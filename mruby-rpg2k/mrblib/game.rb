@@ -15040,6 +15040,11 @@ module Game
       # CharSet row, which is numerically identical to liblcf's own facing
       # enum (both walk up/right/down/left in that order).
       hero[22] = CharSet::DIR_ROW[@direction] || 2
+      # Field 21 (liblcf's own `direction`/"sprite direction", distinct from
+      # field 22's `facing`) mirrors field 22 -- see SAVE_MOVABLE's own
+      # schema.rb comment for the genuine-save evidence and why this
+      # codebase has no separate value to give it.
+      hero[21] = hero[22]
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable

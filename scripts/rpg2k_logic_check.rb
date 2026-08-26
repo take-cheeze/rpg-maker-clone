@@ -4360,6 +4360,22 @@ check 'to_lsd writes the leader/vehicle sprite index at the correct liblcf ' \
   eq 2, boat_chunk[74]
 end
 
+check 'to_lsd mirrors chunk 104 field 21 (liblcf\'s own "direction") off ' \
+      'field 22 ("facing")' do
+  # Confirmed against a genuine kk1.12 save under wine: field 21 was present
+  # holding the exact same raw value as field 22 in that capture -- see
+  # SAVE_MOVABLE's own schema.rb comment. #to_lsd used to leave field 21
+  # entirely absent.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.direction = 4 # numpad left
+  hero = st.to_lsd[104]
+  ok hero.key?(21), 'field 21 is present'
+  eq hero[22], hero[21], 'field 21 mirrors field 22 exactly'
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
