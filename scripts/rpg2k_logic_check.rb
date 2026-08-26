@@ -7390,14 +7390,34 @@ check 'a skill book does nothing on a downed actor -- unlike Medicine, ' \
   eq 1, st.party.item_count(8)                 # not consumed
 end
 
-check 'a seed permanently raises the target stats (points2 set) and is consumed' do
-  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk2: 5) })
+check 'a seed permanently raises the target stats (points2 set, not points1) ' \
+      'and is consumed' do
+  # atk: (atk_points1, the *equip*-bonus field EQUIP_BONUS_FIELD reads for a
+  # worn weapon/shield/armour/helmet/accessory) is set here to a large,
+  # unmistakable 999 alongside atk2: 5 (atk_points2, the seed-boost field) --
+  # confirmed directly against genuine RPG_RT.exe under wine (cycle #157):
+  # item 403 in Nepheshel206beta's own database (an actual shipped "seed" --
+  # 赤いドロップ/Red Drop, atk_points2=2 in the unmodified data) was edited to
+  # add atk_points1=77 on a duplicate database, then used from the field Item
+  # menu on the save's live leader (デモ用, LV50) in two side-by-side genuine
+  # runs read via the Equip screen's own 攻撃力 stat line: unmodified item
+  # (atk_points1 absent) raised ATK from 870 to 872 (+2, matching
+  # atk_points2); the atk_points1=77 variant raised it from 870 to 872 too --
+  # the identical +2, not +77 or +79 -- while the item's name, description
+  # and on-use consumption (held count 1 -> 0 in both runs, ruling out "the
+  # item silently failed to apply" as an alternative explanation) were
+  # unchanged, so the LDB edit demonstrably parsed and the seed path
+  # demonstrably ran; RPG_RT.exe's own Seed-consumption code reads only the
+  # points2 field set, exactly like Game::Actor#seed_boosts already does.
+  # (Replaces the former citation to "EasyRPG's Game_Actor seed handling",
+  # which was never independently checked against the genuine engine.)
+  st = item_party({ 9 => fake_item(type: 8, mhp: 50, atk: 999, atk2: 5) })
   st.party.gain_item(9, 2)
   hero = st.party.leader                        # max_hp 100, atk 10
   eq true, st.party.item_effective?(9, hero)
   eq [hero], st.party.use_item(9, hero)
   eq 150, hero.max_hp                           # +50 base max HP
-  eq 15, hero.atk                               # +5 base attack (atk_points2)
+  eq 15, hero.atk, 'atk_points2 (+5) applies; atk_points1 (999) must not'
   eq 1, st.party.item_count(9)                  # one seed consumed
 end
 

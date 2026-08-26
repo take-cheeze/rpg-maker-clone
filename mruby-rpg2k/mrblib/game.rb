@@ -4774,8 +4774,21 @@ module Game
     # The six permanent stat boosts a seed grants, in Actor::STAT_NAMES order
     # (max HP, max SP, attack, defence, spirit, agility). RPG2000 seeds use the
     # item's max_hp_points / max_sp_points and the *_points2 stat set -- distinct
-    # from the *_points1 fields that carry equipment bonuses -- confirmed against
-    # EasyRPG's Game_Actor seed handling.
+    # from the *_points1 fields that carry equipment bonuses. Confirmed
+    # directly against genuine RPG_RT.exe under wine (cycle #157, replacing a
+    # former citation to "EasyRPG's Game_Actor seed handling" that was never
+    # itself independently checked): Nepheshel206beta's own item 403 (a real
+    # shipped "seed", 赤いドロップ/Red Drop, atk_points2=2) was duplicated with
+    # atk_points1 additionally set to 77 on a second copy of the database, then
+    # used from the field Item menu on the save's live leader in two
+    # side-by-side genuine runs, ATK read via the Equip screen both times: the
+    # unmodified item raised ATK 870 -> 872 (+2); the atk_points1=77 variant
+    # raised it 870 -> 872 too, the identical +2, not +77 or +79, while the
+    # item's name/description and its held count (1 -> 0 both runs) stayed
+    # exactly the same, ruling out "the edit was silently ignored" as an
+    # alternative explanation. See the matching regression check in
+    # scripts/rpg2k_logic_check.rb ("a seed permanently raises the target
+    # stats (points2 set, not points1)...") for the full write-up.
     def seed_boosts(it)
       [it.max_hp_points || 0, it.max_sp_points || 0,
        it.atk_points2 || 0, it.def_points2 || 0,
