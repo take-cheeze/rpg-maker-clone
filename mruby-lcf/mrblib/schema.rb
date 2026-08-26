@@ -1861,6 +1861,23 @@ module LCF
       # `:battle_background` name was always a guess from the field's
       # position in the table, now disproven as this specific command's
       # persistence slot; no alternative candidate has been identified.
+      #
+      # A new candidate, from a different save entirely: a genuine kk1.12
+      # (RPG2003) `Save01.lsd` captured during ordinary map exploration --
+      # no battle in progress, no Change Battle Background ever issued that
+      # session -- carries field 125 *present*, decoding (Shift_JIS) as
+      # "草原" ("grassland/plains"), a plausible stock battle-backdrop name.
+      # liblcf's own generator/csv/fields.csv independently names this exact
+      # field (0x7D) `background`, a bare `String`, with no further
+      # description. Together these suggest field 125 is simply the current
+      # map's own resolved encounter background (or another background
+      # concept entirely unrelated to Change Battle Background's own live
+      # override) snapshotted for the save, present whenever *some*
+      # background applies -- not gated on a live override surviving past a
+      # fight the way cycle #167's own probe assumed. Not followed up
+      # further this cycle (no wine session running to test the "is it the
+      # map's own default backdrop" hypothesis directly); left for whoever
+      # picks this back up, alongside cycle #167's own note above.
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine
