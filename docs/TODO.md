@@ -4120,6 +4120,84 @@ The work below is roughly ordered by the critical path to a walkable game
   crash, the autostart-crash mystery, the missing-Picture-asset hang, and
   every EasyRPG-style citation cycle #154's own repo-wide grep turned up
   that no cycle has yet touched.
+  ✅ **Follow-up (cycle #164, 2026-08-26): picked up this cycle's own open
+  item -- `SAVE_PICTURE` field 9's true identity and the still-missing
+  `fixed_to_map`/`use_transparent_color` fields -- and settled both at
+  once.** **Evidence:** reused cycle #155/#163's own scratch injector/
+  driver shape (new `inject_picture_flags.rb`, `inject_double_move.rb`,
+  `inject_reshow_mid_move.rb`, all now in this session's scratchpad) to
+  drive genuine RPG_RT.exe under wine (same Xvfb/matchbox/
+  `LIBGL_ALWAYS_SOFTWARE=1`/`ja_JP.UTF-8`/`WINEARCH=win32`/
+  `WINEPREFIX=~/.wine-nepheshel32` setup, same clean Save01.lsd cycles
+  #155-#163 used) through four otherwise-identical Show Picture scenarios
+  differing only in param4 (`fixed_to_map`) / param7
+  (`use_transparent_color`): base (both clear), fixed (param4 set), transparent
+  (param7 set), both (both set). Reading each resulting genuine Save02.lsd's
+  raw chunk 103 with `read_picture_chunk.rb` (cycle #155's own raw-field
+  reader) found field 6 present as a lone `0x01` byte **only** in the
+  fixed/both captures and field 9 present the same way **only** in the
+  transparent/both captures -- absent from base in both cases, and both
+  fields present *simultaneously and independently* in the "both" capture
+  (ruling out any bit-packing between them). This directly overturns the
+  schema's prior field-9 guess (`:visible`, explicitly flagged "never
+  confirmed" across cycles #154/#155/#159): those three cycles' own five
+  capture shapes never once varied the transparent-color flag, so the
+  absence they observed was simply the wrong experiment, not proof the
+  field is unused. Separately, reused the same shape to settle two open
+  questions from this cycle's own candidate list about re-issuing a Move/
+  Show Picture mid-flight: a second Move Picture issued on a picture already
+  gliding (id 5, 0,100 -> 100,100 over 10.0s wait off -> Wait 3.0s -> 100,100
+  -> 250,100 over 10.0s wait off -> Wait N) produced current_x readings of
+  exactly 52.0 (N=1.0s) and 140.0 (N=5.0s) -- decisively matching the
+  "continues easing from the current live position" model
+  (30+(250-30)*k/600) and ruling out "snaps to the first move's own target
+  first" (which predicts 115.0/175.0) -- and a Show Picture re-issued on an
+  id already mid-move (same setup, then Show Picture again at 200,100 mid-
+  glide) produced current_x=200.0 with `time_left` absent, confirming Show
+  Picture unconditionally cancels any in-flight move and snaps to the fresh
+  position at rest. Both of those already matched this codebase's existing
+  `Game::Picture#move_to`/`#show_picture` behavior exactly, so no change was
+  needed for either -- only the field-6/9 gap was a real, fixable
+  divergence. **Fixed:** `SAVE_PICTURE` (`mruby-lcf/mrblib/schema.rb`) now
+  declares field 6 as `fixed_to_map` and renames field 9 from `:visible` to
+  `use_transparent_color`, both booleans elided at their own `false`
+  default like every other picture flag in the table. `Game::State#to_lsd`'s
+  picture-writing loop now writes `e[6]`/`e[9]` from `p.fixed_to_map`/
+  `p.use_transparent_color`, and `Game::State.restore_pictures` now passes
+  `fixed_to_map:`/`use_transparent_color:` through to `#show_picture` on
+  load -- previously neither flag was written or read at all, so a picture
+  shown fixed-to-the-map or exempted from the transparent color silently
+  reverted to the opposite behavior on every Save/Continue round trip.
+  **New coverage in `scripts/rpg2k_save_load_check.rb`:** the existing
+  `to_lsd`/`from_lsd` round-trip block now also shows a picture with both
+  flags set before serializing, and asserts the reloaded picture keeps both
+  -- proved to fail cleanly against the pre-fix code (`git stash push --
+  mruby-rpg2k/mrblib/game.rb mruby-lcf/mrblib/schema.rb`, keeping the new
+  check, reran the script: both new assertions failed with `expected true,
+  got false`, error count 3 -> 5; `git stash pop` restored the fix and the
+  count back to 3). Full suite reconfirmed passing after the fix:
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_logic_check.rb`
+  (1145), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15); `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures
+  (the unmodelled BGM `balance` field, the `show_x`/`show_y` `nil`-vs-absent
+  mismatch, and the "screen transition defaults unreadable" stderr warning)
+  were reconfirmed present identically before and after this cycle's
+  changes -- the show_x/show_y failure's own diff now additionally shows
+  the two new keys on both sides of the mismatch, which is the same
+  pre-existing failure widened by this cycle's new fields, not a new one.
+  The two live fixtures the wine driver copies into `data/` on each run
+  (`Save01.lsd`, `Map0012.lmu`) were restored to their exact original bytes
+  and reconfirmed byte-identical by `md5sum` against the same
+  `3ab5bb01.../c2fa69a0...` values every prior cycle back to #148 recorded;
+  `git status` on `data/` came back clean. No EasyRPG source was consulted
+  for any claim this cycle, and no web search was used either. **Left open
+  for a future cycle:** field 140 (`atb_mode`)'s version-gate-vs-always-
+  default question (still needs a genuine RPG2003 project or an
+  ATB-toggling save -- none is available among this repo's own wine-testable
+  fixtures), the party-roster-field crash, the autostart-crash mystery, the
+  missing-Picture-asset hang, and every EasyRPG-style citation cycle #154's
+  own repo-wide grep turned up that no cycle has yet touched.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

@@ -1231,6 +1231,16 @@ module LCF
     # -- see docs/TODO.md.
     SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
+      # Show Picture's own "fixed to map position" checkbox (param4 in
+      # `Interpreter#do_show_picture`, which pins the picture to scroll with
+      # the camera instead of the screen). Confirmed against genuine
+      # RPG_RT.exe under wine (cycle #164): a Show Picture issued with this
+      # flag clear wrote chunk 103 with field 6 *absent*; an otherwise
+      # byte-identical Show Picture with only this flag set wrote field 6
+      # *present* as a single `0x01` byte -- elided at its own (false)
+      # default, the same convention as every other picture flag/field in
+      # this table.
+      6 => { name: :fixed_to_map, type: :bool, default: false },
       2 => { name: :show_x, type: :double, default: 0.0 },
       3 => { name: :show_y, type: :double, default: 0.0 },
       # The picture's genuinely live position/zoom/transparency/tone -- see
@@ -1252,24 +1262,25 @@ module LCF
       12 => { name: :current_tone_green, type: :double, default: 100.0 },
       13 => { name: :current_tone_blue, type: :double, default: 100.0 },
       14 => { name: :current_tone_saturation, type: :double, default: 100.0 },
-      # 表示するか (0 非表示 / 1 表示) -- a name inferred from the field id's
-      # own position in this table (between the current_* and finish_*
-      # clusters), never confirmed against a genuine RPG_RT.exe capture that
-      # actually carries it. Cycle #159 looked for it in the one new scenario
-      # this cycle's own genuine-wine evidence could reach (a picture shown
-      # then Erase Picture'd, then saved) and still did not find it present
-      # -- an erased id's own chunk 103 entry keeps every other field
-      # (2/3/4/5/7/8/11-14/31/32/33/34/41-44) but field 9 stayed absent there
-      # too, the same as every other capture cycles #154/#155 already tried
-      # (a never-touched slot, an at-rest shown picture, one pushed off every
-      # visual default, and one mid-Move-Picture). Five distinct genuine
-      # capture shapes across three cycles have now never once observed this
-      # field present -- consistent with it being unused by any ordinary
-      # RPG2000 Show/Move/Erase Picture sequence, though still not proof no
-      # scenario ever writes it (RPG2003's own picture flag set, e.g., was
-      # never tried). Left as `default: false` (matching a picture that was
-      # never shown) since nothing in this codebase reads or writes it.
-      9 => { name: :visible, type: :bool, default: false },
+      # Show Picture's "not affected by transparent color" checkbox (param7
+      # in `Interpreter#do_show_picture`, `use_transparent_color`) -- NOT
+      # "visible", as a prior version of this comment guessed purely from
+      # this field id's position in the table (between the current_* and
+      # finish_* clusters). That guess was never confirmed and, worse, was
+      # actively misleading: cycles #154/#155/#159 all failed to find field
+      # 9 present in any of five genuine-RPG_RT.exe capture shapes because
+      # none of them ever varied the transparent-color flag -- an
+      # unrelated-field absence was being read as "this field is unused."
+      # Cycle #164 confirmed the real mapping directly against genuine
+      # RPG_RT.exe under wine: a Show Picture issued with this flag clear
+      # wrote chunk 103 with field 9 *absent*; an otherwise byte-identical
+      # Show Picture with only this flag set wrote field 9 *present* as a
+      # single `0x01` byte, and setting *both* this flag and the
+      # `fixed_to_map` flag (field 6) together wrote both fields 6 and 9
+      # present simultaneously, each independently -- ruling out any
+      # bit-packing between the two and confirming both really are their
+      # own elided-at-default boolean fields.
+      9 => { name: :use_transparent_color, type: :bool, default: false },
       # The picture's resting/target position -- see this table's own
       # comment above for why these are named finish_*, not current_*.
       31 => { name: :finish_x, type: :double, default: 0.0 }, # 表示位置Ｘ (中心)

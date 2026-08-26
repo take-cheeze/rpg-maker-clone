@@ -259,7 +259,23 @@ def check_game(dir)
   state.vehicle(:airship).x = 15
   state.vehicle(:airship).y = 7
 
+  # A picture shown "fixed to map position" and/or exempt from the
+  # transparent color (SAVE_PICTURE chunk 103 fields 6/9, cycle #164) --
+  # both used to be entirely unwritten by #to_lsd/unread by
+  # #restore_pictures, so a picture shown with either flag silently reverted
+  # to the opposite behaviour (screen-fixed instead of map-scrolling, or
+  # affected by the transparent color again) after every Save/Continue
+  # round trip. Confirmed against genuine RPG_RT.exe under wine: see
+  # SAVE_PICTURE's own schema comment for the field-presence evidence.
+  state.show_picture(7, name: 'flagpic', x: 10, y: 20, fixed_to_map: true,
+                         use_transparent_color: true)
+
   round = Game::State.from_lsd(db, LCF::SaveData.new(StringIO.new(state.to_lsd(state.save_count).to_lcf)))
+  fp = round.pictures[7]
+  eq true, !fp.nil? && fp.fixed_to_map,
+     'to_lsd: a picture shown fixed-to-map keeps that flag across Save/Continue'
+  eq true, !fp.nil? && fp.use_transparent_color,
+     'to_lsd: a picture shown exempt from the transparent color keeps that flag across Save/Continue'
   eq state.map_id, round.map_id, 'to_lsd: map id'
   eq state.x, round.x, 'to_lsd: hero x'
   eq state.y, round.y, 'to_lsd: hero y'
