@@ -1083,6 +1083,17 @@ module RGSS
       self
     end
 
+    # The batched form of #blt (see Bitmap#blt_quads in mruby-rgss/src/
+    # lib.cxx): each [qdx, qdy, sx, sy, w, h] quad composites exactly as an
+    # individual full-opacity #blt would. The CRuby harness has no native
+    # dispatch to save, so it simply fans back out to #blt.
+    def blt_quads(x, y, src, quads)
+      quads.each do |qdx, qdy, sx, sy, w, h|
+        blt(x + qdx, y + qdy, src, Rect.new(sx, sy, w, h))
+      end
+      self
+    end
+
     def copy_blt(x, y, src, srect)
       bmp_require!
       src.bmp_require!
