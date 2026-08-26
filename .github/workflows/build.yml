@@ -216,13 +216,19 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.11
 
       # Runs while the background steps above are still in flight.
+      # -DENABLE_TIME_REPORT=ON (CMakeLists.txt) is this job's own opt-in --
+      # local/dev builds don't pay for it -- turning on GCC's
+      # -ftime-report-details for every compile below, so the build log the
+      # next step captures carries a per-file compiler-phase timing block the
+      # "compile-time report" step further down turns into a bottleneck-hint
+      # summary.
       - name: cmake
         run: |
-          cmake -S . -B build -GNinja
+          cmake -S . -B build -GNinja -DENABLE_TIME_REPORT=ON
 
       - name: build
         run: |
-          cmake --build build
+          cmake --build build 2>&1 | tee build.log
 
       - name: sccache stats
         if: always()
@@ -234,6 +240,16 @@ jobs:
             sccache --show-stats
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Reads the -ftime-report-details blocks the build step's log just
+      # captured (empty/absent on a fully-cached run, which is fine -- see
+      # the script's own comment) and appends a "slowest files/phases this
+      # run" table to the job summary, right alongside the sccache stats
+      # above. if: always() so a failed build still surfaces where its time
+      # actually went before it died.
+      - name: compile-time report
+        if: always()
+        run: ruby scripts/compile_time_report.rb build.log
 
       # Barrier: block until lint and every download have finished before the
       # checks that consume them. A failed background step (e.g. pre-commit)
