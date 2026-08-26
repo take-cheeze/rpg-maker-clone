@@ -1678,6 +1678,47 @@ module LCF
       122 => { name: :escape_allowed, type: :bool },
       123 => { name: :save_allowed, type: :bool },
       124 => { name: :menu_allowed, type: :bool },
+      # Cycle #165 surfaced this field as declared but completely unplumbed
+      # (`Game::State#to_lsd`/`.from_lsd` never read or wrote it) and cycle
+      # #166 confirmed the underlying command it names -- Change Battle
+      # Background (13210), decoded correctly by `Interpreter#
+      # do_change_battle_bg` -- genuinely fires and visibly changes the live
+      # battle backdrop when issued from a troop's own battle-event page
+      # (verified against genuine RPG_RT.exe: troop 103's real "light"
+      # backdrop swap). **Cycle #167 completed the open question and closed
+      # it: this override does NOT survive past the battle it was issued in.**
+      # Evidence: reused cycles #130-165's own proven-safe splice technique
+      # (Map0478 event 2's genuine autostart script, spliced onto a scratch
+      # Map0012.lmu copy) extended to all three of that event's real pages
+      # (not just page 2 in isolation, which cycle #166 found loops forever
+      # on Victory) so the fight could be won cleanly and reach an ordinary
+      # save-capable map state, then appended a trailing Open Save Menu
+      # (11910) command (same "genuine content + appended Open Save Menu, no
+      # Wait" idiom cycle #155's picture probes already used safely) to save
+      # immediately after Victory -- sidestepping the demo save's own
+      # `save_allowed: false` baked into `Save01_clean.lsd`, which blocks the
+      # ordinary in-game System menu's own Save entry regardless of anything
+      # the battle does. Ran this twice under wine: once against troop 103
+      # unmodified (baseline) and once with cycle #166's own proven-safe
+      # troop-page-injection technique added to troop 103's own `RPG_RT.ldb`
+      # entry (a new page, condition copied from the troop's own page 2
+      # shape, running Change Battle Background("light")) -- the backdrop
+      # visibly changed to the pink/white `Backdrop/light.png` gradient mid-
+      # fight in the second run (screenshot evidence), confirming the change
+      # genuinely fired, yet the resulting genuine `Save01.lsd`'s chunk 101
+      # came back with field 125 **absent in both captures** (`LCF::
+      # SaveData#key?(125)` false either way). This is a real, symmetric A/B
+      # result, not an inconclusive one: the only variable between the two
+      # runs was whether Change Battle Background fired, and the save
+      # chunk's own shape did not differ on that field. This codebase's own
+      # existing behavior -- `@battle_background` scoped entirely to the
+      # live `Scene::Battle` instance, discarded when the fight ends, never
+      # touching `Game::State` -- therefore already matches genuine RPG_RT.exe
+      # and needs no change. Left genuinely open (not this field's own
+      # concern): what field 125 actually is, if anything -- this schema's
+      # `:battle_background` name was always a guess from the field's
+      # position in the table, now disproven as this specific command's
+      # persistence slot; no alternative candidate has been identified.
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine
