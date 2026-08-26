@@ -1801,6 +1801,12 @@ jobs:
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     continue-on-error: true
+    env:
+      # See the `build` job for what this is -- the same Nepheshel download
+      # runs here, and without it this job hits the real upstream host
+      # directly instead of the CORS proxy's R2 cache `build`/`ruby-checks`/
+      # `wasm` route their own Nepheshel downloads through.
+      CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
     steps:
       - uses: actions/checkout@v7
         with:
