@@ -4808,7 +4808,15 @@ module Game
     # genuine RPG_RT.exe under wine on this exact save/map the instant the
     # field menu was opened -- so this test left it untouched and used
     # whichever actor the save already, genuinely led with instead of adding
-    # a second party member. Separately, and unrelated to this claim: a
+    # a second party member. Root cause since found (kk1.12, a later
+    # session): `#to_lsd` wrote the roster into field 1 alone as a raw
+    # int8_array and never wrote field 2 at all, but liblcf's own
+    # generator/csv/fields.csv documents field 1 as the roster vector's
+    # *count* and field 2 as its *data* -- the same count-then-data split
+    # item_count/item_ids (11/12) already use. A save missing the data field
+    # that a genuine RPG_RT.exe itself always writes crashes it on load
+    # regardless of what the count says, roster edited or not; see
+    # SAVE_INVENTORY's own comment. Separately, and unrelated to this claim: a
     # synthetic autostart map event of 2+ commands reliably wedges or crashes
     # genuine RPG_RT.exe on the very next Cancel/menu-open press on this same
     # save/map, reproducing cycles #137-151's own open "autostart-crash
@@ -15229,7 +15237,14 @@ module Game
       save[103] = pics
 
       inv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_INVENTORY })
-      inv[1] = @party.actors.map { |a| a.id }
+      # party_count (1) / party (2): the same count-then-data split as
+      # item_count/item_ids (11/12) just below -- see SAVE_INVENTORY's own
+      # comment. A genuine RPG_RT.exe requires both fields; writing only the
+      # count (or, as this used to, cramming the roster into field 1 alone
+      # and never writing field 2 at all) crashes it outright on load.
+      party_ids = @party.actors.map { |a| a.id }
+      inv[1] = party_ids.size
+      inv[2] = party_ids
       item_ids = @party.items.keys.sort
       inv[11] = item_ids.size
       inv[12] = item_ids

@@ -7301,6 +7301,36 @@ check 'to_lsd/from_lsd round-trips the 使用回数 tally (chunk 109 field 14)' 
   eq 1, round.party.item_count(4)
 end
 
+check 'to_lsd writes the party roster as a count-then-data pair (chunk 109 ' \
+      'fields 1/2), the same split item_count/item_ids (11/12) already use' do
+  # liblcf's own generator/csv/fields.csv documents SAVE_INVENTORY field 1 as
+  # the roster Vector<Int16>'s *count* and field 2 as its *data* -- #to_lsd
+  # used to write the roster into field 1 alone as a self-contained
+  # int8_array and never write field 2 at all. A solo party's field 1 byte
+  # happens to read identically either way (count 1 and "array [1]" are the
+  # same one byte), which is exactly why this went unnoticed until a
+  # multi-actor party (kk1.12, a real RPG2003 game) exposed it: a save
+  # missing field 2 that a genuine RPG_RT.exe itself always writes crashes
+  # the real engine outright on load, confirmed live under wine.
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8),
+    2 => FakePlayerRow.new('Ally', '', 0, 3, max_hp: 50, max_mp: 20, atk: 6, def: 5),
+    3 => FakePlayerRow.new('Mage', '', 0, 3, max_hp: 40, max_mp: 40, atk: 4, def: 3),
+  }
+  db = FakeActorDB.new(players, [1])
+  party = Game::Party.new(db)
+  party.add_actor(2)
+  party.add_actor(3)
+  st = Game::State.new(party, 1, 0, 0)
+
+  inv = st.to_lsd[109]
+  eq 3, inv.party_count, 'field 1 is the count, not the roster itself'
+  eq [1, 2, 3], inv.party, 'field 2 is the roster data'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [1, 2, 3], round.party.actors.map(&:id)
+end
+
 check 'field_items lists every held item in id order with counts, including ' \
       'an unusable one -- RPG_RT lists it disabled, it does not omit it' do
   items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
