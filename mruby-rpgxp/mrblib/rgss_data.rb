@@ -271,15 +271,20 @@ class RPGXP
       @system = load_data("System")
       @map_infos = load_data("MapInfos")
       @cache = {}
-      ARRAY_FILES.each do |name, file|
-        @cache[name] = load_data(file)
-      end
     end
 
     attr_reader :system, :map_infos, :game_dir
 
-    ARRAY_FILES.each_key do |name|
-      define_method(name) { @cache[name] }
+    # Each table loads lazily, on first access, rather than all eleven being
+    # Marshal.load'd unconditionally the instant the database opens: a given
+    # session commonly never opens a battle (Troops/Enemies/Animations, often
+    # the largest files in this group, unread) or never touches several other
+    # tables in a short play session. Safe: RGSSData exposes no way to reload
+    # a table once cached, and read_object (via load_data) raises on a
+    # missing file rather than returning nil/false, so `||=` cannot mistake
+    # "not loaded yet" for "loaded as nil".
+    ARRAY_FILES.each do |name, file|
+      define_method(name) { @cache[name] ||= load_data(file) }
     end
 
     # Load one map (Data/MapNNN.rxdata) by id. Maps are big, so they are not
