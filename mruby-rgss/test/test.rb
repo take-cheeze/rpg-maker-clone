@@ -669,6 +669,39 @@ assert "RGSS::Bitmap blt_quads matches per-quad blt" do
   end
 end
 
+assert "RGSS::Bitmap blt_quads blends a row with only some opaque pixels" do
+  # The batch's row-copy fast path only memcpy's a source row when *every*
+  # pixel in it is fully opaque (alpha 255) -- a row with a mix of opaque and
+  # non-opaque pixels must still blend pixel by pixel. This is exactly the
+  # shape of an autotile quarter-tile: a solid chip next to a transparent
+  # corner mask in the same row. Misclassifying such a row as opaque memcpy's
+  # the transparent pixel's raw (typically black) source bytes straight over
+  # the destination instead of leaving it alone, blacking out the corner.
+  src = RGSS::Bitmap.new(2, 1)
+  src.set_pixel(0, 0, RGSS::Color.new(10, 200, 30, 255))  # opaque
+  src.set_pixel(1, 0, RGSS::Color.new(0, 0, 0, 0))        # fully transparent
+
+  under = RGSS::Color.new(50, 60, 200, 255)
+  want = RGSS::Bitmap.new(2, 1)
+  want.fill_rect(0, 0, 2, 1, under)
+  want.blt(0, 0, src, RGSS::Rect.new(0, 0, 2, 1))
+
+  got = RGSS::Bitmap.new(2, 1)
+  got.fill_rect(0, 0, 2, 1, under)
+  got.blt_quads(0, 0, src, [[0, 0, 0, 0, 2, 1]])
+
+  2.times do |x|
+    w, g = want.get_pixel(x, 0), got.get_pixel(x, 0)
+    assert_equal w.red, g.red, "red at #{x}"
+    assert_equal w.green, g.green, "green at #{x}"
+    assert_equal w.blue, g.blue, "blue at #{x}"
+    assert_equal w.alpha, g.alpha, "alpha at #{x}"
+  end
+  # The transparent pixel must leave the destination untouched, not paint it
+  # black -- the failure mode the row-copy fast path's bug produced.
+  assert_equal 200.0, got.get_pixel(1, 0).blue
+end
+
 assert "RGSS::Bitmap copy_blt matches blt onto a cleared destination" do
   # The justification for #copy_blt is that onto a *cleared* destination it
   # shows the same picture as #blt -- that is what lets the map renderer swap
