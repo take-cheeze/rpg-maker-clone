@@ -164,6 +164,41 @@ adb push /path/to/game/. /sdcard/Android/data/org.rpg2k.android/files/game/
 one APK install is one game, matching the PSP port's own "one EBOOT, one
 game" scope for this first slice.
 
+## Continuous integration
+
+Two CI jobs cover this port (`.github/workflows/build.yml`):
+
+- **`android`** cross-compiles the whole dependency stack and packages the
+  debug APK via Gradle — a compile-only check.
+- **`android-smoke`** (`needs: android`) actually boots that APK: an x86_64
+  `google_apis` emulator under KVM, relying on the Android Emulator's own
+  ARM-binary translation to run the arm64-v8a `.so` unmodified (bundled with
+  Google APIs images from API 28 on — this app's own `minSdk` floor). It
+  installs the APK, pushes Nepheshel to the fixed game directory above,
+  launches `RpgMakerCloneActivity` and asserts the engine reaches the map
+  scene (`[RPG2k-MAP]` in `adb logcat -s RPG2K`) with no native crash
+  (`F libc`/`F DEBUG` tombstone lines or `FATAL EXCEPTION` anywhere in the
+  device log). `scripts/android_smoke_check.bash` is the actual check; the
+  workflow step is a thin `reactivecircus/android-emulator-runner` wrapper
+  around it.
+  - This is a **boot-and-crash** check, not a performance measurement: an
+    emulator's frame times mean nothing next to real-device numbers. See
+    `docs/adr/0058-android-port.md` for those, and
+    [`docs/android-perf-followups.md`](../docs/android-perf-followups.md) for
+    what is still device-only.
+  - The self-driving flags (`--test_play --rpg2k_new_game --timeout_ms=...`,
+    the same ones `scripts/rpg2k_boot_check.bash` uses on desktop) reach the
+    running engine through a CI-only hook: `getArguments()` reads an
+    `rpg2k_extra_args` string extra off the launch `Intent` and appends it to
+    argv when present, so `adb shell am start ... --es rpg2k_extra_args
+    "--test_play --rpg2k_new_game --timeout_ms=20000"` drives the engine to
+    New Game and a clean self-exit with no touch-input automation. Absent on
+    every real launch (the extra is simply not set), so ordinary installs are
+    unaffected.
+  - `continue-on-error: true` for now — new and unproven, the same starting
+    point `psp-smoke-game` used before it had run green for a while; promote
+    once this has too.
+
 ## Not yet wired (later slices)
 
 - **RPG Maker MV/MZ (the WebGL/quickjs-ng maker).** `mruby-mvjs/src/mvgl.cxx`

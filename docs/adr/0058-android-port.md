@@ -328,6 +328,28 @@ The animation-step `map.layers` spikes above were precisely this loop, so
 the device-side win should track whatever share of them was compose rather
 than dispatch; the scrolling present path is the one named remainder left.
 
+**Update (2026-08-26, later): CI now boots the APK itself, on an emulator.**
+Every update above was confirmed by hand on the `C330`; nothing in CI ever ran
+the APK past `aapt dump badging` (the `android` job's own scope). The new
+`android-smoke` job (`.github/workflows/build.yml`, `needs: android`) closes
+that specific gap: an x86_64 `google_apis` emulator under KVM, leaning on the
+Android Emulator's own ARM-binary translation (bundled with Google APIs
+images from API 28 on — this app's own `minSdk` floor, not a coincidence) to
+run the arm64-v8a `.so` unmodified rather than needing a second native build.
+It installs the APK, pushes Nepheshel to the fixed game directory, launches
+`RpgMakerCloneActivity` with a CI-only `rpg2k_extra_args` intent-extra hook
+(`getArguments()`, absent on every real launch) carrying the same
+`--test_play --rpg2k_new_game --timeout_ms=...` flags
+`scripts/rpg2k_boot_check.bash` already uses on desktop, and asserts the
+engine reaches `[RPG2k-MAP]` with no native crash marker in the device log.
+This is a *boot-and-crash* check, not a performance measurement — an
+emulator's frame times mean nothing next to the C330 numbers above, which
+`docs/android-perf-followups.md` still asks a real device for — but it does
+catch the class of bug every update above found by hand before a device was
+available: a runtime crash, a missing lookup, a native abort that only shows
+up once the `.so` actually loads and runs. `continue-on-error: true` for now,
+the same starting point `psp-smoke-game` used before it proved stable.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 

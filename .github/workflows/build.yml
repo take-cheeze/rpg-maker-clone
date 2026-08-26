@@ -1678,8 +1678,8 @@ jobs:
     # Build the Android debug APK (app/android). Like the Wio/PSP jobs, this is
     # the external check for the port: cross-compiles mruby, LVGL,
     # SDL2/SDL2_mixer, gflags, ng-log, uni-algo and quickjs-ng for arm64-v8a
-    # and packages them into a real APK via Gradle. It does not run the APK on
-    # a device or emulator (no equivalent of the psp-smoke job yet) -- see
+    # and packages them into a real APK via Gradle. It does not itself run the
+    # APK -- the `android-smoke` job below does that, on an emulator -- see
     # app/android/README.md and docs/adr/0058-android-port.md.
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
@@ -1765,6 +1765,111 @@ jobs:
           name: android-debug-apk
           path: app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  android-smoke:
+    # Boot the APK `android` just built, for real, on an emulator -- the same
+    # idea as `psp-smoke`/`psp-smoke-game` for the PSP EBOOT, closing the gap
+    # the `android` job's own comment used to describe. The app ships
+    # arm64-v8a native libraries only (app/android/app/build.gradle's
+    # `abiFilters`), and GitHub-hosted Linux runners only get KVM
+    # acceleration for an x86/x86_64 guest -- an arm64-v8a system image runs
+    # fully software-emulated and is far too slow to boot in a CI job -- so
+    # this targets an x86_64 `google_apis` image instead and leans on the
+    # Android Emulator's own ARM-binary translation (bundled with Google
+    # APIs images from API 28 on, which not by coincidence is also this
+    # app's own `minSdk` floor -- see that field's own comment) to run the
+    # arm64-v8a .so unmodified rather than needing a second, x86_64 native
+    # build.
+    #
+    # This is a *boot-and-crash* check, not a performance measurement: an
+    # x86_64-hosted, ARM-translated emulator's frame times mean nothing next
+    # to the C330 numbers ADR 58 and docs/android-perf-followups.md track --
+    # those still need a real device (see docs/android-perf-followups.md's
+    # "How to measure" section). What this job catches instead is the class
+    # of bug the `android` job's compile-only check cannot: a runtime crash,
+    # a missing asset lookup, a native abort that only shows up once
+    # Dalvik/ART actually loads the .so and SDL's Java glue drives main() --
+    # exactly the shape of the three real bugs ADR 58's Consequences section
+    # found by hand before any device or emulator was available to this port.
+    #
+    # New and unproven, like `psp-smoke-game` was at first (see its own
+    # comment above): `continue-on-error: true` until this has run green for
+    # a while, since ARM-translation availability is an emulator/system-image
+    # detail this job does not control and CI emulators are a known source of
+    # first-boot flakiness.
+    needs: android
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Only scripts/android_smoke_check.bash, scripts/download-
+          # nepheshel.bash and this workflow file are read here -- no
+          # submodules, same reasoning as `psp-smoke`.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Download debug APK
+        uses: actions/download-artifact@v8
+        with:
+          name: android-debug-apk
+          path: apk
+
+      - name: Download Nepheshel
+        # Same fixture and installer the desktop `build` job and
+        # `psp-smoke-game` already use; see the latter's own comment for why
+        # this is a plain apt-get rather than the full nix devShell.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q unar
+          ./scripts/download-nepheshel.bash
+
+      - name: Enable KVM group perms
+        # Standard boilerplate for reactivecircus/android-emulator-runner on
+        # a GitHub-hosted Linux runner: /dev/kvm exists but is root-only
+        # until a udev rule opens it to the `kvm` group the runner user is
+        # already in.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Cache AVD
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ runner.os }}-api30-google_apis-x86_64
+
+      - name: Boot the APK and walk it to the map scene
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          # -no-snapshot-save alongside the AVD cache above: this job never
+          # wants to persist a mid-boot snapshot back into the cached image,
+          # only the empty-AVD creation cost.
+          emulator-options: >-
+            -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+            -camera-back none -no-snapshot-save
+          disable-animations: true
+          script: ./scripts/android_smoke_check.bash
+
+      - name: Upload smoke-test output
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-smoke
+          path: |
+            android-smoke-logcat.txt
+            android-smoke-full-logcat.txt
+            android-smoke-screenshot.png
+          if-no-files-found: warn
 
   flake:
     if: ${{ github.event_name != 'issue_comment' }}

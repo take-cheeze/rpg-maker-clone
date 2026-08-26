@@ -24,6 +24,23 @@ public class RpgMakerCloneActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         String gameDir = getExternalFilesDir(null) + "/game";
-        return new String[] { "--game_dir", gameDir };
+        java.util.ArrayList<String> args = new java.util.ArrayList<>();
+        args.add("--game_dir");
+        args.add(gameDir);
+        // CI hook: `adb shell am start ... --es rpg2k_extra_args "..."` lets
+        // the android-smoke CI job (.github/workflows/build.yml) pass the
+        // same self-driving flags scripts/rpg2k_boot_check.bash uses on
+        // desktop (--test_play --rpg2k_new_game --timeout_ms=..., see
+        // src/main.cxx) without any touch-input automation. Absent from every
+        // real launch, so getStringExtra returns null and ordinary installs
+        // are unaffected.
+        String extraArgs = getIntent() != null
+            ? getIntent().getStringExtra("rpg2k_extra_args") : null;
+        if (extraArgs != null && !extraArgs.trim().isEmpty()) {
+            for (String arg : extraArgs.trim().split("\\s+")) {
+                args.add(arg);
+            }
+        }
+        return args.toArray(new String[0]);
     }
 }
