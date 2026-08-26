@@ -3791,6 +3791,134 @@ The work below is roughly ordered by the critical path to a walkable game
   missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
   own repo-wide grep turned up that no cycle has yet touched (see cycle
   #154's own list, unchanged).
+  ✅ **Follow-up (cycle #161, 2026-08-26): picked up candidate 1 (SAVE_SYSTEM
+  fields 71-140), spot-checking a representative field from each of cycle
+  #160's own three named sub-conventions against a fresh genuine RPG_RT.exe
+  capture -- confirmed the 111-116 "always-present with a 0xff sentinel"
+  convention exactly as claimed, but found the 121-124 "unconditional write"
+  and 131/132 "always-present" claims were each half wrong, landing two real
+  fixes.** **Evidence:** reused cycle #159/#160's own `LCF::MapUnit`
+  short-synthetic-prefix + genuine-89-command-tail injector shape
+  (`inject_access_probe.rb`, `drive_slot_probe.bash`, both scratch-only) to
+  add one autostart event to a byte-identical copy of Map0012.lmu (md5
+  `c2fa69a0...`) issuing a Control Teleport/Escape/Save/Menu Access command
+  (11820/11840/11930/11960) then Open Save Menu (11910) with no Wait in
+  between -- the same "no auto-clear, state still live at the instant of
+  save" isolation cycle #160 used for Change Face Graphic. Drove genuine
+  RPG_RT.exe under wine (Xvfb 640x480x16, matchbox, `LIBGL_ALWAYS_SOFTWARE=1`,
+  `ja_JP.UTF-8`, continuing from the same clean Save01.lsd cycle #160 used)
+  through several scenarios, reading each resulting genuine Save0N.lsd's raw
+  chunk 101 with `LCF::SaveData` + `Array1D#key?` (`read_sys_fields.rb`,
+  bypassing schema defaults): field 111 (`teleport_erase_transition`, and by
+  extension 112-116) was present with value **255** (0xff) in every capture
+  where it was never touched, confirming the schema's own already-documented
+  claim that these six are always-present raw `:uint8` sentinel bytes, not a
+  gap. Field 121 (`teleport_allowed`) stayed **present** with its own false
+  constructor default even right after an explicit ENABLE(1) immediately
+  followed by DISABLE(0) putting it back to that exact default, mid-event --
+  confirming the unconditional-write claim for this field (122 was not
+  independently probed this cycle, sharing 121's exact code shape and
+  command family, so is treated as the same convention by analogy). By
+  contrast, field 123 (`save_allowed`, constructor default true) went from
+  **present** (value false) immediately after an explicit DISABLE(0) to
+  **fully absent** once a further ENABLE(1) put it back to that true
+  default, still mid-event -- the same per-value "omit at default"
+  convention already confirmed for fields 41-44/51-54/61, not the
+  unconditional-write convention the inherited doc comment claimed for the
+  whole 121-124 cluster; field 124 (`menu_allowed`, constructor default
+  true) showed the identical present-then-absent-again pattern across a
+  parallel notouch / DISABLE / DISABLE-then-ENABLE trio. Separately, field
+  132 (`save_slot`) was found **absent** from every genuine save taken into
+  File 1 (including the project's own long-standing Save01.lsd baseline
+  fixture used continuously since cycle #148, save_count=4) while an
+  otherwise-identical probe saved into File 2 wrote it present as **2**, and
+  into File 3 present as **3** -- exactly matching the schema's own
+  already-declared `default: 1` for this field, which this codebase's own
+  `#to_lsd` was not honouring at all. **The gaps:** (1)
+  `Game::State#to_lsd` (`mruby-rpg2k/mrblib/game.rb`) wrote `sys[123]`/
+  `sys[124]` unconditionally (`@save_access ? true : false`, `@menu_access ?
+  true : false`), so a save taken with save/menu access at their own true
+  default carried explicit `true`-valued bytes a genuine RPG_RT.exe save
+  never does -- the same species of over-writing bug cycles #152/#153/#160
+  already fixed elsewhere in this schema, now shown to also apply to half of
+  this specific cluster; (2) `#to_lsd` hardcoded `sys[132] = 1` with no way
+  to express any other slot at all -- `#export_lsd` (`mruby-rpg2k/mrblib/
+  main.rb`) already had the real destination slot in scope but never passed
+  it through, so every save this engine ever exported to a non-1 file slot
+  carried both a **wrong** save_slot value (always 1) and carried it
+  **unconditionally** where a genuine File-1 save would have omitted the
+  field altogether. **Fixed:** `sys[123] = false unless @save_access`,
+  `sys[124] = false unless @menu_access`; `#to_lsd` gained a third `save_slot
+  = 1` parameter, `sys[132] = save_slot if save_slot != 1`, and
+  `#export_lsd` now calls `state.to_lsd(state.save_count, nil, slot)`.
+  Deliberately did *not* add `default:` to fields 123/124 in
+  `LCF::Schema::SAVE_SYSTEM` (`mruby-lcf/mrblib/schema.rb`) despite the new
+  write-side gating: `Game::State.from_lsd` already tells "absent" from
+  "explicitly false" via `unless sys.save_allowed.nil?`, which only works
+  because these two fields carry no schema default at all (the exact
+  convention SAVE_INVENTORY's own comment on its eight undefaulted
+  timer/tally fields already cites this pair as the template for) -- adding
+  one would have collapsed that distinction for no behavioural gain, since
+  the constructor's own true default already supplies the same value on the
+  decode side. Field 132 keeps its pre-existing `default: 1`, which
+  `#to_lsd` simply wasn't honouring. Updated `SAVE_SYSTEM`'s own schema
+  comments (`mruby-lcf/mrblib/schema.rb`) to document all of this cycle's
+  confirmed conventions in place of the inherited claim. **New coverage in
+  `scripts/rpg2k_logic_check.rb`:** two new checks drive `Game::State`
+  directly through this cycle's own genuine capture shapes for both gaps
+  (121/122 present-at-default vs. 123/124 present-then-absent-again for the
+  access cluster; File 1/2/3 for the slot field) and assert `#to_lsd`'s
+  chunk 101 field presence/values against them exactly, plus a round-trip
+  through `.from_lsd` for the access flags. **Proved the fix and the new
+  checks actually catch the regression:** `git stash` of `mruby-rpg2k/mrblib/
+  game.rb` and `main.rb` reverted to the pre-fix code and rerunning
+  `rpg2k_logic_check.rb` failed both new checks immediately with precise,
+  specific errors (`RuntimeError: expected false, got true (field 123 absent
+  at its own true default (omit-at-default))` and `ArgumentError: wrong
+  number of arguments (given 3, expected 0..2)` from the old two-argument
+  `to_lsd`) before `git stash pop` restored the fix and all checks passed
+  again. Full suite reconfirmed passing, `scripts/rpg2k_logic_check.rb` up
+  by 2: `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb`
+  (41), `scripts/rpg2k_logic_check.rb` (1144), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15); `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures (the
+  unmodelled BGM `balance` field, the `show_x`/`show_y` `nil`-vs-absent
+  mismatch, and a pre-existing "screen transition defaults unreadable"
+  stderr warning from that suite's own fake-db harness) were byte-for-byte
+  reconfirmed identical before and after this cycle's changes (`git stash`
+  of all three source files, rerun, compare, `git stash pop`), ruling this
+  cycle out as their cause. This cycle also built the mruby engine binary
+  from source (`cmake --build build --target rpg_maker_clone`, using the two
+  hash-pinned Unicode tables already fetched to `/tmp/tables` by an earlier
+  cycle) and confirmed it links cleanly. Every scratch map/save this cycle's
+  probes produced lived entirely under this session's own scratch dir; the
+  two live fixtures the wine driver copies into `data/` on each run
+  (`Save01.lsd`, `Map0012.lmu`) were restored to their exact original bytes
+  and reconfirmed byte-identical by `md5sum` against the same
+  `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148 recorded;
+  `git status` on `data/` came back clean. No EasyRPG source was consulted
+  for any claim this cycle, and no web search was used either. **Left open
+  for a future cycle:** field 122 (`escape_allowed`) was not independently
+  probed this cycle (treated as sharing field 121's unconditional convention
+  by analogy to its identical code shape and command family, not by its own
+  direct genuine capture); field 140 (`atb_mode`) was still not re-probed
+  this cycle either -- its "2003-only, default-gated" status rests on the
+  same repeated-absence observation (every capture across cycles #159-#161
+  alike) already recorded rather than a dedicated fresh test, and relatedly,
+  *why* field 140 is always absent from this RPG2000 project's own saves
+  (a version-gated chunk vs. simply always being at its default 0) was never
+  disambiguated the way this cycle disambiguated field 124's identical
+  question -- a future cycle with access to a genuine RPG2003 project could
+  settle both by the same explicit-DISABLE/ENABLE-then-reset technique used
+  here; whether RPG2003's own picture-flag commands would ever surface
+  `SAVE_PICTURE` field 9 (cycle #159's own open item); whether a picture
+  mid-Move-Picture at the instant of Erase Picture freezes or keeps gliding
+  (cycle #159's own open item); `SAVE_PICTURE`'s own still-missing
+  `fixed_to_map`/`use_transparent_color` fields (cycle #155/#158); the
+  party-roster-field crash; the autostart-crash mystery; the
+  missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
+  own repo-wide grep turned up that no cycle has yet touched (see cycle
+  #154's own list, unchanged).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

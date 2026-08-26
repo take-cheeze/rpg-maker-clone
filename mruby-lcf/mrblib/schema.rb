@@ -1631,12 +1631,46 @@ module LCF
       114 => { name: :battle_start_show_transition, type: :uint8 },
       115 => { name: :battle_end_erase_transition, type: :uint8 },
       116 => { name: :battle_end_show_transition, type: :uint8 },
+      # Control Teleport/Escape/Save/Menu Access (11820/11840/11930/11960).
+      # These four are NOT one uniform cluster despite looking identical --
+      # confirmed against genuine RPG_RT.exe under wine (cycle #161), probing
+      # each with a synthetic autostart event issuing the matching Control
+      # command then Open Save Menu with no Wait in between (the same shape
+      # cycle #160 used for fields 51-54): 121/122 stayed **present** (with
+      # their own false constructor default) even right after an explicit
+      # ENABLE-then-DISABLE resetting them back to that exact default,
+      # mid-event -- an unconditional write -- while 123/124 went from
+      # **present** (false) right after an explicit DISABLE to **absent**
+      # once a further ENABLE put them back to their own true default, still
+      # mid-event -- the same per-value "omit at default" convention already
+      # confirmed for fields 41-44/51-54/61. No `default:` is given here for
+      # any of the four, deliberately: `Game::State.from_lsd` (game.rb) tells
+      # "not in this save" (nil) from "explicitly false" for all four the
+      # same way (`unless sys.xxx_allowed.nil?`), so 123/124's own
+      # constructor-side true default lives in `Game::State#initialize`, not
+      # here -- adding `default: true` here would make an absent field decode
+      # as the concrete value `true` instead of `nil`, collapsing that
+      # distinction (see SAVE_INVENTORY's own near-identical comment on its
+      # eight undefaulted timer/tally fields, which already cites this exact
+      # field as its template). #to_lsd's own comment in game.rb records the
+      # write-side "omit at true" gating for 123/124 that this cycle added.
+      # (122 was not independently probed this cycle -- it shares 121's exact
+      # code shape and command family, so is treated as the same convention
+      # by analogy pending its own direct check.)
       121 => { name: :teleport_allowed, type: :bool },
       122 => { name: :escape_allowed, type: :bool },
       123 => { name: :save_allowed, type: :bool },
       124 => { name: :menu_allowed, type: :bool },
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
+      # The file slot this save was written to. Confirmed against genuine
+      # RPG_RT.exe under wine (cycle #161): saving to File 1 omits this field
+      # entirely (matching the `default: 1` below), while saving to File 2 /
+      # File 3 writes it present with the exact chosen slot number -- the
+      # same "omit at default" convention as the cluster just above. See
+      # `Game::State#to_lsd`'s own comment in game.rb for the exact capture
+      # shapes tried; this codebase's own `#to_lsd` used to hardcode this
+      # field to 1 unconditionally regardless of the real destination slot.
        132 => { name: :save_slot, type: :int, default: 1 },
       # liblcf's `SaveSystem.atb_mode` (0x8C == 140): the RPG2003 wait/active
       # toggle. 0 = wait (the command menu pauses the fight), 1 = active
