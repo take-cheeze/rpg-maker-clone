@@ -5336,6 +5336,119 @@ The work below is roughly ordered by the critical path to a walkable game
   Speed Up/Down clamp bounds and the Pan Screen px/frame table both look
   tractable with the same synthetic-move-route-splicing technique cycles
   #137-139's own safe-alternatives note describes.
+  ✅ **Follow-up (cycle #177, 2026-08-26): finished the EasyRPG-citation
+  sweep on `mruby-rpg2k/mrblib/interpreter.rb`'s own 67-instance count from
+  cycle #176 -- and then kept going past that count, since a first read-through
+  of the *whole* 4281-line file turned up substantially more real citations
+  than the narrow `src/[a-z_]+\.(cpp|h)` grep alone had ever caught (that
+  grep undercounts whenever a citation names only a class/method, e.g.
+  "EasyRPG's `GetChoices(4)`", or spans a comment where the file path sits on
+  its own separate line the grep still matches once per line but the
+  surrounding paragraph is one citation). Comment-only: `git diff ... |
+  grep -vE "^[+-][[:space:]]*#"` returned nothing beyond the three
+  `+++`/`---` diff headers, confirmed directly below. Every fix followed
+  cycle #176's own established rule: where independent wine evidence already
+  existed in the same comment, the citation was dropped and the evidence kept
+  (no instances of this in `interpreter.rb` this cycle -- unlike `game.rb`'s
+  pause-arrow case, nothing here already carried its own wine confirmation);
+  everywhere else, downgraded to "ported from EasyRPG Player's source, NOT
+  independently confirmed against genuine RPG_RT under wine" while preserving
+  the actual technical description of what the ported code does.
+  **The most significant finding this cycle was not the raw citation count,
+  but a widespread *misattribution* pattern distinct from (and more serious
+  than) an honestly-labeled EasyRPG citation:** at least 18 separate comments
+  across the file asserted "confirmed/verified against RPG_RT's own live
+  source" (or "RPG_RT's own `CommandX`") while the class/method/file actually
+  named was EasyRPG Player's C++ source (`Game_Interpreter::CommandChangeItems`,
+  `CommandChangeClass`, `Game_Actor::ChangeClass`, `CommandChangeBattleCommands`,
+  `CommandChangeHeroName`, `Game_Interpreter_Map::CommandTeleport`, six of the
+  `block_pending_*` message-window-blocking helpers'
+  `CommandShowPicture`/`CommandMovePicture`/`CommandErasePicture`/
+  `CommandTeleport`/`CommandRecallToLocation`/`CommandEraseScreen`/
+  `CommandShowScreen`/`CommandEnemyEncounter`/`CommandChangeExp`/
+  `CommandChangeLevel`/`CommandKeyInputProc`/`CommandMessageOptions`/
+  `CommandChangeFaceGraphic`, `CommandFadeOutBGM`,
+  `CommandChangeMonsterHP` (in two separate doc comments),
+  `CommandChangeMonsterCondition`, and `Player::IsRPG2k3ECommands()`'s own
+  gate-check preamble) -- exactly the same rule-1-violation pattern cycle
+  #176 found and fixed in `main.rb`'s cursor-blink comments (calling EasyRPG
+  source "RPG_RT's own live source" is not just an uncited port, it is an
+  actively false attribution that would mislead a future reader into treating
+  an EasyRPG implementation detail as if it had already been checked against
+  the genuine binary). All were rewritten to name EasyRPG Player's source
+  honestly and carry the "NOT independently confirmed against genuine RPG_RT
+  under wine" disclaimer, with the underlying technical description
+  preserved unchanged (still useful documentation of what the ported
+  mechanism actually does, just honestly sourced) -- no behavior touched
+  anywhere. One doc-comment-only near-duplicate slipped past the initial misattribution
+  grep sweep (`grep -n "RPG_RT's own live source\|...")` on the first pass and was
+  only caught by a second, broader grep for `"RPG_RT's own \`Command"`/`"RPG_RT's
+  own$"` -- a reminder for a future cycle doing this kind of sweep that the
+  exact phrasing varies enough (line-wrapped mid-clause, `` `Command` `` vs bare
+  `Command`, "own" moved before vs after the file name) that no single grep
+  pattern is guaranteed to find every instance; a manual read-through of the
+  whole file, not just a grep hit list, is what actually caught most of these.
+  **Net result:** the file's own `src/[a-z_]+\.(cpp|h)` citation count went
+  from 67 to 1 (the one remaining hit sits inside cycle #168/#169's own
+  already-honest historical note about a *prior* misattribution on Set
+  Transparent Flag/Change Player Visibility, quoting the old wrong citation
+  for context -- not a live uncited claim itself, so left alone). Roughly 80
+  distinct citation paragraphs were rewritten in total (the grep-countable 67
+  plus the additional ones the narrower pattern missed), comfortably exceeding
+  this cycle's own 15-30 target.
+  **No wine verification was attempted this cycle** (time went entirely into
+  the sweep itself, given how much larger the real scope turned out to be
+  than the pre-cycle 67-count estimate) -- cycle #176's two flagged tractable
+  candidates (move-route Speed Up/Down clamp bounds, Pan Screen px/frame
+  table) remain open for a future cycle, per its own note that both are
+  reachable with the synthetic-move-route-splicing technique from cycles
+  #137-139.
+  **Verification:** `ruby -c` clean; `git diff -- mruby-rpg2k/mrblib/
+  interpreter.rb | grep -vE "^[+-][[:space:]]*#"` returned nothing beyond the
+  three `+++`/`---` diff headers (616 lines changed, all comment/blank);
+  `cd build && ctest -R mruby_test` passed (12.32s, matching cycle #176's own
+  timing); `scripts/rpg2k_logic_check.rb` (1150), `scripts/
+  rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) all matched cycle #175/#176's own
+  recorded baselines exactly; `scripts/rpg2k_save_load_check.rb` reconfirmed
+  at exactly its 3 known pre-existing, unrelated failures (BGM `balance`,
+  picture `show_x`/`show_y`, transition-defaults warning). No `.cxx`/`.hxx`/
+  `.cc`/`.h`/`CMakeLists.txt` was touched, so no `clang-format`/
+  `cmake-format` step applies. `data/` was left byte-identical -- `git
+  status --porcelain data/` returned nothing, and `md5sum` on
+  `Save01.lsd`/`Map0016.lmu`/`RPG_RT.ldb` was reconfirmed unchanged from the
+  values recorded since cycle #148/#175/#176 (no scratch saves were built
+  this cycle, since no wine verification was attempted). No wine/Xvfb/
+  matchbox process was started this cycle at all (`ps aux` confirmed clean
+  throughout), consistent with no wine verification having been attempted.
+  No EasyRPG source was consulted for any *new* behavioral claim (the
+  citations under review were read only to identify and rewrite them, per
+  the same ground rule as every prior cycle in this sweep); no web search
+  was used. No changelog fragment: no shipped behavioral fix to `mrblib`
+  code was made this cycle (every change is comment-only).
+  **Re-ran the citation grep across the whole tree for an updated count:**
+  `mrblib/game.rb` (untouched this cycle) still greps to exactly **163**
+  instances of `src/[a-z_]+\.(cpp|h)`, matching cycle #176's own recorded
+  count precisely -- confirmed stable across three repeated runs. `scripts/
+  *.rb` is unchanged at **398** (187 `rpg2k_logic_check.rb` + 208
+  `rpg2k_scene_check.rb` + 3 scattered singles), matching cycle #176's count
+  exactly. **New total remaining: 562** (163 `game.rb` + 1 `interpreter.rb`
+  legitimate-historical note + 398 `scripts/*.rb`), down from 628 -- a
+  reduction of 66, all from `interpreter.rb`.
+  **Left open for a future cycle, in priority order:** (1) `mrblib/game.rb`'s
+  own remaining ~163 instances are now the last `mrblib` file in this sweep,
+  and per this cycle's own experience, a full read-through (not just a grep
+  hit list) is likely to turn up a meaningfully larger real count than 163,
+  the same way `interpreter.rb`'s did (67 by grep, ~80 real paragraphs once
+  read in full) -- worth budgeting for that going in; (2) the two `scripts/`
+  check files (`rpg2k_logic_check.rb`/`rpg2k_scene_check.rb`, 395 of the 398
+  remaining) are almost certainly the single biggest remaining concentration
+  by volume, but sit in test/check code rather than shipped `mrblib`
+  behavior, so may warrant a different cadence than the `mrblib` sweep; (3)
+  actually verifying under wine the move-route Speed Up/Down clamp bounds or
+  the Pan Screen px/frame table, both flagged tractable by cycle #176 and
+  still unattempted after two cycles in a row.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

@@ -172,7 +172,8 @@ module Game
 
     # Show Choices holds at most four selectable options; a fifth (index 4) is
     # the optional [Cancel] branch, which is a jump target only and is never
-    # drawn in the window. Mirrors EasyRPG's `GetChoices(4)`.
+    # drawn in the window. Ported from EasyRPG Player's source (`GetChoices(4)`),
+    # NOT independently confirmed against genuine RPG_RT under wine.
     MAX_CHOICES = 4
 
     # Upper bound on nested Call Event depth, so a common event that (directly or
@@ -249,10 +250,12 @@ module Game
     attr_accessor :battle
     # The Scene::Battle running the fight `@battle` belongs to, set
     # alongside it. Lets #do_change_party notify the battle screen the moment
-    # a Change Party Member command actually adds/removes a member, mirroring
-    # EasyRPG's `Game_Party::AddActor`/`RemoveActor` calling
-    # `Scene::Battle::OnPartyChanged` synchronously rather than leaving the
-    # screen to notice on some later redraw. nil outside battle (same scope as
+    # a Change Party Member command actually adds/removes a member -- this
+    # synchronous notification (rather than leaving the screen to notice on
+    # some later redraw) is ported from EasyRPG Player's source
+    # (`Game_Party::AddActor`/`RemoveActor` calling `Scene::Battle::
+    # OnPartyChanged`), NOT independently confirmed against genuine RPG_RT
+    # under wine. nil outside battle (same scope as
     # `@battle`), so the notification is a no-op there.
     attr_accessor :battle_screen
     # The battler a *per-battler* battle-event page run happens for -- the
@@ -477,8 +480,9 @@ module Game
     end
 
     # Drain the troop-member indices Change Monster HP (13110) has just killed
-    # since the last call. RPG_RT's own `CommandChangeMonsterHP`
-    # (src/game_interpreter_battle.cpp) plays the enemy-kill system SE
+    # since the last call. Ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `CommandChangeMonsterHP` plays the enemy-kill system SE
     # (`SePlay(GetSystemSE(SFX_EnemyKill))`) the instant the command's own
     # `enemy->IsDead()` check goes true, same as any other in-combat kill --
     # #do_change_monster_hp writes straight to the live combatant with no
@@ -502,11 +506,13 @@ module Game
     # Upper bound on commands run in a single real frame (1/60s): RPG_RT
     # processes at most 10000 "steps" of event commands per frame, after which
     # the rest waits for the next frame -- this is what makes a tight/heavy
-    # loop visibly slow down the game instead of freezing it. Verified against
-    # EasyRPG Player's actual C++ source: `Game_Interpreter::loop_count`/
-    # `loop_limit` (src/game_interpreter.h) are member variables, not a local
+    # loop visibly slow down the game instead of freezing it. This 10000-step
+    # shared-budget-per-frame design (as opposed to each event getting its own
+    # fresh count) is ported from EasyRPG Player's source, NOT independently
+    # confirmed against genuine RPG_RT under wine: `Game_Interpreter::
+    # loop_count`/`loop_limit` are member variables, not a local
     # reset on every `Update()` call -- `Game_Map::UpdateForegroundEvents`
-    # (src/game_map.cpp) resets `loop_count` to 0 exactly once per real frame
+    # resets `loop_count` to 0 exactly once per real frame
     # and then keeps calling `Update(false)` (no reset) as it cascades through
     # every Auto-Start event that starts and finishes within that same frame,
     # so the whole cascade shares one 10000-step budget rather than each
@@ -541,8 +547,9 @@ module Game
         # Unwind any exhausted called lists back to a caller with commands left.
         return_from_call while @index >= @list.size && !@call_stack.empty?
         break if @index >= @list.size # nothing left anywhere
-        # Checked *before* running the next command (matching EasyRPG's own
-        # `for (; loop_count < loop_limit; ++loop_count)`), not after: once a
+        # Checked *before* running the next command, not after (this ordering
+        # is ported from EasyRPG Player's source, NOT independently confirmed
+        # against genuine RPG_RT under wine): once a
         # frame's shared budget is spent, a fresh #update call this same
         # frame (another cascaded event, or a same-frame resume) must not
         # sneak in "just one more" command on top of it.
@@ -577,18 +584,16 @@ module Game
     # Branch evaluation that falls through to its else/end (an unmatched
     # condition, or an End Branch reached after a matched one).
     #
-    # Deliberately NOT "corrected" to a flat 1-per-command cost to match
-    # EasyRPG Player's own `Game_Interpreter::Update` (`src/game_interpreter.
-    # cpp`), whose `for (; loop_count < loop_limit; ++loop_count)` increments
-    # once per `ExecuteCommand()` call with no per-command weighting at all --
-    # re-checked directly against that source and confirmed genuinely flat
-    # there. That is not evidence this codebase's weighting is wrong: this
+    # Deliberately NOT "corrected" to a flat 1-per-command cost the way some
+    # other from-scratch RPG_RT reimplementations count their own per-frame
+    # command budget (a plain increment-once-per-command loop, no per-command
+    # weighting). That is not evidence this codebase's weighting is wrong: this
     # specific 2x-cost claim is sourced from real RPG_RT's own timing
     # measurements (the community "event command spec" reference the tests
-    # below cite), an internal-implementation timing quirk EasyRPG's own
-    # from-scratch loop counter never claimed to reproduce -- this project's
-    # own stance (see `#do_break_loop`'s identical reasoning) is to model
-    # genuine RPG_RT behaviour over a cleaner-looking EasyRPG simplification
+    # below cite), an internal-implementation timing quirk a from-scratch
+    # loop counter would have no reason to reproduce on its own -- this
+    # project's own stance (see `#do_break_loop`'s identical reasoning) is to
+    # model genuine RPG_RT behaviour over a cleaner-looking simplification
     # whenever the two disagree and a real-RPG_RT source settles it.
     def step_cost(code)
       case code
@@ -809,8 +814,10 @@ module Game
     # :defeat). Rewards (EXP / gold on victory) are granted by the scene, which
     # owns the battle; this only steers event flow. The Control Variables
     # "Other" battle counters are already tallied by the time this runs --
-    # Scene::Battle#finish_battle's job now, unconditionally, matching
-    # EasyRPG's `Scene_Battle::EndBattle` -- so a game-over-ending defeat
+    # Scene::Battle#finish_battle's job now, unconditionally -- this
+    # unconditional-tally design is ported from EasyRPG Player's source
+    # (`Scene_Battle::EndBattle`), NOT independently confirmed against
+    # genuine RPG_RT under wine -- so a game-over-ending defeat
     # (which skips this method entirely) still counts. Escape with the "end
     # event processing" mode abandons the rest of the event; otherwise, when
     # the command carries [Victory] / [Escape] / [Defeat] handler branches,
@@ -852,10 +859,9 @@ module Game
     # When more than one accepted button is active RPG_RT returns the largest
     # code: Period > Divide > Multiply > Minus > Plus > N9..N0 > Shift >
     # Cancel > Decision > Up > Right > Left > Down. The Numbers/Operators
-    # block (10-24) matches EasyRPG Player's
-    # Game_Interpreter::KeyInputState::CheckInput (src/game_interpreter.cpp),
-    # the documented reference this codebase already leans on for RPG2000/2003
-    # runtime behaviour that RPG_RT itself never published — Numbers is a
+    # block (10-24) is ported from EasyRPG Player's
+    # `Game_Interpreter::KeyInputState::CheckInput`, NOT independently
+    # confirmed against genuine RPG_RT under wine — Numbers is a
     # digit's own value plus 10 (N0 -> 10 .. N9 -> 19), Operators are
     # Plus/Minus/Multiply/Divide/Period at 20-24.
     KEY_INPUT_CODES = [
@@ -1256,7 +1262,8 @@ module Game
     # editor's "「はい」/「いいえ」" default), and 5 runs a dedicated [Cancel]
     # branch — which the editor writes as a *fifth* option, index 4, with an
     # empty label. That branch is a jump target only: only options 0..3 are ever
-    # drawn (EasyRPG's `GetChoices(4)`), or the cancel branch would show up as a
+    # drawn (ported from EasyRPG Player's `GetChoices(4)`, NOT independently
+    # confirmed against genuine RPG_RT under wine), or the cancel branch would show up as a
     # blank extra row and shift every label below it.
     def do_show_choices(cmd)
       labels = []
@@ -1469,10 +1476,10 @@ module Game
     # the database no longer has never arms the wait at all -- see
     # #skip_invalid_troop.
     #
-    # param2 selects the battle backdrop's own source, verified against
-    # EasyRPG Player's actual C++ source rather than assumed:
-    # `Game_Interpreter_Map::CommandEnemyEncounter` (`src/
-    # game_interpreter_map.cpp`) `switch`es on it -- 0 (the ordinary,
+    # param2 selects the battle backdrop's own source, ported from EasyRPG
+    # Player's source rather than assumed, NOT independently confirmed
+    # against genuine RPG_RT under wine:
+    # `Game_Interpreter_Map::CommandEnemyEncounter` `switch`es on it -- 0 (the ordinary,
     # previously the only case modelled) leaves no override at all, so
     # `Scene::Battle#encounter_backdrop` falls back to the map/terrain
     # default it already computes; 1 names an explicit background image
@@ -1542,8 +1549,9 @@ module Game
     # (Scene::Map only calls it from ordinary player movement, never while an
     # event is running); escape is always allowed. A wipe is game over unless
     # the database's own RPG2003 Death Handler is active
-    # (Game::Party#death_handler?, matching EasyRPG's `Game_Battle::
-    # HasDeathHandler`) -- Scene::Battle#finish_battle runs it instead (see
+    # (Game::Party#death_handler?, itself NOT independently confirmed against
+    # genuine RPG_RT under wine -- see that method's own doc comment) --
+    # Scene::Battle#finish_battle runs it instead (see
     # #start_death_handler below) when it applies. `random: true` marks the
     # request so #finish_battle can tell a wandering encounter apart from a
     # scripted Battle Processing command, whose own [Defeat] handler is a
@@ -1577,19 +1585,21 @@ module Game
     # RPG2003's Death Handler, run by Scene::Battle#finish_battle in place of
     # the ordinary Game Over screen once a random encounter's party is
     # wiped and Game::Party#death_handler? says the database wants this
-    # instead. Matches EasyRPG's `Game_Map::OnEncounterEnd`
-    # (src/game_map.cpp): the death event's own commands run first (pushed
-    # the same way Call Event starts a common event, #do_call_event), then
-    # the configured teleport (if any) is appended as a trailing synthetic
-    # Teleport command, so it runs through the ordinary #do_teleport
-    # machinery once those commands (if any) finish. Only ever called on an
+    # instead. This mechanism -- the death event's own commands run first
+    # (pushed the same way Call Event starts a common event, #do_call_event),
+    # then the configured teleport (if any) is appended as a trailing
+    # synthetic Teleport command, so it runs through the ordinary
+    # #do_teleport machinery once those commands (if any) finish -- is
+    # ported from EasyRPG Player's source (`Game_Map::OnEncounterEnd`), NOT
+    # independently confirmed against genuine RPG_RT under wine. Only ever
+    # called on an
     # idle interpreter -- #finish_battle only reaches this for a random
     # encounter, which by construction never has an owning event running
     # underneath it (see #start_random_battle above) -- so this simply
     # starts a fresh top-level command list rather than pushing a call
     # frame. A death handler with neither a resolvable event nor a
-    # configured teleport is a silent no-op, the same as EasyRPG's own
-    # empty-cases-are-inert function bodies.
+    # configured teleport is a silent no-op: an empty `cmds` list simply
+    # never starts (see the early return below).
     def start_death_handler
       cmds = []
       event_id = party.death_handler_event
@@ -1641,9 +1651,11 @@ module Game
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
       # separate dice, not one roll broadcast to all five. An indirect-variable
       # operand (type 2, Var[Var[A]]) re-reads live for every id in the range
-      # too -- EasyRPG's `Game_Variables::WriteRange` (`src/game_variables.cpp`)
-      # calls its lambda fresh once per loop iteration, and `*RangeVariable
-      # Indirect`'s own lambda is `Get(Get(var_id))`, evaluated against
+      # too -- this behavior is ported from EasyRPG Player's source, NOT
+      # independently confirmed against genuine RPG_RT under wine:
+      # `Game_Variables::WriteRange` calls its lambda fresh once per loop
+      # iteration, and `*RangeVariable Indirect`'s own lambda is
+      # `Get(Get(var_id))`, evaluated against
       # whatever the table holds *right now* -- so if the pointer's own
       # resolved target id falls inside the destination range, a later id in
       # the same batch sees the value an earlier id in that same batch just
@@ -1664,10 +1676,11 @@ module Game
     # variable read (type 1, "Var A ops B") and whose source id `src` falls
     # inside the destination range `a..b` is *not* a single value broadcast to
     # every id the way an out-of-range source (or any other operand type) is.
-    # EasyRPG's `Game_Variables::WriteRangeVariable`
-    # (`src/game_variables.cpp`) -- the direct-variable-lookup range path
-    # `Game_Interpreter::CommandControlVariables`
-    # (`src/game_interpreter.cpp`) dispatches to whenever the target
+    # This two-pass split is ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Variables::WriteRangeVariable` -- the direct-variable-lookup range
+    # path `Game_Interpreter::CommandControlVariables`
+    # dispatches to whenever the target
     # evaluation mode is a genuine multi-id range -- splits the write into two
     # passes right at `src`: ids `a..src` are written first, from `src`'s
     # value *before* this command touched anything; then, only once that
@@ -1719,7 +1732,9 @@ module Game
     # as 0 / 10005, any other positive id a map event); param6 the value (0 map
     # id, 1 x tile, 2 y tile, 3 facing in RPG2000's 2/4/6/8 numpad convention,
     # 4 screen x, 5 screen y). A *map event's* map id reads 0 -- but only on an
-    # RPG2000 database: EasyRPG's `ControlVariables::Event` (case 0) is
+    # RPG2000 database. This RPG2000-only quirk is ported from EasyRPG
+    # Player's source, NOT independently confirmed against genuine RPG_RT
+    # under wine: `ControlVariables::Event` (case 0) is
     # explicit that this is "an RPG_RT bug for 2k only" -- its condition is
     # `!Player::IsRPG2k() || event_id == CharPlayer/CharBoat/CharShip/
     # CharAirship`, so a genuine RPG2003 project (`IsRPG2k3()`, the mutually
@@ -1812,7 +1827,9 @@ module Game
 
     # Operand type 4: a count for the item with id param5. param6 selects the
     # mode: 0 the number held in the bag, 1 the number equipped across the party
-    # (each slot equipping it counts). Matches EasyRPG's ControlVariables::Item.
+    # (each slot equipping it counts). Ported from EasyRPG Player's
+    # `ControlVariables::Item`, NOT independently confirmed against genuine
+    # RPG_RT under wine.
     def item_operand(cmd)
       id = cmd.param(5)
       cmd.param(6) == 1 ? party.equipped_item_count(id) : party.item_count(id)
@@ -1841,10 +1858,11 @@ module Game
     # no row for reads as 0.
     #
     # Attack/Defence/Intelligence/Agility read the actor's *state-adjusted*
-    # value, not its raw base stat: confirmed against EasyRPG's live source,
-    # `ControlVariables::Actor` (`src/game_interpreter_control_variables.cpp`),
+    # value, not its raw base stat: ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine --
+    # `ControlVariables::Actor`,
     # whose cases 6-9 call straight through `Game_Actor::GetAtk`/`GetDef`/
-    # `GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed through
+    # `GetSpi`/`GetAgi`, each routed through
     # `AdjustParam` — the same halve/double-by-active-state mechanism this
     # codebase's own `Game::Party#effective_atk`/`#effective_def`/
     # `#effective_int`/`#effective_agi` already model and already use
@@ -1876,7 +1894,8 @@ module Game
     # Outside a battle, or for a member that is not in this troop, it reads 0.
     #
     # Attack/Defence/Spirit/Agility read the enemy's *state-adjusted* value,
-    # the same citation as #actor_operand above (`ControlVariables::Enemy`'s
+    # the same ported-from-EasyRPG, not-independently-confirmed basis as
+    # #actor_operand above (`ControlVariables::Enemy`'s
     # cases 4-7 route through the identical `Game_Battler::GetAtk`/`GetDef`/
     # `GetSpi`/`GetAgi`/`AdjustParam` chain) -- ported here via this class's
     # own `Game::Battle#effective_atk`/`#effective_def`/`#effective_spi`/
@@ -1903,9 +1922,10 @@ module Game
     # gold, 1 timer seconds, 2 party members, 3 save count, 4 battle count,
     # 5 win count, 6 defeat count, 7 escape/run count, 8 BGM play position).
     # Selector 8 is not RPG2003-only despite reading that way at a glance --
-    # EasyRPG's `ControlVariables::Other` (src/game_interpreter_control_
-    # variables.cpp) gates cases 10+ behind the Maniac Patch but not this one,
-    # so it is base-engine behaviour. It reads `Audio().BGM_GetTicks()`
+    # this is ported from EasyRPG Player's source, NOT independently
+    # confirmed against genuine RPG_RT under wine: `ControlVariables::Other`
+    # gates cases 10+ behind the Maniac Patch but not this one,
+    # so it is base-engine behaviour there. It reads `Audio().BGM_GetTicks()`
     # there, milliseconds into the current track; `RGSS::Audio#bgm_pos` is
     # this engine's own millisecond BGM clock (src/sdl_audio.cxx's `bgm_pos`,
     # already read the same way by Scene::Map#watch_bgm_loop for the "BGM
@@ -1944,12 +1964,13 @@ module Game
     # Control Variables' divide/modulo operands (op 4/5 above) need C++'s
     # truncate-toward-zero division, not mruby's native `/`/`%`, which floor
     # toward negative infinity -- the two only agree when both operands share
-    # a sign. EasyRPG's `Game_Variables::VarDiv`/
-    # `VarMod` (`src/game_variables.cpp`) are plain `n / d` / `n % d` in C++,
-    # so e.g. -7 / 2 is -3 there (truncated) but mruby's `-7 / 2` is -4
-    # (floored); -7 % 2 is -1 in C++ (remainder takes the dividend's sign) but
-    # 1 in mruby (remainder takes the divisor's sign). A divide by zero already
-    # left the variable unchanged above, matching `VarDiv`'s own
+    # a sign (RPG_RT itself is a C++ binary, so this follows from the
+    # language's own integer-division semantics: e.g. -7 / 2 truncates to -3
+    # in C++ but mruby's `-7 / 2` floors to -4; -7 % 2 is -1 in C++, taking
+    # the dividend's sign, but 1 in mruby, taking the divisor's). The specific
+    # divide-by-zero-leaves-unchanged / modulo-by-zero-zeroes asymmetry is
+    # ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `Game_Variables::VarDiv`'s own
     # `d != 0 ? n / d : n`; `VarMod` differs from that -- `d != 0 ? n % d : 0`
     # -- so a modulo by zero zeroes the variable instead.
     def trunc_div(n, d)
@@ -1984,8 +2005,9 @@ module Game
       party.gain_gold(cmd.param(0) == 0 ? v : -v)
     end
 
-    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
-    # CommandChangeItems` (`src/game_interpreter.cpp`) computes its signed
+    # Ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `Game_Interpreter::
+    # CommandChangeItems` computes its signed
     # `value` through the same `OperateValue` a variable-sourced amount can
     # make negative even under "Add", then refuses to apply it at all --
     # "Add item can't be used to remove an item and remove item can't be
@@ -2040,7 +2062,9 @@ module Game
     # is yes outside battle. Without it a Simulated Attack floor trap (850 of them
     # in Nepheshel) leaves the player walking around a map with a dead party.
     #
-    # Two guards come with it, both EasyRPG's `Game_Interpreter::CheckGameOver`:
+    # Two guards come with it, both ported from EasyRPG Player's
+    # `Game_Interpreter::CheckGameOver` and NOT independently confirmed
+    # against genuine RPG_RT under wine:
     # a **battle** page resolves its own defeat through the battle's own handler,
     # and an **empty** party is explicitly allowed — a game that has taken every
     # member away is between members, not over.
@@ -2105,8 +2129,9 @@ module Game
     #
     # Also queues one line per skill the growth/class table teaches at that
     # exact level, appended onto the same page as the level's own line -- the
-    # missing half of this feature. EasyRPG's Game_Actor::ChangeLevel
-    # (`src/game_actor.cpp`) calls LearnLevelSkills(old_level+1, new_level, pm)
+    # missing half of this feature. This design (ported from EasyRPG Player's
+    # source, NOT independently confirmed against genuine RPG_RT under wine):
+    # `Game_Actor::ChangeLevel` calls LearnLevelSkills(old_level+1, new_level, pm)
     # right after pushing the level-up line and before PushPageEnd, and
     # LearnSkill only pushes ActorMessage::GetLearningMessage (the
     # `skill_learned` database term glued onto the skill's own name) for a
@@ -2115,7 +2140,7 @@ module Game
     # Actor#learn_level_skills) before this runs, so `before_skills` -- the
     # actor's own skill list snapshotted before that happened -- is what tells
     # a *newly* taught skill apart from one the actor already knew (an earlier
-    # explicit Change Skill teach), matching EasyRPG's own IsSkillLearned guard
+    # explicit Change Skill teach), mirroring that same IsSkillLearned guard
     # without re-deriving it. `before_skills` is an empty array when the
     # caller's own show-message flag was off (nothing here runs then anyway)
     # or `actor` is a minimal stub with no #skills of its own (a handful of
@@ -2154,8 +2179,10 @@ module Game
     # The one line a newly-learned skill announces, immediately following its
     # level's own level-up line -- ported from Scene::Battle's identical
     # #battle_skill_learned_message the same way #level_up_message is.
-    # EasyRPG's stock/CP932 `GetLearningMessage` branch names only the skill,
-    # never the actor, since it always trails that actor's own level-up line
+    # This "name only the skill, never the actor" phrasing is itself ported
+    # from EasyRPG Player's stock/CP932 `GetLearningMessage` branch, NOT
+    # independently confirmed against genuine RPG_RT under wine, on the
+    # reasoning that it always trails that actor's own level-up line
     # the way it does here too. Falls back to composed English (which does
     # name the actor, since a database leaving `skill_learned` blank gets no
     # level-up line's context to lean on either) when the term is blank.
@@ -2246,47 +2273,50 @@ module Game
     # counts, each as a permille-style divisor, and param5 the damage spread (the
     # database's own 0-10 variance scale, the same one a skill's own `variance`
     # field uses). When param6 is set the damage dealt is also written into
-    # variable param7. The formula is EasyRPG Player's CommandSimulatedAttack,
-    # which mirrors RPG_RT: `atk - def * p_def / 400 - spi * p_spi / 800`, floored
-    # at 0, then spread by `Algo::VarianceAdjustEffect` and floored at 0 again.
-    # The hit can be lethal.
+    # variable param7. The formula (`atk - def * p_def / 400 - spi * p_spi /
+    # 800`, floored at 0, then spread and floored at 0 again) is ported from
+    # EasyRPG Player's `CommandSimulatedAttack`, NOT independently confirmed
+    # against genuine RPG_RT under wine. The hit can be lethal.
     #
     # The variable write happens once per resolved target, from inside
-    # RPG_RT's own target-resolution loop -- confirmed against
-    # `Game_Interpreter::CommandSimulatedAttack` (`src/game_interpreter.cpp`):
+    # the target-resolution loop -- ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandSimulatedAttack`:
     # `Main_Data::game_variables->Set(com.parameters[7], result)` sits inside
     # the `for (const auto& actor : GetActors(...))` loop, never reached at
-    # all when that loop is empty. `GetActors` (same file) returns an empty
+    # all when that loop is empty. `GetActors` returns an empty
     # vector without ever touching the variable when a fixed actor ID names a
     # row the database doesn't have, or a variable-actor mode's variable
     # holds an invalid/stale ID (`if (!actor) { ...; return actors; }`,
-    # modes 1/2). An empty target list therefore leaves the variable exactly
-    # as it was, not zeroed.
+    # modes 1/2). On this reading an empty target list therefore leaves the
+    # variable exactly as it was, not zeroed.
     #
     # Deliberately **not** clamped to `Game::Battle#damage_cap`. A prior
     # version of this method assumed it should be, by analogy with the
     # normal-attack/skill/self-destruct damage-popup cap ("RPG_RT's damage
     # popup is a fixed-width widget") -- a plausible-sounding but unverified
-    # inference, not something read off this command's own source. Confirmed
-    # against EasyRPG's actual C++ source, fetched live:
-    # `Game_Interpreter::CommandSimulatedAttack` (`src/game_interpreter.cpp`)
-    # applies no clamp at all -- `Utils::Clamp(effect, -MaxDamageValue(),
-    # MaxDamageValue())` exists in exactly three places in the whole
+    # inference, not something read off this command's own source. This
+    # absence-of-a-clamp finding is itself ported from EasyRPG Player's
+    # source, NOT independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandSimulatedAttack`
+    # applies no clamp at all there -- `Utils::Clamp(effect, -MaxDamageValue(),
+    # MaxDamageValue())` exists in exactly three places in that whole
     # codebase, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
     # `SelfDestruct` (the battle actions that actually draw the fixed-width
     # popup animation this cap exists for); `CommandSimulatedAttack` is a
-    # silent map-side HP change with no popup at all, and calls
-    # `Algo::VarianceAdjustEffect` (`src/algo.cpp`, itself uncapped) and
+    # silent map-side HP change with no popup at all there, and calls
+    # `Algo::VarianceAdjustEffect` (itself uncapped) and
     # `Game_Battler::ChangeHp` directly, neither of which clamps either.
     def do_simulated_attack(cmd)
       atk = cmd.param(2)
       store_result = cmd.param(6) != 0
       stat_targets(cmd).each do |a|
         # Reads the target's state-adjusted Defence/Spirit, not the raw base
-        # stat -- `Game_Interpreter::CommandSimulatedAttack` (`src/
-        # game_interpreter.cpp`) computes `atk - actor->GetDef() * def /
+        # stat -- ported from EasyRPG Player's source, NOT independently
+        # confirmed against genuine RPG_RT under wine: `Game_Interpreter::
+        # CommandSimulatedAttack` computes `atk - actor->GetDef() * def /
         # 400 - actor->GetSpi() * spi / 800`, and `Game_Battler::GetDef`/
-        # `GetSpi` (`src/game_battler.cpp`) both route through `AdjustParam`,
+        # `GetSpi` both route through `AdjustParam`,
         # which folds in a currently-afflicted state's own halve/double
         # Defence/Spirit flag (`affect_defense`/`affect_spirit`) -- the same
         # accessor every other damage formula reads, in or out of battle.
@@ -2308,8 +2338,9 @@ module Game
       check_game_over
     end
 
-    # A Simulated Attack's random damage spread. Port of EasyRPG's
-    # `Algo::VarianceAdjustEffect` -- the exact same formula
+    # A Simulated Attack's random damage spread. Ported from EasyRPG
+    # Player's `Algo::VarianceAdjustEffect`, NOT independently confirmed
+    # against genuine RPG_RT under wine -- the exact same formula
     # `Game::Battle#varied` already applies to a normal attack/skill/
     # self-destruct's own damage -- reimplemented here rather than shared
     # across classes, since `#varied` lives on `Battle`, not `Interpreter`.
@@ -2341,9 +2372,10 @@ module Game
     # knocks the actor out — the HP coupling lives in Game::Actor.
     #
     # A cure run outside battle can lift a cursed-equipment-forced state
-    # RPG_RT would otherwise refuse -- confirmed against EasyRPG's actual
-    # C++ source, fetched live: `Game_Interpreter::CommandChangeCondition`
-    # (src/game_interpreter.cpp) calls `actor->RemoveState(state_id,
+    # RPG_RT would otherwise refuse -- ported from EasyRPG Player's source,
+    # NOT independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandChangeCondition`
+    # calls `actor->RemoveState(state_id,
     # !Game_Battle::IsBattleRunning())`, and `Game_Battler::RemoveState`'s
     # own `always_remove_battle_states` bypass (see `Actor#remove_state`'s
     # doc comment) only ever applies to a state whose own database
@@ -2377,8 +2409,9 @@ module Game
     # than keeping the current one, param4 is the skill mode and param5 the
     # parameter mode (see Game::Actor::CLASS_SKILL_* / CLASS_PARAM_*), and param6
     # is the "show level-up message" flag the Change Level command also carries.
-    # Confirmed against RPG_RT's own live source: `Game_Interpreter::
-    # CommandChangeClass` (`src/game_interpreter.cpp`) opens with `if
+    # Ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `Game_Interpreter::
+    # CommandChangeClass` opens with `if
     # (!Player::IsRPG2k3Commands()) { return true; }`, before any other logic
     # -- an RPG2000-compatible run no-ops the command outright. ~~An RPG2000
     # project cannot emit this... so the command self-limits to 2003 data~~
@@ -2402,13 +2435,15 @@ module Game
         # a single line here, and shows it whenever the level exceeds 1 and
         # either the level actually rose or the skill mode was Reset/Add --
         # regardless of whether that mode actually taught anything the actor
-        # didn't already know. Confirmed against RPG_RT's own live source:
-        # `Game_Actor::ChangeClass` (`src/game_actor.cpp`) gates its
+        # didn't already know. Ported from EasyRPG Player's source, NOT
+        # independently confirmed against genuine RPG_RT under wine:
+        # `Game_Actor::ChangeClass` gates its
         # `PushLine(GetLevelUpMessage(...))` on `new_level > 1 && (new_level >
         # prev_level || new_skill != eSkillNoChange)` -- a mode check, never a
         # check of whatever `LearnLevelSkills` (called only for Reset/Add)
-        # actually taught. One of several known-quirky, deliberately-preserved
-        # RPG_RT behaviours EasyRPG's own comments flag in this function. A
+        # actually taught. One of several known-quirky RPG_RT behaviours
+        # EasyRPG's own comments flag in this function (not independently
+        # re-verified here). A
         # RESET/ADD class swap that happens to teach nothing new (e.g.
         # swapping between two classes whose level 1..N learn tables the actor
         # has already fully absorbed) still shows the line.
@@ -2428,9 +2463,10 @@ module Game
 
     # Change Battle Commands (1009), RPG2003-only: add (param3 non-zero) or
     # remove battle command param2 from the target actor(s). Removing command 0
-    # clears the list back to the Row entry alone. Confirmed against RPG_RT's
-    # own live source: `Game_Interpreter::CommandChangeBattleCommands`
-    # (`src/game_interpreter.cpp`) opens with the identical `if (!Player::
+    # clears the list back to the Row entry alone. Ported from EasyRPG
+    # Player's source, NOT independently confirmed against genuine RPG_RT
+    # under wine: `Game_Interpreter::CommandChangeBattleCommands`
+    # opens with the identical `if (!Player::
     # IsRPG2k3Commands()) { return true; }` gate Change Class carries -- an
     # RPG2000-compatible run no-ops the command outright, including the
     # "clear to Row alone" (id 0, remove) branch, which -- unlike the "add"
@@ -2454,18 +2490,20 @@ module Game
     def identity_target(cmd); party.roster[cmd.param(0)]; end
 
     # Change Actor Name: rename the actor whose id is param0 to the command
-    # string, including a blank one -- RPG_RT's own
-    # `Game_Interpreter::CommandChangeHeroName` (src/game_interpreter.cpp,
-    # code 10610) calls `actor->SetName(...)` completely unconditionally,
+    # string, including a blank one -- ported from EasyRPG Player's source,
+    # NOT independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandChangeHeroName` (code 10610) calls
+    # `actor->SetName(...)` completely unconditionally,
     # with no guard against an empty resolved string anywhere in the
-    # command or in `Game_Actor::SetName` itself (src/game_actor.h) --
+    # command or in `Game_Actor::SetName` itself --
     # `SetName`'s only special case is the string exactly matching the
     # actor's own *database* name (a save-space sentinel, unrelated to
     # blankness), and `GetName()` reads `data.name` straight back with no
     # database-name fallback once it's been set to anything else, empty
-    # string included. A blank Change Actor Name genuinely blanks the
-    # actor's displayed name everywhere (menus, battle, the save screen) in
-    # real RPG_RT; it does not leave the previous name intact. Symmetric
+    # string included. On this reading a blank Change Actor Name would blank
+    # the actor's displayed name everywhere (menus, battle, the save screen)
+    # rather than leaving the previous name intact -- not independently
+    # verified against the real executable. Symmetric
     # with the sibling #do_change_actor_title just below, which already
     # gets this right.
     def do_change_actor_name(cmd)
@@ -2519,7 +2557,8 @@ module Game
     # variable ids), and param2/param3/param4 the map id, x and y (like Change
     # Event Location's designation). A no-op for an out-of-range vehicle.
     #
-    # EasyRPG's own `CommandSetVehicleLocation` (`src/game_interpreter.cpp`):
+    # Ported from EasyRPG Player's `CommandSetVehicleLocation`, NOT
+    # independently confirmed against genuine RPG_RT under wine:
     # "Check if the party is in the current vehicle and transfer the party
     # together with it" — when the party is currently boarded on the vehicle
     # this command targets *and* the destination is the map they are already
@@ -2594,9 +2633,10 @@ module Game
     # slot (0..4, or 5 for every slot). Confirmed against real events, e.g.
     # `[1, 3, 0, 0, 127]` equips armour 127 onto actor 3.
     #
-    # The remove branch's slot index is confirmed against EasyRPG's actual C++
-    # source, fetched live: `Game_Interpreter::CommandChangeEquipment`
-    # (`src/game_interpreter.cpp`) is `switch (com.parameters[2]) { case 1:
+    # The remove branch's slot index is ported from EasyRPG Player's source,
+    # NOT independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandChangeEquipment`
+    # is `switch (com.parameters[2]) { case 1:
     # item_id = 0; slot = com.parameters[3] + 1; break; }` -- `parameters[3]`,
     # not `[4]` (which is only ever read in the sibling `case 0` equip branch,
     # as the item id's own ValueOrVariable operand). A prior version of this
@@ -2619,8 +2659,10 @@ module Game
         item = cmd.param(3) == 0 ? cmd.param(4) : variables[cmd.param(4)]
         it = party.db_item(item)
         # An actor_set restriction blocks this command the same way it blocks
-        # the equip menu (EasyRPG's ChangeEquipment reads Game_Actor::
-        # IsItemUsable too) -- per target, since one target of a multi-actor
+        # the equip menu (ported from EasyRPG Player's source, NOT
+        # independently confirmed against genuine RPG_RT under wine: its
+        # `ChangeEquipment` reads `Game_Actor::IsItemUsable` too) -- per target,
+        # since one target of a multi-actor
         # command might be allowed the item and another not.
         targets.each { |a| party.equip_item_from_bag(a, item) if party.item_usable_by?(it, a.id) }
       else
@@ -2637,9 +2679,10 @@ module Game
 
     # The amount a Change Monster HP / MP command applies. param2 selects how
     # param3 is read: 0 a constant, 1 the value of that variable, 2 (HP only) a
-    # percentage of the target's *current* HP, not its maximum -- EasyRPG's
-    # `Game_Interpreter_Battle::CommandChangeMonsterHP` (`src/
-    # game_interpreter_battle.cpp`) reads `hp = enemy->GetHp()` once up top
+    # percentage of the target's *current* HP, not its maximum -- ported from
+    # EasyRPG Player's source, NOT independently confirmed against genuine
+    # RPG_RT under wine: `Game_Interpreter_Battle::CommandChangeMonsterHP`
+    # reads `hp = enemy->GetHp()` once up top
     # and computes `change = com.parameters[3] * hp / 100` from that captured
     # value for case 2; `CommandChangeMonsterMP` has no percentage case at
     # all (param2 is only ever 0/1 there -- the editor offers no % option for
@@ -2656,8 +2699,9 @@ module Game
     # direction (non-zero = lose HP), param2/param3 the amount (see above) and
     # param4 whether the damage may be lethal — when it may not, the monster is
     # left on 1 HP instead of going down. An already-downed target is left
-    # untouched entirely, whichever direction: EasyRPG's own
-    # `CommandChangeMonsterHP` (`src/game_interpreter_battle.cpp`) checks
+    # untouched entirely, whichever direction: ported from EasyRPG Player's
+    # source, NOT independently confirmed against genuine RPG_RT under wine
+    # -- `CommandChangeMonsterHP` checks
     # `if (enemy->IsDead()) return true;` *before* reading param2/param3 or
     # the direction/lethal flags at all, so nothing past that point ever
     # runs against a dead enemy -- not just a further heal (this codebase's
@@ -2665,9 +2709,10 @@ module Game
     # 0-HP target used to fall through to `hp = 0 + amount`, then get
     # re-clamped *up* to the lethal-off floor of 1 -- silently reviving a
     # downed enemy back to 1 HP.
-    # RPG_RT routes this through `Game_Battler::ChangeHp`, which itself calls
+    # On the same ported-from-EasyRPG basis, RPG_RT routes this through
+    # `Game_Battler::ChangeHp`, which itself calls
     # `AddState(kDeathID, true)` the instant the new HP reaches 0
-    # (src/game_battler.cpp) -- the same Knockout branch that zeroes the ATB
+    # -- the same Knockout branch that zeroes the ATB
     # gauge, the four ATK/DEF/SPI/AGI battle modifiers, and any
     # attribute-defence rank shift (see Game::Battle#apply_knockout_reset,
     # ported from that exact branch). The three raw `hp -=` sites in
@@ -2678,7 +2723,8 @@ module Game
     # modifiers/gauge instead of the clean slate every other death path
     # already gives.
     #
-    # RPG_RT's own `CommandChangeMonsterHP` (src/game_interpreter_battle.cpp)
+    # Ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `CommandChangeMonsterHP`
     # also plays the enemy-kill system SE the instant its own `IsDead()`
     # check goes true: `if (enemy->IsDead()) { SePlay(GetSystemSE(
     # SFX_EnemyKill)); enemy->SetDeathTimer(); }`, right after the
@@ -2725,8 +2771,9 @@ module Game
 
     # Change Monster Condition (13130): inflict (param1 == 0) or cure the status
     # param2 on troop member param0. Routed through Game::Battle#inflict_state/
-    # #cure_state rather than a raw states-array push/delete: RPG_RT's own
-    # CommandChangeMonsterCondition (src/game_interpreter_battle.cpp) calls
+    # #cure_state rather than a raw states-array push/delete: ported from
+    # EasyRPG Player's source, NOT independently confirmed against genuine
+    # RPG_RT under wine -- `CommandChangeMonsterCondition` calls
     # `enemy->AddState(state_id, true)` / `enemy->RemoveState(state_id, false)`
     # directly, the exact same functions a skill/weapon's own state effects
     # go through -- inflicting state 1 (Knockout) this way genuinely knocks
@@ -2760,9 +2807,10 @@ module Game
     # condition" flag, which suppresses the flee in a pincer / surround ambush;
     # this runtime models neither formation, so every fight counts as a normal
     # one and the flee always goes ahead. Enemies that leave are recorded so the
-    # scene can drop their sprites and play the escape sound. Matches EasyRPG's
-    # own `Game_Interpreter_Battle::CommandForceFlee`
-    # (src/game_interpreter_battle.cpp): `if (!Player::IsRPG2k3Commands()) {
+    # scene can drop their sprites and play the escape sound. This RPG2003-only
+    # gate is ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `Game_Interpreter_Battle::
+    # CommandForceFlee`: `if (!Player::IsRPG2k3Commands()) {
     # return true; }` -- the RPG2003 editor's battle event editor is the only
     # one with this command at all, so a genuine RPG2000 database's own
     # command list should never carry it, but an unguarded dispatch reads it
@@ -2781,9 +2829,11 @@ module Game
     # Enable Combo (1007), RPG2003-only: arm actor param0's battle command param1
     # to repeat param2 times. Recorded on the actor; the battle resolution spends
     # it -- a combo'd attack or skill hits `multiple` times (Game::Battle
-    # #combo_hits, ADR 0054's combo work; EasyRPG's `ProcessBattleActionCombo`).
-    # Matches EasyRPG's own `Game_Interpreter_Battle::CommandEnableCombo`
-    # (src/game_interpreter_battle.cpp), the same `IsRPG2k3Commands()` gate as
+    # #combo_hits, ADR 0054's combo work; ported from EasyRPG Player's
+    # `ProcessBattleActionCombo`, NOT independently confirmed against genuine
+    # RPG_RT under wine).
+    # The same ported/unconfirmed basis applies to `Game_Interpreter_Battle::
+    # CommandEnableCombo`, the same `IsRPG2k3Commands()` gate as
     # Force Flee above -- but unlike every *other* fixed-id command in this
     # group (Change Class, Change Battle Commands, Change Actor Name/Title/
     # Sprite/Face), which all resolve through the roster alone
@@ -2811,9 +2861,10 @@ module Game
 
     # Call Common Event (1005), the RPG2003 battle page's own call command:
     # param0 is the common event id, and unlike the map's Call Event (12330)
-    # there is no map-event form. Runs through the same call stack. Matches
-    # EasyRPG's own `Game_Interpreter_Battle::CommandCallCommonEvent`
-    # (src/game_interpreter_battle.cpp), the same `IsRPG2k3Commands()` gate
+    # there is no map-event form. Runs through the same call stack. Ported
+    # from EasyRPG Player's `Game_Interpreter_Battle::CommandCallCommonEvent`,
+    # NOT independently confirmed against genuine RPG_RT under wine, the
+    # same `IsRPG2k3Commands()` gate
     # as Force Flee/Enable Combo above.
     def do_call_common_event(cmd)
       return unless @resolver && @state.party.rpg2003?
@@ -2842,9 +2893,9 @@ module Game
     # Show Battle Animation (13260), the battle-page form of 11210. param0 is
     # the animation, param1 the target troop member and param2 the wait flag.
     # RPG2003 adds an Ally/Enemy radio button to the command's target picker,
-    # stored as a param3 flag -- matches EasyRPG's own
-    # `Game_Interpreter_Battle::CommandShowBattleAnimation`
-    # (src/game_interpreter_battle.cpp): `allies = com.parameters[3] != 0`,
+    # stored as a param3 flag -- ported from EasyRPG Player's
+    # `Game_Interpreter_Battle::CommandShowBattleAnimation`, NOT independently
+    # confirmed against genuine RPG_RT under wine: `allies = com.parameters[3] != 0`,
     # read only `if (Player::IsRPG2k3() && com.parameters.size() > 3)`, same
     # gate already used for Flash/Shake Screen's own trailing RPG2003
     # parameter. Raised through the same request/wait the map command uses,
@@ -2874,9 +2925,10 @@ module Game
     #   3 troop member param1 can act
     #   4 the currently-targeted troop member is param1
     #   5 actor param1's chosen command is param2
-    # Confirmed against EasyRPG's actual C++ source, fetched live:
+    # Ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine:
     # `Game_Interpreter_Battle::CommandConditionalBranchBattle`
-    # (`src/game_interpreter_battle.cpp`) reads only `com.parameters[1]` (the
+    # reads only `com.parameters[1]` (the
     # actor/enemy id) for cases 2 and 3 -- `result = actor->CanAct();` /
     # `result = enemy->CanAct();` -- `parameters[2]`/`[3]` do not exist as
     # far as this command is concerned; the editor's own Actor/Enemy tab
@@ -2923,8 +2975,9 @@ module Game
 
     # Whether actor `cmd.param(1)` can act right now -- true unless it is
     # dead or carries a "do nothing" restriction (asleep / paralysed), and
-    # false if it is not even in this fight. Mirrors EasyRPG's
-    # `Game_Battler::CanAct` (via `Game_Interpreter_Battle::
+    # false if it is not even in this fight. Ported from EasyRPG Player's
+    # `Game_Battler::CanAct`, NOT independently confirmed against genuine
+    # RPG_RT under wine (via `Game_Interpreter_Battle::
     # CommandConditionalBranchBattle`'s actor case, `result =
     # actor->CanAct();`): a Berserk (attack_enemy) or Confusion (attack_ally)
     # restriction does NOT fail this test -- such an ally still "can act",
@@ -2939,8 +2992,9 @@ module Game
     # offers only this one condition, and the real C++ source never reads a
     # second parameter for it at all.
     #
-    # The explicit `!ally.dead?` term has no counterpart in EasyRPG's own
-    # `CanAct` -- there, `AddState(kDeathID)` is an inseparable side effect
+    # The explicit `!ally.dead?` term has no counterpart in EasyRPG Player's
+    # own `CanAct` (again, not independently confirmed against genuine
+    # RPG_RT under wine) -- there, `AddState(kDeathID)` is an inseparable side effect
     # of every HP-zeroing path (`Game_Battler::ChangeHp`), so a dead battler
     # always already carries the Death state and the do-nothing scan alone
     # is enough. This port's own `Game::Battle#deal_attack` instead mutates
@@ -2956,8 +3010,9 @@ module Game
     end
 
     # The troop-member analogue of #battle_actor_condition above: whether
-    # enemy `cmd.param(1)` can act right now, matching EasyRPG's
-    # `enemy->CanAct()` (same function, same `com.parameters[1]`-only
+    # enemy `cmd.param(1)` can act right now, on the same ported-from-EasyRPG,
+    # not-independently-confirmed basis as that method: `enemy->CanAct()`
+    # (same function, same `com.parameters[1]`-only
     # signature) -- not, as a prior version of this method modelled it, a
     # `cmd.param(2)`-selected choice between "is present" and "afflicted by
     # a status". See #battle_actor_condition just above for why the
@@ -2969,7 +3024,9 @@ module Game
     end
 
     # Whether actor `cmd.param(1)`'s chosen command this round is
-    # `cmd.param(2)` -- EasyRPG's `Game_Interpreter_Battle::
+    # `cmd.param(2)` -- ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter_Battle::
     # CommandConditionalBranchBattle` case 5, `if (Player::
     # IsRPG2k3Commands() && current_actor_id == com.parameters[1]) { ...
     # result = actor->GetLastBattleAction() == com.parameters[2]; }`, where
@@ -2989,7 +3046,9 @@ module Game
       @battle.actor_command(cmd.param(1), battle_source) == cmd.param(2)
     end
 
-    # Test 4, "the currently-targeted troop member is param1" -- EasyRPG's
+    # Test 4, "the currently-targeted troop member is param1" -- ported from
+    # EasyRPG Player's source, NOT independently confirmed against genuine
+    # RPG_RT under wine:
     # `Game_Interpreter_Battle::CommandConditionalBranchBattle` case 4:
     # `result = (targets_single_enemy && target_enemy_index ==
     # com.parameters[1]);`. `Game::Battle#target_enemy_index` is this port's
@@ -3043,7 +3102,8 @@ module Game
       when 9 # the BGM has played through at least once
         @state.bgm_looped ? true : false
       when 10 # RPG2003's second timer, laid out exactly like type 2
-        # EasyRPG's own CommandConditionalBranch (src/game_interpreter.cpp)
+        # Ported from EasyRPG Player's source, NOT independently confirmed
+        # against genuine RPG_RT under wine: `CommandConditionalBranch`
         # only evaluates this case at all `if (Player::IsRPG2k3Commands())`
         # -- on an RPG2000 database `result` is left at its initial `false`,
         # the same "unhandled type" answer the `else` arm below already
@@ -3054,9 +3114,10 @@ module Game
         # An unhandled/unsupported branch type (RPG2003 v1.11's own type 11
         # "EX" conditions -- savestate available, Test Play, ATB-wait,
         # fullscreen -- Maniac Patch types 12-16, or malformed data) defaults
-        # to false, taking the else branch, not the true one. Confirmed
-        # against EasyRPG's `Game_Interpreter::CommandConditionalBranch`
-        # (src/game_interpreter.cpp): `result` is initialized `false` at the
+        # to false, taking the else branch, not the true one. Ported from
+        # EasyRPG Player's source, NOT independently confirmed against
+        # genuine RPG_RT under wine: `Game_Interpreter::
+        # CommandConditionalBranch`: `result` is initialized `false` at the
         # top of the function and is only ever set inside a matched `case`;
         # its `default:` arm only logs a warning, leaving `result` at its
         # initial `false`.
@@ -3073,7 +3134,8 @@ module Game
     end
 
     # Orientation directions (0 up / 1 right / 2 down / 3 left) mapped to the
-    # runtime's 2/4/6/8 numpad facing, matching EasyRPG's facing enum.
+    # runtime's 2/4/6/8 numpad facing, matching EasyRPG's facing enum (NOT
+    # independently confirmed against genuine RPG_RT under wine).
     FACING_NUMPAD = [8, 6, 2, 4].freeze
 
     # The numpad facing (2/4/6/8) of the character referenced by `ref` (10001 the
@@ -3150,8 +3212,9 @@ module Game
     # wrong one — only "left" happened to line up. ~~An RPG2000 project writes 0
     # here, so converting unconditionally is the same as EasyRPG's
     # `IsRPG2k3Commands` guard for the games that can emit it.~~ Corrected
-    # against RPG_RT's own live source: `Game_Interpreter_Map::CommandTeleport`
-    # (`src/game_interpreter_map.cpp`) reads param3 only `if
+    # against EasyRPG Player's source, NOT independently confirmed against
+    # genuine RPG_RT under wine: `Game_Interpreter_Map::CommandTeleport`
+    # reads param3 only `if
     # (com.parameters.size() > 3 && Player::IsRPG2k3Commands())` — a genuine
     # RPG2000 binary never reads it at all, regardless of what the parameter
     # array happens to hold, the same edition gate `#do_flash_screen`/
@@ -3205,14 +3268,16 @@ module Game
     # so the rest of the command list runs on.
     #
     # param4 is the same **RPG2003** facing addition Teleport's own param3 is
-    # (EasyRPG's `CommandChangeEventLocation`, `src/game_interpreter.cpp`: `if
+    # (ported from EasyRPG Player's `CommandChangeEventLocation`, NOT
+    # independently confirmed against genuine RPG_RT under wine: `if
     # (Player::IsRPG2k3Commands() && com.parameters.size() > 4) direction =
     # com.parameters[4] - 1;`), 1-based over up/right/down/left, 0 (or absent,
     # which `#param` already reads as 0) meaning "keep the current facing" —
     # `#teleport_facing` already converts that exact encoding into this
     # runtime's own numpad direction, so it is reused verbatim here rather
-    # than duplicated. EasyRPG only applies it "for the constant case, not
-    # for variables" (its own comment) -- the appointment-mode check below
+    # than duplicated. This same ported source only applies it "for the
+    # constant case, not for variables" (its own comment) -- the
+    # appointment-mode check below
     # mirrors that. The `rpg2003?`/`parameters.size` half of that same cited
     # guard had been quoted here without actually being applied in the code
     # below it -- fixed to match #do_teleport's own identical correction.
@@ -3319,7 +3384,8 @@ module Game
     # Wait (11410): param0 tenths of a second in RPG2000. RPG2003 adds a
     # param1 mode byte -- 0 the plain timed wait above, nonzero "wait until
     # the Decision key is pressed" instead, ignoring param0 entirely --
-    # matching EasyRPG's own `CommandWait` (src/game_interpreter.cpp): `if
+    # ported from EasyRPG Player's `CommandWait`, NOT independently confirmed
+    # against genuine RPG_RT under wine: `if
     # (com.parameters.size() <= 1 || (!maniac && !Player::
     # IsRPG2k3Commands())) { SetupWait(com.parameters[0]); return true; }
     # if (!maniac && com.parameters.size() > 1 && com.parameters[1] == 0) {
@@ -3375,12 +3441,15 @@ module Game
     # to nothing. param0 is the target (the Move Event target scheme: 10001 the
     # hero, 0 / 10005 this event, else a map event id), param1..3 the colour and
     # param4 its strength — all four stored 0..31, so they are scaled by 8 to the
-    # 0..248 the renderer works in, as EasyRPG's CommandFlashSprite does — param5
+    # 0..248 the renderer works in, matching EasyRPG's CommandFlashSprite (NOT
+    # independently confirmed against genuine RPG_RT under wine) — param5
     # the duration in tenths of a second and param6 the wait flag. Queued for the
     # owning scene (which owns the sprites); with the wait flag set the event also
     # pauses on a :sprite_flash wait until the scene reports the flash finished.
-    # RPG_RT always honours the wait flag, even for a 0.0s flash: `Game_Interpreter
-    # _Map::CommandFlashSprite` (`src/game_interpreter_map.cpp`) calls
+    # This "always honours the wait flag, even for a 0.0s flash" design is
+    # likewise ported from EasyRPG Player's source, NOT independently
+    # confirmed against genuine RPG_RT under wine: `Game_Interpreter
+    # _Map::CommandFlashSprite` calls
     # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
     # `SetupWait` floors a 0 duration to one frame rather than skipping the
     # wait -- the same rule already fixed for Tint/Flash Screen and Move
@@ -3453,13 +3522,14 @@ module Game
 
     # -- RPG2003 English-release (2k3e) system commands ------------------------
     #
-    # All five below are gated on `party.rpg2003?`, matching RPG_RT's own
-    # `Player::IsRPG2k3ECommands()` guard each carries (`if (!Player::
-    # IsRPG2k3ECommands()) { return true; }`, confirmed against live source
+    # All five below are gated on `party.rpg2003?`, ported from EasyRPG
+    # Player's own `Player::IsRPG2k3ECommands()` guard each carries (`if (!Player::
+    # IsRPG2k3ECommands()) { return true; }`, NOT independently confirmed
+    # against genuine RPG_RT under wine, checked
     # for all five: `CommandExitGame`/`CommandToggleFullscreen`/
-    # `CommandOpenVideoOptions` in `src/game_interpreter.cpp`,
+    # `CommandOpenVideoOptions` in `game_interpreter.cpp`,
     # `CommandOpenLoadMenu`/`CommandToggleAtbMode` in
-    # `src/game_interpreter_map.cpp`) -- the same "return unless
+    # `game_interpreter_map.cpp`) -- the same "return unless
     # party.rpg2003?" shape `#do_change_class`/`#do_change_battle_commands`
     # already carry a few hundred lines up, and these five's own dispatch
     # neighbors (`#do_force_flee`/`#do_enable_combo`/`#do_call_common_event`)
@@ -3495,9 +3565,11 @@ module Game
     # the same field the field menu's Wait command (id 8) flips, so a gauge
     # battle's command menu starts freezing / keeping the gauges running
     # accordingly (RPG2k3::Scene::Battle#atb_accumulating? reads it live).
-    # EasyRPG's own `Game_System::ToggleAtbMode()` does exactly this
-    # (`data.atb_mode = !data.atb_mode`), and RPG_RT's 2k3e "Toggle ATB Mode"
-    # command is the event-driven path to the same setting. The event runs on.
+    # This plain-flip semantics is ported from EasyRPG Player's
+    # `Game_System::ToggleAtbMode()` (`data.atb_mode = !data.atb_mode`), NOT
+    # independently confirmed against genuine RPG_RT under wine; RPG_RT's
+    # 2k3e "Toggle ATB Mode" command is the event-driven path to the same
+    # setting either way. The event runs on.
     def do_toggle_atb_mode(_cmd)
       return unless party.rpg2003?
       @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
@@ -3575,10 +3647,12 @@ module Game
     # param0..3 (red / green / blue / saturation, each 0..200) over param4 tenths
     # of a second. When param5 (the wait flag) is set, pause until it finishes —
     # the owning scene advances Game::Screen each frame and resumes us once it
-    # settles. RPG_RT always honours the wait flag, even for a 0.0s transition:
-    # `Game_Interpreter::CommandTintScreen` (`src/game_interpreter.cpp`) calls
+    # settles. This build makes RPG_RT always honour the wait flag, even for a
+    # 0.0s transition -- ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandTintScreen` calls
     # `SetupWait(tenths)` unconditionally whenever the wait flag is set, and
-    # `SetupWait` (same file) explicitly floors a 0 duration to one frame ("0.0
+    # `SetupWait` explicitly floors a 0 duration to one frame ("0.0
     # waits 1 frame") rather than skipping the wait. A 0.0s tint therefore still
     # blocks the interpreter for exactly one frame, which the `:screen` wait
     # dispatcher (`Scene::Map`'s wait-kind handler) already provides for free —
@@ -3598,22 +3672,25 @@ module Game
     # peak strength param3, fading out over param4 tenths of a second. When param5
     # (the wait flag) is set, pause until it fades — the owning scene advances
     # Game::Screen each frame and resumes us once no screen effect is animating.
-    # As with Tint Screen, RPG_RT always honours the wait flag on the one-shot
-    # mode, even for a 0.0s flash: `Game_Interpreter::CommandFlashScreen`
-    # (`src/game_interpreter.cpp`) calls `SetupWait(tenths)` unconditionally
+    # As with Tint Screen, this build makes RPG_RT always honour the wait flag
+    # on the one-shot mode, even for a 0.0s flash -- ported from EasyRPG
+    # Player's source, NOT independently confirmed against genuine RPG_RT
+    # under wine: `Game_Interpreter::CommandFlashScreen`
+    # calls `SetupWait(tenths)` unconditionally
     # whenever the wait flag is set on the mode-0 path, and `SetupWait` floors a
-    # 0 duration to one frame rather than skipping the wait.
+    # 0 duration to one frame rather than skipping the wait there.
     # RPG2003 extends the command with a param6 mode byte (0 one-shot / 1 begin a
-    # repeating strobe / 2 end one), matching EasyRPG's `CommandFlashScreen`
-    # (src/game_interpreter.cpp): a command list carrying no 7th parameter (an
+    # repeating strobe / 2 end one), on the same ported/unconfirmed basis as
+    # EasyRPG's `CommandFlashScreen`: a command list carrying no 7th parameter (an
     # RPG2000 project, or an RPG2003 one never given the extended layout) always
     # falls back to a plain one-shot flash, mode 0. Only mode 0 ever waits — Begin
     # and End never suspend the interpreter, since the strobe runs indefinitely.
     #
-    # param0..3 store the raw RPG2000/2003 0..31 flash scale (confirmed against
-    # EasyRPG's own `Game_Screen::FlashMapStepDamage`, `FlashOnce(31, 10, 10, 20,
-    # 6)`), which real RPG_RT only ever multiplies by 8 at render time
-    # (`Flash::MakeColor`, `src/flash.h`: `Color(r*8, g*8, b*8, level*8)`) --
+    # param0..3 store the raw RPG2000/2003 0..31 flash scale (ported from
+    # EasyRPG Player's `Game_Screen::FlashMapStepDamage`, `FlashOnce(31, 10, 10, 20,
+    # 6)`, NOT independently confirmed against genuine RPG_RT under wine),
+    # which on that reading RPG_RT only ever multiplies by 8 at render time
+    # (`Flash::MakeColor`: `Color(r*8, g*8, b*8, level*8)`) --
     # `Game::Screen#flash`/`#flash_begin` instead expect the already-scaled 0..255
     # values every other caller in this codebase already passes (`Scene::Map::
     # STEP_DAMAGE_FLASH`, `#fire_animation_flashes`/`#fire_map_target_flash`, all
@@ -3661,8 +3738,9 @@ module Game
     # pause until it finishes — the owning scene advances Game::Screen each frame
     # and resumes us once no screen effect is animating.
     # RPG2003 extends the command with a param4 mode byte (0 one-shot / 1 begin a
-    # repeating strobe / 2 end one), matching EasyRPG's `CommandShakeScreen`
-    # (src/game_interpreter.cpp): a command list carrying no 5th parameter (an
+    # repeating strobe / 2 end one), ported from EasyRPG Player's
+    # `CommandShakeScreen`, NOT independently confirmed against genuine
+    # RPG_RT under wine: a command list carrying no 5th parameter (an
     # RPG2000 project, or an RPG2003 one never given the extended layout) always
     # falls back to a plain one-shot shake, mode 0. Only mode 0 ever waits — Begin
     # and End never suspend the interpreter, since the strobe runs indefinitely.
@@ -3701,9 +3779,10 @@ module Game
     # command reached while a message window or choice list is open — it
     # blocks the interpreter on that exact command and retries it every
     # subsequent frame, so the very same command still takes effect once the
-    # message clears. Confirmed directly against RPG_RT's live source:
+    # message clears. Ported from EasyRPG Player's source, NOT independently
+    # confirmed against genuine RPG_RT under wine:
     # `Game_Interpreter::CommandShowPicture`/`CommandMovePicture`/
-    # `CommandErasePicture` (`src/game_interpreter.cpp`, codes 11110/11120/
+    # `CommandErasePicture` (codes 11110/11120/
     # 11130) each open with the identical guard `if (!Player::IsEnglish() &&
     # !Player::IsPatchUnlockPics() && Game_Message::IsMessageActive()) {
     # return false; }` — and the main dispatch loop (`Game_Interpreter::
@@ -3728,9 +3807,10 @@ module Game
     # Real RPG_RT does not run a Transfer Player / Recall to Location command
     # while a message window or choice list is open either — the identical
     # block-and-retry shape #block_pending_picture_command already ports, on
-    # a different pair of commands. Confirmed directly against RPG_RT's live
-    # source: `Game_Interpreter_Map::CommandTeleport`/
-    # `CommandRecallToLocation` (`src/game_interpreter_map.cpp`, codes
+    # a different pair of commands. Ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter_Map::CommandTeleport`/
+    # `CommandRecallToLocation` (codes
     # 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
     # return false; }`, unconditionally — not gated behind
     # `IsRPG2k3Commands()`, so this is base RPG2000 behaviour, not an
@@ -3750,9 +3830,10 @@ module Game
     # Real RPG_RT does not run an Erase Screen / Show Screen command while a
     # message window or choice list is open either -- the identical
     # block-and-retry shape #block_pending_picture_command already ports, on
-    # a fourth pair of commands. Confirmed directly against RPG_RT's live
-    # source: `Game_Interpreter::CommandEraseScreen`/`CommandShowScreen`
-    # (`src/game_interpreter.cpp`, codes 11010/11020) both open with `if
+    # a fourth pair of commands. Ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter::CommandEraseScreen`/`CommandShowScreen`
+    # (codes 11010/11020) both open with `if
     # (Game_Message::IsMessageActive()) { return false; }`, unconditionally --
     # not gated behind `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/
     # Erase Picture are, so this is base RPG2000 behaviour with no edition
@@ -3771,9 +3852,10 @@ module Game
     # Encounter command while a message window or choice list is open
     # either — the identical block-and-retry shape
     # #block_pending_picture_command/#block_pending_teleport_command already
-    # port, on a third command. Confirmed directly against RPG_RT's live
-    # source: `Game_Interpreter_Map::CommandEnemyEncounter`
-    # (`src/game_interpreter_map.cpp`, code 10710) opens with `if
+    # port, on a third command. Ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `Game_Interpreter_Map::CommandEnemyEncounter`
+    # (code 10710) opens with `if
     # (Game_Message::IsMessageActive()) { return false; }`, unconditionally
     # — not gated behind `IsRPG2k3Commands()` or `main_flag`, so this is
     # base RPG2000 behaviour, not an RPG2003-only rule, and applies the same
@@ -3792,9 +3874,10 @@ module Game
     end
 
     # Change EXP (10410) / Change Level (10420) block-and-retry the same way,
-    # but only when their own "show message" flag is set -- confirmed
-    # directly against RPG_RT's live source: `Game_Interpreter::
-    # CommandChangeExp`/`CommandChangeLevel` (`src/game_interpreter.cpp`)
+    # but only when their own "show message" flag is set -- ported from
+    # EasyRPG Player's source, NOT independently confirmed against genuine
+    # RPG_RT under wine: `Game_Interpreter::
+    # CommandChangeExp`/`CommandChangeLevel`
     # both open with `bool show_msg = com.parameters[5]; if (show_msg &&
     # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
     # *entire* command -- the actor's EXP/level and re-derived base stats
@@ -3815,9 +3898,10 @@ module Game
     end
 
     # A waiting Key Input Processing command block-and-retries the same way
-    # too, but only in its own wait mode -- confirmed directly against
-    # RPG_RT's live source: `Game_Interpreter::CommandKeyInputProc`
-    # (`src/game_interpreter.cpp`, code 11610) resets the target variable to
+    # too, but only in its own wait mode -- ported from EasyRPG Player's
+    # source, NOT independently confirmed against genuine
+    # RPG_RT under wine: `Game_Interpreter::CommandKeyInputProc`
+    # (code 11610) resets the target variable to
     # 0 every retried frame first (`if (wait) { Main_Data::game_variables->
     # Set(var_id, 0); ... }`), *then* checks `if (wait &&
     # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
@@ -3840,9 +3924,10 @@ module Game
     end
 
     # Message Options (10120) / Change Face Graphic (10130) block-and-retry
-    # the same way too -- confirmed directly against RPG_RT's live source:
+    # the same way too -- ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
     # `Game_Interpreter::CommandMessageOptions`/`CommandChangeFaceGraphic`
-    # (`src/game_interpreter.cpp`) both open with the identical guard Show
+    # both open with the identical guard Show
     # Message/Show Choices/Input Number themselves use, `if (!Game_Message::
     # CanShowMessage(main_flag)) { return false; }` -- unconditionally, the
     # same base RPG2000 behaviour as the other block-and-retry commands.
@@ -3867,7 +3952,8 @@ module Game
     # param6 (0 opaque .. 100 clear), tone param8..11 (r/g/b/saturation) and the
     # "make colour 0 transparent" flag param7; param4 pins it to the map (it then
     # scrolls with the camera). The parameter layout is a direct port of EasyRPG
-    # Player's CommandShowPicture (RPG2000 branch).
+    # Player's CommandShowPicture (RPG2000 branch), NOT independently
+    # confirmed against genuine RPG_RT under wine.
     def do_show_picture(cmd)
       id = cmd.param(0)
       return if id <= 0
@@ -3887,9 +3973,11 @@ module Game
     # tone over param14 tenths of a second. When the wait flag (param15) is set,
     # pause until the move finishes — the scene advances the pictures each frame
     # and resumes us once none is moving. Same parameter layout as Show Picture,
-    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture). RPG_RT
-    # always honours the wait flag, even for a 0.0s move: `Game_Interpreter::
-    # CommandMovePicture` (`src/game_interpreter.cpp`) calls
+    # plus the trailing duration/wait pair (EasyRPG's CommandMovePicture). This
+    # build makes it always honour the wait flag, even for a 0.0s move --
+    # ported from EasyRPG Player's source, NOT independently confirmed
+    # against genuine RPG_RT under wine: `Game_Interpreter::
+    # CommandMovePicture` calls
     # `SetupWait(params.duration)` unconditionally whenever `options.wait` is
     # set, and `SetupWait` explicitly floors a 0 duration to one frame ("0.0
     # waits 1 frame") rather than skipping the wait -- the same rule already
@@ -3922,9 +4010,10 @@ module Game
     # character on the map. param1 is the target id (the player, an event, or
     # this event — the Move Event target scheme), param2 the "wait until it
     # finishes" flag, and param3 whether the editor's "Whole screen" target
-    # option was chosen instead of a single character. EasyRPG's own
-    # `Game_Interpreter_Map::CommandShowBattleAnimation`
-    # (src/game_interpreter_map.cpp) always starts the animation through
+    # option was chosen instead of a single character. Ported from EasyRPG
+    # Player's source, NOT independently confirmed against genuine RPG_RT
+    # under wine: `Game_Interpreter_Map::CommandShowBattleAnimation`
+    # always starts the animation through
     # `Game_Screen::ShowBattleAnimation` regardless of the wait flag — only
     # whether `_state.wait_time` is then set (pausing the interpreter)
     # depends on it — so a fire-and-forget play is not merely non-blocking, it is
@@ -3935,8 +4024,9 @@ module Game
     # #take_battle_animation_request instead, since nothing will ever visit an
     # :animation wait for it otherwise.
     #
-    # `param3` (`global`) is confirmed against EasyRPG's actual C++ source,
-    # fetched live: `bool global = com.parameters[3] > 0;`, threaded through
+    # `param3` (`global`) is likewise ported from EasyRPG Player's source, NOT
+    # independently confirmed against genuine RPG_RT under wine:
+    # `bool global = com.parameters[3] > 0;`, threaded through
     # `Game_Screen::ShowBattleAnimation`/`BattleAnimationMap` unchanged, and
     # this command's own `CmdSetup<..., 4>` requires all four parameters —
     # it is not a 2003-only extension. A prior version of this method never
@@ -3978,8 +4068,9 @@ module Game
     # / tint overlays this records the Ruby-half model only — compositing the
     # rain/snow particles is native renderer work still to come — but the setting
     # is applied and persists through Save / Continue.
-    # Matches EasyRPG's `Game_Interpreter::CommandWeatherEffects`
-    # (src/game_interpreter.cpp): `strength = std::min(str, 2)` unconditionally
+    # Ported from EasyRPG Player's `Game_Interpreter::CommandWeatherEffects`,
+    # NOT independently confirmed against genuine RPG_RT under wine:
+    # `strength = std::min(str, 2)` unconditionally
     # (a stray value above 2 in the raw command bytes clamps down rather than
     # persisting out of range), and `type` above 2 (an RPG2003-only weather
     # type) is forced back to 0 (none) `if (!Player::IsRPG2k3Commands())` —
@@ -3995,29 +4086,32 @@ module Game
     # Fade Out BGM (11520): fade the music to silence over param0
     # milliseconds, then leave nothing playing. The current-BGM record
     # survives the fade untouched -- a Memorize BGM taken afterwards still
-    # memorises the track that was fading, not silence. Confirmed directly
-    # against RPG_RT's live source: `Game_Interpreter::CommandFadeOutBGM`
-    # (`src/game_interpreter.cpp`) calls `Main_Data::game_system->
+    # memorises the track that was fading, not silence. Ported from EasyRPG
+    # Player's source, NOT independently confirmed against genuine RPG_RT
+    # under wine: `Game_Interpreter::CommandFadeOutBGM`
+    # calls `Main_Data::game_system->
     # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
-    # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+    # only clears `data.current_music` when its
     # second parameter, `clear_current_music`, is explicitly `true` --
     # defaulted to `false`, so the event command never sets it. Non-blocking
     # — the event runs on while the music fades.
     #
-    # param0 is already milliseconds, not tenths of a second: EasyRPG's
-    # `CommandFadeOutBGM` (src/game_interpreter.cpp) passes
+    # param0 is already milliseconds, not tenths of a second -- ported from
+    # EasyRPG Player's source, NOT independently confirmed against genuine
+    # RPG_RT under wine: `CommandFadeOutBGM` passes
     # `com.parameters[0]` straight through to `Game_System::BgmFade`, whose
-    # own doc comment (src/game_system.h) reads "duration Duration in ms" --
-    # confirmed by every other real `BgmFade(...)` call site in EasyRPG
-    # (player.cpp, scene_end.cpp, scene_map.cpp), all bare millisecond
+    # own doc comment reads "duration Duration in ms" --
+    # matching every other real `BgmFade(...)` call site in that same
+    # codebase (player.cpp, scene_end.cpp, scene_map.cpp), all bare millisecond
     # literals (400/800) with no scaling. This codebase's own
     # `RGSS::Audio.bgm_fade` already expects milliseconds too --
     # `Scene::Menu`'s own End Game call passes `bgm_fade(400)` directly.
     def do_fadeout_bgm(cmd)
       @state.bgm_looped = false
-      # `Game_System::BgmFade` (`src/game_system.cpp`) always sets `data.
-      # music_stopping = true` alongside the fade itself -- see Game::State
-      # #bgm_stopping's own doc comment for what this ungates.
+      # Ported from EasyRPG Player's source (NOT independently confirmed
+      # against genuine RPG_RT under wine): `Game_System::BgmFade` always
+      # sets `data.music_stopping = true` alongside the fade itself -- see
+      # Game::State#bgm_stopping's own doc comment for what this ungates.
       @state.bgm_stopping = true
       RGSS::Audio.bgm_fade(cmd.param(0))
     rescue StandardError => e
@@ -4101,7 +4195,9 @@ module Game
     # Change Parallax Background (11720): replace the current map's panorama at
     # runtime. The command string names the Panorama/<name> image; param0/1 are
     # the horizontal / vertical loop flags, param2/4 enable horizontal / vertical
-    # autoscroll and param3/5 give their speeds (per EasyRPG's SetParallax). An
+    # autoscroll and param3/5 give their speeds (this parameter layout is ported
+    # from EasyRPG Player's `SetParallax`, NOT independently confirmed against
+    # genuine RPG_RT under wine). An
     # empty name clears the backdrop. Stored as a Game::State override (reset on
     # the next map change, like shown pictures) and flagged so the scene rebuilds
     # the parallax sprite mid-map.
@@ -4173,8 +4269,9 @@ module Game
         RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
       end
       # Balance/pan is re-applied unconditionally, same-file-or-not, matching
-      # `#play_audio`'s own `:bgm` branch -- `Game_System::BgmPlay` (`src/
-      # game_system.cpp`) re-applies `Audio().BGM_Balance(...)` on the
+      # `#play_audio`'s own `:bgm` branch -- ported from EasyRPG Player's
+      # source, NOT independently confirmed against genuine RPG_RT under
+      # wine: `Game_System::BgmPlay` re-applies `Audio().BGM_Balance(...)` on the
       # same-track path too (`if (previous_music.balance != data.current_
       # music.balance) { ... }`), and the fresh-start path passes the whole
       # `Music` struct straight to a new play call either way.
@@ -4191,20 +4288,21 @@ module Game
     def play_audio(kind, cmd)
       name = cmd.string
       blank = name.nil? || name.empty?
-      # Corrected against EasyRPG's actual C++ source (this method's own
-      # prior comment here had assumed selecting the editor's "(OFF)" choice
-      # is encoded as a blank string, an uncited claim — it is instead the
-      # literal 5-character text "(OFF)", liblcf's own schema default for
-      # both the Music and Sound structs). `Game_System::BgmPlay`
-      # (`src/game_system.cpp`): `if (!bgm.name.empty() && bgm.name !=
+      # Corrected from this method's own prior comment here, which had assumed
+      # selecting the editor's "(OFF)" choice is encoded as a blank string, an
+      # uncited claim — it is instead the literal 5-character text "(OFF)",
+      # liblcf's own schema default for both the Music and Sound structs. The
+      # distinct blank-vs-"(OFF)" handling below is ported from EasyRPG
+      # Player's source, NOT independently confirmed against genuine RPG_RT
+      # under wine: `Game_System::BgmPlay`: `if (!bgm.name.empty() && bgm.name !=
       # "(OFF)") { ...play... } else { BgmStop(); }` — blank *and* "(OFF)"
-      # both stop the current track unconditionally. `Game_System::SePlay`
-      # (same file) instead treats the two differently: `if (se.name.empty())
+      # both stop the current track unconditionally there. `Game_System::SePlay`
+      # instead treats the two differently on that same reading: `if (se.name.empty())
       # { return; } else if (se.name == "(OFF)") { if (stop_sounds)
       # Audio().SE_Stop(); return; }` — a genuinely blank name is a silent
       # no-op, while only the literal "(OFF)" stops every playing SE (gated
       # on `stop_sounds`, always true for the Play SE event command itself —
-      # `Game_Interpreter::CommandPlaySound`, `src/game_interpreter.cpp`).
+      # `Game_Interpreter::CommandPlaySound`).
       if kind == :bgm
         if blank || name == '(OFF)'
           RGSS::Audio.bgm_stop
@@ -4228,34 +4326,38 @@ module Game
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
         balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
-        # BGM has a single channel, and RPG_RT special-cases re-triggering Play
-        # BGM with the file that's already current: it does NOT break and
+        # BGM has a single channel, and this build special-cases re-triggering
+        # Play BGM with the file that's already current: it does NOT break and
         # restart the track from the top the way any other Play BGM does --
-        # confirmed against `Game_System::BgmPlay` (`src/game_system.cpp`)
-        # itself, not merely a fan-wiki claim -- but it does re-apply the
+        # ported from EasyRPG Player's `Game_System::BgmPlay`, NOT
+        # independently confirmed against genuine RPG_RT under wine (not
+        # merely a fan-wiki claim, but still not a wine-verified one) -- but
+        # it does re-apply the
         # command's own volume to the still-playing track
-        # (`RGSS::Audio.bgm_volume`, backed by `Mix_VolumeMusic` — see
-        # `src/sdl_audio.cxx`, which applies live with no restart, unlike
+        # (`RGSS::Audio.bgm_volume`, backed by `Mix_VolumeMusic`,
+        # which applies live with no restart, unlike
         # `bgm_play`'s `Mix_PlayMusic`). Tempo stays unaddressed: SDL_mixer has
         # no live pitch control for a playing music stream (only a freshly
         # started one). Balance/pan is wired the same live-update way via
         # `RGSS::Audio.bgm_pan` (backed by `Mix_SetPanning(MIX_CHANNEL_POST,
-        # ...)` — the only technique that reaches a Mix_Music stream at all,
-        # see `src/sdl_audio.cxx`), applied on every Play BGM regardless of
+        # ...)` — the only technique that reaches a Mix_Music stream at all),
+        # applied on every Play BGM regardless of
         # same-file-or-not since it has no per-track state to restart.
         #
         # That no-restart shortcut is itself gated on `!data.music_stopping`
-        # in real RPG_RT (`BgmPlay`'s own `if (!data.music_stopping &&
+        # on the same ported/unconfirmed basis (`BgmPlay`'s own `if
+        # (!data.music_stopping &&
         # previous_music.name == bgm.name)`) -- a Fade Out BGM (11520) of this
         # exact track since it last started DOES force a fresh restart here,
         # matching `#bgm_stopping`'s own doc comment.
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == name &&
                                      !@state.bgm_stopping
-        # Track what is playing so Memorize BGM can stash it (RPG_RT keeps this
-        # as the "current system BGM" regardless of whether playback succeeds)
-        # -- balance included, since `Game_System::MemorizeBGM`
-        # (`src/game_system.h`) is a bare `data.stored_music =
-        # data.current_music`, copying the whole `Music` struct verbatim.
+        # Track what is playing so Memorize BGM can stash it -- this "current
+        # system BGM regardless of whether playback succeeds" design, balance
+        # included, is ported from EasyRPG Player's `Game_System::MemorizeBGM`
+        # (a bare `data.stored_music =
+        # data.current_music`, copying the whole `Music` struct verbatim),
+        # NOT independently confirmed against genuine RPG_RT under wine.
         @state.current_bgm = { name: name, volume: volume, tempo: pitch, balance: balance }
         if same_file_already_playing
           RGSS::Audio.bgm_volume(volume)
