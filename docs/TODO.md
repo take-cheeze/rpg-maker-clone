@@ -3180,6 +3180,129 @@ The work below is roughly ordered by the critical path to a walkable game
   repo-wide grep turned up outside chunks 102/103/110's own neighbourhood
   (item/equipment/skill usability, enemy AI, move routes -- candidate 2,
   not attempted this cycle either).
+  ✅ **Follow-up (cycle #156, 2026-08-26): picked up candidate 1's own
+  outstanding item/skill-usability vein (cycle #154's repo-wide grep,
+  never attempted by #155). A fresh repo-wide grep for "RPG_RT's live
+  source"/"RPG_RT's own live source"/"confirmed against RPG_RT" across
+  `mruby-rpg2k/mrblib/` turned up the same several dozen citations #154
+  already catalogued, still unaddressed; picked `Game::Party#use_skill_book`/
+  `#use_seed`'s own "A Skill Book/Seed does nothing on a downed actor"
+  claim (`mruby-rpg2k/mrblib/game.rb`), naming `Game_Actor::UseItem`
+  (`src/game_actor.cpp`) and an `if (!IsDead())` guard -- EasyRPG Player's
+  own class/file names, not RPG_RT's, the identical mislabeling pattern
+  #125/#126/#154 already fixed elsewhere. Independently re-verified the
+  underlying behavioral claim against genuine RPG_RT.exe under wine (no
+  EasyRPG source was consulted for this claim, or at all this cycle).
+  **Methodology, and a real snag hit along the way:** the initial plan
+  reused cycle #148-155's own `LCF::MapUnit` autostart-event-injector
+  pattern (Change Party Member: Add actor 2, Change Party Item: give item
+  401, Change HP: floor actor 1 with allow-death, on Nepheshel's own
+  Map0012/Save01_clean.lsd) to build a downed-actor-holding-a-seed scenario,
+  then drive the field Item menu by hand via the Cancel/menu-open key
+  (`xdotool`) the same way cycle #150-152 drove Escape and Save-menu
+  navigation. This reliably left the game **stuck on the map, unable to
+  open the main menu at all** (not a crash -- the process stayed alive,
+  `xdotool search --name 'Nepheshel'` still found its window) for every
+  synthetic autostart page tried (2 to 5 real commands: Change Party alone,
+  Wait alone, the full downed scenario). Bisecting against a bare,
+  content-free control (`crashprobe/inject.rb`'s own N-bare-BlankLines
+  harness, cycles #137-151's own tool) reproduced that harness's own
+  historical numbers exactly first (N=1 survives and opens the menu fine,
+  N=2 through N=200 all previously logged `RESULT: CRASHED` in this
+  session's own scratch dir from cycle #150) and then showed the *same*
+  N=1-survives/N>=2-breaks split holds for real command content too (a
+  single Change Party Member command with no terminator survives and opens
+  the menu; the identical command plus a bare BlankLine terminator does
+  not) -- i.e. this is cycle #137-151's own still-open "autostart-crash
+  mystery" (candidate 4), reproduced fresh this session under an
+  unrelated investigation, just with a *different* symptom for non-blank
+  command content (silently wedged, not a full process kill) than the
+  bare-BlankLine case's clean crash. Not chased further as its own root
+  cause -- out of scope for this cycle, and per this file's own standing
+  guidance not to pursue candidate 4 without a genuinely new angle; noted
+  here only as a fresh data point (the wedge-not-crash manifestation) for
+  whoever next attempts it. **Worked around it entirely** by not using a
+  synthetic map event at all: built the scenario via a direct, raw
+  `Save01.lsd` field edit instead (chunk 109's `item_ids`/`item_counts`,
+  giving 3x Nepheshel's own item 401, a Seed granting +5 max HP; chunk
+  108's own `hp`/`state_size`/`states` fields on the one actor this exact
+  save's own field menu actually, genuinely displays as its live party
+  leader), leaving `Map0012.lmu` **completely untouched** -- no autostart
+  event, no crash-mystery exposure at all. **A second real snag, also
+  worth recording:** that live-leader actor is *not* actor id 1 despite
+  chunk 109's own `party` field (`SAVE_INVENTORY`'s own `[1]`, matching
+  this schema's own pre-existing "actor 1 is the roster" comment) --
+  editing `party` to `[1, 2]` or even swapping it to a same-length `[2]`
+  single-element array left the menu still showing the *original* actor's
+  own stats unchanged, and in the `[2]` case **crashed genuine RPG_RT.exe
+  outright** the instant the field menu opened. Never root-caused (a
+  third, distinct fragility from the autostart-command one above, this
+  time in the party-roster field itself, on this exact save) -- worked
+  around by leaving `party` untouched entirely and editing the
+  already-live actor's own chunk 108 entry instead, which behaved exactly
+  as expected with no crash. **The genuine RPG_RT.exe evidence itself:**
+  two side-by-side captures of the identical item (401) used from the
+  field Item menu on the identical actor (level 50, "デモ用", base
+  600 max HP) -- alive (600/600 HP): the held count fell from 3 to 2 and
+  Max HP rose to 605, both visible together in the same target-confirm
+  window; downed (HP floored to 0, `states` set to `[1]`, and the genuine
+  RPG_RT.exe menu itself displayed the real 戦闘不能/incapacitated status
+  tag): applying the identical item left the held count at 3 (confirmed
+  again after backing out to the refreshed item list, not just the static
+  target-confirm panel) and HP/MaxHP completely unchanged. The live/alive
+  capture is the control that rules out "the harness never detects
+  consumption at all" as an alternative explanation for the downed
+  capture's own null result. **Conclusion: the existing behavioral claim
+  was already correct** -- only its citation was wrong. **Fixed** the
+  citation in three places: `Game::Party#use_skill_book`'s own comment and
+  `#use_seed`'s cross-reference to it (`mruby-rpg2k/mrblib/game.rb`), and
+  the two matching `scripts/rpg2k_logic_check.rb` check comments that
+  carried the identical mislabeled text -- all four now cite this cycle's
+  own genuine-wine evidence instead of EasyRPG's `Game_Actor::UseItem`/
+  `Game_Battler::UseItem`. No behavioral code changed (the `!actor.dead?`
+  guards in both methods were already correct), so no new check was added,
+  but the two pre-existing `rpg2k_logic_check.rb` checks already covering
+  this ("a skill book does nothing on a downed actor...", "a seed does
+  nothing on a downed actor...") were confirmed, freshly this cycle, to
+  actually catch a regression here: deliberately stripping `!actor.dead?`
+  from both guards (`git diff` reverted after) made both checks fail with
+  precise, specific errors (`RuntimeError: expected [], got
+  [#<Game::Actor ...>]`, i.e. the item wrongly took effect on the downed
+  actor) before restoring the guards brought the suite back to green. Full
+  suite reconfirmed passing, unchanged from cycle #155 (a citation-only
+  fix touches no check count): `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1139), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15). This cycle also built the mruby
+  engine binary from source (`cmake --build build --target
+  rpg_maker_clone`, the two Unicode tables fetched and hash-verified per
+  this file's own standing note) and confirmed it links and runs cleanly
+  against the edited `game.rb`. `Map0012.lmu`/`Save01.lsd` were restored to
+  their original bytes (byte-identical by `md5sum` against the same
+  `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148
+  recorded) and every scratch `Save0N.lsd`/`Map0012.lmu` variant this
+  cycle's own probes produced was removed from the game directory
+  afterward; `git status` on `data/` came back clean. No EasyRPG source
+  was consulted for any claim this cycle, and no web search was used
+  either. **Left open for a future cycle:** every other EasyRPG-style
+  citation cycle #154's own repo-wide grep turned up and this cycle did
+  not touch (`do_change_equipment`, `Window_Skill::CheckInclude`/
+  `Algo::IsSkillUsable`'s own field-skill-menu logic, `EnemyAi::
+  IsActionValid`, `Game_Event::MoveTypeRandom`/`MoveTypeCycle`,
+  `CalcNormalAttackAutoBattleTargetRank`, `Window_ShopSell`, and more --
+  see cycle #154's own list); the still-unlabeled `seed_boosts` comment
+  a few lines above this cycle's own fix, which honestly says "confirmed
+  against EasyRPG's Game_Actor seed handling" rather than misattributing
+  it to RPG_RT, so it was left alone as a different (and lower-priority)
+  problem from the mislabeling this cycle targeted, but is still an
+  EasyRPG-source-derived claim never independently re-verified against
+  genuine RPG_RT.exe; the autostart-crash mystery's own new wedge-not-crash
+  data point noted above; the party-roster-field crash noted above,
+  distinct from the autostart mystery and never chased at all; fields
+  51-54/71-140 of SAVE_SYSTEM (cycle #152/#153's own open items, untouched
+  again); the missing-Picture-asset hang (cycle #155's own open item,
+  untouched again); and whether field 9 (`visible`) of `SAVE_PICTURE`
+  (cycle #155's own open item) is ever written by genuine RPG_RT.exe.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

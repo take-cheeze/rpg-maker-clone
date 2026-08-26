@@ -4732,16 +4732,36 @@ module Game
     # A skill book teaches its skill (item field 53) to `actor` if the actor does
     # not already know it, consuming one book. A book with no skill, or used on an
     # actor who already knows the skill, does nothing and is not consumed.
-    # A Skill Book/Seed does nothing on a downed actor -- confirmed against
-    # RPG_RT's own live source: `Game_Actor::UseItem` (`src/game_actor.cpp`)
-    # only reaches its `Type_book`/`Type_material` branches inside an
-    # `if (!IsDead())` guard; falling through to `Game_Battler::UseItem`
-    # (`src/game_battler.cpp`) for a dead actor lands on neither type at
-    # all (only Medicine/Switch/skill-invoking items are handled there), so
-    # the item is silently never consumed and nothing changes -- unlike
-    # Medicine, the one item type genuinely meant to work on the dead
-    # (`#ko_only_blocked?`'s own `it.ko_only` case), Book/Seed have no such
-    # exception.
+    #
+    # A Skill Book/Seed does nothing on a downed actor: not consumed, no effect
+    # -- confirmed directly against genuine RPG_RT.exe under wine (cycle #156;
+    # the prior comment here cited "RPG_RT's own live source: `Game_Actor::
+    # UseItem` (`src/game_actor.cpp`)", but that is EasyRPG Player's own
+    # reimplementation, not RPG_RT's own source, which Anthropic has never had
+    # access to -- the citation was wrong, though the underlying claim held up
+    # once independently re-tested). Nepheshel's own item 401 (a Seed, +5 max
+    # HP) used from the field Item menu on its own "デモ用" test actor (level
+    # 50, hp/max_hp 600) via a raw Save01.lsd edit (chunk 108's own hp/state
+    # fields, no synthetic map event at all -- see the methodology note below)
+    # gave two directly comparable genuine screenshots: on a live target
+    # (600/600 HP) the item count fell 3 -> 2 and Max HP rose to 605 in the
+    # same target-confirm window; on the identical actor downed to 0/600 HP
+    # (戦闘不能, the genuine incapacitated status, shown in the RPG_RT.exe menu
+    # itself) applying the identical item left the count at 3 and HP/MaxHP
+    # completely unchanged -- unlike Medicine, the one item type genuinely
+    # meant to work on the dead (`#ko_only_blocked?`'s own `it.ko_only` case),
+    # Book/Seed have no such exception. (Methodology note for whoever extends
+    # this: editing chunk109's own party-roster field (`SAVE_INVENTORY`'s
+    # `party`), even a same-length single-element swap, reliably crashed
+    # genuine RPG_RT.exe under wine on this exact save/map the instant the
+    # field menu was opened -- so this test left it untouched and used
+    # whichever actor the save already, genuinely led with instead of adding
+    # a second party member. Separately, and unrelated to this claim: a
+    # synthetic autostart map event of 2+ commands reliably wedges or crashes
+    # genuine RPG_RT.exe on the very next Cancel/menu-open press on this same
+    # save/map, reproducing cycles #137-151's own open "autostart-crash
+    # mystery" fresh this session -- not investigated further here, since a
+    # pure save-file edit sidesteps it entirely.)
     def use_skill_book(it, id, actor)
       skill = it.skill_id
       return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id) &&
@@ -4766,8 +4786,8 @@ module Game
     # through Actor#change_param, so RPG2000's stat caps hold). Consumes one when
     # it carries any boost; a seed with no boost does nothing and is not consumed.
     # A Seed does nothing on a downed actor -- see #use_skill_book's own
-    # comment for the full RPG_RT citation; this shares the identical
-    # `if (!IsDead())` gate in `Game_Actor::UseItem`.
+    # comment for the full genuine-RPG_RT.exe evidence (cycle #156); this
+    # shares the identical dead-actor guard.
     def use_seed(it, id, actor)
       return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id)
       boosts = seed_boosts(it)
