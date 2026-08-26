@@ -8441,6 +8441,13 @@ module Game
   class Picture
     attr_reader :id, :name, :fixed_to_map, :use_transparent_color
 
+    # The position given to the most recent Show Picture call for this id --
+    # `.lsd` chunk 103's own field 2/3, identified behaviorally by cycle #155
+    # (see SAVE_PICTURE's own comment for the experiment): unlike `#x`/`#y`
+    # below, a Move Picture (`#move_to`) never touches these, only a fresh
+    # `Picture.new` (i.e. another Show Picture on this same id) does.
+    attr_reader :show_x, :show_y
+
     # Every interpolated field is truncated to a whole number here (matching
     # EasyRPG's own `int x = data.current_x;`, `sprite_picture.cpp`) but held
     # at full float precision internally between frames -- see #step's own
@@ -8474,6 +8481,15 @@ module Game
       @name = opts[:name] || ''
       @x = opts[:x] || 0
       @y = opts[:y] || 0
+      # Defaults to the shown position itself: the live Show Picture command
+      # (#do_show_picture) never passes these explicitly, so an ordinary
+      # fresh show records its own x/y as-shown, exactly matching genuine
+      # RPG_RT. #restore_pictures passes the saved field 2/3 explicitly, for
+      # a save whose picture was already mid-Move-Picture when written (so
+      # `x`/`y` above hold the live *current* position, not the original
+      # show position, which is what these must restore to instead).
+      @show_x = opts[:show_x] || @x
+      @show_y = opts[:show_y] || @y
       @zoom = opts[:zoom] || 100
       @opacity = opts[:opacity] || 255
       @red = opts[:red] || 100
@@ -14758,7 +14774,7 @@ module Game
       # Chunk 103 is every picture slot RPG2000 offers (Show Picture, 11110)
       # -- its own container and its own 1..MAX_PICTURE_ID (50) slot range are
       # both confirmed unconditional against genuine RPG_RT.exe under wine
-      # this cycle (not EasyRPG source, correcting a prior comment here that
+      # (cycle #154; not EasyRPG source, correcting a prior comment here that
       # mislabelled EasyRPG Player's own `src/scene_save.cpp`/`src/
       # game_pictures.cpp` as "RPG_RT's live source"): a synthetic autostart
       # list that never issues Show Picture at all still produced a genuine
@@ -14774,64 +14790,67 @@ module Game
       # array entirely unless a picture has ever been shown there" shape
       # (which also, as a side effect, only ever emitted however many ids
       # had been *touched*, never the full 50-wide range genuine RPG_RT.exe
-      # always carries). Field mapping is the exact mirror of
-      # `.restore_pictures`' own read (see `SAVE_PICTURE`'s own comment for
-      # why 31/32/etc are finish_*, not current_*): 1 name, 31/32
-      # finish_x/finish_y, 33 zoom, 34 transparency (`Game.opacity_to_trans`,
-      # the inverse of the live command's own `#trans_to_opacity`), 41-44 the
-      # red/green/blue/saturation tone -- a picture at rest writes its own
-      # live values as both, matching real RPG_RT's own current-tracks-finish
-      # idle sync. `@pictures` only ever holds currently-shown pictures
+      # always carries). `@pictures` only ever holds currently-shown pictures
       # (#erase_picture deletes the entry outright), so an ordinary shown
       # picture is a slot with an entry here and an untouched slot is
-      # nil/absent from `@pictures`, both handled below. A picture still
-      # mid-Move-Picture (#moving?) additionally writes its own genuinely-live
-      # current_*/time_left fields (4/5/7/8/11-14/51) so a resumed Continue
-      # keeps gliding from exactly where it was, rather than snapping
-      # straight to the move's target the instant the save reloads. (A
-      # second, narrower gap spotted along the way but left unfixed here,
-      # out of this cycle's own container-presence scope: genuine RPG_RT.exe
-      # also wrote a field 2/3 pair on the live id-5 entry this cycle's own
-      # probe never modelled at all -- and per-value elision may reach
-      # *inside* an occupied slot too, since fields 33/34/41-44 came back
-      # absent in that same probe despite the slot itself being fully
-      # populated, purely because every value this cycle's own probe chose
-      # for them happened to equal each field's own default. Neither was
-      # investigated further; see docs/TODO.md.)
+      # nil/absent from `@pictures`, both handled below.
+      #
+      # Field mapping is the exact mirror of `.restore_pictures`' own read
+      # (see `SAVE_PICTURE`'s own comment for the full evidence behind each
+      # field): 1 name; 2/3 show_x/show_y (the position last given to Show
+      # Picture, untouched by any Move Picture since); 4/5/7/8/11-14 the
+      # genuinely live current position/zoom/transparency/tone; 31/32
+      # finish_x/finish_y (the move's target, equal to current at rest);
+      # 33/34/41-44 the finish zoom/transparency/tone; 51 the in-flight
+      # move's own remaining-frames counter. Cycle #155 confirmed against
+      # genuine RPG_RT.exe under wine that 4/5/7/8/11-14 are written whether
+      # or not a move is actually in flight (a picture shown and never moved
+      # still carries them, equal to their own 31-34/41-44 counterparts,
+      # matching real RPG_RT's own current-tracks-finish idle sync already
+      # noted above) -- fixing a prior version of this method that wrote
+      # them only while `Game::Picture#moving?`, silently dropping the
+      # "genuinely live" current_* value on every picture at rest. Cycle
+      # #155 also confirmed zoom/transparency/tone (both the current_* and
+      # finish_* copies) are each elided independently at their own default
+      # -- see SAVE_PICTURE's own comment for the controlled genuine-RPG_RT
+      # A/B pair that pinned this down, ruling out cycle #154's own
+      # "probe just happened to pick default values" alternative reading.
       pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
       (1..MAX_PICTURE_ID).each do |id|
         p = @pictures[id]
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
         if p
           e[1] = p.name
-          if p.moving?
-            e[4] = p.x
-            e[5] = p.y
-            e[7] = p.zoom
-            e[8] = Game.opacity_to_trans(p.opacity)
-            e[11] = p.red
-            e[12] = p.green
-            e[13] = p.blue
-            e[14] = p.saturation
-            e[31] = p.finish_x
-            e[32] = p.finish_y
-            e[33] = p.finish_zoom
-            e[34] = Game.opacity_to_trans(p.finish_opacity)
-            e[41] = p.finish_red
-            e[42] = p.finish_green
-            e[43] = p.finish_blue
-            e[44] = p.finish_saturation
-            e[51] = p.frames_left
-          else
-            e[31] = p.x
-            e[32] = p.y
-            e[33] = p.zoom
-            e[34] = Game.opacity_to_trans(p.opacity)
-            e[41] = p.red
-            e[42] = p.green
-            e[43] = p.blue
-            e[44] = p.saturation
-          end
+          e[2] = p.show_x
+          e[3] = p.show_y
+          e[4] = p.x
+          e[5] = p.y
+          e[7] = p.zoom if p.zoom != 100
+          cur_trans = Game.opacity_to_trans(p.opacity)
+          e[8] = cur_trans if cur_trans != 0
+          e[11] = p.red if p.red != 100
+          e[12] = p.green if p.green != 100
+          e[13] = p.blue if p.blue != 100
+          e[14] = p.saturation if p.saturation != 100
+          moving = p.moving?
+          fx = moving ? p.finish_x : p.x
+          fy = moving ? p.finish_y : p.y
+          fzoom = moving ? p.finish_zoom : p.zoom
+          fopacity = moving ? p.finish_opacity : p.opacity
+          fred = moving ? p.finish_red : p.red
+          fgreen = moving ? p.finish_green : p.green
+          fblue = moving ? p.finish_blue : p.blue
+          fsat = moving ? p.finish_saturation : p.saturation
+          e[31] = fx
+          e[32] = fy
+          e[33] = fzoom if fzoom != 100
+          fin_trans = Game.opacity_to_trans(fopacity)
+          e[34] = fin_trans if fin_trans != 0
+          e[41] = fred if fred != 100
+          e[42] = fgreen if fgreen != 100
+          e[43] = fblue if fblue != 100
+          e[44] = fsat if fsat != 100
+          e[51] = p.frames_left if moving
         end
         pics[id] = e
       end
@@ -15450,6 +15469,14 @@ module Game
     # fresh `Game::Picture` starts at, so a save written before this landed
     # (missing all of fields 4/5/7/8/11-14/51) reads time_left as 0 and
     # restores identically to before -- unaffected by this change.
+    #
+    # Field 2/3 (show_x/show_y, see SAVE_PICTURE's own comment for how cycle
+    # #155 identified them) are passed through explicitly rather than via
+    # `Game::Picture.new`'s own "defaults to the shown position" fallback --
+    # `pic.key?` (not `pic.show_x` alone) gates it, since the schema default
+    # of 0.0 would otherwise look like a real, present value of (0,0) for a
+    # save written before this field was modelled, wrongly overriding the
+    # fallback for exactly the legacy saves it exists to cover.
     def self.restore_pictures(state, pictures)
       return unless pictures
       pictures.each do |id, pic|
@@ -15462,6 +15489,8 @@ module Game
         state.show_picture(id, name: name,
                                x: ((moving ? pic.current_x : pic.finish_x) || 0).to_i,
                                y: ((moving ? pic.current_y : pic.finish_y) || 0).to_i,
+                               show_x: pic.key?(2) ? pic.show_x : nil,
+                               show_y: pic.key?(3) ? pic.show_y : nil,
                                zoom: moving ? pic.current_zoom : pic.zoom,
                                opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
                                red: moving ? pic.current_tone_red : pic.tone_red,

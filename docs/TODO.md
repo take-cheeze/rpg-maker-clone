@@ -3012,6 +3012,174 @@ The work below is roughly ordered by the critical path to a walkable game
   104's -- chunk 104 (`hero`, the movable position record) carries no
   EasyRPG-style citation in `to_lsd` at all currently; 102/103/110 is what
   this cycle actually found and addressed.)
+  ✅ **Follow-up (cycle #155, 2026-08-25): picked up candidate 1, the two
+  loose ends cycle #154 explicitly left open on chunk 103 (pictures) --
+  the undeclared field 2/3 pair on a live picture entry, and whether
+  per-value elision reaches *inside* an occupied slot for fields 33/34/
+  41-44. Both resolved with new, controlled genuine-RPG_RT.exe-under-wine
+  evidence, and a third, larger gap found along the way: `Game::State
+  #to_lsd` was writing chunk 103's own current_x/y/zoom/transparency/tone
+  (fields 4/5/7/8/11-14) only while `Game::Picture#moving?`, but genuine
+  RPG_RT.exe writes them unconditionally, on every shown picture, moving or
+  not.** Reused cycle #148-154's own `LCF::MapUnit`-based autostart-event
+  injector design (a fresh scratch harness this session, since a prior
+  session's own scratch dir does not persist across cycles; `Map0012.lmu`/
+  `Save01.lsd` copied to scratch first and re-verified byte-identical
+  against every prior cycle's own recorded values back to #148: `c2fa69a0
+  .../3ab5bb01...`) and cycle #152's own genuine-in-game-Save-menu capture
+  technique (an autostart list ending in Open Save Menu, `xdotool` Down +
+  Return onto the empty File 2 slot, no confirm dialog) under the same Xvfb
+  (640x480x16, `LIBGL_ALWAYS_SOFTWARE=1`, matchbox-window-manager,
+  `LANG=ja_JP.UTF-8`, `WINEARCH=win32`, `WINEPREFIX=~/.wine-nepheshel32`)
+  setup every prior wine cycle has used, plus cycle #152/#153's own raw
+  `LCF::Array1D` `key?`/`@data` field-presence reader (bypassing schema
+  defaults entirely) to inspect the resulting genuine `Save02.lsd` byte for
+  byte. One methodology snag hit and fixed along the way, noted for whoever
+  extends this harness next: the very first Show Picture probe named a
+  picture file (`"picture"`) that does not exist in Nepheshel's own
+  `Picture/` folder, and genuine RPG_RT.exe silently hung on the map
+  forever rather than opening the autostart's own trailing Open Save Menu
+  command or drawing anything -- switching to a real asset already shipped
+  with the game (`black.png`) fixed it outright; this was never chased
+  further as its own investigation (a missing-asset hang is a plausible,
+  low-priority engine quirk, not a save-format fidelity gap), but is worth
+  either testbed authors or a future cycle knowing about. **Four scenarios,
+  each independently driven once:** a picture shown at (111,77) with
+  zoom/transparency/tone all left at their own default (100/0/100,100,100,
+  100); the identical command except all six pushed off their own default
+  (133/25/140,60,180,50); the off-default show immediately followed by a
+  Move Picture to (222,188) over 5.0s (frames=300 @ 60fps) with a 3.0s Wait
+  (180 frames) before the autostart's own Open Save Menu, so the move was
+  genuinely still in flight when the genuine save was written; and a
+  control autostart that never touches a picture at all (reconfirming cycle
+  #154's own "50 empty placeholder slots" finding still holds, unchanged).
+  **Field 2/3:** present in every one of the three picture-touching
+  captures, always an 8-byte IEEE-754 double (same wire type as 4/5/31/32,
+  confirmed by directly inspecting the raw bytes rather than assuming a
+  type, the same discipline the task brief itself asked for). At rest, 2/3
+  equalled 4/5 and 31/32 exactly (111.0/77.0), reproducing cycle #154's own
+  original, undecidable observation. The decisive capture was the
+  still-moving one: current_x/y (4/5) read the genuinely interpolated
+  177.6/143.6 (a clean 60%-of-the-way point between 111,77 and 222,188 over
+  the 180-of-300 elapsed frames, cross-checked arithmetically, not merely
+  eyeballed) and finish_x/y (31/32) read the move's own target 222.0/188.0
+  -- while field 2/3 stayed at 111.0/77.0, tracking *neither* value, but
+  the position the picture was originally shown at and left untouched by
+  the intervening Move Picture entirely. No liblcf field name was available
+  to confirm this against (this file's own standing exception covers using
+  `generator/csv/fields.csv` for a field id/type already known, not
+  fetching it fresh over the network, which this sandbox still cannot do
+  per cycle #154's own note) -- named `show_x`/`show_y` here strictly by
+  the behavior actually observed, documented as such in `SAVE_PICTURE`'s
+  own comment rather than claimed as RPG_RT's or liblcf's own internal
+  name. **Fields 33/34/41-44 (and their current_* counterparts 7/8/11-14):**
+  the default-valued capture wrote chunk 103's entry with *only* fields
+  [1,2,3,4,5,31,32] present -- zoom/transparency/tone (current and finish
+  alike) all six absent -- while the identical command with all six pushed
+  off-default wrote all of [7,8,11,12,13,14,33,34,41,42,43,44] present too,
+  carrying the exact values given. Same picture, same name, same position,
+  same "never moved" state, only the six visual values changed between the
+  two runs -- decisively confirming genuine per-field elision-at-default
+  (the same convention already established for SAVE_SCREEN's tint fields,
+  cycle #154, and SAVE_SYSTEM's message-config cluster, cycle #152/#153)
+  and ruling out cycle #154's own flagged alternative ("the probe's values
+  merely happened to equal each default"). **The unrelated, larger gap
+  found along the way:** the off-default-but-never-moved capture's fields
+  7/8/11-14 (current_zoom/transparency/tone) were present with the exact
+  same values as their 33/34/41-44 (finish) counterparts, even though this
+  picture was never put through Move Picture at all -- meaning genuine
+  RPG_RT.exe writes current_* unconditionally on every shown picture, not
+  only while a move is in flight, contradicting this file's own prior
+  `Game::Picture#moving?`-gated write (inherited from cycle #150's original
+  chunk-103 fix, which only ever had a *moving* sample save to work from).
+  **Fixed** three things in `mruby-rpg2k/mrblib/game.rb` and
+  `mruby-lcf/mrblib/schema.rb`: (1) `SAVE_PICTURE` gained `2 => :show_x` /
+  `3 => :show_y` (type `:double`, default `0.0`, matching its position
+  siblings) and explicit `default:` values on 31-34/41-44 (previously
+  undefaulted, decoding to `nil` on an absent field -- harmless in practice
+  since `Game::Picture.new`'s own `opts[:x] || default` fallbacks already
+  covered `nil`, but now consistent with every other field here); (2)
+  `Game::Picture` gained a `show_x`/`show_y` reader pair, set at
+  construction from `opts[:show_x] || @x` (so the live Show Picture command
+  path, which never passes `show_x` explicitly, naturally records its own
+  shown position, and `#move_to` never touches it, matching the evidence
+  exactly); (3) `Game::State#to_lsd`'s chunk 103 write collapsed the old
+  `if p.moving? / else` branch into one unconditional block that writes
+  `show_x`/`show_y` (2/3) and `current_x`/`current_y` (4/5) always, elides
+  `current_zoom`/`current_transparency`/`current_tone_*` (7/8/11-14) and
+  `zoom`/`transparency`/`tone_*` (33/34/41-44) independently at their own
+  default (reading from `p.finish_*` while moving, from `p.x`/`p.zoom`/etc.
+  directly at rest, matching the already-established "current tracks finish
+  at idle" sync), and writes `time_left` (51) only while still moving --
+  simpler code than the branch it replaced, not just more correct.
+  `Game::State.restore_pictures` (the read side) gained a `show_x:
+  pic.key?(2) ? pic.show_x : nil` / `show_y:` pair passed through to
+  `Game::Picture.new`, gated on `key?` rather than the value alone so an
+  old save with no field 2/3 at all falls back to the shown position
+  (through `Picture.new`'s own fallback) instead of wrongly restoring a
+  literal `(0.0, 0.0)` from the schema's new default. Covered by two new
+  `scripts/rpg2k_logic_check.rb` checks: one asserting the exact raw
+  present-field-id list for a same-position picture at its own defaults
+  vs. off them (`[1,2,3,4,5,31,32]` vs. the full eighteen-field list,
+  mirroring the genuine-RPG_RT A/B pair above byte for byte) plus the
+  round-trip of the off-default values through `.from_lsd`; the other
+  building the exact moving-picture scenario above in miniature (Show
+  Picture, Move Picture, 180 simulated `#update` frames, then `to_lsd`) and
+  asserting `show_x`/`show_y` stay at the original position while current/
+  finish read the interpolated/target values respectively, survive a
+  `.from_lsd` round-trip, reset on a fresh Show Picture for the same id,
+  and fall back correctly from a legacy entry with no field 2/3 at all --
+  confirmed to fail against the pre-fix code (`git stash` of just
+  `schema.rb`/`game.rb`) with two precise, specific errors: `RuntimeError:
+  expected [1, 2, 3, 4, 5, 31, 32], got [1, 31, 32, 33, 34, 41, 42, 43, 44]`
+  (exactly the old unconditional-finish/no-current-at-rest shape) and
+  `TypeError: no implicit conversion from nil to integer` (`show_x`/
+  `show_y` not existing pre-fix at all, `LCF::Array1D#[]` raising the
+  instant the new check asked for a schema field id the old table never
+  declared). `Map0012.lmu`/`Save01.lsd` were restored to their original
+  bytes (byte-identical by `md5sum` against the same `c2fa69a0.../
+  3ab5bb01...` values every prior cycle back to #148 recorded) and every
+  scratch `Save02.lsd` this cycle's probes produced was removed from the
+  game directory afterward; `git status` on `data/` came back clean. No
+  EasyRPG source was consulted for any claim in this cycle (the field 2/3
+  identification was deliberately behavioral, per the task brief's own
+  instruction, precisely because liblcf's own field list was unreachable
+  without a network fetch this sandbox still does not have) and no web
+  search was used either. This cycle also built the mruby engine binary
+  from source (per this file's own standing note that this sandbox
+  supports it: fetched and hash-verified the two Unicode tables `scripts/
+  native-build-without-nix.bash` pins, exported `$cp932_table`/
+  `$jis0208_table`, `cmake --build build --target rpg_maker_clone`) and
+  confirmed both that the build succeeds with these changes (mruby's own
+  stricter parser compiling `game.rb`/`schema.rb` cleanly is a real, if
+  weak, second check beyond CRuby's own more permissive one) and that
+  `--rpg2k_continue` on the Nepheshel test-bed still boots straight to the
+  map with no crash. Full suite reconfirmed passing, `scripts/
+  rpg2k_logic_check.rb` up by 2: `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1139), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15). **Left open for a future cycle:**
+  whether genuine RPG_RT.exe ever *reads* field 2/3 back for anything
+  beyond round-tripping it through Save/Continue (this cycle only
+  established what it writes and named it behaviorally; no test loaded an
+  edited save with show_x/y deliberately different from current/finish
+  under genuine RPG_RT.exe to see whether anything visible depends on it --
+  plausibly nothing does, matching chunk 110's own escape-target precedent,
+  but unconfirmed either way); whether current_* and finish_* are truly
+  elided *independently* of each other (every scenario this cycle ran kept
+  them equal, since only an at-rest or a same-valued moving picture was
+  tested -- a picture whose current copy sits exactly on a default while
+  its finish copy does not, or vice versa, was never captured); field 9
+  (`visible`) of `SAVE_PICTURE`, never written by this codebase at all and
+  untouched again this cycle, still an open question distinct from
+  everything above; fields 51-54/71-140 of SAVE_SYSTEM (cycle #152/#153's
+  own open items, untouched again); the crash mystery's own two still-
+  untested threads (unchanged since cycle #151/#152); the missing-Picture-
+  asset hang noted above, its own small mystery never chased; and every
+  other EasyRPG-style "RPG_RT's live source" citation cycle #154's own
+  repo-wide grep turned up outside chunks 102/103/110's own neighbourhood
+  (item/equipment/skill usability, enemy AI, move routes -- candidate 2,
+  not attempted this cycle either).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
