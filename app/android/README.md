@@ -101,11 +101,12 @@ Nepheshel — title screen 22 → 60fps, map scenes 14 → 40-45fps, overworld
 
 What remains is mruby game-logic speed on a low-end CPU (the interpreter and
 event bookkeeping are the biggest single block of a standing-still frame),
-plus two known follow-ups: the tile-animation step's per-pixel compose
-(~30-54ms spikes on autotile-heavy maps, down from ~57-86ms once the step
-batched its blits through `Bitmap#blt_quads` — a row-copy fast path for
-opaque chipset pixels is the next cut), and walking across a panorama map
-re-tiling it every frame (~20ms) on top of the scrolling present.
+plus the follow-ups handed off in
+[`docs/android-perf-followups.md`](../docs/android-perf-followups.md): the
+tile-animation step's per-pixel compose was cut by the opaque-row `memcpy`
+fast path (#1371, host-measured ~30x on the rebuild grid — on-device numbers
+still to record), and walking across a panorama map still re-tiles it every
+frame (~20ms) on top of the scrolling present path.
 
 ## Launcher icon
 
