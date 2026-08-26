@@ -1715,10 +1715,19 @@ the interpreter-linking slice, in this order:
   use. Verified locally: `scripts/rpg2k_scene_check.rb` (929 checks,
   including four tests updated to grab `@picture_bmp`/`@weather_bmp` after
   the first draw that now creates them rather than before) and
-  `scripts/rpg2k_logic_check.rb` (1145 checks) both pass. Real impact on
-  `bmp_blank` -- and how much of it survives once a real playthrough
-  actually uses pictures/flash/weather somewhere -- left to CI's own
-  `psp-smoke-game` run, as always in this section.
+  `scripts/rpg2k_logic_check.rb` (1145 checks) both pass.
+
+  **Validated (2026-08-26, [#1389](https://github.com/take-cheeze/rpg-maker-clone/pull/1389)),
+  same Nepheshel run.** `bmp_blank` against the #1385 baseline above:
+  `frame=0` **2,046,464 B** (was 2,968,064 B), then flat at **2,329,600 B**
+  from `frame=200` through `frame=1600` (was 3,251,200 B) -- a **921,600 B**
+  drop, exactly 3 × 307,200 B, held at *every* measurement point through the
+  whole 1600-frame run. That means none of weather, Screen Flash, or Show
+  Picture ever triggered on this run's map/route -- so this specific
+  playthrough happened to realize the full theoretical saving with nothing
+  left on the table, not a partial one. A game that leans harder on
+  pictures than this one (a common menu-substitute idiom in some RPG2000
+  projects) would keep less of it; this run doesn't say how much.
 - **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
   declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
   pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries
