@@ -1479,16 +1479,32 @@ module LCF
     # save: gold (21) matched the on-screen 100G, and the parallel item id/count
     # arrays matched the held items looked up in the database -- 薬草 (item 1) ×3
     # and 導きの書 (item 451) ×1, after the gate crystal had been spent. Item ids
-    # are int16; counts and per-item use-counts are one byte each. Field 1 is the
-    # party roster (actor ids); the sole entry `[1]` is actor 1, whose database
-    # charset matches the saved hero. The turn/step counters (fields 0x29/0x2A)
-    # are now decoded too, below. Fields 23-30 (0x17-0x1E) are the two Timer
-    # Operation countdowns -- ids and "value is seconds*60+59" both confirmed
-    # against liblcf's own `ChunkSaveInventory` enum, which documents them
-    # under this chunk rather than the system chunk (101) `docs/TODO.md` used
-    # to guess they would need a new id in.
+    # are int16; counts and per-item use-counts are one byte each. The turn/step
+    # counters (fields 0x29/0x2A) are now decoded too, below. Fields 23-30
+    # (0x17-0x1E) are the two Timer Operation countdowns -- ids and "value is
+    # seconds*60+59" both confirmed against liblcf's own `ChunkSaveInventory`
+    # enum, which documents them under this chunk rather than the system chunk
+    # (101) `docs/TODO.md` used to guess they would need a new id in.
+    #
+    # party_count (1) / party (2): the actor-id roster, split the same
+    # count-then-data way as item_count/item_ids (11/12) just below --
+    # confirmed against liblcf's own generator/csv/fields.csv, which
+    # documents field 1 as the `Vector<Int16>` *count* and field 2 as its
+    # *data*, not (as this schema had it, and #to_lsd wrote to match) a
+    # single self-contained int8_array crammed into field 1 alone with field
+    # 2 never written at all. A single-actor party's field 1 byte happens to
+    # read identically under either schema (count 1 and "array `[1]`" are the
+    # same one byte), which is exactly why this went unnoticed: kk1.12's
+    # three-actor roster (`party_count` 3, `party` data `[1, 2, 3]`) does not
+    # share that coincidence, and a save missing field 2 that a genuine
+    # RPG_RT.exe writes crashes the real engine outright on load (confirmed
+    # live under wine: the same crash a prior session's own methodology note
+    # a few hundred lines down in game.rb already flagged and worked around
+    # without diagnosing). `#to_lsd`/`#from_lsd` (mruby-rpg2k/mrblib/game.rb)
+    # updated to match.
     SAVE_INVENTORY = {
-      1 => { name: :party, type: :int8_array },
+      1 => { name: :party_count, type: :int, default: 0 },
+      2 => { name: :party, type: :int16_array },
       11 => { name: :item_count, type: :int, default: 0 },
       12 => { name: :item_ids, type: :int16_array },
       13 => { name: :item_counts, type: :int8_array },
