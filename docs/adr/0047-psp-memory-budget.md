@@ -1355,8 +1355,19 @@ the interpreter-linking slice, in this order:
   reasoning `main.cxx` already uses, since `sysclib_snprintf` is not to be
   trusted here either. Verified the shrunk pool builds clean and the idle-HAL
   screen (title + status label) does not trip that marker under
-  PPSSPP-headless; validating it against a real game's widget count still
-  needs the same on-device run P1/P2 do.
+  PPSSPP-headless.
+
+  **Validated (2026-08-25), the on-device figure P1c's own investigation
+  ended up producing as a side effect.** The same `psp-smoke-game` run that
+  confirmed P1c's crash gone ([#1360](https://github.com/take-cheeze/rpg-maker-clone/pull/1360))
+  reached `Scene::Map` and kept running for 1600 frames on a real game
+  (Nepheshel) -- every `RPG2K_PSP_BRINGUP` heartbeat across that whole run
+  reports `lvgl_used=6876 lvgl_max=7448`, rock-steady from the first Map
+  frame onward. `lvgl_max` (LVGL's own high-water mark) at 7448 of the
+  262,144 B (256 KB) pool is **2.8% utilization** -- no `RPG2K_PSP_LVGL_ASSERT`
+  fired, and 256 KB is confirmed comfortable rather than merely estimated.
+  No further validation needed here; 256 KB could very likely be cut
+  further, but this pool was never the constraint P1c chased.
 - **P6 — drawn from Finding 3's "third pool" and the EBOOT's own size,
   landed as four smaller reductions:**
   - The uni-algo modules nothing in this project calls are switched off, so
@@ -1488,21 +1499,28 @@ the interpreter-linking slice, in this order:
   resolutions actually fit in what's left of the ~24 MB after `LV_MEM_SIZE`
   and the stack/statics — a measurement to take once P1's device numbers
   exist for a real game, not a code change.
-- **P5 — done (the sizing and the measurement; the number itself still wants a
-  real game).** `app/psp/main.cxx` now declares
-  `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting pspsdk's implicit
-  default, and the `RPG2K_PSP_BRINGUP` heartbeat carries two more fields,
-  `stack_free` and `stack_used_max`. `sceKernelGetThreadStackFreeSize` reports
-  how much of the stack is still the 0xFF fill pspsdk left at thread creation;
-  because a down-growing stack never restores those bytes once a frame has
-  written over them, *any* sample is already the high-water mark of how deep
-  the interpreter has recursed, and `stack_used_max` keeps the running maximum
-  so an error return cannot walk the reported figure backwards. 256 KB is the
-  size that already runs the real RPG2k scene tree — what changes is that the
-  log now shows how much of it a title actually reaches, so a deeper-recursing
-  game is caught by the numbers rather than by a crash. Like the arena's 8 MB
-  (P2), turning 256 KB from "runs today" into a justified figure needs a real
-  game at `kGameDir`, which CI's `psp-smoke` does not have.
+- **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
+  declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
+  pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries
+  two more fields, `stack_free` and `stack_used_max`. `sceKernelGetThreadStackFreeSize`
+  reports how much of the stack is still the 0xFF fill pspsdk left at thread
+  creation; because a down-growing stack never restores those bytes once a
+  frame has written over them, *any* sample is already the high-water mark of
+  how deep the interpreter has recursed, and `stack_used_max` keeps the
+  running maximum so an error return cannot walk the reported figure
+  backwards. 256 KB is the size that already runs the real RPG2k scene tree
+  — what changes is that the log now shows how much of it a title actually
+  reaches, so a deeper-recursing game is caught by the numbers rather than
+  by a crash.
+
+  **Validated (2026-08-25), same run as P2a above.** `stack_used_max=17600`
+  across the entire 1600-frame `Scene::Map` run on a real game (Nepheshel) —
+  identical from the first Map frame through the last, meaning nothing in
+  1600 frames of event execution, movement, or rendering recursed any
+  deeper than whatever the first frame already reached. 17,600 of 262,144 B
+  (256 KB) is **6.7% utilization** — comfortable headroom, confirmed rather
+  than estimated. Like P2a, this was never the constraint P1c chased and
+  256 KB could plausibly be cut, but there's no pressure to.
 
 ## Consequences
 
@@ -1515,12 +1533,17 @@ the interpreter-linking slice, in this order:
   assert handler replacing LVGL's silent-halt default) plus P6's reductions
   (draw buffers sized to the canvas, the LVGL widget/theme/example trim, the
   mruby embedded tuning knobs, and the uni-algo table trim), and P5's
-  explicit main-thread stack size plus its heartbeat fields. The three sizing
-  numbers that still depend on a real database and map actually being loaded
-  are the mruby arena's size (8 MB originally, revised to 12 MB, a 12.5 MB
-  experiment tried and reverted — see P2's follow-ups and P1c), LVGL's
-  256 KB, and the stack's 256 KB, all three of which the heartbeat is now
-  in place to validate.
+  explicit main-thread stack size plus its heartbeat fields. Of the three
+  sizing numbers that depended on a real database and map actually being
+  loaded, two are now validated against one (2026-08-25, the same
+  [#1360](https://github.com/take-cheeze/rpg-maker-clone/pull/1360) run
+  that resolved P1c's crash): LVGL's 256 KB pool (P2a, 2.8% peak
+  utilization) and the stack's 256 KB (P5, 6.7% peak utilization), both
+  with comfortable headroom to spare. The mruby arena's 12 MB (P2, after an
+  8 MB original figure and a 12.5 MB experiment tried and reverted) remains
+  the one number still worth watching — P1c showed it can be driven close
+  to its ceiling by a real map, even though the same PR's fixes pulled this
+  particular game's session back to a safe ~60-90% range.
 - ADR 0010's "the full gem set should fit" is narrowed: it holds for gem
   *code* size, but says nothing about per-title asset memory, which Finding 2
   shows can exceed the entire 24 MB budget for an RGSSAD-packed game even
@@ -1539,8 +1562,11 @@ the interpreter-linking slice, in this order:
   wanting to avoid the archive's storage footprint on the Memory Stick, but
   is no longer the only thing standing between a packed release and a
   guaranteed arena-exhaustion crash). P4 is a lower-risk follow-up once a
-  title actually renders; P5 is now measured rather than guessed, leaving
-  only the same "needs a real game" caveat P2's arena size has.
+  title actually renders; P5 and P2a are both now measured against a real
+  1600-frame game session with comfortable headroom (6.7% and 2.8% peak
+  utilization respectively) rather than guessed — only the mruby arena's
+  size (P2) still carries the "can be driven close to its ceiling by a
+  demanding-enough map" caveat, per P1c.
 - Follow-up: once P1's real numbers exist, replace this ADR's estimates with
   measured figures (a memory budget table, as ADR 0007 has for the Wio
   Terminal) — either as an amendment here or a superseding ADR.
