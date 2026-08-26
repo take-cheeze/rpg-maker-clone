@@ -1209,14 +1209,41 @@ module LCF
     # resumed under real RPG_RT as a picture visibly still gliding from the
     # current position toward the finish one -- not sitting statically at
     # either.
+    #
+    # Field 2/3 -- cycle #154 spotted genuine RPG_RT.exe writing an
+    # undeclared pair here (on a picture at rest, decoding to the same x/y as
+    # 4/5 and 31/32, so left unidentified) and cycle #155 pinned it down with
+    # a follow-up experiment: Show Picture at (111,77), then Move Picture to
+    # (222,188) over 5.0s with a 3.0s Wait before saving (so the move is
+    # genuinely still in flight, current_x/y at 4/5 reading the interpolated
+    # 177.6/143.6 and finish_x/y at 31/32 reading the target 222/188, both
+    # confirmed against this same save) -- field 2/3 stayed at 111.0/77.0
+    # throughout, tracking *neither* current nor finish, but the position the
+    # picture was originally shown at and never touched by the move at all.
+    # No liblcf field name could be consulted for this pair (this file's own
+    # standing narrow exception did not extend to a name never seen without
+    # network access to `generator/csv/fields.csv`), so `show_x`/`show_y`
+    # names it by the behavior actually observed: the argument of the last
+    # Show Picture call for this id, holding steady across any number of
+    # subsequent Move Picture calls, reset only by a fresh Show Picture.
+    # Whether genuine RPG_RT ever *reads* this pair back for anything beyond
+    # round-tripping it through Save/Continue is not established either way
+    # -- see docs/TODO.md.
     SAVE_PICTURE = {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
-      # The picture's genuinely live position/zoom/transparency/tone, only
-      # meaningful while a move is still in flight (time_left > 0) -- see
-      # this table's own comment above. Defaults match a fresh Game::Picture
-      # so an old save written before these fields existed (or a picture
-      # that has never moved, time_left always 0) restores identically to
-      # before: #restore_pictures only ever reads these when time_left > 0.
+      2 => { name: :show_x, type: :double, default: 0.0 },
+      3 => { name: :show_y, type: :double, default: 0.0 },
+      # The picture's genuinely live position/zoom/transparency/tone -- see
+      # this table's own comment above for how 4/5 were told apart from
+      # 31/32. Confirmed unconditional (present whenever a picture is shown
+      # at all, not only while a move is in flight) by cycle #155: a picture
+      # shown and never moved still wrote 4/5/7/8/11-14 with the exact same
+      # values as 31-34/41-44, matching real RPG_RT's own current-tracks-
+      # finish idle sync already noted above -- see Game::State#to_lsd's own
+      # comment for the fix this corrected (the old code wrote these only
+      # while Game::Picture#moving?). Defaults match a fresh Game::Picture so
+      # an old save written before these fields existed restores identically
+      # to before.
       4 => { name: :current_x, type: :double, default: 0.0 },
       5 => { name: :current_y, type: :double, default: 0.0 },
       7 => { name: :current_zoom, type: :double, default: 100.0 },
@@ -1228,17 +1255,33 @@ module LCF
       9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
       # The picture's resting/target position -- see this table's own
       # comment above for why these are named finish_*, not current_*.
-      31 => { name: :finish_x, type: :double },         # 表示位置Ｘ (中心)
-      32 => { name: :finish_y, type: :double },         # 表示位置Ｙ (中心)
-      33 => { name: :zoom, type: :int },                # 拡大率
-      34 => { name: :transparency, type: :int },        # 透明度
-      41 => { name: :tone_red, type: :int },            # 色調：赤(R)
-      42 => { name: :tone_green, type: :int },          # 色調：緑(G)
-      43 => { name: :tone_blue, type: :int },           # 色調：青(B)
-      44 => { name: :tone_saturation, type: :int },     # 色調：彩度(S)
+      31 => { name: :finish_x, type: :double, default: 0.0 }, # 表示位置Ｘ (中心)
+      32 => { name: :finish_y, type: :double, default: 0.0 }, # 表示位置Ｙ (中心)
+      # Zoom/transparency/tone (both the current_* set above and this
+      # finish_* set) are each elided independently at their own default --
+      # confirmed by cycle #155's own controlled pair of genuine RPG_RT.exe
+      # captures, identical in every other respect (same name, same
+      # position, same "never moved" state): one issuing Show Picture with
+      # every one of these six values left at its own default (zoom 100,
+      # transparency 0, tone 100/100/100/100) wrote fields 7/8/11-14/33/34/
+      # 41-44 *absent*; the other issuing the identical command with every
+      # one of the six pushed off its own default (zoom 133, transparency
+      # 25, tone 140/60/180/50) wrote every one of those fields *present*
+      # with the exact values given -- ruling out the alternative reading
+      # cycle #154 flagged ("every value that cycle's own probe chose merely
+      # happened to equal the default") in favour of genuine per-field
+      # elision, the same convention already established for SAVE_SCREEN's
+      # own tint fields (cycle #154) and SAVE_SYSTEM's message-config
+      # cluster (cycle #152/#153).
+      33 => { name: :zoom, type: :int, default: 100 },        # 拡大率
+      34 => { name: :transparency, type: :int, default: 0 },  # 透明度
+      41 => { name: :tone_red, type: :int, default: 100 },        # 色調：赤(R)
+      42 => { name: :tone_green, type: :int, default: 100 },      # 色調：緑(G)
+      43 => { name: :tone_blue, type: :int, default: 100 },       # 色調：青(B)
+      44 => { name: :tone_saturation, type: :int, default: 100 }, # 色調：彩度(S)
       # How many frames remain in an in-flight Move Picture; 0 (the default,
       # covering both a still picture and an old save missing this field
-      # entirely) means fields 4/5/7/8/11-14 above are not consulted at all.
+      # entirely) means #restore_pictures does not start a fresh move on load.
       51 => { name: :time_left, type: :int, default: 0 },
     }
 

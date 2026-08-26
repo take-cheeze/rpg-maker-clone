@@ -4762,6 +4762,123 @@ check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' 
   ok !still_round.pictures[6].moving?, 'a picture never moved restores at rest'
 end
 
+check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
+      'only while moving), eliding zoom/transparency/tone independently at ' \
+      'their own default' do
+  # Cycle #155: confirmed against genuine RPG_RT.exe under wine (not EasyRPG
+  # source) with a controlled pair of synthetic-autostart captures, identical
+  # in every other respect (same picture id/name/position, never moved) --
+  # one issuing Show Picture with zoom/transparency/tone all left at their
+  # own default (100/0/100,100,100,100) produced a save whose chunk 103 raw
+  # field ids present were exactly [1,2,3,4,5,31,32] (fields 7/8/11-14/33/34/
+  # 41-44 all absent); the other, identical except every one of those six
+  # values pushed off its own default (133/25/140,60,180,50), produced a
+  # save with every one of fields 7,8,11,12,13,14,31,32,33,34,41,42,43,44
+  # present carrying the exact values given. This rules out cycle #154's own
+  # "the probe just happened to choose default values" alternative reading
+  # of its own field-33/34/41-44-absent finding, and additionally shows
+  # current_* (4/5/7/8/11-14) are written even though this picture was never
+  # put through a Move Picture at all -- the prior version of this method
+  # only ever wrote those fields when `Game::Picture#moving?`, so an
+  # ordinary still picture's own current_zoom/current_transparency/
+  # current_tone_* silently never round-tripped through Save/Continue.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  st.show_picture(8, name: 'black', x: 111, y: 77) # every visual param at default
+  at_default = st.to_lsd[103][8]
+  raw = at_default.instance_variable_get(:@data)
+  present = (0...raw.size).select { |i| raw[i] }
+  eq [1, 2, 3, 4, 5, 31, 32], present,
+     'zoom/transparency/tone are all absent when every one sits at its own default'
+  eq 111.0, at_default.current_x
+  eq 77.0, at_default.current_y
+
+  st.show_picture(9, name: 'black', x: 111, y: 77,
+                  zoom: 133, opacity: Game.trans_to_opacity(25),
+                  red: 140, green: 60, blue: 180, saturation: 50)
+  off_default = st.to_lsd[103][9]
+  raw2 = off_default.instance_variable_get(:@data)
+  present2 = (0...raw2.size).select { |i| raw2[i] }
+  eq [1, 2, 3, 4, 5, 7, 8, 11, 12, 13, 14, 31, 32, 33, 34, 41, 42, 43, 44], present2,
+     'zoom/transparency/tone are all present (current and finish alike) once ' \
+     'every one is off its own default, though the picture was never moved'
+  eq 133.0, off_default.current_zoom
+  # 26, not 25: the same pre-existing opacity/transparency round-trip
+  # precision gap the "to_lsd writes chunk 103..." check above already notes
+  # (Game.trans_to_opacity(25) == 191, then Game.opacity_to_trans(191) ==
+  # 26) -- unrelated to and unaffected by this check's own fix.
+  eq 26, off_default.transparency
+  eq 133, off_default.zoom
+  eq 140, off_default.tone_red
+  eq 60, off_default.tone_green
+  eq 180, off_default.tone_blue
+  eq 50, off_default.tone_saturation
+
+  # Round-trips correctly too: a fresh Game::State built from this save
+  # restores the exact same off-default values, not Picture's own defaults.
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[9]
+  eq 133, restored.zoom
+  eq 140, restored.red
+  eq 60, restored.green
+  eq 180, restored.blue
+  eq 50, restored.saturation
+end
+
+check 'to_lsd/from_lsd round-trips chunk 103\'s show_x/show_y (field 2/3), ' \
+      'the position last given to Show Picture, untouched by Move Picture' do
+  # Cycle #155: field 2/3 was an undeclared pair cycle #154 spotted genuine
+  # RPG_RT.exe writing on a live picture entry but could not identify (its
+  # own probe only ever exercised a picture at rest, where current/finish/
+  # show all coincide). A follow-up genuine-RPG_RT.exe wine capture --
+  # Show Picture at (111,77), then Move Picture to (222,188) over 5.0s with
+  # a 3.0s Wait before saving (so the move was genuinely still in flight) --
+  # found field 2/3 held steady at 111.0/77.0 throughout: not the live
+  # current position (177.6/143.6, the correct 60%-of-the-way interpolation)
+  # and not the move's finish target (222/188) either, but the position the
+  # picture was originally shown at.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  st.show_picture(10, name: 'banner', x: 111, y: 77)
+  st.move_picture(10, 222, 188, 100, 255, 100, 100, 100, 100, 300) # 5.0s @ 60fps
+  180.times { st.pictures[10].update } # 3.0s elapsed, still 120 frames left
+
+  saved = st.to_lsd[103][10]
+  eq 120, saved.time_left, 'sanity: the move is genuinely still in flight'
+  eq 111.0, saved.show_x, 'show_x stays the original Show Picture position...'
+  eq 77.0, saved.show_y, '...not the live current position...'
+  ok (saved.current_x.to_i - 177).abs <= 1, '...which has moved on (~177.6)'
+  eq 222, saved.finish_x.to_i, '...nor the move\'s own finish target'
+  eq 188, saved.finish_y.to_i
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  restored = round.pictures[10]
+  eq 111.0, restored.show_x, 'show_x survives a full to_lsd/from_lsd round-trip'
+  eq 77.0, restored.show_y
+
+  # A fresh Show Picture on the same id resets show_x/show_y to the new
+  # position -- it is "the last Show Picture call", not a permanent origin.
+  st.show_picture(10, name: 'banner', x: 5, y: 9)
+  eq 5, st.pictures[10].show_x
+  eq 9, st.pictures[10].show_y
+
+  # A save written before this field existed (no field 2/3 at all) must not
+  # restore show_x/show_y as (0,0) -- it should fall back to the picture's
+  # own shown position, matching this codebase's behavior before field 2/3
+  # was modelled at all.
+  legacy = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  legacy[1] = 'old'
+  legacy[31] = 40.0
+  legacy[32] = 60.0
+  legacy_pics = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })
+  legacy_pics[11] = legacy
+  Game::State.restore_pictures(st, legacy_pics)
+  eq 40, st.pictures[11].show_x, 'no field 2/3 at all falls back to the shown position'
+  eq 60, st.pictures[11].show_y
+end
+
 # -- the permanent actor roster (Game::Actors) --------------------------------
 #
 # Nepheshel drives its whole party mechanic through Change Party Member: it adds
