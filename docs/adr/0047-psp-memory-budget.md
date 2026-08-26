@@ -1585,14 +1585,54 @@ the interpreter-linking slice, in this order:
 - **P4 — corrected; not an LVGL-cache problem.** There is no LVGL image
   cache to bound for RGSS bitmaps (Finding 3) — they live in the plain C
   runtime heap via `Bitmap::buffer`, a third pool `LV_MEM_SIZE` never
-  touches. Nothing to implement here that isn't already covered: once the
-  interpreter is linked and real bitmaps are loaded, P1's heartbeat already
-  surfaces this pool's consumption as the gap between
-  `sceKernelTotalFreeMemSize` and `lv_mem_monitor`'s LVGL-only figures. What
-  remains is confirming decoded-bitmap sizes for the target games'
-  resolutions actually fit in what's left of the ~24 MB after `LV_MEM_SIZE`
-  and the stack/statics — a measurement to take once P1's device numbers
-  exist for a real game, not a code change.
+  touches. Originally concluded "nothing to implement here that isn't
+  already covered" on the assumption that P1's heartbeat (the gap between
+  `sceKernelTotalFreeMemSize` and `lv_mem_monitor`'s LVGL-only figures)
+  would surface this pool's consumption once real bitmaps loaded — see the
+  follow-up below for why that assumption no longer holds unquestioned, and
+  what got implemented regardless.
+
+  **Follow-up (2026-08-26): RPG2k's own uncapped bitmap caches, found while
+  investigating a different hypothesis (whether old `Game::Map` objects
+  survive a map transfer — they don't; `Scene::Map#perform_teleport`
+  already resets every per-visit table it owns, including the ones this
+  ADR's Array2D/common-event work above cares about).** One level up from
+  `Game::Map`, `Scene::Map`'s seven named-graphic caches
+  (`@charset_cache`/`@picture_cache`/`@backdrop_cache`/`@monster_cache`/
+  `@animation_cache`/`@battlecharset_cache`/`@system2_cache`,
+  `mruby-rpg2k/mrblib/scene/map.rb`) were never reset or bounded anywhere,
+  including in that same otherwise-thorough per-visit reset block — every
+  uniquely-named graphic a session ever showed, across every map and battle
+  for the entire play session (`Scene::Map` itself is a session-long
+  singleton, only replaced at New Game/Continue), stayed decoded in
+  `Bitmap::buffer` forever. This is exactly Finding 3's "third pool," with
+  no cap of its own, actually filling up over a long session — not
+  hypothetical. Fixed with a small `LRUBitmapCache` class (same file):
+  bounded by estimated decoded bytes (`width * height * 4`, this build's
+  fixed ARGB8888 decode format) per category, evicting least-recently-used
+  entries once over budget; an evicted entry just reloads (and re-caches)
+  the next time its name comes up, the same as any other cache miss.
+  `#cached_bitmap`'s call sites needed no changes — the new class
+  implements the same `key?`/`[]`/`[]=` surface a plain Hash did. Per-
+  category byte budgets are a conservative first cut, not a measured one
+  (see the constants' own comment in `scene/map.rb`): **the assumption this
+  P4 entry originally rested on — that `sceKernelTotalFreeMemSize` would
+  surface this pool's real consumption — does not hold up against what
+  P1's own heartbeat actually reported.** A full `psp-smoke-game` run
+  against Nepheshel (1600 `Scene::Map` frames, definitely loading and
+  caching charsets/chipsets/etc. along the way) logged the exact same
+  `free=782336 maxfree=524288` on *every single heartbeat*, unmoving, while
+  `arena_used` in the same log moved by megabytes frame to frame. Either
+  `sceKernelTotalFreeMemSize`/`sceKernelMaxFreeMemSize` report something
+  coarser than live heap consumption on this target (a PPSSPP HLE
+  limitation is plausible — untested against real hardware) or this
+  specific run's bitmap traffic genuinely never moved the needle on
+  whatever partition they measure; either way, this instrumentation cannot
+  currently confirm the third pool's actual size or validate that the new
+  cap helps. Confirming decoded-bitmap sizes really fit in what's left of
+  the ~24 MB, and getting instrumentation that can actually show it,
+  remains open — not resolved by this follow-up, only made safer against
+  the unbounded-growth case regardless of what the numbers turn out to be.
 - **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
   declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
   pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries
