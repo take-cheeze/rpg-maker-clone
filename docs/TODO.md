@@ -5449,6 +5449,171 @@ The work below is roughly ordered by the critical path to a walkable game
   actually verifying under wine the move-route Speed Up/Down clamp bounds or
   the Pan Screen px/frame table, both flagged tractable by cycle #176 and
   still unattempted after two cycles in a row.
+  ✅ **Follow-up (cycle #178, 2026-08-26): confirmed the Pan Screen px/frame
+  table under genuine RPG_RT.exe -- both of cycle #176's own two flagged
+  candidates were picked up this cycle, and the Pan Screen one resolved to a
+  real, positive confirmation (the existing implementation was already
+  correct); the move-route Speed Up/Down clamp bounds got a partial,
+  non-wine corroboration instead (below) rather than a forced conclusion.**
+  Per this cycle's own steer to prioritize wine verification over further
+  citation relabeling, no citation-sweep work was done this cycle at all
+  (the `game.rb` 163-instance full read-through cycle #177 flagged as the
+  natural next step remains untouched, still open for a future cycle).
+  **Pan Screen -- confirmed, no code change:** `#pan_step_for`'s own comment
+  (`mruby-rpg2k/mrblib/game.rb`) carried a specific, falsifiable numeric
+  claim -- `(2 << speed) / 16.0` px/frame for speed 1..6 (0.25, 0.5, 1, 2, 4,
+  8), ported from an EasyRPG reading of RPG_RT's own subpixel space, versus a
+  4x-faster rejected alternative (a plain 1, 2, 4, 8, 16, 32 doubling) -- and
+  turned out to be directly measurable against the genuine binary without
+  writing a single new event command. Dumping every Nepheshel `.lmu`'s own
+  event-command list (a new scratch script parsing through this codebase's
+  own `LCF::MapUnit`/schema, not by hand) for every Pan Screen (event code
+  11060) call found exactly one, anywhere in the game, whose wait flag
+  (param 4) is set: `Map0521.lmu` event 1 page 1 (trigger 3 = autostart,
+  condition flags 0 -- unconditional), a genuine, already-authored sequence
+  Show Screen -> **Pan Screen (op=2 pan, direction=left, distance=9 tiles,
+  speed=1, wait ON)** -> Erase Screen -> Teleport (to map 374). Erase
+  Screen's own fade-to-black is a real-engine, directly observable marker of
+  exactly when the interpreter's `:screen` wait on the pan releases, so
+  timing *it* times the pan without needing to read any internal state.
+  Method: `gen-rpg2k-save.rb --map 521 --at 32,15 --facing down
+  --clear-scene` moved Save01.lsd's party onto map 521 (no code path
+  touched, no map data edited for this half of the test); genuine RPG_RT.exe
+  was booted under wine (Xvfb :1096, matchbox, `LIBGL_ALWAYS_SOFTWARE=1`,
+  `LANG=ja_JP.UTF-8`, the established `~/.wine-nepheshel32` prefix), driven
+  through the title/Continue/file-select with the same fixed three-key
+  script `compare-nepheshel-save-wine.bash` already established (Down,
+  Return, Return), and then screenshotted at fixed wall-clock offsets (0.25s
+  resolution near the transition) from the moment the load's Return was
+  confirmed. At the **genuine, unedited speed 1**: the scene was still
+  visibly mid-pan (parallax background and wall crenellations both still
+  shifting frame to frame -- screenshotted directly, not inferred) at
+  t=11.5s, `identify`'s own colour count had dropped from ~160-167 to 104 by
+  t=11.75s (fade in progress) and to exactly 1 (solid black) by t=12.0s.
+  Predicted total under the current formula: 144px / 0.25px-per-frame = 576
+  frames = 9.6s of pan, plus a fixed ~0.58s Erase Screen fade (35 frames,
+  `Game::Transition.default_frames(FADE_OUT)`) plus whatever fixed
+  load/Show-Screen overhead the boot itself costs (~1.5-1.7s, backed out
+  algebraically below) -- landing the predicted black-screen moment at
+  ~11.7-11.9s, matching the observed 11.75-12.0s window closely.
+  **A second measurement at a different speed is what actually rules out the
+  rejected alternative, rather than just being consistent with one
+  reading:** the *same* genuine Pan Screen command's own speed parameter
+  (index 3 of its 5 parameters) was edited in place from 1 to 3 -- nothing
+  else touched (code/indent/string/every other parameter identical, verified
+  by re-decoding the edited file and by a raw `cmp` showing the two `.lmu`
+  files differ at exactly one byte offset) -- via a small scratch script
+  that reassigns the mutated command list back through each parent chunk's
+  own `[]=` at every nesting level (event_commands -> page -> pages -> event
+  -> events -> map), per cycle #176's own in-place-mutation caveat. This is
+  the safe splice technique cycles #137-139 established (edit an existing
+  genuine command's own parameter value, not build new command structure)
+  applied for the first time to a *map* event rather than a move route or
+  battle page -- and it worked cleanly: no crash, no hang, the edited save
+  loaded and ran the same autostart sequence with only the pan's own speed
+  changed. Timed the same way: the fade-to-black landed at t=4.5s (colour
+  count already down to 112 from ~163) and was effectively black (7 colours)
+  by t=5.0s. Predicted under the current formula: 144px / 1.0px-per-frame =
+  144 frames = 2.4s of pan, so with the same ~1.5-1.7s overhead and ~0.58s
+  fade, the predicted black-screen moment is ~4.5-4.7s -- again matching.
+  **The two runs' own difference is the real test, because it cancels the
+  unmeasured boot/load overhead term algebraically:** observed gap between
+  the two runs' black-screen landings is 12.0s - ~5.0s = ~7.0s; the current
+  formula predicts a gap of (576 - 144) frames = 432 frames = 7.2s between
+  the two pan durations, a difference within this measurement's own 0.25s
+  screenshot resolution. The rejected "plain doubling from a whole pixel"
+  alternative predicts pan durations of 2.4s (speed 1) and 0.6s (speed 3) --
+  a gap of only 1.8s, four times smaller than what genuine RPG_RT actually
+  shows, and not something a 0.25s-resolution measurement could mistake for
+  7.0s. **Conclusion: the existing `pan_step_for` formula is confirmed
+  correct against genuine RPG_RT.exe** at speeds 1 and 3, and the clean 4x
+  ratio match (exactly what `(2<<3)/(2<<1) = 4` predicts) is strong evidence
+  the same geometric law holds at every speed 1..6, not just the two points
+  actually measured. `game.rb`'s own comment was rewritten to record this
+  wine evidence in place of the old "NOT independently confirmed" line;
+  **no code changed** (the implementation was already right), so no
+  changelog fragment.
+  **Move-route Speed Up/Down clamp bounds -- left open, but with a concrete
+  measurement plan for a future cycle instead of a forced conclusion:**
+  looked for a genuine, already-authored move route that pushes the clamp
+  the same way Map0521 pushed the Pan Screen speed parameter, by dumping
+  every event page's own move_route (field 41) across all Nepheshel maps for
+  Speed Up (28) / Speed Down (29) commands. Found one directly relevant:
+  `Map0068.lmu` events 1-3 each run a repeating route starting
+  `26, 30, 30, 30, 13, 14, 15, 28, 28, 28, 28, 36, ...` -- **four consecutive
+  Speed Up commands in a row**, authored into a real, shipped game, from the
+  page's own default move_speed (editor value 3, internal 2 on this
+  codebase's 0-5 scale per `Scene::Map#page_move_speed`'s `- 1` conversion)
+  -- which would want to reach internal 6 but this codebase's own
+  `[character.move_speed + 1, 5].min` clamps it to 5 (editor 6, the
+  documented RPG Maker maximum), meaning the genuine game already trusted
+  the fourth Speed Up to be a safe no-op rather than an error or a wrap.
+  That is real corroborating context (a shipped game exercising exactly the
+  boundary this codebase's clamp sits at, and clearly expecting it not to
+  break anything) but it is **not** a wine measurement of the actual
+  resulting speed, so the comment was deliberately left as "NOT
+  independently confirmed" rather than upgraded on this evidence alone --
+  upgrading a numeric behavioral claim on authored-data plausibility instead
+  of an actual observed frame rate would be exactly the kind of unverified
+  claim this whole sweep exists to stop introducing. The concrete plan for
+  actually closing this: `Map0068.lmu` event 1's own route is a repeating
+  NPC idle animation (not gated on being the invisible actor-15 leader, so
+  its sprite renders normally), and its move segment right after the four
+  Speed Ups (a run of `10`/`9`-id move commands) could be timed the same
+  screenshot-offset way used for Pan Screen above -- track the NPC's own
+  on-screen pixel position frame-to-frame (or count frames per tile of
+  movement) during that segment and compare against the same segment timed
+  after only *one* Speed Up (well inside the unclamped range), which would
+  directly show whether real RPG_RT's own speed after four Ups matches speed
+  6 (clamped, as this codebase predicts) or is faster (unclamped/wrapped).
+  Not attempted this cycle: it requires precise per-frame position tracking
+  rather than a single fade-to-black marker, a meaningfully larger effort
+  than the Pan Screen probe above, and this cycle's time was better spent
+  closing that one out rigorously (including the second-speed
+  cross-check) than splitting effort across two half-finished wine probes.
+  **Verification:** `ruby -c` clean on `game.rb`; `git diff --
+  mruby-rpg2k/mrblib/game.rb | grep -vE "^[+-][[:space:]]*#"` returned
+  nothing beyond the three `+++`/`---`/context-line noise (comment-only, one
+  paragraph rewritten); `cd build && ctest -R mruby_test` passed (10.60s);
+  `scripts/rpg2k_logic_check.rb` (1150), `scripts/rpg2k_scene_check.rb`
+  (929), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15) all matched cycles #175-177's own recorded baselines exactly;
+  `scripts/rpg2k_save_load_check.rb` reconfirmed at exactly its 3 known
+  pre-existing, unrelated failures (BGM `balance`, picture `show_x`/
+  `show_y`, transition-defaults warning), and its own printed save summary
+  (`leader="Renamed" ... map=12 pos=(40,15)`) confirms `Save01.lsd` is back
+  to its pre-cycle state. No `.cxx`/`.hxx`/`.cc`/`.h`/`CMakeLists.txt` was
+  touched, so no `clang-format`/`cmake-format` step applies. `data/` was left
+  byte-identical: `md5sum` reconfirmed unchanged on `Save01.lsd`/
+  `Map0016.lmu`/`RPG_RT.ldb`/`Map0521.lmu` against the values recorded since
+  cycle #148/#175/#176/#177 (the `Map0521.lmu` speed-3 edit and the
+  `Save01.lsd` map-521 edit were both made to on-disk copies for the wine
+  boots and then overwritten back from a pre-edit backup taken before either
+  change, confirmed byte-for-byte by `md5sum` immediately after restoring);
+  `git status --porcelain` shows only `mruby-rpg2k/mrblib/game.rb` changed
+  (the pre-existing dirty `3rd/mruby` submodule pointer predates this cycle
+  and was not touched). Every wine/Xvfb/matchbox process this cycle started
+  was confirmed terminated (`ps aux` clean) between and after both boots,
+  with an explicit `wineserver -k` + sleep before each. No EasyRPG source
+  was consulted for any behavioral claim (the existing ported formula was
+  read only to state what it predicts, then checked against the genuine
+  binary, never against EasyRPG's own source); no web search was used. No
+  changelog fragment: this cycle confirmed existing, already-correct
+  behavior rather than fixing a bug.
+  **Left open for a future cycle, in priority order:** (1) the move-route
+  Speed Up/Down clamp bounds' own concrete per-frame-tracking measurement
+  plan above; (2) `mrblib/game.rb`'s own ~163-instance citation count is
+  still unread-through-in-full (cycle #177's own experience on
+  `interpreter.rb` suggests the real count is meaningfully higher once read
+  end to end, not just grepped); (3) the two `scripts/` check files
+  (`rpg2k_logic_check.rb`/`rpg2k_scene_check.rb`, ~395 instances) as a
+  possibly-different-cadence cleanup; (4) picking up one or two of
+  `interpreter.rb`'s own newly-honest "NOT independently confirmed" claims
+  cycle #177 flagged (Change Items' signed-value asymmetric guard,
+  Teleport's RPG2003-only facing-parameter gate, the `block_pending_*`
+  message-blocking helpers) for the same kind of real wine resolution this
+  cycle gave the Pan Screen table.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
