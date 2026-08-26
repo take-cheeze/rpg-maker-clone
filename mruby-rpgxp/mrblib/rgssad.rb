@@ -247,6 +247,16 @@ class RPGXP
       @entries.key?(normalize(name))
     end
 
+    # An entry's decoded byte size without reading or decrypting it -- the
+    # archive's own header already carries this per entry (see #initialize),
+    # so this is a plain Hash lookup, not I/O. nil when the entry is absent.
+    # Lets a caller report on a packed entry (e.g. a database-table census)
+    # without paying for a full read+decrypt+Marshal.load just to size it.
+    def entry_size(name)
+      e = @entries[normalize(name)]
+      e && e[:size]
+    end
+
     # Decrypted bytes for one entry, or nil when it is not in the archive. `name`
     # may be given with '/' or '\' separators. Seeks to the entry's own offset
     # and reads only its own bytes -- the archive is never loaded whole (see
