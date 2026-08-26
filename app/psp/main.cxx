@@ -247,6 +247,21 @@ MrbBlock* g_mrb_free = nullptr;
 
 void mrb_arena_init();
 
+// Live decoded-Bitmap-buffer byte totals (mruby-rgss/src/lib.cxx's own
+// g_bitmap_bytes_decoded/_blank, behind the Bitmap constructor/destructor/
+// operator= so every live buffer, whatever the current scene, is counted
+// automatically) -- this file's counterpart to mrb_arena_used() below for
+// the "third pool" docs/adr/0047-psp-memory-budget.md's Finding 3
+// identified: decoded pixels live in the plain C++ allocator, not the
+// mruby arena, so they need their own instrumentation. Split decoded (real
+// asset pixels -- what mruby-rpg2k's LRUBitmapCache now bounds) from blank
+// (render targets, canvases, snapshots, and a clone's own copy) since the
+// two grow for very different reasons. Declared here, ahead of
+// append_mem_fields below (the only caller), the same as mrb_arena_used()
+// itself just below.
+extern "C" size_t rgss_bitmap_bytes_decoded(void);
+extern "C" size_t rgss_bitmap_bytes_blank(void);
+
 // Live bytes (payload + headers) currently handed out, for the heartbeat.
 size_t mrb_arena_used() {
   mrb_arena_init();
@@ -601,19 +616,6 @@ void append_scene_name(StrBuf& sb, mrb_state* M, mrb_value game_obj) {
 // then calls strlen() on a boxed mruby value, which is the
 // sysclib_strlen(0x11e) crash ADR 0047's bug 10 was tracking.
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* d);
-
-// Live decoded-Bitmap-buffer byte totals (mruby-rgss/src/lib.cxx's own
-// g_bitmap_bytes_decoded/_blank, behind the Bitmap constructor/destructor/
-// operator= so every live buffer, whatever the current scene, is counted
-// automatically) -- this file's counterpart to mrb_arena_used() for the
-// "third pool" docs/adr/0047-psp-memory-budget.md's Finding 3 identified:
-// decoded pixels live in the plain C++ allocator, not the mruby arena, so
-// they need their own instrumentation. Split decoded (real asset pixels --
-// what mruby-rpg2k's LRUBitmapCache now bounds) from blank (render targets,
-// canvases, snapshots, and a clone's own copy) since the two grow for very
-// different reasons.
-extern "C" size_t rgss_bitmap_bytes_decoded(void);
-extern "C" size_t rgss_bitmap_bytes_blank(void);
 
 // mruby 4.0 has no per-state allocator hook; a program overrides the global
 // mrb_basic_alloc_func to supply its own allocator. Defining it here means the
