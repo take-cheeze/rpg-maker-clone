@@ -9604,7 +9604,16 @@ class RPG2k
         @pictures_sig = sig
         @picture_bmp.clear
         return if pics.empty?
-        pics.keys.sort.each { |id| draw_picture pics[id], cam_x, cam_y }
+        # An erased id's own `Game::Picture` object lingers in `@state.
+        # pictures` (cycle #159, so `#to_lsd` can still read its stale
+        # fields back out onto a save -- see `Picture#erase!`'s own
+        # comment) but must never draw again; `#shown?` is the explicit
+        # signal for that, not `Picture#name` (deliberately left untouched
+        # by an erase, so relying on emptiness here would be wrong too).
+        pics.keys.sort.each do |id|
+          p = pics[id]
+          draw_picture p, cam_x, cam_y if p.shown?
+        end
       end
 
       # One array describing the whole picture layer's drawn output: the shown

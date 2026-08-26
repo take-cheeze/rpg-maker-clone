@@ -1252,7 +1252,24 @@ module LCF
       12 => { name: :current_tone_green, type: :double, default: 100.0 },
       13 => { name: :current_tone_blue, type: :double, default: 100.0 },
       14 => { name: :current_tone_saturation, type: :double, default: 100.0 },
-      9 => { name: :visible, type: :bool, default: false }, # 表示するか (0 非表示 / 1 表示)
+      # 表示するか (0 非表示 / 1 表示) -- a name inferred from the field id's
+      # own position in this table (between the current_* and finish_*
+      # clusters), never confirmed against a genuine RPG_RT.exe capture that
+      # actually carries it. Cycle #159 looked for it in the one new scenario
+      # this cycle's own genuine-wine evidence could reach (a picture shown
+      # then Erase Picture'd, then saved) and still did not find it present
+      # -- an erased id's own chunk 103 entry keeps every other field
+      # (2/3/4/5/7/8/11-14/31/32/33/34/41-44) but field 9 stayed absent there
+      # too, the same as every other capture cycles #154/#155 already tried
+      # (a never-touched slot, an at-rest shown picture, one pushed off every
+      # visual default, and one mid-Move-Picture). Five distinct genuine
+      # capture shapes across three cycles have now never once observed this
+      # field present -- consistent with it being unused by any ordinary
+      # RPG2000 Show/Move/Erase Picture sequence, though still not proof no
+      # scenario ever writes it (RPG2003's own picture flag set, e.g., was
+      # never tried). Left as `default: false` (matching a picture that was
+      # never shown) since nothing in this codebase reads or writes it.
+      9 => { name: :visible, type: :bool, default: false },
       # The picture's resting/target position -- see this table's own
       # comment above for why these are named finish_*, not current_*.
       31 => { name: :finish_x, type: :double, default: 0.0 }, # 表示位置Ｘ (中心)

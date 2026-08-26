@@ -3538,6 +3538,148 @@ The work below is roughly ordered by the critical path to a walkable game
   yet touched (`do_change_equipment`, `Window_Skill::CheckInclude`/`Algo::
   IsSkillUsable`, `EnemyAi::IsActionValid`, `Game_Event::MoveTypeRandom`/
   `MoveTypeCycle`, `CalcNormalAttackAutoBattleTargetRank`, `Window_ShopSell`).
+  ✅ **Follow-up (cycle #159, 2026-08-26): picked up candidate 1 (unblocking
+  the "Open Save Menu crashes genuine RPG_RT.exe" finding cycle #158 left
+  behind), then pivoted to candidate 2 (`SAVE_PICTURE` field 9) once that
+  unblocked it -- landing a real fix on a *different*, freshly-discovered
+  chunk 103 gap along the way: an Erase Picture'd id's own genuine save entry
+  is not the fully field-less placeholder this codebase's own `#to_lsd`
+  wrote for it.** **Candidate 1, resolved as "not reproducible," unblocking
+  2/3 for whoever needs the write path next:** reused cycle #155's own
+  scratch `LCF::MapUnit` injector (`inject_picture_probe.rb`) and wine driver
+  (`drive_picture_probe.bash`, both scratch-only) unchanged, on the identical
+  byte-for-byte fixture cycle #158 reported crashing on (`Map0012.lmu` md5
+  `c2fa69a0...`, `Save01.lsd` md5 `3ab5bb01...`, chunk 101 field 123
+  `save_allowed` independently reconfirmed `false` by direct raw-field read,
+  same as cycle #158 found) -- and it never crashed, five independent times
+  in a row: the exact `baseline` scenario (Show Picture never touched, Open
+  Save Menu, confirm the empty File 2 slot) twice, a `moving` scenario
+  (picture mid-Move-Picture when saved) once, and a new variant confirming
+  onto the *occupied* File 1 slot (overwrite, `Return` then a second `Return`
+  for the "already used" confirm dialog) once -- every run produced a
+  genuine, structurally valid `Save0N.lsd` (`lcf_save_check.rb` parsed every
+  chunk cleanly; the overwrite variant's `save_count`/`frame` fields visibly
+  advanced past the source save's own, ruling out "the overwrite silently
+  did nothing" as an alternative explanation). Since this is the same
+  fixture, same `save_allowed=false` state, and the same event-command
+  technique cycle #158 reported failing identically five times, the most
+  likely explanation is a session-local environmental artifact in cycle
+  #158's own run (a stale wine prefix lock, a leftover process from an
+  earlier crash, or similar) rather than a genuine, reproducible RPG_RT.exe
+  behavior tied to `save_allowed` -- documented here rather than chased
+  further, since the task at hand is a *positive* capture, not a crash
+  post-mortem; whoever next hits a save-menu-confirm crash on this fixture
+  should suspect their own session state before re-blaming `save_allowed`.
+  **Candidate 2, decisively resolved with new genuine-RPG_RT.exe evidence,
+  though not the way it was framed:** built a new scenario in the same
+  injector/driver pair -- autostart: Show Picture id 5 off every visual
+  default, Wait 1.0s, Erase Picture 5, Open Save Menu, confirm File 2 --
+  and inspected the resulting genuine `Save02.lsd` chunk 103 id 5 with
+  cycle #155's own raw `LCF::Array1D` `key?`/`@data` field-presence reader.
+  **Result:** field 1 (`name`) absent, but fields 2/3 (`show_x`/`show_y`),
+  4/5/7/8/11-14 (`current_*`), and 31/32/33/34/41-44 (`finish_*`) *all still
+  present*, carrying the exact pre-erase values (111.0/77.0 show position,
+  133/25/140/60/180/50 zoom/transparency/tone) -- decisively distinct from a
+  same-save control id (6, never shown at all), whose raw field list was
+  empty, `[]`, reconfirming cycle #154's own "fully field-less placeholder"
+  finding is unchanged for a genuinely untouched slot. Field 9 (`visible`)
+  itself was absent in this capture too, same as every other genuine
+  capture cycles #154/#155/#159 have now tried (never-touched, at-rest
+  shown, off-default shown, mid-move, and now erased) -- five distinct
+  capture shapes across three cycles have never once observed it present,
+  documented as such in `SAVE_PICTURE`'s own schema comment
+  (`mruby-lcf/mrblib/schema.rb`) rather than claimed as definitively dead,
+  since RPG2003's own picture flag set was never tried. **The real,
+  previously-unknown gap this surfaced:** this codebase's own
+  `Game::State#erase_picture` deleted the `Picture` object outright, so
+  `#to_lsd` wrote a fully field-less placeholder for any erased id --
+  silently losing every one of the stale fields genuine RPG_RT.exe keeps.
+  **Fixed** (`mruby-rpg2k/mrblib/game.rb`): `Game::State#erase_picture` now
+  calls a new `Picture#erase!` (clears a dedicated `@shown` flag, halts any
+  in-flight move by zeroing `@frames`, but leaves name/position/zoom/tone
+  otherwise untouched) instead of deleting the hash entry; `#to_lsd` gates
+  field 1 on the new `Picture#shown?` instead of writing it unconditionally;
+  `Game::State#move_picture` also now gates on `#shown?` rather than mere
+  hash presence, so Move Picture on an erased id stays the no-op it already
+  was for a never-shown one. A dedicated `@shown` flag was used rather than
+  clearing `@name` on erase (the more literal reading of "field 1 goes
+  absent") because several pre-existing `rpg2k_scene_check.rb` fixtures
+  build a `Game::Picture.new` directly with no `:name` at all, purely to
+  seed a position for a Move/Erase Picture check, and must still read as
+  currently shown; `Scene::Map#draw_pictures` (`mruby-rpg2k/mrblib/
+  scene/map.rb`) was updated to gate drawing on `#shown?` explicitly for the
+  same reason, rather than continuing to rely on `Scene::Map#picture_src`'s
+  own nil/empty-name guard as an incidental "erased picture never draws"
+  mechanism. **Whether a picture still mid-Move-Picture at the exact instant
+  of Erase Picture freezes at its live interpolated position (this fix's own
+  choice, since RPG_RT's event thread is single-stepped so nothing else
+  could be advancing the move) or keeps gliding toward its old target was
+  not tested this cycle** -- flagged in `Picture#erase!`'s own comment as
+  the conservative, not-invented-evidence reading; likewise
+  `Game::State#erase_all_pictures` (the automatic all-pictures clear on an
+  ordinary map transfer) was deliberately left as a full hash reset, not
+  converted to a per-id soft-erase, since only the explicit Erase Picture
+  command was ever tested against genuine RPG_RT.exe. **New coverage in
+  `scripts/rpg2k_logic_check.rb`:** the pre-existing "Erase Picture removes
+  the picture" check was rewritten to assert the new `#shown?`-based
+  semantics (the `Picture` object itself is `not nil`, `#shown?` is false,
+  `#name` is unchanged, Move Picture on it is still a no-op) instead of hash
+  deletion; a new check drives Show Picture then Erase Picture through
+  `Game::State` directly and asserts `#to_lsd`'s chunk 103 output against
+  the exact field list/values this cycle's own genuine capture recorded,
+  with a same-state never-touched control id proving the field-less
+  placeholder path is unchanged. One pre-existing `rpg2k_scene_check.rb`
+  check ("Show/Move/Erase Picture from an independently-running parallel
+  process...") also needed its own final assertion updated from
+  `!st3.pictures.key?(1)` to `st3.pictures.key?(1) && !st3.pictures[1]
+  .shown?`, since hash presence no longer implies "currently shown" --
+  this is not a new regression test, just keeping a real pre-existing
+  behavioral check aligned with the new (evidence-driven) internal
+  representation; the behavior it verifies (an erased picture does not
+  draw) is unchanged and still covered. **Proved the fix and both updated
+  checks actually catch the regression:** `git stash` of just
+  `mruby-rpg2k/mrblib/{game.rb,scene/map.rb}` reverted to pre-fix code and
+  reran both suites -- `rpg2k_logic_check.rb` failed its own two picture
+  checks with precise, specific errors (`NoMethodError: undefined method
+  'shown?' for an instance of Game::Picture`, then, after fixing just that
+  one, `RuntimeError: field 2 (show_x) is still present after erase`) and
+  `rpg2k_scene_check.rb` failed its own updated check the same way
+  (`NoMethodError: undefined method 'shown?'`) -- before `git stash pop`
+  restored the fix and all three passed again. Full suite reconfirmed
+  passing, `scripts/rpg2k_logic_check.rb` up by 1 (the one new check;
+  the rewritten "Erase Picture..." check replaces its old self 1-for-1):
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb`
+  (41), `scripts/rpg2k_logic_check.rb` (1141), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15); `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures
+  (an unmodelled BGM `balance` field and a `show_x`/`show_y` `nil`-vs-absent
+  mismatch, both unrelated to pictures-on-erase) were independently
+  reconfirmed present identically before and after this cycle's own changes,
+  ruling this cycle out as their cause. This cycle also built the mruby
+  engine binary from source (`cmake --build build --target rpg_maker_clone`)
+  twice, once mid-cycle and once after the final `@shown`-flag redesign, and
+  confirmed both link and compile cleanly. Every scratch game directory,
+  injected `.lmu`, and edited `Save0N.lsd` this cycle's probes produced
+  lived entirely under this session's own scratch dir, never inside `data/`;
+  the two live fixtures the wine driver copies into `data/` on each run
+  (`Save01.lsd`, `Map0012.lmu`) were restored to their exact original bytes
+  and reconfirmed byte-identical by `md5sum` against the same `c2fa69a0.../
+  3ab5bb01...` values every prior cycle back to #148 recorded; `git status`
+  on `data/` came back clean. No EasyRPG source was consulted for any claim
+  this cycle, and no web search was used either. **Left open for a future
+  cycle:** whether `SAVE_PICTURE` field 9 (`visible`) is *ever* written by
+  genuine RPG_RT.exe remains unconfirmed (five capture shapes now say no;
+  RPG2003's own picture-flag commands were never tried); whether a picture
+  still mid-move at the instant of Erase Picture freezes or keeps gliding;
+  whether `Game::State#erase_all_pictures`'s automatic map-transfer clear
+  should carry the same per-id residual-field behavior as an explicit Erase
+  Picture (untested, deliberately left as a full reset); `SAVE_PICTURE`'s
+  own still-missing `fixed_to_map`/`use_transparent_color` fields (cycle
+  #155/#158); fields 51-54/71-140 of `SAVE_SYSTEM`, now genuinely unblocked
+  again by this cycle's own candidate-1 finding; the party-roster-field
+  crash; the autostart-crash mystery; the missing-Picture-asset hang; and
+  every EasyRPG-style citation cycle #154's own repo-wide grep turned up
+  that no cycle has yet touched (see cycle #154's own list, unchanged).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

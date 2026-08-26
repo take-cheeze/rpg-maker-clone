@@ -3765,11 +3765,16 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   scene3.send(:open_message, ['hi'], false)
 
   10.times { scene3.update }
-  ok st3.pictures.key?(1), 'Erase Picture from the parallel process must not apply while the window is open'
+  ok st3.pictures.key?(1) && st3.pictures[1].shown?,
+     'Erase Picture from the parallel process must not apply while the window is open'
 
   scene3.send(:close_message)
   5.times { scene3.update }
-  ok !st3.pictures.key?(1), 'Erase Picture applies once the window closes'
+  # Cycle #159: an erased id's own `Game::Picture` now lingers in `@pictures`
+  # (so `#to_lsd` can still read its stale fields, see `Picture#erase!`'s own
+  # comment) rather than being deleted outright, so `#shown?`, not hash
+  # presence, is what this must have flipped once the window closes.
+  ok st3.pictures.key?(1) && !st3.pictures[1].shown?, 'Erase Picture applies once the window closes'
 end
 
 check 'a blocked Show Picture resumes the command right after it the same ' \
