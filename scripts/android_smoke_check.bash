@@ -59,6 +59,14 @@ adb shell am force-stop "${PACKAGE}"
 echo "== pushing Nepheshel to ${GAME_DIR}"
 adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${GAME_DIR}/"
 
+# Pushed as root (above), so the files land owned by root rather than going
+# through the FUSE layer's normal shell-user permission translation -- the
+# app's own UID then can't read them back: a real CI run crashed with
+# libc++abi's filesystem_error, "Permission denied" on posix_stat'ing
+# RPG_RT.ini. World-readable/-writable settles it regardless of which UID
+# the app process actually runs as.
+adb shell chmod -R 777 "${GAME_DIR}"
+
 adb logcat -c
 
 echo "== launching ${ACTIVITY}"
