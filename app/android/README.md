@@ -101,9 +101,11 @@ Nepheshel — title screen 22 → 60fps, map scenes 14 → 40-45fps, overworld
 
 What remains is mruby game-logic speed on a low-end CPU (the interpreter and
 event bookkeeping are the biggest single block of a standing-still frame),
-plus two known follow-ups: the tile-animation step still re-blits every
-autotile cell on autotile-heavy maps (~50ms spikes), and walking across a
-panorama map re-tiles it every frame (~20ms) on top of the scrolling present.
+plus two known follow-ups: the tile-animation step's per-pixel compose
+(~30-54ms spikes on autotile-heavy maps, down from ~57-86ms once the step
+batched its blits through `Bitmap#blt_quads` — a row-copy fast path for
+opaque chipset pixels is the next cut), and walking across a panorama map
+re-tiling it every frame (~20ms) on top of the scrolling present.
 
 ## Launcher icon
 

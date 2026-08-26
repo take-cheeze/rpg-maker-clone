@@ -77,6 +77,15 @@ module RGSS
     # only that drawing happened.
     def blt(*a); (@blt_calls ||= []) << a; end
     attr_reader :blt_calls
+    # Bitmap#blt_quads batches several #blt source rects into one native
+    # dispatch (see Bitmap#blt_quads in mruby-rgss/src/lib.cxx). The stub
+    # expands it back to per-quad #blt calls, so checks counting or
+    # inspecting tile draws see the same shape whichever path drew them.
+    def blt_quads(x, y, src, quads)
+      quads.each do |qdx, qdy, sx, sy, w, h|
+        blt(x + qdx, y + qdy, src, Rect.new(sx, sy, w, h))
+      end
+    end
     def clear_blt_calls; @blt_calls = []; end
     # The non-blending copy the map renderer moves its cached tile grid with
     # (see Bitmap#copy_blt in mruby-rgss/src/lib.cxx). Recorded apart from

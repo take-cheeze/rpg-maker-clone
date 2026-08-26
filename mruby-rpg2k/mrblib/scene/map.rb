@@ -10080,9 +10080,13 @@ class RPG2k
       # chip is a single 16x16 copy; an autotile is assembled from four 8x8
       # quarters. Empty/out-of-range ids draw nothing (id 0 is transparent).
       def draw_tile bmp, id, dx, dy, abf, cf
-        Game::ChipsetLayout.quads(id, abf, cf).each do |qdx, qdy, sx, sy, w, h|
-          bmp.blt dx + qdx, dy + qdy, @chipset_bmp, Rect.new(sx, sy, w, h)
-        end
+        # One native dispatch for the whole chip instead of a dispatch (and
+        # a Rect allocation) per sub-quad -- see Bitmap#blt_quads in
+        # mruby-rgss/src/lib.cxx. Animation steps redraw every animated cell,
+        # so this is the map renderer's hottest mruby path.
+        qs = Game::ChipsetLayout.quads(id, abf, cf)
+        return if qs.empty?
+        bmp.blt_quads dx, dy, @chipset_bmp, qs
       end
 
       # Which CharSet bitmap + index currently draw the player: ordinarily the

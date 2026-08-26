@@ -298,9 +298,13 @@ that follow it; the panorama memcpy-copies instead of blending; the native
 `opacity=`/`x=`/`y=`/`visible=` setters skip the style set on an equal
 value. Measured: intro map 14 → 40-45fps, overworld 26fps standing, battle
 53-59fps, `gfx.lvgl` 22 → ~2.5ms on a static frame. The floor is now mruby
-game logic on the device's CPU; known follow-ups are C-side quad batching
-for animation-step spikes on autotile-heavy maps and the scrolling present
-path.
+game logic on the device's CPU; the C-side quad batching follow-up has since
+landed (`Bitmap#blt_quads`, one native dispatch for a whole tile's quads:
+animation-step `map.layers` spikes ~57-86 → 30-54ms, and event-page
+re-selection now skips events whose condition inputs did not change,
+`map.refresh_pages` 5.5 → 0.9ms on the town map); what remains is the
+per-pixel compose cost itself (a row-copy fast path for opaque chipset
+pixels) and the scrolling present path.
 
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
