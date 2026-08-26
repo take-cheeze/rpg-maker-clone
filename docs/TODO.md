@@ -4039,6 +4039,87 @@ The work below is roughly ordered by the critical path to a walkable game
   missing-Picture-asset hang; and every EasyRPG-style citation cycle #154's
   own repo-wide grep turned up that no cycle has yet touched (see cycle
   #154's own list, unchanged).
+  ✅ **Follow-up (cycle #163, 2026-08-26): picked up cycle #159's own open
+  item, still unresolved through cycle #162 -- whether a picture still
+  mid-Move-Picture at the instant of Erase Picture freezes at its live
+  interpolated position or keeps gliding invisibly toward its old target --
+  and settled it with a genuine RPG_RT.exe capture pair, landing a real
+  fix.** **Evidence:** reused cycle #155/#159's own scratch injector/driver
+  shape (`inject_picture_probe.rb`, `drive_picture_probe.bash`, both still
+  present in this session's scratchpad, untouched) to build a new injector
+  (`inject_erase_mid_move.rb`) with two scenarios sharing one Show Picture
+  (id 5, x=50,y=50) -> Move Picture (to x=250,y=250 over 10.0s, wait flag
+  OFF so the event continues immediately while the picture keeps gliding)
+  -> Erase Picture 5 (the very next command, no wait in between) -> Wait N
+  -> Open Save Menu sequence, differing only in N (`erase_early` = 1.0s,
+  `erase_late` = 5.0s). Drove genuine RPG_RT.exe under wine (Xvfb
+  640x480x16, matchbox, `LIBGL_ALWAYS_SOFTWARE=1`, `ja_JP.UTF-8`,
+  `WINEARCH=win32`/`WINEPREFIX=~/.wine-nepheshel32`, continuing from the
+  same clean Save01.lsd cycles #155-#162 used, `BOOT_WAIT=35`) through both
+  scenarios, saving into empty slot 2 each time, then read each resulting
+  genuine Save02.lsd's raw chunk 103 with `read_picture_chunk.rb` (cycle
+  #155's own raw-field reader): `erase_early` came back with field 4/5
+  (current_x/current_y) at **70.0** and field 51 (time_left) at **540**;
+  `erase_late` came back with field 4/5 at **150.0** and field 51 at
+  **300**. Both current_x/y values sit strictly between the 50/250
+  endpoints and *increase* with elapsed time since the erase -- the
+  opposite of what freezing predicts (which would read identically in both
+  captures, pinned at whatever position the picture held the instant Erase
+  Picture ran) -- and the time_left drop (540 to 300, a 240-frame gap
+  across 4.0s of extra wait) is internally consistent with a 60fps engine
+  and the move's own 600-frame/10.0s total (540 + 1.0s*60fps = 600):
+  decisive proof the move keeps running to completion in the background,
+  invisibly, exactly as if Erase Picture had never been issued except for
+  the drawn sprite itself. **Fixed:** `Game::Picture#erase!` no longer
+  forces `@frames = 0` -- it already happens for free once that line is
+  gone, since `Game::State#update_pictures` (`@pictures.each_value(&:
+  update)`) already iterates every id in `@pictures` regardless of
+  `#shown?`. Also corrected a stale comment above `Game::State#to_lsd`'s
+  own picture-writing loop left over from before cycle #159's fix, which
+  still claimed "`#erase_picture` deletes the entry outright" -- directly
+  contradicted by the actual code (and by `#erase_picture`'s own correct
+  neighbouring comment) ever since cycle #159 changed it to keep the
+  `Picture` object around instead. **New coverage in
+  `scripts/rpg2k_logic_check.rb`:** added "Erase Picture mid-Move-Picture
+  does NOT freeze the move" replaying the same Show -> Move (wait off) ->
+  Erase shape at the interpreter level, then advancing frames and asserting
+  the picture is still invisible *and* still interpolating (`x` strictly
+  past its erase-instant value), and finally that running out the rest of
+  the move's own duration lands it exactly on the target and stops --
+  matching a shown picture's own completion behaviour. **Proved the fix and
+  the new check actually catch the regression:** `git stash push --
+  mruby-rpg2k/mrblib/game.rb` (keeping the new check in
+  `scripts/rpg2k_logic_check.rb`) reverted to the pre-fix code and rerunning
+  `rpg2k_logic_check.rb` failed immediately with `RuntimeError: but the
+  move itself is still in flight right after erase` before `git stash pop`
+  restored the fix and all checks passed again. Full suite reconfirmed
+  passing after the fix: `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1145, up from 1144 -- one new check added), `scripts/
+  rpg2k3_battle_row_check.rb` (19) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15); `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures
+  (the unmodelled BGM `balance` field, the `show_x`/`show_y` `nil`-vs-absent
+  mismatch, and the "screen transition defaults unreadable" stderr warning)
+  were reconfirmed present identically before and after this cycle's
+  changes. This cycle also built the mruby engine binary from source
+  (`cmake --build build --target rpg_maker_clone`, using the two
+  hash-pinned Unicode tables already fetched to `/tmp/tables` by an earlier
+  cycle) and confirmed it links cleanly. Every scratch map/save this cycle's
+  probes produced lived entirely under this session's own scratch dir; the
+  two live fixtures the wine driver copies into `data/` on each run
+  (`Save01.lsd`, `Map0012.lmu`) were restored to their exact original bytes
+  and reconfirmed byte-identical by `md5sum` against the same
+  `c2fa69a0.../3ab5bb01...` values every prior cycle back to #148 recorded;
+  `git status` on `data/` came back clean. No EasyRPG source was consulted
+  for any claim this cycle, and no web search was used either. **Left open
+  for a future cycle:** everything cycle #162's own "left open" list still
+  names, now minus the Erase-Picture-mid-move item this cycle closed --
+  field 140 (`atb_mode`)'s version-gate-vs-always-default question,
+  `SAVE_PICTURE` field 9, `SAVE_PICTURE`'s own still-missing
+  `fixed_to_map`/`use_transparent_color` fields, the party-roster-field
+  crash, the autostart-crash mystery, the missing-Picture-asset hang, and
+  every EasyRPG-style citation cycle #154's own repo-wide grep turned up
+  that no cycle has yet touched.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

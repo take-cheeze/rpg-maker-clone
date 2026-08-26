@@ -9955,6 +9955,63 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
      'a never-touched id carries no fields at all, not even absent-name'
 end
 
+check 'Erase Picture mid-Move-Picture does NOT freeze the move: the picture ' \
+      'keeps gliding invisibly toward its old target, matching genuine ' \
+      'RPG_RT.exe (cycle #163)' do
+  # Cycle #163 drove genuine RPG_RT.exe under wine through two scenarios
+  # sharing one Show Picture (id 5, x=50,y=50) -> Move Picture (to
+  # x=250,y=250 over 10.0s, wait flag off, so the event continues
+  # immediately while the picture is still gliding) -> Erase Picture 5 ->
+  # Wait N -> Open Save Menu sequence, differing only in N (1.0s vs 5.0s),
+  # and read each resulting genuine Save0N.lsd's raw chunk 103: field 4/5
+  # (current_x/current_y) came back 70.0 after the 1.0s wait and 150.0
+  # after the 5.0s wait -- strictly between the 50/250 endpoints and
+  # increasing with elapsed time since the erase, not frozen at a single
+  # value -- while field 51 (time_left) came back 540 then 300, a
+  # 240-frame drop across 4.0s of extra elapsed time (60fps, matching the
+  # 600-frame/10.0s move total implied by 540 + 1.0s*60fps). A frozen
+  # picture would have shown identical current_x/y and time_left in both
+  # captures regardless of N. This replays that same shape at the
+  # interpreter level: Show -> Move (wait off) -> Erase, immediately
+  # followed, then advances a handful of frames and checks the picture is
+  # still interpolating rather than stuck at its erase-instant position.
+  st = new_state
+  show = Game::Interpreter.new(st)
+  show.start([FakeCmd.new(IC::SHOW_PICTURE,
+                          [5, 0, 50, 50, 0, 100, 0, 0, 100, 100, 100, 100],
+                          string: 'p')])
+  show.update
+
+  mv = Game::Interpreter.new(st)
+  mv.start([FakeCmd.new(IC::MOVE_PICTURE,
+                        [5, 0, 250, 250, 0, 100, 0, 0, 100, 100, 100, 100,
+                         0, 0, 100, 0])]) # 100 tenths = 10.0s, wait flag off
+  mv.update
+
+  er = Game::Interpreter.new(st)
+  er.start([FakeCmd.new(IC::ERASE_PICTURE, [5])])
+  er.update
+
+  p = st.pictures[5]
+  ok !p.shown?, 'erased: nothing draws'
+  ok p.moving?, 'but the move itself is still in flight right after erase'
+  x_at_erase = p.x
+
+  30.times { st.update_pictures }
+  ok !p.shown?, 'still invisible 30 frames later'
+  ok p.moving?, 'still gliding 30 frames later -- erase did not freeze it'
+  ok p.x > x_at_erase, "current x kept advancing toward the target " \
+                        "(#{x_at_erase} -> #{p.x}), matching the genuine " \
+                        "70.0/150.0 divergence cycle #163 captured"
+
+  # Run out the rest of the move's own duration: it must land exactly on
+  # the target and then stop, the same as a shown picture would.
+  600.times { st.update_pictures }
+  ok !p.moving?, 'the move completes on its own once the duration elapses'
+  eq 250, p.x
+  eq 250, p.y
+end
+
 check 'Show Picture on an id past the 50-slot range is a no-op' do
   st = new_state
   it = Game::Interpreter.new(st)
