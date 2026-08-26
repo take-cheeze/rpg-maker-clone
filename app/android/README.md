@@ -174,13 +174,14 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
   `google_apis` emulator under KVM, relying on the Android Emulator's own
   ARM-binary translation to run the arm64-v8a `.so` unmodified (bundled with
   Google APIs images from API 28 on — this app's own `minSdk` floor). It
-  installs the APK, pushes Nepheshel to the fixed game directory above,
-  launches `RpgMakerCloneActivity` and asserts the engine reaches the map
-  scene (`[RPG2k-MAP]` in `adb logcat -s RPG2K`) with no native crash
-  (`F libc`/`F DEBUG` tombstone lines or `FATAL EXCEPTION` anywhere in the
-  device log). `scripts/android_smoke_check.bash` is the actual check; the
-  workflow step is a thin `reactivecircus/android-emulator-runner` wrapper
-  around it.
+  installs the APK, pushes Nepheshel to a plain world-writable staging
+  directory (`/data/local/tmp` — see below for why not the game directory
+  above), launches `RpgMakerCloneActivity` and asserts the engine reaches
+  the map scene (`[RPG2k-MAP]` in `adb logcat -s RPG2K`) with no native
+  crash (`F libc`/`F DEBUG` tombstone lines or `FATAL EXCEPTION` anywhere in
+  the device log). `scripts/android_smoke_check.bash` is the actual check;
+  the workflow step is a thin `reactivecircus/android-emulator-runner`
+  wrapper around it.
   - This is a **boot-and-crash** check, not a performance measurement: an
     emulator's frame times mean nothing next to real-device numbers. See
     `docs/adr/0058-android-port.md` for those, and
@@ -195,6 +196,19 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
     New Game and a clean self-exit with no touch-input automation. Absent on
     every real launch (the extra is simply not set), so ordinary installs are
     unaffected.
+  - The pushed project lands at a plain `/data/local/tmp` staging directory
+    rather than this app's own external-files game directory above, with
+    `rpg2k_extra_args` also carrying a second `--game_dir` that overrides it
+    (gflags takes the last occurrence of a repeated flag). Four different
+    ways of getting real data into `Android/data/<pkg>/...` on this AVD
+    system image each hit a different scoped-storage wall — a plain
+    `adb push` (permission denied creating or writing the directory), `adb
+    root` (the pushed files land root-owned and unreadable by the app, and
+    `chmod` cannot fix that on this AVD's synthetic FUSE storage), and
+    `run-as` (its shell does not carry the same per-app storage mount
+    namespace a real launched process gets, so a `run-as cp` hit
+    "Permission denied" too) — so this sidesteps external storage for the
+    smoke test's purposes entirely instead of fighting it further.
   - `continue-on-error: true` for now — new and unproven, the same starting
     point `psp-smoke-game` used before it had run green for a while; promote
     once this has too.
