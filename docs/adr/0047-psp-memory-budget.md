@@ -1695,6 +1695,30 @@ the interpreter-linking slice, in this order:
   different fix shape than a named-asset LRU cache, likely closer to "how
   many of these does Scene::Map actually need to keep alive at once"), left
   unpursued for now rather than opened speculatively.
+
+  **Third follow-up (2026-08-26): three of the buffers behind `bmp_blank`
+  turned out to be exactly that shape.** `Scene::Map#setup_screen_overlay`/
+  `#setup_pictures` built `@weather_bmp`/`@flash_bmp`/`@picture_bmp`
+  (307,200 B decoded each) unconditionally at scene setup, whether or not
+  that map ever turns on weather, triggers a Screen Flash, or runs Show
+  Picture -- up to ~900 KB of the run above's own `bmp_blank` figure, paid
+  by every map visit regardless. Each is now built lazily, the first time
+  `#draw_weather`/the flash branch of `#update_screen_overlay`/
+  `#draw_pictures` actually needs to paint into it -- the same "materialize
+  N objects when a fraction are ever used" shape as the RPG2k/Array1D/Array2D
+  fixes earlier in this ADR, just one layer up (a compositing buffer, not a
+  decoded chunk). `@fade_bmp` -- the fourth screen-sized overlay, right next
+  to `@flash_bmp`/`@weather_bmp` in the same method -- stays eager: a map
+  transition arrives via a fade far too often (it's how most Transfer
+  Player/Teleport commands read as a scene change at all) for laziness to
+  plausibly pay off there, unlike the other three's genuinely occasional
+  use. Verified locally: `scripts/rpg2k_scene_check.rb` (929 checks,
+  including four tests updated to grab `@picture_bmp`/`@weather_bmp` after
+  the first draw that now creates them rather than before) and
+  `scripts/rpg2k_logic_check.rb` (1145 checks) both pass. Real impact on
+  `bmp_blank` -- and how much of it survives once a real playthrough
+  actually uses pictures/flash/weather somewhere -- left to CI's own
+  `psp-smoke-game` run, as always in this section.
 - **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
   declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
   pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries

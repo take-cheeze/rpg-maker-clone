@@ -6492,9 +6492,12 @@ check 'pictures composite in ascending id order, independent of show order' do
   st = scene.instance_variable_get(:@state)
   st.show_picture(2, name: 'picB', x: 160, y: 120, zoom: 100, opacity: 255)
   st.show_picture(1, name: 'picA', x: 160, y: 120, zoom: 100, opacity: 255)
-  bmp = scene.instance_variable_get(:@picture_bmp)
-  bmp.clear_stretch_calls
+  # @picture_bmp is built lazily by #draw_pictures on the first frame that
+  # actually shows one, so it doesn't exist until this first #update -- no
+  # #clear_stretch_calls needed beforehand, the freshly-built stub starts
+  # with none recorded.
   scene.update
+  bmp = scene.instance_variable_get(:@picture_bmp)
   srcs = bmp.stretch_calls.map { |c| c[1] } # stretch_blt(dest, src, src_rect, opacity)
   eq 2, srcs.size, 'both pictures drew'
   # Picture 1 (id 1) composites first, so picture 2 (higher id) ends up on top.
@@ -6518,10 +6521,10 @@ check 'a picture not fixed to the map still shakes with Shake Screen (RPG_RT)' d
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
   st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
-  bmp = scene.instance_variable_get(:@picture_bmp)
-
-  bmp.clear_stretch_calls
+  # @picture_bmp is built lazily by #draw_pictures on the first frame that
+  # actually shows one, so it doesn't exist until this first #update.
   scene.update
+  bmp = scene.instance_variable_get(:@picture_bmp)
   baseline_x = bmp.stretch_calls.first[0].x
 
   st.screen.shake(6, 5, 30) # power 6, speed 5, 30 frames
@@ -11193,9 +11196,14 @@ check 'Weather rain falls and drifts at RPG_RT\'s own per-frame rate, and ' \
   # every frame it's alive (`p.y += 4; p.x -= 1`), snow drifts leftward
   # only, never rightward (`p.x -= Rand::GetRandomNumber(0, 1)`).
   scene = new_scene({})
-  bmp = scene.instance_variable_get(:@weather_bmp)
+  # @weather_bmp is built lazily by #draw_weather on the first frame weather
+  # is actually active (most maps never turn it on) -- this check calls
+  # #draw_weather_particle directly, bypassing that, so it needs the buffer
+  # in place itself.
   h = RPG2k::Scene::Map::SCREEN_H
   w = RPG2k::Scene::Map::SCREEN_W
+  bmp = RGSS::Bitmap.new(w, h)
+  scene.instance_variable_set(:@weather_bmp, bmp)
 
   scene.instance_variable_set(:@anim_frame, 5)
   scene.send(:draw_weather_particle, RPG2k::Scene::Map::WEATHER_RAIN, 0)
@@ -15095,7 +15103,6 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   st = scene.instance_variable_get(:@state)
   st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
   sprite = scene.instance_variable_get(:@picture_sprite)
-  bmp = scene.instance_variable_get(:@picture_bmp)
 
   10.times do
     scene.update
@@ -15104,6 +15111,10 @@ check 'pictures are hidden while the battle screen is up (yado.tk: none show on 
   end
   ok battle_ui(scene), 'the battle opened'
   ok !sprite.visible, 'the picture layer is hidden the instant the battle screen is up'
+  # @picture_bmp is built lazily by #draw_pictures, but the loop above
+  # already ran it at least once before the battle opened (the picture was
+  # shown first), so it exists by now.
+  bmp = scene.instance_variable_get(:@picture_bmp)
   bmp.clear_stretch_calls
   scene.update
   eq 0, bmp.stretch_calls.size, 'and stops compositing pictures entirely while the fight runs'
