@@ -8562,7 +8562,9 @@ module Game
     # #erase! turns this false. An id that has never been shown at all has no
     # `Picture` object in `Game::State#pictures` to begin with (see
     # `#erase_picture`'s own comment), so this predicate only ever needs to
-    # distinguish "currently shown" from "was shown, now erased".
+    # distinguish "currently shown" from "was shown, now erased". Deliberately
+    # independent of #moving? -- see #erase!'s own comment: an erased picture
+    # can still be moving (invisibly) for a while after this goes false.
     def shown?; @shown; end
 
     def initialize(id, opts = {})
@@ -8604,35 +8606,54 @@ module Game
 
     # Erase Picture (11130): turns #shown? false (so nothing draws --
     # `Scene::Map#draw_pictures` gates on it explicitly, since the name
-    # itself is deliberately left alone here, see below) and halts any
-    # in-flight move, but otherwise leaves name/position/zoom/tone exactly as
-    # they stood at the moment of erasure -- confirmed against genuine
-    # RPG_RT.exe under wine (cycle #159): a Show Picture immediately followed
-    # by Erase Picture, then an Open Save Menu, produced a genuine `.lsd`
-    # chunk 103 entry with field 1 (name) *absent* but fields
-    # 2/3/4/5/7/8/11-14/31/32/33/34/41-44 all still *present*, carrying the
-    # exact values the picture held before erasure -- decisively distinct
-    # from an id that was never shown at all, which cycle #154 already
-    # established writes as a fully field-less placeholder (every one of
-    # those fields absent, not merely zero). `#to_lsd` reads `#shown?`, not
-    # `#name`, to decide whether to write field 1 -- `@name` itself is left
-    # untouched here (rather than cleared) because several pre-existing
+    # itself is deliberately left alone here, see below) but otherwise leaves
+    # name/position/zoom/tone exactly as they stood at the moment of erasure,
+    # and -- confirmed by cycle #163, see below -- does NOT halt an in-flight
+    # move: a picture erased mid-Move-Picture keeps gliding invisibly toward
+    # its old target and only stops when the move's own duration elapses.
+    # Confirmed against genuine RPG_RT.exe under wine (cycle #159): a Show
+    # Picture immediately followed by Erase Picture, then an Open Save Menu,
+    # produced a genuine `.lsd` chunk 103 entry with field 1 (name) *absent*
+    # but fields 2/3/4/5/7/8/11-14/31/32/33/34/41-44 all still *present*,
+    # carrying the exact values the picture held before erasure -- decisively
+    # distinct from an id that was never shown at all, which cycle #154
+    # already established writes as a fully field-less placeholder (every one
+    # of those fields absent, not merely zero). `#to_lsd` reads `#shown?`,
+    # not `#name`, to decide whether to write field 1 -- `@name` itself is
+    # left untouched here (rather than cleared) because several pre-existing
     # scene-check fixtures build a `Picture.new` directly with no `:name` at
     # all, purely to seed a position, and must still read as shown; clearing
     # `@name` on erasure would have made an *empty* name ambiguous between
     # "never had one" and "erased". `Game::State` keeps this `Picture` object
     # in `@pictures` after an erase (see `#erase_picture`) specifically so
     # `#to_lsd` can still read these fields back out.
+    #
     # Whether a picture still mid-move at the moment of Erase Picture freezes
-    # at its live interpolated position (as here, forcing frames to 0) or
-    # keeps gliding toward its old target was not tested this cycle -- this
-    # is the conservative reading (RPG_RT's own event thread is
-    # single-stepped, so nothing else could still be advancing the move
-    # in the same instant Erase Picture runs) and errs toward *not*
-    # inventing unverified motion, not toward matching a real capture.
+    # at its live interpolated position or keeps gliding toward its old
+    # target (left open by cycle #159, still open through cycle #162) is now
+    # settled: cycle #163 drove genuine RPG_RT.exe under wine through two
+    # scenarios sharing one Show Picture (x=50,y=50) -> Move Picture (to
+    # x=250,y=250 over 10.0s, wait flag off) -> Erase Picture -> Wait N ->
+    # Open Save Menu sequence, differing only in N (1.0s vs 5.0s), and read
+    # each resulting genuine Save0N.lsd's raw chunk 103 with
+    # `LCF::SaveData` + the raw-field reader: field 4/5 (current_x/y) came
+    # back **70.0** after the 1.0s wait and **150.0** after the 5.0s wait --
+    # both strictly between the 50/250 endpoints and increasing with elapsed
+    # time since the erase, not frozen at a single value -- while field 51
+    # (time_left) came back 540 and 300 respectively, a 240-frame drop across
+    # 4.0s of extra elapsed time (60fps, matching the 600-frame/10.0s move
+    # total implied by 540 + 1.0s*60fps). A frozen picture would have shown
+    # identical current_x/y and time_left in both captures regardless of N;
+    # instead both tracked continued, undisturbed progress toward the
+    # original target exactly as if Erase Picture had never been issued,
+    # except for the drawn sprite itself. This is simply what already
+    # happens for free once `#erase!` stops forcing `@frames` to 0: `Game::
+    # State#update_pictures` (`@pictures.each_value(&:update)`) already
+    # iterates every id in `@pictures` regardless of `#shown?`, so an erased-
+    # but-still-moving `Picture` keeps ticking down and interpolating exactly
+    # like a shown one, invisibly, until its own move naturally completes.
     def erase!
       @shown = false
-      @frames = 0
     end
 
     # Advance one frame of the in-flight move (a no-op when at rest). Every
@@ -15044,10 +15065,11 @@ module Game
       # array entirely unless a picture has ever been shown there" shape
       # (which also, as a side effect, only ever emitted however many ids
       # had been *touched*, never the full 50-wide range genuine RPG_RT.exe
-      # always carries). `@pictures` only ever holds currently-shown pictures
-      # (#erase_picture deletes the entry outright), so an ordinary shown
-      # picture is a slot with an entry here and an untouched slot is
-      # nil/absent from `@pictures`, both handled below.
+      # always carries). `@pictures` holds every id ever shown, including an
+      # erased one (see `#erase_picture`'s own comment -- the entry lingers
+      # so its fields keep round-tripping through here), so a shown-or-
+      # erased id is a slot with an entry here and only a genuinely
+      # untouched id is nil/absent from `@pictures`, both handled below.
       #
       # Field mapping is the exact mirror of `.restore_pictures`' own read
       # (see `SAVE_PICTURE`'s own comment for the full evidence behind each
