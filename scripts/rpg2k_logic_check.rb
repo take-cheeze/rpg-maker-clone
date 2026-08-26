@@ -11696,13 +11696,16 @@ check 'a zero or negative quantity is not a transaction' do
   ok !shop.did_transaction
 end
 
-# Confirmed against RPG_RT's own live source: `Window_ShopSell`
-# (`src/window_shopsell.cpp`) inherits `Window_Item::CheckInclude`/
-# `Refresh` (`src/window_item.cpp`) unchanged -- a plain `item_id > 0`
-# filter with no price check at all -- and only overrides `CheckEnable`
-# (`item->price > 0`), which `Scene_Shop::UpdateSellSelection`
-# (`src/scene_shop.cpp`) reads to Buzz instead of opening the quantity
-# counter. A price-0 (key) item the party holds is listed, just refused.
+# Confirmed against genuine RPG_RT.exe under wine (cycle #175): walking the
+# party up to Nepheshel's item-shop NPC (`Map0016.lmu` event 4) holding both
+# an ordinary item and a price-0 one (17, 天使の翼) and opening Sell showed
+# both listed side by side ("薬草 : 5" and "天使の翼 : 1") -- a price-0 (key)
+# item the party holds is listed, just refused when selected. See
+# `Game::Shop#sellable_items`'s own comment (`mruby-rpg2k/mrblib/game.rb`)
+# for the full wine recipe and the two methodology hazards it took to get a
+# clean run (event 4's action-key trigger only fires approached from one
+# particular side; a cross-map save move can silently relocate same-numbered
+# events via chunk 111's own stale per-event position snapshot).
 check 'Shop sellable_items lists every held item, id order -- a price-0 ' \
       '(key) item stays listed even though it cannot actually be sold' do
   st, shop = shop_setup(0, { 3 => 100, 5 => 40, 8 => 0 })
