@@ -13,6 +13,7 @@
 #include <mruby/array.h>
 #include <mruby/compile.h>
 #include <mruby/error.h>
+#include <mruby/object.h>
 #include <mruby/string.h>
 #include <mruby/variable.h>
 
@@ -776,6 +777,106 @@ extern "C" void rgss_tts_init(int style_id,
                               double volume_scale);
 extern "C" void rgss_tts_shutdown(void);
 
+// Deferred per-maker gem init (build_config.rb's rpg_maker_gem_dispatch):
+// mrb_open() would otherwise define every class and method mruby-rpg2k,
+// mruby-rpgxp, mruby-rpgvx and mruby-mvjs carry on every run, regardless of
+// which single one the detected game directory actually needs. main() opens
+// mruby with mrb_open_core() instead (core classes only, no gems), calls
+// rpg_maker_init_shared_gems for the gems every maker needs, and then only
+// the one maker-specific function the detected GameKind calls for --
+// rpg_maker_init_rpgvx_gem brings up mruby-rpgxp itself too, since RGSS2/3
+// extends RGSS. See docs/adr/0047's Finding 1 for the live-heap cost this
+// avoids paying for the makers a run never uses.
+extern "C" void rpg_maker_init_shared_gems(mrb_state* M);
+extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* M);
+extern "C" void rpg_maker_init_rpgxp_gem(mrb_state* M);
+extern "C" void rpg_maker_init_rpgvx_gem(mrb_state* M);
+extern "C" void rpg_maker_init_mvjs_gem(mrb_state* M);
+
+// Which RPG Maker generation a game directory holds, decided by the same
+// markers the game-class dispatch in main() and (on Emscripten)
+// rpg_start_game already check individually. Factored out so both can share
+// one detection pass: main() now needs the answer *before* it opens mruby,
+// to init only the matching maker gem (see "Deferred per-maker gem init"
+// above), where it previously only needed it at dispatch time.
+enum class GameKind { kUnknown, kRpg2k, kMz, kMv, kRpgVx, kRpgXp };
+
+GameKind detect_game_kind(const fs::path& game_dir) {
+  if (fs::exists(game_dir / "RPG_RT.ldb"))
+    return GameKind::kRpg2k;
+  if (fs::exists(game_dir / "js" / "rmmz_core.js") &&
+      fs::exists(game_dir / "data" / "System.json"))
+    return GameKind::kMz;
+  if (fs::exists(game_dir / "js" / "rpg_core.js") &&
+      fs::exists(game_dir / "data" / "System.json"))
+    return GameKind::kMv;
+  if (is_rpgvx_game(game_dir))
+    return GameKind::kRpgVx;
+  if (fs::exists(game_dir / "Game.ini"))
+    return GameKind::kRpgXp;
+  return GameKind::kUnknown;
+}
+
+// Body shims for mrb_protect_error (mruby/error.h): each just calls the
+// matching rpg_maker_init_*_gem extern declared above.
+mrb_value protect_body_shared(mrb_state* M, void*) {
+  rpg_maker_init_shared_gems(M);
+  return mrb_nil_value();
+}
+mrb_value protect_body_rpg2k(mrb_state* M, void*) {
+  rpg_maker_init_rpg2k_gem(M);
+  return mrb_nil_value();
+}
+mrb_value protect_body_rpgxp(mrb_state* M, void*) {
+  rpg_maker_init_rpgxp_gem(M);
+  return mrb_nil_value();
+}
+mrb_value protect_body_rpgvx(mrb_state* M, void*) {
+  rpg_maker_init_rpgvx_gem(M);
+  return mrb_nil_value();
+}
+mrb_value protect_body_mvjs(mrb_state* M, void*) {
+  rpg_maker_init_mvjs_gem(M);
+  return mrb_nil_value();
+}
+
+// Runs one of the shims above the same way mrb_open() itself runs mruby's
+// own generated mrb_init_mrbgems(): guarded by a fresh jmp target, so a
+// raise partway through a gem's mrblib load reports through the normal
+// M->exc / CHECK_NO_EXC path below instead of longjmp-ing into whatever
+// happened to be on the C stack. mrb_protect_error clears M->exc into its
+// return value on the way out (so nested protected calls compose); restore
+// it so the CHECK_NO_EXC right after main()'s call site still sees it.
+void protect_gem_init(mrb_state* M, mrb_protect_error_func* body) {
+  mrb_bool failed = false;
+  const mrb_value result = mrb_protect_error(M, body, nullptr, &failed);
+  if (failed)
+    M->exc = mrb_obj_ptr(result);
+}
+
+// Calls the one rpg_maker_init_*_gem function `kind` needs. A no-op for
+// kUnknown: the caller reports "no recognisable project" on its own (see the
+// game-class dispatch below and rpg_start_game's).
+void init_maker_gem(mrb_state* M, GameKind kind) {
+  switch (kind) {
+    case GameKind::kRpg2k:
+      protect_gem_init(M, protect_body_rpg2k);
+      break;
+    case GameKind::kRpgXp:
+      protect_gem_init(M, protect_body_rpgxp);
+      break;
+    case GameKind::kRpgVx:
+      protect_gem_init(M, protect_body_rpgvx);
+      break;
+    case GameKind::kMv:
+    case GameKind::kMz:
+      protect_gem_init(M, protect_body_mvjs);
+      break;
+    case GameKind::kUnknown:
+      break;
+  }
+}
+
 // Whether the pending mruby exception is the game ending on purpose rather than
 // failing: `exit` raises SystemExit, which mruby tags with MRB_EXC_EXIT. Both
 // built-in title screens offer a Shutdown entry that calls it, and RMXP's own
@@ -837,60 +938,69 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
     return 1;
 
   const fs::path game_dir_path = "/game";
-  mrb_value game_obj;
+  const GameKind kind = detect_game_kind(game_dir_path);
+  // Deferred per-maker gem init (see that section above): the browser only
+  // learns which maker a project is once its loader unzips one in here, well
+  // after main() already opened mruby with just the shared gems.
+  init_maker_gem(M, kind);
+  mrb_value game_obj = mrb_nil_value();
   // Which maker was detected is recorded for the crash report before the
   // runtime is built, so a report from a failed construction still says what
   // the engine thought it was loading.
-  if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
-    error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
-  } else if (is_rpgvx_game(game_dir_path)) {
-    // RPG Maker VX / VX Ace: checked before the XP branch below, which only
-    // looks for Game.ini — a VX project has one too. See mruby-rpgvx.
-    error_dump_set_context("project", "RPG Maker VX / VX Ace");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &em_args);
-  } else if (fs::exists(game_dir_path / "Game.ini")) {
-    // RPG Maker XP renders at 640x480. Native main() sizes the display from
-    // --game_dir before creating it, but in the browser no project exists yet
-    // at that point (the page's loader mounts one here, later), so the display
-    // was created at the 320x240 default. Resize it now, before the runtime
-    // builds any screen-sized object: with a 320x240 canvas the XP scenes draw
-    // off the edge -- the title's command window lands past the bottom and its
-    // centred text past the right (found by the browser check that ADR 0025 has
-    // since dropped; see docs/adr/0025). The canvas follows the new resolution
-    // (LVGL resizes the SDL window on a resolution change) and the page
-    // rescales it from there; the browser display is never zoomed, see main()
-    // below.
-    if (em_display) {
-      lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
-      LOG(INFO) << "RPGXP: display sized to " << RPGXP_WIDTH << "x"
-                << RPGXP_HEIGHT;
-    }
-    error_dump_set_context("project", "RPG Maker XP (Game.ini)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
-  } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
-             fs::exists(game_dir_path / "data" / "System.json")) {
-    // RPG Maker MZ: a JavaScript project (js/rmmz_core.js + data/System.json).
-    // Mirrors MZ::REQUIRED_MARKERS. MZ shares MV's embedded JS host but ships
-    // PIXI v5 (WebGL-only); the WebGL backend it needs is not built yet, so
-    // this reports the pending state instead of the "no project found" error
-    // below (see mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6).
-    error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &em_args);
-  } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
-             fs::exists(game_dir_path / "data" / "System.json")) {
-    // RPG Maker MV: a JavaScript project (js/rpg_core.js + data/System.json).
-    // Mirrors MV::REQUIRED_MARKERS; the embedded JS host runs the game's own
-    // scripts (see mruby-mvjs). Lets the shell loader run MV projects too.
-    error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
-  } else {
-    LOG(ERROR) << "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
-                  "Ace (Data/System.rvdata[2]), RPG Maker MV "
-                  "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
-                  "(js/rmmz_core.js + data/System.json) project found under "
-                  "/game";
-    return 1;
+  switch (kind) {
+    case GameKind::kRpg2k:
+      error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &em_args);
+      break;
+    case GameKind::kRpgVx:
+      error_dump_set_context("project", "RPG Maker VX / VX Ace");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &em_args);
+      break;
+    case GameKind::kRpgXp:
+      // RPG Maker XP renders at 640x480. Native main() sizes the display from
+      // --game_dir before creating it, but in the browser no project exists
+      // yet at that point (the page's loader mounts one here, later), so the
+      // display was created at the 320x240 default. Resize it now, before the
+      // runtime builds any screen-sized object: with a 320x240 canvas the XP
+      // scenes draw off the edge -- the title's command window lands past the
+      // bottom and its centred text past the right (found by the browser
+      // check that ADR 0025 has since dropped; see docs/adr/0025). The canvas
+      // follows the new resolution (LVGL resizes the SDL window on a
+      // resolution change) and the page rescales it from there; the browser
+      // display is never zoomed, see main() below.
+      if (em_display) {
+        lv_display_set_resolution(em_display.get(), RPGXP_WIDTH, RPGXP_HEIGHT);
+        LOG(INFO) << "RPGXP: display sized to " << RPGXP_WIDTH << "x"
+                  << RPGXP_HEIGHT;
+      }
+      error_dump_set_context("project", "RPG Maker XP (Game.ini)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &em_args);
+      break;
+    case GameKind::kMz:
+      // RPG Maker MZ: a JavaScript project (js/rmmz_core.js +
+      // data/System.json). Mirrors MZ::REQUIRED_MARKERS. MZ shares MV's
+      // embedded JS host but ships PIXI v5 (WebGL-only); the WebGL backend it
+      // needs is not built yet, so this reports the pending state instead of
+      // the "no project found" error below (see mruby-mvjs/mrblib/mz.rb,
+      // docs/adr/0004 M6).
+      error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &em_args);
+      break;
+    case GameKind::kMv:
+      // RPG Maker MV: a JavaScript project (js/rpg_core.js + data/System.json).
+      // Mirrors MV::REQUIRED_MARKERS; the embedded JS host runs the game's own
+      // scripts (see mruby-mvjs). Lets the shell loader run MV projects too.
+      error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
+      break;
+    case GameKind::kUnknown:
+      LOG(ERROR)
+          << "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
+             "Ace (Data/System.rvdata[2]), RPG Maker MV "
+             "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
+             "(js/rmmz_core.js + data/System.json) project found under "
+             "/game";
+      return 1;
   }
   if (M->exc) {
     error_dump_report(M, "loading the project");
@@ -1354,18 +1464,25 @@ int main(int argc, char** argv) {
   // read back as "immediate" and every mrb_*_p type predicate fails, corrupting
   // core init. Use mruby's default allocator (emscripten malloc is 16-byte
   // aligned).
-  std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
+  std::shared_ptr<mrb_state> mrb(mrb_open_core(), mrb_close);
 #else
   // mruby's allocator is the global mrb_basic_alloc_func override above, which
   // routes through lvgl's pool. With profiling on, register lvallocf as the
   // profiler's downstream and have the override count through it; this must
-  // happen before mrb_open() takes the first allocation.
+  // happen before mrb_open_core() takes the first allocation.
   if (profiling)
     profiler_set_downstream_allocf(lvallocf);
   g_alloc_through_profiler = profiling;
-  std::shared_ptr<mrb_state> mrb(mrb_open(), mrb_close);
+  std::shared_ptr<mrb_state> mrb(mrb_open_core(), mrb_close);
 #endif
   mrb_state* M = mrb.get();
+  CHECK_NO_EXC(M);
+  // mrb_open_core() brings up mruby's own core classes only, none of this
+  // project's gems: see "Deferred per-maker gem init" above for why. Every
+  // maker still needs this shared set (RGSS, LCF, IO, ...); only the one
+  // maker gem the detected game directory calls for is deferred further,
+  // to just before that maker's class is actually looked up below.
+  protect_gem_init(M, protect_body_shared);
   CHECK_NO_EXC(M);
 
   // Start tailing the runtime log now, so anything the game reports on its way
@@ -1595,12 +1712,7 @@ int main(int argc, char** argv) {
   em_display = display;
   em_args = args;
   mrb_gc_register(M, em_args);
-  if (fs::exists(game_dir_path / "RPG_RT.ldb") ||
-      fs::exists(game_dir_path / "Game.ini") || is_rpgvx_game(game_dir_path) ||
-      (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
-       fs::exists(game_dir_path / "data" / "System.json")) ||
-      (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
-       fs::exists(game_dir_path / "data" / "System.json"))) {
+  if (detect_game_kind(game_dir_path) != GameKind::kUnknown) {
     rpg_start_game();
   } else {
     LOG(INFO) << "No project baked in; waiting for the page to load one "
@@ -1635,10 +1747,18 @@ int main(int argc, char** argv) {
     return mrb_test(ok) ? EXIT_SUCCESS : EXIT_FAILURE;
   }
 
-  mrb_value game_obj;
+  mrb_value game_obj = mrb_nil_value();
   // Record the detected maker for the crash report before the runtime is built
   // (see the same dispatch in rpg_start_game above).
   if (!FLAGS_script.empty()) {
+    // An arbitrary Ruby file (dev/debug use, e.g. the boot-check scripts'
+    // probes), not a game directory: which maker class(es) it touches, if
+    // any, isn't known up front, so bring up all of them rather than guess.
+    protect_gem_init(M, protect_body_rpg2k);
+    protect_gem_init(M, protect_body_rpgxp);
+    protect_gem_init(M, protect_body_rpgvx);
+    protect_gem_init(M, protect_body_mvjs);
+    CHECK_NO_EXC(M);
     std::ifstream ifs(FLAGS_script);
     CHECK(ifs) << "file open failed: " << FLAGS_script;
     std::string str((std::istreambuf_iterator<char>(ifs)),
@@ -1649,37 +1769,48 @@ int main(int argc, char** argv) {
     mrb_load_string(M, str.c_str());
     CHECK_NO_EXC(M);
     return EXIT_SUCCESS;
-  } else if (fs::exists(game_dir_path / "RPG_RT.ldb")) {
-    error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
-  } else if (fs::exists(game_dir_path / "js" / "rmmz_core.js") &&
-             fs::exists(game_dir_path / "data" / "System.json")) {
-    // RPG Maker MZ: a JavaScript game (js/rmmz_core.js) with a JSON database.
-    // Shares MV's JS host but needs a WebGL backend (not built yet), so it
-    // reports the pending state. See mruby-mvjs/mrblib/mz.rb, docs/adr/0004 M6.
-    error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &args);
-  } else if (fs::exists(game_dir_path / "js" / "rpg_core.js") &&
-             fs::exists(game_dir_path / "data" / "System.json")) {
-    // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
-    // See docs/adr/0004-javascript-maker-mv-quickjs.md.
-    error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
-  } else if (is_rpgvx_game(game_dir_path)) {
-    // RPG Maker VX / VX Ace: a Marshal database like XP's under a different
-    // extension (Data/*.rvdata[2]) and schema. Checked before the XP branch,
-    // which only looks for Game.ini — a VX project has one too. The database
-    // loads and the RGSS script host (the default path) runs the project's own
-    // scripts; the built-in title/map flow is still to come, so a project that
-    // ships no scripts — or a boot with RGSS_SCRIPT_HOST=0 — reports that. See
-    // mruby-rpgvx and docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
-    error_dump_set_context("project", "RPG Maker VX / VX Ace");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);
-  } else if (fs::exists(game_dir_path / "Game.ini")) {
-    error_dump_set_context("project", "RPG Maker XP (Game.ini)");
-    game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
-  } else {
-    CHECK(false) << "Unknown game directory: " << game_dir_path;
+  }
+
+  const GameKind kind = detect_game_kind(game_dir_path);
+  init_maker_gem(M, kind);
+  CHECK_NO_EXC(M);
+  switch (kind) {
+    case GameKind::kRpg2k:
+      error_dump_set_context("project", "RPG Maker 2000/2003 (RPG_RT.ldb)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPG2k"), 1, &args);
+      break;
+    case GameKind::kMz:
+      // RPG Maker MZ: a JavaScript game (js/rmmz_core.js) with a JSON database.
+      // Shares MV's JS host but needs a WebGL backend (not built yet), so it
+      // reports the pending state. See mruby-mvjs/mrblib/mz.rb, docs/adr/0004
+      // M6.
+      error_dump_set_context("project", "RPG Maker MZ (js/rmmz_core.js)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "MZ"), 1, &args);
+      break;
+    case GameKind::kMv:
+      // RPG Maker MV: a JavaScript game (js/rpg_core.js) with a JSON database.
+      // See docs/adr/0004-javascript-maker-mv-quickjs.md.
+      error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &args);
+      break;
+    case GameKind::kRpgVx:
+      // RPG Maker VX / VX Ace: a Marshal database like XP's under a different
+      // extension (Data/*.rvdata[2]) and schema. Checked before the XP branch,
+      // which only looks for Game.ini — a VX project has one too. The database
+      // loads and the RGSS script host (the default path) runs the project's
+      // own scripts; the built-in title/map flow is still to come, so a project
+      // that ships no scripts — or a boot with RGSS_SCRIPT_HOST=0 — reports
+      // that. See mruby-rpgvx and
+      // docs/adr/0024-rpgvx-rgss2-rgss3-data-layer.md.
+      error_dump_set_context("project", "RPG Maker VX / VX Ace");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGVX"), 1, &args);
+      break;
+    case GameKind::kRpgXp:
+      error_dump_set_context("project", "RPG Maker XP (Game.ini)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
+      break;
+    case GameKind::kUnknown:
+      CHECK(false) << "Unknown game directory: " << game_dir_path;
   }
   CHECK_NO_EXC(M);
 
