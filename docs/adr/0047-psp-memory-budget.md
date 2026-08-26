@@ -1295,6 +1295,37 @@ the interpreter-linking slice, in this order:
   (defeating the lazy-decode win) could still climb back toward the
   ceiling and rediscover the same cliff. Real, measured, and worth having;
   not a substitute for eventually hardening the failure path itself.
+
+  **Further fixes (2026-08-26,
+  [#1368](https://github.com/take-cheeze/rpg-maker-clone/pull/1368)):
+  `LCF::Array1D` also now caches `:event`/`:move_commands` decodes (an
+  event page's own command list, or a Move Route's -- previously only
+  nested `Array1D`/`Array2D` chunks were cached, so a page-flip or Call
+  Event redecoded a command list from scratch every time), and
+  `RPGVX::RGSSData` (VX/VX Ace's database loader, left eager in #1367
+  because its boot-time `[RGSS2-DB]` summary read each table's cache slot
+  directly) is now lazy too, via a `#summary` that reports a not-yet-loaded
+  table's on-disk byte size instead of forcing a decode just to count it.**
+
+  **Open follow-up, deliberately not yet implemented: `LCF::Array2D` still
+  eagerly builds one `Array1D` object per row for an entire table the
+  instant it's decoded** (`mruby-lcf/mrblib/lcf.rb`'s `Array2D#initialize`)
+  -- applies to `.lmt`'s `map_properties` (one row per map in the project)
+  and every `Array2D` table in `.ldb` (items/actors/skills/enemies/troops/
+  animations/common_events/...), even though a session only ever touches
+  the current map's tree-ancestry and a fraction of database rows. This is
+  the same shape as the fixes above (materializing N objects when a
+  fraction are ever read), but riskier to land blind: unlike caching a
+  decode result, this means Array2D would need to store each row's raw
+  byte span instead of a materialized `Array1D`, decoding lazily on first
+  `#[]`/`#each` access -- new binary-format boundary-scanning logic, not
+  just deferred work, in a class whose byte-exact `#to_lcf` round-trip
+  real save/database files depend on. Not implemented without a way to
+  measure its actual payoff first (a real game's map-tree/database row
+  counts) and confirm no round-trip regression on real data -- both blocked
+  in the environment that did this investigation (no network path to the
+  test fixtures beyond what CI already fetches). Left as a scoped,
+  concrete option for whoever picks this up next, not a vague TODO.
 - **P1a — done.** Stripped `-g` from `mrbc`'s compile options in the `psp`
   `MRuby::CrossBuild` block (`build_config.rb`), closing Finding 5's one real
   gap; confirmed `-O0` needed no fix (already stripped) and `-g3` needed none
