@@ -121,11 +121,12 @@ HERO_DIRECTION = 22
 PICTURES = 103
 FOREGROUND_EVENT = 113
 
-# The saved map state (chunk 111) and its camera scroll fields, per
-# LCF::Schema::SAVE_MAP_EVENT.
+# The saved map state (chunk 111), its camera scroll fields, and its
+# per-event position/direction snapshot table, per LCF::Schema::SAVE_MAP_EVENT.
 MAP_EVENTS = 111
 SCROLL_X = 1
 SCROLL_Y = 2
+EVENTS = 11
 
 # RPG2000 screen geometry, mirroring Game::TILE / RPG2k::WIDTH / RPG2k::HEIGHT
 # in the engine (which is mruby-only, so it cannot be loaded here).
@@ -247,6 +248,26 @@ scroll_px = [camera_offset(x * TILE + TILE / 2, SCREEN_W, map.width * TILE),
              camera_offset(y * TILE + TILE / 2, SCREEN_H, map.height * TILE)]
 map_ev[SCROLL_X] = scroll_px[0] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
 map_ev[SCROLL_Y] = scroll_px[1] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
+
+# Chunk 111 field 11 is a per-event-id position/direction snapshot for
+# whichever map the save was captured on -- NOT touched by --clear-scene
+# (that only drops the foreground event and shown pictures, chunks 113/103).
+# A cross-map move leaves it in place, and a genuine RPG_RT.exe then applies
+# it to the NEW map's own events that happen to share an id with the old
+# one's snapshot, silently relocating them off their Map####.lmu-authored
+# position -- confirmed under wine this cycle (#175): Nepheshel's Map0012
+# and Map0016 both number their events 1-4, and moving a Map0012 save onto
+# Map0016 left its own event 4 (an item-shop trigger, authored at (14,10))
+# unreachable at that spot because chunk 111 still carried Map0012's own
+# event-4 position (19,24). There is no scenario where keeping a snapshot
+# captured on a DIFFERENT map is desirable, so this is cleared unconditionally
+# on any map change (not gated on --clear-scene, whose two chunks are a
+# separate, narrower concern -- the mid-execution event and shown pictures).
+events_cleared = false
+if moved_maps && map_ev.key?(EVENTS)
+  map_ev[EVENTS] = LCF::Array2D.new('', LCF::Schema::SAVE_MOVABLE)
+  events_cleared = true
+end
 save[MAP_EVENTS] = map_ev
 
 # Drop the chunks that would replay the scene the save was taken in, leaving the
@@ -293,9 +314,15 @@ unless got_scroll == want_scroll
   warn "FAILED: wrote scroll #{want_scroll.inspect} but read back #{got_scroll.inspect}"
   exit 1
 end
+if events_cleared && back[MAP_EVENTS].key?(EVENTS) && back[MAP_EVENTS][EVENTS].any? { |_, v| v }
+  warn 'FAILED: a map change left stale per-event position data (chunk 111 ' \
+       'field 11) in the written save'
+  exit 1
+end
 
 puts "#{out}: map #{from[0]} (#{from[1]},#{from[2]}) -> #{map_id} (#{x},#{y})" \
      "#{options[:facing] ? " facing #{options[:facing]}" : ''}" \
-     "#{moved_maps ? ' [map changed: the save keeps the old map event states]' : ''}" \
+     "#{moved_maps ? ' [map changed: old map event execution state (switches/vars/etc) ' \
+                      'carries over; per-event positions (chunk 111) cleared]' : ''}" \
      " [camera #{scroll_px[0]},#{scroll_px[1]}px]" \
      "#{cleared.empty? ? '' : " [cleared: #{cleared.join(', ')}]"}"

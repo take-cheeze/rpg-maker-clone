@@ -5017,6 +5017,161 @@ The work below is roughly ordered by the critical path to a walkable game
   terminated before finishing. No EasyRPG source was consulted for any
   behavioral claim this cycle (the citations under review were read only to
   identify and remove them), and no web search was used.
+  ✅ **Follow-up (cycle #175, 2026-08-26): resolved cycle #174's own left-open
+  question -- `gen-rpg2k-save.rb`'s chunk 104 x/y/direction edits DO take
+  effect on genuine RPG_RT.exe. The prior null result was specific to this
+  one save's actor-15 leader (already explained by cycles #169/#170's
+  blank-charset finding), not a defect in the technique itself.** Built a
+  genuine, ordinary-leader save to test against by editing a copy of
+  Nepheshel's checked-in `Save01.lsd` in place: matching the exact
+  title-chunk "leader promotion" mechanism `Game::State.from_lsd` already
+  implements and cycle #169/#170 confirmed against genuine RPG_RT.exe
+  (`mruby-rpg2k/mrblib/game.rb`, the `party.promote_to_leader` comment),
+  set chunk 100's `hero_name`/`hero_level`/`hero_hp` and chunk 109's `party`
+  list to database actor 1 ("リト", a real story actor with a normal
+  `"mainchr"` charset already present in chunk 108 with no override) instead
+  of the save's actual leader, actor 15 ("デモ用", blank charset). Loaded
+  under genuine RPG_RT.exe, the file-select screen immediately confirmed the
+  swap ("ファイル３ リト LV1 HP50"), and `gen-rpg2k-save.rb --map 16 --at
+  X,Y --facing DIR` repositioning this leader was then pixel-precise and
+  fully reproducible: three independent, freshly-booted wine sessions with
+  three different positions ((14,11), (5,10), (10,3)-ish) each rendered the
+  leader's sprite at exactly its own predicted screen pixel (cropped and
+  cross-checked against the tile-to-pixel math by hand), and re-running the
+  *same* save/position twice in separate boots came back `compare -metric AE`
+  `0` (byte-identical) every time once wine process teardown was done
+  properly (see the methodology note below) -- unlike cycle #174's actor-15
+  test, which was truly unable to show *any* position at all, on any save,
+  because that leader draws nothing. Direction was independently confirmed
+  too: the same position with `--facing up` vs `--facing down` produced
+  byte-identical frames except for a small, sprite-sized region showing a
+  different (still recognizably the same character's) walking pose. Directly
+  re-confirmed the actor-15 side of the explanation as well, this time by
+  raw pixel sampling rather than visual impression (a first look at a
+  down-scaled screenshot briefly misread the *shopkeeper NPC's* own two-tone
+  hair/ribbon sprite as a second character before the raw RGB samples ruled
+  it out): repositioning the *unmodified* `Save01.lsd` (still actor-15) to a
+  freshly-chosen tile rendered nothing at all at that tile's exact predicted
+  pixels, matching the plain floor/wall background byte-for-byte -- the
+  leader really is invisible everywhere on this save, independent of
+  position, exactly as the blank-charset finding requires.
+  **A genuine methodology hazard was found and resolved along the way, and
+  is worth any future cycle's attention:** midway through, before settling
+  into the protocol above, a run of quick, back-to-back wine boots without
+  a full `wineserver -k` teardown between them made the *same, byte-verified
+  identical* save (`cmp` confirmed) render its leader at two different
+  on-screen tiles across separate boots -- not a corrupted write, a
+  literal restart-to-restart inconsistency. Explicitly ruled out chunk 113
+  (mid-execution foreground event) as the cause first, since it was the
+  obvious suspect and matches `--clear-scene`'s own stated purpose: neither
+  the "flaky" nor the "clean" save in the pair being compared ever carried
+  chunk 113 at all (it was absent in the base `Save01.lsd` to begin with),
+  so `--clear-scene` was provably a no-op on both, yet only the boot
+  discipline differed the outcome. Adding an explicit `wineserver -k` plus a
+  short sleep between separate wine invocations sharing the same
+  `WINEPREFIX` eliminated the flakiness completely across every subsequent
+  repeat this cycle ran (a dozen-plus boots, zero further inconsistency) --
+  strongly suggesting leftover/stale wineserver state from an unclean kill as
+  the mechanism, though the exact wine-internal reason was not chased
+  further (out of scope, no standing to reverse-engineer wine itself here).
+  **No code changes were needed in `gen-rpg2k-save.rb` or
+  `compare-nepheshel-save-wine.bash` for the position/facing/map claim
+  itself** -- an initial patch attributing the flakiness to chunk 113 was
+  written, tested, and then reverted after the `cmp` check above disproved
+  its own premise; shipping a fix for a disproven mechanism would have been
+  actively misleading, so the diff was discarded rather than kept. The
+  practical guidance for future cycles: always fully tear down wine
+  (`wineserver -k` + a short sleep, not just `kill` on tracked PIDs) between
+  *separate* wine boots that share a `WINEPREFIX`, especially in ad hoc
+  probes assembled during an investigation rather than the existing,
+  already-careful `compare-nepheshel-save-wine.bash`/`gen-lcf-save-wine.bash`
+  scripts (whose own teardown looks equally careful and was not implicated).
+  **A second, real, and distinct bug WAS found and fixed this cycle, in
+  `gen-rpg2k-save.rb` itself:** chasing why Map0016's item-shop trigger
+  event (event 4, an action-key page authored at (14,10)) would not respond
+  after a `--map 12 --at ... 16` move led to chunk 111 (`SAVE_MAP_EVENT`
+  field 11) -- a per-event-*id* position/direction snapshot for whichever
+  map the save was captured on, entirely separate from `--clear-scene`'s two
+  chunks (113/103). A cross-map move left it untouched, and Nepheshel's
+  Map0012 (the save's original map) and Map0016 happen to number their own
+  events 1-4 identically, so Map0012's own event 4 (at (19,24)) silently
+  overrode Map0016's authored (14,10) for the same id -- confirmed directly
+  by dumping both the save's chunk 111 and `Map0012.lmu`'s own event table,
+  which matched exactly. There is no case where keeping a snapshot captured
+  on a *different* map is wanted, so `gen-rpg2k-save.rb` now clears chunk
+  111 field 11 unconditionally whenever `--map` actually changes the map
+  (independent of `--clear-scene`, which stays scoped to its original two
+  chunks) -- tested both directions: a cross-map move now clears it (chunk
+  111's `events` array reads back with all four ids `nil`), a same-map `--at`
+  move leaves it untouched. The tool's own printed summary line was reworded
+  to describe both halves of the "keeps the old map event states" caveat
+  accurately (switch/variable-driven event *execution* state genuinely still
+  carries over and is unaffected by this fix; only the raw position/direction
+  snapshot is now cleared).
+  **With both hazards worked around, retried `Game::Shop#sellable_items`'s
+  own open question and got a clean, unambiguous answer: a price-0 item the
+  party holds DOES appear in the genuine RPG_RT.exe Sell list, confirming
+  this method's existing (previously "not independently confirmed") design.**
+  One more wrinkle surfaced first: standing at (14,11) facing up -- directly
+  south of event 4, the "intuitive" adjacent tile cycles #173/#174 both
+  used -- never triggered the event at all, silently, across every boot this
+  cycle tried from that side; a fresh dump of the event's own command list
+  ruled out an in-script gate (its one conditional branch, checking the
+  hero's facing, has empty bodies on both arms and is dead code) before
+  simply trying the other three sides by hand. Approaching from the *west*,
+  (13,10) facing right, fired the NPC's greeting on the first try, every
+  time it was retried. From there: party holding item 1 (ordinary, price
+  90, x5 from the base save) and item 17 (天使の翼, price 0, x1, added for
+  this test and reconfirmed via a fresh `RPG_RT.ldb` dump), the shop's own
+  買入/売却/やっぱりやめる choice, Sell selected, and the resulting list
+  showed **both** items side by side -- "薬草 : 5" and "天使の翼 : 1" --
+  screenshotted directly. `Game::Shop#sellable_items`'s own comment
+  (`mruby-rpg2k/mrblib/game.rb`) is updated with this evidence in place of
+  the prior cycles' "NOT independently confirmed" caveat and full failure
+  history. Also fixed, on the same topic and found while working on it: a
+  rule-1 violation in `scripts/rpg2k_logic_check.rb` (a detailed comment
+  citing `Window_ShopSell`/`src/window_shopsell.cpp` and `src/
+  window_item.cpp`/`src/scene_shop.cpp` as "RPG_RT's own live source") that
+  cycle #174's own citation sweep did not catch, because that sweep's grep
+  was scoped to `mrblib/*.rb` and this instance lives in `scripts/` --
+  replaced with this cycle's own wine evidence. Did not attempt the broader
+  256-instance sweep cycle #174 sized up; this was one instance directly
+  encountered while re-confirming its exact subject matter.
+  **Verification:** `ruby -c` clean on all three edited files
+  (`scripts/gen-rpg2k-save.rb`, `scripts/rpg2k_logic_check.rb`,
+  `mruby-rpg2k/mrblib/game.rb`); `cd build && ctest -R mruby_test` passed
+  twice (before and after the `gen-rpg2k-save.rb` fix, 12.36s/5.55s);
+  `scripts/rpg2k_logic_check.rb` (1150 checks, including the edited one),
+  `scripts/rpg2k_scene_check.rb` (929) both passed; `scripts/
+  rpg2k_save_load_check.rb` reconfirmed at exactly its 3 known pre-existing,
+  unrelated failures (BGM `balance`, picture `show_x`/`show_y`, the
+  transition-defaults warning); `gen-rpg2k-save.rb`'s own new chunk-111
+  behavior was exercised directly for both a cross-map move (events cleared,
+  confirmed via a fresh dump) and a same-map move (events left untouched).
+  No C++ was touched, so no `clang-format`/`cmake-format` step applies. No
+  changelog fragment: neither shipped change is a behavioral fix to
+  `mrblib` code (the `game.rb` edit is comment-only; the `gen-rpg2k-save.rb`
+  fix is host-side test tooling, not the engine). `data/` was left
+  byte-identical to this cycle's starting point -- `md5sum` reconfirmed
+  unchanged on `Save01.lsd`/`Map0012.lmu`/`RPG_RT.ldb` (matching the values
+  recorded at the start of this cycle) both mid-cycle and at the end; every
+  scratch `Save03.lsd`-`Save20.lsd` this cycle created across its many wine
+  probes was deleted afterward (confirmed via `ls Save*.lsd` showing only
+  `Save01.lsd` left), the one-off `data/mtf-meido-action/Debug/Save01.lsd`
+  generated while considering (and ultimately not using) an alternate
+  ordinary-leader source was also removed, `git status` on `data/` came back
+  clean throughout, and every wine/Xvfb/matchbox process this cycle started
+  was confirmed terminated (`ps aux` clean) before finishing. No EasyRPG
+  source was consulted for any behavioral claim.
+  **Left open for a future cycle:** whether `compare-nepheshel-save-wine.bash`
+  itself should default to more careful wineserver teardown between its own
+  ref/our boots was considered but not changed -- its existing sequencing
+  looks equally careful to what worked here and was never directly
+  implicated, so this is a "watch for it," not a concrete gap; the
+  256-citation sweep (`mrblib/*.rb`) and the equivalent sweep of `scripts/`
+  (not covered by cycle #174's own grep, and this cycle found one real
+  instance there) remain open; "iris"'s own switch-gated pages (cycle #174's
+  own open question 3) were not investigated further.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

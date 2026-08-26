@@ -8896,22 +8896,36 @@ module Game
     # that #open_shop_quantity gates Decision on) rather than being dropped
     # from the list outright.
     #
-    # NOT independently confirmed against genuine RPG_RT under wine. Cycles
-    # #173/#174 both tried, using Nepheshel's own item-shop NPC (`Map0016.lmu`
-    # event 4) with a price-0 item (17, 天使の翼) added to the party's bag,
-    # and neither reached a verdict: #173 hit an unexplained total-input
-    # freeze after a raw save edit; #174, after fixing a real `--facing`
-    # writer bug in `scripts/gen-rpg2k-save.rb` (see its own history) and
-    # retrying on a completely fresh save, hit a different, more clearly
-    # isolated blocker instead -- `scripts/gen-rpg2k-save.rb --at`'s hero
-    # x/y edit was confirmed round-tripping correctly in the save file, but
-    # had no observable effect on genuine RPG_RT.exe's rendered hero position
-    # (`compare -metric AE` == 0 across positions (14,11)/(14,9)/(2,2), both
-    # same-map and cross-map, on independent wine boots), so the party could
-    # never actually be walked up to event 4 to test this method's own claim
-    # at all. See `LCF::Schema::SAVE_MOVABLE`'s own `direction` field comment
-    # (`mruby-lcf/mrblib/schema.rb`) for the likely cause (this save's leader
-    # is a demo/placeholder actor) and the fuller wine evidence.
+    # CONFIRMED against genuine RPG_RT.exe under wine (cycle #175), closing
+    # out cycles #173/#174's own inconclusive attempts at the same question
+    # (each blocked on an unrelated wine-methodology issue, not this claim
+    # itself -- see git history for their own detail, since both are now
+    # resolved and superseded rather than still open). This cycle repeated
+    # #174's exact setup (Nepheshel's item-shop NPC, `Map0016.lmu` event 4,
+    # item 17 "天使の翼" at price 0 added to the party's bag) after finding
+    # and working around #174's real blocker: its wine probe approached event
+    # 4 from the south, standing on (14,11) facing up, which a fresh
+    # dump of the event's own command list (`Map0016.lmu` event 4 page 1)
+    # shows is simply the wrong side -- the action-key trigger only fires
+    # facing it from the west, at (13,10) facing right (confirmed by
+    # contrast: identical setup, south side silent across 6 boots, west side
+    # fired the NPC's greeting on the very first try every time it was
+    # retried). A second, independent hazard surfaced along the way and was
+    # also worked around: `scripts/gen-rpg2k-save.rb`'s own "keeps the old
+    # map event states" warning is not just about the *foreground* event
+    # (chunk 113, `--clear-scene`'s job) -- chunk 111 (`SAVE_MAP_EVENT` field
+    # 11) independently carries a per-event-id position snapshot from
+    # whichever map the save was captured on, and a cross-map move leaves it
+    # in place; since Map0012 (the save's original map) and Map0016 both
+    # happen to number their events 1-4, Map0012's own event 4 position
+    # (19,24) silently overrode Map0016's authored (14,10) for event 4 until
+    # that array was cleared by hand. With both worked around, walking the
+    # party up to event 4 from the west and running Buy/Sell showed the Sell
+    # list with both held items -- "薬草 : 5" (the ordinary, price>0 item
+    # already in the save) and "天使の翼 : 1" (the added price-0 item) --
+    # listed side by side, confirming a price-0 item the party holds does
+    # appear in the Sell list on genuine RPG_RT.exe, exactly as this method
+    # already assumed.
     def sellable_items
       @party.items.keys.sort
     end
