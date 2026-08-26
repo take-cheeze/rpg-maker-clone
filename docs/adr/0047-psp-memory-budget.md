@@ -1269,6 +1269,23 @@ the interpreter-linking slice, in this order:
   fired on this run (frame=400 sat just under the 85% line, so it may not
   have).
 
+  **Further confirmation (2026-08-25,
+  [#1367](https://github.com/take-cheeze/rpg-maker-clone/pull/1367)):
+  two more instances of the same waste patterns, found and fixed, pushed
+  this run's own numbers lower still.** `LCF::Array1D`'s `sym2idx` table
+  (P1360's fix above) was still built eagerly for ~18 write-only save-data
+  call sites that never read it; `RPGXP::RGSSData` ate the RPG2k
+  equivalent of the common-event problem at table granularity (all eleven
+  `Data/*.rxdata` files eager at open, several never touched in a given
+  session). Neither fix touches RPG2k's own Scene::Map path directly, but
+  the same `psp-smoke-game` run's numbers still dropped further:
+  `GAME_READY` 4,317,728 (was 4,320,480), `frame=0` 6,813,520 (was
+  6,919,584), `frame=200` **7,149,920** (was 8,091,600), `frame=400`
+  **7,486,816** (was the run's own prior peak, 10,690,512) -- this run's
+  peak across all ten heartbeats is 9,809,952 (77.9% of the ceiling, at
+  frame=1000), noticeably further from the edge than the already-resolved
+  run above. Still no crash, still reaches `frame=1600` cleanly.
+
   **Caveat, stated plainly: this is not a fix for the underlying
   corrupting-unwind mechanism**, which remains completely unhardened and
   unconfirmed as this crash's exact root cause. What changed is that this
