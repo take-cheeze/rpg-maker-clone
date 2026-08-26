@@ -14693,7 +14693,18 @@ module Game
     # Switch and variable ids are 1-indexed in-game but 0-indexed in the save, so
     # they shift down by one; unset entries default to false / 0. +save_count+
     # goes in the system chunk (RPG_RT increments it on every save); +timestamp+
-    # is the OLE-automation date shown on the file screen, defaulting to now.
+    # is the OLE-automation date shown on the file screen, defaulting to now;
+    # +save_slot+ is the 1-indexed file slot this save is being written to
+    # (SAVE_SYSTEM field 132) -- confirmed against genuine RPG_RT.exe under
+    # wine (cycle #161): saving into File 1 (the project's own baseline
+    # Save01.lsd fixture, save_count=4) leaves field 132 **absent**, while an
+    # otherwise-identical autostart-Open-Save-Menu probe saved into File 2
+    # writes field 132 present as **2** and, saved into File 3, present as
+    # **3** -- matching the schema's own already-declared `default: 1` for
+    # this field (LCF::Schema::SAVE_SYSTEM) exactly, the same "omit at
+    # default" convention already confirmed for fields 41-44/51-54/61
+    # (cycles #152/#153/#160). See #to_lsd's own sys[132] write below for the
+    # gap this closed.
     #
     # That default used to be 0.0, and it is why the genuine RPG_RT refused to
     # load anything this wrote: a zero date is 1899-12-30, which RPG_RT reads as
@@ -14709,7 +14720,7 @@ module Game
     # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
     # battles/defeats/escapes/victories/steps/turns fields and
     # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
-    def to_lsd(save_count = 1, timestamp = nil)
+    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
@@ -14847,10 +14858,38 @@ module Game
         se = @system_sfx[slot]
         sys[field] = se_chunk(se) if se
       end
+      # SAVE_SYSTEM fields 121-124 (Control Teleport/Escape/Save/Menu Access)
+      # are NOT one uniform "unconditional write" cluster the way an earlier
+      # cycle's own schema comment claimed -- confirmed against genuine
+      # RPG_RT.exe under wine (cycle #161), each field probed independently
+      # via a synthetic autostart event issuing the matching Control command
+      # then Open Save Menu with no Wait in between (same shape cycle #160
+      # used for fields 51-54): 121 (`teleport_access`, constructor default
+      # false) stayed **present** with value false even after an explicit
+      # ENABLE followed immediately by a DISABLE resetting it back to that
+      # same default, mid-event -- ruling out "omit at default" for this
+      # field and confirming the unconditional-write claim only for it (122
+      # was not independently probed this cycle but shares 121's exact code
+      # shape and command family, so is treated as the same convention by
+      # analogy pending its own direct check); by contrast 123
+      # (`save_access`, constructor default true) and 124 (`menu_access`,
+      # constructor default true) both went from **present** (value false)
+      # right after an explicit DISABLE to **absent** once a further ENABLE
+      # put them back to their own true default, still mid-event -- the same
+      # per-value "omit at default" convention already confirmed for fields
+      # 41-44/51-54/61/132, not the unconditional-write convention 121/122
+      # actually use. This codebase's own #to_lsd used to write all four
+      # fields unconditionally (`@save_access ? true : false` etc.,
+      # inherited from whichever earlier cycle wrote the doc comment this
+      # cycle corrected), so a save taken with save/menu access still at
+      # their own true default carried explicit `true`-valued bytes for
+      # fields 123/124 that a genuine RPG_RT.exe save never does -- the same
+      # species of over-writing bug cycles #152/#153/#160 already fixed for
+      # other fields in this schema.
       sys[121] = @teleport_access ? true : false
       sys[122] = @escape_access ? true : false
-      sys[123] = @save_access ? true : false
-      sys[124] = @menu_access ? true : false
+      sys[123] = false unless @save_access
+      sys[124] = false unless @menu_access
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
       # System windowskin / font override (Change System Graphics).
@@ -14861,7 +14900,17 @@ module Game
       # must not gain a stray 0 here.
       sys[140] = @atb_mode if @atb_mode && @atb_mode != 0
       sys[131] = save_count
-      sys[132] = 1
+      # The file slot this save is being written to (SAVE_SYSTEM field 132).
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #161): field
+      # 132 is omitted entirely from a save written to File 1 (matching the
+      # schema's own `default: 1`) and present with the exact chosen slot
+      # number for File 2 / File 3 -- the same per-field "omit at default"
+      # convention already confirmed for fields 41-44/51-54/61. This used to
+      # hardcode 1 regardless of the actual destination slot, the same
+      # species of bug cycles #152/#153/#160 already fixed elsewhere in this
+      # cluster (a field written unconditionally, and with the wrong value to
+      # boot, when genuine RPG_RT gates it on the real state).
+      sys[132] = save_slot if save_slot != 1
       save[101] = sys
 
       # Chunk 108 is the whole roster, one entry per actor the party has ever

@@ -4537,6 +4537,114 @@ check 'to_lsd omits SAVE_SYSTEM fields 51-54 (Change Face Graphic state) when ' 
   eq false, saved4.key?(54), 'field 54 absent (face_flipped still at its default, false)'
 end
 
+check 'to_lsd writes SAVE_SYSTEM fields 121/122 (teleport/escape access) ' \
+      'unconditionally but omits 123/124 (save/menu access) at their own ' \
+      'true default, matching genuine RPG_RT.exe' do
+  # Cycle #161: probed each of the four Control Teleport/Escape/Save/Menu
+  # Access fields independently against a genuine RPG_RT.exe save under wine
+  # (a synthetic autostart event issuing the matching Control command --
+  # 11820/11840/11930/11960 -- then Open Save Menu with no Wait in between,
+  # the same shape cycle #160 used for fields 51-54, continuing from the
+  # project's own baseline save whose inherited state already has
+  # teleport_access/escape_access/save_access all false and menu_access at
+  # its true default): 121 (teleport_allowed) stayed present with value
+  # false even right after an explicit ENABLE-then-DISABLE putting it back
+  # to that exact false default, mid-event -- an unconditional write. 123
+  # (save_allowed) went from present (false) right after an explicit DISABLE
+  # to fully absent once a further ENABLE put it back to its own true
+  # default, still mid-event; 124 (menu_allowed), never touched at all
+  # (still at its own true default), was absent from every capture, and an
+  # explicit DISABLE-then-ENABLE round trip (matching the "notouch" and
+  # "reset" pair already used for fields 51-54/132) showed the identical
+  # present-then-absent-again pattern -- the same per-value "omit at
+  # default" convention already confirmed for 41-44/51-54/61/132, not the
+  # unconditional-write convention 121/122 actually use and this codebase's
+  # own #to_lsd previously applied to all four alike (`@save_access ? true :
+  # false`, `@menu_access ? true : false`).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+
+  # A freshly-constructed state already sits at every one of these fields'
+  # own constructor default (teleport/escape_access false, save/menu_access
+  # true) -- exactly the "notouch" genuine capture shape.
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = st.to_lsd[101]
+  eq true, saved.key?(121), 'field 121 present even at its own false default (unconditional)'
+  eq false, saved[121], 'field 121 holds false'
+  eq true, saved.key?(122), 'field 122 present even at its own false default (unconditional)'
+  eq false, saved[122], 'field 122 holds false'
+  eq false, saved.key?(123), 'field 123 absent at its own true default (omit-at-default)'
+  eq false, saved.key?(124), 'field 124 absent at its own true default (omit-at-default)'
+
+  # Flip all four away from their defaults (Control Teleport/Escape/Save/Menu
+  # Access DISABLE/DISABLE/DISABLE/DISABLE) -- every field should now be
+  # present holding its changed (non-default) value.
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st2.teleport_access = true   # away from its own false default
+  st2.escape_access = true     # away from its own false default
+  st2.save_access = false      # away from its own true default
+  st2.menu_access = false      # away from its own true default
+  saved2 = st2.to_lsd[101]
+  eq true, saved2.key?(121), 'field 121 present once teleport_access differs from its default'
+  eq true, saved2[121]
+  eq true, saved2.key?(122), 'field 122 present once escape_access differs from its default'
+  eq true, saved2[122]
+  eq true, saved2.key?(123), 'field 123 present once save_access differs from its default (true)'
+  eq false, saved2[123]
+  eq true, saved2.key?(124), 'field 124 present once menu_access differs from its default (true)'
+  eq false, saved2[124]
+  round2 = Game::State.from_lsd(db, st2.to_lsd)
+  eq true, round2.teleport_access, 'teleport_access round-trips true'
+  eq true, round2.escape_access, 'escape_access round-trips true'
+  eq false, round2.save_access, 'save_access round-trips false'
+  eq false, round2.menu_access, 'menu_access round-trips false'
+
+  # Put 123/124 back to their own true default, still mid-scenario (no
+  # save/load boundary crossed) -- mirrors the "reset" genuine-RPG_RT probe:
+  # the fields go absent again, not "present, but re-holding the default
+  # value". 121/122 stay present even back at their own false default,
+  # since they are unconditional.
+  st2.teleport_access = false
+  st2.escape_access = false
+  st2.save_access = true
+  st2.menu_access = true
+  saved3 = st2.to_lsd[101]
+  eq true, saved3.key?(121), 'field 121 still present back at its own false default (unconditional)'
+  eq true, saved3.key?(122), 'field 122 still present back at its own false default (unconditional)'
+  eq false, saved3.key?(123),
+     'field 123 is absent again once save_access is put back to its true default, ' \
+     'not left present holding the default value'
+  eq false, saved3.key?(124),
+     'field 124 is absent again once menu_access is put back to its true default, ' \
+     'not left present holding the default value'
+end
+
+check 'to_lsd writes SAVE_SYSTEM field 132 (save_slot) only for a ' \
+      'non-default destination file slot, matching genuine RPG_RT.exe' do
+  # Cycle #161: confirmed against genuine RPG_RT.exe saves under wine that
+  # field 132 is omitted entirely from a save written to File 1 (the
+  # project's own long-standing baseline fixture, save_count=4, produced
+  # across cycles #148-160's own probes) while an otherwise-identical
+  # synthetic autostart-Open-Save-Menu probe, saved into File 2, writes
+  # field 132 present as 2, and into File 3 present as 3 -- matching the
+  # schema's own already-declared `default: 1` (LCF::Schema::SAVE_SYSTEM)
+  # exactly, the same "omit at default" convention already confirmed for
+  # fields 41-44/51-54/61/121... (123/124 above). This codebase's own
+  # #to_lsd used to hardcode `sys[132] = 1` unconditionally, ignoring
+  # whichever slot #export_lsd (main.rb) actually asked for -- a save to any
+  # slot but 1 both carried a wrong value *and* carried it when a genuine
+  # save to slot 1 would have omitted the field altogether.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  eq false, st.to_lsd(1, nil, 1)[101].key?(132), 'field 132 absent when saving to file 1 (the default slot)'
+  saved2 = st.to_lsd(1, nil, 2)[101]
+  eq true, saved2.key?(132), 'field 132 present when saving to file 2'
+  eq 2, saved2[132]
+  saved3 = st.to_lsd(1, nil, 3)[101]
+  eq true, saved3.key?(132), 'field 132 present when saving to file 3'
+  eq 3, saved3[132]
+end
+
 check 'a Fade Out BGM followed by a Save/Continue boundary still forces the ' \
       'next same-file Play BGM to restart, not silently adjust volume in place' do
   # The behavioural point of the round-trip above: pre-fix, bgm_stopping was

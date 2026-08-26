@@ -929,7 +929,7 @@ class RPG2k
   # Write a real Save<slot>.lsd next to the Marshal save. Best-effort: any error
   # is logged and swallowed so it cannot break the primary save.
   def export_lsd state, slot = 1
-    state.to_lsd(state.save_count).save_to(lsd_path(slot))
+    state.to_lsd(state.save_count, nil, slot).save_to(lsd_path(slot))
   rescue StandardError => e
     $stderr.puts "[RPG2k] .lsd export failed for slot #{slot}: #{e.message}"
   end
