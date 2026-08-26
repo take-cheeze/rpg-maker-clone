@@ -8618,6 +8618,40 @@ module Game
       @frames -= 1
     end
 
+    # Snapshot for this engine's own internal Marshal-style quick-resume
+    # (Game::State#to_h/.load) -- a private format with none of `.lsd`'s own
+    # field-count/byte-format constraints, so unlike `SAVE_PICTURE` (chunk
+    # 103) this can and does carry every field this class holds, including
+    # `fixed_to_map`/`use_transparent_color` (never modelled in `.lsd` at
+    # all -- see SAVE_PICTURE's own schema comment) and the live in-flight
+    # move target/frame-count, so a picture mid-Move-Picture at save time
+    # keeps gliding after a resume instead of snapping to rest.
+    def to_h
+      { name: @name, x: @x, y: @y, show_x: @show_x, show_y: @show_y,
+        zoom: @zoom, opacity: @opacity, red: @red, green: @green,
+        blue: @blue, saturation: @saturation, fixed_to_map: @fixed_to_map,
+        use_transparent_color: @use_transparent_color,
+        tx: @tx, ty: @ty, tzoom: @tzoom, topacity: @topacity,
+        tred: @tred, tgreen: @tgreen, tblue: @tblue, tsat: @tsat,
+        frames: @frames }
+    end
+
+    # Inverse of #to_h. `Picture.new`'s own opts already cover every at-rest
+    # field by the same key names; only the in-flight move state (absent from
+    # `opts`) needs restoring afterward, the same two-step shape
+    # `Game::State.restore_pictures` already uses for the `.lsd` path
+    # (`Picture.new` then `#move_to`).
+    def self.from_h(id, h)
+      return nil unless h
+      p = new(id, h)
+      frames = h[:frames] || 0
+      if frames > 0
+        p.move_to(h[:tx], h[:ty], h[:tzoom], h[:topacity], h[:tred],
+                  h[:tgreen], h[:tblue], h[:tsat], frames)
+      end
+      p
+    end
+
     private
 
     def step(cur, target); cur + (target - cur) / @frames.to_f; end
@@ -14350,7 +14384,15 @@ module Game
       # Shown pictures, id => Game::Picture. DOES round-trip through a real
       # Save/Continue (#to_lsd/.from_lsd, chunk 103, SAVE_PICTURE) -- a prior
       # version of this comment claimed otherwise; corrected the same day
-      # chunk 103 was added (see docs/TODO.md).
+      # chunk 103 was added (see docs/TODO.md). It now ALSO round-trips
+      # through this engine's own internal Marshal-style quick-resume
+      # (#to_h/.load, the same pair the Pan Screen offset above already
+      # uses) -- cycle #158 found `#to_h` simply never mentioned `@pictures`
+      # at all, so any picture on screen when Continue used the `.mrb` path
+      # (main.rb's own documented preference over `.lsd` when both exist --
+      # see scripts/compare-nepheshel-save-wine.bash's header) vanished on
+      # resume with no trace, a real, player-visible loss this engine's own
+      # `.lsd` path already avoided. See Picture#to_h/.from_h below.
       @pictures = {}
       # Runtime parallax override from a Change Parallax Background command (nil =
       # use the map's own panorama). Reset on a map change (#clear_parallax,
@@ -14553,6 +14595,7 @@ module Game
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
         screen: @screen.to_h,
+        pictures: @pictures.each_with_object({}) { |(id, p), out| out[id] = p.to_h },
         teleport_access: @teleport_access, escape_access: @escape_access,
         encounter_rate: @encounter_rate, encounter_total: @encounter_total,
         teleport_targets: @teleport_targets,
@@ -15656,6 +15699,13 @@ module Game
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
       state.screen.load_h(h[:screen])
+      # A save written before this existed carries no `pictures` key at all
+      # (nil), restoring the pre-fix "no pictures shown" behaviour rather
+      # than raising on a missing hash.
+      (h[:pictures] || {}).each do |id, ph|
+        pic = Picture.from_h(id, ph)
+        state.pictures[id] = pic if pic
+      end
       state.teleport_access = h[:teleport_access] ? true : false
       state.escape_access = h[:escape_access] ? true : false
       # Registries default empty / unset; a save written before these existed

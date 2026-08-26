@@ -9813,6 +9813,67 @@ check 'common_event_progress (a Parallel Process interpreter checkpoint) round-t
   eq({}, Game::State.load(db, legacy).common_event_progress)
 end
 
+check 'shown pictures round-trip through this engine\'s own internal Marshal-style ' \
+      'save (Game::State#to_h/.load), not just through a genuine .lsd (#to_lsd/.from_lsd)' do
+  # Cycle #158: #to_h never mentioned @pictures at all, so any picture on screen
+  # when Continue used this engine's own preferred `.mrb` quick-resume path
+  # (main.rb picks it over a genuine `.lsd` when both exist) vanished on resume
+  # with no trace -- a real, player-visible loss the `.lsd` path (chunk 103,
+  # SAVE_PICTURE) already avoided. See Game::Picture#to_h's own comment for why
+  # this is a strictly richer snapshot than `.lsd` can carry (fixed_to_map /
+  # use_transparent_color have no SAVE_PICTURE field at all).
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(5, name: 'black', x: 100, y: 80, zoom: 150,
+                  opacity: 200, red: 90, green: 110, blue: 95, saturation: 70,
+                  fixed_to_map: true, use_transparent_color: true)
+  # A second, still-in-flight Move Picture: the interpolated *current*
+  # position/etc must resume gliding toward the same target over the same
+  # remaining frame count, not snap to rest.
+  st.show_picture(7, name: 'black', x: 10, y: 10)
+  st.move_picture(7, 210, 10, 200, 50, 100, 100, 100, 100, 20)
+  10.times { st.update_pictures }
+  mid_x = st.pictures[7].x
+  ok st.pictures[7].moving?, 'picture 7 should still be moving mid-test'
+
+  loaded = Game::State.load(db, st.to_h)
+  p5 = loaded.pictures[5]
+  ok p5, 'picture 5 should have survived the round-trip'
+  eq 'black', p5.name
+  eq 100, p5.x
+  eq 80, p5.y
+  eq 150, p5.zoom
+  eq 200, p5.opacity
+  eq 90, p5.red
+  eq 110, p5.green
+  eq 95, p5.blue
+  eq 70, p5.saturation
+  eq true, p5.fixed_to_map
+  eq true, p5.use_transparent_color
+  eq false, p5.moving?
+
+  p7 = loaded.pictures[7]
+  ok p7, 'picture 7 should have survived the round-trip'
+  eq true, p7.moving?, 'a picture mid-Move-Picture must resume still moving'
+  eq mid_x, p7.x, 'resumes from its live interpolated position, not the original show position'
+  eq 210, p7.finish_x
+  eq 10, p7.finish_y
+  10.times { loaded.update_pictures }
+  eq false, p7.moving?, 'the restored move still runs to completion after enough frames'
+  eq 210, p7.x
+
+  # A save written before this existed carries no `pictures` key at all
+  # (nil), restoring the pre-fix "no pictures shown" behaviour rather than
+  # raising on a missing hash.
+  legacy = st.to_h
+  legacy.delete(:pictures)
+  eq({}, Game::State.load(db, legacy).pictures)
+end
+
 check 'map_event_positions (a wandered NPC\'s live tile + facing) round-trips through the save' do
   players = {
     1 => FakePlayerRow.new('Hero', '', 0, 5,
