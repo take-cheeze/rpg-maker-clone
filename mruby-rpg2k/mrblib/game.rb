@@ -15208,6 +15208,10 @@ module Game
           e[7] = p.zoom if p.zoom != 100
           cur_trans = Game.opacity_to_trans(p.opacity)
           e[8] = cur_trans if cur_trans != 0
+          # Field 18 (current_bot_trans, RPG2003-only) has no independent
+          # value of its own here -- see SAVE_PICTURE's own schema.rb comment
+          # -- so it mirrors field 8 (top == bottom).
+          e[18] = cur_trans if cur_trans != 0
           e[11] = p.red if p.red != 100
           e[12] = p.green if p.green != 100
           e[13] = p.blue if p.blue != 100
@@ -15226,6 +15230,9 @@ module Game
           e[33] = fzoom if fzoom != 100
           fin_trans = Game.opacity_to_trans(fopacity)
           e[34] = fin_trans if fin_trans != 0
+          # Field 35 (finish_bot_trans, RPG2003-only) mirrors field 34 for
+          # the same reason field 18 mirrors field 8 above.
+          e[35] = fin_trans if fin_trans != 0
           e[41] = fred if fred != 100
           e[42] = fgreen if fgreen != 100
           e[43] = fblue if fblue != 100
@@ -15880,7 +15887,27 @@ module Game
       pictures.each do |id, pic|
         next unless pic
         name = pic.name
-        next if name.nil? || name.empty?
+        # A blank name means either "never shown" (a fully field-less
+        # placeholder -- see SAVE_PICTURE's own comment) or "shown, then
+        # Erase Picture'd" (every position/zoom/tone field still present,
+        # only the name dropped -- confirmed against genuine RPG_RT.exe,
+        # cycle #159). `#key?(4)` (current_x) tells the two apart: it is
+        # written unconditionally for any id ever shown at all, and only
+        # for one, so its presence is exactly "this id has stale state to
+        # keep" -- a never-touched id is truly empty and must stay skipped.
+        # Reconstructing the erased case (rather than dropping it, this
+        # method's own prior behavior) matters for round-trip stability:
+        # this engine's own live Show Picture -> Erase Picture -> Save
+        # already keeps these fields through `#to_lsd` (see
+        # `Game::State#erase_picture`'s own comment), so a save loaded with
+        # an id already in that state must carry it into *this* Continue's
+        # own eventual next save too, the same way genuine RPG_RT keeps
+        # rewriting the identical stale bytes indefinitely -- not silently
+        # revert to a blank placeholder after a single load/save cycle.
+        if name.nil? || name.empty?
+          next unless pic.key?(4)
+          name = ''
+        end
         time_left = pic.time_left || 0
         moving = time_left > 0
         transparency = moving ? pic.current_transparency : pic.transparency
@@ -15897,6 +15924,7 @@ module Game
                                saturation: moving ? pic.current_tone_saturation : pic.tone_saturation,
                                fixed_to_map: pic.fixed_to_map,
                                use_transparent_color: pic.use_transparent_color)
+        state.erase_picture(id) if pic.name.nil? || pic.name.empty?
         next unless moving
         finish_trans = pic.transparency
         state.move_picture(id, (pic.finish_x || 0).to_i, (pic.finish_y || 0).to_i,

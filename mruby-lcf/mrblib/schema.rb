@@ -1240,6 +1240,21 @@ module LCF
       # *present* as a single `0x01` byte -- elided at its own (false)
       # default, the same convention as every other picture flag/field in
       # this table.
+      #
+      # liblcf's own generator/csv/fields.csv (`SavePicture`) names field 8
+      # `current_top_trans` and field 0x22/34 `finish_top_trans` -- RPG2003
+      # (below 1.12) can split a picture's transparency into independent top
+      # and bottom halves, with `current_bot_trans` at field 0x12/18 and
+      # `finish_bot_trans` at field 0x23/35 as their own separate fields, both
+      # confirmed present (alongside 8/34, holding the identical value) on a
+      # real kk1.12 (RPG2003) save under wine even though that save never
+      # exercises a genuine top/bottom split. `Game::Picture` here has no
+      # top/bottom split of its own -- only the one `#opacity` this table's
+      # field 8/34 already round-trip -- so `#to_lsd` writes 18/35 as plain
+      # mirrors of 8/34 (top == bottom, matching "never split" byte for byte)
+      # rather than modelling the split feature itself, left as a future
+      # extension the same way `docs/TODO.md` already tracks other unmodelled
+      # save fields.
       6 => { name: :fixed_to_map, type: :bool, default: false },
       2 => { name: :show_x, type: :double, default: 0.0 },
       3 => { name: :show_y, type: :double, default: 0.0 },
@@ -1258,6 +1273,10 @@ module LCF
       5 => { name: :current_y, type: :double, default: 0.0 },
       7 => { name: :current_zoom, type: :double, default: 100.0 },
       8 => { name: :current_transparency, type: :double, default: 0.0 },
+      # RPG2003-only bottom-half transparency (`current_bot_trans`) -- see
+      # field 8's own comment above. Written as a plain mirror of field 8
+      # (top == bottom), never independently.
+      18 => { name: :current_bot_transparency, type: :double, default: 0.0 },
       11 => { name: :current_tone_red, type: :double, default: 100.0 },
       12 => { name: :current_tone_green, type: :double, default: 100.0 },
       13 => { name: :current_tone_blue, type: :double, default: 100.0 },
@@ -1303,6 +1322,11 @@ module LCF
       # cluster (cycle #152/#153).
       33 => { name: :zoom, type: :int, default: 100 },        # 拡大率
       34 => { name: :transparency, type: :int, default: 0 },  # 透明度
+      # RPG2003-only bottom-half finish transparency (`finish_bot_trans`) --
+      # see field 8's own comment above for the top/bottom split this table
+      # doesn't model; written as a plain mirror of field 34, never
+      # independently.
+      35 => { name: :bot_transparency, type: :int, default: 0 },
       41 => { name: :tone_red, type: :int, default: 100 },        # 色調：赤(R)
       42 => { name: :tone_green, type: :int, default: 100 },      # 色調：緑(G)
       43 => { name: :tone_blue, type: :int, default: 100 },       # 色調：青(B)

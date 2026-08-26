@@ -4895,6 +4895,38 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
      'a slot with no picture of its own stays an empty placeholder alongside the live ones'
 end
 
+check 'to_lsd mirrors the RPG2003-only bottom-half transparency fields ' \
+      '(18/35) off the top-half ones (8/34) this codebase actually models' do
+  # liblcf's own generator/csv/fields.csv (SavePicture) names field 8
+  # current_top_trans and field 34 finish_top_trans, and documents a
+  # completely separate pair -- current_bot_trans (0x12/18) and
+  # finish_bot_trans (0x23/35) -- for RPG2003's pre-1.12 top/bottom split
+  # transparency feature. A real kk1.12 (RPG2003) save under wine carries
+  # both 8/18 and 34/35 present with identical values even though it never
+  # exercises a genuine split. Game::Picture has no top/bottom split of its
+  # own, so #to_lsd writes 18/35 as plain mirrors of 8/34 rather than
+  # dropping them (which used to leave a real RPG_RT.exe-written save's own
+  # split-transparency fields with no equivalent on this engine's own
+  # from-scratch write).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(3, name: 'backdrop', x: 200, y: 150,
+                  opacity: Game.trans_to_opacity(25))
+  saved = st.to_lsd[103][3]
+  eq saved.transparency, saved.bot_transparency,
+     'finish_bot_trans (35) mirrors finish_top_trans (34)'
+  eq saved.current_transparency, saved.current_bot_transparency,
+     'current_bot_trans (18) mirrors current_top_trans (8)'
+  ok saved.bot_transparency != 0, 'the mirrored value is not just both sides defaulting to 0'
+
+  # A picture never shown (still at its own default opacity/transparency 0)
+  # must leave both mirrored fields elided too, the same "omit at default"
+  # convention every other picture field here already follows.
+  untouched = st.to_lsd[103][7].instance_variable_get(:@data)
+  ok untouched[18].nil?, 'an untouched slot has no current_bot_trans of its own'
+  ok untouched[35].nil?, 'an untouched slot has no finish_bot_trans of its own'
+end
+
 check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' \
       'the glide instead of snapping straight to its target' do
   # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: a save
@@ -4984,9 +5016,10 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
   off_default = st.to_lsd[103][9]
   raw2 = off_default.instance_variable_get(:@data)
   present2 = (0...raw2.size).select { |i| raw2[i] }
-  eq [1, 2, 3, 4, 5, 7, 8, 11, 12, 13, 14, 31, 32, 33, 34, 41, 42, 43, 44], present2,
+  eq [1, 2, 3, 4, 5, 7, 8, 11, 12, 13, 14, 18, 31, 32, 33, 34, 35, 41, 42, 43, 44], present2,
      'zoom/transparency/tone are all present (current and finish alike) once ' \
-     'every one is off its own default, though the picture was never moved'
+     'every one is off its own default, though the picture was never moved -- ' \
+     'including the mirrored bottom-half transparency fields 18/35'
   eq 133.0, off_default.current_zoom
   # 26, not 25: the same pre-existing opacity/transparency round-trip
   # precision gap the "to_lsd writes chunk 103..." check above already notes
@@ -10021,6 +10054,47 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
   never_touched = pics[6]
   eq [], (1..51).select { |id| LCF::Schema::SAVE_PICTURE[id] && never_touched.key?(id) },
      'a never-touched id carries no fields at all, not even absent-name'
+end
+
+check 'from_lsd reconstructs an already-erased picture\'s stale fields from a ' \
+      'foreign save, so a second Continue -> Save keeps writing the same ' \
+      'bytes forever, matching genuine RPG_RT, instead of dropping them ' \
+      'after one load/save cycle' do
+  # #restore_pictures used to `next` outright on a blank-name entry, so
+  # loading a genuine RPG_RT.exe save whose picture had already been
+  # Erase Picture'd before that save was written left this engine's own
+  # `Game::State#pictures` with no entry for that id at all -- distinct
+  # from this engine's own live Show Picture -> Erase Picture -> Save,
+  # which the check above already confirms keeps the stale fields. A
+  # second Save/Continue from the *loaded* state then wrote a fully
+  # field-less placeholder instead of the identical stale bytes genuine
+  # RPG_RT itself would keep rewriting -- an asymmetry a real kk1.12 save
+  # exposed (its own already-erased pictures round-tripped through this
+  # engine as if they had never been shown at all).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  origin = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  # opacity 0 (transparency 100) is a fixed point of the opacity<->
+  # transparency conversion (like the 255/0 pair the checks above already
+  # use) -- picked deliberately so this check exercises reconstruction/
+  # erasure symmetry only, not the separate, already-documented rounding
+  # gap a lossier opacity value would also trip over.
+  origin.show_picture(5, name: 'black', x: 111, y: 77, zoom: 133,
+                       opacity: 0,
+                       red: 140, green: 60, blue: 180, saturation: 50)
+  origin.erase_picture(5)
+  foreign_save = origin.to_lsd
+
+  loaded = Game::State.from_lsd(db, foreign_save)
+  pic = loaded.pictures[5]
+  ok !pic.nil?, 'the already-erased picture is reconstructed, not dropped'
+  ok !pic.shown?, 'it comes back marked erased, not visible'
+  eq 111, pic.show_x
+  eq 133, pic.zoom
+
+  resaved = loaded.to_lsd[103][5]
+  eq foreign_save[103][5].instance_variable_get(:@data),
+     resaved.instance_variable_get(:@data),
+     'a second Save/Continue writes the exact same stale bytes as the first'
 end
 
 check 'Erase Picture mid-Move-Picture does NOT freeze the move: the picture ' \
