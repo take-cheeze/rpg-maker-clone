@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-# Install the Android debug APK the `android` CI job built, push a real
-# RPG2k project (Nepheshel) to a plain world-writable staging directory
-# (see the --game_dir override below for why this is not
-# RpgMakerCloneActivity.java's own external-files game directory), launch it
-# with the rpg2k_extra_args intent-extra hook
+# Install the Android debug APK the `android` CI job built, stage a real
+# RPG2k project (Nepheshel) via a plain world-writable directory and copy it
+# into the app's own internal storage as the app itself (see the --game_dir
+# override below for why this is not RpgMakerCloneActivity.java's own
+# external-files game directory), launch it with the rpg2k_extra_args
+# intent-extra hook
 # (RpgMakerCloneActivity#getArguments) so it self-drives to New Game and
 # exits cleanly via --timeout_ms -- the same flags scripts/rpg2k_boot_check.bash
 # uses on desktop -- with no touch-input automation needed, and assert it
@@ -36,35 +37,38 @@ adb wait-for-device
 adb install -r "${APK}"
 
 # Getting a real project into RpgMakerCloneActivity's own external-files
-# game directory (Android/data/<pkg>/files/game) turned out to be a dead end
-# on this AVD system image (`google_apis` x86_64 API 30) -- four attempts,
-# four different scoped-storage walls:
-#  - plain `adb push` as the `shell` user: "secure_mkdirs failed" creating
-#    the directory, "stat failed" once it exists -- either way, permission
-#    denied.
-#  - `adb root` gets past both, but the pushed files land owned by root
-#    rather than going through the FUSE layer's normal shell-user
-#    permission translation, so the app's own UID can't read them back
-#    (libc++abi filesystem_error, "Permission denied" posix_stat'ing
-#    RPG_RT.ini) -- and `chmod -R 777` as root does not fix it, because this
-#    AVD's emulated external storage synthesizes access from *which app
-#    owns the path*, not from real mode bits.
-#  - `run-as` (the app's own UID, no root) can create the directory via a
-#    real getExternalFilesDir() launch, but a `run-as cp` into it still hit
-#    "Permission denied": run-as's shell does not carry the same per-app
-#    storage mount namespace a real, zygote-launched app process gets, so
-#    it is not actually equivalent to the app for scoped storage.
+# game directory (Android/data/<pkg>/files/game) turned out to be a dead
+# end on this AVD system image (`google_apis` x86_64 API 30) -- several
+# attempts, several different scoped-storage walls (secure_mkdirs/stat
+# permission denied as the plain `shell` user; root-owned, app-unreadable
+# files after `adb root`; `run-as`'s shell not carrying the same per-app
+# storage mount namespace a real launched process gets). Routing around
+# external storage entirely via a second --game_dir into plain
+# /data/local/tmp (gflags takes the *last* occurrence of a repeated flag,
+# src/main.cxx's plain `DEFINE_string(game_dir, ...)`, no dedup) got
+# further but hit a wall of its own kind: SIGSEGV, with an SELinux denial
+# logged in the same instant --
+#   avc: denied { append } for name="RPG_RT.ini" ...
+#     scontext=u:r:untrusted_app:s0:... tcontext=u:object_r:shell_data_file:s0
+# -- /data/local/tmp is labeled shell_data_file, and SELinux policy simply
+# does not let the untrusted_app domain every real app process runs under
+# touch that label, DAC permission bits notwithstanding; the open() call
+# fails and something downstream dereferences the result unchecked.
 #
-# Sidestepping the question entirely: `rpg2k_extra_args` (below,
-# RpgMakerCloneActivity#getArguments) can carry a second --game_dir, and
-# gflags takes the *last* occurrence of a repeated flag (src/main.cxx's
-# plain `DEFINE_string(game_dir, ...)`, no dedup) -- so pointing it at a
-# plain world-writable staging directory outside external storage
-# altogether (/data/local/tmp, which a normal push always reaches without
-# any of the above) skips scoped storage rather than fighting it.
+# The one class of path avoiding all of the above at once: the app's own
+# *internal* storage (Context.getFilesDir(), /data/data/<pkg>/files) --
+# always owned by the app's own uid, always labeled for its own SELinux
+# domain, no scoped-storage mount-namespace question at all, and (unlike
+# external storage) squarely what `run-as` is documented to reach: its
+# shell starts already cd'd into /data/data/<pkg>, so a plain relative
+# `cp` lands correctly with no `mkdir -p`/absolute-path games needed.
 STAGING="/data/local/tmp/nepheshel"
+INTERNAL_GAME_DIR="/data/data/${PACKAGE}/files/game"
 adb shell rm -rf "${STAGING}"
 adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${STAGING}/"
+echo "== copying Nepheshel into ${PACKAGE}'s internal storage"
+adb shell "run-as ${PACKAGE} sh -c \"mkdir -p files/game && cp -r ${STAGING}/. files/game/\""
+adb shell rm -rf "${STAGING}"
 
 adb logcat -c
 
@@ -76,7 +80,7 @@ echo "== launching ${ACTIVITY}"
 # the first time this ran. Single-quoting the value here and handing the
 # whole command to `adb shell` as one string lets the device's shell -- not
 # adb's own re-join -- be the one place that matters.
-EXTRA_ARGS="--game_dir ${STAGING} --test_play --rpg2k_new_game --timeout_ms=${TIMEOUT_MS}"
+EXTRA_ARGS="--game_dir ${INTERNAL_GAME_DIR} --test_play --rpg2k_new_game --timeout_ms=${TIMEOUT_MS}"
 adb shell "am start -W -n ${ACTIVITY} --es rpg2k_extra_args '${EXTRA_ARGS}'"
 
 # Poll logcat for the [RPG2k-MAP] marker (Scene::Map reached) rather than a

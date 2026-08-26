@@ -174,9 +174,10 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
   `google_apis` emulator under KVM, relying on the Android Emulator's own
   ARM-binary translation to run the arm64-v8a `.so` unmodified (bundled with
   Google APIs images from API 28 on — this app's own `minSdk` floor). It
-  installs the APK, pushes Nepheshel to a plain world-writable staging
-  directory (`/data/local/tmp` — see below for why not the game directory
-  above), launches `RpgMakerCloneActivity` and asserts the engine reaches
+  installs the APK, stages Nepheshel via a plain world-writable directory
+  and copies it into the app's own internal storage as the app itself (see
+  below for why not the game directory above), launches
+  `RpgMakerCloneActivity` and asserts the engine reaches
   the map scene (`[RPG2k-MAP]` in `adb logcat -s RPG2K`) with no native
   crash (`F libc`/`F DEBUG` tombstone lines or `FATAL EXCEPTION` anywhere in
   the device log). `scripts/android_smoke_check.bash` is the actual check;
@@ -196,19 +197,26 @@ Two CI jobs cover this port (`.github/workflows/build.yml`):
     New Game and a clean self-exit with no touch-input automation. Absent on
     every real launch (the extra is simply not set), so ordinary installs are
     unaffected.
-  - The pushed project lands at a plain `/data/local/tmp` staging directory
-    rather than this app's own external-files game directory above, with
-    `rpg2k_extra_args` also carrying a second `--game_dir` that overrides it
-    (gflags takes the last occurrence of a repeated flag). Four different
-    ways of getting real data into `Android/data/<pkg>/...` on this AVD
-    system image each hit a different scoped-storage wall — a plain
-    `adb push` (permission denied creating or writing the directory), `adb
-    root` (the pushed files land root-owned and unreadable by the app, and
-    `chmod` cannot fix that on this AVD's synthetic FUSE storage), and
-    `run-as` (its shell does not carry the same per-app storage mount
-    namespace a real launched process gets, so a `run-as cp` hit
-    "Permission denied" too) — so this sidesteps external storage for the
-    smoke test's purposes entirely instead of fighting it further.
+  - The pushed project lands in the app's own *internal* storage
+    (`/data/data/<pkg>/files/game`, `run-as`'s own default working
+    directory) rather than this app's own external-files game directory
+    above, with `rpg2k_extra_args` also carrying a second `--game_dir` that
+    overrides it (gflags takes the last occurrence of a repeated flag).
+    Getting real data into `Android/data/<pkg>/...` on this AVD system
+    image hit a run of different scoped-storage walls — a plain `adb push`
+    (permission denied creating or writing the directory), `adb root` (the
+    pushed files land root-owned and unreadable by the app, and `chmod`
+    cannot fix that on this AVD's synthetic FUSE storage), `run-as` into
+    *external* storage (its shell does not carry the same per-app storage
+    mount namespace a real launched process gets), and even a second
+    `--game_dir` into plain `/data/local/tmp` (SIGSEGV, with an SELinux
+    denial in the same instant — `avc: denied { append } ...
+    scontext=u:r:untrusted_app:s0:... tcontext=u:object_r:shell_data_file:s0`;
+    every real app process runs as `untrusted_app`, and policy never lets
+    that domain touch a `shell_data_file`-labeled path, DAC bits
+    notwithstanding). Internal storage sidesteps all of it at once: always
+    owned by the app's own uid, always labeled for its own SELinux domain,
+    and exactly the storage class `run-as` is documented to reach.
   - `continue-on-error: true` for now — new and unproven, the same starting
     point `psp-smoke-game` used before it had run green for a while; promote
     once this has too.
