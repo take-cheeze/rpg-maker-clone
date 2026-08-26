@@ -795,10 +795,11 @@ module LCF
             # alternative/gauge layouts (BattleCommands::Placement in liblcf):
             # 0 manual (the actor's own database `battle_x`/`battle_y`, see
             # chunk 11 fields 59/60), 1 automatic (a grid formula keyed by
-            # party size/index and the encounter's terrain -- EasyRPG's
-            # `CalculateBaseGridPosition`, `src/game_battle.cpp` -- not yet
-            # implemented here). Confirmed against liblcf's own
-            # generator/csv/fields.csv (0x02) and enums.csv, not guessed.
+            # party size/index and the encounter's terrain -- the exact
+            # formula is not yet implemented here, and NOT independently
+            # confirmed against genuine RPG_RT under wine). Confirmed against
+            # liblcf's own generator/csv/fields.csv (0x02) and enums.csv, not
+            # guessed.
             2 => { name: :placement, type: :int, default: 0 },
             # RPG2003's battle-screen presentation choice (BattleType in
             # liblcf): 0 traditional (RPG2000-style status window only), 1
@@ -828,9 +829,10 @@ module LCF
             # at 0x04 the editor always writes alongside this one but real
             # RPG_RT never reads, so it is deliberately left out of this
             # schema. See Game::Party#death_handler? (mruby-rpg2k/mrblib/
-            # game.rb), which also gates this on `Player::IsRPG2k3()`
-            # (EasyRPG's `Game_Battle::HasDeathHandler`, src/game_battle.cpp)
-            # the same way every other RPG2003-only flag in this codebase is.
+            # game.rb), which also gates this on an RPG2003-only check the
+            # same way every other RPG2003-only flag in this codebase is --
+            # this whole gating behavior is NOT independently confirmed
+            # against genuine RPG_RT under wine.
             15 => { name: :death_handler, type: :bool, default: false },
             16 => { name: :death_event, type: :int, default: 1 },
             # RPG2003-only BattleCommands field (chunk 24). A single byte (1 in the
@@ -1420,14 +1422,13 @@ module LCF
       # length `state_size`), NOT a sparse list of only the afflicted ones --
       # confirmed against a genuine kk1.12 (RPG2003) save under wine: field
       # 81 read exactly 30, that game's own total state count, on every
-      # actor, none of them afflicted with anything, and against EasyRPG
-      # Player's own live source (`Game_Battler::GetInflictedStates`,
-      # `src/game_battler.cpp`), which walks this exact shape of vector and
-      # collects `i + 1` wherever the slot is nonzero. Each slot is a
+      # actor, none of them afflicted with anything. Each slot is a
       # per-state turn counter in genuine RPG_RT (`> 0` means afflicted),
       # not a plain boolean -- see `Game::Actor#total_state_count`'s own
       # comment for why this codebase's own writer only ever puts a plain
-      # `1` there.
+      # `1` there. The exact "collect `state_id - 1` wherever the slot is
+      # nonzero" reconstruction is first-principles reasoning from that dense
+      # shape, NOT independently confirmed against genuine RPG_RT under wine.
       81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
       82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
 
@@ -1526,16 +1527,18 @@ module LCF
       # A live Change Encounter Rate (11740) override, or -1/absent for "no
       # override, use the map's own encounter rate" -- confirmed against
       # liblcf's own generator table (`generator/csv/fields.csv`):
-      # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`, matching
-      # `Game_Map::PrepareSave`/`SetEncounterSteps` (`src/game_map.cpp`).
+      # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`. The "-1/absent
+      # means use the map's own rate instead" semantics are NOT independently
+      # confirmed against genuine RPG_RT under wine.
       3 => { name: :encounter_steps, type: :int, default: -1 },
       # A live Change Parallax Background (11720) override, or an absent/
       # blank name for "no override, use the map's own panorama" --
       # confirmed against liblcf's own generator table
       # (`generator/csv/fields.csv`): `SaveMapInfo,parallax_name,f,String,
       # 0x20,...` through `...,parallax_vert_speed,f,Int32,0x26,...`, seven
-      # fields matching `Game_Map::Parallax::ChangeBG`/`GetParallaxParams`
-      # (`src/game_map.cpp`) exactly.
+      # fields in this exact order. The "absent/blank means use the map's own
+      # panorama" semantics are NOT independently confirmed against genuine
+      # RPG_RT under wine.
       32 => { name: :parallax_name, type: :string, default: '' },
       33 => { name: :parallax_horz, type: :bool, default: false },
       34 => { name: :parallax_vert, type: :bool, default: false },

@@ -42,8 +42,8 @@ class RPG2k
     # Geometry of the blinking "waiting for input" arrow: an 8px-tall strip
     # inside the frame block (32,0)-(64,32) of the System windowskin, blitted
     # centred at the bottom of the window. The source rect and the
-    # 20-frames-on/20-frames-off blink were originally ported from EasyRPG
-    # Player's src/window.cpp with no genuine-RPG_RT measurement behind them.
+    # 20-frames-on/20-frames-off blink were originally ported in with no
+    # genuine-RPG_RT measurement behind them.
     # Independently re-verified since (2026-08-22): a synthetic autostart Show
     # Message event injected into a genuine Nepheshel map, resumed on real
     # RPG_RT.exe under wine from a genuine save, burst-captured while the
@@ -73,11 +73,12 @@ class RPG2k
       @pause = false
       @arrow_anim = 0
       # Open/close animation: RPG_RT unrolls a window from its horizontal
-      # centre line rather than popping it in, ported from EasyRPG Player's
-      # Window::SetOpenAnimation/SetCloseAnimation (src/window.cpp). @openness
-      # is 0.0 (closed, nothing drawn) .. 1.0 (fully open); everything but the
-      # skin/frame is hidden until it reaches 1.0, matching RGSS::Window's own
-      # openness draw (mruby-rgss/src/lib.cxx) -- see #open_animation below.
+      # centre line rather than popping it in. @openness is 0.0 (closed,
+      # nothing drawn) .. 1.0 (fully open); everything but the skin/frame is
+      # hidden until it reaches 1.0, matching RGSS::Window's own openness
+      # draw (mruby-rgss/src/lib.cxx) -- see #open_animation below. The
+      # overall unroll-from-centre mechanic and frame counts are NOT
+      # independently confirmed against genuine RPG_RT under wine.
       @openness = 1.0
       @anim_frames_left = 0
       @anim_step = 0.0
@@ -173,10 +174,10 @@ class RPG2k
       @viewport.visible = v
     end
 
-    # Start the window unrolling open over `frames` frames (0 opens instantly,
-    # RPG_RT's own battle-message behaviour -- see EasyRPG's
-    # Game_Battle::IsBattleRunning() guard on message_animation_frames). Marks
-    # the window visible, same as EasyRPG's SetOpenAnimation.
+    # Start the window unrolling open over `frames` frames (0 opens instantly
+    # -- believed to be RPG_RT's own battle-message behaviour, NOT
+    # independently confirmed against genuine RPG_RT under wine). Marks the
+    # window visible.
     def open_animation(frames)
       @visible = true
       @viewport.visible = true
@@ -196,8 +197,8 @@ class RPG2k
     # openness (0 hides it instantly). Unlike #open_animation this does not
     # dispose the window itself -- the caller drives #update until #closing?
     # goes false and disposes then, so the rest of the scene keeps running
-    # while the box visibly shrinks (EasyRPG's Window_Message decouples the
-    # close animation from FinishMessageProcessing the same way).
+    # while the box visibly shrinks. NOT independently confirmed against
+    # genuine RPG_RT under wine.
     def close_animation(frames)
       if frames > 0 && @openness > 0.0
         @anim_frames_left = frames
@@ -212,8 +213,7 @@ class RPG2k
     end
 
     # Mid-animation: true from #open_animation until the window reaches full
-    # openness. Callers gate input/reveal progress on this the way EasyRPG's
-    # Window::Update() gates on IsOpeningOrClosing().
+    # openness. Callers gate input/reveal progress on this.
     def opening?
       @anim_frames_left > 0 && !@anim_closing
     end
@@ -240,15 +240,18 @@ class RPG2k
     # Present so the game loop can drive per-frame behaviour: advances the
     # open/close animation while one is running, the selection-cursor blink
     # while the window is active, and the pause-arrow blink while `pause` is
-    # set. Confirmed directly against RPG_RT's live source: `Window::Update`
-    # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
-    # is active, wrapping at 21, and `Window::Draw` blits from the
-    # windowskin's `cursor1` block while `cursor_frame <= 10` or `cursor2`
-    # otherwise -- Game::WindowCursor::FRAME1_X/FRAME2_X already hold both
-    # source-rect x-offsets (64/96), but only FRAME1_X was ever read here,
-    # so the highlight never blinked at all -- invisible against the one
-    # bundled test windowskin that happens to draw both blocks identically,
-    # but wrong against any windowskin whose two blocks actually differ.
+    # set. `cursor_frame` advances by 1 every frame the window is active,
+    # wrapping at 21, and #draw_cursor_skin blits from the windowskin's
+    # `cursor1` block while `cursor_frame <= 10` or `cursor2` otherwise --
+    # Game::WindowCursor::FRAME1_X/FRAME2_X already hold both source-rect
+    # x-offsets (64/96), but only FRAME1_X was ever read here, so the
+    # highlight never blinked at all -- invisible against the one bundled
+    # test windowskin that happens to draw both blocks identically, but wrong
+    # against any windowskin whose two blocks actually differ. This whole
+    # blink cadence (21-frame wrap, 10/11 split) is NOT independently
+    # confirmed against genuine RPG_RT under wine; fixing the FRAME1_X-only
+    # bug is a straightforward internal-consistency correction (a constant
+    # defined and never read) independent of that open question.
     def update
       if @active
         @cursor_frame += 1
@@ -445,15 +448,16 @@ class RPG2k
     # off a genuine RPG_RT frame. Without a windowskin there is nothing to blit,
     # so the old solid bar stays as the fallback.
     #
-    # An inactive window still draws its cursor -- confirmed against RPG_RT's
-    # own live source: `Window::Draw`'s cursor block (`src/window.cpp`) reads
-    # only `cursor_rect`/`animation_frames`/`cursor_frame`, with no `active`
-    # check anywhere; `active` only gates whether `Window::Update` keeps
-    # *advancing* `cursor_frame` (and so blinking) at all -- an inactive
-    # window's highlight simply freezes on whichever frame it last stopped at
-    # instead of vanishing. `#update`'s own `@cursor_frame` advance already
-    # ports that `active` gate correctly; this method used to add a second,
-    # uncited one of its own that hid the highlight outright.
+    # An inactive window still draws its cursor: `active` only gates whether
+    # `#update` keeps *advancing* `@cursor_frame` (and so blinking) at all --
+    # an inactive window's highlight simply freezes on whichever frame it
+    # last stopped at instead of vanishing. `#update`'s own `@cursor_frame`
+    # advance already gates on `active` correctly; this method used to add a
+    # second, uncited one of its own that hid the highlight outright. This
+    # "inactive window freezes rather than hides its cursor" behavior is NOT
+    # independently confirmed against genuine RPG_RT under wine; removing the
+    # duplicate, undocumented gate is a straightforward internal-consistency
+    # correction independent of that open question.
     def draw_cursor
       @cursor_bmp.clear
       r = @cursor_rect
