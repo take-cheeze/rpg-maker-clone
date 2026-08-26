@@ -795,13 +795,10 @@ check 'MoveType vertical bounces off a blocked tile' do
 end
 
 check 'MoveType vertical/horizontal-cycle defaults to Down/Right (not Up/' \
-      'Left) when the event is caught facing off its own cycle axis -- ' \
-      'confirmed against RPG_RT\'s own live source: Game_Event::' \
-      'MoveTypeCycle (src/game_event.cpp) only continues in ReverseDir(' \
-      'default_dir) when already facing exactly that; any other current ' \
-      'facing (on-axis or not) moves default_dir instead, and ' \
-      'MoveTypeCycleUpDown/MoveTypeCycleLeftRight pass Down/Right as that ' \
-      'default' do
+      'Left) when the event is caught facing off its own cycle axis ' \
+      '(Game::MoveType.bounce\'s own pair[0] default -- NOT independently ' \
+      'confirmed against genuine RPG_RT under wine, see its comment in ' \
+      'mruby-rpg2k/mrblib/game.rb)' do
   # Vertical-cycle event facing sideways (Left/6): neither pair member, so
   # it must fall to the RPG_RT default (Down), not the old code's Up.
   c = Game::Character.new(2, 2, 4)
@@ -814,11 +811,12 @@ check 'MoveType vertical/horizontal-cycle defaults to Down/Right (not Up/' \
 end
 
 check 'MoveType toward/away chase and flee the hero, gated on sight and a ' \
-      '1-in-10 roll -- confirmed against RPG_RT\'s own live source: ' \
-      'Game_Event::MoveTypeTowardsOrAwayPlayer (src/game_event.cpp) only ' \
-      'computes the real direction on a draw of 2-9 out of a 0-9 roll ' \
-      '(0 keeps the current facing, 1 is a random cardinal), and only while ' \
-      'on screen -- picking a random cardinal unconditionally off screen' do
+      '1-in-10 roll: only a draw of 2-9 out of a 0-9 roll computes the ' \
+      'real direction (0 keeps the current facing, 1 is a random ' \
+      'cardinal), and only while on screen -- picking a random cardinal ' \
+      'unconditionally off screen (Game::MoveType.toward_away_direction\'s ' \
+      'own comment in mruby-rpg2k/mrblib/game.rb notes this is NOT ' \
+      'independently confirmed against genuine RPG_RT under wine)' do
   c = Game::Character.new(0, 0, 6) # facing right
   # In sight, draw 2 (>= 2): the real geometric direction.
   w = FakeWorld.new(hero: [0, 5], rolls: [2])
