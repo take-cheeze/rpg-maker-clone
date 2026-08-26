@@ -6839,9 +6839,57 @@ module Game
       when UNLOCK_FACING then character.facing_locked = false; [:effect, true]
       # Bounds are the internal 0..5 scale (real Move Speed 1..6 minus 1; see
       # Scene::Map::SLIDE_UNITS/#page_move_speed), shifted down by that same
-      # offset from EasyRPG Player's own `SetMoveSpeed(min(GetMoveSpeed() +
-      # 1, 6))` / `max(GetMoveSpeed() - 1, 1)`. NOT independently confirmed
-      # against genuine RPG_RT under wine.
+      # offset -- i.e. a move-route Speed Up/Down can never push a character
+      # outside real Move Speed 1..6.
+      #
+      # The SPEED_DOWN floor (0) is now confirmed against genuine RPG_RT
+      # under wine, by timing a real, already-authored move route rather
+      # than a synthetic one (cycle #179; the safe-splice discipline of
+      # cycles #137-139/#178 applies here too, but no edit was even needed --
+      # the route was used exactly as shipped). Nepheshel's `Map0465.lmu`
+      # event 4 ("キマイラa", a visible on-map encounter monster, cond_flags
+      # 0 so its page is always active) authors, on a genuine repeating move
+      # route: 4 consecutive Speed Down commands from the page's own default
+      # move_speed (editor 3, internal 2 -- `[2-1,-1,-1,-1].max(0)` per this
+      # clamp would floor at internal 0 rather than go to -2), then after a
+      # couple of moves and two Wait commands, 4 consecutive Speed Up
+      # commands, then 6 Move Forward commands whose speed directly exposes
+      # what the Speed Down block actually left behind: internal 4 (real 5)
+      # if the floor held, or internal 2 (real 3, "Normal") if the raw value
+      # went negative and the Ups only clawed back up from -2. These predict
+      # 4 vs. 16 frames/tile (Scene::Map::SLIDE_UNITS's own table) -- a clean
+      # 4x difference in wall-clock time for the same 6 real tiles (0.4s vs.
+      # 1.6s), not a subtle one. Method: `gen-rpg2k-save.rb --map 465 --at
+      # 1,1 --clear-scene` (the whole 20x15 map fits in one screen at that
+      # corner, so the event needs no camera-follow bookkeeping and no
+      # switch/contact contamination was found on this map); genuine
+      # RPG_RT.exe booted under wine (`~/.wine-nepheshel32`, Xvfb, matchbox,
+      # `LIBGL_ALWAYS_SOFTWARE=1`, `LANG=ja_JP.UTF-8`) and screenshotted via
+      # a tight `xwd`-only capture loop (no per-frame `convert`) started the
+      # instant the file-load Return was sent, sustaining ~55-58fps -- fast
+      # enough to resolve individual frames of a 4-frames/tile slide.
+      # Isolating the event's own sprite by its charset colour (fuzzy-masked
+      # and `-trim`med to a bounding box, cross-checked against its known
+      # map coordinates) gave a clean position trace: a still period, then a
+      # steady 6-tile dash covering 192 screen-px in ~0.39-0.41s before the
+      # trace's slope visibly drops back to the slow regime. That lands
+      # squarely on the floor-confirmed 0.4s prediction (~4 frames/tile) and
+      # rules out the unclamped 1.6s alternative by a wide margin (a 55fps
+      # capture cannot mistake 0.4s for 1.6s). The SPEED_UP ceiling (5) was
+      # not itself isolated this way -- Map0068's own events 1-3 (cycle
+      # #178's own left-open item; a "default speed + 4 Speed Ups" route
+      # with no slow calibration phase beforehand) sit on a much larger,
+      # wisp-crowded map where every position far enough from the event to
+      # survive its own fast, through-walls dash toward the party without
+      # triggering contact first is also crowded with several other,
+      # similarly-coloured wisp events, and narrowing the colour mask to a
+      # screen-space strip still caught more than one blob; not resolved
+      # this cycle (see docs/TODO.md). Standing evidence for it instead:
+      # this same clamp expression's mirror-image half (the floor) is now
+      # wine-confirmed, and a real, shipped move route (Map0068 above)
+      # already authors exactly 4 consecutive Speed Ups from the page
+      # default -- reaching this ceiling exactly, not short of or past it --
+      # and visibly trusts that not to wrap or error.
       when SPEED_UP   then character.move_speed = [character.move_speed + 1, 5].min; [:effect, true]
       when SPEED_DOWN then character.move_speed = [character.move_speed - 1, 0].max; [:effect, true]
       when FREQ_UP    then character.move_frequency = [character.move_frequency + 1, 8].min; [:effect, true]
