@@ -4393,6 +4393,63 @@ check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrid
   eq nil, round.system_sfx[1], 'an untouched SFX slot round-trips as absent, not an empty override'
 end
 
+check 'to_lsd writes SAVE_SYSTEM fields 71-82/91-102 (title/battle/etc. ' \
+      'BGM and every system SE slot) unconditionally, blank when untouched' do
+  # Confirmed against a genuine kk1.12 save under wine: every one of
+  # title_music(71)/battle_music(72)/battle_end_music(73)/inn_music(74)/
+  # boat_music(79)/ship_music(80)/airship_music(81)/gameover_music(82) and
+  # cursor_se(91)..item_se(102) was present, blank-named, on a save whose
+  # party never touched Change System BGM/SFX at all -- #to_lsd used to
+  # omit every one of these fields entirely in that case (the same species
+  # of bug as chunk 103's own picture-slot range, cycle #154).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  sys = st.to_lsd[101]
+  [71, 72, 73, 74, 79, 80, 81, 82].each do |field|
+    ok sys.key?(field), "BGM field #{field} is present even when never touched"
+    eq '', sys[field].file, "BGM field #{field} is blank-named"
+  end
+  (91..102).each do |field|
+    ok sys.key?(field), "SE field #{field} is present even when never touched"
+    eq '', sys[field].file, "SE field #{field} is blank-named"
+  end
+end
+
+check 'to_lsd writes SAVE_SYSTEM field 1 (scene) as the constant 5, and ' \
+      'elides field 23 (font_id) at its own default' do
+  # Field 1 (`scene`) is a legacy field RPG_RT itself always writes as 5
+  # (its own "file menu" scene id) for any save file; field 23 (`font_id`)
+  # follows the ordinary "omit at default" convention -- both confirmed
+  # against a genuine kk1.12 save under wine.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  sys = st.to_lsd[101]
+  eq 5, sys.scene
+  ok !sys.key?(23), 'font_id is absent at its own default (0)'
+
+  st.font_id = 2
+  eq 2, st.to_lsd[101].font, 'a changed font_id is still written'
+end
+
+check 'to_lsd elides SAVE_SYSTEM field 31 (switch count) when no switch ' \
+      'has ever been touched, but still writes field 32 (the empty set)' do
+  # Confirmed against a genuine kk1.12 save under wine: an early save whose
+  # party had never touched a switch omitted field 31 entirely (rather than
+  # an explicit count of 0) while still carrying field 32 present as a
+  # zero-length array -- an asymmetric elision this codebase's own writer
+  # did not previously reproduce (it wrote both, or neither).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  sys = st.to_lsd[101]
+  ok !sys.key?(31), 'switch count is absent when no switch was ever touched'
+  eq [], sys.switches, 'the switch data array is still present, just empty'
+
+  st.switches[3] = true
+  touched = st.to_lsd[101]
+  eq 3, touched.switch_size
+  eq [false, false, true], touched.switches
+end
+
 check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
       'not just name/volume/tempo' do
   # #bgm_chunk/.bgm_from_chunk (the current-BGM/stored-BGM chunk 75/78
