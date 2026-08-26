@@ -306,6 +306,28 @@ re-selection now skips events whose condition inputs did not change,
 per-pixel compose cost itself (a row-copy fast path for opaque chipset
 pixels) and the scrolling present path.
 
+**Update (2026-08-26): the per-pixel compose cost got its row-copy fast
+path** — the first of those two remainders. `blt_pixels`, the loop `#blt`
+and `#blt_quads` share (`mruby-rgss/src/lib.cxx`), re-derived the pixel size
+and re-checked both bitmaps' bounds for *every* source pixel, even where the
+old opaque-source branch then overwrote the pixel wholesale — and chipset
+tiles are nothing but opaque rows. Now the rect is clipped once up front
+(the same carry-along clip `bmp_copy_blt` already used), and when both
+bitmaps share a format and the opacity is full, any row whose every alpha
+byte is 255 goes down as one `memcpy`; rows with any transparency keep the
+pixel loop, now bounds-check-free because of the pre-clip. The picture is
+unchanged by construction — a fully-opaque row's memcpy writes exactly what
+the per-pixel overwrite branch wrote — and the mruby-rgss blt parity tests
+plus `scripts/rpg2k_render_check.rb`'s 41 frame checks confirm it. Measured
+on the host with a 336-tile full-grid rebuild through `#blt_quads`
+(21x16 chips, the exact shape of `rebuild_tile_cache`): ~0.6ms → ~0.02ms a
+pass (~30x); charset-shaped blits (transparent margins around an opaque
+core) dropped ~4x from the hoisted clipping alone; blended blts are
+unchanged, as they must be — they never had an overwrite path to shortcut.
+The animation-step `map.layers` spikes above were precisely this loop, so
+the device-side win should track whatever share of them was compose rather
+than dispatch; the scrolling present path is the one named remainder left.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 

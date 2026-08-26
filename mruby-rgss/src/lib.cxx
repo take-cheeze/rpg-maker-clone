@@ -1837,38 +1837,109 @@ mrb_value bmp_set_pixel(mrb_state* M, V self) {
   return self;
 }
 
+// Composite one source row onto one destination row: `w` pixels from source
+// row `sy` starting at column `sx`, written from destination column `x` on row
+// `y`. The per-pixel body of the old blt_pixels loop, kept verbatim so the
+// fast path below cannot drift from it. Callers pass an already-clipped rect,
+// so no bounds checks -- every pixel lands inside both bitmaps.
+static void blt_row_pixels(Bitmap& dst,
+                           const Bitmap& sb,
+                           mrb_int x,
+                           mrb_int y,
+                           mrb_int sx,
+                           mrb_int sy,
+                           mrb_int w,
+                           int opacity) {
+  for (mrb_int col = 0; col < w; ++col) {
+    int r, g, bl, a;
+    bmp_read(sb, sx + col, sy, r, g, bl, a);
+    const int alpha = a * opacity / 255;
+    if (alpha <= 0)
+      continue;
+    if (alpha >= 255) {
+      bmp_put(dst, x + col, y, r, g, bl, 255);
+      continue;
+    }
+    int dr, dg, db, da;
+    bmp_read(dst, x + col, y, dr, dg, db, da);
+    blend_over(dst, x + col, y, r, g, bl, alpha, dr, dg, db, da);
+  }
+}
+
 // The pixel loop #blt and #blt_quads share: composite src_rect over (x, y)
-// at `opacity`, per-pixel, skipping transparent source pixels and anything
-// outside either bitmap. Kept in one place so the batched form cannot drift
-// from the single-rect one.
+// at `opacity`. Kept in one place so the batched form cannot drift from the
+// single-rect one.
 static void blt_pixels(Bitmap& dst,
                        const Bitmap& sb,
                        mrb_int x,
                        mrb_int y,
                        const Rect& rc,
                        int opacity) {
-  for (mrb_int sy = rc.y; sy < rc.y + rc.height; ++sy) {
-    for (mrb_int sx = rc.x; sx < rc.x + rc.width; ++sx) {
-      if (sx < 0 || sy < 0 || sx >= sb.width || sy >= sb.height)
-        continue;
-      int r, g, bl, a;
-      bmp_read(sb, sx, sy, r, g, bl, a);
-      const int alpha = a * opacity / 255;
-      const mrb_int dx = x + (sx - rc.x);
-      const mrb_int dy = y + (sy - rc.y);
-      if (dx < 0 || dy < 0 || dx >= dst.width || dy >= dst.height)
-        continue;
-      if (alpha <= 0)
-        continue;
-      if (alpha >= 255) {
-        bmp_put(dst, dx, dy, r, g, bl, 255);
-        continue;
-      }
-      int dr, dg, db, da;
-      bmp_read(dst, dx, dy, dr, dg, db, da);
-      blend_over(dst, dx, dy, r, g, bl, alpha, dr, dg, db, da);
-    }
+  mrb_int sx = rc.x, sy = rc.y, w = rc.width, h = rc.height;
+  if (w <= 0 || h <= 0)
+    return;
+  // Clip against both bitmaps up front, carrying the destination along with
+  // the source the way bmp_copy_blt does. The old loop checked every pixel
+  // against both bitmaps instead; iterating only the intersection draws the
+  // same set.
+  if (sx < 0) {
+    w += sx;
+    x -= sx;
+    sx = 0;
   }
+  if (sy < 0) {
+    h += sy;
+    y -= sy;
+    sy = 0;
+  }
+  if (x < 0) {
+    w += x;
+    sx -= x;
+    x = 0;
+  }
+  if (y < 0) {
+    h += y;
+    sy -= y;
+    y = 0;
+  }
+  if (sx + w > sb.width)
+    w = sb.width - sx;
+  if (sy + h > sb.height)
+    h = sb.height - sy;
+  if (x + w > dst.width)
+    w = dst.width - x;
+  if (y + h > dst.height)
+    h = dst.height - y;
+  if (w <= 0 || h <= 0)
+    return;
+
+  // Row-copy fast path. Chipset tiles -- the map renderer's rebuild and
+  // animation-step hot path through #blt_quads -- are fully opaque rows of
+  // plain colour, and for them the per-pixel read/branch/write below is pure
+  // overhead: bmp_read/bmp_put re-derive the bytes-per-pixel and redo the
+  // bounds checks for every pixel. When both bitmaps share a format, a row
+  // whose every alpha byte is 255 is exactly what memcpy puts down (the
+  // opaque branch above overwrites the whole pixel including alpha), so copy
+  // it in one go; rows with any transparency fall back to the pixel loop.
+  if (opacity >= 255 && dst.format == sb.format) {
+    const unsigned bpp = lv_color_format_get_size(dst.format);
+    for (mrb_int row = 0; row < h; ++row) {
+      const uint8_t* s =
+          sb.buffer.data() + ((size_t)(sy + row) * sb.width + sx) * bpp;
+      uint8_t* d =
+          dst.buffer.data() + ((size_t)(y + row) * dst.width + x) * bpp;
+      bool opaque = bpp < 4;
+      for (mrb_int col = 0; !opaque && col < w; ++col)
+        opaque = s[(size_t)col * bpp + 3] == 255;
+      if (opaque)
+        std::memcpy(d, s, (size_t)w * bpp);
+      else
+        blt_row_pixels(dst, sb, x, y + row, sx, sy + row, w, opacity);
+    }
+    return;
+  }
+  for (mrb_int row = 0; row < h; ++row)
+    blt_row_pixels(dst, sb, x, y + row, sx, sy + row, w, opacity);
 }
 
 mrb_value bmp_blt(mrb_state* M, V self) {
