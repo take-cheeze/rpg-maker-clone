@@ -3390,6 +3390,154 @@ The work below is roughly ordered by the critical path to a walkable game
   boots -- consistent with cycle #156's own conclusion that the fragility is
   specific to writing chunk109 field 1 itself, not inventory edits in
   general.
+  ✅ **Follow-up (cycle #158, 2026-08-26): started on candidate 1
+  (`SAVE_PICTURE` field 9, `visible`) and candidate 3 (`SAVE_SYSTEM` fields
+  51-54), both blocked by a genuine, newly-discovered RPG_RT.exe crash; ended
+  up landing a real fix on a third front discovered along the way -- this
+  engine's own internal quick-resume save never carried shown pictures at
+  all.** **What was attempted and why it didn't reach a verdict:** cycle
+  #155's own picture-elision technique (an `LCF::MapUnit`-injected autostart:
+  Show Picture x3, Wait, Erase Picture on one of them, Move Picture to full
+  transparency on another, Open Save Menu) needed a *fresh* genuine
+  RPG_RT.exe save write to see whether an erased/faded slot leaves a residual
+  `visible=0` entry rather than reverting to the empty placeholder cycle #154
+  established for a never-touched slot -- and the same live-write need
+  applies to whether fields 51-54 (`face_name`/`face_index`/
+  `face_right_position`/`face_flip`, set by Change Face Graphic, 10130) are
+  each elided at their own default the same way cycle #152/153 already
+  proved for the *sibling* field cluster 41-44 (Message Options) in this
+  exact struct. **Every attempt at the write side failed the same way,
+  independent of which fields were being tested:** confirming to a save slot
+  from an `Open Save Menu` (11910) event command, on this session's
+  `Nepheshel206Rbeta` fixture, reliably kills genuine RPG_RT.exe outright
+  (the process exits with no crash trace in the wine log) the instant Return
+  confirms the slot -- reproduced identically five independent times, across
+  both a picture-touching autostart and a completely pristine one, and
+  regardless of which save slot (File 1's own occupied slot or File 2's
+  empty one) was targeted. **Ruled out as the cause:** a stale/wrong X window
+  target for the synthesized keys -- switching from a hardcoded window id to
+  `scripts/compare-nepheshel-save-wine.bash`'s own proven `focus_window`/
+  `send_keys` helpers (`xdotool search --onlyvisible --name . | tail -1`,
+  re-resolved before every key) made ordinary map interaction (walking,
+  opening/closing the field menu with Escape) reliably stable across many
+  repeated boots -- so this is not the wedge/window-focus artifact cycle #156
+  hit; a disk/permissions problem -- the scratch game directory stayed
+  writable throughout, confirmed by hand. **A real, likely-relevant clue
+  found along the way:** this exact `Save01.lsd`'s own chunk 101 (`SAVE_
+  SYSTEM`) carries `save_allowed = false` (confirmed by direct field read)
+  and the field menu, opened normally via Escape, offers only three commands
+  with no セーブ (Save) row at all -- i.e. this fixture is a demo save with
+  saving disabled entirely, and the crash may be RPG_RT's own `Open Save
+  Menu` event command never having been exercised against a disabled-save
+  state by its original author. **Not chased further this cycle** (per the
+  task's own time-boxing guidance) -- flagged here as a new, distinct,
+  reproducible RPG_RT.exe crash trigger for whoever next needs a genuine save
+  *write* capture from this fixture: try flipping chunk 101 field 123
+  (`save_allowed`) to `true` in a scratch copy first, or building a fresh
+  save via `scripts/gen-lcf-save-wine.bash` (a different code path, EasyRPG's
+  own F9 debug menu, not usable for RPG_RT behavioral claims but fine for a
+  save_allowed=true *base* to edit) before reusing this technique.
+  **A second, load-only investigation reused the same session's now-proven
+  `focus_window`/`send_keys` helpers to make real headway on candidate 2 (the
+  party-roster-field crash) without needing any live write at all** --
+  loading a `Save01.lsd` with chunk 109's `party` field hand-edited, then
+  pressing Escape once to open the field menu, crashed genuine RPG_RT.exe
+  identically for **two different substitute actor ids** (`[2]`, already
+  known from cycle #157, and freshly tried `[15]` -- the id this exact save's
+  *own* chunk 100 `hero_name` field and the real, database-matching level/HP
+  actually belong to) while a byte-for-byte reproduction of the untouched
+  original value (`[1]`) round-tripped through this engine's own `LCF`
+  writer confirmed clean (`cmp` reported no difference at all) -- ruling out
+  "our own save writer's round-trip is silently corrupting some *other* part
+  of chunk 109" as an explanation and confirming the crash is general to
+  *any* edit of this one field, not specific to actor id 2 or to picking an
+  id that disagrees with what RPG_RT itself would consider correct. That
+  last part connects to an already-existing, already-shipped fix this cycle
+  rediscovered independently while chasing it: `Game::State.from_lsd`'s own
+  leader-promotion-by-title-chunk-name logic (`mruby-rpg2k/mrblib/game.rb`,
+  its own comment citing a prior cycle's genuine-wine verification of the
+  exact same chunk109-vs-chunk100 mismatch on this exact save) already
+  produces the *correct* actor 15 leader from this fixture's own untouched
+  `party=[1]` -- so this cycle's own new evidence is additive (the crash
+  itself is RPG_RT.exe's own bug, separate from and not fixed by that
+  existing leader-promotion logic, which only ever ran on this codebase's own
+  reader, never on genuine RPG_RT.exe's), not a re-fix of already-correct
+  code. **Conclusion, documented rather than fixed (it is a crash in the
+  genuine, external RPG_RT.exe binary, not something this codebase's own
+  code can patch):** editing `SAVE_INVENTORY` field 1 (`party`) at all -- to
+  any value, correct-per-RPG_RT or not -- reliably crashes genuine RPG_RT.exe
+  the instant the field menu opens, on this exact save/map; still not
+  root-caused at the mechanism level, but now known to be general across
+  substitute values rather than specific to actor id 2, and known not to be
+  an artifact of this codebase's own re-serialization. **The fix actually
+  shipped this cycle, found while re-reading `Game::State#to_h`/`.load` (the
+  Marshal-style quick-resume pair `main.rb`'s own Continue prefers over a
+  genuine `.lsd` whenever both exist) looking for a load-only way to
+  cross-check the party-roster mystery:** `#to_h` never mentioned `@pictures`
+  at all -- every other piece of live state (switches, timers, the screen
+  tint, vehicles, `@pictures`'s own neighbour `@parallax_override`) round-
+  trips through this pair, but a currently-shown picture silently vanished on
+  every resume through this engine's *own preferred* save path, even though
+  the *same* picture already round-trips correctly through a genuine `.lsd`
+  (`#to_lsd`/`.from_lsd`, chunk 103, fixed by cycle #150/#155). This needed no
+  genuine-RPG_RT verification at all -- it is a pure internal-consistency gap
+  in this codebase's own private save format, not a save-byte-compatibility
+  question, so the "must verify against genuine RPG_RT.exe" constraint does
+  not apply to the claim itself (only to what fields a real `.lsd` carries,
+  untouched by this fix). **Fixed** by giving `Game::Picture` its own
+  `#to_h`/`.from_h` pair (`mruby-rpg2k/mrblib/game.rb`) -- deliberately
+  richer than `SAVE_PICTURE` can be, since this is a private format with none
+  of `.lsd`'s field-count constraints: it carries `fixed_to_map`/
+  `use_transparent_color` too (still not modelled in `SAVE_PICTURE` at all,
+  the same gap cycle #155 left open, unresolved by this fix) and the live
+  in-flight Move Picture target/frame-count, so a picture mid-move at save
+  time keeps gliding after a resume instead of snapping to rest -- and wiring
+  `pictures:` into `Game::State#to_h` and a restore loop into `.load`, gated
+  on `h[:pictures] || {}` so a save written before this fix (no `pictures`
+  key at all) restores the pre-fix "no pictures shown" behaviour rather than
+  raising. Covered by a new `scripts/rpg2k_logic_check.rb` check (an at-rest
+  picture with every field pushed off its own default, plus a second picture
+  still mid-Move-Picture, both round-tripped through `to_h`/`.load`; the
+  mid-move picture is asserted to resume from its live interpolated position
+  rather than snapping to either end, and to still run to completion over the
+  remaining frames after the restore; a legacy hash missing the `pictures`
+  key restores empty rather than raising), confirmed to fail against the
+  pre-fix code (`git stash` of just `game.rb`) with a precise, specific error
+  (`RuntimeError: picture 5 should have survived the round-trip`) before the
+  fix. Full suite reconfirmed passing, `scripts/rpg2k_logic_check.rb` up by 1
+  (the one new check block above): `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_render_check.rb` (41), `scripts/rpg2k_logic_check.rb`
+  (1140), `scripts/rpg2k3_battle_row_check.rb` (19) and `scripts/
+  rpg2k3_battle_gauge_check.rb` (15). This cycle also built the mruby engine
+  binary from source (`cmake --build build --target rpg_maker_clone`, the
+  Unicode tables already cached from a prior cycle's build in this same
+  container) and confirmed it links and compiles cleanly against the edited
+  `game.rb`/`rpg2k_logic_check.rb`. Every scratch game directory, injected
+  `.lmu`, and edited `Save0N.lsd` this cycle's probes produced lived entirely
+  under this session's own scratch dir, never inside `data/` -- the real
+  `Map0012.lmu`/`Save01.lsd` fixtures were never opened for writing at all
+  this cycle (only read, then copied out before any edit), reconfirmed
+  byte-identical by `md5sum` against the same `c2fa69a0.../3ab5bb01...`
+  values every prior cycle back to #148 recorded; `git status` on `data/`
+  came back clean. No EasyRPG source was consulted for any claim this cycle,
+  and no web search was used either. **Left open for a future cycle:**
+  whether `SAVE_PICTURE` field 9 (`visible`) is ever written by genuine
+  RPG_RT.exe, and whether fields 51-54 of `SAVE_SYSTEM` follow the sibling
+  cluster's own "omit at default" convention -- both now additionally
+  blocked on a *new* prerequisite: getting a genuine RPG_RT.exe save *write*
+  out of this exact fixture at all (see the `save_allowed`/`Open Save Menu`
+  crash above; try a `save_allowed=true` scratch copy, or a completely
+  different genuine-save source, before reattempting either); the party-
+  roster-field crash itself, now known to be general across substitute
+  values and independent of this codebase's own writer, but still not
+  root-caused at the RPG_RT.exe mechanism level; `SAVE_PICTURE`'s own missing
+  `fixed_to_map`/`use_transparent_color` fields, confirmed again this cycle
+  to have no save-format representation at all (Marshal now carries them;
+  `.lsd` still cannot); the missing-Picture-asset hang; and every EasyRPG-
+  style citation cycle #154's own repo-wide grep turned up that no cycle has
+  yet touched (`do_change_equipment`, `Window_Skill::CheckInclude`/`Algo::
+  IsSkillUsable`, `EnemyAi::IsActionValid`, `Game_Event::MoveTypeRandom`/
+  `MoveTypeCycle`, `CalcNormalAttackAutoBattleTargetRank`, `Window_ShopSell`).
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
