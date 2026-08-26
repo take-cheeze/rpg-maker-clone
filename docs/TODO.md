@@ -4626,6 +4626,72 @@ The work below is roughly ordered by the critical path to a walkable game
   claim noticed but out of scope this cycle); and every other EasyRPG-style
   citation cycle #154's own repo-wide grep turned up that no cycle has yet
   touched.
+  ✅ **Follow-up (cycle #170, 2026-08-26): resolved cycle #169's own left-open
+  question -- genuine RPG_RT.exe does NOT read a save's chunk 104 hero
+  `charset_name`/`charset_index` as a live sprite override, but it DOES
+  persist and restore a live Change Sprite Association (10630) override, just
+  from a different chunk than this codebase assumed.** Verified under wine
+  with a from-scratch experiment sidestepping cycle #169's own uncertainties
+  entirely (no patched save, no pre-existing fixture): a fresh New Game
+  autostart on Map0371 (the genuine start map, per `RPG_RT.lmt`'s own
+  `initial_map_id`) ran a real Change Sprite Association on the default
+  leader (actor 15, blank database charset) to `"mainchr"`/4, then opened the
+  Save menu and saved to file 1. Diffing that save against two controls (no
+  command at all; the same non-blank graphic baked into actor 15's own
+  *database* row instead, with no event command run) isolated the effect
+  precisely: all three saves wrote chunk 104's hero fields 73/74 whenever the
+  leader's *currently drawn* sprite was non-blank, override or plain
+  database default alike (elided only when blank) -- but only the genuine
+  live-override save wrote three previously-undeclared fields on the
+  *actor's own* chunk 108 (`SAVE_PARTY_ACTOR`) entry: 11 (`sprite_name`,
+  `"mainchr"`), 12 (`sprite_id`, 4), and, only when the command's own
+  transparency param was also set in a third variant, 13
+  (`sprite_transparent`, `\x03`, liblcf's familiar "0 or 3" convention).
+  Continuing the live-override save under genuine RPG_RT.exe (with the
+  injected autostart page removed, so nothing could re-trigger the change)
+  rendered the leader with the saved-off `"mainchr"` graphic; continuing the
+  no-override control left the leader invisible (blank database charset) --
+  directly confirming chunk 108's fields, not chunk 104's, are what a genuine
+  Continue actually restores the sprite from, and fully explaining cycle
+  #169's own negative result (it only ever patched chunk 104). **Fixed**:
+  `SAVE_PARTY_ACTOR` (`mruby-lcf/mrblib/schema.rb`) gained fields 11/12/13;
+  `Game::Actor` (`mruby-rpg2k/mrblib/game.rb`) gained a `@sprite_changed`
+  flag (set by `#set_charset`, mirroring `@class_changed`'s own convention)
+  so a plain database-default graphic is never mistaken for a live override;
+  `Game::State#to_lsd` now writes chunk 108's fields 11-13 per roster actor
+  gated on `#sprite_changed?` (not just the leader -- Change Sprite
+  Association can target any actor id) and elides chunk 104's own 73/74 only
+  when the leader's current sprite is genuinely blank (previously written
+  unconditionally as `''`, unlike genuine RPG_RT); `Game::State.from_lsd` now
+  restores the override from chunk 108 per actor instead of chunk 104's hero
+  record. `Party#to_h`/`#apply_actor_meta` (the engine's own separate,
+  non-`.lsd` quicksave format) also carry the new flag, so an actor's plain
+  database default no longer round-trips there as a spurious live override
+  either, with an explicit `nil`-vs-`false` fallback keeping an
+  already-in-flight quicksave from before this fix working unchanged.
+  **Verification:** `scripts/rpg2k_save_load_check.rb` gained two new
+  round-trip assertions (a live override lands on chunk 108 and
+  `#sprite_changed?` survives it; an untouched actor's chunk 108 sprite
+  fields and `#sprite_changed?` both stay absent/false) -- both pass on the
+  fixed code and, via `git stash` of just the two `mrblib` files (keeping the
+  check-script change), the untouched-actor code path in the pre-fix
+  `Game::Actor` errors outright (`sprite_changed?` did not exist), confirming
+  the check exercises the fix. All of `scripts/rpg2k_scene_check.rb` (929),
+  `scripts/rpg2k_logic_check.rb` (1146), `scripts/rpg2k_render_check.rb`
+  (41), `scripts/rpg2k3_battle_row_check.rb` (19), `scripts/
+  rpg2k3_battle_gauge_check.rb` (15) and `ctest -R mruby_test` all passed;
+  `scripts/rpg2k_save_load_check.rb`'s own 3 pre-existing failures (BGM
+  `balance`, `show_x`/`show_y`, the transition-defaults warning) were
+  reconfirmed present identically, unchanged by this fix. All wine work ran
+  against an isolated scratch copy of Nepheshel's game directory, never the
+  checked-in one -- `RPG_RT.ldb`/`Map0012.lmu`/`Save01.lsd`/`Map0371.lmu`/
+  `RPG_RT.lmt` are reconfirmed byte-identical by `md5sum` to their
+  previously-recorded values, `git status` on `data/` (gitignored) came back
+  clean, and no stray Xvfb/wine/engine processes were left running. No
+  EasyRPG source and no `generator/csv/fields.csv` were consulted for any
+  part of this cycle's fields 11/12/13 -- purely wine experiment, unlike
+  fields 1/2/31/32/etc.'s own liblcf-confirmed provenance already documented
+  in `SAVE_PARTY_ACTOR`'s own comment.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

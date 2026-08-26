@@ -1345,6 +1345,34 @@ module LCF
     SAVE_PARTY_ACTOR = {
       1 => { name: :actor_name, type: :string },            # 名前
       2 => { name: :title, type: :string },                 # 二つ名 (Change Actor Title)
+      # A live Change Sprite Association (10630) override, confirmed against
+      # genuine RPG_RT.exe under wine (cycle #170) -- NOT liblcf's own field
+      # table (no network access to `generator/csv/fields.csv` this cycle),
+      # purely by experiment: a fresh New Game autostart running Change
+      # Sprite Association on the default party leader (actor 15, a blank-
+      # charset database row) then immediately opening the Save menu wrote
+      # these three fields onto that actor's own chunk-108 entry -- 11
+      # ("mainchr"), 12 (4), and, only when the command's own transparency
+      # param was also set, 13 (`\x03`, the same liblcf "0 or 3" convention
+      # SAVE_MOVABLE field 24 uses). A second control save from the same
+      # autostart page with the Change Sprite Association command removed
+      # left all three fields absent. A third save, from an actor whose
+      # *database* row was patched to that same non-blank graphic with no
+      # Change Sprite Association command ever run, also left 11-13 entirely
+      # absent -- proving these are gated on a live "the command actually
+      # ran" flag (Game::Actor#sprite_changed?), not merely "the current
+      # sprite happens to be non-blank" (that weaker, blank-elided condition
+      # is what chunk 104's own hero-record mirror, fields 73/74, actually
+      # uses instead -- see #to_lsd's own citation). Continuing the
+      # Change-Sprite-Association save under genuine RPG_RT.exe rendered the
+      # leader with the saved-off "mainchr" graphic, confirming these fields
+      # -- not chunk 104's -- are what a genuine Continue actually restores
+      # from; this directly explains cycle #169's own negative finding that
+      # patching only chunk 104's fields 73/74 in a real save never changed
+      # what Continue drew.
+      11 => { name: :sprite_name, type: :string },
+      12 => { name: :sprite_id, type: :int },
+      13 => { name: :sprite_transparent, type: :int, default: 0 },
       31 => { name: :level, type: :int, default: 1 },      # レベル
       32 => { name: :exp, type: :int, default: 0 },        # 経験値
       51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数
