@@ -164,6 +164,7 @@ jobs:
           ./scripts/download-opengame-xp.bash
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
+          ./scripts/download-killer-knights.bash
 
       - name: Download MV test game
         id: dl-mv
@@ -809,6 +810,7 @@ jobs:
           ./scripts/download-opengame-xp.bash
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
+          ./scripts/download-killer-knights.bash
 
       - parallel:
           - name: LCF test-bed smoke check

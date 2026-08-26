@@ -6055,6 +6055,44 @@ check "an actor with a startup class reads class_id immediately, but its curve, 
   eq 0, b.class_id
 end
 
+check "Party save/Continue does not fabricate a Change Class for an actor " \
+      "merely starting in one" do
+  # Party#to_h/#load_state (this engine's own Marshal Save/Continue, distinct
+  # from the .lsd export) used to call Actor#restore_class whenever an
+  # actor's meta carried a class_id at all -- which every actor starting in a
+  # class does, whether or not a live Change Class event ever ran (see the
+  # check just above: #class_id reads a startup class immediately, #curve_row
+  # does not until #class_changed is actually set). #restore_class
+  # unconditionally sets @class_changed, so *every* Continue silently
+  # switched such an actor onto the class's own curve, learn table and EXP
+  # curve instead of the actor row's -- found via a real RPG2003 game
+  # (kk1.12) whose swappable companions start classed and level entirely
+  # through Change Level, not Change EXP: reloading a save taken while one
+  # was out of the party re-derived a wildly different level (and dropped
+  # every skill learnt past level 1) purely from #set_exp's climb against the
+  # now-wrong curve. #to_h now also carries #class_changed?, and #load_state
+  # only calls #restore_class when it says a change genuinely happened.
+  db = class_db(1)
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.actor_by_id(1)
+  eq 1, hero.class_id
+  eq false, hero.class_changed?
+  eq 120, hero.max_hp, "the actor's own row curve -- class 1's (220) is not live"
+
+  loaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  eq false, loaded.class_changed?, 'Continue must not fabricate a class change'
+  eq 120, loaded.max_hp, "still the actor's own row curve after Save/Continue"
+  eq hero.skills.sort, loaded.skills.sort
+
+  # An actor that really did Change Class still carries it across Continue.
+  hero.change_class(1, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                    Game::Actor::CLASS_PARAM_RESET_LEVEL)
+  ok hero.class_changed?
+  reloaded = Game::State.load(db, st.to_h).party.actor_by_id(1)
+  ok reloaded.class_changed?
+  eq 220, reloaded.max_hp, 'a genuine Change Class survives Continue too'
+end
+
 check 'Change Class swaps the growth curve and resets EXP' do
   st = class_state
   a = st.party.actor_by_id(1)

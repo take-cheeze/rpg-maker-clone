@@ -3621,8 +3621,11 @@ module Game
                        base_raw: a.base_raw.dup,
                        # RPG2003: a Change Class / Change Battle Commands is a
                        # permanent edit, so it has to outlive Save / Continue the
-                       # way the name and sprite overrides do.
-                       class_id: a.class_id,
+                       # way the name and sprite overrides do. class_changed
+                       # distinguishes that from an actor's ordinary
+                       # database-assigned starting class, which #load_state
+                       # must *not* restore through -- see its own comment.
+                       class_id: a.class_id, class_changed: a.class_changed?,
                        battle_commands: a.battle_commands.dup,
                        # RPG2003 battle row (ADR 0053's Row command): outlives
                        # Save/Continue the same way a live Change Class does.
@@ -3667,9 +3670,19 @@ module Game
         a = @roster[id]
         next unless a
         # The class comes back first: it decides which growth and EXP curves the
-        # restored EXP is then read against.
+        # restored EXP is then read against. Gated on class_changed, not merely
+        # class_id being present: every actor's meta carries its current
+        # class_id whether or not a Change Class event ever ran, and
+        # #restore_class unconditionally flips @class_changed to true --
+        # calling it for an actor still on their ordinary database-assigned
+        # starting class would wrongly switch #curve_row from the actor's own
+        # row to the class row (see #curve_row's own comment), silently
+        # reinterpreting their EXP/level and skill-learn table after every
+        # Save/Continue. A save written before class_changed existed carries no
+        # such key, read as false -- the same "never changed" default the .lsd
+        # format's own -1 sentinel gives an older save.
         m = meta[id]
-        a.restore_class(m[:class_id]) if m && m[:class_id]
+        a.restore_class(m[:class_id]) if m && m[:class_changed]
         a.set_exp(exp[id]) if exp[id]
         # #set_exp re-seeds @base/@base_raw from the level-derived baseline
         # whenever it changes the level, discarding a live Change Parameters
