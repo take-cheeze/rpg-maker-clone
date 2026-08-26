@@ -4459,6 +4459,84 @@ check 'to_lsd omits SAVE_SYSTEM fields 41-44 (message-window config) when ' \
   end
 end
 
+check 'to_lsd omits SAVE_SYSTEM fields 51-54 (Change Face Graphic state) when ' \
+      'each one sits at its own schema default, matching genuine RPG_RT.exe' do
+  # Cycle #160: confirmed against a genuine RPG_RT.exe save under wine that
+  # this cluster follows the exact same per-field "present only when
+  # different from the declared default" convention already established for
+  # 41-44 and 61 -- not the unconditional write this codebase's own #to_lsd
+  # had before this fix (every prior save this engine produced carried
+  # explicit ''/0/false-valued 51-54 bytes a genuine RPG_RT.exe save never
+  # does while no face is shown). Evidence, via a synthetic autostart event
+  # that issues Change Face Graphic (10130) then Open Save Menu (11910) with
+  # no Wait in between -- Open Save Menu suspends the interpreter before its
+  # command list ever reaches `finished?`, so the separate "yado.tk"
+  # auto-clear-on-event-finish rule (interpreter.rb #update, @face_owner)
+  # never fires and the face state set moments earlier is still live at the
+  # exact instant of save: (1) no Change Face Graphic issued at all left
+  # fields 51-54 all absent; (2) a real face/index/side/flip, all off their
+  # defaults, wrote all four fields present with the exact set values
+  # (51="face", 52=3, 53=1, 54=true); (3) a further Change Face Graphic('')
+  # resetting every value back to the default, still mid-event, left all
+  # four absent again -- a per-value comparison at save time, not an
+  # ever-touched flag; (4) a real face name at otherwise-default
+  # index/side/flip wrote only field 51 present, leaving 52-54 absent --
+  # confirming the four fields are gated independently, not as one
+  # all-or-nothing group keyed on "is a face shown at all".
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = st.to_lsd[101]
+  [51, 52, 53, 54].each do |id|
+    eq false, saved.key?(id),
+       "field #{id} is absent on a freshly-constructed state (no face " \
+       'shown, matching its own schema default)'
+  end
+
+  st2 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  mc = st2.message_config
+  mc.face_name = 'face'
+  mc.face_index = 3
+  mc.face_right = true
+  mc.face_flipped = true
+  saved2 = st2.to_lsd[101]
+  eq true, saved2.key?(51), 'field 51 present once face_name differs from its default (\'\')'
+  eq true, saved2.key?(52), 'field 52 present once face_index differs from its default (0)'
+  eq true, saved2.key?(53), 'field 53 present once face_right differs from its default (false)'
+  eq true, saved2.key?(54), 'field 54 present once face_flipped differs from its default (false)'
+  eq 'face', saved2[51]
+  eq 3, saved2[52]
+  eq 1, saved2[53]
+  eq true, saved2[54]
+  round2 = Game::State.from_lsd(db, st2.to_lsd)
+  eq 'face', round2.message_config.face_name, 'face_name round-trips'
+  eq 3, round2.message_config.face_index, 'face_index round-trips'
+  eq true, round2.message_config.face_right, 'face_right round-trips true'
+  eq true, round2.message_config.face_flipped, 'face_flipped round-trips true'
+
+  # Changed, then reset back to the exact default -- mirrors this cycle's
+  # own "cleared" genuine-RPG_RT probe: the fields go absent again, not
+  # "present, but re-holding the default value".
+  mc.clear_face
+  saved3 = st2.to_lsd[101]
+  [51, 52, 53, 54].each do |id|
+    eq false, saved3.key?(id),
+       "field #{id} is absent again once the face is cleared back to its " \
+       'default, not left present holding the default value'
+  end
+
+  # A real face name at otherwise-default index/side/flip -- only field 51
+  # should be present; 52-54 stay absent (independent per-field gating, not
+  # a single "any face shown" group flag).
+  st3 = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st3.message_config.face_name = 'face'
+  saved4 = st3.to_lsd[101]
+  eq true, saved4.key?(51), 'field 51 present (face_name set)'
+  eq false, saved4.key?(52), 'field 52 absent (face_index still at its default, 0)'
+  eq false, saved4.key?(53), 'field 53 absent (face_right still at its default, false)'
+  eq false, saved4.key?(54), 'field 54 absent (face_flipped still at its default, false)'
+end
+
 check 'a Fade Out BGM followed by a Save/Continue boundary still forces the ' \
       'next same-file Play BGM to restart, not silently adjust volume in place' do
   # The behavioural point of the round-trip above: pre-fix, bgm_stopping was

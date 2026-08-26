@@ -14807,10 +14807,26 @@ module Game
       sys[42] = mc.position if mc.position != MessageConfig::POS_BOTTOM
       sys[43] = false if mc.position_fixed
       sys[44] = true if mc.continue_events
-      sys[51] = mc.face_name || ''
-      sys[52] = mc.face_index || 0
-      sys[53] = mc.face_right ? 1 : 0
-      sys[54] = mc.face_flipped ? true : false
+      # Change Face Graphic (10130) state (SAVE_SYSTEM fields 51-54) follows
+      # the exact same per-field "omit at default" convention as 41-44 above,
+      # confirmed against a genuine RPG_RT.exe save under wine (cycle #160):
+      # a synthetic autostart Change Face Graphic call left at its own
+      # constructor default (no face shown at all) omitted all four fields;
+      # the same call set to a real face/index/side/flip (all off-default)
+      # wrote all four fields present with the exact set values; a further
+      # Change Face Graphic('') resetting back to the default (still
+      # mid-event, so the separate "yado.tk" auto-clear-on-event-finish rule
+      # never fired) omitted all four again -- ruling out "ever touched" and
+      # confirming per-value comparison, not an unconditional write (this
+      # codebase's own prior behavior, which wrote all four fields on every
+      # save regardless of state). A fourth capture -- a real face name at
+      # otherwise-default index/side/flip -- wrote only field 51 and left
+      # 52-54 absent, confirming the four fields are gated *independently*,
+      # not as one all-or-nothing group keyed on "is a face shown at all".
+      sys[51] = mc.face_name if mc.face?
+      sys[52] = mc.face_index if mc.face_index != 0
+      sys[53] = 1 if mc.face_right
+      sys[54] = true if mc.face_flipped
       # liblcf's `music_stopping` (field 61) -- written only when true,
       # confirmed against a genuine RPG_RT.exe save under wine (see
       # SAVE_SYSTEM's own comment in schema.rb): a fresh Fade Out BGM
