@@ -454,6 +454,54 @@ Distinguishing those two still needs a real device or an arm64-v8a
 system image, neither available in the environment this port is being
 worked from; still tracked as a follow-up, not fixed here.
 
+**Update (2026-08-26, later still): a second independent CI run hit the
+same crash with the same two-stage shape, and one specific mechanism in
+the standing hypothesis is now ruled out by reading the code.** This
+run's own pid-scoped log (`tid` 3579 for the framework-side thread, 3484
+for `SDLThread` — different tids than the first occurrence's 3582/3530,
+same roles):
+
+```
+11:47:55.522  PlayerBase::PlayerBase()       tid 3484 (SDLThread)  -- device opened
+11:47:55.580  PlayerBase::stop() from IPlayer tid 3579              -- 0 frames (open probe)
+11:48:32.265  [RPG2k-MAP] map=371 x=10 y=7                          -- map scene reached
+11:48:32.348  PlayerBase::stop() from IPlayer tid 3579              -- 1622016 frames (title/loading BGM stopped)
+11:48:32.390  PlayerBase::stop() from IPlayer tid 3484 (SDLThread)  -- second stop, 42ms later, our own thread
+11:48:32.732  scudo: invalid chunk state when deallocating          -- 342ms after that second stop
+11:48:32.732  F libc: Fatal signal 6 (SIGABRT), tid 3484 (SDLThread)
+```
+
+Two independent runs now show the identical shape: framework-thread stop
+with a real frame count, then a second stop ~42-53ms later on `SDLThread`
+itself, then the Scudo abort ~320-340ms after *that* — consistent enough
+across runs that this reads more like a fixed sequence than raw race
+jitter, though two data points is not enough to lean hard on that.
+
+The earlier hypothesis named `bgm_play()`'s `Mix_HaltMusic()`/
+`Mix_FreeMusic()` sequence (`src/sdl_audio.cxx`) as SDLThread's route into
+whatever calls `PlayerBase::stop()`. Reading SDL_mixer's own
+implementation of both (`3rd/SDL_mixer/src/music.c`,
+`Mix_FreeMusic`/`Mix_HaltMusic`/`music_internal_halt`) rules that specific
+mechanism out: they only ever call `Mix_LockAudio`/`Mix_UnlockAudio`
+(`SDL_LockAudioDevice`/`SDL_UnlockAudioDevice`, a plain mutex around the
+mixer's internal state) and flip in-process flags on the `Mix_Music`
+struct — neither one calls anything in `SDL_openslES.c`. That backend's
+only path to `SetPlayState(SL_PLAYSTATE_STOPPED)` is
+`openslES_DestroyPCMPlayer`, reachable only from `Mix_CloseAudio`
+(`rgss_audio_shutdown`, engine exit) or the sample-rate-retry branch in
+`openslES_OpenDevice` (initial open only) — and `Mix_OpenAudio`/
+`Mix_CloseAudio` are each called exactly once, at `rgss_audio_init`/
+shutdown (verified by grepping `src/sdl_audio.cxx` for every `Mix_*Audio`
+call site), so the single `bqPlayerObject` this backend creates is never
+torn down or recreated over a BGM handoff. Whatever calls `stop()` on
+`SDLThread` at the title→map handoff, it is not through this specific
+teardown path — narrowing what "the SDLThread-side call" in the standing
+hypothesis could actually be, without yet identifying it. Everything else
+in the standing hypothesis (real SDL2/OpenSLES concurrency bug vs.
+`ndk_translation`-only artifact, needs a real device or arm64-v8a system
+image to distinguish) still stands unchanged; this only corrects the one
+concrete mechanism named for SDLThread's side of it.
+
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.
 
