@@ -8688,8 +8688,9 @@ module Game
     # (Game::State#to_h/.load) -- a private format with none of `.lsd`'s own
     # field-count/byte-format constraints, so unlike `SAVE_PICTURE` (chunk
     # 103) this can and does carry every field this class holds, including
-    # `fixed_to_map`/`use_transparent_color` (never modelled in `.lsd` at
-    # all -- see SAVE_PICTURE's own schema comment) and the live in-flight
+    # `fixed_to_map`/`use_transparent_color` (also modelled in `.lsd` as of
+    # cycle #164 -- chunk 103 fields 6/9, see SAVE_PICTURE's own schema
+    # comment for the genuine-RPG_RT.exe evidence) and the live in-flight
     # move target/frame-count, so a picture mid-Move-Picture at save time
     # keeps gliding after a resume instead of snapping to rest.
     def to_h
@@ -15073,7 +15074,12 @@ module Game
       #
       # Field mapping is the exact mirror of `.restore_pictures`' own read
       # (see `SAVE_PICTURE`'s own comment for the full evidence behind each
-      # field): 1 name; 2/3 show_x/show_y (the position last given to Show
+      # field): 1 name; 6/9 the fixed_to_map/use_transparent_color flags
+      # given to the picture's own Show Picture call, elided false like
+      # every other picture flag (cycle #164 -- these two were previously
+      # unwritten entirely, so a picture shown fixed-to-the-map or exempted
+      # from the transparent color lost that flag on every Save/Continue
+      # round trip); 2/3 show_x/show_y (the position last given to Show
       # Picture, untouched by any Move Picture since); 4/5/7/8/11-14 the
       # genuinely live current position/zoom/transparency/tone; 31/32
       # finish_x/finish_y (the move's target, equal to current at rest);
@@ -15106,6 +15112,8 @@ module Game
           # as a fully field-less placeholder, `p` nil, matching cycle #154's
           # own finding unchanged).
           e[1] = p.name if p.shown?
+          e[6] = true if p.fixed_to_map
+          e[9] = true if p.use_transparent_color
           e[2] = p.show_x
           e[3] = p.show_y
           e[4] = p.x
@@ -15781,7 +15789,9 @@ module Game
                                red: moving ? pic.current_tone_red : pic.tone_red,
                                green: moving ? pic.current_tone_green : pic.tone_green,
                                blue: moving ? pic.current_tone_blue : pic.tone_blue,
-                               saturation: moving ? pic.current_tone_saturation : pic.tone_saturation)
+                               saturation: moving ? pic.current_tone_saturation : pic.tone_saturation,
+                               fixed_to_map: pic.fixed_to_map,
+                               use_transparent_color: pic.use_transparent_color)
         next unless moving
         finish_trans = pic.transparency
         state.move_picture(id, (pic.finish_x || 0).to_i, (pic.finish_y || 0).to_i,
