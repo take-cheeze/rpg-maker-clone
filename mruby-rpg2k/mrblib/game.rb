@@ -1322,7 +1322,7 @@ module Game
     # process that sets the same flag every frame must not keep the map busy.
     attr_reader :revision
 
-    def initialize; @data = {}; @revision = 0; end
+    def initialize; @data = {}; @revision = 0; @dirty = {}; end
     def [](id); @data[id] || false; end
 
     def []=(id, v)
@@ -1330,12 +1330,29 @@ module Game
       return nv if self[id] == nv
       @data[id] = nv
       @revision += 1
+      # nil stays nil: a bulk replace made every id dirty, which subsumes this
+      # one, and writing into nil would crash.
+      @dirty[id] = true unless @dirty.nil?
       nv
     end
 
     def flip(id); self[id] = !self[id]; end
     def to_h; @data; end
-    def replace(h); @data = h || {}; @revision += 1; end
+    def replace(h)
+      @data = h || {}
+      @revision += 1
+      # Bulk loads (a save, a debug fill) carry an unknown id set: the next
+      # page sweep must assume every switch-referencing page may have flipped.
+      @dirty = nil
+    end
+
+    # Which ids changed since the page sweep last consumed them -- a Hash of
+    # ids, or nil when the set is unknown (a bulk `replace`). Scene::Map's
+    # page sweep re-selects only the events whose conditions reference a dirty
+    # id; #clear_dirty closes the sweep.
+    attr_reader :dirty
+
+    def clear_dirty; @dirty = {}; end
   end
 
   # Game variables: a 1-indexed set of integers, defaulting to 0.
@@ -1366,6 +1383,7 @@ module Game
     def initialize(rpg2003 = false)
       @data = {}
       @revision = 0
+      @dirty = {}
       @max = rpg2003 ? RPG2003_MAX : MAX
       @min = rpg2003 ? RPG2003_MIN : MIN
     end
@@ -1378,11 +1396,22 @@ module Game
       return v if self[id] == v
       @data[id] = v
       @revision += 1
+      @dirty[id] = true unless @dirty.nil? # nil stays nil, see Switches#[]=
       v
     end
 
     def to_h; @data; end
-    def replace(h); @data = h || {}; @revision += 1; end
+    def replace(h)
+      @data = h || {}
+      @revision += 1
+      @dirty = nil # bulk load: unknown id set, see Switches#replace
+    end
+
+    # See Switches#dirty: the ids written since the page sweep last consumed
+    # them, or nil after a bulk `replace`.
+    attr_reader :dirty
+
+    def clear_dirty; @dirty = {}; end
   end
 
   # A digit-entry model backing the Input Number event command: `digits` cells,
