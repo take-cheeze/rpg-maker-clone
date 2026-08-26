@@ -1308,7 +1308,7 @@ the interpreter-linking slice, in this order:
   table's on-disk byte size instead of forcing a decode just to count it.**
 
   **Further fixes (2026-08-26,
-  [#1372](https://github.com/take-cheeze/rpg-maker-clone/pull/1372)):
+  [#1374](https://github.com/take-cheeze/rpg-maker-clone/pull/1374)):
   `LCF::Array2D` no longer builds one `Array1D` object per row for an
   entire table the instant it's decoded** (`mruby-lcf/mrblib/lcf.rb`'s
   `Array2D#initialize`) -- this applied to `.lmt`'s `map_properties` (one
