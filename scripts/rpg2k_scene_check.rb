@@ -4070,12 +4070,17 @@ end
 
 # The leader's own actor graphic "Transparent" flag (Change Actor Graphic /
 # the database Actor checkbox) is a wholly separate, ghost-opacity mechanism
-# from Set Transparent Flag's real hide -- confirmed against RPG_RT's own
-# live source: `Game_Actor::SetSprite` stores `data.transparency = 3`
-# (`src/game_actor.cpp`), and `Game_Character::GetOpacity` (`src/
-# game_character.cpp`) is `Clamp((8 - GetTransparency()) * 32 - 1, 0, 255)`
-# -- level 3 yields 159/255, not a hide. This codebase used to fold the two
-# into one hide-only flag.
+# from Set Transparent Flag's real hide -- confirmed against genuine
+# RPG_RT.exe under wine, cycle #171 (see `Scene::Map#player_translucent?`'s
+# own comment in `mruby-rpg2k/mrblib/scene/map.rb` for the full write-up): a
+# from-scratch Change Sprite Association autostart probe on the genuine New
+# Game start map, screenshotted at an identical frame with the command's own
+# transparent param 0 vs 1, showed the "on" sprite's pixels consistently at
+# ~61-63% of the "off" run's own values -- alpha-blended with the
+# background, never a hide. This corrects a prior version of this comment
+# that mislabelled EasyRPG Player's own `src/game_actor.cpp`/
+# `src/game_character.cpp` as "RPG_RT's own live source". This codebase used
+# to fold the two into one hide-only flag.
 check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
       'translucent, not hidden' do
   scene = new_scene({}, player: [5, 5], members: [SlipActor.new])
@@ -4087,7 +4092,7 @@ check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
   st.party.leader.transparent = true
   scene.update
   eq true, spr.visible, 'the ghost flag never hides the sprite outright'
-  eq 159, spr.opacity, 'ghost-translucent, RPG_RT\'s own (8 - 3) * 32 - 1'
+  eq 159, spr.opacity, 'ghost-translucent, ~62% opacity confirmed under wine'
   st.party.leader.transparent = false
   scene.update
   eq 255, spr.opacity, 'and clears back to fully opaque'
