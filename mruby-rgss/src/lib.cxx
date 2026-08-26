@@ -209,6 +209,22 @@ struct Table {
   std::vector<int16_t> data;
 };
 
+// Live decoded-Bitmap-buffer byte totals, split by how the buffer's contents
+// came to be, since the two have very different growth shapes: `decoded` is
+// real asset pixels (CharSet/Picture/Chipset/... -- what
+// mruby-rpg2k/mrblib/scene/map.rb's LRUBitmapCache now bounds, and what
+// docs/adr/0047-psp-memory-budget.md's Finding 3 calls "the third pool"),
+// while `blank` is everything that never touched a decoder: render targets,
+// snapshots, canvases (`Bitmap.new(w, h)`), and a `Bitmap#clone`'s own copy
+// (RPG::Cache's hue-variant pattern -- copies an existing buffer, decodes
+// nothing itself, so it is not double-counted against `decoded` even though
+// the bitmap it was cloned from was). Exposed to app/psp/main.cxx's own
+// heartbeat via rgss_bitmap_bytes_decoded/_blank below, the same
+// extern-"C"-without-a-shared-header pattern rgss_set_display already uses
+// across this boundary.
+static size_t g_bitmap_bytes_decoded = 0;
+static size_t g_bitmap_bytes_blank = 0;
+
 struct Bitmap {
   int32_t width, height;
   lv_color_format_t format;
@@ -217,13 +233,64 @@ struct Bitmap {
   // sprites showing this bitmap and have LVGL redraw them. Starts true so the
   // initial contents are painted on the first frame after assignment.
   bool dirty = true;
+  // Which of g_bitmap_bytes_decoded/_blank this instance's buffer counts
+  // against -- fixed at construction (see the constructor's own `decoded`
+  // parameter) and never changed afterward, including across a
+  // Bitmap#clone's own reassignment (see operator= below): the category
+  // tracks how *this* object came to exist, not what its buffer currently
+  // holds.
+  bool decoded_from_source;
 
-  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f)
+  Bitmap(mrb_int w, mrb_int h, lv_color_format_t f, bool decoded = false)
       : width(w),
         height(h),
         format(f),
-        buffer(w * h * lv_color_format_get_size(f)) {}
+        buffer(w * h * lv_color_format_get_size(f)),
+        decoded_from_source(decoded) {
+    (decoded ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) += buffer.size();
+  }
+
+  ~Bitmap() {
+    (decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank) -=
+        buffer.size();
+  }
+
+  // Only ever assigned through Bitmap#clone's `dst = src;` (this file's
+  // bmp_init_copy): a deep copy of the pixel content, but deliberately
+  // *not* of `decoded_from_source` -- `dst` keeps counting against whatever
+  // category its own construction already added it to, so this can't leave
+  // the two counters out of sync with what was actually added/removed at
+  // construction/destruction time. Copy-constructing a Bitmap is never done
+  // anywhere in this codebase (every use goes through DataType<Bitmap>'s
+  // alloc_obj or this operator=) and is deleted below so a future one
+  // can't silently bypass this bookkeeping.
+  Bitmap& operator=(const Bitmap& other) {
+    if (this == &other)
+      return *this;
+    size_t& counter =
+        decoded_from_source ? g_bitmap_bytes_decoded : g_bitmap_bytes_blank;
+    counter -= buffer.size();
+    width = other.width;
+    height = other.height;
+    format = other.format;
+    buffer = other.buffer;
+    dirty = other.dirty;
+    counter += buffer.size();
+    return *this;
+  }
+
+  Bitmap(const Bitmap&) = delete;
 };
+
+// The RPG2k/RPGXP/RPGVX asset loaders below (bmp_decode_into) are the only
+// real "decoded from a source" construction path; every other Bitmap
+// (blank buffers, canvases, snapshots, and a clone's own copy) is `blank`.
+extern "C" size_t rgss_bitmap_bytes_decoded(void) {
+  return g_bitmap_bytes_decoded;
+}
+extern "C" size_t rgss_bitmap_bytes_blank(void) {
+  return g_bitmap_bytes_blank;
+}
 
 template <class T>
 struct DataType {
@@ -1349,7 +1416,8 @@ static bool bmp_decode_into(mrb_state* M,
   const int channels = from_stb ? req : 4;
   Bitmap& bmp = DataType<Bitmap>::alloc_obj(
       M, self, w, h,
-      channels == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888);
+      channels == 4 ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB888,
+      /* decoded = */ true);
   std::memcpy(bmp.buffer.data(), img.get(), bmp.buffer.size());
   if (from_stb) {
     uint8_t* p = bmp.buffer.data();

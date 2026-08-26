@@ -247,6 +247,21 @@ MrbBlock* g_mrb_free = nullptr;
 
 void mrb_arena_init();
 
+// Live decoded-Bitmap-buffer byte totals (mruby-rgss/src/lib.cxx's own
+// g_bitmap_bytes_decoded/_blank, behind the Bitmap constructor/destructor/
+// operator= so every live buffer, whatever the current scene, is counted
+// automatically) -- this file's counterpart to mrb_arena_used() below for
+// the "third pool" docs/adr/0047-psp-memory-budget.md's Finding 3
+// identified: decoded pixels live in the plain C++ allocator, not the
+// mruby arena, so they need their own instrumentation. Split decoded (real
+// asset pixels -- what mruby-rpg2k's LRUBitmapCache now bounds) from blank
+// (render targets, canvases, snapshots, and a clone's own copy) since the
+// two grow for very different reasons. Declared here, ahead of
+// append_mem_fields below (the only caller), the same as mrb_arena_used()
+// itself just below.
+extern "C" size_t rgss_bitmap_bytes_decoded(void);
+extern "C" size_t rgss_bitmap_bytes_blank(void);
+
 // Live bytes (payload + headers) currently handed out, for the heartbeat.
 size_t mrb_arena_used() {
   mrb_arena_init();
@@ -543,6 +558,10 @@ void append_mem_fields(StrBuf& sb, int stack_free, unsigned stack_used_max) {
   sb.uint(stack_used_max);
   sb.str(" arena_used=");
   sb.uint(static_cast<unsigned>(mrb_arena_used()));
+  sb.str(" bmp_decoded=");
+  sb.uint(static_cast<unsigned>(rgss_bitmap_bytes_decoded()));
+  sb.str(" bmp_blank=");
+  sb.uint(static_cast<unsigned>(rgss_bitmap_bytes_blank()));
 }
 
 // Convenience for a one-shot marker (as opposed to the periodic BRINGUP

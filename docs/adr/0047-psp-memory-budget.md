@@ -1633,6 +1633,68 @@ the interpreter-linking slice, in this order:
   the ~24 MB, and getting instrumentation that can actually show it,
   remains open — not resolved by this follow-up, only made safer against
   the unbounded-growth case regardless of what the numbers turn out to be.
+
+  **Second follow-up (2026-08-26): direct instrumentation, since
+  `sceKernelTotalFreeMemSize`/`MaxFreeMemSize` couldn't be trusted.**
+  Rather than continue relying on a kernel API that demonstrably didn't
+  move across a real run, `Bitmap` (`mruby-rgss/src/lib.cxx`) now tracks its
+  own live byte totals directly, through its constructor/destructor/
+  `operator=` — no dependency on the PSP kernel's own reporting at all.
+  Split into two module-level counters by how a buffer's contents came to
+  be, since the two pools this ADR has been treating as one "third pool"
+  actually grow for different reasons and on different schedules: `decoded`
+  (real asset pixels — CharSet/Picture/Chipset/..., what
+  `mruby-rpg2k`'s new `LRUBitmapCache` above now bounds) and `blank`
+  (render targets, canvases, snapshots, and a `Bitmap#clone`'s own copy —
+  RPG::Cache's hue-variant pattern, which allocates via the same
+  constructor but copies an existing buffer rather than decoding one, and
+  is deliberately *not* double-counted against `decoded` even though the
+  bitmap it was cloned from was). `app/psp/main.cxx` surfaces both as new
+  `bmp_decoded`/`bmp_blank` fields on every existing heartbeat marker,
+  alongside `arena_used`. Verified locally: no PSP cross-compiler available
+  in this environment (the standing limitation this ADR has noted
+  throughout), so this was checked by extracting the exact struct/
+  constructor/destructor/`operator=`/deleted-copy-constructor shape into a
+  standalone host-compiled C++ program mirroring `DataType<T>::alloc_obj`'s
+  own `T{args...}` braced-init call pattern (including the untouched 3-arg
+  call sites picking up the new parameter's default correctly) — construct/
+  clone-via-`operator=`/destroy round-trips both counters back to exactly
+  their prior values, in every order tried.
+
+  **Validated (2026-08-26, [#1385](https://github.com/take-cheeze/rpg-maker-clone/pull/1385)),
+  same Nepheshel run as the arena figures above.** `bmp_decoded`:
+  `GAME_READY` 281,600 B, `frame=0` **824,320 B**, then flat —
+  unchanged at 824,320 B through `frame=1600`. `bmp_blank`: `GAME_READY`
+  42,500 B, `frame=0` 2,968,064 B, then flat at **3,251,200 B** from
+  `frame=200` on. Two things this settles, and one it doesn't:
+
+  - It settles that `sceKernelTotalFreeMemSize` really was the wrong tool —
+    these two counters move exactly where that API stayed frozen, proving
+    the third pool is real and now visible.
+  - It settles that `bmp_blank` (render targets, canvases, snapshots — not
+    what the new `LRUBitmapCache` bounds) is the *larger* of the two pools
+    in this run: roughly 3.1 MB vs. `bmp_decoded`'s 0.8 MB, meaning the
+    screen-sized compositing buffers (picture layer, parallax, snapshots
+    for transitions) outweigh decoded asset pixels here. Combined with the
+    same run's `arena_used` peak (6,108,304 B at `frame=1000`) plus
+    `lvgl_used`/`stack_used_max`, total tracked live memory at that point
+    is ≈10.2 MB — against Finding 3's own ~24 MB estimate, roughly 40%
+    utilization, with `bmp_blank` now the largest *uncapped* pool of the
+    three.
+  - It does **not** settle whether the `LRUBitmapCache` fix (#1383) was
+    actually load-bearing for this run: `bmp_decoded` never moves after
+    `frame=0`, meaning this particular 1600-frame session's distinct-named-
+    graphics working set never grew past what was already loaded by then —
+    the eviction path was never exercised, so this run shows no thrashing
+    but also doesn't prove the original unbounded-growth risk was real on
+    this timescale/map. The fix remains precautionary against a longer or
+    more map-varied session, not confirmed necessary by this one.
+
+  `bmp_blank`'s size — now the largest uncapped pool measured in this ADR —
+  is a genuine new lead (screen-sized compositing buffers are a very
+  different fix shape than a named-asset LRU cache, likely closer to "how
+  many of these does Scene::Map actually need to keep alive at once"), left
+  unpursued for now rather than opened speculatively.
 - **P5 — done, including the real-game measurement.** `app/psp/main.cxx` now
   declares `PSP_MAIN_THREAD_STACK_SIZE_KB(256)` instead of inheriting
   pspsdk's implicit default, and the `RPG2K_PSP_BRINGUP` heartbeat carries
