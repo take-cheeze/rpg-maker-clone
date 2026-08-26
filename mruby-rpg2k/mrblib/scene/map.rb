@@ -176,23 +176,123 @@ class RPG2k
       # other call site *is* a fresh entry (New Game's first map, and every
       # Transfer Player / Teleport via #perform_teleport's own separate call)
       # and keeps re-deriving as before.
+      # A name -> Bitmap cache bounded by estimated decoded pixel bytes rather
+      # than entry count (a CharSet and a System2 gauge sheet differ by an
+      # order of magnitude in size), evicting least-recently-used entries once
+      # over budget. Drop-in for the plain Hash #cached_bitmap used to take:
+      # implements the same #key?/#[]/#[]= surface (including tests that poke
+      # a cache directly, e.g. `@animation_cache['GhostAnim'] = nil` to
+      # simulate a poisoned/missing graphic), so #cached_bitmap itself needed
+      # no changes.
+      class LRUBitmapCache
+        def initialize(capacity_bytes)
+          @capacity_bytes = capacity_bytes
+          @entries = {} # key => value, oldest (least-recently-used) first
+          @bytes = 0
+        end
+
+        def key?(key)
+          @entries.key?(key)
+        end
+
+        # Return a cached value (nil for a poisoned/failed-load entry, same as
+        # a plain Hash) and mark it most-recently-used. Callers check #key?
+        # first, exactly as they did against the plain Hash, so a genuine miss
+        # is never confused with a cached nil here.
+        def [] key
+          return nil unless @entries.key?(key)
+          v = @entries.delete(key)
+          @entries[key] = v
+          v
+        end
+
+        def []= key, value
+          @bytes -= bitmap_bytes(@entries.delete(key)) if @entries.key?(key)
+          @entries[key] = value
+          @bytes += bitmap_bytes(value)
+          evict_lru_until_within_budget
+          value
+        end
+
+        private
+
+        # width * height * 4 -- every Bitmap this build decodes from a file is
+        # ARGB8888 (mruby-rgss/src/lib.cxx's file-loading Bitmap.new overload
+        # always passes LV_COLOR_FORMAT_ARGB8888), so this is the buffer size
+        # the native Bitmap struct actually allocates, not a guess. 0 for a
+        # poisoned (nil) or otherwise non-Bitmap entry -- it costs nothing and
+        # so creates no eviction pressure on its own.
+        def bitmap_bytes(v)
+          return 0 unless v.respond_to?(:width) && v.respond_to?(:height)
+          v.width * v.height * 4
+        end
+
+        # Evict oldest-first until back within budget. Stops at one remaining
+        # entry even if that entry alone exceeds the budget: the entry just
+        # inserted is always the newest (last) one, so this never evicts what
+        # the caller is about to use, and never busy-loops reloading the same
+        # single oversized graphic every time it's requested.
+        def evict_lru_until_within_budget
+          while @bytes > @capacity_bytes && @entries.size > 1
+            oldest_key = nil
+            @entries.each_key { |k| oldest_key = k; break }
+            @bytes -= bitmap_bytes(@entries.delete(oldest_key))
+          end
+        end
+      end
+
+      # Per-category caps for the named-graphic caches below (see #initialize),
+      # in estimated decoded bytes (see LRUBitmapCache#bitmap_bytes) -- a
+      # conservative first cut, not a measured budget: this build's only
+      # native-heap instrumentation (sceKernelTotalFreeMemSize/MaxFreeMemSize,
+      # app/psp/main.cxx's `free`/`maxfree` fields) reported the exact same
+      # value across every heartbeat of a full psp-smoke-game run regardless
+      # of arena_used moving by megabytes, so it cannot currently validate
+      # (or rule out) whatever headroom is actually available. Each constant
+      # is independent and trivially raised later once real measurement
+      # exists; sized for now to comfortably outlast one screen's working set
+      # (e.g. a troop's handful of distinct battler graphics) while still
+      # bounding a long session's worth of distinct maps/battles from
+      # retaining every graphic they ever showed.
+      CHARSET_CACHE_BYTES = 1_000_000
+      PICTURE_CACHE_BYTES = 1_000_000
+      BACKDROP_CACHE_BYTES = 500_000
+      MONSTER_CACHE_BYTES = 1_500_000
+      ANIMATION_CACHE_BYTES = 1_500_000
+      BATTLECHARSET_CACHE_BYTES = 500_000
+      SYSTEM2_CACHE_BYTES = 250_000
+
       def initialize parent, state, apply_access: true
         super parent
         @state = state
         # Named graphics loaded and memoized on demand -- see #cached_bitmap.
-        # One hash per graphic category (rather than a single cache keyed by
+        # One cache per graphic category (rather than a single cache keyed by
         # a [kind, name] tuple) so each material's entries stay a plain
         # name -> Bitmap lookup and one category's keys can never collide
-        # with another's.
-        @charset_cache = {}   # CharSet/<name> -- event graphics and the
+        # with another's. Each is a bounded LRUBitmapCache, not a plain Hash:
+        # a long session that visits many maps/battles referencing many
+        # uniquely-named graphics used to retain every one of them for the
+        # rest of the run (nothing here ever cleared these hashes, including
+        # #perform_teleport's otherwise-thorough per-visit reset just below);
+        # now only the most-recently-used ones survive past each cache's own
+        # byte budget, and anything evicted is simply reloaded (and re-cached)
+        # the next time its name comes up.
+        @charset_cache = LRUBitmapCache.new(CHARSET_CACHE_BYTES)
+                               # CharSet/<name> -- event graphics and the
                                # party leader's own graphic share this, since
                                # both load the same files.
-        @picture_cache = {}   # Picture/<name>, keyed by [name, transparent]
-        @backdrop_cache = {}  # Backdrop/<name> (battle background)
-        @monster_cache = {}   # Monster/<name> (battler graphics)
-        @animation_cache = {} # Battle/<name> (battle animation sheets)
-        @battlecharset_cache = {} # BattleCharSet/<name> (RPG2003 actor battler sprites)
-        @system2_cache = {}   # System2/<name> (RPG2003 gauge card sprite sheet)
+        @picture_cache = LRUBitmapCache.new(PICTURE_CACHE_BYTES)
+                               # Picture/<name>, keyed by [name, transparent]
+        @backdrop_cache = LRUBitmapCache.new(BACKDROP_CACHE_BYTES)
+                               # Backdrop/<name> (battle background)
+        @monster_cache = LRUBitmapCache.new(MONSTER_CACHE_BYTES)
+                               # Monster/<name> (battler graphics)
+        @animation_cache = LRUBitmapCache.new(ANIMATION_CACHE_BYTES)
+                               # Battle/<name> (battle animation sheets)
+        @battlecharset_cache = LRUBitmapCache.new(BATTLECHARSET_CACHE_BYTES)
+                               # BattleCharSet/<name> (RPG2003 actor battler sprites)
+        @system2_cache = LRUBitmapCache.new(SYSTEM2_CACHE_BYTES)
+                               # System2/<name> (RPG2003 gauge card sprite sheet)
         apply_map_access if apply_access
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
