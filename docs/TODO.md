@@ -3303,6 +3303,93 @@ The work below is roughly ordered by the critical path to a walkable game
   again); the missing-Picture-asset hang (cycle #155's own open item,
   untouched again); and whether field 9 (`visible`) of `SAVE_PICTURE`
   (cycle #155's own open item) is ever written by genuine RPG_RT.exe.
+  ✅ **Follow-up (cycle #157, 2026-08-26): picked up cycle #156's own named
+  leftover item, the `seed_boosts` comment** (`mruby-rpg2k/mrblib/game.rb`,
+  a few lines above cycle #156's own fix) -- it honestly said "confirmed
+  against EasyRPG's Game_Actor seed handling" rather than misattributing the
+  claim to RPG_RT (so it was a citation-only problem, not the
+  RPG_RT-mislabeled-as-EasyRPG pattern #125/#126/#154/#156 kept finding), but
+  had never been independently re-verified against the genuine engine. The
+  underlying claim: a Seed-type item's (database type 8) one-time permanent
+  stat boost reads `max_hp_points`/`max_sp_points` and the `atk_points2`/
+  `def_points2`/`spi_points2`/`agi_points2` field set -- distinct from the
+  structurally near-identical `atk_points1`/`def_points1`/`spi_points1`/
+  `agi_points1` fields that carry *equipment* bonuses (`EQUIP_BONUS_FIELD`,
+  read only while an item is worn). **Independently re-verified directly
+  against genuine RPG_RT.exe under wine** (no EasyRPG source consulted for
+  this claim, or at all this cycle). **Method:** reused cycles #148-156's own
+  raw-field save/database editing infrastructure (`mruby-lcf`'s own
+  `LCF::Database`/`LCF::SaveData` classes, loaded standalone the same way
+  cycle #154-156's own scratch scripts did) rather than any synthetic
+  autostart map event, again sidestepping the still-open autostart-crash
+  mystery entirely. Nepheshel206beta's own item 403 (a real shipped "seed",
+  赤いドロップ/Red Drop, `atk_points2`=2 in the unmodified database, one of a
+  clean six-item family 401-406 the game's own designer built, one per
+  `seed_boosts` stat) was duplicated into a second `RPG_RT.ldb` with
+  `atk_points1` additionally set to a large, unmistakable 77 (`atk_points2`
+  left at its original 2) -- a field a Seed item never otherwise touches,
+  since Seeds are never equipped. A `Save01.lsd` giving the save's live
+  leader (デモ用, LV50 -- confirmed, per cycle #156's own finding, to be
+  actor 15's data despite chunk109's `party` field nominally saying `[1]`;
+  left completely untouched here too, editing only the item-inventory
+  arrays, matching cycle #156's own crash-avoidance workaround) exactly 1x
+  item 403 was built once and reused unmodified across both runs. Two
+  side-by-side genuine RPG_RT.exe boots (Xvfb 640x480x16, matchbox,
+  `LANG=ja_JP.UTF-8`, `LIBGL_ALWAYS_SOFTWARE=1`, `xdotool`-driven, `xwd`+
+  ImageMagick screenshots) -- one with the unmodified item 403, one with the
+  `atk_points1`=77 variant -- each: loaded File 1, opened the field 装備
+  (Equip) screen to read the leader's own 攻撃力 (ATK) stat line *before*
+  (870 in both runs, confirming the LDB edit changed nothing about the
+  equip-time display, as expected since a type-8 item is never equipped),
+  backed out to the map, opened the field アイテム (Item) menu, used item 403
+  on the leader (confirmed consumed: held count 1 -> 0 in both runs, ruling
+  out "the item silently failed to apply at all" as an alternative
+  explanation for a null result), then reopened Equip and read ATK *after*.
+  **Result: identical in both runs** -- ATK rose from 870 to exactly 872
+  (+2, matching `atk_points2`) whether or not `atk_points1` carried 77; the
+  item's displayed name and flavour-text description were also byte-for-byte
+  identical between runs, evidence the edited database parsed correctly and
+  wasn't silently rejected/defaulted. This directly confirms genuine
+  RPG_RT.exe's Seed-consumption code reads only the points2 field set,
+  exactly matching the pre-existing (if mis-cited) `Game::Actor#seed_boosts`
+  implementation -- **no behavioral code changed**, only the comment's
+  citation. Also **strengthened the matching pre-existing regression check**
+  in `scripts/rpg2k_logic_check.rb` ("a seed permanently raises the target
+  stats (points2 set...)"): the fixture item now also carries `atk: 999`
+  (`atk_points1`) alongside the existing `atk2: 5` (`atk_points2`), and the
+  assertion documents that only the +5 must land. Proved this actually
+  catches a regression: temporarily changing `seed_boosts` to read
+  `atk_points1`/`def_points1`/`spi_points1`/`agi_points1` instead of the
+  `*_points2` set (`git diff` reverted after) made the check fail with a
+  precise, specific error (`RuntimeError: expected 15, got 999`) before
+  restoring the original fields brought the suite back to green. Full suite
+  reconfirmed passing, unchanged from cycle #156 (a citation fix plus
+  strengthening one pre-existing check in place touches no check count):
+  `scripts/rpg2k_scene_check.rb` (929), `scripts/rpg2k_render_check.rb` (41),
+  `scripts/rpg2k_logic_check.rb` (1139), `scripts/rpg2k3_battle_row_check.rb`
+  (19) and `scripts/rpg2k3_battle_gauge_check.rb` (15). `RPG_RT.ldb`/
+  `Save01.lsd` were restored to their original bytes after every run (each
+  driver script backs up and restores them automatically on exit, `trap
+  cleanup EXIT`) and reconfirmed byte-identical by `md5sum` against the same
+  `a738d3b9.../3ab5bb01...` values recorded since cycle #148; `git status` on
+  `data/` came back clean. No EasyRPG source was consulted for any claim
+  this cycle, and no web search was used either. **Left open for a future
+  cycle:** every EasyRPG-style citation cycle #154's own repo-wide grep
+  turned up that no cycle has yet touched (`do_change_equipment`,
+  `Window_Skill::CheckInclude`/`Algo::IsSkillUsable`'s own field-skill-menu
+  logic, `EnemyAi::IsActionValid`, `Game_Event::MoveTypeRandom`/
+  `MoveTypeCycle`, `CalcNormalAttackAutoBattleTargetRank`, `Window_ShopSell`,
+  and more -- see cycle #154's own list); the autostart-crash mystery; the
+  party-roster-field crash; fields 51-54/71-140 of SAVE_SYSTEM; the
+  missing-Picture-asset hang; and whether `SAVE_PICTURE` field 9 (`visible`)
+  is ever written -- none of these five were touched again this cycle. One
+  new, small, genuinely fresh observation worth flagging for whoever next
+  investigates the party-roster-field crash: this cycle's own `Save01.lsd`
+  edits (item-inventory arrays only, chunk109 fields 11-14, `party` at field
+  1 never touched) never crashed or misbehaved across many repeated
+  boots -- consistent with cycle #156's own conclusion that the fragility is
+  specific to writing chunk109 field 1 itself, not inventory edits in
+  general.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
