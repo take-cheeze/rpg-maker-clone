@@ -48,21 +48,33 @@ adb install -r "${APK}"
 # bits, so chmod is a no-op on it). `run-as` sidesteps all of that at once:
 # it runs a command as the app's own UID, which the OS already grants
 # unrestricted read/write to its own external-files directory -- no root,
-# no scoped-storage exception needed. Stage the files somewhere any shell
-# user can write (world-writable /data/local/tmp) and have the app itself
-# copy them into place.
+# no scoped-storage exception needed.
+#
+# But `run-as ... mkdir -p` on the *full* path failed too ("mkdir:
+# '/sdcard/Android': Permission denied") -- a raw shell mkdir walking the
+# path from /sdcard/Android down hits the same FUSE restriction non-owning
+# processes hit elsewhere in this script, even under run-as. Real
+# Android API calls don't: getExternalFilesDir()/mkdirs()
+# (RpgMakerCloneActivity#getArguments()) create the same directory from
+# inside the app process without issue. So prime it that way -- one
+# throwaway launch, no project pushed yet, so it exits almost immediately
+# via src/main.cxx's "no project found" path -- and let `run-as` do only the
+# `cp`, into a directory that already exists.
+echo "== priming ${PACKAGE}'s external-files directory"
+adb shell am start -W -n "${ACTIVITY}"
+sleep 5
+adb shell am force-stop "${PACKAGE}"
+
 STAGING="/data/local/tmp/nepheshel"
 adb shell rm -rf "${STAGING}"
 adb push data/Nepheshel206beta/Nepheshel206Rbeta/. "${STAGING}/"
 echo "== copying Nepheshel into ${GAME_DIR} as ${PACKAGE}"
-# One argv element again (see the `am start` comment below): `adb shell`
-# re-joins several arguments with plain spaces, so the unquoted `&&` between
-# mkdir and cp came back apart as two separate remote commands ("mkdir:
-# Needs 1 argument") instead of staying inside sh -c's one string. Handing
+# One argv element (see the `am start` comment below): `adb shell` re-joins
+# several arguments with plain spaces, so passing run-as/sh/-c/the command as
+# separate argv elements lets adb's own re-join scramble the quoting. Handing
 # adb the whole thing pre-quoted, with the sh -c argument itself
-# double-quoted, keeps the remote shell's own top-level parse from splitting
-# on that `&&` before sh -c ever sees it.
-COPY_CMD="mkdir -p '${GAME_DIR}' && cp -r '${STAGING}/.' '${GAME_DIR}/'"
+# double-quoted, keeps the remote shell's own top-level parse from doing that.
+COPY_CMD="cp -r '${STAGING}/.' '${GAME_DIR}/'"
 adb shell "run-as ${PACKAGE} sh -c \"${COPY_CMD}\""
 adb shell rm -rf "${STAGING}"
 
