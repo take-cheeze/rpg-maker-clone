@@ -353,20 +353,39 @@ up once the `.so` actually loads and runs. `continue-on-error: true` for now,
 the same starting point `psp-smoke-game` used before it proved stable.
 
 **Update (2026-08-26, still later): the new job's first clean run found a
-real crash.** Once the storage plumbing above worked, `android-smoke`
-reached `[RPG2k-MAP]` — the engine really does boot, load Nepheshel and put
-up the map on this emulator — and then the process itself SIGABRTed about
-half a second later: `Scudo ERROR: invalid chunk state when deallocating
-address 0x...`, i.e. Android's hardened allocator catching a real
-double-free or heap-corruption-then-free, not an emulator artifact. The
-crash lands in `SDLThread` moments after several `AudioTrack`/`PlayerBase`
-lines (`PlayerBase::stop() from IPlayer` right before it), so the audio
-path around map-entry BGM playback is the first place to look. Glibc's
-allocator on desktop is far less strict about this class of corruption than
-Scudo, which is very likely why nothing already in the desktop test suite
-caught it — exactly the gap this job exists to close. Root-causing it is
-out of scope for the CI-infrastructure change that added `android-smoke`
-itself; tracked as a follow-up rather than fixed here.
+real crash — cause not yet pinned down.** Once the storage plumbing above
+worked, `android-smoke` reached `[RPG2k-MAP]` — the engine really does
+boot, load Nepheshel and put up the map on this emulator — and then the
+process itself SIGABRTed about half a second later, reproducibly across
+runs: `Scudo ERROR: invalid chunk state when deallocating address 0x...`
+in `SDLThread`. That is Android's hardened allocator (Scudo) catching a
+real double-free or heap-corruption-then-free, not an emulator artifact by
+itself — Scudo only reports it at the *deallocation* that notices the
+damage, which can be well downstream of whatever actually corrupted the
+chunk, so the backtrace alone (bionic/Scudo frames, then one unsymbolized
+address in our own `.so`) does not say where.
+[This engine's own CI logs](https://github.com/take-cheeze/rpg-maker-clone/actions)
+cannot be fetched from every environment this port is worked from (an
+outbound-network policy blocks the Azure Blob Storage host GitHub Actions
+artifacts download from), so a first pass at correlating the crash with
+nearby audio-stack log lines (`PlayerBase`/`AudioTrack`) turned out to be
+reading the *wrong* run's log entirely — a mistake worth naming so it is
+not repeated. `scripts/android_smoke_check.bash` now prints the full
+device log for the crashing run's own pid directly into the CI job's own
+console on either assertion failure, precisely so this does not require an
+artifact download to investigate next time.
+Two standing hypotheses, neither confirmed: an actual bug in this engine's
+audio path (Glibc's allocator on desktop is far less strict about this
+class of corruption than Scudo, which would explain nothing in the desktop
+test suite catching it), or an artifact of running an arm64-v8a `.so`
+through this AVD's `ndk_translation` binary-translation layer specifically
+(present because this is an x86_64 host emulator, not real arm64 hardware
+— see the `android-smoke` job's own comment) doing something the real C330
+device's native execution never would. Telling them apart needs either a
+real device or an arm64-v8a system image run (impractically slow for CI,
+per that same comment, but usable as a one-off diagnostic). Root-causing
+this is out of scope for the CI-infrastructure change that added
+`android-smoke` itself; tracked as a follow-up rather than fixed here.
 
 The remaining bullets still hold except where quoted above; "no on-screen
 touch controls yet" is no longer true.

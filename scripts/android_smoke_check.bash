@@ -102,36 +102,42 @@ adb exec-out screencap -p > "${SCREENSHOT_OUT}" || true
 adb logcat -d -s RPG2K > "${LOGCAT_OUT}"
 adb logcat -d > "${FULL_LOGCAT_OUT}"
 
+# Print every device log line carrying this run's own pid -- used by both
+# assertions below on failure. The RPG2K tag alone only ever carries this
+# app's own bridged stderr (see main.cxx's android_stderr_bridge); a native
+# abort's tombstone (F DEBUG/F libc) is logged by the system under other
+# tags entirely, so seeing *why* (not just *that*) needs the full device
+# log, not just the RPG2K-tagged stream. A plain chronological tail of that
+# full log is not good enough here: this `google_apis` image runs the full
+# Google app/service suite, which floods logcat continuously, so by the
+# time either assertion below runs, unrelated entries have long since
+# pushed the interesting ones out of any reasonably-sized tail (confirmed
+# the hard way -- a captured "last 150 lines" was 100% unrelated system
+# noise, nothing from this app at all). Filtering by this run's own pid
+# keeps the result relevant regardless of how much else logged in between.
+print_pid_context() {
+    # grep for an actual RPG2K line first: logcat's own
+    # "--------- beginning of crash" buffer-switch marker (not tied to the
+    # -s RPG2K filter at all) can be the literal last line, and it has no
+    # pid column to extract.
+    local pid
+    pid="$(grep ' RPG2K ' "${LOGCAT_OUT}" | tail -1 | awk '{print $3}')"
+    if echo "${pid}" | grep -qE '^[0-9]+$' ; then
+        echo "full device log lines for this run's pid (${pid}):" >&2
+        adb logcat -d --pid="${pid}" >&2 || true
+    else
+        echo "could not recover this run's pid from the RPG2K log; last 150 lines of the full device log:" >&2
+        tail -150 "${FULL_LOGCAT_OUT}" >&2
+    fi
+}
+
 echo "=== asserting the engine booted and reached the map scene ==="
 if grep -q '\[RPG2k-MAP\]' "${LOGCAT_OUT}" ; then
     grep '\[RPG2k-MAP\]' "${LOGCAT_OUT}"
 else
     echo "never reached the map scene ([RPG2k-MAP] missing) after ${waited}s; last 100 RPG2K lines:" >&2
     tail -100 "${LOGCAT_OUT}" >&2
-    # The RPG2K tag only ever carries this app's own bridged stderr (see
-    # main.cxx's android_stderr_bridge) -- a native abort's tombstone (F
-    # DEBUG/F libc) is logged by the system under other tags entirely, so a
-    # crash with no application-level message needs the full device log to
-    # see why at all. A plain chronological tail of that full log is *not*
-    # good enough here: this `google_apis` image runs the full Google app/
-    # service suite, which floods logcat continuously, so by the time the
-    # poll loop above gives up, the crash-time entries are long since pushed
-    # out of any reasonably-sized tail (confirmed the hard way -- a captured
-    # "last 150 lines" was 100% unrelated system noise, nothing from this
-    # app at all). Filtering by this run's own pid keeps the result relevant
-    # regardless of how much else logged in between.
-    # grep for an actual RPG2K line first: logcat's own
-    # "--------- beginning of crash" buffer-switch marker (not tied to the
-    # -s RPG2K filter at all) can be the literal last line, and it has no
-    # pid column to extract.
-    PID="$(grep ' RPG2K ' "${LOGCAT_OUT}" | tail -1 | awk '{print $3}')"
-    if echo "${PID}" | grep -qE '^[0-9]+$' ; then
-        echo "full device log lines for this run's pid (${PID}):" >&2
-        adb logcat -d --pid="${PID}" >&2 || true
-    else
-        echo "could not recover this run's pid from the RPG2K log; last 150 lines of the full device log:" >&2
-        tail -150 "${FULL_LOGCAT_OUT}" >&2
-    fi
+    print_pid_context
     exit 1
 fi
 
@@ -144,6 +150,7 @@ echo "=== asserting no native crash reached the device log ==="
 if grep -qE 'F libc|F DEBUG|FATAL EXCEPTION' "${FULL_LOGCAT_OUT}" ; then
     echo "native crash marker found in the device log:" >&2
     grep -E 'F libc|F DEBUG|FATAL EXCEPTION' "${FULL_LOGCAT_OUT}" >&2
+    print_pid_context
     exit 1
 fi
 
