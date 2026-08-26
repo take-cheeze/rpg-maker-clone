@@ -8554,9 +8554,21 @@ module Game
     def frames_left; @frames; end
     def saturation; @saturation.to_i; end
 
+    # Whether this id is currently on screen -- false once #erase! has run.
+    # A distinct flag rather than "name non-empty": a fresh `Picture.new`
+    # with no `:name` (as several pre-existing scene-check fixtures build one
+    # directly, skipping Show Picture, purely to seed a position for a Move/
+    # Erase Picture check) must still read as shown -- only an *explicit*
+    # #erase! turns this false. An id that has never been shown at all has no
+    # `Picture` object in `Game::State#pictures` to begin with (see
+    # `#erase_picture`'s own comment), so this predicate only ever needs to
+    # distinguish "currently shown" from "was shown, now erased".
+    def shown?; @shown; end
+
     def initialize(id, opts = {})
       @id = id
       @name = opts[:name] || ''
+      @shown = true
       @x = opts[:x] || 0
       @y = opts[:y] || 0
       # Defaults to the shown position itself: the live Show Picture command
@@ -8589,6 +8601,39 @@ module Game
     end
 
     def moving?; @frames > 0; end
+
+    # Erase Picture (11130): turns #shown? false (so nothing draws --
+    # `Scene::Map#draw_pictures` gates on it explicitly, since the name
+    # itself is deliberately left alone here, see below) and halts any
+    # in-flight move, but otherwise leaves name/position/zoom/tone exactly as
+    # they stood at the moment of erasure -- confirmed against genuine
+    # RPG_RT.exe under wine (cycle #159): a Show Picture immediately followed
+    # by Erase Picture, then an Open Save Menu, produced a genuine `.lsd`
+    # chunk 103 entry with field 1 (name) *absent* but fields
+    # 2/3/4/5/7/8/11-14/31/32/33/34/41-44 all still *present*, carrying the
+    # exact values the picture held before erasure -- decisively distinct
+    # from an id that was never shown at all, which cycle #154 already
+    # established writes as a fully field-less placeholder (every one of
+    # those fields absent, not merely zero). `#to_lsd` reads `#shown?`, not
+    # `#name`, to decide whether to write field 1 -- `@name` itself is left
+    # untouched here (rather than cleared) because several pre-existing
+    # scene-check fixtures build a `Picture.new` directly with no `:name` at
+    # all, purely to seed a position, and must still read as shown; clearing
+    # `@name` on erasure would have made an *empty* name ambiguous between
+    # "never had one" and "erased". `Game::State` keeps this `Picture` object
+    # in `@pictures` after an erase (see `#erase_picture`) specifically so
+    # `#to_lsd` can still read these fields back out.
+    # Whether a picture still mid-move at the moment of Erase Picture freezes
+    # at its live interpolated position (as here, forcing frames to 0) or
+    # keeps gliding toward its old target was not tested this cycle -- this
+    # is the conservative reading (RPG_RT's own event thread is
+    # single-stepped, so nothing else could still be advancing the move
+    # in the same instant Erase Picture runs) and errs toward *not*
+    # inventing unverified motion, not toward matching a real capture.
+    def erase!
+      @shown = false
+      @frames = 0
+    end
 
     # Advance one frame of the in-flight move (a no-op when at rest). Every
     # parameter eases a `1/remaining` fraction toward its target, in float
@@ -14452,12 +14497,25 @@ module Game
 
     # Start a move on picture `id` (a no-op if it is not shown). `args` are the
     # Picture#move_to arguments (x, y, zoom, opacity, r, g, b, s, frames).
+    # Gated on `#shown?`, not mere hash presence: since cycle #159, an erased
+    # id's `Picture` object lingers in `@pictures` (see `#erase_picture`'s own
+    # comment), and this must stay a no-op for that id exactly as it already
+    # was for a never-shown one.
     def move_picture(id, *args)
       pic = @pictures[id]
-      pic.move_to(*args) if pic
+      pic.move_to(*args) if pic&.shown?
     end
 
-    def erase_picture(id); @pictures.delete(id); end
+    # Erase Picture (11130): the `Picture` object itself is kept, not deleted
+    # -- see `Picture#erase!`'s own comment for the genuine-RPG_RT.exe
+    # evidence (cycle #159) that its position/zoom/tone fields must still
+    # round-trip through `#to_lsd` after an erase, distinct from an id that
+    # was never shown at all (which has no entry here to begin with, and
+    # `#to_lsd` still writes as a fully field-less placeholder).
+    def erase_picture(id)
+      pic = @pictures[id]
+      pic&.erase!
+    end
 
     # Drop every shown picture. RPG2000 does this on every map change, so a
     # cutscene's pictures never survive into the map it teleports to.
@@ -14941,7 +14999,16 @@ module Game
         p = @pictures[id]
         e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_PICTURE })
         if p
-          e[1] = p.name
+          # Field 1 (name) is present only while the picture is actually
+          # shown (`#shown?`, not mere name-emptiness -- see Picture#erase!'s
+          # own comment for why) -- this table's own SAVE_PICTURE schema
+          # comment carries cycle #159's genuine-RPG_RT evidence: an id that
+          # was shown and then Erase Picture'd keeps every position/zoom/tone
+          # field at its last value but drops the name outright, distinct
+          # from an id that was never shown at all (which this loop leaves
+          # as a fully field-less placeholder, `p` nil, matching cycle #154's
+          # own finding unchanged).
+          e[1] = p.name if p.shown?
           e[2] = p.show_x
           e[3] = p.show_y
           e[4] = p.x

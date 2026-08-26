@@ -9691,7 +9691,9 @@ check 'Move Picture with an instant (zero-duration) move still waits one frame' 
   eq true, st.switches[1], 'resumed the very next frame, since nothing is left moving'
 end
 
-check 'Erase Picture removes the picture' do
+check 'Erase Picture stops showing the picture, but its Game::Picture object ' \
+      'lingers (#shown? flips false, nothing else is deleted or cleared) so ' \
+      '#to_lsd can still read its stale fields back out' do
   st = new_state
   # Show alone first, to confirm it is present before erasing.
   its = Game::Interpreter.new(st)
@@ -9700,11 +9702,73 @@ check 'Erase Picture removes the picture' do
                          string: 'p')])
   its.update
   ok st.pictures[5], 'shown'
+  ok st.pictures[5].shown?, 'shown? true while displayed'
   # Then Erase (both commands are non-blocking, so they run in one update).
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::ERASE_PICTURE, [5])])
   it.update
-  ok st.pictures[5].nil?, 'erased'
+  # Cycle #159 confirmed against genuine RPG_RT.exe under wine (autostart:
+  # Show Picture id 5, Wait, Erase Picture 5, Open Save Menu) that an erased
+  # id's genuine `.lsd` chunk 103 entry keeps every position/zoom/tone field
+  # at its pre-erase value with only field 1 (name) absent -- decisively
+  # distinct from an id never shown at all, which writes as a fully
+  # field-less placeholder (cycle #154). `Game::State#erase_picture` must
+  # therefore keep the `Picture` object (not delete it outright, the prior
+  # behavior this check used to assert) so `#to_lsd` has those fields to
+  # read; `#shown?` (a dedicated flag, not name-emptiness -- several
+  # pre-existing scene-check fixtures build a nameless `Picture.new` directly
+  # and must still read as shown) governs whether anything draws, can be
+  # moved, or is written to field 1.
+  ok !st.pictures[5].nil?, 'the Picture object itself is NOT deleted'
+  ok !st.pictures[5].shown?, 'shown? false once erased'
+  eq 'p', st.pictures[5].name, 'the name itself is left untouched, only #shown? flips'
+  eq 0, st.pictures[5].x, 'position is unaffected by erasure (still 0,0 here)'
+  # Move Picture on an erased id must stay the same no-op it already was for
+  # an id that had never been shown at all -- gated on #shown?, not mere
+  # `@pictures[id]` presence, now that presence alone no longer implies shown.
+  mv = Game::Interpreter.new(st)
+  mv.start([FakeCmd.new(IC::MOVE_PICTURE,
+                        [5, 0, 30, 30, 0, 100, 0, 0, 100, 100, 100, 100, 0, 0, 10, 0])])
+  mv.update
+  ok !st.pictures[5].moving?, 'Move Picture on an erased id is still a no-op'
+end
+
+check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
+      'position/zoom/tone fields present and field 1 (name) absent, matching ' \
+      'genuine RPG_RT.exe (cycle #159) -- distinct from an id never shown at ' \
+      'all, which stays a fully field-less placeholder' do
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.show_picture(5, name: 'black', x: 111, y: 77, zoom: 133,
+                  opacity: Game.trans_to_opacity(25),
+                  red: 140, green: 60, blue: 180, saturation: 50)
+  st.erase_picture(5)
+
+  save = st.to_lsd
+  pics = save[103]
+  erased = pics[5]
+  ok !erased.key?(1), 'field 1 (name) is absent once erased'
+  %i[show_x show_y current_x current_y current_zoom current_transparency
+     current_tone_red current_tone_green current_tone_blue
+     current_tone_saturation finish_x finish_y zoom transparency
+     tone_red tone_green tone_blue tone_saturation].each do |name|
+    id = LCF::Schema::SAVE_PICTURE.find { |_, spec| spec[:name] == name }.first
+    ok erased.key?(id), "field #{id} (#{name}) is still present after erase"
+  end
+  eq 111, erased.show_x
+  eq 77, erased.show_y
+  eq 133, erased.zoom
+  # 26, not 25: the same pre-existing opacity<->transparency round-trip
+  # precision gap the "to_lsd writes chunk 103..." check above already
+  # documents (out of scope for this fix; unrelated to erasure).
+  eq 26, erased.transparency
+  eq 140, erased.tone_red
+
+  # Control: an id that was never shown at all is still a fully field-less
+  # placeholder (cycle #154, unchanged by this fix).
+  never_touched = pics[6]
+  eq [], (1..51).select { |id| LCF::Schema::SAVE_PICTURE[id] && never_touched.key?(id) },
+     'a never-touched id carries no fields at all, not even absent-name'
 end
 
 check 'Show Picture on an id past the 50-slot range is a no-op' do
