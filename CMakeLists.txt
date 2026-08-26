@@ -29,40 +29,45 @@ if(USE_MOLD
 endif()
 
 # Per-translation-unit compiler-phase timing: GCC's own -ftime-report-details
-# prints, for every file it actually compiles (a no-op on an sccache cache
-# hit, since sccache then never invokes cc1plus at all), how much wall/user/
-# sys time went into each compiler phase and pass -- parsing, template
-# instantiation, individual GIMPLE/RTL passes, and so on. Off by default: it's
-# diagnostic-only stderr noise a local incremental build has no use for. CI's
-# own "build" job (.github/workflows/build.yml) turns it on unconditionally
-# via -DENABLE_TIME_REPORT=ON, tees the build log, and feeds it to
+# prints, for every file it actually compiles (a no-op on an sccache cache hit,
+# since sccache then never invokes cc1plus at all), how much wall/user/sys time
+# went into each compiler phase and pass -- parsing, template instantiation,
+# individual GIMPLE/RTL passes, and so on. Off by default: it's diagnostic-only
+# stderr noise a local incremental build has no use for. CI's own "build" job
+# (.github/workflows/build.yml) turns it on unconditionally via
+# -DENABLE_TIME_REPORT=ON, tees the build log, and feeds it to
 # scripts/compile_time_report.rb, which turns these per-file blocks into a
 # "slowest files/phases this run" job-summary table -- a standing bottleneck
 # hint that costs nothing on a warm cache and only grows informative exactly
-# when a run actually recompiles a lot (a cold cache, a submodule bump, a
-# change to a widely-included header).
-option(ENABLE_TIME_REPORT "Emit GCC's -ftime-report-details compiler-phase timing" OFF)
+# when a run actually recompiles a lot (a cold cache, a submodule bump, a change
+# to a widely-included header).
+option(ENABLE_TIME_REPORT
+       "Emit GCC's -ftime-report-details compiler-phase timing" OFF)
 if(ENABLE_TIME_REPORT)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     include(CheckCXXCompilerFlag)
     check_cxx_compiler_flag("-ftime-report" CXX_SUPPORTS_TIME_REPORT)
     if(CXX_SUPPORTS_TIME_REPORT)
-      # -ftime-report-details (GCC 10+) only adds its per-pass breakdown on
-      # top of -ftime-report's own per-phase totals -- passed alone it
-      # compiles cleanly (so a flag-support check alone can't tell them
-      # apart) but emits nothing at all, so -ftime-report itself always goes
-      # first and -ftime-report-details is an addition, never a substitute.
+      # -ftime-report-details (GCC 10+) only adds its per-pass breakdown on top
+      # of -ftime-report's own per-phase totals -- passed alone it compiles
+      # cleanly (so a flag-support check alone can't tell them apart) but emits
+      # nothing at all, so -ftime-report itself always goes first and
+      # -ftime-report-details is an addition, never a substitute.
       add_compile_options("-ftime-report")
-      check_cxx_compiler_flag("-ftime-report-details" CXX_SUPPORTS_TIME_REPORT_DETAILS)
+      check_cxx_compiler_flag("-ftime-report-details"
+                              CXX_SUPPORTS_TIME_REPORT_DETAILS)
       if(CXX_SUPPORTS_TIME_REPORT_DETAILS)
         add_compile_options("-ftime-report-details")
       endif()
     else()
-      message(WARNING "ENABLE_TIME_REPORT requested but this GCC does not support -ftime-report -- no-op")
+      message(
+        WARNING
+          "ENABLE_TIME_REPORT requested but this GCC does not support -ftime-report -- no-op"
+      )
     endif()
   else()
     message(STATUS "ENABLE_TIME_REPORT requested but the compiler is "
-                    "${CMAKE_CXX_COMPILER_ID}, not GCC -- no-op (GCC-only flag)")
+                   "${CMAKE_CXX_COMPILER_ID}, not GCC -- no-op (GCC-only flag)")
   endif()
 endif()
 
