@@ -990,8 +990,9 @@ end
 
 check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
       'two cursor blocks (source x 64/96), matching RPG_RT' do
-  # Confirmed directly against RPG_RT's live source: `Window::Update`
-  # (`src/window.cpp`) advances `cursor_frame` by 1 every frame the window
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Window::Update`
+  # advances `cursor_frame` by 1 every frame the window
   # is active, wrapping at 21, and `Window::Draw` blits from the
   # windowskin's `cursor1` block (source x 64, Game::WindowCursor::FRAME1_X)
   # while `cursor_frame <= 10`, or `cursor2` (source x 96, FRAME2_X)
@@ -1051,8 +1052,9 @@ end
 
 check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
       'inactive -- it does not hide it' do
-  # Confirmed against RPG_RT's own live source: `Window::Draw`'s cursor
-  # block (`src/window.cpp`) reads only `cursor_rect`/`cursor_frame`, with
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Window::Draw`'s cursor
+  # block reads only `cursor_rect`/`cursor_frame`, with
   # no `active` check anywhere -- `active` only gates whether
   # `Window::Update` keeps *advancing* (blinking) `cursor_frame` at all.
   win = RPG2k::Window.new(0, 0, 64, 64)
@@ -1247,7 +1249,8 @@ check 'the map layers composite in a fixed order, under the overlays' do
   # A previously "still open" question, now settled directly rather than only
   # transitively through the two checks above: a map's Show Battle Animation
   # (@animation_sprite) must draw *under* the picture layer, not over it.
-  # EasyRPG Player's own Priority enum (src/drawable.h) puts
+  # Per EasyRPG Player's own Priority enum, NOT independently confirmed
+  # against genuine RPG_RT under wine: it puts
   # Priority_PictureOld (120) above Priority_BattleAnimation (110) for every
   # standard RPG2000/RPG2003 database -- see the citation next to
   # @animation_sprite.z in Scene::Map#setup_sprites.
@@ -1457,7 +1460,8 @@ end
 check "a fixed-direction event's own explicit Face Direction sub-command still " \
       'turns its drawn sprite, even though ordinary movement never does' do
   # yado.tk: "Face Direction always overrides Fixed Direction/Animation Type" --
-  # verified against EasyRPG Player's actual C++ source (see the pure-logic
+  # ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine (see the pure-logic
   # checks in scripts/rpg2k_logic_check.rb for the exact citations). This is the
   # full-stack version: Scene::Map#build_event now wires a page's own
   # Game::EventGraphic.fixed_direction? into Character#fixed_facing, and
@@ -1535,10 +1539,11 @@ end
 check 'a blocked autonomous move does not turn the event to face the ' \
       'obstacle -- RPG_RT reverts that facing back on nearly every failed ' \
       'attempt' do
-  # Confirmed against RPG_RT's own live source: `Game_Character::Move`
-  # (src/game_character.cpp) does turn to face the drawn direction before
-  # ever checking passability, but every autonomous-move caller in
-  # src/game_event.cpp (MoveTypeRandom/MoveTypeCycle/
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Game_Character::Move`
+  # does turn to face the drawn direction before
+  # ever checking passability, but every autonomous-move caller
+  # (MoveTypeRandom/MoveTypeCycle/
   # MoveTypeTowardsOrAwayPlayer) immediately reverts that turn on a blocked
   # move unless genuinely stuck for a sustained stretch (GetMaxStopCount() +
   # 60 frames) -- boxing an event in on all four sides means every draw is
@@ -1613,8 +1618,9 @@ end
 
 check "a same-layer event with its own Through Mode on lets the hero walk " \
       'straight through it' do
-  # Confirmed against EasyRPG's actual C++ source: `WouldCollide` (`src/
-  # game_map.cpp`) checks `self.GetThrough() || other.GetThrough()` first
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `WouldCollide`
+  # checks `self.GetThrough() || other.GetThrough()` first
   # and unconditionally, before any layer test at all -- a blocker's own
   # Through Mode (a common authoring technique so an NPC never blocks the
   # party) exempts it from collision the same way the mover's own Through
@@ -1634,8 +1640,9 @@ check 'events on different layers pass through each other via Move Route' do
   # A below-layer event sits at (3,2); an above-layer event runs a custom
   # route straight through its column. #char_passable? gates layer on an
   # *exact* match between the mover's own layer and the blocker's
-  # (matching EasyRPG Player's `WouldCollide`, `src/game_map.cpp`:
-  # `self.GetLayer() == other.GetLayer()`), so a below-layer blocker never
+  # (matching EasyRPG Player's `WouldCollide`: `self.GetLayer() ==
+  # other.GetLayer()`; NOT independently confirmed against genuine RPG_RT
+  # under wine), so a below-layer blocker never
   # stops an above-layer mover -- the layers simply don't match.
   below = event(3, 2, page(layer: RPG2k::Scene::Map::LAYER_BELOW))
   mover = event(1, 2, page(x_move_type: Game::MoveType::CUSTOM,
@@ -1687,7 +1694,8 @@ check "an event's own Through Mode lets another event's Move Route pass " \
       'through it, even on a matching layer' do
   # The event-vs-event equivalent of "a same-layer event with its own
   # Through Mode on lets the hero walk straight through it" above:
-  # `WouldCollide` (`src/game_map.cpp`) checks `self.GetThrough() ||
+  # per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), `WouldCollide` checks `self.GetThrough() ||
   # other.GetThrough()` before the layer-match test, so a blocking event's
   # own Through Mode exempts it from #char_passable?'s layer gate too, not
   # just #passable?'s.
@@ -1704,8 +1712,10 @@ check "an event's own Through Mode lets another event's Move Route pass " \
 end
 
 check 'overlap_forbidden does not block the hero on an ordinary step' do
-  # The "doesn't overlap" page flag (LCF field 35) only ever fires between
-  # two map events in real RPG_RT (`WouldCollide`, `src/game_map.cpp`:
+  # The "doesn't overlap" page flag (LCF field 35), per EasyRPG Player's
+  # source (NOT independently confirmed against genuine RPG_RT under wine),
+  # only ever fires between
+  # two map events (`WouldCollide`:
   # `self.GetType() == Event && other.GetType() == Event && (self.
   # IsOverlapForbidden() || other.IsOverlapForbidden())`) -- the party's own
   # GetType() is Player, never Event, so the flag can never be what blocks
@@ -1905,8 +1915,9 @@ check 'player-touch (trigger 1) on a same-layer event: walking into it runs ' \
       'it, no move' do
   ic = Game::Interpreter::Cmd
   # Same-layer only: like a closed door, the event blocks like any other
-  # LAYER_SAME obstacle, so the touch fires as a bump (EasyRPG's
-  # `CheckEventTriggerThere`) and the party stays put. A below/above-
+  # LAYER_SAME obstacle, so the touch fires as a bump (per EasyRPG Player's
+  # `CheckEventTriggerThere`; NOT independently confirmed against genuine
+  # RPG_RT under wine) and the party stays put. A below/above-
   # characters touch event is the opposite case, see the check just below.
   pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_SAME) # player touch
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 6, 6, 0])]
@@ -2000,8 +2011,9 @@ check 'event-touch (trigger 2): a custom-route event stepping into the ' \
   # driven through Game::MoveRoute#do_move) never fired Event Touch at all
   # when it stepped a map event onto the party's tile, unlike an autonomous
   # Random/Approach/Away-type move (#move_autonomous's own dedicated check,
-  # already covered by the check just above). Verified against EasyRPG
-  # Player's actual C++ source: `Game_Character::Move`'s
+  # already covered by the check just above). Ported from EasyRPG
+  # Player's source, NOT independently confirmed against genuine RPG_RT
+  # under wine: `Game_Character::Move`'s
   # `CheckCollisonOnMoveFailure` starts a Trigger_collision page the same way
   # regardless of whether a move route is driving the character, with no
   # `IsMoveRouteOverwritten`-style guard the way the *player's* own touch
@@ -2130,8 +2142,9 @@ check 'action (trigger 0) does not fire on mere contact' do
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
 end
 
-# Confirmed against RPG_RT's own live source: `Game_Player::CheckActionEvent`
-# (src/game_player.cpp) checks `{Trigger_touched, Trigger_collision}`
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: `Game_Player::CheckActionEvent`
+# checks `{Trigger_touched, Trigger_collision}`
 # (Player Touch / Event Touch) on the faced tile unconditionally, before it
 # ever looks for an action-triggered event there -- a same-layer touch event
 # the party is merely facing, not standing on, still answers the action
@@ -2263,8 +2276,9 @@ check 'an action event under the player answers the action button' do
   ok st.switches[4], 'the event under the party ran'
 end
 
-# Confirmed against EasyRPG's actual C++ source: `Game_Player::
-# CheckEventTriggerHere` (`src/game_player.cpp`) -- the overlap check
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: `Game_Player::
+# CheckEventTriggerHere` -- the overlap check
 # `#try_action_trigger`'s own "under the player" branch above ports --
 # explicitly excludes a same-layer event (`ev.GetLayer() != lcf::rpg::
 # EventPage::Layers_same`), the same restriction the faced-tile check a few
@@ -2365,8 +2379,9 @@ end
 
 # RPG2003's own Wait dialog adds a "wait until the Decision key is pressed"
 # mode (Interpreter#do_wait's own `:wait_key_enter`, param1 nonzero) that
-# ignores the timed duration in param0 entirely -- confirmed against
-# EasyRPG's actual `CommandWait` (src/game_interpreter.cpp). Drives the
+# ignores the timed duration in param0 entirely -- ported from EasyRPG
+# Player's `CommandWait`, NOT independently confirmed against genuine
+# RPG_RT under wine. Drives the
 # same #message_window_open?-gated convention every other suppressed
 # command in this file already uses (Show/Move/Erase Picture while a
 # message is open, above); not re-proven here, just reused.
@@ -2392,8 +2407,9 @@ end
 # yado.tk "Untriaged backlog": "Autorun cascading within one frame" -- if the
 # lowest-id eligible Autorun map event's content contains no wait-including
 # command, real RPG_RT lets the next-lowest-id eligible Autorun event start
-# immediately in the same frame. Verified against EasyRPG Player's actual C++
-# source: `Game_Map::UpdateForegroundEvents` drives the shared foreground
+# immediately in the same frame. Ported from EasyRPG Player's source, NOT
+# independently confirmed against genuine RPG_RT under wine:
+# `Game_Map::UpdateForegroundEvents` drives the shared foreground
 # interpreter inside a `while (!interp.IsRunning() && ...)` loop that rescans
 # for another eligible event the instant one's own command list drains, all
 # within the same real-frame call -- see `Scene::Map#drive_autostart_cascade`.
@@ -2448,11 +2464,12 @@ end
 # The cascade above (and Game::Interpreter#update generally) used to give
 # *every* #update call its own fresh MAX_STEPS budget -- a local `steps = 0`
 # reset at the top of the method -- rather than sharing one budget across a
-# whole real frame's worth of calls. Verified against EasyRPG Player's actual
-# C++ source rather than assumed from the cascading fix's own already-correct
-# writeup above: `Game_Interpreter::loop_count`/`loop_limit`
-# (src/game_interpreter.h) are member variables, not a local, and
-# `Game_Map::UpdateForegroundEvents` (src/game_map.cpp) resets `loop_count`
+# whole real frame's worth of calls. Ported from EasyRPG Player's source
+# rather than assumed from the cascading fix's own already-correct
+# writeup above (NOT independently confirmed against genuine RPG_RT under
+# wine): `Game_Interpreter::loop_count`/`loop_limit`
+# are member variables, not a local, and
+# `Game_Map::UpdateForegroundEvents` resets `loop_count`
 # to 0 exactly once per real frame (`interp.Update(!resume_fg)`) and then
 # keeps calling `Update(false)` -- no reset -- as it cascades through every
 # Auto-Start event that starts and finishes within that same frame. So a
@@ -2546,11 +2563,12 @@ end
 
 # yado.tk "Full-site sweep": "Multiple simultaneous parallel processes are not
 # concurrent -- the engine advances one command block at a time, round-robin,
-# ... in definition/event-ID order." Settled precisely against EasyRPG
-# Player's actual C++ source rather than guessed at: `Game_Map::Update`
-# (src/game_map.cpp) always calls `UpdateCommonEvents()` before
+# ... in definition/event-ID order." Ported from EasyRPG
+# Player's source rather than guessed at (NOT independently confirmed
+# against genuine RPG_RT under wine): `Game_Map::Update`
+# always calls `UpdateCommonEvents()` before
 # `UpdateMapEvents()`, every real frame, with no interleaving by id across the
-# two groups -- `Game_CommonEvent` (src/game_commonevent.cpp) only ever builds
+# two groups -- `Game_CommonEvent` only ever builds
 # an interpreter for a Parallel-trigger common event, so `UpdateCommonEvents`
 # is this engine's exact counterpart to `#step_parallels`' common-event half.
 # `Scene::Map#build_parallels` (mruby-rpg2k/mrblib/scene/map.rb) used to push
@@ -2735,9 +2753,10 @@ end
 check "a common event's Parallel Process's own Transfer Player command is " \
       'blocked (not dropped) while a message window is open, and retries once ' \
       'it closes' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter_Map::
-  # CommandTeleport`/`CommandRecallToLocation` (`src/game_interpreter_map.cpp`,
-  # codes 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Game_Interpreter_Map::
+  # CommandTeleport`/`CommandRecallToLocation` (codes 10810/10830) both open
+  # with `if (Game_Message::IsMessageActive()) {
   # return false; }`, unconditionally -- the identical block-and-retry shape
   # already ported for Show/Move/Erase Picture (see
   # #block_pending_picture_command). A command right after the blocked
@@ -2768,9 +2787,10 @@ end
 check "a common event's Parallel Process's own Message Options command is " \
       'blocked (not dropped) while a different message window is open, and ' \
       'retries once it closes' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandMessageOptions`/`CommandChangeFaceGraphic` (`src/
-  # game_interpreter.cpp`, codes 10120/10130) both open with `if (!Game_
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Game_Interpreter::
+  # CommandMessageOptions`/`CommandChangeFaceGraphic` (codes 10120/10130)
+  # both open with `if (!Game_
   # Message::CanShowMessage(main_flag)) { return false; }` -- the identical
   # guard Show Message/Show Choices/Input Number themselves use, and the
   # same block-and-retry shape already ported for Show/Move/Erase Picture,
@@ -2806,9 +2826,10 @@ end
 check "a common event's Parallel Process's own Erase Screen command is " \
       'blocked (not dropped) while a message window is open, and retries ' \
       'once it closes' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandEraseScreen`/`CommandShowScreen` (`src/game_interpreter.cpp`,
-  # codes 11010/11020) both open with `if (Game_Message::IsMessageActive()) {
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Game_Interpreter::
+  # CommandEraseScreen`/`CommandShowScreen` (codes 11010/11020) both open
+  # with `if (Game_Message::IsMessageActive()) {
   # return false; }`, unconditionally -- not gated behind
   # `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/Erase Picture are --
   # the same block-and-retry shape already ported for Show/Move/Erase
@@ -3238,8 +3259,10 @@ end
 
 check 'Show Inn scene: an accepted stay fades to black, holds through the heal, ' \
       'then fades back in over the RPG_RT default 35 frames' do
-  # Real RPG_RT (EasyRPG's Scene_Map::UpdateInn / FinishInn, the async
-  # eCallInn path CommandShowInn's accepted-stay continuation triggers) fades
+  # Per EasyRPG Player's Scene_Map::UpdateInn / FinishInn (the async
+  # eCallInn path CommandShowInn's accepted-stay continuation triggers; NOT
+  # independently confirmed against genuine RPG_RT under wine), real RPG_RT
+  # is modeled to fade
   # out the instant a stay is accepted -- before the heal, not after -- holds
   # black while the party is healed, then starts the fade back in the same
   # beat, all in the plain FADE_OUT / FADE_IN styles Erase/Show Screen use at
@@ -3316,9 +3339,10 @@ check 'Show Inn scene: an unaffordable Accept is ignored' do
 end
 
 check 'Show Inn scene: plays the RPG_RT system SE on every interaction' do
-  # Confirmed against EasyRPG's Window_Selectable-style Cursor plays and
+  # Per EasyRPG Player's Window_Selectable-style Cursor plays and
   # Scene::Map's own Show Choices, plus CommandShowInn's own
-  # `pm.PushChoice(accept, can_afford)` (src/game_interpreter_map.cpp): a
+  # `pm.PushChoice(accept, can_afford)` (NOT independently confirmed against
+  # genuine RPG_RT under wine): a
   # disabled Accept plays Buzzer rather than Decision.
   scene, = inn_scene(50, inn_commands(Game::Interpreter::Cmd, 100)) # 50g < 100g
   5.times { scene.update } # cursor starts on Accept, disabled but still the default
@@ -3366,9 +3390,10 @@ end
 
 check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
       'not just a fresh press' do
-  # Real RPG_RT implements this exact prompt as an ordinary Show Choices
-  # pair (`Game_Interpreter_Map::CommandShowInn`, `src/
-  # game_interpreter_map.cpp`), so it inherits the same `Window_Selectable`
+  # Per EasyRPG Player's implementation of this exact prompt as an ordinary
+  # Show Choices pair (`Game_Interpreter_Map::CommandShowInn`; NOT
+  # independently confirmed against genuine RPG_RT under wine), it inherits
+  # the same `Window_Selectable`
   # auto-repeat every other list cursor gets.
   scene, _st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   5.times { scene.update } # inn command runs; the greeting prompt opens
@@ -3428,11 +3453,12 @@ check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BG
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
 
-# EasyRPG's `Game_Interpreter_Map::CommandShowInn`
-# (src/game_interpreter_map.cpp) is the exact same method for the foreground
+# Per EasyRPG Player's `Game_Interpreter_Map::CommandShowInn` (NOT
+# independently confirmed against genuine RPG_RT under wine), which
+# is the exact same method for the foreground
 # and every Parallel Process's own interpreter, like Open Shop/Enter Hero
 # Name -- but it carries one extra, deliberately-preserved nuance of its own
-# (EasyRPG's own comment: "Emulates RPG_RT behavior (Bug?) Inn's called by
+# (that source's own comment: "Emulates RPG_RT behavior (Bug?) Inn's called by
 # parallel events overwrite the current message"): a *priced* stay is gated
 # `main_flag && !Game_Message::CanShowMessage(main_flag)`, which is always
 # false for a non-foreground interpreter, so the message-active check is
@@ -3502,8 +3528,9 @@ end
 
 check 'a waiting Key Input Proc issued from a Parallel Process is blocked ' \
       '(not armed) while a message window is open, and retries once it closes' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandKeyInputProc` (`src/game_interpreter.cpp`, code 11610) resets the
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Game_Interpreter::
+  # CommandKeyInputProc` (code 11610) resets the
   # target variable to 0 every retried frame, *then* checks `if (wait &&
   # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
   # the same block-and-retry shape already ported for Show/Move/Erase
@@ -4108,8 +4135,9 @@ check 'Return to Title Screen hands control back to the app' do
   ok parent.returned_to_title, 'the app was told to return to the title screen'
 end
 
-# EasyRPG's `Game_Interpreter::CommandReturnToTitleScreen`
-# (src/game_interpreter.cpp) is a plain `Game_Interpreter` method with no
+# Per EasyRPG Player's `Game_Interpreter::CommandReturnToTitleScreen` (NOT
+# independently confirmed against genuine RPG_RT under wine), which
+# is a plain `Game_Interpreter` method with no
 # `main_flag` gate at all, so every interpreter -- foreground or a Parallel
 # Process's own -- reaches it identically. Before this fix,
 # `Scene::Map#drive_parallel_wait` had no `:return_title` branch, so it fell
@@ -4194,9 +4222,10 @@ end
 # erased event silently did nothing at all -- worse for Trade Event
 # Locations, whose #apply_location_request aborts the *entire* swap
 # (`return unless a && b`) the moment either side resolves to nil, so even
-# the live participant failed to move. Verified against EasyRPG Player's
-# actual C++ source: CommandChangeEventLocation and
-# CommandTradeEventLocations (src/game_interpreter.cpp) both resolve their
+# the live participant failed to move. Ported from EasyRPG Player's
+# source, NOT independently confirmed against genuine RPG_RT under wine:
+# CommandChangeEventLocation and
+# CommandTradeEventLocations both resolve their
 # target(s) through the same unconditional-by-id Game_Interpreter::
 # GetCharacter -> Game_Character::GetCharacter -> Game_Map::GetEvent chain
 # #event_position's own fix already relies on, so RPG_RT genuinely
@@ -4314,9 +4343,10 @@ check 'Input Number opens a widget; confirming stores the entered value' do
 end
 
 check 'Input Number plays the Cursor SE on every digit move and Decision on confirm' do
-  # Confirmed against EasyRPG's Window_NumberInput::Update (src/
-  # window_numberinput.cpp, every UP/DOWN/LEFT/RIGHT plays SFX_Cursor) and
-  # Window_Message::InputNumber (src/window_message.cpp, Decision on
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: Window_NumberInput::Update (every
+  # UP/DOWN/LEFT/RIGHT plays SFX_Cursor) and
+  # Window_Message::InputNumber (Decision on
   # confirm) -- the same SE Show Choices already plays, just missing here.
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -4355,8 +4385,9 @@ end
 
 check 'Input Number: on a single-digit widget, Right is a silent no-op but ' \
       'Left still plays the cursor SE' do
-  # Confirmed against RPG_RT's own live source, Window_NumberInput::Update
-  # (src/window_numberinput.cpp): Right is guarded behind `if (digits_max >=
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine, Window_NumberInput::Update: Right is guarded
+  # behind `if (digits_max >=
   # 2)` -- no move, no sound, on a one-digit widget -- but Left has no such
   # guard and always plays SFX_Cursor, even though its own modulo leaves a
   # single-cell cursor unmoved either way. Not the symmetric pair the
@@ -4742,8 +4773,9 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
     break if frames > 20
   end
   ok reveal.pending_pause, 'the \\. pause is reached'
-  # EasyRPG's own port comment: "Despite documentation saying 1/4 second,
-  # RPG_RT waits for 16 frames" -- one frame past the documented/naive 15
+  # Per EasyRPG Player's own port comment (NOT independently confirmed
+  # against genuine RPG_RT under wine): "Despite documentation saying 1/4
+  # second, RPG_RT waits for 16 frames" -- one frame past the documented/naive 15
   # (a quarter of 60fps), the same "natural reading is wrong" shape this
   # codebase already tracks for other RPG_RT quirks.
   held = 0
@@ -4757,8 +4789,9 @@ end
 
 check 'an ordinary Decision press held throughout a \\. pause does not cut it ' \
       'short -- only Test Play\'s own Shift fast-forward may' do
-  # Confirmed directly against RPG_RT's live source: `Window_Message::
-  # Update` (`src/window_message.cpp`) decrements `wait_count` (the counter
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `Window_Message::
+  # Update` decrements `wait_count` (the counter
   # `\.`/`\|` set via `SetWaitForNonPrintable`) and returns unconditionally
   # while it is still positive -- entirely before the separate
   # `GetPause()`/`WaitForInput()` branch that checks
@@ -4794,7 +4827,9 @@ check 'an ordinary Decision press held throughout a \\. pause does not cut it ' 
 end
 
 check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
-  # EasyRPG's own comment calls this "a bug(??)": `SetWaitForNonPrintable(16
+  # Per EasyRPG Player's own comment (NOT independently confirmed against
+  # genuine RPG_RT under wine), which calls this "a bug(??)":
+  # `SetWaitForNonPrintable(16
   # + Utils::Clamp(speed - 16, 0, 4))`, where `speed` is whatever `\s[n]`
   # (1..20) is in effect when the `\.` is reached, not a fixed 16. Speed 20
   # stretches the quarter-pause by its full +4 (`clamp(20-16, 0, 4) = 4`).
@@ -4838,8 +4873,10 @@ check 'a \\| pause holds the reveal for RPG_RT\'s real 61 frames, not the docume
     break if frames > 20
   end
   ok reveal.pending_pause, 'the \\| pause is reached'
-  # EasyRPG's own port comment: "Despite documentation saying 1 second,
-  # RPG_RT waits for 61 frames" -- one frame past the documented/naive 60.
+  # Per EasyRPG Player's own port comment (NOT independently confirmed
+  # against genuine RPG_RT under wine): "Despite documentation saying 1
+  # second, RPG_RT waits for 61 frames" -- one frame past the
+  # documented/naive 60.
   held = 0
   until reveal.pending_pause.nil?
     scene.update
@@ -5404,13 +5441,14 @@ check 'Store Event ID resolves an event whose page conditions have never been me
   # yado.tk's "Get Event ID at Location" claim had a second, previously-open
   # half: an event whose current page conditions simply aren't met never gets
   # a Game::Character built at all (#build_events skips it outright), so
-  # there was no position to answer from. Verified against EasyRPG Player's
-  # actual C++ source rather than guessed at: real RPG_RT keeps one
+  # there was no position to answer from. Ported from EasyRPG Player's
+  # source rather than guessed at, NOT independently confirmed against
+  # genuine RPG_RT under wine: that source keeps one
   # Game_Event object per map event for the whole visit regardless of page
-  # state (Game_Event::RefreshPage, src/game_event.cpp, clears the active
+  # state (Game_Event::RefreshPage clears the active
   # page on a no-match but never touches x/y), and
   # Game_Interpreter::CommandStoreEventID's own lookup,
-  # Game_Map::GetEventAt(x, y, /* require_active */ false) (src/game_map.cpp),
+  # Game_Map::GetEventAt(x, y, /* require_active */ false),
   # explicitly passes false so an inactive event still matches by position.
   hidden = page(trigger: 0)
   hidden.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A, switch_a_id: 5)
@@ -5455,14 +5493,15 @@ end
 # Conditional Branch's "Character Direction is" test) used to search only
 # @events -- the live/active-page list -- and answer nil for anything else,
 # unlike its sibling #event_id_at just above, which already falls back to
-# @event_last_position for the identical reason. Verified against EasyRPG
-# Player's actual C++ source: Game_Interpreter::GetCharacter ->
-# Game_Character::GetCharacter -> Game_Map::GetEvent (src/game_map.cpp) is an
+# @event_last_position for the identical reason. Ported from EasyRPG
+# Player's source, NOT independently confirmed against genuine RPG_RT under
+# wine: Game_Interpreter::GetCharacter ->
+# Game_Character::GetCharacter -> Game_Map::GetEvent is an
 # unconditional lookup by id with no active-state filter, and
-# CommandEraseEvent (src/game_interpreter.cpp) only flips the event's own
+# CommandEraseEvent only flips the event's own
 # active flag -- it never removes the Game_Event from the map's own event
-# list -- so ControlVariables::Event's X/Y/Direction cases
-# (src/game_interpreter_control_variables.cpp) and Conditional Branch's own
+# list -- so ControlVariables::Event's X/Y/Direction cases and Conditional
+# Branch's own
 # "Orientation of char" case keep reading a real, frozen last position/facing
 # off it rather than nothing.
 check '#event_position resolves a hidden event at wherever it stood before ' \

@@ -6272,6 +6272,74 @@ The work below is roughly ordered by the critical path to a walkable game
   Teleport facing parameter behaves differently from cycle #181's finding
   -- still no RPG2003 test-bed game available; (6) the SPEED_UP ceiling's
   exact internal value (4 vs. 5), untouched since cycle #180.
+  ✅ **Follow-up (cycle #184, 2026-08-27): resumed the EasyRPG-citation sweep
+  on the two `scripts/rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` check
+  files cycle #177 flagged as untouched (item (4) above) -- explicitly a
+  lighter-weight cycle, no wine/Xvfb work, comment editing only.**
+  **Method:** re-ran the same `src/[a-z_]+\.(cpp|h)` grep cycle #176/#177
+  used, plus a broader `EasyRPG` scan per cycle #177's own warning that the
+  narrow file-path pattern misses citations naming only a class/method (or
+  a check's own descriptive title/message string, both of which count as
+  fair game here since neither is the check's actual assertion). Pre-cycle
+  baseline: `rpg2k_logic_check.rb` 183 file-path hits (236 `EasyRPG`
+  mentions), `rpg2k_scene_check.rb` 207 file-path hits (201 `EasyRPG`
+  mentions) -- 395 combined file-path citations, matching cycle #176/#177's
+  own recorded count almost exactly (the ~395 estimate the last four cycles
+  carried forward untouched). Worked `rpg2k_logic_check.rb` first per this
+  cycle's own priority (it is the smaller file), read top-to-bottom in
+  ~150-300 line chunks rather than jumping straight to grep hits alone,
+  since cycle #177 found a pure grep sweep misses real citations. Every fix
+  followed the established rule: where a comment already carried
+  independent evidence (an explicit "confirmed against genuine RPG_RT.exe
+  under wine" citation, or a citation to this codebase's own schema/liblcf
+  generator), the EasyRPG citation was dropped and the independent evidence
+  kept untouched (several dozen such comments were left alone entirely, most
+  visibly the `mrblib/game.rb`-forwarding "NOT independently confirmed"
+  citations and the handful of already-honest "not EasyRPG's source"
+  historical corrections from cycles #154-#171); everywhere else, rewritten
+  to "ported from EasyRPG Player's source, NOT independently confirmed
+  against genuine RPG_RT under wine" (or an equivalent phrasing fitted to
+  the sentence), preserving the underlying technical description of what
+  the ported mechanism actually does. A few of the worst offenders were
+  outright misattributions in the cycle #176/#177 style -- "Confirmed
+  directly against RPG_RT's own live source: `Game_Character::
+  GetDirectionToCharacter` (`src/game_character.cpp`)" and similar -- which
+  got the same honest-downgrade treatment, not just a citation trim.
+  **Net result:** `rpg2k_logic_check.rb`'s own `src/[a-z_]+\.(cpp|h)` count
+  went from 183 to 94 (89 fixed); `rpg2k_scene_check.rb`'s went from 207 to
+  177 (30 fixed) -- 119 citations fixed in total across roughly 100 distinct
+  comment/string-literal edits, comfortably past this cycle's own "100+ is a
+  fine outcome" target, but nowhere near exhaustive: **new combined
+  remaining count is 271** (94 + 177), concentrated overwhelmingly in
+  `rpg2k_scene_check.rb`'s own untouched back half and
+  `rpg2k_logic_check.rb`'s own untouched battle-algorithm section (roughly
+  lines 12000-22000, dense with `Game_BattleAlgorithm`/`Algo::`/`enemyai.cpp`
+  citations that never got read this cycle at all).
+  **Verification:** `ruby -c` clean on both files. Comment-only:
+  `git diff -- scripts/rpg2k_logic_check.rb scripts/rpg2k_scene_check.rb |
+  grep -E '^[+-]' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^(---|\+\+\+)'` returned 36 lines for `rpg2k_logic_check.rb` (all
+  check-title or `eq`/`ok` message string continuations, never an
+  assertion or logic line) and 0 lines for `rpg2k_scene_check.rb`.
+  `ruby scripts/rpg2k_logic_check.rb` (1150) and `ruby
+  scripts/rpg2k_scene_check.rb` (929) both passed at their existing
+  baselines exactly, confirming no assertion was touched. `cd build && ctest
+  -R mruby_test` passed (4.64s) -- unaffected, as expected, since no
+  `mrblib` file was touched. No wine/Xvfb/matchbox process was started this
+  cycle (none was needed or attempted, per this cycle's own lighter-weight
+  framing). No new EasyRPG source was consulted for any behavioral claim --
+  existing citations were read only to identify and rewrite them, per every
+  prior cycle in this sweep's own ground rule. No changelog fragment: this
+  is comment-only documentation work, not a behavioral fix.
+  **Left open for a future cycle:** the same two files' own remaining 271
+  citations (94 `rpg2k_logic_check.rb` + 177 `rpg2k_scene_check.rb`), with
+  `rpg2k_logic_check.rb`'s dense battle-algorithm stretch (~12000-22000) as
+  the single biggest remaining concentration by line count; `mrblib/game.rb`
+  and `interpreter.rb` are already down to single digits of legitimate
+  historical-note citations per cycle #182's own count and do not need
+  another pass. The two flagged-tractable wine-verification items (move-route
+  Speed Up/Down ceiling's exact value, RPG2003 Teleport facing on a genuine
+  RPG2003 database) remain untouched, as expected for a comment-only cycle.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
