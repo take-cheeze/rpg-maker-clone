@@ -1814,6 +1814,24 @@ module LCF
       73 => { name: :battle_end_bgm, type: :Array1D, elements: BGM },
       74 => { name: :inn_bgm, type: :Array1D, elements: BGM },
       75 => { name: :current_bgm, type: :Array1D, elements: BGM },
+      # liblcf's own generator/csv/fields.csv: `before_vehicle_music`
+      # (0x4C == 76) and `before_battle_music` (0x4D == 77), the track RPG_RT
+      # restores on disembark/after the fight -- the two gaps in this
+      # otherwise-contiguous 71-82 BGM-slot run. Confirmed present on a
+      # genuine kk1.12 save under wine (taken outside any vehicle/battle):
+      # both decode as a BGM struct whose own `file` (field 1) is the
+      # literal string "(OFF)" -- RPG_RT's own placeholder name for "no
+      # track", rather than either field being absent outright. Not wired
+      # into `Game::State#to_lsd`/`.from_lsd` yet: this codebase's own
+      # counterpart to each restore point (`Scene::Map#restore_pre_vehicle_bgm`
+      # and its battle equivalent) is transient scene-layer state, not
+      # anything `Game::State` itself tracks, so `#to_lsd` has nothing to
+      # source these two from today -- and writing the "(OFF)" placeholder
+      # unconditionally would be actively wrong the instant a real session
+      # boards a vehicle or fights a battle before saving. Left for a future
+      # cycle that promotes that scene-layer state onto `Game::State` first.
+      76 => { name: :before_vehicle_music, type: :Array1D, elements: BGM },
+      77 => { name: :before_battle_music, type: :Array1D, elements: BGM },
       78 => { name: :stored_bgm, type: :Array1D, elements: BGM },
       79 => { name: :boat_bgm, type: :Array1D, elements: BGM },
       80 => { name: :ship_bgm, type: :Array1D, elements: BGM },
@@ -1932,6 +1950,20 @@ module LCF
       # further this cycle (no wine session running to test the "is it the
       # map's own default backdrop" hypothesis directly); left for whoever
       # picks this back up, alongside cycle #167's own note above.
+      #
+      # This codebase already has every *piece* the "map's own resolved
+      # encounter background" hypothesis needs -- `Game::Backdrop.name_for`
+      # (the map-tree backdrop_type walk) and `Scene::Map#terrain_backdrop`
+      # (the tile's own terrain background) together compute exactly this
+      # for `Scene::Battle#encounter_backdrop` -- but both live on
+      # `Scene::Map`/`Scene::Battle`, not `Game::State`: `#terrain_backdrop`
+      # needs `Scene::Map`'s own compiled `@chipset` (tile id -> terrain id)
+      # to resolve the party's current tile, which `Game::State#to_lsd` has
+      # no equivalent of at all. Wiring field 125 up for real needs that
+      # chipset/terrain lookup (or an equivalent) threaded into `#to_lsd`
+      # first, the same kind of database/scene-layer handle `#to_lsd`'s own
+      # vehicle-location comment (mrblib/game.rb) already flags as missing
+      # for a different field.
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine
@@ -2009,8 +2041,15 @@ module LCF
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked
     # unanalysed on that wiki, were identified against a real Save01.lsd (see
     # ADR 0011). Chunk 102 (screen effects) is now handled for its tint fields
-    # only (see SAVE_SCREEN above). Chunk 112 (a one-byte flag) and 200 (a
-    # non-standard high-id extension chunk) are still left out until confirmed.
+    # only (see SAVE_SCREEN above). Chunk 112 is liblcf's own `SavePanorama`
+    # (generator/csv/fields.csv, top-level Save field 0x70) -- not "a one-byte
+    # flag" as an earlier guess here had it (that byte is simply an empty
+    # nested struct's own terminator: a genuine kk1.12 save under wine carried
+    # chunk 112 present but empty, `\x00`, no fields of its own set at all).
+    # SavePanorama's own field layout has not been identified, and with no
+    # capture yet showing it populated there is nothing to confirm one
+    # against -- left out along with 200 (a non-standard high-id extension
+    # chunk) until one is.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
