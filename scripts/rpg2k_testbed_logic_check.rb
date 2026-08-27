@@ -1056,9 +1056,11 @@ def check_bush(dir)
   end
 end
 
-# Curative items, against the real item table. `reverse_state_effect` is dead
-# on a medicine in the real engine (EasyRPG's `Item::vExecute` never reads it
-# -- see `Game::Party#item_cured_states`'s own comment), so every medicine
+# Curative items, against the real item table. `reverse_state_effect` is
+# ported from EasyRPG Player's source as dead on a medicine (its
+# `Item::vExecute` never reads it -- see `Game::Party#item_cured_states`'s
+# own comment), NOT independently confirmed against genuine RPG_RT under
+# wine, so every medicine
 # naming states cures them regardless of the flag; `reversed` below is only
 # tallied for visibility; the assertions apply equally to it. Nepheshel's
 # アンチドーテ and ユニコーンの角 name all fifteen states and 気付け薬 names

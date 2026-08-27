@@ -149,8 +149,8 @@ DIRECTIONS = { 'up' => 8, 'right' => 6, 'left' => 4, 'down' => 2 }.freeze
 
 # LCF::Schema::SAVE_MOVABLE's own field 22 (which HERO_DIRECTION above points
 # at) is documented there as liblcf's own facing enum -- 0=up, 1=right,
-# 2=down, 3=left, matching `Game_Character::Direction`'s enum order -- NOT
-# this runtime's numpad convention (2/4/6/8) DIRECTIONS holds. Game::CharSet
+# 2=down, 3=left -- NOT this runtime's numpad convention (2/4/6/8)
+# DIRECTIONS holds. Game::CharSet
 # ::DIR_ROW (mruby-rpg2k/mrblib/game.rb) is that exact numpad -> liblcf-index
 # table, so it doubles as the encoder here (this script cannot load the mruby
 # gem, so the table is inlined rather than shared).

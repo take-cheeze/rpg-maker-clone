@@ -92,11 +92,12 @@ check 'advance_gauges is a no-op for battle_type 0' do
   eq 0, bat.ready_combatants.size
 end
 
-# -- gauge fills by EasyRPG's relative curve for the 2003 gauge presentation ---
-# Port of Game_Battle::UpdateAtbGauges (src/game_battle.cpp): every non-hidden
-# battler's AGI is summed (times 100), and each battler's per-frame increment
-# is GAUGE_MAX / (sum_agi / (agi + 1)), all integer-truncated -- so the faster
-# battler fills first but the field charges together, not at independent rates.
+# -- gauge fills by the relative curve used for the 2003 gauge presentation ---
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: every non-hidden battler's AGI is summed (times
+# 100), and each battler's per-frame increment is GAUGE_MAX / (sum_agi /
+# (agi + 1)), all integer-truncated -- so the faster battler fills first but
+# the field charges together, not at independent rates.
 fast = combatant('Fast', 1, 1, 20, 1)   # 300000 / (3000/21) = 2112/frame
 slow = combatant('Slow', 1, 1, 10, 1)   # 300000 / (3000/11) = 1102/frame
 bat = Game::Battle.new([fast], [slow], Game::Rng.new(1))
@@ -125,12 +126,13 @@ check 'ready_combatants is ordered by gauge descending' do
   eq [slow, fast], bat.ready_combatants
 end
 
-# RPG_RT 2003's own Scene_Battle_Rpg2k3::atb_order (src/scene_battle_rpg2k3.cpp,
-# confirmed against the real source): among several simultaneously-ready party
-# members -- every ready gauge is clamped to the identical GAUGE_MAX by
-# #advance_gauges, so there is never a real gauge-value difference to sort by
-# -- RPG_RT hands the next turn to whoever has been waiting *longest*, not
-# whoever sits earlier in the party roster. #ready_combatants used to fall
+# Ported from EasyRPG Player's Scene_Battle_Rpg2k3::atb_order, NOT
+# independently confirmed against genuine RPG_RT under wine: among several
+# simultaneously-ready party members -- every ready gauge is clamped to the
+# identical GAUGE_MAX by #advance_gauges, so there is never a real
+# gauge-value difference to sort by -- the tie-break instead hands the next
+# turn to whoever has been waiting *longest*, not whoever sits earlier in
+# the party roster. #ready_combatants used to fall
 # back to plain array position once tied, so a slower, earlier-seated ally
 # would jump the queue in front of a faster ally that had already been
 # sitting ready for many frames.
@@ -160,7 +162,9 @@ check 'a dead battler does not charge or become ready' do
   eq false, dead.gauge_full?
 end
 
-check 'a do-nothing-restricted ally never charges, matching EasyRPG\'s CanAct() gate' do
+check 'a do-nothing-restricted ally never charges (ported from EasyRPG\'s ' \
+      'CanAct() gate, NOT independently confirmed against genuine RPG_RT ' \
+      'under wine)' do
   asleep = combatant('Asleep', 1, 1, 20, 1)
   asleep.states = [4] # Sleep: restriction 1
   states = { 4 => OpenStruct.new(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }
