@@ -15334,6 +15334,12 @@ module Game
         # RPG2000 save (or a 2003 save whose party never touched Row) never
         # gains the field.
         e[91] = a.battle_row if a.battle_row != Battle::ROW_FRONT
+        # A live mirror of the actor's own current class/database-derived
+        # combat toggles -- see SAVE_PARTY_ACTOR's own schema.rb comment.
+        e[92] = true if a.double_hand?
+        e[93] = true if a.equipment_fixed?
+        e[94] = true if a.force_ai?
+        e[95] = true if a.strong_defence?
         # A live Change Parameters edit (#change_param) survives Save/
         # Continue too -- see SAVE_PARTY_ACTOR's own comment for the
         # genuine-RPG_RT verification. `@base_raw` is the curve plus this

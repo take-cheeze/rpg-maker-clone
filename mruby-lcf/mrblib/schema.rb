@@ -1498,10 +1498,23 @@ module LCF
       # in-battle Row command (ADR 0053's row mechanic). liblcf's own
       # `ChunkSaveActor` enum (lsd/chunks.h) numbers this field 0x5B, right
       # after class_id (0x5A) and before the two_weapon/lock_equipment/
-      # auto_battle/super_guard/battler_animation fields this schema does not
-      # declare yet -- 0 (RowType_front) is both liblcf's own default and the
-      # only row RPG2000 ever writes.
+      # auto_battle/super_guard/battler_animation fields below -- 0
+      # (RowType_front) is both liblcf's own default and the only row
+      # RPG2000 ever writes.
       91 => { name: :row, type: :int, default: 0 }, # 隊列 (2003)
+      # liblcf's own generator/csv/fields.csv (0x5C-0x5F): a live mirror of
+      # the actor's own current class/database-derived combat toggles
+      # (Game::Actor#double_hand?/#equipment_fixed?/#force_ai?/
+      # #strong_defence?), confirmed present (each only when true) on a
+      # genuine kk1.12 save under wine. Purely a snapshot of state this
+      # codebase already derives live from the actor's own class/database
+      # row -- #to_lsd writes it for byte parity, but `.from_lsd` has
+      # nothing to restore *to* (there is no separate "was this overridden"
+      # concept for these four, unlike class_id/battle_commands above).
+      92 => { name: :two_weapon, type: :bool, default: false },
+      93 => { name: :lock_equipment, type: :bool, default: false },
+      94 => { name: :auto_battle, type: :bool, default: false },
+      95 => { name: :super_guard, type: :bool, default: false },
 
       # The live Change Parameters shadow (Game::Actor#change_param's
       # @base_raw, isolated from the level curve) -- confirmed against a
