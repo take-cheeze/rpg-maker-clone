@@ -1948,19 +1948,15 @@ module LCF
       # map's own default backdrop" hypothesis directly); left for whoever
       # picks this back up, alongside cycle #167's own note above.
       #
-      # This codebase already has every *piece* the "map's own resolved
-      # encounter background" hypothesis needs -- `Game::Backdrop.name_for`
-      # (the map-tree backdrop_type walk) and `Scene::Map#terrain_backdrop`
-      # (the tile's own terrain background) together compute exactly this
-      # for `Scene::Battle#encounter_backdrop` -- but both live on
-      # `Scene::Map`/`Scene::Battle`, not `Game::State`: `#terrain_backdrop`
-      # needs `Scene::Map`'s own compiled `@chipset` (tile id -> terrain id)
-      # to resolve the party's current tile, which `Game::State#to_lsd` has
-      # no equivalent of at all. Wiring field 125 up for real needs that
-      # chipset/terrain lookup (or an equivalent) threaded into `#to_lsd`
-      # first, the same kind of database/scene-layer handle `#to_lsd`'s own
-      # vehicle-location comment (mrblib/game.rb) already flags as missing
-      # for a different field.
+      # Wired into `Game::State#to_lsd` off the same `Game::Backdrop.name_for`
+      # map-tree walk `Scene::Battle#encounter_backdrop` uses, plus a
+      # `Game::ChipSet`/terrain lookup built straight from the optional `db`/
+      # `map_tree` arguments (see `#to_lsd`'s own citation in game.rb) --
+      # `Game::ChipSet` already lives in the `Game` namespace, not
+      # `Scene::Map`-only as this comment previously assumed, so no new
+      # scene-layer dependency was needed after all. Not accounted for: a
+      # live Change Map Tileset override (`Scene::Map`'s own `@tileset_id`),
+      # which this codebase does not persist anywhere yet.
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine

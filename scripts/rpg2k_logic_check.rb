@@ -3916,6 +3916,11 @@ end
 class FakeActorDB
   attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
               :enemy_group, :battleranimations, :term
+  # Writable (unlike the others above): nil by default, matching a database
+  # with no chipset/terrain chunk at all -- set directly on an instance by
+  # the handful of checks that need Game::ChipSet/#terrain resolution (e.g.
+  # SAVE_SYSTEM field 125's own database-backed lookup).
+  attr_accessor :chipset, :terrain
   # `enemy_group` defaults to "every id exists" (Hash.new(true)) since most
   # checks using this fixture have nothing to do with troop validity; pass an
   # explicit hash (e.g. {}) to exercise the missing-troop-id diagnostic path.
@@ -22458,6 +22463,33 @@ check 'an unindexable tile reads the first lower tile' do
   td = Array.new(162, 3)
   td[0] = 7
   eq 7, chipset_with(td).terrain(-1)
+end
+
+check 'to_lsd resolves SAVE_SYSTEM field 125 (battle background) off the ' \
+      'map tree/terrain when given a database and map tree' do
+  # Confirmed byte-for-byte against a genuine kk1.12 save under wine: loading
+  # it and re-exporting via #to_lsd(..., db, map_tree) reproduces field 125
+  # ("草原", grassland) exactly. Game::Backdrop.name_for's own checks above
+  # already cover the map-tree backdrop_type walk in detail -- this one is
+  # about #to_lsd actually wiring db/map_tree into it end to end.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  db.chipset = { 1 => FakeChipsetRow.new('cs', 'cs', nil, nil, [7], 0, 0) }
+  db.terrain = { 7 => Struct.new(:background_name).new('Grassland') }
+  map_tree = Struct.new(:map_properties).new({ 5 => FakeMapNode.new(1, '') }) # type 1: use terrain
+
+  st = Game::State.new(Game::Party.new(db), 5, 0, 0)
+  st.map = Game::Map.new(5, FakeMapUnit.new(1, 1, 1, [0], []))
+
+  eq false, st.to_lsd[101].key?(125), 'omitted with no db/map_tree given (tests, tools)'
+
+  saved = st.to_lsd(1, nil, 1, db, map_tree)
+  eq 'Grassland', saved[101][125]
+
+  # backdrop_type 2 (the map's own specific file) overrides the terrain
+  # entirely, the same as Game::Backdrop.name_for's own already-tested rule.
+  map_tree.map_properties[5].backdrop_type = 2
+  map_tree.map_properties[5].backdrop_file = 'boss'
+  eq 'boss', st.to_lsd(1, nil, 1, db, map_tree)[101][125]
 end
 
 # -- chipset directional passability ------------------------------------------
