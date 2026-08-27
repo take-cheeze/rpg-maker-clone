@@ -1007,9 +1007,10 @@ module LCF
       # Game::EventPage::TIMER.
       8 => { name: :timer_sec, type: :int, default: 0 },
       # RPG2003-only: a second timer condition (flags bit 0x40, gated on
-      # Player::IsRPG2k3Commands() in EasyRPG) and the variable comparison
-      # operator, both now read by Game::EventPage -- see its own TIMER2 /
-      # compare_operator handling there.
+      # Player::IsRPG2k3Commands() in EasyRPG's source, NOT independently
+      # confirmed against genuine RPG_RT under wine) and the variable
+      # comparison operator, both now read by Game::EventPage -- see its own
+      # TIMER2 / compare_operator handling there.
       9 => { name: :timer2_sec, type: :int, default: 0 },
       # 0 == 1 >= 2 <= 3 > 4 < 5 != (liblcf's EventPageCondition::Comparison
       # enum). Default 1 (>=), not 0 (==): liblcf's generated

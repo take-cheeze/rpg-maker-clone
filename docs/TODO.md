@@ -6560,6 +6560,89 @@ The work below is roughly ordered by the critical path to a walkable game
   turned up (`gen-rpg2k-save.rb`, `rpg2k_field_audit.rb`,
   `rpg2k_testbed_logic_check.rb`) were checked in full; a handful of other
   0-hit files were not individually re-read line-by-line for bare mentions.
+  ✅ **Follow-up (cycle #188, 2026-08-27): closing pass on the EasyRPG-citation
+  sweep -- resolved cycle #186's own flagged `#item_cured_states`/`ko_only`
+  lead (item (1) above) and then ran a full bare-mention re-scan of
+  `mruby-rpg2k/mrblib/game.rb`, `interpreter.rb`, `mruby-lcf/mrblib/schema.rb`
+  and `mruby-rpg2k/mrblib/main.rb`.** Explicitly a lighter-weight cycle -- no
+  wine/Xvfb, comment editing only. **Method:** the two specific lines cycle
+  #186 flagged (`weapon_states`'s own paragraph around the old line 2392, and
+  `ko_only_blocked?` around the old line 4475) were both genuine violations --
+  fixed per the established rule (`#item_cured_states` itself already carried
+  its own honest disclosure, so `weapon_states`' "see #item_cured_states"
+  pointer could drop the direct EasyRPG re-citation; `ko_only_blocked?` had no
+  independent evidence, so it got the standard "ported ... NOT independently
+  confirmed" rewrite). That led into a full read-through of `game.rb` hunting
+  the same shape cycle #186 missed: a bare citation with **no `src/*.cpp|h`
+  path on the same line** (often because the path wrapped onto the *next*
+  comment line, e.g. `` `src/\n  # game_event.cpp` ``, which the file-path
+  grep's single-line pattern can never match) and no "NOT independently
+  confirmed" disclosure anywhere nearby. Found this was a large, genuinely
+  distinct class from what cycles #174/#176/#177/#184-187 had already fixed:
+  roughly 90 more illegitimate citations across `game.rb`, including several
+  of the more serious kind -- outright "Confirmed against EasyRPG's ...",
+  "Verified against EasyRPG Player's actual C++ source", and "matches real
+  RPG_RT" framings that treated EasyRPG's own source as if it were a genuine
+  RPG_RT confirmation (e.g. the actor crit-chance truncation comment, the
+  Window_NumberInput cursor-cell comment, the Random Movement citation, the
+  Zoom-transition citation, the enemy-EXP/gold/drops citation, several battle
+  paragraphs in `apply_skill_hit`/`battle_skill_command`/`weapon_states`), plus
+  one direct quote of an EasyRPG source comment ("we take the max probability
+  as RPG_RT does") that was dropped along with its citation. Every fix
+  followed the established rule: independent evidence already in the same
+  comment (genuine wine confirmation, this codebase's own schema citation, or
+  community デフォ戦bot/@2000_battle_bot trivia) was kept and the illegitimate
+  EasyRPG framing dropped (e.g. the self-destruct "does not kill the caster"
+  paragraph and the HP-kill-skips-SP-drain paragraph both kept their trivia
+  confirmation and only lost the "verified against EasyRPG source" wrapper);
+  everywhere else, rewritten to "ported from EasyRPG['s ...], NOT
+  independently confirmed against genuine RPG_RT under wine" while preserving
+  the technical description. `interpreter.rb`, `schema.rb` and `main.rb` were
+  each re-scanned the same way and found to already be almost entirely
+  honest, confirming cycle #186's assessment of those three held even under
+  this narrower single-line-citation pattern -- only one genuine miss turned
+  up, in `schema.rb`'s TIMER2 field comment ("gated on
+  `Player::IsRPG2k3Commands()` in EasyRPG", no disclosure), fixed the same
+  way. Also spot-checked the `scripts/*.rb` files cycle #187 already swept
+  (`rpg2k3_battle_row_check.rb`, `rpg2k_render_check.rb`,
+  `rpg2k_field_audit.rb`, `rpg2k3_battle_gauge_check.rb`, `gen-rpg2k-save.rb`,
+  `rpg2k_testbed_logic_check.rb`, `rpg2k_save_load_check.rb`) plus
+  `rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` (cycle #185's own count) --
+  all still read as legitimate historical-correction or benign-tooling
+  comments, no new edits needed there.
+  **Verification:** `ruby -c` clean on both edited files (`game.rb`,
+  `schema.rb`; `interpreter.rb`/`main.rb` untouched). Comment-only, checked
+  per file with `git diff -- <file> | grep -E '^[+-]' | grep -vE
+  '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: empty for both. Before/after check counts, all
+  matching pre-cycle baselines exactly: `rpg2k_logic_check.rb` 1163,
+  `rpg2k_scene_check.rb` 929, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures, `rpg2k_testbed_logic_check.rb` 130, `rpg2k_save_load_check.rb`
+  unchanged at exactly its 3 known pre-existing failures (screen-transition-
+  defaults arity, saved-picture fields, BGM balance field). `cd build && ctest
+  -R mruby_test` passed (72.43s). No wine/Xvfb process started this cycle, no
+  `data/` files touched. No changelog fragment: comment-only documentation
+  work, not a behavioral fix.
+  **Is the sweep complete now?** Believed substantially complete for the four
+  `mrblib` files under both the file-path and single-line bare-citation
+  patterns, but **not exhaustively proven complete**: this cycle's scan
+  pattern still requires the citation and the words "EasyRPG"/a bare class
+  name to appear within a few lines of each other in a way a human reader (or
+  a wider multi-line regex window) would catch, and `game.rb` is ~16,600
+  lines with well over a thousand EasyRPG mentions total, most already
+  legitimately disclosed -- a residual few percent of edge cases (an
+  unusual paragraph shape, a disclosure phrased differently than "NOT
+  independently confirmed", a citation split across more than two lines)
+  plausibly remain unfound. `rpg2k_logic_check.rb` (298 EasyRPG mentions) and
+  `rpg2k_scene_check.rb` (291) were spot-checked, not read start-to-finish
+  again this cycle -- cycle #185 already read them in full and cycle #187
+  re-confirmed the count held, but a dedicated line-by-line re-read of those
+  two specific files (the largest remaining EasyRPG-mention counts in the
+  whole repo) has not happened since cycle #185. If a future cycle wants to
+  formally close this out, that re-read plus a scripted multi-line-window
+  scan of `game.rb` (rather than this cycle's manual read-through) would be
+  the way to get a provable rather than believed-complete result.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
