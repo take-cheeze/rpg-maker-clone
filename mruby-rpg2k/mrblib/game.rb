@@ -14885,9 +14885,74 @@ module Game
     # all: Scene::Map#build_parallels keeps the live Game::Interpreter object
     # across it, which preserves full fidelity (call stack, in-flight wait
     # timer, everything), not just this coarser checkpoint. Persisted in the
-    # portable Marshal save; not yet in `.lsd` (chunks 113/114 are still
-    # opaque, see LCF::Schema::SAVE_FOREGROUND_EVENT / SAVE_COMMON_EVENT).
+    # portable Marshal save (#to_h/.load); not persisted through `.lsd` at
+    # all any more as of cycle #191 -- #common_event_exec below is the richer
+    # mechanism that now backs chunk 114, and #new_parallel only ever falls
+    # back to this cursor when that has nothing for a given common event id
+    # (an older save, or one written by a build that predates cycle #191).
+    # Kept, rather than replaced outright, because it is still exactly what
+    # the portable Marshal save round-trips -- see #common_event_exec's own
+    # comment for why that path was deliberately left alone.
     attr_accessor :common_event_progress
+    # Full `Game::Interpreter` call-stack snapshot (see
+    # Game::Interpreter#call_stack_snapshot) of whichever event currently
+    # occupies the single shared foreground interpreter (Scene::Map's own
+    # @interpreter) -- a map event (trigger 0 action key / 1 touch /
+    # Auto-Start) or an Auto-Start Common Event, both of which run on that
+    # one shared interpreter (see Scene::Map#start_autostart). A Hash
+    # `{ event_id:, frames: }` (`frames` is #call_stack_snapshot's own return
+    # value; `event_id` is the map event id it belongs to, or 0 for a common
+    # event / no map character) when there is something mid-execution there,
+    # nil otherwise -- true the overwhelming majority of the time a save
+    # actually happens: an ordinary player-driven Save can only ever open
+    # between events (Scene::Map#try_open_menu bails out on #event_busy?),
+    # so the one reachable way to reach a non-nil value here is an event's
+    # own Open Save Menu command (Cmd::OPEN_SAVE_MENU, 11910), which parks
+    # the interpreter on a :save_menu wait rather than stopping it. Restoring
+    # the wait itself (so the save menu would reopen the instant Continue
+    # resumes) is deliberately out of scope, same as every other blocking-UI
+    # wait #call_stack_snapshot's own comment already excludes -- the event
+    # simply carries on with its very next command once resumed, which for
+    # a completed Open Save Menu is exactly right (the menu already served
+    # its purpose: writing this very save).
+    #
+    # Snapshotted every frame by Scene::Map#record_foreground_event_exec;
+    # consumed once, at Continue time, by Scene::Map#initialize via
+    # Scene::Map#restore_foreground_event_exec (Game::Interpreter
+    # #restore_call_stack). Not persisted through the portable Marshal save
+    # (#to_h/.load) -- see #common_event_exec's own comment for why. Round-
+    # trips through a real `.lsd`'s chunk 113 (LCF::Schema::
+    # SAVE_FOREGROUND_EVENT), as of cycle #191.
+    attr_accessor :foreground_event_exec
+    # Full `Game::Interpreter` call-stack snapshots of every currently-
+    # running Common Event Parallel Process (Scene::Map's own @parallels,
+    # the `common_event_id`-non-nil entries only -- a Map Event's own
+    # parallel process is excluded, matching #common_event_progress's
+    # identical scope and its own "always restarts fresh" reasoning): common
+    # event id => Game::Interpreter#call_stack_snapshot's own return value.
+    #
+    # Snapshotted every tick by Scene::Map#record_parallel_progress
+    # (superseding #common_event_progress for anything that has ever
+    # actually run one full tick: unlike #resumable_index,
+    # #call_stack_snapshot also captures a process mid a nested Call Event,
+    # not only a clean between-commands cursor), consumed by
+    # Scene::Map#new_parallel via Game::Interpreter#restore_call_stack,
+    # falling back to #common_event_progress only when this hash has
+    # nothing for a given id.
+    #
+    # Kept as a *separate* hash rather than folded into
+    # #common_event_progress since the two round-trip through different save
+    # formats by design: this one is `.lsd`-only (chunk 114, LCF::Schema::
+    # SAVE_COMMON_EVENT), deliberately never added to the portable Marshal
+    # save (#to_h/.load) -- that path already has full fidelity for free
+    # within one process (a Transfer Player keeps the live
+    # Game::Interpreter objects themselves, per #common_event_progress's own
+    # comment above) and gets by with the coarser cursor otherwise, exactly
+    # as it always has; Marshal-dumping a whole command-list snapshot (an
+    # Array of LCF::EventCommand objects) every tick, for every running
+    # Parallel Process, is unnecessary weight that path's own callers (dev
+    # tooling, this test suite's own round-trip checks) have no need for.
+    attr_accessor :common_event_exec
     # The current map's own live event positions, event id => [x, y, direction],
     # snapshotted every frame by Scene::Map#record_map_event_positions. Real
     # RPG_RT's SaveMapEvent chunk carries exactly this (plus a move-route index,
@@ -14975,6 +15040,8 @@ module Game
       @teleport_targets = {}
       @escape_target = nil
       @common_event_progress = {}
+      @foreground_event_exec = nil
+      @common_event_exec = {}
       @map_event_positions = {}
       @map_event_route_index = {}
       @tile_substitutions = [{}, {}]
@@ -16051,6 +16118,37 @@ module Game
         save[111] = mapev
       end
 
+      # Chunk 113 (SAVE_FOREGROUND_EVENT): the shared foreground
+      # interpreter's own live call stack, when something is actually
+      # mid-execution there at save time -- see #foreground_event_exec's own
+      # comment for when that is genuinely reachable. Absent otherwise,
+      # matching every other "nothing to restore" chunk in this method.
+      if @foreground_event_exec && @foreground_event_exec[:frames]
+        fg = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_FOREGROUND_EVENT })
+        fg[1] = self.class.build_event_exec_state(@foreground_event_exec[:frames])
+        save[113] = fg
+      end
+
+      # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
+      # Event Parallel Process -- see #common_event_exec's own comment. A
+      # genuine RPG_RT save writes one entry per common event *in the
+      # database* (505 of them on a real Nepheshel capture, see
+      # LCF::Schema::SAVE_COMMON_EVENT's own comment); this only ever writes
+      # the ones this engine actually has live state for, since nothing here
+      # ever reads the rest back and this method has no reliable way to
+      # enumerate "every common event id in the database" without a `db`
+      # argument it is not always given.
+      running_common = @common_event_exec.select { |_, frames| frames && !frames.empty? }
+      unless running_common.empty?
+        ce = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
+        running_common.each do |id, frames|
+          entry = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_COMMON_EVENT })
+          entry[1] = self.class.build_event_exec_state(frames)
+          ce[id] = entry
+        end
+        save[114] = ce
+      end
+
       save
     end
 
@@ -16076,6 +16174,58 @@ module Game
       h = {}
       bytes.each_with_index { |v, i| h[i] = v if v != i }
       h
+    end
+
+    # Build a SAVE_EVENT_EXEC_STATE chunk (an LCF::Array1D) from a
+    # Game::Interpreter#call_stack_snapshot-shaped `frames` array -- shared by
+    # #to_lsd's chunk 113 and 114 writers above (class methods, not instance,
+    # for the same reason .tile_replacement_bytes/_hash are just above: both
+    # #to_lsd and .from_lsd need to reach them). `stack`'s own array ids are
+    # 1-based, ascending outer to inner -- see SAVE_EVENT_EXEC_STATE's own
+    # schema.rb comment on why that particular numbering, not a confirmed
+    # genuine-file convention (nothing to check it against was available).
+    def self.build_event_exec_state(frames)
+      state = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_STATE })
+      stack = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
+      frames.each_with_index do |f, i|
+        frame = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_EVENT_EXEC_FRAME })
+        cmds = f[:commands] || []
+        # Mirrors field 2's own encoded byte length exactly, the same
+        # size-field convention MAP_EVENT_PAGE's own event_command_size
+        # (field 51) already established -- see that field's own comment.
+        frame[1] = LCF.encode_event_commands(cmds).bytesize
+        frame[2] = cmds
+        frame[11] = f[:current_command] || 0
+        frame[12] = f[:event_id] || 0
+        frame[13] = !!f[:triggered_by_decision_key]
+        stack[i + 1] = frame
+      end
+      state[1] = stack
+      state
+    end
+
+    # The inverse of .build_event_exec_state: decode a SAVE_EVENT_EXEC_STATE
+    # Array1D (chunk 113/114's own field 1) back into a
+    # Game::Interpreter#call_stack_snapshot-shaped frames array, outermost
+    # frame first (`stack`'s own #each already yields ascending by array id,
+    # which .build_event_exec_state always writes in that same
+    # outer-to-inner order). nil for an absent chunk, or one whose own stack
+    # is absent or empty -- both mean "nothing to restore" to
+    # Scene::Map#restore_foreground_event_exec/#new_parallel alike.
+    def self.read_event_exec_frames(exec_state)
+      return nil unless exec_state
+      stack = exec_state.stack
+      return nil unless stack
+      frames = []
+      stack.each do |_, frame|
+        frames << {
+          commands: frame.commands || [],
+          current_command: frame.current_command || 0,
+          event_id: frame.event_id || 0,
+          triggered_by_decision_key: !!frame.triggered_by_decision_key,
+        }
+      end
+      frames.empty? ? nil : frames
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
@@ -16542,6 +16692,30 @@ module Game
                            sx: map_events.parallax_horz_speed,
                            auto_y: !!map_events.parallax_vert_auto,
                            sy: map_events.parallax_vert_speed)
+      end
+      # Chunk 113 (SAVE_FOREGROUND_EVENT): whatever event was mid-execution
+      # in the shared foreground interpreter at save time -- see
+      # #foreground_event_exec's own comment for when a genuine save
+      # actually carries one. Absent on the overwhelming majority of saves
+      # (nothing to restore, matching every save taken between events), and
+      # on any save written before cycle #191. Consumed once, at Continue
+      # time, by Scene::Map#restore_foreground_event_exec -- this method
+      # itself only decodes the chunk onto Game::State, it does not touch a
+      # live interpreter (there is none to touch here).
+      fg_state = save[113] && save[113].execution_state
+      fg_frames = read_event_exec_frames(fg_state)
+      state.foreground_event_exec = fg_frames && { event_id: fg_frames.first[:event_id], frames: fg_frames }
+      # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
+      # Event Parallel Process -- see #common_event_exec's own comment.
+      # Absent, or missing individual ids, on a save written before cycle
+      # #191; Scene::Map#new_parallel falls back to #common_event_progress
+      # (or a fresh #start) for any id this does not cover.
+      common_events = save[114]
+      if common_events
+        common_events.each do |id, entry|
+          frames = read_event_exec_frames(entry.execution_state)
+          state.common_event_exec[id] = frames if frames
+        end
       end
       state
     end

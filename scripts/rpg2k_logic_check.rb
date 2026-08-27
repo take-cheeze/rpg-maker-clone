@@ -1927,6 +1927,147 @@ check '#start_at falls back to the top for an out-of-range index' do
   eq true, st.switches[1], 'an out-of-range index is ignored, same as a fresh #start'
 end
 
+# Cycle #191: #call_stack_snapshot/#restore_call_stack back the richer
+# LCF::Schema::SAVE_EVENT_EXEC_STATE/_FRAME `.lsd` continuation (chunks
+# 113/114, wired through Game::State#foreground_event_exec/
+# #common_event_exec -- see scripts/rpg2k_scene_check.rb for the end-to-end
+# version through an actual map/save round trip once one exists). These pin
+# the plain interpreter-level contract in isolation, the same way the
+# #resumable_index/#start_at checks just above pin the older, coarser one.
+check '#call_stack_snapshot captures a clean mid-list position; #restore_call_stack resumes there' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  commands = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0]),
+              FakeCmd.new(IC::WAIT, [1]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 2, 2, 0])]
+  ok it.call_stack_snapshot.nil?, 'nothing captured before the process even starts'
+  it.start(commands)
+  it.event_id = 7
+  it.triggered_by_decision_key = true
+  it.update # switch 1 on, then parks at the Wait
+  eq true, st.switches[1]
+
+  frames = it.call_stack_snapshot
+  eq 1, frames.size, 'a single frame -- no Call Event pushed anything'
+  eq 2, frames[0][:current_command], 'parked right after the Wait, at the next command'
+  eq 7, frames[0][:event_id]
+  eq true, frames[0][:triggered_by_decision_key]
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.restore_call_stack(frames)
+  st2 = it2.instance_variable_get(:@state)
+  eq 7, it2.event_id, 'event_id restored from the outermost (only) frame'
+  eq true, it2.triggered_by_decision_key
+  it2.update
+  eq false, st2.switches[1], '#restore_call_stack does not replay commands before the captured index'
+  eq true, st2.switches[2], 'it resumes exactly at the captured index'
+end
+
+check '#call_stack_snapshot captures a process mid a nested Call Event too, unlike #resumable_index' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]),
+            FakeCmd.new(IC::WAIT, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 10, 10, 0])]
+  it.resolver = FakeResolver.new(common: { 5 => called })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update # enters the call, runs its first command, parks on its own Wait
+  eq true, st.switches[9]
+  ok it.resumable_index.nil?, 'not capturable the old, coarser way -- mid a nested call'
+
+  frames = it.call_stack_snapshot
+  eq 2, frames.size, 'the suspended caller frame plus the called frame'
+  eq 1, frames[0][:current_command], 'the caller is parked right after its own Call Event'
+  eq 2, frames[1][:current_command], 'the called frame is parked right after its own Wait'
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.resolver = FakeResolver.new(common: { 5 => called })
+  it2.restore_call_stack(frames)
+  st2 = it2.instance_variable_get(:@state)
+  it2.resume # clear the restored Wait, same as the scene driving its timer to zero would
+  it2.update
+  eq false, st2.switches[9], '#restore_call_stack does not replay the called frame\'s own already-run command'
+  eq true, st2.switches[10], 'the called frame resumes past its own Wait, not from the top'
+  eq true, st2.switches[1], 'control correctly returns to the outer, suspended caller'
+  ok !it2.running?, 'the whole call stack unwinds to completion'
+end
+
+check '#call_stack_snapshot is nil once the process has finished' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok !it.running?
+  ok it.call_stack_snapshot.nil?, 'nothing to resume once the list is exhausted'
+end
+
+check '#restore_call_stack is a no-op for a nil/empty snapshot' do
+  it = Game::Interpreter.new(new_state)
+  it.restore_call_stack(nil)
+  ok !it.running?, 'nil frames leave the interpreter exactly as it was'
+  it.restore_call_stack([])
+  ok !it.running?, 'same for an empty frames array'
+end
+
+# LCF::Schema::SAVE_EVENT_EXEC_STATE/_FRAME's own encode/decode round trip
+# (Game::State.build_event_exec_state/.read_event_exec_frames), through
+# genuine chunk bytes (Array1D#to_lcf / LCF::Array1D.new) rather than just
+# in-memory Ruby Hashes -- this is a from-scratch round-trip check, NOT
+# verified against a genuine wine-saved mid-event `.lsd`, since no such
+# fixture (a save taken mid a nested Call Event or a Common Event Parallel
+# Process) was available to compare byte-for-byte against. See
+# LCF::Schema::SAVE_EVENT_EXEC_STATE's own schema.rb comment.
+check 'SAVE_EVENT_EXEC_STATE round-trips a captured call-stack snapshot through raw .lsd bytes' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]),
+            FakeCmd.new(IC::WAIT, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 10, 10, 0])]
+  it.resolver = FakeResolver.new(common: { 5 => called })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.event_id = 3
+  it.triggered_by_decision_key = true
+  it.update
+  frames = it.call_stack_snapshot
+  eq 2, frames.size
+
+  exec_state = Game::State.build_event_exec_state(frames)
+  bytes = exec_state.to_lcf # genuine chunk bytes, terminator included
+  decoded = LCF::Array1D.new(bytes, { elements: LCF::Schema::SAVE_EVENT_EXEC_STATE })
+  round = Game::State.read_event_exec_frames(decoded)
+  eq frames.size, round.size, 'both frames survived the round trip'
+
+  round.each_index do |i|
+    eq frames[i][:current_command], round[i][:current_command], "frame #{i} current_command"
+    eq frames[i][:event_id], round[i][:event_id], "frame #{i} event_id"
+    eq frames[i][:triggered_by_decision_key], round[i][:triggered_by_decision_key],
+       "frame #{i} triggered_by_decision_key"
+    eq frames[i][:commands].size, round[i][:commands].size, "frame #{i} command count"
+    frames[i][:commands].each_index do |j|
+      eq frames[i][:commands][j].code, round[i][:commands][j].code, "frame #{i} command #{j} code"
+      eq frames[i][:commands][j].parameters, round[i][:commands][j].parameters,
+         "frame #{i} command #{j} parameters"
+    end
+  end
+  eq true, round[0][:triggered_by_decision_key], 'only the outermost frame carries the trigger flag'
+  eq false, round[1][:triggered_by_decision_key], 'a Call Event\'s own nested frame never does'
+
+  # And the round-tripped frames genuinely drive a fresh Game::Interpreter to
+  # completion, not just decode as inert data.
+  it2 = Game::Interpreter.new(new_state)
+  it2.resolver = FakeResolver.new(common: { 5 => called })
+  it2.restore_call_stack(round)
+  st2 = it2.instance_variable_get(:@state)
+  it2.resume
+  it2.update
+  eq false, st2.switches[9], 'the already-run command before the captured index was not replayed'
+  eq true, st2.switches[10], 'the called frame ran the rest of its own commands'
+  eq true, st2.switches[1], 'and control returned to the outer caller, which ran to completion'
+  ok !it2.running?, 'the whole restored call stack unwound correctly'
+end
+
 # A resolver that counts every Call Event lookup instead of answering with
 # real commands, so a Call Event round trip stays a one-command no-op (the
 # empty-target early return in do_call_event) whose count is still visible.
@@ -10668,6 +10809,74 @@ check 'common_event_progress (a Parallel Process interpreter checkpoint) round-t
   legacy = st.to_h
   legacy.delete(:common_event_progress)
   eq({}, Game::State.load(db, legacy).common_event_progress)
+end
+
+# Cycle #191: chunks 113 (SAVE_FOREGROUND_EVENT) and 114 (SAVE_COMMON_EVENT)
+# now round-trip a genuine Game::Interpreter call-stack snapshot through
+# to_lsd/from_lsd, not just the coarser common_event_progress cursor above --
+# see Game::State#foreground_event_exec/#common_event_exec's own comments.
+# This exercises the same to_lsd/from_lsd path scripts/rpg2k_scene_check.rb
+# drives end to end through an actual Scene::Map; this check pins the
+# Game::State-level contract in isolation, the same relationship the
+# #call_stack_snapshot checks in this file bear to Scene::Map's own
+# #record_foreground_event_exec/#record_parallel_progress.
+check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack snapshot (chunks 113/114)' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  fg_it = Game::Interpreter.new(st)
+  fg_it.resolver = FakeResolver.new
+  fg_it.start([FakeCmd.new(IC::WAIT, [1]), FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  fg_it.event_id = 42
+  fg_it.triggered_by_decision_key = true
+  fg_it.update # parks on the Wait
+  st.foreground_event_exec = { event_id: 42, frames: fg_it.call_stack_snapshot }
+
+  ce_it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]), FakeCmd.new(IC::WAIT, [1])]
+  ce_it.resolver = FakeResolver.new(common: { 5 => called })
+  ce_it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0])])
+  ce_it.update # enters the call, parks mid a nested Call Event
+  ok ce_it.resumable_index.nil?, 'sanity: not capturable the old, coarser way'
+  st.common_event_exec[7] = ce_it.call_stack_snapshot
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+
+  fg = round.foreground_event_exec
+  ok !fg.nil?, 'chunk 113 came back'
+  eq 42, fg[:event_id]
+  eq 1, fg[:frames].size
+  eq 1, fg[:frames][0][:current_command], 'parked right after the Wait'
+  eq true, fg[:frames][0][:triggered_by_decision_key]
+
+  ce_frames = round.common_event_exec[7]
+  ok !ce_frames.nil?, 'chunk 114 carries an entry for common event 7'
+  eq 2, ce_frames.size, 'the suspended caller frame plus the called frame, not collapsed'
+  eq 2, ce_frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  ok round.common_event_exec[12].nil?, 'no entry at all for a common event nothing ran'
+
+  # Absent when nothing was mid-execution -- the overwhelming common case --
+  # matching every other "nothing to restore" chunk in #to_lsd.
+  bare = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  bare_round = Game::State.from_lsd(db, bare.to_lsd)
+  ok bare_round.foreground_event_exec.nil?, 'chunk 113 is absent, not an empty stub'
+  eq({}, bare_round.common_event_exec)
+
+  # The portable Marshal save (#to_h/.load) never carries either field at all
+  # -- deliberately, see #common_event_exec's own comment -- so loading one
+  # restores the same "nothing to resume" state a fresh Game::State starts
+  # with, whatever #foreground_event_exec/#common_event_exec held before it
+  # was dumped.
+  st.foreground_event_exec = { event_id: 42, frames: fg_it.call_stack_snapshot }
+  st.common_event_exec[7] = [{ commands: [], current_command: 0, event_id: 0,
+                                triggered_by_decision_key: false }]
+  via_marshal = Game::State.load(db, st.to_h)
+  ok via_marshal.foreground_event_exec.nil?, 'not carried by #to_h at all'
+  eq({}, via_marshal.common_event_exec)
 end
 
 check 'shown pictures round-trip through this engine\'s own internal Marshal-style ' \

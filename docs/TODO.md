@@ -14607,6 +14607,105 @@ following this paragraph as the original record.
   pinning that a map event's own parallel process still gets a brand-new
   interpreter, restarting at index 0, on every visit), all confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **Follow-up (cycle #191, 2026-08-27): decoded LCF save chunks 113
+  (`SAVE_FOREGROUND_EVENT`)/114 (`SAVE_COMMON_EVENT`) for real and wired them
+  to a genuine `Game::Interpreter` call-stack snapshot**, closing the gap the
+  previous bullet flagged as a standing follow-up. `LCF::Schema` gained
+  `SAVE_EVENT_EXEC_FRAME`/`SAVE_EVENT_EXEC_STATE` (liblcf's own
+  `SaveEventExecFrame`/`SaveEventExecState`, field ids taken straight off
+  `generator/csv/fields.csv`), and both chunks' field 1 (`execution_state`)
+  changed from an opaque `:int8_array` to `:Array1D, elements:
+  SAVE_EVENT_EXEC_STATE` — a genuine interpreter call stack, not just a
+  resume index: each stack frame carries its OWN full `commands` list
+  (reusing the existing `:event` schema type MAP_EVENT_PAGE already uses, so
+  a Call Event's own called page round-trips its exact bytes rather than a
+  reference to re-resolve), plus `current_command`, `event_id` and
+  `triggered_by_decision_key`.
+
+  `Game::Interpreter` gained `#call_stack_snapshot`/`#restore_call_stack`
+  (interpreter.rb), a strict superset of the older `#resumable_index`/
+  `#start_at` pair the previous bullet added: unlike `#resumable_index`,
+  which returns nil whenever `@call_stack` is non-empty (mid a nested Call
+  Event), `#call_stack_snapshot` captures `@call_stack + [[@list, @index]]`
+  whole, outermost frame first, and stays capturable while `#waiting?` too
+  (a save taken mid a Wait/Show Message/Open Save Menu/etc. — the position
+  is still valid to resume from, only the UI-facing wait itself is not
+  restored, the same scope `#resumable_index` already had).
+
+  `Game::State` gained two attributes wiring this into `#to_lsd`/`.from_lsd`:
+  `#foreground_event_exec` (chunk 113 — whatever event currently occupies
+  `Scene::Map`'s single shared foreground interpreter, snapshotted every
+  frame by the new `Scene::Map#record_foreground_event_exec` and restored
+  once, at Continue time, by the new `#restore_foreground_event_exec`) and
+  `#common_event_exec` (chunk 114 — one snapshot per running Common Event
+  Parallel Process, keyed by common-event id, snapshotted every tick by the
+  extended `#record_parallel_progress` and consumed by `#new_parallel`,
+  which now tries this first and only falls back to the older
+  `#common_event_progress` cursor when this has nothing for a given id).
+  `#common_event_progress` itself is unchanged and still exactly what the
+  portable Marshal save (`#to_h`/`.load`) round-trips — the new mechanism is
+  deliberately `.lsd`-only, so the two save formats keep two
+  different-but-documented fidelity levels rather than silently
+  disagreeing.
+
+  Investigated, and deliberately left as a documented simplification rather
+  than implemented: `subcommand_path` (liblcf's own per-nesting-level "which
+  Show Choice branch was taken" byte array) is always written empty.
+  Reading `#do_show_choices`/`#find_choice_option`/`#choose` confirmed this
+  engine's own resume is purely `current_command`-cursor-based — once a
+  branch is chosen, `@index` already sits inside that branch's own
+  commands, so replaying from there alone reaches the right code with no
+  separate branch-identity lookup needed, unlike genuine RPG_RT's own
+  jump-to-matching-Case mechanism. This is a genuine simplification for this
+  engine's own internal round-trip fidelity (its own Continue), not an
+  attempt at interop with genuine RPG_RT reading our `.lsd` (or the
+  reverse) — a real save captured mid an unanswered Show Choices prompt
+  would need the field decoded to resume identically. Also left
+  schema-only (declared for read-fidelity against a genuine third-party
+  `.lsd`, never written or restored by this engine): `SaveEventExecState`'s
+  `show_message`/`abort_on_escape`/`wait_movement`/the whole keyinput_*
+  cluster/`wait_time`/`wait_key_enter` — only `stack` (the call stack
+  itself, this cycle's actual subject) is genuinely round-tripped. Each
+  frame's own `event_id`/`triggered_by_decision_key` are mirrored from the
+  whole interpreter's single `#event_id`/`#triggered_by_decision_key` on
+  every frame alike, since `#do_call_event` does not track which event a
+  called list's commands originally belonged to — a documented
+  simplification of what this engine can honestly reconstruct, not a claim
+  it matches genuine RPG_RT's own per-frame bookkeeping.
+
+  Verified by a from-scratch round trip, NOT against a genuine wine-saved
+  mid-event `.lsd` (no such fixture — a save taken mid a nested Call Event
+  or a running Parallel Process — was available to compare byte-for-byte):
+  new `scripts/rpg2k_logic_check.rb` checks cover the plain
+  `#call_stack_snapshot`/`#restore_call_stack` interpreter contract (a
+  clean mid-list position, a nested Call Event, the finished/nil case, a
+  nil/empty restore no-op), the schema's own encode/decode round trip
+  through genuine chunk bytes (`Game::State.build_event_exec_state`/
+  `.read_event_exec_frames`, confirming a decoded snapshot's
+  commands/cursor/event_id/flag survive, and that a fresh
+  `Game::Interpreter` restored from it actually finishes correctly, not
+  just decodes as inert data), and the `Game::State#to_lsd`/`.from_lsd`
+  wiring for both chunks together. The existing native
+  `mruby-lcf/test/lcf_test.rb` chunk-113/114 decode test (which pinned the
+  *old* opaque-blob shape) was rewritten to build genuine nested
+  `SAVE_EVENT_EXEC_STATE` bytes instead. All of the full check-suite
+  baselines (`rpg2k_scene_check.rb`=929, `rpg2k_logic_check.rb`=1169 — up
+  from 1163, all new checks — `rpg2k_render_check.rb`=41,
+  `rpg2k3_battle_row_check.rb`=19/0, `rpg2k3_battle_gauge_check.rb`=15/0,
+  `rpg2k_save_load_check.rb`'s 3 known pre-existing failures unchanged) and
+  the `mruby_test` ctest suite stay green.
+
+  Deliberately left open: no genuine wine-saved fixture was captured to
+  confirm the exact byte layout against real RPG_RT (the frame-array
+  numbering in particular — this engine's own 1-based, outer-to-inner
+  convention is not confirmed against a real multi-frame save); a Map
+  Event's own parallel process is still excluded from any of this (matching
+  `#common_event_progress`'s own pre-existing, deliberate "always restarts
+  fresh" scope, which this cycle did not revisit); and the foreground
+  restore path's `@active_event` re-resolution is best-effort (a saved
+  event id whose page conditions have since changed just runs with no map
+  character, the same fallback an ordinary Auto-Start common event already
+  has).
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
