@@ -681,9 +681,10 @@ check "Game::EventGraphic.frame draws a fixed-direction event's live facing, " \
   # character's own #direction (the check above), the render layer threw it
   # away and drew the stale page facing regardless. Covers all three
   # fixed_direction? kinds, FIXED_GRAPHIC ("never animates") included --
-  # EasyRPG only special-cases it for the *walk-frame column* (a fixed
-  # graphic's own pattern column never advances, still true here via
-  # #animated?), never for GetFacing()/its move-route Face handling.
+  # ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: it only special-cases it for the *walk-frame
+  # column* (a fixed graphic's own pattern column never advances, still true
+  # here via #animated?), never for GetFacing()/its move-route Face handling.
   eg = Game::EventGraphic
   dir, col = eg.frame(eg::FIXED_NON_CONTINUOUS, 2, 1, 8, 0, false)
   eq [8, 1], [dir, col], 'char_dir (an explicit Face Up), not base_dir (2, south)'
@@ -5501,10 +5502,11 @@ end
 
 check "Party#toggle_actor_row flips an actor's row and refuses to empty the front row" do
   # RPG2003's field-menu Row command (scene/menu.rb's :row branch) --
-  # EasyRPG's own `Scene_Menu::UpdateActorSelection` Row case, restated:
-  # blocks only the toggle that would leave every live party member in the
-  # back row (no `IsDirectionFlipped` term here -- that quirk is specific to
-  # the in-battle `Scene_Battle_Rpg2k3::RowSelected`, see
+  # ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Scene_Menu::UpdateActorSelection` Row
+  # case, restated, blocks only the toggle that would leave every live party
+  # member in the back row (no `IsDirectionFlipped` term here -- that quirk
+  # is specific to the in-battle `Scene_Battle_Rpg2k3::RowSelected`, see
   # Game::Battle#can_leave_front_row?).
   players = (1..3).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
   db = FakeActorDB.new(players, [1, 2, 3])
@@ -8387,8 +8389,9 @@ end
 
 # Under the *default* "by Actor" setting (equipment_setting left at 0, or a
 # fixture that never sets it at all), class_set is ignored entirely and
-# actor_set decides, even in an RPG2003 database with classes -- matching
-# EasyRPG's own `if` branch, which only switches to class_set once
+# actor_set decides, even in an RPG2003 database with classes -- ported from
+# EasyRPG Player's source, NOT independently confirmed against genuine
+# RPG_RT under wine: its own `if` branch only switches to class_set once
 # `equipment_setting == EquipmentSetting_class`.
 check 'class_set is ignored under the default "by Actor" equipment setting' do
   items = { 4 => fake_item(type: 6, rhp: 40, actor_set: [true, false],
@@ -9204,10 +9207,12 @@ check 'party#has_item? counts a copy equipped on any member, not just the bag' d
 end
 
 # The shop status panel's "equipped" row (Scene::Map#draw_shop_status) sums
-# every slot on every party member holding the item -- EasyRPG's
-# Game_Party::GetEquippedItemCount / Game_Actor::GetItemCount, a plain slot
-# equality scan, so two members (or two slots on one member) each holding a
-# copy count as two, and it moves independently of the bag count.
+# every slot on every party member holding the item -- ported from EasyRPG
+# Player's source, NOT independently confirmed against genuine RPG_RT under
+# wine: its `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount`
+# is a plain slot equality scan, so two members (or two slots on one member)
+# each holding a copy count as two, and it moves independently of the bag
+# count.
 check "party#equipped_item_count sums a held item across every member's " \
       'equipment slots' do
   items = { 7 => fake_item(atk: 15, type: 1) }   # weapon -> slot 0
@@ -11390,8 +11395,9 @@ check 'Weather Effects keeps an RPG2003-only weather type on an RPG2003 database
   eq 3, st.weather.type, 'an RPG2003 database keeps the higher type'
 end
 
-# `int strength = std::min(str, 2);` in the same EasyRPG function, applied
-# unconditionally on every edition.
+# `int strength = std::min(str, 2);` in the same EasyRPG function as above
+# (also NOT independently confirmed against genuine RPG_RT under wine),
+# applied unconditionally on every edition.
 check 'Weather Effects clamps strength to at most 2 on any edition' do
   st = party_state
   it = Game::Interpreter.new(st)
@@ -11644,7 +11650,8 @@ check "an RPG2003 database widens the EXP cap to 9999999" do
 end
 
 check "an RPG2003 database's EXP curve is RPG2003's own linear formula, not RPG2000's" do
-  # EasyRPG's CalculateExp branches entirely on edition
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its CalculateExp branches entirely on edition
   # (`Player::IsRPG2k() ? 1 : 2`) -- RPG2003's own curve sums
   # `base + i*inflation + correction` linearly over the level index, a
   # structurally different formula from RPG2000's compounding
@@ -12316,7 +12323,9 @@ check 'Troop#drops rolls the drop probability on the given RNG' do
   ok results.any?(&:empty?), 'and sometimes misses'
 end
 
-check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.tk, EasyRPG game_enemyparty.cpp)' do
+check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.tk; ' \
+      'ported from EasyRPG Player\'s game_enemyparty.cpp, NOT independently confirmed ' \
+      'against genuine RPG_RT under wine)' do
   # A never-revealed Show-Hidden-Monster member: victory can fire while it's
   # still flagged invisible (Game::Battle#incapacitated? treats hidden the
   # same as dead for win/loss purposes), yet it never actually fell.
@@ -13011,13 +13020,14 @@ check 'to_lsd encodes a character\'s facing in liblcf\'s 0..3 convention, ' \
   eq 4, round.vehicle(:boat).direction, 'and the boat reads back numpad left too'
 end
 
-# EasyRPG models an actor's and an enemy's own "state id the target's
-# state_ranks array doesn't cover" case (routine -- liblcf/RPG_RT truncate
-# trailing default bytes off it) as two distinct functions with two distinct
-# defaults: Game_Actor::GetStateProbability defaults to C (rank 2, 60%),
-# Game_Enemy::GetStateProbability to B (rank 1, 80%) -- not one shared
-# default. #ally? (a live Combatant#actor vs nil) is the same tell Battle
-# already uses elsewhere to distinguish the two.
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: it models an actor's and an enemy's own "state
+# id the target's state_ranks array doesn't cover" case (routine --
+# liblcf/RPG_RT truncate trailing default bytes off it) as two distinct
+# functions with two distinct defaults: Game_Actor::GetStateProbability
+# defaults to C (rank 2, 60%), Game_Enemy::GetStateProbability to B (rank 1,
+# 80%) -- not one shared default. #ally? (a live Combatant#actor vs nil) is
+# the same tell Battle already uses elsewhere to distinguish the two.
 check "an enemy's own missing state-rank entry defaults to B (80%), an actor's to C (60%)" do
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.actor = Object.new # a live actor -- #ally? true
@@ -13091,8 +13101,10 @@ end
 check "on RPG2003, a defensive item's reverse_state_effect flag grants no resistance either" do
   # reverse_state_effect only ever means something on a *weapon's own* states
   # (flips inflict to heal, #weapon_states) or a curative item; it has no
-  # meaning on defensive gear's state_set, matching EasyRPG's own
-  # `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard excluding it.
+  # meaning on defensive gear's state_set -- ported from EasyRPG Player's
+  # source, NOT independently confirmed against genuine RPG_RT under wine:
+  # its own `!(Player::IsRPG2k3() && item->reverse_state_effect)` guard
+  # excludes it.
   items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50,
                             reverse_state: true) }
   st = skill_party({}, items, rpg2003: true)
@@ -13227,9 +13239,10 @@ check 'battle: a critical hit triples the damage when the fight rolls one' do
 end
 
 check "battle: a critical's damage multiplier now applies before variance, not after" do
-  # EasyRPG's CalcNormalAttackEffect applies the critical/charge multiplier
-  # and only then spreads the result by VarianceAdjustEffect -- not the other
-  # way round. #varied's own spread (`var*base/10`) scales with its input, so
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its CalcNormalAttackEffect applies the
+  # critical/charge multiplier and only then spreads the result by
+  # VarianceAdjustEffect -- not the other way round. #varied's own spread (`var*base/10`) scales with its input, so
   # rolling variance on the pre-crit base and tripling the *result* afterward
   # can only ever land on a multiple of 3 away from the tripled base (each
   # ±1 unit of pre-crit noise becomes ±3 once multiplied) -- a strictly
@@ -13303,10 +13316,12 @@ def crit_party(items)
 end
 
 check 'Actor#crit_chance: the row rate alone, truncated to a whole percent' do
-  # EasyRPG's Algo::CalcCriticalHitChance truncates the actor's own float rate
-  # to a whole int percent before ever rolling (`static_cast<int>(chance *
-  # 100.0)`, fed straight to `Rand::PercentChance(int)`'s plain 0..99 roll) --
-  # a 1-in-30 rate is a flat 3%, not 3.33%.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Algo::CalcCriticalHitChance truncates the
+  # actor's own float rate to a whole int percent before ever rolling
+  # (`static_cast<int>(chance * 100.0)`, fed straight to
+  # `Rand::PercentChance(int)`'s plain 0..99 roll) -- a 1-in-30 rate is a flat
+  # 3%, not 3.33%.
   st = crit_party({})
   eq 3, st.party.actor_by_id(1).crit_chance, '1-in-30 truncates to 3%'
   eq 0, st.party.actor_by_id(2).crit_chance, 'an actor that never crits'
@@ -13314,8 +13329,10 @@ end
 
 check 'Actor#crit_chance: an equipped weapon adds its own percentage' do
   # RPG_RT adds the weapon's rate to the wielder's, which no 1-in-N denominator
-  # can express -- but the *sum*, not the base rate, is what EasyRPG truncates,
-  # so 3% + 20% lands on the same 23% either way the truncation is ordered.
+  # can express -- but per the same EasyRPG-ported CalcCriticalHitChance
+  # reading above (NOT independently confirmed against genuine RPG_RT under
+  # wine), the *sum*, not the base rate, is what gets truncated, so 3% + 20%
+  # lands on the same 23% either way the truncation is ordered.
   items = { 7 => fake_item(type: 1, atk: 5, critical_hit: 20) }
   st = crit_party(items)
   a = st.party.actor_by_id(1)
@@ -13477,8 +13494,10 @@ check 'Appear Randomly never re-rolls a member already individually flagged ' \
 end
 
 check 'battle: the crit roll is read against a whole-percent scale' do
-  # A rate of N must crit on a roll of N-1 and not on N -- EasyRPG's
-  # Rand::PercentChance(int rate), `GetRandomNumber(0, 99) < rate`.
+  # A rate of N must crit on a roll of N-1 and not on N -- ported from
+  # EasyRPG Player's source, NOT independently confirmed against genuine
+  # RPG_RT under wine: its Rand::PercentChance(int rate) is
+  # `GetRandomNumber(0, 99) < rate`.
   [[49, true], [50, false], [51, false]].each do |roll, want|
     hero = combatant('Hero', 40, 0, 20, 100)
     hero.crit_chance = 50
@@ -13716,7 +13735,9 @@ check 'battle: RPG2003 lets a negative attribute rate scale damage directly, and
      'falls to the milder rate (not a multiply) when only one side is negative' do
   # Same single-attribute setup as the RPG2000 check above, but with the
   # `rpg2003:` flag on: unlike RPG2000, RPG2003 keeps EasyRPG's `INT_MIN`
-  # (no) floor, so the lone negative-rate side still applies directly.
+  # (no) floor (ported from EasyRPG Player's source, NOT independently
+  # confirmed against genuine RPG_RT under wine), so the lone negative-rate
+  # side still applies directly.
   props = { 1 => RateRow.new(200, 150, 100, 50, -100, 0) }
   hero = combatant('Hero', 40, 0, 20, 100)
   hero.atk_attrs = [1]
@@ -13773,9 +13794,10 @@ end
 
  # A "physical" failure message (failure_message == 3) on an enemy-scope skill
  # switches its to-hit from the flat `skill.hit` to the agility-adjusted,
- # evasion-aware physical formula (EasyRPG Algo::CalcSkillToHit) -- the
- # CalcSkillToHit edge case docs/TODO.md left unimplemented. See Game::Battle#
- # skill_to_hit.
+ # evasion-aware physical formula (EasyRPG Algo::CalcSkillToHit, ported from
+ # EasyRPG Player's source and NOT independently confirmed against genuine
+ # RPG_RT under wine) -- the CalcSkillToHit edge case docs/TODO.md left
+ # unimplemented. See Game::Battle# skill_to_hit.
  check 'a physical-flagged enemy-scope skill uses the agility-adjusted hit formula' do
    skills = { 7 => fake_skill(name: 'Punch', scope: 0, hit: 90, failure_message: 3) }
    st = skill_party(skills)
@@ -13838,9 +13860,11 @@ end
  end
 
  # `hit == -1` is a sentinel meaning "use the caster's own weapon-based hit
- # chance" -- EasyRPG's Algo::CalcSkillToHit reads it unconditionally, as its
- # very first line, for every skill (not gated behind any EasyRPG-only
- # extension flag, unlike the row terms). Previously read literally: -1 as a
+ # chance" -- ported from EasyRPG Player's source, NOT independently
+ # confirmed against genuine RPG_RT under wine: its Algo::CalcSkillToHit
+ # reads it unconditionally, as its very first line, for every skill (not
+ # gated behind any EasyRPG-only extension flag, unlike the row terms).
+ # Previously read literally: -1 as a
  # flat percent compares false against every possible `@rng.random(100)`
  # roll (0..99), so such a skill missed unconditionally instead of using the
  # caster's real hit rate.
@@ -13923,9 +13947,10 @@ end
 
 check "battle: a basic Attack rolls its weapon's own state-infliction chance" do
   # A "Poison Dagger" -- state_set flags state 3, state_chance 100 -- ported
-  # from EasyRPG's Game_BattleAlgorithm::Normal::vExecute weapon block, which
-  # this codebase previously left entirely unbuilt: only Skills/Items rolled
-  # state infliction, never a plain Attack.
+  # from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::Normal::vExecute
+  # weapon block, which this codebase previously left entirely unbuilt: only
+  # Skills/Items rolled state infliction, never a plain Attack.
   items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1], state_chance: 100) }
   st = skill_party({}, items)
   a = st.party.actor_by_id(1)
@@ -13941,10 +13966,11 @@ end
 
 check "battle: an RPG2003 weapon's reverse_state_effect heals instead of inflicts" do
   # Same weapon, `reverse_state_effect` set: on RPG2003 this flips the weapon
-  # from inflicting its named states to curing them (EasyRPG's
-  # `is2k3 && w->reverse_state_effect` branch) -- a weapon-only flip; the
-  # identical field on a *medicine* item is dead in the real engine (see
-  # `Game::Party#item_cured_states`'s own comment).
+  # from inflicting its named states to curing them (ported from EasyRPG
+  # Player's source, NOT independently confirmed against genuine RPG_RT
+  # under wine: its `is2k3 && w->reverse_state_effect` branch) -- a
+  # weapon-only flip; the identical field on a *medicine* item is dead in
+  # the real engine (see `Game::Party#item_cured_states`'s own comment).
   items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
                             state_chance: 100, reverse_state: true) }
   st = skill_party({}, items, rpg2003: true)
@@ -13963,7 +13989,9 @@ end
 check "battle: on RPG2000, a weapon's reverse_state_effect has no effect -- it still inflicts" do
   # The exact same weapon/scenario as the RPG2003 heal check above, but on an
   # RPG2000 database: `reverse_state_effect` only flips a weapon's polarity on
-  # RPG2003 (EasyRPG's `is2k3 &&` guard), so the state still inflicts here.
+  # RPG2003, per the same EasyRPG-ported `is2k3 &&` guard cited above (NOT
+  # independently confirmed against genuine RPG_RT under wine), so the state
+  # still inflicts here.
   items = { 7 => fake_item(type: 1, atk: 10, state_set: [0, 0, 1],
                             state_chance: 100, reverse_state: true) }
   st = skill_party({}, items) # rpg2003 defaults to false
@@ -14027,10 +14055,11 @@ check 'Battle#escape_chance scales with the agility ratio, clamped 0..100' do
 end
 
 check 'Battle#escape_chance still counts a fallen battler, per GetAverageAgility' do
-  # EasyRPG's Game_Party_Base::GetAverageAgility sums over GetBattlers (every
-  # member) rather than GetActiveBattlers (the not-dead subset), so a party
-  # that has already lost someone still divides by the whole roster and adds
-  # the fallen member's own agility in.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_Party_Base::GetAverageAgility sums
+  # over GetBattlers (every member) rather than GetActiveBattlers (the
+  # not-dead subset), so a party that has already lost someone still
+  # divides by the whole roster and adds the fallen member's own agility in.
   hero = combatant('Hero', 0, 0, 20, 10)      # alive, agi 20
   squire = combatant('Squire', 0, 0, 0, 0)    # already down, agi 0
   slime = combatant('Slime', 0, 0, 10, 10)    # agi 10
@@ -14042,9 +14071,11 @@ check 'Battle#escape_chance still counts a fallen battler, per GetAverageAgility
 end
 
 check 'Battle#escape_chance rounds the agility ratio to the nearest percent' do
-  # EasyRPG's InitEscapeChance finishes with Utils::RoundTo<int> (std::lrint),
-  # not a truncating integer divide -- unlike this same class's #to_hit
-  # agility term, which RPG_RT computes in `float` and truncates instead.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its InitEscapeChance finishes with
+  # Utils::RoundTo<int> (std::lrint), not a truncating integer divide --
+  # unlike this same class's #to_hit agility term, which RPG_RT computes in
+  # `float` and truncates instead.
   hero = combatant('Hero', 0, 0, 7, 10)
   slime = combatant('Slime', 0, 0, 10, 10)
   b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
@@ -14058,8 +14089,10 @@ check 'Battle#escape_chance rounds an exact tie to even, not always up' do
   # Utils::RoundTo<int> is std::lrint under the default IEEE 754 FE_TONEAREST
   # mode -- round-half-to-*even*, not round-half-up (`Float#round`'s own
   # half-away-from-zero rule). Party average agility 200, enemy average 101:
-  # 100*101/200 = 50.5 exactly. EasyRPG rounds to 50 (already even) -> escape
-  # 150-50 = 100; round-half-up would land on 51 -> escape 99.
+  # 100*101/200 = 50.5 exactly. Per the same EasyRPG-ported RoundTo/lrint
+  # reading above (NOT independently confirmed against genuine RPG_RT under
+  # wine), it rounds to 50 (already even) -> escape 150-50 = 100;
+  # round-half-up would land on 51 -> escape 99.
   hero = combatant('Hero', 0, 0, 200, 10)
   slime = combatant('Slime', 0, 0, 101, 10)
   b = Game::Battle.new([hero], [slime], Game::Rng.new(1))
@@ -14067,9 +14100,11 @@ check 'Battle#escape_chance rounds an exact tie to even, not always up' do
 end
 
 check 'Battle#escape_chance is fixed at battle start, not re-derived per attempt' do
-  # EasyRPG calls InitEscapeChance() exactly once, from Scene_Battle::Start;
-  # TryEscape only ever adds +10 to that one starting value on a failure, and
-  # nothing re-reads the agilities once the fight is under way.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: it calls InitEscapeChance() exactly once, from
+  # Scene_Battle::Start; TryEscape only ever adds +10 to that one starting
+  # value on a failure, and nothing re-reads the agilities once the fight is
+  # under way.
   states = { 1 => fake_state(affect_type: 0, affect_agility: true) } # 0 = halve
   hero = combatant('Hero', 0, 0, 20, 10)
   slime = combatant('Slime', 0, 0, 10, 10)
@@ -14774,14 +14809,19 @@ check 'Battle#apply_to_party ignores combatants with no source actor' do
   ok true, 'write-back skipped bare combatants without error'
 end
 
-check "Battle#apply_to_party carries a survivor's active-time gauge into the next fight, matching RPG_RT (2026-08-18)" do
-  # EasyRPG's Game_Battler::ResetBattle deliberately does not reset the ATB
-  # gauge -- "ATB gauge is not reset here. This is on purpose because RPG_RT
-  # will freeze the gauge and carry it between battles if
-  # !CanActOrRecoverable()" -- only Knockout (AddState's own kDeathID
-  # branch) zeroes it. Combatant.from_actor previously never seeded #gauge
-  # from anything persistent, so every fight started every actor's gauge at
-  # 0 regardless of how charged they were when the last one ended.
+check "Battle#apply_to_party carries a survivor's active-time gauge into the next " \
+      "fight, per EasyRPG Player's source (2026-08-18, NOT independently confirmed " \
+      "against genuine RPG_RT under wine)" do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_Battler::ResetBattle deliberately
+  # does not reset the ATB gauge -- that source's own comment there claims
+  # this is "on purpose because RPG_RT will freeze the gauge and carry it
+  # between battles if !CanActOrRecoverable()", a claim this codebase has
+  # not itself verified against the genuine engine -- only Knockout
+  # (AddState's own kDeathID branch) zeroes it. Combatant.from_actor
+  # previously never seeded #gauge from anything persistent, so every fight
+  # started every actor's gauge at 0 regardless of how charged they were
+  # when the last one ended.
   st = party_state
   hero = st.party.actor_by_id(1)
   eq 0, hero.atb_gauge, 'a fresh actor has never charged'
@@ -15143,8 +15183,10 @@ check 'an attack skill that computes to 0 damage still reads as an attack, not a
   eq 100, tough_foe.hp, 'the target neither took damage nor was healed'
 end
 
-# Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute (algo.cpp's
-# CalcSkillEffect + game_battlealgorithm.cpp): an enemy-scope attack skill's
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Game_BattleAlgorithm::Skill::vExecute
+# (algo.cpp's CalcSkillEffect + game_battlealgorithm.cpp): an enemy-scope
+# attack skill's
 # `affect_hp`/`affect_sp` flags each independently gate whether the skill's
 # one shared `effect` value (the same number, not two separately-rolled
 # amounts) lands on the target's HP and/or SP. #battle_skill_command's enemy
@@ -15179,11 +15221,12 @@ end
 
 check 'an offensive skill halves its HP effect against a defending target, ' \
       'but leaves the SP effect untouched' do
-  # EasyRPG's Skill::vExecute: `hp_effect = IsPositive() ? effect :
-  # Algo::AdjustDamageForDefend(effect, *target)` -- an enemy-scope skill's HP
-  # branch gets the same defend-halving a plain Attack already gets, but the
-  # SP branch (and the ATK/DEF/SPI/AGI stat-mod branches) read the raw
-  # `effect` with no such adjustment.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Skill::vExecute has `hp_effect =
+  # IsPositive() ? effect : Algo::AdjustDamageForDefend(effect, *target)` --
+  # an enemy-scope skill's HP branch gets the same defend-halving a plain
+  # Attack already gets, but the SP branch (and the ATK/DEF/SPI/AGI
+  # stat-mod branches) read the raw `effect` with no such adjustment.
   skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
                              mrate: 40, hp: true, sp: true) }
   st = skill_party(skills)
@@ -15231,11 +15274,13 @@ end
 
 check "a dual HP+SP attack skill's killing blow leaves SP untouched -- HP " \
       'reaching 0 blocks the SP damage on the same swing' do
-  # EasyRPG's own ordering: `if (!is_dead && GetTarget()->GetHp() +
-  # this->GetAffectedHp() <= 0) return IsSuccess();` runs right after the
-  # affect_hp block and *before* affect_sp's -- so a lethal HP hit skips SP
-  # entirely on that swing, matching デフォ戦bot's own trivia: "ＨＰとＭＰに
-  # ダメージを与える技能でＨＰがゼロになった場合、ＭＰは減らない".
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine (though the general behavior matches
+  # デフォ戦bot's own community trivia: "ＨＰとＭＰにダメージを与える技能で
+  # ＨＰがゼロになった場合、ＭＰは減らない"): its own ordering,
+  # `if (!is_dead && GetTarget()->GetHp() + this->GetAffectedHp() <= 0)
+  # return IsSuccess();`, runs right after the affect_hp block and *before*
+  # affect_sp's -- so a lethal HP hit skips SP entirely on that swing.
   skills = { 7 => fake_skill(name: 'Drain Fire', scope: 0, sp_cost: 6, power: 20,
                              mrate: 40, hp: true, sp: true) }
   st = skill_party(skills)
@@ -15259,8 +15304,9 @@ end
 
 check 'a skill flagged "attribute defence up/down" picks direction from ' \
       'the skill\'s own scope, not reverse_state_effect' do
-  # Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute: `auto shift
-  # = IsPositive() ? 1 : -1;`, where IsPositive() comes from
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::Skill::vExecute has
+  # `auto shift = IsPositive() ? 1 : -1;`, where IsPositive() comes from
   # Algo::SkillTargetsAllies(skill) -- purely the skill's own `scope` field.
   # reverse_state_effect never enters into it, unlike this codebase's old,
   # explicitly-unconfirmed guess that it did. Every scope/reverse_state_effect
@@ -15299,8 +15345,10 @@ end
 check 'on an RPG2000 database, a self/ally-scoped skill\'s own state_effects ' \
       'cure in battle, ignoring reverse_state_effect (an enemy-scoped one ' \
       'still inflicts)' do
-  # EasyRPG's Game_BattleAlgorithm::Skill::vExecute: `heals_states =
-  # IsPositive() ^ (Player::IsRPG2k3() && skill.reverse_state_effect)`, and
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::Skill::vExecute has
+  # `heals_states = IsPositive() ^ (Player::IsRPG2k3() &&
+  # skill.reverse_state_effect)`, and
   # `IsPositive()` is `Algo::SkillTargetsAllies(skill)` -- true for every scope
   # but Scope_enemy(0)/Scope_enemies(1). On an RPG2000 database the XOR's
   # right-hand term is always false (`Player::IsRPG2k3()` false), so
@@ -15338,8 +15386,10 @@ check 'on an RPG2003 database, reverse_state_effect flips a skill\'s own ' \
   # The gap this closes: #battle_skill_command used to apply the plain
   # scope-only rule (ally cures / enemy inflicts) unconditionally, the same
   # simplification #skill_attr_shift's own sibling formula settled for good
-  # reason -- but unlike attribute-defence direction, EasyRPG's `heals_states`
-  # line does gate on `Player::IsRPG2k3()`, so a real RPG2003 database with
+  # reason -- but unlike attribute-defence direction, per the same
+  # EasyRPG-ported `heals_states` reading above (NOT independently
+  # confirmed against genuine RPG_RT under wine), that line does gate on
+  # `Player::IsRPG2k3()`, so a real RPG2003 database with
   # `reverse_state_effect` set can invert either scope: an ally/self skill
   # inflicts its listed states on its own side (a self-scoped Berserk that
   # confuses its own caster), and an enemy skill cures its target's states
@@ -15498,10 +15548,12 @@ check 'battle: an actor added to the live party mid-fight joins the next round' 
 end
 
 # Corrects an initial reading of this fix's own community-trivia source
-# ("swap out then back in still lets the queued command execute"), checked
-# directly against EasyRPG's real `Scene_Battle_Rpg2k::ProcessSceneActionBattle`:
-# its `ePreAction` substate rechecks `battler->Exists()` (which folds in
-# `IsInParty()`, `game_battler.h`) immediately before running *each* queued
+# ("swap out then back in still lets the queued command execute"), against
+# a closer reading of EasyRPG Player's source -- ported from that source,
+# NOT independently confirmed against genuine RPG_RT under wine:
+# `Scene_Battle_Rpg2k::ProcessSceneActionBattle`'s `ePreAction` substate
+# rechecks `battler->Exists()` (which folds in `IsInParty()`,
+# `game_battler.h`) immediately before running *each* queued
 # action and drops the ones that fail, not only the ones for the *next*
 # round's queue. #step_action ports that same recheck (see its own comment) --
 # a turn already resolved before the removal stands (nothing rewinds `@log`),
@@ -15574,8 +15626,10 @@ end
 # agility) -- a skill's own per-battle ATK/DEF/SPI/AGI modifier, distinct from
 # both attribute-defence rank shifting (above) and a *state*'s halve/double
 # (Game::Battle#stat_mode / #adjust_stat, "stat-halving state" checks nearby).
-# Ported from EasyRPG's Game_Battler::atk_modifier and CanChangeAtkModifier
-# (and its DEF/SPI/AGI siblings) -- this codebase used to parse these four
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Game_Battler::atk_modifier and
+# CanChangeAtkModifier (and its DEF/SPI/AGI siblings) -- this codebase used
+# to parse these four
 # skill flags into FakeSkill/the LCF schema and then read none of them
 # anywhere, so a "raise/lower ATK/DEF/SPI/AGI" skill silently did nothing at
 # all beyond whatever incidental affect_hp/affect_sp damage/heal it also
@@ -15679,9 +15733,11 @@ end
 check 'ability-value decrease rounds toward zero (up) on an odd base, not ' \
       'a Ruby-style floor' do
   # -(5 / 2) truncates toward zero to -2 in both this Ruby code (dividing the
-  # positive base first, then negating) and EasyRPG's C++ `-base / 2` -- a
-  # floor-toward-negative-infinity reading (Ruby's own `-base / 2`, base
-  # negated first) would instead land one step lower, at -3.
+  # positive base first, then negating) and EasyRPG Player's C++ `-base / 2`
+  # (ported from that source, NOT independently confirmed against genuine
+  # RPG_RT under wine) -- a floor-toward-negative-infinity reading (Ruby's
+  # own `-base / 2`, base negated first) would instead land one step lower,
+  # at -3.
   weaken = fake_skill(name: 'Weaken', scope: 0, sp_cost: 0, power: 100, prate: 0,
                       mrate: 0, affect_attack: true)
   st = skill_party({ 7 => weaken })
@@ -15763,9 +15819,10 @@ end
 
 # -- Battle skill/item effect accuracy (Game::Battle#skill_effect_hits?) -----
 #
-# Ported from EasyRPG's Game_BattleAlgorithm::Skill::vExecute: each of
-# affect_hp/affect_sp/affect_attack/affect_defense/affect_spirit/
-# affect_agility is gated behind its own Rand::PercentChance(to_hit) roll.
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Game_BattleAlgorithm::Skill::vExecute has
+# each of affect_hp/affect_sp/affect_attack/affect_defense/affect_spirit/
+# affect_agility gated behind its own Rand::PercentChance(to_hit) roll.
 # Previously #apply_skill_hit applied a skill's core HP/SP/stat effect
 # unconditionally -- only state infliction (#roll_inflict) ever consulted
 # cmd[:chance] -- so an offensive or buff skill with hit < 100 landed its
@@ -16049,11 +16106,12 @@ check "battle: a heal on a still-standing target is unaffected by the " \
 end
 
 check "battle: a skill/spell attack now rolls its own critical hit too" do
-  # EasyRPG's Game_BattleAlgorithm::Skill::vExecute rolls
-  # Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the exact
-  # same weapon-inclusive rate #deal_attack's own #critical? already reads --
-  # and Algo::CalcSkillEffect triples the result the same way a basic
-  # attack's own CalcNormalAttackEffect does. Previously nothing in
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::Skill::vExecute
+  # rolls Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the
+  # exact same weapon-inclusive rate #deal_attack's own #critical? already
+  # reads -- and Algo::CalcSkillEffect triples the result the same way a
+  # basic attack's own CalcNormalAttackEffect does. Previously nothing in
   # #apply_skill_hit ever rolled a skill/spell critical at all: every
   # offensive skill's damage was capped at its non-critical value on every
   # single cast.
@@ -16092,9 +16150,11 @@ check 'battle: no skill/spell critical when the fight has criticals off' do
 end
 
 check "battle: an attack skill's own physical_rate shakes loose a status on a landed hit" do
-  # EasyRPG's Skill::vExecute calls BattlePhysicalStateHeal(skill.physical_rate
-  # * 10, ...) inside the same affect_hp/to_hit-gated block the HP change
-  # itself is in -- previously #apply_skill_hit never called this at all, so
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Skill::vExecute calls
+  # BattlePhysicalStateHeal(skill.physical_rate * 10, ...) inside the same
+  # affect_hp/to_hit-gated block the HP change itself is in -- previously
+  # #apply_skill_hit never called this at all, so
   # even a fully melee/physical attack skill never shook a status loose.
   states = { 8 => fake_state(release_by_attack: 100) }
   hero = combatant('Hero', 40, 0, 20, 100)
@@ -16563,10 +16623,12 @@ check 'battle_items lists battle medicines; battle_item_command recovers' do
      st.party.battle_item_command(st.party.db_item(5), target))
 end
 
-# A 蘇生専用 (`ko_only`) item cast from the battle Item menu: EasyRPG's
-# `Game_BattleAlgorithm::Item::vExecute` returns before either the HP/SP
-# recovery or the state cure is ever computed once `item.ko_only &&
-# !GetTarget()->IsDead()`, so a revive item aimed at a target still standing
+# A 蘇生専用 (`ko_only`) item cast from the battle Item menu: ported from
+# EasyRPG Player's source, NOT independently confirmed against genuine
+# RPG_RT under wine: its `Game_BattleAlgorithm::Item::vExecute` returns
+# before either the HP/SP recovery or the state cure is ever computed once
+# `item.ko_only && !GetTarget()->IsDead()`, so a revive item aimed at a
+# target still standing
 # does nothing at all -- not even the percentage HP restore or the cure. The
 # field-menu path (`#use_medicine`) already honoured this; `#battle_item_
 # command` had not.
@@ -16826,10 +16888,12 @@ end
 
 # デフォ戦bot: "once afflicted with a 'cannot act' state, curing it before your
 # turn comes up still doesn't let you act that turn; likewise Silence cured
-# before your turn still blocks magic." Checked directly against EasyRPG's
-# real source rather than trusted from the trivia alone (`SelectNextActor`/
-# `CreateEnemyActions`, `PrepareBattleAction`, `Game_Battler::AddState`, all
-# in `src/scene_battle*.cpp`/`game_battler.cpp`): a do-nothing restriction
+# before your turn still blocks magic." That general behavior is community
+# trivia; the specific mechanism below is ported from EasyRPG Player's
+# source, NOT independently confirmed against genuine RPG_RT under wine
+# (`SelectNextActor`/`CreateEnemyActions`, `PrepareBattleAction`,
+# `Game_Battler::AddState`, all in `src/scene_battle*.cpp`/
+# `game_battler.cpp`): a do-nothing restriction
 # (`!CanAct()`) locks an actor's queued algorithm to `Game_BattleAlgorithm::
 # None` the moment it is decided -- at `SelectNextActor`/`CreateEnemyActions`
 # (queue-build time) if already restricted then, or live via `AddState`'s own
@@ -16888,9 +16952,11 @@ check 'battle: a do-nothing state inflicted after queueing still blocks the turn
   eq 'Healthy', first[:attacker]
 
   # Something in the round (an earlier ally/enemy action, a troop page) puts
-  # Victim to sleep before its own queued turn comes up -- EasyRPG's
-  # Game_Battler::AddState overrides an already-queued action to None the
-  # moment this happens, live, not only at the round's original queue-build.
+  # Victim to sleep before its own queued turn comes up -- per the same
+  # EasyRPG-ported `AddState` reading above (NOT independently confirmed
+  # against genuine RPG_RT under wine), its Game_Battler::AddState overrides
+  # an already-queued action to None the moment this happens, live, not
+  # only at the round's original queue-build.
   victim.states = [8]
 
   entries = []
@@ -17053,8 +17119,10 @@ check 'battle: a fully-Stoned enemy troop, still at full HP, does not end the fi
 end
 
 # yado.tk's "unrecoverable input-blocking state lock" case, next to the
-# empty/all-KO'd-party fix: EasyRPG's Scene_Battle_Rpg2k::SelectNextActor
-# skips the Fight/Skill/Defend/Item prompt entirely for a "do nothing"
+# empty/all-KO'd-party fix: ported from EasyRPG Player's source, NOT
+# independently confirmed against genuine RPG_RT under wine: its
+# Scene_Battle_Rpg2k::SelectNextActor skips the Fight/Skill/Defend/Item
+# prompt entirely for a "do nothing"
 # restriction (asleep/paralysed, !CanAct()) and a forced attack-ally/
 # attack-enemy restriction (confused/berserk, GetSignificantRestriction() !=
 # Restriction_normal) rather than asking the player to pick a command that
@@ -17309,9 +17377,11 @@ check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
 end
 
 check "battle: a self-destruct's 強力防御 halves a defending target's blow twice" do
-  # EasyRPG's SelfDestruct::vExecute calls the identical AdjustDamageForDefend
-  # a basic attack (#deal_attack) already applies -- not a self-destruct-
-  # specific halving rule. A prior version of this method only ever halved
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its SelfDestruct::vExecute calls the identical
+  # AdjustDamageForDefend a basic attack (#deal_attack) already applies --
+  # not a self-destruct-specific halving rule. A prior version of this
+  # method only ever halved
   # once, for plain Defend, ignoring the second halving a 強力防御 (strong
   # defence) target's own gear/class adds.
   bomber = combatant('Bomber', 50, 0, 5, 1)
@@ -17349,8 +17419,10 @@ check "battle: a self-destruct's defend-halving carries no floor either, matchin
 end
 
 check 'battle: a self-destruct shakes loose a survivor\'s status the same as a basic attack' do
-  # EasyRPG's SelfDestruct::vExecute calls the same BattlePhysicalStateHeal(100,
-  # ...) Normal::vExecute does -- previously unmodelled here, so a blinded
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its SelfDestruct::vExecute calls the same
+  # BattlePhysicalStateHeal(100, ...) Normal::vExecute does -- previously
+  # unmodelled here, so a blinded
   # survivor of a self-destruct stayed blind no matter how hard the blast hit,
   # where a plain attack for the same damage would have had a shot at curing it.
   states = { 8 => fake_state(release_by_attack: 100) }
@@ -17973,10 +18045,11 @@ end
 
 check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unconditionally' do
   # Parsed (mruby-lcf/mrblib/schema.rb state field 36, avoid_attacks) but never
-  # read anywhere in Game::Battle before this fix -- EasyRPG's
-  # Game_Battler::EvadesAllPhysicalAttacks (game_battler.cpp) forces
-  # CalcNormalAttackToHit to 0 the instant the target carries one, ahead of
-  # every other term, so the state did nothing at all here.
+  # read anywhere in Game::Battle before this fix -- ported from EasyRPG
+  # Player's source, NOT independently confirmed against genuine RPG_RT
+  # under wine: its Game_Battler::EvadesAllPhysicalAttacks (game_battler.cpp)
+  # forces CalcNormalAttackToHit to 0 the instant the target carries one,
+  # ahead of every other term, so the state did nothing at all here.
   states = { 12 => fake_state(avoid_attacks: true), 13 => fake_state }
   attacker = combatant('Attacker', 20, 0, 10, 100) # a fast, hard-hitting attacker
   dodger = combatant('Dodger', 0, 0, 1, 100)        # slow, so agi alone would favour a hit
@@ -18001,9 +18074,11 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
 end
 
 check 'battle: a "do nothing"-restricted target always gets hit' do
-  # EasyRPG's CalcNormalAttackToHit: `if (!target.CanAct()) return 100;` --
-  # the next term down from avoid_attacks, ahead of every ordinary accuracy
-  # roll. An asleep/paralysed target (state restriction 1) was previously
+  # Per the same EasyRPG-ported CalcNormalAttackToHit reading above (NOT
+  # independently confirmed against genuine RPG_RT under wine): `if
+  # (!target.CanAct()) return 100;` -- the next term down from
+  # avoid_attacks, ahead of every ordinary accuracy roll. An asleep/paralysed
+  # target (state restriction 1) was previously
   # rolled through the normal hit-rate/agility math like anyone else.
   states = { 5 => fake_state(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }
   # A slow, low-hit-rate attacker against a fast target: agility alone would
@@ -18025,8 +18100,10 @@ end
 
 check "battle: a state's reduce_hit_ratio folds into the base hit rate before " \
       'the agility term, not after' do
-  # EasyRPG: `to_hit = to_hit * GetHitChanceModifierFromStates() / 100;` runs
-  # *before* `CalcToHitAgiAdjustment`, so the AGI term's own nonlinear
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `to_hit = to_hit *
+  # GetHitChanceModifierFromStates() / 100;` runs *before*
+  # `CalcToHitAgiAdjustment`, so the AGI term's own nonlinear
   # `100 - (100 - to_hit) * (src + tgt) / (2 * src)` shape is applied to the
   # already-blinded hit rate, not to the unblinded base with the state
   # discount multiplied on afterward -- the two orders disagree whenever
@@ -18045,9 +18122,11 @@ end
 
 check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its own caster' do
   # Parsed (mruby-lcf/mrblib/schema.rb state field 37, reflect_magic) but never
-  # read anywhere in Game::Battle before this fix -- EasyRPG's
-  # Game_BattleAlgorithm::Skill::IsReflected (game_battlealgorithm.cpp) redirects
-  # a Skill's target onto its own caster the instant the intended target carries
+  # read anywhere in Game::Battle before this fix -- ported from EasyRPG
+  # Player's source, NOT independently confirmed against genuine RPG_RT
+  # under wine: its Game_BattleAlgorithm::Skill::IsReflected
+  # (game_battlealgorithm.cpp) redirects a Skill's target onto its own
+  # caster the instant the intended target carries
   # one, checked by Scene_Battle_Rpg2k::ProcessBattleActionAnimationImpl right
   # before the action's own Execute() step -- so the skill still rolls its own
   # damage/accuracy/variance normally afterward, just against the new target.
@@ -18090,8 +18169,10 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   eq 75, caster_foe.hp
 
   # A skill's own reflect check requires a genuine skill cast (cmd[:skill_id]) --
-  # an item-cast effect (EasyRPG's own "item" guard in Skill::IsReflected) never
-  # reflects even against the identical warded target, and neither does a skill
+  # an item-cast effect (per the same EasyRPG-ported IsReflected "item" guard
+  # above, NOT independently confirmed against genuine RPG_RT under wine)
+  # never reflects even against the identical warded target, and neither
+  # does a skill
   # whose target starts on the *same* side as its caster (an ally/self-scoped
   # skill never legitimately reaches the opposing side to begin with).
   bare = Game::Battle.new([mage], [warded_foe], Game::Rng.new(1), states)
@@ -18107,8 +18188,10 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
 end
 
 check "battle: an all-enemy Skill's own reflect redirects the whole volley onto the caster's entire party" do
-  # EasyRPG's AlgorithmBase::ReflectTargets (game_battlealgorithm.cpp), for the
-  # `party_target` (all-enemies/all-allies scope) shape the single-target
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its AlgorithmBase::ReflectTargets
+  # (game_battlealgorithm.cpp), for the `party_target` (all-enemies/
+  # all-allies scope) shape the single-target
   # reflect fix's own comment names as a "materially different shape" left
   # unaddressed: `AddTargets(&source->GetParty(), true)` both adds every
   # member of the caster's own party as new targets *and* repoints the
@@ -18260,8 +18343,9 @@ end
 
 # 攻撃の回数 (weapon field 70's per-actor Battle Animation table, RPG2003
 # only): a basic Attack's swing count is now multiplied by
-# `Actor#weapon_attack_multiplier`, matching EasyRPG's `Algo::
-# GetNumberOfAttacks` (`cba[actor_id - 1].attacks + 1`). Previously
+# `Actor#weapon_attack_multiplier`, ported from EasyRPG Player's source
+# (NOT independently confirmed against genuine RPG_RT under wine): its
+# `Algo::GetNumberOfAttacks` (`cba[actor_id - 1].attacks + 1`). Previously
 # `Actor#strike_count` ported only the `dual_attack` term of that same
 # function, never reading `attack_times` at all (docs/TODO.md).
 check 'battle: RPG2003 攻撃の回数 multiplies a basic Attack\'s swing count' do
@@ -18291,9 +18375,11 @@ check 'battle: RPG2003 攻撃の回数 multiplies a basic Attack\'s swing count'
   eq 1, hero2000.strike_count, 'RPG2000: the same row is never consulted at all'
 
   # A two-weapon (#double_hand?) actor: each weapon's own multiplier scales
-  # only its own term before the two are summed -- EasyRPG's `Normal::Init`
-  # sums `GetNumberOfAttacks(WeaponPrimary) + GetNumberOfAttacks
-  # (WeaponSecondary)`, each already including its own `cba_hits`.
+  # only its own term before the two are summed -- ported from EasyRPG
+  # Player's source, NOT independently confirmed against genuine RPG_RT
+  # under wine: its `Normal::Init` sums `GetNumberOfAttacks(WeaponPrimary) +
+  # GetNumberOfAttacks(WeaponSecondary)`, each already including its own
+  # `cba_hits`.
   items2 = { 7 => fake_item(type: 1, atk: 5, animation_data: { 1 => FakeCbaRow.new(2) }), # 3 hits
              9 => fake_item(type: 1, atk: 5, dual_attack: true) } # 2 hits, no row
   db2 = FakeActorDB.new({ 1 => row }, [1], items2, {}, {}, nil, nil, rpg2003: true)
@@ -18304,7 +18390,8 @@ check 'battle: RPG2003 攻撃の回数 multiplies a basic Attack\'s swing count'
 end
 
 # 消費SP (weapon field 16): a basic Attack now spends the equipped weapon's
-# own SP cost, matching EasyRPG's `Normal::vStart`
+# own SP cost, ported from EasyRPG Player's source (NOT independently
+# confirmed against genuine RPG_RT under wine): its `Normal::vStart`
 # (`source->ChangeSp(-source->CalculateWeaponSpCost(weapon))`, unconditional
 # every action, hit or miss). Previously unwired entirely -- `Actor#half_sp_cost?`
 # only ever discounted a *skill's* SP, and no weapon-side accessor existed at
@@ -18511,8 +18598,10 @@ check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy 
 end
 
 check 'battle: 全体化 spreads a forced (confused) attack across the whole ally side too' do
-  # EasyRPG's Normal::vStart spreads across whichever side the already-
-  # resolved single target belongs to -- confusion resolves that target from
+  # Per the same EasyRPG-ported Normal::vStart reading above (NOT
+  # independently confirmed against genuine RPG_RT under wine), it spreads
+  # across whichever side the already-resolved single target belongs to --
+  # confusion resolves that target from
   # the attacker's own side, so a 全体化 weapon spreads across allies here,
   # the attacker included (AddTargets pushes the whole party with no
   # self-exclusion).
@@ -18602,8 +18691,10 @@ check 'battle: 強力防御 halves damage a second time' do
 end
 
 check 'MP消費半分 gear halves a fixed cost rounding up, a percent cost rounding down' do
-  # EasyRPG's Algo::CalcSkillCost rounds the two sp_type branches differently
-  # when half-cost gear is worn: a fixed cost gets a `+1` before halving (so
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Algo::CalcSkillCost rounds the two
+  # sp_type branches differently when half-cost gear is worn: a fixed cost
+  # gets a `+1` before halving (so
   # a 1-SP skill still costs 1), a percent cost gets no such `+1` and simply
   # floors. Applying one shared `(cost + 1) / 2` to whichever cost came out
   # (a prior version of this method) silently overcharged the percent branch
@@ -18802,9 +18893,11 @@ check 'Simulated Attack does not hard-cap damage the way a real battle-popup ' \
 end
 
 check "Simulated Attack's variance uses RPG_RT's real spread, not a coarser percent model" do
-  # EasyRPG's CommandSimulatedAttack rolls Algo::VarianceAdjustEffect(result,
-  # var) -- the exact same formula Game::Battle#varied already applies to a
-  # normal attack/skill/self-destruct's own damage. A prior version of this
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its CommandSimulatedAttack rolls
+  # Algo::VarianceAdjustEffect(result, var) -- the exact same formula
+  # Game::Battle#varied already applies to a normal attack/skill/
+  # self-destruct's own damage. A prior version of this
   # method modelled the spread as a flat +/-(var*5) *percent* of the base
   # instead (its own doc comment incorrectly attributed that to EasyRPG's
   # source): the two formulas' outer bounds happen to coincide (base +/-
@@ -19378,8 +19471,10 @@ end
 # -- the per-battler source: BattlePage checks at an action boundary -----------
 #
 # A per-battler check runs *for* a concrete battler -- the scene passes the
-# battle's #acting_battler. Port of EasyRPG's AreConditionsMet(source, ...):
-# the source gates turn_enemy/turn_actor (a page checked at one battler's turn
+# battle's #acting_battler. Ported from EasyRPG Player's source, NOT
+# independently confirmed against genuine RPG_RT under wine: its
+# AreConditionsMet(source, ...) has the source gate turn_enemy/turn_actor
+# (a page checked at one battler's turn
 # never fires off a different battler's counter) and command_actor (needs a
 # source at all, and that source must be the named actor, whose chosen command
 # is then compared against the condition).
@@ -19415,7 +19510,9 @@ check 'a turn_enemy / turn_actor condition is gated on the source being that bat
   eq true, BP.active?(econd, st.switches, st.variables, b2003, foe),
      'checked at the foe\'s own turn, its counter fires'
   # Checked at the hero's boundary (the hero is the source): the foe's
-  # counter must not answer -- EasyRPG's `if (source && source != enemy)`.
+  # counter must not answer -- per the same EasyRPG-ported AreConditionsMet
+  # reading above (NOT independently confirmed against genuine RPG_RT under
+  # wine): `if (source && source != enemy)`.
   eq false, BP.active?(econd, st.switches, st.variables, b2003, hero),
      'checked at a different battler\'s turn, the foe\'s counter does not fire'
 
@@ -19520,10 +19617,12 @@ check 'Battle#fatigue weights HP two thirds and SP one third' do
 end
 
 check 'Battle#fatigue rounds an exact tie to even, not always up' do
-  # EasyRPG's Utils::RoundTo<int> is std::lrint under the default IEEE 754
-  # FE_TONEAREST mode -- round-half-to-*even*, not round-half-up. max_hp 16,
-  # hp 3, no SP (total_sp forced to 1) computes exactly 12.5 before rounding:
-  # EasyRPG rounds to 12 (already even), landing fatigue at 88, not 87.
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Utils::RoundTo<int> is std::lrint under
+  # the default IEEE 754 FE_TONEAREST mode -- round-half-to-*even*, not
+  # round-half-up. max_hp 16, hp 3, no SP (total_sp forced to 1) computes
+  # exactly 12.5 before rounding: it rounds to 12 (already even), landing
+  # fatigue at 88, not 87.
   tied = combatant('Hero', 10, 0, 10, 16)
   tied.hp = 3
   b = Game::Battle.new([tied], [combatant('Slime', 5, 0, 5, 10)], Game::Rng.new(1))
@@ -20032,8 +20131,10 @@ end
 
 # `Game::Battle#deal_attack` mutates a Combatant's hp directly (`target.hp
 # -= dmg`) with no matching `#inflict_state(target, DEATH_ID)` call, unlike
-# EasyRPG's own `Game_Battler::ChangeHp` (which folds `AddState(kDeathID)`
-# into every HP-zeroing path) -- so `#dead?`, an explicit HP check, has to
+# EasyRPG Player's own `Game_Battler::ChangeHp` (which folds
+# `AddState(kDeathID)` into every HP-zeroing path -- ported from that
+# source, NOT independently confirmed against genuine RPG_RT under wine) --
+# so `#dead?`, an explicit HP check, has to
 # be tested alongside the do-nothing-restriction scan in
 # `#battle_actor_condition`/`#battle_enemy_condition` rather than assumed
 # subsumed by it the way it safely is for `Game::Actor` (whose own
@@ -20692,8 +20793,10 @@ end
 
 check 'a charged enemy is forced to a single Attack even when its pattern ' \
       'would otherwise choose Attack Twice' do
-  # EasyRPG's EnemyAi::SetStateRestrictedAction forces a hardcoded
-  # MakeAttack(source, 1) while charged -- a fixed one-hit repeat count, not
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its EnemyAi::SetStateRestrictedAction forces
+  # a hardcoded MakeAttack(source, 1) while charged -- a fixed one-hit
+  # repeat count, not
   # whatever #enemy.GetEnemyAi() would have picked -- so a charged enemy
   # can never reach a genuine "Attack Twice" pattern action either, the same
   # way it can never reach Defend (see the check above). A dual attack
@@ -20745,8 +20848,10 @@ check 'an escaping enemy leaves the fight without counting as a kill' do
 end
 
 check 'self-destruction hits the party for atk - def/2 and hides the caster, ' \
-      'not kills it (2000_battle_bot / デフォ戦bot trivia, verified against ' \
-      'EasyRPG: Game_BattleAlgorithm::SelfDestruct::vExecute sets the ' \
+      'not kills it (2000_battle_bot / デフォ戦bot trivia; the specific ' \
+      'mechanism is ported from EasyRPG Player\'s source, NOT independently ' \
+      'confirmed against genuine RPG_RT under wine: ' \
+      'Game_BattleAlgorithm::SelfDestruct::vExecute sets the ' \
       'affected HP on the target only, and ApplyCustomEffect reacts to the ' \
       'caster with SetHidden(true) alone, no HP write)' do
   hero = combatant('Hero', 40, 10, 20, 500)
@@ -21178,8 +21283,10 @@ check 'Game::Actor#force_ai? reads the row (or its RPG2003 class) exactly like #
   ok !st.party.actor_by_id(2).force_ai?, 'an unflagged actor reads false'
 end
 
-# Ports EasyRPG's `Algo::CalcSkillCost` edition gate (`Player::IsRPG2k3() &&
-# skill.sp_type == SpType_percent`), reached via `CalcSkillCostAutoBattle`'s
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Algo::CalcSkillCost` edition gate
+# (`Player::IsRPG2k3() && skill.sp_type == SpType_percent`), reached via
+# `CalcSkillCostAutoBattle`'s
 # own `emulate_bugs: true` path (`AutoBattle::RpgRtCompat` always calls it
 # that way) -- the exact same gate `Game::Party#skill_cost` already applies
 # for the SP actually charged once the action is queued. Without it, a stray
@@ -21320,9 +21427,11 @@ check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with 
 end
 
 check 'battle: a Forced-AI actor revives a downed ally instead of attacking' do
-  # The "downed target" half of #auto_battle_heal_rank (EasyRPG's
-  # CalcSkillHealAutoBattleTargetRank checking skill.state_effects[0], state
-  # id 1 == Game::Actor::DEATH_STATE) -- its own `power/1000.0 + 1.0` rank
+  # The "downed target" half of #auto_battle_heal_rank -- ported from
+  # EasyRPG Player's source, NOT independently confirmed against genuine
+  # RPG_RT under wine: its CalcSkillHealAutoBattleTargetRank checks
+  # skill.state_effects[0], state id 1 == Game::Actor::DEATH_STATE -- its
+  # own `power/1000.0 + 1.0` rank
   # has no cost penalty or cap, so a revive skill with any real `power` value
   # comfortably clears an ordinary Attack's own ranking ceiling (well under
   # 2.0 even at its own best-case jitter roll) regardless of seed.
@@ -21585,9 +21694,11 @@ end
 # -- field Teleport/Escape access resolution (map tree fields 31, 32) --------
 #
 # The identical tri-state walk as Save above (field 33), just read off a
-# different pair of fields -- confirmed against EasyRPG's Game_Map::Setup,
-# which re-derives Game_System::AllowTeleport/AllowEscape from these two
-# fields on every map load exactly as it does AllowSave. Since #allowed? is
+# different pair of fields -- ported from EasyRPG Player's source, NOT
+# independently confirmed against genuine RPG_RT under wine: its
+# Game_Map::Setup re-derives Game_System::AllowTeleport/AllowEscape from
+# these two fields on every map load exactly as it does AllowSave. Since
+# #allowed? is
 # shared with #save_allowed? and its walk (inherit, loop, unknown map, root,
 # a field-less node) is already exhaustively covered above, these checks only
 # have to show each method reads its own field rather than borrowing #save's.
@@ -21749,9 +21860,10 @@ end
 # The critical-hit line is a bare term with no battler name in front — unlike
 # every predicate above, it stands alone the same way `using_message2` does —
 # and which term speaks is keyed on the *target* taking the crit, matching
-# `actor_damaged` / `enemy_damaged`'s own side rule (EasyRPG's
-# GetCriticalHitMessage: `target.GetType() == Type_Ally ? actor_critical :
-# enemy_critical`), not on which side dealt the blow.
+# `actor_damaged` / `enemy_damaged`'s own side rule -- ported from EasyRPG
+# Player's source, NOT independently confirmed against genuine RPG_RT under
+# wine: its GetCriticalHitMessage is `target.GetType() == Type_Ally ?
+# actor_critical : enemy_critical`, not on which side dealt the blow.
 check 'a critical-hit line is the bare term, keyed on the target taking it' do
   t = fake_terms
   eq '会心の一撃！！', BT.critical(t, true), 'a party member took the crit'
@@ -22138,8 +22250,10 @@ check 'equipping from the bag returns the emptied hand to the bag' do
   eq 0, st.party.item_count(2)
 end
 
-# Restoring a saved loadout is not an equip action: RPG_RT stores what it stores,
-# and EasyRPG enforces the rule only in ChangeEquipment.
+# Restoring a saved loadout is not an equip action: RPG_RT stores what it
+# stores, and EasyRPG Player's source enforces the rule only in
+# ChangeEquipment (ported from that source, NOT independently confirmed
+# against genuine RPG_RT under wine).
 check 'a bulk equip restores a saved pair as-is' do
   st = two_handed_party
   hero = st.party.actor_by_id(1)
@@ -22379,7 +22493,8 @@ check "battle: an RPG2003 two-weapon actor's swing on a genuine 0%-hit " \
   # covers (see "a weapon with its own genuine 0% hit rate is used as-is,
   # not treated as unequipped" above), now for the per-swing #swing_weapon_
   # data/#weapon_roll_data path a two-weapon RPG2003 actor's second swing
-  # goes through. Confirmed against the same EasyRPG source: `Game_Actor::
+  # goes through. Per the same EasyRPG-ported source cited above (NOT
+  # independently confirmed against genuine RPG_RT under wine): `Game_Actor::
   # GetHitChance`'s `ForEachEquipment<true,false>(..., weapon)` call visits
   # exactly one slot for a single-weapon query, so `hit = std::max(INT_MIN,
   # item.hit) == item.hit` verbatim -- the `INT_MIN` fallback to 90 only
@@ -22412,8 +22527,9 @@ check 'battle: #swing actually lands three attacks when strike_count is three, '
   # then a second only if strike_count >= 2) -- a limit that happened to
   # match every *previous* strike_count value (1 or 2, #dual_attack?'s own
   # binary range), so it went unnoticed until a two-weapon actor with one
-  # dual_attack weapon could report 3 (or 4). EasyRPG's own SetRepeat takes
-  # the summed hit count as-is, with no such cap.
+  # dual_attack weapon could report 3 (or 4). Ported from EasyRPG Player's
+  # source, NOT independently confirmed against genuine RPG_RT under wine:
+  # its own SetRepeat takes the summed hit count as-is, with no such cap.
   items = { 1 => fake_item(type: 1, atk: 5, hit: 100, dual_attack: true), # 2 swings
             2 => fake_item(type: 1, atk: 5, hit: 100) }                  # 1 swing
   row = FakePlayerRow.new('Hero', '', 0, 5,
@@ -22522,9 +22638,11 @@ end
 
 # -- 装備固定 actors (equipment_fixed) -----------------------------------------
 # An actor (or RPG2003 class) trait meaning the field cannot change their
-# equipment at all. EasyRPG gates this at the equip *scene* -- confirming a
-# slot refuses to even open the item list for such an actor -- rather than in
-# Game_Actor::ChangeEquipment or Game_Party's bag-swapping helpers, which
+# equipment at all. Ported from EasyRPG Player's source, NOT independently
+# confirmed against genuine RPG_RT under wine: it gates this at the equip
+# *scene* -- a slot refuses to even open the item list for such an actor --
+# rather than in Game_Actor::ChangeEquipment or Game_Party's bag-swapping
+# helpers, which
 # neither check it (a Change Equipment event command, unlike the menu, is not
 # gated by this at all). So Game::Party's own equip API stays usable here on
 # purpose; #equipment_fixed? exists for Scene::EquipMenu to read before
@@ -22561,8 +22679,10 @@ check 'equipment_fixed? does not itself block Party#equip_from_bag / #unequip_to
 end
 
 # -- 呪い states lock equipment too (Actor#equipment_fixed?/#state_cursed?) ---
-# The RPG2003 state field EasyRPG's own `IsEquipmentFixed(true)` folds into the
-# same predicate as the row's `equipment_fixed` trait -- see the fuller
+# The RPG2003 state field folds into the same predicate as the row's
+# `equipment_fixed` trait -- ported from EasyRPG Player's own
+# `IsEquipmentFixed(true)`, NOT independently confirmed against genuine
+# RPG_RT under wine -- see the fuller
 # writeup at #equipment_fixed? above. Distinct from #slot_cursed? (a property
 # of the *item*, checked further below): this one is a property of whatever
 # states the actor currently carries, so it comes and goes with the state

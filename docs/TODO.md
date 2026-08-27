@@ -6643,6 +6643,126 @@ The work below is roughly ordered by the critical path to a walkable game
   formally close this out, that re-read plus a scripted multi-line-window
   scan of `game.rb` (rather than this cycle's manual read-through) would be
   the way to get a provable rather than believed-complete result.
+  ✅ **Follow-up (cycle #189, 2026-08-27): the line-by-line re-read of
+  `rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` cycle #188 flagged as never
+  having happened since cycle #185.** Explicitly a lighter-weight cycle -- no
+  wine/Xvfb, comment editing only. **Method:** read both files in full,
+  section by section, specifically hunting cycle #188's own split-citation
+  shape (an EasyRPG class/method name on one comment line, a `src/*.cpp|h`
+  file path on a different line) plus any other undisclosed-citation shape a
+  human read could catch that the grep patterns from cycles #174-188 could
+  not (a bare filename with no `src/` prefix, a filename glob like
+  `scene_battle*.cpp`, or simply "EasyRPG's `Foo::Bar` does X" stated as fact
+  with no disclaimer anywhere in the same check). A scripted pass (group the
+  file into per-`check`-block sections including each block's own leading
+  comment, flag any section mentioning EasyRPG with no disclaimer phrase
+  anywhere in it) narrowed several thousand lines down to roughly 90
+  candidates per file, each then read by hand in context to separate genuine
+  violations from false positives (a disclaimer phrased differently than "NOT
+  independently confirmed", e.g. "Independently re-verified under wine" or a
+  hyphenated "not-independently-confirmed"; a citation deferring to another
+  spot in `mrblib/game.rb` or `mrblib/scene/map.rb` that was checked and
+  does carry its own honest disclosure; a benign self-consistency check like
+  "matches EasyRPG CheckTurns/DrawNumberSystem2 exactly" that ports a literal
+  transcription of an EasyRPG algorithm and tests the Ruby port against that
+  transcription, never claiming RPG_RT confirmation; a historical-correction
+  paragraph that already says the EasyRPG-sourced claim does not match
+  genuine RPG_RT; or independent evidence -- genuine wine confirmation, a
+  citation to this codebase's own already-disclosed comment, or community
+  デフォ戦bot/2000_battle_bot/yado.tk trivia -- already present, which was kept
+  while only the illegitimate EasyRPG-source framing was dropped).
+  **Found and fixed, `rpg2k_logic_check.rb` (69 edited spots):** the exact
+  cycle-#188 split-line shape did turn up (`Scene_Battle::EndBattle`'s class
+  name on one comment line, `` `src/\n  # scene_battle.cpp`` `` split onto the
+  next, in `rpg2k_scene_check.rb` -- see below), but this file's own
+  dominant miss was different and larger: dozens of "EasyRPG's `Foo::Bar`
+  does X" / "ported from EasyRPG's `Foo::Bar`" statements presented as flat
+  behavioral fact with no disclaimer anywhere nearby, several using the
+  outright illegitimate "**Confirmed against EasyRPG's** ..." / "**Verified
+  against RPG_RT's actual behavior via EasyRPG Player's own C++ source**"
+  framing cycle #188 flagged as the most serious violation shape (e.g. the
+  airship-boarding-facing check's "fetched live" framing, which also
+  presented an EasyRPG source comment's own claim -- "RPG_RT ignores the
+  lock\_facing flag here!" -- as if it were this codebase's own verified
+  finding; the self-destruction-basic-action check's "verified against
+  EasyRPG" title; several "class\_set is ignored"/"Row case"/"crit-chance
+  truncation"/"escape-chance rounding"/"weapon-swing count" battle-math
+  paragraphs). Every one rewritten to the established "ported from EasyRPG
+  Player's source, NOT independently confirmed against genuine RPG_RT under
+  wine" framing, preserving the technical description and any independent
+  evidence already present (e.g. the self-destruct check kept its
+  2000\_battle\_bot/デフォ戦bot trivia and only lost the "verified against
+  EasyRPG" wrapper). **Found and fixed, `rpg2k_scene_check.rb` (67 edited spots):**
+  the same "confirmed/verified against EasyRPG" and bare undisclosed-citation
+  shapes throughout the battle scene, menu, equip, and field-map sections,
+  plus three genuine split/evasion shapes the prior file-path grep could
+  never have caught: `Scene_Battle::EndBattle`'s citation split exactly like
+  cycle #188's `game.rb` finds (class name one line, `` `src/\n  #
+  scene_battle.cpp`` `` the next); two bare filenames with no `src/` prefix
+  at all (`` `Game_Battler::EvadesAllPhysicalAttacks (game_battler.cpp)` ``
+  and `` `Skill::IsReflected (game_battlealgorithm.cpp)` ``, both inside
+  `rpg2k_logic_check.rb`); and a glob-style reference (`` `src/
+  scene_battle*.cpp` ``) that a literal-path regex can never match. Also
+  corrected two mislabelling shapes cycle #188 specifically warned about --
+  citing "RPG\_RT's own `GetParameterChangeMessage`/`GetAttributeShiftMessage`"
+  when those are EasyRPG's own function names, and "confirmed against
+  EasyRPG's" phrasing on several Scene\_Menu/Scene\_Equip/Scene\_Skill
+  checks -- to the honest "ported from ..., NOT independently confirmed"
+  framing throughout. Left two citations pointing at `mruby-rpg2k/mrblib/
+  scene/map.rb` doc comments (`#hold_animation_screen_flash`/
+  `#hold_animation_target_flash`) that themselves still read as
+  "corroborated independently against EasyRPG's own C++ source" with no
+  disclaimer of their own -- `scene_check.rb`'s own two citing comments were
+  rewritten to disclose honestly regardless, but `scene/map.rb` itself is
+  out of this cycle's scope (only `scripts/rpg2k_logic_check.rb`/
+  `rpg2k_scene_check.rb` were assigned) and still needs its own pass.
+  **`mruby-rpg2k/mrblib/interpreter.rb` spot-check:** re-read with the same
+  scripted narrowing (100 EasyRPG mentions total, 6 candidates after
+  filtering); all 6 already read as honest on inspection -- two used a
+  hyphenated "ported-from-EasyRPG, not-independently-confirmed" disclaimer
+  the regex's exact-phrase match missed, one is a `~~struck-through~~`
+  historical correction immediately followed by a lengthy genuine
+  RPG\_RT.exe-under-wine confirmation (cycle #181's Teleport facing-parameter
+  splice, run against two distinct genuine binaries), and one is a design-
+  rationale analogy ("like EasyRPG on a platform whose window cannot change
+  mode") with no RPG\_RT behavioral claim at all. Confirms cycles #177/#186's
+  "already honest" assessment still holds; **no edits made** to this file.
+  **Verification:** `ruby -c` clean on both edited files. Comment-only,
+  checked per file with `git diff -- <file> | grep -E '^[+-]' | grep -vE
+  '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: for `rpg2k_logic_check.rb`, only 3 rewritten
+  check-title strings ever showed (never an assertion line); for
+  `rpg2k_scene_check.rb`, only 6 rewritten check-title/assertion-message
+  strings showed. Before/after check counts, both matching the pre-cycle
+  baselines this cycle confirmed first: `rpg2k_logic_check.rb` 1163 checks
+  passed, `rpg2k_scene_check.rb` 929 checks passed, identical before and
+  after every edit. `cd build && ctest -R mruby_test` passed (7.90s). No
+  wine/Xvfb/matchbox process started this cycle, no save file touched. No
+  changelog fragment: comment-only documentation work, not a behavioral fix.
+  **Is the sweep complete now?** For these two files specifically: believed
+  complete under both the file-path grep and a full manual read for
+  undisclosed/mislabelled EasyRPG citations -- this cycle read every line of
+  both files, not just the post-narrowing candidate set (the candidate
+  narrowing was cross-checked, not solely relied on). What is **not**
+  provably complete: (1) `mruby-rpg2k/mrblib/scene/map.rb`, newly identified
+  above as carrying at least two "corroborated independently against
+  EasyRPG's own C++ source" citations with no disclaimer of their own --
+  never in scope for any prior citation-hygiene cycle and not fixed here
+  either, since this cycle's assignment was the two `scripts/*.rb` files;
+  (2) `mruby-rpg2k/mrblib/game.rb` itself, ~16,600 lines, cycle #188's own
+  closing note already flagged as not exhaustively provable and untouched
+  this cycle; (3) the handful of `scripts/*.rb` files with a low EasyRPG
+  count that no cycle has re-read line-by-line since cycle #187's blanket
+  sweep (only spot-checked there, not read in full); and (4) this cycle's own
+  scripted narrowing heuristic (disclaimer-phrase-anywhere-in-the-same-
+  `check`-block) is itself an approximation -- a disclaimer worded
+  unusually enough to dodge the regex *and* missed by this cycle's own manual
+  read remains a theoretical gap, though the full manual read of both files
+  makes that considerably less likely than after cycles #185/#187's
+  narrower automated passes alone. Net assessment: the two largest,
+  longest-unread files in the sweep are now the most thoroughly checked, and
+  the specific cycle-#188 blind spot (a citation split across lines) is
+  confirmed either absent or fixed in both.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
