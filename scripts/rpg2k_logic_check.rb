@@ -5480,8 +5480,9 @@ check 'Party#reorder applies a picked front-to-back permutation, ' \
       'and can change the leader' do
   # RPG2003's Order menu command -- see Scene::Order (mruby-rpg2k/mrblib/
   # scene/order.rb), which builds exactly this kind of permutation one pick
-  # at a time and hands it to #reorder. Confirmed against EasyRPG's own
-  # `Scene_Order::Confirm`, which has the same net effect (remove every
+  # at a time and hands it to #reorder. Per EasyRPG Player's source (NOT
+  # independently confirmed against genuine RPG_RT under wine), its
+  # `Scene_Order::Confirm` has the same net effect (remove every
   # member, then re-add them in the picked order).
   players = (1..4).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
   db = FakeActorDB.new(players, [1, 2, 3, 4])
@@ -12530,8 +12531,9 @@ check 'a random encounter reports and skips a missing troop id without arming th
   eq :battle, it.wait_kind
 end
 
-# Ports EasyRPG's own `Game_Battle::HasDeathHandler`/
-# `GetDeathHandlerCommonEvent`/`GetDeathHandlerTeleport` (src/game_battle.cpp):
+# Ported from EasyRPG Player's source (its HasDeathHandler/
+# GetDeathHandlerCommonEvent/GetDeathHandlerTeleport equivalents), NOT
+# independently confirmed against genuine RPG_RT under wine:
 # `Player::IsRPG2k3() && db.death_handler` gates all three. A scripted Battle
 # Processing command's own [Defeat] handler (`defeat_game_over: cmd.param(4)
 # == 0`, above) is unaffected either way -- this only changes a *random*
@@ -12619,11 +12621,11 @@ def combatant_mp(name, atk, dfn, agi, hp, mp)
   c
 end
 
-# The Actor-side checks above cover the field-side prune/cure paths; every
-# `Game_BattleAlgorithm` subclass's own state mutation
-# (src/game_battlealgorithm.cpp) threads the identical
-# `target->GetPermanentStates()` into every in-battle `State::Add`/
-# `State::Remove` too -- `Game::Battle#inflict_state`/`#cure_state` had no
+# The Actor-side checks above cover the field-side prune/cure paths; ported
+# from EasyRPG Player's source (every `Game_BattleAlgorithm` subclass's own
+# state mutation threads the identical `target->GetPermanentStates()` into
+# every in-battle State::Add/State::Remove too), NOT independently confirmed
+# against genuine RPG_RT under wine -- `Game::Battle#inflict_state`/`#cure_state` had no
 # such wiring at all, so the exact same cursed state that already survived
 # a lethal hit and resisted Full Recovery on the field could still be
 # stripped by a lethal in-battle hit, or cured outright by a curative
@@ -12759,9 +12761,10 @@ check 'to_lsd/from_lsd round-trips a live Change Encounter Rate override ' \
   # Real RPG_RT's SaveMapInfo.encounter_steps (liblcf generator/csv/
   # fields.csv: `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`) restores a
   # Save/Continue on the same map to whatever Change Encounter Rate (11740)
-  # had overridden -- Game_Map::PrepareSave/SetEncounterSteps
-  # (src/game_map.cpp) confirmed directly against EasyRPG's own live source;
-  # #to_lsd/.from_lsd previously never touched field 3 at all, so the
+  # had overridden -- Game_Map::PrepareSave/SetEncounterSteps, ported from
+  # EasyRPG Player's source and NOT independently confirmed against genuine
+  # RPG_RT under wine (the field id/type above is the independently-verified
+  # part, from liblcf's own schema); #to_lsd/.from_lsd previously never touched field 3 at all, so the
   # override silently reverted to the map's own default the moment a real
   # save was reloaded.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
@@ -12797,8 +12800,10 @@ check 'to_lsd/from_lsd round-trips a live Change Parallax Background ' \
   # parallax_name,f,String,0x20,...` through `...,parallax_vert_speed,f,
   # Int32,0x26,...`) restore a Save/Continue on the same map to whatever
   # Change Parallax Background (11720) had overridden --
-  # Game_Map::Parallax::ChangeBG/GetParallaxParams (src/game_map.cpp)
-  # confirmed directly against EasyRPG's own live source, the same `map_info`
+  # Game_Map::Parallax::ChangeBG/GetParallaxParams, ported from EasyRPG
+  # Player's source and NOT independently confirmed against genuine RPG_RT
+  # under wine (the field ids/types above are the independently-verified
+  # part, from liblcf's own schema); the same `map_info`
   # struct `SetupFromSave` restores wholesale before ChangeBG re-derives the
   # live panorama from it. #to_lsd/.from_lsd previously never touched these
   # fields at all, so the override silently reverted to the map's own
@@ -12834,10 +12839,11 @@ end
 
 check 'to_lsd/from_lsd round-trips Set Teleport Target / Set Escape Target ' \
       '(chunk 110)' do
-  # Confirmed directly against RPG_RT's live source: `Scene_Save::Prepare`/
-  # `Player::LoadSavegame` (`src/scene_save.cpp`/`src/player.cpp`) round-trip
-  # `save.targets` via `Game_Targets::GetSaveData`/`SetSaveData`
-  # (`src/game_targets.cpp`) unconditionally on every save -- the escape
+  # Ported from EasyRPG Player's source (`Scene_Save::Prepare`/
+  # `Player::LoadSavegame` round-trip `save.targets` via
+  # `Game_Targets::GetSaveData`/`SetSaveData`), NOT independently confirmed
+  # against genuine RPG_RT under wine -- claimed to round-trip
+  # unconditionally on every save -- the escape
   # target always at array id 0, every teleport target keyed by its own
   # destination map id. #to_lsd/.from_lsd previously never touched chunk 110
   # at all (only this engine's own portable Marshal save round-tripped these
@@ -13028,8 +13034,9 @@ check "an enemy's own missing state-rank entry defaults to B (80%), an actor's t
   eq 100, bat.send(:state_susceptibility, slime, 2), "state 2 is explicitly rank A (100%) for the enemy too"
 end
 
-# Ports EasyRPG's `Game_Actor::GetStateProbability` (src/game_actor.cpp): a
-# shield/armor/helmet/accessory that flags a state in its own `state_set`
+# Ported from EasyRPG Player's source (its Game_Actor::GetStateProbability
+# equivalent), NOT independently confirmed against genuine RPG_RT under
+# wine: a shield/armor/helmet/accessory that flags a state in its own `state_set`
 # resists it landing at all, by `100 - state_chance` percent, on top of the
 # target's A-E rank. `Game_Enemy::GetStateProbability` never scans equipment
 # at all (monsters equip nothing), so only an ally is affected.
@@ -13182,10 +13189,11 @@ check 'battle: a crit chance is paid out at the rate it states' do
      "a 1-in-20 chance crit #{crits} times in #{trials}, wanted about #{want.round}"
 end
 
-check 'battle: critical? draws from the RNG even at an exact 0% crit chance, matching RPG_RT (2026-08-18)' do
-  # EasyRPG's Rand::PercentChance(crit_chance) rolls unconditionally, even
-  # when crit_chance is exactly 0 -- Game_BattleAlgorithm's vExecute call
-  # sites (src/game_battlealgorithm.cpp, both the basic-attack and skill
+check 'battle: critical? draws from the RNG even at an exact 0% crit chance, per EasyRPG Player (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)' do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Rand::PercentChance(crit_chance) rolls
+  # unconditionally, even when crit_chance is exactly 0 -- its
+  # Game_BattleAlgorithm's vExecute call sites (both the basic-attack and skill
   # ones) carry no `crit_chance > 0` guard around the roll. So a battler with
   # no crit ability at all (the common case: most enemies, and any actor
   # before equipping a crit-capable weapon) still burns one draw from the
@@ -13371,8 +13379,9 @@ end
 
 # ランダムに出現 (Appear Randomly, chunk 15 field 6): parsed but never read
 # before this fix -- every troop with the box checked behaved exactly like
-# one without it. Ports EasyRPG's actual C++ source, `Game_EnemyParty
-# ::ResetBattle` (src/game_enemyparty.cpp): a per-member
+# one without it. Ported from EasyRPG Player's source (its
+# `Game_EnemyParty::ResetBattle` equivalent), NOT independently confirmed
+# against genuine RPG_RT under wine: a per-member
 # `Rand::PercentChance(40)` roll in member order, stopping the instant only
 # one member is left visible.
 AppearRandomRow = Struct.new(:name, :members, :appear_randomly)
@@ -13668,8 +13677,9 @@ check 'battle: two attributes of the same type keep the strongest rate, not mult
   eq 40, bat.step_action[:damage] # base 20 * 200%, not 200% * 200%
 end
 
-check 'battle: RPG2000 drops a negative-rate attribute instead of healing (yado.tk / ' \
-     'EasyRPG src/attribute.cpp)' do
+check 'battle: RPG2000 drops a negative-rate attribute instead of healing (yado.tk; ' \
+     'ported from EasyRPG Player\'s source, NOT independently confirmed against ' \
+     'genuine RPG_RT under wine)' do
   # Rank E (index 4) set to a deliberate -100% -- a plain signed database
   # field, not something the editor forbids.
   props = { 1 => RateRow.new(200, 150, 100, 50, -100, 0) } # weapon-type
@@ -13797,8 +13807,9 @@ end
    eq 90, c[:chance]                            # no agility term, just skill.hit
  end
 
- # 3 (Switch): EasyRPG's `Game_BattleAlgorithm::Skill::vExecute`
- # (`src/game_battlealgorithm.cpp`) special-cases a switch skill before any of
+ # 3 (Switch): per EasyRPG Player's source (NOT independently confirmed
+ # against genuine RPG_RT under wine), its `Game_BattleAlgorithm::Skill::vExecute`
+ # special-cases a switch skill before any of
  # the ordinary hit/damage/state logic -- `SetAffectedSwitch(skill.switch_id);
  # return SetIsSuccess();` -- so casting one in a fight, exactly like on the
  # field (`#cast_switch_skill`), only ever spends its SP and flips its switch.
@@ -14102,10 +14113,11 @@ check 'Battle#first_strike? is true only for the opening ambush round, ' \
   # `@rounds` is 0 for the whole of round 1's command phase (before
   # #begin_round has ever run -- Scene::Battle only calls it once every
   # actor already has a command, including a possible Escape) and 1 or
-  # higher for every round after, mirroring EasyRPG's own `first_strike`
-  # flag: set for the whole of round 1 and cleared right before round 2's
+  # higher for every round after, mirroring EasyRPG Player's own `first_strike`
+  # flag (NOT independently confirmed against genuine RPG_RT under wine):
+  # set for the whole of round 1 and cleared right before round 2's
   # command phase opens (`Scene_Battle_Rpg2k::ProcessSceneActionOption`'s
-  # `ePost` substate, src/scene_battle_rpg2k.cpp).
+  # `ePost` substate).
   hero = combatant('Hero', 40, 0, 5, 100)
   foe = combatant('Slime', 30, 0, 20, 100)
   fs = Game::Battle.new([hero], [foe], Game::Rng.new(1), nil, false, false, false, true)
@@ -14433,12 +14445,13 @@ end
 # -- RPG2003 battle combo (Enable Combo / 1007) --------------------------------
 #
 # A combo armed by Enable Combo (event 1007) makes the named battle command hit
-# `multiple` times. Port of EasyRPG's ProcessBattleActionCombo
-# (src/scene_battle_rpg2k3.cpp): the armed combo applies only when `command_id`
+# `multiple` times. Ported from EasyRPG Player's source (its
+# ProcessBattleActionCombo), NOT independently confirmed against genuine
+# RPG_RT under wine: the armed combo applies only when `command_id`
 # is the command the actor actually chose this turn (Combatant#last_battle_action,
 # recorded by the scene's #select_battle_command) and only to attack / skill /
-# subskill commands -- never Defend, Item or Escape. Like EasyRPG the combo is
-# not decremented by a use; it stays armed for the whole fight.
+# subskill commands -- never Defend, Item or Escape. Like that reference the
+# combo is not decremented by a use; it stays armed for the whole fight.
 
 # A party whose battle-commands table carries the fixed four (attack 1, skill
 # 2, defend 3, item 4 -- EasyRPG's GetDefaultBattleCommands ids) so a combo's
@@ -14557,14 +14570,12 @@ end
 
 check 'battle_skill_command carries the skill elemental attributes on its heal branch too, ' \
      'and a target that partly resists them heals for less than the raw base' do
-  # EasyRPG's `Algo::CalcSkillEffect` runs `Attribute::
-  # ApplyAttributeSkillMultiplier` unconditionally -- no heal-vs-damage branch
-  # gates it -- so a healing skill tagged with an elemental attribute (a real
-  # RPG2000/2003 database trick: tag a heal with a custom attribute and set a
+  # No heal-vs-damage branch gates the elemental-attribute multiplier -- so a
+  # healing skill tagged with an elemental attribute (a real RPG2000/2003
+  # database trick: tag a heal with a custom attribute and set a
   # character's own resistance to it to make them harder/easier to heal) scales
   # its recovery by the target's resistance exactly like an attack skill's own
-  # `attributes:` already does. Verified directly against EasyRPG Player's
-  # `src/algo.cpp` and independently by @2000_battle_bot/デフォ戦bot trivia.
+  # `attributes:` already does, per @2000_battle_bot/デフォ戦bot trivia.
   skills = { 8 => fake_skill(name: 'Cure', scope: 3, power: 30, hp: true,
                              attribute_effects: [false, false, true]) } # element 3
   st = skill_party(skills)
@@ -14698,8 +14709,10 @@ check 'Battle: a defending ally takes half damage and does not attack' do
   eq 90, hero.hp, 'took half of 20 = 10'
 end
 
-check "battle: defend-halving carries no floor of its own, matching RPG_RT's AdjustDamageForDefend (2026-08-18)" do
-  # EasyRPG's AdjustDamageForDefend (src/algo.cpp) is a bare `dmg /= 2` (twice
+check "battle: defend-halving carries no floor of its own, per EasyRPG Player's " \
+      "AdjustDamageForDefend (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)" do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its AdjustDamageForDefend is a bare `dmg /= 2` (twice
   # for strong defence), with no std::max of any kind -- unlike the base
   # damage formula's own std::max(0, atk/2 - def/4) floor (already correctly
   # ported as Battle.attack_damage's own 0 floor). A defending target facing
@@ -14794,10 +14807,10 @@ check 'Battle#apply_to_party zeroes the active-time gauge for an ally who ended 
   eq 0, ally.atb_gauge, 'a knocked-out ally does not carry a charge into the next fight'
 end
 
-# Confirmed against EasyRPG's actual C++ source, fetched live:
-# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) is
-# `if (state_id == kDeathID) { SetAtbGauge(0); SetHp(0); ... }`, fired the
-# instant Death lands -- and `Game_Battler::ChangeHp` calls
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Battler::AddState`'s Knockout branch
+# is `if (state_id == kDeathID) { SetAtbGauge(0); SetHp(0); ... }`, fired the
+# instant Death lands -- and its `Game_Battler::ChangeHp` calls
 # `AddState(kDeathID, true)` itself the moment `new_hp <= 0`, so *every*
 # ordinary lethal hit zeroes the gauge mid-fight, not merely once the
 # fight ends (the already-fixed `Battle#apply_to_party` cross-*battle*
@@ -14805,7 +14818,7 @@ end
 # this, an ally charged to near-full gauge who dies and is then revived
 # by an ordinary Full Heal/revival item within the same fight would
 # resume acting from that stale pre-death charge instead of empty, like
-# anyone else newly readying up -- a real, exploitable pacing difference
+# anyone else newly readying up -- a plausible, exploitable pacing difference
 # in any RPG2003 project using the Gauge battle system.
 check "a lethal attack zeroes the target's active-time gauge immediately, not " \
       'merely once the fight ends' do
@@ -14819,17 +14832,18 @@ check "a lethal attack zeroes the target's active-time gauge immediately, not " 
 
   # An ordinary revival effect (a Full Heal/revival item raising HP back
   # above 0) does not restore the stale pre-death charge -- nothing
-  # recharges a dead battler's gauge in between, matching real RPG_RT,
-  # which never re-zeroes on revival because it was already zeroed the
-  # moment death landed.
+  # recharges a dead battler's gauge in between (per EasyRPG Player's source,
+  # NOT independently confirmed against genuine RPG_RT under wine, which never
+  # re-zeroes on revival because it was already zeroed the moment death
+  # landed).
   foe.hp = 10
   ok !foe.dead?, 'revived'
   eq 0, foe.gauge, 'revival does not restore the pre-death charge'
 end
 
-# Confirmed against EasyRPG's actual C++ source, fetched live:
-# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) also
-# resets `SetAtkModifier(0)`/`SetDefModifier(0)`/`SetSpiModifier(0)`/
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Battler::AddState`'s Knockout branch
+# also resets `SetAtkModifier(0)`/`SetDefModifier(0)`/`SetSpiModifier(0)`/
 # `SetAgiModifier(0)` and clears `attribute_shift` the instant Death
 # lands -- the exact same branch the gauge check just above already
 # proved this codebase now honours for `#gauge`, but the fix that added
@@ -14839,9 +14853,10 @@ end
 # #apply_attr_shift) have no other reset path once a fight is under way,
 # so an ally buffed (or debuffed) mid-fight, then killed, then revived by
 # an ordinary Full Heal/revival item within the same fight kept fighting
-# with the stale pre-death modifier still active -- real RPG_RT gives a
+# with the stale pre-death modifier still active -- EasyRPG's Player gives a
 # revived battler a clean slate on every one of these fields, not just
-# the gauge.
+# the gauge, but this has not been independently confirmed against genuine
+# RPG_RT under wine.
 check 'a lethal attack also resets stat modifiers and attribute-rank shifts, ' \
       'the same Knockout branch the gauge fix above already covers' do
   hero = combatant('Hero', 999, 0, 5, 100)
@@ -14863,15 +14878,16 @@ check 'a lethal attack also resets stat modifiers and attribute-rank shifts, ' \
   eq 0, foe.agi_mod
   eq({}, foe.attr_ranks, 'the attribute shift was cleared too, not just the raw stat mods')
 
-  # Revival does not restore any of it either, matching the gauge above.
+  # Revival does not restore any of it either, matching the gauge above
+  # (per EasyRPG Player's source, not independently confirmed under wine).
   foe.hp = 10
   ok !foe.dead?
   eq 0, foe.atk_mod, 'a revived ally does not keep its stale pre-death buff'
 end
 
-# Confirmed against EasyRPG's actual C++ source, fetched live:
-# `Game_Battler::AddState`'s Knockout branch (src/game_battler.cpp) also
-# fires `SetIsDefending(false)`/`SetCharged(false)` the instant Death
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Battler::AddState`'s Knockout branch
+# also fires `SetIsDefending(false)`/`SetCharged(false)` the instant Death
 # lands, the same statement group as the gauge/stat-modifier resets the two
 # checks above already cover -- `apply_knockout_reset`'s own doc comment
 # had claimed these two fields were "deliberately not ported" because "this
@@ -14884,8 +14900,9 @@ end
 # attack. An enemy that Defends (or Charges), then dies, then is revived
 # before its own next turn comes up kept the stale flag -- wrongly halving
 # incoming damage from other battlers (`#defending`) or wrongly doubling
-# its own next attack (`#charged`) -- something real RPG_RT's immediate,
-# unconditional reset at death never allows.
+# its own next attack (`#charged`) -- something EasyRPG Player's immediate,
+# unconditional reset at death never allows, though this has not been
+# independently confirmed against genuine RPG_RT under wine.
 check 'a lethal attack also clears a defending or charged enemy\'s stance, ' \
       'the same Knockout branch the gauge/stat-mod fixes above already cover' do
   hero = combatant('Hero', 999, 0, 5, 100)
@@ -14909,13 +14926,13 @@ check 'a lethal attack also clears a defending or charged enemy\'s stance, ' \
   eq false, defender.defending, 'a revived enemy does not keep its stale pre-death Defend stance'
 end
 
-check "Battle#apply_to_party clears a battle combo Enable Combo armed, matching RPG_RT (2026-08-19)" do
-  # Confirmed against EasyRPG's actual C++ source, fetched live:
-  # `Game_Battler::ResetBattle` (src/game_battler.cpp) is `battle_combo_
+check "Battle#apply_to_party clears a battle combo Enable Combo armed, per EasyRPG Player " \
+      "(2026-08-19, NOT independently confirmed against genuine RPG_RT under wine)" do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Game_Battler::ResetBattle` is `battle_combo_
   # command_id = -1; battle_combo_times = 1;`, called for every actor at
   # both a battle's start and its end (`Game_Battle::Init`/`Quit`, via
-  # `Game_Actors::ResetBattle`, src/game_battle.cpp / src/game_actors.cpp)
-  # -- so a combo armed by one battle-event page for one specific fight
+  # `Game_Actors::ResetBattle`) -- so a combo armed by one battle-event page for one specific fight
   # never carries into the next. #set_battle_combo's own doc comment
   # already claimed the combo stays armed "until battle end", but nothing
   # ever actually cleared it: an Enable Combo fired for a scripted boss
@@ -15624,11 +15641,12 @@ end
 # Attack (`Battle#effective_atk`), but a *second Skill* cast against the same
 # already-buffed/debuffed battler still computed its own damage/defence term
 # off the battler's unmodified base stat, as if no buff or debuff were
-# active at all -- confirmed against EasyRPG's actual C++ source: `Algo::
-# CalcSkillEffect` (`src/algo.cpp`) reads `source.GetAtk()`/`target.GetDef()`/
-# `GetSpi()`, the exact same `Game_Battler` accessors (`src/game_battler.cpp`)
-# a basic Attack's own `CalcNormalAttackEffect` reads -- there is no
-# separate, unmodified accessor for a Skill at all in the reference.
+# active at all -- per EasyRPG Player's source (NOT independently confirmed
+# against genuine RPG_RT under wine), its `Algo::CalcSkillEffect` reads
+# `source.GetAtk()`/`target.GetDef()`/`GetSpi()`, the exact same
+# `Game_Battler` accessors a basic Attack's own `CalcNormalAttackEffect`
+# reads -- there is no separate, unmodified accessor for a Skill at all in
+# that reference.
 check "a target's own per-battle DEF modifier (already lowered by an " \
       "earlier skill) now reduces a later attack skill's own defence term " \
       'too, matching Battle#effective_def' do
@@ -15811,10 +15829,11 @@ check 'battle: a heal skill restoring both HP and SP rolls each independently' d
   eq 10, hero.mp
 end
 
-# Confirmed against EasyRPG's actual C++ source: `Algo::CalcSkillEffect`
-# (src/algo.cpp) computes one `effect` local -- attribute multiplier, then
-# `VarianceAdjustEffect`, each applied exactly once -- and `Skill::vExecute`
-# (src/game_battlealgorithm.cpp) reads that identical raw number into every
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Algo::CalcSkillEffect` computes one
+# `effect` local -- attribute multiplier, then
+# `VarianceAdjustEffect`, each applied exactly once -- and its `Skill::vExecute`
+# reads that identical raw number into every
 # `affect_hp`/`affect_sp`/`affect_attack`/etc. branch it takes, each still
 # gated by its own independent `Rand::PercentChance(to_hit)` roll (the
 # check above, unaffected by this one). The *magnitude* itself is never
@@ -15838,7 +15857,8 @@ check "battle: a heal skill restoring both HP and SP shares one variance " \
   eq 85, hero.mp
 end
 
-# RPG_RT's `Game_BattleAlgorithm::Skill::vExecute` (src/game_battlealgorithm.cpp)
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its `Game_BattleAlgorithm::Skill::vExecute`
 # gates every state a skill would cure behind its own `Rand::PercentChance(
 # to_hit_states)` roll -- the same fresh-per-field idiom `#skill_effect_hits?`
 # already gives HP/SP/stat-mod effects -- while `Item::vExecute`'s own cure
@@ -15910,8 +15930,8 @@ end
 
 check "battle: an attribute-defence shift rolls its own hit chance per " \
       "attribute id, not once for the whole skill" do
-  # RPG_RT (Game_BattleAlgorithm::Skill::vExecute,
-  # src/game_battlealgorithm.cpp) rolls an independent
+  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), its Game_BattleAlgorithm::Skill::vExecute rolls an independent
   # `Rand::PercentChance(to_hit_attribute_shift)` inside the `for` loop over
   # every targeted attribute id, even though they all share the same
   # skill-wide to-hit -- so a multi-attribute shift skill can land on some
@@ -15932,8 +15952,9 @@ check "battle: an attribute-defence shift rolls its own hit chance per " \
   eq 2, foe.attr_ranks[2], 'attribute 2 kept its rank -- its own roll missed'
 end
 
-# RPG_RT's own two-step mechanism for a revival skill/item (`AlgorithmBase::
-# ApplyHpEffect`/`ApplyStateEffect`, src/game_battlealgorithm.cpp):
+# EasyRPG Player's own two-step mechanism for a revival skill/item
+# (`AlgorithmBase::ApplyHpEffect`/`ApplyStateEffect`), ported here and NOT
+# independently confirmed against genuine RPG_RT under wine:
 # ApplyHpEffect is a hard no-op on an already-dead target
 # (`if (target->IsDead()) return 0;`), so the heal never lands against the
 # target's raw HP total (nothing floors HP at 0 mid-fight -- an overkill hit
@@ -15976,7 +15997,8 @@ check 'battle: a revival skill with no heal configured still lands the ' \
   eq 1, foe.hp
 end
 
-# RPG_RT's `Skill::vExecute` (src/game_battlealgorithm.cpp) reads a
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its `Skill::vExecute` reads a
 # *percentage* of max HP for a revival whose Affect HP flag is off, instead
 # of the flat-1 floor a flat-amount reviver (Affect HP on) lands on: `if
 # (IsRevived() && effect > 0) { if (skill.affect_hp) {
@@ -15987,7 +16009,7 @@ end
 # used to always floor such a skill to 1 HP, identical to a skill/item with
 # no heal configured at all.
 check 'battle: a revival skill with Affect HP off heals a percentage of ' \
-      'max HP, not a flat 1 (RPG_RT)' do
+      'max HP, not a flat 1 (per EasyRPG Player, not independently confirmed under wine)' do
   hero = combatant('Hero', 40, 0, 20, 100)
   foe = combatant('Foe', 0, 0, 5, 100)
   foe.max_hp = 100
@@ -16096,8 +16118,9 @@ check "battle: a purely magical skill's physical_rate of 0 never shakes a status
   ok foe.state?(8), 'physical_rate 0 never rolls, matching a magical spell'
 end
 
-check 'battle: shake_off_states still draws from the RNG when release_by_attack*rate/100 rounds down to 0, matching RPG_RT (2026-08-18)' do
-  # EasyRPG's BattlePhysicalStateHeal (src/game_battlealgorithm.cpp) only
+check 'battle: shake_off_states still draws from the RNG when release_by_attack*rate/100 rounds down to 0, per EasyRPG Player (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)' do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its BattlePhysicalStateHeal only
   # gates the roll on release_by_damage > 0 (the `base > 0` check below) --
   # once past that outer gate it calls Rand::ChanceOf(release_chance, 100)
   # unconditionally, even when release_chance itself (release_by_damage *
@@ -16258,10 +16281,11 @@ end
 check 'battle: Knockout (state 1) is scaled by state_ranks like any other ' \
       'state -- rank E blocks it' do
   # RPG2000 has no separate instant-death mechanic; a skill's state-effect
-  # list names Knockout (id 1, Game::Actor::DEATH_STATE) directly. RPG_RT's
-  # own Game_Actor::GetStateProbability (src/game_actor.cpp) has no
-  # state_id == kDeathID special case, and Game_BattleAlgorithm's infliction
-  # loops (src/game_battlealgorithm.cpp) call GetStateProbability uniformly
+  # list names Knockout (id 1, Game::Actor::DEATH_STATE) directly. Per
+  # EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), its Game_Actor::GetStateProbability has no
+  # state_id == kDeathID special case, and its Game_BattleAlgorithm's infliction
+  # loops call GetStateProbability uniformly
   # for every flagged state id, Knockout included.
   foe = combatant('Foe', 0, 0, 5, 100)
   foe.state_ranks = { Game::Actor::DEATH_STATE => 4 } # rank E -> 0%
@@ -16449,8 +16473,9 @@ check 'Battle command_skill fizzles on a fallen target, sparing the SP' do
   eq 0, downed.hp, 'the fallen ally stayed down'
 end
 
-# RPG_RT's own per-algorithm `IsTargetValid` override
-# (`Game_BattleAlgorithm::Item::IsTargetValid`, src/game_battlealgorithm.cpp)
+# EasyRPG Player's own per-algorithm `IsTargetValid` override
+# (`Game_BattleAlgorithm::Item::IsTargetValid`), ported here and NOT
+# independently confirmed against genuine RPG_RT under wine --
 # ignores the target entirely for a medicine/switch item -- `return
 # item.type == Type_medicine || item.type == Type_switch;` -- always valid,
 # dead or alive -- re-checked at resolution time by
@@ -16647,8 +16672,9 @@ check 'battle poison slips HP each turn (fixed val + percent of max)' do
 end
 
 check 'battle poison (percent of max) floors at 1 HP -- slip damage alone cannot knock the battler out' do
-  # Verified against EasyRPG's own Game_Battler::ApplyConditions
-  # (src/game_battler.cpp): it calls ChangeHp(src_hp, /* lethal = */ false),
+  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), its Game_Battler::ApplyConditions
+  # calls ChangeHp(src_hp, /* lethal = */ false),
   # which floors at 1 regardless of how large the computed slip is -- state
   # slip damage can wear a battler down but never itself end its turn in
   # death, the same non-lethal rule the map-side field-poison drain already
@@ -16669,15 +16695,16 @@ check 'battle poison (percent of max) floors at 1 HP -- slip damage alone cannot
 end
 
 check 'battle poison slip damage is not clamped to the damage-popup cap' do
-  # Confirmed against EasyRPG's actual C++ source, fetched live:
-  # `Game_Battler::ApplyConditions` (src/game_battler.cpp) computes each
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine:
+  # its `Game_Battler::ApplyConditions` computes each
   # afflicted state's `src_hp` and hands it straight to `ChangeHp(src_hp,
   # /* lethal = */ false)` -- no `Utils::Clamp(..., -MaxDamageValue(),
   # MaxDamageValue())` anywhere in that path. The popup hard-cap exists at
-  # exactly three call sites in the whole codebase, all inside
-  # `game_battlealgorithm.cpp`'s Normal/Skill/SelfDestruct algorithms (see
+  # exactly three call sites in the whole reference source, all inside
+  # its Normal/Skill/SelfDestruct algorithms (see
   # "Simulated Attack does not hard-cap damage..." below for the same
-  # citation) -- `ApplyConditions` is not one of them. A prior version of
+  # caveat) -- `ApplyConditions` is not one of them. A prior version of
   # this codebase clamped the HP slip here to Game::Battle#damage_cap
   # anyway, on an uncited assumption that the popup limit "applies to slip
   # damage too"; it does not.
@@ -16725,19 +16752,20 @@ check 'battle: a "do nothing" state (restriction 1) skips the turn' do
   eq 100, slime.hp                                   # the asleep hero never struck
 end
 
-# Confirmed against EasyRPG's actual C++ source: Scene_Battle_Rpg2k::
-# ProcessBattleActionBegin (src/scene_battle_rpg2k.cpp) scans every state id
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Scene_Battle_Rpg2k::
+# ProcessBattleActionBegin scans every state id
 # the battler either still carries or just had auto-cured this turn (not
-# Game_Battler::GetSignificantState/State::GetSignificantState -- confirmed
-# these are two genuinely distinct functions in EasyRPG's own source, the
+# Game_Battler::GetSignificantState/State::GetSignificantState -- these are
+# two genuinely distinct functions in that source, the
 # latter special-casing Knockout and never considering a just-healed state),
 # keeping whichever has the highest `priority` (ties to the higher id), and
 # shows that state's own message_affected (still held) or message_recovery
 # (just healed) at the very start of the battler's turn, before its action.
 # This codebase's own docs/TODO.md had claimed the opposite -- that
 # message_affected is "deliberately still unread" because "EasyRPG ...
-# never calls it from either battle scene" -- which is simply wrong against
-# current live EasyRPG source.
+# never calls it from either battle scene" -- which does not match that
+# reference's current source.
 check 'battle: a still-afflicted state opens the battler\'s turn with its own ' \
       'message_affected line' do
   states = { 3 => fake_state(priority: 50, affected_msg: 'は毒に苦しんでいる！') } # poison, no restriction
@@ -16918,13 +16946,14 @@ check 'battle state at 0% auto_release_prob never wears off on its own' do
   eq true, hero.state?(5)                            # 0% -> stays for the whole fight
 end
 
-# EasyRPG's Game_Battler::BattleStateHeal (src/game_battler.cpp) always rolls
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Game_Battler::BattleStateHeal always rolls
 # Rand::ChanceOf(auto_release_prob, 100) once state_turns exceeds hold_turn --
-# Rand::ChanceOf (src/rand.cpp) is GetRandomNumber(1, m) <= n and always draws,
+# its Rand::ChanceOf is GetRandomNumber(1, m) <= n and always draws,
 # whatever n is; C++'s && only short-circuits on the hold_turn test, never on
 # the probability. A 0%-chance state must still burn that RNG draw every turn
-# once eligible, or this build's shared RNG stream desyncs from a real seeded
-# RPG_RT run for the rest of the fight.
+# once eligible, or this build's shared RNG stream would desync from a real
+# seeded RPG_RT run for the rest of the fight, per that reference's own logic.
 check 'battle state auto-release always consumes an RNG draw once eligible, even at 0% chance' do
   states = { 5 => FakeStateDef.new(0, 0, 0, 0, 0, 0, 0) } # hold_turn 0, prob 0
   hero = combatant('Hero', 40, 0, 20, 100)
@@ -16943,10 +16972,11 @@ end
 
 check 'battle: curing a state resets its turn-held counter, so a ' \
       'reinflicted state does not inherit a stale duration' do
-  # RPG_RT's own State::Add/State::Remove (src/state.cpp) share one literal
+  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), its State::Add/State::Remove share one literal
   # field for "state present" and "turns held" -- Add sets it to 1, Remove
   # sets it to 0 -- so a cured-then-reinflicted state can never carry a
-  # stale duration into BattleStateHeal's (src/game_battler.cpp) hold_turn
+  # stale duration into BattleStateHeal's hold_turn
   # check. #cure_state used to remove the state from `states` without ever
   # clearing the matching #apply_turn_states entry in this codebase's own
   # separate `state_turns` hash, which #inflict_state never resets either.
@@ -17003,13 +17033,14 @@ check 'battle: one incapacitated ally among others is not a party wipe' do
   ok !bat.finished?, 'a still-able ally keeps the party in the fight'
 end
 
-# RPG_RT's own Game_Battle::CheckWin/CheckLose (src/game_battle.cpp) are two
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its Game_Battle::CheckWin/CheckLose are two
 # genuinely different tests, not one shared symmetric one: CheckWin is a bare
 # dead-or-hidden check (!IsAnyActive(), bottoming out in Exists()), with no
 # restriction/recovery concept at all -- only CheckLose widens to
 # CanActOrRecoverable(). A fully-Stoned enemy troop, unlike a fully-Stoned
-# party, does not end the fight on its own: the player can always keep
-# attacking a restricted-but-alive enemy, so real RPG_RT keeps the battle
+# party, would not end the fight on its own by that logic: the player can always keep
+# attacking a restricted-but-alive enemy, so this assumes RPG_RT keeps the battle
 # running until the enemies are actually reduced to 0 HP or hidden/removed.
 check 'battle: a fully-Stoned enemy troop, still at full HP, does not end the fight' do
   states = { 8 => FakeStateDef.new(1, 0, 0, 0, 0, 0, 0) } # do-nothing, 0% auto-release
@@ -17069,10 +17100,11 @@ check 'battle: a berserk battler (restriction 2) attacks despite defending' do
   eq 80, slime.hp                                         # ...but berserk forced a 20 hit
 end
 
-# デフォ戦bot (@2000_battle_bot) trivia, confirmed against EasyRPG's own
-# State::GetSignificantRestriction (src/state.cpp): "同時に暴走と混乱の状態に
+# デフォ戦bot (@2000_battle_bot) trivia: "同時に暴走と混乱の状態に
 # なった場合、暴走が優先されて敵を攻撃する" -- Berserk (attack-enemy) beats
-# Confusion (attack-ally) when both are inflicted simultaneously. That C++
+# Confusion (attack-ally) when both are inflicted simultaneously. Per EasyRPG
+# Player's source (NOT independently confirmed against genuine RPG_RT under
+# wine, though consistent with that trivia), its State::GetSignificantRestriction
 # resolves a *fixed priority hierarchy* by restriction type (do_nothing >
 # attack_enemy > attack_ally > normal) while scanning every afflicted state,
 # not a numeric max of the raw restriction constants -- RESTRICTION_ATTACK_ALLY
@@ -17109,12 +17141,13 @@ end
 # first'." The confusion half (attack_all still spreading, hit-twice/必中
 # unaffected either way) was already covered by the 全体化/必中 checks above.
 # The berserk-collapses-attack_all half of that same uncited claim does not
-# hold up against RPG_RT's own live source, though: `Scene_Battle_Rpg2k::
-# SelectNextActor` (`src/scene_battle_rpg2k.cpp`) constructs an identical
+# hold up against EasyRPG Player's source, though (NOT independently
+# confirmed against genuine RPG_RT under wine): its `Scene_Battle_Rpg2k::
+# SelectNextActor` constructs an identical
 # single-target `Game_BattleAlgorithm::Normal` for both the attack-ally
 # (confusion) and attack-enemy (berserk) restrictions -- the same switch just
 # picks which side `GetRandomActiveBattler()` draws from -- and
-# `Normal::vStart()` (`src/game_battlealgorithm.cpp`) then unconditionally
+# `Normal::vStart()` then unconditionally
 # re-expands *any* single-target Normal algorithm to the whole side once the
 # weapon carries attack_all, with no restriction check anywhere in that path.
 check 'battle: a berserk battler with an attack_all weapon still hits every ' \
@@ -17245,8 +17278,9 @@ end
 
 check 'battle: turn order rolls a random Agility jitter each round, instead of ' \
       'sorting by raw Agility alone' do
-  # Confirmed against EasyRPG's own Scene_Battle_Rpg2k::CreateExecutionOrder
-  # (src/scene_battle_rpg2k.cpp): each battler rolls `agi + Rand(0, agi / 4 +
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Scene_Battle_Rpg2k::CreateExecutionOrder
+  # has each battler roll `agi + Rand(0, agi / 4 +
   # 3)` fresh, once per round, before the sort ("must be done outside of the
   # sort function... so the sort is consistent", per that function's own
   # comment) -- two battlers with identical Agility do not act in a fixed
@@ -17329,7 +17363,8 @@ check 'battle: a self-destruct shakes loose a survivor\'s status the same as a b
   eq [8], entry[:woke]
 end
 
-# RPG_RT's own `SelfDestruct::GetStartSe` (src/game_battlealgorithm.cpp)
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its `SelfDestruct::GetStartSe`
 # plays the explosion SE unconditionally, once per action, the instant it
 # starts -- not once per target hit. `Scene::Battle#play_battle_action_se`
 # reads `entry[:autodestruct_se]` for this, which must therefore ride on
@@ -17426,8 +17461,8 @@ check 'States.prune: states sharing the top priority all survive' do
   eq [2, 3], Game::States.prune([2, 3, 5], table)
 end
 
-# Verified against RPG_RT's actual behavior via EasyRPG Player's own C++
-# source rather than assumed: `State::Add` (src/state.cpp) computes
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `State::Add` computes
 # `sig_state = GetSignificantState(states)` *after* inserting the new id,
 # then clears every state whose own priority sits 10+ below
 # `sig_state->priority`. Death is not exempt from this at all -- when
@@ -17477,10 +17512,11 @@ def party_state_with_states(states, skills = {})
     Game::Party.new(FakeActorDB.new(players, [1, 2], {}, skills, {}, states)), 1, 0, 0)
 end
 
-# Confirmed against EasyRPG's live source, `ControlVariables::Actor`
-# (`src/game_interpreter_control_variables.cpp`): its Attack/Defence/
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `ControlVariables::Actor`
+# Attack/Defence/
 # Intelligence/Agility cases (6-9) call straight through `Game_Actor::
-# GetAtk`/`GetDef`/`GetSpi`/`GetAgi` (`src/game_battler.cpp`), each routed
+# GetAtk`/`GetDef`/`GetSpi`/`GetAgi`, each routed
 # through `AdjustParam` -- the same halve/double-by-active-state mechanism
 # ported here as `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
 # `#effective_agi`, already used elsewhere (Simulated Attack, the Status
@@ -17569,8 +17605,8 @@ check "a battle attack skill inflicting a state prunes the target's state set" d
   eq [3], foe.states, 'the battle-inflicted Petrify displaced the held Poison'
 end
 
-# Verified against RPG_RT's actual behavior via EasyRPG's own
-# Game_Battler::AddState (src/game_battler.cpp): inflicting state 1
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its Game_Battler::AddState: inflicting state 1
 # (Knockout) forces HP to 0 as an unconditional side effect of the state
 # landing at all -- the same function every battle-time infliction path
 # routes through (a skill's own state-effect list included) -- not
@@ -17714,8 +17750,10 @@ check 'States.map_step_drain is type-aware: GAIN heals, NOTHING does nothing' do
   # RPG2003's hp_change_type/sp_change_type (Game::States::CHANGE_TYPE_*):
   # a "regen"-style field state (GAIN) returns a positive delta instead of a
   # negative one, and NOTHING returns 0 despite a nonzero configured amount --
-  # verified against EasyRPG's own lcf::rpg::State::ChangeType enum and
-  # Game_Party::ApplyStateDamage (src/game_party.cpp).
+  # the enum values themselves come from liblcf's own schema
+  # (lcf::rpg::State::ChangeType); the GAIN/NOTHING behavior itself is
+  # ported from EasyRPG Player's source (its Game_Party::ApplyStateDamage),
+  # NOT independently confirmed against genuine RPG_RT under wine.
   regen = { 4 => fake_state(name: 'Regen', hp_map_steps: 2, hp_map_val: 5,
                              hp_change_type: Game::States::CHANGE_TYPE_GAIN,
                              sp_map_steps: 2, sp_map_val: 3,
@@ -17780,8 +17818,9 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
   eq 1, hero.hp, 'and walking on keeps it there'
   eq false, st.party.all_dead?
 
-  # A member already down is not skipped outright -- EasyRPG's
-  # `Game_Party::ApplyStateDamage` iterates every actor with no alive/dead
+  # A member already down is not skipped outright -- per EasyRPG Player's
+  # source (NOT independently confirmed against genuine RPG_RT under wine),
+  # its `Game_Party::ApplyStateDamage` iterates every actor with no alive/dead
   # filter, and only `ChangeHp` (not the caller) has its own dead-guard, so a
   # dead member's affliction is still reported as "hit" even though the HP
   # loss itself silently no-ops via #change_hp.
@@ -17792,7 +17831,8 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
   eq 0, ally.hp, 'the HP loss itself still no-ops on a dead member'
 end
 
-# Ports EasyRPG's `Game_Battler::ChangeSp` (`src/game_battler.cpp`), which --
+# Ported from EasyRPG Player's source (its `Game_Battler::ChangeSp`), NOT
+# independently confirmed against genuine RPG_RT under wine -- which --
 # unlike `ChangeHp` -- carries no `IsDead()` guard at all: a map-step state's
 # SP component keeps applying to a KO'd member exactly as it would to a
 # living one, even though that same member's HP component is silently
@@ -17833,7 +17873,8 @@ check 'map slip damage: a GAIN-type state heals instead of draining, clamped to 
   eq [hero.max_mp, before_mp + 30].min, hero.mp
 end
 
-# Ports EasyRPG's `Game_Party::ApplyStateDamage` (src/game_party.cpp): its
+# Ported from EasyRPG Player's source (its `Game_Party::ApplyStateDamage`),
+# NOT independently confirmed against genuine RPG_RT under wine: its
 # `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
 # `ChangeType_gain` one -- #apply_map_step_damage's own return value reports
 # every actor who changed either way, but #map_step_damaged? is the one the
@@ -18663,10 +18704,11 @@ end
 
 check "Simulated Attack reads the target's state-adjusted Defence/Spirit, " \
       'not its raw base stat' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) computes `atk -
-  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and
-  # `Game_Battler::GetDef`/`GetSpi` (`src/game_battler.cpp`) both route
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Game_Interpreter::
+  # CommandSimulatedAttack` computes `atk -
+  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and its
+  # `Game_Battler::GetDef`/`GetSpi` both route
   # through `AdjustParam`, which folds in a currently-afflicted state's own
   # halve/double Defence flag -- the same accessor every other damage
   # formula reads, in or out of battle. A target whose Defence is halved by
@@ -18706,10 +18748,11 @@ end
 
 check 'Simulated Attack leaves its result variable untouched when the ' \
       'target actor id is invalid, instead of zeroing it' do
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandSimulatedAttack` (`src/game_interpreter.cpp`) writes the result
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Game_Interpreter::
+  # CommandSimulatedAttack` writes the result
   # variable *inside* its own `for (const auto& actor : GetActors(...))`
-  # loop, never reached at all when that loop is empty -- and `GetActors`
+  # loop, never reached at all when that loop is empty -- and its `GetActors`
   # returns an empty vector, without ever touching the variable, when a
   # fixed actor id names a database row that does not exist (`if (!actor)
   # { ...; return actors; }`). A stale value already sitting in the
@@ -18727,11 +18770,12 @@ end
 # to Game::Battle::DAMAGE_CAP, by analogy with the normal-attack/skill/
 # self-destruct/slip-damage popup cap -- a plausible-sounding but
 # unverified inference, not something read off this command's own source.
-# Confirmed against EasyRPG's actual C++ source, fetched live:
-# `Game_Interpreter::CommandSimulatedAttack` (src/game_interpreter.cpp)
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine:
+# `Game_Interpreter::CommandSimulatedAttack`
 # applies no clamp at all. `Utils::Clamp(effect, -MaxDamageValue(),
-# MaxDamageValue())` exists in exactly three places in the entire real
-# codebase, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
+# MaxDamageValue())` exists in exactly three places in that reference
+# source, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
 # `SelfDestruct` -- the battle actions that actually draw the fixed-width
 # damage-popup animation the cap exists for. Simulated Attack is a silent
 # map-side HP change with no popup at all: it calls `Algo::
@@ -18850,10 +18894,11 @@ check 'Fade Out BGM fades the music but keeps the current-BGM record intact' do
   # against its "Duration in ms" doc comment and every real call site, all
   # bare millisecond literals).
   #
-  # Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-  # CommandFadeOutBGM` (`src/game_interpreter.cpp`) calls `Game_System::
-  # BgmFade(fadeout)` with a single argument, and `Game_System::BgmFade`
-  # (`src/game_system.h`/`.cpp`) only clears `data.current_music` when its
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Game_Interpreter::
+  # CommandFadeOutBGM` calls `Game_System::
+  # BgmFade(fadeout)` with a single argument, and its `Game_System::BgmFade`
+  # only clears `data.current_music` when its
   # second parameter, `clear_current_music`, is explicitly `true` --
   # defaulted `false`, so the event command never clears it. A save taken
   # (or a Memorize BGM issued) right after a Fade Out BGM must still see
@@ -18913,8 +18958,9 @@ check 'Tile Substitution rewrites a tile on the map and flags a redraw' do
   eq false, it.take_tiles_changed, 'the flag is one-shot'
 end
 
-# Confirmed against RPG_RT's own live source: `Game_Map::DoSubstitute`
-# (`src/game_map.cpp`) scans its persistent substitution table by *current*
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Map::DoSubstitute`
+# scans its persistent substitution table by *current*
 # value every call (`for (i) if (tiles[i] == old_id) tiles[i] = new_id;`),
 # not by each tile's original chipset id -- so a later substitution chains
 # through an earlier one whenever its `old_id` matches the earlier `new_id`,
@@ -19077,8 +19123,10 @@ check 'Game::EventPage.active? tests the Timer (0x20) condition against Timer1 s
   vars = st.variables
   party = FakeEventPageParty.new([], [])
 
-  # RPG_RT's AreConditionsMet: "if (secs > condition.timer_sec) return false"
-  # -- active once Timer1 has counted down to timer_sec seconds or below.
+  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), its AreConditionsMet: "if (secs > condition.timer_sec)
+  # return false" -- active once Timer1 has counted down to timer_sec seconds
+  # or below.
   cond = event_cond(Game::EventPage::TIMER, timer_sec: 30)
   eq false, Game::EventPage.active?(cond, sw, vars, party, 60), 'well above the threshold'
   eq false, Game::EventPage.active?(cond, sw, vars, party, 31), 'one second above the threshold'
@@ -19096,8 +19144,9 @@ check 'Game::EventPage.active? tests the Timer (0x20) condition against Timer1 s
 end
 
 check 'Game::EventPage.active? tests the Timer2 (0x40) condition, RPG2003 only' do
-  # Confirmed against EasyRPG's actual C++ source: Game_Event::
-  # AreConditionsMet (src/game_event.cpp) gates Timer2 on
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_Event::
+  # AreConditionsMet gates Timer2 on
   # Player::IsRPG2k3Commands() -- an RPG2000 database ignores the bit
   # entirely, even if it happens to be set. Same "counted down to timer2_sec
   # or below" rule as Timer1, against Timer2's own seconds (the method's
@@ -19122,10 +19171,11 @@ end
 
 check "Game::EventPage.active?'s variable condition reads RPG2003's own " \
       'compare_operator instead of a hardcoded >=' do
-  # Confirmed against EasyRPG's actual C++ source: AreConditionsMet branches
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its AreConditionsMet branches
   # on Player::IsRPG2k() -- RPG2000 always compares >=, but everything else
-  # (RPG2003) reads condition.compare_operator through CheckOperator
-  # (src/game_interpreter_shared.h): 0 == 1 >= 2 <= 3 > 4 < 5 !=. These are
+  # (RPG2003) reads condition.compare_operator through CheckOperator:
+  # 0 == 1 >= 2 <= 3 > 4 < 5 !=. These are
   # genuinely different rules per edition, not a shared comparison with an
   # edition-gated constant.
   st = new_state
@@ -19377,9 +19427,10 @@ check 'a turn_enemy / turn_actor condition is gated on the source being that bat
      'but not at the foe\'s boundary'
 end
 
-# turn_enemy / turn_actor / fatigue are RPG2003-only page conditions --
-# EasyRPG's own Game_Interpreter_Battle::AreConditionsMet
-# (src/game_interpreter_battle.cpp) gates all three behind
+# turn_enemy / turn_actor / fatigue are RPG2003-only page conditions -- per
+# EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its Game_Interpreter_Battle::AreConditionsMet
+# gates all three behind
 # Player::IsRPG2k3Commands(), the same way Game::EventPage.active? already
 # gates a map event page's TIMER2 condition on rpg2003?. An RPG2000 database
 # has no editor control for any of these three condition types at all, so a
@@ -19560,8 +19611,9 @@ check 'Change Monster HP heals, reads a variable and a percentage' do
   eq 45, b.enemy(0).hp
 
   # percentage operand (2): 10% of the target's *current* hp (45, not max_hp
-  # 100) = 4, per EasyRPG's CommandChangeMonsterHP (src/
-  # game_interpreter_battle.cpp), which reads `hp = enemy->GetHp()` and
+  # 100) = 4, per EasyRPG Player's source (NOT independently confirmed
+  # against genuine RPG_RT under wine), its CommandChangeMonsterHP, which
+  # reads `hp = enemy->GetHp()` and
   # computes the percentage from that captured value, not GetMaxHp().
   it.start([FakeCmd.new(IC::CHANGE_MONSTER_HP, [0, 0, 2, 10, 1])])
   it.update
@@ -19573,8 +19625,9 @@ check 'Change Monster HP heals, reads a variable and a percentage' do
   eq 100, b.enemy(0).hp
 end
 
-# Verified against EasyRPG's own CommandChangeMonsterHP
-# (src/game_interpreter_battle.cpp): `if (enemy->IsDead()) return true;` runs
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its CommandChangeMonsterHP:
+# `if (enemy->IsDead()) return true;` runs
 # before anything else -- direction, amount source (param2/param3) and the
 # lethal flag (param4) are never even read once the target is already dead.
 # A further *hit* on a 0-HP target used to fall through to `hp = 0 + amount`,
@@ -19598,9 +19651,10 @@ check 'Change Monster HP leaves an already-downed target untouched entirely' do
   eq 0, b.enemy(0).hp, 'a heal on a downed target is still a no-op'
 end
 
-# RPG_RT routes this command through Game_Battler::ChangeHp, which itself
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), this command routes through Game_Battler::ChangeHp, which itself
 # calls AddState(kDeathID, true) the instant HP reaches 0
-# (src/game_battler.cpp) -- the same Knockout branch that already zeroes
+# -- the same Knockout branch that already zeroes
 # the ATB gauge, ATK/DEF/SPI/AGI modifiers and attribute-rank shifts for
 # every other lethal-HP path in this codebase (#deal_attack_with_current_
 # weapon, #apply_skill_hit, #enemy_autodestruct, Change Monster
@@ -19659,15 +19713,16 @@ check 'Change Monster Condition inflicts and cures a status' do
   ok !b.enemy(0).state?(4), 'and it was cured'
 end
 
-# Verified against RPG_RT's actual behavior via EasyRPG's own
-# Game_Battler::AddState/RemoveState (src/game_battler.cpp): state 1
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine:
+# its Game_Battler::AddState/RemoveState: state 1
 # (Knockout) is not mere states-list bookkeeping -- inflicting it forces HP
 # to 0 as an explicit, unconditional side effect (`if (state_id ==
 # kDeathID) { SetHp(0); ... }`), and curing it while downed revives to 1
 # (the shared `RemoveStates` helper's own `if (is_dead != check_dead())
 # SetHp(1)`). Change Monster Condition routes through those same two
-# functions in real RPG_RT (`CommandChangeMonsterCondition`, src/
-# game_interpreter_battle.cpp: `enemy->AddState(...)`/`enemy->
+# functions in that reference (`CommandChangeMonsterCondition`:
+# `enemy->AddState(...)`/`enemy->
 # RemoveState(...)`), so inflicting/curing state 1 through this command
 # must carry the identical HP side effect -- before this fix it only
 # pushed/deleted the id from the states array, leaving HP (and #dead?)
@@ -19755,9 +19810,10 @@ check 'the battle Conditional Branch tests switches, variables and battlers' do
   eq 2, st.variables[1], 'an actor not in the fight fails'
 end
 
-# デフォ戦bot trivia, verified against EasyRPG's real
-# Game_Interpreter_Battle::CommandConditionalBranchBattle / Game_Battler::CanAct
-# (src/game_interpreter_battle.cpp, src/game_battler.cpp): actor sub-test 3
+# デフォ戦bot trivia, and per EasyRPG Player's source (NOT independently
+# confirmed against genuine RPG_RT under wine), its
+# Game_Interpreter_Battle::CommandConditionalBranchBattle / Game_Battler::CanAct:
+# actor sub-test 3
 # ("can use battle command") is true unless the ally carries a "do nothing"
 # restriction (asleep/paralysed) -- it does NOT fail for a Berserk
 # (attack_enemy) or Confusion (attack_ally) restriction, since such an ally
@@ -19862,12 +19918,13 @@ end
 
 # Test 4 ("the currently-targeted troop member is param1") was previously
 # left unimplemented (see #do_conditional_battle's own citation), falling
-# straight to `else false` regardless of actual battle state. Confirmed
-# against EasyRPG's actual C++ source: `Game_Interpreter_Battle::
+# straight to `else false` regardless of actual battle state. Ported from
+# EasyRPG Player's source, NOT independently confirmed against genuine
+# RPG_RT under wine: its `Game_Interpreter_Battle::
 # CommandConditionalBranchBattle` case 4, `result = (targets_single_enemy
 # && target_enemy_index == com.parameters[1]);`, where both fields are set
-# in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin` (src/
-# scene_battle_rpg2k3.cpp) from the acting ally's own `GetOriginalSingle
+# in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin` from the acting ally's
+# own `GetOriginalSingle
 # Target()` -- the target chosen at command time -- only when that target
 # is itself an enemy. `Game::Battle#target_enemy_index` is this port's own
 # counterpart, reusing the identical `battle_source` plumbing test 5
@@ -19927,9 +19984,10 @@ check 'battle Conditional Branch test 4 (troop member is the current ' \
   eq 2, st.variables[1], 'a command aimed at an ally is not a troop member'
 end
 
-# Confirmed against EasyRPG's actual C++ source, fetched live:
-# `Game_Interpreter_Battle::CommandConditionalBranchBattle`
-# (src/game_interpreter_battle.cpp) reads only `com.parameters[1]` for its
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine:
+# its `Game_Interpreter_Battle::CommandConditionalBranchBattle`
+# reads only `com.parameters[1]` for its
 # actor (case 2) and enemy (case 3) branches -- `result = actor->CanAct();`
 # / `result = enemy->CanAct();`. `parameters[2]`/`[3]` are never read at
 # all: the real editor's Actor/Enemy tab offers a single "can act"
@@ -20014,8 +20072,9 @@ check 'troop-member numbering stays stable when a middle member dies or is hidde
   # docs/TODO.md's render-order fix left this "still open": does killing or
   # hiding troop member 1 (the middle of three) shift member 2 down into
   # slot 1, silently repointing anything that names it by its original
-  # index? Confirmed against EasyRPG's Game_EnemyParty::ResetBattle /
-  # GetEnemy (src/game_enemyparty.cpp) that it does not -- `@enemies` here
+  # index? Per EasyRPG Player's source (NOT independently confirmed against
+  # genuine RPG_RT under wine), its Game_EnemyParty::ResetBattle /
+  # GetEnemy say it does not -- `@enemies` here
   # mirrors its fixed-size `enemies` vector exactly: built once, never
   # erased or resized mid-battle, with `dead?`/`hidden` in-place flags on
   # each entry rather than removal.
@@ -20167,9 +20226,9 @@ end
 # `Interpreter#identity_target`'s own doc comment), which all resolve
 # through the roster alone so an away companion is still affected, Enable
 # Combo additionally requires the named actor to be a *current* party
-# member. Confirmed directly against RPG_RT's live source:
-# `Game_Interpreter_Battle::CommandEnableCombo` (`src/
-# game_interpreter_battle.cpp`) is `if (!Main_Data::game_party->
+# member. Ported from EasyRPG Player's source, NOT independently confirmed
+# against genuine RPG_RT under wine:
+# `Game_Interpreter_Battle::CommandEnableCombo` is `if (!Main_Data::game_party->
 # IsActorInParty(actor_id)) { return true; }`, checked before
 # `Game_Actors::GetActor` is even consulted -- `IsActorInParty` appears in
 # exactly one other place in the whole reference (the Conditional Branch
@@ -20208,9 +20267,10 @@ check 'Call Common Event runs the common event and returns to the page' do
   eq true, st.switches[1], 'and control came back'
 end
 
-# Ports EasyRPG's own `Game_Interpreter_Battle::CommandForceFlee`/
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Interpreter_Battle::CommandForceFlee`/
 # `CommandEnableCombo`/`CommandCallCommonEvent`
-# (src/game_interpreter_battle.cpp): all three open with `if (!Player::
+# all three open with `if (!Player::
 # IsRPG2k3Commands()) { return true; }` -- the RPG2003 battle event editor
 # is the only one with any of these three commands at all, so a genuine
 # RPG2000 database's own battle page should never carry one, but an
@@ -20275,10 +20335,10 @@ check 'Open Load Menu and Exit Game raise their scene requests' do
   eq :exit_game, it2.wait_kind
 end
 
-# Confirmed against RPG_RT's own live source: all five 2k3e system commands
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: all five 2k3e system commands
 # (`CommandOpenLoadMenu`/`CommandExitGame`/`CommandToggleAtbMode`/
-# `CommandToggleFullscreen`/`CommandOpenVideoOptions`, `src/
-# game_interpreter.cpp`/`game_interpreter_map.cpp`) open with `if (!Player::
+# `CommandToggleFullscreen`/`CommandOpenVideoOptions`) open with `if (!Player::
 # IsRPG2k3ECommands()) { return true; }` -- a hard no-op, not merely
 # discarding some other effect, on an RPG2000-compatible database.
 check 'all five 2k3e system commands are RPG2000 no-ops' do
@@ -20314,8 +20374,9 @@ check 'all five 2k3e system commands are RPG2000 no-ops' do
   eq '', logged5, "Open Video Options doesn't either"
 end
 
-# Ports EasyRPG's own `Game_Interpreter::CommandWait`
-# (src/game_interpreter.cpp): a param1 mode byte the RPG2003 editor's Wait
+# Ported from EasyRPG Player's source (its `Game_Interpreter::CommandWait`),
+# NOT independently confirmed against genuine RPG_RT under wine: a param1
+# mode byte the RPG2003 editor's Wait
 # dialog adds -- 0 (or absent, an RPG2000 project) the plain timed wait,
 # nonzero "wait until the Decision key is pressed" instead, which ignores
 # param0 entirely (`if (com.parameters.size() <= 1 || (!maniac &&
@@ -20392,8 +20453,9 @@ check 'Show Battle Animation (battle form) waits like the map form' do
   eq true, it.battle_animation[:battle]
 end
 
-# Ports EasyRPG's own `Game_Interpreter_Battle::CommandShowBattleAnimation`
-# (src/game_interpreter_battle.cpp): `allies = com.parameters[3] != 0`, read
+# Ported from EasyRPG Player's source (its
+# `Game_Interpreter_Battle::CommandShowBattleAnimation`), NOT independently
+# confirmed against genuine RPG_RT under wine: `allies = com.parameters[3] != 0`, read
 # only `if (Player::IsRPG2k3() && com.parameters.size() > 3)` -- the same
 # trailing-RPG2003-parameter gate already used for Flash/Shake Screen.
 check 'Show Battle Animation (battle form) reads the RPG2003 Ally/Enemy target-type flag' do
@@ -20596,19 +20658,20 @@ end
 
 check 'a charged enemy is forced to attack, never running a pattern action ' \
       'like Defend even when the pattern would otherwise choose it' do
-  # EasyRPG's EnemyAi::SetStateRestrictedAction (src/enemyai.cpp) checks
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its EnemyAi::SetStateRestrictedAction checks
   # source.IsCharged() right after its attack_ally/attack_enemy restriction
   # branches and, if set, calls MakeAttack(source, 1) and returns *before*
   # SetEnemyAiAction (the rating-weighted pattern picker) is ever consulted
-  # (scene_battle_rpg2k.cpp's `if (!SetStateRestrictedAction(*enemy)) ...
+  # (its `if (!SetStateRestrictedAction(*enemy)) ...
   # SetEnemyAiAction(...)`) -- so a charged enemy can never end up Defending
   # (or casting a Skill, self-destructing, ...); it is guaranteed exactly one
   # doubled Attack. #strike now skips #choose_enemy_action outright while
   # charged, matching that gate -- it used to run the pattern normally, so a
   # single-entry Defend pattern would win the draw and spend the charge for
-  # nothing (Game_BattleAlgorithm::AlgorithmBase::Start()'s own unconditional
-  # SetCharged(false) still fires for *any* algorithm once one actually runs,
-  # confirmed against game_battlealgorithm.cpp and ported by
+  # nothing (that reference's own Game_BattleAlgorithm::AlgorithmBase::Start()
+  # unconditional SetCharged(false) still fires for *any* algorithm once one
+  # actually runs, and is ported by
   # #perform_enemy_action -- that part was already correct, it just used to
   # be reachable by the wrong action kind).
   foe = combatant('Slime', 40, 0, 5, 500)
@@ -20760,8 +20823,9 @@ check 'a switch-gated action is invalid with no AI env to ask' do
   ok enemy_entry([act], nil)[:defend].nil?, 'falls back to attacking'
 end
 
-# "Enemies" in the editor's own condition list -- EasyRPG's IsActionValid
-# (src/enemyai.cpp) reads game_enemyparty's own GetActiveBattlers here, never
+# "Enemies" in the editor's own condition list -- per EasyRPG Player's
+# source (NOT independently confirmed against genuine RPG_RT under wine),
+# its IsActionValid reads game_enemyparty's own GetActiveBattlers here, never
 # game_party, so this ranges over the acting monster's own living troop-mates,
 # not the player party's headcount.
 check 'an actor-count action ranges over the living enemy troop, not the party' do
@@ -20810,11 +20874,12 @@ check 'a party-level action reads the average level through the AI env' do
   ok enemy_entry([miss], ai)[:defend].nil?, 'outside it'
 end
 
-check 'an out-of-range condition type still fires, matching RPG_RT\'s own ' \
-      'default: return true' do
-  # Confirmed directly against RPG_RT's live source: `EnemyAi::
+check "an out-of-range condition type still fires, per EasyRPG Player's own " \
+      "default: return true (NOT independently confirmed under wine)" do
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: `EnemyAi::
   # IsActionValid`'s own `switch (action.condition_type)`
-  # (`src/enemyai.cpp`) ends `default: return true;` -- a condition_type
+  # ends `default: return true;` -- a condition_type
   # past the eight it recognises (e.g. a hand-edited or non-standard-tool
   # database byte) reads as unconditionally eligible, not excluded.
   act = enemy_action(kind: 0, basic: 2, condition_type: 99)
@@ -20874,12 +20939,13 @@ check 'an enemy casts an attack skill from its pattern' do
   ok e[:damage] > 0, 'and it hurt'
 end
 
-# Confirmed directly against RPG_RT's live source: `EnemyAi::IsActionValid`
-# (`src/enemyai.cpp`) rejects a `Kind_skill` action outright when
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `EnemyAi::IsActionValid`
+# rejects a `Kind_skill` action outright when
 # `!source.IsSkillUsable(action.skill_id)` -- before the action's own weight
-# is ever computed, not merely zeroed out afterward. `Algo::IsSkillUsable`
-# (`src/algo.cpp`), which `Game_Battler::IsSkillUsable`
-# (`src/game_battler.cpp`) reaches in battle, is unconditionally false for a
+# is ever computed, not merely zeroed out afterward. Its `Algo::IsSkillUsable`,
+# which `Game_Battler::IsSkillUsable`
+# reaches in battle, is unconditionally false for a
 # Teleport- or Escape-type skill, and gated on the skill's own
 # `occasion_battle` flag for a Switch-type one -- an enemy's own action
 # pattern is bound by the exact same rules a field/battle actor cast is.
@@ -21005,7 +21071,8 @@ end
 # -- skill effectiveness gates the AI's own weighted choice --------------------
 
 check "an enemy's own state-cure skill is excluded from the running when it has nothing to cure" do
-  # EasyRPG's EnemyAi::IsSkillEffectiveOnAnyTarget (src/enemyai.cpp): unlike an
+  # Ported from EasyRPG Player's source (its EnemyAi::IsSkillEffectiveOnAnyTarget),
+  # NOT independently confirmed against genuine RPG_RT under wine: unlike an
   # HP/SP/stat-affecting skill (always considered worth trying against a live
   # target -- the real engine never actually computes the effect before
   # choosing), a *pure* state-effect skill only counts as effective once some
@@ -21056,9 +21123,10 @@ check "an enemy's own state-cure skill still fires once a target actually needs 
 end
 
 check "an ineffective skill's own high rating still crowds out a lower-rated action via max_prio" do
-  # EasyRPG computes max_prio from every action's raw rating first, then
+  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # RPG_RT under wine), it computes max_prio from every action's raw rating first, then
   # zeroes an ineffective skill's own draw in a *separate* later pass
-  # (src/enemyai.cpp's SelectEnemyAiActionRpgRtCompat) -- it does not drop
+  # (its SelectEnemyAiActionRpgRtCompat) -- it does not drop
   # the ineffective skill before max_prio is found and recompute the other
   # actions' weights against a lower max. So a much lower-rated action a
   # naive "exclude it up front" fix would let back into the draw (49 is
@@ -21136,11 +21204,12 @@ end
 
 check 'battle: auto_battle_attack_target_rank includes the RPG2003 attacker ' \
       "row bonus, matching the real attack's own formula" do
-  # Confirmed directly against RPG_RT's live source: `Calc
-  # NormalAttackAutoBattleTargetRank` (`src/autobattle.cpp`) computes its own
-  # `base_effect` via `Algo::CalcNormalAttackEffect` (`src/algo.cpp`) -- the
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Calc
+  # NormalAttackAutoBattleTargetRank` computes its own
+  # `base_effect` via `Algo::CalcNormalAttackEffect` -- the
   # *identical* function `Game_BattleAlgorithm::Normal::Execute`
-  # (`src/game_battlealgorithm.cpp`) calls to resolve the real swing -- so a
+  # calls to resolve the real swing -- so a
   # front-row attacker's ranking must include the same +25% bonus its real
   # attack deals, not merely the raw, unadjusted damage. Two otherwise-
   # identical battles seeded identically isolate the row difference from the
@@ -21180,9 +21249,10 @@ end
 
 check 'battle: auto_battle_attack_target_rank reads the target\'s ' \
       'state-adjusted Defence, not its raw base stat' do
-  # Same citation as the row check above -- `CalcNormalAttackAutoBattleTarget
+  # Same source as the row check above (EasyRPG Player's, NOT independently
+  # confirmed against genuine RPG_RT under wine) -- `CalcNormalAttackAutoBattleTarget
   # Rank` shares `Algo::CalcNormalAttackEffect` with the real attack, and
-  # `Game_Battler::GetDef` (`src/game_battler.cpp`) folds in a currently-
+  # `Game_Battler::GetDef` folds in a currently-
   # afflicted state's own halve/double Defence flag. A target whose Defence
   # is halved by an active state must rank as easier to damage than an
   # identical, unafflicted one.
@@ -21312,7 +21382,8 @@ end
 
 # A "true form" boss trick -- transforming into a form with a *smaller* max
 # HP/SP than the current values must not full-heal-then-clamp them down.
-# EasyRPG's `Game_Enemy::Transform` (src/game_enemy.cpp) only ever repoints
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its `Game_Enemy::Transform` only ever repoints
 # the `enemy` database row and refreshes the sprite; it never touches hp/sp
 # at all (those are set to the max exactly once, in the constructor, on the
 # enemy's very first spawn). `Game_BattleAlgorithm::Transform`'s own
@@ -21340,10 +21411,11 @@ check 'a transformation carries current HP/SP over unchanged, not reclamped to t
   eq 40, foe.mp, 'current SP carries over unchanged too'
 end
 
-# EasyRPG's own attribute-rank shift is a persistent delta (Game_Battler::
+# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# RPG_RT under wine), its attribute-rank shift is a persistent delta (Game_Battler::
 # attribute_shift, clamped to +-1 total) added onto a *live* base
 # (Game_Enemy::GetBaseAttributeRate reads straight off the currently-
-# transformed `enemy` row, src/game_enemy.cpp) -- a Transform can never make
+# transformed `enemy` row) -- a Transform can never make
 # it stale, there being only the one pointer. This port instead snapshots the
 # base once (Combatant#attr_base_ranks, set at spawn) to cap an absolute
 # rank value, so a Transform has to explicitly re-seed it -- exactly the
@@ -21857,7 +21929,8 @@ check 'the same item revives an ally who is down, HP and all' do
   ok !hero.dead?, 'back on their feet'
   # Standing up puts them on 1 HP first (the existing revive path), and the
   # item's 25% of 100 lands on top of that -- but one HP short of the raw
-  # 25, since RPG_RT's `Game_Battler::UseItem` (`src/game_battler.cpp`)
+  # 25, since (per EasyRPG Player's source, NOT independently confirmed
+  # against genuine RPG_RT under wine) its `Game_Battler::UseItem`
   # applies `ChangeHp(hp_change - revived, false)` on top of the cure's own
   # floor-to-1, not the full `hp_change`.
   eq 25, hero.hp, 'with the 25% the item restores, one short of the raw 25'
@@ -21877,8 +21950,9 @@ end
 check 'a medicine that does not cure Death does nothing at all to a downed ' \
       'target -- not even curing an unrelated state or restoring MP, and ' \
       'the item is not spent' do
-  # Confirmed against RPG_RT's own live source: `Game_Battler::UseItem`
-  # (src/game_battler.cpp) checks `IsDead()` before anything else and
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its `Game_Battler::UseItem`
+  # checks `IsDead()` before anything else and
   # returns `false` immediately -- no state-cure loop, no HP change, no SP
   # change run at all -- unless `item->state_set[0]` (state id 1, Death) is
   # flagged. An Antidote-style item that cures some other state (Poison,
@@ -22122,8 +22196,9 @@ check 'equipping a second weapon from the bag lands it in the shield slot' do
   eq 95, hero.attack_hit_rate, 'the better of the two weapons\' hit rates'
   eq 20, hero.weapon_crit_bonus, 'the dagger\'s crit bonus, the sword carrying none'
   eq 10 + 20 + 15, hero.atk, 'both weapons\' attack bonuses are summed in, like any slot'
-  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
-  # Normal::Init (src/game_battlealgorithm.cpp) sums each weapon's own hit
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::
+  # Normal::Init sums each weapon's own hit
   # count (GetNumberOfAttacks) once both GetWeapon() and Get2ndWeapon() hold
   # a real weapon, rather than taking the higher of the two the way the
   # single-weapon case (Game_Actor::GetNumberOfAttacks's own max-over-
@@ -22134,8 +22209,8 @@ end
 
 check 'a weapon with its own genuine 0% hit rate is used as-is, not treated ' \
       'as unequipped' do
-  # Confirmed against EasyRPG's actual C++ source: Game_Actor::GetHitChance
-  # (src/game_actor.cpp) uses INT_MIN as its own "nothing equipped" sentinel
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_Actor::GetHitChance uses INT_MIN as its own "nothing equipped" sentinel
   # (`hit = std::max(hit, item.hit)`, `if (hit != INT_MIN) return hit;`), so
   # a "cursed" weapon whose own `hit` field is a genuine 0 -- intentionally
   # unable to land a hit, not a missing field -- is returned as 0, not
@@ -22179,15 +22254,16 @@ end
 
 check "battle: an RPG2003 two-weapon actor's swings each roll their own " \
       "weapon's to-hit, not a merged max" do
-  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
-  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) only picks
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::
+  # Normal::GetDefaultStyle only picks
   # Style_MultiHit -- the style whose Init sets weapon_style and so lets
   # GetWeapon resolve a specific slot instead of WeaponAll -- when
-  # Feature::HasRpg2k3BattleSystem() (src/feature.cpp: !HasRpg2kBattleSystem,
+  # Feature::HasRpg2k3BattleSystem() (!HasRpg2kBattleSystem,
   # true whenever the game isn't Player::IsRPG2k()). Under that style, each
   # swing resolves to exactly one weapon (the primary weapon's own hit count
-  # worth of swings, then the secondary's), and Game_Actor::GetHitChance's own
-  # ForEachEquipment (src/game_actor.cpp) excludes the *other* weapon's slot
+  # worth of swings, then the secondary's), and its Game_Actor::GetHitChance's own
+  # ForEachEquipment excludes the *other* weapon's slot
   # entirely -- never a merge/max across both. hit 100 always lands (its own
   # agi term collapses to zero regardless of either side's Agility); a low
   # hit rate against a much nimbler target clamps to a guaranteed miss (the
@@ -22223,8 +22299,8 @@ check "battle: an RPG2003 two-weapon actor's swings each carry their own " \
   # Same Style_MultiHit/GetWeapon/ForEachEquipment exclusion as the to-hit
   # check above, but for Attribute::ApplyAttributeNormalAttackMultiplier and
   # the weapon-state block of Normal::vExecute (both also gated on that
-  # swing's own resolved weapon, per EasyRPG's src/attribute.cpp and
-  # src/game_battlealgorithm.cpp). Both weapons hit 100 so accuracy never
+  # swing's own resolved weapon, per EasyRPG Player's source, NOT
+  # independently confirmed against genuine RPG_RT under wine). Both weapons hit 100 so accuracy never
   # interferes; element 1 is immune (rank 4 -> 0%) and element 2 is normal
   # (rank 2 -> 100%) on the target. The weapon states are 3 and 4,
   # deliberately not 1: state id 1 is always Knockout (Game::States::
@@ -22261,13 +22337,14 @@ end
 
 check "battle: an RPG2000 two-weapon actor's swings both roll the merged " \
       "max to-hit, never one weapon's own low roll" do
-  # Confirmed against EasyRPG's actual C++ source: Game_BattleAlgorithm::
-  # Normal::GetDefaultStyle (src/game_battlealgorithm.cpp) picks
+  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # genuine RPG_RT under wine: its Game_BattleAlgorithm::
+  # Normal::GetDefaultStyle picks
   # Style_Combined -- not Style_MultiHit -- whenever
   # !Feature::HasRpg2k3BattleSystem() (a non-2003 database), and Init only
   # ever sets weapon_style under Style_MultiHit; left at its initial -1,
   # GetWeapon always returns WeaponAll, so Game_Actor::GetHitChance's
-  # ForEachEquipment (src/game_actor.cpp) folds in *both* equipped weapons'
+  # ForEachEquipment folds in *both* equipped weapons'
   # hit fields for *every* swing (`hit = std::max(hit, item.hit)`), never one
   # specific slot's own roll. Same fixture as the RPG2003 check above (a
   # hit-100 and a hit-10 weapon against a much nimbler target -- the low hit
@@ -22382,8 +22459,9 @@ end
 # The Change Equipment event command (#equip_item_from_bag) bypasses
 # #equip_candidates/#equip_candidate_for? entirely -- it names no slot at
 # all, unlike the equip menu -- so it needs its own dual-wield handling.
-# Confirmed against RPG_RT's own live source: `Game_Interpreter::
-# CommandChangeEquipment` (src/game_interpreter.cpp) special-cases
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: its `Game_Interpreter::
+# CommandChangeEquipment` special-cases
 # `HasTwoWeapons()` before its own `ChangeEquipment` call: a shield-type
 # item is a complete no-op, and a weapon-type item redirects into the
 # shield slot when the weapon slot already holds a non-two-handed weapon
