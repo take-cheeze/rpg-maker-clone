@@ -10707,6 +10707,54 @@ check 'to_lsd writes the system graphic / font override at the correct ' \
   eq 1, round.font_id
 end
 
+check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
+      'even for a vehicle never boarded' do
+  # Confirmed against a genuine kk1.12 save under wine: all three chunks
+  # were present despite the party never boarding any vehicle that session
+  # (map_id/x/y all 0, the never-placed sentinel) -- #to_lsd used to omit
+  # the chunk entirely until a vehicle was placed.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  ok !st.vehicle(:boat).placed?
+  ok !st.vehicle(:ship).placed?
+  ok !st.vehicle(:airship).placed?
+
+  saved = st.to_lsd
+  [105, 106, 107].each { |chunk| ok saved.key?(chunk), "chunk #{chunk} is present even though unplaced" }
+
+  boat = saved[105]
+  eq 0, boat.map_id
+  eq 0, boat.x
+  eq 0, boat.y
+  eq 1, boat.vehicle, "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 1 for the boat"
+  eq 4, boat.move_speed
+  # Uncustomized (Vehicle.new's own empty charset_name/0 index sentinel):
+  # 73/74 stay absent, the same sentinel Scene::Map's own
+  # #vehicle_charset/#vehicle_charset_index already test for -- #to_lsd has
+  # no database handle to resolve the System boat_name/_index fallback
+  # those use, so it must not fabricate a name/index of its own.
+  ok !boat.key?(73), 'no charset override written for an uncustomized vehicle'
+  ok !boat.key?(74)
+
+  ship = saved[106]
+  eq 2, ship.vehicle
+  eq 4, ship.move_speed
+
+  airship = saved[107]
+  eq 3, airship.vehicle
+  eq 5, airship.move_speed, 'move_speed (field 37), 5 for the (faster) airship vs 4 for boat/ship'
+
+  # A live Change Vehicle Graphic override (or a restored .lsd's own
+  # charset_name/_index, via #load_movable) is still written through as
+  # before.
+  st.vehicle(:boat).charset_name = 'Vehicle'
+  st.vehicle(:boat).charset_index = 2
+  customized = st.to_lsd[105]
+  eq 'Vehicle', customized.charset_name
+  eq 2, customized.charset_index
+end
+
 check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \
       'hero position, not just when some other chunk-111 override is live' do
   # RPG_RT restores the camera from the save rather than deriving it from the

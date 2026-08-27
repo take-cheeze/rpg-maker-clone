@@ -14246,6 +14246,19 @@ module Game
   class Vehicle
     TYPES = [:boat, :ship, :airship].freeze
 
+    # liblcf's own `SaveVehicleLocation.vehicle` ordinal (generator/csv/
+    # fields.csv, field 101) -- the value #to_lsd's own vehicle-writing loop
+    # stamps into that field, one per vehicle chunk (105/106/107).
+    TYPE_ID = { boat: 1, ship: 2, airship: 3 }.freeze
+
+    # RPG_RT's own built-in vehicle move speed, confirmed against a genuine
+    # kk1.12 save under wine (move_speed 4/4/5 on the boat/ship/airship
+    # location records, present even though the party never boarded any of
+    # them that session). Nothing in this codebase tracks a live per-vehicle
+    # speed to source this from instead -- #to_lsd's own vehicle-writing
+    # loop uses it as a straight constant.
+    DEFAULT_MOVE_SPEED = { boat: 4, ship: 4, airship: 5 }.freeze
+
     attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
     attr_reader :type
 
@@ -14255,6 +14268,11 @@ module Game
       @x = x || 0
       @y = y || 0
       @direction = direction || 2
+      # Empty/0 is the "uncustomized" sentinel Scene::Map's own
+      # #vehicle_charset/#vehicle_charset_index (mrblib/scene/map.rb) test
+      # for, falling back to the database's own System boat/ship/airship
+      # name/index -- do not seed a non-empty placeholder here, or that
+      # fallback silently stops firing.
       @charset_name = ''
       @charset_index = 0
     end
@@ -15075,19 +15093,42 @@ module Game
       end
       save[104] = hero
 
-      # Vehicle locations (105 boat / 106 ship / 107 airship). Only a placed
-      # vehicle is written, so a game that never positioned one leaves the chunk
-      # absent, exactly as RPG_RT does.
+      # Vehicle locations (105 boat / 106 ship / 107 airship). Confirmed
+      # against a genuine kk1.12 save under wine: all three chunks were
+      # present even though the party never boarded any of them that
+      # session (map_id/x/y all still 0, the never-placed sentinel) --
+      # genuine RPG_RT writes every vehicle's record unconditionally, not
+      # only once it has been placed.
+      #
+      # The same capture also had charset_name ("乗り物") and charset_index
+      # (0/1/3) present on all three even though this engine's own model
+      # never wrote them until customized -- but that capture's own
+      # database happens to configure every vehicle's System boat/ship/
+      # airship_name/_index to resolve to exactly those values, the same
+      # fallback Scene::Map's own #vehicle_charset/#vehicle_charset_index
+      # (mrblib/scene/map.rb) already apply for rendering. #to_lsd has no
+      # database handle to resolve that same fallback with (`Game::State`
+      # carries no `db` reference at all), so an uncustomized vehicle's own
+      # 73/74 stay absent here rather than risk baking in kk1.12's own
+      # database values as if they were a universal RPG_RT default --
+      # left for a future cycle that threads a database reference through.
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
         v = @vehicles[type]
-        next unless v.placed?
         mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
         mv[11] = v.map_id
         mv[12] = v.x
         mv[13] = v.y
-        mv[22] = CharSet::DIR_ROW[v.direction] || 2
-        mv[73] = v.charset_name || ''
-        mv[74] = v.charset_index || 0
+        dir_row = CharSet::DIR_ROW[v.direction] || 2
+        mv[21] = dir_row
+        mv[22] = dir_row
+        mv[35] = 0
+        mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
+        if v.charset_name && !v.charset_name.empty?
+          mv[73] = v.charset_name
+          idx = v.charset_index || 0
+          mv[74] = idx if idx != 0
+        end
+        mv[101] = Vehicle::TYPE_ID[type]
         save[chunk] = mv
       end
 
