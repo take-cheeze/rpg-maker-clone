@@ -5949,7 +5949,7 @@ check "Flash Sprite's own wait flag blocks a Parallel Process's own interpreter,
   st = scene.instance_variable_get(:@state)
 
   scene.update # runs Flash Sprite -> suspends on :sprite_flash
-  ok scene.instance_variable_get(:@player_flash), 'the hero is flashing'
+  ok st.player_flash, 'the hero is flashing'
   ok !st.switches[1], 'the Parallel Process must wait too, not resume immediately'
 
   4.times { scene.update } # still mid-flash (6-frame duration)
@@ -10033,11 +10033,10 @@ check 'A Character Flash concurrent with a Show Battle Animation targeting the s
   saw_the_flash_at_all = false
   40.times do
     scene.update
-    pf = scene.instance_variable_get(:@player_flash)
+    pf = st.player_flash
     saw_the_flash_at_all ||= !pf.nil?
     anim = scene.instance_variable_get(:@map_animation)
-    stomped_at_frame_0 ||= (anim && anim[:frame_i] == 0 &&
-                            scene.instance_variable_get(:@player_flash).nil?)
+    stomped_at_frame_0 ||= (anim && anim[:frame_i] == 0 && st.player_flash.nil?)
     break if st.switches[6]
   end
   ok saw_the_flash_at_all, 'the independently-fired Flash Sprite command did take effect at some point'
@@ -10178,7 +10177,7 @@ end
 # #fire_target_flash's battle-only enemy-sprite mechanism, which a map scene
 # (no @battle_ui at all) can never populate, so the flash simply never fired.
 # #fire_map_target_flash reuses the Flash Sprite command's own CharSet-tone
-# mechanism (@player_flash / an @events entry's [:flash]) instead of
+# mechanism (@state.player_flash / an @events entry's [:flash]) instead of
 # inventing a second one. Animation 9 in the fake db carries a flash_scope 1
 # timing (see the fake-db comment above) rather than id 8's flash_scope 2, so
 # this is isolated from the screen-flash check above.
@@ -10194,7 +10193,7 @@ check "a map-triggered Show Battle Animation's target-scope flash pulses the pla
   seen = false
   40.times do
     scene.update
-    pf = scene.instance_variable_get(:@player_flash)
+    pf = st.player_flash
     seen ||= (pf && pf[:red] == 248 && pf[:green] == 0 && pf[:blue] == 0)
     break if st.switches[6]
   end
@@ -10267,7 +10266,7 @@ check "a map-triggered Show Battle Animation's target-scope flash pulses the nam
     scene.update
     ev2 = event_hashes(scene)[2]
     seen_target ||= (ev2[:flash] && ev2[:flash][:red] == 248)
-    seen_player ||= !scene.instance_variable_get(:@player_flash).nil?
+    seen_player ||= !st.player_flash.nil?
     break if st.switches[6]
   end
   ok seen_target, "the targeted map event's own flash was armed"
@@ -14435,10 +14434,10 @@ check 'Flash Sprite on the hero holds a waiting event until it decays' do
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
   scene.update
-  ok scene.instance_variable_get(:@player_flash), 'the hero is flashing'
+  ok st.player_flash, 'the hero is flashing'
   eq 0, st.variables[5], 'the event is held while the flash runs'
   10.times { scene.update }
-  ok !scene.instance_variable_get(:@player_flash), 'the flash decayed away'
+  ok !st.player_flash, 'the flash decayed away'
   eq 1, st.variables[5], 'the event resumed once the flash finished'
 end
 
@@ -14452,7 +14451,7 @@ check 'Flash Sprite on the hero with an instant (zero-duration) flash still ' \
   st = scene.instance_variable_get(:@state)
   scene.instance_variable_get(:@interpreter).start(cmds)
   scene.update
-  ok !scene.instance_variable_get(:@player_flash), 'nothing left to flash, it was instant'
+  ok !st.player_flash, 'nothing left to flash, it was instant'
   eq 0, st.variables[5], 'the event is still held right after the flash is queued'
   scene.update
   eq 1, st.variables[5], 'the event resumed the very next frame -- matching RPG_RT, whose ' \
