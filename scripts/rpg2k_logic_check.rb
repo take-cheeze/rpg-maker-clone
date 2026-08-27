@@ -10729,11 +10729,11 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   eq 0, boat.y
   eq 1, boat.vehicle, "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 1 for the boat"
   eq 4, boat.move_speed
-  # Uncustomized (Vehicle.new's own empty charset_name/0 index sentinel):
-  # 73/74 stay absent, the same sentinel Scene::Map's own
-  # #vehicle_charset/#vehicle_charset_index already test for -- #to_lsd has
+  # Uncustomized (Vehicle.new's own empty charset_name/0 index sentinel)
+  # and no `db` given: 73/74 stay absent, the same sentinel Scene::Map's
+  # own #vehicle_charset/#vehicle_charset_index already test for -- with
   # no database handle to resolve the System boat_name/_index fallback
-  # those use, so it must not fabricate a name/index of its own.
+  # those use, #to_lsd must not fabricate a name/index of its own.
   ok !boat.key?(73), 'no charset override written for an uncustomized vehicle'
   ok !boat.key?(74)
 
@@ -10753,6 +10753,45 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   customized = st.to_lsd[105]
   eq 'Vehicle', customized.charset_name
   eq 2, customized.charset_index
+end
+
+FakeVehicleSystem = Struct.new(:boat_name, :boat_index, :ship_name, :ship_index,
+                                :airship_name, :airship_index)
+FakeVehicleDB = Struct.new(:system)
+
+check 'to_lsd resolves an uncustomized vehicle\'s charset_name/_index off ' \
+      'the database System fallback when given one' do
+  # Mirrors Scene::Map's own #vehicle_charset/#vehicle_charset_index
+  # fallback (mrblib/scene/map.rb) for the save writer: a caller that has a
+  # database handle to give (main.rb's own #export_lsd does) gets the same
+  # resolved name/index an uncustomized vehicle actually renders with,
+  # instead of leaving 73/74 absent.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  fake_system = FakeVehicleSystem.new('乗り物', 0, '乗り物', 1, '乗り物', 3)
+  fake_db = FakeVehicleDB.new(fake_system)
+
+  saved = st.to_lsd(1, nil, 1, fake_db)
+  boat = saved[105]
+  eq '乗り物', boat.charset_name
+  ok !boat.key?(74), 'boat_index 0 elides field 74, same as a live customization would'
+
+  ship = saved[106]
+  eq '乗り物', ship.charset_name
+  eq 1, ship.charset_index
+
+  airship = saved[107]
+  eq '乗り物', airship.charset_name
+  eq 3, airship.charset_index
+
+  # A live Change Vehicle Graphic override still wins over the database
+  # fallback, exactly like Scene::Map's own #vehicle_charset does.
+  st.vehicle(:boat).charset_name = 'Vehicle'
+  st.vehicle(:boat).charset_index = 2
+  overridden = st.to_lsd(1, nil, 1, fake_db)[105]
+  eq 'Vehicle', overridden.charset_name
+  eq 2, overridden.charset_index
 end
 
 check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \

@@ -15024,7 +15024,13 @@ module Game
     # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
     # battles/defeats/escapes/victories/steps/turns fields and
     # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
-    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1)
+    # `db`, when given, is only consulted for the same database System
+    # boat/ship/airship_name/_index fallback Scene::Map's own
+    # #vehicle_charset/#vehicle_charset_index (mrblib/scene/map.rb) already
+    # apply for rendering an uncustomized vehicle -- see the vehicle-writing
+    # loop below. Every other caller (tests, tools) omits it and gets the
+    # prior behavior (73/74 simply absent for an uncustomized vehicle).
+    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1, db = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
@@ -15102,16 +15108,16 @@ module Game
       #
       # The same capture also had charset_name ("乗り物") and charset_index
       # (0/1/3) present on all three even though this engine's own model
-      # never wrote them until customized -- but that capture's own
-      # database happens to configure every vehicle's System boat/ship/
-      # airship_name/_index to resolve to exactly those values, the same
-      # fallback Scene::Map's own #vehicle_charset/#vehicle_charset_index
-      # (mrblib/scene/map.rb) already apply for rendering. #to_lsd has no
-      # database handle to resolve that same fallback with (`Game::State`
-      # carries no `db` reference at all), so an uncustomized vehicle's own
-      # 73/74 stay absent here rather than risk baking in kk1.12's own
-      # database values as if they were a universal RPG_RT default --
-      # left for a future cycle that threads a database reference through.
+      # never wrote them until customized -- that capture's own database
+      # configures every vehicle's System boat/ship/airship_name/_index to
+      # resolve to exactly those values, the same fallback Scene::Map's own
+      # #vehicle_charset/#vehicle_charset_index (mrblib/scene/map.rb) apply
+      # for rendering. Mirrored here off the optional `db` argument: when a
+      # caller has one to give (main.rb's own #export_lsd does), an
+      # uncustomized vehicle's 73/74 resolve the database's own name/index
+      # instead of staying absent, exactly like rendering already does; a
+      # caller with no `db` (tests, tools) keeps the prior absent-when-
+      # uncustomized behavior.
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
         v = @vehicles[type]
         mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
@@ -15127,6 +15133,15 @@ module Game
           mv[73] = v.charset_name
           idx = v.charset_index || 0
           mv[74] = idx if idx != 0
+        elsif db && db.respond_to?(:system) && db.system
+          name_field = "#{type}_name"
+          index_field = "#{type}_index"
+          name = db.system.respond_to?(name_field) ? db.system.send(name_field) : nil
+          if name && !name.to_s.empty?
+            mv[73] = name.to_s
+            idx = db.system.respond_to?(index_field) ? (db.system.send(index_field) || 0) : 0
+            mv[74] = idx if idx != 0
+          end
         end
         mv[101] = Vehicle::TYPE_ID[type]
         save[chunk] = mv
