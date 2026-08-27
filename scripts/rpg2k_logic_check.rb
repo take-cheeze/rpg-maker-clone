@@ -9917,12 +9917,9 @@ check 'Conditional Branch orientation: a vehicle ref (type 6, ref 10002-10004)' 
   eq true, st.switches[1]                             # facing down -> if-branch
   st = run_actor_cond([6, 10003, 0]) { |s| s.vehicle(:ship).direction = 2 } # ship facing down, asked up
   eq true, st.switches[2]                             # not facing up -> else
-  # An unplaced vehicle defaults to facing left (numpad 4) -- confirmed
-  # against a genuine kk1.12 save under wine, whose own never-boarded
-  # vehicle location records (chunks 105-107) all decoded this way (see
-  # Vehicle's own class-level comment) -- reads a real direction, not
-  # nil/false regardless.
-  eq true, run_actor_cond([6, 10004, 3]).switches[1]  # airship, never placed, still faces left
+  # An unplaced vehicle defaults to facing down (numpad 2, direction 8's
+  # own #new default) -- reads a real direction, not nil/false regardless.
+  eq true, run_actor_cond([6, 10004, 2]).switches[1]  # airship, never placed, still faces down
 end
 
 # -- Input Number -------------------------------------------------------------
@@ -10730,18 +10727,32 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   eq 0, boat.map_id
   eq 0, boat.x
   eq 0, boat.y
-  eq '乗り物', boat.charset_name, "RPG_RT's own built-in vehicle sprite name"
-  eq false, boat.key?(74), 'charset_index elided at its own default (0) on the boat'
+  eq 1, boat.vehicle, "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 1 for the boat"
+  eq 4, boat.move_speed
+  # Uncustomized (Vehicle.new's own empty charset_name/0 index sentinel):
+  # 73/74 stay absent, the same sentinel Scene::Map's own
+  # #vehicle_charset/#vehicle_charset_index already test for -- #to_lsd has
+  # no database handle to resolve the System boat_name/_index fallback
+  # those use, so it must not fabricate a name/index of its own.
+  ok !boat.key?(73), 'no charset override written for an uncustomized vehicle'
+  ok !boat.key?(74)
 
   ship = saved[106]
-  eq 1, ship.charset_index
-  eq 2, ship.vehicle, "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 2 for the ship"
+  eq 2, ship.vehicle
   eq 4, ship.move_speed
 
   airship = saved[107]
-  eq 3, airship.charset_index
   eq 3, airship.vehicle
   eq 5, airship.move_speed, 'move_speed (field 37), 5 for the (faster) airship vs 4 for boat/ship'
+
+  # A live Change Vehicle Graphic override (or a restored .lsd's own
+  # charset_name/_index, via #load_movable) is still written through as
+  # before.
+  st.vehicle(:boat).charset_name = 'Vehicle'
+  st.vehicle(:boat).charset_index = 2
+  customized = st.to_lsd[105]
+  eq 'Vehicle', customized.charset_name
+  eq 2, customized.charset_index
 end
 
 check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \

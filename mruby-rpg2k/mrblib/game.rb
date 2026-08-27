@@ -14251,33 +14251,30 @@ module Game
     # stamps into that field, one per vehicle chunk (105/106/107).
     TYPE_ID = { boat: 1, ship: 2, airship: 3 }.freeze
 
-    # RPG_RT's own built-in vehicle sprite/speed, confirmed against a genuine
-    # kk1.12 save under wine whose boat/ship/airship location records were
-    # all present despite the party never boarding any of them that session
-    # (see #to_lsd's own citation for the larger discovery this came from):
-    # charset_name "乗り物" on all three, charset_index absent (0) on the
-    # boat, 1 on the ship, 3 on the airship, and move_speed 4/4/5. Neither
-    # this class nor any event command in this codebase currently overrides
-    # a vehicle's own graphic or speed, so these apply unconditionally
-    # rather than only as an initial placeholder.
-    DEFAULT_CHARSET_INDEX = { boat: 0, ship: 1, airship: 3 }.freeze
+    # RPG_RT's own built-in vehicle move speed, confirmed against a genuine
+    # kk1.12 save under wine (move_speed 4/4/5 on the boat/ship/airship
+    # location records, present even though the party never boarded any of
+    # them that session). Nothing in this codebase tracks a live per-vehicle
+    # speed to source this from instead -- #to_lsd's own vehicle-writing
+    # loop uses it as a straight constant.
     DEFAULT_MOVE_SPEED = { boat: 4, ship: 4, airship: 5 }.freeze
 
     attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
     attr_reader :type
 
-    def initialize(type, map_id = 0, x = 0, y = 0, direction = nil)
+    def initialize(type, map_id = 0, x = 0, y = 0, direction = 2)
       @type = type
       @map_id = map_id || 0
       @x = x || 0
       @y = y || 0
-      # Confirmed against the same genuine kk1.12 save: an unboarded
-      # vehicle's own direction field decodes as "left" (liblcf's 0..3 wire
-      # value 3, CharSet::DIR_ROW's numpad 4), not the arbitrary "down" this
-      # class defaulted to before.
-      @direction = direction || 4
-      @charset_name = '乗り物'
-      @charset_index = DEFAULT_CHARSET_INDEX[type] || 0
+      @direction = direction || 2
+      # Empty/0 is the "uncustomized" sentinel Scene::Map's own
+      # #vehicle_charset/#vehicle_charset_index (mrblib/scene/map.rb) test
+      # for, falling back to the database's own System boat/ship/airship
+      # name/index -- do not seed a non-empty placeholder here, or that
+      # fallback silently stops firing.
+      @charset_name = ''
+      @charset_index = 0
     end
 
     # Whether the vehicle has been placed on a map (0 = never positioned).
@@ -15101,9 +15098,20 @@ module Game
       # present even though the party never boarded any of them that
       # session (map_id/x/y all still 0, the never-placed sentinel) --
       # genuine RPG_RT writes every vehicle's record unconditionally, not
-      # only once it has been placed. See Vehicle's own class-level comment
-      # for the rest of that capture's findings (direction, charset_name/
-      # _index, move_speed, and liblcf's own `vehicle` ordinal, field 101).
+      # only once it has been placed.
+      #
+      # The same capture also had charset_name ("乗り物") and charset_index
+      # (0/1/3) present on all three even though this engine's own model
+      # never wrote them until customized -- but that capture's own
+      # database happens to configure every vehicle's System boat/ship/
+      # airship_name/_index to resolve to exactly those values, the same
+      # fallback Scene::Map's own #vehicle_charset/#vehicle_charset_index
+      # (mrblib/scene/map.rb) already apply for rendering. #to_lsd has no
+      # database handle to resolve that same fallback with (`Game::State`
+      # carries no `db` reference at all), so an uncustomized vehicle's own
+      # 73/74 stay absent here rather than risk baking in kk1.12's own
+      # database values as if they were a universal RPG_RT default --
+      # left for a future cycle that threads a database reference through.
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
         v = @vehicles[type]
         mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
@@ -15115,9 +15123,11 @@ module Game
         mv[22] = dir_row
         mv[35] = 0
         mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
-        mv[73] = v.charset_name || ''
-        idx = v.charset_index || 0
-        mv[74] = idx if idx != 0
+        if v.charset_name && !v.charset_name.empty?
+          mv[73] = v.charset_name
+          idx = v.charset_index || 0
+          mv[74] = idx if idx != 0
+        end
         mv[101] = Vehicle::TYPE_ID[type]
         save[chunk] = mv
       end
