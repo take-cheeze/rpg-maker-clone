@@ -406,6 +406,15 @@ class RPG2k
         # a Move Event targeting "this event" can be resolved. nil for common
         # events (which have no map character).
         @active_event = nil
+        # Resume whatever event was mid-execution in the shared foreground
+        # interpreter at save time, if the state we were built from carries
+        # one -- see #restore_foreground_event_exec's own comment. Placed
+        # here, after @active_event's own plain-nil init just above (which
+        # would otherwise wipe out a restore run any earlier) and after
+        # #build_events/#build_resolver already ran, but before anything
+        # else in this method or its caller gets a chance to start a
+        # *different* event on the one shared interpreter.
+        restore_foreground_event_exec
         # A forced move route applied to the player by a Move Event, with its own
         # character mirror and step timer; nil when the player moves by input.
         @player_route = nil
@@ -668,6 +677,7 @@ class RPG2k
           end
         end
         record_map_event_positions
+        record_foreground_event_exec
         record_tile_substitutions
         RGSS::Profiler.section("map.animate_events") { animate_events }
         RGSS::Profiler.section("map.render") { render }
@@ -1491,6 +1501,49 @@ class RPG2k
         end
       end
 
+      # Snapshot the shared foreground @interpreter's own live call stack onto
+      # Game::State every frame -- see Game::State#foreground_event_exec's
+      # own comment for exactly when this is non-nil (in practice: only
+      # while an event's own Open Save Menu command has it parked on a
+      # :save_menu wait, since the ordinary player-driven Save menu can only
+      # ever open between events). Cleared back to nil the instant nothing is
+      # mid-execution there, so a save taken between events -- the
+      # overwhelming majority of the time -- carries no stale chunk 113 at
+      # all when #to_lsd runs, matching genuine RPG_RT.
+      def record_foreground_event_exec
+        frames = @interpreter.call_stack_snapshot
+        @state.foreground_event_exec =
+          frames && { event_id: @active_event ? @active_event[:id] : 0, frames: frames }
+      end
+
+      # Resume whatever event was mid-execution in the shared foreground
+      # interpreter at save time (Game::State#foreground_event_exec, decoded
+      # from a real .lsd's chunk 113 by Game::State.from_lsd, or carried over
+      # from #record_foreground_event_exec's own last snapshot when this
+      # Scene::Map was instead built straight from a live State without going
+      # through .lsd at all). A no-op the overwhelming majority of the time
+      # (see #record_foreground_event_exec's own comment on when this is ever
+      # non-nil). Called once, from #initialize, before anything else gets a
+      # chance to start a *different* event on the one shared interpreter.
+      #
+      # A saved event id that no longer resolves to a live map event here
+      # (its page's own conditions changed since, e.g. a switch flipped
+      # elsewhere, or it belonged to a common event Auto-Start, id 0) still
+      # resumes the raw command list -- each frame carries its own full
+      # commands, not just a reference to a page -- it just has no map
+      # character to answer a "this event" reference with, same as an
+      # ordinary Auto-Start common event running on this same shared
+      # interpreter today (#start_autostart's own `@active_event = nil`).
+      def restore_foreground_event_exec
+        saved = @state.foreground_event_exec
+        frames = saved && saved[:frames]
+        return unless frames && !frames.empty?
+        @interpreter.restore_call_stack(frames)
+        return unless @interpreter.running?
+        ev_id = saved[:event_id]
+        @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e[:id] == ev_id } : nil
+      end
+
       # Snapshot the current map's live Tile Substitution table onto
       # Game::State every frame, the same "survives a Save/Continue on this
       # map, resets on an ordinary re-visit" pattern #record_map_event_positions
@@ -1877,15 +1930,28 @@ class RPG2k
       # `common_event_id` is that common event's own id, nil for a map event --
       # it keys both the teleport-time reuse in #build_parallels above and the
       # save-file continuation this seeds from below.
+      #
+      # Genuine full-fidelity continuation (Game::State#common_event_exec,
+      # driven from a real .lsd's chunk 114 -- see that attribute's own
+      # comment) is tried first: unlike the older #common_event_progress
+      # cursor, it also covers a process saved mid a nested Call Event.
+      # #common_event_progress only ever gets a look-in when this has
+      # nothing for the id (an older save, or one written before cycle
+      # #191).
       def new_parallel(commands, gate_switch, event, common_event_id)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
         it.map_info = self
-        resume_at = common_event_id && @state.common_event_progress[common_event_id]
-        if resume_at
-          it.start_at(commands, resume_at)
+        saved_frames = common_event_id && @state.common_event_exec[common_event_id]
+        if saved_frames && !saved_frames.empty?
+          it.restore_call_stack(saved_frames)
         else
-          it.start(commands)
+          resume_at = common_event_id && @state.common_event_progress[common_event_id]
+          if resume_at
+            it.start_at(commands, resume_at)
+          else
+            it.start(commands)
+          end
         end
         it.event_id = event && event[:id]
         { interp: it, commands: commands, gate_switch: gate_switch,
@@ -2024,17 +2090,29 @@ class RPG2k
       # Snapshot a Common Event Parallel Process's current position onto
       # Game::State, so a fresh Scene::Map built later from this state (a
       # genuine save/load, not a Transfer Player -- see #build_parallels) can
-      # resume it instead of restarting at the top. Only overwrites the stored
-      # checkpoint when the interpreter's position is cleanly capturable right
-      # now (see Game::Interpreter#resumable_index); a tick that returns nil
-      # (mid a nested Call Event) simply leaves the last known-good checkpoint
-      # in place rather than clearing it. A no-op for a map event's own
-      # parallel process (p[:common_event_id] is nil there), which never gets a
-      # checkpoint at all -- it always restarts fresh, unchanged.
+      # resume it instead of restarting at the top. A no-op for a map event's
+      # own parallel process (p[:common_event_id] is nil there), which never
+      # gets a checkpoint at all -- it always restarts fresh, unchanged.
+      #
+      # Records two things, cycle #191 having added the second on top of the
+      # pre-existing first:
+      #   - Game::State#common_event_progress (Game::Interpreter
+      #     #resumable_index): only overwrites the stored checkpoint when the
+      #     interpreter's position is cleanly capturable right now; a tick
+      #     that returns nil (mid a nested Call Event) simply leaves the last
+      #     known-good checkpoint in place rather than clearing it. Still the
+      #     only mechanism the portable Marshal save (#to_h/.load) carries.
+      #   - Game::State#common_event_exec (Game::Interpreter
+      #     #call_stack_snapshot): the fuller call-stack snapshot a real
+      #     `.lsd`'s chunk 114 now backs, captured whenever the interpreter is
+      #     running at all -- including mid a nested Call Event, unlike
+      #     #resumable_index above.
       def record_parallel_progress(p)
         return unless p[:common_event_id]
         idx = p[:interp].resumable_index
         @state.common_event_progress[p[:common_event_id]] = idx if idx
+        frames = p[:interp].call_stack_snapshot
+        @state.common_event_exec[p[:common_event_id]] = frames if frames
       end
 
       def drive_parallel_wait(p, it)

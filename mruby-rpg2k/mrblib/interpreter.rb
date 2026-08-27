@@ -659,6 +659,88 @@ module Game
       { index: @index, size: @list.size, call_depth: @call_stack.size }
     end
 
+    # Full call-stack snapshot, suitable for a genuine `.lsd`'s
+    # SaveEventExecState/SaveEventExecFrame (LCF::Schema::
+    # SAVE_EVENT_EXEC_STATE/_FRAME, mruby-lcf/mrblib/schema.rb) -- unlike
+    # #resumable_index (a single command-list cursor, only capturable with
+    # @call_stack empty), this captures every frame Call Event has pushed,
+    # outermost first, plus the innermost currently-executing one, so a save
+    # taken mid a nested Call Event resumes at the exact right command in the
+    # exact right list once restored via #restore_call_stack. It also stays
+    # capturable while #waiting? (parked on a Show Message/Wait/Open Save
+    # Menu/etc. request): @waiting only stops execution from *advancing*
+    # further, it does not make @call_stack/@list/@index any less valid a
+    # position to resume at than #resumable_index already treats a clean
+    # between-commands pause -- @index always sits just past the command
+    # that raised the wait either way (see #resumable_index's own comment).
+    #
+    # Each returned frame is a Hash: `commands` (the frame's own command
+    # list, an Array of LCF::EventCommand-alikes -- exactly what
+    # LCF.encode_event_commands/#restore_call_stack both expect),
+    # `current_command` (the cursor into it), `event_id` and
+    # `triggered_by_decision_key`, both mirrored from this whole
+    # interpreter's own #event_id/#triggered_by_decision_key rather than
+    # tracked per frame -- #do_call_event does not record which event a
+    # called list's commands originally belonged to (a "this event"
+    # reference always resolves through the outermost caller's own id, see
+    # #character_ref), so there is no richer per-frame value available to
+    # give honestly. Only the outermost frame's own `triggered_by_decision_key`
+    # can genuinely be true: a Call Event's own nested frame was never itself
+    # started by the action key, whatever launched the outer event.
+    #
+    # Returns nil for an interpreter with nothing to capture (never started,
+    # or already finished) -- the overwhelming common case a save actually
+    # happens in, matching real RPG_RT (see SAVE_FOREGROUND_EVENT/
+    # SAVE_COMMON_EVENT's own schema.rb comments for when it is not).
+    def call_stack_snapshot
+      return nil unless @running
+      frames = @call_stack + [[@list, @index]]
+      frames.each_with_index.map do |(list, index), i|
+        {
+          commands: list,
+          current_command: index,
+          event_id: @event_id || 0,
+          triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
+        }
+      end
+    end
+
+    # Restore a previously #call_stack_snapshot-captured stack (or the
+    # equivalent decoded fresh off a genuine `.lsd`'s SAVE_EVENT_EXEC_STATE),
+    # replacing whatever this interpreter was running. Rebuilds
+    # @call_stack/@list/@index exactly, outermost frame first (matching
+    # #call_stack_snapshot's own order), restores the outermost frame's own
+    # #event_id/#triggered_by_decision_key (0/false read back as "nothing to
+    # restore", the same as a fresh interpreter already starts with), and
+    # marks the interpreter running again via #start -- which also resets
+    # every other per-run flag (@waiting included) a fresh #start already
+    # resets, since nothing here attempts to restore a mid-wait UI request
+    # (a Show Message/Choices window, a Key Input prompt, ...), only the
+    # command-list position underneath it -- see #call_stack_snapshot's own
+    # comment on that same scope limit, which #resumable_index/#start_at
+    # already share.
+    #
+    # The caller still owns #resolver/#map_info the same way #start's own
+    # callers already do (Scene::Map's #start_autostart/#new_parallel/the
+    # decision-key trigger path) -- this only rebuilds the execution
+    # position, not the surrounding wiring a fresh interpreter also needs.
+    #
+    # A blank/nil `frames` is a no-op, leaving the interpreter exactly as it
+    # was (unstarted, most likely) -- there is nothing here to fall back to
+    # instead, so the caller is expected to check first, same as every
+    # existing #resumable_index/#start_at call site already does.
+    def restore_call_stack(frames)
+      return if frames.nil? || frames.empty?
+      innermost = frames.last
+      start(innermost[:commands] || [])
+      idx = innermost[:current_command]
+      @index = idx if idx && idx >= 0 && idx <= @list.size
+      @call_stack = frames[0...-1].map { |f| [f[:commands] || [], f[:current_command] || 0] }
+      outer = frames.first
+      @event_id = outer[:event_id] if outer[:event_id] && outer[:event_id] != 0
+      @triggered_by_decision_key = !!outer[:triggered_by_decision_key]
+    end
+
     # Start (or restart) at a previously #resumable_index-captured position
     # instead of the top of the list. `commands` must be the same command list
     # (or an equivalent rebuild of it, e.g. the same common event reloaded from

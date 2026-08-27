@@ -521,11 +521,24 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
                            lcf_field(13, "\x03\x01"),
                            lcf_field(14, "\x00\x00"),
                            lcf_int_field(21, 100)])
-  # Common-event state (chunk 114): Array2D indexed by common-event id, each an
-  # opaque per-event execution-state blob.
-  common = lcf_array2d([[1, lcf_array1d([lcf_field(1, "\x01\x01\x00\x00")])]])
-  # Foreground event (chunk 113): the running event's opaque exec-state blob.
-  foreground = lcf_array1d([lcf_field(1, "\xab\xcd")])
+  # Common-event state (chunk 114) and foreground event (chunk 113, cycle
+  # #191): each is a SAVE_EVENT_EXEC_STATE (field 1: `stack`, an Array2D of
+  # SAVE_EVENT_EXEC_FRAME -- see mruby-lcf/mrblib/schema.rb's own comment on
+  # these two tables), no longer an opaque blob. One single-frame stack per
+  # chunk here, with an empty `commands` list (field 2, the `:event` type,
+  # already covered end-to-end by the "decodes an event command list" test
+  # elsewhere in this file) -- current_command/event_id/
+  # triggered_by_decision_key are the fields this test is actually pinning.
+  ce_frame = lcf_array1d([lcf_int_field(1, 0), lcf_field(2, ''),
+                          lcf_int_field(11, 3), lcf_int_field(12, 7),
+                          lcf_field(13, "\x01")])
+  ce_state = lcf_array1d([lcf_field(1, lcf_array2d([[1, ce_frame]]))])
+  common = lcf_array2d([[1, lcf_array1d([lcf_field(1, ce_state)])]])
+  fg_frame = lcf_array1d([lcf_int_field(1, 0), lcf_field(2, ''),
+                          lcf_int_field(11, 5), lcf_int_field(12, 0),
+                          lcf_field(13, "\x00")])
+  fg_state = lcf_array1d([lcf_field(1, lcf_array2d([[1, fg_frame]]))])
+  foreground = lcf_array1d([lcf_field(1, fg_state)])
   body = lcf_array1d([lcf_field(109, inventory),
                       lcf_field(113, foreground),
                       lcf_field(114, common)])
@@ -535,8 +548,18 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
   assert_equal [1, 451], save.inventory.item_ids
   assert_equal [3, 1], save.inventory.item_counts
   assert_equal 100, save.inventory.gold
-  assert_equal [0x01, 0x01, 0x00, 0x00], save.common_events[1].execution_state
-  assert_equal [0xab, 0xcd], save.foreground_event.execution_state
+
+  ce = save.common_events[1].execution_state.stack[1]
+  assert_equal [], ce.commands
+  assert_equal 3, ce.current_command
+  assert_equal 7, ce.event_id
+  assert_equal true, ce.triggered_by_decision_key
+
+  fg = save.foreground_event.execution_state.stack[1]
+  assert_equal [], fg.commands
+  assert_equal 5, fg.current_command
+  assert_equal 0, fg.event_id
+  assert_equal false, fg.triggered_by_decision_key
 end
 
 assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
