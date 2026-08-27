@@ -4466,6 +4466,23 @@ check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrid
   eq nil, round.system_sfx[1], 'an untouched SFX slot round-trips as absent, not an empty override'
 end
 
+check 'Game::State.bgm_from_chunk treats the literal file name "(OFF)" the ' \
+      'same as an absent/blank one, not a real track to play' do
+  # liblcf's own Music-struct schema default is the literal string "(OFF)",
+  # not a blank name -- #play_bgm_or_stop (Scene::Map) already treats this
+  # exact literal as "play nothing" for live playback (see its own comment),
+  # but #bgm_from_chunk, the save round-trip's decoder, never got the same
+  # fix: a Change System BGM override (or a before_vehicle_music/
+  # before_battle_music restore point, see the check above) explicitly left
+  # at "(OFF)" decoded as a genuine request to play a file literally named
+  # "(OFF)" instead of the "nothing here" it actually means.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.system_bgm[0] = { name: '(OFF)', volume: 90, tempo: 110, balance: 20 }
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq nil, round.system_bgm[0], '"(OFF)" round-trips as no override, not a literal "(OFF)" file'
+end
+
 check 'to_lsd writes SAVE_SYSTEM fields 71-82/91-102 (title/battle/etc. ' \
       'BGM and every system SE slot) unconditionally, blank when untouched' do
   # Confirmed against a genuine kk1.12 save under wine: every one of
@@ -4541,6 +4558,40 @@ check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
   eq 30, round.current_bgm[:balance], 'and its balance round-trips too'
   eq 'field', round.memorized_bgm[:name], 'memorized BGM round-trips'
   eq 60, round.memorized_bgm[:balance], 'and its balance round-trips too'
+end
+
+check 'to_lsd/from_lsd round-trips the vehicle/battle BGM restore point ' \
+      '(chunk 101 fields 76/77), "(OFF)" when nothing to restore' do
+  # Confirmed against a genuine kk1.12 save under wine, taken outside any
+  # vehicle/battle: both fields present, decoding as a BGM struct whose own
+  # `file` is the literal "(OFF)" -- RPG_RT's own placeholder, not either
+  # field being absent. Game::State#pre_vehicle_bgm/#pre_battle_bgm were
+  # promoted off Scene::Map's own transient same-named instance variables so
+  # #to_lsd would have something to source these two fields from at all.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.pre_vehicle_bgm, 'nothing to restore by default'
+  eq nil, st.pre_battle_bgm
+
+  saved = st.to_lsd
+  eq true, saved[101].key?(76), 'always present, unlike an ordinary omit-at-default field'
+  eq true, saved[101].key?(77)
+  eq '(OFF)', saved[101][76].file
+  eq '(OFF)', saved[101][77].file
+
+  round = Game::State.from_lsd(db, saved)
+  eq nil, round.pre_vehicle_bgm, '"(OFF)" reads back as nil, not a literal track named "(OFF)"'
+  eq nil, round.pre_battle_bgm
+
+  # A live restore point (mid-ride/mid-fight at save time) survives a real
+  # Save/Continue, not just this engine's own Marshal format.
+  st.pre_vehicle_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
+  st.pre_battle_bgm = { name: 'field', volume: 70, tempo: 90, balance: 60 }
+  round2 = Game::State.from_lsd(db, st.to_lsd)
+  eq 'town', round2.pre_vehicle_bgm[:name]
+  eq 30, round2.pre_vehicle_bgm[:balance]
+  eq 'field', round2.pre_battle_bgm[:name]
+  eq 60, round2.pre_battle_bgm[:balance]
 end
 
 check 'to_lsd/from_lsd round-trips bgm_stopping (liblcf SaveSystem field ' \

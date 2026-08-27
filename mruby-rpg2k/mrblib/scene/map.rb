@@ -394,7 +394,6 @@ class RPG2k
         # One digit-cell sprite per timer (RPG2003 has two); built lazily when
         # first shown (see #draw_timer).
         @timer_sprites = [nil, nil]
-        @pre_vehicle_bgm = nil
         @choice_index = 0
         # The map event whose commands the foreground interpreter is running, so
         # a Move Event targeting "this event" can be resolved. nil for common
@@ -2734,7 +2733,7 @@ class RPG2k
       # airship music — remembering the BGM that was playing so
       # #restore_pre_vehicle_bgm can bring it back on disembark.
       def play_vehicle_bgm(type)
-        @pre_vehicle_bgm = @state.current_bgm
+        @state.pre_vehicle_bgm = @state.current_bgm
         play_bgm_or_stop(vehicle_bgm(type))
       rescue StandardError => e
         $stderr.puts "[RPG2k] vehicle BGM failed: #{e.message}"
@@ -2742,8 +2741,8 @@ class RPG2k
 
       # Restore the BGM that was playing before the party boarded (the map BGM).
       def restore_pre_vehicle_bgm
-        bgm = @pre_vehicle_bgm
-        @pre_vehicle_bgm = nil
+        bgm = @state.pre_vehicle_bgm
+        @state.pre_vehicle_bgm = nil
         play_bgm_or_stop(bgm)
       rescue StandardError => e
         $stderr.puts "[RPG2k] restoring BGM failed: #{e.message}"
@@ -2765,7 +2764,7 @@ class RPG2k
       def play_battle_bgm
         music = battle_bgm
         return unless music
-        @pre_battle_bgm = @state.current_bgm
+        @state.pre_battle_bgm = @state.current_bgm
         play_bgm(music)
       rescue StandardError => e
         $stderr.puts "[RPG2k] battle BGM failed: #{e.message}"
@@ -2843,8 +2842,8 @@ class RPG2k
       # it. Harmless to call for an escape or a defeat too: there is no ME
       # active then, so it is a no-op.
       def restore_pre_battle_bgm
-        bgm = @pre_battle_bgm
-        @pre_battle_bgm = nil
+        bgm = @state.pre_battle_bgm
+        @state.pre_battle_bgm = nil
         return unless bgm && bgm[:name] && !bgm[:name].empty?
         RGSS::Audio.me_stop
         play_bgm(bgm)

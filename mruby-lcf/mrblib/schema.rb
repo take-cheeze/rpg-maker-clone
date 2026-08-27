@@ -1821,15 +1821,12 @@ module LCF
       # genuine kk1.12 save under wine (taken outside any vehicle/battle):
       # both decode as a BGM struct whose own `file` (field 1) is the
       # literal string "(OFF)" -- RPG_RT's own placeholder name for "no
-      # track", rather than either field being absent outright. Not wired
-      # into `Game::State#to_lsd`/`.from_lsd` yet: this codebase's own
-      # counterpart to each restore point (`Scene::Map#restore_pre_vehicle_bgm`
-      # and its battle equivalent) is transient scene-layer state, not
-      # anything `Game::State` itself tracks, so `#to_lsd` has nothing to
-      # source these two from today -- and writing the "(OFF)" placeholder
-      # unconditionally would be actively wrong the instant a real session
-      # boards a vehicle or fights a battle before saving. Left for a future
-      # cycle that promotes that scene-layer state onto `Game::State` first.
+      # track", rather than either field being absent outright. Wired into
+      # `Game::State#to_lsd`/`.from_lsd` via `Game::State#pre_vehicle_bgm`/
+      # `#pre_battle_bgm`, promoted off `Scene::Map`'s own transient
+      # `@pre_vehicle_bgm`/`@pre_battle_bgm` instance variables (see that
+      # class's own citation in game.rb) so the restore point survives a
+      # genuine Save/Continue too, not just the current visit.
       76 => { name: :before_vehicle_music, type: :Array1D, elements: BGM },
       77 => { name: :before_battle_music, type: :Array1D, elements: BGM },
       78 => { name: :stored_bgm, type: :Array1D, elements: BGM },
