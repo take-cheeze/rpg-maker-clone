@@ -349,9 +349,7 @@ module LCF
             # tempo + balance, liblcf's own `generator/csv/fields.csv`:
             # `Terrain,footstep,f,Sound,0x0F,...`), not a bare filename --
             # the same shape every other Sound-typed database field here
-            # already uses (see `SE` above). Confirmed against EasyRPG's
-            # actual C++ source: `src/generated/lcf/rpg/terrain.h` declares
-            # `Sound footstep;`.
+            # already uses (see `SE` above).
             15 => { name: :footstep, type: :Array1D, elements: SE },
             16 => { name: :on_damage_se, type: :bool, default: false },
             17 => { name: :background_type, type: :int, default: 0 },

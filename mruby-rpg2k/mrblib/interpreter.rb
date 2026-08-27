@@ -163,7 +163,9 @@ module Game
     # three vehicle slots, sit between them and are only recognised by the scene,
     # which owns the vehicles). **This event** is the event whose page is running
     # the command list: the editor writes 10005, and a bare 0 means the same
-    # thing (RPG_RT's `GetCharacter` maps both), which is why every reference
+    # thing (EasyRPG's `GetCharacter` maps both, ported from its source and
+    # NOT independently confirmed against genuine RPG_RT under wine), which
+    # is why every reference
     # goes through #character_ref before it is looked up.
     CHAR_PLAYER     = 10001
     CHAR_BOAT       = 10002
@@ -1850,7 +1852,9 @@ module Game
     # equipment slot — weapon, shield, armour, helmet, accessory, in the order
     # Game::Actor::EQUIP_ORDER already stores them, 0 for an empty slot).
     #
-    # Read through the roster (RPG_RT's `Game_Actors::GetActor`), so a companion
+    # Read through the roster (EasyRPG's `Game_Actors::GetActor`, ported from
+    # its source and NOT independently confirmed against genuine RPG_RT
+    # under wine), so a companion
     # who is out of the party reports their real level and gear rather than 0.
     # **Every** actor-stat read in Nepheshel — all 2436 — names a swappable
     # companion, and its party status display is built out of them, so a
@@ -2045,7 +2049,9 @@ module Game
     # Change Party Member (10330): add or remove the actor named by param2 (a
     # constant, or a variable when param1 is 1). Either can change who leads
     # the party — an add when the party was empty, a remove of the current
-    # leader — and RPG_RT's `Game_Player::Refresh` runs on every such change,
+    # leader — and EasyRPG's `Game_Player::Refresh` is believed to run on
+    # every such change (ported from its source, NOT independently
+    # confirmed against genuine RPG_RT under wine),
     # not only on Change Sprite Association, so the on-screen hero sprite
     # (loaded from the leader's CharSet) has to be reloaded here too. Without
     # this a companion swap left the map showing whichever leader's graphic
@@ -2239,7 +2245,8 @@ module Game
     #
     # Only scope 0 means "the party". A **named** actor is looked up in the
     # roster, so the command reaches one who is currently out of the party —
-    # RPG_RT's `Game_Interpreter::GetActors`, which reads the party for scope 0
+    # ported from EasyRPG's `Game_Interpreter::GetActors`, NOT independently
+    # confirmed against genuine RPG_RT under wine, which reads the party for scope 0
     # and `Game_Actors::GetActor` for the other two. That distinction is the
     # whole point in a game that swaps members: **every** fixed-id stat command
     # in Nepheshel (7805 of them — Change Skills on actor 1 alone is 2871) names
@@ -2500,8 +2507,9 @@ module Game
     # -- actor identity / graphic ---------------------------------------------
 
     # Every command in this group names its actor by a fixed id in param0, and
-    # RPG_RT resolves all of them through `Game_Actors::GetActor` — the roster,
-    # not the party — so a companion who is currently away is still renamed,
+    # EasyRPG resolves all of them through `Game_Actors::GetActor` — the roster,
+    # not the party — ported from its source, NOT independently confirmed
+    # against genuine RPG_RT under wine, so a companion who is currently away is still renamed,
     # re-dressed and re-portraited, and has it waiting when they rejoin. nil only
     # for an id the database has no row for.
     def identity_target(cmd); party.roster[cmd.param(0)]; end
@@ -2965,8 +2973,10 @@ module Game
     # actually runs the page's in-body commands. Test 4 ("the currently-
     # targeted troop member is param1") is now implemented too -- see
     # #battle_target_enemy_condition/`Game::Battle#target_enemy_index`, this
-    # port's own counterpart of RPG_RT's `target_enemy_index`/`targets_
-    # single_enemy` pair, reusing the identical `battle_source` plumbing
+    # port's own counterpart of EasyRPG's `target_enemy_index`/`targets_
+    # single_enemy` pair (ported from its source, NOT independently
+    # confirmed against genuine RPG_RT under wine), reusing the identical
+    # `battle_source` plumbing
     # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
@@ -3069,7 +3079,7 @@ module Game
     # `Game_Interpreter_Battle::CommandConditionalBranchBattle` case 4:
     # `result = (targets_single_enemy && target_enemy_index ==
     # com.parameters[1]);`. `Game::Battle#target_enemy_index` is this port's
-    # own counterpart of RPG_RT's `target_enemy_index`/`targets_single_
+    # own counterpart of EasyRPG's `target_enemy_index`/`targets_single_
     # enemy` pair, reusing the identical `battle_source` plumbing
     # `#battle_command_condition` (test 5) already threads from
     # `#run_battle_events`; a nil result (no single enemy target resolved)
@@ -3183,8 +3193,9 @@ module Game
     # 6 afflicted by state param3.
     #
     # Only sub-condition 0 asks the party; the rest ask the **actor**, through
-    # the roster, exactly as RPG_RT splits them (`IsActorInParty` versus
-    # `Game_Actors::GetActor`). The distinction decides which branch runs, and
+    # the roster, exactly as EasyRPG splits them (`IsActorInParty` versus
+    # `Game_Actors::GetActor`, ported from its source and NOT independently
+    # confirmed against genuine RPG_RT under wine). The distinction decides which branch runs, and
     # real data leans on it: Nepheshel writes 28 "is in the party" tests and 243
     # state tests, all of the latter naming a companion it also dismisses — so
     # answering them from the party alone sent every one down the false branch
@@ -4298,8 +4309,9 @@ module Game
     # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the
     # current BGM again. A no-op when nothing was memorised. Playback resumes
     # from the start — the SDL_mixer backend cannot seek to the stored position
-    # — *unless* the memorized file is the one still playing right now: real
-    # RPG_RT's `Game_System::PlayMemorizedBGM` is a bare call to the same
+    # — *unless* the memorized file is the one still playing right now: ported
+    # from EasyRPG's `Game_System::PlayMemorizedBGM`, NOT independently
+    # confirmed against genuine RPG_RT under wine, which is a bare call to the same
     # `BgmPlay` every other BGM entry point goes through (Play BGM, and the
     # battle/vehicle/inn helpers — see `Scene::Map#play_bgm`), so its "same
     # music: only adjust volume and speed" no-restart rule applies here too,

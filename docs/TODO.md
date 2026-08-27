@@ -6414,6 +6414,60 @@ The work below is roughly ordered by the critical path to a walkable game
   the rest of the codebase (`mrblib/*.rb`, other `scripts/*.rb` check files)
   before assuming the whole citation-sweep effort is complete -- this cycle
   only scoped the two files named in its own instructions.
+  ✅ **Follow-up (cycle #186, 2026-08-27): re-ran the widened citation scan
+  cycle #185 recommended against the four `mrblib` files earlier cycles
+  (#174/#176/#177) had believed fully swept.** Explicitly a lighter-weight
+  cycle -- no wine/Xvfb, comment editing only. **Method:** re-grepped
+  `mruby-rpg2k/mrblib/game.rb`, `mruby-rpg2k/mrblib/interpreter.rb`,
+  `mruby-lcf/mrblib/schema.rb` and `mruby-rpg2k/mrblib/main.rb` with the
+  digit-inclusive pattern `src/[a-z0-9_]+\.(cpp|h)` cycle #185 established,
+  plus a scan for bare `EasyRPG`/`Game_`/`Scene_`/`Window_` mentions with no
+  file path (the same misattribution shape cycle #177 flagged). **Found the
+  earlier sweeps had badly undercounted `game.rb` specifically**: the
+  narrow, letters-only pattern used by cycles #174/#176/#177 missed every
+  citation naming a digit-bearing EasyRPG filename (`game_actor.cpp` is
+  fine, but anything citing e.g. a battler/interpreter file with a
+  version-numbered name slipped through) -- the true remaining count in
+  `game.rb` was 165, not the low-teens earlier cycles' own narrower grep had
+  reported as "the last few." `interpreter.rb` (1), `schema.rb` (0) and
+  `main.rb` (0) were already genuinely clear under the widened pattern,
+  confirming those three files' earlier sweeps were in fact complete --
+  only `game.rb` had the blind spot. Rewrote all 165 in `game.rb` following
+  the established treatment (keep independent wine/schema evidence and drop
+  the citation where it already existed; otherwise rewrite to "ported from
+  EasyRPG Player's source, NOT independently confirmed against genuine
+  RPG_RT under wine" while preserving the technical description) -- 161
+  fixed, 4 remaining are pre-existing, already-honest historical-correction
+  comments (verified by reading each in context: e.g. the cycle #156 Skill
+  Book comment at line ~4883, which explicitly says the old citation was
+  wrong and independently re-confirms the claim under wine). This was
+  **not** run to completion by its own background agent -- the session's
+  container restarted mid-cycle, losing the agent's own process and
+  verification report before it could commit -- so this entry, the fix
+  counts, and all verification below were reconstructed and independently
+  re-run by the supervisor directly against the surviving working-tree
+  diff, not copied from an agent summary.
+  **Verification:** `ruby -c` clean on all four files; every changed line
+  in all four is a comment (`git diff origin/master -- <file> | grep -vE
+  "^[+-][[:space:]]*#"` empty for each, confirmed individually); `ctest -R
+  mruby_test` passed (74s); `rpg2k_scene_check.rb` (929), `rpg2k_logic_
+  check.rb` (1163), `rpg2k_render_check.rb` (41), `rpg2k3_battle_row_
+  check.rb` (19) and `rpg2k3_battle_gauge_check.rb` (15) all matched the
+  baselines already established on `origin/master` at the time (unaffected
+  by the concurrent, unrelated upstream activity landing on this repo
+  throughout this cycle -- confirmed those four files had zero upstream
+  changes to reconcile against before resetting the branch). No `data/`
+  files touched, no wine/Xvfb processes ever started this cycle. No
+  changelog fragment: comment-only, no shipped behavioral change.
+  **Left open for a future cycle:** the same widened scan against the
+  remaining `scripts/*.rb` check files beyond the two already swept by
+  cycles #184/#185 (`rpg2k_render_check.rb`, `rpg2k3_battle_row_check.rb`,
+  `rpg2k3_battle_gauge_check.rb`, `rpg2k_save_load_check.rb`, others) has
+  still never been run at all; the four `mrblib` files' own bare-EasyRPG-
+  mention-without-file-path scan (as opposed to the `src/*.cpp|h` pattern)
+  was not separately exhausted this cycle beyond what surfaced naturally
+  while fixing the file-path citations, so a dedicated pass for that
+  narrower shape may still find a few more.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
