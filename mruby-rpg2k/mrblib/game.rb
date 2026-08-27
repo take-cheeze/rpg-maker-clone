@@ -15093,6 +15093,14 @@ module Game
       # schema.rb comment for the genuine-save evidence and why this
       # codebase has no separate value to give it.
       hero[21] = hero[22]
+      # Field 33 (liblcf's own `layer`): confirmed present as the constant 1
+      # ("same as characters") on a genuine kk1.12 save under wine, on both
+      # the hero's own record and every vehicle's (see the vehicle-writing
+      # loop below) -- this codebase has no "Change Hero/Vehicle Layer"
+      # concept at all (RPG2000/2003 never offers one; only a map *event*
+      # page can be pinned below/above characters), so 1 is a true constant
+      # here, not a live value with a default to elide at.
+      hero[33] = 1
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
@@ -15146,6 +15154,9 @@ module Game
         dir_row = CharSet::DIR_ROW[v.direction] || 2
         mv[21] = dir_row
         mv[22] = dir_row
+        # Field 33 (layer): a true constant, see the hero's own field-33
+        # citation just above.
+        mv[33] = 1
         mv[35] = 0
         mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
         if v.charset_name && !v.charset_name.empty?

@@ -1180,6 +1180,14 @@ module LCF
       # write-only mirror, the same shape as chunk 104's own 73/74
       # (`charset_name`/`charset_index`) sprite mirror.
       21 => { name: :sprite_direction, type: :int },
+      # liblcf's own `layer` (generator/csv/fields.csv, 0x21 == 33): confirmed
+      # present as the constant 1 ("same as characters") on a genuine kk1.12
+      # save under wine, on the hero's own record and every vehicle's alike
+      # (chunks 104-107) -- RPG2000/2003 has no "Change Hero/Vehicle Layer"
+      # command (only a map *event* page can be pinned below/above
+      # characters), so this codebase's own `#to_lsd` writes it as a true
+      # constant rather than tracking any live state for it.
+      33 => { name: :layer, type: :int },
       # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
       # 0x18 == 24): "0 or 3 - Transparency level of the current event page".
       # On the *hero's* own record (chunk 104) this is Set Transparent Flag's
@@ -1241,10 +1249,10 @@ module LCF
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
-    # (generator/csv/fields.csv) than this table models: `layer` (0x21/33),
-    # a full in-progress `move_route` (`MoveRoute` chunk, 0x29/41 -- the
-    # hero had a live custom route recorded in that capture), `through`
-    # (0x33/51), `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54,
+    # (generator/csv/fields.csv) than this table models: a full in-progress
+    # `move_route` (`MoveRoute` chunk, 0x29/41 -- the hero had a live custom
+    # route recorded in that capture), `through` (0x33/51),
+    # `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54,
     # movement/animation frame timers), `begin_jump_x`/`_y` (0x3E-3F/62-63),
     # `processed` (0x4B/75, already noted above), and
     # `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`
@@ -1256,7 +1264,8 @@ module LCF
     # movement/animation timers are pure per-frame scheduling this engine
     # already recomputes fresh rather than resuming byte-for-byte. Left as a
     # known, larger gap for a future cycle -- see this table's own field 43
-    # comment for the one piece (`move_route_index`) already covered.
+    # comment for the `move_route_index` piece, and field 33's own comment
+    # for `layer`, already covered.
     #
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #

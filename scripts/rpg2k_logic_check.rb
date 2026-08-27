@@ -4438,6 +4438,22 @@ check 'to_lsd mirrors chunk 104 field 21 (liblcf\'s own "direction") off ' \
   eq hero[22], hero[21], 'field 21 mirrors field 22 exactly'
 end
 
+check 'to_lsd writes chunk 104/105-107 field 33 (layer) as the constant 1, ' \
+      'for the hero and every vehicle alike' do
+  # Confirmed against a genuine kk1.12 save under wine: present as 1 ("same
+  # as characters") on the hero's own record and every vehicle's -- this
+  # codebase has no "Change Hero/Vehicle Layer" concept to source a live
+  # value from (RPG2000/2003 never offers one outside a map event's own
+  # page), so it is a true constant, not an omit-at-default field.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  saved = st.to_lsd
+  eq 1, saved[104].layer, "the hero's own record"
+  eq 1, saved[105].layer, 'the boat'
+  eq 1, saved[106].layer, 'the ship'
+  eq 1, saved[107].layer, 'the airship'
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
