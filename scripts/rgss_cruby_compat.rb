@@ -2373,7 +2373,12 @@ module RGSS
           rss_bytes: 0,
           live_blocks: 0,
           lv_used_bytes: 0,
-          sections: sections
+          sections: sections,
+          # The native profiler (mruby-rgss/src/profiler.cxx) reads this from
+          # mruby's own GC counters (patches/mruby-gc-type-live-counts.patch),
+          # which have no CRuby equivalent -- stubbed empty like the other
+          # native-only fields above rather than omitted.
+          object_types: {}
         }
       end
 

@@ -148,22 +148,21 @@ function(rpg2k_add_mruby)
   set(mruby_nomem_patch
       "${ARG_REPO_ROOT}/patches/mruby-nomemoryerror-reentrant-alloc.patch")
 
-  # Vendored mruby has no way to see what a live heap is made of by type --
-  # the stock answer, the mruby-objectspace mrbgem's ObjectSpace.count_objects,
+  # Vendored mruby has no way to see what a live heap is made of by type -- the
+  # stock answer, the mruby-objectspace mrbgem's ObjectSpace.count_objects,
   # forces a full mrb_full_gc() before every walk (patches/mruby-gc-type-
   # live-counts.patch's own preamble has the full trail), which is the exact
   # stop-the-world cost this project's profiler exists to watch for, so it
   # cannot be the thing that watches for it. This patch instead adds a
   # per-mrb_vtype live/allocation counter pair to mrb_gc, kept current by a
-  # single increment already-executing mrb_obj_alloc() and a single decrement
-  # in the sweep phase's obj_free() -- no extra heap walk, no extra GC pass --
-  # plus mrb_gc_type_counts() to read them out, which mruby-rgss/src/
-  # profiler.cxx uses to report per-type object counts through
-  # RGSS::Profiler.stats. Unlike the other patches here this is a project-
-  # owned addition rather than an upstream bug fix, so it is not expected to
-  # ever land upstream and stays permanently. Same patch-in-place treatment as
-  # the rest of this file, for the same reason (no fork of upstream
-  # mruby/mruby this project controls).
+  # single increment already-executing mrb_obj_alloc() and a single decrement in
+  # the sweep phase's obj_free() -- no extra heap walk, no extra GC pass -- plus
+  # mrb_gc_type_counts() to read them out, which mruby-rgss/src/ profiler.cxx
+  # uses to report per-type object counts through RGSS::Profiler.stats. Unlike
+  # the other patches here this is a project- owned addition rather than an
+  # upstream bug fix, so it is not expected to ever land upstream and stays
+  # permanently. Same patch-in-place treatment as the rest of this file, for the
+  # same reason (no fork of upstream mruby/mruby this project controls).
   set(mruby_gc_type_counts_patch
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
@@ -197,9 +196,13 @@ function(rpg2k_add_mruby)
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME}/mgem-list && ${mrb_opts} rake
       -v
     WORKING_DIRECTORY "${mruby_prefix}"
-    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" "${mruby_colon3_patch}"
-            "${mruby_dollar_bang_patch}" "${mruby_defined_keyword_patch}"
-            "${mruby_nomem_patch}" "${mruby_gc_type_counts_patch}" ${mrb_files})
+    DEPENDS "${ARG_REPO_ROOT}/build_config.rb"
+            "${mruby_colon3_patch}"
+            "${mruby_dollar_bang_patch}"
+            "${mruby_defined_keyword_patch}"
+            "${mruby_nomem_patch}"
+            "${mruby_gc_type_counts_patch}"
+            ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
 
