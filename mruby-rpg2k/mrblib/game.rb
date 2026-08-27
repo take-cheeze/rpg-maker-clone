@@ -15041,13 +15041,15 @@ module Game
     # LCF::Schema::SAVE_INVENTORY's timer1_*/timer2_*,
     # battles/defeats/escapes/victories/steps/turns fields and
     # SAVE_PARTY_ACTOR's actor_name/title), so this is a near-parity export.
-    # `db`, when given, is only consulted for the same database System
-    # boat/ship/airship_name/_index fallback Scene::Map's own
-    # #vehicle_charset/#vehicle_charset_index (mrblib/scene/map.rb) already
-    # apply for rendering an uncustomized vehicle -- see the vehicle-writing
-    # loop below. Every other caller (tests, tools) omits it and gets the
-    # prior behavior (73/74 simply absent for an uncustomized vehicle).
-    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1, db = nil)
+    # `db`, when given, is consulted for the same database System boat/ship/
+    # airship_name/_index fallback Scene::Map's own #vehicle_charset/
+    # #vehicle_charset_index (mrblib/scene/map.rb) already apply for
+    # rendering an uncustomized vehicle -- see the vehicle-writing loop
+    # below -- and, together with `map_tree`, for SAVE_SYSTEM field 125 (see
+    # that field's own citation further down). Every other caller (tests,
+    # tools) omits either and gets the prior behavior (73/74 simply absent
+    # for an uncustomized vehicle; field 125 omitted entirely).
+    def to_lsd(save_count = 1, timestamp = nil, save_slot = 1, db = nil, map_tree = nil)
       timestamp = State.ole_now if timestamp.nil?
       save = LCF::SaveData.new
 
@@ -15091,6 +15093,14 @@ module Game
       # schema.rb comment for the genuine-save evidence and why this
       # codebase has no separate value to give it.
       hero[21] = hero[22]
+      # Field 33 (liblcf's own `layer`): confirmed present as the constant 1
+      # ("same as characters") on a genuine kk1.12 save under wine, on both
+      # the hero's own record and every vehicle's (see the vehicle-writing
+      # loop below) -- this codebase has no "Change Hero/Vehicle Layer"
+      # concept at all (RPG2000/2003 never offers one; only a map *event*
+      # page can be pinned below/above characters), so 1 is a true constant
+      # here, not a live value with a default to elide at.
+      hero[33] = 1
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
@@ -15144,6 +15154,9 @@ module Game
         dir_row = CharSet::DIR_ROW[v.direction] || 2
         mv[21] = dir_row
         mv[22] = dir_row
+        # Field 33 (layer): a true constant, see the hero's own field-33
+        # citation just above.
+        mv[33] = 1
         mv[35] = 0
         mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
         if v.charset_name && !v.charset_name.empty?
@@ -15311,6 +15324,37 @@ module Game
       sys[122] = false unless @escape_access
       sys[123] = false unless @save_access
       sys[124] = false unless @menu_access
+      # Field 125 ("background" in liblcf's own generator/csv/fields.csv --
+      # this schema's own :battle_background name was a disproven guess, see
+      # SAVE_SYSTEM's own comment for the full history): the current map's
+      # resolved encounter background, standing on whatever terrain the
+      # party currently occupies -- the same `Game::Backdrop.name_for` walk
+      # plus terrain lookup `Scene::Battle#encounter_backdrop` already uses
+      # to pick a fight's own backdrop. Needs both `db` (a chipset to
+      # resolve the tile's terrain id, and the terrain table's own
+      # background_name) and `map_tree` (the map-tree's own backdrop_type
+      # walk) to compute -- omitted when either is absent (tests, tools), or
+      # this state has no map loaded (a fresh, unplayed save). Does not
+      # account for a live Change Map Tileset override
+      # (Scene::Map#apply_tileset_request's own `@tileset_id`), which this
+      # codebase does not persist anywhere yet -- a separate, pre-existing
+      # gap.
+      if db && map_tree && self.map
+        begin
+          props = map_tree.respond_to?(:map_properties) ? map_tree.map_properties : nil
+          terrain_name = ''
+          if db.respond_to?(:chipset) && db.respond_to?(:terrain) && self.map.in_bounds?(@x, @y)
+            chipset = ChipSet.new(db, self.map.chipset_id)
+            tid = chipset.terrain(self.map.lower(@x, @y))
+            row = db.terrain[tid]
+            terrain_name = row.background_name.to_s if row && row.respond_to?(:background_name)
+          end
+          name = Backdrop.name_for(map_id, props, terrain_name)
+          sys[125] = name unless name.nil? || name.empty?
+        rescue StandardError => e
+          $stderr.puts "[RPG2k] battle background lookup failed: #{e.message}"
+        end
+      end
       # Screen-transition slots 0..5 map to chunks 111..116 in order.
       @screen_transitions.each_with_index { |style, i| sys[111 + i] = style || 0 }
       # System windowskin / font override (Change System Graphics). Font id
