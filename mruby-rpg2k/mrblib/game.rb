@@ -15025,7 +15025,12 @@ module Game
           break if i >= face_fields.size
           nf, xf = face_fields[i]
           title[nf] = members[i].faceset_name
-          title[xf] = members[i].faceset_index
+          # Elided at its own default (0) -- confirmed against a genuine
+          # kk1.12 save under wine, whose leader's own FaceSet index was 0
+          # and left field 22 (this member's own index slot) absent rather
+          # than an explicit 0.
+          idx = members[i].faceset_index
+          title[xf] = idx if idx != 0
         end
         save[100] = title
       end
@@ -15389,6 +15394,9 @@ module Game
       scr[13] = current[2] if current[2] != Screen::NEUTRAL
       scr[14] = current[3] if current[3] != Screen::NEUTRAL
       scr[15] = frames if frames != 0
+      pan_x, pan_y = @screen.pan_offset
+      scr[41] = pan_x if pan_x != 0
+      scr[42] = pan_y if pan_y != 0
       save[102] = scr
 
       # Chunk 103 is every picture slot RPG2000 offers (Show Picture, 11110)
@@ -16039,6 +16047,13 @@ module Game
                                    [scr.tint_current_red, scr.tint_current_green,
                                     scr.tint_current_blue, scr.tint_current_sat],
                                    scr.tint_time_left)
+        # The live Pan Screen offset (fields 41/42) -- a genuine save never
+        # carries a separate in-flight target, so this restores at rest
+        # (current == target), the same idle-sync convention already used
+        # for tint/pictures elsewhere in this method.
+        px = scr.pan_x || 0
+        py = scr.pan_y || 0
+        state.screen.load_h(pan_x: px, pan_y: py, pan_tx: px, pan_ty: py)
       end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
