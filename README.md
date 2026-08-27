@@ -690,6 +690,24 @@
   rate (SDL_mixer already mixes on its own thread; only asset load blocks the
   game loop)
 
+### Performance
+
+- `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
+  repaint the screen — `30`, `15` or `10` redraw the screen that many times a
+  second instead of 60, to cut rendering CPU/GPU work and the memory
+  bandwidth it costs on constrained hardware (handhelds, older phones, the
+  PSP/Wio Terminal ports). Game logic, `Graphics.frame_count`, animation
+  timers, message speed and `Wait` all keep running every call at the normal
+  rate — the game plays and times identically at every setting, it just
+  visibly updates less often:
+
+  ```sh
+  ./rpg_maker_clone --render_fps=30 --game_dir path/to/game
+  ```
+
+  Defaults to `60` (every frame renders); values outside `1..60` are clamped
+  with a warning.
+
 ### Build natively without Nix
 
 - The supported build is the Nix flake (`nix develop`), which pins every

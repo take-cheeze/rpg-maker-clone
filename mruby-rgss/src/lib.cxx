@@ -3155,6 +3155,12 @@ uint32_t g_next_frame = 0;
 uint32_t g_period_acc = 0;
 bool g_paced = false;
 
+// --render_fps (src/main.cxx): duty-cycle accumulator deciding which of every
+// 60 Graphics.update calls actually reach the LVGL redraw below (same
+// Bresenham-style technique as g_period_acc above, just spreading renders
+// instead of milliseconds evenly across the 60 calls-per-second baseline).
+uint32_t g_render_acc = 0;
+
 // RGSS Graphics.frame_reset: "resets the screen refresh timing", called after
 // something slow so the game does not then run fast catching up. The pacing
 // below carries an absolute deadline forward, so after a long stall it owes a
@@ -3170,6 +3176,32 @@ mrb_value gfx_frame_reset(mrb_state* M, mrb_value self) {
   (void)M;
   g_paced = false;
   return self;
+}
+
+// Whether *this* Graphics.update call should reach the LVGL redraw, per
+// --render_fps (src/main.cxx). Game logic runs every call regardless -- this
+// only gates the z-reorder/bitmap-invalidate/LVGL draw work below, so a lower
+// setting redraws the screen less often without changing how fast the game
+// itself runs. Undefined (e.g. the per-gem `rake test` binary, which never
+// runs main.cxx) means "render every frame", same fallback as NO_RENDER_WAIT.
+bool render_due(mrb_state* M) {
+  int32_t render_fps = 60;
+  if (mrb_const_defined(M, mrb_obj_value(M->object_class),
+                        mrb_intern_lit(M, "RENDER_FPS"))) {
+    const mrb_value v = mrb_const_get(M, mrb_obj_value(M->object_class),
+                                      mrb_intern_lit(M, "RENDER_FPS"));
+    mrb_assert(mrb_fixnum_p(v));
+    render_fps = static_cast<int32_t>(mrb_fixnum(v));
+  }
+  if (render_fps >= 60)
+    return true;
+  if (render_fps <= 0)
+    return false;
+  g_render_acc += static_cast<uint32_t>(render_fps);
+  if (g_render_acc < 60)
+    return false;
+  g_render_acc -= 60;
+  return true;
 }
 
 mrb_value gfx_update(mrb_state* M, mrb_value self) {
@@ -3194,73 +3226,81 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
     }
   }
 
-  // Reapply z ordering when something changed since the last frame. LVGL draws
-  // siblings in child order, so within each LVGL parent we sort that parent's
-  // z-managed objects by `z` and move them to the foreground from lowest to
-  // highest, leaving the greatest `z` on top. Grouping by parent means sprites
-  // that live inside a Viewport are ordered among themselves, while the
-  // Viewport (and top-level sprites) are ordered against each other on the
-  // screen. Disposed objects (null DATA_PTR) are dropped from the set here so
-  // it does not grow unbounded.
-  if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
-    ProfilerScope _zscope("gfx.zorder");
-    const mrb_value objs = zorder_objs(M);
-    const mrb_value live = mrb_ary_new(M);
-    std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
-    for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
-      const mrb_value v = RARRAY_PTR(objs)[i];
-      if (!DATA_PTR(v))
-        continue;
-      mrb_ary_push(M, live, v);
-      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
-      const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
-      mrb_assert(mrb_fixnum_p(z));
-      by_parent[lv_obj_get_parent(obj)].insert({mrb_fixnum(z), obj});
+  // --render_fps (src/main.cxx): on a skipped frame, leave the z/dirty flags
+  // set rather than touching them, so the next frame that does render picks
+  // up everything that changed while it waited -- no dropped update, just a
+  // deferred repaint.
+  if (render_due(M)) {
+    // Reapply z ordering when something changed since the last frame. LVGL
+    // draws siblings in child order, so within each LVGL parent we sort that
+    // parent's z-managed objects by `z` and move them to the foreground from
+    // lowest to highest, leaving the greatest `z` on top. Grouping by parent
+    // means sprites that live inside a Viewport are ordered among
+    // themselves, while the Viewport (and top-level sprites) are ordered
+    // against each other on the screen. Disposed objects (null DATA_PTR) are
+    // dropped from the set here so it does not grow unbounded.
+    if (mrb_bool(mrb_iv_get(M, rgss_mod, mrb_intern_lit(M, "_z_updated")))) {
+      ProfilerScope _zscope("gfx.zorder");
+      const mrb_value objs = zorder_objs(M);
+      const mrb_value live = mrb_ary_new(M);
+      std::map<lv_obj_t*, std::multimap<mrb_int, lv_obj_t*>> by_parent;
+      for (mrb_int i = 0; i < RARRAY_LEN(objs); ++i) {
+        const mrb_value v = RARRAY_PTR(objs)[i];
+        if (!DATA_PTR(v))
+          continue;
+        mrb_ary_push(M, live, v);
+        lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
+        const mrb_value z = mrb_iv_get(M, v, mrb_intern_lit(M, "@z"));
+        mrb_assert(mrb_fixnum_p(z));
+        by_parent[lv_obj_get_parent(obj)].insert({mrb_fixnum(z), obj});
+      }
+      mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_zobjs"), live);
+      for (const auto& group : by_parent)
+        for (const auto& order : group.second)
+          lv_obj_move_foreground(order.second);
+      mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"),
+                 mrb_false_value());
     }
-    mrb_const_set(M, rgss_mod, mrb_intern_lit(M, "_zobjs"), live);
-    for (const auto& group : by_parent)
-      for (const auto& order : group.second)
-        lv_obj_move_foreground(order.second);
-    mrb_iv_set(M, rgss_mod, mrb_intern_lit(M, "_z_updated"), mrb_false_value());
-  }
 
-  // Bitmap mutators write straight into the shared pixel buffer, which LVGL
-  // does not observe. Walk the live sprites and invalidate any whose bitmap has
-  // been touched since the last frame so LVGL repaints them below. Flags are
-  // cleared only after the whole sweep so a bitmap shared by several sprites
-  // invalidates all of them.
-  {
-    ProfilerScope _iscope("gfx.invalidate");
-    const mrb_value roots = zorder_objs(M);
-    const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
-    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-      const mrb_value v = RARRAY_PTR(roots)[i];
-      lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
-      if (!obj)
-        continue;
-      const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
-      if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
-        continue;
-      Bitmap* b = reinterpret_cast<Bitmap*>(DATA_PTR(bmpv));
-      if (b->dirty)
-        lv_obj_invalidate(obj);
+    // Bitmap mutators write straight into the shared pixel buffer, which LVGL
+    // does not observe. Walk the live sprites and invalidate any whose bitmap
+    // has been touched since the last frame so LVGL repaints them below.
+    // Flags are cleared only after the whole sweep so a bitmap shared by
+    // several sprites invalidates all of them.
+    {
+      ProfilerScope _iscope("gfx.invalidate");
+      const mrb_value roots = zorder_objs(M);
+      const mrb_sym bitmap_sym = mrb_intern_lit(M, "@bitmap");
+      for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
+        const mrb_value v = RARRAY_PTR(roots)[i];
+        lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(v));
+        if (!obj)
+          continue;
+        const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
+        if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
+          continue;
+        Bitmap* b = reinterpret_cast<Bitmap*>(DATA_PTR(bmpv));
+        if (b->dirty)
+          lv_obj_invalidate(obj);
+      }
+      // Second pass: clear the flags now that every referencing sprite is
+      // marked.
+      for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
+        const mrb_value v = RARRAY_PTR(roots)[i];
+        if (!DATA_PTR(v))
+          continue;
+        const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
+        if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
+          continue;
+        reinterpret_cast<Bitmap*>(DATA_PTR(bmpv))->dirty = false;
+      }
     }
-    // Second pass: clear the flags now that every referencing sprite is marked.
-    for (mrb_int i = 0; i < RARRAY_LEN(roots); ++i) {
-      const mrb_value v = RARRAY_PTR(roots)[i];
-      if (!DATA_PTR(v))
-        continue;
-      const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
-      if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
-        continue;
-      reinterpret_cast<Bitmap*>(DATA_PTR(bmpv))->dirty = false;
-    }
-  }
 
-  {
-    ProfilerScope _lvscope("gfx.lvgl");
-    lv_timer_handler();
-    lv_task_handler();
+    {
+      ProfilerScope _lvscope("gfx.lvgl");
+      lv_timer_handler();
+      lv_task_handler();
+    }
   }
 
   // Advance Graphics.frame_count, matching RGSS semantics.
