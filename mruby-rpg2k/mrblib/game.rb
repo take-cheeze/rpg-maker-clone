@@ -14741,6 +14741,18 @@ module Game
     # promoted onto Game::State so #to_h/#load_h and #to_lsd/.from_lsd can
     # round-trip it like #current_bgm above.
     attr_accessor :pre_vehicle_bgm, :pre_battle_bgm
+    # The hero's own in-flight Flash Sprite (11320) or map-triggered battle-
+    # animation flash, a `{ red:, green:, blue:, power:, frames:, total: }`
+    # hash (see Scene::Map's own "Flash Sprite" section) or nil when nothing
+    # is flashing -- previously tracked only as Scene::Map's own transient
+    # `@player_flash`, invisible to both save formats, so a save taken mid-
+    # flash and continued silently dropped it instead of resuming the fade.
+    # Promoted onto Game::State so #to_h/#load_h and #to_lsd/.from_lsd can
+    # round-trip it, wiring up chunk 104's own flash_red/_green/_blue/
+    # _current_level/_time_left (liblcf's own generator/csv/fields.csv,
+    # 0x51-0x55/81-85) -- see #to_lsd's own citation for exactly what is and
+    # is not confirmed against genuine RPG_RT here.
+    attr_accessor :player_flash
     # Whether the current BGM has wrapped back to its start at least once — the
     # "BGM played once" conditional-branch test (12010 type 9). Cleared whenever
     # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
@@ -15025,6 +15037,7 @@ module Game
       @memorized_bgm = nil
       @pre_vehicle_bgm = nil
       @pre_battle_bgm = nil
+      @player_flash = nil
       @bgm_looped = false
       @bgm_stopping = false
       @player_transparent = false
@@ -15301,6 +15314,7 @@ module Game
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         pre_vehicle_bgm: @pre_vehicle_bgm, pre_battle_bgm: @pre_battle_bgm,
+        player_flash: @player_flash,
         player_transparent: @player_transparent, weather: @weather.to_h,
         screen: @screen.to_h,
         pictures: @pictures.each_with_object({}) { |(id, p), out| out[id] = p.to_h },
@@ -15430,6 +15444,23 @@ module Game
       # page can be pinned below/above characters), so 1 is a true constant
       # here, not a live value with a default to elide at.
       hero[33] = 1
+      # Fields 81-85 (flash_red/_green/_blue/_current_level/_time_left): see
+      # SAVE_MOVABLE's own schema.rb comment for the full citation. The RGB
+      # triple is written unconditionally (0 when nothing is flashing,
+      # confirmed against genuine RPG_RT under wine -- not the schema's own
+      # -1 generator default); the level/time_left pair only while
+      # #player_flash is actually live, `flash_current_level` derived from
+      # this codebase's own linear decay (`power * frames / total.to_f`,
+      # matching Scene::Map#flash_tone) rather than independently confirmed.
+      pf = @player_flash
+      hero[81] = pf ? pf[:red] : 0
+      hero[82] = pf ? pf[:green] : 0
+      hero[83] = pf ? pf[:blue] : 0
+      if pf && pf[:frames] && pf[:frames] > 0
+        total = pf[:total] && pf[:total] > 0 ? pf[:total] : pf[:frames]
+        hero[84] = pf[:power].to_f * pf[:frames] / total
+        hero[85] = pf[:frames]
+      end
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
@@ -16439,6 +16470,25 @@ module Game
       # liblcf's "0 or 3" convention on the hero's own movable record (see
       # #to_lsd's own citation on why this lives here, not the system chunk).
       state.player_transparent = (hero.transparency || 0) != 0
+      # Fields 81-85 (flash_red/_green/_blue/_current_level/_time_left): see
+      # #to_lsd's own citation. A flash is only "live" once time_left is
+      # actually present and positive -- the RGB triple alone (0 or a stale
+      # colour) carries no flash of its own without it. `power` is
+      # recovered from `current_level` at its own peak strength (frames ==
+      # total, the instant it starts) since liblcf has no separate field for
+      # the original peak; a save resumed mid-decay therefore restarts that
+      # decay from its own already-decayed current level, one frame short of
+      # exactly reproducing genuine RPG_RT's own remaining fade -- close
+      # enough that the visual difference is a single frame, not a
+      # citation this codebase can make stronger without a wine capture of
+      # an actual in-progress flash to compare against.
+      if hero.flash_time_left && hero.flash_time_left > 0
+        frames = hero.flash_time_left
+        level = hero.flash_current_level || 0.0
+        state.player_flash = { red: hero.flash_red || 0, green: hero.flash_green || 0,
+                               blue: hero.flash_blue || 0, power: level.round, frames: frames,
+                               total: frames }
+      end
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
       # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
       state.vehicle(:boat).load_movable(save.boat)
@@ -16896,6 +16946,7 @@ module Game
       state.memorized_bgm = h[:memorized_bgm]
       state.pre_vehicle_bgm = h[:pre_vehicle_bgm]
       state.pre_battle_bgm = h[:pre_battle_bgm]
+      state.player_flash = h[:player_flash]
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
       state.screen.load_h(h[:screen])

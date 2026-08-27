@@ -4094,7 +4094,7 @@ class RPG2k
         return nil if flash[:frames] <= 0
         case r[:target]
         when MOVE_TARGET_PLAYER
-          @player_flash = flash
+          @state.player_flash = flash
           @last_frame = nil # force the hero's cached frame to be re-toned
           flash
         when 0, MOVE_TARGET_THIS
@@ -4127,15 +4127,15 @@ class RPG2k
         # Invalidate the hero's cached frame whenever a flash was running this
         # tick — including the tick it ends on, so the last toned frame is
         # replaced by the plain one instead of staying baked in.
-        @last_frame = nil if @player_flash
-        @player_flash = tick_flash(@player_flash)
+        @last_frame = nil if @state.player_flash
+        @state.player_flash = tick_flash(@state.player_flash)
         @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
         # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
         # decay here (its visuals are the native sprite #update_vehicle_flashes
         # already drives) -- @flash_wait's `:vehicle` marker is only ever set
         # by #apply_sprite_flash's own vehicle branch, so this can never
-        # double-decay the identical object the @player_flash/event lines
-        # above already tick.
+        # double-decay the identical object the @state.player_flash/event
+        # lines above already tick.
         @flash_wait = tick_flash(@flash_wait) if @flash_wait && @flash_wait[:vehicle]
       end
 
@@ -7617,8 +7617,8 @@ class RPG2k
         end
       end
 
-      # The map-triggered half: drop @player_flash / an @events entry's own
-      # [:flash] back to nil, the same "no flash in flight" state #tick_flash's
+      # The map-triggered half: drop @state.player_flash / an @events entry's
+      # own [:flash] back to nil, the same "no flash in flight" state #tick_flash's
       # own decay already leaves behind, mirroring #fire_map_target_flash's own
       # arm call. A vehicle target clears the native RGSS flash
       # #fire_map_target_flash armed on `@vehicle_sprites[type]` directly,
@@ -7632,8 +7632,8 @@ class RPG2k
           spr = @vehicle_sprites && @vehicle_sprites[target]
           spr.flash(nil, 0) if spr
         elsif target == :player
-          @last_frame = nil if @player_flash
-          @player_flash = nil
+          @last_frame = nil if @state.player_flash
+          @state.player_flash = nil
         else
           target[:flash] = nil
         end
@@ -7938,7 +7938,7 @@ class RPG2k
       # {red:, green:, blue:, power:, frames:, total:} hash #apply_sprite_flash
       # builds and #flash_tone/#update_sprite_flashes already drive every frame
       # (see the "Flash Sprite" section above): `target` (from
-      # #map_animation_flash_target) is either `:player` (-> @player_flash) or
+      # #map_animation_flash_target) is either `:player` (-> @state.player_flash) or
       # an `@events` entry (-> its `[:flash]`). A vehicle target (one of
       # `Game::Vehicle::TYPES`) instead pulses `@vehicle_sprites[type]`
       # directly with the native RGSS `Sprite#flash` primitive #fire_target_flash
@@ -7970,7 +7970,7 @@ class RPG2k
                   blue: (t.flash_blue || 0) * 8, power: (t.flash_power || 0) * 8,
                   frames: ANIM_FLASH_FRAMES, total: ANIM_FLASH_FRAMES }
         if target == :player
-          @player_flash = flash
+          @state.player_flash = flash
           @last_frame = nil # force the hero's cached frame to be re-toned
         else
           target[:flash] = flash
@@ -10364,7 +10364,7 @@ class RPG2k
       # rebuild that reorders or resizes the list reads as dirty -- always safe,
       # merely sometimes conservative.
       def events_dirty?
-        return true if @player_flash || @events.any? { |e| e[:flash] }
+        return true if @state.player_flash || @events.any? { |e| e[:flash] }
         sigs = @events.map { |e| event_draw_sig(e) }
         dirty = sigs != @event_draw_sigs
         @event_draw_sigs = sigs
@@ -10681,7 +10681,7 @@ class RPG2k
         # A Flash Sprite aimed at the hero tones the frame as it is laid down
         # (update_sprite_flashes invalidates @last_frame each frame it runs, so
         # the fading colour is re-applied rather than baked in once).
-        toned = @player_flash && flashed_charset(charset, src, @player_flash)
+        toned = @state.player_flash && flashed_charset(charset, src, @state.player_flash)
         @player_bmp.clear
         if toned
           blt_bushed @player_bmp, 0, 0, toned,

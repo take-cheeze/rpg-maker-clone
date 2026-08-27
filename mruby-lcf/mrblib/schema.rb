@@ -1235,6 +1235,29 @@ module LCF
       # sprite_id co-occurring without its paired sprite_name ever would.
       73 => { name: :charset_name, type: :string },
       74 => { name: :charset_index, type: :int },
+      # liblcf's own generator/csv/fields.csv (0x51-0x55 == 81-85): an
+      # in-flight Flash Sprite (11320), or a map-triggered battle-animation
+      # flash reusing the same mechanism (see Game::State#player_flash's own
+      # citation in game.rb). `flash_current_level` is declared a `Double`
+      # (not an Int32 like its siblings) -- liblcf tracks the *current*,
+      # already-decayed strength directly rather than recomputing it from
+      # `flash_power`/`flash_time_left` each frame, so `#to_lsd` derives an
+      # equivalent value from this codebase's own `power * frames / total`
+      # decay math (`Scene::Map#flash_tone`'s own formula). Confirmed against
+      # a genuine kk1.12 save under wine, for the *not flashing* case only:
+      # flash_red/_green/_blue present as an explicit 0 (not the schema's own
+      # -1 generator default, and not absent either) while
+      # flash_current_level/_time_left stayed absent -- so RPG_RT always
+      # writes the RGB triple, defaulting to 0 rather than -1, and only adds
+      # the level/time_left pair while a flash is actually in progress. The
+      # *flashing* case's exact byte values (in particular whether
+      # `flash_current_level`'s own decay curve matches this codebase's
+      # linear one) has not been confirmed against genuine RPG_RT.
+      81 => { name: :flash_red, type: :int },
+      82 => { name: :flash_green, type: :int },
+      83 => { name: :flash_blue, type: :int },
+      84 => { name: :flash_current_level, type: :double },
+      85 => { name: :flash_time_left, type: :int },
       # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
       # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
       # shared SAVE_MOVABLE table otherwise has no equivalent for (the hero's
@@ -1250,21 +1273,20 @@ module LCF
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
     # (generator/csv/fields.csv) than this table models: a full in-progress
     # `move_route` (`MoveRoute` chunk, 0x29/41 -- the hero had a live custom
-    # route recorded in that capture), `through` (0x33/51),
-    # `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54,
-    # movement/animation frame timers), `begin_jump_x`/`_y` (0x3E-3F/62-63),
-    # `processed` (0x4B/75, already noted above), and
-    # `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`
-    # (0x51-55/81-85, a live Flash Sprite in progress). None of these are
-    # modelled here: several need genuine new state this codebase's own
-    # `Game::State`/`Game::Character` don't track for the hero at all
-    # (an in-flight custom move route or Flash Sprite survives a save only
-    # by chance today, via whatever the interpreter re-derives), and the
-    # movement/animation timers are pure per-frame scheduling this engine
-    # already recomputes fresh rather than resuming byte-for-byte. Left as a
-    # known, larger gap for a future cycle -- see this table's own field 43
-    # comment for the `move_route_index` piece, and field 33's own comment
-    # for `layer`, already covered.
+    # route recorded in that capture), `through` (0x33/51), and
+    # `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54, movement/
+    # animation frame timers). None of these are modelled here: the move
+    # route needs genuine new state this codebase's own `Game::State`/
+    # `Game::Character` don't track for the hero at all (an in-flight custom
+    # move route survives a save only by chance today, via whatever the
+    # interpreter re-derives), and the movement/animation timers are pure
+    # per-frame scheduling this engine already recomputes fresh rather than
+    # resuming byte-for-byte. Left as a known, larger gap for a future cycle
+    # -- see this table's own field 43 comment for the `move_route_index`
+    # piece, field 33's own comment for `layer`, and fields 81-85's own
+    # comment for `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`,
+    # already covered. `begin_jump_x`/`_y` (0x3E-3F/62-63) and `processed`
+    # (0x4B/75, already noted above) remain unmodeled too.
     #
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #

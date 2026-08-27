@@ -4632,6 +4632,50 @@ check 'to_lsd writes chunk 104/105-107 field 33 (layer) as the constant 1, ' \
   eq 1, saved[107].layer, 'the airship'
 end
 
+check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
+      '(chunk 104 fields 81-85)' do
+  # Confirmed against a genuine kk1.12 save under wine, for the *not
+  # flashing* case: flash_red/_green/_blue present as an explicit 0 (not
+  # the schema's own -1 generator default), flash_current_level/_time_left
+  # both absent -- see SAVE_MOVABLE's own schema.rb comment for the fuller
+  # citation, including what is *not* confirmed (the exact decay curve
+  # while a flash is actually live).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.player_flash
+
+  saved = st.to_lsd[104]
+  eq 0, saved.flash_red, 'the RGB triple is an explicit 0, not the schema default (-1) or absent'
+  eq 0, saved.flash_green
+  eq 0, saved.flash_blue
+  ok !saved.key?(84), 'flash_current_level stays absent while nothing is flashing'
+  ok !saved.key?(85), 'flash_time_left stays absent while nothing is flashing'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq nil, round.player_flash
+
+  # A live flash (Flash Sprite / a map-triggered battle-animation pulse)
+  # survives a real Save/Continue, not just this engine's own Marshal
+  # format -- previously tracked only as Scene::Map's own transient
+  # @player_flash, dropped silently by any save.
+  st.player_flash = { red: 200, green: 50, blue: 10, power: 24, frames: 8, total: 12 }
+  saved2 = st.to_lsd[104]
+  eq 200, saved2.flash_red
+  eq 50, saved2.flash_green
+  eq 10, saved2.flash_blue
+  eq 8, saved2.flash_time_left
+  eq 24.0 * 8 / 12, saved2.flash_current_level
+
+  round2 = Game::State.from_lsd(db, st.to_lsd)
+  pf = round2.player_flash
+  ok pf, 'the live flash round-trips as still in progress'
+  eq 200, pf[:red]
+  eq 50, pf[:green]
+  eq 10, pf[:blue]
+  eq 8, pf[:frames]
+  eq 8, pf[:total], 'no separate peak-duration field on the wire -- resumes decaying from here'
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots
