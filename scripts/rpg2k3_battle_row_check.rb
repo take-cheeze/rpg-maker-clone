@@ -2,15 +2,17 @@
 # encoding: UTF-8
 #
 # Host-side unit checks for the RPG2003 front/back row battle mechanic
-# (ADR 0053 Phase 1, resolved against EasyRPG's Algo::IsRowAdjusted /
-# CalcNormalAttackToHit / CalcNormalAttackEffect, src/algo.cpp). The row is an
+# (ADR 0053 Phase 1, ported from EasyRPG Player's Algo::IsRowAdjusted /
+# CalcNormalAttackToHit / CalcNormalAttackEffect -- NOT independently
+# confirmed against genuine RPG_RT under wine). The row is an
 # RPG2003-only concept: it changes how the fight treats a battler -- a back-row
 # defender is 25 harder to hit and takes -25% damage, a front-row actor deals
 # +25% damage, and an enemy attacker (or a back-row attacker) is not row-
 # adjusted at all. RPG2000 never sets a row, so the path is a no-op there and
 # these checks exercise the 2003 behaviour directly on the shared helpers in
 # mruby-rpg2k/mrblib/game.rb. Skills are deliberately NOT row-adjusted (the
-# reference gates that behind an EasyRPG-only field absent from real files).
+# EasyRPG reference implementation gates that behind a field absent from
+# real database files).
 #
 # Usage: ruby scripts/rpg2k3_battle_row_check.rb   (exits non-zero on failure)
 
@@ -98,9 +100,9 @@ check 'setting ROW_BACK makes back_row? true' do
 end
 
 # -- can_leave_front_row?/toggle_row (RowSelected's front_row_battlers
-#    headcount, EasyRPG's own `Game_Party::GetActors()` loop -- unfiltered by
-#    HP/hidden, only a party member who has actually left the roster drops
-#    out) -------------------------------------------------------------------
+#    headcount, ported from EasyRPG Player's source -- NOT independently
+#    confirmed against genuine RPG_RT under wine -- unfiltered by HP/hidden,
+#    only a party member who has actually left the roster drops out) -------
 check 'a KO\'d front-row ally still counts toward keeping the front row ' \
       'non-empty, so a living front-row ally may still step back' do
   alive = combatant('Alive', 10, 5, 8, 100)
@@ -263,10 +265,11 @@ check 'from_actor leaves a battler in the front row by default' do
   eq false, c.back_row?
 end
 
-# -- row safety net (EasyRPG's Scene_Battle_Rpg2k3::InitActors "ROW
-#    ADJUSTMENT"): a fight that would start with nobody able to act in the
-#    front row forces everyone to the front, so back-row survivors are never
-#    stuck behind a wiped-out front row for the rest of the fight. ----------
+# -- row safety net (ported from EasyRPG Player's source -- NOT
+#    independently confirmed against genuine RPG_RT under wine): a fight
+#    that would start with nobody able to act in the front row forces
+#    everyone to the front, so back-row survivors are never stuck behind a
+#    wiped-out front row for the rest of the fight. --------------------------
 
 check 'an rpg2003 battle forces every ally to the front row when the whole ' \
       'front row starts dead and only back-row allies are alive' do

@@ -51,8 +51,10 @@ load File.join(ROOT, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
 
 # Fields this runtime should **not** grow, with the reason, so nobody spends an
-# afternoon rediscovering it. Each was checked against EasyRPG rather than
-# guessed at, and each would otherwise sit near the top of the list below.
+# afternoon rediscovering it. Each was checked against EasyRPG Player's source
+# as a reference for what real games do with the field (NOT independently
+# confirmed against genuine RPG_RT under wine), rather than guessed at, and
+# each would otherwise sit near the top of the list below.
 NOT_OURS = {
   levitate: 'RPG2003 only — EasyRPG\'s Game_Enemy::GetFlyingOffset returns 0 ' \
             'outside 2k3: "2k does not support flying, albeit mentioned in ' \

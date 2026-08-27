@@ -687,8 +687,9 @@ class RPG2k
   # Pop every scene down to (and stopping at) the base `Scene::Map`, disposing
   # each in turn. Mirrors EasyRPG's `Scene::PopUntil(Scene::Map)`: casting an
   # Escape / Teleport field skill closes the whole menu stack in one step
-  # rather than leaving the player to cancel out of it manually, matching
-  # RPG_RT's own "warp closes the menu" behaviour.
+  # rather than leaving the player to cancel out of it manually -- ported
+  # from EasyRPG's source, NOT independently confirmed against genuine
+  # RPG_RT under wine.
   def pop_to_map
     pop while @scenes.size > 1
   end
