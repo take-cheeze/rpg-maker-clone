@@ -1228,6 +1228,15 @@ module LCF
       # sprite_id co-occurring without its paired sprite_name ever would.
       73 => { name: :charset_name, type: :string },
       74 => { name: :charset_index, type: :int },
+      # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
+      # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
+      # shared SAVE_MOVABLE table otherwise has no equivalent for (the hero's
+      # own chunk 104 record never carries it). Confirmed present on a
+      # genuine kk1.12 save under wine as the vehicle's own 1/2/3 ordinal
+      # (boat/ship/airship), on all three vehicle chunks, none of which had
+      # ever been boarded that session -- see SAVE_DATA's own 105-107
+      # comment for the larger discovery this field was found alongside.
+      101 => { name: :vehicle, type: :int },
     }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)

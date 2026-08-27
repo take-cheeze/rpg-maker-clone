@@ -14246,17 +14246,38 @@ module Game
   class Vehicle
     TYPES = [:boat, :ship, :airship].freeze
 
+    # liblcf's own `SaveVehicleLocation.vehicle` ordinal (generator/csv/
+    # fields.csv, field 101) -- the value #to_lsd's own vehicle-writing loop
+    # stamps into that field, one per vehicle chunk (105/106/107).
+    TYPE_ID = { boat: 1, ship: 2, airship: 3 }.freeze
+
+    # RPG_RT's own built-in vehicle sprite/speed, confirmed against a genuine
+    # kk1.12 save under wine whose boat/ship/airship location records were
+    # all present despite the party never boarding any of them that session
+    # (see #to_lsd's own citation for the larger discovery this came from):
+    # charset_name "乗り物" on all three, charset_index absent (0) on the
+    # boat, 1 on the ship, 3 on the airship, and move_speed 4/4/5. Neither
+    # this class nor any event command in this codebase currently overrides
+    # a vehicle's own graphic or speed, so these apply unconditionally
+    # rather than only as an initial placeholder.
+    DEFAULT_CHARSET_INDEX = { boat: 0, ship: 1, airship: 3 }.freeze
+    DEFAULT_MOVE_SPEED = { boat: 4, ship: 4, airship: 5 }.freeze
+
     attr_accessor :map_id, :x, :y, :direction, :charset_name, :charset_index
     attr_reader :type
 
-    def initialize(type, map_id = 0, x = 0, y = 0, direction = 2)
+    def initialize(type, map_id = 0, x = 0, y = 0, direction = nil)
       @type = type
       @map_id = map_id || 0
       @x = x || 0
       @y = y || 0
-      @direction = direction || 2
-      @charset_name = ''
-      @charset_index = 0
+      # Confirmed against the same genuine kk1.12 save: an unboarded
+      # vehicle's own direction field decodes as "left" (liblcf's 0..3 wire
+      # value 3, CharSet::DIR_ROW's numpad 4), not the arbitrary "down" this
+      # class defaulted to before.
+      @direction = direction || 4
+      @charset_name = '乗り物'
+      @charset_index = DEFAULT_CHARSET_INDEX[type] || 0
     end
 
     # Whether the vehicle has been placed on a map (0 = never positioned).
@@ -15075,19 +15096,29 @@ module Game
       end
       save[104] = hero
 
-      # Vehicle locations (105 boat / 106 ship / 107 airship). Only a placed
-      # vehicle is written, so a game that never positioned one leaves the chunk
-      # absent, exactly as RPG_RT does.
+      # Vehicle locations (105 boat / 106 ship / 107 airship). Confirmed
+      # against a genuine kk1.12 save under wine: all three chunks were
+      # present even though the party never boarded any of them that
+      # session (map_id/x/y all still 0, the never-placed sentinel) --
+      # genuine RPG_RT writes every vehicle's record unconditionally, not
+      # only once it has been placed. See Vehicle's own class-level comment
+      # for the rest of that capture's findings (direction, charset_name/
+      # _index, move_speed, and liblcf's own `vehicle` ordinal, field 101).
       { 105 => :boat, 106 => :ship, 107 => :airship }.each do |chunk, type|
         v = @vehicles[type]
-        next unless v.placed?
         mv = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
         mv[11] = v.map_id
         mv[12] = v.x
         mv[13] = v.y
-        mv[22] = CharSet::DIR_ROW[v.direction] || 2
+        dir_row = CharSet::DIR_ROW[v.direction] || 2
+        mv[21] = dir_row
+        mv[22] = dir_row
+        mv[35] = 0
+        mv[37] = Vehicle::DEFAULT_MOVE_SPEED[type]
         mv[73] = v.charset_name || ''
-        mv[74] = v.charset_index || 0
+        idx = v.charset_index || 0
+        mv[74] = idx if idx != 0
+        mv[101] = Vehicle::TYPE_ID[type]
         save[chunk] = mv
       end
 
