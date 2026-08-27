@@ -15519,20 +15519,26 @@ module Game
       # save keeps them -- .from_lsd and RPG_RT alike read them by index.
       inv[14] = item_ids.map { |i| @party.item_usage[i] || 0 }
       inv[21] = @party.gold
+      # liblcf's own generator/csv/fields.csv declares every one of these
+      # fields (timers, battle tallies, steps) at default 0/false, and a
+      # genuine kk1.12 save under wine omits all of them -- confirmed even
+      # for a save taken well into a real playthrough, so #to_lsd eliding
+      # only at the literal never-touched value (not "close enough to
+      # start") matches. #to_lsd previously wrote every one unconditionally.
       t1, t2 = @timers[0], @timers[1]
-      inv[23] = t1.frames
-      inv[24] = t1.running
-      inv[25] = t1.visible
-      inv[26] = t1.in_battle
-      inv[27] = t2.frames
-      inv[28] = t2.running
-      inv[29] = t2.visible
-      inv[30] = t2.in_battle
-      inv[32] = @battle_count
-      inv[33] = @defeat_count
-      inv[34] = @escape_count
-      inv[35] = @win_count
-      inv[42] = @steps
+      inv[23] = t1.frames if t1.frames != 0
+      inv[24] = true if t1.running
+      inv[25] = true if t1.visible
+      inv[26] = true if t1.in_battle
+      inv[27] = t2.frames if t2.frames != 0
+      inv[28] = true if t2.running
+      inv[29] = true if t2.visible
+      inv[30] = true if t2.in_battle
+      inv[32] = @battle_count if @battle_count != 0
+      inv[33] = @defeat_count if @defeat_count != 0
+      inv[34] = @escape_count if @escape_count != 0
+      inv[35] = @win_count if @win_count != 0
+      inv[42] = @steps if @steps != 0
       # Undefaulted, like the other counters -- absent until a battle has ever
       # finished (see #last_battle_turns).
       inv[41] = @last_battle_turns if @last_battle_turns

@@ -4866,6 +4866,26 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   eq 0, old.win_count
   eq 0, old.defeat_count
   eq 0, old.escape_count
+
+  # #to_lsd itself must also elide these (and the two timers' own fields)
+  # at their own neutral/never-touched value, the same "old save" shape
+  # above -- confirmed against a genuine kk1.12 save under wine: a save
+  # taken well into a real playthrough still omitted every one of fields
+  # 23-30/32-35/42 entirely, matching liblcf's own generator/csv/fields.csv
+  # declared defaults (0/false) for all of them. #to_lsd used to write
+  # every one unconditionally.
+  fresh = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  untouched = fresh.to_lsd[109].instance_variable_get(:@data)
+  [23, 24, 25, 26, 27, 28, 29, 30, 32, 33, 34, 35, 42].each do |field|
+    ok untouched[field].nil?, "field #{field} is absent when never touched"
+  end
+
+  fresh.timer(0).frames = 100
+  fresh.timer(0).running = true
+  touched = fresh.to_lsd[109]
+  eq 100, touched.timer1_frames, 'a touched timer is still written'
+  ok touched.timer1_active
+  ok !touched.instance_variable_get(:@data)[25], 'the untouched sibling field (visible) stays absent'
 end
 
 check 'restore_pictures restores zoom, opacity and tone, not just name/position' do
