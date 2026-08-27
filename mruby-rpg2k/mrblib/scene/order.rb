@@ -1,8 +1,9 @@
 class RPG2k
   module Scene
     # The field Order screen (RPG2003 main menu -> Order, System chunk 22 field
-    # 27's `menu_commands` id 7). Reorders the party front-to-back -- confirmed
-    # against EasyRPG's own `Scene_Order`: it is a *pick-and-place* build, not a
+    # 27's `menu_commands` id 7). Reorders the party front-to-back -- ported
+    # from EasyRPG Player's own `Scene_Order`, NOT independently confirmed
+    # against genuine RPG_RT under wine: it is a *pick-and-place* build, not a
     # swap or a drag-drop. The left column lists the current party in its
     # existing order; the player picks members one at a time (DOWN/UP to move,
     # C to pick), and each pick is appended to the right column in the order
@@ -50,8 +51,9 @@ class RPG2k
       private
 
       # Holding Down/Up auto-repeats both cursors here after the initial
-      # delay, not just a single step per tap -- confirmed against
-      # EasyRPG's actual source: `Scene_Order::vUpdate` (`src/
+      # delay, not just a single step per tap -- ported from EasyRPG
+      # Player's source, NOT independently confirmed against genuine RPG_RT
+      # under wine: `Scene_Order::vUpdate` (`src/
       # scene_order.cpp`) calls `window_left->Update()`/`window_confirm->
       # Update()` unconditionally, every frame, before ever checking which
       # one is active -- both are genuine `Window_Selectable`s, whose own
@@ -81,8 +83,10 @@ class RPG2k
 
       # Reject re-picking an already-picked slot (its left-column text is
       # blank, but the row is still there to land the cursor on) with the
-      # Cancel SE -- `Scene_Order::UpdateOrder`'s own duplicate guard plays
-      # the same SE genuine RPG_RT does for a rejected-but-confirmed choice
+      # Cancel SE, ported from EasyRPG Player's source and NOT independently
+      # confirmed against genuine RPG_RT under wine -- `Scene_Order::
+      # UpdateOrder`'s own duplicate guard plays
+      # the same SE as a rejected-but-confirmed choice
       # elsewhere in this menu (matching #choose_item/#choose_skill's Buzzer
       # precedent would be a different, unconfirmed SE).
       def pick_current
@@ -105,7 +109,8 @@ class RPG2k
         refresh_right_window
       end
 
-      # Confirmed against EasyRPG's actual C++ source: `Scene_Order::
+      # Ported from EasyRPG Player's source, NOT independently confirmed
+      # against genuine RPG_RT under wine: `Scene_Order::
       # UpdateOrder` (`src/scene_order.cpp`), once the last member is picked,
       # calls `window_left->SetIndex(-1)` before `SetActive(false)` --
       # distinct from simply going inactive (see `RPG2k::Window#draw_cursor`'s
@@ -113,7 +118,7 @@ class RPG2k
       # inactive window whose index is untouched). `Window_Selectable::
       # UpdateCursorRect` (`src/window_selectable.cpp`) special-cases a
       # negative index to `SetCursorRect(Rect())`, emptying the highlight
-      # outright -- so real RPG_RT hides the left column's cursor entirely at
+      # outright -- so this ported model hides the left column's cursor entirely at
       # this transition rather than freezing it on the now-blank final row.
       def enter_confirm
         @focus = :confirm
@@ -125,7 +130,9 @@ class RPG2k
         refresh_confirm_cursor
       end
 
-      # Matches `Scene_Order::UpdateConfirm`: Cancel and choosing "Redo" both
+      # Matches EasyRPG Player's `Scene_Order::UpdateConfirm`, NOT
+      # independently confirmed against genuine RPG_RT under wine: Cancel and
+      # choosing "Redo" both
       # funnel into #redo, whose own Cancel SE plays regardless of which input
       # triggered it -- Decision on "Confirm" is the only path with its own SE.
       def update_confirm

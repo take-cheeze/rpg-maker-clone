@@ -6763,6 +6763,118 @@ The work below is roughly ordered by the critical path to a walkable game
   longest-unread files in the sweep are now the most thoroughly checked, and
   the specific cycle-#188 blind spot (a citation split across lines) is
   confirmed either absent or fixed in both.
+  ✅ **Follow-up (cycle #190, 2026-08-27): swept `mruby-rpg2k/mrblib/scene/
+  map.rb`, the file cycle #189 identified but explicitly left out of its own
+  scope.** Explicitly a lighter-weight cycle -- no wine/Xvfb, comment editing
+  only. **Method:** read the whole file (10,430 lines) top to bottom rather
+  than relying on grep alone, after a first pass with the established
+  `src/[a-z0-9_]+\.(cpp|h)` pattern plus a bare `EasyRPG`/`Game_`/`Scene_`/
+  `Window_`/`Sprite_`/`Spriteset_`/`Feature::`/`Main_Data`/`AsyncOp` mention
+  scan turned up 130 file-path citations and 123 `EasyRPG` mentions but only
+  7 disclaimer phrases in the whole file -- a much higher undisclosed-to-
+  disclosed ratio than any file this sweep had swept before, confirming
+  cycle #189's suspicion that this file had never been touched. **Found and
+  fixed the exact two "corroborated independently against EasyRPG's own C++
+  source" citations cycle #189 flagged** (`#hold_animation_screen_flash`/
+  `#hold_animation_target_flash`'s own doc comments, ~line 7420/7456 at the
+  time), plus roughly 140 more of the same undisclosed shape spread across
+  the whole file: the ported timing tables at the top (JUMP_SLIDE_STEP,
+  ANIM_STATIONARY/CONTINUOUS/SPIN_FRAMES), the Parallel Process wait-kind
+  dispatch table (Enter Hero Name/Open Shop/Show Inn/Return to
+  Title/Exit Game/Save/Load/Main Menu, each with its own "is the very same
+  method for the foreground and every parallel process" citation), vehicle
+  boarding/disembarking (`GetOnVehicle`/`GetOffVehicle`/`CanLandAirship`/
+  `CanDisembarkShip`, including the airship-facing "RPG_RT ignores the
+  lock_facing flag here!" quote that was presenting EasyRPG's own comment as
+  this project's verified finding -- the same violation shape cycle #189
+  called the most serious kind), BGM routing (`Game_System::BgmPlay`, the
+  sys_bgm slot enum), collision/layer gating (`CheckOrMakeWayEx`/
+  `WouldCollide`), the entire shop screen (`Window_Shop`/`Scene_Shop`/
+  `Window_ShopNumber`), the name-entry kana keyboard (`Window_Keyboard`/
+  `Scene_Name`), the whole battle-animation subsystem (`BattleAnimation`/
+  `BattleAnimationMap`, cell/flash-frame timing constants, the screen/target
+  flash re-assertion mechanism cycle #189 flagged by name), the message
+  window (position resolution, auto-repeat, the `\.`/`\|` pause quirk, which
+  had directly quoted EasyRPG's own "Despite documentation saying..." claim
+  as if it were this project's own measurement), the number-input widget,
+  footstep SE/terrain damage, random encounters (`UpdateEncounterSteps`/
+  `PrepareEncounter`/`GetEncountersAt`), and the countdown timer sprite
+  (`Sprite_Timer::Draw`, its RPG_RT-relocation-avoidance logic). Every fix
+  followed the established rule: independent evidence already in the same
+  comment (a genuine wine confirmation -- several already-honest historical
+  corrections from cycles #144/#148/#149/#169/#171 were found and correctly
+  left untouched -- or a cross-reference to another spot in this same file
+  or in `mrblib/game.rb` that itself carries a disclosure) was kept and the
+  illegitimate EasyRPG-source framing dropped; everywhere else, rewritten to
+  "ported from EasyRPG Player's source, NOT independently confirmed against
+  genuine RPG_RT under wine" while preserving the technical description,
+  including direct quotes of EasyRPG's own source comments now attributed to
+  EasyRPG rather than presented as this project's finding. **Then, with time
+  remaining, ran the same widened scan across every other `.rb` file in
+  `mruby-rpg2k/mrblib/` and `mruby-lcf/mrblib/` cycles #174-189 had never
+  looked at** (`scene/base.rb`, `battle.rb`, `battle_rpg2k3.rb`,
+  `chipset_editor.rb`, `debug_menu.rb`, `equip_menu.rb`, `game_over.rb`,
+  `item_menu.rb`, `map_viewer.rb`, `menu.rb`, `order.rb`, `save_load.rb`,
+  `skill_menu.rb`, `status_menu.rb`, `title.rb`, plus `mruby-lcf/mrblib/
+  lcf.rb`) -- **this was the first time any citation-hygiene cycle had ever
+  scanned this directory beyond `map.rb`/`game.rb`/`interpreter.rb`/
+  `main.rb`/`schema.rb`.** This surfaced a large, previously-unknown
+  concentration: `scene/battle.rb` alone carries 34 file-path citations and
+  78 `EasyRPG` mentions (comparable in density to `game.rb`/`map.rb` before
+  they were swept), with `status_menu.rb` (13), `menu.rb` (10), `skill_menu.rb`
+  (9), `item_menu.rb`/`title.rb` (8 each), `equip_menu.rb`/`save_load.rb` (7
+  each) and `base.rb` (6) also carrying real, never-checked citations;
+  `chipset_editor.rb`, `map_viewer.rb` and `lcf.rb` had none. Given this
+  cycle's own lighter-weight, comment-only framing and the size of what
+  `battle.rb` alone would need, fully swept only the four smallest files
+  found (`debug_menu.rb` 1 fix, `battle_rpg2k3.rb` 3 fixes, `game_over.rb` 2
+  fixes plus one already-honest wine-confirmed citation correctly left
+  alone, `order.rb` 5 fixes) rather than rushing a partial pass at the
+  larger ones -- every citation in these four files is now honestly
+  disclosed or already was.
+  **Verification:** `ruby -c` clean on all five edited files (`scene/map.rb`,
+  `debug_menu.rb`, `battle_rpg2k3.rb`, `game_over.rb`, `order.rb`).
+  Comment-only, checked per file with `git diff -- <file> | grep -E '^[+-]' |
+  grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: empty for four of the five files, and exactly one
+  line for `scene/map.rb` -- `JUMP_STEP_UNITS = 256` with only its trailing
+  inline comment changed (`# EasyRPG's SCREEN_TILE_SIZE` ->
+  `# EasyRPG Player's SCREEN_TILE_SIZE`), the assignment itself byte-identical,
+  confirming even that one hit is comment-only. Before/after check counts,
+  all matching the pre-cycle baselines exactly: `rpg2k_scene_check.rb` 929,
+  `rpg2k_logic_check.rb` 1163, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures. `cd build && ctest -R mruby_test` passed (8.36s). No
+  wine/Xvfb/matchbox process started this cycle, no save file touched. No
+  changelog fragment: comment-only documentation work, not a behavioral fix.
+  **Is the multi-cycle EasyRPG-citation-hygiene sweep (cycles #174, #176,
+  #177, #184-190) now complete? No -- and this cycle's own second half is
+  exactly why:** every file this sweep had actually promised to check
+  (`game.rb`, `interpreter.rb`, `schema.rb`, `main.rb`,
+  `rpg2k_logic_check.rb`, `rpg2k_scene_check.rb`, the `scripts/*.rb` files
+  cycle #187 swept, and now `scene/map.rb`) is genuinely clean or down to
+  pre-existing honest historical corrections -- but this cycle's own
+  discovery that thirteen more `scene/*.rb` files (plus `lcf.rb`) had simply
+  never been in scope for any prior cycle means the sweep's own believed
+  perimeter was wrong, not just incomplete within it. `scene/battle.rb`
+  specifically is a substantial, `game.rb`-scale citation cleanup on its own
+  (34 file-path hits, 78 `EasyRPG` mentions, almost certainly including the
+  same "confirmed/verified against EasyRPG" and quoted-source-as-own-finding
+  shapes every other large file in this sweep turned out to carry) that no
+  cycle has ever read. **Left open for a future cycle, in priority order:**
+  (1) `scene/battle.rb` (34/78) -- the single largest remaining
+  concentration in the whole repo by this measure, and the natural next
+  target; (2) `status_menu.rb` (13), `menu.rb` (10), `skill_menu.rb` (9),
+  `item_menu.rb`/`title.rb` (8 each), `equip_menu.rb`/`save_load.rb` (7
+  each) and `base.rb` (6), none of which have been read in full; (3) a
+  parity check of whether `scripts/*.rb` files that exercise these newly-
+  found scenes (e.g. any equip/skill/status/title check) themselves quote
+  or restate any of these scenes' own undisclosed citations, the same
+  cross-file leakage shape cycle #189 found between `rpg2k_scene_check.rb`
+  and `scene/map.rb`. Until (1)-(2) are done, "the sweep is complete" would
+  be a false claim -- this cycle's honest assessment is that the sweep is
+  further from done than cycle #189 believed, not closer, precisely because
+  this cycle went looking in a place no prior cycle had ever checked.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
