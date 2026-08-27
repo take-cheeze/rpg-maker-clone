@@ -4171,6 +4171,51 @@ check 'to_lsd/from_lsd round-trips a live Change Parameters edit on every ' \
       untouched_round.party.leader.int, untouched_round.party.leader.agi]
 end
 
+check 'to_lsd mirrors chunk 108\'s own class/database-derived combat ' \
+      'toggles (fields 92-95), confirmed present only when true on a ' \
+      'genuine kk1.12 save' do
+  # liblcf's own generator/csv/fields.csv names these 0x5C-0x5F
+  # two_weapon/lock_equipment/auto_battle/super_guard, right after row
+  # (0x5B, field 91). #to_lsd never wrote any of the four before -- a
+  # genuine kk1.12 save under wine had them present (each only when the
+  # underlying actor/class trait was actually on) on several roster slots.
+  # There is nothing for .from_lsd to restore *to*: unlike class_id or
+  # battle_commands, these four are a pure live snapshot of a value this
+  # engine already derives from the actor's own class/database row, so a
+  # fresh load simply re-derives the same true/false rather than reading
+  # the field back.
+  row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  row.double_hand = true
+  row.equipment_fixed = true
+  row.force_ai = true
+  row.strong_defence = true
+  db = FakeActorDB.new({ 1 => row }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  hero = st.party.leader
+  ok hero.double_hand?
+  ok hero.equipment_fixed?
+  ok hero.force_ai?
+  ok hero.strong_defence?
+
+  saved = st.to_lsd[108][1]
+  eq true, saved.two_weapon
+  eq true, saved.lock_equipment
+  eq true, saved.auto_battle
+  eq true, saved.super_guard
+
+  # None of the four ever set: a genuine save leaves the field absent
+  # rather than writing an explicit false -- same "omit at default"
+  # convention as field 91 (row) right above them.
+  plain_row = FakePlayerRow.new('Hero', '', 0, 5, { max_hp: 100, max_mp: 30, atk: 10, def: 8 })
+  plain_db = FakeActorDB.new({ 1 => plain_row }, [1])
+  plain_st = Game::State.new(Game::Party.new(plain_db), 1, 0, 0)
+  plain_saved = plain_st.to_lsd[108][1]
+  eq false, plain_saved.two_weapon
+  eq false, plain_saved.lock_equipment
+  eq false, plain_saved.auto_battle
+  eq false, plain_saved.super_guard
+end
+
 check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
       'as it was' do
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
