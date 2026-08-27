@@ -4618,6 +4618,28 @@ check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
   eq 60, round.memorized_bgm[:balance], 'and its balance round-trips too'
 end
 
+check 'to_lsd writes chunk 101 field 78 (stored_bgm/Memorize BGM) ' \
+      'unconditionally, "(OFF)" when nothing memorized' do
+  # Confirmed against a genuine kk1.12 save under wine: field 78 was present
+  # even though that session never ran Memorize BGM (11530), decoding as a
+  # BGM struct whose own `file` read the literal "(OFF)" -- the same
+  # "always present, (OFF) as placeholder" convention fields 76/77 already
+  # follow, not the "omit when nil" this field used before (a bug the
+  # bgm_from_chunk "(OFF)" sentinel fix exposed: previously "(OFF)" round-
+  # tripped as a truthy value by accident, masking that this field was never
+  # actually omitted by genuine RPG_RT at all).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.memorized_bgm
+
+  saved = st.to_lsd
+  eq true, saved[101].key?(78), 'always present, unlike an ordinary omit-at-default field'
+  eq '(OFF)', saved[101][78].file
+
+  round = Game::State.from_lsd(db, saved)
+  eq nil, round.memorized_bgm, '"(OFF)" reads back as nil, not a literal track named "(OFF)"'
+end
+
 check 'to_lsd/from_lsd round-trips the vehicle/battle BGM restore point ' \
       '(chunk 101 fields 76/77), "(OFF)" when nothing to restore' do
   # Confirmed against a genuine kk1.12 save under wine, taken outside any

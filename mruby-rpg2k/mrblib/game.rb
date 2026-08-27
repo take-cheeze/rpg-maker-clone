@@ -15269,7 +15269,13 @@ module Game
       # as a BGM struct whose own `file` read the literal "(OFF)".
       sys[76] = bgm_chunk(@pre_vehicle_bgm || { name: '(OFF)' })
       sys[77] = bgm_chunk(@pre_battle_bgm || { name: '(OFF)' })
-      sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
+      # Field 78 (stored_bgm/Memorize BGM's own stash, 11530) follows the
+      # exact same "always present, (OFF) when nothing to hold" convention
+      # as 76/77 above, not the "omit at default" this field used before --
+      # confirmed against the same genuine kk1.12 save under wine: present
+      # even though that session never ran Memorize BGM, decoding as a BGM
+      # struct whose own `file` read the literal "(OFF)".
+      sys[78] = bgm_chunk(@memorized_bgm || { name: '(OFF)' })
       # Change System BGM (10660) overrides (SYSTEM_BGM_SAVE_FIELD above) --
       # like field 71 and the SFX slots below, all seven are written
       # unconditionally (blank when unset), confirmed against the same
