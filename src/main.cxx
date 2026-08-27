@@ -1,4 +1,5 @@
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -73,6 +74,17 @@ DEFINE_bool(
     "the wall clock, so this only removes idle wall-clock wait -- it does "
     "not change what any frame does. Used by the MV/MZ/RPG2k/XP boot-check "
     "smokes, which only need the frames to happen, not to happen on time.");
+DEFINE_int32(
+    render_fps,
+    60,
+    "Cap how many of every 60 Graphics.update calls actually repaint the "
+    "screen (e.g. 30, 15 or 10), to cut rendering CPU/GPU work and the "
+    "memory bandwidth it costs on constrained devices. Game logic, "
+    "Graphics.frame_count, animation timers and Wait all still run every "
+    "call at the normal rate -- only the LVGL redraw itself is skipped on "
+    "the frames a lower rate does not need, so the game plays and times "
+    "identically at every setting, just visibly updating less often. "
+    "Clamped to 1..60; 60 (the default) renders every frame");
 DEFINE_bool(
     rpg2k_new_game,
     false,
@@ -1563,6 +1575,17 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "NO_RENDER_WAIT"),
                 mrb_bool_value(FLAGS_no_render_wait));
+  // See --render_fps above: read once here, the same way NO_RENDER_WAIT is,
+  // by RGSS::Graphics.update (mruby-rgss/src/lib.cxx) to decide which frames
+  // actually reach the LVGL redraw.
+  if (FLAGS_render_fps < 1 || FLAGS_render_fps > 60) {
+    LOG(ERROR) << "--render_fps=" << FLAGS_render_fps
+               << " is out of range; clamping to 1..60";
+    FLAGS_render_fps = std::clamp(FLAGS_render_fps, 1, 60);
+  }
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RENDER_FPS"),
+                mrb_fixnum_value(FLAGS_render_fps));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_NEW_GAME"),
                 mrb_bool_value(FLAGS_rpg2k_new_game));
