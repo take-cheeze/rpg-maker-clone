@@ -843,6 +843,29 @@
   `libEGL.so` doesn't export) — RPG2000/2003, XP and VX/VX Ace are
   unaffected. See the ADR.
 
+### iPod nano 7th generation (homebrew)
+
+- [`app/nano7/rpg2k_walk`](app/nano7/rpg2k_walk) walks a real RPG Maker
+  2000/2003 map on a jailbroken iPod nano 7th generation via the
+  [NanoApps](https://github.com/nfzerox/NanoApps) homebrew SDK. Unlike every
+  other port above, this is **not** the mruby/RGSS engine on a new display
+  backend — NanoApps caps a compiled app image at roughly 500 KB, far under
+  what this repo's mruby + RGSS/RPG2k gem stack needs, so it is instead a
+  small from-scratch C engine. A new host-side exporter
+  (`scripts/export_nano7_map.rb`) does the real LCF parsing and chipset/
+  autotile compositing once, on this repo's own pure-Ruby tooling, and writes
+  a compact binary the on-device app reads directly. See
+  [`docs/adr/0061-ipod-nano-7-homebrew-map-walk.md`](docs/adr/0061-ipod-nano-7-homebrew-map-walk.md)
+  for why, and the app's own README for build/install instructions.
+- **Scope: map walking, not the game.** Tile rendering (including autotiles,
+  frozen at their first animation frame) and grid movement with real
+  collision, for one static map — no events, battle or menus.
+- Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
+  ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
+  exported map with working collision. One known issue: cells whose
+  lower-layer chip resolves to the chipset's transparent/placeholder region
+  render as solid magenta instead of being handled — see the ADR.
+
 ### Reporting an error
 
 When the engine dies on a Ruby exception it no longer just prints a backtrace
