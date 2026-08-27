@@ -271,6 +271,42 @@ class RPG2k
       BATTLECHARSET_CACHE_BYTES = 500_000
       SYSTEM2_CACHE_BYTES = 250_000
 
+      # A scaled-down budget never shrinks past base/this, so a cache always
+      # keeps some working set (one still-oversized entry, per
+      # LRUBitmapCache#evict_lru_until_within_budget, would otherwise never
+      # evict anything else at all, and the picture tone cache -- see
+      # #toned_picture_src -- would stop caching entirely).
+      CONSTRAINED_SCALE_FLOOR_DIVISOR = 8
+
+      # Scale a named-graphic cache's byte budget (or the picture tone
+      # cache's entry count, see #toned_picture_src) down when --render_fps
+      # (src/main.cxx) signals a constrained device: a target picked for a
+      # low real-time render rate -- the PSP/Wio-class ports this flag exists
+      # for -- is RAM-constrained too, so it is worth evicting decoded
+      # graphics more eagerly (a re-decode-on-next-use cost) to hold a
+      # smaller working set. Scaled by the fps ratio rather than a single
+      # on/off cut -- --render_fps=30 roughly halves a budget, 10 roughly
+      # sixths it -- and floored at CONSTRAINED_SCALE_FLOOR_DIVISOR so a very
+      # low setting still leaves a small working set rather than none. An
+      # ordinary run (render_fps 60, the default) always returns base
+      # unchanged.
+      #
+      # RGSS::Graphics.render_fps rescued rather than called bare: the
+      # host-side scene checks (scripts/rpg2k_scene_check.rb) load this file
+      # under plain CRuby against their own minimal Graphics stub, which has
+      # no render_fps method -- same "missing means uncapped" fallback
+      # RGSS::Graphics.render_fps itself uses for the native constant it
+      # reads.
+      def constrained_scale(base)
+        fps = RGSS::Graphics.render_fps
+        return base if fps >= 60
+        scaled = base * fps / 60
+        floor = base / CONSTRAINED_SCALE_FLOOR_DIVISOR
+        scaled > floor ? scaled : floor
+      rescue StandardError
+        base
+      end
+
       def initialize parent, state, apply_access: true
         super parent
         @state = state
@@ -286,21 +322,22 @@ class RPG2k
         # now only the most-recently-used ones survive past each cache's own
         # byte budget, and anything evicted is simply reloaded (and re-cached)
         # the next time its name comes up.
-        @charset_cache = LRUBitmapCache.new(CHARSET_CACHE_BYTES)
+        @charset_cache = LRUBitmapCache.new(constrained_scale(CHARSET_CACHE_BYTES))
                                # CharSet/<name> -- event graphics and the
                                # party leader's own graphic share this, since
                                # both load the same files.
-        @picture_cache = LRUBitmapCache.new(PICTURE_CACHE_BYTES)
+        @picture_cache = LRUBitmapCache.new(constrained_scale(PICTURE_CACHE_BYTES))
                                # Picture/<name>, keyed by [name, transparent]
-        @backdrop_cache = LRUBitmapCache.new(BACKDROP_CACHE_BYTES)
+        @backdrop_cache = LRUBitmapCache.new(constrained_scale(BACKDROP_CACHE_BYTES))
                                # Backdrop/<name> (battle background)
-        @monster_cache = LRUBitmapCache.new(MONSTER_CACHE_BYTES)
+        @monster_cache = LRUBitmapCache.new(constrained_scale(MONSTER_CACHE_BYTES))
                                # Monster/<name> (battler graphics)
-        @animation_cache = LRUBitmapCache.new(ANIMATION_CACHE_BYTES)
+        @animation_cache = LRUBitmapCache.new(constrained_scale(ANIMATION_CACHE_BYTES))
                                # Battle/<name> (battle animation sheets)
-        @battlecharset_cache = LRUBitmapCache.new(BATTLECHARSET_CACHE_BYTES)
+        @battlecharset_cache =
+          LRUBitmapCache.new(constrained_scale(BATTLECHARSET_CACHE_BYTES))
                                # BattleCharSet/<name> (RPG2003 actor battler sprites)
-        @system2_cache = LRUBitmapCache.new(SYSTEM2_CACHE_BYTES)
+        @system2_cache = LRUBitmapCache.new(constrained_scale(SYSTEM2_CACHE_BYTES))
                                # System2/<name> (RPG2003 gauge card sprite sheet)
         apply_map_access if apply_access
         # Same Continue-only split as #apply_map_access just above: a fresh
@@ -9823,10 +9860,12 @@ class RPG2k
                         # neutral becomes positive desaturation.
                         Scene::Map.tone_channel(pic.saturation) * -1)
         scratch.tone_blt src, tone
-        # Bounded so a picture cycling through tones cannot grow it without end;
-        # the oldest entry goes first.
+        # Bounded so a picture cycling through tones cannot grow it without
+        # end; the oldest entry goes first. See #constrained_scale: each
+        # cached entry is a same-size decoded bitmap, so this shrinks under
+        # --render_fps the same way the named-graphic caches above do.
         @picture_tone_cache.delete(@picture_tone_cache.keys.first) if
-          @picture_tone_cache.size >= PICTURE_TONE_CACHE_MAX
+          @picture_tone_cache.size >= constrained_scale(PICTURE_TONE_CACHE_MAX)
         @picture_tone_cache[key] = scratch
       rescue StandardError => e
         $stderr.puts "[RPG2k] picture ##{pic.id} tone failed, drawn untinted: #{e.message}"

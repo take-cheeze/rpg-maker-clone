@@ -1365,6 +1365,23 @@ module RGSS
         @height = height
       end
 
+      # --render_fps (src/main.cxx): how many of every 60 real-time
+      # Graphics.update calls actually redraw the screen, set once at boot --
+      # unlike frame_rate above, a real-time redraw cadence the engine
+      # enforces, not a value scripts declare for their own timing math. Game
+      # code can read this to scale back purely-visual, memory-costly work
+      # (bitmap cache budgets, particle counts) on a device picked for a low
+      # render rate, without touching anything that affects game timing.
+      # Defaults to 60 (every frame renders) wherever the native RENDER_FPS
+      # constant isn't defined, e.g. the per-gem `rake test` binary, which
+      # never runs main.cxx -- same fallback main.cxx documents for
+      # NO_RENDER_WAIT.
+      def render_fps
+        RENDER_FPS
+      rescue StandardError
+        60
+      end
+
       # Run `duration` frames. Real behaviour, not a stub: the scripts use it to
       # hold a scene (fade-ins, message waits), and each update is a real frame.
       def wait(duration)
