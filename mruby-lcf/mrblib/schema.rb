@@ -1963,6 +1963,24 @@ module LCF
       13 => { name: :tint_current_blue, type: :double, default: 100.0 },
       14 => { name: :tint_current_sat, type: :double, default: 100.0 },
       15 => { name: :tint_time_left, type: :int, default: 0 },
+      # liblcf's own generator/csv/fields.csv (SaveScreen): the live Pan
+      # Screen offset, confirmed present on a genuine kk1.12 save under
+      # wine (field 42/pan_y nonzero, field 41/pan_x absent -- elided at
+      # its own default 0, a vertical-only pan). `Game::Screen` already
+      # tracks this (`#pan_offset`) for the Marshal save format; only the
+      # `.lsd` write was missing.
+      41 => { name: :pan_x, type: :int, default: 0 },
+      42 => { name: :pan_y, type: :int, default: 0 },
+      # liblcf's own fields 0x2B-0x2F (43-47): the last (or currently
+      # playing) battle animation's id/target/frame/active/global-scope --
+      # confirmed present (id/target/frame, all nonzero) on the same
+      # genuine kk1.12 save even though it was taken on the map, not
+      # mid-battle, meaning genuine RPG_RT leaves these as stale leftover
+      # values rather than resetting them once the animation finishes
+      # (`battleanim_active`, field 46, was itself absent/false in that
+      # capture). `Game::Screen` has no equivalent "last played battle
+      # animation" state to source these from at all, so left undecoded --
+      # a larger gap than the pan fields above, for a future cycle.
     }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk

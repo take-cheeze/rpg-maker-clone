@@ -4272,6 +4272,18 @@ check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
   ok no_face_round.preview_faces.nil?,
      'a party with no FaceSet set writes an all-blank snapshot, read back as nil ' \
      "(got #{no_face_round.preview_faces.inspect})"
+
+  # A FaceSet index of 0 (the schema's own declared default for fields
+  # 22/24/26/28) is elided the same way every other "omit at default"
+  # field in this schema is -- confirmed against a genuine kk1.12 save
+  # under wine, whose leader's own face index was 0 and left field 22
+  # absent, not an explicit 0. #to_lsd previously wrote it unconditionally.
+  zero_index_st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  zero_index_st.party.leader.set_faceset('LeaderFace', 0)
+  title = zero_index_st.to_lsd[100]
+  ok !title.key?(22), 'face index 0 is absent, not an explicit 0'
+  eq [['LeaderFace', 0]], Game::State.from_lsd(db, zero_index_st.to_lsd).preview_faces[0, 1],
+     'and still round-trips back to index 0 on load'
 end
 
 check 'to_lsd/from_lsd round-trips the file-select screen\'s level/HP snapshot ' \
@@ -12590,6 +12602,32 @@ check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
   old = Game::State.from_lsd(db, legacy)
   eq [100, 100, 100, 100], old.screen.tint
   eq false, old.screen.tinting?
+end
+
+check 'to_lsd/from_lsd round-trips a live Pan Screen offset (chunk 102 ' \
+      'fields 41/42)' do
+  # Confirmed against a genuine kk1.12 save under wine: field 42 (pan_y)
+  # was present and nonzero (a vertical-only pan), field 41 (pan_x) absent
+  # at its own default 0 -- #to_lsd previously never wrote either field at
+  # all, so a live Pan Screen offset silently reset to (0,0) on Save/
+  # Continue even though `Game::Screen` already tracks it for the portable
+  # Marshal save format.
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  st.screen.instance_variable_set(:@pan_x, 0)
+  st.screen.instance_variable_set(:@pan_y, 96)
+  scr = st.to_lsd[102]
+  ok !scr.key?(41), 'pan_x is absent at its own default (0)'
+  eq 96, scr.pan_y
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  eq [0, 96], round.screen.pan_offset, 'the pan offset round-trips, restored at rest'
+
+  # A save written before this landed simply omits both fields; from_lsd
+  # must leave the fresh Screen.new neutral (0, 0) offset alone.
+  legacy = Game::State.new(Game::Party.new(db), 1, 0, 0).to_lsd
+  old = Game::State.from_lsd(db, legacy)
+  eq [0, 0], old.screen.pan_offset
 end
 
 # liblcf's SaveMapEventBase.facing (generator/csv/fields.csv, 0x16 == 22) is
