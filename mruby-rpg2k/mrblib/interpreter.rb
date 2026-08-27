@@ -190,6 +190,11 @@ module Game
       @index = 0
       @running = false
       @call_stack = []
+      # The event_id a Call Event resolved for the list @list currently holds,
+      # tracked purely so #call_stack_snapshot can report each stack frame's
+      # own genuine identity -- see its declaration further down (searched for
+      # "@call_frame_event_id" everywhere it is touched) for the full story.
+      @call_frame_event_id = nil
       @resolver = nil
       @move_route_requests = []
       @location_requests = []
@@ -286,13 +291,56 @@ module Game
     # is stepping. The read-side ones — Conditional Branch orientation, the
     # Control Variables character operand and a Call Event naming a map event —
     # are answered here, so they need the id too.
+    #
+    # Deliberately NOT frame-scoped: a nested Call Event (#do_call_event)
+    # never touches #event_id, so a "this event" reference inside a called
+    # page still resolves to whichever event/common-event originally started
+    # THIS interpreter (the outermost caller), not to the map event the Call
+    # Event actually jumped into. This is this codebase's own pre-existing,
+    # deliberate design (predating cycle #192), not something introduced or
+    # revisited here — cycle #192 only teaches #call_stack_snapshot to record
+    # each frame's own real target-event identity for the *save file*
+    # (@call_frame_event_id below), and deliberately leaves this live
+    # resolution semantic alone: changing what "this event" means mid a
+    # nested call would be a genuine RPG_RT behavior question of its own,
+    # needing its own citable evidence, not a side effect of a save-fidelity
+    # cycle. Because #event_id is never mutated by entering a call in the
+    # first place, #return_from_call correctly has nothing to restore here
+    # either -- see #return_from_call's own comment.
     attr_accessor :event_id
+
+    # The event_id a Call Event resolved when it pushed the list @list is
+    # currently running (0 for a common event, matching liblcf's own
+    # SaveEventExecFrame#event_id comment "0 if it's common event or in
+    # other map" -- see LCF::Schema::SAVE_EVENT_EXEC_FRAME's own comment for
+    # why "in other map" collapses into the same 0 case here). Tracked
+    # entirely separately from #event_id above: this is per-CALL-FRAME
+    # identity, purely so #call_stack_snapshot can give each frame its own
+    # honest value instead of mirroring the whole interpreter's single
+    # #event_id on every frame alike (cycle #191's original simplification).
+    # #character_ref/#event_id's own "this event" resolution never reads
+    # this -- it is inert for live command execution, exactly like the
+    # `commands`/`current_command` a stack frame also carries are inert
+    # until a return actually unwinds to them.
+    #
+    # nil at depth 0 (no Call Event has run yet this interpreter run) --
+    # #call_stack_snapshot then falls back to #event_id for that frame,
+    # which is exactly correct since depth 0 IS the interpreter's own root
+    # frame. #do_call_event sets it to the callee's resolved id on every
+    # push (after first stashing the outgoing value into the pushed
+    # @call_stack entry's own third element), and #return_from_call restores
+    # it from that same third element on every pop, so it always names
+    # whichever list @list currently holds, all the way back up.
+    attr_reader :call_frame_event_id
 
     def start(commands)
       @list = commands || []
       @index = 0
       @running = true
       @call_stack = []
+      # A fresh run starts back at depth 0, same reasoning as #event_id's own
+      # reset just below.
+      @call_frame_event_id = nil
       @move_route_requests = []
       @location_requests = []
       @sprite_flash_requests = []
@@ -615,10 +663,15 @@ module Game
     end
 
     # Resume the caller that a finished called-list returned to; returns false
-    # when there is no caller (the outermost list is done).
+    # when there is no caller (the outermost list is done). Also restores
+    # #call_frame_event_id from the popped frame's own third element, so it
+    # keeps naming whichever list @list holds now that we are back a level
+    # shallower -- #event_id itself needs no matching restore here: it was
+    # never touched by #do_call_event entering the call in the first place
+    # (see #event_id's own comment), so there is nothing to unwind.
     def return_from_call
       return false if @call_stack.empty?
-      @list, @index = @call_stack.pop
+      @list, @index, @call_frame_event_id = @call_stack.pop
       true
     end
 
@@ -678,15 +731,21 @@ module Game
     # list, an Array of LCF::EventCommand-alikes -- exactly what
     # LCF.encode_event_commands/#restore_call_stack both expect),
     # `current_command` (the cursor into it), `event_id` and
-    # `triggered_by_decision_key`, both mirrored from this whole
-    # interpreter's own #event_id/#triggered_by_decision_key rather than
-    # tracked per frame -- #do_call_event does not record which event a
-    # called list's commands originally belonged to (a "this event"
-    # reference always resolves through the outermost caller's own id, see
-    # #character_ref), so there is no richer per-frame value available to
-    # give honestly. Only the outermost frame's own `triggered_by_decision_key`
-    # can genuinely be true: a Call Event's own nested frame was never itself
-    # started by the action key, whatever launched the outer event.
+    # `triggered_by_decision_key`.
+    #
+    # `event_id` is each frame's own genuine target identity (cycle #192):
+    # the outermost frame (index 0) always carries this whole interpreter's
+    # own #event_id -- that one was never pushed by a Call Event, it is
+    # whatever the owning scene set before this run started, and stays the
+    # only source of truth for it (see #event_id's own comment on why it is
+    # deliberately NOT frame-scoped for live execution). Every frame beneath
+    # it carries the map-event id (or 0 for a common event -- see
+    # #do_call_event/#resolve_call) that the Call Event pushing it actually
+    # resolved, tracked live via #call_frame_event_id and threaded through
+    # each @call_stack entry's own third element. Only the outermost frame's
+    # own `triggered_by_decision_key` can genuinely be true: a Call Event's
+    # own nested frame was never itself started by the action key, whatever
+    # launched the outer event.
     #
     # Returns nil for an interpreter with nothing to capture (never started,
     # or already finished) -- the overwhelming common case a save actually
@@ -694,12 +753,12 @@ module Game
     # SAVE_COMMON_EVENT's own schema.rb comments for when it is not).
     def call_stack_snapshot
       return nil unless @running
-      frames = @call_stack + [[@list, @index]]
-      frames.each_with_index.map do |(list, index), i|
+      frames = @call_stack + [[@list, @index, @call_frame_event_id || @event_id || 0]]
+      frames.each_with_index.map do |(list, index, event_id), i|
         {
           commands: list,
           current_command: index,
-          event_id: @event_id || 0,
+          event_id: (i.zero? ? @event_id : event_id) || 0,
           triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
         }
       end
@@ -720,6 +779,24 @@ module Game
     # comment on that same scope limit, which #resumable_index/#start_at
     # already share.
     #
+    # Each restored @call_stack entry also gets back its own frame's
+    # `event_id` (cycle #192) as its third element, and #call_frame_event_id
+    # is set to the innermost frame's own value when there is any nesting at
+    # all (#start above already reset it to nil, the correct depth-0 value,
+    # for the no-nesting case). None of this changes what actually executes
+    # -- #character_ref/#event_id's own "this event" resolution only ever
+    # reads #event_id (restored just below, from the OUTERMOST frame, same
+    # as before), never a frame's own per-call identity or
+    # #call_frame_event_id -- it exists purely so that immediately
+    # re-snapshotting a freshly-restored interpreter (before it runs another
+    # command) reproduces the exact same per-frame `event_id` values the
+    # original snapshot had, i.e. so the round trip is stable. A suspended
+    # caller frame's own event_id is genuinely dormant data until
+    # #return_from_call eventually pops back to it; #return_from_call
+    # already restores #call_frame_event_id from that same third element at
+    # that point (see its own comment), so nothing here needs to anticipate
+    # that -- only the record has to survive the round trip.
+    #
     # The caller still owns #resolver/#map_info the same way #start's own
     # callers already do (Scene::Map's #start_autostart/#new_parallel/the
     # decision-key trigger path) -- this only rebuilds the execution
@@ -735,10 +812,13 @@ module Game
       start(innermost[:commands] || [])
       idx = innermost[:current_command]
       @index = idx if idx && idx >= 0 && idx <= @list.size
-      @call_stack = frames[0...-1].map { |f| [f[:commands] || [], f[:current_command] || 0] }
+      @call_stack = frames[0...-1].map do |f|
+        [f[:commands] || [], f[:current_command] || 0, f[:event_id] || 0]
+      end
       outer = frames.first
       @event_id = outer[:event_id] if outer[:event_id] && outer[:event_id] != 0
       @triggered_by_decision_key = !!outer[:triggered_by_decision_key]
+      @call_frame_event_id = (innermost[:event_id] || 0) if frames.size > 1
     end
 
     # Start (or restart) at a previously #resumable_index-captured position
@@ -767,6 +847,7 @@ module Game
       @running = false
       @index = @list.size
       @call_stack = []
+      @call_frame_event_id = nil
       @pending_messages = []
       reset_waits
     end
@@ -910,6 +991,7 @@ module Game
       if result == :escape && @battle_escape_aborts
         @index = @list.size
         @call_stack = []
+        @call_frame_event_id = nil
         reset_waits
         return
       end
@@ -1152,23 +1234,43 @@ module Game
     # A missing target is a logged no-op (see #resolve_call/#map_event_call); an
     # empty (but resolved) target is a silent no-op, since that page/event
     # genuinely has nothing to run. Recursion is bounded by MAX_CALL_DEPTH.
+    #
+    # Before diving in, stashes the OUTGOING #call_frame_event_id (cycle
+    # #192 -- this frame's own genuine identity, whatever list @list held
+    # before this call) onto the pushed @call_stack entry's own third
+    # element, then updates #call_frame_event_id to the callee's own newly-
+    # resolved identity, so it always names whichever list @list currently
+    # holds -- see #call_frame_event_id's own comment for the full
+    # bookkeeping story and #return_from_call for the matching pop-side
+    # restore.
     def do_call_event(cmd)
       return unless @resolver
-      cmds = resolve_call(cmd)
+      cmds, target_event_id = resolve_call(cmd)
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      @call_stack.push [@list, @index]
+      @call_stack.push [@list, @index, @call_frame_event_id || @event_id || 0]
       @list = cmds
       @index = 0
+      @call_frame_event_id = target_event_id
     end
 
+    # Resolves a Call Event's target, returning `[commands, event_id]` (both
+    # nil on any failure) -- `event_id` (cycle #192) is the concrete map-event
+    # id #do_call_event's pushed frame should carry for the list about to run,
+    # 0 for a common event, matching liblcf's own SaveEventExecFrame#event_id
+    # comment "0 if it's common event or in other map" (see
+    # LCF::Schema::SAVE_EVENT_EXEC_FRAME's own comment on why "in other map"
+    # is not a distinct, reachable case in this codebase's own model: Call
+    # Event's own command format -- param0 0/1/2 above -- never names a map
+    # at all, only a common-event id or a same-map event id/page, so there is
+    # no "different map" target for this engine to ever resolve here).
     def resolve_call(cmd)
       case cmd.param(0)
       when 0
         id = cmd.param(1)
         cmds = @resolver.common_event_commands(id)
         $stderr.puts "[RPG2k] Call Event: common event #{id} not found" if cmds.nil?
-        cmds
+        [cmds, 0]
       when 1 then map_event_call(cmd.param(1), cmd.param(2))
       when 2 then map_event_call(variables[cmd.param(1)],
                                  variables[cmd.param(2)])
@@ -1184,7 +1286,9 @@ module Game
     # stale event id or page number resolves to no commands either -- both are
     # reported here rather than left a silent no-op, matching real RPG_RT's
     # error dialog for the same targets (see docs/TODO.md's runtime error
-    # catalog).
+    # catalog). Returns `[commands, id]` on success (see #resolve_call), a
+    # bare nil on failure -- #do_call_event/#resolve_call already bail out on
+    # `cmds.nil?` before ever consulting the second value in that case.
     def map_event_call(event_ref, page)
       id = character_ref(event_ref)
       if id.nil?
@@ -1194,7 +1298,7 @@ module Game
       end
       cmds = @resolver.map_event_commands(id, page)
       $stderr.puts "[RPG2k] Call Event: map event #{id} page #{page} not found" if cmds.nil?
-      cmds
+      [cmds, id]
     end
 
     # Translate a command's character reference into the map event id the scene
@@ -1615,6 +1719,7 @@ module Game
       if @battle_escape_aborts
         @index = @list.size
         @call_stack = []
+        @call_frame_event_id = nil
         return
       end
       target = @battle_has_handlers && find_battle_option(:escape)
@@ -2973,12 +3078,22 @@ module Game
     # NOT independently confirmed against genuine RPG_RT under wine, the
     # same `IsRPG2k3Commands()` gate
     # as Force Flee/Enable Combo above.
+    #
+    # The pushed entry's third element (cycle #192's per-frame event_id, see
+    # #do_call_event's own comment) is always a literal 0 here, matching the
+    # only kind of target this command ever has -- kept purely so
+    # @call_stack's own shape stays uniform for the shared #return_from_call
+    # to pop, NOT a claim that battle interpreters participate in
+    # #call_stack_snapshot's save mechanism: they do not (see
+    # #call_stack_snapshot's own scope, Game::State#foreground_event_exec/
+    # #common_event_exec), per-frame identity there is deliberately out of
+    # scope for this cycle.
     def do_call_common_event(cmd)
       return unless @resolver && @state.party.rpg2003?
       cmds = common_event_commands(cmd.param(0))
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      @call_stack.push [@list, @index]
+      @call_stack.push [@list, @index, 0]
       @list = cmds
       @index = 0
     end
@@ -3023,6 +3138,7 @@ module Game
       @battle.terminate
       @index = @list.size
       @call_stack = []
+      @call_frame_event_id = nil
     end
 
     # Conditional Branch (battle form, 13310). param0 selects the test:
