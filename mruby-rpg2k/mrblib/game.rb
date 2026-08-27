@@ -14467,6 +14467,20 @@ module Game
     # each nil or a `{ name:, volume:, tempo: }` hash. Play Memorized BGM (11540)
     # restores the stash. Persisted in the save so the memory survives a reload.
     attr_accessor :current_bgm, :memorized_bgm
+    # The BGM #play_vehicle_bgm/#play_battle_bgm (Scene::Map) stash right
+    # before boarding a vehicle or a fight opens, so #restore_pre_vehicle_bgm/
+    # #restore_pre_battle_bgm can bring it back on disembark/after the fight --
+    # nil the rest of the time (no ride or fight in progress). Confirmed
+    # against a genuine kk1.12 save under wine: chunk 101 (SAVE_SYSTEM) fields
+    # 76/77 (liblcf's own before_vehicle_music/before_battle_music) were both
+    # present, as a BGM struct whose own `file` read the literal "(OFF)" --
+    # RPG_RT's own placeholder for "nothing to restore", not either field
+    # being absent -- confirmed in a session that never boarded a vehicle or
+    # fought a battle, i.e. both nil here. Previously tracked only as a
+    # transient Scene::Map instance variable, invisible to both save formats;
+    # promoted onto Game::State so #to_h/#load_h and #to_lsd/.from_lsd can
+    # round-trip it like #current_bgm above.
+    attr_accessor :pre_vehicle_bgm, :pre_battle_bgm
     # Whether the current BGM has wrapped back to its start at least once — the
     # "BGM played once" conditional-branch test (12010 type 9). Cleared whenever
     # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
@@ -14683,6 +14697,8 @@ module Game
       @escape_access = true
       @current_bgm = nil
       @memorized_bgm = nil
+      @pre_vehicle_bgm = nil
+      @pre_battle_bgm = nil
       @bgm_looped = false
       @bgm_stopping = false
       @player_transparent = false
@@ -14955,6 +14971,7 @@ module Game
         message_config: @message_config.to_h,
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
+        pre_vehicle_bgm: @pre_vehicle_bgm, pre_battle_bgm: @pre_battle_bgm,
         player_transparent: @player_transparent, weather: @weather.to_h,
         screen: @screen.to_h,
         pictures: @pictures.each_with_object({}) { |(id, p), out| out[id] = p.to_h },
@@ -15229,6 +15246,16 @@ module Game
       # 72-82. Written unconditionally to match.
       sys[71] = bgm_chunk({})
       sys[75] = bgm_chunk(@current_bgm) if @current_bgm
+      # Fields 76/77 (before_vehicle_music/before_battle_music) are the
+      # restore point #restore_pre_vehicle_bgm/#restore_pre_battle_bgm
+      # (Scene::Map) bring back on disembark/after a fight -- unlike the
+      # Change System BGM override slots just below, RPG_RT always writes a
+      # real value here, "(OFF)" standing in for "nothing to restore" rather
+      # than the field going absent. Confirmed against a genuine kk1.12 save
+      # under wine, taken outside any vehicle/battle: both present, decoding
+      # as a BGM struct whose own `file` read the literal "(OFF)".
+      sys[76] = bgm_chunk(@pre_vehicle_bgm || { name: '(OFF)' })
+      sys[77] = bgm_chunk(@pre_battle_bgm || { name: '(OFF)' })
       sys[78] = bgm_chunk(@memorized_bgm) if @memorized_bgm
       # Change System BGM (10660) overrides (SYSTEM_BGM_SAVE_FIELD above) --
       # like field 71 and the SFX slots below, all seven are written
@@ -16002,6 +16029,11 @@ module Game
       # Overridden BGM playback state; an empty file name means "none".
       state.current_bgm = bgm_from_chunk(sys.current_bgm)
       state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
+      # The vehicle/battle BGM restore point -- "(OFF)" (RPG_RT's own
+      # placeholder, see #to_lsd's own citation) reads back as nil, the same
+      # as an empty file name, via #bgm_from_chunk's own sentinel handling.
+      state.pre_vehicle_bgm = bgm_from_chunk(sys.before_vehicle_music)
+      state.pre_battle_bgm = bgm_from_chunk(sys.before_battle_music)
       # Change System BGM (10660) / Change System SFX (10670) overrides, read
       # back by the same slot -> field map #to_lsd wrote them with. A slot the
       # save left un-overridden is simply absent from the hash, matching
@@ -16319,12 +16351,19 @@ module Game
 
     # Rebuild our `{ name:, volume:, tempo:, balance: }` BGM hash from a
     # parsed BGM chunk (an LCF::Array1D over the BGM schema). Returns nil for
-    # an absent chunk or an empty file name (the "use the database value"
-    # sentinel).
+    # an absent chunk, an empty file name (the "use the database value"
+    # sentinel), or the literal file name "(OFF)" -- liblcf's own Music-struct
+    # schema default, and RPG_RT's own "play nothing" placeholder wherever a
+    # BGM slot is left unset (#play_bgm_or_stop's own comment already
+    # documents this same literal for live playback; a save round-trip
+    # carries the identical sentinel and needs the same treatment, or an
+    # editor-set-to-"(OFF)" override, or a before_vehicle_music/
+    # before_battle_music restore point with nothing to restore, would
+    # decode as a real request to play a file literally named "(OFF)").
     def self.bgm_from_chunk(chunk)
       return nil unless chunk
       name = chunk.file
-      return nil if name.nil? || name.empty?
+      return nil if name.nil? || name.empty? || name == '(OFF)'
       { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
         balance: chunk.balance || 50 }
     end
@@ -16365,6 +16404,8 @@ module Game
       state.save_access = h[:save_access] unless h[:save_access].nil?
       state.current_bgm = h[:current_bgm]
       state.memorized_bgm = h[:memorized_bgm]
+      state.pre_vehicle_bgm = h[:pre_vehicle_bgm]
+      state.pre_battle_bgm = h[:pre_battle_bgm]
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
       state.screen.load_h(h[:screen])
