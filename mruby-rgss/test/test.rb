@@ -1515,6 +1515,21 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     assert_equal 3, sections["work"][:calls]
     assert_true sections["work"][:avg_ms] >= 0.0
 
+    # object_types comes straight off the GC's own per-type counters (see
+    # patches/mruby-gc-type-live-counts.patch), not a sampled/capped subset --
+    # the mruby heap is never empty (the interpreter's own bootstrap objects
+    # alone guarantee at least one live Object/Class/String), so this must be
+    # non-empty even though the "work" block itself never touches the heap.
+    object_types = st[:object_types]
+    assert_true object_types.is_a?(Hash)
+    assert_true object_types.size > 0, "expected at least one live object type"
+    object_types.each do |name, counts|
+      assert_true name.is_a?(String)
+      assert_true counts[:live] >= 0
+      assert_true counts[:allocs] >= counts[:live],
+                  "#{name}: cumulative allocs must be >= current live count"
+    end
+
     # report and reset must not raise; reset clears the interval.
     RGSS::Profiler.report
     RGSS::Profiler.reset

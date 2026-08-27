@@ -654,7 +654,7 @@
   line to stderr, e.g.:
 
   ```
-  [profiler] fps=60.0 frame(work) avg=3.21ms max=8.40ms n=60 | mem rss=45.20MB lv_used=1.83MB lv_frag=12% live_blocks=48213 allocs/s=91234 | sections: scene.update avg=1.90ms max=6.10ms n=60 (59%) gfx.lvgl avg=0.80ms max=1.20ms n=60 (25%) gfx.zorder avg=0.20ms max=0.90ms n=17 (6%)
+  [profiler] fps=60.0 frame(work) avg=3.21ms max=8.40ms n=60 | mem rss=45.20MB lv_used=1.83MB lv_frag=12% live_blocks=48213 allocs/s=91234 | types: String=18234 Array=9021 Object=4110 Hash=812 | sections: scene.update avg=1.90ms max=6.10ms n=60 (59%) gfx.lvgl avg=0.80ms max=1.20ms n=60 (25%) gfx.zorder avg=0.20ms max=0.90ms n=17 (6%)
   ```
 
 - `frame(work)` is per-frame CPU time (the frame span minus the fps-cap sleep);
@@ -665,7 +665,15 @@
   the **top eight** sections fit on the line, so use the Chrome trace below to
   see the cheap ones. The memory
   fields cover process RSS, the LVGL heap pool and mruby allocation churn (live
-  blocks and allocations/sec; the allocation counters need the native build)
+  blocks and allocations/sec; the allocation counters need the native build).
+  `types` is the mruby heap broken down by object type (Ruby class), most-live
+  first and also capped at eight — a live population count straight off the
+  GC's own per-type counters (`patches/mruby-gc-type-live-counts.patch`), not
+  a sampled walk: no extra GC pass and no extra heap scan, so it costs nothing
+  beyond the existing `--profile` overhead. `RGSS::Profiler.stats` exposes the
+  uncapped breakdown as `:object_types` (a Hash of class name to `:live` and
+  cumulative `:allocs`), and a Chrome trace mirrors it as a `mruby_types`
+  counter series
 - Game/engine Ruby code can time its own hot spots with
   `RGSS::Profiler.section("name") { ... }`, and read the live numbers back as a
   Hash with `RGSS::Profiler.stats`
