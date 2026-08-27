@@ -1972,6 +1972,7 @@ check '#call_stack_snapshot captures a process mid a nested Call Event too, unli
   it.resolver = FakeResolver.new(common: { 5 => called })
   it.start([FakeCmd.new(IC::CALL_EVENT, [0, 5, 0]),
             FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.event_id = 3 # the caller's own identity -- must NOT leak into the called frame below
   it.update # enters the call, runs its first command, parks on its own Wait
   eq true, st.switches[9]
   ok it.resumable_index.nil?, 'not capturable the old, coarser way -- mid a nested call'
@@ -1980,6 +1981,12 @@ check '#call_stack_snapshot captures a process mid a nested Call Event too, unli
   eq 2, frames.size, 'the suspended caller frame plus the called frame'
   eq 1, frames[0][:current_command], 'the caller is parked right after its own Call Event'
   eq 2, frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  # Cycle #192: a Call Event targeting a COMMON event reads back event_id 0
+  # on its own frame (liblcf's own "0 if it's common event or in other
+  # map"), never the outer caller's own id -- the outermost frame alone
+  # still carries the interpreter's own root #event_id.
+  eq 3, frames[0][:event_id], 'the outermost frame is still this interpreter\'s own root event_id'
+  eq 0, frames[1][:event_id], 'a called common event\'s own frame reads back 0, not the caller\'s 3'
 
   it2 = Game::Interpreter.new(new_state)
   it2.resolver = FakeResolver.new(common: { 5 => called })
@@ -1991,6 +1998,84 @@ check '#call_stack_snapshot captures a process mid a nested Call Event too, unli
   eq true, st2.switches[10], 'the called frame resumes past its own Wait, not from the top'
   eq true, st2.switches[1], 'control correctly returns to the outer, suspended caller'
   ok !it2.running?, 'the whole call stack unwinds to completion'
+end
+
+check "#call_stack_snapshot's called frame carries the target map event's own event_id, not the caller's" do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]),
+            FakeCmd.new(IC::WAIT, [1]),
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 10, 10, 0])]
+  it.resolver = FakeResolver.new(maps: { 12 => { 2 => called } })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [1, 12, 2]), # call map event 12, page 2
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.event_id = 7 # the caller's own identity -- distinct from the target, 12
+  it.update # enters the call, runs its first command, parks on its own Wait
+  eq true, st.switches[9]
+
+  frames = it.call_stack_snapshot
+  eq 2, frames.size
+  eq 7, frames[0][:event_id], 'the outermost (suspended caller) frame is the interpreter\'s own root identity'
+  eq 12, frames[1][:event_id],
+     'the called frame carries the TARGET map event\'s own id (12), not the caller\'s (7)'
+
+  # A re-snapshot after a full restore reproduces the exact same per-frame
+  # event_ids -- #call_frame_event_id round-trips through #restore_call_stack
+  # even though nothing about live execution needs it (see
+  # Game::Interpreter#restore_call_stack's own comment).
+  it2 = Game::Interpreter.new(new_state)
+  it2.resolver = FakeResolver.new(maps: { 12 => { 2 => called } })
+  it2.restore_call_stack(frames)
+  eq 7, it2.event_id, 'event_id restored from the outermost frame, same as before'
+  round = it2.call_stack_snapshot
+  eq frames.map { |f| f[:event_id] }, round.map { |f| f[:event_id] },
+     'restoring then re-snapshotting reproduces the exact same per-frame event_ids'
+
+end
+
+check '#return_from_call restores the caller\'s own event_id -- it does not leak into a later, unrelated call' do
+  # Two SEQUENTIAL (not nested) Call Events from the same root event, each
+  # to a different map event: once the first call fully returns,
+  # #call_frame_event_id must read back the root's own identity (7) again,
+  # not stay stuck on the first callee's (12) -- otherwise the SECOND call's
+  # own pushed frame would record the wrong caller identity.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  first_called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])] # finishes immediately, no Wait
+  second_called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 10, 10, 0]), FakeCmd.new(IC::WAIT, [1])]
+  it.resolver = FakeResolver.new(maps: { 12 => { 2 => first_called }, 20 => { 3 => second_called } })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [1, 12, 2]),
+            FakeCmd.new(IC::CALL_EVENT, [1, 20, 3])])
+  it.event_id = 7
+  it.update # runs+returns from the first call, then enters the second and parks on its Wait
+  eq true, st.switches[9], 'the first call ran and returned'
+  eq true, st.switches[10], 'the second call ran up to its own Wait'
+
+  frames = it.call_stack_snapshot
+  eq 2, frames.size, 'the suspended root caller plus the second called frame'
+  eq 7, frames[0][:event_id], 'the caller\'s own identity, not leaked from the first call\'s target (12)'
+  eq 20, frames[1][:event_id], 'the second call\'s own frame correctly carries its own target (20)'
+end
+
+check '#call_stack_snapshot on a Call Event to "this event" gives the called frame the SAME id as the caller' do
+  # Self-calling another page of the event already running is genuinely the
+  # same event throughout -- unlike calling a DIFFERENT map event (checked
+  # above), the called frame's own event_id must equal the caller's, not
+  # read back as a distinct id.
+  st = new_state
+  it = Game::Interpreter.new(st)
+  page2 = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]), FakeCmd.new(IC::WAIT, [1])]
+  it.resolver = FakeResolver.new(maps: { 7 => { 2 => page2 } })
+  it.start([FakeCmd.new(IC::CALL_EVENT, [1, 10005, 2]), # "this event", page 2
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.event_id = 7 # the list belongs to map event 7
+  it.update
+  eq true, st.switches[9]
+
+  frames = it.call_stack_snapshot
+  eq 2, frames.size
+  eq 7, frames[0][:event_id]
+  eq 7, frames[1][:event_id], 'the called frame is genuinely the same event (7), not a distinct callee id'
 end
 
 check '#call_stack_snapshot is nil once the process has finished' do

@@ -1711,19 +1711,27 @@ module LCF
     # codebase's own writer (`Game::State#to_lsd`) recomputes it the same way.
     #
     # `event_id` (0x0C, "0 if it's common event or in other map" per liblcf's
-    # own comment) and `triggered_by_decision_key` (0x0D) are written from
-    # this whole interpreter's own single `#event_id`/
-    # `#triggered_by_decision_key` on every frame alike -- this codebase's own
-    # Call Event (`#do_call_event`) does not track which event a called
-    # list's commands originally belonged to (a "this event" reference
-    # inside a call always resolves to the outermost caller's own id, never
-    # the callee's -- see `#character_ref`'s own comment), so there is no
-    # richer per-frame value to honestly give here than the one id/flag the
-    # whole interpreter already carries. A genuine RPG_RT `.lsd` may carry a
-    # different value per frame; this is a documented simplification of what
-    # this engine can honestly reconstruct from its own live state, not a
-    # claim that every frame's `event_id` matches genuine RPG_RT's own
-    # per-frame bookkeeping.
+    # own comment): cycle #192 gave each frame its own genuine value.
+    # `Game::Interpreter#do_call_event` now records, at the moment it pushes
+    # each frame, the concrete map-event id that frame's own `commands` list
+    # actually belongs to (via `#resolve_call`/`#map_event_call`, which
+    # already resolve exactly that to look the list up in the first place),
+    # or 0 when the call target was a common event -- see
+    # `#call_stack_snapshot`'s own comment for exactly how each frame's
+    # value is derived (the outermost frame is always this whole
+    # interpreter's own `#event_id`; every frame beneath it carries its own
+    # Call Event's resolved target). "...or in other map" does not name a
+    # distinct, reachable case here: Call Event's own command format (param0
+    # 0/1/2, see `#do_call_event`'s own comment) never names a map at all,
+    # only a common-event id or a same-map event id/page, so this codebase's
+    # own model has no "different map" target to ever resolve into a frame
+    # -- 0 covers both the common-event case and (vacuously) that one.
+    # `triggered_by_decision_key` (0x0D) is still written from this whole
+    # interpreter's single `#triggered_by_decision_key`, true only for the
+    # outermost frame (index 0): a Call Event's own nested frame was never
+    # itself started by the action key, whatever launched the outer event --
+    # this part was already correct as of cycle #191 and cycle #192 left it
+    # untouched.
     #
     # `subcommand_path` (0x15 count / 0x16 data, one byte per nesting level --
     # the chosen Show Choice branch id at that level, 255 once taken, per
@@ -1756,10 +1764,10 @@ module LCF
     # `stack` (0x01, `Array<SaveEventExecFrame>` -- see SAVE_EVENT_EXEC_FRAME
     # just above) is the genuine call stack, outermost frame first, matching
     # `Game::Interpreter#call_stack_snapshot`'s own `@call_stack + [[@list,
-    # @index]]` order (this codebase's own writer/reader convention for the
-    # frame's own array index within `stack`, 1-based ascending outer to
-    # inner -- not confirmed against a genuine multi-frame capture, since none
-    # was available; only that a single-frame `stack` round-trips against
+    # @index, event_id]]` order (this codebase's own writer/reader convention
+    # for the frame's own array index within `stack`, 1-based ascending outer
+    # to inner -- not confirmed against a genuine multi-frame capture, since
+    # none was available; only that a single-frame `stack` round-trips against
     # this codebase's own reading of the field table). `SaveMapEvent`'s own
     # 0x6C field and `SaveCommonEvent`'s own field 1 both point at this same
     # struct (`generator/csv/fields.csv`'s `Save.foreground_event_execstate`

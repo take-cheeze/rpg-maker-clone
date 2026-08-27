@@ -14707,6 +14707,101 @@ following this paragraph as the original record.
   character, the same fallback an ordinary Auto-Start common event already
   has).
 
+  **Superseded by cycle #192, 2026-08-27, on one specific point**: this
+  entry's own writeup above (and `LCF::Schema::SAVE_EVENT_EXEC_FRAME`'s
+  schema.rb comment as it read at the time) claimed each frame's `event_id`/
+  `triggered_by_decision_key` were "mirrored from this whole interpreter's
+  own single `#event_id`/`#triggered_by_decision_key`... since `#do_call_event`
+  does not track which event a called list's commands originally belonged
+  to". That was true when written; cycle #192 closed exactly that gap for
+  `event_id` (`triggered_by_decision_key` was already correct — only the
+  outermost frame ever carries it true — and needed no change). See cycle
+  #192's own entry below for what changed and why this historical bullet is
+  left as-is otherwise.
+- ✅ **Follow-up (cycle #192, 2026-08-27): `#call_stack_snapshot`'s saved
+  call-stack frames now carry each frame's own genuine `event_id`**, closing
+  the one-line gap cycle #191 flagged and documented honestly rather than
+  fixing (quoted just above). `Game::Interpreter#do_call_event` (Call Event,
+  12330) now records, at the exact moment it pushes a frame onto
+  `@call_stack`, the target event's own identity: `#resolve_call` was
+  extended to return `[commands, event_id]` instead of just `commands` (and
+  `#map_event_call` likewise `[commands, id]`) — 0 for a common-event target
+  (`param(0) == 0`), the concrete map-event id `#character_ref` already
+  resolves for a same-map target (`param(0) == 1` or `2`). `@call_stack`'s
+  own entries grew a third element (`[list, index, event_id]`) to carry it;
+  every read/write site was updated to match: `#do_call_event`'s own push,
+  `#return_from_call`'s pop, `#call_stack_snapshot`, `#restore_call_stack`,
+  and every `@call_stack = []` reset site (`#initialize`, `#start`, `#stop`,
+  `#resume_battle`, `#skip_invalid_troop`, `#do_terminate_battle`) gained a
+  matching `@call_frame_event_id = nil` reset. A new `@call_frame_event_id`
+  ivar tracks "the event_id of whichever list `@list` currently holds" live,
+  updated by `#do_call_event` on every push and restored by
+  `#return_from_call` on every pop, entirely separate from `#event_id`
+  itself (see below).
+
+  The RPG2003 battle page's own Call Common Event (1005,
+  `#do_call_common_event`) shares the same `@call_stack`/`#return_from_call`
+  mechanism but was deliberately left out of scope (per the original
+  cycle-#192 brief): its push now writes a literal `0` third element purely
+  so the shared array shape stays uniform for `#return_from_call` to pop —
+  battle interpreters were never part of cycle #191's save mechanism
+  (`Game::State#foreground_event_exec`/`#common_event_exec` only ever
+  snapshot map/common-event interpreters), so no real per-frame identity
+  tracking was added there.
+
+  liblcf's own field comment ("0 if it's common event or in other map")
+  raised the question of whether a distinct "in other map" case needed
+  modelling separately from "common event". Investigated and concluded no:
+  Call Event's own command format (`param(0)` 0/1/2, see `#do_call_event`'s
+  own comment) never names a map at all, only a common-event id or a
+  same-map event id/page — this codebase's own model has no path to a
+  "different map" target for `#resolve_call` to ever produce, so `0` was
+  kept as the one case covering both, documented explicitly rather than
+  inventing an unreachable branch.
+
+  Also investigated, per the original brief's own prompt, whether
+  `#event_id` itself (the live "this event" resolution `#character_ref`
+  reads) needed a matching per-frame restore in `#return_from_call` — i.e.
+  whether resuming an outer, suspended caller frame needs its own identity
+  restored the way `@call_frame_event_id` now is. Concluded no, and left
+  `#event_id` untouched: `#do_call_event` never mutates `#event_id` when
+  entering a call in the first place (this codebase's own pre-existing,
+  deliberate design — a "this event" reference inside a nested call
+  resolves to the outermost caller's own id throughout, never switching to
+  the callee's, predating this cycle and not revisited here), so there is
+  nothing for `#return_from_call` to restore: the value was never disturbed.
+  Changing that live resolution semantic (making "this event" inside a
+  called page mean the callee instead) would be a genuine RPG_RT behavior
+  question needing its own citable evidence, out of scope for a save-
+  fidelity cycle — `#event_id`'s own attr comment (interpreter.rb) now
+  spells this reasoning out explicitly so a future cycle does not
+  rediscover the same question from scratch.
+
+  `LCF::Schema::SAVE_EVENT_EXEC_FRAME`'s own schema.rb comment was rewritten
+  to describe what is now actually implemented (it previously described the
+  gap this cycle closed as a permanent simplification).
+
+  Verified with 4 new `scripts/rpg2k_logic_check.rb` checks (a called
+  common-event frame reads back `event_id` 0, not the caller's; a called
+  map-event frame reads back its own target id, not the caller's; a Call
+  Event self-call to "this event" reads back the SAME id as the caller,
+  since it genuinely is the same event; and `#return_from_call` correctly
+  restores the caller's own identity after a call fully returns, so it does
+  not leak into a later, sequential, unrelated call) plus extended
+  assertions on cycle #191's own nested-call-stack check — total
+  `rpg2k_logic_check.rb` now 1172 (up from 1169). All other check-suite
+  baselines unchanged (`rpg2k_scene_check.rb`=929,
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures unchanged), and the `mruby_test` ctest suite passes.
+
+  Deliberately left open: the round-trip fidelity of `@call_frame_event_id`
+  through `#restore_call_stack` (so a restored interpreter, re-snapshotted
+  immediately without running another command, reproduces the exact same
+  per-frame `event_id` values) is verified by a fresh-state round trip, not
+  a genuine wine-saved multi-frame `.lsd`, same open point cycle #191 itself
+  already carried forward.
+
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
   `do_wait`/`drive_wait` in interpreter.rb / map.rb.
