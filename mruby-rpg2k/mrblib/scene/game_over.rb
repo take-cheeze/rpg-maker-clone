@@ -9,8 +9,9 @@ class RPG2k
     # than running a [Defeat] handler — so both go through Scene::GameOver rather
     # than dropping straight back to the title as they used to.
     class GameOver < Base
-      # System BGM slot for Change System BGM (10660), matching EasyRPG's
-      # Game_System::SystemBGM enum (BGM_GameOver = 6) — see
+      # System BGM slot for Change System BGM (10660), matching EasyRPG
+      # Player's Game_System::SystemBGM enum (BGM_GameOver = 6), NOT
+      # independently confirmed against genuine RPG_RT under wine — see
       # Scene_Gameover::Start, which plays GetSystemBGM(BGM_GameOver) rather
       # than the database's gameover_music directly.
       SYSTEM_BGM_GAMEOVER = 6
@@ -80,7 +81,8 @@ class RPG2k
 
       # A Change System BGM (10660) override for the game-over slot, when the
       # running game set one and it names a file, else the database's own
-      # gameover_music. Mirrors EasyRPG's Game_System::GetAudio: the override
+      # gameover_music. Mirrors EasyRPG Player's Game_System::GetAudio, NOT
+      # independently confirmed against genuine RPG_RT under wine: the override
       # wins only when its own filename is non-empty.
       def play_gameover_bgm
         name, vol, tempo = gameover_bgm_override || database_gameover_bgm
