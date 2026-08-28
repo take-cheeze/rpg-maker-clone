@@ -7005,6 +7005,39 @@ check "an actor with a startup class reads class_id immediately, but its curve, 
   eq 0, b.class_id
 end
 
+# A database shrink deleting a class (chunk 30) an event still references --
+# shown as "?" in the editor -- used to leave Change Class a silent no-op with
+# no trace, the one lookup docs/TODO.md's runtime error catalog never named
+# alongside its sibling hero/skill/item/enemy/enemy-group/battle-animation/
+# terrain/chipset/common-event cases.
+check 'a dangling class id in Change Class reports and is a no-op, unlike a ' \
+      'database with no class table at all' do
+  hero = class_state.party.actor_by_id(1) # class_db(0): class-less, jobs 1/2 exist
+  before_hp = hero.max_hp
+  changed = nil
+  out = capture_stderr do
+    changed = hero.change_class(99, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                                 Game::Actor::CLASS_PARAM_NO_CHANGE)
+  end
+  eq false, changed, 'a dangling class id is still a no-op, same as before this fix'
+  ok out.include?('[RPG2k] Change Class: class #99 not found in database'), out
+  eq 0, hero.class_id, "the actor's class_id is left untouched"
+  eq before_hp, hero.max_hp, 'stats are untouched too'
+
+  # A database with no class table at all (jobs: nil, matching a genuine
+  # RPG2000 .ldb -- the same guard `Actor#class_row_for` already uses) stays
+  # quiet: there is no class concept for this database, so this is not a
+  # dangling reference.
+  no_job_players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                             atk: 10, def: 8) }
+  no_job_hero = Game::Party.new(FakeActorDB.new(no_job_players, [1], {}, {}, nil)).actor_by_id(1)
+  out2 = capture_stderr do
+    no_job_hero.change_class(99, 3, Game::Actor::CLASS_SKILL_NO_CHANGE,
+                              Game::Actor::CLASS_PARAM_NO_CHANGE)
+  end
+  eq '', out2, 'no class table at all stays quiet, unlike a genuine dangling reference'
+end
+
 check "Party save/Continue does not fabricate a Change Class for an actor " \
       "merely starting in one" do
   # Party#to_h/#load_state (this engine's own Marshal Save/Continue, distinct
