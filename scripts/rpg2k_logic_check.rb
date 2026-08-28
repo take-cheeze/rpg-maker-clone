@@ -420,6 +420,24 @@ check 'faces inside a jump steer the next move without moving anything' do
   eq [4, 5], [c.x, c.y]
 end
 
+check 'Move Forward inside a jump repeats the diagonal just walked, not the ' \
+      'pre-diagonal direction it had in hand' do
+  # Mirrors the already-fixed non-jump "Move Upper-Right, Move Forward"
+  # case (#do_diagonal_dir / Character#last_move_direction): a diagonal
+  # move-route sub-command must leave its own [horizontal, vertical] pair
+  # in hand, not the direction from before it ran, so a Move Forward right
+  # after it inside the *same* jump block repeats the diagonal rather than
+  # sliding back onto one cardinal axis. Character starts facing Down (2);
+  # Move Upper-Right then Move Forward should land two tiles up-right of
+  # start, not one tile up-right plus one tile down (the pre-fix bug: the
+  # second command re-read the stale pre-jump `dir`, Down).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::MOVE_FORWARD),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 0], [c.x, c.y], 'the diagonal in hand repeats twice, landing (2,-2) away'
+end
+
 check 'a jump only tests where it lands, not what it clears' do
   # (1, 0) is a wall; the jump passes straight over it onto (2, 0).
   route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),

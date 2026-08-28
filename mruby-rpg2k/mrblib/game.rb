@@ -7171,21 +7171,40 @@ module Game
 
     # The direction a move command inside a jump block contributes. The moves
     # that would pick a direction at run time (random, toward / away from the
-    # hero) still pick one; Move Forward keeps the direction in hand.
+    # hero) still pick one; Move Forward keeps the direction in hand. A
+    # diagonal now leaves its own `[horizontal, vertical]` pair in hand too
+    # (mirroring #move_diagonal's `#last_move_direction` outside a jump) --
+    # it used to fall into the bare `else dir` catch-all alongside Move
+    # Forward itself, so the diagonal never actually updated the running
+    # `dir` a *later* Move Forward in the same jump block reads: "Begin
+    # Jump, Move Upper-Right, Move Forward, End Jump" repeated the
+    # *pre*-diagonal direction instead of the diagonal just walked, the same
+    # root cause #last_move_direction was introduced for outside a jump (see
+    # #move_diagonal's own doc comment), just never carried into this
+    # separate jump-scan path. This still leaves the diagonal step's own
+    # delta correct even before this fix, since #jump_delta computes it
+    # straight from `id`, not `dir` -- only a *following* Move Forward was
+    # affected.
     def jump_move_direction(id, dir, character, world)
       case id
       when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
+      when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT then DIAGONAL[id]
       when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
       when MOVE_TOWARD_HERO then toward_hero(character, world)
       when MOVE_AWAY_HERO then away_hero(character, world)
-      else dir # Move Forward, and the diagonals (which carry their own delta)
+      else dir # Move Forward: keeps whatever direction (cardinal or diagonal pair) is in hand
       end
     end
 
-    # The tile offset a move command inside a jump block adds. A diagonal moves
-    # on both axes at once; everything else moves one tile along `dir`.
+    # The tile offset a move command inside a jump block adds. A diagonal
+    # moves on both axes at once -- whether it comes from an explicit
+    # diagonal sub-command (`id` itself names one) or from Move Forward
+    # continuing a diagonal `dir` a prior diagonal command left in hand (a
+    # two-element `[horizontal, vertical]` pair, see #jump_move_direction
+    # above); everything else moves one tile along the cardinal `dir`.
     def jump_delta(id, dir)
-      if (pair = DIAGONAL[id])
+      pair = DIAGONAL[id] || (dir if dir.is_a?(Array))
+      if pair
         horizontal, vertical = pair
         hx, = Character::DIR_DELTA[horizontal] || [0, 0]
         _, vy = Character::DIR_DELTA[vertical] || [0, 0]

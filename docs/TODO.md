@@ -21833,6 +21833,72 @@ not yet verified:
   the same root cause (this codebase's direction state could only hold a
   single cardinal), just not exercised by this fix, which only touched the
   non-jump path.
+  ✅ **Follow-up (cycle #206, 2026-08-28): closed this exact "Still open"
+  jump-path gap.** Method: after skimming several sections of this file
+  looking for a well-scoped, currently-open item outside the last five
+  cycles' BGM-fade-in/HP-MP-recolor territory (most of the "Untriaged
+  backlog"/"Full-site sweep" material turned out to already be resolved,
+  or explicitly deferred pending a genuine wine session this environment
+  doesn't have this cycle), this dangling cross-reference from the
+  already-fixed non-jump diagonal bug was exactly the kind of self-
+  contained, code-only gap that needed no fresh behavioral citation — the
+  underlying rule (a diagonal move-route sub-command must leave its own
+  `[horizontal, vertical]` pair in hand for a following Move Forward to
+  repeat, not collapse to one cardinal axis) was already established and
+  wine-adjacent-confirmed by the non-jump fix directly above; this cycle's
+  own contribution is recognizing the jump-scan path (`MoveRoute#do_jump`'s
+  local `dir` variable) never received it. Confirmed by direct code
+  reading: `#jump_move_direction`'s `else dir` branch caught both Move
+  Forward *and* all four diagonal move ids (`MOVE_UPRIGHT`/`_DOWNRIGHT`/
+  `_DOWNLEFT`/`_UPLEFT` sit inside the `MOVE_UP..MOVE_FORWARD` id range but
+  had no explicit `when` arm), so a diagonal sub-command left `dir`
+  completely unchanged — the diagonal's own displacement stayed correct
+  regardless, since `#jump_delta` computes it straight from the command
+  `id` when `id` itself is diagonal, not from `dir` — but a *following*
+  Move Forward (`jump_delta(MOVE_FORWARD, dir)`, `id` not diagonal) fell
+  through to the untouched, stale pre-diagonal `dir`. Fixed by giving
+  `#jump_move_direction` an explicit diagonal `when` arm returning
+  `DIAGONAL[id]` (the same `[horizontal, vertical]` pair
+  `Character#last_move_direction` already uses outside a jump), and
+  widening `#jump_delta` to also treat `dir` itself as a diagonal pair
+  (`Array`) when the *current* command isn't one — the two-line change
+  `pair = DIAGONAL[id] || (dir if dir.is_a?(Array))`. `#jump_face_direction`
+  (Turn/Face commands inside a jump block) is untouched: a Turn command
+  immediately after a diagonal, before any Move Forward, is a further,
+  narrower edge case this bullet's own claim never named (`TURN_RIGHT[dir]`
+  etc. simply fail their hash lookup on an `Array` key and fall back to
+  `|| dir`, leaving the pair as-is rather than crashing — a graceful
+  no-op, not a regression, and out of this cycle's scope). **Verification**:
+  hand-traced the fix's own arithmetic before writing the check (Character
+  at `(2, 2)` facing Down, `Begin Jump / Move Upper-Right / Move Forward /
+  End Jump` — pre-fix: diagonal step correctly adds `(1, -1)`, but Move
+  Forward then reads the untouched pre-jump `dir` (Down) and adds `(0, 1)`,
+  landing at `(3, 2)`; post-fix: Move Forward reads the `[6, 8]` pair left
+  by the diagonal and adds `(1, -1)` again, landing at `(4, 0)`) — the new
+  `scripts/rpg2k_logic_check.rb` check asserts exactly `(4, 0)` and was
+  confirmed to fail against the pre-fix code first (`expected [4, 0], got
+  [3, 2]`, matching the hand trace precisely) via `git stash`/`git stash
+  pop` on just `mruby-rpg2k/mrblib/game.rb`, then pass after. Full suite:
+  `rpg2k_logic_check.rb` 1180 passed (1179 baseline + 1 new, 0 failures);
+  `rpg2k_scene_check.rb` 943 passed (unchanged, this cycle touches no
+  `scene/*.rb` file); `rpg2k_render_check.rb` 41 passed (unchanged);
+  `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_gauge_check.rb`
+  15/0 (both unchanged, no battle code touched); `rpg2k_save_load_check.rb`
+  still reports exactly the same 1 known pre-existing failure (the
+  unrelated Show Picture field-shape mismatch), unaffected. No `.cxx`/
+  `.hxx` file was touched (pure `mrblib` Ruby), so the pinned
+  `clang-format` step does not apply; `cd build && ninja` clean rebuild
+  with no new warnings; `ctest -R mruby_test` passed. No wine session was
+  run this cycle and no EasyRPG source was consulted for this fix's own
+  behavioral claim — the rule being extended (a diagonal move-route
+  sub-command's direction persists for a following Move Forward, rather
+  than collapsing to one cardinal axis) is the identical, already-
+  established one the non-jump fix directly above this bullet already
+  carries its own citation for; this cycle only closes the one code path
+  (`do_jump`'s local `dir` tracking) that fix's own "Still open" note
+  named as unexercised, a self-contained internal-consistency fix
+  discoverable by reading `MoveRoute#do_jump`/`#jump_move_direction`/
+  `#jump_delta` directly, needing no fresh reference confirmation.
   ✅ **Follow-up (2026-08-21): Move Forward after an explicit Face/Turn
   sub-command continued in the direction last *physically walked* instead
   of the newly faced direction — the opposite of what the original fix in
