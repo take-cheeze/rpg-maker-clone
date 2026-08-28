@@ -7873,8 +7873,9 @@ check 'Enemy Encounter scene: victory plays the database battle_end_music over t
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   eq [], RGSS::Audio.bgm_calls,
      'the fanfare is a one-shot ME, not an ordinary looping BGM play'
-  eq [['VictoryBGM', 90, 105]], RGSS::Audio.me_calls,
-     'the victory fanfare played over the result screen through the ME channel'
+  eq [['VictoryBGM', 90, 105, 0]], RGSS::Audio.me_calls,
+     'the victory fanfare played over the result screen through the ME channel, ' \
+     'with no fade-in configured'
   eq 'BattleBGM', st.current_bgm[:name],
      "the ME is not tracked as the ongoing BGM -- #current_bgm still names " \
      'whatever the last actual BGM play was (the battle track)'
@@ -7907,9 +7908,48 @@ check 'Enemy Encounter scene: a Change System BGM victory override beats the dat
   battle_attack_to_end(scene) # Attack the Slimes each round until they fall
   eq [], RGSS::Audio.bgm_calls,
      'the fanfare is a one-shot ME, not an ordinary looping BGM play'
-  eq [['CustomVictory', 60, 130]], RGSS::Audio.me_calls,
+  eq [['CustomVictory', 60, 130, 0]], RGSS::Audio.me_calls,
      'the Change System BGM override played instead of the database battle_end_music'
   eq 'BattleBGM', st.current_bgm[:name]
+end
+
+check 'Enemy Encounter scene: victory fanfare forwards battle_end_music\'s own fade-in to the ME channel' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  # `fade_in` is liblcf's own BGM-struct field 2 -- the same field
+  # battle_music/inn_music/etc. already carry (see #battle_bgm's own doc
+  # comment) -- present on battle_end_music too.
+  scene.db.system.battle_end_music =
+    OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105, fade_in: 1500)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [['VictoryBGM', 90, 105, 1500]], RGSS::Audio.me_calls,
+     "the database battle_end_music's own fade-in reaches Audio.me_play's 4th argument"
+end
+
+check 'Enemy Encounter scene: a Change System BGM victory override\'s own fade-in reaches the ME channel too' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_end_music =
+    OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105, fade_in: 1500)
+  st.system_bgm[1] = { name: 'CustomVictory', fadein: 750, volume: 60, tempo: 130,
+                       balance: 50 }
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [['CustomVictory', 60, 130, 750]], RGSS::Audio.me_calls,
+     "the override's own fadein beats the database battle_end_music's, the same " \
+     'override-then-default precedence #battle_bgm already uses for name/volume/tempo'
 end
 
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do

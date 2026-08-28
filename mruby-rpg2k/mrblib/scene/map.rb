@@ -3102,43 +3102,43 @@ class RPG2k
       # victory BGM configured leaves whatever was playing (the battle track)
       # alone, the same blank-Music no-op #battle_bgm documents.
       #
-      # Deliberately does NOT forward a fade-in (cycle #203 audit): the
-      # override and battle_end_music both do carry a genuine fade-in value
-      # the same way battle_music/inn_music/vehicle music do (Change System
-      # BGM's own fade-in parameter; liblcf's `BGM`-struct field 2), but
-      # RGSS::Audio.me_play has no fadein parameter at all -- unlike
-      # RGSS::Audio.bgm_play (cycle #202), the native ME playback path
-      # (`me_play`/`me_play_mem`, src/sdl_audio.cxx) was never given one,
-      # since RPG_RT's own "ME" one-shot channel is a distinct playback
-      # mechanism from its looping BGM channel. Wiring this would mean adding
-      # a fadein parameter across the whole native ME path (sdl_audio.cxx,
-      # include/rgss_audio.hxx, mruby-rgss/src/audio.cxx,
-      # mruby-rgss/mrblib/lib.rb) -- out of this audit's scope, which is
-      # forwarding an already-plumbed value through mrblib call sites, not
-      # extending the native audio surface.
+      # Forwards a fade-in (cycle #204 follow-up to the cycle #203 audit
+      # above): the override and battle_end_music both carry a genuine
+      # fade-in value the same way battle_music/inn_music/vehicle music do
+      # (Change System BGM's own fade-in parameter; liblcf's `BGM`-struct
+      # field 2), and RGSS::Audio.me_play now has a fadein parameter of its
+      # own -- the native ME playback path (`me_play`/`me_play_mem`,
+      # src/sdl_audio.cxx) was extended to accept one the same way
+      # RGSS::Audio.bgm_play's was (cycle #202), since SDL_mixer's
+      # Mix_FadeInMusic works identically for the one-shot ME channel as it
+      # does for the looping BGM channel underneath -- both are the same
+      # Mix_Music stream, just started with a different loop count.
       def play_victory_bgm
         music = victory_bgm
         return unless music
-        RGSS::Audio.me_play(music[:name], music[:volume] || 100, music[:tempo] || 100)
+        RGSS::Audio.me_play(music[:name], music[:volume] || 100,
+                            music[:tempo] || 100, music[:fadein] || 0)
       rescue StandardError => e
         $stderr.puts "[RPG2k] victory BGM failed: #{e.message}"
       end
 
-      # The victory BGM to play as { name:, volume:, tempo: }, or nil when
-      # neither source names a file. Prefers a Change System BGM override for
-      # the victory slot over the database's own System battle_end_music --
-      # the same override-then-default idiom #battle_bgm uses for the battle
-      # slot.
+      # The victory BGM to play as { name:, volume:, tempo:, fadein: }, or
+      # nil when neither source names a file. Prefers a Change System BGM
+      # override for the victory slot over the database's own System
+      # battle_end_music -- the same override-then-default idiom #battle_bgm
+      # uses for the battle slot, `fadein` included (cycle #204) the same way
+      # #battle_bgm / #inn_bgm already carry theirs.
       def victory_bgm
         ov = @state.system_bgm[SYSTEM_BGM_VICTORY]
         if ov && ov[:name] && !ov[:name].to_s.empty?
           return { name: ov[:name], volume: ov[:volume] || 100,
-                    tempo: ov[:tempo] || 100 }
+                    tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0 }
         end
         name = music_name(db.system.battle_end_music)
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(db.system.battle_end_music),
-          tempo: music_tempo(db.system.battle_end_music) }
+          tempo: music_tempo(db.system.battle_end_music),
+          fadein: music_fadein(db.system.battle_end_music) }
       end
 
       # Restore the BGM that was playing before the fight started. A no-op

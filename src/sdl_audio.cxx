@@ -537,7 +537,11 @@ int bgs_pos(void) {
 
 // -- ME ---------------------------------------------------------------------
 
-void me_play(const char* path, int volume, int /*pitch*/) {
+// fadein_ms > 0 (RPG2000's own Change System BGM fade-in, reaching the
+// victory fanfare's ME channel via Scene::Map#play_victory_bgm, cycle #204)
+// ramps the ME up from silence the same way bgm_play's does -- play_music
+// already supports this for any loop count, ME's `1` (play once) included.
+void me_play(const char* path, int volume, int /*pitch*/, int fadein_ms) {
   // Play once over the BGM; update() restores the BGM when the effect ends.
   // Capture the BGM's own position now, before g_me_active flips bgm_pos() to
   // 0 -- but only on the first ME of a run, not one that replaces another
@@ -545,7 +549,7 @@ void me_play(const char* path, int volume, int /*pitch*/) {
   if (!g_me_active)
     g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
-  if (!play_music(path, volume, 1))
+  if (!play_music(path, volume, 1, 0, fadein_ms))
     g_me_active = false;  // load failed: nothing to wait for.
 }
 
@@ -553,11 +557,12 @@ void me_play_mem(const char* name,
                  const void* data,
                  int size,
                  int volume,
-                 int /*pitch*/) {
+                 int /*pitch*/,
+                 int fadein_ms) {
   if (!g_me_active)
     g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
-  if (!play_music_mem(name, data, size, volume, 1))
+  if (!play_music_mem(name, data, size, volume, 1, 0, fadein_ms))
     g_me_active = false;
 }
 

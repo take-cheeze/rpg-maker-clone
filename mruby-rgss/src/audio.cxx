@@ -36,7 +36,10 @@ void get_play_args(mrb_state* M,
   mrb_get_args(M, "z|ii", path, volume, pitch);
 }
 
-// The *_play_mem twins take (name, bytes, volume=100, pitch=100). `name` is an
+// The bgs_play_mem/se_play_mem twins take (name, bytes, volume=100,
+// pitch=100) -- bgm_play_mem and me_play_mem each grew extra trailing
+// arguments (pos_ms/fadein_ms, and fadein_ms respectively) and so define
+// their own mrb functions below rather than sharing this one. `name` is an
 // archive entry name rather than a path -- see include/rgss_audio.hxx.
 using PlayMemFn = void (*)(const char*, const void*, int, int, int);
 
@@ -55,10 +58,11 @@ mrb_value bgm_play(mrb_state* M, mrb_value self) {
   const char* path;
   mrb_int volume = 100, pitch = 100, pos_ms = 0, fadein_ms = 0;
   // BGM alone takes a 4th (pos_ms) argument: RGSS3's mid-track resume, which
-  // BGS/ME/SE never had -- get_play_args (above) only reads the three they all
-  // share. The 5th (fadein_ms, cycle #202) is RPG2000's own Play BGM fade-in,
-  // not part of any real RGSS Audio.bgm_play -- see rgss_audio.hxx's own
-  // doc comment.
+  // BGS/ME/SE never had -- get_play_args (above) only reads the three BGS/SE
+  // still share (ME grew its own 4th argument too, cycle #204; see me_play,
+  // below). The 5th (fadein_ms, cycle #202) is RPG2000's own Play BGM
+  // fade-in, not part of any real RGSS Audio.bgm_play -- see rgss_audio.hxx's
+  // own doc comment.
   mrb_get_args(M, "z|iiii", &path, &volume, &pitch, &pos_ms, &fadein_ms);
   if (g_backend.bgm_play)
     g_backend.bgm_play(path, (int)volume, (int)pitch, (int)pos_ms,
@@ -131,10 +135,16 @@ mrb_value bgs_pos(mrb_state* M, mrb_value self) {
 
 mrb_value me_play(mrb_state* M, mrb_value self) {
   const char* path;
-  mrb_int volume, pitch;
-  get_play_args(M, &path, &volume, &pitch);
+  mrb_int volume = 100, pitch = 100, fadein_ms = 0;
+  // ME grew its own 4th (fadein_ms, cycle #204) argument, so it reads its
+  // args directly rather than sharing get_play_args (bgs_play/se_play still
+  // do, above/below) -- the same Play-BGM-style fade-in
+  // RGSS::Audio.bgm_play's own 5th argument carries (cycle #202), reaching
+  // the victory fanfare's one-shot ME channel via
+  // Scene::Map#play_victory_bgm.
+  mrb_get_args(M, "z|iii", &path, &volume, &pitch, &fadein_ms);
   if (g_backend.me_play)
-    g_backend.me_play(path, (int)volume, (int)pitch);
+    g_backend.me_play(path, (int)volume, (int)pitch, (int)fadein_ms);
   return mrb_nil_value();
 }
 
@@ -203,7 +213,19 @@ mrb_value bgs_play_mem(mrb_state* M, mrb_value self) {
 }
 
 mrb_value me_play_mem(mrb_state* M, mrb_value self) {
-  return play_mem(M, g_backend.me_play_mem);
+  // Not the shared play_mem helper: unlike bgs_play_mem/se_play_mem, ME
+  // takes a 5th (fadein_ms, cycle #204) argument (see me_play, above) -- this
+  // is the packed-archive path a released game's victory-fanfare fade-in
+  // actually reaches (see RGSS.asset_archive).
+  const char* name;
+  const char* data;
+  mrb_int size;
+  mrb_int volume = 100, pitch = 100, fadein_ms = 0;
+  mrb_get_args(M, "zs|iii", &name, &data, &size, &volume, &pitch, &fadein_ms);
+  if (g_backend.me_play_mem && size > 0)
+    g_backend.me_play_mem(name, data, (int)size, (int)volume, (int)pitch,
+                          (int)fadein_ms);
+  return mrb_nil_value();
 }
 
 mrb_value se_play_mem(mrb_state* M, mrb_value self) {
@@ -254,7 +276,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_bgs_stop", bgs_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_bgs_fade", bgs_fade, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, audio, "_bgs_pos", bgs_pos, MRB_ARGS_NONE());
-  mrb_define_module_function(M, audio, "_me_play", me_play, MRB_ARGS_ARG(1, 2));
+  mrb_define_module_function(M, audio, "_me_play", me_play, MRB_ARGS_ARG(1, 3));
   mrb_define_module_function(M, audio, "_me_stop", me_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_me_fade", me_fade, MRB_ARGS_REQ(1));
   mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 2));
@@ -268,7 +290,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_bgs_play_mem", bgs_play_mem,
                              MRB_ARGS_ARG(2, 2));
   mrb_define_module_function(M, audio, "_me_play_mem", me_play_mem,
-                             MRB_ARGS_ARG(2, 2));
+                             MRB_ARGS_ARG(2, 3));
   mrb_define_module_function(M, audio, "_se_play_mem", se_play_mem,
                              MRB_ARGS_ARG(2, 2));
   mrb_define_module_function(M, audio, "_midi_available", midi_available,
