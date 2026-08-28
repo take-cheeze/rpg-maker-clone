@@ -6362,9 +6362,21 @@ module Game
     # A snapshot ({old_id => new_id} per layer) safe to stash on Game::State
     # for a Save/Continue -- see Scene::Map#record_tile_substitutions -- dup'd
     # so later #substitute_tile calls on the live map cannot mutate a saved
-    # copy out from under it.
+    # copy out from under it. Called every frame regardless of whether a
+    # substitution ever ran (Tile Substitution itself is a rare command), so
+    # the dup'd pair is cached and only rebuilt when @substitutions[0]/[1]
+    # are no longer the same objects last dup'd from -- #substitute_tile and
+    # #restore_substitutions both only ever *reassign* those slots to a fresh
+    # Hash/Array, never mutate one in place, so an unchanged object identity
+    # here really does mean unchanged contents.
     def substitution_snapshot
-      [@substitutions[0].dup, @substitutions[1].dup]
+      lower = @substitutions[0]
+      upper = @substitutions[1]
+      return @substitution_snapshot_cache if @substitution_snapshot_src_lower.equal?(lower) &&
+                                              @substitution_snapshot_src_upper.equal?(upper)
+      @substitution_snapshot_src_lower = lower
+      @substitution_snapshot_src_upper = upper
+      @substitution_snapshot_cache = [lower.dup, upper.dup]
     end
 
     # Reapply a snapshot taken by #substitution_snapshot (real RPG_RT's own

@@ -799,15 +799,34 @@ module Game
       # applies for its own "message window still open" case, just triggered
       # here instead of by the interpreter's own next #update.
       live_index = (@waiting && @wait_kind == :key_input) ? @index - 1 : @index
-      frames = @call_stack + [[@list, live_index, @call_frame_event_id || @event_id || 0]]
-      frames.each_with_index.map do |(list, index, event_id), i|
-        {
+      # A plain preallocated Array + while loop instead of building
+      # @call_stack + [[...]] (two more array literals to hold the current
+      # frame's own tuple) and walking it via #each_with_index.map (an
+      # Enumerator, one boxed [item, index] pair per iteration, and a block
+      # Proc+env) -- same frame-by-frame values, one Array allocated instead
+      # of one per @call_stack entry plus the Enumerator machinery. The
+      # current (innermost) frame is handled after the loop since it never
+      # actually lived in @call_stack.
+      n = @call_stack.size
+      out = Array.new(n + 1)
+      i = 0
+      while i < n
+        list, index, event_id = @call_stack[i]
+        out[i] = {
           commands: list,
           current_command: index,
           event_id: (i.zero? ? @event_id : event_id) || 0,
           triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
         }
+        i += 1
       end
+      out[n] = {
+        commands: @list,
+        current_command: live_index,
+        event_id: n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
+        triggered_by_decision_key: n.zero? && !!@triggered_by_decision_key,
+      }
+      out
     end
 
     # Restore a previously #call_stack_snapshot-captured stack (or the
