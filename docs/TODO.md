@@ -6943,6 +6943,77 @@ The work below is roughly ordered by the critical path to a walkable game
   cross-file leakage shape cycle #189 found between `rpg2k_scene_check.rb`
   and `scene/map.rb` -- also remains untouched by this cycle and is still
   open.
+  ✅ **Follow-up (cycle #197, 2026-08-28): swept `scene/battle.rb`, the
+  single remaining file cycle #196 identified as unswept.** Read the whole
+  4164-line file top to bottom and rewrote every citation that presented an
+  EasyRPG Player C++ source read as if it were an independently verified
+  RPG_RT fact -- the two shapes this sweep has flagged since cycle #174:
+  literal `confirmed against`/`verified against EasyRPG[...]actual C++
+  source` phrasing (9 instances at the start of this cycle, one of which --
+  the `#drive_battle_command`/`#drive_battle_options` auto-repeat comment,
+  cycle #130 -- was already a legitimate before/after narration of an
+  EasyRPG-only claim later re-verified against genuine RPG_RT.exe under
+  wine, and was correctly left untouched), and the worse shape of quoting an
+  EasyRPG C++ construct (a function name, a `SetWait`/`CheckWait` call, a
+  window class) while labelling it "RPG_RT's own X" or "RPG_RT does/plays/
+  shows Y," which does not use the word "confirmed" at all but claims the
+  same unearned certainty. Found roughly 30 such spots once both shapes were
+  counted together (this file's citation density genuinely was comparable to
+  `game.rb`/`map.rb` before they were swept, as cycle #196 predicted), and
+  rewrote each to honestly read "ported from EasyRPG['s [own]] source, NOT
+  independently confirmed against genuine RPG_RT under wine," preserving the
+  underlying technical description (including quoted EasyRPG source, now
+  attributed to EasyRPG rather than to "RPG_RT itself"/"RPG_RT's own X").
+  Genuine wine-confirmed citations already in the file -- cycles #130/#131/
+  #133/#134/#136's own pixel- and keypress-level probes of the battle
+  command/options/target/skill/item/ally-target cursors, and an earlier
+  cycle's own wine confirmation that `#draw_battle_stat_segment`'s
+  below-1/4-max HP recolouring matches genuine RPG_RT.exe -- were read and
+  correctly left untouched (no new wine verification was run this cycle), as
+  were plain, non-overclaiming "ported from
+  EasyRPG"/"matching EasyRPG's own X" attributions that never claimed
+  confirmation in the first place (the same style left standing throughout
+  `game.rb`/`interpreter.rb` after their own sweeps): this cycle's own
+  criterion for touching a citation was the presence of an unearned
+  certainty claim, not the mere presence of an EasyRPG mention, matching how
+  cycle #196 itself read (not "confirmed"-flavoured "matching EasyRPG's X"
+  phrasing was left alone in several of its six files too, e.g.
+  `equip_menu.rb`/`save_load.rb`'s wine-measured citations). No wine/Xvfb/
+  matchbox process was started and no `data/` fixture was touched this
+  cycle -- this was a documentation-only sweep, not a new verification.
+  **Verification:** `ruby -c` clean. Diff isolation (the same command every
+  prior cycle in this sweep has used): `git diff -- mruby-rpg2k/mrblib/
+  scene/battle.rb | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE
+  '^[+-][[:space:]]*#' | grep -vE '^[+-][[:space:]]*$'` -- empty, confirming
+  every one of the 298 changed lines (`git diff --stat`: 178 insertions, 120
+  deletions) is a comment. `EasyRPG` mentions rose
+  from 78 to 118 (the disclosure sentences themselves name EasyRPG more
+  often than the citations they replaced did) while file-path citations held
+  at 34 -- no citation was added or removed, only relabelled. Full rebuild
+  and check suite run despite this being comment-only mruby source, since
+  the file is unusually large and this was the first time it had been
+  touched: `cd build && ninja` succeeds, `rpg2k_scene_check.rb` 932,
+  `rpg2k_logic_check.rb` 1176, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures (all exactly matching baseline), `ctest -R mruby_test`
+  passed. No changelog fragment: comment-only, matching cycles #190/#196's
+  own precedent for this exact class of fix.
+  With `battle.rb` now swept, the file-level portion of the multi-cycle
+  sweep cycles #174/#176/#177/#184-190/#196 opened is complete: every file
+  those cycles' own `EasyRPG`/`src/*.cpp` grep identified (`game.rb`,
+  `interpreter.rb`, `schema.rb`, `main.rb`, `rpg2k_logic_check.rb`,
+  `rpg2k_scene_check.rb`, the `scripts/*.rb` files cycle #187 swept,
+  `scene/map.rb`, the six smaller `scene/*.rb` files cycle #196 closed, and
+  now `scene/battle.rb`) is either genuinely clean or down to disclosed
+  ports and honest wine-confirmed findings. The one item still open from
+  cycle #190's own list is its item (3): whether `scripts/*.rb` files that
+  exercise `scene/battle.rb` (i.e. `rpg2k3_battle_row_check.rb`/
+  `rpg2k3_battle_gauge_check.rb`) themselves quote or restate any of this
+  file's own (now-disclosed) citations without the same disclosure -- the
+  cross-file leakage shape cycle #189 found once already between
+  `rpg2k_scene_check.rb` and `scene/map.rb`. Not checked this cycle; left
+  for a future one to grep both battle-check scripts against the citation
+  list this cycle just fixed.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
