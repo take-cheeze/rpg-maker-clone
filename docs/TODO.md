@@ -26622,6 +26622,82 @@ and knocked-out HP fixture, asserting indices 0/4/5 (and that MP never
 reads knockout-grey even at 0); and the existing column-overflow check,
 updated to reconstruct each now-three-call segment before asserting its
 clipped text — both confirmed to fail against the pre-fix code.
+  ✅ **Follow-up (cycle #205, 2026-08-28): the main menu's own party list, and
+  the Item/Skill target-actor list, had the identical flat-colour gap —
+  picked as this cycle's target instead of continuing the last four cycles'
+  run of BGM/audio fade-in work.** Method: after reading the Nepheshel
+  "issue items" section for a well-scoped audio-adjacent follow-up and
+  finding nothing both open and narrow, searched this codebase's own
+  `Scene::Base#value_font_color` (the shared HP/MP recolour rule above,
+  already ported and, per the two entries directly above, independently
+  wine-confirmed for the field Status screen and the battle status panel)
+  for every call site, then separately grepped every scene file for
+  `term(:hp_short` to find every place a party member's live HP/MP prints —
+  five hits: the already-fixed Status screen and battle panel, the
+  already-column-based Save/Load screen (no `/max` in its display at all, a
+  differently-shaped case left alone), and two more that still built their
+  HP/MP text as one flat-white string handed straight to `draw_text`/
+  `c.draw_text` with no colour logic whatsoever: `Scene::Menu#build_windows`
+  (`mruby-rpg2k/mrblib/scene/menu.rb`, the main menu's own party-status
+  panel — literally `"Lv X  HP a/b  MP c/d"` as one interpolated string) and
+  `Scene::ItemMenu`/`Scene::SkillMenu#build_target_window`
+  (`mruby-rpg2k/mrblib/scene/item_menu.rb` /
+  `mruby-rpg2k/mrblib/scene/skill_menu.rb` — two independent, byte-identical
+  copies of the same target-actor list, per that class's own comment citing
+  a genuine RPG_RT.exe capture proving the two screens share this exact
+  layout). No fresh wine session was needed to establish *that* RPG_RT
+  recolors these figures — that fact is already established and
+  independently confirmed for this project's other two screens by the
+  entries directly above; this cycle's own contribution is recognizing that
+  the identical rule was simply never reached from these three additional,
+  structurally-identical call sites, an oversight rather than a separately
+  fact-checkable claim. **Fixed** by promoting `Scene::StatusMenu`'s own
+  `#draw_stat_segment` (unclipped "LABEL cur/max" flowing text, as opposed
+  to the battle panel's fixed-column `#draw_battle_stat_segment`) up into
+  `Scene::Base` as a shared helper — every subclass already carries the
+  `@skin` its body reads — so `Scene::StatusMenu` now inherits it instead of
+  keeping a private copy, and `Scene::Menu#build_windows`'s HP/MP line and
+  both `#build_target_window`s' HP/MP lines call it too, in each case
+  replacing a single flat `draw_text`/`c.draw_text` call with the label
+  drawn plain plus a `#draw_stat_segment` call per stat — preserving each
+  screen's original pixel spacing exactly (`Scene::Menu`'s two-space
+  gutters; the target list's fixed `TARGET_VALUE_X` column). Covered by two
+  new `scripts/rpg2k_scene_check.rb` checks mirroring the field Status
+  screen's own existing swatch-blend check verbatim (a knocked-out HP figure
+  and a critical MP figure each blend from their own distinct windowskin
+  swatch cell — indices 5 and 4 — while the HP max figure stays on the
+  default swatch, index 0) — one for `Scene::Menu`'s status panel, one
+  iterating both `Scene::ItemMenu` and `Scene::SkillMenu`'s target windows —
+  both confirmed to fail against the pre-fix code (`git stash` of just the
+  five touched `mrblib` files) with the expected "must blend from swatch
+  index 5" errors before the fix. The pre-existing target-list layout check
+  ("draws each actor on three lines") asserted the old flat `"HP 80/120"`/
+  `"MP 10/30"` strings as single draw calls, which the split into
+  label/current/`"/max"` runs necessarily broke (there is no longer any one
+  call whose text equals the full string) — confirmed that exact break
+  against the pre-fix stash first, then updated it to look for the `"HP "`/
+  `"MP "` label runs and each figure's own text instead, keeping its
+  row/column position assertions intact. **Verification**:
+  `scripts/rpg2k_scene_check.rb` 943 passed (941 baseline + 2 new checks, 0
+  failures, including the updated layout check); `rpg2k_logic_check.rb` 1179
+  passed (unchanged — no scene-check touched file is reachable from it);
+  `rpg2k_render_check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb`
+  19/0 and `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, this cycle
+  never touches `scene/battle.rb`); `rpg2k_save_load_check.rb` still reports
+  the same 1 known pre-existing failure (the unrelated Show Picture
+  field-shape mismatch) before and after; `scripts/rpg2k_command_soak.rb`
+  clean on both Nepheshel test-beds (184166 commands each, no gaps or
+  raises) — only the unrelated, pre-existing "Open Video Options" log line
+  on the Ch.1 test-bed, present before this cycle too. No `.cxx`/`.hxx` file
+  was touched (this cycle is pure `mrblib` Ruby), so the pinned
+  `clang-format` step does not apply; `cd build && ninja` clean rebuild with
+  no new warnings; `ctest -R mruby_test` passed. No wine session was run
+  this cycle: the behavioural claim being extended (RPG_RT recolors a
+  low/knocked-out HP/MP figure) is not a fresh claim needing its own
+  genuine-executable confirmation, it is the same already-wine-confirmed
+  rule from the two entries above, applied at three call sites that were
+  simply never wired to it — a mechanical-plumbing cycle in the same sense
+  cycle #204's ME fade-in extension was, not a first-time behavioral claim.
 ✅ **A dangling battle-animation id no longer draws nothing with no trace** —
 the "battle animation" case from the "invalid hero, skill, item, enemy,
 enemy group, battle animation, terrain, chipset, common event" list above.
