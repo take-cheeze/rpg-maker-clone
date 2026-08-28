@@ -3,6 +3,7 @@
 #include "terminal.hxx"
 
 #include <mruby.h>
+#include <mruby/gc.h>
 #include <mruby/hash.h>
 #include <mruby/string.h>
 
@@ -47,6 +48,62 @@ uint64_t g_interval_ns = 1'000'000'000ULL;  // 1s default
 profiler_allocf_t g_downstream_allocf = nullptr;
 int64_t g_live_blocks = 0;
 int64_t g_alloc_calls = 0;
+
+// ---- Per-type object counts -----------------------------------------------
+//
+// mrb_gc_type_counts() (patches/mruby-gc-type-live-counts.patch) reads out two
+// counters the GC itself now maintains per mrb_vtype: live objects and
+// cumulative allocations. Both are kept current by a single increment in
+// mrb_obj_alloc() and a single decrement in the sweep phase's obj_free(), so
+// reading them here is an O(MRB_TT_MAXDEFINE) memcpy -- no heap walk, no GC
+// triggered (unlike ObjectSpace.count_objects, which forces a full GC before
+// every call; see that patch's preamble for why that ruled it out here).
+//
+// report() and the trace writer below run off the C++ main loop, not a Ruby
+// call, so they have no mrb_state of their own; profiler_init() stashes the
+// one this project ever opens here, matching how g_downstream_allocf is
+// installed once and reused for the life of the process.
+mrb_state* g_mrb = nullptr;
+
+constexpr size_t kNumTypes = MRB_TT_MAXDEFINE;
+
+// Ruby class names for every mrb_vtype, built from mruby's own
+// MRB_VTYPE_FOREACH (mruby/value.h) so this can never drift out of sync with
+// the enum -- adding a type upstream (or via a future patch) grows this table
+// for free.
+const char* const kTypeNames[] = {
+#define RPG2K_VTYPE_NAME(tt, type, name) name,
+    MRB_VTYPE_FOREACH(RPG2K_VTYPE_NAME)
+#undef RPG2K_VTYPE_NAME
+};
+static_assert(sizeof(kTypeNames) / sizeof(kTypeNames[0]) == MRB_TT_MAXDEFINE,
+              "kTypeNames must cover every mrb_vtype in order");
+
+struct TypeCount {
+  const char* name;
+  size_t live;
+  size_t allocs;
+};
+
+// Non-zero (live or ever-allocated) types, hottest (most live) first. Reads
+// straight off the GC's own counters; empty (not an error) before
+// profiler_init() has run or once profiling never touched a real mrb_state.
+std::vector<TypeCount> live_type_snapshot() {
+  std::vector<TypeCount> out;
+  if (!g_mrb)
+    return out;
+  size_t live[kNumTypes] = {};
+  size_t allocs[kNumTypes] = {};
+  mrb_gc_type_counts(g_mrb, live, allocs);
+  for (size_t i = 0; i < kNumTypes; ++i) {
+    if (live[i] != 0 || allocs[i] != 0)
+      out.push_back(TypeCount{kTypeNames[i], live[i], allocs[i]});
+  }
+  std::sort(out.begin(), out.end(), [](const TypeCount& a, const TypeCount& b) {
+    return a.live > b.live;
+  });
+  return out;
+}
 
 // ---- Per-interval aggregation --------------------------------------------
 
@@ -276,6 +333,19 @@ void report(uint64_t now) {
                 static_cast<long long>(g_live_blocks), alloc_rate);
   line += buf;
 
+  // Object types, most live first, capped so the line stays readable -- the
+  // full breakdown is in RGSS::Profiler.stats and the trace.
+  const std::vector<TypeCount> types = live_type_snapshot();
+  if (!types.empty()) {
+    line += " | types:";
+    const size_t top = std::min<size_t>(types.size(), 8);
+    for (size_t i = 0; i < top; ++i) {
+      std::snprintf(buf, sizeof(buf), " %s=%llu", types[i].name,
+                    static_cast<unsigned long long>(types[i].live));
+      line += buf;
+    }
+  }
+
   // Sections, hottest first (by total time), capped so the line stays readable.
   std::vector<std::pair<std::string, SectionAgg>> secs_v(g_sections.begin(),
                                                          g_sections.end());
@@ -312,6 +382,18 @@ void report(uint64_t now) {
     std::snprintf(args, sizeof(args), "\"live\":%lld",
                   static_cast<long long>(g_live_blocks));
     trace_counter("mruby_blocks", now, args);
+    if (!types.empty()) {
+      std::string type_args;
+      for (const TypeCount& t : types) {
+        if (!type_args.empty())
+          type_args += ',';
+        type_args += "\"";
+        type_args += json_escape(t.name);
+        type_args += "\":";
+        type_args += std::to_string(t.live);
+      }
+      trace_counter("mruby_types", now, type_args);
+    }
     std::fflush(g_trace_file);
   }
 
@@ -561,6 +643,27 @@ mrb_value prof_stats(mrb_state* M, mrb_value) {
                  sh);
   }
   mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "sections")), sections);
+
+  // Object type breakdown -- straight off the GC's own per-type counters
+  // (mrb_gc_type_counts, patches/mruby-gc-type-live-counts.patch), not the
+  // top-eight-capped subset the stderr summary line shows.
+  mrb_value object_types = mrb_hash_new(M);
+  size_t live[kNumTypes] = {};
+  size_t allocs[kNumTypes] = {};
+  mrb_gc_type_counts(M, live, allocs);
+  for (size_t i = 0; i < kNumTypes; ++i) {
+    if (live[i] == 0 && allocs[i] == 0)
+      continue;
+    mrb_value th = mrb_hash_new(M);
+    mrb_hash_set(M, th, mrb_symbol_value(mrb_intern_lit(M, "live")),
+                 mrb_fixnum_value(static_cast<mrb_int>(live[i])));
+    mrb_hash_set(M, th, mrb_symbol_value(mrb_intern_lit(M, "allocs")),
+                 mrb_fixnum_value(static_cast<mrb_int>(allocs[i])));
+    mrb_hash_set(M, object_types, mrb_str_new_cstr(M, kTypeNames[i]), th);
+  }
+  mrb_hash_set(M, h, mrb_symbol_value(mrb_intern_lit(M, "object_types")),
+               object_types);
+
   return h;
 }
 
@@ -602,6 +705,7 @@ mrb_value prof_tracing_p(mrb_state* M, mrb_value) {
 }  // namespace
 
 void profiler_init(mrb_state* M) {
+  g_mrb = M;
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
   mrb_define_module_function(M, prof, "enabled?", prof_enabled_p,

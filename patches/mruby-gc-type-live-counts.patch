@@ -1,0 +1,99 @@
+mruby has no built-in way to see what a live mruby heap is made of --
+neither "how many Strings/Arrays/Hashes/... are alive right now" nor "which
+type is producing the allocation churn." The only stock answer is the
+mruby-objectspace mrbgem's ObjectSpace.count_objects, and it does not fit
+this project's always-on profiler (docs/profiling.md; mruby-rgss/src/
+profiler.cxx): mrb_objspace_each_objects() (src/gc.c) calls mrb_full_gc()
+before every walk, then iterates every slot of every heap page (live and
+dead). Sampling object-type stats once a second this way would mean forcing
+a full stop-the-world mark-and-sweep once a second -- the exact class of
+pause docs/profiling.md's map-render optimization (350k allocs/s -> 10k/s)
+was written to get rid of, self-inflicted by the very tool meant to watch
+for it.
+
+Every heap object of every type already funnels through one function,
+mrb_obj_alloc() (src/gc.c), which already switches on ttype before handing
+back a slot; and mruby's own incremental sweep already visits every dead
+object exactly once, in obj_free() (src/gc.c), which already has obj->tt
+in hand before it gets stomped to MRB_TT_FREE. This patch adds a
+size_t[MRB_TT_MAXDEFINE] pair to mrb_gc (include/mruby/gc.h) -- tt_live
+(currently-live objects, by mrb_vtype) and tt_allocs (cumulative
+allocations, by mrb_vtype) -- and one increment in mrb_obj_alloc, one
+decrement in obj_free, to keep them current. Both are single array-index
+updates on paths that already run for every object; no extra heap walk, no
+extra GC pass, and (unlike ObjectSpace.count_objects) no measurement-
+induced GC pressure. A new accessor, mrb_gc_type_counts(), copies both
+arrays out for a caller (mruby-rgss/src/profiler.cxx) to report, e.g.
+through RGSS::Profiler.stats -- an O(MRB_TT_MAXDEFINE) memcpy, cheap enough
+to call every frame if wanted.
+
+This is a project-owned addition, not an upstream mruby bug fix, so unlike
+the other patches in this directory it will never land upstream and this
+patch stays permanently (or until this project's own mruby pin gains
+something equivalent). Same patch-in-place treatment as the rest of this
+directory, for the same reason (no fork of upstream mruby/mruby this
+project controls).
+
+--- a/include/mruby/gc.h
++++ b/include/mruby/gc.h
+@@ -48,6 +48,8 @@ typedef struct mrb_gc {
+   mrb_bool gray_overflow:1;        /* gray stack overflowed; needs heap rescan */
+   size_t live;                     /* count of live objects */
+   size_t live_after_mark;          /* old generation objects */
++  size_t tt_live[MRB_TT_MAXDEFINE];   /* live objects, by mrb_vtype */
++  size_t tt_allocs[MRB_TT_MAXDEFINE]; /* cumulative allocations, by mrb_vtype */
+   size_t threshold;                /* threshold to start GC */
+   size_t oldgen_threshold;         /* threshold to kick major GC */
+   mrb_gc_state state;              /* current state of gc */
+@@ -72,6 +74,17 @@ typedef struct mrb_gc {
+ MRB_API mrb_bool mrb_object_dead_p(struct mrb_state *mrb, struct RBasic *object);
+ MRB_API int mrb_gc_add_region(struct mrb_state *mrb, void *start, size_t size);
+
++/*
++ * Snapshot the GC's per-type live/allocation counters into caller-owned
++ * arrays of MRB_TT_MAXDEFINE size_t entries each (index by enum mrb_vtype,
++ * e.g. MRB_TT_STRING). live_out reports currently-live objects of that type;
++ * alloc_out reports cumulative allocations since mrb_open(). Either pointer
++ * may be NULL to skip that half. O(MRB_TT_MAXDEFINE) -- no heap walk, no GC
++ * triggered: the counters are maintained incrementally by mrb_obj_alloc()
++ * and the sweep phase's obj_free(), so this is safe to call every frame.
++ */
++MRB_API void mrb_gc_type_counts(struct mrb_state *mrb, size_t *live_out, size_t *alloc_out);
++
+ #define MRB_GC_RED 7
+
+ MRB_END_DECL
+--- a/src/gc.c
++++ b/src/gc.c
+@@ -602,6 +602,8 @@ mrb_obj_alloc(mrb_state *mrb, enum mrb_vtype ttype, struct RClass *cls)
+   }
+
+   gc->live++;
++  gc->tt_live[ttype]++;
++  gc->tt_allocs[ttype]++;
+   gc_protect(mrb, gc, &p->as.basic);
+   *p = RVALUE_zero;
+   p->as.basic.tt = ttype;
+@@ -613,6 +615,14 @@ mrb_obj_alloc(mrb_state *mrb, enum mrb_vtype ttype, struct RClass *cls)
+   return &p->as.basic;
+ }
+
++MRB_API void
++mrb_gc_type_counts(mrb_state *mrb, size_t *live_out, size_t *alloc_out)
++{
++  mrb_gc *gc = &mrb->gc;
++  if (live_out) memcpy(live_out, gc->tt_live, sizeof(gc->tt_live));
++  if (alloc_out) memcpy(alloc_out, gc->tt_allocs, sizeof(gc->tt_allocs));
++}
++
+ static inline void
+ add_gray_list(mrb_gc *gc, struct RBasic *obj)
+ {
+@@ -851,6 +861,7 @@ static void
+ obj_free(mrb_state *mrb, struct RBasic *obj, mrb_bool end)
+ {
+   DEBUG(fprintf(stderr, "obj_free(%p,tt=%d)\n",obj,obj->tt));
++  mrb->gc.tt_live[obj->tt]--;
+   switch (obj->tt) {
+   case MRB_TT_OBJECT:
+     mrb_gc_free_iv(mrb, (struct RObject*)obj);
