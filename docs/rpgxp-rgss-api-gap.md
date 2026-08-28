@@ -556,9 +556,14 @@ characters — is designed in
 [ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) and remains the follow-up.
 `tileset=`, `map_data=`, `priorities=`, `ox=`/`oy=`, `z=`, `update`,
 `visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
-`visible=` hides the above layer along with the ground. **Remaining:** the per-row
-priority scheme (ADR 0022); `z=` on the tilemap does not yet shift the above
-layer's fixed `z`; and `flash_data` is still ignored.
+`visible=` hides the above layer along with the ground. `z=` now keeps the
+above layer pinned a fixed offset above the tilemap's own `z` too (cycle
+#211, `tilemap_set_z`, `mruby-rgss/src/lib.cxx`) — it used to leave the
+above layer at its construction-time `z` forever, so a script reassigning a
+tilemap's `z` broke the "above sorts over the ground" relationship the two
+layers are supposed to keep in lockstep, the same gap `visible=` already had
+to close for visibility a few lines above. **Remaining:** the per-row
+priority scheme (ADR 0022); `flash_data` is still ignored.
 
 ### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 
