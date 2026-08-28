@@ -3487,14 +3487,14 @@ check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' d
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
   RGSS::Audio.reset_bgm
   5.times { scene.update } # inn command runs; the greeting prompt opens
-  eq [['InnBGM', 75, 105]], RGSS::Audio.bgm_calls,
-     'the database inn BGM played the moment the greeting opened'
+  eq [['InnBGM', 75, 105, 0, 0]], RGSS::Audio.bgm_calls,
+     'the database inn BGM played the moment the greeting opened (pos=0, no fade-in configured)'
   eq 'InnBGM', st.current_bgm[:name], 'and is now the tracked current BGM'
   RGSS::Audio.reset_bgm
   RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
   scene.update # accept: starts the fade-out, the BGM swap waits for it to land
   35.times { scene.update } # drain the 35-frame fade-out
-  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+  eq [['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
      'the field BGM that was playing before the stay replays once the fade lands'
   eq 'Field', st.current_bgm[:name]
 end
@@ -3506,9 +3506,31 @@ check 'Show Inn scene: a Change System BGM inn override beats the database defau
   st.system_bgm[2] = { name: 'CustomInn', fadein: 0, volume: 60, tempo: 130, balance: 50 }
   RGSS::Audio.reset_bgm
   5.times { scene.update }
-  eq [['CustomInn', 60, 130]], RGSS::Audio.bgm_calls,
+  eq [['CustomInn', 60, 130, 0, 0]], RGSS::Audio.bgm_calls,
      'the Change System BGM override played instead of the database inn_music'
   eq 'CustomInn', st.current_bgm[:name]
+end
+
+# Cycle #203: inn_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) and a Change System BGM inn override's own
+# fade-in parameter (do_change_system_bgm, mruby-rpg2k/mrblib/interpreter.rb)
+# were both read off their struct/hash by #inn_bgm and then dropped before
+# reaching #play_bgm, the same gap cycle #202 already fixed for the Play BGM
+# event command itself.
+check 'Show Inn scene: a database or override inn fade-in forwards to bgm_play, not dropped (cycle #203)' do
+  scene, = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  scene.db.system.inn_music.fade_in = 450
+  RGSS::Audio.reset_bgm
+  5.times { scene.update } # inn command runs; the greeting prompt opens
+  eq [['InnBGM', 75, 105, 0, 450]], RGSS::Audio.bgm_calls,
+     "the database inn_music's own fade_in reaches bgm_play's 5th argument"
+
+  scene2, st2 = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  st2.system_bgm[2] = { name: 'CustomInn', fadein: 600, volume: 60, tempo: 130, balance: 50 }
+  RGSS::Audio.reset_bgm
+  5.times { scene2.update }
+  eq [['CustomInn', 60, 130, 0, 600]], RGSS::Audio.bgm_calls,
+     "a Change System BGM inn override's own fade-in reaches bgm_play too"
 end
 
 check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BGM' do
@@ -3521,10 +3543,10 @@ check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BG
   # so it still fades to black (35 frames) before the field BGM restores and
   # the resolved Stay branch runs, same as a prompted Accept.
   3.times { scene.update }
-  eq [['InnBGM', 75, 105]], RGSS::Audio.bgm_calls, 'the inn BGM played'
+  eq [['InnBGM', 75, 105, 0, 0]], RGSS::Audio.bgm_calls, 'the inn BGM played'
   ok st.screen.fading?, 'a free stay auto-accepts, so it fades out too'
   40.times { scene.update } # drain the fade-out (35 frames) and the Stay branch after
-  eq [['InnBGM', 75, 105], ['Field', 100, 100]], RGSS::Audio.bgm_calls,
+  eq [['InnBGM', 75, 105, 0, 0], ['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
      'the field BGM was restored once the fade landed'
   eq 'Field', st.current_bgm[:name]
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
@@ -7738,7 +7760,7 @@ check 'Enemy Encounter scene: battle BGM plays on entry, field BGM resumes after
   # second is what actually opens the battle UI (like battle_attack_to_end's
   # own "a nil ui just means the battle is still opening" allowance above).
   2.times { scene.update }
-  eq [['BattleBGM', 70, 110]], RGSS::Audio.bgm_calls,
+  eq [['BattleBGM', 70, 110, 0, 0]], RGSS::Audio.bgm_calls,
      'the database battle BGM played, at its configured vol/tempo'
   eq 'BattleBGM', st.current_bgm[:name], 'and is now the tracked current BGM'
   RGSS::Audio.reset_bgm
@@ -7746,7 +7768,7 @@ check 'Enemy Encounter scene: battle BGM plays on entry, field BGM resumes after
   RGSS::Input.triggered = [RGSS::Input::C] # dismiss the Victory result
   scene.update
   RGSS::Input.triggered = []
-  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+  eq [['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
      'the field BGM that was playing before the fight replays once it ends'
   eq 'Field', st.current_bgm[:name]
 end
@@ -7763,9 +7785,39 @@ check 'Enemy Encounter scene: a Change System BGM battle override beats the data
                        balance: 50 }
   RGSS::Audio.reset_bgm
   2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
-  eq [['CustomBattle', 85, 120]], RGSS::Audio.bgm_calls,
+  eq [['CustomBattle', 85, 120, 0, 0]], RGSS::Audio.bgm_calls,
      'the Change System BGM override played instead of the database BattleBGM'
   eq 'CustomBattle', st.current_bgm[:name]
+end
+
+# Cycle #203: battle_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) and a Change System BGM battle override's own
+# fade-in parameter (do_change_system_bgm, mruby-rpg2k/mrblib/interpreter.rb)
+# were both read off their struct/hash by #battle_bgm and then dropped before
+# reaching #play_bgm, the same gap cycle #202 already fixed for the Play BGM
+# event command itself.
+check 'Enemy Encounter scene: a database or override battle fade-in forwards to bgm_play, ' \
+      'not dropped (cycle #203)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_music.fade_in = 500
+  RGSS::Audio.reset_bgm
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  eq [['BattleBGM', 70, 110, 0, 500]], RGSS::Audio.bgm_calls,
+     "the database battle_music's own fade_in reaches bgm_play's 5th argument"
+
+  scene2 = new_scene({ 1 => event(2, 2, auto) })
+  st2 = scene2.instance_variable_get(:@state)
+  st2.instance_variable_set(:@party, BattleStubParty.new)
+  st2.system_bgm[0] = { name: 'CustomBattle', fadein: 700, volume: 85, tempo: 120, balance: 50 }
+  RGSS::Audio.reset_bgm
+  2.times { scene2.update }
+  eq [['CustomBattle', 85, 120, 0, 700]], RGSS::Audio.bgm_calls,
+     "a Change System BGM battle override's own fade-in reaches bgm_play too"
 end
 
 check 'Enemy Encounter scene: a battle BGM matching the already-playing field track ' \
@@ -7833,7 +7885,7 @@ check 'Enemy Encounter scene: victory plays the database battle_end_music over t
   eq 1, RGSS::Audio.me_stop_calls,
      'the fanfare is ended through its own ME stop path rather than a bare BGM play ' \
      'yanking the shared music stream out from under it'
-  eq [['Field', 100, 100]], RGSS::Audio.bgm_calls,
+  eq [['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
      'the field BGM that was playing before the fight replays once the result is dismissed'
   eq 'Field', st.current_bgm[:name]
 end
@@ -8262,7 +8314,7 @@ check 'the Game Over screen shows its picture, plays its BGM and waits' do
   Audio.reset_bgm
   Input.reset
   scene = RPG2k::Scene::GameOver.new(parent)
-  eq [['GameOverBGM', 90, 100]], Audio.bgm_calls, 'the database game-over music'
+  eq [['GameOverBGM', 90, 100, 0, 0]], Audio.bgm_calls, 'the database game-over music'
   ok scene.instance_variable_get(:@picture).bitmap, 'the GameOver/ picture loaded'
 
   scene.update
@@ -8282,7 +8334,7 @@ check 'the Game Over screen plays a Change System BGM override instead of the da
                   { name: 'OverrideGameOverBGM', volume: 33, tempo: 66 } }
   )
   RPG2k::Scene::GameOver.new(parent, state)
-  eq [['OverrideGameOverBGM', 33, 66]], Audio.bgm_calls,
+  eq [['OverrideGameOverBGM', 33, 66, 0, 0]], Audio.bgm_calls,
      'the override plays, not the database GameOverBGM'
   Input.reset
 end
@@ -8292,7 +8344,37 @@ check 'a bare Game Over (no Game::State) still falls back to the database gameov
   Audio.reset_bgm
   Input.reset
   RPG2k::Scene::GameOver.new(parent) # state omitted, as every pre-existing caller does
-  eq [['GameOverBGM', 90, 100]], Audio.bgm_calls, 'unaffected by the new optional state arg'
+  eq [['GameOverBGM', 90, 100, 0, 0]], Audio.bgm_calls, 'unaffected by the new optional state arg'
+  Input.reset
+end
+
+# Cycle #203: gameover_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) and a Change System BGM game-over override's own
+# fade-in parameter (do_change_system_bgm, mruby-rpg2k/mrblib/interpreter.rb)
+# were both read off their struct/hash by #play_gameover_bgm and then dropped
+# before reaching Audio.bgm_play, the same gap cycle #202 already fixed for
+# the Play BGM event command itself.
+check 'the Game Over screen forwards a database or override fade-in to bgm_play, not dropped (cycle #203)' do
+  db = fake_db
+  db.system.gameover_music.fade_in = 350
+  parent = fake_parent(db)
+  Audio.reset_bgm
+  Input.reset
+  RPG2k::Scene::GameOver.new(parent)
+  eq [['GameOverBGM', 90, 100, 0, 350]], Audio.bgm_calls,
+     "the database gameover_music's own fade_in reaches bgm_play's 5th argument"
+  Input.reset
+
+  parent2 = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  state = OpenStruct.new(
+    system_bgm: { RPG2k::Scene::GameOver::SYSTEM_BGM_GAMEOVER =>
+                  { name: 'OverrideGameOverBGM', volume: 33, tempo: 66, fadein: 700 } }
+  )
+  RPG2k::Scene::GameOver.new(parent2, state)
+  eq [['OverrideGameOverBGM', 33, 66, 0, 700]], Audio.bgm_calls,
+     "a Change System BGM game-over override's own fade-in reaches bgm_play too"
   Input.reset
 end
 
@@ -11748,6 +11830,49 @@ check 'boarding a vehicle plays a Change System BGM override instead of the data
   eq 'CustomBoat', st.current_bgm[:name], 'the override plays instead of the database BoatBGM'
   eq 55, st.current_bgm[:volume]
   eq 90, st.current_bgm[:tempo]
+end
+
+# Cycle #203: boat_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) and a Change System BGM boat override's own
+# fade-in parameter (do_change_system_bgm, mruby-rpg2k/mrblib/interpreter.rb)
+# were both read off their struct/hash by #vehicle_bgm and then dropped before
+# reaching #play_bgm, the same gap cycle #202 already fixed for the Play BGM
+# event command itself. Boat stands in for ship/airship too -- all three
+# share #vehicle_bgm's single VEHICLE_SYSTEM_BGM_SLOT-indexed code path.
+check 'boarding a vehicle forwards a database or override fade-in to bgm_play, not dropped (cycle #203)' do
+  scene = new_scene({}, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.db.system.boat_music.fade_in = 300
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  st.direction = 2
+  boat = st.vehicle(:boat)
+  boat.map_id = st.map_id
+  boat.x = 0
+  boat.y = 1
+  boat.charset_name = 'Boat'
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene.update
+  RGSS::Input.triggered = []
+  eq [['BoatBGM', 80, 100, 0, 300]], RGSS::Audio.bgm_calls,
+     "the database boat_music's own fade_in reaches bgm_play's 5th argument"
+
+  scene2 = new_scene({}, player: [0, 0])
+  st2 = scene2.instance_variable_get(:@state)
+  st2.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  st2.direction = 2
+  st2.system_bgm[3] = { name: 'CustomBoat', fadein: 900, volume: 55, tempo: 90, balance: 50 }
+  boat2 = st2.vehicle(:boat)
+  boat2.map_id = st2.map_id
+  boat2.x = 0
+  boat2.y = 1
+  boat2.charset_name = 'Boat'
+  RGSS::Audio.reset_bgm
+  RGSS::Input.triggered = [RGSS::Input::C] # board the boat ahead
+  scene2.update
+  RGSS::Input.triggered = []
+  eq [['CustomBoat', 55, 90, 0, 900]], RGSS::Audio.bgm_calls,
+     "a Change System BGM boat override's own fade-in reaches bgm_play too"
 end
 
 check 'boarding a vehicle with no configured BGM stops the field music instead of leaving it ' \
@@ -22156,16 +22281,16 @@ check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
   state.map = fake_map(1, {})
   RGSS::Audio.reset_bgm
   scene = RPG2k::Scene::Map.new(parent, state)
-  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls, 'map 1 own BGM played on load'
+  eq [['Town', 90, 105, 0, 0]], RGSS::Audio.bgm_calls, 'map 1 own BGM played on load'
   eq 'Town', state.current_bgm[:name]
 
   RGSS::Audio.reset_bgm
   scene.send(:perform_teleport, [2, 0, 0, 0])
-  eq [['Cave', 80, 95]], RGSS::Audio.bgm_calls, 'map 2 own BGM played on Teleport'
+  eq [['Cave', 80, 95, 0, 0]], RGSS::Audio.bgm_calls, 'map 2 own BGM played on Teleport'
 
   RGSS::Audio.reset_bgm
   scene.send(:perform_teleport, [1, 0, 0, 0])
-  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls,
+  eq [['Town', 90, 105, 0, 0]], RGSS::Audio.bgm_calls,
      'and teleporting back to map 1 plays it again (a fresh Setup, not a same-visit no-op)'
 
   RGSS::Audio.reset_bgm
@@ -22214,7 +22339,7 @@ check 'Scene::Map resumes the saved BGM on Continue (apply_access: false) ' \
   state2.current_bgm = { name: 'Boss Theme', volume: 70, tempo: 120 }
   RGSS::Audio.reset_bgm
   RPG2k::Scene::Map.new(parent, state2)
-  eq [['Town', 90, 105]], RGSS::Audio.bgm_calls,
+  eq [['Town', 90, 105, 0, 0]], RGSS::Audio.bgm_calls,
      'an ordinary (apply_access: true) entry recomputes from the tree instead'
 end
 

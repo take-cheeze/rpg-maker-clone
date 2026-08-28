@@ -1478,6 +1478,79 @@ The work below is roughly ordered by the critical path to a walkable game
   keep the change small and independently verifiable; the save round-trip
   fix in (2) means that fadein value is no longer *lost*, just not yet
   *played*, for those four call sites specifically.
+  ✅ **Follow-up (cycle #203, 2026-08-28): picked up the gap cycle #202 left
+  open above.** Method: read `mruby-rpg2k/mrblib/scene/map.rb` end to end for
+  every BGM-playing call site, then checked `mruby-lcf/mrblib/schema.rb` for
+  whether each source Music struct genuinely carries a `fade_in` field (not
+  assumed) before touching anything, per the standing rule against inventing
+  schema fields. Findings: `db.system.battle_music` / `inn_music` /
+  `boat_music` / `ship_music` / `airship_music` / `gameover_music` are all
+  declared `elements: BGM` (schema.rb lines 677/679-683), the same `BGM`
+  struct (`file`/`fade_in`/`volume`/`pitch`/`balance`, field 2 = `fade_in`)
+  Play BGM's own struct already uses — so every one of them genuinely carries
+  a fade-in in the format, not an invented field. A Change System BGM
+  (10660) override for any of these slots already carries `fadein:` too
+  (`do_change_system_bgm`, interpreter.rb, stashed since fadein first
+  landed) — cycle #202's own save-round-trip fix already preserved it
+  end-to-end; only the *playback* side (`Scene::Map`'s helpers reading it
+  back out and forwarding it) was the gap. Fixed for three of the four named
+  helpers plus a fifth site found along the way: `#battle_bgm`, `#inn_bgm`
+  and `#vehicle_bgm` (map.rb) now read `fade_in`/`fadein` off both the
+  database struct (a new `#music_fadein` helper, parallel to the existing
+  `#music_name`/`#music_volume`/`#music_tempo`) and the Change System BGM
+  override hash, and `#play_bgm` (the one choke point all three funnel
+  through, alongside `#play_map_bgm` and the vehicle/battle/inn restore
+  helpers) now passes it as `RGSS::Audio.bgm_play`'s 5th argument, `|| 0`
+  defaulted the same way volume/tempo already are — the identical idiom
+  `#play_audio`'s `:bgm` branch and `#do_play_memorized_bgm` already
+  established. `Scene::GameOver#play_gameover_bgm` had the exact same gap
+  (`gameover_music` is field 38, same `BGM` struct, and its own
+  Change-System-BGM slot-6 override already carried `fadein:` too) and got
+  the same fix — the "game over" call site this cycle's own task brief
+  flagged as worth checking for, found by grep rather than assumed. **Left
+  deliberately untouched: `#victory_bgm`/`#play_victory_bgm`.**
+  `battle_end_music` (field 33) is the same `BGM` struct and does genuinely
+  carry a `fade_in` too, so the *format* has no gap here — but
+  `#play_victory_bgm` plays it through `RGSS::Audio.me_play`, RPG_RT's
+  distinct one-shot "ME" channel, and `me_play`'s native signature
+  (`mruby-rgss/mrblib/lib.rb`, `src/sdl_audio.cxx`) has no fadein parameter
+  at all — unlike `bgm_play`, it was never given one, since RGSS itself has
+  no such call either. Wiring it would mean extending the native ME
+  playback path end to end (`sdl_audio.cxx`, `include/rgss_audio.hxx`,
+  `mruby-rgss/src/audio.cxx`, `mruby-rgss/mrblib/lib.rb`) — a genuinely
+  different, larger change than forwarding an already-plumbed value through
+  an existing 5-argument call, and out of this cycle's scope; documented in
+  place on `#play_victory_bgm` itself rather than silently left as-is. Also
+  deliberately untouched: `#play_map_bgm` (the map's own default on-load/
+  Teleport BGM, `Game::MapBgm` — a different struct from any of the four
+  named helpers, not part of this cycle's brief) and `#resume_saved_bgm`
+  (Continue's direct-to-backend replay of the save's own `current_bgm`,
+  which bypasses `#play_bgm` on purpose per its own doc comment and so needed
+  no change here). Regression-covered by four new
+  `scripts/rpg2k_scene_check.rb` checks (a non-zero fade-in from both the
+  database struct and a Change System BGM override reaches `bgm_play`'s 5th
+  argument, for battle/inn/vehicle-boarding/Game-Over each), all four
+  confirmed to fail against the pre-fix code before the fix; every
+  pre-existing `bgm_calls` assertion whose call site now runs through the
+  widened `#play_bgm` (battle/inn/vehicle/Game-Over/`#play_map_bgm`'s own
+  on-load-and-Teleport checks — 11 of them) was updated to expect the
+  now-explicit `pos=0, fadein=0` trailing arguments, each independently
+  confirmed to fail against the pre-fix code too (the old 3-argument shape)
+  before being updated, so none of them could have silently started
+  asserting the wrong thing. **Verification**:
+  `scripts/rpg2k_scene_check.rb` 939 passed (935 baseline + 4 new checks, 0
+  failures); `rpg2k_logic_check.rb` 1179 passed (unchanged — it never
+  instantiates `Scene::Map`, so untouched by this cycle);
+  `rpg2k_render_check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb`
+  19/0 and `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged);
+  `rpg2k_save_load_check.rb` still reports the same 1 known pre-existing
+  failure (the unrelated Show Picture field-shape mismatch) before and
+  after, confirmed by running it against both the pre-fix and post-fix tree;
+  `cd build && ninja` clean rebuild; `ctest -R mruby_test` passed. No wine
+  session was run this cycle, for the same reason cycle #202 gave (audio
+  timing is not screenshot-diffable, and nothing here touched a `data/`
+  fixture) — this is first-principles schema-and-code reading, not a
+  wine-verified timing match.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
