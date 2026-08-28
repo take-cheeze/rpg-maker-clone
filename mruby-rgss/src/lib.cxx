@@ -5326,6 +5326,29 @@ mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// Sets the tilemap's own z and keeps the priority "above" layer pinned
+// TILEMAP_ABOVE_Z higher than it, the same z= propagation
+// tilemap_set_visible already does for visibility. The generic obj_set_z
+// only ever touched `self`'s own `@z`; the above canvas (`@_tm_above_obj`,
+// a separate LVGL object of its own -- see tilemap_init) was left at its
+// construction-time z forever, so a script that ever reassigned a
+// tilemap's z (moving it behind/above some other z-managed object) lost
+// the "above sorts over characters" relationship the two layers are
+// supposed to keep in lockstep, since only the ground canvas actually
+// moved.
+mrb_value tilemap_set_z(mrb_state* M, mrb_value self) {
+  mrb_int z;
+  mrb_get_args(M, "i", &z);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@z"), mrb_fixnum_value(z));
+  const mrb_value above =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  if (mrb_test(above))
+    mrb_iv_set(M, above, mrb_intern_lit(M, "@z"),
+               mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
+  update_z(M);
+  return self;
+}
+
 // Real RGSS treats `ox`/`oy` as a cheap, hardware-composited draw offset --
 // stock Spriteset_Map#update reassigns it every single frame regardless of
 // whether the camera actually moved. This engine instead re-composites the
@@ -6848,7 +6871,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, tilemap, "ox=", tilemap_set_ox, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "oy=", tilemap_set_oy, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "update", tilemap_update, MRB_ARGS_NONE());
-  mrb_define_method(M, tilemap, "z=", obj_set_z, MRB_ARGS_REQ(1));
+  mrb_define_method(M, tilemap, "z=", tilemap_set_z, MRB_ARGS_REQ(1));
   mrb_define_method(M, tilemap, "visible", obj_visible, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "visible=", tilemap_set_visible,
                     MRB_ARGS_REQ(1));

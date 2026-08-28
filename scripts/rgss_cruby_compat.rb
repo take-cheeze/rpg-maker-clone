@@ -1967,8 +1967,23 @@ module RGSS
       nil
     end
 
+    # Mirrors tilemap_set_z (mruby-rgss/src/lib.cxx, cycle #211): the native
+    # side keeps the priority "above" layer (@_tm_above_obj, a real ivar only
+    # under a live Tilemap that went through tilemap_init -- absent here,
+    # this compat class has no such object of its own) offset a fixed amount
+    # above the tilemap's own z on every reassignment. This compat class
+    # never actually builds an above layer, but scripts/rgss_cruby_test_check.rb
+    # runs mruby-rgss/test/test.rb's own "z= keeps the priority above layer
+    # offset above it" check against this shim too, and that check pokes
+    # @_tm_above_obj directly to stand in for it -- so this needs the same
+    # propagation the native side has, or that one shared test diverges
+    # between the two hosts.
+    TILEMAP_ABOVE_Z = 900
+
     def z=(v)
       @z = v
+      above = instance_variable_get(:@_tm_above_obj)
+      above.instance_variable_set(:@z, v + TILEMAP_ABOVE_Z) if above
     end
 
     attr_reader :visible

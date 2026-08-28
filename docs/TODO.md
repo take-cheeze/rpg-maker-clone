@@ -29764,6 +29764,90 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   and a follow camera. Remaining: per-row priority interleaving rather than one
   flat above-layer (ADR 0022), and the character effects the sprites ignore —
   opacity, blend mode, hue and step animation.
+  ✅ **Follow-up (cycle #211, 2026-08-28): `Tilemap#z=` never moved the
+  priority "above" layer along with it.** Method: per the standing
+  instruction to pick a genuinely different area from cycles #206-210's
+  Event-system run, skimmed broadly first — Menus/save/battle, the
+  `2k/09_bug/`/`2k/01_shoshin/011_siyou/` untriaged backlogs, the
+  Full-site-sweep's per-topic clusters (Message window, Battle system,
+  Party/Actor/Vehicle, Save/Load persistence, Database field semantics),
+  the viprpg-dev wiki backlog, VX/VX Ace — and found nearly every leaf
+  bullet already carries its own ✅, the handful of genuinely open items
+  either explicitly flagged as too large for one cycle (the SPEED_UP
+  ceiling investigation, the within-frame Autorun-restart feature, the
+  デフォ戦botまとめ 140-item dump) or event/movement-adjacent (the
+  Approach-Hero-plus-Autorun freeze **Bug** bullet a few thousand lines up).
+  Re-ran `scripts/rpg2k_field_audit.rb` for a fresh, code-grounded lead
+  instead: of its 8 unread-field hits, 6 (`system.battle_test_*`,
+  `saved_times`, `selected_condition`, `maker_version`) are already
+  self-documented in `mruby-lcf/mrblib/schema.rb` as editor-only "Battle
+  test"/"Battle animation editor leftovers" bookkeeping RPG_RT itself never
+  reads, and the 2 RPG2003 `terrain.grid_location`/`battlecommands.
+  section_flags_24` fields have no established formula anywhere this
+  codebase can cite (the schema's own comment on the latter says so
+  outright) — implementing either from a guessed formula would violate
+  this project's own evidence-based standard, not a one-cycle task. Pivoted
+  to `docs/rpgxp-rgss-api-gap.md`'s own still-open Tilemap item instead
+  (RGSS-side rendering, a suggested area, and unlike the RPG2000-side items
+  above this doc had marked it explicitly unresolved, not merely
+  unmentioned): "`z=` on the tilemap does not yet shift the above layer's
+  fixed `z`." Confirmed genuinely reachable, not just theoretical: the
+  priority "above" layer (`tilemap_init`, `mruby-rgss/src/lib.cxx`) is a
+  second, independent LVGL canvas registered for z-ordering with its own
+  `@z` pinned to the file-scope `TILEMAP_ABOVE_Z` constant (900) once, at
+  construction — `tilemap`'s own generic `z=` (`obj_set_z`, shared by every
+  Sprite/Viewport/Plane/Window/Tilemap) only ever touched `self`'s `@z`,
+  never the above object's, so a script reassigning a tilemap's `z` (moving
+  it behind/above some other z-managed object, e.g. a HUD viewport) broke
+  the "above sorts over the ground/characters" relationship the two layers
+  are supposed to keep in lockstep — exactly the same "companion propagation"
+  gap `tilemap_set_visible` already had to close for visibility a few
+  functions above it in the same file (its own comment: "the above canvas
+  is a separate LVGL object that obj_set_visible on the tilemap alone would
+  leave showing"), just never extended to `z=`. Fixed with a new
+  `tilemap_set_z` (mirroring `tilemap_set_visible`'s shape): sets `self`'s
+  `@z` as before, then — when `@_tm_above_obj` is set — pins the above
+  object's own `@z` to `z + TILEMAP_ABOVE_Z`, preserving the fixed 900-unit
+  gap across any reassignment instead of leaving the above layer frozen at
+  its original construction-time value; registered in place of the shared
+  `obj_set_z` for the `Tilemap` class only, every other class untouched.
+  **Verification:** since the mrbtest binary has no live display (`Tilemap.
+  new` needs `lv_canvas_create`/a real display, which the headless test
+  harness lacks — the existing "RGSS::Tilemap API surface" test already
+  documents this and only asserts the method surface), the new
+  `mruby-rgss/test/test.rb` check instead uses `RGSS::Tilemap.allocate`
+  (no native construction, matching the existing `Sprite#width`/`#height`
+  test's identical technique) with a plain `Object.new` standing in for the
+  above canvas — `tilemap_set_z` never dereferences `self`'s own native
+  pointer, only ivars, so this exercises the real C function safely without
+  a display. Asserts the above stand-in's `@z` tracks two different
+  reassigned tilemap `z` values by the *same* fixed offset (not a specific
+  hardcoded number, so the test does not encode `TILEMAP_ABOVE_Z`'s own
+  value) and that a bare `Tilemap.allocate` with no above-layer ivar at all
+  does not raise. Confirmed to fail against the pre-fix code first
+  (`git stash`/`git stash pop` on just `mruby-rgss/src/lib.cxx`, rebuild,
+  rerun): `NoMethodError: undefined method '-' for NilClass` (the above
+  stand-in's `@z` was never touched, so `instance_variable_get(:@z)` read
+  `nil`) — then passed clean after restoring the fix. Full suite (only
+  `mruby-rgss`/RGSS-side code touched, not `mruby-rpg2k`, so no change
+  expected and none seen): `rpg2k_scene_check.rb` 943, `rpg2k_logic_
+  check.rb` 1185, `rpg2k_render_check.rb` 41, `rpg2k3_battle_row_check.rb`
+  19/0, `rpg2k3_battle_gauge_check.rb` 15/0 all unchanged; `rpg2k_save_
+  load_check.rb` still reports exactly the same 1 known pre-existing
+  failure (the unrelated Show Picture field-shape mismatch), unaffected.
+  `mruby-rgss/src/lib.cxx` run through the pinned `clang-format` 22.1.8
+  (no reformatting beyond the new code — clean diff); `cd build && ninja`
+  clean rebuild succeeded; `ctest -R mruby_test` passed. No wine session
+  was run this cycle: this is this project's own internal rendering
+  approximation (the "above" canvas split has no counterpart in real RGSS
+  at all — a genuine Tilemap draws priority tiles inline, per-row, with no
+  separate object), not an RPG_RT/RGSS behavioral claim, so there is
+  nothing external to verify against; correctness here is purely "does
+  this engine's own two-canvas approximation stay internally consistent
+  when a script moves the tilemap," which the new unit test pins directly.
+  `docs/rpgxp-rgss-api-gap.md`'s own Tilemap section updated to record the
+  fix and drop this item from its "Remaining" list (the per-row scheme
+  itself and `flash_data` are unaffected, still open).
 - ~~🚧 **Event system**~~ — **superseded, not current.** This bullet describes
   the reimplemented `mruby-rpgxp/mrblib/interpreter.rb` `Game::Interpreter` /
   `game.rb` party-actor model that used to stand in for a game's own scripts;
