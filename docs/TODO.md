@@ -1623,6 +1623,59 @@ The work below is roughly ordered by the critical path to a walkable game
   BGM in cycle #202; this cycle is mechanical plumbing of that same
   mechanism to a second, structurally identical call path) rather than a
   wine-verified timing match.
+  ✅ **Follow-up (cycle #215, 2026-08-28): the "1 known pre-existing
+  failure" this file has carried forward at every one of the dozens of
+  citations above (the Show Picture field-shape mismatch) is now closed
+  too, the same root cause as this bullet's own two BGM assertions above --
+  a real feature landed correctly and the test's own expected hash simply
+  never got updated to match.** Method: after a genuinely broad search
+  (the "Message window", "Battle system", "Pictures", "Screen effects",
+  "Move Route", "Party/Actor/Vehicle", "Database field semantics" and
+  "Concrete runtime error catalog" sections, the RGSS/VX/VXAce gap docs,
+  and a paragraph-level sweep of every bullet in this whole file for one
+  with no ✅/🚧 marker anywhere in its own text) turned up nothing else
+  both small and genuinely open -- essentially the entire backlog through
+  cycle #214 is already closed, confirming this file's own "the runtime
+  error catalog family is close to exhausted" read holds for the rest of
+  the document too, not just that one catalog. `scripts/
+  rpg2k_save_load_check.rb`'s synthetic Show Picture round-trip check built
+  a chunk-103 entry that never set fields 2/3 (`show_x`/`show_y`) or 6/9
+  (`fixed_to_map`/`use_transparent_color`), then asserted against an
+  expected hash with no such keys at all -- but `Game::State.
+  restore_pictures` (`mruby-rpg2k/mrblib/game.rb`) has unconditionally
+  included all four in the options hash it passes to `#show_picture` since
+  the cycles that added `fixed_to_map`/`use_transparent_color` (#155/#158)
+  and `show_x`/`show_y` round-tripping, so the check had been failing on
+  every run since, exactly the same drift already diagnosed for the BGM
+  case above. Fixed by setting fields 2/3/6/9 in the synthetic entry to
+  values distinct from the neighbouring `finish_x`/`finish_y` (80/60), so
+  the check actually exercises the round-trip instead of merely matching
+  whatever the code happens to default to, and widening the expected hash
+  to the real four-key-richer shape. **Verification**: confirmed to fail
+  against the pre-fix code first (`git stash`/`git stash pop` on just
+  `scripts/rpg2k_save_load_check.rb` -- the pre-fix version reports exactly
+  the same `expected ... got ...` mismatch this file's own dozens of
+  citations already quote) then pass after. Full suite: `rpg2k_scene_
+  check.rb` 943 passed (unchanged, no `scene/map.rb`/`interpreter.rb`
+  touched); `rpg2k_logic_check.rb` 1187 passed (unchanged); `rpg2k_render_
+  check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, no battle code
+  touched); `rpg2k_save_load_check.rb` now reports **zero** known failures,
+  down from the one it has carried since the BGM fix above reduced the
+  original three to it -- every future cycle's own "unaffected" note for
+  it can finally read "0 failures" instead of "1 known pre-existing
+  failure". No `.cxx`/`.hxx`
+  file was touched (a single check-script fixture correction, no `mrblib`
+  Ruby or native code changed at all), so the pinned `clang-format` step
+  does not apply and no rebuild was strictly needed; `cd build && ninja`
+  reported no work to do (confirming nothing native was touched) and
+  `ctest -R mruby_test` passed anyway for completeness, as did `ruby
+  scripts/rgss_cruby_test_check.rb` (also unaffected, no RGSS code
+  touched). No wine session was run this cycle and no EasyRPG source was
+  consulted: this is a pure test-fixture correction verified entirely by
+  internal consistency (the corrected fixture's own field values against
+  `Game::State.restore_pictures`'s already-shipped, already-cited-elsewhere
+  behavior), not a new behavioral claim about genuine RPG_RT.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
