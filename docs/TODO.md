@@ -21899,6 +21899,92 @@ not yet verified:
   named as unexercised, a self-contained internal-consistency fix
   discoverable by reading `MoveRoute#do_jump`/`#jump_move_direction`/
   `#jump_delta` directly, needing no fresh reference confirmation.
+  ✅ **Follow-up (cycle #207, 2026-08-28): closed the narrower sibling gap
+  cycle #206 itself named and deliberately left untouched --
+  `#jump_face_direction`'s own diagonal-Array hash-lookup miss.** Method:
+  skimmed several other sections of this file first (menus/save/battle,
+  the untriaged/full-site-sweep backlog, VX/VXAce and RGSS material) looking
+  for a fresher, unrelated candidate outside move-route territory, but
+  most open-looking items there either needed a genuine wine session this
+  environment doesn't have this cycle or were already resolved; cycle
+  #206's own named "Still open" (well, "further, narrower edge case") --
+  a self-contained, code-only gap needing no fresh behavioral citation --
+  was the best-scoped target available, so picked it up. While reading the
+  surrounding code for context, noticed (but did not touch, being out of
+  this cycle's own scope) two pre-existing direct citations of EasyRPG
+  Player's own C++ source as behavioral justification still sitting in
+  `mruby-rpg2k/mrblib/game.rb` — `Character#direction_toward`'s "Corrected
+  to match EasyRPG Player's own `Game_Character::GetDirectionToCharacter`"
+  and `Character#diagonal_facing`'s "ported from EasyRPG Player's own
+  `Game_Character::UpdateFacing`" — both explicitly self-flagged in their
+  own comments as "NOT independently confirmed against genuine RPG_RT under
+  wine," i.e. already known-weak, uncited-in-this-cycle's-work citations
+  rather than something this fix relied on; noting them here for whichever
+  future cycle resumes cycle #174's own citation-hygiene sweep (256 unswept
+  instances as of that cycle; these two were apparently missed by it, or
+  postdate it). Confirmed by direct code reading: `Character::TURN_RIGHT`/
+  `TURN_LEFT`/`TURN_180` (`mruby-rpg2k/mrblib/game.rb`) were plain
+  cardinal-int-keyed hashes (`{8=>6, 6=>2, 2=>4, 4=>8}` etc.); `#jump_face_
+  direction`'s `TURN_RIGHT`/`TURN_LEFT`/`TURN_180` case arms look a jump
+  block's tracked direction up in exactly these hashes, and that tracked
+  direction is a `[horizontal, vertical]` Array pair right after a diagonal
+  move sub-command (per cycle #206's own fix) — an Array key always misses
+  a hash built from bare integers, so the `|| dir` fallback silently kept
+  the *unrotated* diagonal, rather than crashing (a graceful no-op, exactly
+  as cycle #206's note described it). Fixed by keying all three hashes with
+  the four diagonal pairs too (`[6,8]` Up-Right, `[6,2]` Down-Right, `[4,2]`
+  Down-Left, `[4,8]` Up-Left), rotated 90/90/180 degrees the same way the
+  existing cardinal entries already do: treating the four cardinals plus
+  four diagonals as eight positions evenly spaced around a compass circle
+  (Up=0, Up-Right=1, Right=2, Down-Right=3, Down=4, Down-Left=5, Left=6,
+  Up-Left=7), a turn is a +-2-position rotation and 180 is a 4-position
+  rotation — verified this generalization reproduces the *existing*
+  cardinal-only table exactly before trusting it for the new diagonal
+  entries (e.g. Up(0) +2 -> Right(2), matching the pre-existing `TURN_RIGHT
+  = {8 => 6, ...}`; Up(0) -2 -> Left(6), matching `TURN_LEFT = {8 => 4,
+  ...}`), so the four new diagonal entries in each hash are a direct
+  extrapolation of an already-established rule, not a fresh, uncited
+  behavioral claim. Reused the existing hashes (rather than a separate
+  table) since a character's own on-map `@direction` is always cardinal —
+  `#turn_right`/`#turn_left`/`#turn_around` and `#direction_away` only ever
+  look up a plain Integer there, so the new Array-keyed entries are inert
+  for every call site except `#jump_face_direction`. **Verification:**
+  hand-traced the fix's own arithmetic before writing the checks (character
+  at `(2, 2)` facing Down, `Begin Jump / Move Upper-Right / Turn Right /
+  Move Forward / End Jump` — diagonal step adds `(1, -1)` landing at
+  `(3, 1)`; Turn Right rotates Up-Right's `[6, 8]` pair to Down-Right's
+  `[6, 2]`; Move Forward then adds `(1, 1)`, landing at `(4, 2)`; a second
+  check swapped Turn Right for Turn 180, rotating to Down-Left's `[4, 2]`
+  pair, whose `(-1, 1)` delta exactly cancels the diagonal step's `(1, -1)`
+  and lands back at the start `(2, 2)` — still a jump, per `Character#
+  jumped`, just a net-zero one; a first draft of this second check's
+  expected value was arithmetically wrong (`[2, 4]`) and was caught by
+  re-deriving the delta table by hand rather than trusting the initial
+  guess). Both new `scripts/rpg2k_logic_check.rb` checks were confirmed to
+  fail against the pre-fix code first (`git stash`/`git stash pop` on just
+  `mruby-rpg2k/mrblib/game.rb`: both landed at `[4, 0]`, matching the bug —
+  the diagonal repeating unrotated a second time exactly as cycle #206's
+  fix already covers for the *unturned* case) then pass after. Full suite:
+  `rpg2k_logic_check.rb` 1182 passed (1180 baseline + 2 new, 0 failures);
+  `rpg2k_scene_check.rb` 943 passed (unchanged); `rpg2k_render_check.rb` 41
+  passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_
+  gauge_check.rb` 15/0 (both unchanged, no battle code touched); `rpg2k_
+  save_load_check.rb` still reports exactly the same 1 known pre-existing
+  failure (the unrelated Show Picture field-shape mismatch), unaffected. No
+  `.cxx`/`.hxx` file was touched (pure `mrblib` Ruby plus a check-script
+  addition), so the pinned `clang-format` step does not apply; `cd build &&
+  ninja` clean rebuild succeeded with no new warnings; `ctest -R mruby_test`
+  passed (7.13s). No wine session was run this cycle and no EasyRPG source
+  was consulted for this fix's own behavioral claim (the two pre-existing
+  EasyRPG citations noted above were read incidentally while orienting in
+  the surrounding code, not relied on for this fix, and were left
+  untouched as out of this cycle's own scope) — the rule being extended (a
+  90/180-degree rotation applies uniformly across all eight compass
+  positions, cardinal and diagonal alike) is a direct arithmetic
+  generalization of the already-established, wine-adjacent cardinal table
+  this same file already carries citations for, verified by reproducing
+  that existing table's own four entries with the general formula before
+  trusting the formula for the four new ones.
   ✅ **Follow-up (2026-08-21): Move Forward after an explicit Face/Turn
   sub-command continued in the direction last *physically walked* instead
   of the newly faced direction — the opposite of what the original fix in

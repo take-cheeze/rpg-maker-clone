@@ -438,6 +438,38 @@ check 'Move Forward inside a jump repeats the diagonal just walked, not the ' \
   eq [4, 0], [c.x, c.y], 'the diagonal in hand repeats twice, landing (2,-2) away'
 end
 
+check 'a Turn Right inside a jump rotates the diagonal in hand, not just a ' \
+      'cardinal' do
+  # Sibling gap to the check above: a Turn/Face command between a diagonal
+  # move and a following Move Forward, still inside the same jump block.
+  # Character::TURN_RIGHT/TURN_LEFT/TURN_180 used to have only cardinal-int
+  # keys, so looking one up with the diagonal's own [horizontal, vertical]
+  # pair missed and fell back to `|| dir`, silently leaving the pair
+  # unrotated -- Move Forward then repeated the pre-turn diagonal instead of
+  # the turned one. Begin Jump, Move Upper-Right, Turn Right, Move Forward:
+  # Up-Right (dx +1, dy -1) rotated 90 degrees clockwise is Down-Right (dx
+  # +1, dy +1), so Move Forward should add (+1, +1), not repeat (+1, -1).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::TURN_RIGHT),
+                 mc(R::MOVE_FORWARD), mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 2], [c.x, c.y], 'Up-Right then a 90-degree right turn to Down-Right'
+end
+
+check 'a Turn 180 inside a jump flips the diagonal in hand' do
+  # Same gap, exercising Character::TURN_180's own new diagonal keys: Begin
+  # Jump, Move Upper-Right, Turn 180, Move Forward. Up-Right (dx +1, dy -1)
+  # flipped 180 degrees is Down-Left (dx -1, dy +1), which exactly cancels
+  # the diagonal step just walked, so the block lands back where it started
+  # -- still a jump (see Character#jumped), just a net-zero one.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::TURN_180),
+                 mc(R::MOVE_FORWARD), mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y], 'Up-Right then a 180-degree flip to Down-Left cancels out'
+  eq true, c.jumped
+end
+
 check 'a jump only tests where it lands, not what it clears' do
   # (1, 0) is a wall; the jump passes straight over it onto (2, 0).
   route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
