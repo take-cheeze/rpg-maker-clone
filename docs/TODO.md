@@ -1308,9 +1308,9 @@ The work below is roughly ordered by the critical path to a walkable game
   battle-BGM paragraph below), slots 3-5 (boat / ship / airship, matching
   EasyRPG's `Game_System::sys_bgm` enum, see the vehicle-boarding paragraph
   below), slot 6 (game over, see the Game Over paragraph under "Menus,
-  save, battle" below) and slot 2 (inn, see the Show Inn paragraph below)
-  are now read back too, so only slot 1 (victory) is still modelled for
-  save fidelity like the access flags. **Change System
+  save, battle" below), slot 2 (inn, see the Show Inn paragraph below) and
+  slot 1 (victory, see the battle-BGM paragraph below and its cycle #202
+  correction) are all read back and consumed too. **Change System
   SFX** (10670) is now consumed on the map: the choice window plays the cursor
   sound as the selection moves and the decision sound on confirm, resolving a
   Change System SFX override on `Game::State` before the database default
@@ -1362,12 +1362,122 @@ The work below is roughly ordered by the critical path to a walkable game
   `#system_se` already established for Change System SFX. Covered by a new
   `scripts/rpg2k_scene_check.rb` check (a Change System BGM override for
   slot 0 plays instead of the database `battle_music` the moment the battle
-  UI opens), confirmed to fail against the pre-fix code before the fix. The
-  remaining System BGM slot (victory, slot 1) is still save-fidelity-only,
-  per the note above — inn (slot 2, see the Show Inn paragraph below), boat
-  / ship / airship (slots 3-5, see the vehicle-boarding paragraph below) and
-  game over (slot 6, see the Game Over paragraph under "Menus, save,
-  battle" below) are all consumed too.
+  UI opens), confirmed to fail against the pre-fix code before the fix.
+  ✅ **Correction (cycle #202): the paragraph used to say slot 1 (victory) was
+  "still save-fidelity-only" here — stale even when written.** `#victory_bgm`/
+  `#play_victory_bgm` (`Scene::Map`) already resolve a Change System BGM
+  slot-1 override the same override-then-default way `#battle_bgm` does, and
+  `scripts/rpg2k_scene_check.rb`'s "a Change System BGM victory override
+  beats the database battle_end_music" check already exercises it end to end
+  — both landed in the same Aug 19 commit this paragraph's own text was
+  merged against on Aug 22 without being reconciled (the two branches'
+  histories cross; see cycle #202's own TODO entry for the git-log evidence).
+  All seven System BGM slots (battle 0, victory 1, inn 2, boat/ship/airship
+  3-5, game over 6 — see their own paragraphs below) are consumed, not just
+  round-tripped.
+  ✅ **Follow-up (cycle #202, 2026-08-28): audio/BGM behavior, a fresh area
+  this session (cycles #191-201 covered interpreter call-stack save
+  persistence, Key Input Proc wait restoration, level-up skill-learn
+  messages, RPG2003 Shake Screen mode gating, an exhaustive SPEED_UP-ceiling
+  scan, and a rendering-path root-cause — none of them audio). Two findings,
+  both first-principles code-reading (wine's screenshot-diff technique does
+  not reach audio timing, so no wine verification was attempted here; this
+  is the cycle #201-style "engine's own internal correctness" investigation
+  the task brief calls out as the alternative to wine):
+  (1) **Fixed a real, previously-undocumented gap: Play BGM's own fade-in
+  parameter (event command param 0) was read off the command and then
+  dropped on the floor.** `Game::Interpreter#play_audio`'s `:bgm` branch
+  computed `fade_in` but never passed it anywhere; a track configured in the
+  editor to fade in over, say, 800ms started at full target volume
+  immediately, indistinguishable from `fade_in=0`. SDL_mixer's
+  `Mix_FadeInMusic` (already available, unlike tempo's genuine SDL_mixer
+  limitation the balance/pan work above ran into) was simply never wired
+  up. Fixed end to end: `RGSS::Audio.bgm_play` (`mruby-rgss/mrblib/lib.rb`,
+  `mruby-rgss/src/audio.cxx`, `include/rgss_audio.hxx`, `src/sdl_audio.cxx`)
+  gained a new 5th `fadein`/`fadein_ms` argument (default 0, so every real
+  RGSS2/RGSS3 script call site — none of which ever pass a 5th argument — is
+  untouched), and `src/sdl_audio.cxx`'s `start_music` now calls
+  `Mix_FadeInMusic(g_music, loops, fadein_ms)` instead of `Mix_PlayMusic`
+  when it is non-zero, threaded through both the disk-file and packed-
+  archive (`bgm_play_mem`, a released game's `RGSSAD`-packed Audio/ tree)
+  paths alike. `Game::Interpreter#play_audio` now forwards Play BGM's own
+  `fade_in` on a fresh play (never on the same-file-already-playing shortcut
+  — there is no restart there for a fade to ramp into, matching every other
+  Play BGM parameter's own same-file handling), and `#do_play_memorized_bgm`
+  forwards the memorized record's own carried-over fadein the identical way
+  it already carries volume/tempo/balance. Units confirmed as milliseconds
+  by liblcf's own schema (`mruby-lcf/mrblib/schema.rb`'s `BGM` struct field
+  2, the same field Change System BGM's own `fadein` and Fade Out BGM's
+  single parameter both already use, per those commands' own pre-existing
+  doc comments) rather than assumed. NOT independently confirmed against
+  genuine RPG_RT's own audible ramp under wine — there is no way to observe
+  that in this sandbox — so this is a first-principles fix (the parameter
+  existed, was read, and was silently discarded; that much needed no wine
+  to establish) rather than a wine-verified timing match. Regression-covered
+  by three new `scripts/rpg2k_logic_check.rb` checks (a non-zero fade-in
+  reaches `RGSS::Audio.bgm_play`'s new 5th argument and lands on
+  `state.current_bgm[:fadein]`; a same-file re-trigger still only adjusts
+  volume/pan live, no fade; Play Memorized BGM replays the memorized fade-in
+  too), all three confirmed to fail against the pre-fix code (asserting a
+  4-argument `bgm_play`/no fade replay) before the fix.
+  (2) **Fixed a second, related gap this investigation surfaced while
+  extending `current_bgm` to carry `fadein:`: every stored BGM record's
+  fade-in was silently dropped on Save, not just never played.**
+  `Game::State#bgm_chunk`/`.bgm_from_chunk` (the shared encode/decode pair
+  behind the current/memorized BGM, the pre-battle/vehicle restore points,
+  and every Change System BGM override slot 0-6 — one function, seven
+  reuse sites) never touched LCF's BGM-struct field 2 (fade-in) in either
+  direction, even though `do_change_system_bgm` (interpreter.rb) has stashed
+  a real `fadein:` value on that hash since fadein first landed — the exact
+  "tracked live, lost on save" class of gap balance (field 5) had before its
+  own fix. `scripts/rpg2k_logic_check.rb`'s existing "Change System BGM /
+  SFX round-trips" check even already set `fadein: 500` on its slot-0
+  fixture going in, but never asserted it came back, which is exactly why
+  the drop went unnoticed for as long as it did — now asserted (`eq 500,
+  round.system_bgm[0][:fadein]`). Fixed on the same "write only away from
+  its own default (0)" idiom fields 3-5 already use, confirmed to fail
+  against the pre-fix code before the fix.
+  (3) **Along the way, found and fixed two stale, self-contradictory
+  documentation bugs in this very paragraph and the one two paragraphs
+  above** (the "only slot 1 (victory) is still modelled for save fidelity"
+  / "still save-fidelity-only... are all consumed too" text corrected in
+  place above) **and two stale test assertions in
+  `scripts/rpg2k_save_load_check.rb`** (`to_lsd: current_bgm`/
+  `memorized_bgm` expected a 3-key hash missing `balance:`, which
+  `#bgm_from_chunk` has included since balance support landed — these were
+  2 of the suite's own "exactly 3 known pre-existing failures" baseline,
+  reproducibly failing on every run since the same Aug 22 merge). All four
+  are the identical root cause: a merge commit (`bd917345`, 2026-08-22)
+  brought together two branches that had each independently extended the
+  BGM save/playback code (one added `balance:`/save round-tripping and this
+  test, the other added victory-slot consumption) without reconciling their
+  prose or fixtures against each other's actual landed code — the runtime
+  behavior in both cases was already correct; only the documentation and
+  test expectations had drifted from it. Fixed the two save_load_check.rb
+  assertions (now asserting the full `{name:, volume:, tempo:, balance:,
+  fadein:}` shape, exercising fadein's own round-trip fix from (2) at the
+  same time) rather than leaving them as tracked failures, since nothing
+  about the runtime behavior they check was ever actually wrong.
+  **Verification**: `scripts/rpg2k_save_load_check.rb` now reports 1 known
+  failure (down from the documented 3 — the remaining one, an unrelated
+  Show Picture field-shape mismatch, is untouched); `rpg2k_logic_check.rb`
+  1179 passed (1176 baseline + 3 new checks, 0 failures);
+  `rpg2k_scene_check.rb` 935 passed (unchanged); `rpg2k_render_check.rb` 41
+  passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged);
+  `scripts/rpg2k_command_soak.rb` clean on both Nepheshel test-beds; `cd
+  build && ninja` clean rebuild with no new warnings; `ctest -R mruby_test`
+  passed. No wine session was run this cycle (audio timing is not
+  screenshot-diffable, and no other part of this investigation touched a
+  `data/` fixture), so there was nothing to restore. Not chased further:
+  extending the same fade-in plumbing to the Change-System-BGM-driven
+  battle/victory/inn/vehicle BGM helpers in `Scene::Map` (`#battle_bgm` /
+  `#victory_bgm` / `#inn_bgm` / `#vehicle_bgm` all still resolve `{name:,
+  volume:, tempo:}` and silently drop any `fadein:` on the override/database
+  Music struct they read) — deliberately left out of this cycle's scope to
+  keep the change small and independently verifiable; the save round-trip
+  fix in (2) means that fadein value is no longer *lost*, just not yet
+  *played*, for those four call sites specifically.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

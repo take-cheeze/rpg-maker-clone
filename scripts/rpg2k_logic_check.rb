@@ -3824,7 +3824,7 @@ check 'Play BGM with the literal "(OFF)" name stops the current track' do
     FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: '(OFF)'),
   ])
   it.update
-  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+  eq [[:bgm, 'town', 80, 100, 0, 0], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
      'the second Play BGM stops the track just started, rather than trying ' \
      'to play a file literally named "(OFF)"'
   eq nil, it.instance_variable_get(:@state).current_bgm,
@@ -3841,8 +3841,69 @@ check 'Play BGM with a blank name also stops the current track' do
     FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: ''),
   ])
   it.update
-  eq [[:bgm, 'town', 80, 100], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
+  eq [[:bgm, 'town', 80, 100, 0, 0], [:bgm_pan, 50], [:bgm_stop]], RGSS::Audio.log,
      'BgmPlay treats a blank name exactly like "(OFF)" -- both stop'
+end
+
+# Cycle #202: Play BGM's own fade_in parameter (param 0) used to be read off
+# the command and then dropped on the floor -- #play_audio never forwarded it
+# anywhere, so a track configured to fade in always snapped straight to its
+# target volume instead, indistinguishable from fade_in=0. Fixed by threading
+# it through as RGSS::Audio.bgm_play's new 5th (fadein_ms) argument, backed by
+# SDL_mixer's Mix_FadeInMusic (src/sdl_audio.cxx) -- not independently
+# confirmed against genuine RPG_RT's own audible ramp under wine (no
+# screenshot-diff technique reaches audio), but the parameter itself, its
+# unit (milliseconds, matching liblcf's own BGM-struct field 2 Change System
+# BGM and Fade Out BGM both already use, per those commands' own doc
+# comments), and its plumbing through every layer are confirmed by reading
+# the LCF schema and this engine's own code.
+check 'Play BGM with a non-zero fade-in forwards it to RGSS::Audio.bgm_play, not dropped' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::PLAY_BGM, [800, 80, 100, 20], string: 'town')])
+  it.update
+  eq [[:bgm, 'town', 80, 100, 0, 800], [:bgm_pan, 20]], RGSS::Audio.log,
+     'fade_in (param 0) reaches bgm_play as its 5th argument (pos=0, fadein=800)'
+  eq 800, st.current_bgm[:fadein], 'and is tracked on state too, the same as volume/tempo/balance'
+end
+
+check 'Play BGM re-triggering the same file does not fade in -- there is ' \
+      'no restart for a fade to ramp into' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [0, 80, 100], string: 'town'),
+    # Same file again, now with a fade-in requested -- the no-restart
+    # shortcut still applies (see the "(OFF)"/blank checks above), so this
+    # only re-applies volume/pan in place, exactly as fade_in=0 would.
+    FakeCmd.new(IC::PLAY_BGM, [600, 90, 100, 30], string: 'town'),
+  ])
+  it.update
+  eq [[:bgm, 'town', 80, 100, 0, 0], [:bgm_pan, 50], [:bgm_volume, 90], [:bgm_pan, 30]],
+     RGSS::Audio.log,
+     'the second Play BGM only adjusts volume/pan live -- no second :bgm (restart) entry'
+  eq 600, st.current_bgm[:fadein],
+     'state still tracks the latest requested fade-in even though nothing replayed'
+end
+
+check 'Play Memorized BGM replays the memorized track\'s own fade-in too' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([
+    FakeCmd.new(IC::PLAY_BGM, [700, 80, 100], string: 'town'), # fades in over 700ms
+    FakeCmd.new(IC::MEMORIZE_BGM, []),
+    FakeCmd.new(IC::PLAY_BGM, [0, 100, 100], string: 'fanfare'), # a plain instant start
+    FakeCmd.new(IC::PLAY_MEMORIZED_BGM, []), # resumes town -- with its own fade-in again
+  ])
+  it.update
+  bgms = RGSS::Audio.log.select { |e| e[0] == :bgm }
+  eq [['town', 80, 100, 0, 700], ['fanfare', 100, 100, 0, 0], ['town', 80, 100, 0, 700]],
+     bgms.map { |e| e[1..] },
+     'the memorized fade-in (700ms) replays on Play Memorized BGM, not silently ' \
+     'dropped to an instant start'
 end
 
 # -- actor HP / MP commands ---------------------------------------------------
@@ -4886,6 +4947,13 @@ check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrid
   eq 90, round.system_bgm[0][:volume]
   eq 110, round.system_bgm[0][:tempo]
   eq 20, round.system_bgm[0][:balance], 'a non-centre balance round-trips too, not just the default'
+  # Cycle #202: fade-in (BGM schema field 2) used to be silently dropped by
+  # #bgm_chunk regardless of the stored value -- this fixture already set a
+  # non-zero fadein above, but nothing here checked it came back, which is
+  # exactly why the gap went unnoticed. Now fixed: field 2 round-trips the
+  # same "write only away from its own default" way fields 3-5 already do.
+  eq 500, round.system_bgm[0][:fadein], 'fade-in round-trips too, not silently dropped'
+  eq 0, round.system_bgm[6][:fadein], 'a zero (default) fade-in still round-trips as zero'
   eq 'GameOver1', round.system_bgm[6][:name], 'Change System BGM slot 6 (game over) round-trips'
   eq 'Cursor1', round.system_sfx[0][:name], 'Change System SFX slot 0 (cursor) round-trips'
   eq 95, round.system_sfx[0][:volume]

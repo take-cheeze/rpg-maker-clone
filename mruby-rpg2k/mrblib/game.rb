@@ -16394,27 +16394,41 @@ module Game
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored
-    # `{ name:, volume:, tempo:, balance: }` hash: file (1), volume (3), pitch
-    # (4) and balance (5). Used for the system chunk's current-BGM (75) and
-    # stored-BGM (78) slots, and (below) every Change System BGM override
-    # slot. Balance is a first-class field of EasyRPG's own `Music`
-    # struct (ported from `Game_Interpreter::CommandPlayBGM`: `music.balance
-    # = ValueOrVariableBitfield(com, 4,
+    # `{ name:, volume:, tempo:, balance:, fadein: }` hash: file (1), fade-in
+    # (2), volume (3), pitch (4) and balance (5). Used for the system chunk's
+    # current-BGM (75) and stored-BGM (78) slots, and (below) every Change
+    # System BGM override slot. Balance is a first-class field of EasyRPG's
+    # own `Music` struct (ported from `Game_Interpreter::CommandPlayBGM`:
+    # `music.balance = ValueOrVariableBitfield(com, 4,
     # 4, 3);`, round-tripped whole by `Game_System::MemorizeBGM`/
     # `PlayMemorizedBGM` the same way every other field
     # here already is), NOT independently confirmed against genuine RPG_RT
     # under wine.
+    #
+    # Field 2 (fade_in) was entirely unwritten here until this cycle even
+    # when the stored hash carried a real non-zero `:fadein` -- do_change_
+    # system_bgm (interpreter.rb) has stashed a Play BGM/Change System BGM
+    # command's own fade-in milliseconds on the hash since fadein first
+    # landed, but this encoder silently dropped it on every Save, the exact
+    # same class of gap as the picture/message fields ADR 0019 catalogues
+    # elsewhere in this file. Now written on the same "elide at the schema
+    # default" idiom the other fields already use.
     def bgm_chunk(bgm)
       b = LCF::Array1D.new('', { elements: LCF::Schema::BGM })
       b[1] = bgm[:name] || ''
-      # Elided at their own schema default (100/100/50) -- confirmed against
-      # a genuine kk1.12 save under wine: an untouched BGM record's raw
-      # bytes carried field 1 (name) alone, with fields 3-5 entirely absent,
-      # not present holding the default values this codebase's own writer
-      # used to always emit.
+      # Elided at their own schema default (0/100/100/50) -- confirmed
+      # against a genuine kk1.12 save under wine for fields 3-5: an untouched
+      # BGM record's raw bytes carried field 1 (name) alone, with fields 3-5
+      # entirely absent, not present holding the default values this
+      # codebase's own writer used to always emit. Field 2's own default-
+      # elision is inferred from that same "write only a non-default field"
+      # pattern liblcf's schema documents for every other field here, NOT
+      # independently confirmed against genuine RPG_RT under wine on its own.
+      fadein = bgm[:fadein] || 0
       vol = bgm[:volume] || 100
       tempo = bgm[:tempo] || 100
       bal = bgm[:balance] || 50
+      b[2] = fadein if fadein != 0
       b[3] = vol if vol != 100
       b[4] = tempo if tempo != 100
       b[5] = bal if bal != 50
@@ -17065,7 +17079,7 @@ module Game
       name = chunk.file
       return nil if name.nil? || name.empty? || name == '(OFF)'
       { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
-        balance: chunk.balance || 50 }
+        balance: chunk.balance || 50, fadein: chunk.fade_in || 0 }
     end
 
     # #bgm_from_chunk's SE counterpart: rebuild our `{ name:, volume:, tempo: }`
