@@ -187,9 +187,11 @@ class RPG2k
          Game::States.color(id, table)]
       end
 
-      # Draw an actor's condition, as RPG_RT does in every field window that
-      # shows one — the menu party list, the item / skill target list and the
-      # status screen (EasyRPG's Window_Base#DrawActorState).
+      # Draw an actor's condition, the same field-window fixture every
+      # database-driven scene shows it in -- the menu party list, the item /
+      # skill target list and the status screen. Ported from EasyRPG
+      # Player's source (Window_Base#DrawActorState), NOT independently
+      # confirmed against genuine RPG_RT under wine.
       def draw_actor_state(bmp, actor, x, y, w, h, skin, align = 0)
         text, color = state_display(actor.states)
         draw_system_text bmp, x, y, w, h, text, skin, color, align
@@ -197,7 +199,8 @@ class RPG2k
 
       # The palette colour index an actor's live HP/SP figure draws in --
       # ported verbatim from EasyRPG's live `Window_Base::GetValueFontColor`
-      # (`src/window_base.cpp`), the shared routine behind `DrawActorHp`/
+      # (`src/window_base.cpp`), NOT independently confirmed against genuine
+      # RPG_RT under wine -- the shared routine behind `DrawActorHp`/
       # `DrawActorSp`: knockout gray (5) at exactly 0 with `can_knockout` set
       # (HP only -- `DrawActorSp` always passes false, so SP never shows this
       # colour even at 0), else critical red/orange (4) at or below a quarter
@@ -273,8 +276,9 @@ class RPG2k
       # `attacker_ally: false` (an enemy's own plain Attack, never a
       # skill/item hit -- EasyRPG's Game_BattleAlgorithm::Normal::GetStartSe
       # returns SFX_EnemyAttacks only for an enemy source, and only the
-      # Normal algorithm ever returns it). Confirmed against EasyRPG Player's
-      # source (scene_battle_rpg2k.cpp): ProcessBattleActionUsage plays
+      # Normal algorithm ever returns it). Ported from EasyRPG Player's
+      # source (scene_battle_rpg2k.cpp), NOT independently confirmed against
+      # genuine RPG_RT under wine: ProcessBattleActionUsage plays
       # GetStartSe() before ProcessBattleActionAnimation and
       # ProcessBattleActionExecute -- the very start of the action, before
       # any sprite swing or hit/miss/damage resolution -- and, for a
@@ -319,20 +323,22 @@ class RPG2k
         return nil unless field && db.system.respond_to?(field)
         se = db.system.send(field)
         name = se && se.respond_to?(:file) ? se.file : nil
-        # Confirmed against EasyRPG's actual C++ source: `Game_System::
-        # SePlay(const lcf::rpg::Sound&, bool)` (`src/game_system.cpp`) --
-        # `if (se.name.empty()) { return; } else if (se.name == "(OFF)")
-        # { ...; return; }` -- treats blank *and* the literal "(OFF)"
-        # sentinel identically as "nothing to play," the same convention
-        # `Interpreter#play_audio` already ports for the Play SE/Play BGM
-        # event commands.
+        # Ported from EasyRPG's actual C++ source, NOT independently
+        # confirmed against genuine RPG_RT under wine (matching the
+        # identical, already-disclosed convention `Interpreter#play_audio`
+        # carries for the Play SE/Play BGM event commands, see there):
+        # `Game_System::SePlay(const lcf::rpg::Sound&, bool)`
+        # (`src/game_system.cpp`) -- `if (se.name.empty()) { return; } else
+        # if (se.name == "(OFF)") { ...; return; }` -- treats blank *and*
+        # the literal "(OFF)" sentinel identically as "nothing to play."
         return nil if name.nil? || name.empty? || name == '(OFF)'
         { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
           tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
       end
 
-      # Plays a battle_anime row's own sound effect -- confirmed against
-      # EasyRPG's actual C++ source: `Game_System::SePlay(const RPG::
+      # Plays a battle_anime row's own sound effect -- ported from
+      # EasyRPG's actual C++ source, NOT independently confirmed against
+      # genuine RPG_RT under wine: `Game_System::SePlay(const RPG::
       # Animation&)` (`src/game_system.cpp`) walks the animation's own
       # `timings` and plays only the *first* one with a real SE, then
       # returns; it never plays every timing's SE, and never draws the
@@ -404,7 +410,8 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
-      # Confirmed against EasyRPG's actual C++ source:
+      # Ported from EasyRPG's actual C++ source, NOT independently
+      # confirmed against genuine RPG_RT under wine:
       # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
       # case (`src/game_character.cpp`) -- `if (move_command.
       # parameter_string != "(OFF)" && move_command.parameter_string !=
@@ -456,7 +463,8 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
-      # Confirmed against EasyRPG's actual C++ source:
+      # Ported from EasyRPG's actual C++ source, NOT independently
+      # confirmed against genuine RPG_RT under wine:
       # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
       # case (`src/game_character.cpp`) -- `if (move_command.
       # parameter_string != "(OFF)" && move_command.parameter_string !=

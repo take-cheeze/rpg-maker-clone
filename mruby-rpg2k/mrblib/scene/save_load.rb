@@ -11,9 +11,11 @@ class RPG2k
     #     Game::State to write out. Every slot -- occupied or not -- is
     #     selectable; confirming one calls RPG2k#save_game(state, slot) and
     #     pops straight back to the menu the same frame, no feedback of any
-    #     kind either way -- confirmed against RPG_RT's own live source,
-    #     `Scene_Save::Action` (`src/scene_save.cpp`), which discards
-    #     `Save`'s own boolean result outright.
+    #     kind either way -- independently confirmed against a genuine
+    #     RPG_RT.exe under wine (cycle #126, see #confirm_selection's own
+    #     fuller writeup below), not just EasyRPG's `Scene_Save::Action`
+    #     (`src/scene_save.cpp`), which discards `Save`'s own boolean result
+    #     outright.
     #   * `:load`, from Scene::Title's Continue entry, with `state` nil (there
     #     is no running game yet). Only an occupied slot is selectable;
     #     confirming one calls RPG2k#continue_game(slot), which tears down the
@@ -71,8 +73,9 @@ class RPG2k
       # (not a scrollbar/track -- there is no such thing anywhere in
       # RPG_RT), pinned at the very top and bottom of the whole slot
       # viewport and shown only while a slot is hidden in that direction.
-      # Confirmed against EasyRPG's own `Scene_File` (`src/scene_file.cpp`,
-      # `MakeArrowSprite`/`UpdateArrows`): this is entirely `Scene_File`'s
+      # Ported from EasyRPG's own `Scene_File` (`src/scene_file.cpp`,
+      # `MakeArrowSprite`/`UpdateArrows`), NOT independently confirmed
+      # against genuine RPG_RT under wine: this is entirely `Scene_File`'s
       # own doing, outside `Window_SaveFile` (which has no scroll logic of
       # its own -- it just draws one slot's contents) and outside the
       # generic `Window_Selectable` scroll-arrow mechanism other list
@@ -248,9 +251,11 @@ class RPG2k
       end
 
       # Tick the blink phase every frame (RPG_RT's own arrows keep animating
-      # even while, say, this screen's save-result message is up -- there is
-      # nothing in EasyRPG's `UpdateArrows` that gates it on anything besides
-      # whether more slots are hidden) and refresh visibility from it.
+      # even while, say, this screen's save-result message is up, per
+      # EasyRPG's `UpdateArrows` -- NOT independently confirmed against
+      # genuine RPG_RT under wine -- there is nothing in it that gates the
+      # blink on anything besides whether more slots are hidden) and refresh
+      # visibility from it.
       def tick_arrows
         return unless @up_arrow
         @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
@@ -261,8 +266,9 @@ class RPG2k
       # in that direction -- `@top > 0` for up, and for down: whether the
       # viewport's last visible row (`@top + VISIBLE_SLOTS - 1`) is still
       # short of the last real slot (`SLOT_COUNT - 1`), i.e. `@top <
-      # SLOT_COUNT - VISIBLE_SLOTS` -- the same shape as EasyRPG's own
-      # `top_index < max_index - 2` for its fixed 3-visible layout.
+      # SLOT_COUNT - VISIBLE_SLOTS` -- matching EasyRPG's own
+      # `top_index < max_index - 2` for its fixed 3-visible layout, NOT
+      # independently confirmed against genuine RPG_RT under wine.
       def refresh_arrows
         return unless @up_arrow
         blink_on = @arrow_anim < ARROW_BLINK_FRAMES
@@ -359,9 +365,10 @@ class RPG2k
       #
       # Every line renders through `#draw_system_text` (the windowskin
       # system-colour swatch blend, with RPG_RT's own one-pixel shadow) now,
-      # not a flat `draw_text` -- EasyRPG's `Window_SaveFile::Refresh`
-      # (`src/window_savefile.cpp`) draws every text element in the box
-      # through `TextDraw(x, y, fc, text)`, never a raw colour, with `fc`
+      # not a flat `draw_text` -- ported from EasyRPG's `Window_SaveFile::
+      # Refresh` (`src/window_savefile.cpp`), NOT independently confirmed
+      # against genuine RPG_RT under wine: it draws every text element in
+      # the box through `TextDraw(x, y, fc, text)`, never a raw colour, with `fc`
       # itself `has_save ? Font::ColorDefault : Font::ColorDisabled` (system
       # colour index 0 or 3, `src/font.h`) for the file label specifically --
       # the same disabled-swatch convention `Scene::Title`'s own Continue
@@ -403,8 +410,9 @@ class RPG2k
 
       # The level/HP line at RPG_RT's own fixed pixel columns (x=4 for the
       # level label, x=46 for HP), not proportioned to the label text --
-      # confirmed against RPG_RT's live source: `Window_SaveFile::Refresh`
-      # (`src/window_savefile.cpp`) is four separate `TextDraw` calls at
+      # ported from EasyRPG's `Window_SaveFile::Refresh`
+      # (`src/window_savefile.cpp`), NOT independently confirmed against
+      # genuine RPG_RT under wine: it is four separate `TextDraw` calls at
       # those exact x-coordinates, each number space-padded to a fixed
       # width (`std::setw(2)` for level, `std::setw(Player::IsRPG2k3() ? 4
       # : 3)` for HP) -- so a level 9 vs. 99 leader never shifts where "HP"
@@ -422,9 +430,10 @@ class RPG2k
       end
 
       # Clamp a database term string to exactly 2 characters, space-padded
-      # if shorter -- matches RPG_RT's own `lvl_short`/`hp_short` handling
-      # (`Window_SaveFile::Refresh`: `if (lvl_short.size() != 2)
-      # lvl_short.resize(2, ' ')`).
+      # if shorter -- ported from EasyRPG's own `lvl_short`/`hp_short`
+      # handling (`Window_SaveFile::Refresh`: `if (lvl_short.size() != 2)
+      # lvl_short.resize(2, ' ')`), NOT independently confirmed against
+      # genuine RPG_RT under wine.
       def fixed_width_term(name, fallback)
         s = term(name, fallback)
         s.length > 2 ? s[0, 2] : s.ljust(2)
@@ -484,9 +493,11 @@ class RPG2k
 
       # Crop one 48x48 cell out of a FaceSet sheet. Unlike
       # `Scene::Map#build_face_cell`, this screen never mirrors a face --
-      # EasyRPG's own `Window_Base::DrawFace` call for the save-file screen
-      # always passes `flip: false`, unlike a message window's Change Face
-      # Graphic, the only place a mirror flag exists in the data at all.
+      # ported from EasyRPG's own `Window_Base::DrawFace` call for the
+      # save-file screen, NOT independently confirmed against genuine
+      # RPG_RT under wine: it always passes `flip: false`, unlike a message
+      # window's Change Face Graphic, the only place a mirror flag exists
+      # in the data at all.
       def build_face_cell(sheet, index)
         src_x = (index % 4) * FACE_SIZE
         src_y = (index / 4) * FACE_SIZE
