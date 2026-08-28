@@ -38,8 +38,17 @@ struct RgssAudioBackend {
   // feeds bgm_pos's own return value back in here round-trips exactly. 0 plays
   // from the beginning, as XP/VX's 3-argument form always did. A backend that
   // cannot seek (or fails to) is expected to fall back to playing from the
-  // beginning rather than dropping the play.
-  void (*bgm_play)(const char* path, int volume, int pitch, int pos_ms);
+  // beginning rather than dropping the play. fadein_ms is not part of any real
+  // RGSS Audio.bgm_play -- it carries RPG2000's own Play BGM fade-in
+  // parameter (cycle #202). 0 (every RGSS-script call site's implicit value)
+  // starts at once, matching every prior build; > 0 is expected to ramp up
+  // from silence to `volume` over that many milliseconds instead of jumping
+  // there immediately.
+  void (*bgm_play)(const char* path,
+                   int volume,
+                   int pitch,
+                   int pos_ms,
+                   int fadein_ms);
   // Re-applies volume to the BGM stream already playing, with no restart --
   // unlike bgm_play, which always starts its track over. Used when a Play BGM
   // command re-triggers the file that is already current (RPG_RT re-applies
@@ -67,8 +76,14 @@ struct RgssAudioBackend {
   void (*bgs_fade)(int ms);
   int (*bgs_pos)(void);
 
-  // Music effect: plays once over the music, then the interrupted BGM resumes.
-  void (*me_play)(const char* path, int volume, int pitch);
+  // Music effect: plays once over the music, then the interrupted BGM
+  // resumes. fadein_ms is the same fade-in-from-silence duration as
+  // bgm_play's, above (RPG2000's own Play BGM / Change System BGM fade-in
+  // parameter, reaching the victory fanfare's ME channel this way starting
+  // cycle #204) -- SDL_mixer's Mix_FadeInMusic applies identically to a
+  // one-shot ME as to a looping BGM, since both are the same underlying
+  // Mix_Music stream, just started with a different loop count.
+  void (*me_play)(const char* path, int volume, int pitch, int fadein_ms);
   void (*me_stop)(void);
   void (*me_fade)(int ms);
 
@@ -85,12 +100,16 @@ struct RgssAudioBackend {
   // bgm_play_mem's pos_ms is the same resume position as bgm_play's, above --
   // this is how a released game (its whole Audio/ tree packed into one
   // archive, nothing loose on disk) actually hears a mid-track resume.
+  // fadein_ms is the same fade-in-from-silence duration as bgm_play's, above,
+  // reaching a released game's packed archive the same way pos_ms already
+  // does.
   void (*bgm_play_mem)(const char* name,
                        const void* data,
                        int size,
                        int volume,
                        int pitch,
-                       int pos_ms);
+                       int pos_ms,
+                       int fadein_ms);
   void (*bgs_play_mem)(const char* name,
                        const void* data,
                        int size,
@@ -100,7 +119,8 @@ struct RgssAudioBackend {
                       const void* data,
                       int size,
                       int volume,
-                      int pitch);
+                      int pitch,
+                      int fadein_ms);
   void (*se_play_mem)(const char* name,
                       const void* data,
                       int size,

@@ -4635,7 +4635,14 @@ module Game
         RGSS::Audio.bgm_volume(bgm[:volume] || 100)
       else
         @state.bgm_looped = false
-        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100)
+        # The memorized record's own fade-in (cycle #202) replays too, the
+        # same whole-struct-carried-over idiom every other field here already
+        # gets -- Memorize BGM stashed whatever Play BGM's fade_in last set
+        # (`#do_memorize_bgm`'s bare `@state.current_bgm.dup`), so a track
+        # memorized while still fading in resumes with that same ramp on
+        # replay rather than snapping straight to its target volume.
+        RGSS::Audio.bgm_play(bgm[:name], bgm[:volume] || 100, bgm[:tempo] || 100,
+                             0, bgm[:fadein] || 0)
       end
       # Balance/pan is re-applied unconditionally, same-file-or-not, matching
       # `#play_audio`'s own `:bgm` branch -- ported from EasyRPG Player's
@@ -4691,7 +4698,12 @@ module Game
       if kind == :bgm
         # PlayBGM parameters: [fade_in, volume, tempo, balance]. Volume/tempo
         # default to 100, balance to 50 (centre), when the command carries a
-        # shorter list.
+        # shorter list. fade_in is already milliseconds, not tenths of a
+        # second -- the same LCF BGM-struct field 2 Change System BGM's own
+        # fadein reads (do_change_system_bgm above) and Fade Out BGM's own
+        # single parameter already is (see do_fadeout_bgm's own citation);
+        # liblcf's schema gives it a plain :int type with no separate scale.
+        fade_in = cmd.parameters.size > 0 ? cmd.param(0) : 0
         volume = cmd.parameters.size > 1 ? cmd.param(1) : 100
         pitch = cmd.parameters.size > 2 ? cmd.param(2) : 100
         balance = cmd.parameters.size > 3 ? cmd.param(3) : 50
@@ -4727,12 +4739,23 @@ module Game
         # (a bare `data.stored_music =
         # data.current_music`, copying the whole `Music` struct verbatim),
         # NOT independently confirmed against genuine RPG_RT under wine.
-        @state.current_bgm = { name: name, volume: volume, tempo: pitch, balance: balance }
+        @state.current_bgm = { name: name, volume: volume, tempo: pitch, balance: balance,
+                               fadein: fade_in }
         if same_file_already_playing
+          # No restart happens here at all (see above), so there is nothing
+          # for a fade-in to ramp into -- matching the same-file shortcut's
+          # own "only adjust volume and speed" rule for every other Play BGM
+          # parameter.
           RGSS::Audio.bgm_volume(volume)
         else
           @state.bgm_looped = false # a fresh track has not looped yet
-          RGSS::Audio.bgm_play(name, volume, pitch)
+          # `fade_in` (cycle #202): previously read off the command's own
+          # parameter list and then dropped on the floor -- a configured
+          # fade-in never actually ramped the volume in, the track simply
+          # started at its target volume immediately, same as fade_in=0.
+          # RGSS::Audio.bgm_play's 5th argument (below) is new this cycle
+          # too; see its own doc comment for the native Mix_FadeInMusic path.
+          RGSS::Audio.bgm_play(name, volume, pitch, 0, fade_in)
         end
         # Cleared unconditionally, restart or not -- `BgmPlay`'s own `data.
         # music_stopping = false;` runs after the if/else either way.

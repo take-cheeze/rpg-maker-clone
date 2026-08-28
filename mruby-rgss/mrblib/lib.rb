@@ -1114,10 +1114,19 @@ module RGSS
       # instant a real game would land on. Seeking can still fail (some
       # decoders, e.g. MOD/MIDI, do not support it); a failed seek plays from
       # the track's own beginning rather than not playing at all.
-      def bgm_play(filename, volume = 100, pitch = 100, pos = 0)
+      #
+      # `fadein` is not part of any real RGSS Audio.bgm_play signature (RGSS2/
+      # RGSS3 scripts never pass a 5th argument) -- it exists for RPG2000's
+      # own Play BGM event command, whose fade-in parameter this engine used
+      # to read and then silently drop (cycle #202). Milliseconds, ramping
+      # from silence up to `volume` via SDL_mixer's Mix_FadeInMusic rather
+      # than jumping straight there the way an ordinary Mix_PlayMusic does;
+      # 0 (the default, and every real RGSS caller's implicit value) keeps
+      # the original instant-start behavior exactly.
+      def bgm_play(filename, volume = 100, pitch = 100, pos = 0, fadein = 0)
         path = resolve(filename, MUSIC_DIRS)
-        return _bgm_play(path, volume, pitch, pos) if path
-        play_packed(:bgm, filename, volume, pitch, pos)
+        return _bgm_play(path, volume, pitch, pos, fadein) if path
+        play_packed(:bgm, filename, volume, pitch, pos, fadein)
       end
 
       # Re-applies volume to the already-playing BGM stream in place, with no
@@ -1171,10 +1180,16 @@ module RGSS
         _bgs_pos
       end
 
-      def me_play(filename, volume = 100, pitch = 100)
+      # `fadein` is not part of any real RGSS Audio.me_play signature (RGSS2/
+      # RGSS3 scripts never pass a 4th argument here either) -- it exists for
+      # RPG2000's own Change System BGM fade-in parameter reaching the
+      # victory fanfare's one-shot ME channel (`Scene::Map#play_victory_bgm`,
+      # cycle #204), the same reason #bgm_play grew its own `fadein` in cycle
+      # #202. 0 (the default) keeps the original instant-start behavior.
+      def me_play(filename, volume = 100, pitch = 100, fadein = 0)
         path = resolve(filename, MUSIC_DIRS)
-        return _me_play(path, volume, pitch) if path
-        play_packed(:me, filename, volume, pitch)
+        return _me_play(path, volume, pitch, fadein) if path
+        play_packed(:me, filename, volume, pitch, 0, fadein)
       end
 
       def me_stop
@@ -1229,8 +1244,13 @@ module RGSS
       # just the disk path in #bgm_play, because a released game's whole
       # Audio/ tree is packed into one encrypted archive with nothing loose on
       # disk (see RGSS.asset_archive) -- this is the path that actually
-      # carries a resume for a released game.
-      def play_packed(kind, filename, volume, pitch, pos = 0)
+      # carries a resume for a released game. `fadein` (cycle #202 for BGM,
+      # #204 for ME) is a fade-in-from-silence duration, the same disk-path/
+      # packed-path split as `pos` for the identical reason: RPG2000's Play
+      # BGM / Change System BGM fade-in has to reach a released game's packed
+      # archive too, not just loose files -- ME ignores `pos` (it never
+      # resumes mid-track) exactly like every non-BGM kind above.
+      def play_packed(kind, filename, volume, pitch, pos = 0, fadein = 0)
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
         name, bytes = archive ? find_packed(archive, kind, filename) : nil
@@ -1251,9 +1271,9 @@ module RGSS
           return nil
         end
         case kind
-        when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos)
+        when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos, fadein)
         when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
-        when :me then _me_play_mem(name, bytes, volume, pitch)
+        when :me then _me_play_mem(name, bytes, volume, pitch, fadein)
         else _se_play_mem(name, bytes, volume, pitch)
         end
         nil

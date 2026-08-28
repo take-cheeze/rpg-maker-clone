@@ -265,10 +265,20 @@ void free_music(void) {
 // (RGSS3's Audio.bgm_play resume point) once playback has actually started; a
 // decoder that cannot seek (or fails to) is left playing from the beginning
 // rather than treated as a load failure — the track is still audible, just not
-// resumed.
-bool start_music(const std::string& what, int volume, int loops, int pos_ms) {
+// resumed. fadein_ms > 0 (RPG2000's own Play BGM fade-in, cycle #202) ramps
+// the volume up from silence to `volume` over that many milliseconds via
+// Mix_FadeInMusic instead of jumping straight there via Mix_PlayMusic; 0 (the
+// default, and every caller here before this cycle) is the original instant
+// start.
+bool start_music(const std::string& what,
+                 int volume,
+                 int loops,
+                 int pos_ms,
+                 int fadein_ms = 0) {
   Mix_VolumeMusic(to_mix_volume(volume));
-  if (Mix_PlayMusic(g_music, loops) < 0) {
+  const int rc = fadein_ms > 0 ? Mix_FadeInMusic(g_music, loops, fadein_ms)
+                               : Mix_PlayMusic(g_music, loops);
+  if (rc < 0) {
     LOG(WARNING) << "Audio: failed to play music '" << what
                  << "': " << Mix_GetError();
     return false;
@@ -324,11 +334,14 @@ void log_music_load_failure(const std::string& what, int size = -1) {
 // (loops = -1 loops forever, 1 plays once). Returns false on load failure.
 // pos_ms defaults to 0 (play from the beginning) for the ME/replay callers
 // below, which never seek; bgm_play (the one caller a resume position reaches)
-// passes the real value through.
+// passes the real value through. fadein_ms likewise defaults to 0 (instant
+// start) for every caller but bgm_play/bgm_play_mem -- see start_music's own
+// doc comment.
 bool play_music(const std::string& path,
                 int volume,
                 int loops,
-                int pos_ms = 0) {
+                int pos_ms = 0,
+                int fadein_ms = 0) {
   free_music();
   {
     // The music stream is opened on the game-loop thread. For MIDI this is the
@@ -341,7 +354,7 @@ bool play_music(const std::string& path,
     log_music_load_failure(path);
     return false;
   }
-  return start_music(path, volume, loops, pos_ms);
+  return start_music(path, volume, loops, pos_ms, fadein_ms);
 }
 
 // The same, from encoded bytes. The bytes are copied into g_music_bytes first:
@@ -352,7 +365,8 @@ bool play_music_mem(const std::string& name,
                     int size,
                     int volume,
                     int loops,
-                    int pos_ms = 0) {
+                    int pos_ms = 0,
+                    int fadein_ms = 0) {
   free_music();
   g_music_bytes.assign(static_cast<const char*>(data),
                        static_cast<size_t>(size));
@@ -373,7 +387,7 @@ bool play_music_mem(const std::string& name,
     g_music_bytes.clear();
     return false;
   }
-  return start_music(name, volume, loops, pos_ms);
+  return start_music(name, volume, loops, pos_ms, fadein_ms);
 }
 
 // Replay the BGM, from wherever it came from. Used to resume after a music
@@ -392,13 +406,17 @@ bool replay_bgm(void) {
 
 // -- BGM --------------------------------------------------------------------
 
-void bgm_play(const char* path, int volume, int /*pitch*/, int pos_ms) {
+void bgm_play(const char* path,
+              int volume,
+              int /*pitch*/,
+              int pos_ms,
+              int fadein_ms) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = path;
   g_bgm_bytes.clear();  // a file now, not archived bytes
   g_bgm_volume = volume;
-  play_music(g_bgm_path, volume, -1, pos_ms);
+  play_music(g_bgm_path, volume, -1, pos_ms, fadein_ms);
 }
 
 // Live volume change for whichever BGM is currently playing, with no restart:
@@ -436,14 +454,15 @@ void bgm_play_mem(const char* name,
                   int size,
                   int volume,
                   int /*pitch*/,
-                  int pos_ms) {
+                  int pos_ms,
+                  int fadein_ms) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = name;  // for diagnostics only; there is no file
   g_bgm_bytes.assign(static_cast<const char*>(data), static_cast<size_t>(size));
   g_bgm_volume = volume;
   if (!play_music_mem(g_bgm_path, g_bgm_bytes.data(), (int)g_bgm_bytes.size(),
-                      volume, -1, pos_ms))
+                      volume, -1, pos_ms, fadein_ms))
     g_bgm_bytes.clear();
 }
 
@@ -518,7 +537,11 @@ int bgs_pos(void) {
 
 // -- ME ---------------------------------------------------------------------
 
-void me_play(const char* path, int volume, int /*pitch*/) {
+// fadein_ms > 0 (RPG2000's own Change System BGM fade-in, reaching the
+// victory fanfare's ME channel via Scene::Map#play_victory_bgm, cycle #204)
+// ramps the ME up from silence the same way bgm_play's does -- play_music
+// already supports this for any loop count, ME's `1` (play once) included.
+void me_play(const char* path, int volume, int /*pitch*/, int fadein_ms) {
   // Play once over the BGM; update() restores the BGM when the effect ends.
   // Capture the BGM's own position now, before g_me_active flips bgm_pos() to
   // 0 -- but only on the first ME of a run, not one that replaces another
@@ -526,7 +549,7 @@ void me_play(const char* path, int volume, int /*pitch*/) {
   if (!g_me_active)
     g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
-  if (!play_music(path, volume, 1))
+  if (!play_music(path, volume, 1, 0, fadein_ms))
     g_me_active = false;  // load failed: nothing to wait for.
 }
 
@@ -534,11 +557,12 @@ void me_play_mem(const char* name,
                  const void* data,
                  int size,
                  int volume,
-                 int /*pitch*/) {
+                 int /*pitch*/,
+                 int fadein_ms) {
   if (!g_me_active)
     g_bgm_resume_pos_ms = bgm_pos();
   g_me_active = true;
-  if (!play_music_mem(name, data, size, volume, 1))
+  if (!play_music_mem(name, data, size, volume, 1, 0, fadein_ms))
     g_me_active = false;
 }
 

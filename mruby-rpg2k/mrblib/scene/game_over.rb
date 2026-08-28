@@ -84,10 +84,18 @@ class RPG2k
       # gameover_music. Mirrors EasyRPG Player's Game_System::GetAudio, NOT
       # independently confirmed against genuine RPG_RT under wine: the override
       # wins only when its own filename is non-empty.
+      #
+      # `fadein` (cycle #203): both sources genuinely carry one, the same as
+      # Scene::Map's battle/inn/vehicle BGM helpers -- the override from
+      # Change System BGM's own fade-in parameter (`do_change_system_bgm`,
+      # mruby-rpg2k/mrblib/interpreter.rb), the database value from
+      # gameover_music's own liblcf `BGM`-struct field 2 (`fade_in`,
+      # mruby-lcf/mrblib/schema.rb) -- previously read off neither and
+      # dropped before reaching Audio.bgm_play.
       def play_gameover_bgm
-        name, vol, tempo = gameover_bgm_override || database_gameover_bgm
+        name, vol, tempo, fadein = gameover_bgm_override || database_gameover_bgm
         return if name.nil? || name.empty?
-        Audio.bgm_play name, vol, tempo
+        Audio.bgm_play name, vol, tempo, 0, fadein
       rescue StandardError => e
         $stderr.puts "[RPG2k] game over BGM playback failed: #{e.message}"
       end
@@ -96,13 +104,13 @@ class RPG2k
         return nil unless @game_state
         ov = @game_state.system_bgm[SYSTEM_BGM_GAMEOVER]
         return nil unless ov && ov[:name] && !ov[:name].to_s.empty?
-        [ov[:name], ov[:volume] || 100, ov[:tempo] || 100]
+        [ov[:name], ov[:volume] || 100, ov[:tempo] || 100, ov[:fadein] || 0]
       end
 
       def database_gameover_bgm
         bgm = db.system.gameover_music
-        return [nil, 100, 100] unless bgm
-        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100)]
+        return [nil, 100, 100, 0] unless bgm
+        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100), (bgm.fade_in || 0)]
       end
     end
 
