@@ -1529,7 +1529,12 @@ class RPG2k
       # into Game::State#map_event_route_index, so the same restore resumes an
       # in-progress custom route at its exact command rather than the top.
       def record_map_event_positions
-        @events.each do |e|
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame.
+        i = 0
+        size = @events.size
+        while i < size
+          e = @events[i]
           ch = e[:char]
           id = e[:id]
           # A stationary event's tuple reads the same every frame -- reuse the
@@ -1551,6 +1556,7 @@ class RPG2k
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
           @event_last_position[id] = pos
+          i += 1
         end
       end
 
@@ -3329,7 +3335,18 @@ class RPG2k
       # case #update calls this a second way (allow_trigger: false) while a
       # message window is open; see #events_move_during_message?.
       def step_events(allow_trigger: true)
-        @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup
+        # (unlike #step_parallels' own loop): #step_event only sets up the
+        # interpreter via #start_event, it never drives it, so no command --
+        # Erase Event included -- can run synchronously here to shrink
+        # @events mid-loop.
+        i = 0
+        size = @events.size
+        while i < size
+          step_event(@events[i], allow_trigger: allow_trigger)
+          i += 1
+        end
       end
 
       # Run `route`'s sub-commands until one actually costs a frame of pacing
@@ -3444,7 +3461,16 @@ class RPG2k
       # Game::EventGraphic.frame reads @moving / @anim_phase to pick the drawn
       # column, and event_pixel reads the slide for the draw position.
       def animate_events
-        @events.each { |e| animate_event(e) }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup:
+        # #animate_event only advances an event's own slide/animation
+        # counters, it never touches @events itself.
+        i = 0
+        size = @events.size
+        while i < size
+          animate_event(@events[i])
+          i += 1
+        end
       end
 
       def animate_event(e)
@@ -4240,7 +4266,17 @@ class RPG2k
         # replaced by the plain one instead of staying baked in.
         @last_frame = nil if @state.player_flash
         @state.player_flash = tick_flash(@state.player_flash)
-        @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup:
+        # #tick_flash only mutates the flash hash it is handed, it never
+        # touches @events itself.
+        i = 0
+        size = @events.size
+        while i < size
+          e = @events[i]
+          e[:flash] = tick_flash(e[:flash]) if e[:flash]
+          i += 1
+        end
         # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
         # decay here (its visuals are the native sprite #update_vehicle_flashes
         # already drives) -- @flash_wait's `:vehicle` marker is only ever set
