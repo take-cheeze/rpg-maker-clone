@@ -26390,7 +26390,9 @@ resolving to no match", plus invalid-event-page as a distinct message from
 invalid-event-id). The remaining "invalid event ID" cause — a stale
 Variable-Op/Move-Route target — is a different command family, not part
 of Call Event; **the Variable-Op half is now fixed too** (see the ✅ entry
-below), leaving only Move-Route open. **Store Event ID has no analogous gap**:
+below), leaving only Move-Route open. ✅ **Follow-up (cycle #209, 2026-08-28):
+the Move-Route half is closed too** — see the dedicated bullet later in this
+file (search "Move Event: target event"). **Store Event ID has no analogous gap**:
 unlike Call Event it never targets an event *by id*, only by tile position
 (`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
 genuine, correctly-modelled answer rather than a stale reference — nothing
@@ -26567,6 +26569,66 @@ the now-dangling tile, and asserts the diagnostic fires exactly once (not
 once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
+✅ **Follow-up (cycle #209, 2026-08-28): "Move Event: target event ..." — Set
+Move Route targeting a genuinely nonexistent event id now reports a
+diagnostic too, closing the last of the four "invalid event ID" causes this
+catalog names (the "leaving only Move-Route open" note above).** Method:
+skimmed several sections of this file broadly first — battle command
+resolution, message/window text processing, database field defaults,
+picture/sprite rendering, the RGSS (XP/VX/VXAce) material, the RPG Maker
+JS/MZ section, and the viprpg-dev backlog — specifically to stay away from
+the move-route diagonal-direction family cycles #206-208 had just
+exhausted; nearly everything skimmed in those other sections turned out
+either already resolved by an earlier cycle, to need a genuine wine session
+this environment doesn't have this cycle, or (the item-drop-rate 1% floor,
+the within-frame Autorun restart, the browser-check dependency) to be
+explicitly flagged elsewhere as too large/uncertain for one cycle. This
+Move-Route diagnostic was the one item that was simultaneously *named as
+still open* by this file's own text (not a fresh guess) and small,
+self-contained, and low-risk (adding a log line to an already-correct,
+already-tested no-op path — no behavioral claim needing external
+verification at all, the same "internal consistency, no wine needed"
+category the picture-round-trip and Party#effective_* fixes earlier in this
+file used). Confirmed by direct code reading: `Scene::Map#apply_move_request`
+(`mruby-rpg2k/mrblib/scene/map.rb`)'s three-way target lookup — an id
+already backing a live `Game::Character` (`@events`), a real-but-hidden id
+in the map's own raw event table (`@map.unit.events`, the already-handled
+freeze case), or neither — had no `else` arm for the third case at all; the
+request was simply dropped, with the method's own comment explicitly
+noting "a genuinely nonexistent event id is a different, unmodelled
+error-dialog case ... and does not land here," i.e. already self-flagged as
+the gap this cycle closes. Fixed by adding the missing `else` arm, logging
+a `[RPG2k] Move Event: target event #<id> not found on this map, dropping
+the route` diagnostic in the same `[RPG2k] <Command>: <detail>` shape every
+other entry in this catalog already uses (Call Event, Enemy Encounter,
+Control Variables' Character operand, Terrain) — behaviour itself is
+untouched, the request was already correctly a silent, non-freezing no-op
+(confirmed by the pre-existing "Set Move Route targeting a genuinely
+nonexistent event id does not freeze" `scripts/rpg2k_scene_check.rb` check
+this same fix extends, rather than a new one), only the missing trace is
+now visible. **Verification:** extended that exact pre-existing check to
+also `capture_stderr` and assert the new diagnostic line names the
+unresolved id (99) and says "not found," confirmed to fail against the
+pre-fix code first (`git stash`/`git stash pop` on just
+`mruby-rpg2k/mrblib/scene/map.rb`: `expected a [RPG2k] Move Event
+diagnostic naming the missing id, got: ""`) then pass after. Full suite:
+`rpg2k_scene_check.rb` 943 passed (unchanged count — an existing check was
+extended, not a new one added; 0 failures); `rpg2k_logic_check.rb` 1184
+passed (unchanged, no `interpreter.rb`/`game.rb` touched); `rpg2k_render_
+check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+`rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, no battle code
+touched); `rpg2k_save_load_check.rb` still reports exactly the same 1
+known pre-existing failure (the unrelated Show Picture field-shape
+mismatch), unaffected. No `.cxx`/`.hxx` file was touched (pure `mrblib`
+Ruby plus a check-script extension), so the pinned `clang-format` step
+does not apply; `cd build && ninja` clean rebuild succeeded with no new
+warnings; `ctest -R mruby_test` passed (7.00s). No wine session was run
+this cycle and no EasyRPG source was consulted for this fix's own
+behavioral claim — there isn't one: this is a pure diagnostics-only
+addition to an already-correct, already-verified-elsewhere no-op path,
+following an established in-repo pattern (the four sibling diagnostics
+this same catalog already names) rather than introducing any new
+behavioral assumption.
 ✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
 are wired up** — ~~parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
 chunk was first decoded (ADR 0034)~~ (see the Follow-up below — `footstep`

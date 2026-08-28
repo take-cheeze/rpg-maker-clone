@@ -4566,10 +4566,22 @@ class RPG2k
             # dropped) so #forced_movement_done? keeps Proceed With Movement
             # -- and the implicit auto-run a Wait/Show Text triggers, see
             # #step_forced_movement -- waiting forever, matching the freeze.
-            # A genuinely nonexistent event id is a different, unmodelled
-            # error-dialog case (see the "Concrete runtime error catalog" TODO
-            # entry) and does not land here.
             @stuck_move_targets << r[:target]
+          else
+            # A genuinely nonexistent event id -- not "this event", not a
+            # vehicle, not any id #build_events ever gave a Game::Character
+            # to, and not even a real-but-currently-hidden id in the map's
+            # own raw event table above. The last of the four "invalid event
+            # ID" causes named in the "Concrete runtime error catalog" TODO
+            # entry (stale Variable-Op/Move-Route target) -- Call Event, the
+            # Variable-Op operand reads and Enemy Encounter already report
+            # their own equivalents; this command silently dropped the
+            # request with no trace at all. Behaviour is unchanged (still a
+            # dropped, non-freezing no-op, matching the "genuinely
+            # nonexistent event id does not freeze" check just above), only
+            # the gap is now visible.
+            $stderr.puts "[RPG2k] Move Event: target event #{r[:target]} " \
+                         'not found on this map, dropping the route'
           end
         end
       end
