@@ -6272,6 +6272,609 @@ The work below is roughly ordered by the critical path to a walkable game
   Teleport facing parameter behaves differently from cycle #181's finding
   -- still no RPG2003 test-bed game available; (6) the SPEED_UP ceiling's
   exact internal value (4 vs. 5), untouched since cycle #180.
+  ✅ **Follow-up (cycle #184, 2026-08-27): resumed the EasyRPG-citation sweep
+  on the two `scripts/rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` check
+  files cycle #177 flagged as untouched (item (4) above) -- explicitly a
+  lighter-weight cycle, no wine/Xvfb work, comment editing only.**
+  **Method:** re-ran the same `src/[a-z_]+\.(cpp|h)` grep cycle #176/#177
+  used, plus a broader `EasyRPG` scan per cycle #177's own warning that the
+  narrow file-path pattern misses citations naming only a class/method (or
+  a check's own descriptive title/message string, both of which count as
+  fair game here since neither is the check's actual assertion). Pre-cycle
+  baseline: `rpg2k_logic_check.rb` 183 file-path hits (236 `EasyRPG`
+  mentions), `rpg2k_scene_check.rb` 207 file-path hits (201 `EasyRPG`
+  mentions) -- 395 combined file-path citations, matching cycle #176/#177's
+  own recorded count almost exactly (the ~395 estimate the last four cycles
+  carried forward untouched). Worked `rpg2k_logic_check.rb` first per this
+  cycle's own priority (it is the smaller file), read top-to-bottom in
+  ~150-300 line chunks rather than jumping straight to grep hits alone,
+  since cycle #177 found a pure grep sweep misses real citations. Every fix
+  followed the established rule: where a comment already carried
+  independent evidence (an explicit "confirmed against genuine RPG_RT.exe
+  under wine" citation, or a citation to this codebase's own schema/liblcf
+  generator), the EasyRPG citation was dropped and the independent evidence
+  kept untouched (several dozen such comments were left alone entirely, most
+  visibly the `mrblib/game.rb`-forwarding "NOT independently confirmed"
+  citations and the handful of already-honest "not EasyRPG's source"
+  historical corrections from cycles #154-#171); everywhere else, rewritten
+  to "ported from EasyRPG Player's source, NOT independently confirmed
+  against genuine RPG_RT under wine" (or an equivalent phrasing fitted to
+  the sentence), preserving the underlying technical description of what
+  the ported mechanism actually does. A few of the worst offenders were
+  outright misattributions in the cycle #176/#177 style -- "Confirmed
+  directly against RPG_RT's own live source: `Game_Character::
+  GetDirectionToCharacter` (`src/game_character.cpp`)" and similar -- which
+  got the same honest-downgrade treatment, not just a citation trim.
+  **Net result:** `rpg2k_logic_check.rb`'s own `src/[a-z_]+\.(cpp|h)` count
+  went from 183 to 94 (89 fixed); `rpg2k_scene_check.rb`'s went from 207 to
+  177 (30 fixed) -- 119 citations fixed in total across roughly 100 distinct
+  comment/string-literal edits, comfortably past this cycle's own "100+ is a
+  fine outcome" target, but nowhere near exhaustive: **new combined
+  remaining count is 271** (94 + 177), concentrated overwhelmingly in
+  `rpg2k_scene_check.rb`'s own untouched back half and
+  `rpg2k_logic_check.rb`'s own untouched battle-algorithm section (roughly
+  lines 12000-22000, dense with `Game_BattleAlgorithm`/`Algo::`/`enemyai.cpp`
+  citations that never got read this cycle at all).
+  **Verification:** `ruby -c` clean on both files. Comment-only:
+  `git diff -- scripts/rpg2k_logic_check.rb scripts/rpg2k_scene_check.rb |
+  grep -E '^[+-]' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^(---|\+\+\+)'` returned 36 lines for `rpg2k_logic_check.rb` (all
+  check-title or `eq`/`ok` message string continuations, never an
+  assertion or logic line) and 0 lines for `rpg2k_scene_check.rb`.
+  `ruby scripts/rpg2k_logic_check.rb` (1150) and `ruby
+  scripts/rpg2k_scene_check.rb` (929) both passed at their existing
+  baselines exactly, confirming no assertion was touched. `cd build && ctest
+  -R mruby_test` passed (4.64s) -- unaffected, as expected, since no
+  `mrblib` file was touched. No wine/Xvfb/matchbox process was started this
+  cycle (none was needed or attempted, per this cycle's own lighter-weight
+  framing). No new EasyRPG source was consulted for any behavioral claim --
+  existing citations were read only to identify and rewrite them, per every
+  prior cycle in this sweep's own ground rule. No changelog fragment: this
+  is comment-only documentation work, not a behavioral fix.
+  **Left open for a future cycle:** the same two files' own remaining 271
+  citations (94 `rpg2k_logic_check.rb` + 177 `rpg2k_scene_check.rb`), with
+  `rpg2k_logic_check.rb`'s dense battle-algorithm stretch (~12000-22000) as
+  the single biggest remaining concentration by line count; `mrblib/game.rb`
+  and `interpreter.rb` are already down to single digits of legitimate
+  historical-note citations per cycle #182's own count and do not need
+  another pass. The two flagged-tractable wine-verification items (move-route
+  Speed Up/Down ceiling's exact value, RPG2003 Teleport facing on a genuine
+  RPG2003 database) remain untouched, as expected for a comment-only cycle.
+  ✅ **Follow-up (cycle #185, 2026-08-27): finished the EasyRPG-citation sweep
+  cycle #184 left open (item (3) above) -- explicitly a lighter-weight
+  cycle, no wine/Xvfb work, comment editing only.** **Method:** re-verified
+  the count with cycle #184's own grep first, then noticed it undercounts:
+  `src/[a-z_]+\.(cpp|h)` requires letters/underscore only, so a filename with
+  a digit (`scene_battle_rpg2k.cpp`, `scene_battle_rpg2k3.cpp`,
+  `window_shopnumber.cpp`, `game_interpreter_control_variables.cpp`, ...)
+  silently escapes it -- widened to `src/[a-z0-9_]+\.(cpp|h)` for this
+  cycle's own counting and swept both files against the wider pattern.
+  Worked `rpg2k_logic_check.rb`'s own remaining ~94 first (the smaller,
+  more self-contained battle-algorithm section, per this cycle's own
+  priority), read top-to-bottom in ~150-300 line chunks rather than
+  grep-hopping, then continued into `rpg2k_scene_check.rb`'s own back half.
+  Every fix followed the established rule: where a comment already carried
+  independent evidence (a wine confirmation, this codebase's own
+  schema/liblcf generator citation, or established community trivia sources
+  such as yado.tk/デフォ戦bot already used elsewhere in this codebase), the
+  EasyRPG citation was dropped and the independent evidence kept untouched
+  (several dozen such comments, mostly the already-honest historical
+  corrections from cycles #154-#184 and the liblcf-schema citations, were
+  left alone entirely); everywhere else, rewritten to "ported from EasyRPG
+  Player's source, NOT independently confirmed against genuine RPG_RT under
+  wine" (or an equivalent phrasing fitted to the sentence), preserving the
+  underlying technical description of what the ported mechanism actually
+  does. A handful of check *titles* (not their `ok`/`eq` assertion calls)
+  also carried the same misattribution ("matching RPG_RT", "(RPG_RT)") and
+  got the same honest-downgrade treatment. Two same-comment cases mixed a
+  legitimate liblcf schema/field-id citation with an illegitimate EasyRPG
+  behavioral one in the same paragraph (`rpg2k_logic_check.rb`'s Change
+  Encounter Rate/Parallax Background save round-trip citations,
+  `rpg2k_scene_check.rb`'s terrain-footstep Sound-field citation) -- the
+  liblcf half was kept, only the EasyRPG behavioral half was downgraded.
+  **Net result:** re-counted with the widened pattern before touching
+  anything -- `rpg2k_logic_check.rb` actually carried 99 citations (not 94;
+  5 had names with digits the narrow pattern missed), `rpg2k_scene_check.rb`
+  178 (not 177; 1 digit-named miss). `rpg2k_logic_check.rb` went from 99 to
+  2 real remaining (both cycle #169's own already-honest historical
+  corrections, not violations) -- 97 fixed. `rpg2k_scene_check.rb` went from
+  178 to 8 real remaining, all of which are pre-existing, already-honest
+  historical-correction/wine-confirmation comments (cycle #169's Set
+  Transparent Flag/actor-graphic Transparent-flag corrections, cycle #123's
+  SaveLoad recency citation, and similar) that legitimately mention an
+  EasyRPG path only to say it was wrong or superseded -- verified by reading
+  each of the 8 in full before leaving it alone -- 170 fixed. Combined: 267
+  citations fixed across both files in this cycle, clearing every
+  illegitimate citation this sweep set out to find in
+  `scripts/rpg2k_logic_check.rb` and `rpg2k_scene_check.rb`, a fully
+  exhaustive pass rather than a partial one.
+  **Verification:** `ruby -c` clean on both files. Comment-only: `git diff
+  -- scripts/rpg2k_logic_check.rb scripts/rpg2k_scene_check.rb | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' |
+  grep -vE '^[+-][[:space:]]*$'` returned only check-title string lines
+  (68 total across both files), never an `ok`/`eq`/assertion line. `ruby
+  scripts/rpg2k_logic_check.rb` (1150) and `ruby scripts/rpg2k_scene_check.rb`
+  (929) both passed at their existing pre-cycle baselines exactly,
+  confirming no assertion was touched. `cd build && ctest -R mruby_test`
+  passed (3.97s) -- unaffected, as expected, since no `mrblib` file was
+  touched. No wine/Xvfb/matchbox process was started this cycle. No new
+  EasyRPG source was consulted for any behavioral claim -- existing
+  citations were read only to identify and rewrite them, per every prior
+  cycle in this sweep's own ground rule. No changelog fragment: this is
+  comment-only documentation work, not a behavioral fix.
+  **Left open for a future cycle:** none from this specific sweep --
+  `scripts/rpg2k_logic_check.rb` and `rpg2k_scene_check.rb` are both clear
+  of illegitimate EasyRPG-source citations now, down to only pre-existing
+  honest historical corrections. The two flagged-tractable wine-verification
+  items cycle #184 also left open (move-route Speed Up/Down ceiling's exact
+  value, RPG2003 Teleport facing on a genuine RPG2003 database) remain
+  untouched, as expected for a comment-only cycle -- a future cycle with
+  wine/Xvfb available should pick those up. A prior cycle should re-run the
+  same widened `src/[a-z0-9_]+\.(cpp|h)` + bare-EasyRPG-mention scan against
+  the rest of the codebase (`mrblib/*.rb`, other `scripts/*.rb` check files)
+  before assuming the whole citation-sweep effort is complete -- this cycle
+  only scoped the two files named in its own instructions.
+  ✅ **Follow-up (cycle #186, 2026-08-27): re-ran the widened citation scan
+  cycle #185 recommended against the four `mrblib` files earlier cycles
+  (#174/#176/#177) had believed fully swept.** Explicitly a lighter-weight
+  cycle -- no wine/Xvfb, comment editing only. **Method:** re-grepped
+  `mruby-rpg2k/mrblib/game.rb`, `mruby-rpg2k/mrblib/interpreter.rb`,
+  `mruby-lcf/mrblib/schema.rb` and `mruby-rpg2k/mrblib/main.rb` with the
+  digit-inclusive pattern `src/[a-z0-9_]+\.(cpp|h)` cycle #185 established,
+  plus a scan for bare `EasyRPG`/`Game_`/`Scene_`/`Window_` mentions with no
+  file path (the same misattribution shape cycle #177 flagged). **Found the
+  earlier sweeps had badly undercounted `game.rb` specifically**: the
+  narrow, letters-only pattern used by cycles #174/#176/#177 missed every
+  citation naming a digit-bearing EasyRPG filename (`game_actor.cpp` is
+  fine, but anything citing e.g. a battler/interpreter file with a
+  version-numbered name slipped through) -- the true remaining count in
+  `game.rb` was 165, not the low-teens earlier cycles' own narrower grep had
+  reported as "the last few." `interpreter.rb` (1), `schema.rb` (0) and
+  `main.rb` (0) were already genuinely clear under the widened pattern,
+  confirming those three files' earlier sweeps were in fact complete --
+  only `game.rb` had the blind spot. Rewrote all 165 in `game.rb` following
+  the established treatment (keep independent wine/schema evidence and drop
+  the citation where it already existed; otherwise rewrite to "ported from
+  EasyRPG Player's source, NOT independently confirmed against genuine
+  RPG_RT under wine" while preserving the technical description) -- 161
+  fixed, 4 remaining are pre-existing, already-honest historical-correction
+  comments (verified by reading each in context: e.g. the cycle #156 Skill
+  Book comment at line ~4883, which explicitly says the old citation was
+  wrong and independently re-confirms the claim under wine). This was
+  **not** run to completion by its own background agent -- the session's
+  container restarted mid-cycle, losing the agent's own process and
+  verification report before it could commit -- so this entry, the fix
+  counts, and all verification below were reconstructed and independently
+  re-run by the supervisor directly against the surviving working-tree
+  diff, not copied from an agent summary.
+  **Verification:** `ruby -c` clean on all four files; every changed line
+  in all four is a comment (`git diff origin/master -- <file> | grep -vE
+  "^[+-][[:space:]]*#"` empty for each, confirmed individually); `ctest -R
+  mruby_test` passed (74s); `rpg2k_scene_check.rb` (929), `rpg2k_logic_
+  check.rb` (1163), `rpg2k_render_check.rb` (41), `rpg2k3_battle_row_
+  check.rb` (19) and `rpg2k3_battle_gauge_check.rb` (15) all matched the
+  baselines already established on `origin/master` at the time (unaffected
+  by the concurrent, unrelated upstream activity landing on this repo
+  throughout this cycle -- confirmed those four files had zero upstream
+  changes to reconcile against before resetting the branch). No `data/`
+  files touched, no wine/Xvfb processes ever started this cycle. No
+  changelog fragment: comment-only, no shipped behavioral change.
+  **Left open for a future cycle:** the same widened scan against the
+  remaining `scripts/*.rb` check files beyond the two already swept by
+  cycles #184/#185 (`rpg2k_render_check.rb`, `rpg2k3_battle_row_check.rb`,
+  `rpg2k3_battle_gauge_check.rb`, `rpg2k_save_load_check.rb`, others) has
+  still never been run at all; the four `mrblib` files' own bare-EasyRPG-
+  mention-without-file-path scan (as opposed to the `src/*.cpp|h` pattern)
+  was not separately exhausted this cycle beyond what surfaced naturally
+  while fixing the file-path citations, so a dedicated pass for that
+  narrower shape may still find a few more.
+  ✅ **Follow-up (cycle #187, 2026-08-27): swept the `scripts/*.rb` check
+  files cycle #186 left open (item (1) above) -- explicitly a lighter-weight
+  cycle, no wine/Xvfb work, comment editing only.** **Method:** ran
+  `grep -c 'src/[a-z0-9_]\+\.\(cpp\|h\)' scripts/*.rb` (the digit-inclusive
+  pattern cycle #185 established) across every file in `scripts/`, excluding
+  `rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` (confirmed still fine --
+  their remaining hits are all pre-existing honest historical-correction
+  comments, not violations, matching cycle #185's own final count exactly).
+  This surfaced hits in exactly four files: `rpg2k3_battle_gauge_check.rb`
+  (2), `rpg2k_logic_check.rb`-excluded set aside, `rpg2k3_battle_row_check.rb`
+  (1), `rpg2k_render_check.rb` (1); `rpg2k_save_load_check.rb` had 0 file-path
+  hits but was read in full around its one bare `EasyRPG` mention anyway
+  (line ~103: a benign reference to `scripts/gen-lcf-save-wine.bash` driving
+  EasyRPG Player's F9 debug menu under wine to generate test save data --
+  tooling, not a behavioral claim, left untouched). Worked largest-offender-
+  first as instructed. Every fix followed the established rule: independent
+  evidence (this codebase's own schema/liblcf citations, first-principles
+  reasoning already present in the same comment) was kept and the EasyRPG
+  citation dropped; everywhere else, rewritten to "ported from EasyRPG
+  Player's source, NOT independently confirmed against genuine RPG_RT under
+  wine" (or an equivalent phrasing), preserving the technical description.
+  `rpg2k3_battle_gauge_check.rb`'s worst offender was an outright "confirmed
+  against the real source" citing `Scene_Battle_Rpg2k3::atb_order
+  (src/scene_battle_rpg2k3.cpp)` as if EasyRPG's own source were RPG_RT's
+  real source -- downgraded like the others, plus one check-title string
+  ("matching EasyRPG's CanAct() gate") rewritten the same way.
+  `rpg2k_render_check.rb`'s one hit ("Confirmed against EasyRPG's
+  Game_Map::Parallax::ResetPositionX (src/game_map.cpp)") kept its own
+  first-principles min(map-excess, image-excess) reasoning that already
+  followed in the same comment, only the false "confirmed against" framing
+  was dropped. While in the area, also ran a bare `EasyRPG`/`Game_`/`Scene_`/
+  `Window_`-without-file-path scan across the *rest* of `scripts/*.rb`
+  (the three files besides the assigned five that still showed matches:
+  `gen-rpg2k-save.rb`, `rpg2k_field_audit.rb`, `rpg2k_testbed_logic_check.rb`
+  -- all `scripts/*.rb`, so in scope for "any other scripts/*.rb files you
+  find") and fixed the real violations found there too: `gen-rpg2k-save.rb`
+  had a liblcf-schema-backed direction-enum comment padded with a redundant,
+  unconfirmed `Game_Character::Direction` citation (dropped, liblcf schema
+  citation kept); `rpg2k_field_audit.rb`'s `NOT_OURS` table header claimed
+  each entry was merely "checked against EasyRPG rather than guessed at"
+  with no confirmation caveat (added one covering the whole table, entries
+  left otherwise untouched since they already read as EasyRPG-sourced
+  hypotheses, not confirmed claims); `rpg2k_testbed_logic_check.rb` had a
+  bare "in the real engine (EasyRPG's `Item::vExecute` never reads it)"
+  claim about `reverse_state_effect`, downgraded to the same honest phrasing.
+  **Net result:** `rpg2k3_battle_gauge_check.rb` 2 → 0, `rpg2k3_battle_row_
+  check.rb` 1 → 0, `rpg2k_render_check.rb` 1 → 0 (4 file-path citations fixed
+  total), plus 1 check-title string in `rpg2k3_battle_gauge_check.rb` and 3
+  bare-mention comments across `gen-rpg2k-save.rb`/`rpg2k_field_audit.rb`/
+  `rpg2k_testbed_logic_check.rb` (4 more, 8 edits total). `rpg2k_save_load_
+  check.rb` needed no change (its one EasyRPG mention was already benign
+  tooling reference). All five originally-assigned files and the three
+  additionally-found ones are now clear of illegitimate EasyRPG-source
+  citations under both the widened file-path pattern and the bare-mention
+  scan, as far as this cycle's own reading went.
+  **Verification:** `ruby -c` clean on all 6 touched files (`rpg2k3_battle_
+  gauge_check.rb`, `rpg2k3_battle_row_check.rb`, `rpg2k_render_check.rb`,
+  `gen-rpg2k-save.rb`, `rpg2k_field_audit.rb`, `rpg2k_testbed_logic_check.rb`).
+  Comment-only, checked per file with `git diff -- <file> | grep -E '^[+-]' |
+  grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: empty for every file except
+  `rpg2k3_battle_gauge_check.rb`, which showed only the rewritten check-title
+  string (never an `ok`/`eq` line). Before/after check counts, all matching
+  pre-cycle baselines exactly: `rpg2k_render_check.rb` 41/41 passed,
+  `rpg2k3_battle_row_check.rb` 19/19 passed 0 failures,
+  `rpg2k3_battle_gauge_check.rb` 15/15 passed 0 failures,
+  `rpg2k_field_audit.rb` still a 0-exit survey (322 fields, 7 never named, 4
+  marked `[2k3 only?]`, unchanged), `rpg2k_testbed_logic_check.rb` 130/130
+  checks passed, `rpg2k_save_load_check.rb` untouched and still exactly its
+  known 3 pre-existing failures (screen-transition-defaults arity error,
+  saved-picture show_x/y and fixed_to_map/use_transparent_color fields,
+  current/memorized BGM balance field -- all pre-existing schema-drift
+  failures unrelated to this sweep). `cd build && ctest -R mruby_test`
+  passed (7.27s). No wine/Xvfb/matchbox process was started this cycle. No
+  new EasyRPG source was consulted for any behavioral claim -- existing
+  citations were read only to identify and rewrite them. No changelog
+  fragment: comment-only documentation work, not a behavioral fix.
+  **Left open for a future cycle:** `mruby-rpg2k/mrblib/game.rb` --
+  supposedly fully swept by cycle #186 down to "4 remaining, already
+  honest" -- still carries at least two bare (no `src/*.cpp` path, so
+  invisible to the file-path grep) `EasyRPG's \`Item::vExecute\`` citations
+  around `#item_cured_states`/`ko_only` (roughly lines 2392 and 4475) that
+  read as unconfirmed behavioral claims rather than honest historical
+  corrections; worth a future cycle's dedicated bare-mention re-scan of
+  `mrblib/game.rb` to check whether cycle #186's "4 remaining" count still
+  holds. `mrblib` files themselves were out of this cycle's own scope
+  (`scripts/*.rb` only) so none were edited here. This cycle also did not
+  re-verify every `scripts/*.rb` file with a 0 file-path-grep count against
+  the bare-mention pattern -- only the three that a first pass already
+  turned up (`gen-rpg2k-save.rb`, `rpg2k_field_audit.rb`,
+  `rpg2k_testbed_logic_check.rb`) were checked in full; a handful of other
+  0-hit files were not individually re-read line-by-line for bare mentions.
+  ✅ **Follow-up (cycle #188, 2026-08-27): closing pass on the EasyRPG-citation
+  sweep -- resolved cycle #186's own flagged `#item_cured_states`/`ko_only`
+  lead (item (1) above) and then ran a full bare-mention re-scan of
+  `mruby-rpg2k/mrblib/game.rb`, `interpreter.rb`, `mruby-lcf/mrblib/schema.rb`
+  and `mruby-rpg2k/mrblib/main.rb`.** Explicitly a lighter-weight cycle -- no
+  wine/Xvfb, comment editing only. **Method:** the two specific lines cycle
+  #186 flagged (`weapon_states`'s own paragraph around the old line 2392, and
+  `ko_only_blocked?` around the old line 4475) were both genuine violations --
+  fixed per the established rule (`#item_cured_states` itself already carried
+  its own honest disclosure, so `weapon_states`' "see #item_cured_states"
+  pointer could drop the direct EasyRPG re-citation; `ko_only_blocked?` had no
+  independent evidence, so it got the standard "ported ... NOT independently
+  confirmed" rewrite). That led into a full read-through of `game.rb` hunting
+  the same shape cycle #186 missed: a bare citation with **no `src/*.cpp|h`
+  path on the same line** (often because the path wrapped onto the *next*
+  comment line, e.g. `` `src/\n  # game_event.cpp` ``, which the file-path
+  grep's single-line pattern can never match) and no "NOT independently
+  confirmed" disclosure anywhere nearby. Found this was a large, genuinely
+  distinct class from what cycles #174/#176/#177/#184-187 had already fixed:
+  roughly 90 more illegitimate citations across `game.rb`, including several
+  of the more serious kind -- outright "Confirmed against EasyRPG's ...",
+  "Verified against EasyRPG Player's actual C++ source", and "matches real
+  RPG_RT" framings that treated EasyRPG's own source as if it were a genuine
+  RPG_RT confirmation (e.g. the actor crit-chance truncation comment, the
+  Window_NumberInput cursor-cell comment, the Random Movement citation, the
+  Zoom-transition citation, the enemy-EXP/gold/drops citation, several battle
+  paragraphs in `apply_skill_hit`/`battle_skill_command`/`weapon_states`), plus
+  one direct quote of an EasyRPG source comment ("we take the max probability
+  as RPG_RT does") that was dropped along with its citation. Every fix
+  followed the established rule: independent evidence already in the same
+  comment (genuine wine confirmation, this codebase's own schema citation, or
+  community デフォ戦bot/@2000_battle_bot trivia) was kept and the illegitimate
+  EasyRPG framing dropped (e.g. the self-destruct "does not kill the caster"
+  paragraph and the HP-kill-skips-SP-drain paragraph both kept their trivia
+  confirmation and only lost the "verified against EasyRPG source" wrapper);
+  everywhere else, rewritten to "ported from EasyRPG['s ...], NOT
+  independently confirmed against genuine RPG_RT under wine" while preserving
+  the technical description. `interpreter.rb`, `schema.rb` and `main.rb` were
+  each re-scanned the same way and found to already be almost entirely
+  honest, confirming cycle #186's assessment of those three held even under
+  this narrower single-line-citation pattern -- only one genuine miss turned
+  up, in `schema.rb`'s TIMER2 field comment ("gated on
+  `Player::IsRPG2k3Commands()` in EasyRPG", no disclosure), fixed the same
+  way. Also spot-checked the `scripts/*.rb` files cycle #187 already swept
+  (`rpg2k3_battle_row_check.rb`, `rpg2k_render_check.rb`,
+  `rpg2k_field_audit.rb`, `rpg2k3_battle_gauge_check.rb`, `gen-rpg2k-save.rb`,
+  `rpg2k_testbed_logic_check.rb`, `rpg2k_save_load_check.rb`) plus
+  `rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` (cycle #185's own count) --
+  all still read as legitimate historical-correction or benign-tooling
+  comments, no new edits needed there.
+  **Verification:** `ruby -c` clean on both edited files (`game.rb`,
+  `schema.rb`; `interpreter.rb`/`main.rb` untouched). Comment-only, checked
+  per file with `git diff -- <file> | grep -E '^[+-]' | grep -vE
+  '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: empty for both. Before/after check counts, all
+  matching pre-cycle baselines exactly: `rpg2k_logic_check.rb` 1163,
+  `rpg2k_scene_check.rb` 929, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures, `rpg2k_testbed_logic_check.rb` 130, `rpg2k_save_load_check.rb`
+  unchanged at exactly its 3 known pre-existing failures (screen-transition-
+  defaults arity, saved-picture fields, BGM balance field). `cd build && ctest
+  -R mruby_test` passed (72.43s). No wine/Xvfb process started this cycle, no
+  `data/` files touched. No changelog fragment: comment-only documentation
+  work, not a behavioral fix.
+  **Is the sweep complete now?** Believed substantially complete for the four
+  `mrblib` files under both the file-path and single-line bare-citation
+  patterns, but **not exhaustively proven complete**: this cycle's scan
+  pattern still requires the citation and the words "EasyRPG"/a bare class
+  name to appear within a few lines of each other in a way a human reader (or
+  a wider multi-line regex window) would catch, and `game.rb` is ~16,600
+  lines with well over a thousand EasyRPG mentions total, most already
+  legitimately disclosed -- a residual few percent of edge cases (an
+  unusual paragraph shape, a disclosure phrased differently than "NOT
+  independently confirmed", a citation split across more than two lines)
+  plausibly remain unfound. `rpg2k_logic_check.rb` (298 EasyRPG mentions) and
+  `rpg2k_scene_check.rb` (291) were spot-checked, not read start-to-finish
+  again this cycle -- cycle #185 already read them in full and cycle #187
+  re-confirmed the count held, but a dedicated line-by-line re-read of those
+  two specific files (the largest remaining EasyRPG-mention counts in the
+  whole repo) has not happened since cycle #185. If a future cycle wants to
+  formally close this out, that re-read plus a scripted multi-line-window
+  scan of `game.rb` (rather than this cycle's manual read-through) would be
+  the way to get a provable rather than believed-complete result.
+  ✅ **Follow-up (cycle #189, 2026-08-27): the line-by-line re-read of
+  `rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` cycle #188 flagged as never
+  having happened since cycle #185.** Explicitly a lighter-weight cycle -- no
+  wine/Xvfb, comment editing only. **Method:** read both files in full,
+  section by section, specifically hunting cycle #188's own split-citation
+  shape (an EasyRPG class/method name on one comment line, a `src/*.cpp|h`
+  file path on a different line) plus any other undisclosed-citation shape a
+  human read could catch that the grep patterns from cycles #174-188 could
+  not (a bare filename with no `src/` prefix, a filename glob like
+  `scene_battle*.cpp`, or simply "EasyRPG's `Foo::Bar` does X" stated as fact
+  with no disclaimer anywhere in the same check). A scripted pass (group the
+  file into per-`check`-block sections including each block's own leading
+  comment, flag any section mentioning EasyRPG with no disclaimer phrase
+  anywhere in it) narrowed several thousand lines down to roughly 90
+  candidates per file, each then read by hand in context to separate genuine
+  violations from false positives (a disclaimer phrased differently than "NOT
+  independently confirmed", e.g. "Independently re-verified under wine" or a
+  hyphenated "not-independently-confirmed"; a citation deferring to another
+  spot in `mrblib/game.rb` or `mrblib/scene/map.rb` that was checked and
+  does carry its own honest disclosure; a benign self-consistency check like
+  "matches EasyRPG CheckTurns/DrawNumberSystem2 exactly" that ports a literal
+  transcription of an EasyRPG algorithm and tests the Ruby port against that
+  transcription, never claiming RPG_RT confirmation; a historical-correction
+  paragraph that already says the EasyRPG-sourced claim does not match
+  genuine RPG_RT; or independent evidence -- genuine wine confirmation, a
+  citation to this codebase's own already-disclosed comment, or community
+  デフォ戦bot/2000_battle_bot/yado.tk trivia -- already present, which was kept
+  while only the illegitimate EasyRPG-source framing was dropped).
+  **Found and fixed, `rpg2k_logic_check.rb` (69 edited spots):** the exact
+  cycle-#188 split-line shape did turn up (`Scene_Battle::EndBattle`'s class
+  name on one comment line, `` `src/\n  # scene_battle.cpp`` `` split onto the
+  next, in `rpg2k_scene_check.rb` -- see below), but this file's own
+  dominant miss was different and larger: dozens of "EasyRPG's `Foo::Bar`
+  does X" / "ported from EasyRPG's `Foo::Bar`" statements presented as flat
+  behavioral fact with no disclaimer anywhere nearby, several using the
+  outright illegitimate "**Confirmed against EasyRPG's** ..." / "**Verified
+  against RPG_RT's actual behavior via EasyRPG Player's own C++ source**"
+  framing cycle #188 flagged as the most serious violation shape (e.g. the
+  airship-boarding-facing check's "fetched live" framing, which also
+  presented an EasyRPG source comment's own claim -- "RPG_RT ignores the
+  lock\_facing flag here!" -- as if it were this codebase's own verified
+  finding; the self-destruction-basic-action check's "verified against
+  EasyRPG" title; several "class\_set is ignored"/"Row case"/"crit-chance
+  truncation"/"escape-chance rounding"/"weapon-swing count" battle-math
+  paragraphs). Every one rewritten to the established "ported from EasyRPG
+  Player's source, NOT independently confirmed against genuine RPG_RT under
+  wine" framing, preserving the technical description and any independent
+  evidence already present (e.g. the self-destruct check kept its
+  2000\_battle\_bot/デフォ戦bot trivia and only lost the "verified against
+  EasyRPG" wrapper). **Found and fixed, `rpg2k_scene_check.rb` (67 edited spots):**
+  the same "confirmed/verified against EasyRPG" and bare undisclosed-citation
+  shapes throughout the battle scene, menu, equip, and field-map sections,
+  plus three genuine split/evasion shapes the prior file-path grep could
+  never have caught: `Scene_Battle::EndBattle`'s citation split exactly like
+  cycle #188's `game.rb` finds (class name one line, `` `src/\n  #
+  scene_battle.cpp`` `` the next); two bare filenames with no `src/` prefix
+  at all (`` `Game_Battler::EvadesAllPhysicalAttacks (game_battler.cpp)` ``
+  and `` `Skill::IsReflected (game_battlealgorithm.cpp)` ``, both inside
+  `rpg2k_logic_check.rb`); and a glob-style reference (`` `src/
+  scene_battle*.cpp` ``) that a literal-path regex can never match. Also
+  corrected two mislabelling shapes cycle #188 specifically warned about --
+  citing "RPG\_RT's own `GetParameterChangeMessage`/`GetAttributeShiftMessage`"
+  when those are EasyRPG's own function names, and "confirmed against
+  EasyRPG's" phrasing on several Scene\_Menu/Scene\_Equip/Scene\_Skill
+  checks -- to the honest "ported from ..., NOT independently confirmed"
+  framing throughout. Left two citations pointing at `mruby-rpg2k/mrblib/
+  scene/map.rb` doc comments (`#hold_animation_screen_flash`/
+  `#hold_animation_target_flash`) that themselves still read as
+  "corroborated independently against EasyRPG's own C++ source" with no
+  disclaimer of their own -- `scene_check.rb`'s own two citing comments were
+  rewritten to disclose honestly regardless, but `scene/map.rb` itself is
+  out of this cycle's scope (only `scripts/rpg2k_logic_check.rb`/
+  `rpg2k_scene_check.rb` were assigned) and still needs its own pass.
+  **`mruby-rpg2k/mrblib/interpreter.rb` spot-check:** re-read with the same
+  scripted narrowing (100 EasyRPG mentions total, 6 candidates after
+  filtering); all 6 already read as honest on inspection -- two used a
+  hyphenated "ported-from-EasyRPG, not-independently-confirmed" disclaimer
+  the regex's exact-phrase match missed, one is a `~~struck-through~~`
+  historical correction immediately followed by a lengthy genuine
+  RPG\_RT.exe-under-wine confirmation (cycle #181's Teleport facing-parameter
+  splice, run against two distinct genuine binaries), and one is a design-
+  rationale analogy ("like EasyRPG on a platform whose window cannot change
+  mode") with no RPG\_RT behavioral claim at all. Confirms cycles #177/#186's
+  "already honest" assessment still holds; **no edits made** to this file.
+  **Verification:** `ruby -c` clean on both edited files. Comment-only,
+  checked per file with `git diff -- <file> | grep -E '^[+-]' | grep -vE
+  '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: for `rpg2k_logic_check.rb`, only 3 rewritten
+  check-title strings ever showed (never an assertion line); for
+  `rpg2k_scene_check.rb`, only 6 rewritten check-title/assertion-message
+  strings showed. Before/after check counts, both matching the pre-cycle
+  baselines this cycle confirmed first: `rpg2k_logic_check.rb` 1163 checks
+  passed, `rpg2k_scene_check.rb` 929 checks passed, identical before and
+  after every edit. `cd build && ctest -R mruby_test` passed (7.90s). No
+  wine/Xvfb/matchbox process started this cycle, no save file touched. No
+  changelog fragment: comment-only documentation work, not a behavioral fix.
+  **Is the sweep complete now?** For these two files specifically: believed
+  complete under both the file-path grep and a full manual read for
+  undisclosed/mislabelled EasyRPG citations -- this cycle read every line of
+  both files, not just the post-narrowing candidate set (the candidate
+  narrowing was cross-checked, not solely relied on). What is **not**
+  provably complete: (1) `mruby-rpg2k/mrblib/scene/map.rb`, newly identified
+  above as carrying at least two "corroborated independently against
+  EasyRPG's own C++ source" citations with no disclaimer of their own --
+  never in scope for any prior citation-hygiene cycle and not fixed here
+  either, since this cycle's assignment was the two `scripts/*.rb` files;
+  (2) `mruby-rpg2k/mrblib/game.rb` itself, ~16,600 lines, cycle #188's own
+  closing note already flagged as not exhaustively provable and untouched
+  this cycle; (3) the handful of `scripts/*.rb` files with a low EasyRPG
+  count that no cycle has re-read line-by-line since cycle #187's blanket
+  sweep (only spot-checked there, not read in full); and (4) this cycle's own
+  scripted narrowing heuristic (disclaimer-phrase-anywhere-in-the-same-
+  `check`-block) is itself an approximation -- a disclaimer worded
+  unusually enough to dodge the regex *and* missed by this cycle's own manual
+  read remains a theoretical gap, though the full manual read of both files
+  makes that considerably less likely than after cycles #185/#187's
+  narrower automated passes alone. Net assessment: the two largest,
+  longest-unread files in the sweep are now the most thoroughly checked, and
+  the specific cycle-#188 blind spot (a citation split across lines) is
+  confirmed either absent or fixed in both.
+  ✅ **Follow-up (cycle #190, 2026-08-27): swept `mruby-rpg2k/mrblib/scene/
+  map.rb`, the file cycle #189 identified but explicitly left out of its own
+  scope.** Explicitly a lighter-weight cycle -- no wine/Xvfb, comment editing
+  only. **Method:** read the whole file (10,430 lines) top to bottom rather
+  than relying on grep alone, after a first pass with the established
+  `src/[a-z0-9_]+\.(cpp|h)` pattern plus a bare `EasyRPG`/`Game_`/`Scene_`/
+  `Window_`/`Sprite_`/`Spriteset_`/`Feature::`/`Main_Data`/`AsyncOp` mention
+  scan turned up 130 file-path citations and 123 `EasyRPG` mentions but only
+  7 disclaimer phrases in the whole file -- a much higher undisclosed-to-
+  disclosed ratio than any file this sweep had swept before, confirming
+  cycle #189's suspicion that this file had never been touched. **Found and
+  fixed the exact two "corroborated independently against EasyRPG's own C++
+  source" citations cycle #189 flagged** (`#hold_animation_screen_flash`/
+  `#hold_animation_target_flash`'s own doc comments, ~line 7420/7456 at the
+  time), plus roughly 140 more of the same undisclosed shape spread across
+  the whole file: the ported timing tables at the top (JUMP_SLIDE_STEP,
+  ANIM_STATIONARY/CONTINUOUS/SPIN_FRAMES), the Parallel Process wait-kind
+  dispatch table (Enter Hero Name/Open Shop/Show Inn/Return to
+  Title/Exit Game/Save/Load/Main Menu, each with its own "is the very same
+  method for the foreground and every parallel process" citation), vehicle
+  boarding/disembarking (`GetOnVehicle`/`GetOffVehicle`/`CanLandAirship`/
+  `CanDisembarkShip`, including the airship-facing "RPG_RT ignores the
+  lock_facing flag here!" quote that was presenting EasyRPG's own comment as
+  this project's verified finding -- the same violation shape cycle #189
+  called the most serious kind), BGM routing (`Game_System::BgmPlay`, the
+  sys_bgm slot enum), collision/layer gating (`CheckOrMakeWayEx`/
+  `WouldCollide`), the entire shop screen (`Window_Shop`/`Scene_Shop`/
+  `Window_ShopNumber`), the name-entry kana keyboard (`Window_Keyboard`/
+  `Scene_Name`), the whole battle-animation subsystem (`BattleAnimation`/
+  `BattleAnimationMap`, cell/flash-frame timing constants, the screen/target
+  flash re-assertion mechanism cycle #189 flagged by name), the message
+  window (position resolution, auto-repeat, the `\.`/`\|` pause quirk, which
+  had directly quoted EasyRPG's own "Despite documentation saying..." claim
+  as if it were this project's own measurement), the number-input widget,
+  footstep SE/terrain damage, random encounters (`UpdateEncounterSteps`/
+  `PrepareEncounter`/`GetEncountersAt`), and the countdown timer sprite
+  (`Sprite_Timer::Draw`, its RPG_RT-relocation-avoidance logic). Every fix
+  followed the established rule: independent evidence already in the same
+  comment (a genuine wine confirmation -- several already-honest historical
+  corrections from cycles #144/#148/#149/#169/#171 were found and correctly
+  left untouched -- or a cross-reference to another spot in this same file
+  or in `mrblib/game.rb` that itself carries a disclosure) was kept and the
+  illegitimate EasyRPG-source framing dropped; everywhere else, rewritten to
+  "ported from EasyRPG Player's source, NOT independently confirmed against
+  genuine RPG_RT under wine" while preserving the technical description,
+  including direct quotes of EasyRPG's own source comments now attributed to
+  EasyRPG rather than presented as this project's finding. **Then, with time
+  remaining, ran the same widened scan across every other `.rb` file in
+  `mruby-rpg2k/mrblib/` and `mruby-lcf/mrblib/` cycles #174-189 had never
+  looked at** (`scene/base.rb`, `battle.rb`, `battle_rpg2k3.rb`,
+  `chipset_editor.rb`, `debug_menu.rb`, `equip_menu.rb`, `game_over.rb`,
+  `item_menu.rb`, `map_viewer.rb`, `menu.rb`, `order.rb`, `save_load.rb`,
+  `skill_menu.rb`, `status_menu.rb`, `title.rb`, plus `mruby-lcf/mrblib/
+  lcf.rb`) -- **this was the first time any citation-hygiene cycle had ever
+  scanned this directory beyond `map.rb`/`game.rb`/`interpreter.rb`/
+  `main.rb`/`schema.rb`.** This surfaced a large, previously-unknown
+  concentration: `scene/battle.rb` alone carries 34 file-path citations and
+  78 `EasyRPG` mentions (comparable in density to `game.rb`/`map.rb` before
+  they were swept), with `status_menu.rb` (13), `menu.rb` (10), `skill_menu.rb`
+  (9), `item_menu.rb`/`title.rb` (8 each), `equip_menu.rb`/`save_load.rb` (7
+  each) and `base.rb` (6) also carrying real, never-checked citations;
+  `chipset_editor.rb`, `map_viewer.rb` and `lcf.rb` had none. Given this
+  cycle's own lighter-weight, comment-only framing and the size of what
+  `battle.rb` alone would need, fully swept only the four smallest files
+  found (`debug_menu.rb` 1 fix, `battle_rpg2k3.rb` 3 fixes, `game_over.rb` 2
+  fixes plus one already-honest wine-confirmed citation correctly left
+  alone, `order.rb` 5 fixes) rather than rushing a partial pass at the
+  larger ones -- every citation in these four files is now honestly
+  disclosed or already was.
+  **Verification:** `ruby -c` clean on all five edited files (`scene/map.rb`,
+  `debug_menu.rb`, `battle_rpg2k3.rb`, `game_over.rb`, `order.rb`).
+  Comment-only, checked per file with `git diff -- <file> | grep -E '^[+-]' |
+  grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'`: empty for four of the five files, and exactly one
+  line for `scene/map.rb` -- `JUMP_STEP_UNITS = 256` with only its trailing
+  inline comment changed (`# EasyRPG's SCREEN_TILE_SIZE` ->
+  `# EasyRPG Player's SCREEN_TILE_SIZE`), the assignment itself byte-identical,
+  confirming even that one hit is comment-only. Before/after check counts,
+  all matching the pre-cycle baselines exactly: `rpg2k_scene_check.rb` 929,
+  `rpg2k_logic_check.rb` 1163, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures. `cd build && ctest -R mruby_test` passed (8.36s). No
+  wine/Xvfb/matchbox process started this cycle, no save file touched. No
+  changelog fragment: comment-only documentation work, not a behavioral fix.
+  **Is the multi-cycle EasyRPG-citation-hygiene sweep (cycles #174, #176,
+  #177, #184-190) now complete? No -- and this cycle's own second half is
+  exactly why:** every file this sweep had actually promised to check
+  (`game.rb`, `interpreter.rb`, `schema.rb`, `main.rb`,
+  `rpg2k_logic_check.rb`, `rpg2k_scene_check.rb`, the `scripts/*.rb` files
+  cycle #187 swept, and now `scene/map.rb`) is genuinely clean or down to
+  pre-existing honest historical corrections -- but this cycle's own
+  discovery that thirteen more `scene/*.rb` files (plus `lcf.rb`) had simply
+  never been in scope for any prior cycle means the sweep's own believed
+  perimeter was wrong, not just incomplete within it. `scene/battle.rb`
+  specifically is a substantial, `game.rb`-scale citation cleanup on its own
+  (34 file-path hits, 78 `EasyRPG` mentions, almost certainly including the
+  same "confirmed/verified against EasyRPG" and quoted-source-as-own-finding
+  shapes every other large file in this sweep turned out to carry) that no
+  cycle has ever read. **Left open for a future cycle, in priority order:**
+  (1) `scene/battle.rb` (34/78) -- the single largest remaining
+  concentration in the whole repo by this measure, and the natural next
+  target; (2) `status_menu.rb` (13), `menu.rb` (10), `skill_menu.rb` (9),
+  `item_menu.rb`/`title.rb` (8 each), `equip_menu.rb`/`save_load.rb` (7
+  each) and `base.rb` (6), none of which have been read in full; (3) a
+  parity check of whether `scripts/*.rb` files that exercise these newly-
+  found scenes (e.g. any equip/skill/status/title check) themselves quote
+  or restate any of these scenes' own undisclosed citations, the same
+  cross-file leakage shape cycle #189 found between `rpg2k_scene_check.rb`
+  and `scene/map.rb`. Until (1)-(2) are done, "the sweep is complete" would
+  be a false claim -- this cycle's honest assessment is that the sweep is
+  further from done than cycle #189 believed, not closer, precisely because
+  this cycle went looking in a place no prior cycle had ever checked.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
@@ -14004,6 +14607,423 @@ following this paragraph as the original record.
   pinning that a map event's own parallel process still gets a brand-new
   interpreter, restarting at index 0, on every visit), all confirmed to fail
   against the pre-fix code before the fix.
+- ✅ **Follow-up (cycle #191, 2026-08-27): decoded LCF save chunks 113
+  (`SAVE_FOREGROUND_EVENT`)/114 (`SAVE_COMMON_EVENT`) for real and wired them
+  to a genuine `Game::Interpreter` call-stack snapshot**, closing the gap the
+  previous bullet flagged as a standing follow-up. `LCF::Schema` gained
+  `SAVE_EVENT_EXEC_FRAME`/`SAVE_EVENT_EXEC_STATE` (liblcf's own
+  `SaveEventExecFrame`/`SaveEventExecState`, field ids taken straight off
+  `generator/csv/fields.csv`), and both chunks' field 1 (`execution_state`)
+  changed from an opaque `:int8_array` to `:Array1D, elements:
+  SAVE_EVENT_EXEC_STATE` — a genuine interpreter call stack, not just a
+  resume index: each stack frame carries its OWN full `commands` list
+  (reusing the existing `:event` schema type MAP_EVENT_PAGE already uses, so
+  a Call Event's own called page round-trips its exact bytes rather than a
+  reference to re-resolve), plus `current_command`, `event_id` and
+  `triggered_by_decision_key`.
+
+  `Game::Interpreter` gained `#call_stack_snapshot`/`#restore_call_stack`
+  (interpreter.rb), a strict superset of the older `#resumable_index`/
+  `#start_at` pair the previous bullet added: unlike `#resumable_index`,
+  which returns nil whenever `@call_stack` is non-empty (mid a nested Call
+  Event), `#call_stack_snapshot` captures `@call_stack + [[@list, @index]]`
+  whole, outermost frame first, and stays capturable while `#waiting?` too
+  (a save taken mid a Wait/Show Message/Open Save Menu/etc. — the position
+  is still valid to resume from, only the UI-facing wait itself is not
+  restored, the same scope `#resumable_index` already had).
+
+  `Game::State` gained two attributes wiring this into `#to_lsd`/`.from_lsd`:
+  `#foreground_event_exec` (chunk 113 — whatever event currently occupies
+  `Scene::Map`'s single shared foreground interpreter, snapshotted every
+  frame by the new `Scene::Map#record_foreground_event_exec` and restored
+  once, at Continue time, by the new `#restore_foreground_event_exec`) and
+  `#common_event_exec` (chunk 114 — one snapshot per running Common Event
+  Parallel Process, keyed by common-event id, snapshotted every tick by the
+  extended `#record_parallel_progress` and consumed by `#new_parallel`,
+  which now tries this first and only falls back to the older
+  `#common_event_progress` cursor when this has nothing for a given id).
+  `#common_event_progress` itself is unchanged and still exactly what the
+  portable Marshal save (`#to_h`/`.load`) round-trips — the new mechanism is
+  deliberately `.lsd`-only, so the two save formats keep two
+  different-but-documented fidelity levels rather than silently
+  disagreeing.
+
+  Investigated, and deliberately left as a documented simplification rather
+  than implemented: `subcommand_path` (liblcf's own per-nesting-level "which
+  Show Choice branch was taken" byte array) is always written empty.
+  Reading `#do_show_choices`/`#find_choice_option`/`#choose` confirmed this
+  engine's own resume is purely `current_command`-cursor-based — once a
+  branch is chosen, `@index` already sits inside that branch's own
+  commands, so replaying from there alone reaches the right code with no
+  separate branch-identity lookup needed, unlike genuine RPG_RT's own
+  jump-to-matching-Case mechanism. This is a genuine simplification for this
+  engine's own internal round-trip fidelity (its own Continue), not an
+  attempt at interop with genuine RPG_RT reading our `.lsd` (or the
+  reverse) — a real save captured mid an unanswered Show Choices prompt
+  would need the field decoded to resume identically. Also left
+  schema-only (declared for read-fidelity against a genuine third-party
+  `.lsd`, never written or restored by this engine): `SaveEventExecState`'s
+  `show_message`/`abort_on_escape`/`wait_movement`/the whole keyinput_*
+  cluster/`wait_time`/`wait_key_enter` — only `stack` (the call stack
+  itself, this cycle's actual subject) is genuinely round-tripped. Each
+  frame's own `event_id`/`triggered_by_decision_key` are mirrored from the
+  whole interpreter's single `#event_id`/`#triggered_by_decision_key` on
+  every frame alike, since `#do_call_event` does not track which event a
+  called list's commands originally belonged to — a documented
+  simplification of what this engine can honestly reconstruct, not a claim
+  it matches genuine RPG_RT's own per-frame bookkeeping.
+
+  Verified by a from-scratch round trip, NOT against a genuine wine-saved
+  mid-event `.lsd` (no such fixture — a save taken mid a nested Call Event
+  or a running Parallel Process — was available to compare byte-for-byte):
+  new `scripts/rpg2k_logic_check.rb` checks cover the plain
+  `#call_stack_snapshot`/`#restore_call_stack` interpreter contract (a
+  clean mid-list position, a nested Call Event, the finished/nil case, a
+  nil/empty restore no-op), the schema's own encode/decode round trip
+  through genuine chunk bytes (`Game::State.build_event_exec_state`/
+  `.read_event_exec_frames`, confirming a decoded snapshot's
+  commands/cursor/event_id/flag survive, and that a fresh
+  `Game::Interpreter` restored from it actually finishes correctly, not
+  just decodes as inert data), and the `Game::State#to_lsd`/`.from_lsd`
+  wiring for both chunks together. The existing native
+  `mruby-lcf/test/lcf_test.rb` chunk-113/114 decode test (which pinned the
+  *old* opaque-blob shape) was rewritten to build genuine nested
+  `SAVE_EVENT_EXEC_STATE` bytes instead. All of the full check-suite
+  baselines (`rpg2k_scene_check.rb`=929, `rpg2k_logic_check.rb`=1169 — up
+  from 1163, all new checks — `rpg2k_render_check.rb`=41,
+  `rpg2k3_battle_row_check.rb`=19/0, `rpg2k3_battle_gauge_check.rb`=15/0,
+  `rpg2k_save_load_check.rb`'s 3 known pre-existing failures unchanged) and
+  the `mruby_test` ctest suite stay green.
+
+  Deliberately left open: no genuine wine-saved fixture was captured to
+  confirm the exact byte layout against real RPG_RT (the frame-array
+  numbering in particular — this engine's own 1-based, outer-to-inner
+  convention is not confirmed against a real multi-frame save); a Map
+  Event's own parallel process is still excluded from any of this (matching
+  `#common_event_progress`'s own pre-existing, deliberate "always restarts
+  fresh" scope, which this cycle did not revisit); and the foreground
+  restore path's `@active_event` re-resolution is best-effort (a saved
+  event id whose page conditions have since changed just runs with no map
+  character, the same fallback an ordinary Auto-Start common event already
+  has).
+
+  **Superseded by cycle #193, 2026-08-28, on the Map Event exclusion
+  specifically**: the paragraph just above says a Map Event's own parallel
+  process "is still excluded from any of this" — true when written; cycle
+  #193 closed exactly that gap (`Game::State#map_event_exec`, SAVE_MOVABLE
+  field 108). See cycle #193's own entry below.
+
+  **Superseded by cycle #192, 2026-08-27, on one specific point**: this
+  entry's own writeup above (and `LCF::Schema::SAVE_EVENT_EXEC_FRAME`'s
+  schema.rb comment as it read at the time) claimed each frame's `event_id`/
+  `triggered_by_decision_key` were "mirrored from this whole interpreter's
+  own single `#event_id`/`#triggered_by_decision_key`... since `#do_call_event`
+  does not track which event a called list's commands originally belonged
+  to". That was true when written; cycle #192 closed exactly that gap for
+  `event_id` (`triggered_by_decision_key` was already correct — only the
+  outermost frame ever carries it true — and needed no change). See cycle
+  #192's own entry below for what changed and why this historical bullet is
+  left as-is otherwise.
+- ✅ **Follow-up (cycle #192, 2026-08-27): `#call_stack_snapshot`'s saved
+  call-stack frames now carry each frame's own genuine `event_id`**, closing
+  the one-line gap cycle #191 flagged and documented honestly rather than
+  fixing (quoted just above). `Game::Interpreter#do_call_event` (Call Event,
+  12330) now records, at the exact moment it pushes a frame onto
+  `@call_stack`, the target event's own identity: `#resolve_call` was
+  extended to return `[commands, event_id]` instead of just `commands` (and
+  `#map_event_call` likewise `[commands, id]`) — 0 for a common-event target
+  (`param(0) == 0`), the concrete map-event id `#character_ref` already
+  resolves for a same-map target (`param(0) == 1` or `2`). `@call_stack`'s
+  own entries grew a third element (`[list, index, event_id]`) to carry it;
+  every read/write site was updated to match: `#do_call_event`'s own push,
+  `#return_from_call`'s pop, `#call_stack_snapshot`, `#restore_call_stack`,
+  and every `@call_stack = []` reset site (`#initialize`, `#start`, `#stop`,
+  `#resume_battle`, `#skip_invalid_troop`, `#do_terminate_battle`) gained a
+  matching `@call_frame_event_id = nil` reset. A new `@call_frame_event_id`
+  ivar tracks "the event_id of whichever list `@list` currently holds" live,
+  updated by `#do_call_event` on every push and restored by
+  `#return_from_call` on every pop, entirely separate from `#event_id`
+  itself (see below).
+
+  The RPG2003 battle page's own Call Common Event (1005,
+  `#do_call_common_event`) shares the same `@call_stack`/`#return_from_call`
+  mechanism but was deliberately left out of scope (per the original
+  cycle-#192 brief): its push now writes a literal `0` third element purely
+  so the shared array shape stays uniform for `#return_from_call` to pop —
+  battle interpreters were never part of cycle #191's save mechanism
+  (`Game::State#foreground_event_exec`/`#common_event_exec` only ever
+  snapshot map/common-event interpreters), so no real per-frame identity
+  tracking was added there.
+
+  liblcf's own field comment ("0 if it's common event or in other map")
+  raised the question of whether a distinct "in other map" case needed
+  modelling separately from "common event". Investigated and concluded no:
+  Call Event's own command format (`param(0)` 0/1/2, see `#do_call_event`'s
+  own comment) never names a map at all, only a common-event id or a
+  same-map event id/page — this codebase's own model has no path to a
+  "different map" target for `#resolve_call` to ever produce, so `0` was
+  kept as the one case covering both, documented explicitly rather than
+  inventing an unreachable branch.
+
+  Also investigated, per the original brief's own prompt, whether
+  `#event_id` itself (the live "this event" resolution `#character_ref`
+  reads) needed a matching per-frame restore in `#return_from_call` — i.e.
+  whether resuming an outer, suspended caller frame needs its own identity
+  restored the way `@call_frame_event_id` now is. Concluded no, and left
+  `#event_id` untouched: `#do_call_event` never mutates `#event_id` when
+  entering a call in the first place (this codebase's own pre-existing,
+  deliberate design — a "this event" reference inside a nested call
+  resolves to the outermost caller's own id throughout, never switching to
+  the callee's, predating this cycle and not revisited here), so there is
+  nothing for `#return_from_call` to restore: the value was never disturbed.
+  Changing that live resolution semantic (making "this event" inside a
+  called page mean the callee instead) would be a genuine RPG_RT behavior
+  question needing its own citable evidence, out of scope for a save-
+  fidelity cycle — `#event_id`'s own attr comment (interpreter.rb) now
+  spells this reasoning out explicitly so a future cycle does not
+  rediscover the same question from scratch.
+
+  `LCF::Schema::SAVE_EVENT_EXEC_FRAME`'s own schema.rb comment was rewritten
+  to describe what is now actually implemented (it previously described the
+  gap this cycle closed as a permanent simplification).
+
+  Verified with 4 new `scripts/rpg2k_logic_check.rb` checks (a called
+  common-event frame reads back `event_id` 0, not the caller's; a called
+  map-event frame reads back its own target id, not the caller's; a Call
+  Event self-call to "this event" reads back the SAME id as the caller,
+  since it genuinely is the same event; and `#return_from_call` correctly
+  restores the caller's own identity after a call fully returns, so it does
+  not leak into a later, sequential, unrelated call) plus extended
+  assertions on cycle #191's own nested-call-stack check — total
+  `rpg2k_logic_check.rb` now 1172 (up from 1169). All other check-suite
+  baselines unchanged (`rpg2k_scene_check.rb`=929,
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures unchanged), and the `mruby_test` ctest suite passes.
+
+  Deliberately left open: the round-trip fidelity of `@call_frame_event_id`
+  through `#restore_call_stack` (so a restored interpreter, re-snapshotted
+  immediately without running another command, reproduces the exact same
+  per-frame `event_id` values) is verified by a fresh-state round trip, not
+  a genuine wine-saved multi-frame `.lsd`, same open point cycle #191 itself
+  already carried forward.
+- ✅ **Follow-up (cycle #193, 2026-08-28): a Map Event's own Parallel Process
+  now persists through a genuine `.lsd` Save/Continue too**, closing the one
+  gap cycles #191/#192 both left open on purpose (see cycle #191's own entry
+  above, now annotated). A Common Event's own Parallel Process
+  (`Game::State#common_event_exec`, chunk 114) and the shared foreground
+  interpreter (`#foreground_event_exec`, chunk 113) already had full
+  call-stack persistence; a Map Event whose own page trigger is Parallel
+  Process — a distinct thing from a Common Event's Parallel Process — had
+  none at all, not even the older, coarser `Game::Interpreter
+  #resumable_index`-style cursor `#common_event_progress` gives common
+  events, since no such cursor ever existed for a map event's own process in
+  the first place.
+
+  `LCF::Schema::SAVE_MOVABLE` (the per-map-event record chunk 111's own field
+  11 `Array2D` elements are, shared with the hero/vehicle chunks 104-107)
+  gained field 108 (`0x6C`, liblcf's own `SaveMapEvent.
+  parallel_event_execstate`, generator/csv/fields.csv): `type: :Array1D,
+  elements: SAVE_EVENT_EXEC_STATE`, the identical struct chunks 113/114
+  already use. Declared after `SAVE_EVENT_EXEC_STATE`'s own definition
+  further down `schema.rb`, not inline in `SAVE_MOVABLE`'s own literal
+  (`SAVE_MOVABLE[108] = {...}`), since that struct did not exist yet at
+  `SAVE_MOVABLE`'s own point in the file — a plain forward-reference, not a
+  design choice. Two of liblcf's other `SaveMapEvent` fields the same brief
+  flagged were deliberately left out: field 101 (`waiting_execution`) already
+  means something else entirely in this same shared table (`SaveVehicleLocation
+  .vehicle`, chunks 105-107's own boat/ship/airship ordinal) — giving one
+  field id two meanings in one shared table is not possible without
+  splitting `SAVE_MOVABLE` into per-chunk tables, out of scope here; fields
+  102/103 (`original_move_route_index`/`triggered_by_decision_key`) are real
+  and uncontested but this codebase has no distinct "route before an
+  override" concept to source the former from, and the latter is already
+  carried per-frame inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`
+  field 13 — left for a future cycle alongside `SAVE_MOVABLE`'s own other
+  already-catalogued gaps (the hero's unmodelled move-route chunk, `through`,
+  movement timers).
+
+  `Game::State` gained `#map_event_exec`, a `{map event id => call-stack
+  frames}` Hash mirroring `#common_event_exec`'s own shape and consumed the
+  same way, but scoped differently in one deliberate respect:
+  `#common_event_exec` is safe to carry across an ordinary Transfer Player
+  (a common event id is global), while `#map_event_exec` is NOT (a map event
+  id repeats across maps, the same hazard `#map_event_positions` already
+  has) — so `Scene::Map#perform_teleport` resets it to `{}` on every map
+  change, alongside `#map_event_positions`/`#map_event_route_index`. This is
+  exactly what keeps a Map Event's own Parallel Process still always
+  restarting fresh across an ordinary same-session Transfer Player, matching
+  the pre-existing, deliberate behaviour `#build_parallels`'s own comment
+  documents — the new mechanism is reachable only through a genuine
+  Save/Continue on the SAME map, the one channel `#perform_teleport`'s reset
+  does not touch. `Scene::Map#record_parallel_progress` (which used to
+  `return unless p[:common_event_id]`, a documented no-op for a map event's
+  own process) now snapshots the `p[:event]`-non-nil half too, keyed by the
+  owning map event's own id; `#new_parallel` consults `#map_event_exec[event
+  [:id]]` the same way it already consults `#common_event_exec
+  [common_event_id]`, with no older-cursor fallback to fall back to (none
+  ever existed). `#to_lsd`/`.from_lsd`'s chunk 111 writer/reader were
+  extended to carry field 108 alongside the pre-existing position/route-index
+  fields, keyed by the union of `#map_event_positions`' and
+  `#map_event_exec`'s own ids (the two are recorded independently, though in
+  practice always together, by `#record_map_event_positions`/
+  `#record_parallel_progress` alike).
+
+  Verified the same way cycle #191 verified chunks 113/114 (a from-scratch
+  round trip, not a genuine wine-saved fixture — none was available):
+  `scripts/rpg2k_logic_check.rb` gained a `to_lsd`/`from_lsd` round-trip
+  check at the `Game::State` level, built around a map event Calling a
+  *different* map event's page and parking mid that nested call's own Wait
+  (mirroring cycle #191's own common-event check, confirming per-frame
+  `event_id`s 5/6 read back correctly, not collapsed or swapped);
+  `scripts/rpg2k_scene_check.rb` gained an end-to-end check building a real
+  `Scene::Map`, capturing the same mid-nested-call snapshot from a live
+  `#step_parallel` tick, then building a *second*, brand-new `Scene::Map`
+  from a fresh `Game::State` carrying only `#map_event_exec` (no live
+  `Game::Interpreter` object, standing in for a genuine Continue) and
+  confirming it resumes exactly where the snapshot left off — the called
+  frame's own follow-up command runs, then control returns to the caller's
+  trailing command, all without either of the two markers that ran *before*
+  the snapshot ever re-running — rather than restarting both map events from
+  the top. The pre-existing "Transfer Player ... always rebuilds a map
+  event's [interpreter]" check (cycle #191) needed no change and still
+  passes unmodified, confirming the two channels (live Transfer Player vs.
+  genuine Continue) stay correctly distinguished. Full check-suite baselines
+  after this cycle: `rpg2k_scene_check.rb`=931 (up from 929: +1 for this
+  part's own resume check, +1 for the part-2 Key Input Proc reachability
+  check below), `rpg2k_logic_check.rb`=1174 (up from 1173 — note: cycle
+  #192's own entry recorded 1172 as its final total, but the actual
+  pre-cycle-#193 baseline measured directly against this branch's own HEAD
+  was 1173, one higher than documented; not investigated further, harmless
+  either way since this cycle's own +1 is verified against the real,
+  measured baseline rather than the possibly-stale documented one),
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures unchanged, and the `mruby_test` ctest suite passes
+  after a clean rebuild.
+
+  Deliberately left open, matching cycle #191/#192's own carried-forward
+  points: no genuine wine-saved fixture confirms the exact byte layout
+  against real RPG_RT; and the same per-frame `event_id`/`triggered_by_decision_key`
+  simplifications cycles #191/#192 already documented for chunks 113/114
+  apply identically here, since field 108 reuses the exact same
+  `SAVE_EVENT_EXEC_STATE`/`SAVE_EVENT_EXEC_FRAME` structs and
+  `Game::Interpreter#call_stack_snapshot`/`#restore_call_stack` machinery,
+  unchanged by this cycle.
+- ✅ **Investigated (cycle #193, 2026-08-28): is saving mid a Show
+  Message/Choices/Key Input wait reachable?** Following up on cycle #191's
+  own "restoring a mid-wait UI request is out of scope" note (`#call_stack_
+  snapshot` captures the command-list position but not `@waiting`/
+  `@wait_kind`/etc.), this asked whether that gap is even reachable at all,
+  for any interpreter — the shared foreground one, a Common Event Parallel
+  Process, or (after this same cycle's own part above) a Map Event's own
+  Parallel Process.
+
+  **Confirmed unreachable for Show Message/Show Choices/Input Number,
+  specifically**: `Scene::Map#event_busy?` (which gates `#try_open_menu`,
+  the only path to an ordinary player-driven Save) checks `@message`/
+  `@number_input` — genuinely scene-wide state, not per-interpreter. Traced
+  `#drive_parallel_wait`'s own `:message`/`:choice`/`:number` cases: a
+  Parallel Process's own Show Message/Show Choices/Input Number opens the
+  *exact same* `@message`/`@number_input` `#open_message`/
+  `#open_number_input` already write for the foreground (confirmed by
+  reading the call sites directly, not inferred) — matching
+  `#message_window_open?`'s own comment, "anywhere in the scene, including a
+  still-running parallel process". So a genuine Save is unreachable while
+  ANY interpreter, foreground or parallel, sits on one of these three
+  specific waits — the gap `#call_stack_snapshot`'s own scope limit
+  describes is real but never actually exercised for them, the same
+  "investigated, confirmed unreachable" verdict this project's culture
+  prefers over leaving the question open.
+
+  **Confirmed reachable for a Key Input Proc's own wait (Cmd::KEY_INPUT_PROC,
+  11610), when issued from a Parallel Process specifically**: `#event_busy?`
+  only ever inspects the single shared foreground `@interpreter`'s own
+  `#waiting?`/`#running?` plus the scene-wide `@message`/`@number_input`/
+  `@battle` — it never looks at any `@parallels` entry's own `#wait_kind` at
+  all. A waiting Key Input Proc (`wait` param set) first blocks-and-retries
+  behind a genuinely open message window (`#block_pending_key_input_
+  command`), but once past that guard (no message window open anywhere) it
+  parks the issuing interpreter on a bare `:key_input` wait with nothing else
+  in the scene reflecting it. For the FOREGROUND interpreter this is already
+  covered — `@interpreter.waiting?` alone makes `#event_busy?` true — but a
+  Common Event's (or, after this cycle's own part 1, a Map Event's) own
+  Parallel Process parked there sets none of `#event_busy?`'s own conditions,
+  so the ordinary Cancel-key menu shortcut — and with it, a genuine Save —
+  stays reachable. Confirmed with a new `scripts/rpg2k_scene_check.rb` check:
+  a Common Event Parallel Process genuinely parked on `:key_input` (Decision
+  only accepted, so the Cancel key used to open the menu cannot also resolve
+  the proc itself) still lets `#try_open_menu` push `Scene::Menu`.
+
+  Judged out of scope to actually restore this cycle, and left as a
+  documented follow-up rather than silently dropped: the call-stack position
+  itself is already captured/restored correctly regardless (a save taken
+  here still resumes at the right command) — only the live request itself
+  (target variable id, accepted-key flags) has no restore path, so a save
+  taken here today silently resumes past the Wait For Key Input entirely,
+  leaving the requested variable at 0 (its own "reset every retried frame"
+  default) rather than a genuine key code. `SAVE_EVENT_EXEC_STATE`'s
+  `keyinput_*` field cluster already exists schema-only for exactly this
+  (see that struct's own schema.rb comment) — restoring it for real would
+  need `#call_stack_snapshot`/`#restore_call_stack` to also carry
+  `@key_input_request`/`@wait_kind`/`@waiting` for the `:key_input` case
+  specifically (and only that case — Show Message/Choices/Input Number are
+  confirmed unreachable above, and a plain Wait/`:wait_key_enter` already
+  round-trip correctly per cycle #191), a real but narrow follow-up left for
+  a future cycle rather than built speculatively here.
+- ✅ **Follow-up (cycle #194, 2026-08-28): restored the Key Input Proc
+  mid-wait case cycle #193 left open**, closing the one narrow gap that
+  cycle's own investigation confirmed reachable. Simpler than that cycle's
+  own writeup anticipated: rather than carrying `@key_input_request`/
+  `@wait_kind`/`@waiting` explicitly through the snapshot (what cycle #193's
+  own entry speculated would be needed, and what `SAVE_EVENT_EXEC_STATE`'s
+  schema-only `keyinput_*` cluster would back), `Game::Interpreter
+  #call_stack_snapshot` now rewinds the innermost frame's own
+  `current_command` by one specifically when `@waiting && @wait_kind ==
+  :key_input` -- capturing the Key Input Proc command itself rather than
+  `@index`'s own usual "just past it" position. `#restore_call_stack`
+  needed no changes at all: rebuilding `@call_stack`/`@list`/`@index` at
+  that rewound position means the very next `#update` naturally re-executes
+  `#do_key_input` from scratch, which is a pure function of the command's
+  own literal parameters (`var_id`, `wait`, the accepted-keys flags) --
+  re-deriving `@key_input_request`/`@wait_kind`/`@waiting` exactly as they
+  were, with no explicit serialization needed. The one side effect
+  (resetting the requested variable to 0) is not a compromise: genuine
+  RPG_RT itself already does that same reset every single frame it
+  re-evaluates a still-pending Key Input Proc (`#do_key_input`'s own
+  existing comment), so replaying the command is not a workaround, it is
+  what would have happened on the very next frame regardless. This reuses
+  the same rewind-and-retry idiom `#block_pending_key_input_command`
+  already applies for its own "message window still open" case -- just
+  triggered by the save/snapshot path instead of by the interpreter's own
+  next tick.
+
+  Deliberately scoped to only this one confirmed-reachable case: Show
+  Message/Choices/Input Number stay correctly untouched (cycle #193 already
+  confirmed a save can never actually happen mid one), and the
+  `SAVE_EVENT_EXEC_STATE` `keyinput_*` field cluster remains schema-only --
+  it was never the mechanism this fix needed, so it is left exactly as
+  cycle #191 declared it (read-fidelity only, not written/restored).
+
+  **Verified**: new `scripts/rpg2k_logic_check.rb` check building an
+  interpreter that parks on a waiting Key Input Proc (Decision-only,
+  `wait` flag set), confirming `#call_stack_snapshot` captures
+  `current_command` one earlier than `@index`, restoring into a fresh
+  interpreter, confirming the very next `#update` re-enters the identical
+  `:key_input` wait (same accepted-keys mask, same `wait` flag) rather than
+  silently skipping past it, and finally confirming a Decision key input
+  afterward still completes the proc and runs the following command --
+  proving the restored state is genuinely live, not just decoded data.
+  `ruby -c` clean; full check-suite baselines unchanged except the one new
+  check (`rpg2k_scene_check.rb`=931, `rpg2k_logic_check.rb`=1175 (+1),
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures); `ctest -R mruby_test` passes after a clean
+  rebuild. No `data/` fixtures touched. No genuine wine-saved fixture
+  exercising this exact scenario was available, so this is a from-scratch
+  round-trip verification, not a wine-confirmed one -- the same honestly-
+  labeled limitation cycles #191-193 already carry for their own new
+  mechanisms.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —

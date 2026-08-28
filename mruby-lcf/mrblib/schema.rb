@@ -349,9 +349,7 @@ module LCF
             # tempo + balance, liblcf's own `generator/csv/fields.csv`:
             # `Terrain,footstep,f,Sound,0x0F,...`), not a bare filename --
             # the same shape every other Sound-typed database field here
-            # already uses (see `SE` above). Confirmed against EasyRPG's
-            # actual C++ source: `src/generated/lcf/rpg/terrain.h` declares
-            # `Sound footstep;`.
+            # already uses (see `SE` above).
             15 => { name: :footstep, type: :Array1D, elements: SE },
             16 => { name: :on_damage_se, type: :bool, default: false },
             17 => { name: :background_type, type: :int, default: 0 },
@@ -1009,9 +1007,10 @@ module LCF
       # Game::EventPage::TIMER.
       8 => { name: :timer_sec, type: :int, default: 0 },
       # RPG2003-only: a second timer condition (flags bit 0x40, gated on
-      # Player::IsRPG2k3Commands() in EasyRPG) and the variable comparison
-      # operator, both now read by Game::EventPage -- see its own TIMER2 /
-      # compare_operator handling there.
+      # Player::IsRPG2k3Commands() in EasyRPG's source, NOT independently
+      # confirmed against genuine RPG_RT under wine) and the variable
+      # comparison operator, both now read by Game::EventPage -- see its own
+      # TIMER2 / compare_operator handling there.
       9 => { name: :timer2_sec, type: :int, default: 0 },
       # 0 == 1 >= 2 <= 3 > 4 < 5 != (liblcf's EventPageCondition::Comparison
       # enum). Default 1 (>=), not 0 (==): liblcf's generated
@@ -1180,6 +1179,14 @@ module LCF
       # write-only mirror, the same shape as chunk 104's own 73/74
       # (`charset_name`/`charset_index`) sprite mirror.
       21 => { name: :sprite_direction, type: :int },
+      # liblcf's own `layer` (generator/csv/fields.csv, 0x21 == 33): confirmed
+      # present as the constant 1 ("same as characters") on a genuine kk1.12
+      # save under wine, on the hero's own record and every vehicle's alike
+      # (chunks 104-107) -- RPG2000/2003 has no "Change Hero/Vehicle Layer"
+      # command (only a map *event* page can be pinned below/above
+      # characters), so this codebase's own `#to_lsd` writes it as a true
+      # constant rather than tracking any live state for it.
+      33 => { name: :layer, type: :int },
       # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
       # 0x18 == 24): "0 or 3 - Transparency level of the current event page".
       # On the *hero's* own record (chunk 104) this is Set Transparent Flag's
@@ -1198,8 +1205,29 @@ module LCF
       # runtime "hidden" state to persist, so their own #load_movable simply
       # never reads it.
       24 => { name: :transparency, type: :int, default: 0 },
+      # liblcf's own generator/csv/fields.csv (0x20 == 32, default 2): the
+      # move-frequency a forced move route (Set Move Route) runs its target
+      # at -- see Game::State#player_route's own citation in game.rb for why
+      # this lives on the hero's own record specifically (Scene::Map's
+      # transient @player_char mirror, not tracked anywhere else). Not
+      # independently confirmed against genuine RPG_RT under wine.
+      32 => { name: :move_frequency, type: :int, default: 2 },
       35 => { name: :animation_type, type: :int },
       37 => { name: :move_speed, type: :int },
+      # liblcf's own `SaveMapEventBase.move_route` (generator/csv/fields.csv,
+      # 0x29 == 41), the same `MOVE_ROUTE` struct (11/12 move_commands,
+      # 21 repeat, 22 skippable) MAP_EVENT_PAGE's own field 41 already uses
+      # for a database-configured custom route -- `LCF.parse_move_commands`/
+      # `.encode_move_commands`'s exact byte format is confirmed against
+      # EasyRPG's own liblcf source (src/lmu_movecommand.cpp, fetched
+      # verbatim) and already exercised across the full test-bed corpus
+      # (116076 real move commands, `scripts/lcf_testbed_check.rb`). On the
+      # hero's own record this is a live Set Move Route (11330) targeting
+      # the player, not a database page property -- see Game::State
+      # #player_route's own citation in game.rb. Confirmed present with
+      # real command data on a genuine kk1.12 save under wine (the hero had
+      # a live custom route recorded in that capture).
+      41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
       # SaveMapEventBase's own move-route cursor: how far into a page's
       # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
       # sourced from EasyRPG's liblcf generator/csv/fields.csv (0x2B == 43).
@@ -1213,6 +1241,14 @@ module LCF
       # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
       # route from the top" from "explicitly at command 0" the same way.
       43 => { name: :move_route_index, type: :int },
+      # liblcf's own `through` (generator/csv/fields.csv, 0x33 == 51,
+      # default false): "Walk Everywhere On/Off" (36/37), a Set Move Route
+      # command that ignores map collision for its target until turned back
+      # off or the route ends. On the hero's own record this is Scene::Map's
+      # own transient @player_through mirror -- see Game::State
+      # #player_route's own citation in game.rb. Not independently confirmed
+      # against genuine RPG_RT under wine.
+      51 => { name: :through, type: :bool, default: false },
       # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
       # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
       # unrelated per-frame flag ("has this event already taken its movement
@@ -1228,6 +1264,29 @@ module LCF
       # sprite_id co-occurring without its paired sprite_name ever would.
       73 => { name: :charset_name, type: :string },
       74 => { name: :charset_index, type: :int },
+      # liblcf's own generator/csv/fields.csv (0x51-0x55 == 81-85): an
+      # in-flight Flash Sprite (11320), or a map-triggered battle-animation
+      # flash reusing the same mechanism (see Game::State#player_flash's own
+      # citation in game.rb). `flash_current_level` is declared a `Double`
+      # (not an Int32 like its siblings) -- liblcf tracks the *current*,
+      # already-decayed strength directly rather than recomputing it from
+      # `flash_power`/`flash_time_left` each frame, so `#to_lsd` derives an
+      # equivalent value from this codebase's own `power * frames / total`
+      # decay math (`Scene::Map#flash_tone`'s own formula). Confirmed against
+      # a genuine kk1.12 save under wine, for the *not flashing* case only:
+      # flash_red/_green/_blue present as an explicit 0 (not the schema's own
+      # -1 generator default, and not absent either) while
+      # flash_current_level/_time_left stayed absent -- so RPG_RT always
+      # writes the RGB triple, defaulting to 0 rather than -1, and only adds
+      # the level/time_left pair while a flash is actually in progress. The
+      # *flashing* case's exact byte values (in particular whether
+      # `flash_current_level`'s own decay curve matches this codebase's
+      # linear one) has not been confirmed against genuine RPG_RT.
+      81 => { name: :flash_red, type: :int },
+      82 => { name: :flash_green, type: :int },
+      83 => { name: :flash_blue, type: :int },
+      84 => { name: :flash_current_level, type: :double },
+      85 => { name: :flash_time_left, type: :int },
       # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
       # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
       # shared SAVE_MOVABLE table otherwise has no equivalent for (the hero's
@@ -1237,26 +1296,36 @@ module LCF
       # ever been boarded that session -- see SAVE_DATA's own 105-107
       # comment for the larger discovery this field was found alongside.
       101 => { name: :vehicle, type: :int },
+      # Field 108 (0x6C, `parallel_event_execstate` -- liblcf's own
+      # `SaveMapEvent`, generator/csv/fields.csv) is added just below
+      # SAVE_EVENT_EXEC_STATE's own definition further down this file, not
+      # inline here: its `elements:` is that very struct, which is not
+      # defined yet at this point in the file (SAVE_MOVABLE is one of the
+      # earliest tables declared; SAVE_EVENT_EXEC_STATE, added by cycle #191,
+      # comes much later). See that assignment's own comment for the field
+      # itself, and for why fields 101 (already spoken for, above) and
+      # 102/103 (liblcf's own `waiting_execution`/`original_move_route_index`
+      # /`triggered_by_decision_key` neighbours) are deliberately left
+      # unmodelled here.
     }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
-    # (generator/csv/fields.csv) than this table models: `layer` (0x21/33),
-    # a full in-progress `move_route` (`MoveRoute` chunk, 0x29/41 -- the
-    # hero had a live custom route recorded in that capture), `through`
-    # (0x33/51), `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54,
-    # movement/animation frame timers), `begin_jump_x`/`_y` (0x3E-3F/62-63),
-    # `processed` (0x4B/75, already noted above), and
-    # `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`
-    # (0x51-55/81-85, a live Flash Sprite in progress). None of these are
-    # modelled here: several need genuine new state this codebase's own
-    # `Game::State`/`Game::Character` don't track for the hero at all
-    # (an in-flight custom move route or Flash Sprite survives a save only
-    # by chance today, via whatever the interpreter re-derives), and the
-    # movement/animation timers are pure per-frame scheduling this engine
-    # already recomputes fresh rather than resuming byte-for-byte. Left as a
-    # known, larger gap for a future cycle -- see this table's own field 43
-    # comment for the one piece (`move_route_index`) already covered.
+    # (generator/csv/fields.csv) than this table models:
+    # `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54, movement/
+    # animation frame timers) and `begin_jump_x`/`_y` (0x3E-3F/62-63,
+    # mid-jump coordinates). Both are pure per-frame scheduling this engine
+    # already recomputes fresh rather than resuming byte-for-byte -- a save
+    # taken mid-jump or between two move-route steps restarts that one
+    # sub-frame's own timing rather than resuming it exactly, the same
+    # category of imperfection already accepted for fields 81-85's own
+    # flash decay curve. Left as a known, minor gap for a future cycle --
+    # see field 32/41/43/51's own comments for the rest of the move-route
+    # picture (`move_frequency`/`move_route`/`move_route_index`/`through`),
+    # field 33's own comment for `layer`, and fields 81-85's own comment for
+    # `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`, all
+    # already covered. `processed` (0x4B/75, already noted above) remains
+    # unmodeled too.
     #
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #
@@ -1685,52 +1754,213 @@ module LCF
       42 => { name: :steps, type: :int },
     }
 
-    # Saved common-event execution state (chunk 114): an Array2D indexed by
-    # common-event id -- 505 entries in a real Nepheshel save. Each entry's
-    # field 1 is that event's interpreter execution state, kept as an opaque blob
-    # (like SAVE_MAP_EVENT's tile replacements) until its grammar is documented.
+    # One stack frame of an interpreter's own call stack (liblcf's
+    # `SaveEventExecFrame`), nested inside SAVE_EVENT_EXEC_STATE's own `stack`
+    # field below. Each frame carries its OWN full `commands` list (0x02,
+    # `Vector<EventCommand>` -- reusing the existing `:event` schema type, the
+    # same one MAP_EVENT_PAGE's own `event_commands` uses, which already
+    # round-trips through `LCF.parse_event_commands`/`encode_event_commands`),
+    # i.e. the exact command page being executed, not just a reference to one
+    # -- a Call Event pushes a frame whose commands come from the called
+    # event, so a nested call round-trips without needing to re-resolve
+    # anything (see `Game::Interpreter#call_stack_snapshot`/
+    # `#restore_call_stack`, mruby-rpg2k/mrblib/interpreter.rb). Field 0x01
+    # (`command_size`) mirrors field 0x02's own encoded byte length exactly,
+    # the same size-field convention `MAP_EVENT_PAGE`'s own
+    # `event_command_size` (field 51) already established -- see that field's
+    # own comment for why a stale length hangs genuine RPG_RT.exe; this
+    # codebase's own writer (`Game::State#to_lsd`) recomputes it the same way.
     #
-    # liblcf's own generator/csv/fields.csv (not yet decoded field-by-field
-    # here) names field 1 (0x01) `parallel_event_execstate`, a
-    # `SaveEventExecState` struct -- NOT a simple resume index like this
-    # codebase's own `Game::State#common_event_progress` (a command-list
-    # cursor per running Common Event). It is a genuine interpreter call-
-    # stack snapshot: `stack` (0x01, `Array<SaveEventExecFrame>`), each frame
-    # carrying its OWN full `commands` list (0x02, `Vector<EventCommand>`,
-    # i.e. the exact command page being executed, not just an id — a Call
-    # Event pushes a frame whose commands come from the called event, so
-    # nested calls round-trip correctly), `current_command` (0x0B, the
-    # index into that frame's own commands), `event_id` (0x0C, 0 for a
-    # common event or one belonging to another map), a
-    # `triggered_by_decision_key` flag (0x0D), and `subcommand_path` (0x15
-    # count / 0x16 data) -- one byte per nesting level, the chosen Show
-    # Choice branch id at that level (255 once taken, per liblcf's own
-    # comment on the field). `SaveEventExecState` itself also carries
-    # `show_message` (0x04), `abort_on_escape` (0x0B), `wait_movement`
-    # (0x0D), a `wait_time` countdown (0x1F), and a whole keyinput_* cluster
-    # (0x15-0x2A) for a live Wait For Key Input / mouse-input pause.
-    # `SaveMapEvent`'s own 0x6C field and `SaveCommonEvent`'s 0x01 both point
-    # at this same struct. Implementing this for real means snapshotting
-    # `Game::Interpreter`'s actual call stack (command list + cursor per
-    # frame, not just the coarser resume-index this codebase tracks today)
-    # -- a genuine feature addition, not a small field fix, so it stays
-    # undecoded here; `Game::State#common_event_progress`'s own comment
-    # tracks this as a standing gap.
-    SAVE_COMMON_EVENT = {
-      1 => { name: :execution_state, type: :int8_array },
+    # `event_id` (0x0C, "0 if it's common event or in other map" per liblcf's
+    # own comment): cycle #192 gave each frame its own genuine value.
+    # `Game::Interpreter#do_call_event` now records, at the moment it pushes
+    # each frame, the concrete map-event id that frame's own `commands` list
+    # actually belongs to (via `#resolve_call`/`#map_event_call`, which
+    # already resolve exactly that to look the list up in the first place),
+    # or 0 when the call target was a common event -- see
+    # `#call_stack_snapshot`'s own comment for exactly how each frame's
+    # value is derived (the outermost frame is always this whole
+    # interpreter's own `#event_id`; every frame beneath it carries its own
+    # Call Event's resolved target). "...or in other map" does not name a
+    # distinct, reachable case here: Call Event's own command format (param0
+    # 0/1/2, see `#do_call_event`'s own comment) never names a map at all,
+    # only a common-event id or a same-map event id/page, so this codebase's
+    # own model has no "different map" target to ever resolve into a frame
+    # -- 0 covers both the common-event case and (vacuously) that one.
+    # `triggered_by_decision_key` (0x0D) is still written from this whole
+    # interpreter's single `#triggered_by_decision_key`, true only for the
+    # outermost frame (index 0): a Call Event's own nested frame was never
+    # itself started by the action key, whatever launched the outer event --
+    # this part was already correct as of cycle #191 and cycle #192 left it
+    # untouched.
+    #
+    # `subcommand_path` (0x15 count / 0x16 data, one byte per nesting level --
+    # the chosen Show Choice branch id at that level, 255 once taken, per
+    # liblcf's own comment on the field) is always written empty here. This
+    # engine's own Show Choices (`#do_show_choices`/`#find_choice_option`)
+    # resumes purely off the flat `current_command` cursor: once a branch is
+    # chosen, `@index` already points inside that branch's own commands (see
+    # `#choose`), so replaying from `current_command` alone reaches the right
+    # code with no separate "which Case was taken" lookup needed, unlike
+    # genuine RPG_RT's own jump-to-matching-Case mechanism, which is what
+    # `subcommand_path` exists to drive. Verified by reading (not by a wine
+    # capture) that nothing else in this engine's interpreter ever consults a
+    # branch identity beyond command position. This is a genuine, deliberate
+    # simplification for this engine's own internal round-trip fidelity (its
+    # own Continue), not an attempt at full interop with genuine RPG_RT.exe
+    # reading our `.lsd` files (or the reverse) -- a real save captured mid a
+    # Show Choices prompt would need this field decoded to resume the exact
+    # same way genuine RPG_RT would.
+    SAVE_EVENT_EXEC_FRAME = {
+      1  => { name: :command_size, type: :int, default: 0 },
+      2  => { name: :commands, type: :event, default: [] },
+      11 => { name: :current_command, type: :int, default: 0 },
+      12 => { name: :event_id, type: :int, default: 0 },
+      13 => { name: :triggered_by_decision_key, type: :bool, default: false },
+      21 => { name: :subcommand_path_size, type: :int, default: 0 },
+      22 => { name: :subcommand_path, type: :int8_array, default: [] },
     }
 
-    # Foreground (map / parallel) event interpreter state (chunk 113): the event
-    # that was mid-execution when the game was saved. A save taken from an
-    # on-screen choice keeps that choice's option strings inside this blob, which
-    # is how the section was identified; its inner grammar is left opaque for now.
+    # An interpreter's full execution state (liblcf's `SaveEventExecState`):
+    # `stack` (0x01, `Array<SaveEventExecFrame>` -- see SAVE_EVENT_EXEC_FRAME
+    # just above) is the genuine call stack, outermost frame first, matching
+    # `Game::Interpreter#call_stack_snapshot`'s own `@call_stack + [[@list,
+    # @index, event_id]]` order (this codebase's own writer/reader convention
+    # for the frame's own array index within `stack`, 1-based ascending outer
+    # to inner -- not confirmed against a genuine multi-frame capture, since
+    # none was available; only that a single-frame `stack` round-trips against
+    # this codebase's own reading of the field table). `SaveMapEvent`'s own
+    # 0x6C field and `SaveCommonEvent`'s own field 1 both point at this same
+    # struct (`generator/csv/fields.csv`'s `Save.foreground_event_execstate`
+    # field, 0x71 at the top-level Save struct, is the same struct again).
     #
-    # Same `SaveEventExecState` struct as SAVE_COMMON_EVENT's own field 1 --
-    # see that table's own comment for liblcf's full field breakdown
-    # (`generator/csv/fields.csv`'s `Save.foreground_event_execstate` field,
-    # 0x71 at the top-level Save struct).
+    # Everything below `stack` -- `show_message`, `abort_on_escape`,
+    # `wait_movement`, the whole keyinput_* cluster, `wait_time`, and
+    # `wait_key_enter` -- is declared here for read-fidelity (so a genuine
+    # third-party `.lsd` carrying them decodes cleanly instead of raising on
+    # an unknown field), but is schema-only: this engine's own writer
+    # (`Game::State#to_lsd`) never populates them (they are always absent,
+    # reading back at their liblcf defaults below), and its own reader never
+    # feeds them into any live interpreter wait state. Only `stack` is
+    # genuinely round-tripped end to end. See `Game::Interpreter
+    # #call_stack_snapshot`'s own comment for exactly what capturing "mid a
+    # blocking wait" (Show Message/Choices/Key Input/etc.) does and does not
+    # preserve today -- the call-stack position survives, the UI-facing wait
+    # itself does not.
+    SAVE_EVENT_EXEC_STATE = {
+      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
+      4  => { name: :show_message, type: :bool, default: false },
+      11 => { name: :abort_on_escape, type: :bool, default: false },
+      13 => { name: :wait_movement, type: :bool, default: false },
+      21 => { name: :keyinput_wait, type: :bool, default: false },
+      22 => { name: :keyinput_variable, type: :uint8, default: 0 },
+      23 => { name: :keyinput_all_directions, type: :bool, default: false },
+      24 => { name: :keyinput_decision, type: :int, default: 0 },
+      25 => { name: :keyinput_cancel, type: :int, default: 0 },
+      26 => { name: :keyinput_2kshift_2k3numbers, type: :int, default: 0 },
+      27 => { name: :keyinput_2kdown_2k3operators, type: :int, default: 0 },
+      28 => { name: :keyinput_2kleft_2k3shift, type: :int, default: 0 },
+      29 => { name: :keyinput_2kright, type: :int, default: 0 },
+      30 => { name: :keyinput_2kup, type: :int, default: 0 },
+      31 => { name: :wait_time, type: :int, default: 0 },
+      32 => { name: :keyinput_time_variable, type: :int, default: 0 },
+      35 => { name: :keyinput_2k3down, type: :int, default: 0 },
+      36 => { name: :keyinput_2k3left, type: :int, default: 0 },
+      37 => { name: :keyinput_2k3right, type: :int, default: 0 },
+      38 => { name: :keyinput_2k3up, type: :int, default: 0 },
+      41 => { name: :keyinput_timed, type: :bool, default: false },
+      42 => { name: :wait_key_enter, type: :bool, default: false },
+    }
+
+    # SAVE_MOVABLE field 108 (0x6C, liblcf's own `SaveMapEvent.
+    # parallel_event_execstate`, generator/csv/fields.csv) -- a map event's
+    # OWN Parallel Process's full call-stack snapshot, the identical
+    # SAVE_EVENT_EXEC_STATE struct chunk 111's own sibling chunks 113/114
+    # (SAVE_FOREGROUND_EVENT/SAVE_COMMON_EVENT) already use. Assigned here,
+    # after SAVE_EVENT_EXEC_STATE's own definition just above, rather than
+    # inline in SAVE_MOVABLE's own literal further up this file -- see that
+    # table's own field-108 comment for why (a forward-reference: this
+    # struct did not exist yet at that point in the file).
+    #
+    # Cycle #193 closes the one gap cycle #191/#192's own foreground/
+    # common-event call-stack persistence deliberately left open: a Map
+    # Event's own Parallel Process (trigger Parallel Process on the event's
+    # own page, distinct from a Common Event's Parallel Process, already
+    # covered by SAVE_COMMON_EVENT) previously had no persistence at all --
+    # not even the older, coarser #resumable_index-style cursor
+    # `Game::State#common_event_progress` gives common events, since no such
+    # cursor ever existed for map events (`Scene::Map#build_parallels`'s own
+    # comment: "a real 'visit' gives a map event's own parallel process no
+    # id that means anything on the map being left"). See
+    # `Game::State#map_event_exec`'s own comment (game.rb) for the full
+    # engine-side wiring this field now backs, and why -- unlike
+    # `#common_event_exec` -- it is scoped to the currently-loaded map only,
+    # matching `#map_event_positions`.
+    #
+    # liblcf's own two neighbouring fields on `SaveMapEvent` --
+    # `waiting_execution` (0x65/101, "this event is waiting for foreground
+    # execution") and `original_move_route_index` (0x66/102) /
+    # `triggered_by_decision_key` (0x67/103) -- are deliberately left
+    # unmodelled: 101 collides with this same shared SAVE_MOVABLE table's
+    # pre-existing, differently-typed `:vehicle` field (chunks 105-107's own
+    # boat/ship/airship ordinal, write-only byte parity with no reader), so
+    # giving it a second meaning here is not possible without splitting
+    # SAVE_MOVABLE into per-chunk tables -- out of scope for this cycle,
+    # which only needs field 108. 102/103 are real, uncontested fields this
+    # codebase's own `Game::State` simply has no distinct "original route
+    # before an override"/"triggered by decision key" concept to source for
+    # a map event specifically (the latter is already carried per-frame
+    # inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`, field 13, which
+    # is what this codebase's reader actually consults) -- left for a future
+    # cycle alongside SAVE_MOVABLE's own already-catalogued larger gaps (see
+    # that table's own comment on the hero's unmodelled move-route chunk/
+    # `through`/movement timers).
+    SAVE_MOVABLE[108] = { name: :parallel_event_execstate, type: :Array1D,
+                          elements: SAVE_EVENT_EXEC_STATE }
+
+    # Saved common-event execution state (chunk 114): an Array2D indexed by
+    # common-event id -- 505 entries in a real Nepheshel save (this codebase's
+    # own writer only ever writes entries for a Common Event actually running
+    # a Parallel Process at save time -- see `Game::State#common_event_exec`'s
+    # own comment for why the full 505-entry shape is not reproduced). Each
+    # entry's field 1 is that common event's own SAVE_EVENT_EXEC_STATE --
+    # NOT a simple resume index like this codebase's own, older
+    # `Game::State#common_event_progress` (a command-list cursor per running
+    # Common Event, still used as the `.lsd`-absent/Marshal-only fallback --
+    # see that attribute's own comment). Cycle #191 wires this field to a
+    # genuine `Game::Interpreter` call-stack snapshot end to end (schema
+    # decode plus `Game::State#to_lsd`/`.from_lsd` plus
+    # `Scene::Map#new_parallel`/`#record_parallel_progress`); verified by a
+    # from-scratch round trip (encode a captured snapshot, decode it back,
+    # confirm a fresh interpreter resumes and finishes identically -- see
+    # `scripts/rpg2k_logic_check.rb`), not against a genuine wine-saved
+    # mid-Parallel-Process `.lsd`, since none was available to compare
+    # byte-for-byte against.
+    SAVE_COMMON_EVENT = {
+      1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
+    }
+
+    # Foreground (map / parallel) event interpreter state (chunk 113): the
+    # event that was mid-execution when the game was saved. A save taken from
+    # an on-screen choice keeps that choice's option strings inside this
+    # blob, which is how the section was identified. Same
+    # `SaveEventExecState` struct as SAVE_COMMON_EVENT's own field 1 above --
+    # see that table's own comment for liblcf's full field breakdown and this
+    # cycle's own verification method.
+    #
+    # "Foreground" is this codebase's own single shared interpreter
+    # (`Scene::Map#@interpreter`), which runs either a map event (trigger 0
+    # action key / 1 touch / Auto-Start) or an Auto-Start Common Event --
+    # both share the one interpreter, matching real RPG_RT's own single
+    # foreground slot. The ordinary player-driven Save menu can only ever
+    # open between events (`Scene::Map#try_open_menu` bails out whenever
+    # `#event_busy?`), so the one reachable way a genuine save actually
+    # captures this chunk with something in it is an event's own Open Save
+    # Menu command (`Cmd::OPEN_SAVE_MENU`, 11910), which parks the
+    # interpreter on a `:save_menu` wait rather than stopping it -- see
+    # `Game::State#foreground_event_exec`'s own comment.
     SAVE_FOREGROUND_EVENT = {
-      1 => { name: :execution_state, type: :int8_array },
+      1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
 
     SAVE_SYSTEM = {
@@ -1948,19 +2178,15 @@ module LCF
       # map's own default backdrop" hypothesis directly); left for whoever
       # picks this back up, alongside cycle #167's own note above.
       #
-      # This codebase already has every *piece* the "map's own resolved
-      # encounter background" hypothesis needs -- `Game::Backdrop.name_for`
-      # (the map-tree backdrop_type walk) and `Scene::Map#terrain_backdrop`
-      # (the tile's own terrain background) together compute exactly this
-      # for `Scene::Battle#encounter_backdrop` -- but both live on
-      # `Scene::Map`/`Scene::Battle`, not `Game::State`: `#terrain_backdrop`
-      # needs `Scene::Map`'s own compiled `@chipset` (tile id -> terrain id)
-      # to resolve the party's current tile, which `Game::State#to_lsd` has
-      # no equivalent of at all. Wiring field 125 up for real needs that
-      # chipset/terrain lookup (or an equivalent) threaded into `#to_lsd`
-      # first, the same kind of database/scene-layer handle `#to_lsd`'s own
-      # vehicle-location comment (mrblib/game.rb) already flags as missing
-      # for a different field.
+      # Wired into `Game::State#to_lsd` off the same `Game::Backdrop.name_for`
+      # map-tree walk `Scene::Battle#encounter_backdrop` uses, plus a
+      # `Game::ChipSet`/terrain lookup built straight from the optional `db`/
+      # `map_tree` arguments (see `#to_lsd`'s own citation in game.rb) --
+      # `Game::ChipSet` already lives in the `Game` namespace, not
+      # `Scene::Map`-only as this comment previously assumed, so no new
+      # scene-layer dependency was needed after all. Not accounted for: a
+      # live Change Map Tileset override (`Scene::Map`'s own `@tileset_id`),
+      # which this codebase does not persist anywhere yet.
       125 => { name: :battle_background, type: :string },
        131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine

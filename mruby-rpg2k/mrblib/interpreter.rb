@@ -184,7 +184,9 @@ module Game
     # three vehicle slots, sit between them and are only recognised by the scene,
     # which owns the vehicles). **This event** is the event whose page is running
     # the command list: the editor writes 10005, and a bare 0 means the same
-    # thing (RPG_RT's `GetCharacter` maps both), which is why every reference
+    # thing (EasyRPG's `GetCharacter` maps both, ported from its source and
+    # NOT independently confirmed against genuine RPG_RT under wine), which
+    # is why every reference
     # goes through #character_ref before it is looked up.
     CHAR_PLAYER     = 10001
     CHAR_BOAT       = 10002
@@ -209,6 +211,11 @@ module Game
       @index = 0
       @running = false
       @call_stack = []
+      # The event_id a Call Event resolved for the list @list currently holds,
+      # tracked purely so #call_stack_snapshot can report each stack frame's
+      # own genuine identity -- see its declaration further down (searched for
+      # "@call_frame_event_id" everywhere it is touched) for the full story.
+      @call_frame_event_id = nil
       @resolver = nil
       @move_route_requests = []
       @location_requests = []
@@ -305,13 +312,56 @@ module Game
     # is stepping. The read-side ones — Conditional Branch orientation, the
     # Control Variables character operand and a Call Event naming a map event —
     # are answered here, so they need the id too.
+    #
+    # Deliberately NOT frame-scoped: a nested Call Event (#do_call_event)
+    # never touches #event_id, so a "this event" reference inside a called
+    # page still resolves to whichever event/common-event originally started
+    # THIS interpreter (the outermost caller), not to the map event the Call
+    # Event actually jumped into. This is this codebase's own pre-existing,
+    # deliberate design (predating cycle #192), not something introduced or
+    # revisited here — cycle #192 only teaches #call_stack_snapshot to record
+    # each frame's own real target-event identity for the *save file*
+    # (@call_frame_event_id below), and deliberately leaves this live
+    # resolution semantic alone: changing what "this event" means mid a
+    # nested call would be a genuine RPG_RT behavior question of its own,
+    # needing its own citable evidence, not a side effect of a save-fidelity
+    # cycle. Because #event_id is never mutated by entering a call in the
+    # first place, #return_from_call correctly has nothing to restore here
+    # either -- see #return_from_call's own comment.
     attr_accessor :event_id
+
+    # The event_id a Call Event resolved when it pushed the list @list is
+    # currently running (0 for a common event, matching liblcf's own
+    # SaveEventExecFrame#event_id comment "0 if it's common event or in
+    # other map" -- see LCF::Schema::SAVE_EVENT_EXEC_FRAME's own comment for
+    # why "in other map" collapses into the same 0 case here). Tracked
+    # entirely separately from #event_id above: this is per-CALL-FRAME
+    # identity, purely so #call_stack_snapshot can give each frame its own
+    # honest value instead of mirroring the whole interpreter's single
+    # #event_id on every frame alike (cycle #191's original simplification).
+    # #character_ref/#event_id's own "this event" resolution never reads
+    # this -- it is inert for live command execution, exactly like the
+    # `commands`/`current_command` a stack frame also carries are inert
+    # until a return actually unwinds to them.
+    #
+    # nil at depth 0 (no Call Event has run yet this interpreter run) --
+    # #call_stack_snapshot then falls back to #event_id for that frame,
+    # which is exactly correct since depth 0 IS the interpreter's own root
+    # frame. #do_call_event sets it to the callee's resolved id on every
+    # push (after first stashing the outgoing value into the pushed
+    # @call_stack entry's own third element), and #return_from_call restores
+    # it from that same third element on every pop, so it always names
+    # whichever list @list currently holds, all the way back up.
+    attr_reader :call_frame_event_id
 
     def start(commands)
       @list = commands || []
       @index = 0
       @running = true
       @call_stack = []
+      # A fresh run starts back at depth 0, same reasoning as #event_id's own
+      # reset just below.
+      @call_frame_event_id = nil
       @move_route_requests = []
       @location_requests = []
       @sprite_flash_requests = []
@@ -634,10 +684,15 @@ module Game
     end
 
     # Resume the caller that a finished called-list returned to; returns false
-    # when there is no caller (the outermost list is done).
+    # when there is no caller (the outermost list is done). Also restores
+    # #call_frame_event_id from the popped frame's own third element, so it
+    # keeps naming whichever list @list holds now that we are back a level
+    # shallower -- #event_id itself needs no matching restore here: it was
+    # never touched by #do_call_event entering the call in the first place
+    # (see #event_id's own comment), so there is nothing to unwind.
     def return_from_call
       return false if @call_stack.empty?
-      @list, @index = @call_stack.pop
+      @list, @index, @call_frame_event_id = @call_stack.pop
       true
     end
 
@@ -678,6 +733,140 @@ module Game
       { index: @index, size: @list.size, call_depth: @call_stack.size }
     end
 
+    # Full call-stack snapshot, suitable for a genuine `.lsd`'s
+    # SaveEventExecState/SaveEventExecFrame (LCF::Schema::
+    # SAVE_EVENT_EXEC_STATE/_FRAME, mruby-lcf/mrblib/schema.rb) -- unlike
+    # #resumable_index (a single command-list cursor, only capturable with
+    # @call_stack empty), this captures every frame Call Event has pushed,
+    # outermost first, plus the innermost currently-executing one, so a save
+    # taken mid a nested Call Event resumes at the exact right command in the
+    # exact right list once restored via #restore_call_stack. It also stays
+    # capturable while #waiting? (parked on a Show Message/Wait/Open Save
+    # Menu/etc. request): @waiting only stops execution from *advancing*
+    # further, it does not make @call_stack/@list/@index any less valid a
+    # position to resume at than #resumable_index already treats a clean
+    # between-commands pause -- @index always sits just past the command
+    # that raised the wait either way (see #resumable_index's own comment).
+    #
+    # Each returned frame is a Hash: `commands` (the frame's own command
+    # list, an Array of LCF::EventCommand-alikes -- exactly what
+    # LCF.encode_event_commands/#restore_call_stack both expect),
+    # `current_command` (the cursor into it), `event_id` and
+    # `triggered_by_decision_key`.
+    #
+    # `event_id` is each frame's own genuine target identity (cycle #192):
+    # the outermost frame (index 0) always carries this whole interpreter's
+    # own #event_id -- that one was never pushed by a Call Event, it is
+    # whatever the owning scene set before this run started, and stays the
+    # only source of truth for it (see #event_id's own comment on why it is
+    # deliberately NOT frame-scoped for live execution). Every frame beneath
+    # it carries the map-event id (or 0 for a common event -- see
+    # #do_call_event/#resolve_call) that the Call Event pushing it actually
+    # resolved, tracked live via #call_frame_event_id and threaded through
+    # each @call_stack entry's own third element. Only the outermost frame's
+    # own `triggered_by_decision_key` can genuinely be true: a Call Event's
+    # own nested frame was never itself started by the action key, whatever
+    # launched the outer event.
+    #
+    # Returns nil for an interpreter with nothing to capture (never started,
+    # or already finished) -- the overwhelming common case a save actually
+    # happens in, matching real RPG_RT (see SAVE_FOREGROUND_EVENT/
+    # SAVE_COMMON_EVENT's own schema.rb comments for when it is not).
+    def call_stack_snapshot
+      return nil unless @running
+      # A Key Input Proc's own wait (@wait_kind == :key_input -- cycle #193's
+      # own confirmed-reachable case: a Parallel Process can be genuinely mid
+      # this specific wait, with no message window open, while a Save is
+      # still reachable, unlike every other message/choice/number wait that
+      # cycle #193 confirmed a Save can never interrupt) is captured one
+      # command EARLIER than @index's own usual "just past the command that
+      # raised the wait" convention. By the time #do_key_input sets
+      # @wait_kind, @index has already advanced past the Key Input Proc
+      # command itself (it committed -- reset the requested variable to 0,
+      # computed the accepted-keys mask -- and is now waiting for a genuine
+      # key press the scene feeds back later), which #restore_call_stack has
+      # no way to reconstruct on its own (it only rebuilds @call_stack/@list/
+      # @index, never @waiting/@wait_kind/@key_input_request -- see its own
+      # comment). Re-running #do_key_input from scratch instead reproduces
+      # the exact same wait state deterministically, since it is a pure
+      # function of the command's own literal parameters -- even its one
+      # side effect (resetting the requested variable to 0) is exactly what
+      # genuine RPG_RT itself already does every single frame it re-checks a
+      # still-pending Key Input Proc (see #do_key_input's own comment), so
+      # replaying it on restore is not a workaround, it is what would have
+      # happened on the very next frame regardless. This reuses the same
+      # rewind-and-retry idiom #block_pending_key_input_command already
+      # applies for its own "message window still open" case, just triggered
+      # here instead of by the interpreter's own next #update.
+      live_index = (@waiting && @wait_kind == :key_input) ? @index - 1 : @index
+      frames = @call_stack + [[@list, live_index, @call_frame_event_id || @event_id || 0]]
+      frames.each_with_index.map do |(list, index, event_id), i|
+        {
+          commands: list,
+          current_command: index,
+          event_id: (i.zero? ? @event_id : event_id) || 0,
+          triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
+        }
+      end
+    end
+
+    # Restore a previously #call_stack_snapshot-captured stack (or the
+    # equivalent decoded fresh off a genuine `.lsd`'s SAVE_EVENT_EXEC_STATE),
+    # replacing whatever this interpreter was running. Rebuilds
+    # @call_stack/@list/@index exactly, outermost frame first (matching
+    # #call_stack_snapshot's own order), restores the outermost frame's own
+    # #event_id/#triggered_by_decision_key (0/false read back as "nothing to
+    # restore", the same as a fresh interpreter already starts with), and
+    # marks the interpreter running again via #start -- which also resets
+    # every other per-run flag (@waiting included) a fresh #start already
+    # resets, since nothing here attempts to restore a mid-wait UI request
+    # (a Show Message/Choices window, a Key Input prompt, ...), only the
+    # command-list position underneath it -- see #call_stack_snapshot's own
+    # comment on that same scope limit, which #resumable_index/#start_at
+    # already share.
+    #
+    # Each restored @call_stack entry also gets back its own frame's
+    # `event_id` (cycle #192) as its third element, and #call_frame_event_id
+    # is set to the innermost frame's own value when there is any nesting at
+    # all (#start above already reset it to nil, the correct depth-0 value,
+    # for the no-nesting case). None of this changes what actually executes
+    # -- #character_ref/#event_id's own "this event" resolution only ever
+    # reads #event_id (restored just below, from the OUTERMOST frame, same
+    # as before), never a frame's own per-call identity or
+    # #call_frame_event_id -- it exists purely so that immediately
+    # re-snapshotting a freshly-restored interpreter (before it runs another
+    # command) reproduces the exact same per-frame `event_id` values the
+    # original snapshot had, i.e. so the round trip is stable. A suspended
+    # caller frame's own event_id is genuinely dormant data until
+    # #return_from_call eventually pops back to it; #return_from_call
+    # already restores #call_frame_event_id from that same third element at
+    # that point (see its own comment), so nothing here needs to anticipate
+    # that -- only the record has to survive the round trip.
+    #
+    # The caller still owns #resolver/#map_info the same way #start's own
+    # callers already do (Scene::Map's #start_autostart/#new_parallel/the
+    # decision-key trigger path) -- this only rebuilds the execution
+    # position, not the surrounding wiring a fresh interpreter also needs.
+    #
+    # A blank/nil `frames` is a no-op, leaving the interpreter exactly as it
+    # was (unstarted, most likely) -- there is nothing here to fall back to
+    # instead, so the caller is expected to check first, same as every
+    # existing #resumable_index/#start_at call site already does.
+    def restore_call_stack(frames)
+      return if frames.nil? || frames.empty?
+      innermost = frames.last
+      start(innermost[:commands] || [])
+      idx = innermost[:current_command]
+      @index = idx if idx && idx >= 0 && idx <= @list.size
+      @call_stack = frames[0...-1].map do |f|
+        [f[:commands] || [], f[:current_command] || 0, f[:event_id] || 0]
+      end
+      outer = frames.first
+      @event_id = outer[:event_id] if outer[:event_id] && outer[:event_id] != 0
+      @triggered_by_decision_key = !!outer[:triggered_by_decision_key]
+      @call_frame_event_id = (innermost[:event_id] || 0) if frames.size > 1
+    end
+
     # Start (or restart) at a previously #resumable_index-captured position
     # instead of the top of the list. `commands` must be the same command list
     # (or an equivalent rebuild of it, e.g. the same common event reloaded from
@@ -704,6 +893,7 @@ module Game
       @running = false
       @index = @list.size
       @call_stack = []
+      @call_frame_event_id = nil
       @pending_messages = []
       reset_waits
     end
@@ -847,6 +1037,7 @@ module Game
       if result == :escape && @battle_escape_aborts
         @index = @list.size
         @call_stack = []
+        @call_frame_event_id = nil
         reset_waits
         return
       end
@@ -1089,23 +1280,43 @@ module Game
     # A missing target is a logged no-op (see #resolve_call/#map_event_call); an
     # empty (but resolved) target is a silent no-op, since that page/event
     # genuinely has nothing to run. Recursion is bounded by MAX_CALL_DEPTH.
+    #
+    # Before diving in, stashes the OUTGOING #call_frame_event_id (cycle
+    # #192 -- this frame's own genuine identity, whatever list @list held
+    # before this call) onto the pushed @call_stack entry's own third
+    # element, then updates #call_frame_event_id to the callee's own newly-
+    # resolved identity, so it always names whichever list @list currently
+    # holds -- see #call_frame_event_id's own comment for the full
+    # bookkeeping story and #return_from_call for the matching pop-side
+    # restore.
     def do_call_event(cmd)
       return unless @resolver
-      cmds = resolve_call(cmd)
+      cmds, target_event_id = resolve_call(cmd)
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      @call_stack.push [@list, @index]
+      @call_stack.push [@list, @index, @call_frame_event_id || @event_id || 0]
       @list = cmds
       @index = 0
+      @call_frame_event_id = target_event_id
     end
 
+    # Resolves a Call Event's target, returning `[commands, event_id]` (both
+    # nil on any failure) -- `event_id` (cycle #192) is the concrete map-event
+    # id #do_call_event's pushed frame should carry for the list about to run,
+    # 0 for a common event, matching liblcf's own SaveEventExecFrame#event_id
+    # comment "0 if it's common event or in other map" (see
+    # LCF::Schema::SAVE_EVENT_EXEC_FRAME's own comment on why "in other map"
+    # is not a distinct, reachable case in this codebase's own model: Call
+    # Event's own command format -- param0 0/1/2 above -- never names a map
+    # at all, only a common-event id or a same-map event id/page, so there is
+    # no "different map" target for this engine to ever resolve here).
     def resolve_call(cmd)
       case cmd.param(0)
       when 0
         id = cmd.param(1)
         cmds = @resolver.common_event_commands(id)
         $stderr.puts "[RPG2k] Call Event: common event #{id} not found" if cmds.nil?
-        cmds
+        [cmds, 0]
       when 1 then map_event_call(cmd.param(1), cmd.param(2))
       when 2 then map_event_call(variables[cmd.param(1)],
                                  variables[cmd.param(2)])
@@ -1121,7 +1332,9 @@ module Game
     # stale event id or page number resolves to no commands either -- both are
     # reported here rather than left a silent no-op, matching real RPG_RT's
     # error dialog for the same targets (see docs/TODO.md's runtime error
-    # catalog).
+    # catalog). Returns `[commands, id]` on success (see #resolve_call), a
+    # bare nil on failure -- #do_call_event/#resolve_call already bail out on
+    # `cmds.nil?` before ever consulting the second value in that case.
     def map_event_call(event_ref, page)
       id = character_ref(event_ref)
       if id.nil?
@@ -1131,7 +1344,7 @@ module Game
       end
       cmds = @resolver.map_event_commands(id, page)
       $stderr.puts "[RPG2k] Call Event: map event #{id} page #{page} not found" if cmds.nil?
-      cmds
+      [cmds, id]
     end
 
     # Translate a command's character reference into the map event id the scene
@@ -1552,6 +1765,7 @@ module Game
       if @battle_escape_aborts
         @index = @list.size
         @call_stack = []
+        @call_frame_event_id = nil
         return
       end
       target = @battle_has_handlers && find_battle_option(:escape)
@@ -1871,7 +2085,9 @@ module Game
     # equipment slot — weapon, shield, armour, helmet, accessory, in the order
     # Game::Actor::EQUIP_ORDER already stores them, 0 for an empty slot).
     #
-    # Read through the roster (RPG_RT's `Game_Actors::GetActor`), so a companion
+    # Read through the roster (EasyRPG's `Game_Actors::GetActor`, ported from
+    # its source and NOT independently confirmed against genuine RPG_RT
+    # under wine), so a companion
     # who is out of the party reports their real level and gear rather than 0.
     # **Every** actor-stat read in Nepheshel — all 2436 — names a swappable
     # companion, and its party status display is built out of them, so a
@@ -2066,7 +2282,9 @@ module Game
     # Change Party Member (10330): add or remove the actor named by param2 (a
     # constant, or a variable when param1 is 1). Either can change who leads
     # the party — an add when the party was empty, a remove of the current
-    # leader — and RPG_RT's `Game_Player::Refresh` runs on every such change,
+    # leader — and EasyRPG's `Game_Player::Refresh` is believed to run on
+    # every such change (ported from its source, NOT independently
+    # confirmed against genuine RPG_RT under wine),
     # not only on Change Sprite Association, so the on-screen hero sprite
     # (loaded from the leader's CharSet) has to be reloaded here too. Without
     # this a companion swap left the map showing whichever leader's graphic
@@ -2260,7 +2478,8 @@ module Game
     #
     # Only scope 0 means "the party". A **named** actor is looked up in the
     # roster, so the command reaches one who is currently out of the party —
-    # RPG_RT's `Game_Interpreter::GetActors`, which reads the party for scope 0
+    # ported from EasyRPG's `Game_Interpreter::GetActors`, NOT independently
+    # confirmed against genuine RPG_RT under wine, which reads the party for scope 0
     # and `Game_Actors::GetActor` for the other two. That distinction is the
     # whole point in a game that swaps members: **every** fixed-id stat command
     # in Nepheshel (7805 of them — Change Skills on actor 1 alone is 2871) names
@@ -2521,8 +2740,9 @@ module Game
     # -- actor identity / graphic ---------------------------------------------
 
     # Every command in this group names its actor by a fixed id in param0, and
-    # RPG_RT resolves all of them through `Game_Actors::GetActor` — the roster,
-    # not the party — so a companion who is currently away is still renamed,
+    # EasyRPG resolves all of them through `Game_Actors::GetActor` — the roster,
+    # not the party — ported from its source, NOT independently confirmed
+    # against genuine RPG_RT under wine, so a companion who is currently away is still renamed,
     # re-dressed and re-portraited, and has it waiting when they rejoin. nil only
     # for an id the database has no row for.
     def identity_target(cmd); party.roster[cmd.param(0)]; end
@@ -2904,12 +3124,22 @@ module Game
     # NOT independently confirmed against genuine RPG_RT under wine, the
     # same `IsRPG2k3Commands()` gate
     # as Force Flee/Enable Combo above.
+    #
+    # The pushed entry's third element (cycle #192's per-frame event_id, see
+    # #do_call_event's own comment) is always a literal 0 here, matching the
+    # only kind of target this command ever has -- kept purely so
+    # @call_stack's own shape stays uniform for the shared #return_from_call
+    # to pop, NOT a claim that battle interpreters participate in
+    # #call_stack_snapshot's save mechanism: they do not (see
+    # #call_stack_snapshot's own scope, Game::State#foreground_event_exec/
+    # #common_event_exec), per-frame identity there is deliberately out of
+    # scope for this cycle.
     def do_call_common_event(cmd)
       return unless @resolver && @state.party.rpg2003?
       cmds = common_event_commands(cmd.param(0))
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
-      @call_stack.push [@list, @index]
+      @call_stack.push [@list, @index, 0]
       @list = cmds
       @index = 0
     end
@@ -2954,6 +3184,7 @@ module Game
       @battle.terminate
       @index = @list.size
       @call_stack = []
+      @call_frame_event_id = nil
     end
 
     # Conditional Branch (battle form, 13310). param0 selects the test:
@@ -2986,8 +3217,10 @@ module Game
     # actually runs the page's in-body commands. Test 4 ("the currently-
     # targeted troop member is param1") is now implemented too -- see
     # #battle_target_enemy_condition/`Game::Battle#target_enemy_index`, this
-    # port's own counterpart of RPG_RT's `target_enemy_index`/`targets_
-    # single_enemy` pair, reusing the identical `battle_source` plumbing
+    # port's own counterpart of EasyRPG's `target_enemy_index`/`targets_
+    # single_enemy` pair (ported from its source, NOT independently
+    # confirmed against genuine RPG_RT under wine), reusing the identical
+    # `battle_source` plumbing
     # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
@@ -3090,7 +3323,7 @@ module Game
     # `Game_Interpreter_Battle::CommandConditionalBranchBattle` case 4:
     # `result = (targets_single_enemy && target_enemy_index ==
     # com.parameters[1]);`. `Game::Battle#target_enemy_index` is this port's
-    # own counterpart of RPG_RT's `target_enemy_index`/`targets_single_
+    # own counterpart of EasyRPG's `target_enemy_index`/`targets_single_
     # enemy` pair, reusing the identical `battle_source` plumbing
     # `#battle_command_condition` (test 5) already threads from
     # `#run_battle_events`; a nil result (no single enemy target resolved)
@@ -3204,8 +3437,9 @@ module Game
     # 6 afflicted by state param3.
     #
     # Only sub-condition 0 asks the party; the rest ask the **actor**, through
-    # the roster, exactly as RPG_RT splits them (`IsActorInParty` versus
-    # `Game_Actors::GetActor`). The distinction decides which branch runs, and
+    # the roster, exactly as EasyRPG splits them (`IsActorInParty` versus
+    # `Game_Actors::GetActor`, ported from its source and NOT independently
+    # confirmed against genuine RPG_RT under wine). The distinction decides which branch runs, and
     # real data leans on it: Nepheshel writes 28 "is in the party" tests and 243
     # state tests, all of the latter naming a companion it also dismisses — so
     # answering them from the party alone sent every one down the false branch
@@ -4319,8 +4553,9 @@ module Game
     # Play Memorized BGM: resume the BGM stashed by Memorize BGM, making it the
     # current BGM again. A no-op when nothing was memorised. Playback resumes
     # from the start — the SDL_mixer backend cannot seek to the stored position
-    # — *unless* the memorized file is the one still playing right now: real
-    # RPG_RT's `Game_System::PlayMemorizedBGM` is a bare call to the same
+    # — *unless* the memorized file is the one still playing right now: ported
+    # from EasyRPG's `Game_System::PlayMemorizedBGM`, NOT independently
+    # confirmed against genuine RPG_RT under wine, which is a bare call to the same
     # `BgmPlay` every other BGM entry point goes through (Play BGM, and the
     # battle/vehicle/inn helpers — see `Scene::Map#play_bgm`), so its "same
     # music: only adjust volume and speed" no-restart rule applies here too,

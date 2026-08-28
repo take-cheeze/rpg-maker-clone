@@ -716,6 +716,13 @@
   Defaults to `60` (every frame renders); values outside `1..60` are clamped
   with a warning.
 
+- For RPG Maker 2000/2003, a low `--render_fps` also shrinks the map scene's
+  decoded-bitmap cache budgets (named graphics and toned-picture variants) by
+  roughly the same ratio, evicting the least-recently-used entry sooner in
+  exchange for real RAM saved on a constrained device — see
+  [`docs/adr/0063-render-fps-scaled-bitmap-caches.md`](docs/adr/0063-render-fps-scaled-bitmap-caches.md).
+  No effect at the default `60`.
+
 ### Build natively without Nix
 
 - The supported build is the Nix flake (`nix develop`), which pins every
