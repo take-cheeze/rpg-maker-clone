@@ -2072,8 +2072,18 @@ class RPG2k
       # (narrower) actual pause conditions.
       def step_parallels
         # Iterate a copy: an Erase Event in a parallel process removes it from
-        # @parallels mid-loop (see erase_event).
-        @parallels.dup.each { |p| step_parallel(p) }
+        # @parallels mid-loop (see erase_event). A plain while loop instead of
+        # #each avoids allocating a Proc+env for the block on every single
+        # frame -- mruby's `for` is sugar for the identical #each call (see
+        # its NODE_FOR codegen), so it would not save anything here; only a
+        # loop with no block at all does.
+        snapshot = @parallels.dup
+        i = 0
+        size = snapshot.size
+        while i < size
+          step_parallel(snapshot[i])
+          i += 1
+        end
       end
 
       # Keep a Parallel Process's own battle advancing once it has opened one
@@ -2093,8 +2103,16 @@ class RPG2k
         return unless @battle
         owner = @battle.owner
         return if owner.nil? || owner.equal?(@interpreter)
-        p = @parallels.find { |pp| pp[:interp].equal?(owner) }
-        step_parallel(p) if p
+        i = 0
+        size = @parallels.size
+        while i < size
+          pp = @parallels[i]
+          if pp[:interp].equal?(owner)
+            step_parallel(pp)
+            return
+          end
+          i += 1
+        end
       end
 
       def step_parallel(p)
