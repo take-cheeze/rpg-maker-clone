@@ -91,11 +91,18 @@ class RPG2k
       # mruby-rpg2k/mrblib/interpreter.rb), the database value from
       # gameover_music's own liblcf `BGM`-struct field 2 (`fade_in`,
       # mruby-lcf/mrblib/schema.rb) -- previously read off neither and
-      # dropped before reaching Audio.bgm_play.
+      # dropped before reaching Audio.bgm_play. `balance` (cycle #219): the
+      # same gap, for field 5 (`balance`) -- Play BGM/Play Memorized BGM and
+      # (as of this same cycle) Scene::Map's own battle/inn/vehicle/Autoplay
+      # BGM all re-apply their balance to `Audio.bgm_pan` unconditionally on
+      # every play, but this screen's own BGM never did, so a database or
+      # override pan configured for the game-over slot was silently dropped
+      # too.
       def play_gameover_bgm
-        name, vol, tempo, fadein = gameover_bgm_override || database_gameover_bgm
+        name, vol, tempo, fadein, balance = gameover_bgm_override || database_gameover_bgm
         return if name.nil? || name.empty?
         Audio.bgm_play name, vol, tempo, 0, fadein
+        Audio.bgm_pan balance
       rescue StandardError => e
         $stderr.puts "[RPG2k] game over BGM playback failed: #{e.message}"
       end
@@ -104,13 +111,13 @@ class RPG2k
         return nil unless @game_state
         ov = @game_state.system_bgm[SYSTEM_BGM_GAMEOVER]
         return nil unless ov && ov[:name] && !ov[:name].to_s.empty?
-        [ov[:name], ov[:volume] || 100, ov[:tempo] || 100, ov[:fadein] || 0]
+        [ov[:name], ov[:volume] || 100, ov[:tempo] || 100, ov[:fadein] || 0, ov[:balance] || 50]
       end
 
       def database_gameover_bgm
         bgm = db.system.gameover_music
-        return [nil, 100, 100, 0] unless bgm
-        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100), (bgm.fade_in || 0)]
+        return [nil, 100, 100, 0, 50] unless bgm
+        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100), (bgm.fade_in || 0), (bgm.balance || 50)]
       end
     end
 
