@@ -2928,9 +2928,23 @@ class RPG2k
       def play_bgm(music)
         same_file_already_playing = @state.current_bgm && @state.current_bgm[:name] == music[:name]
         if same_file_already_playing
+          # No restart happens here, so there is nothing for a fade-in to
+          # ramp into -- the same same-file shortcut #play_audio's own :bgm
+          # branch (mruby-rpg2k/mrblib/interpreter.rb) already documents for
+          # every other Play BGM parameter, cycle #202.
           RGSS::Audio.bgm_volume(music[:volume] || 100)
         else
-          RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100)
+          # `music[:fadein]` (cycle #203): battle/inn/vehicle BGM now carries
+          # a real fade-in through here the same way Play BGM and Play
+          # Memorized BGM already do (see those two's own doc comments) --
+          # both a Change System BGM (10660) override (`do_change_system_bgm`
+          # in interpreter.rb) and the database's own battle_music/inn_music/
+          # boat_music/ship_music/airship_music (all liblcf `BGM`-struct
+          # fields, schema.rb, field 2 `fade_in`) genuinely carry a fade-in
+          # value that this helper used to read the struct for and then drop
+          # before reaching RGSS::Audio.bgm_play's 5th argument.
+          RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100,
+                               0, music[:fadein] || 0)
         end
         @state.current_bgm = music
       end
@@ -3010,22 +3024,29 @@ class RPG2k
         $stderr.puts "[RPG2k] battle BGM failed: #{e.message}"
       end
 
-      # The battle BGM to play as { name:, volume:, tempo: }, or nil when
-      # neither source names a file. Prefers a Change System BGM override for
-      # the battle slot over the database's own System battle_music -- the
-      # same override-then-default idiom #system_se already uses for Change
-      # System SFX overrides, extended to BGM now that a battle actually
-      # plays music to override.
+      # The battle BGM to play as { name:, volume:, tempo:, fadein: }, or nil
+      # when neither source names a file. Prefers a Change System BGM
+      # override for the battle slot over the database's own System
+      # battle_music -- the same override-then-default idiom #system_se
+      # already uses for Change System SFX overrides, extended to BGM now
+      # that a battle actually plays music to override. `fadein` (cycle
+      # #203): both sources genuinely carry one -- the override from Change
+      # System BGM's own fade-in parameter (`do_change_system_bgm`,
+      # mruby-rpg2k/mrblib/interpreter.rb), the database value from
+      # battle_music's own liblcf `BGM`-struct field 2 (`fade_in`,
+      # mruby-lcf/mrblib/schema.rb) -- previously read off neither and
+      # dropped before reaching #play_bgm.
       def battle_bgm
         ov = @state.system_bgm[SYSTEM_BGM_BATTLE]
         if ov && ov[:name] && !ov[:name].empty?
           return { name: ov[:name], volume: ov[:volume] || 100,
-                    tempo: ov[:tempo] || 100 }
+                    tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0 }
         end
         name = music_name(db.system.battle_music)
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(db.system.battle_music),
-          tempo: music_tempo(db.system.battle_music) }
+          tempo: music_tempo(db.system.battle_music),
+          fadein: music_fadein(db.system.battle_music) }
       end
 
       # Play the victory fanfare over the result window on a win, the same way
@@ -3041,6 +3062,21 @@ class RPG2k
       # here needs to remember or restore anything of its own. A game with no
       # victory BGM configured leaves whatever was playing (the battle track)
       # alone, the same blank-Music no-op #battle_bgm documents.
+      #
+      # Deliberately does NOT forward a fade-in (cycle #203 audit): the
+      # override and battle_end_music both do carry a genuine fade-in value
+      # the same way battle_music/inn_music/vehicle music do (Change System
+      # BGM's own fade-in parameter; liblcf's `BGM`-struct field 2), but
+      # RGSS::Audio.me_play has no fadein parameter at all -- unlike
+      # RGSS::Audio.bgm_play (cycle #202), the native ME playback path
+      # (`me_play`/`me_play_mem`, src/sdl_audio.cxx) was never given one,
+      # since RPG_RT's own "ME" one-shot channel is a distinct playback
+      # mechanism from its looping BGM channel. Wiring this would mean adding
+      # a fadein parameter across the whole native ME path (sdl_audio.cxx,
+      # include/rgss_audio.hxx, mruby-rgss/src/audio.cxx,
+      # mruby-rgss/mrblib/lib.rb) -- out of this audit's scope, which is
+      # forwarding an already-plumbed value through mrblib call sites, not
+      # extending the native audio surface.
       def play_victory_bgm
         music = victory_bgm
         return unless music
@@ -3114,19 +3150,22 @@ class RPG2k
         $stderr.puts "[RPG2k] inn BGM failed: #{e.message}"
       end
 
-      # The inn BGM to play as { name:, volume:, tempo: }, or nil when
-      # neither source names a file. Prefers a Change System BGM override for
-      # the inn slot over the database's own System inn_music -- the same
-      # override-then-default idiom #battle_bgm / #vehicle_bgm already use.
+      # The inn BGM to play as { name:, volume:, tempo:, fadein: }, or nil
+      # when neither source names a file. Prefers a Change System BGM
+      # override for the inn slot over the database's own System inn_music --
+      # the same override-then-default idiom #battle_bgm / #vehicle_bgm
+      # already use, `fadein` included (cycle #203) -- see #battle_bgm's own
+      # doc comment for why both sources genuinely carry one.
       def inn_bgm
         ov = @state.system_bgm[SYSTEM_BGM_INN]
         if ov && ov[:name] && !ov[:name].to_s.empty?
-          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100 }
+          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
+                    fadein: ov[:fadein] || 0 }
         end
         name = music_name(db.system.inn_music)
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(db.system.inn_music),
-          tempo: music_tempo(db.system.inn_music) }
+          tempo: music_tempo(db.system.inn_music), fadein: music_fadein(db.system.inn_music) }
       end
 
       # Restore the BGM that was playing before the inn stay began. A no-op
@@ -3149,30 +3188,40 @@ class RPG2k
       # sit between the ones the battle and game-over BGM already resolve.
       VEHICLE_SYSTEM_BGM_SLOT = { boat: 3, ship: 4, airship: 5 }.freeze
 
-      # The BGM to play for vehicle `type` as { name:, volume:, tempo: }, or
-      # nil when neither source names a file. Prefers a Change System BGM
-      # override for the vehicle's slot over the database's own boat / ship /
-      # airship music — the same override-then-default idiom #system_se
-      # already uses for Change System SFX.
+      # The BGM to play for vehicle `type` as
+      # { name:, volume:, tempo:, fadein: }, or nil when neither source names
+      # a file. Prefers a Change System BGM override for the vehicle's slot
+      # over the database's own boat / ship / airship music — the same
+      # override-then-default idiom #system_se already uses for Change System
+      # SFX, `fadein` included (cycle #203) -- see #battle_bgm's own doc
+      # comment for why both sources genuinely carry one.
       def vehicle_bgm(type)
         slot = VEHICLE_SYSTEM_BGM_SLOT[type]
         ov = slot && @state.system_bgm[slot]
         if ov && ov[:name] && !ov[:name].to_s.empty?
-          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100 }
+          return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
+                    fadein: ov[:fadein] || 0 }
         end
         field = "#{type}_music"
         return nil unless @db.system.respond_to?(field)
         bgm = @db.system.send(field)
         name = music_name(bgm)
         return nil if name.nil? || name.empty?
-        { name: name, volume: music_volume(bgm), tempo: music_tempo(bgm) }
+        { name: name, volume: music_volume(bgm), tempo: music_tempo(bgm), fadein: music_fadein(bgm) }
       end
 
-      # A parsed BGM chunk exposes file / volume / pitch; read them defensively so
-      # a bare fixture that omits a field still works.
+      # A parsed BGM chunk exposes file / fade_in / volume / pitch; read them
+      # defensively so a bare fixture that omits a field still works.
       def music_name(m); m.file rescue nil; end
       def music_volume(m); (m.volume rescue nil) || 100; end
       def music_tempo(m); (m.pitch rescue nil) || 100; end
+      # `fade_in` (cycle #203): liblcf's `BGM` struct field 2
+      # (mruby-lcf/mrblib/schema.rb), present on every System Music slot this
+      # scene reads (battle_music, inn_music, boat/ship/airship_music) --
+      # previously never read here at all, so a database-configured fade-in
+      # on any of those slots was silently dropped rather than reaching
+      # #play_bgm.
+      def music_fadein(m); (m.fade_in rescue nil) || 0; end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle

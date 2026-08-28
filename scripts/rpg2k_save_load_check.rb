@@ -231,8 +231,8 @@ def check_game(dir)
   mc.face_right = true
   mc.face_flipped = true
   state.player_transparent = true
-  state.current_bgm = { name: 'Theme', volume: 80, tempo: 120 }
-  state.memorized_bgm = { name: 'Boss', volume: 90, tempo: 100 }
+  state.current_bgm = { name: 'Theme', volume: 80, tempo: 120, fadein: 500 }
+  state.memorized_bgm = { name: 'Boss', volume: 90, tempo: 100, fadein: 800 }
   state.menu_access = false
   state.save_access = false
   state.teleport_access = true
@@ -329,8 +329,18 @@ def check_game(dir)
   eq true, rmc.face_right, 'to_lsd: message face_right'
   eq true, rmc.face_flipped, 'to_lsd: message face_flipped'
   eq true, round.player_transparent, 'to_lsd: player_transparent'
-  eq({ name: 'Theme', volume: 80, tempo: 120 }, round.current_bgm, 'to_lsd: current_bgm')
-  eq({ name: 'Boss', volume: 90, tempo: 100 }, round.memorized_bgm, 'to_lsd: memorized_bgm')
+  # Both hashes below also pin `balance: 50` (the untouched schema default),
+  # not just the fields this test mutates -- #bgm_from_chunk always includes
+  # it (cycle #175's own balance support), which these two assertions had
+  # fallen out of sync with (a stale merge-conflict leftover, see docs/
+  # TODO.md's cycle #202 entry) and so had failed on every run since; fixed
+  # here rather than left as one of this suite's tracked pre-existing
+  # failures, since the actual runtime behavior asserted here (balance
+  # rebuilds as its own default) was already correct.
+  eq({ name: 'Theme', volume: 80, tempo: 120, balance: 50, fadein: 500 },
+     round.current_bgm, 'to_lsd: current_bgm')
+  eq({ name: 'Boss', volume: 90, tempo: 100, balance: 50, fadein: 800 },
+     round.memorized_bgm, 'to_lsd: memorized_bgm')
   eq false, round.menu_access, 'to_lsd: menu_access'
   eq false, round.save_access, 'to_lsd: save_access'
   eq true, round.teleport_access, 'to_lsd: teleport_access'

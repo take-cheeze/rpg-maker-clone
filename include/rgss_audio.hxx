@@ -38,8 +38,17 @@ struct RgssAudioBackend {
   // feeds bgm_pos's own return value back in here round-trips exactly. 0 plays
   // from the beginning, as XP/VX's 3-argument form always did. A backend that
   // cannot seek (or fails to) is expected to fall back to playing from the
-  // beginning rather than dropping the play.
-  void (*bgm_play)(const char* path, int volume, int pitch, int pos_ms);
+  // beginning rather than dropping the play. fadein_ms is not part of any real
+  // RGSS Audio.bgm_play -- it carries RPG2000's own Play BGM fade-in
+  // parameter (cycle #202). 0 (every RGSS-script call site's implicit value)
+  // starts at once, matching every prior build; > 0 is expected to ramp up
+  // from silence to `volume` over that many milliseconds instead of jumping
+  // there immediately.
+  void (*bgm_play)(const char* path,
+                   int volume,
+                   int pitch,
+                   int pos_ms,
+                   int fadein_ms);
   // Re-applies volume to the BGM stream already playing, with no restart --
   // unlike bgm_play, which always starts its track over. Used when a Play BGM
   // command re-triggers the file that is already current (RPG_RT re-applies
@@ -85,12 +94,16 @@ struct RgssAudioBackend {
   // bgm_play_mem's pos_ms is the same resume position as bgm_play's, above --
   // this is how a released game (its whole Audio/ tree packed into one
   // archive, nothing loose on disk) actually hears a mid-track resume.
+  // fadein_ms is the same fade-in-from-silence duration as bgm_play's, above,
+  // reaching a released game's packed archive the same way pos_ms already
+  // does.
   void (*bgm_play_mem)(const char* name,
                        const void* data,
                        int size,
                        int volume,
                        int pitch,
-                       int pos_ms);
+                       int pos_ms,
+                       int fadein_ms);
   void (*bgs_play_mem)(const char* name,
                        const void* data,
                        int size,
