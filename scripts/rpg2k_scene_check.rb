@@ -17852,6 +17852,60 @@ check 'a battle animation cell blits at its own transparency' do
   # mutated cell does not leak into the next check.
 end
 
+# Each animation cell also carries its own `zoom` (LCF `battle_anime` chunk
+# 19's per-cell field 5 -- mruby-lcf/mrblib/schema.rb, schema default 100),
+# decoded all along and never read the same way `transparency` was before the
+# check above -- every cell drew at its sheet's native 96x96 no matter what
+# its author dialled the zoom to. #animation_cell_zoom is the pure-logic half.
+check 'animation_cell_zoom converts a cell zoom percentage to a clamped scale' do
+  scene, = battle_at_command
+  z = ->(v) { scene.send(:animation_cell_zoom, OpenStruct.new(cell_id: 0, zoom: v)) }
+  eq 100, z.call(100), 'the schema default: unscaled'
+  eq 200, z.call(200), 'zoom above 100 enlarges'
+  eq 50, z.call(50), 'zoom below 100 shrinks'
+  eq 0, z.call(-10), 'a negative zoom clamps to 0, not an inverted rect'
+  eq 100, scene.send(:animation_cell_zoom, OpenStruct.new(cell_id: 0)),
+     'a cell carrying no zoom field at all reads as the 100 default, not as nil'
+end
+
+check 'a battle animation cell blits scaled at its own zoom' do
+  scene, = battle_at_command
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  bmp = scene.instance_variable_get(:@animation_bmp)
+  cell = ma[:frames][0].cells[1]
+
+  bmp.clear_blt_calls
+  bmp.clear_stretch_calls
+  scene.send(:draw_map_animation, 500, 400)
+  eq 1, bmp.blt_calls.size,
+     'a cell at the schema default zoom still takes the plain #blt path, exactly as before this fix'
+  ok bmp.stretch_calls.empty?, 'and never touches #stretch_blt'
+
+  cell.zoom = 200
+  bmp.clear_blt_calls
+  bmp.clear_stretch_calls
+  scene.send(:draw_map_animation, 500, 400)
+  ok bmp.blt_calls.empty?, 'a zoomed cell takes the #stretch_blt path instead of #blt'
+  eq 1, bmp.stretch_calls.size, 'still one cell'
+  dest, _src, _rect, op = bmp.stretch_calls.first
+  eq [ma[:targets][0][:tx] - 96, ma[:targets][0][:ty] - 96, 192, 192],
+     [dest.x, dest.y, dest.width, dest.height],
+     '200% doubles the 96x96 cell to 192x192, still centred on the same placement pixel'
+  eq 255, op, 'opacity is unaffected by zoom'
+
+  cell.zoom = 50
+  bmp.clear_stretch_calls
+  scene.send(:draw_map_animation, 500, 400)
+  dest, = bmp.stretch_calls.first
+  eq [ma[:targets][0][:tx] - 24, ma[:targets][0][:ty] - 24, 48, 48],
+     [dest.x, dest.y, dest.width, dest.height], '50% halves the cell to 48x48, still centred'
+  # The fixture database is rebuilt per scene (#new_scene -> #fake_db), so the
+  # mutated cell does not leak into the next check.
+end
+
 check 'the battle status window shows each ally condition, or the normal term' do
   scene, ui = battle_at_command
   texts = window_texts(ui[:status_win])

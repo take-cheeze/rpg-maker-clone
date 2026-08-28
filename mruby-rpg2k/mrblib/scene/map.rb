@@ -8410,6 +8410,40 @@ class RPG2k
         255 * (100 - t) / 100
       end
 
+      # A cell's own `zoom` field (LCF `battle_anime` chunk 19's per-cell field
+      # 5, mruby-lcf/mrblib/schema.rb; schema default 100 -- normal size), a
+      # percentage the same way `#draw_picture`'s own `pic.zoom` already is:
+      # 100 unscaled, below shrinks, above enlarges. Decoded off the real
+      # database and never read before this -- every cell drew at its sheet's
+      # native 96x96 no matter what its author dialled the zoom to. Clamped to
+      # 0 at the bottom (a negative value would otherwise ask
+      # `#animation_cell_dest_rect` for an inverted, off-by-its-own-width rect)
+      # the same defensive shape `#animation_cell_opacity` already uses for
+      # `transparency`; no ceiling, matching that a picture's own zoom has none
+      # either.
+      def animation_cell_zoom(cell)
+        z = cell.respond_to?(:zoom) ? cell.zoom : nil
+        z = 100 if z.nil?
+        z = 0 if z < 0
+        z
+      end
+
+      # The destination rect a zoomed cell blits into: `ANIM_CELL` scaled by
+      # its own `#animation_cell_zoom`, centred on the same placement pixel
+      # (`cx + cell.x, cy + cell.y`) the unzoomed path already centres on --
+      # scaling around the cell's own centre, not its top-left corner, the
+      # same "position/size by centre" convention `#draw_picture`'s own
+      # zoom-vs-`pic.x`/`pic.y` centring already established for Show
+      # Picture's identical zoom field. NOT independently confirmed against
+      # genuine RPG_RT under wine.
+      def animation_cell_dest_rect(cell, cx, cy)
+        z = animation_cell_zoom(cell)
+        w = ANIM_CELL * z / 100
+        dx = cx + (cell.x || 0) - w / 2
+        dy = cy + (cell.y || 0) - w / 2
+        [dx, dy, w, w]
+      end
+
       def blit_animation_cell(sheet, cell, cx, cy)
         opacity = animation_cell_opacity(cell)
         # A fully transparent cell contributes nothing; skipping it spares the
@@ -8419,9 +8453,21 @@ class RPG2k
         cid = cell.cell_id || 0
         sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
         sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
-        dx = cx + (cell.x || 0) - ANIM_CELL / 2
-        dy = cy + (cell.y || 0) - ANIM_CELL / 2
-        @animation_bmp.blt dx, dy, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL), opacity
+        src_rect = Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+        zoom = animation_cell_zoom(cell)
+        if zoom == 100
+          # The common case (a cell whose author never touched the zoom field,
+          # or set it back to 100) keeps the plain, cheaper #blt path exactly
+          # as before this fix -- no resample needed when the source and
+          # destination are the same size.
+          dx = cx + (cell.x || 0) - ANIM_CELL / 2
+          dy = cy + (cell.y || 0) - ANIM_CELL / 2
+          @animation_bmp.blt dx, dy, sheet, src_rect, opacity
+        else
+          dx, dy, w, h = animation_cell_dest_rect(cell, cx, cy)
+          return if w <= 0 || h <= 0
+          @animation_bmp.stretch_blt Rect.new(dx, dy, w, h), sheet, src_rect, opacity
+        end
       rescue StandardError
         nil
       end

@@ -2045,6 +2045,71 @@ The work below is roughly ordered by the critical path to a walkable game
   doc comment rather than left implicit. No EasyRPG source was consulted for
   any new behavioral claim.
 
+  ✅ **Follow-up (cycle #222, 2026-08-28): a battle animation cell's own
+  `zoom` field is now honoured too, closing the gap the
+  `battle-animation-cell-transparency` changelog fragment itself flagged as
+  still open ("Per-cell zoom and tone remain approximated as a plain blit,
+  unchanged").** Method: cycles #217-#221 closed the BGM/SE audio-panning
+  family end to end, so this cycle swept `mruby-lcf/mrblib/schema.rb` for the
+  next struct with multiple optional fields where a consumer reads some and
+  drops others. The `ANIMATION` cell struct (chunk 19 field 12→cells,
+  `mruby-lcf/mrblib/schema.rb`) has ten fields; `Scene::Map
+  #blit_animation_cell` (`mruby-rpg2k/mrblib/scene/map.rb`) already read
+  `visible`/`cell_id`/`x`/`y`/`transparency` but silently ignored `zoom`
+  (field 5, schema default 100) and the four `tone_*` fields (6-9) —
+  confirmed by grepping every reference to those field names across
+  `mruby-rpg2k`: zero hits outside the schema itself and the changelog
+  fragment's own "unchanged" note. Fixed the `zoom` half: a new
+  `Scene::Map#animation_cell_zoom` reads the field as a percentage (100
+  unscaled, clamped to 0 at the bottom against a corrupt negative value),
+  and a new `#animation_cell_dest_rect` scales the cell's 96x96 source
+  square by it, centred on the same placement pixel the unzoomed path
+  already centres on — the identical "position/size by centre" convention
+  `#draw_picture`'s own `pic.zoom` already established for Show Picture
+  (`Scene::Map#draw_picture`, `mruby-rpg2k/mrblib/scene/map.rb`), reusing
+  that same code's existing `Bitmap#stretch_blt` call shape rather than
+  inventing a new one. `#blit_animation_cell` keeps the cheap, unchanged
+  `Bitmap#blt` path when a cell's zoom is at its schema default (100) and
+  only reaches for `#stretch_blt` once a cell actually asks for a different
+  size, so the untouched common case is byte-for-byte the same call it was
+  before this fix. Per-cell tone (fields 6-9) is left open for a future
+  cycle — applying it would need `Bitmap#tone_blt` (already used for Show
+  Picture's own tone, see `#toned_picture_src`) run over a cached, re-toned
+  copy of the animation sheet rather than the destination bitmap directly,
+  a materially bigger change than this cycle's zoom fix, deliberately left
+  alone rather than rushed. **Verification**: added 2 new
+  `rpg2k_scene_check.rb` checks — `animation_cell_zoom converts a cell zoom
+  percentage to a clamped scale` (the pure-logic percentage math, including
+  the schema-default-when-absent and negative-clamps-to-0 cases, mirroring
+  the existing `animation_cell_opacity` check's own shape) and `a battle
+  animation cell blits scaled at its own zoom` (asserts the plain `#blt`
+  path at zoom 100, and the `#stretch_blt` path with the exact doubled/
+  halved destination rect, still centred on the same pixel, at zoom 200/50).
+  Confirmed both fail against the pre-fix `mruby-rpg2k/mrblib/scene/map.rb`
+  (`git show HEAD:...` swapped in for the working copy in its place, never
+  `git stash`, to avoid disturbing any concurrent session's own uncommitted
+  work — `3rd/mruby`'s own working-tree modification was left untouched
+  throughout) — both new checks failed, the other 953 untouched — then
+  restored the fix and reran clean. Full suite: `rpg2k_scene_check.rb` 955
+  passed (953 baseline + 2 new checks); `rpg2k_logic_check.rb` 1188 passed
+  (unchanged); `rpg2k_render_check.rb` 41 passed (unchanged);
+  `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_gauge_check.rb` 15/0
+  (both unchanged); `rpg2k_save_load_check.rb` exit 0, zero known failures
+  (unchanged); `cd build && ninja` clean rebuild; `ctest --test-dir build`
+  8/8 passing. No `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its
+  check-script fixtures), so the pinned `clang-format` step does not apply,
+  and no `mruby-rgss` file was touched either, so
+  `rgss_cruby_test_check.rb`/`rgss_cruby_compat.rb` needed no attention. No
+  wine session was run this cycle — the zoom math is arithmetic
+  (`ANIM_CELL * zoom / 100`, centred the same way `#draw_picture`'s own
+  already-established zoom is) rather than anything needing a screenshot
+  diff, and this sandbox has no genuine RPG_RT.exe — so the exact centring
+  convention (scaling about the cell's own placement pixel, not its
+  top-left corner) is asserted only by analogy to Show Picture's own
+  already-established behaviour in this codebase, not independently
+  confirmed against genuine RPG_RT under wine. No EasyRPG source was
+  consulted for any new behavioral claim.
+
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
