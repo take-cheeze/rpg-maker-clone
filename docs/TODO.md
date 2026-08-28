@@ -6272,6 +6272,85 @@ The work below is roughly ordered by the critical path to a walkable game
   Teleport facing parameter behaves differently from cycle #181's finding
   -- still no RPG2003 test-bed game available; (6) the SPEED_UP ceiling's
   exact internal value (4 vs. 5), untouched since cycle #180.
+  **Follow-up (cycle #200, 2026-08-28): picked up item (6) above -- still
+  not resolved, but with new negative evidence and a genuine pitfall found
+  along the way, both worth recording so the next attempt does not repeat
+  either.** Wrote a scratch scanner (this codebase's own `mruby-lcf`
+  parser under CRuby, not EasyRPG) over every `Map*.lmu` in Nepheshel --
+  all 543 -- simulating each authored move route's own internal move_speed
+  step by step (SPEED_UP +1 clamp 5 / SPEED_DOWN -1 clamp 0, matching the
+  existing clamp exactly) to find a "discriminating template" per cycle
+  #180's own spec: a route that reaches internal 5 with a deterministic
+  (no Move Random) post-Up dash and no Transparency Up/Down anywhere in
+  the route (so a plain colour mask suffices, no relative-hue tracking).
+  **Result: none exists.** Every route that reaches internal 5 at all is
+  the identical copy-pasted "8 consecutive Speed Ups then 8 Transparency
+  Ups" wisp template cycle #180 already used (now confirmed present on
+  at least a dozen more maps than the one cycle #180 tried, all sharing
+  the same contamination); every route with no transparency and no random
+  tops out at internal 4 at most (the "down-first" template: floor at 0,
+  claw back up exactly 4). This turns cycle #180's own single-map
+  diagnosis into an exhaustive, whole-game negative result rather than a
+  guess that a cleaner route might exist elsewhere unexamined.
+  **A genuine pitfall found while looking for a splice-based workaround:**
+  tried boosting a "down-first" template's own page past its floor by
+  splicing its *default* move_speed field up (1 -> 3, so the route's own
+  fixed 3-Speed-Up run lands on 5 instead of 4) rather than editing the
+  move-route commands themselves -- a single already-genuine field value,
+  the same discipline cycles #137-139/#176/#178 established. The obvious
+  first candidate for this (an event whose page carries an *explicit*,
+  non-default `move_speed` field, so the edit changes a real value rather
+  than inserting one from nothing) turned out, every time, to be a page
+  whose `move_type` is `AWAY` (5, "flee from hero"), not `CUSTOM` (6) --
+  confirmed directly against this codebase's own `Game::MoveType`
+  constants (`mruby-rpg2k/mrblib/game.rb`). An `AWAY` page's own
+  `move_route` table still fully parses (RPG2000's own file format writes
+  one regardless of the page's move type) but is never executed at
+  runtime -- only a `CUSTOM` page's route ever runs -- so every Speed
+  Up/Down command sitting in it is inert data, not a live route, no
+  matter how clean it looks in a dump. This cost a full wine boot cycle
+  (switch-spliced onto Nepheshel's `Map0177.lmu` events 3/4) before the
+  mistake was caught: both events rendered and idled normally, exactly as
+  their *own* page 1 (the real `CUSTOM` page) does, never touching the
+  spliced page 2's speed at all -- a silent false negative, not a crash,
+  which is what made it worth flagging explicitly rather than just moving
+  on. Re-scanning restricted to genuinely `move_type == CUSTOM` pages with
+  an explicit `move_speed` field turned up real candidates (e.g.
+  `Map0102.lmu` event 8's page 2, `Map0346.lmu` events 1/2/5/7/19), but
+  ran out of cycle time chasing a second, independent anomaly on the first
+  of those: `Map0102.lmu` event 8's page 2 (switch-gated, `cond_flags: 1`,
+  `sw_a: 265`) is correctly selected by `Game::EventPage.select` (checked
+  directly, not assumed) once its own switch is set, and its sibling page
+  1 (identical charset/position, different switch/route) renders and
+  moves normally under this same engine -- but page 2 itself never drew a
+  sprite in any of several repositioned/retimed attempts, pristine map
+  file included, so this is not caused by the speed splice. Not root-
+  caused this cycle (outside the scope of the SPEED_UP question itself);
+  flagged here as its own small, reproducible, previously-unnoticed gap
+  for whoever looks at it next. **No `data/` fixture ended this cycle
+  modified**: `Map0177.lmu`, `Map0102.lmu` and `Save01.lsd` were each
+  spliced and restored several times over the course of this
+  investigation, and all three were re-verified byte-identical at the end
+  -- `Map0177.lmu`/`Map0102.lmu` against a fresh extraction of the
+  checked-in `data/Nepheshel206beta.zip` (`fe558533...`/`10c7a1e1...`,
+  both matching exactly) and `Save01.lsd` against this cycle's own
+  pre-edit backup (`3ab5bb01...`, matching every prior cycle's recorded
+  value back to #148). No engine code was changed, so
+  `scripts/rpg2k_logic_check.rb` (1176) and `scripts/rpg2k_scene_check.rb`
+  (932) were re-run only as a sanity check, both matching their existing
+  baselines exactly; no changelog fragment (investigation only, no shipped
+  behavioral change). Every wine/Xvfb/matchbox process this cycle started
+  was confirmed terminated (`ps aux` clean) before finishing. No EasyRPG
+  source was consulted for any behavioral claim, and no web search was
+  used. **Left open, in priority order: (1) the SPEED_UP ceiling's exact
+  internal value (4 vs. 5) itself remains genuinely unresolved -- reaching
+  it cleanly now looks like it needs either a synthetic move-route splice
+  (a bigger step than this project's established single-*parameter*-splice
+  discipline covers, since a repeat/skippable custom route's own command
+  *sequence* would need extending, not just one existing value changed) or
+  a non-Nepheshel RPG2000 test bed whose own content happens to author a
+  cleaner route; (2) the `Map0102.lmu` event 8 page 2 rendering gap found
+  along the way.**
   ✅ **Follow-up (cycle #184, 2026-08-27): resumed the EasyRPG-citation sweep
   on the two `scripts/rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` check
   files cycle #177 flagged as untouched (item (4) above) -- explicitly a
