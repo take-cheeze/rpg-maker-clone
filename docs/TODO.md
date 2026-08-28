@@ -2110,6 +2110,88 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed against genuine RPG_RT under wine. No EasyRPG source was
   consulted for any new behavioral claim.
 
+  ✅ **Follow-up (cycle #223, 2026-08-28): a battle animation cell's four
+  `tone_*` fields are now honoured too**, closing the gap cycle #222's own
+  fragment (`battle-animation-cell-zoom.fixed.md`) deliberately left open
+  ("Per-cell tone remains unimplemented ... needs `Bitmap#tone_blt` over a
+  cached, re-toned sheet copy"). Method: read how Show Picture's own tone
+  already does this (`Scene::Map#toned?`/`#toned_picture_src`,
+  `mruby-rpg2k/mrblib/scene/map.rb`) and mirrored the same cache-a-toned-
+  copy-keyed-by-tone shape for animation cells, sized down to one 96x96 cell
+  instead of a whole picture since a cell's sheet is shared across many
+  cells rather than owned per-picture. `battle_anime` chunk 19's per-cell
+  fields 6-9 (`tone_red`/`tone_green`/`tone_blue`/`tone_gray`,
+  `mruby-lcf/mrblib/schema.rb`, each defaulting to 100/neutral) decode the
+  same 0..200 shape `Game::Picture`'s own `red`/`green`/`blue`/`saturation`
+  carry (cross-checked against that struct's `current_tone_red`/etc. save
+  defaults, same schema file, chunk 103) and were confirmed dropped by
+  grepping every reference to those four field names across `mruby-rpg2k`:
+  zero hits outside the schema itself before this fix. New
+  `Scene::Map#animation_cell_tone`/`#toned_animation_cell?` read the four
+  fields (defensive `respond_to?`/nil guards matching
+  `#animation_cell_opacity`/`#animation_cell_zoom`'s own shape for a bare
+  test double); `#toned_animation_cell_src` crops the cell's raw 96x96 sheet
+  square into a small reused scratch buffer
+  (`#animation_cell_crop_buffer`, disposed alongside the existing
+  `@flash_buffer`/`@flash_out_buffer` in `#dispose`) and `Bitmap#tone_blt`s
+  it into a second, cached bitmap — reusing `#tone_channel`'s existing
+  0..200-to-RGSS-Tone conversion and the same saturation-channel sign flip
+  `#toned_picture_src` already applies for Show Picture's `saturation`
+  field, carried over to the cell's `tone_gray` field **unconfirmed**: both
+  fields share the identical field shape (0..200, 100 neutral, the fourth of
+  a red/green/blue/grey-or-saturation quartet) but liblcf's own
+  `generator/csv/fields.csv` names them differently (`AnimationCellData
+  .tone_gray` vs the Picture chunk's `tone_saturation`), so the sign
+  direction is asserted only by analogy to the already-established Picture
+  behaviour in this codebase, not independently verified for this specific
+  field against genuine RPG_RT under wine — documented as such directly in
+  `toned_animation_cell_src`'s own comment. The result is cached in a new
+  bounded `@animation_tone_cache` (`ANIMATION_CELL_TONE_CACHE_MAX = 16`,
+  the same eviction shape `@picture_tone_cache`/`PICTURE_TONE_CACHE_MAX`
+  already use), keyed by `[sheet.object_id, cell_id, tone_red, tone_green,
+  tone_blue, tone_gray]` — sheet identity rather than name, since a cell has
+  no name of its own to key by and (unlike `@picture_cache`'s entries)
+  `ma[:sheet]` is already held live for an animation's whole run once
+  fetched, the same `charset.object_id` identity-key precedent
+  `#draw_vehicle_frame`/`#draw_player_frame` already use in this file.
+  `#blit_animation_cell` reaches for the toned copy (and a `(0, 0, 96, 96)`
+  source rect into it) only when a cell's tone differs from neutral,
+  otherwise blitting straight from the sheet exactly as before — the
+  untouched common case (no author-set tone) is the same call it always
+  was. **Verification**: added 2 new `rpg2k_scene_check.rb` checks —
+  `animation_cell_tone reads a cell's four tone fields with schema
+  defaults` (the field-by-field default/absent-field cases, mirroring the
+  existing `animation_cell_opacity`/`animation_cell_zoom` checks' own
+  shape) and `a toned battle animation cell tones through a cached crop
+  instead of blitting the raw sheet` (asserts an untoned cell still takes
+  the plain `#blt` path against the raw `sheet` object, and a toned one
+  blits from a *different*, cell-sized bitmap while leaving the raw sheet
+  untouched — i.e. the crop/tone/cache pipeline actually ran rather than
+  being silently skipped). Confirmed both fail against the pre-fix
+  `mruby-rpg2k/mrblib/scene/map.rb` (`git show HEAD:...` swapped in for the
+  working copy in its place, never `git stash`, to avoid disturbing any
+  concurrent session's own uncommitted work — `3rd/mruby`'s own
+  working-tree modification was left untouched throughout) — both new
+  checks failed, the other 955 untouched — then restored the fix and reran
+  clean. Full suite: `rpg2k_scene_check.rb` 957 passed (955 baseline + 2 new
+  checks); `rpg2k_logic_check.rb` 1188 passed (unchanged);
+  `rpg2k_render_check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb`
+  19/0 and `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged);
+  `rpg2k_save_load_check.rb` exit 0, zero known failures (unchanged);
+  `cd build && ninja` clean rebuild; `ctest --test-dir build` 8/8 passing.
+  No `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixtures), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so
+  `rgss_cruby_test_check.rb`/`rgss_cruby_compat.rb` needed no attention. No
+  wine session was run this cycle — this sandbox has no genuine RPG_RT.exe,
+  so the crop/tone/cache mechanics are verified by arithmetic and object-
+  identity assertions only, and (as noted above) the `tone_gray` channel's
+  sign direction is carried over from Picture by analogy, not independently
+  confirmed. `generator/csv/fields.csv` from EasyRPG/liblcf was consulted
+  only to confirm the four fields' IDs/types/defaults (0x06-0x09, all
+  Int32 default 100) already matched `mruby-lcf/mrblib/schema.rb` exactly —
+  no EasyRPG C++ source, and no other new behavioral claim, was consulted.
+
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
@@ -9113,9 +9195,11 @@ The work below is roughly ordered by the critical path to a walkable game
   -- see the fuller, EasyRPG-source-verified writeup a few pages down, "A
   plain Attack now plays its own animation too"'s neighbouring bullet, which
   covers the player/map-event/vehicle target-flash mechanism this note used
-  to undersell); **per-cell zoom/tone genuinely still is** an approximation,
-  since it needs an `RGSS::Viewport` tone this codebase's map rendering
-  path has never had either -- see ADR 0037. **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
+  to undersell); **per-cell zoom and tone are now both honoured** (cycles
+  #222/#223: `Scene::Map#animation_cell_zoom`/`#toned_animation_cell_src`),
+  each cell scaled and re-toned from its own database fields rather than
+  approximated as a plain blit -- see the cycle #223 follow-up below.
+  **Set Vehicle Location** (10850) and **Change Vehicle Graphic** (10650)
   place a boat / ship / airship and set its CharSet (persisted via
   `Game::Vehicle`), and the party can now **board and pilot** a placed vehicle on
   the map (`Game::State#boarded`; the airship flies over any tile whose terrain
