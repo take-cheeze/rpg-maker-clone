@@ -183,14 +183,26 @@ def check_game(dir)
   entry[42] = 110
   entry[43] = 95
   entry[44] = 80
+  # Show Picture's own two checkbox flags (fields 6/9, SAVE_PICTURE's own
+  # comments) and the show_x/show_y pair (fields 2/3) round-trip too --
+  # deliberately set to values distinct from finish_x/finish_y (80/60) above
+  # so a field mixed up with the wrong one would fail loudly instead of
+  # coincidentally matching.
+  entry[2] = 200.0
+  entry[3] = 90.0
+  entry[6] = true
+  entry[9] = true
   pics[3] = entry
   restored = {}
   Game::State.restore_pictures(Struct.new(:pictures) do
     def show_picture(id, opts); pictures[id] = opts; end
   end.new(restored), pics)
-  eq({ 3 => { name: 'island', x: 80, y: 60, zoom: 150, opacity: 191,
-              red: 90, green: 110, blue: 95, saturation: 80 } }, restored,
-     'a saved picture is re-shown at its saved centre, zoom, opacity and tone')
+  eq({ 3 => { name: 'island', x: 80, y: 60, show_x: 200, show_y: 90,
+              zoom: 150, opacity: 191, red: 90, green: 110, blue: 95,
+              saturation: 80, fixed_to_map: true, use_transparent_color: true } },
+     restored,
+     'a saved picture is re-shown at its saved centre, show position, zoom, ' \
+     'opacity, tone and flags')
 
   # An entry with no file name is one of the empty slots RPG2000 always writes.
   blank = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_PICTURE })

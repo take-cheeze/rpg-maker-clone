@@ -6884,13 +6884,25 @@ class RPG2k
       # Skipped while boarded: the vehicle's own BGM (#play_vehicle_bgm) owns
       # the audio then, and #restore_pre_vehicle_bgm resumes whatever this
       # would have played once the party disembarks.
+      #
+      # `fadein` (cycle #218): the map-tree node's `bgm` chunk is the same
+      # liblcf `BGM` struct (mruby-lcf/mrblib/schema.rb) as battle_music/
+      # inn_music/boat_music/ship_music/airship_music, whose own field 2
+      # `fade_in` cycle #203 already threaded through #battle_bgm/
+      # #restore_pre_inn_bgm's source/#vehicle_bgm into #play_bgm's 5th
+      # `RGSS::Audio.bgm_play` argument -- this call site (#music_fadein
+      # already exists for exactly this) was the one #203 missed, so a map's
+      # own Autoplay BGM fade-in (set on the map-tree node in the editor) was
+      # silently dropped and every map entry/Transfer Player restarted the
+      # track at full volume instantly instead.
       def play_map_bgm
         return if @state.boarded?
         bgm = Game::MapBgm.chunk_for(@state.map_id, map_properties)
         return unless bgm
         name = music_name(bgm)
         return if name.nil? || name.empty?
-        play_bgm(name: name, volume: music_volume(bgm), tempo: music_tempo(bgm))
+        play_bgm(name: name, volume: music_volume(bgm), tempo: music_tempo(bgm),
+                 fadein: music_fadein(bgm))
       rescue StandardError => e
         $stderr.puts "[RPG2k] map BGM failed: #{e.message}"
       end
@@ -6988,11 +7000,10 @@ class RPG2k
       end
 
       # Game over: the party was wiped in an encounter that ends the game on
-      # defeat (also the target of the Game Over event command). Stop the event
-      # and return to the title screen — the faithful end state. (RPG2000 shows a
-      # Game Over graphic first; that screen is native renderer work still to come.)
-      # Game Over (12420), and a battle defeat the encounter marked "game over":
-      # show the Game Over screen, which returns to the title once dismissed.
+      # defeat, or the event command itself named the target directly — either
+      # way, RPG2000 shows the Game Over graphic first: Game Over (12420) and a
+      # battle defeat the encounter marked "game over" both route here to show
+      # the Game Over screen, which returns to the title once dismissed.
       # Nothing resumes, so the event is stopped rather than released.
       #
       # `interp` is whichever interpreter actually raised the :game_over wait --

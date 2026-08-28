@@ -14165,6 +14165,25 @@ check 'without HideTitle the picture shows and the window docks near its foot' d
      'the command window docks near the picture, as RPG_RT does'
 end
 
+# Cycle #217: title_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) was read off the record by #play_title_bgm and
+# then dropped before reaching Audio.bgm_play, the same gap cycle #202/#203
+# already fixed for Play BGM, Play Memorized BGM and the battle/inn/vehicle/
+# game-over BGM helpers (Scene::Map/Scene::GameOver) -- the title screen's own
+# BGM was the one source those two cycles never reached. `fake_db` names no
+# title_music at all (every other check above only cares that a title picture
+# and command window are built), so this sets one locally rather than
+# widening the shared fixture for every other Title check.
+check 'the title screen forwards the database title_music fade-in to bgm_play, not dropped (cycle #217)' do
+  db = fake_db
+  db.system.title_music = OpenStruct.new(file: 'TitleBGM', volume: 90, pitch: 100, fade_in: 350)
+  parent = TitleParent.new(db, nil, false)
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Title.new(parent)
+  eq [['TitleBGM', 90, 100, 0, 350]], RGSS::Audio.bgm_calls,
+     "the database title_music's own fade_in reaches bgm_play's 5th argument"
+end
+
 # -- Continue disabled without save data --------------------------------------
 #
 # RPG_RT grays out Continue on the title screen when there is no save to
@@ -22381,7 +22400,7 @@ check 'Scene::Map re-derives Save/Teleport/Escape access from the map tree ' \
 end
 
 # One map-tree node's BGM settings (Game::MapBgm, fields 11 bgm_type / 12 bgm).
-FakeBgmChunk = Struct.new(:file, :volume, :pitch)
+FakeBgmChunk = Struct.new(:file, :volume, :pitch, :fade_in)
 FakeBgmTreeNode = Struct.new(:bgm_type, :bgm, :parent_map_id)
 
 check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
@@ -22412,6 +22431,33 @@ check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
   eq [], RGSS::Audio.bgm_calls,
      'map 3 is type 1 (none): the still-playing map-1 track is left alone, nothing restarts'
   eq 'Town', state.current_bgm[:name], 'so the tracked current BGM is untouched too'
+end
+
+# Cycle #218: the map-tree node's own `bgm` chunk is the same liblcf `BGM`
+# struct (mruby-lcf/mrblib/schema.rb) as battle_music/inn_music/boat_music/
+# ship_music/airship_music -- whose own field 2 `fade_in` cycle #203 already
+# threaded through to `RGSS::Audio.bgm_play`'s 5th argument -- but
+# #play_map_bgm was the one call site #203 missed, so a map's own Autoplay
+# BGM fade-in was read off nothing and silently dropped.
+check "Scene::Map's own map BGM autoplay carries its fade-in through to " \
+     'bgm_play, same as battle/inn/vehicle BGM already do' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Town', 90, 105, 400), 0),
+    2 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Cave', 80, 95, 0), 0)
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  RGSS::Audio.reset_bgm
+  scene = RPG2k::Scene::Map.new(parent, state)
+  eq [['Town', 90, 105, 0, 400]], RGSS::Audio.bgm_calls,
+     "map 1's own fade_in (400) reaches bgm_play's 5th argument on load"
+  eq 400, state.current_bgm[:fadein], 'and is tracked on state too'
+
+  RGSS::Audio.reset_bgm
+  scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq [['Cave', 80, 95, 0, 0]], RGSS::Audio.bgm_calls,
+     "a zero (default/unset) fade_in on map 2's own BGM still reaches bgm_play as zero"
 end
 
 check 'Scene::Map does not auto-play the map BGM while the party is boarded' do

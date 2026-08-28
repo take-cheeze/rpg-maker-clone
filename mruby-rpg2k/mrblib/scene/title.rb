@@ -397,16 +397,23 @@ class RPG2k
       # when the title screen comes up. Re-entering the title (Return to Title)
       # builds a new scene and so restarts it, which is what RPG_RT does too.
       #
-      # `fade_in` is read from the record but not honoured: the audio backend
-      # can fade a BGM out, not in (see ADR 0006), so the music starts at full
-      # volume. A no-op when the game defines no title music, the file is
-      # missing, or no audio backend is installed.
+      # `fade_in` (title_music's own liblcf `BGM`-struct field 2,
+      # mruby-lcf/mrblib/schema.rb) now reaches `Audio.bgm_play`'s 5th
+      # argument, the same fade-in idiom cycle #202/#203 already wired for
+      # Play BGM, Play Memorized BGM and the battle/inn/vehicle/game-over
+      # helpers (`Scene::Map`/`Scene::GameOver`) -- this call site was the one
+      # BGM source those two cycles never reached, left behind reading the
+      # stale claim (now corrected) that the audio backend could only fade a
+      # BGM out, not in; `Mix_FadeInMusic` (`src/sdl_audio.cxx`'s
+      # `start_music`) has taken a `fadein_ms` argument since cycle #202. A
+      # no-op when the game defines no title music, the file is missing, or
+      # no audio backend is installed.
       def play_title_bgm
         bgm = db.system.title_music
         return unless bgm
         name = bgm.file
         return if name.nil? || name.empty?
-        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100)
+        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100), 0, (bgm.fade_in || 0)
       rescue StandardError => e
         $stderr.puts "[RPG2k] title BGM playback failed: #{e.message}"
       end

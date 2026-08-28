@@ -1623,6 +1623,205 @@ The work below is roughly ordered by the critical path to a walkable game
   BGM in cycle #202; this cycle is mechanical plumbing of that same
   mechanism to a second, structurally identical call path) rather than a
   wine-verified timing match.
+  ✅ **Follow-up (cycle #215, 2026-08-28): the "1 known pre-existing
+  failure" this file has carried forward at every one of the dozens of
+  citations above (the Show Picture field-shape mismatch) is now closed
+  too, the same root cause as this bullet's own two BGM assertions above --
+  a real feature landed correctly and the test's own expected hash simply
+  never got updated to match.** Method: after a genuinely broad search
+  (the "Message window", "Battle system", "Pictures", "Screen effects",
+  "Move Route", "Party/Actor/Vehicle", "Database field semantics" and
+  "Concrete runtime error catalog" sections, the RGSS/VX/VXAce gap docs,
+  and a paragraph-level sweep of every bullet in this whole file for one
+  with no ✅/🚧 marker anywhere in its own text) turned up nothing else
+  both small and genuinely open -- essentially the entire backlog through
+  cycle #214 is already closed, confirming this file's own "the runtime
+  error catalog family is close to exhausted" read holds for the rest of
+  the document too, not just that one catalog. `scripts/
+  rpg2k_save_load_check.rb`'s synthetic Show Picture round-trip check built
+  a chunk-103 entry that never set fields 2/3 (`show_x`/`show_y`) or 6/9
+  (`fixed_to_map`/`use_transparent_color`), then asserted against an
+  expected hash with no such keys at all -- but `Game::State.
+  restore_pictures` (`mruby-rpg2k/mrblib/game.rb`) has unconditionally
+  included all four in the options hash it passes to `#show_picture` since
+  the cycles that added `fixed_to_map`/`use_transparent_color` (#155/#158)
+  and `show_x`/`show_y` round-tripping, so the check had been failing on
+  every run since, exactly the same drift already diagnosed for the BGM
+  case above. Fixed by setting fields 2/3/6/9 in the synthetic entry to
+  values distinct from the neighbouring `finish_x`/`finish_y` (80/60), so
+  the check actually exercises the round-trip instead of merely matching
+  whatever the code happens to default to, and widening the expected hash
+  to the real four-key-richer shape. **Verification**: confirmed to fail
+  against the pre-fix code first (`git stash`/`git stash pop` on just
+  `scripts/rpg2k_save_load_check.rb` -- the pre-fix version reports exactly
+  the same `expected ... got ...` mismatch this file's own dozens of
+  citations already quote) then pass after. Full suite: `rpg2k_scene_
+  check.rb` 943 passed (unchanged, no `scene/map.rb`/`interpreter.rb`
+  touched); `rpg2k_logic_check.rb` 1187 passed (unchanged); `rpg2k_render_
+  check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, no battle code
+  touched); `rpg2k_save_load_check.rb` now reports **zero** known failures,
+  down from the one it has carried since the BGM fix above reduced the
+  original three to it -- every future cycle's own "unaffected" note for
+  it can finally read "0 failures" instead of "1 known pre-existing
+  failure". No `.cxx`/`.hxx`
+  file was touched (a single check-script fixture correction, no `mrblib`
+  Ruby or native code changed at all), so the pinned `clang-format` step
+  does not apply and no rebuild was strictly needed; `cd build && ninja`
+  reported no work to do (confirming nothing native was touched) and
+  `ctest -R mruby_test` passed anyway for completeness, as did `ruby
+  scripts/rgss_cruby_test_check.rb` (also unaffected, no RGSS code
+  touched). No wine session was run this cycle and no EasyRPG source was
+  consulted: this is a pure test-fixture correction verified entirely by
+  internal consistency (the corrected fixture's own field values against
+  `Game::State.restore_pictures`'s already-shipped, already-cited-elsewhere
+  behavior), not a new behavioral claim about genuine RPG_RT.
+  ✅ **Follow-up (cycle #216, 2026-08-28): with the backlog above still
+  fully closed, this cycle went looking (per this file's own cycle #215
+  note that the doc-level sweep was exhausted) for code-quality issues
+  instead, and found four live doc comments in `mruby-rpg2k/mrblib/`
+  describing already-shipped features as "still to come" -- pure
+  documentation drift, no behavioral bug and no code change.** Method: a
+  repo-wide grep for "still to come"/"does not yet draw"/"deliberately
+  simple first cut" style phrasing across `mrblib`, cross-checked against
+  this file's own history for each claim (rather than trusted at face
+  value) -- three of the four resolved instances are large open questions
+  this file already answers elsewhere ("The screen tone reaches the map
+  now as well" above; the game-over screen and weather rendering are both
+  long-shipped features, confirmed by reading `Scene::Map#perform_game_
+  over`/`#draw_weather` directly), and the fourth (`Game::Battle`'s class
+  doc calling itself "a deliberately simple first cut") was checked
+  directly against the class body, which turned out to already implement
+  both named gaps (`#attempt_escape`, `#inflict_state` fed from an enemy's
+  own skill picks via `#choose_enemy_action`) and has grown to ~4000 lines
+  -- the actual engine behind `Scene::Battle`'s live fights, not a
+  stand-in for one. Fixed by rewriting each of the four comments to
+  describe the current, correct state (`Game::Screen`'s class doc,
+  `Interpreter#do_weather`'s doc, `Scene::Map#perform_game_over`'s doc --
+  which had two contradictory paragraphs stacked back to back, the stale
+  one describing a "return to the title screen" outcome the very next
+  sentence already correctly overrides with "show the Game Over screen"
+  -- and `Game::Battle`'s class doc). No behavioral code changed anywhere
+  (`git diff` on all three touched `mrblib` files is comments only), so no
+  regression check applies, matching cycle #169/#171/#215's own precedent
+  for citation/comment-only fixes. **Verification**: `scripts/
+  rpg2k_scene_check.rb` 943 passed (unchanged), `rpg2k_logic_check.rb`
+  1187 passed (unchanged), `rpg2k_render_check.rb` 41 passed (unchanged),
+  `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_gauge_check.rb`
+  15/0 (both unchanged), `rpg2k_save_load_check.rb` still reports zero
+  known failures; `cd build && ninja` clean rebuild with no new warnings;
+  `ctest -R mruby_test` passed; `ruby scripts/rgss_cruby_test_check.rb`
+  passed (run for completeness -- no RGSS-side file was touched). No
+  `.cxx`/`.hxx` file was touched, so the pinned `clang-format` step does
+  not apply. No wine session was run and no EasyRPG source was consulted
+  for any behavioral claim this cycle (the one EasyRPG-sourced citation
+  read in passing, `Game::Battle`'s `#inflict_state` doc a few hundred
+  lines below the fixed class doc, was read only to confirm the feature
+  exists, not cited as a new behavioral claim). **Left open**: this was a
+  narrow, targeted grep for one specific phrasing pattern, not the
+  repo-wide EasyRPG-citation-hygiene sweep cycle #174's own note (256
+  unswept instances, last counted then) already tracks separately --
+  that sweep is unrelated to this fix and still needs a future cycle.
+  ✅ **Follow-up (cycle #217, 2026-08-28): the title screen's own database
+  BGM (`System > title music`) was the one BGM source cycle #202/#203's
+  fade-in wiring never reached, dropping a configured `fade_in` on the
+  floor instead of fading the music in.** Method: with the doc-level
+  backlog and this file's own comment-drift sweep both already closed
+  (cycles #215/#216), this cycle widened the search per the standing
+  instructions — check-suite coverage gaps first. Cross-referencing every
+  `Scene::` BGM call site (`grep -rn bgm_play mruby-rpg2k/mrblib`) against
+  cycle #202's own "Play BGM's fade-in parameter now actually fades the
+  music in" fix and cycle #203's follow-on ("battle/inn/vehicle, and the
+  Game Over screen now honour a configured BGM fade-in") turned up exactly
+  one remaining 3-argument `Audio.bgm_play` call left over from both
+  passes: `Scene::Title#play_title_bgm` (`mruby-rpg2k/mrblib/scene/
+  title.rb`), whose own doc comment claimed "the audio backend can fade a
+  BGM out, not in (see ADR 0006)" — a statement that was already false by
+  the time it was written (`git blame` dates that comment to 2026-08-22,
+  cycle #202's `Mix_FadeInMusic` wiring landed 2026-08-28) and ADR 0006
+  itself never makes that claim at all (it only documents pitch/tempo as
+  unsupported). `scripts/rpg2k_scene_check.rb`'s own `fake_db` fixture
+  names no `title_music` at all, so the gap was invisible to the whole
+  check suite — no check exercised `play_title_bgm`'s `Audio.bgm_play`
+  call at all before this cycle. Fixed by threading `bgm.fade_in || 0`
+  through as the 5th `Audio.bgm_play` argument, the same idiom every
+  sibling BGM helper already uses, and rewriting the stale doc comment.
+  **Verification**: a new `rpg2k_scene_check.rb` check sets a local
+  `db.system.title_music` (not the shared fixture, to avoid perturbing
+  every other Title check) with `fade_in: 350` and asserts
+  `Audio.bgm_calls == [['TitleBGM', 90, 100, 0, 350]]`; confirmed to fail
+  against the pre-fix code first (`git stash` on just `title.rb`, which
+  reproduced the expected 3-argument call and failed the assertion) then
+  pass after (`git stash pop`). Full suite: `rpg2k_scene_check.rb` 944
+  passed (943 baseline + 1 new check); `rpg2k_logic_check.rb` 1187 passed
+  (unchanged, no `mrblib` file it loads was touched); `rpg2k_render_
+  check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+  load_check.rb` exit 0, zero known failures (unchanged); `cd build &&
+  ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixture), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb`
+  and `rgss_cruby_compat.rb` needed no attention. No wine session was run
+  this cycle (audio timing is not screenshot-diffable, matching every
+  earlier BGM-fade-in cycle's own note) and no EasyRPG source was
+  consulted for any new behavioral claim — this is first-principles code
+  reading (the native fade-in mechanism was already proven for every
+  other BGM path in cycles #202/#203; this cycle is the same mechanical
+  plumbing to the one call site those cycles missed) plus a factual
+  correction of a comment that had gone stale the moment it was written.
+  ✅ **Follow-up (cycle #218, 2026-08-28): a map's own Autoplay BGM
+  (the map-tree node's `bgm` chunk, Map Properties in the editor) was a
+  second BGM source cycle #203's fade-in wiring never reached.** Method:
+  per the standing instruction to repeat cycle #217's systematic-sweep
+  pattern rather than blind reading, this cycle grepped every call site of
+  `#music_fadein` (the helper cycle #203 added specifically to read a
+  liblcf `BGM`-struct's field 2 `fade_in`, `mruby-lcf/mrblib/schema.rb`)
+  across `mruby-rpg2k/mrblib/scene/map.rb`. Three call sites already read
+  it (`#battle_bgm`, `#vehicle_bgm`, and `#restore_pre_inn_bgm`'s source
+  `db.system.inn_music` via cycle #203's own fix), but `#play_map_bgm` —
+  which resolves `Game::MapBgm.chunk_for` (the same `BGM`-struct shape,
+  `map_properties` field 12) on every initial map load and every Transfer
+  Player — built its `{ name:, volume:, tempo: }` hash for `#play_bgm`
+  without ever calling `#music_fadein`, so a fade-in configured on a
+  map-tree node's own BGM was always read as 0 and the track always
+  restarted at full volume instantly. Fixed by passing
+  `fadein: music_fadein(bgm)` through, the same idiom `#battle_bgm`/
+  `#vehicle_bgm` already use. **Verification**: extended
+  `rpg2k_scene_check.rb`'s existing `FakeBgmChunk` fixture struct with a
+  `fade_in` field (defaults to `nil` when omitted, so every pre-existing
+  call site building one with 3 positional args is unaffected) and added a
+  new check asserting a map's own `fade_in: 400` reaches
+  `Audio.bgm_calls` as `['Town', 90, 105, 0, 400]`, plus a sibling map
+  with an unset fade-in still reaching bgm_play as 0. Confirmed to fail
+  against the pre-fix `map.rb` first (`git show HEAD:mruby-rpg2k/mrblib/
+  scene/map.rb` swapped in in place of the working copy, ran the check,
+  got the expected `RuntimeError: expected [...0, 400]], got [...0, 0]]`
+  failure) then restored the fix and reran clean. Full suite:
+  `rpg2k_scene_check.rb` 945 passed (944 baseline + 1 new check);
+  `rpg2k_logic_check.rb` 1187 passed (unchanged); `rpg2k_render_check.rb`
+  41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+  load_check.rb` exit 0, zero known failures (unchanged); `cd build &&
+  ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixture), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb` and
+  `rgss_cruby_compat.rb` needed no attention. No wine session was run this
+  cycle (audio timing is not screenshot-diffable, matching every earlier
+  BGM-fade-in cycle's own note) and no EasyRPG source was consulted for
+  any new behavioral claim — the `BGM`-struct shape and `#music_fadein`
+  mechanism were already established by cycle #203; this cycle is the
+  same mechanical plumbing to a call site that cycle missed. **Left
+  open**: the systematic sweep of `Audio.bgm_play`/`#music_fadein` call
+  sites is now exhausted (every remaining call site — `resume_saved_bgm`,
+  `RGSS::Audio.bgm_play` in `interpreter.rb`'s Play BGM/Play Memorized
+  BGM branches, `Scene::Title`, `Scene::GameOver` — already threads
+  fade-in correctly or deliberately bypasses it with a cited reason); a
+  similar sweep of `Audio.se_play`/SE-struct call sites found every one
+  already consistent (the `SE` struct's `balance` field is dropped
+  everywhere, but that matches `Audio.se_play`'s own 3-argument signature,
+  which has no pan parameter to receive it — not a missed call site).
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
