@@ -590,6 +590,47 @@ check 'Move Forward continues a diagonal last move diagonally, not along ' \
      'not just the vertical one'
 end
 
+check 'a Turn Right after a diagonal move (outside a jump) rotates the ' \
+      'diagonal in hand, not just a collapsed cardinal' do
+  # Sibling gap to the already-fixed jump-block case (`docs/TODO.md`'s
+  # cycle #207 entry, "a Turn Right inside a jump rotates the diagonal in
+  # hand"): #turn_right/#turn_left/#turn_around used to always copy the
+  # freshly-turned *cardinal* @direction into #last_move_direction, so a
+  # Turn Right right after a diagonal move-route sub-command (still outside
+  # any jump block) silently discarded the `[horizontal, vertical]` pair
+  # #move_diagonal had just left there -- a following Move Forward then
+  # continued along one collapsed cardinal axis instead of the turned
+  # diagonal. Move Upper-Right, Turn Right, Move Forward, starting Down
+  # (2): Up-Right (dx +1, dy -1) rotated 90 degrees clockwise is
+  # Down-Right (dx +1, dy +1), so Move Forward should add (+1, +1) on top
+  # of the diagonal step already taken, not repeat/collapse onto (+1, 0).
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::TURN_RIGHT), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [3, 1], [c.x, c.y], 'Up-Right lands one tile up-right of start'
+  eq :turned, route.step(c, FakeWorld.new)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 2], [c.x, c.y], 'Move Forward then walks the turned Down-Right ' \
+     'diagonal, not the pre-turn one collapsed to a single cardinal'
+end
+
+check 'a Turn 180 after a diagonal move (outside a jump) flips the ' \
+      'diagonal in hand' do
+  # Same gap, exercising TURN_180's own diagonal keys: Move Upper-Right,
+  # Turn 180, Move Forward. Up-Right (dx +1, dy -1) flipped 180 degrees is
+  # Down-Left (dx -1, dy +1), which exactly cancels the diagonal step just
+  # walked -- an ordinary (non-jump) net-zero move, landing back at the
+  # start with Character#jumped left false throughout.
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::TURN_180), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq :turned, route.step(c, FakeWorld.new)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y], 'Up-Right then a 180-degree flip to Down-Left ' \
+     'cancels out'
+  eq false, c.jumped, 'an ordinary move, not a jump'
+end
+
 # Ported from EasyRPG Player's source, NOT independently confirmed against
 # genuine RPG_RT under wine: `Game_Character::UpdateFacing`
 # only reverses the prior facing when it matches

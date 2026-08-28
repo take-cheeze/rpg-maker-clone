@@ -6480,9 +6480,12 @@ module Game
     # in too, rotated the same 90/180 degrees around the 8-way compass these
     # four cardinals sit on (Up=0, Up-Right=1, Right=2, Down-Right=3, Down=4,
     # Down-Left=5, Left=6, Up-Left=7; a turn moves +-2 steps, 180 moves 4) --
-    # only #jump_face_direction ever looks up a diagonal key here, for a
-    # Turn/Face command that follows a diagonal move inside the same jump
-    # block, since a character's own on-map @direction is always cardinal.
+    # #jump_face_direction looks up a diagonal key here for a Turn/Face
+    # command that follows a diagonal move inside a jump block; #turn_right/
+    # #turn_left/#turn_around look one up too, for the identical
+    # non-jump case, rotating #last_move_direction rather than the always-
+    # cardinal @direction (see #last_move_direction's own citation for why
+    # the two can diverge).
     TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8,
                    [6, 8] => [6, 2], [6, 2] => [4, 2],
                    [4, 2] => [4, 8], [4, 8] => [6, 8] }.freeze
@@ -6713,19 +6716,36 @@ module Game
       @jumped = false
     end
 
+    # Sibling gap to #jump_face_direction's own diagonal-Array fix
+    # (MoveRoute, `docs/TODO.md`'s cycle #207 entry): the non-jump path had
+    # the identical bug. `#last_move_direction` is what a following Move
+    # Forward reads (see its own citation above) and can hold a diagonal
+    # `[horizontal, vertical]` pair after #move_diagonal, but these three
+    # methods used to just copy the newly-turned *cardinal* `@direction`
+    # into it -- discarding any diagonal pair outright, rather than rotating
+    # it, whenever a Turn Right/Left/180 (or Turn Random, which calls
+    # #turn_right/#turn_left directly) followed a diagonal move-route
+    # sub-command. `TURN_RIGHT`/`TURN_LEFT`/`TURN_180` already carry the
+    # diagonal-pair keys `#jump_face_direction` needed for the identical
+    # rotation inside a jump block, so the fix is the same one-line idiom:
+    # look `@last_move_direction` itself up in the table (a plain cardinal
+    # or a diagonal pair alike) instead of re-deriving it from `@direction`.
+    # `@direction` (the visible, always-cardinal facing -- see
+    # #last_move_direction's own citation) is untouched by this fix and
+    # keeps rotating exactly as it already did.
     def turn_right
       @direction = TURN_RIGHT[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_RIGHT[@last_move_direction] || @last_move_direction
     end
 
     def turn_left
       @direction = TURN_LEFT[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_LEFT[@last_move_direction] || @last_move_direction
     end
 
     def turn_around
       @direction = TURN_180[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_180[@last_move_direction] || @last_move_direction
     end
 
     # Direction pointing from this character toward (tx, ty). ~~Ties (and
