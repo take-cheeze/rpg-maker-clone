@@ -6272,6 +6272,85 @@ The work below is roughly ordered by the critical path to a walkable game
   Teleport facing parameter behaves differently from cycle #181's finding
   -- still no RPG2003 test-bed game available; (6) the SPEED_UP ceiling's
   exact internal value (4 vs. 5), untouched since cycle #180.
+  **Follow-up (cycle #200, 2026-08-28): picked up item (6) above -- still
+  not resolved, but with new negative evidence and a genuine pitfall found
+  along the way, both worth recording so the next attempt does not repeat
+  either.** Wrote a scratch scanner (this codebase's own `mruby-lcf`
+  parser under CRuby, not EasyRPG) over every `Map*.lmu` in Nepheshel --
+  all 543 -- simulating each authored move route's own internal move_speed
+  step by step (SPEED_UP +1 clamp 5 / SPEED_DOWN -1 clamp 0, matching the
+  existing clamp exactly) to find a "discriminating template" per cycle
+  #180's own spec: a route that reaches internal 5 with a deterministic
+  (no Move Random) post-Up dash and no Transparency Up/Down anywhere in
+  the route (so a plain colour mask suffices, no relative-hue tracking).
+  **Result: none exists.** Every route that reaches internal 5 at all is
+  the identical copy-pasted "8 consecutive Speed Ups then 8 Transparency
+  Ups" wisp template cycle #180 already used (now confirmed present on
+  at least a dozen more maps than the one cycle #180 tried, all sharing
+  the same contamination); every route with no transparency and no random
+  tops out at internal 4 at most (the "down-first" template: floor at 0,
+  claw back up exactly 4). This turns cycle #180's own single-map
+  diagnosis into an exhaustive, whole-game negative result rather than a
+  guess that a cleaner route might exist elsewhere unexamined.
+  **A genuine pitfall found while looking for a splice-based workaround:**
+  tried boosting a "down-first" template's own page past its floor by
+  splicing its *default* move_speed field up (1 -> 3, so the route's own
+  fixed 3-Speed-Up run lands on 5 instead of 4) rather than editing the
+  move-route commands themselves -- a single already-genuine field value,
+  the same discipline cycles #137-139/#176/#178 established. The obvious
+  first candidate for this (an event whose page carries an *explicit*,
+  non-default `move_speed` field, so the edit changes a real value rather
+  than inserting one from nothing) turned out, every time, to be a page
+  whose `move_type` is `AWAY` (5, "flee from hero"), not `CUSTOM` (6) --
+  confirmed directly against this codebase's own `Game::MoveType`
+  constants (`mruby-rpg2k/mrblib/game.rb`). An `AWAY` page's own
+  `move_route` table still fully parses (RPG2000's own file format writes
+  one regardless of the page's move type) but is never executed at
+  runtime -- only a `CUSTOM` page's route ever runs -- so every Speed
+  Up/Down command sitting in it is inert data, not a live route, no
+  matter how clean it looks in a dump. This cost a full wine boot cycle
+  (switch-spliced onto Nepheshel's `Map0177.lmu` events 3/4) before the
+  mistake was caught: both events rendered and idled normally, exactly as
+  their *own* page 1 (the real `CUSTOM` page) does, never touching the
+  spliced page 2's speed at all -- a silent false negative, not a crash,
+  which is what made it worth flagging explicitly rather than just moving
+  on. Re-scanning restricted to genuinely `move_type == CUSTOM` pages with
+  an explicit `move_speed` field turned up real candidates (e.g.
+  `Map0102.lmu` event 8's page 2, `Map0346.lmu` events 1/2/5/7/19), but
+  ran out of cycle time chasing a second, independent anomaly on the first
+  of those: `Map0102.lmu` event 8's page 2 (switch-gated, `cond_flags: 1`,
+  `sw_a: 265`) is correctly selected by `Game::EventPage.select` (checked
+  directly, not assumed) once its own switch is set, and its sibling page
+  1 (identical charset/position, different switch/route) renders and
+  moves normally under this same engine -- but page 2 itself never drew a
+  sprite in any of several repositioned/retimed attempts, pristine map
+  file included, so this is not caused by the speed splice. Not root-
+  caused this cycle (outside the scope of the SPEED_UP question itself);
+  flagged here as its own small, reproducible, previously-unnoticed gap
+  for whoever looks at it next. **No `data/` fixture ended this cycle
+  modified**: `Map0177.lmu`, `Map0102.lmu` and `Save01.lsd` were each
+  spliced and restored several times over the course of this
+  investigation, and all three were re-verified byte-identical at the end
+  -- `Map0177.lmu`/`Map0102.lmu` against a fresh extraction of the
+  checked-in `data/Nepheshel206beta.zip` (`fe558533...`/`10c7a1e1...`,
+  both matching exactly) and `Save01.lsd` against this cycle's own
+  pre-edit backup (`3ab5bb01...`, matching every prior cycle's recorded
+  value back to #148). No engine code was changed, so
+  `scripts/rpg2k_logic_check.rb` (1176) and `scripts/rpg2k_scene_check.rb`
+  (932) were re-run only as a sanity check, both matching their existing
+  baselines exactly; no changelog fragment (investigation only, no shipped
+  behavioral change). Every wine/Xvfb/matchbox process this cycle started
+  was confirmed terminated (`ps aux` clean) before finishing. No EasyRPG
+  source was consulted for any behavioral claim, and no web search was
+  used. **Left open, in priority order: (1) the SPEED_UP ceiling's exact
+  internal value (4 vs. 5) itself remains genuinely unresolved -- reaching
+  it cleanly now looks like it needs either a synthetic move-route splice
+  (a bigger step than this project's established single-*parameter*-splice
+  discipline covers, since a repeat/skippable custom route's own command
+  *sequence* would need extending, not just one existing value changed) or
+  a non-Nepheshel RPG2000 test bed whose own content happens to author a
+  cleaner route; (2) the `Map0102.lmu` event 8 page 2 rendering gap found
+  along the way.**
   ✅ **Follow-up (cycle #184, 2026-08-27): resumed the EasyRPG-citation sweep
   on the two `scripts/rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` check
   files cycle #177 flagged as untouched (item (4) above) -- explicitly a
@@ -6875,6 +6954,239 @@ The work below is roughly ordered by the critical path to a walkable game
   be a false claim -- this cycle's honest assessment is that the sweep is
   further from done than cycle #189 believed, not closer, precisely because
   this cycle went looking in a place no prior cycle had ever checked.
+  ✅ **Follow-up (cycle #196, 2026-08-28): picked up item (2) from cycle #190's
+  own "left open" list -- the six smaller `scene/*.rb` files (`status_menu.rb`
+  13, `menu.rb` 10, `title.rb` 8, `equip_menu.rb`/`save_load.rb` 7 each,
+  `base.rb` 6) -- and fully swept all six**, following cycle #190's own
+  established method exactly: read each file whole, top to bottom, and for
+  every `EasyRPG`/`confirmed against`/`RPG_RT's [own] live source` citation
+  that presented a behavioral claim as verified fact without disclosure,
+  rewrote it to honestly disclose "ported from EasyRPG['s [own]] source, NOT
+  independently confirmed against genuine RPG_RT under wine" while preserving
+  the underlying technical description (including quoted EasyRPG source, now
+  attributed to EasyRPG rather than presented as this project's own finding);
+  genuine wine-confirmed citations already present (several in each file --
+  `save_load.rb` and `equip_menu.rb` especially, both citing real pixel-level
+  wine measurements from cycles #121-#127) were read and correctly left
+  untouched, and cross-references to an already-disclosed wine-measured
+  citation elsewhere in the same codebase (the `Input.repeat?` auto-repeat
+  timing, independently measured against genuine RPG_RT.exe and cited
+  identically in `menu.rb`/`title.rb`/`item_menu.rb`/`equip_menu.rb`/
+  `save_load.rb`) were likewise left as the legitimate shorthand cycle #190
+  itself established, not re-flagged. One additional, distinct bug found
+  along the way, not just a citation-hygiene gap: `save_load.rb`'s own
+  class-doc comment (documenting the `:save` mode) still carried the *exact*
+  "confirmed against RPG_RT's own live source, `Scene_Save::Action`" framing
+  that this same file's `#confirm_selection` method had already debunked and
+  corrected back in cycle #126 ("mislabeled at the time as 'RPG_RT's own live
+  source'... independently confirmed [instead]... against a genuine
+  RPG_RT.exe under wine") -- the class comment was simply never updated when
+  the method-level comment was fixed, so the file carried both the honest,
+  wine-confirmed version and its own stale, debunked EasyRPG-sourced
+  duplicate side by side. Fixed by pointing the class comment at
+  `#confirm_selection`'s own real wine confirmation instead of restating the
+  discredited citation. Counted precisely against cycle #190's own tally
+  before starting (`grep -c` for `EasyRPG` plus the `src/[a-z0-9_]+\.(cpp|h)`
+  pattern per file, matching cycle #190's own method): every undisclosed
+  instance in all six files is now either honestly disclosed or was already a
+  genuine wine-confirmed citation -- re-grepping after the fix turns up only
+  disclosed/wine-confirmed occurrences in each of the six.
+
+  **Verification:** `ruby -c` clean on all six edited files. Diff isolation
+  per file, the same command cycle #190 used (`git diff -- <file> | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' |
+  grep -vE '^[+-][[:space:]]*$'`): empty for all six, confirming every edit
+  is comment-only. Before/after check counts, all matching baseline exactly:
+  `rpg2k_scene_check.rb` 932, `rpg2k_logic_check.rb` 1176,
+  `rpg2k_render_check.rb` 41, `rpg2k3_battle_row_check.rb` 19/0 failures,
+  `rpg2k3_battle_gauge_check.rb` 15/0 failures, `rpg2k_save_load_check.rb`'s 3
+  known pre-existing failures reconfirmed identical (screen-transition arity,
+  saved-picture fields, BGM balance field). `cd build && ninja && ctest -R
+  mruby_test` passed. No wine/Xvfb/matchbox process started this cycle, no
+  `data/` file touched (`git status` on it stayed clean throughout). No
+  changelog fragment: comment-only documentation work, matching cycle #190's
+  own precedent for this exact class of fix, not a behavioral change.
+
+  **Left open for a future cycle, unchanged in priority from cycle #190's own
+  list except for the six files this cycle closed:** `scene/battle.rb`
+  (34 file-path citations, 78 `EasyRPG` mentions at last count) is now the
+  only remaining unswept file this measure identified, and by a wide margin
+  the largest -- comparable in density to `game.rb`/`map.rb` before they were
+  swept, and roughly 4-5x the size of any one file this cycle closed. Given
+  this cycle's own lighter-weight, comment-only framing (matching cycle
+  #190's own choice to fully finish several small files rather than rush a
+  partial pass at a large one), `battle.rb` was deliberately left for a
+  dedicated future cycle rather than attempted partially here. Cycle #190's
+  own item (3) -- a parity check of whether `scripts/*.rb` files quote or
+  restate any of the newly-swept scenes' undisclosed citations, the same
+  cross-file leakage shape cycle #189 found between `rpg2k_scene_check.rb`
+  and `scene/map.rb` -- also remains untouched by this cycle and is still
+  open.
+  ✅ **Follow-up (cycle #197, 2026-08-28): swept `scene/battle.rb`, the
+  single remaining file cycle #196 identified as unswept.** Read the whole
+  4164-line file top to bottom and rewrote every citation that presented an
+  EasyRPG Player C++ source read as if it were an independently verified
+  RPG_RT fact -- the two shapes this sweep has flagged since cycle #174:
+  literal `confirmed against`/`verified against EasyRPG[...]actual C++
+  source` phrasing (9 instances at the start of this cycle, one of which --
+  the `#drive_battle_command`/`#drive_battle_options` auto-repeat comment,
+  cycle #130 -- was already a legitimate before/after narration of an
+  EasyRPG-only claim later re-verified against genuine RPG_RT.exe under
+  wine, and was correctly left untouched), and the worse shape of quoting an
+  EasyRPG C++ construct (a function name, a `SetWait`/`CheckWait` call, a
+  window class) while labelling it "RPG_RT's own X" or "RPG_RT does/plays/
+  shows Y," which does not use the word "confirmed" at all but claims the
+  same unearned certainty. Found roughly 30 such spots once both shapes were
+  counted together (this file's citation density genuinely was comparable to
+  `game.rb`/`map.rb` before they were swept, as cycle #196 predicted), and
+  rewrote each to honestly read "ported from EasyRPG['s [own]] source, NOT
+  independently confirmed against genuine RPG_RT under wine," preserving the
+  underlying technical description (including quoted EasyRPG source, now
+  attributed to EasyRPG rather than to "RPG_RT itself"/"RPG_RT's own X").
+  Genuine wine-confirmed citations already in the file -- cycles #130/#131/
+  #133/#134/#136's own pixel- and keypress-level probes of the battle
+  command/options/target/skill/item/ally-target cursors, and an earlier
+  cycle's own wine confirmation that `#draw_battle_stat_segment`'s
+  below-1/4-max HP recolouring matches genuine RPG_RT.exe -- were read and
+  correctly left untouched (no new wine verification was run this cycle), as
+  were plain, non-overclaiming "ported from
+  EasyRPG"/"matching EasyRPG's own X" attributions that never claimed
+  confirmation in the first place (the same style left standing throughout
+  `game.rb`/`interpreter.rb` after their own sweeps): this cycle's own
+  criterion for touching a citation was the presence of an unearned
+  certainty claim, not the mere presence of an EasyRPG mention, matching how
+  cycle #196 itself read (not "confirmed"-flavoured "matching EasyRPG's X"
+  phrasing was left alone in several of its six files too, e.g.
+  `equip_menu.rb`/`save_load.rb`'s wine-measured citations). No wine/Xvfb/
+  matchbox process was started and no `data/` fixture was touched this
+  cycle -- this was a documentation-only sweep, not a new verification.
+  **Verification:** `ruby -c` clean. Diff isolation (the same command every
+  prior cycle in this sweep has used): `git diff -- mruby-rpg2k/mrblib/
+  scene/battle.rb | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE
+  '^[+-][[:space:]]*#' | grep -vE '^[+-][[:space:]]*$'` -- empty, confirming
+  every one of the 298 changed lines (`git diff --stat`: 178 insertions, 120
+  deletions) is a comment. `EasyRPG` mentions rose
+  from 78 to 118 (the disclosure sentences themselves name EasyRPG more
+  often than the citations they replaced did) while file-path citations held
+  at 34 -- no citation was added or removed, only relabelled. Full rebuild
+  and check suite run despite this being comment-only mruby source, since
+  the file is unusually large and this was the first time it had been
+  touched: `cd build && ninja` succeeds, `rpg2k_scene_check.rb` 932,
+  `rpg2k_logic_check.rb` 1176, `rpg2k_render_check.rb` 41,
+  `rpg2k3_battle_row_check.rb` 19/0 failures, `rpg2k3_battle_gauge_check.rb`
+  15/0 failures (all exactly matching baseline), `ctest -R mruby_test`
+  passed. No changelog fragment: comment-only, matching cycles #190/#196's
+  own precedent for this exact class of fix.
+  With `battle.rb` now swept, the file-level portion of the multi-cycle
+  sweep cycles #174/#176/#177/#184-190/#196 opened is complete: every file
+  those cycles' own `EasyRPG`/`src/*.cpp` grep identified (`game.rb`,
+  `interpreter.rb`, `schema.rb`, `main.rb`, `rpg2k_logic_check.rb`,
+  `rpg2k_scene_check.rb`, the `scripts/*.rb` files cycle #187 swept,
+  `scene/map.rb`, the six smaller `scene/*.rb` files cycle #196 closed, and
+  now `scene/battle.rb`) is either genuinely clean or down to disclosed
+  ports and honest wine-confirmed findings. The one item still open from
+  cycle #190's own list is its item (3): whether `scripts/*.rb` files that
+  exercise `scene/battle.rb` (i.e. `rpg2k3_battle_row_check.rb`/
+  `rpg2k3_battle_gauge_check.rb`) themselves quote or restate any of this
+  file's own (now-disclosed) citations without the same disclosure -- the
+  cross-file leakage shape cycle #189 found once already between
+  `rpg2k_scene_check.rb` and `scene/map.rb`. Not checked this cycle; left
+  for a future one to grep both battle-check scripts against the citation
+  list this cycle just fixed.
+  ✅ **Follow-up (cycle #198, 2026-08-28): closed cycle #190's own item (3)
+  above (checked, clean, no fix needed), then landed a genuine
+  RPG_RT.exe-under-wine confirmation for `queue_level_up_messages`'s own
+  "one line per skill, same page as the level line" citation.** **Item (3):**
+  grepped `scripts/rpg2k3_battle_row_check.rb`/`rpg2k3_battle_gauge_check.rb`
+  for every `EasyRPG`/`src/*.cpp` mention and cross-checked each against
+  `scene/battle.rb`'s own (cycle #197-disclosed) citations -- every one of
+  the eight hits already carries its own inline "NOT independently confirmed
+  against genuine RPG_RT under wine" disclosure (`rpg2k3_battle_row_check.rb`
+  lines 5-7/103-104/268-269, `rpg2k3_battle_gauge_check.rb` lines 96/129-130/
+  165-167), so this cross-file leakage shape (present once before, between
+  `rpg2k_scene_check.rb` and `scene/map.rb`, cycle #189) does not recur here;
+  both suites reconfirmed at their exact baselines (19/0 and 15/0 failures)
+  with no edit needed. **Main investigation:** `Interpreter#queue_level_up_
+  messages` (`mruby-rpg2k/mrblib/interpreter.rb`) already implements "a
+  newly-learned skill announces on the same message page as the level-up
+  line, not a separate box," ported from EasyRPG's source and flagged NOT
+  independently confirmed -- picked this specific, narrow, event-command-area
+  claim to verify since a genuine RPG_RT.exe-under-wine test was tractable
+  with no ambiguity about pass/fail. First tried Song-of-the-Sea (a genuine
+  RPG2003 `RPG_RT.exe`, needed for an unrelated Wait-command investigation
+  this cycle abandoned -- see below) but it pops a blocking "RPG Maker 2003
+  RTP is not found." dialog and exits the instant it is dismissed, with or
+  without any synthetic edit (confirmed against the untouched original
+  Map0001.lmu too) -- this sandbox has no RTP and no network path to fetch
+  one, so that game is not usable for wine verification here; noted for any
+  future cycle tempted to reach for it. Pivoted to Nepheshel (confirmed
+  genuinely RPG2000 via `LCF::Database#rpg2003?`, so this particular claim
+  --  which fires on any edition -- was still testable there) and its own
+  actor 2 (ファル), level 1/0 exp in the established clean `Save01_clean.lsd`
+  (verified by a fresh raw read of that save's own chunk 108), who
+  `RPG_RT.ldb`'s own actor-skill table teaches skill 4 (バマー) at level 3 and
+  nothing at level 2. Built a synthetic autostart Change Level (10420) event
+  on a copy of the genuine `Map0012.lmu`, two variants differing only in the
+  level delta (+1: control, no skill crossed; +2: treatment, crosses level
+  3). **A first attempt with just the two probe commands produced solid-black
+  `xwd` screenshots throughout** -- alarming at first, but this is exactly
+  the pre-existing "short synthetic autostart list of >= 2 commands with
+  nothing appended" capture artifact cycles #150/#151 already root-caused
+  and documented (their own `err:d3d:context_choose_pixel_format` count-4
+  signature; genuine RPG_RT.exe is almost certainly still alive and correct
+  underneath, `xwd` just cannot capture its client area in that state) --
+  recognized from this file's own history rather than re-diagnosed from
+  scratch, and worked around exactly as cycle #159 already established: page
+  id 1 (not 0) in the pages table, and the genuine 89-command tail copied
+  verbatim off `Map0478.lmu` event 2 page 2 appended after the two probe
+  commands, which cycle #151 found suppresses the signature entirely. With
+  that fix, screenshots rendered normally. **Result, decisive and
+  reproducible:** the +1 run showed a single-line message box, exactly
+  "ファルはレベル２になった！"; the +2 run showed a *two*-line box in the same
+  window, "ファルはレベル３になった！" immediately followed by "バマーも覚えた！"
+  -- directly matching this implementation's own design (one skill line per
+  newly-crossed learn-level, appended to the level line's own page, not a
+  separate page) and ruling out the alternative EasyRPG's own source does not
+  by itself rule out (a same-page vs. separate-page/box difference would
+  have been visible as either a taller single box or a second Decision-gated
+  page). **No code or behavior change** -- the citation was already correct,
+  this cycle only earned the confirmation the comment already claimed to
+  lack; the comment on `queue_level_up_messages` was rewritten to record the
+  wine evidence in place of "NOT independently confirmed." No changelog
+  fragment (comment-only) and no new check (the existing `scripts/
+  rpg2k_logic_check.rb` coverage -- "level_up_message/skill_learned_message
+  compose...", "Change Class announces each newly-learned skill...", and the
+  dedicated level-up-message block -- already locks in the exact same-page
+  invariant this cycle confirmed against genuine RPG_RT.exe). **Verification:**
+  `ruby -c` clean; `git diff -- mruby-rpg2k/mrblib/interpreter.rb | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' |
+  grep -vE '^[+-][[:space:]]*$'` empty, confirming every changed line is a
+  comment; full rebuild (`cd build && ninja`) and `ctest -R mruby_test` both
+  passed; `scripts/rpg2k_scene_check.rb` (932), `scripts/rpg2k_logic_check.rb`
+  (1176), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19/0) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15/0) all exactly matched their baselines; `scripts/rpg2k_save_load_check.rb`
+  reconfirmed at its exact 3 known pre-existing failures. Every `data/`
+  fixture this cycle touched (`Map0012.lmu`, `Save01.lsd` -- both Nepheshel;
+  `Map0001.lmu` -- Song-of-the-Sea, freshly downloaded this cycle and left in
+  place, gitignored, for any future cycle that wants a genuine RPG2003
+  `RPG_RT.exe` for something other than a fresh boot) was restored to its
+  exact original bytes and reconfirmed byte-identical by `md5sum` (Nepheshel:
+  `c2fa69a0.../3ab5bb01...`, matching every prior cycle back to #148;
+  Song-of-the-Sea: `92765c2c...`); `git status` on `data/` came back clean
+  (it is fully gitignored); no Save02/03.lsd scratch files were left behind;
+  every wine/Xvfb/matchbox process this cycle started was confirmed
+  terminated before finishing. No EasyRPG source was consulted for any
+  behavioral claim this cycle, and no web search was used. **Left open for a
+  future cycle:** the RPG2003 Wait-command "wait until Decision is pressed"
+  citation (`Interpreter#do_wait`, `mruby-rpg2k/mrblib/interpreter.rb`,
+  "ignoring param0 entirely ... NOT independently confirmed") this cycle
+  originally set out to verify -- blocked entirely by Song-of-the-Sea's
+  missing-RTP dialog before a synthetic autostart event could even run; a
+  future cycle would need either a different genuine RPG2003 `RPG_RT.exe`
+  fixture that does not require the RTP, or a legitimate way to obtain the
+  RTP itself, neither available this cycle; everything else already listed
+  as open by cycle #197 above, unchanged.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
@@ -15024,6 +15336,165 @@ following this paragraph as the original record.
   round-trip verification, not a wine-confirmed one -- the same honestly-
   labeled limitation cycles #191-193 already carry for their own new
   mechanisms.
+- ✅ **Investigated (cycle #195, 2026-08-28): does genuine RPG_RT.exe even
+  honour `SAVE_EVENT_EXEC_STATE`'s `stack`/`current_command` for a Common
+  Event's own Parallel Process resume at all, and if so, in which array-id
+  order?** The specific question cycles #191/#192 both flagged and carried
+  forward as open (`stack`'s 1-based, outer-to-inner numbering "not
+  confirmed against a genuine multi-frame capture, since none was
+  available"). This cycle got wine access and a real multi-frame-shaped
+  target and ran the splice, but the result is a bigger, more basic finding
+  than the array-id question it set out to answer -- and the array-id
+  question itself is left open, not resolved.
+
+  **Method**: `data/Nepheshel206beta/Nepheshel206Rbeta`'s own `RPG_RT.ldb`
+  was scanned (a one-off CRuby script loading `mruby-lcf/mrblib/{lcf,
+  schema}.rb` exactly as `scripts/lcf_testbed_check.rb` does) for a Common
+  Event with `start_term == :parallel` whose own page contains a genuine
+  Call Event (12330) command -- i.e. a real, already-authored two-frame
+  call stack reachable by the project's own logic, per this cycle's brief.
+  Found one on the first pass: Common Event #13 ("!HP自動回復", HP
+  auto-recovery, `start_term=4`/parallel, `need_flag=false` so
+  unconditionally active) calls Common Event #18 at its own command index
+  38 (`param(0)=0` common-event mode, target id 18) and Common Event #29 at
+  index 67 -- no database edit needed at all, both call targets already
+  exist. `Game::State.build_event_exec_state`'s own logic was reimplemented
+  standalone (same field-by-field construction, verified byte-identical in
+  shape by decoding the result back through this codebase's own schema)
+  to splice a two-frame `SAVE_EVENT_EXEC_STATE` into a **copy** of the
+  repo's standing real-save fixture, `Save01.lsd` (the genuine EasyRPG-
+  under-wine capture `scripts/gen-lcf-save-wine.bash` already produced for
+  this fixture in an earlier cycle) -- chunk 114's own entry for common
+  event 13, leaving all 504 other entries and every other chunk untouched.
+  Outer frame: Common Event #13's own real 69 commands, byte-identical to
+  the database, `current_command=39` (the index right after the Call Event
+  at 38 -- confirmed from `#do_call_event`'s own source, `@index += 1`
+  happens in `Game::Interpreter#update`'s dispatch loop *before* the
+  command handler runs, so by the time a Call Event pushes the caller's
+  frame the caller's own `@index` already sits one past the call). Inner
+  frame: Common Event #18's own real 14 commands, byte-identical to the
+  database, with ONE new Show Message command ("SPLICE\_OK A"/"SPLICE\_OK
+  B") plus a trailing terminator appended -- not touching the database, only
+  this save-embedded copy, which the schema already treats as an
+  independent full copy (see `SAVE_EVENT_EXEC_FRAME`'s own comment) --
+  `current_command` pointing straight at it, so a correct resume shows the
+  message within the very first tick after load, an unambiguous,
+  unmistakable signal genuine RPG_RT's own commands never produce on their
+  own. Two variants were built: A (this codebase's own convention, outer
+  frame at array id 1, inner at id 2) and B (reversed, inner at id 1, outer
+  at id 2).
+
+  Booted genuine RPG\_RT.exe under wine (`WINEARCH=win32`,
+  `WINEPREFIX=~/.wine-nepheshel32`, `ja_JP.UTF-8`,
+  `LIBGL_ALWAYS_SOFTWARE=1`, Xvfb + matchbox-window-manager, held
+  `xdotool` keys -- the exact incantation `scripts/compare-nepheshel-
+  save-wine.bash` already uses), Down/Return/Return on the title screen to
+  load Save file 1 (the same fixed three-key sequence that script already
+  documents), then waited several seconds and screenshotted. **Neither
+  variant A nor variant B ever showed the message** -- no crash, no hang,
+  no glitch either; the game loaded and rendered the map completely
+  normally in both cases, as if the splice were not there at all.
+
+  That null result was ambiguous on its own (wrong array order? a commands-
+  content mismatch check silently discarding the whole snapshot? current_
+  command not honoured at all? the Parallel Process not even running?), so
+  three more splices isolated each hypothesis in turn, from most to least
+  conservative, all built the same way against the same fixture:
+  - **Single frame, Common Event #13's own 69 commands byte-identical to
+    the database (no appended content at all), `current_command=999`** (
+    wildly out of bounds for a 69-entry list). No crash, no hang -- if
+    genuine RPG\_RT blindly trusted this index the way this codebase's own
+    prior finding on `MAP_EVENT_PAGE`'s stale `event_command_size` (cycle
+    #181) showed RPG\_RT trusting an unchecked length, an out-of-range
+    index into `@list` should have visibly misbehaved. It did not.
+  - **Single frame, the same 69 real commands plus one appended Show
+    Message + terminator, `current_command=69`** (pointing directly at the
+    appended message, in-bounds). No message appeared.
+  - **Single frame, Common Event #13's saved `commands` replaced wholesale**
+    with just `[ShowMessage, terminator]`, `current_command=0` -- the
+    simplest possible in-bounds, from-the-top case, and the one most
+    likely to succeed if the mechanism works at all. No message appeared
+    here either.
+
+  **Conclusion, stated as plainly as the evidence supports**: across four
+  independent splices (two two-frame, two single-frame) and one out-of-
+  bounds probe, genuine RPG\_RT.exe showed no observable effect from any
+  of `SAVE_EVENT_EXEC_STATE`'s `stack`/`commands`/`current_command` content
+  for a Common Event's own Parallel Process, in either array-id order, at
+  any index, and even when the entire commands list was replaced outright
+  -- while never crashing or hanging on any of it either. The most
+  parsimonious reading is that genuine RPG\_RT does not consult this data
+  to resume a Common Event's own Parallel Process at all for the ordinary
+  (not-mid-a-blocking-wait) case tested here: it appears to just re-derive
+  the common event's current page from its own database and start fresh
+  every time, independent of whatever chunk 114 holds. If that reading is
+  right, the original array-id-ordering question this cycle set out to
+  answer is largely moot for this specific chunk/case -- there is no
+  resume behavior for the ordering to matter to. **This is not a certainty
+  strong enough to call "confirmed" and act on** (see caveats below), but
+  it is strong enough that this codebase's own `Game::State#common_event_
+  exec` resume mechanism (cycles #191/#193) should not be assumed to match
+  genuine RPG_RT's actual behavior for the ordinary case, only its byte
+  format (which liblcf's own field table, a legitimate citation, still
+  correctly documents).
+
+  **Caveats, honestly**: (1) this used the repo's one available real
+  save fixture and one real Common Event; a different common event, a
+  different trigger shape, or a save taken from a different point in the
+  game was not tried, and cannot be ruled out as behaving differently. (2)
+  The alternative that this mechanism only ever activates when a Parallel
+  Process is captured mid one of the specific blocking waits `SAVE_EVENT_
+  EXEC_STATE`'s own schema-only fields describe (`wait_movement`,
+  `keyinput_*`, etc. -- all left unwritten by this codebase, cycle #191's
+  own documented scope) was not tested here at all; this cycle's splices
+  never populated those fields, so a real RPG_RT that only resumes
+  positionally in that narrower scenario would show exactly this same null
+  result. (3) A more instrumented test (an in-game menu Save after
+  resuming, decoding the result to check for indirect side effects like
+  variable changes, rather than relying on a visible Show Message) was not
+  attempted -- reaching the Save menu requires additional keypresses and
+  the target map's own permission to save, not confirmed reachable from
+  this fixture's own saved position, and was judged not worth the
+  additional wine cycles given the already-consistent four-way null
+  result. (4) Ground rule 1 (no EasyRPG source) was respected throughout;
+  the existing pristine `Save01.lsd` (produced by EasyRPG Player under
+  wine, not genuine RPG_RT) was inspected once, purely to check whether it
+  already happened to contain a genuine multi-frame capture from some
+  earlier session -- it did not (every one of its 5 non-empty common-event
+  entries was single-frame, `current_command=0`, matching a fresh start),
+  so it could not answer this cycle's question on its own and no EasyRPG-
+  authored numbering convention was relied on for any conclusion above --
+  only genuine RPG_RT.exe's own observed on-screen behavior was.
+
+  **No code change shipped.** `LCF::Schema::SAVE_EVENT_EXEC_FRAME`/
+  `SAVE_EVENT_EXEC_STATE` and `Game::State.build_event_exec_state`/
+  `Game::Interpreter#call_stack_snapshot`/`#restore_call_stack` are
+  unchanged -- this cycle's own finding argues for caution in trusting the
+  existing mechanism's real-world fidelity, not for a specific fix (there
+  is no confirmed-correct alternative array-id convention to switch to;
+  the evidence suggests the ordering question may not even be the live
+  one). A future cycle picking this up should start from the "does RPG_RT
+  resume a Common Event Parallel Process positionally AT ALL" question,
+  probably via the in-game-Save/re-decode method caveat (3) above
+  describes, rather than re-testing array-id order directly.
+
+  **Fixture hygiene**: `data/Nepheshel206beta/Nepheshel206Rbeta/Save01.lsd`
+  and `RPG_RT.ldb` were backed up before any edit and restored byte-
+  identical afterward (`md5sum` matched the pre-cycle backup for both);
+  `git status -- data/` was clean throughout, since `data/` is gitignored
+  and was never a concern for accidental commits, but the restore was done
+  anyway per this cycle's own ground rules, so the fixture is exactly as
+  the next cycle's own wine scripts expect it (unmodified, `Save01.lsd`
+  still the single-frame, fresh-game EasyRPG capture every other script
+  already assumes). All screenshots were written to the session's own
+  scratchpad, not `ss/` or anywhere committed, and every Xvfb/wine/
+  matchbox process this cycle started was killed before finishing (no
+  leftover processes). No `data/` fixture, code, or check-suite baseline
+  changed: `rpg2k_scene_check.rb`=931, `rpg2k_logic_check.rb`=1175,
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures, all reconfirmed unchanged after the fixture
+  restore. No engine code touched, so no rebuild/`ctest` run was needed.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
@@ -19255,6 +19726,88 @@ not yet verified:
   of re-arming — three of the four confirmed to fail against the pre-fix
   code before the fix (the fallback check already passed, since the
   pre-fix code always behaved as mode 0 regardless).
+  ✅ **Follow-up (cycle #199, 2026-08-28): wine-confirmed the "an RPG2000
+  project's own Shake Screen always falls back to one-shot mode 0, even when
+  a 5th (RPG2003-only) parameter is physically present in the command"
+  half of the citation above -- narrowed but, honestly, not fully settled
+  (see caveat below).** Single-parameter-spliced Nepheshel's own genuine
+  Map0325 event 3 ("earthquake trap 2", a real player-touch earthquake trap
+  whose page is Play SE -> two genuine back-to-back Shake Screen commands ->
+  Erase Screen -> Teleport -> Show Screen) on a copy of the genuine
+  `Map0325.lmu`: the first Shake Screen's own real 4-parameter list
+  (`[3,5,30,1]`) grown to 5 (`[3,5,30,1,1]`, appending param4=1, "begin a
+  repeating strobe"), with `MAP_EVENT_PAGE` field 51
+  (`event_command_size`) recomputed per cycle #181's own established
+  discipline (`page[51] = LCF.encode_event_commands(cmds).bytesize`) so the
+  stale-length black-screen hang that cycle found does not recur.
+  Repositioning a save onto the trap needed its own detour: the first
+  attempt stood the party directly on the trap's own south neighbour (8,5),
+  which turned out to be an impassable chasm tile (chipset 13's own
+  `passable_data_lower` flags = 0 for every direction) that this codebase's
+  own `ChipSet#passable?`/`#lower_index` correctly refuses to route *into* --
+  not a bug, just this cycle's own bad choice of standing tile, caught by
+  replicating that exact lookup in a scratch script against the map's real
+  chipset table before spending a wine cycle on it, then fixed by standing
+  one tile further out (9,4) instead, whose neighbour passability flags (15
+  -- open on all four sides) `scripts/gen-rpg2k-save.rb --at 9,4 --facing
+  left` reaches cleanly with a single step onto (8,4). Booted genuine
+  RPG_RT.exe under wine (the June-2003-PE-timestamped `Nepheshel206Rbeta`
+  binary cycle #181 first identified), loaded the spliced save, stepped
+  onto the trap tile, and timed the Erase Screen blackout (mean pixel
+  brightness on a dense 0.25s-interval `xwd` screenshot series dropping from
+  its steady ~0.17-0.18 baseline to ~0 and back) against an identical run on
+  the byte-for-byte untouched original map, same save, same two-key-press
+  script. **Result: both landed the blackout at the same ~4.0s mark,
+  indistinguishable** -- matching this codebase's own prediction (mode stays
+  0, so both Shake Screen commands still block for their own param3-gated
+  full duration) rather than the alternative a genuinely honoured param4=1
+  would produce (the first Shake becoming a non-blocking Begin, per this
+  codebase's own `#shake_begin`, which never waits at all -- the second
+  Shake and the Erase Screen right behind it would then have run
+  immediately, landing the blackout 2-3 seconds earlier than observed, a gap
+  far larger than any run-to-run input-timing jitter this method could
+  plausibly produce). The `do_shake_screen` comment was rewritten in place
+  with this finding, replacing the bare "NOT independently confirmed"
+  flag -- no behavior change, since the citation was already correct.
+  **Left open, honestly:** only the one `Nepheshel206Rbeta` binary and this
+  one maker=2000-format database were exercised. Nepheshel has no
+  maker=2003-format sibling to test the *positive* case against (a genuine
+  2003 project actually honouring param4), and neither the sibling
+  `Nepheshel206Nbeta` binary (cycle #181's own May-2001-dated one) nor
+  Song-of-the-Sea's genuine RPG2003 `RPG_RT.exe` (still blocked by the
+  missing-RTP dialog cycle #198 documented) were tried this cycle -- so this
+  result cannot by itself distinguish "the mode gate genuinely reads the
+  project's own maker edition" (this codebase's design, and EasyRPG's own
+  `Player::IsRPG2k3Commands()` citation) from "this specific 2003-PE-dated
+  binary simply never implements the strobe extension at all, regardless of
+  which project it is fed" -- both predict the exact null result actually
+  observed here. A future cycle wanting the positive case would need either
+  a working genuine RPG2003 `RPG_RT.exe` test-bed or a legitimate way around
+  Song-of-the-Sea's RTP requirement. **Verification:** `ruby -c` clean;
+  `git diff -- mruby-rpg2k/mrblib/interpreter.rb | grep -E '^[+-]' | grep
+  -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'` empty, confirming every changed line is a comment;
+  full rebuild (`cd build && ninja`) and `ctest -R mruby_test` both passed;
+  `scripts/rpg2k_scene_check.rb` (932), `scripts/rpg2k_logic_check.rb`
+  (1176), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19/0) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15/0) all exactly matched their recorded baselines; `scripts/
+  rpg2k_save_load_check.rb` reconfirmed at its exact 3 known pre-existing
+  failures (BGM `balance` x2, picture `show_x`/`show_y`), its own printed
+  save summary (`leader="Renamed" ... map=12 pos=(40,15)`) confirming
+  `Save01.lsd` was back to its pre-cycle state. Both `data/` fixtures this
+  cycle touched (`Save01.lsd`, `Map0325.lmu`, both Nepheshel) were backed up
+  before editing and restored byte-identical afterward, reconfirmed by
+  `md5sum` against the exact values every prior cycle back to #148 recorded
+  for `Save01.lsd` (`3ab5bb01...`) and this cycle's own first read of
+  `Map0325.lmu` (`7bc298752c...`); `git status --porcelain -- data/` stayed
+  empty throughout (the directory is fully gitignored regardless); no
+  `save*.mrb` scratch files were left behind; every wine/Xvfb/matchbox
+  process this cycle started was confirmed killed (`ps aux` clean,
+  `wineserver -k`) before finishing. No EasyRPG source was consulted for any
+  behavioral claim this cycle (only read, long after this cycle's own
+  independent wine finding, to phrase the citation's remaining gap
+  precisely), and no web search was used.
 - ✅ **A troop battle-event page's Show Battle Animation now honours RPG2003's
   Ally/Enemy target-type flag instead of always indexing the enemy troop —
   an "Ally #1" target used to play over the troop's own *second* monster in

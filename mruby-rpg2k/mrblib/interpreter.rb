@@ -2384,15 +2384,25 @@ module Game
     # from the database terms; this build uses a plain English line for now.
     #
     # Also queues one line per skill the growth/class table teaches at that
-    # exact level, appended onto the same page as the level's own line -- the
-    # missing half of this feature. This design (ported from EasyRPG Player's
-    # source, NOT independently confirmed against genuine RPG_RT under wine):
-    # `Game_Actor::ChangeLevel` calls LearnLevelSkills(old_level+1, new_level, pm)
-    # right after pushing the level-up line and before PushPageEnd, and
-    # LearnSkill only pushes ActorMessage::GetLearningMessage (the
-    # `skill_learned` database term glued onto the skill's own name) for a
-    # skill not already IsSkillLearned -- both are only reachable from
-    # #do_change_exp/#do_change_level, which already call #set_level (and so
+    # exact level, appended onto the same page as the level's own line --
+    # confirmed against genuine RPG_RT.exe under wine (cycle #198): a
+    # synthetic autostart Change Level (10420) on Nepheshel's own actor 2
+    # (ファル, level 1/0 exp in the established clean Save01_clean.lsd, per a
+    # fresh read of that save's own chunk 108), +1 level (no skill at level
+    # 2) showed a single-line message box reading "ファルはレベル２になった！";
+    # the identical setup with +2 levels instead (crossing level 3, which
+    # `RPG_RT.ldb`'s own actor-skill table teaches skill 4, バマー, at) showed
+    # a *two*-line box in the same window, "ファルはレベル３になった！" followed
+    # immediately by "バマーも覚えた！" -- decisively matching this
+    # implementation's own "one line per skill, same page as the level line"
+    # design, not a separate page/box. This design was originally ported from
+    # EasyRPG Player's source (`Game_Actor::ChangeLevel` calls
+    # LearnLevelSkills(old_level+1, new_level, pm) right after pushing the
+    # level-up line and before PushPageEnd, and LearnSkill only pushes
+    # ActorMessage::GetLearningMessage -- the `skill_learned` database term
+    # glued onto the skill's own name -- for a skill not already
+    # IsSkillLearned) -- both are only reachable from #do_change_exp/
+    # #do_change_level, which already call #set_level (and so
     # Actor#learn_level_skills) before this runs, so `before_skills` -- the
     # actor's own skill list snapshotted before that happened -- is what tells
     # a *newly* taught skill apart from one the actor already knew (an earlier
@@ -4046,11 +4056,43 @@ module Game
     # and resumes us once no screen effect is animating.
     # RPG2003 extends the command with a param4 mode byte (0 one-shot / 1 begin a
     # repeating strobe / 2 end one), ported from EasyRPG Player's
-    # `CommandShakeScreen`, NOT independently confirmed against genuine
-    # RPG_RT under wine: a command list carrying no 5th parameter (an
-    # RPG2000 project, or an RPG2003 one never given the extended layout) always
-    # falls back to a plain one-shot shake, mode 0. Only mode 0 ever waits — Begin
-    # and End never suspend the interpreter, since the strobe runs indefinitely.
+    # `CommandShakeScreen`. Only mode 0 ever waits — Begin and End never suspend
+    # the interpreter, since the strobe runs indefinitely.
+    #
+    # The "an RPG2000 project always falls back to one-shot, even when a 5th
+    # parameter is physically present" half is now genuine-RPG_RT-confirmed
+    # (cycle #199): Nepheshel's own Map0325 event 3 ("地震2", a real player-
+    # touch earthquake trap -- Play SE, two genuine back-to-back Shake Screen
+    # commands, Erase Screen, Teleport, Show Screen) had its first Shake
+    # Screen's own genuine 4-parameter list ([3,5,30,1]) single-parameter-
+    # spliced to 5 ([3,5,30,1,1], appending param4=1 -- "begin a repeating
+    # strobe") on a copy of the genuine `Map0325.lmu`, recomputing
+    # `MAP_EVENT_PAGE` field 51 (`event_command_size`) per cycle #181's own
+    # established discipline. Booted genuine RPG_RT.exe under wine (the
+    # June-2003-PE-timestamped `Nepheshel206Rbeta` binary cycle #181 first
+    # identified) from a save spliced onto the tile beside the trap
+    # (`scripts/gen-rpg2k-save.rb --map 325 --at 9,4 --facing left`), stepped
+    # onto it, and timed the Erase Screen blackout (mean pixel brightness
+    # dropping to ~0 on a 0.25s-interval screenshot series) against an
+    # identical run on the untouched original map. Both landed the blackout at
+    # the same ~4.0s mark after the same two key presses -- indistinguishable,
+    # matching mode staying 0 (the same full ~5-tenths-of-shake blocking wait
+    # both commands' own param3 asks for) rather than the spliced param4=1
+    # actually starting an indefinite, non-blocking strobe (per this
+    # codebase's own `#shake_begin`, which never waits at all): had genuine
+    # RPG_RT honoured it, the second Shake Screen -- and the Erase Screen
+    # right behind it -- would have run immediately, landing the blackout
+    # ~2-3s earlier than observed, a gap far larger than any run-to-run
+    # input-timing jitter. Only this one binary and
+    # this one maker=2000 project were tested (Nepheshel has no maker=2003
+    # database available, and the sibling `Nepheshel206Nbeta` binary /
+    # Song-of-the-Sea's genuine RPG2003 `RPG_RT.exe` were not exercised this
+    # cycle -- see docs/TODO.md's cycle #199 entry), so this does not by
+    # itself distinguish "the mode gate reads the project's own maker
+    # edition" (this codebase's design) from "this specific binary never
+    # implements the strobe extension regardless of project format" -- both
+    # predict the identical null result actually observed here. Left open,
+    # honestly, rather than overclaimed.
     def do_shake_screen(cmd)
       mode = @state.party.rpg2003? && cmd.parameters.size > 4 ? cmd.param(4) : 0
       case mode

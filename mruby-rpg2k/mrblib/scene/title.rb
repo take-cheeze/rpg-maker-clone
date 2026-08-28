@@ -13,10 +13,11 @@ class RPG2k
       # three 48px-wide labels the window lands at (128, 148) 64x64.
       BOTTOM_NUM = 53
       BOTTOM_DEN = 60
-      # RPG_RT unrolls the title command window open over 8 frames (EasyRPG's
-      # scene_title.cpp: `command_window->SetOpenAnimation(8)`), skipped under
-      # HideTitle -- the centred window appears with the rest of the screen
-      # rather than flourishing in on its own.
+      # RPG_RT unrolls the title command window open over 8 frames, ported
+      # from EasyRPG's scene_title.cpp (`command_window->SetOpenAnimation(8)`),
+      # NOT independently confirmed against genuine RPG_RT under wine --
+      # skipped under HideTitle: the centred window appears with the rest of
+      # the screen rather than flourishing in on its own.
       OPEN_ANIM_FRAMES = 8
 
       def initialize parent
@@ -78,10 +79,12 @@ class RPG2k
         # Render the (unchanging) menu labels once, in the windowskin's own
         # default text colour (system-colour swatch 0) with RPG_RT's
         # one-pixel shadow. A disabled Continue reads the windowskin's own
-        # *disabled* swatch instead -- EasyRPG's `Window_Command::DrawItem`
-        # (`src/window_command.cpp`), which `Scene_Title` drives via
+        # *disabled* swatch instead -- ported from EasyRPG's
+        # `Window_Command::DrawItem` (`src/window_command.cpp`), NOT
+        # independently confirmed against genuine RPG_RT under wine: driven
+        # by `Scene_Title` via
         # `command_window->SetItemEnabled(1, continue_enabled)`
-        # (`src/scene_title.cpp`), always looks up `Font::ColorDisabled`
+        # (`src/scene_title.cpp`), it always looks up `Font::ColorDisabled`
         # (`src/font.h`, swatch index 3) rather than hardcoding a flat gray --
         # a custom windowskin whose disabled swatch is tinted (not neutral
         # gray) shows that tint on real RPG_RT, with the same drop-shadow
@@ -110,13 +113,18 @@ class RPG2k
         @window.update
 
         # Holding Down/Up auto-repeats the cursor after the initial delay,
-        # not just a single step per tap -- confirmed against EasyRPG's
-        # actual source: `Scene_Title::vUpdate` (`src/scene_title.cpp`)
+        # not just a single step per tap -- ported from EasyRPG's actual
+        # source: `Scene_Title::vUpdate` (`src/scene_title.cpp`)
         # calls `command_window->Update()` unconditionally every frame, a
         # genuine `Window_Command` (`Window_Selectable` subclass) whose own
         # `Update()` is what drives the cursor via the standard
-        # trigger-then-repeat (see `Scene::ItemMenu#update_items`'s fuller
-        # writeup and docs/TODO.md).
+        # trigger-then-repeat. `Input.repeat?`'s own timing already matches
+        # EasyRPG's repeat constants exactly, independently measured against
+        # genuine RPG_RT.exe under wine (see `Scene::ItemMenu#update_items`'s
+        # fuller writeup and docs/TODO.md) -- so only the specific claim that
+        # *this* window's cursor is driven the same way as every other
+        # `Window_Selectable`-based list is ported from EasyRPG's source
+        # rather than independently confirmed here.
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_selection 1
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
@@ -126,8 +134,9 @@ class RPG2k
         confirmed = Input.trigger?(Input::C)
         if confirmed && @selected_index == 1 && !@continue_available
           # Continue is grayed out with nothing to resume, but confirming it
-          # anyway is not silent -- confirmed against EasyRPG's own
-          # `Scene_Title::CommandContinue`, whose disabled branch is
+          # anyway is not silent -- ported from EasyRPG's own
+          # `Scene_Title::CommandContinue`, NOT independently confirmed
+          # against genuine RPG_RT under wine: its disabled branch is
           # `SePlay(...SFX_Buzzer...); return;`, not a plain no-op (the
           # enabled check lives inside the handler itself, not a guard in
           # `vUpdate()` around calling it at all).
@@ -135,11 +144,12 @@ class RPG2k
         elsif confirmed || (auto = auto_select?)
           case @selected_index
           when 0  # New Game
-            # RPG_RT does not hard-cut the title music -- `Player::
-            # SetupNewGame` (`src/player.cpp`) is `Main_Data::game_system->
-            # BgmFade(800, true); ...`, an 800ms fade, not `BgmStop()`'s
-            # immediate stop (the two are genuinely different `Game_System`
-            # calls, confirmed against `src/game_system.cpp`). The blanket
+            # RPG_RT does not hard-cut the title music -- ported from
+            # EasyRPG's `Player::SetupNewGame` (`src/player.cpp`), NOT
+            # independently confirmed against genuine RPG_RT under wine: it
+            # is `Main_Data::game_system->BgmFade(800, true); ...`, an 800ms
+            # fade, not `BgmStop()`'s immediate stop (the two are genuinely
+            # different `Game_System` calls per `src/game_system.cpp`). The blanket
             # `Audio.bgm_stop` this method used to run before every
             # selection (including this one) skipped straight to silence
             # instead.
@@ -155,9 +165,10 @@ class RPG2k
             # scripts/compare-nepheshel-wine.bash (watching stderr for the
             # [RPG2k-MAP] marker only #continue_game emits) needs.
             #
-            # The headless auto-select path fades here too, matching
+            # The headless auto-select path fades here too, ported from
             # `Player::LoadSavegame`'s own `if (!load_on_map) { BgmFade(800);
-            # ... }` (`src/player.cpp`) -- true from the title, the only case
+            # ... }` (`src/player.cpp`), NOT independently confirmed against
+            # genuine RPG_RT under wine -- true from the title, the only case
             # this shortcut ever takes. The interactive `Scene::SaveLoad`
             # push is deliberately left alone: that scene's own `:load` mode
             # is shared with the RPG2003 in-map "Open Load Menu" event
@@ -174,12 +185,14 @@ class RPG2k
               parent.push(Scene::SaveLoad.new(parent, nil, :load))
             end
           when 2  # Shutdown
-            # No confirmation dialog -- EasyRPG's own `CommandShutdown` plays
-            # Decision then exits immediately (a fade-out transition into
-            # `Scene::Pop`), unlike the field menu's own End Game command,
-            # which pushes a yes/no confirm screen this runtime does not
-            # model either. `CommandShutdown` (`src/scene_title.cpp`) makes
-            # no BGM call at all -- confirmed by reading its full body -- so
+            # No confirmation dialog -- ported from EasyRPG's own
+            # `CommandShutdown`, NOT independently confirmed against genuine
+            # RPG_RT under wine: it plays Decision then exits immediately (a
+            # fade-out transition into `Scene::Pop`), unlike the field menu's
+            # own End Game command, which pushes a yes/no confirm screen this
+            # runtime does not model either. `CommandShutdown`
+            # (`src/scene_title.cpp`) makes no BGM call at all in EasyRPG's
+            # own source -- so
             # this branch touches neither `bgm_fade` nor `bgm_stop`, matching
             # the blanket `Audio.bgm_stop` this method used to run
             # unconditionally before every selection, this one included.
