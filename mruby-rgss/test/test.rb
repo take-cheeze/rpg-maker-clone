@@ -1515,6 +1515,23 @@ assert "RGSS::Profiler aggregates frames and sections when enabled" do
     assert_equal 3, sections["work"][:calls]
     assert_true sections["work"][:avg_ms] >= 0.0
 
+    # object_types comes straight off the GC's own per-type counters (see
+    # patches/mruby-gc-type-live-counts.patch), not a sampled/capped subset.
+    # Under real mruby this is never empty -- the interpreter's own bootstrap
+    # objects alone guarantee at least one live Object/Class/String -- but
+    # this same file also runs under the CRuby compat harness
+    # (scripts/rgss_cruby_compat.rb), which has no equivalent GC introspection
+    # and stubs it as {}, so only the shape is asserted unconditionally; the
+    # per-entry invariants below still exercise real data on a native build.
+    object_types = st[:object_types]
+    assert_true object_types.is_a?(Hash)
+    object_types.each do |name, counts|
+      assert_true name.is_a?(String)
+      assert_true counts[:live] >= 0
+      assert_true counts[:allocs] >= counts[:live],
+                  "#{name}: cumulative allocs must be >= current live count"
+    end
+
     # report and reset must not raise; reset clears the interval.
     RGSS::Profiler.report
     RGSS::Profiler.reset
