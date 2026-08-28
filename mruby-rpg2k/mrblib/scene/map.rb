@@ -466,6 +466,7 @@ class RPG2k
         # aborts an in-progress route without unwinding its side effects, so a
         # route cancelled mid-Through-Mode leaves the hero stuck pass-through.
         @player_through = false
+        restore_player_route
 
         # A forced move route applied to a vehicle by a Move Event, keyed by
         # type (:boat/:ship/:airship). Unlike the player/events, a moving
@@ -3862,6 +3863,7 @@ class RPG2k
         return unless interp.take_halt_movement_request
         @player_route = nil
         @player_char = nil
+        sync_player_route_to_state
         @events.each { |e| e[:forced_route] = nil } if @events
       rescue StandardError => e
         $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
@@ -4684,6 +4686,47 @@ class RPG2k
         @vehicle_routes[type] = nil # drop a broken route so Proceed does not hang
       end
 
+      # Mirror the player's own forced route (or its absence) onto
+      # Game::State#player_route so a save taken mid-route can resume it --
+      # see that accessor's own citation in game.rb. Called at every point
+      # this scene's own @player_route/@player_char changes; @player_route's
+      # own #index always reflects the *next* command about to run (the one
+      # a save resumes at), never one already executed.
+      def sync_player_route_to_state
+        @state.player_route = if @player_route
+                                { commands: @player_route.commands, repeat: @player_route.repeat?,
+                                  skippable: @player_route.skippable?, index: @player_route.index,
+                                  frequency: @player_char && @player_char.move_frequency }
+                              end
+      end
+
+      # Reconstruct a forced player route resumed from a genuine Save/
+      # Continue (Game::State#player_route, populated by .from_lsd/#load_h)
+      # -- the counterpart to #sync_player_route_to_state, called once from
+      # #initialize. The route's own step-pacing timer is not part of either
+      # save format (see that accessor's own citation), so it always
+      # restarts at 0 rather than resuming mid-count.
+      def restore_player_route
+        # Through Mode outlives the route that set it (see #apply_halt_
+        # request's own citation), so it is restored unconditionally, not
+        # only alongside an active route.
+        @player_through = @state.player_through ? true : false
+        pr = @state.player_route
+        return unless pr
+        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char.event_id = MOVE_TARGET_PLAYER
+        @player_char.through = @player_through
+        @player_char.move_frequency = pr[:frequency] || @player_char.move_frequency
+        @player_route = Game::MoveRoute.new(pr[:commands], repeat: pr[:repeat],
+                                            skippable: pr[:skippable])
+        @player_route.resume_at(pr[:index]) if pr[:index]
+        @player_route_timer = 0
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] player move route restore failed: #{e.message}"
+        @player_route = nil
+        @player_char = nil
+      end
+
       # Drive the player along a forced route: the player has no Game::Character,
       # so mirror one, step it against the map world and slide the party after
       # it. Input movement is suppressed while the route is active.
@@ -4698,6 +4741,7 @@ class RPG2k
                                       @player_char.move_frequency
         @player_route = route
         @player_route_timer = 0
+        sync_player_route_to_state
       end
 
       # Take one step of the player's forced route, if its pacing timer is up.
@@ -4734,11 +4778,13 @@ class RPG2k
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
         @player_through = @player_char.through
+        @state.player_through = @player_through
         @state.direction = @player_char.direction
         if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
           start_player_slide
         end
         @player_route = nil if @player_route.done?
+        sync_player_route_to_state
       end
 
       # Begin the party's slide toward wherever the route character now stands.
@@ -8288,6 +8334,8 @@ class RPG2k
         # unlike the dedicated Change Hero Graphic command.
         @player_char = nil
         @player_through = false # ... nor does Through Mode
+        @state.player_route = nil
+        @state.player_through = false
         # Same for a vehicle's own forced route / Change Graphic override
         # (#force_vehicle_route, #vehicle_charset): none of it survives a
         # teleport, since the mirror was simulating movement against the map

@@ -4076,6 +4076,46 @@ check 'a non-repeating player route finishes and returns control to input' do
   ok st.y > 0, "input resumed after the route finished, at y=#{st.y}"
 end
 
+check 'a forced player route survives Save/Continue and resumes correctly' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  # target 10001 (player), freq 8, repeat off, skippable on, three MOVE_RIGHT
+  # steps -- long enough to still be mid-route when we snapshot it below.
+  auto.event_commands = [ECmd.new(ic::MOVE_EVENT,
+    [10001, 8, 0, 1, R::MOVE_RIGHT, R::MOVE_RIGHT, R::MOVE_RIGHT])]
+  one_shot_auto(auto, 9009)
+  scene = new_scene({ 1 => event(3, 0, auto) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  scene.update until st.player_route # let the Move Event command actually start the route
+  ok st.player_route, 'the route is tracked on Game::State once started'
+  12.times { scene.update } # partway through: one step taken (freq 8), two more left
+  ok st.x > 0 && st.x < 3, "mid-route, at x=#{st.x}"
+  pr = st.player_route
+  ok pr, 'still in progress'
+  mid_index = pr[:index]
+
+  # Simulate Save (#to_h) then Continue (.load + a fresh Scene::Map with
+  # apply_access: false, the same resume path the BGM Continue checks above
+  # use) -- proving the full stack round-trips, not just #to_lsd/.from_lsd.
+  h = st.to_h
+  db = fake_db
+  new_state = Game::State.load(db, h)
+  new_state.map = fake_map(1, { 1 => event(3, 0, auto) })
+  parent = fake_parent(db)
+  resumed = RPG2k::Scene::Map.new(parent, new_state, apply_access: false)
+  pr2 = new_state.player_route
+  ok pr2, 'the in-progress route survived the Save/Continue round-trip'
+  eq mid_index, pr2[:index], 'resuming at the same command index'
+  eq 8, pr2[:frequency]
+  eq false, pr2[:repeat]
+  eq true, pr2[:skippable]
+
+  start_x = new_state.x
+  20.times { resumed.update } # enough frames to finish the remaining steps
+  ok new_state.x > start_x, "the resumed route kept moving the player east, at x=#{new_state.x}"
+  ok !new_state.player_route, 'the route finished and cleared itself once done'
+end
+
 check 'Erase Event removes the running event from the map' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3) # auto-start: erase myself

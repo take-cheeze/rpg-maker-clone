@@ -1205,8 +1205,29 @@ module LCF
       # runtime "hidden" state to persist, so their own #load_movable simply
       # never reads it.
       24 => { name: :transparency, type: :int, default: 0 },
+      # liblcf's own generator/csv/fields.csv (0x20 == 32, default 2): the
+      # move-frequency a forced move route (Set Move Route) runs its target
+      # at -- see Game::State#player_route's own citation in game.rb for why
+      # this lives on the hero's own record specifically (Scene::Map's
+      # transient @player_char mirror, not tracked anywhere else). Not
+      # independently confirmed against genuine RPG_RT under wine.
+      32 => { name: :move_frequency, type: :int, default: 2 },
       35 => { name: :animation_type, type: :int },
       37 => { name: :move_speed, type: :int },
+      # liblcf's own `SaveMapEventBase.move_route` (generator/csv/fields.csv,
+      # 0x29 == 41), the same `MOVE_ROUTE` struct (11/12 move_commands,
+      # 21 repeat, 22 skippable) MAP_EVENT_PAGE's own field 41 already uses
+      # for a database-configured custom route -- `LCF.parse_move_commands`/
+      # `.encode_move_commands`'s exact byte format is confirmed against
+      # EasyRPG's own liblcf source (src/lmu_movecommand.cpp, fetched
+      # verbatim) and already exercised across the full test-bed corpus
+      # (116076 real move commands, `scripts/lcf_testbed_check.rb`). On the
+      # hero's own record this is a live Set Move Route (11330) targeting
+      # the player, not a database page property -- see Game::State
+      # #player_route's own citation in game.rb. Confirmed present with
+      # real command data on a genuine kk1.12 save under wine (the hero had
+      # a live custom route recorded in that capture).
+      41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
       # SaveMapEventBase's own move-route cursor: how far into a page's
       # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
       # sourced from EasyRPG's liblcf generator/csv/fields.csv (0x2B == 43).
@@ -1220,6 +1241,14 @@ module LCF
       # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
       # route from the top" from "explicitly at command 0" the same way.
       43 => { name: :move_route_index, type: :int },
+      # liblcf's own `through` (generator/csv/fields.csv, 0x33 == 51,
+      # default false): "Walk Everywhere On/Off" (36/37), a Set Move Route
+      # command that ignores map collision for its target until turned back
+      # off or the route ends. On the hero's own record this is Scene::Map's
+      # own transient @player_through mirror -- see Game::State
+      # #player_route's own citation in game.rb. Not independently confirmed
+      # against genuine RPG_RT under wine.
+      51 => { name: :through, type: :bool, default: false },
       # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
       # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
       # unrelated per-frame flag ("has this event already taken its movement
@@ -1282,22 +1311,21 @@ module LCF
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
-    # (generator/csv/fields.csv) than this table models: a full in-progress
-    # `move_route` (`MoveRoute` chunk, 0x29/41 -- the hero had a live custom
-    # route recorded in that capture), `through` (0x33/51), and
+    # (generator/csv/fields.csv) than this table models:
     # `stop_count`/`anim_count`/`max_stop_count` (0x34-36/52-54, movement/
-    # animation frame timers). None of these are modelled here: the move
-    # route needs genuine new state this codebase's own `Game::State`/
-    # `Game::Character` don't track for the hero at all (an in-flight custom
-    # move route survives a save only by chance today, via whatever the
-    # interpreter re-derives), and the movement/animation timers are pure
-    # per-frame scheduling this engine already recomputes fresh rather than
-    # resuming byte-for-byte. Left as a known, larger gap for a future cycle
-    # -- see this table's own field 43 comment for the `move_route_index`
-    # piece, field 33's own comment for `layer`, and fields 81-85's own
-    # comment for `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`,
-    # already covered. `begin_jump_x`/`_y` (0x3E-3F/62-63) and `processed`
-    # (0x4B/75, already noted above) remain unmodeled too.
+    # animation frame timers) and `begin_jump_x`/`_y` (0x3E-3F/62-63,
+    # mid-jump coordinates). Both are pure per-frame scheduling this engine
+    # already recomputes fresh rather than resuming byte-for-byte -- a save
+    # taken mid-jump or between two move-route steps restarts that one
+    # sub-frame's own timing rather than resuming it exactly, the same
+    # category of imperfection already accepted for fields 81-85's own
+    # flash decay curve. Left as a known, minor gap for a future cycle --
+    # see field 32/41/43/51's own comments for the rest of the move-route
+    # picture (`move_frequency`/`move_route`/`move_route_index`/`through`),
+    # field 33's own comment for `layer`, and fields 81-85's own comment for
+    # `flash_red`/`_green`/`_blue`/`_current_level`/`_time_left`, all
+    # already covered. `processed` (0x4B/75, already noted above) remains
+    # unmodeled too.
     #
     # https://w.atwiki.jp/rpg2kpsp/pages/21.html
     #
