@@ -226,6 +226,7 @@ module RGSS
     viewport.dispose
     ok = false unless window_probe
     ok = false unless windowskin_rect_probe
+    ok = false unless tilemap_above_layer_probe
     $stderr.puts "[RGSS-PROBE] #{ok ? "ok" : "failed"}"
     ok
   end
@@ -407,6 +408,51 @@ module RGSS
     end
     win.dispose
     skin.dispose
+    ok
+  end
+
+  # Prove the priority "above" layer (tilemap_ensure_above, lib.cxx) is
+  # allocated lazily rather than for every Tilemap. XP's own priority tiles
+  # route through the per-row strips (TILEMAP_PRIO_SPAN) exclusively and never
+  # draw into this companion canvas at all — only the VX/VX Ace tile model
+  # (tilemap_refresh_vx) still does — so an XP-shaped tilemap (a tileset +
+  # map_data, no bitmaps) must never allocate it, while a VX-shaped one
+  # (bitmaps assigned) must. The two probes above measure *pixels*; what a
+  # dead, never-drawn canvas leaves behind is nothing to sample — an unused
+  # 1.17 MiB allocation looks exactly like no allocation on screen — so this
+  # reads the tilemap's own internal @_tm_above_obj ivar directly instead,
+  # the same technique the z= propagation unit test in
+  # mruby-rgss/test/test.rb uses on a bare Tilemap.allocate, just against a
+  # real, refreshed Tilemap here since the thing under test is allocation
+  # timing itself, not the z arithmetic.
+  def self.tilemap_above_layer_probe
+    xp = Tilemap.new
+    xp.tileset = Bitmap.new(32, 32)
+    xp.map_data = Table.new(1, 1, 1)
+    xp_above = xp.instance_variable_get(:@_tm_above_obj)
+    xp.dispose
+
+    vx = Tilemap.new
+    vx.bitmaps[0] = Bitmap.new(32, 32)
+    vx.map_data = Table.new(1, 1, 1)
+    vx_above = vx.instance_variable_get(:@_tm_above_obj)
+    vx.dispose
+
+    $stderr.puts "[RGSS-PROBE] tilemap above layer xp_allocated=" \
+                 "#{!xp_above.nil?} vx_allocated=#{!vx_above.nil?}"
+
+    ok = true
+    unless xp_above.nil?
+      $stderr.puts "[RGSS-PROBE] FAIL an XP tilemap (no VX sheets) allocated " \
+                   'the priority "above" layer it can never draw into'
+      ok = false
+    end
+    if vx_above.nil?
+      $stderr.puts "[RGSS-PROBE] FAIL a VX tilemap (bitmaps assigned) never " \
+                   'allocated the priority "above" layer its own tile model ' \
+                   'needs'
+      ok = false
+    end
     ok
   end
 

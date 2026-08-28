@@ -542,28 +542,43 @@ matching RMXP/mkxp's 16-tick-per-frame `atAnimation` table), and the renderer
 shifts the autotile source into that frame's column — so water and waterfalls
 animate. `update` only re-tiles on a frame boundary, and only when the map
 actually has an animated autotile (recorded during the last refresh), so static
-maps do no per-frame work. **Priority split (interim):** `priorities=` (native)
-routes each tile by its `priorities[id]` value — priority-0 tiles into the ground
-canvas, priority ≥ 1 tiles into a second **"above" canvas** that is a companion
-z-ordered object (created in `tilemap_init`, torn down by the native
-`Tilemap#dispose`) sorting above the character sprites (`TILEMAP_ABOVE_Z`). So
-roofs and tree crowns now draw over the party. This is an **interim flat
-approximation**: it puts *every* priority tile above *every* character, not only
-the ones on lower rows, and the above layer's single `z` is a best guess (above
-characters, below fog) pending in-game confirmation. The correct **per-row**
-scheme — above-priority tiles as per-row `z` strips that interleave with
-characters — is designed in
-[ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md) and remains the follow-up.
-`tileset=`, `map_data=`, `priorities=`, `ox=`/`oy=`, `z=`, `update`,
-`visible`/`visible=`, `dispose`/`disposed?` are native and re-render on change.
-`visible=` hides the above layer along with the ground. `z=` now keeps the
-above layer pinned a fixed offset above the tilemap's own `z` too (cycle
-#211, `tilemap_set_z`, `mruby-rgss/src/lib.cxx`) — it used to leave the
-above layer at its construction-time `z` forever, so a script reassigning a
-tilemap's `z` broke the "above sorts over the ground" relationship the two
-layers are supposed to keep in lockstep, the same gap `visible=` already had
-to close for visibility a few lines above. **Remaining:** the per-row
-priority scheme (ADR 0022); `flash_data` is still ignored.
+maps do no per-frame work. **Priority split — the real per-row scheme, not the
+flat approximation this entry used to describe:** `priorities=` (native) routes
+each tile by its `priorities[id]` value — priority-0 tiles stay in the ground
+canvas; priority 1..5 tiles go into a **per-row `z` strip**
+(`TILEMAP_PRIO_SPAN`), one lazily-allocated, pooled canvas per `(row + priority)`
+bucket, positioned and z-sorted so a priority tile sorts exactly as though it
+stood `priority` rows lower — matching RMXP's own `Game_Character#screen_z`
+formula (`z = screen_y + priorities[tile_id] * 32`, confirmed against the XP
+test bed's own decompiled scripts). So a character now sorts *between* a roof
+above their own row and a tree crown below it, not merely above every priority
+tile at once — the per-row interleaving [ADR 0022](adr/0022-rpgxp-tilemap-priority-layering.md)
+designed, now implemented (its own "Remaining" note calling this out as a
+follow-up was stale; only `flash_data`, its other listed follow-up, is still
+open — see below). `tileset=`, `map_data=`, `priorities=`, `ox=`/`oy=`, `z=`,
+`update`, `visible`/`visible=`, `dispose`/`disposed?` are native and re-render
+on change; `visible=`/`z=` propagate to every allocated strip the same way
+they do to the VX above layer below.
+
+A second, separate **flat "above" canvas** (`TILEMAP_ABOVE_Z`, a single
+z-ordered companion object) still exists alongside the per-row strips, but it
+is not part of the XP priority path any more — VX/VX Ace's own tile model
+(`bitmaps=`, [VX gap](rpgvx-rgss-api-gap.md) item 1) is the only thing that
+still draws into it, as mkxp's own fixed-z "above characters" layer for that
+maker (not a gap there). **Fixed (cycle #212):** it used to be allocated
+unconditionally in `tilemap_init`, so every XP tilemap paid a permanent,
+always-blank 1.17 MiB canvas plus a wasted per-refresh viewport-tone pass over
+it for a layer its own priority tiles could never reach once the per-row
+strips took over — dead weight on every RPG Maker XP game, including the
+psp/wio targets this code is shared with. It is now allocated lazily
+(`tilemap_ensure_above`), on the first VX-path refresh that actually needs it,
+syncing to whatever `z`/`visible` the tilemap already has by then rather than
+the fixed defaults the old eager allocation in `Tilemap.new` could assume.
+**Remaining:** `flash_data` is still ignored — unlike the priority scheme, no
+formula for it has ever been confirmed against a real game (the stock XP/VX
+Ace script bundles this project has access to never call it at all, which
+also means implementing it would have nothing to verify against), so it stays
+open rather than guessed at.
 
 ### 4. `Plane` ✅ (tiling + scroll + tint/blend + zoom all rendered)
 

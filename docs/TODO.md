@@ -29848,6 +29848,111 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `docs/rpgxp-rgss-api-gap.md`'s own Tilemap section updated to record the
   fix and drop this item from its "Remaining" list (the per-row scheme
   itself and `flash_data` are unaffected, still open).
+  ✅ **Follow-up (cycle #212, 2026-08-28): the priority "above" layer's own
+  "Remaining" note was stale — the per-row scheme it named as a follow-up
+  had already landed — and the eager allocation behind it was a real,
+  unrelated resource-waste bug, now fixed.** Method: skimmed broadly first
+  (per the standing instruction) — `docs/TODO.md`'s own "Full-site sweep"
+  clusters, the RPG2000-side message/window text-code parser
+  (`Game::Message.scan`, exhaustively already implements `\v`/`\n`/`\c`/`\s`/
+  `\.`/`\|`/`\!`/`\^`/`\$`/`\>`/`\<`/`\\`/`\_`), `scripts/rpg2k_command_soak.rb`
+  run fresh against both real game beds (clean except the already-documented,
+  deliberate `Toggle Fullscreen`/`Open Video Options` backend-limitation
+  no-ops), `mruby-lcf/mrblib/schema.rb` and every `grep`-able "not
+  implemented"/"unimplemented" comment across `mruby-rpg2k`/`mruby-lcf`/
+  `mruby-rgss` — nearly everything reachable this way was already ✅ or
+  explicitly out of scope (the RPG2003 terrain-condition back-attack/pincer
+  system cycle #211 already declined for lack of a citable formula; the
+  Maniac Patch's own Wait mode-byte encoding, explicitly a third-party
+  extension; the CBA battle-animation sprite format, a genuinely large
+  feature). Pivoted to re-reading `docs/rpgxp-rgss-api-gap.md`'s own Tilemap
+  entry line by line against the actual code it describes (`mruby-rgss/src/
+  lib.cxx`) rather than trusting the doc text, since it is the one item both
+  the api-gap doc and this doc's own cycle #211 note still listed as
+  "Remaining." That comparison found the doc (and cycle #211's note) wrong,
+  not just outdated: `docs/adr/0022-rpgxp-tilemap-priority-layering.md`'s own
+  header already says "Accepted — implemented 2026-08-06," and the code has
+  `TILEMAP_PRIO_SPAN`/`tilemap_strip`/the per-`(row+priority)`-bucket strip
+  pool right there in `tilemap_refresh` — the real per-row scheme, not the
+  flat single-canvas approximation the doc prose (and the stale code comment
+  directly above `TILEMAP_ABOVE_Z`, still labelled "INTERIM") described. Both
+  landed in the same large merge (`bd91734`) that also introduced the
+  now-outdated doc text, so the prose was never updated to match the code it
+  shipped alongside — an easy thing to miss since nothing re-reads a
+  "Remaining" line once it is written, which is exactly what let cycle #211
+  carry the same stale claim forward without checking it against `lib.cxx`
+  either. Confirmed genuinely reachable, not just theoretical, once the doc
+  claim was corrected: with the per-row strips doing all of XP's own priority
+  work, the second, flat `@_tm_above_obj`/`@_tm_above_canvas` companion
+  canvas (`TILEMAP_ABOVE_Z`, created unconditionally in `tilemap_init`) is
+  drawn into *only* by `tilemap_refresh_vx` (the VX/VX Ace tile model, which
+  still uses a flat "above characters" layer — mkxp's own fixed z=200 layer
+  for that maker, not a gap there per `docs/rpgvx-rgss-api-gap.md` item 1) —
+  never by the XP path, which routes every priority tile through
+  `tilemap_strip` exclusively. So every XP tilemap (the common case: one per
+  running game, via `Spriteset_Map`) permanently allocated a 1.17 MiB
+  (640×480 ARGB8888) canvas it could never draw a single pixel into, and
+  `tilemap_apply_viewport_tone` walked all of its pixels on every refresh
+  whenever the map has a viewport tone active — real, measurable memory and
+  CPU waste with zero possible visual benefit, on the same psp/wio-shared
+  code ADR 0022 itself spent a whole "Strip height" section budgeting
+  carefully (a bare 21×1.17 MiB naive reading was explicitly rejected there
+  as "unaffordable," yet this one always-blank 1.17 MiB canvas shipped
+  unconditionally regardless). Fixed with a new `tilemap_ensure_above`
+  (`mruby-rgss/src/lib.cxx`), mirroring `tilemap_strip`'s own lazy shape:
+  `tilemap_init` no longer allocates the above canvas/object at all;
+  `tilemap_refresh` calls `tilemap_ensure_above` only when
+  `vx_has_sheets(@bitmaps)` is true (the same condition that already gates
+  the VX branch), and the helper syncs the new companion object's `z`/hidden
+  state to the tilemap's *current* `@z`/`@visible` ivars rather than the
+  fixed always-visible/`z=TILEMAP_ABOVE_Z` defaults the old eager call in
+  `tilemap_init` could safely assume (it always ran before a script had any
+  chance to touch either; a lazy create now can run well after one has).
+  Every existing call site that touches the above object
+  (`tilemap_set_visible`, `tilemap_set_z`, `tilemap_dispose`, the trailing
+  tone/invalidate calls in `tilemap_refresh` itself) was already null-safe
+  (`mrb_test(above) && ...`), so none needed changing — an absent-until-first-
+  VX-refresh above object is indistinguishable to them from the
+  already-handled "never went through `tilemap_init`" case cycle #211's own
+  unit test exercises via `.allocate`. **Verification:** `mruby-rgss`'s test
+  binary has no live display (the same limitation ADR 0022 and cycle #211
+  both recorded — `Tilemap.new` needs `lv_canvas_create`), so this could not
+  be pinned the same `.allocate`-plus-ivar-stub way cycle #211's `z=` test
+  was; construction-timing is exactly the thing under test here, which
+  `.allocate` bypasses entirely. Extended the *display-backed* probe instead
+  (`RGSS.effect_probe`, run under Xvfb by the `render_probe` ctest and
+  `--rgss_effect_probe`) with a new `tilemap_above_layer_probe`: builds one
+  XP-shaped `Tilemap` (`tileset=`/`map_data=`, no `bitmaps`) and one
+  VX-shaped one (`bitmaps[0] =` a live `Bitmap`, then `map_data=`), and reads
+  each one's own `@_tm_above_obj` ivar directly after — a dead canvas that is
+  never drawn into leaves no pixel trace either way for `frame_mean` to
+  sample, so this reads the allocation itself rather than the frame.
+  Confirmed to fail against the pre-fix code first (`git stash` on just
+  `mruby-rgss/src/lib.cxx`, rebuild, rerun): `xp_allocated=true` (should be
+  `false`) failed the probe and the `render_probe` ctest with it — then
+  passed clean (`xp_allocated=false vx_allocated=true`) after restoring the
+  fix. Full suite (only `mruby-rgss` touched, not `mruby-rpg2k`, so no change
+  expected and none seen): `rpg2k_scene_check.rb` 943, `rpg2k_logic_check.rb`
+  1185, `rpg2k_render_check.rb` 41, `rpg2k3_battle_row_check.rb` 19/0,
+  `rpg2k3_battle_gauge_check.rb` 15/0 all unchanged; `rpg2k_save_load_check.rb`
+  still reports exactly the same 1 known pre-existing failure (the unrelated
+  Show Picture field-shape mismatch), unaffected. `ctest` (all 8 targets,
+  including `mruby_test` and the newly-touched `render_probe`) and
+  `scripts/rgss_cruby_test_check.rb` (the separate CRuby-hosted mirror of
+  `mruby-rgss/test/test.rb`, unaffected since it never calls this engine's
+  actual native `Tilemap` code at all) both pass. `mruby-rgss/src/lib.cxx`
+  run through the pinned `clang-format` 22.1.8 with **no reformatting at all**
+  (clean diff, matched the file's existing style exactly). `cd build && ninja`
+  clean rebuild succeeded throughout. No wine session was run this cycle:
+  like cycle #211's own fix in this same area, this is purely an internal
+  resource-allocation question with no pixel-visible effect either way (a
+  canvas nothing ever draws into looks identical whether it exists or not),
+  so there is no RPG_RT/RGSS behavior to compare against — correctness here
+  is "does the above layer still exist exactly when something needs to draw
+  into it," which the new probe pins directly against a live display.
+  `docs/rpgxp-rgss-api-gap.md`'s own Tilemap entry rewritten in place to
+  describe the real per-row scheme instead of the stale flat-approximation
+  prose, and to record this fix.
 - ~~🚧 **Event system**~~ — **superseded, not current.** This bullet describes
   the reimplemented `mruby-rpgxp/mrblib/interpreter.rb` `Game::Interpreter` /
   `game.rb` party-actor model that used to stand in for a game's own scripts;
