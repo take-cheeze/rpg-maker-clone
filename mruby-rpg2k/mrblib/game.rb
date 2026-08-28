@@ -6475,9 +6475,23 @@ module Game
     # numpad direction -> [dx, dy] step in tiles.
     DIR_DELTA = { 8 => [0, -1], 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0] }.freeze
     # 90-degree clockwise / counter-clockwise rotations and the 180-degree flip.
-    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8 }.freeze
-    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8 }.freeze
-    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4 }.freeze
+    # Diagonal directions (as the [horizontal, vertical] pairs #move_diagonal /
+    # MoveRoute's own DIAGONAL table use, e.g. [6, 8] for Up-Right) are keyed
+    # in too, rotated the same 90/180 degrees around the 8-way compass these
+    # four cardinals sit on (Up=0, Up-Right=1, Right=2, Down-Right=3, Down=4,
+    # Down-Left=5, Left=6, Up-Left=7; a turn moves +-2 steps, 180 moves 4) --
+    # only #jump_face_direction ever looks up a diagonal key here, for a
+    # Turn/Face command that follows a diagonal move inside the same jump
+    # block, since a character's own on-map @direction is always cardinal.
+    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8,
+                   [6, 8] => [6, 2], [6, 2] => [4, 2],
+                   [4, 2] => [4, 8], [4, 8] => [6, 8] }.freeze
+    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8,
+                   [6, 8] => [4, 8], [4, 8] => [4, 2],
+                   [4, 2] => [6, 2], [6, 2] => [6, 8] }.freeze
+    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4,
+                   [6, 8] => [4, 2], [4, 2] => [6, 8],
+                   [6, 2] => [4, 8], [4, 8] => [6, 2] }.freeze
     # The four cardinal directions, indexable for random selection.
     CARDINALS = [2, 4, 6, 8].freeze
 
@@ -7171,21 +7185,40 @@ module Game
 
     # The direction a move command inside a jump block contributes. The moves
     # that would pick a direction at run time (random, toward / away from the
-    # hero) still pick one; Move Forward keeps the direction in hand.
+    # hero) still pick one; Move Forward keeps the direction in hand. A
+    # diagonal now leaves its own `[horizontal, vertical]` pair in hand too
+    # (mirroring #move_diagonal's `#last_move_direction` outside a jump) --
+    # it used to fall into the bare `else dir` catch-all alongside Move
+    # Forward itself, so the diagonal never actually updated the running
+    # `dir` a *later* Move Forward in the same jump block reads: "Begin
+    # Jump, Move Upper-Right, Move Forward, End Jump" repeated the
+    # *pre*-diagonal direction instead of the diagonal just walked, the same
+    # root cause #last_move_direction was introduced for outside a jump (see
+    # #move_diagonal's own doc comment), just never carried into this
+    # separate jump-scan path. This still leaves the diagonal step's own
+    # delta correct even before this fix, since #jump_delta computes it
+    # straight from `id`, not `dir` -- only a *following* Move Forward was
+    # affected.
     def jump_move_direction(id, dir, character, world)
       case id
       when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
+      when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT then DIAGONAL[id]
       when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
       when MOVE_TOWARD_HERO then toward_hero(character, world)
       when MOVE_AWAY_HERO then away_hero(character, world)
-      else dir # Move Forward, and the diagonals (which carry their own delta)
+      else dir # Move Forward: keeps whatever direction (cardinal or diagonal pair) is in hand
       end
     end
 
-    # The tile offset a move command inside a jump block adds. A diagonal moves
-    # on both axes at once; everything else moves one tile along `dir`.
+    # The tile offset a move command inside a jump block adds. A diagonal
+    # moves on both axes at once -- whether it comes from an explicit
+    # diagonal sub-command (`id` itself names one) or from Move Forward
+    # continuing a diagonal `dir` a prior diagonal command left in hand (a
+    # two-element `[horizontal, vertical]` pair, see #jump_move_direction
+    # above); everything else moves one tile along the cardinal `dir`.
     def jump_delta(id, dir)
-      if (pair = DIAGONAL[id])
+      pair = DIAGONAL[id] || (dir if dir.is_a?(Array))
+      if pair
         horizontal, vertical = pair
         hx, = Character::DIR_DELTA[horizontal] || [0, 0]
         _, vy = Character::DIR_DELTA[vertical] || [0, 0]
@@ -7197,6 +7230,17 @@ module Game
 
     # The direction a face / turn command inside a jump block leaves in hand. It
     # contributes no offset of its own — it only steers the next move command.
+    # A Turn Right/Left/180 (or the matching half of Turn 90 Right/Left/180
+    # Random) right after a diagonal move in the same block used to be a
+    # silent no-op: `dir` was the diagonal's own `[horizontal, vertical]`
+    # pair by then (see #jump_move_direction above), and Character::
+    # TURN_RIGHT/TURN_LEFT/TURN_180 only had cardinal-int keys, so the hash
+    # lookup missed and `|| dir` left the pair completely unrotated -- a
+    # following Move Forward kept walking the pre-turn diagonal instead of
+    # the turned one. Fixed by keying those three hashes with the four
+    # diagonal pairs too (see their own doc comment), rotated the same
+    # 90/180 degrees the cardinal entries already encode; the lookups here
+    # are unchanged.
     def jump_face_direction(id, dir, character, world)
       case id
       when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT then FACE_DIR[id]
