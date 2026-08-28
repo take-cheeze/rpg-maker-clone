@@ -14971,6 +14971,59 @@ following this paragraph as the original record.
   confirmed unreachable above, and a plain Wait/`:wait_key_enter` already
   round-trip correctly per cycle #191), a real but narrow follow-up left for
   a future cycle rather than built speculatively here.
+- ✅ **Follow-up (cycle #194, 2026-08-28): restored the Key Input Proc
+  mid-wait case cycle #193 left open**, closing the one narrow gap that
+  cycle's own investigation confirmed reachable. Simpler than that cycle's
+  own writeup anticipated: rather than carrying `@key_input_request`/
+  `@wait_kind`/`@waiting` explicitly through the snapshot (what cycle #193's
+  own entry speculated would be needed, and what `SAVE_EVENT_EXEC_STATE`'s
+  schema-only `keyinput_*` cluster would back), `Game::Interpreter
+  #call_stack_snapshot` now rewinds the innermost frame's own
+  `current_command` by one specifically when `@waiting && @wait_kind ==
+  :key_input` -- capturing the Key Input Proc command itself rather than
+  `@index`'s own usual "just past it" position. `#restore_call_stack`
+  needed no changes at all: rebuilding `@call_stack`/`@list`/`@index` at
+  that rewound position means the very next `#update` naturally re-executes
+  `#do_key_input` from scratch, which is a pure function of the command's
+  own literal parameters (`var_id`, `wait`, the accepted-keys flags) --
+  re-deriving `@key_input_request`/`@wait_kind`/`@waiting` exactly as they
+  were, with no explicit serialization needed. The one side effect
+  (resetting the requested variable to 0) is not a compromise: genuine
+  RPG_RT itself already does that same reset every single frame it
+  re-evaluates a still-pending Key Input Proc (`#do_key_input`'s own
+  existing comment), so replaying the command is not a workaround, it is
+  what would have happened on the very next frame regardless. This reuses
+  the same rewind-and-retry idiom `#block_pending_key_input_command`
+  already applies for its own "message window still open" case -- just
+  triggered by the save/snapshot path instead of by the interpreter's own
+  next tick.
+
+  Deliberately scoped to only this one confirmed-reachable case: Show
+  Message/Choices/Input Number stay correctly untouched (cycle #193 already
+  confirmed a save can never actually happen mid one), and the
+  `SAVE_EVENT_EXEC_STATE` `keyinput_*` field cluster remains schema-only --
+  it was never the mechanism this fix needed, so it is left exactly as
+  cycle #191 declared it (read-fidelity only, not written/restored).
+
+  **Verified**: new `scripts/rpg2k_logic_check.rb` check building an
+  interpreter that parks on a waiting Key Input Proc (Decision-only,
+  `wait` flag set), confirming `#call_stack_snapshot` captures
+  `current_command` one earlier than `@index`, restoring into a fresh
+  interpreter, confirming the very next `#update` re-enters the identical
+  `:key_input` wait (same accepted-keys mask, same `wait` flag) rather than
+  silently skipping past it, and finally confirming a Decision key input
+  afterward still completes the proc and runs the following command --
+  proving the restored state is genuinely live, not just decoded data.
+  `ruby -c` clean; full check-suite baselines unchanged except the one new
+  check (`rpg2k_scene_check.rb`=931, `rpg2k_logic_check.rb`=1175 (+1),
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures); `ctest -R mruby_test` passes after a clean
+  rebuild. No `data/` fixtures touched. No genuine wine-saved fixture
+  exercising this exact scenario was available, so this is a from-scratch
+  round-trip verification, not a wine-confirmed one -- the same honestly-
+  labeled limitation cycles #191-193 already carry for their own new
+  mechanisms.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —

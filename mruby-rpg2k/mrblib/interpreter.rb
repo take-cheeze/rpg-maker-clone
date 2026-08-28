@@ -753,7 +753,32 @@ module Game
     # SAVE_COMMON_EVENT's own schema.rb comments for when it is not).
     def call_stack_snapshot
       return nil unless @running
-      frames = @call_stack + [[@list, @index, @call_frame_event_id || @event_id || 0]]
+      # A Key Input Proc's own wait (@wait_kind == :key_input -- cycle #193's
+      # own confirmed-reachable case: a Parallel Process can be genuinely mid
+      # this specific wait, with no message window open, while a Save is
+      # still reachable, unlike every other message/choice/number wait that
+      # cycle #193 confirmed a Save can never interrupt) is captured one
+      # command EARLIER than @index's own usual "just past the command that
+      # raised the wait" convention. By the time #do_key_input sets
+      # @wait_kind, @index has already advanced past the Key Input Proc
+      # command itself (it committed -- reset the requested variable to 0,
+      # computed the accepted-keys mask -- and is now waiting for a genuine
+      # key press the scene feeds back later), which #restore_call_stack has
+      # no way to reconstruct on its own (it only rebuilds @call_stack/@list/
+      # @index, never @waiting/@wait_kind/@key_input_request -- see its own
+      # comment). Re-running #do_key_input from scratch instead reproduces
+      # the exact same wait state deterministically, since it is a pure
+      # function of the command's own literal parameters -- even its one
+      # side effect (resetting the requested variable to 0) is exactly what
+      # genuine RPG_RT itself already does every single frame it re-checks a
+      # still-pending Key Input Proc (see #do_key_input's own comment), so
+      # replaying it on restore is not a workaround, it is what would have
+      # happened on the very next frame regardless. This reuses the same
+      # rewind-and-retry idiom #block_pending_key_input_command already
+      # applies for its own "message window still open" case, just triggered
+      # here instead of by the interpreter's own next #update.
+      live_index = (@waiting && @wait_kind == :key_input) ? @index - 1 : @index
+      frames = @call_stack + [[@list, live_index, @call_frame_event_id || @event_id || 0]]
       frames.each_with_index.map do |(list, index, event_id), i|
         {
           commands: list,

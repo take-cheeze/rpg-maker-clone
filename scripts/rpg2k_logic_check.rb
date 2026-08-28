@@ -2095,6 +2095,56 @@ check '#restore_call_stack is a no-op for a nil/empty snapshot' do
   ok !it.running?, 'same for an empty frames array'
 end
 
+# Cycle #194: cycle #193's own investigation confirmed a Parallel Process's
+# own waiting Key Input Proc (Cmd::KEY_INPUT_PROC, wait flag set) is the one
+# wait kind a genuine Save can interrupt without a message window blocking it
+# first (#event_busy? never inspects a parallel process's own wait_kind) --
+# every other message/choice/number wait is unreachable for a save, since all
+# three set the same scene-wide state #event_busy? already gates on. Unlike
+# those, #call_stack_snapshot/#restore_call_stack did not restore this one's
+# own wait state at all before this cycle: @index already sits just past the
+# Key Input Proc command by the time it starts waiting (the same general
+# convention every other wait kind's capture already relies on), so a naive
+# restore would silently resume PAST the wait, leaving the requested variable
+# at 0 forever and the proc effectively skipped. See #call_stack_snapshot's
+# own comment for the fix (rewinding this one specific wait kind's own
+# current_command by one, so restoring naturally re-executes the Key Input
+# Proc command from scratch -- a pure function of its own parameters, and
+# exactly what genuine RPG_RT itself already does every frame it re-checks a
+# pending one).
+check '#call_stack_snapshot rewinds a mid-Key-Input-Proc wait so #restore_call_stack re-derives it' do
+  st = new_state
+  it = Game::Interpreter.new(st)
+  it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [3, 1, 0, 1, 0, 0, 0, 0, 0, 0]), # var 3, wait, decision only
+            FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+  it.update
+  ok it.waiting?, 'parked on the Key Input Proc'
+  eq :key_input, it.wait_kind
+  eq 0, st.variables[3], 'the requested variable was already reset to 0'
+
+  frames = it.call_stack_snapshot
+  eq 1, frames.size
+  eq 0, frames[0][:current_command],
+     'rewound to the Key Input Proc command itself, not past it (@index was already 1)'
+
+  it2 = Game::Interpreter.new(new_state)
+  it2.restore_call_stack(frames)
+  ok !it2.waiting?, 'not waiting yet -- #restore_call_stack never re-executes anything on its own'
+  it2.update
+  ok it2.waiting?, 'the very next #update re-ran the Key Input Proc command from its rewound position'
+  eq :key_input, it2.wait_kind
+  eq true, it2.key_input_request[:wait], 'the wait flag survived re-execution'
+  eq true, it2.key_input_request[:accepted][:decision], 're-derived deterministically from the command\'s own params'
+  eq false, it2.key_input_request[:accepted][:cancel]
+
+  # And it genuinely still functions afterward -- not just decoding as inert
+  # state: a Decision key input completes the proc and the command after it
+  # runs, the same as an interpreter that was never saved/restored at all.
+  it2.resume_key_input(it2.key_input_result([:decision]))
+  it2.update
+  eq true, it2.instance_variable_get(:@state).switches[1], 'the command after the proc ran'
+end
+
 # LCF::Schema::SAVE_EVENT_EXEC_STATE/_FRAME's own encode/decode round trip
 # (Game::State.build_event_exec_state/.read_event_exec_frames), through
 # genuine chunk bytes (Array1D#to_lcf / LCF::Array1D.new) rather than just
