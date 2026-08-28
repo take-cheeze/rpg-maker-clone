@@ -15024,6 +15024,165 @@ following this paragraph as the original record.
   round-trip verification, not a wine-confirmed one -- the same honestly-
   labeled limitation cycles #191-193 already carry for their own new
   mechanisms.
+- ✅ **Investigated (cycle #195, 2026-08-28): does genuine RPG_RT.exe even
+  honour `SAVE_EVENT_EXEC_STATE`'s `stack`/`current_command` for a Common
+  Event's own Parallel Process resume at all, and if so, in which array-id
+  order?** The specific question cycles #191/#192 both flagged and carried
+  forward as open (`stack`'s 1-based, outer-to-inner numbering "not
+  confirmed against a genuine multi-frame capture, since none was
+  available"). This cycle got wine access and a real multi-frame-shaped
+  target and ran the splice, but the result is a bigger, more basic finding
+  than the array-id question it set out to answer -- and the array-id
+  question itself is left open, not resolved.
+
+  **Method**: `data/Nepheshel206beta/Nepheshel206Rbeta`'s own `RPG_RT.ldb`
+  was scanned (a one-off CRuby script loading `mruby-lcf/mrblib/{lcf,
+  schema}.rb` exactly as `scripts/lcf_testbed_check.rb` does) for a Common
+  Event with `start_term == :parallel` whose own page contains a genuine
+  Call Event (12330) command -- i.e. a real, already-authored two-frame
+  call stack reachable by the project's own logic, per this cycle's brief.
+  Found one on the first pass: Common Event #13 ("!HP自動回復", HP
+  auto-recovery, `start_term=4`/parallel, `need_flag=false` so
+  unconditionally active) calls Common Event #18 at its own command index
+  38 (`param(0)=0` common-event mode, target id 18) and Common Event #29 at
+  index 67 -- no database edit needed at all, both call targets already
+  exist. `Game::State.build_event_exec_state`'s own logic was reimplemented
+  standalone (same field-by-field construction, verified byte-identical in
+  shape by decoding the result back through this codebase's own schema)
+  to splice a two-frame `SAVE_EVENT_EXEC_STATE` into a **copy** of the
+  repo's standing real-save fixture, `Save01.lsd` (the genuine EasyRPG-
+  under-wine capture `scripts/gen-lcf-save-wine.bash` already produced for
+  this fixture in an earlier cycle) -- chunk 114's own entry for common
+  event 13, leaving all 504 other entries and every other chunk untouched.
+  Outer frame: Common Event #13's own real 69 commands, byte-identical to
+  the database, `current_command=39` (the index right after the Call Event
+  at 38 -- confirmed from `#do_call_event`'s own source, `@index += 1`
+  happens in `Game::Interpreter#update`'s dispatch loop *before* the
+  command handler runs, so by the time a Call Event pushes the caller's
+  frame the caller's own `@index` already sits one past the call). Inner
+  frame: Common Event #18's own real 14 commands, byte-identical to the
+  database, with ONE new Show Message command ("SPLICE\_OK A"/"SPLICE\_OK
+  B") plus a trailing terminator appended -- not touching the database, only
+  this save-embedded copy, which the schema already treats as an
+  independent full copy (see `SAVE_EVENT_EXEC_FRAME`'s own comment) --
+  `current_command` pointing straight at it, so a correct resume shows the
+  message within the very first tick after load, an unambiguous,
+  unmistakable signal genuine RPG_RT's own commands never produce on their
+  own. Two variants were built: A (this codebase's own convention, outer
+  frame at array id 1, inner at id 2) and B (reversed, inner at id 1, outer
+  at id 2).
+
+  Booted genuine RPG\_RT.exe under wine (`WINEARCH=win32`,
+  `WINEPREFIX=~/.wine-nepheshel32`, `ja_JP.UTF-8`,
+  `LIBGL_ALWAYS_SOFTWARE=1`, Xvfb + matchbox-window-manager, held
+  `xdotool` keys -- the exact incantation `scripts/compare-nepheshel-
+  save-wine.bash` already uses), Down/Return/Return on the title screen to
+  load Save file 1 (the same fixed three-key sequence that script already
+  documents), then waited several seconds and screenshotted. **Neither
+  variant A nor variant B ever showed the message** -- no crash, no hang,
+  no glitch either; the game loaded and rendered the map completely
+  normally in both cases, as if the splice were not there at all.
+
+  That null result was ambiguous on its own (wrong array order? a commands-
+  content mismatch check silently discarding the whole snapshot? current_
+  command not honoured at all? the Parallel Process not even running?), so
+  three more splices isolated each hypothesis in turn, from most to least
+  conservative, all built the same way against the same fixture:
+  - **Single frame, Common Event #13's own 69 commands byte-identical to
+    the database (no appended content at all), `current_command=999`** (
+    wildly out of bounds for a 69-entry list). No crash, no hang -- if
+    genuine RPG\_RT blindly trusted this index the way this codebase's own
+    prior finding on `MAP_EVENT_PAGE`'s stale `event_command_size` (cycle
+    #181) showed RPG\_RT trusting an unchecked length, an out-of-range
+    index into `@list` should have visibly misbehaved. It did not.
+  - **Single frame, the same 69 real commands plus one appended Show
+    Message + terminator, `current_command=69`** (pointing directly at the
+    appended message, in-bounds). No message appeared.
+  - **Single frame, Common Event #13's saved `commands` replaced wholesale**
+    with just `[ShowMessage, terminator]`, `current_command=0` -- the
+    simplest possible in-bounds, from-the-top case, and the one most
+    likely to succeed if the mechanism works at all. No message appeared
+    here either.
+
+  **Conclusion, stated as plainly as the evidence supports**: across four
+  independent splices (two two-frame, two single-frame) and one out-of-
+  bounds probe, genuine RPG\_RT.exe showed no observable effect from any
+  of `SAVE_EVENT_EXEC_STATE`'s `stack`/`commands`/`current_command` content
+  for a Common Event's own Parallel Process, in either array-id order, at
+  any index, and even when the entire commands list was replaced outright
+  -- while never crashing or hanging on any of it either. The most
+  parsimonious reading is that genuine RPG\_RT does not consult this data
+  to resume a Common Event's own Parallel Process at all for the ordinary
+  (not-mid-a-blocking-wait) case tested here: it appears to just re-derive
+  the common event's current page from its own database and start fresh
+  every time, independent of whatever chunk 114 holds. If that reading is
+  right, the original array-id-ordering question this cycle set out to
+  answer is largely moot for this specific chunk/case -- there is no
+  resume behavior for the ordering to matter to. **This is not a certainty
+  strong enough to call "confirmed" and act on** (see caveats below), but
+  it is strong enough that this codebase's own `Game::State#common_event_
+  exec` resume mechanism (cycles #191/#193) should not be assumed to match
+  genuine RPG_RT's actual behavior for the ordinary case, only its byte
+  format (which liblcf's own field table, a legitimate citation, still
+  correctly documents).
+
+  **Caveats, honestly**: (1) this used the repo's one available real
+  save fixture and one real Common Event; a different common event, a
+  different trigger shape, or a save taken from a different point in the
+  game was not tried, and cannot be ruled out as behaving differently. (2)
+  The alternative that this mechanism only ever activates when a Parallel
+  Process is captured mid one of the specific blocking waits `SAVE_EVENT_
+  EXEC_STATE`'s own schema-only fields describe (`wait_movement`,
+  `keyinput_*`, etc. -- all left unwritten by this codebase, cycle #191's
+  own documented scope) was not tested here at all; this cycle's splices
+  never populated those fields, so a real RPG_RT that only resumes
+  positionally in that narrower scenario would show exactly this same null
+  result. (3) A more instrumented test (an in-game menu Save after
+  resuming, decoding the result to check for indirect side effects like
+  variable changes, rather than relying on a visible Show Message) was not
+  attempted -- reaching the Save menu requires additional keypresses and
+  the target map's own permission to save, not confirmed reachable from
+  this fixture's own saved position, and was judged not worth the
+  additional wine cycles given the already-consistent four-way null
+  result. (4) Ground rule 1 (no EasyRPG source) was respected throughout;
+  the existing pristine `Save01.lsd` (produced by EasyRPG Player under
+  wine, not genuine RPG_RT) was inspected once, purely to check whether it
+  already happened to contain a genuine multi-frame capture from some
+  earlier session -- it did not (every one of its 5 non-empty common-event
+  entries was single-frame, `current_command=0`, matching a fresh start),
+  so it could not answer this cycle's question on its own and no EasyRPG-
+  authored numbering convention was relied on for any conclusion above --
+  only genuine RPG_RT.exe's own observed on-screen behavior was.
+
+  **No code change shipped.** `LCF::Schema::SAVE_EVENT_EXEC_FRAME`/
+  `SAVE_EVENT_EXEC_STATE` and `Game::State.build_event_exec_state`/
+  `Game::Interpreter#call_stack_snapshot`/`#restore_call_stack` are
+  unchanged -- this cycle's own finding argues for caution in trusting the
+  existing mechanism's real-world fidelity, not for a specific fix (there
+  is no confirmed-correct alternative array-id convention to switch to;
+  the evidence suggests the ordering question may not even be the live
+  one). A future cycle picking this up should start from the "does RPG_RT
+  resume a Common Event Parallel Process positionally AT ALL" question,
+  probably via the in-game-Save/re-decode method caveat (3) above
+  describes, rather than re-testing array-id order directly.
+
+  **Fixture hygiene**: `data/Nepheshel206beta/Nepheshel206Rbeta/Save01.lsd`
+  and `RPG_RT.ldb` were backed up before any edit and restored byte-
+  identical afterward (`md5sum` matched the pre-cycle backup for both);
+  `git status -- data/` was clean throughout, since `data/` is gitignored
+  and was never a concern for accidental commits, but the restore was done
+  anyway per this cycle's own ground rules, so the fixture is exactly as
+  the next cycle's own wine scripts expect it (unmodified, `Save01.lsd`
+  still the single-frame, fresh-game EasyRPG capture every other script
+  already assumes). All screenshots were written to the session's own
+  scratchpad, not `ss/` or anywhere committed, and every Xvfb/wine/
+  matchbox process this cycle started was killed before finishing (no
+  leftover processes). No `data/` fixture, code, or check-suite baseline
+  changed: `rpg2k_scene_check.rb`=931, `rpg2k_logic_check.rb`=1175,
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures, all reconfirmed unchanged after the fixture
+  restore. No engine code touched, so no rebuild/`ctest` run was needed.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —
