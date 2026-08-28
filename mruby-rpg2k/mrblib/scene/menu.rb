@@ -329,10 +329,22 @@ class RPG2k
           # beside the level, but that row already carries HP and MP here and
           # this panel is only 196px wide, so it goes where there is room.
           draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
-          sc.draw_text 0, y + 16, sc.width, 14,
-                       "#{term(:level_short, 'Lv')} #{a.level}  " \
-                        "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}  " \
-                        "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
+          # HP/MP recolor the same way the field Status screen's identical row
+          # does (Scene::Base#draw_stat_segment, ported from EasyRPG's
+          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # citation): only the current-value figure, never its label or max,
+          # dims to knockout gray at 0 HP or critical red/orange at or below a
+          # quarter of max. This row used to draw as one flat-white string,
+          # the same gap the field Status screen and battle status panel each
+          # had before their own earlier fixes (see docs/TODO.md).
+          row_y = y + 16
+          lvl_label = "#{term(:level_short, 'Lv')} #{a.level}  "
+          draw_system_text sc, 0, row_y, sc.width, 14, lvl_label, @skin
+          gutter = sc.text_size('  ').width
+          x = draw_stat_segment(sc, sc.text_size(lvl_label).width, row_y, sc.width, 14,
+                                 "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
+          draw_stat_segment(sc, x + gutter, row_y, sc.width, 14,
+                             "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see

@@ -19023,6 +19023,37 @@ check 'the menu party list shows each member condition' do
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
 end
 
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: `Window_Base::GetValueFontColor`, the shared
+# routine behind `DrawActorHp`/`DrawActorSp` -- the *current* HP/MP figure
+# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
+# red/orange (index 4) at or below a quarter of max, the ordinary default
+# (index 0) otherwise. Already ported for the field Status screen and the
+# battle status panel (see docs/TODO.md); this screen's own party list drew
+# its whole "Lv X  HP a/b  MP c/d" line as one flat-white string until now,
+# the same gap those two screens had before their own fixes.
+check 'the main menu party list colours a knocked-out HP figure and a ' \
+      'critical MP figure through the windowskin\'s own swatches, not a ' \
+      'flat colour' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> make_windowskin returns a real Bitmap
+  st = Game::State.new(MenuStubParty.new, 1, 0, 0)
+  hero = st.party.actors.first
+  hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
+  hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
+  win = menu_scene(RPG2k::Scene::Menu, st, db).instance_variable_get(:@status)
+  bc = win.contents.blend_calls || []
+  # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+  ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
+     "the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
+     "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
+     "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+     'the HP max figure stays the default colour (index 0)'
+end
+
 # Per EasyRPG Player's source (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Window_Gold` on this screen --
 # `Scene_Menu::Start`, which creates one
@@ -20357,6 +20388,39 @@ check 'the item / skill target list shows who is afflicted' do
   end
 end
 
+# Ported from EasyRPG Player's source, NOT independently confirmed against
+# genuine RPG_RT under wine: `Window_Base::GetValueFontColor`, the shared
+# routine behind `DrawActorHp`/`DrawActorSp` -- the *current* HP/MP figure
+# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
+# red/orange (index 4) at or below a quarter of max, the ordinary default
+# (index 0) otherwise. Already ported for the field Status screen and the
+# battle status panel (see docs/TODO.md); this target-confirm list drew its
+# "HP a/b" and "MP c/d" lines as flat-white text until now, the same gap
+# those two screens had before their own fixes.
+check 'the item / skill target list colours a knocked-out HP figure and a ' \
+      'critical MP figure through the windowskin\'s own swatches too' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> make_windowskin returns a real Bitmap
+  st = menu_state
+  hero = st.party.actors.first
+  hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
+  hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
+  [RPG2k::Scene::ItemMenu, RPG2k::Scene::SkillMenu].each do |klass|
+    scene = menu_scene(klass, st, db)
+    scene.send(:build_target_window)
+    bc = scene.instance_variable_get(:@target_window).contents.blend_calls || []
+    # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
+    ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
+       "#{klass}: the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
+       "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+    ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
+       "#{klass}: the critical MP figure must blend from swatch index 4 (64, 48), got: " \
+       "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
+    ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+       "#{klass}: the HP max figure stays the default colour (index 0)"
+  end
+end
+
 # A four-actor party -- RPG2000's own party-membership cap (see
 # Game::Party#reorder and every battle-side ally list in this codebase) --
 # for the target-confirm panel's own at-capacity boundary case below.
@@ -20420,21 +20484,29 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
     row_x = ->(text) { calls.find { |c| c[4].to_s == text }&.at(0) }
     name_y = row_y.call(a.name)
     lv_y = row_y.call('Lv 5')
-    hp_y = row_y.call('HP 80/120')
-    mp_y = row_y.call('MP 10/30')
+    # HP/MP now draw as three separately-coloured runs ("HP ", "80", "/120")
+    # through Scene::Base#draw_stat_segment rather than one flat string --
+    # see the windowskin-swatch check below for the recolouring itself; this
+    # layout check only needs the label run's own position.
+    hp_y = row_y.call('HP ')
+    mp_y = row_y.call('MP ')
     ok name_y, "#{klass} target window draws the actor's name"
     ok lv_y, "#{klass} target window draws \"Lv 5\""
-    ok hp_y, "#{klass} target window draws \"HP 80/120\""
-    ok mp_y, "#{klass} target window draws \"MP 10/30\""
+    ok hp_y, "#{klass} target window draws the \"HP \" label"
+    ok mp_y, "#{klass} target window draws the \"MP \" label"
+    ok row_y.call('80'), "#{klass} target window draws the HP figure"
+    ok row_y.call('/120'), "#{klass} target window draws the HP max"
+    ok row_y.call('10'), "#{klass} target window draws the MP figure"
+    ok row_y.call('/30'), "#{klass} target window draws the MP max"
     eq 0, name_y, "#{klass}: the name is alone on the first line"
     eq RPG2k::Scene::ItemMenu::LINE_H, lv_y, "#{klass}: level is on the second line"
     eq RPG2k::Scene::ItemMenu::LINE_H, hp_y, "#{klass}: HP shares the second line with level"
     eq RPG2k::Scene::ItemMenu::LINE_H * 2, mp_y, "#{klass}: MP is on the third line"
     # The value column (HP/MP) starts partway across the row, not flush
     # against the label column (level/condition) -- see TARGET_VALUE_X.
-    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('HP 80/120'),
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('HP '),
        "#{klass}: HP starts at the value column, not right after \"Lv 5\""
-    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('MP 10/30'),
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('MP '),
        "#{klass}: MP starts at the value column, not right after the condition"
   end
 end

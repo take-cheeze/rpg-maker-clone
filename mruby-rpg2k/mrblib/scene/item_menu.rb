@@ -924,15 +924,23 @@ class RPG2k
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
-          c.draw_text TARGET_VALUE_X, y + LINE_H, inner_w - TARGET_VALUE_X, LINE_H,
-                      "#{term(:hp_short, 'HP')} #{a.hp}/#{a.display_max_hp}"
+          # HP/MP recolor the same way the field Status screen's row does
+          # (Scene::Base#draw_stat_segment, ported from EasyRPG's
+          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # citation): only the current-value figure, never its label or max,
+          # dims to knockout gray at 0 HP or critical red/orange at or below a
+          # quarter of max. This target list used to draw both as flat-white
+          # text, the same gap the Status screen and battle status panel each
+          # had before their own earlier fixes (see docs/TODO.md).
+          draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H, inner_w, LINE_H,
+                            "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
-          c.draw_text TARGET_VALUE_X, y + LINE_H * 2, inner_w - TARGET_VALUE_X, LINE_H,
-                      "#{term(:mp_short, 'MP')} #{a.mp}/#{a.display_max_mp}"
+          draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H * 2, inner_w, LINE_H,
+                            "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
         end
         @target_window.contents = c
         refresh_target_cursor

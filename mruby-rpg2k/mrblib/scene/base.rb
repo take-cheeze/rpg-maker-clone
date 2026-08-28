@@ -213,6 +213,32 @@ class RPG2k
         0
       end
 
+      # One "LABEL cur/max" run starting at `x`: `label` and the `/max` suffix
+      # draw in the default palette colour, `cur` alone through
+      # #value_font_color (`can_knockout` true only for HP, matching
+      # `DrawActorHp`'s own call -- `DrawActorSp` never passes it). Returns the
+      # x position just past the drawn run, so a caller can chain another stat
+      # after it. Shared by every screen that shows a party member's live HP/MP
+      # figures next to their max as flowing (not fixed-column) text -- the
+      # field Status screen originally had this to itself; promoted here
+      # (cycle #205) so the main menu's own party list and the Item/Skill
+      # target-actor lists pick up the identical recolouring instead of each
+      # carrying a private copy or, as before, none at all. The battle status
+      # panel's `#draw_battle_stat_segment` (Scene::Battle) stays a separate,
+      # not-shared implementation since its fixed-width columns need the
+      # `#clip_text_to_width` treatment this flowing-text version does not.
+      def draw_stat_segment(c, x, y, w, h, label, cur, max, can_knockout, skin)
+        draw_system_text c, x, y, w - x, h, label, skin
+        x += c.text_size(label).width
+        color = value_font_color(cur, max, can_knockout)
+        cur_s = cur.to_s
+        draw_system_text c, x, y, w - x, h, cur_s, skin, color
+        x += c.text_size(cur_s).width
+        rest = "/#{max}"
+        draw_system_text c, x, y, w - x, h, rest, skin
+        x + c.text_size(rest).width
+      end
+
       # The database's word for "no condition" (RPG_RT shows it rather than
       # leaving the column blank), or a plain English stand-in for a database
       # that leaves the term unset.

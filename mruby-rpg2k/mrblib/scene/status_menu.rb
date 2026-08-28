@@ -221,33 +221,15 @@ class RPG2k
       # `Window_ActorStatus::DrawStatus` (`src/window_actorstatus.cpp`)
       # draws it through the same `DrawActorHp`/`DrawActorSp`
       # (`src/window_base.cpp`) the battle status panel uses, so it carries
-      # the identical per-value colouring (see
+      # the identical per-value colouring (see Scene::Base
       # #draw_stat_segment) -- only ever applied to this screen's *current*
       # HP/MP figures, never their label or max.
       def draw_hp_mp_row(c, a, y, inner_w)
         gutter = c.text_size('    ').width
-        x = draw_stat_segment(c, 0, y, inner_w, term(:hp_short, 'HP') + ' ',
-                               a.hp, a.display_max_hp, true)
-        draw_stat_segment(c, x + gutter, y, inner_w, term(:mp_short, 'MP') + ' ',
-                           a.mp, a.display_max_mp, false)
-      end
-
-      # One "LABEL current/max" run starting at `x`: `label` and the `/max`
-      # suffix draw in the default palette colour, `cur` alone through
-      # #value_font_color (`can_knockout` true only for HP, matching
-      # `DrawActorHp`'s own call -- `DrawActorSp` never passes it). Returns
-      # the x position just past the drawn run, so a caller can chain another
-      # stat after it (see #draw_hp_mp_row's own MP call).
-      def draw_stat_segment(c, x, y, inner_w, label, cur, max, can_knockout)
-        draw_system_text c, x, y, inner_w - x, LINE_H, label, @skin
-        x += c.text_size(label).width
-        color = value_font_color(cur, max, can_knockout)
-        cur_s = cur.to_s
-        draw_system_text c, x, y, inner_w - x, LINE_H, cur_s, @skin, color
-        x += c.text_size(cur_s).width
-        rest = "/#{max}"
-        draw_system_text c, x, y, inner_w - x, LINE_H, rest, @skin
-        x + c.text_size(rest).width
+        x = draw_stat_segment(c, 0, y, inner_w, LINE_H, term(:hp_short, 'HP') + ' ',
+                               a.hp, a.display_max_hp, true, @skin)
+        draw_stat_segment(c, x + gutter, y, inner_w, LINE_H, term(:mp_short, 'MP') + ' ',
+                           a.mp, a.display_max_mp, false, @skin)
       end
 
       def draw_battle_row(bmp, actor, inner_w)
