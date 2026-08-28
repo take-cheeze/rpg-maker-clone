@@ -6875,6 +6875,74 @@ The work below is roughly ordered by the critical path to a walkable game
   be a false claim -- this cycle's honest assessment is that the sweep is
   further from done than cycle #189 believed, not closer, precisely because
   this cycle went looking in a place no prior cycle had ever checked.
+  ✅ **Follow-up (cycle #196, 2026-08-28): picked up item (2) from cycle #190's
+  own "left open" list -- the six smaller `scene/*.rb` files (`status_menu.rb`
+  13, `menu.rb` 10, `title.rb` 8, `equip_menu.rb`/`save_load.rb` 7 each,
+  `base.rb` 6) -- and fully swept all six**, following cycle #190's own
+  established method exactly: read each file whole, top to bottom, and for
+  every `EasyRPG`/`confirmed against`/`RPG_RT's [own] live source` citation
+  that presented a behavioral claim as verified fact without disclosure,
+  rewrote it to honestly disclose "ported from EasyRPG['s [own]] source, NOT
+  independently confirmed against genuine RPG_RT under wine" while preserving
+  the underlying technical description (including quoted EasyRPG source, now
+  attributed to EasyRPG rather than presented as this project's own finding);
+  genuine wine-confirmed citations already present (several in each file --
+  `save_load.rb` and `equip_menu.rb` especially, both citing real pixel-level
+  wine measurements from cycles #121-#127) were read and correctly left
+  untouched, and cross-references to an already-disclosed wine-measured
+  citation elsewhere in the same codebase (the `Input.repeat?` auto-repeat
+  timing, independently measured against genuine RPG_RT.exe and cited
+  identically in `menu.rb`/`title.rb`/`item_menu.rb`/`equip_menu.rb`/
+  `save_load.rb`) were likewise left as the legitimate shorthand cycle #190
+  itself established, not re-flagged. One additional, distinct bug found
+  along the way, not just a citation-hygiene gap: `save_load.rb`'s own
+  class-doc comment (documenting the `:save` mode) still carried the *exact*
+  "confirmed against RPG_RT's own live source, `Scene_Save::Action`" framing
+  that this same file's `#confirm_selection` method had already debunked and
+  corrected back in cycle #126 ("mislabeled at the time as 'RPG_RT's own live
+  source'... independently confirmed [instead]... against a genuine
+  RPG_RT.exe under wine") -- the class comment was simply never updated when
+  the method-level comment was fixed, so the file carried both the honest,
+  wine-confirmed version and its own stale, debunked EasyRPG-sourced
+  duplicate side by side. Fixed by pointing the class comment at
+  `#confirm_selection`'s own real wine confirmation instead of restating the
+  discredited citation. Counted precisely against cycle #190's own tally
+  before starting (`grep -c` for `EasyRPG` plus the `src/[a-z0-9_]+\.(cpp|h)`
+  pattern per file, matching cycle #190's own method): every undisclosed
+  instance in all six files is now either honestly disclosed or was already a
+  genuine wine-confirmed citation -- re-grepping after the fix turns up only
+  disclosed/wine-confirmed occurrences in each of the six.
+
+  **Verification:** `ruby -c` clean on all six edited files. Diff isolation
+  per file, the same command cycle #190 used (`git diff -- <file> | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' |
+  grep -vE '^[+-][[:space:]]*$'`): empty for all six, confirming every edit
+  is comment-only. Before/after check counts, all matching baseline exactly:
+  `rpg2k_scene_check.rb` 932, `rpg2k_logic_check.rb` 1176,
+  `rpg2k_render_check.rb` 41, `rpg2k3_battle_row_check.rb` 19/0 failures,
+  `rpg2k3_battle_gauge_check.rb` 15/0 failures, `rpg2k_save_load_check.rb`'s 3
+  known pre-existing failures reconfirmed identical (screen-transition arity,
+  saved-picture fields, BGM balance field). `cd build && ninja && ctest -R
+  mruby_test` passed. No wine/Xvfb/matchbox process started this cycle, no
+  `data/` file touched (`git status` on it stayed clean throughout). No
+  changelog fragment: comment-only documentation work, matching cycle #190's
+  own precedent for this exact class of fix, not a behavioral change.
+
+  **Left open for a future cycle, unchanged in priority from cycle #190's own
+  list except for the six files this cycle closed:** `scene/battle.rb`
+  (34 file-path citations, 78 `EasyRPG` mentions at last count) is now the
+  only remaining unswept file this measure identified, and by a wide margin
+  the largest -- comparable in density to `game.rb`/`map.rb` before they were
+  swept, and roughly 4-5x the size of any one file this cycle closed. Given
+  this cycle's own lighter-weight, comment-only framing (matching cycle
+  #190's own choice to fully finish several small files rather than rush a
+  partial pass at a large one), `battle.rb` was deliberately left for a
+  dedicated future cycle rather than attempted partially here. Cycle #190's
+  own item (3) -- a parity check of whether `scripts/*.rb` files quote or
+  restate any of the newly-swept scenes' undisclosed citations, the same
+  cross-file leakage shape cycle #189 found between `rpg2k_scene_check.rb`
+  and `scene/map.rb` -- also remains untouched by this cycle and is still
+  open.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,

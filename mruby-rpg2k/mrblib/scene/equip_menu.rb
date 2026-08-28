@@ -36,12 +36,14 @@ class RPG2k
 
       # `actor_index` is which party member the screen opens on -- the one
       # `Scene::Menu#enter_actor_selection` preselected from the menu's own
-      # party list (confirmed against EasyRPG's `Scene_Equip` constructor,
-      # which takes the same parameter), defaulting to 0 (the leader) for
+      # party list, matching EasyRPG's `Scene_Equip` constructor (which
+      # takes the same parameter), defaulting to 0 (the leader) for
       # callers that never had a picker to begin with, e.g. the host test
       # harnesses. LEFT/RIGHT still cycle from there once inside, unlike
-      # Scene::SkillMenu -- EasyRPG's own `Scene_Equip::UpdateEquipSelection`
-      # does the same, unlike `Scene_Skill`.
+      # Scene::SkillMenu, the same way EasyRPG's own `Scene_Equip::
+      # UpdateEquipSelection` does (unlike `Scene_Skill`); ported from
+      # EasyRPG's source, NOT independently confirmed against genuine
+      # RPG_RT under wine.
       def initialize parent, state, actor_index = 0
         super parent
         @state = state
@@ -110,8 +112,9 @@ class RPG2k
       # genuine `Window_Equip`, a `Window_Selectable` subclass, whose own
       # `Update()` falls through to `Input::IsRepeated` the same as every
       # other list here (see Scene::ItemMenu#update_items's fuller
-      # writeup). The actor switch (RIGHT/LEFT) does **not**: confirmed
-      # against EasyRPG's actual source -- `Scene_Equip::
+      # writeup). The actor switch (RIGHT/LEFT) does **not**: ported from
+      # EasyRPG's actual source, NOT independently confirmed against
+      # genuine RPG_RT under wine -- `Scene_Equip::
       # UpdateEquipSelection` (`src/scene_equip.cpp`) checks
       # `Input::IsTriggered(Input::RIGHT/LEFT)` only, no `IsRepeated` at
       # all, since each switch pushes a whole new `Scene_Equip` rather than
@@ -158,11 +161,13 @@ class RPG2k
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
           # 装備固定 / 呪われた装備: RPG_RT refuses to even open the item list
-          # for such an actor, or for a slot currently holding a cursed item
-          # (EasyRPG's Scene_Equip#UpdateEquipSelection), rather than opening
-          # it and rejecting whatever gets chosen there -- confirmed a
-          # rejected Decision plays Buzzer, matching every other "confirmed
-          # but refused" case this scene's siblings handle the same way.
+          # for such an actor, or for a slot currently holding a cursed item,
+          # ported from EasyRPG's Scene_Equip#UpdateEquipSelection (NOT
+          # independently confirmed against genuine RPG_RT under wine),
+          # rather than opening it and rejecting whatever gets chosen there
+          # -- a rejected Decision plays Buzzer, matching every other
+          # "confirmed but refused" case this scene's siblings handle the
+          # same way.
           if actor.equipment_fixed? || actor.slot_cursed?(@slot_index)
             play_system_se(SFX_BUZZER)
           else
@@ -326,8 +331,10 @@ class RPG2k
       # method / state-flag quintuples for the four battle stats, in the
       # order EasyRPG's own `Window_EquipStatus::DrawParameter`
       # (`src/window_equipstatus.cpp`) draws them (Atk/Def/Spirit/Agility --
-      # this codebase's own `term(:mind, ...)`/`#int` name RPG2000's
-      # "Spirit" stat "Int" instead, matching status_menu.rb).
+      # ported from EasyRPG's source, NOT independently confirmed against
+      # genuine RPG_RT under wine); this codebase's own `term(:mind, ...)`/
+      # `#int` name RPG2000's "Spirit" stat "Int" instead, matching
+      # status_menu.rb.
       STAT_DEFS = [
         [:attack, 'Atk', :atk_points1, :atk, :effective_atk, :affect_attack],
         [:defense, 'Def', :def_points1, :def, :effective_def, :affect_defense],
@@ -337,9 +344,10 @@ class RPG2k
 
       # Four independent stat rows -- one "label value" per row while
       # browsing the slot list, or, while browsing candidates, "label value
-      # > new_value" comparisons -- confirmed against EasyRPG's actual
+      # > new_value" comparisons -- ported from EasyRPG's actual
       # `Window_EquipStatus::Refresh`/`DrawParameter`
-      # (`src/window_equipstatus.cpp`), which draws the actor name once,
+      # (`src/window_equipstatus.cpp`), NOT independently confirmed against
+      # genuine RPG_RT under wine: it draws the actor name once,
       # then loops the four stats at `y_offset + ((12 + 4) * i)` -- a
       # genuinely separate row per stat, each an old value, an arrow, and a
       # new value coloured by `GetNewParameterColor` (0 unchanged / 2 up / 3
@@ -354,8 +362,9 @@ class RPG2k
           y = LINE_H * (1 + i)
           x = 0
           # State-adjusted (halve/double), not the raw base+equip total --
-          # confirmed against RPG_RT's own live source: `Window_EquipStatus::
-          # DrawParameter` (`src/window_equipstatus.cpp`) draws
+          # ported from EasyRPG's `Window_EquipStatus::
+          # DrawParameter` (`src/window_equipstatus.cpp`), NOT independently
+          # confirmed against genuine RPG_RT under wine: it draws
           # `actor.GetAtk()` et al., which run the base value through
           # `Game_Battler::AdjustParam` (`src/game_battler.cpp`) against
           # whatever states the actor currently carries. `Game::Party
@@ -472,7 +481,8 @@ class RPG2k
 
       # The candidate's real net delta for one raw database `field` against
       # what is equipped now -- not just the two items landing in *this*
-      # slot. Confirmed against EasyRPG's actual C++ source: `Scene_Equip::
+      # slot. Ported from EasyRPG's actual C++ source, NOT independently
+      # confirmed against genuine RPG_RT under wine: `Scene_Equip::
       # UpdateStatusWindow` (`src/scene_equip.cpp`) also subtracts the
       # *other* hand's item when either it or the candidate is a 両手持ち
       # weapon (`Actor#two_handed?`), since equipping either one forces the

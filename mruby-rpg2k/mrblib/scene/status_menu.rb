@@ -4,10 +4,11 @@ class RPG2k
     # detail -- name/title, level, EXP and the next level's absolute EXP
     # threshold, HP/MP, the six stats and the five equipment slots; LEFT/
     # RIGHT cycle the member. Read-only, so there is no sub-mode. The "Next"
-    # figure is Game::Actor#next_level_exp -- the absolute threshold RPG_RT's
-    # own `Window_ActorStatus::DrawStatus` displays (`GetNextExpString`),
-    # not the remaining-EXP delta `#exp_to_next` computes (host-tested); the
-    # rest reads existing accessors.
+    # figure is Game::Actor#next_level_exp -- the absolute threshold, matching
+    # EasyRPG Player's `Window_ActorStatus::DrawStatus` (`GetNextExpString`)
+    # rather than the remaining-EXP delta `#exp_to_next` computes; ported from
+    # EasyRPG's source, NOT independently confirmed against genuine RPG_RT
+    # under wine (host-tested only); the rest reads existing accessors.
     class StatusMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -25,11 +26,12 @@ class RPG2k
 
       # `actor_index` is which party member the screen opens on -- the one
       # `Scene::Menu#enter_actor_selection` preselected from the menu's own
-      # party list (confirmed against EasyRPG's `Scene_Status` constructor,
-      # which takes the same parameter), defaulting to 0 (the leader) for
+      # party list, matching EasyRPG's `Scene_Status` constructor (which
+      # takes the same parameter) -- defaulting to 0 (the leader) for
       # callers that never had a picker to begin with, e.g. the host test
-      # harnesses. LEFT/RIGHT still cycle from there once inside -- EasyRPG's
-      # own `Scene_Status::vUpdate` does the same.
+      # harnesses. LEFT/RIGHT still cycle from there once inside, the same
+      # way EasyRPG's own `Scene_Status::vUpdate` does; ported from EasyRPG's
+      # source, NOT independently confirmed against genuine RPG_RT under wine.
       def initialize parent, state, actor_index = 0
         super parent
         @state = state
@@ -52,8 +54,9 @@ class RPG2k
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
           @parent.pop
-        # A solo party leaves RIGHT/LEFT silent no-ops -- confirmed against
-        # RPG_RT's own live source: `Scene_Status::vUpdate`
+        # A solo party leaves RIGHT/LEFT silent no-ops -- ported from
+        # EasyRPG Player's source, NOT independently confirmed against
+        # genuine RPG_RT under wine: `Scene_Status::vUpdate`
         # (`src/scene_status.cpp`) gates both branches on `actors.size() >
         # 1`, not just the trigger itself, so a lone hero's Status screen
         # plays no cursor SE and rebuilds nothing on either key.
@@ -113,8 +116,9 @@ class RPG2k
         title = a.title.to_s
         header = title.empty? ? a.name.to_s : "#{a.name}  #{title}"
         # The "Next" figure is the *absolute* EXP threshold for the next
-        # level, not the remaining delta -- confirmed directly against
-        # RPG_RT's live source: `Window_ActorStatus::DrawStatus`
+        # level, not the remaining delta -- ported from EasyRPG Player's
+        # source, NOT independently confirmed against genuine RPG_RT under
+        # wine: `Window_ActorStatus::DrawStatus`
         # (`src/window_actorstatus.cpp`) draws the Exp row via
         # `DrawMinMax(90, 34, -1, -1)`, whose `-1, -1` sentinel routes both
         # halves through `actor.GetExpString(true)`/`GetNextExpString(true)`
@@ -130,8 +134,10 @@ class RPG2k
         lines = [
           header,
           # RPG_RT always draws a labelled Class/Profession row on this
-          # screen too, between Name and Title -- confirmed against
-          # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+          # screen too, between Name and Title -- ported from EasyRPG
+          # Player's source, NOT independently confirmed against genuine
+          # RPG_RT under wine: `Window_ActorInfo::DrawInfo`
+          # (`src/window_actorinfo.cpp`):
           # `TextDraw(..., "Class"); DrawActorClass(actor, ...)`, with no
           # version gate around it (unlike the RPG2003-only Row line just
           # above it in the same function), so it draws blank rather than
@@ -145,8 +151,9 @@ class RPG2k
           "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           # Drawn separately, after this flat pass -- see #draw_hp_mp_row.
           '',
-          # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- confirmed against
-          # RPG_RT's own live source: `Window_ParamStatus::Refresh`
+          # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- ported from EasyRPG
+          # Player's source, NOT independently confirmed against genuine
+          # RPG_RT under wine: `Window_ParamStatus::Refresh`
           # (`src/window_paramstatus.cpp`) draws `actor.GetAtk()`/`GetDef()`/
           # `GetSpi()`/`GetAgi()` directly, and `Game_Battler::GetAtk` et al.
           # (`src/game_battler.cpp`) run the base value through `AdjustParam`,
@@ -170,13 +177,15 @@ class RPG2k
         ]
         eqp = a.equipment
         @slots.each_with_index { |label, i| lines.push("#{label}: #{item_name(eqp[i])}") }
-        # RPG_RT always shows the party's own Gold on this screen -- its own
-        # `Window_Gold` (`src/window_gold.cpp`) sits right under the
-        # actor-info box, drawn unconditionally by `Scene_Status::Start`
-        # (`src/scene_status.cpp`, no visibility gate anywhere in the file) --
-        # confirmed missing here entirely, not merely mispositioned.
-        # `DrawCurrencyValue` (`src/window_base.cpp`) draws just the amount
-        # and the term, no extra label of its own.
+        # RPG_RT always shows the party's own Gold on this screen -- per
+        # EasyRPG Player's source (NOT independently confirmed against
+        # genuine RPG_RT under wine), its own `Window_Gold`
+        # (`src/window_gold.cpp`) sits right under the actor-info box, drawn
+        # unconditionally by `Scene_Status::Start` (`src/scene_status.cpp`,
+        # no visibility gate anywhere in the file) -- this screen was missing
+        # it here entirely before this line was added, not merely
+        # mispositioning it. `DrawCurrencyValue` (`src/window_base.cpp`)
+        # draws just the amount and the term, no extra label of its own.
         lines.push("#{@state.party.gold}#{term(:gold, 'G')}")
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
@@ -189,8 +198,9 @@ class RPG2k
       end
 
       # RPG_RT's own status screen additionally shows which RPG2003 battle
-      # row the displayed actor is currently in -- confirmed against
-      # `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
+      # row the displayed actor is currently in -- ported from EasyRPG
+      # Player's source, NOT independently confirmed against genuine RPG_RT
+      # under wine: `Window_ActorInfo::DrawInfo` (`src/window_actorinfo.cpp`):
       # `if (Feature::HasRow()) { ... TextDraw(width, 2, ..., battle_row,
       # AlignRight); }`, right-aligned at the top of the panel, above the
       # face/name block. `Feature::HasRow` (`src/feature.cpp`) reduces to
@@ -206,10 +216,12 @@ class RPG2k
         @state.party.respond_to?(:rpg2003?) && @state.party.rpg2003?
       end
 
-      # This screen's HP/MP row: RPG_RT's own `Window_ActorStatus::DrawStatus`
-      # (`src/window_actorstatus.cpp`) draws it through the same
-      # `DrawActorHp`/`DrawActorSp` (`src/window_base.cpp`) the battle status
-      # panel uses, so it carries the identical per-value colouring (see
+      # This screen's HP/MP row: ported from EasyRPG Player's source, NOT
+      # independently confirmed against genuine RPG_RT under wine --
+      # `Window_ActorStatus::DrawStatus` (`src/window_actorstatus.cpp`)
+      # draws it through the same `DrawActorHp`/`DrawActorSp`
+      # (`src/window_base.cpp`) the battle status panel uses, so it carries
+      # the identical per-value colouring (see
       # #draw_stat_segment) -- only ever applied to this screen's *current*
       # HP/MP figures, never their label or max.
       def draw_hp_mp_row(c, a, y, inner_w)
