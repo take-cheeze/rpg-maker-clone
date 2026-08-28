@@ -14173,6 +14173,79 @@ check 'neither flag set leaves the title screen waiting for input' do
   ok !scene.send(:auto_select?), 'no auto-select without a flag'
 end
 
+# -- System#show_title (LDB chunk 22 field 111) -------------------------------
+#
+# RPG2k#show_title? and #boot_title_or_new_game (mruby-rpg2k/mrblib/main.rb)
+# read the database's own "Show title screen" checkbox and, when it is
+# unchecked, skip Scene::Title entirely and boot straight into New Game --
+# see #boot_title_or_new_game's own comment for the field citation and the
+# fallback-to-title safety net a data problem in #start_new_game still gets.
+# #initialize itself (which needs a real RPG_RT.ldb/.lmt) is not exercised
+# here, the same "flag plumbing only, in CRuby" split every other headless
+# flag check on this file already uses -- these two pin #show_title?'s own
+# defaulting and #boot_title_or_new_game's branching in isolation.
+check 'RPG2k#show_title? defaults true when the field or the whole System table is missing' do
+  rpg2k = RPG2k.allocate
+  rpg2k.instance_variable_set(:@db, OpenStruct.new)
+  ok rpg2k.send(:show_title?), 'no System table at all -> true, the schema default'
+
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new))
+  ok rpg2k.send(:show_title?), 'a System table with no show_title field -> true'
+
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new(show_title: true)))
+  ok rpg2k.send(:show_title?), 'System#show_title explicitly true -> true'
+
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new(show_title: false)))
+  ok !rpg2k.send(:show_title?), 'System#show_title explicitly false -> false'
+end
+
+check 'RPG2k#boot_title_or_new_game skips the title screen and starts a new game '\
+     'when System#show_title is off' do
+  rpg2k = RPG2k.allocate
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new(show_title: false)))
+  rpg2k.instance_variable_set(:@scenes, [])
+  new_game_calls = 0
+  title_calls = 0
+  # A well-behaved #start_new_game leaves a real scene behind (Scene::Map),
+  # modelled here as any non-empty @scenes -- so the fallback below must not
+  # fire.
+  rpg2k.define_singleton_method(:start_new_game) { new_game_calls += 1; @scenes = [:fake_map_scene] }
+  rpg2k.define_singleton_method(:push_title_screen) { title_calls += 1 }
+  rpg2k.send(:boot_title_or_new_game)
+  eq 1, new_game_calls, 'start_new_game is called directly, with no title screen in between'
+  eq 0, title_calls, 'the title screen is never pushed when show_title is off and New Game succeeds'
+  eq [:fake_map_scene], rpg2k.instance_variable_get(:@scenes)
+end
+
+check 'RPG2k#boot_title_or_new_game still shows the title screen normally when show_title is on' do
+  rpg2k = RPG2k.allocate
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new(show_title: true)))
+  rpg2k.instance_variable_set(:@scenes, [])
+  new_game_calls = 0
+  title_calls = 0
+  rpg2k.define_singleton_method(:start_new_game) { new_game_calls += 1 }
+  rpg2k.define_singleton_method(:push_title_screen) { title_calls += 1 }
+  rpg2k.send(:boot_title_or_new_game)
+  eq 0, new_game_calls, 'New Game is not auto-started with show_title on'
+  eq 1, title_calls, 'the title screen is pushed exactly like before this field was wired up'
+end
+
+check 'RPG2k#boot_title_or_new_game falls back to the title screen if a show_title-off '\
+     'New Game hits a data problem' do
+  rpg2k = RPG2k.allocate
+  rpg2k.instance_variable_set(:@db, OpenStruct.new(system: OpenStruct.new(show_title: false)))
+  rpg2k.instance_variable_set(:@scenes, [])
+  title_calls = 0
+  # Mirrors #start_new_game's own `rescue StandardError` clause: a data
+  # problem is reported and @scenes is left exactly as #initialize set it,
+  # empty -- never raised out to the caller.
+  rpg2k.define_singleton_method(:start_new_game) { }
+  rpg2k.define_singleton_method(:push_title_screen) { title_calls += 1 }
+  rpg2k.send(:boot_title_or_new_game)
+  eq 1, title_calls,
+     'a New Game that leaves no scene behind still gets a title screen, not a blank #main_loop crash'
+end
+
 # -- --rpg2k_preview_map (map preview, see README.md's "Map exploration") ----
 #
 # RPG2k#preview_map_id reads the RPG2K_PREVIEW_MAP constant main.cxx sets from

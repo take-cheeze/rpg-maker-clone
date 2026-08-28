@@ -603,6 +603,55 @@ class RPG2k
     @title = read_ini_title
     RGSS.window_title = @title
     @scenes = []
+    boot_title_or_new_game
+  end
+
+  # System#show_title (LDB chunk 22 field 111, mruby-lcf/mrblib/schema.rb) --
+  # the RPG2003 System tab's own "タイトル画面を表示させる" ("Show title screen")
+  # checkbox, default true. This codebase has decoded the field since it was
+  # named, but nothing ever read it: #initialize always pushed Scene::Title
+  # unconditionally, the same "declared but never wired" shape cycle #165
+  # found for Change Battle Background's own save field. When unchecked, the
+  # documented editor behaviour is that RPG_RT skips the title screen (its
+  # picture, its title BGM, and the New Game/Continue/Shutdown menu) entirely
+  # and boots straight into a fresh New Game instead, as though the player
+  # had already chosen it -- used by projects that open on a scripted intro
+  # rather than a title menu. NOT independently confirmed against genuine
+  # RPG_RT under wine this cycle (no wine session run); implemented from the
+  # field's own well-documented, unambiguous editor semantics, the standard
+  # this project already applies to every other database flag no wine
+  # capture has directly probed (see e.g. mruby-lcf/mrblib/schema.rb's own
+  # System#equipment_setting comment). Guarded with respond_to? so a
+  # bare/synthetic database missing the field -- or the whole System table,
+  # as scripts/rpg2k_scene_check.rb's fixtures do -- answers true, the
+  # harmless default every real project's database also reads back until
+  # this box is unchecked.
+  def show_title?
+    !(@db.respond_to?(:system) && @db.system.respond_to?(:show_title) &&
+      @db.system.show_title == false)
+  end
+
+  # Split out of #initialize so #show_title?'s branch can be exercised
+  # directly (RPG2k.allocate, with #start_new_game/#push_title_screen
+  # stubbed) without a real RPG_RT.ldb/.lmt -- see
+  # scripts/rpg2k_scene_check.rb.
+  def boot_title_or_new_game
+    if show_title?
+      push_title_screen
+    else
+      $stderr.puts '[RPG2k] System#show_title is off: skipping the title ' \
+                   'screen, booting straight into New Game'
+      start_new_game
+      # #start_new_game leaves @scenes untouched (so still empty here) if it
+      # hits a data problem and rescues -- fall back to an ordinary title
+      # rather than leave #main_loop's `@scenes.last.update` with nothing to
+      # call, the same "never let a data problem crash the title screen"
+      # rule its own rescue clause already documents for the normal path.
+      push_title_screen if @scenes.empty?
+    end
+  end
+
+  def push_title_screen
     push Scene::Title.new self
   end
 

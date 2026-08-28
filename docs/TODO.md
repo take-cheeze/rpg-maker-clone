@@ -2268,6 +2268,75 @@ The work below is roughly ordered by the critical path to a walkable game
   (cycle #211's own note above) already declined to do — left as a genuine,
   documented lead rather than an implemented guess.
 
+  ✅ **Follow-up (cycle #225, 2026-08-28): `System#show_title` (the "Show
+  title screen" checkbox) is now honoured — a project with it unchecked
+  used to get the ordinary title screen every single boot regardless.**
+  Method: cycles #217-#224's own audio-struct sweep (BGM/SE/animation
+  cell/animation timing) had exhausted every LCF struct in
+  `mruby-lcf/mrblib/schema.rb` with 3+ optional fields this cycle could find
+  a genuinely undone, safely-scoped field on (`BATTLER_ANIMATION`'s
+  `weapon_cba`/`movement`/`after_image`/... union is a real, still-unread
+  gap, but it is the same large, semantics-unclear "CBA battle-animation
+  sprite format" this file's own top-of-section 🚧 already tracks as
+  foundational-only, not a one-field bug; `SAVE_SCREEN`'s battle-animation
+  replay fields and `battle_anime`'s own `scope`/`large`/`grid` are both
+  already-declined-for-good-reason per cycle #224's note just above and an
+  earlier cycle's `terrain.grid_location` note). Widened the search instead
+  to single scalar `System` fields decoded but never read anywhere in
+  `mruby-rpg2k` (grepped each field name from chunk 22 of `DATABASE` against
+  the whole tree): `show_title` (field 111, default `true`) came up with
+  zero hits outside its own schema declaration — `RPG2k#initialize`
+  (`mruby-rpg2k/mrblib/main.rb`) pushed `Scene::Title` unconditionally,
+  never consulting it. Fixed with new `RPG2k#show_title?` (defaults `true`
+  via `respond_to?` guards, matching the schema default for a database
+  missing the field or the whole System table) and
+  `#boot_title_or_new_game`, which replaces the old unconditional push: off
+  skips `Scene::Title` entirely (no title picture load, no title BGM
+  started-then-faded) and calls `#start_new_game` directly, with a
+  fallback-to-title safety net if that hits a data problem and leaves
+  `@scenes` empty (mirroring `#start_new_game`'s own existing "never let a
+  data problem crash the title screen" rescue). `#return_to_title` /
+  `#show_game_over` are untouched on purpose — the setting is read as
+  gating only the initial boot, not the in-game "To Title" command or a
+  Game Over's own return path. **Verification**: added 4 new
+  `rpg2k_scene_check.rb` checks (`#show_title?`'s own three-way defaulting;
+  the skip-title path calling `#start_new_game` with the title never
+  pushed; the on-path behaving exactly as before, unchanged; the
+  data-problem fallback), each built the same "flag plumbing only, in
+  CRuby, via `RPG2k.allocate` with `#start_new_game`/`#push_title_screen`
+  stubbed" pattern this file's own `--rpg2k_preview_map`/`--rpg2k_battle_troop`
+  checks already established just below — no real `RPG_RT.ldb`/`.lmt` I/O,
+  matching how `#start_new_game` itself is only ever exercised end-to-end by
+  the native boot check against real game data. Confirmed all 4 fail against
+  the pre-fix `mruby-rpg2k/mrblib/main.rb` (`git show HEAD:...` swapped in
+  for the working copy in its place, never `git stash`, so as not to disturb
+  any concurrent session's own uncommitted work — `3rd/mruby`'s own
+  working-tree modification was left untouched throughout) — the pre-fix
+  code failed with a straight unconditional push (`start_new_game` never
+  called, `push_title_screen` called once regardless of `show_title`) —
+  then restored the fix and reran clean. Full suite:
+  `rpg2k_scene_check.rb` 964 passed (960 baseline + 4 new checks);
+  `rpg2k_logic_check.rb` 1188 passed (unchanged); `rpg2k_render_check.rb` 41
+  passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged);
+  `rpg2k_save_load_check.rb` exit 0, zero known failures (unchanged);
+  `cd build && ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixtures), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb`/
+  `rgss_cruby_compat.rb` needed no attention. No wine session was run this
+  cycle — this sandbox has no genuine RPG_RT.exe — so the "unchecking Show
+  Title Screen skips straight to New Game, with no title BGM/picture ever
+  touched" reading is implemented from the field's own well-documented,
+  unambiguous editor semantics rather than independently confirmed against
+  genuine RPG_RT, the same standard this project already applies to every
+  other database flag no wine capture has directly probed. Left genuinely
+  open: whether `#return_to_title`/`#show_game_over` really should keep
+  ignoring the flag (this cycle's own reading, not wine-verified either),
+  and the `BATTLER_ANIMATION` union's still-unread weapon-CBA fields noted
+  above, which remain the largest genuinely-open item this same search
+  method has surfaced.
+
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
