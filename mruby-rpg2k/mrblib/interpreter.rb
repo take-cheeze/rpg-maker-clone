@@ -149,6 +149,27 @@ module Game
       END_BRANCH_B             = 23311
     end
 
+    # #skip_to's terminator-code lists, hoisted to frozen constants rather than
+    # written as array literals at each call site below. #skip_to only ever
+    # reads them (Array#include?), so sharing one instance per shape is safe --
+    # and it matters here: every one of these call sites sits on the event
+    # command dispatch path (#execute, #do_conditional and friends), which
+    # background Parallel Process common events re-enter every frame they have
+    # steps left to spend. A Conditional Branch that evaluates false calls
+    # #skip_to once per check, so a game with a handful of always-on polling
+    # common events (switch/variable checks in a Loop, a very common RPG2000
+    # idiom) was allocating one of these throwaway arrays per check, per frame,
+    # per process -- profiled as the single largest contributor to per-frame
+    # Array churn (RGSS::Profiler.stats[:object_types], see docs/profiling.md).
+    SKIP_TO_CHOICE_END = [Cmd::CHOICE_END].freeze
+    SKIP_TO_END_BATTLE = [Cmd::END_BATTLE].freeze
+    SKIP_TO_SHOP_END = [Cmd::SHOP_END].freeze
+    SKIP_TO_INN_END = [Cmd::INN_END].freeze
+    SKIP_TO_END_BRANCH = [Cmd::END_BRANCH].freeze
+    SKIP_TO_END_BRANCH_B = [Cmd::END_BRANCH_B].freeze
+    SKIP_TO_ELSE_OR_END_BRANCH = [Cmd::ELSE_BRANCH, Cmd::END_BRANCH].freeze
+    SKIP_TO_ELSE_OR_END_BRANCH_B = [Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B].freeze
+
     # Move-command ids inside a Move Event that carry extra parameters (every
     # other id is a bare command). Mirrors LCF's move-route parameter layout.
     module MoveCmd
@@ -1122,23 +1143,23 @@ module Game
       when Cmd::MESSAGE_OPTIONS  then do_message_options cmd
       when Cmd::CHANGE_FACE      then do_change_face cmd
       when Cmd::SHOW_CHOICES     then do_show_choices cmd
-      when Cmd::CHOICE_OPTION    then skip_to([Cmd::CHOICE_END], cmd.indent); consume
+      when Cmd::CHOICE_OPTION    then skip_to(SKIP_TO_CHOICE_END, cmd.indent); consume
       when Cmd::CHOICE_END       then nil
       when Cmd::INPUT_NUMBER     then do_input_number cmd
       when Cmd::KEY_INPUT_PROC   then do_key_input cmd
       when Cmd::ENEMY_ENCOUNTER  then do_enemy_encounter cmd
-      when Cmd::VICTORY_HANDLER  then skip_to([Cmd::END_BATTLE], cmd.indent); consume
-      when Cmd::ESCAPE_HANDLER   then skip_to([Cmd::END_BATTLE], cmd.indent); consume
-      when Cmd::DEFEAT_HANDLER   then skip_to([Cmd::END_BATTLE], cmd.indent); consume
+      when Cmd::VICTORY_HANDLER  then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
+      when Cmd::ESCAPE_HANDLER   then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
+      when Cmd::DEFEAT_HANDLER   then skip_to(SKIP_TO_END_BATTLE, cmd.indent); consume
       when Cmd::END_BATTLE       then nil
       when Cmd::OPEN_SHOP        then do_open_shop cmd
-      when Cmd::SHOP_TRANSACTION    then skip_to([Cmd::SHOP_END], cmd.indent); consume
-      when Cmd::SHOP_NO_TRANSACTION then skip_to([Cmd::SHOP_END], cmd.indent); consume
+      when Cmd::SHOP_TRANSACTION    then skip_to(SKIP_TO_SHOP_END, cmd.indent); consume
+      when Cmd::SHOP_NO_TRANSACTION then skip_to(SKIP_TO_SHOP_END, cmd.indent); consume
       when Cmd::SHOP_END         then nil
       when Cmd::NAME_INPUT       then do_name_input cmd
       when Cmd::SHOW_INN         then do_show_inn cmd
-      when Cmd::INN_STAY         then skip_to([Cmd::INN_END], cmd.indent); consume
-      when Cmd::INN_NO_STAY      then skip_to([Cmd::INN_END], cmd.indent); consume
+      when Cmd::INN_STAY         then skip_to(SKIP_TO_INN_END, cmd.indent); consume
+      when Cmd::INN_NO_STAY      then skip_to(SKIP_TO_INN_END, cmd.indent); consume
       when Cmd::INN_END          then nil
       when Cmd::CONTROL_SWITCHES then do_control_switches cmd
       when Cmd::CONTROL_VARS     then do_control_vars cmd
@@ -1166,7 +1187,7 @@ module Game
       when Cmd::SET_VEHICLE_LOCATION then do_set_vehicle_location cmd
       when Cmd::ENTER_EXIT_VEHICLE then @vehicle_toggle_requested = true
       when Cmd::CONDITIONAL      then do_conditional cmd
-      when Cmd::ELSE_BRANCH      then skip_to([Cmd::END_BRANCH], cmd.indent); consume
+      when Cmd::ELSE_BRANCH      then skip_to(SKIP_TO_END_BRANCH, cmd.indent); consume
       when Cmd::END_BRANCH       then nil
       when Cmd::JUMP_TO_LABEL    then do_jump_label cmd
       when Cmd::LOOP             then nil # marker; body runs, END_LOOP loops back
@@ -1240,7 +1261,7 @@ module Game
       when Cmd::CHANGE_BATTLE_BG         then do_change_battle_bg cmd
       when Cmd::SHOW_BATTLE_ANIM_B       then do_show_battle_animation_b cmd
       when Cmd::CONDITIONAL_B            then do_conditional_battle cmd
-      when Cmd::ELSE_BRANCH_B    then skip_to([Cmd::END_BRANCH_B], cmd.indent); consume
+      when Cmd::ELSE_BRANCH_B    then skip_to(SKIP_TO_END_BRANCH_B, cmd.indent); consume
       when Cmd::END_BRANCH_B     then nil
       when Cmd::TERMINATE_BATTLE then do_terminate_battle cmd
       else nil # blank editor lines (codes 0 / 10) and RPG2003-only commands
@@ -3203,7 +3224,7 @@ module Game
     # test 5 already threads.
     def do_conditional_battle(cmd)
       return if eval_battle_condition(cmd)
-      skip_to([Cmd::ELSE_BRANCH_B, Cmd::END_BRANCH_B], cmd.indent)
+      skip_to(SKIP_TO_ELSE_OR_END_BRANCH_B, cmd.indent)
       consume
     end
 
@@ -3317,7 +3338,7 @@ module Game
     def do_conditional(cmd)
       @last_condition_matched = eval_condition(cmd)
       return if @last_condition_matched # fall through into the true branch
-      skip_to([Cmd::ELSE_BRANCH, Cmd::END_BRANCH], cmd.indent)
+      skip_to(SKIP_TO_ELSE_OR_END_BRANCH, cmd.indent)
       consume # step past the else/end marker to run the else body (or continue)
     end
 

@@ -466,6 +466,7 @@ class RPG2k
         # aborts an in-progress route without unwinding its side effects, so a
         # route cancelled mid-Through-Mode leaves the hero stuck pass-through.
         @player_through = false
+        restore_player_route
 
         # A forced move route applied to a vehicle by a Move Event, keyed by
         # type (:boat/:ship/:airship). Unlike the player/events, a moving
@@ -3591,15 +3592,23 @@ class RPG2k
       # Current position of event `e` in map pixels, interpolated from its
       # display origin toward its logical tile while a slide is in progress.
       def event_pixel(e)
+        [event_pixel_x(e), event_pixel_y(e)]
+      end
+
+      # The two axes of #event_pixel split out so a caller that only needs one
+      # coordinate at a time (the per-event redraw signature, checked every
+      # event every frame) can skip building and immediately discarding the
+      # two-element array.
+      def event_pixel_x(e)
         cx = e[:char].x
+        return cx * TILE unless event_sliding?(e)
+        e[:disp_x] * TILE + (cx - e[:disp_x]) * e[:move_count]
+      end
+
+      def event_pixel_y(e)
         cy = e[:char].y
-        if event_sliding?(e)
-          t = e[:move_count]
-          [e[:disp_x] * TILE + (cx - e[:disp_x]) * t,
-           e[:disp_y] * TILE + (cy - e[:disp_y]) * t]
-        else
-          [cx * TILE, cy * TILE]
-        end
+        return cy * TILE unless event_sliding?(e)
+        e[:disp_y] * TILE + (cy - e[:disp_y]) * e[:move_count]
       end
 
       # -- Erase Event --------------------------------------------------------
@@ -3862,6 +3871,7 @@ class RPG2k
         return unless interp.take_halt_movement_request
         @player_route = nil
         @player_char = nil
+        sync_player_route_to_state
         @events.each { |e| e[:forced_route] = nil } if @events
       rescue StandardError => e
         $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
@@ -4684,6 +4694,47 @@ class RPG2k
         @vehicle_routes[type] = nil # drop a broken route so Proceed does not hang
       end
 
+      # Mirror the player's own forced route (or its absence) onto
+      # Game::State#player_route so a save taken mid-route can resume it --
+      # see that accessor's own citation in game.rb. Called at every point
+      # this scene's own @player_route/@player_char changes; @player_route's
+      # own #index always reflects the *next* command about to run (the one
+      # a save resumes at), never one already executed.
+      def sync_player_route_to_state
+        @state.player_route = if @player_route
+                                { commands: @player_route.commands, repeat: @player_route.repeat?,
+                                  skippable: @player_route.skippable?, index: @player_route.index,
+                                  frequency: @player_char && @player_char.move_frequency }
+                              end
+      end
+
+      # Reconstruct a forced player route resumed from a genuine Save/
+      # Continue (Game::State#player_route, populated by .from_lsd/#load_h)
+      # -- the counterpart to #sync_player_route_to_state, called once from
+      # #initialize. The route's own step-pacing timer is not part of either
+      # save format (see that accessor's own citation), so it always
+      # restarts at 0 rather than resuming mid-count.
+      def restore_player_route
+        # Through Mode outlives the route that set it (see #apply_halt_
+        # request's own citation), so it is restored unconditionally, not
+        # only alongside an active route.
+        @player_through = @state.player_through ? true : false
+        pr = @state.player_route
+        return unless pr
+        @player_char = Game::Character.new(@state.x, @state.y, @state.direction)
+        @player_char.event_id = MOVE_TARGET_PLAYER
+        @player_char.through = @player_through
+        @player_char.move_frequency = pr[:frequency] || @player_char.move_frequency
+        @player_route = Game::MoveRoute.new(pr[:commands], repeat: pr[:repeat],
+                                            skippable: pr[:skippable])
+        @player_route.resume_at(pr[:index]) if pr[:index]
+        @player_route_timer = 0
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] player move route restore failed: #{e.message}"
+        @player_route = nil
+        @player_char = nil
+      end
+
       # Drive the player along a forced route: the player has no Game::Character,
       # so mirror one, step it against the map world and slide the party after
       # it. Input movement is suppressed while the route is active.
@@ -4698,6 +4749,7 @@ class RPG2k
                                       @player_char.move_frequency
         @player_route = route
         @player_route_timer = 0
+        sync_player_route_to_state
       end
 
       # Take one step of the player's forced route, if its pacing timer is up.
@@ -4734,11 +4786,13 @@ class RPG2k
         # the route ends), so a Halt All Movement mid-route sees whatever the
         # route had set so far rather than the mirror's now-discarded state.
         @player_through = @player_char.through
+        @state.player_through = @player_through
         @state.direction = @player_char.direction
         if @player_char.x != ox || @player_char.y != oy || @player_char.jumped
           start_player_slide
         end
         @player_route = nil if @player_route.done?
+        sync_player_route_to_state
       end
 
       # Begin the party's slide toward wherever the route character now stands.
@@ -8288,6 +8342,8 @@ class RPG2k
         # unlike the dedicated Change Hero Graphic command.
         @player_char = nil
         @player_through = false # ... nor does Through Mode
+        @state.player_route = nil
+        @state.player_through = false
         # Same for a vehicle's own forced route / Change Graphic override
         # (#force_vehicle_route, #vehicle_charset): none of it survives a
         # teleport, since the mirror was simulating movement against the map
@@ -9734,9 +9790,11 @@ class RPG2k
       # coordinate" operand can ask for it too; it is a pure function of the
       # hero position, the pan lock/offset and the shake, apart from `@locked_cam`
       # being captured the first frame the camera locks (which is idempotent, so
-      # an extra caller cannot move the view).
-      def camera_position
-        px, py = player_pixel
+      # an extra caller cannot move the view). `px`/`py` let #render, which
+      # already has #player_pixel's result, pass it straight through instead of
+      # recomputing (and re-allocating) it here.
+      def camera_position(px = nil, py = nil)
+        px, py = player_pixel if px.nil?
         screen = @state.screen
         hero_cx = Game.camera_offset(px + TILE / 2, SCREEN_W, @map.width * TILE)
         hero_cy = Game.camera_offset(py + TILE / 2, SCREEN_H, @map.height * TILE)
@@ -9840,7 +9898,7 @@ class RPG2k
 
       def render
         px, py = player_pixel
-        cam_x, cam_y = camera_position
+        cam_x, cam_y = camera_position(px, py)
 
         # The map itself never shows on the battle screen -- see
         # #set_map_layers_visible, which explains why the backdrop needs it gone
@@ -9946,7 +10004,8 @@ class RPG2k
       def draw_timer
         battle = !@battle.nil?
         @timer_sprites ||= [nil, nil]
-        2.times { |id| draw_one_timer(id, battle) }
+        draw_one_timer(0, battle)
+        draw_one_timer(1, battle)
       end
 
       def draw_one_timer(id, battle)
@@ -10380,11 +10439,14 @@ class RPG2k
           rebuilt = true
         end
 
-        if !rebuilt && !@layers_dirty &&
-           @drawn_ox == ox && @drawn_oy == oy &&
-           @drawn_party_y == @state.y && !events_dirty?
-          return
-        end
+        # Captured separately from the #events_dirty? call itself so the
+        # signature recompute after the redraw below (which only exists to
+        # cover the paths that skip #events_dirty?) knows when it can trust
+        # the freshly-stored signatures instead of redoing the same work.
+        events_checked = !rebuilt && !@layers_dirty &&
+                          @drawn_ox == ox && @drawn_oy == oy &&
+                          @drawn_party_y == @state.y
+        return if events_checked && !events_dirty?
         @layers_dirty = false
         @drawn_ox = ox
         @drawn_oy = oy
@@ -10411,42 +10473,90 @@ class RPG2k
         # The signatures must describe what was *just drawn*, not some earlier
         # frame: a compose forced by a rebuild or a flash may have drawn a state
         # whose signature was never stored, and a later frame that matches it
-        # has to be able to trust the skip.
-        @event_draw_sigs = @events.map { |e| event_draw_sig(e) }
+        # has to be able to trust the skip. When #events_dirty? already ran
+        # above, its signatures already describe this exact frame -- redoing
+        # it here would just be recomputing values that haven't changed since.
+        store_event_draw_sigs unless events_checked
+      end
+
+      # Number of scalar fields #store_event_draw_sig writes per event -- see
+      # its comment for what each one is.
+      EVENT_DRAW_SIG_FIELDS = 10
+
+      # Writes event `e`'s current draw signature into the flat `buf` at
+      # `base..base + EVENT_DRAW_SIG_FIELDS - 1`, covering exactly what
+      # #draw_event reads for it -- which CharSet cell (direction/column
+      # derived from the anim inputs), where it sits (pixel position, jump
+      # arc, bush depth), how it blends (translucency) and which buffer it
+      # lands in (page layer, and for the same-as-hero layer the y-sort
+      # against the party). Returns whether any field differs from what was
+      # there before, i.e. whether this event would composite differently
+      # from the last completed composition. Scalars written into a reused
+      # buffer, rather than an array-of-tuples rebuilt every call, so a frame
+      # with nothing to redraw costs no per-event allocation to find that out.
+      def store_event_draw_sig(e, buf, base)
+        ch = e[:char]
+        dir = Game::EventGraphic.frame_dir(e[:anim_type], ch.direction, e[:anim_phase])
+        col = Game::EventGraphic.frame_col(e[:anim_type], e[:base_pattern],
+                                           e[:anim_phase], e[:moving])
+        epx = event_pixel_x(e)
+        epy = event_pixel_y(e)
+        translucent = e[:translucent]
+        jump = event_jump_offset(e)
+        bush = event_bush_depth(e)
+        upper = event_target_buffer(e).equal?(@upper_bmp)
+
+        changed = buf[base] != ch.graphic_name || buf[base + 1] != ch.graphic_index ||
+                  buf[base + 2] != dir || buf[base + 3] != col ||
+                  buf[base + 4] != epx || buf[base + 5] != epy ||
+                  buf[base + 6] != translucent || buf[base + 7] != jump ||
+                  buf[base + 8] != bush || buf[base + 9] != upper
+
+        buf[base] = ch.graphic_name
+        buf[base + 1] = ch.graphic_index
+        buf[base + 2] = dir
+        buf[base + 3] = col
+        buf[base + 4] = epx
+        buf[base + 5] = epy
+        buf[base + 6] = translucent
+        buf[base + 7] = jump
+        buf[base + 8] = bush
+        buf[base + 9] = upper
+        changed
+      end
+
+      # Refreshes @event_draw_sigs to the current frame's actual values,
+      # resizing the buffer first if the event count changed (a page rebuild
+      # swapping entries in or out).
+      def store_event_draw_sigs
+        needed = @events.size * EVENT_DRAW_SIG_FIELDS
+        unless @event_draw_sigs && @event_draw_sigs.size == needed
+          @event_draw_sigs = Array.new(needed)
+        end
+        @events.each_with_index do |e, i|
+          store_event_draw_sig(e, @event_draw_sigs, i * EVENT_DRAW_SIG_FIELDS)
+        end
       end
 
       # Whether any event would composite differently from the last completed
-      # composition. One signature per event covering exactly what #draw_event
-      # reads -- which CharSet cell (direction/column derived from the anim
-      # inputs), where it sits (pixel position, jump arc, bush depth), how it
-      # blends (translucency) and which buffer it lands in (page layer, and for
-      # the same-as-hero layer the y-sort against the party). A frame where
-      # every signature repeats redraws the same pixels into the same buffers,
-      # so the composition as a whole can keep last frame's output. An event
-      # mid-Flash recomposes every frame by the global flash check in
-      # #events_dirty? -- its tone changes per frame, cheaper to over-draw than
-      # to fingerprint.
-      def event_draw_sig(e)
-        ch = e[:char]
-        dir, col = Game::EventGraphic.frame(e[:anim_type], e[:base_dir],
-                                            e[:base_pattern], ch.direction,
-                                            e[:anim_phase], e[:moving])
-        epx, epy = event_pixel(e)
-        [ch.graphic_name, ch.graphic_index, dir, col, epx, epy,
-         e[:translucent], event_jump_offset(e), event_bush_depth(e),
-         event_target_buffer(e).equal?(@upper_bmp)]
-      end
-
-      # Whether any event's #event_draw_sig differs from the last composed
-      # frame's, or the event set itself changed (page rebuilds swap the
-      # entries). Signatures are stored positionally, matching @events, so a
-      # rebuild that reorders or resizes the list reads as dirty -- always safe,
-      # merely sometimes conservative.
+      # composition, or the event set itself changed size (page rebuilds swap
+      # the entries). Signatures are stored positionally, matching @events, so
+      # a rebuild that reorders or resizes the list reads as dirty -- always
+      # safe, merely sometimes conservative. An event mid-Flash recomposes
+      # every frame by the global flash check below -- its tone changes per
+      # frame, cheaper to over-draw than to fingerprint.
       def events_dirty?
         return true if @state.player_flash || @events.any? { |e| e[:flash] }
-        sigs = @events.map { |e| event_draw_sig(e) }
-        dirty = sigs != @event_draw_sigs
-        @event_draw_sigs = sigs
+        needed = @events.size * EVENT_DRAW_SIG_FIELDS
+        unless @event_draw_sigs && @event_draw_sigs.size == needed
+          store_event_draw_sigs
+          return true
+        end
+        dirty = false
+        @events.each_with_index do |e, i|
+          base = i * EVENT_DRAW_SIG_FIELDS
+          dirty = true if store_event_draw_sig(e, @event_draw_sigs, base)
+        end
         dirty
       end
 

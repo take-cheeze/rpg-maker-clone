@@ -4811,6 +4811,61 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   eq 8, pf[:total], 'no separate peak-duration field on the wire -- resumes decaying from here'
 end
 
+check 'to_lsd/from_lsd round-trips a live Set Move Route on the hero ' \
+      '(chunk 104 fields 32/41/43/51)' do
+  # Confirmed byte-for-byte against a genuine kk1.12 save under wine: loading
+  # it and re-exporting reproduces move_frequency (32), the raw move_route
+  # (41) sub-chunk bytes, move_route_index (43), and through (51) exactly --
+  # that capture's own hero had a real 1-command route (id 15, face left)
+  # mid-way through (index 1, i.e. already finished, non-repeating).
+  db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  eq nil, st.player_route
+  eq false, st.player_through
+  ok !st.to_lsd[104].key?(41), 'no move_route chunk when the hero walks freely'
+  ok !st.to_lsd[104].key?(32), 'move_frequency stays absent too'
+  ok !st.to_lsd[104].key?(51), 'through stays absent at its own false default'
+
+  cmds = [Game::MoveCommand.new(Game::MoveRoute::MOVE_UP),
+          Game::MoveCommand.new(Game::MoveRoute::PLAY_SOUND, 'Bell', 90, 100, 50)]
+  st.player_route = { commands: cmds, repeat: true, skippable: true, index: 1, frequency: 5 }
+  st.player_through = true
+  saved = st.to_lsd[104]
+  eq 5, saved.move_frequency
+  eq 1, saved.move_route_index
+  eq true, saved.through
+  mr = saved.move_route
+  eq 2, mr.command_size
+  eq true, mr.repeat
+  eq true, mr.skippable
+  route_cmds = mr.commands
+  eq 2, route_cmds.size
+  eq Game::MoveRoute::MOVE_UP, route_cmds[0].command_id
+  eq Game::MoveRoute::PLAY_SOUND, route_cmds[1].command_id
+  eq 'Bell', route_cmds[1].parameter_string
+  eq 90, route_cmds[1].parameter_a
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  pr = round.player_route
+  ok pr, 'the live route round-trips as still in progress'
+  eq 2, pr[:commands].size
+  eq Game::MoveRoute::MOVE_UP, pr[:commands][0].command_id
+  eq 'Bell', pr[:commands][1].parameter_string
+  eq true, pr[:repeat]
+  eq true, pr[:skippable]
+  eq 1, pr[:index]
+  eq 5, pr[:frequency]
+  eq true, round.player_through
+
+  # repeat/skippable each individually omit at their own default (true/
+  # false respectively), matching the genuine save's own field 21 (present,
+  # differing from default) vs 22 (absent, at default) split.
+  st.player_route = { commands: cmds, repeat: false, skippable: false, index: 0 }
+  saved2 = st.to_lsd[104].move_route
+  eq false, saved2.repeat
+  ok !saved2.key?(22), 'skippable stays absent at its own false default'
+end
+
 check 'to_lsd/from_lsd round-trips Change System BGM / Change System SFX overrides' do
   # do_change_system_bgm/_sfx (interpreter.rb) stash overrides in
   # @state.system_bgm/@state.system_sfx, keyed by slot -- the same slots

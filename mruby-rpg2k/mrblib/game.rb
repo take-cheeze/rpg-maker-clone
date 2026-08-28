@@ -1230,15 +1230,24 @@ module Game
     # stays base_pattern by construction); the ordinary types walk (cycling
     # columns) while moving/continuous and rest on the page pattern when idle.
     def self.frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
+      [frame_dir(anim_type, char_dir, phase),
+       frame_col(anim_type, base_pattern, phase, moving)]
+    end
+
+    # The direction half of #frame, split out so a caller that only needs it
+    # (map.rb's per-event redraw signature, checked every event every frame)
+    # can skip building and immediately discarding the two-element array.
+    def self.frame_dir(anim_type, char_dir, phase)
+      anim_type == SPIN ? spin_direction(phase) : char_dir
+    end
+
+    # The column half of #frame, split out for the same reason as #frame_dir.
+    def self.frame_col(anim_type, base_pattern, phase, moving)
       case anim_type
-      when SPIN
-        [spin_direction(phase), base_pattern]
-      when FIXED_GRAPHIC
-        [char_dir, base_pattern]
+      when SPIN, FIXED_GRAPHIC
+        base_pattern
       else
-        col = (moving || continuous?(anim_type)) ? pattern_column(phase)
-                                                  : base_pattern
-        [char_dir, col]
+        (moving || continuous?(anim_type)) ? pattern_column(phase) : base_pattern
       end
     end
   end
@@ -6798,7 +6807,7 @@ module Game
       @done = @commands.empty?
     end
 
-    attr_reader :index
+    attr_reader :index, :commands
 
     def done?; @done; end
     def empty?; @commands.empty?; end
@@ -14753,6 +14762,28 @@ module Game
     # 0x51-0x55/81-85) -- see #to_lsd's own citation for exactly what is and
     # is not confirmed against genuine RPG_RT here.
     attr_accessor :player_flash
+    # A live Set Move Route (11330) forced route targeting the player, a
+    # `{ commands:, repeat:, skippable:, index:, frequency: }` hash (an array
+    # of Game::MoveCommand for `commands`) or nil when the hero is walking
+    # freely -- previously tracked only as Scene::Map's own transient
+    # `@player_route`/`@player_char`, invisible to both save formats, so a
+    # save taken mid-route and continued silently dropped it. `frequency` is
+    # `@player_char`'s own live `move_frequency` (liblcf field 32); `index`
+    # is the route's own cursor (field 43, the same field a map event's
+    # custom route already uses via #map_event_route_index, here dedicated
+    # to the hero instead). Promoted onto Game::State so #to_h/#load_h and
+    # #to_lsd/.from_lsd can round-trip it -- see #to_lsd's own citation for
+    # what is not independently confirmed (in particular, resuming this
+    # restarts the route's own step-pacing timer from 0 rather than
+    # wherever it was mid-count, the same category of imperfection already
+    # accepted for #player_flash's own decay curve).
+    attr_accessor :player_route
+    # Whether a live #player_route is running in Through Mode (liblcf's own
+    # `through`, field 51 -- "Walk Everywhere On"/"Off", 36/37): previously
+    # Scene::Map's own transient `@player_through`, surviving between
+    # routes (see that ivar's own citation there) but not a save. Nil/false
+    # when not applicable.
+    attr_accessor :player_through
     # Whether the current BGM has wrapped back to its start at least once — the
     # "BGM played once" conditional-branch test (12010 type 9). Cleared whenever
     # a new BGM starts; set by Scene::Map, which watches `RGSS::Audio.bgm_pos`
@@ -15093,6 +15124,8 @@ module Game
       @pre_vehicle_bgm = nil
       @pre_battle_bgm = nil
       @player_flash = nil
+      @player_route = nil
+      @player_through = false
       @bgm_looped = false
       @bgm_stopping = false
       @player_transparent = false
@@ -15370,7 +15403,8 @@ module Game
         menu_access: @menu_access, save_access: @save_access,
         current_bgm: @current_bgm, memorized_bgm: @memorized_bgm,
         pre_vehicle_bgm: @pre_vehicle_bgm, pre_battle_bgm: @pre_battle_bgm,
-        player_flash: @player_flash,
+        player_flash: @player_flash, player_route: @player_route,
+        player_through: @player_through,
         player_transparent: @player_transparent, weather: @weather.to_h,
         screen: @screen.to_h,
         pictures: @pictures.each_with_object({}) { |(id, p), out| out[id] = p.to_h },
@@ -15517,6 +15551,36 @@ module Game
         hero[84] = pf[:power].to_f * pf[:frames] / total
         hero[85] = pf[:frames]
       end
+      # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
+      # through): a live Set Move Route (11330) forced route targeting the
+      # player -- see Game::State#player_route's own citation for what is
+      # and is not confirmed here. `Game::MoveCommand` (this codebase's own
+      # class) already exposes the exact reader methods `LCF.
+      # encode_move_commands` needs, so the route's own command list is
+      # handed to it unconverted.
+      pr = @player_route
+      if pr
+        hero[32] = pr[:frequency] if pr[:frequency]
+        cmds = pr[:commands] || []
+        route = LCF::Array1D.new('', { elements: LCF::Schema::MOVE_ROUTE })
+        # Confirmed against the same genuine kk1.12 save: field 11
+        # (command_size) is present alongside field 12, matching the real
+        # command count -- redundant for #parse_move_commands' own
+        # self-terminating read (it just runs to the end of field 12's own
+        # blob), but written unconditionally to match. repeat (21)/
+        # skippable (22) follow the ordinary per-field "omit at own
+        # default" convention, same as every other boolean pair in this
+        # schema -- confirmed in that same capture: repeat was present
+        # (false, differing from its own true default) while skippable was
+        # absent (at its own false default).
+        route[11] = cmds.size
+        route[12] = cmds
+        route[21] = false unless pr[:repeat]
+        route[22] = true if pr[:skippable]
+        hero[41] = route
+        hero[43] = pr[:index] if pr[:index]
+      end
+      hero[51] = true if @player_through
       # Set Transparent Flag's own override (Player Visibility, 11310) --
       # liblcf's own "0 or 3" convention for this field (see schema.rb's
       # SAVE_MOVABLE comment on why it lives here, on the hero's own movable
@@ -16559,6 +16623,18 @@ module Game
                                blue: hero.flash_blue || 0, power: level.round, frames: frames,
                                total: frames }
       end
+      # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
+      # through): see #to_lsd's own citation. A route is only "live" once
+      # field 41 is actually present with at least one command -- an absent
+      # chunk (or one with zero commands, which #to_lsd never itself
+      # writes) leaves the hero walking freely.
+      route = hero.move_route
+      if route && route.commands && !route.commands.empty?
+        state.player_route = { commands: route.commands, repeat: route.repeat ? true : false,
+                               skippable: route.skippable ? true : false,
+                               index: hero.move_route_index, frequency: hero.move_frequency }
+      end
+      state.player_through = (hero.through || false) ? true : false
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
       # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
       state.vehicle(:boat).load_movable(save.boat)
@@ -17031,6 +17107,8 @@ module Game
       state.pre_vehicle_bgm = h[:pre_vehicle_bgm]
       state.pre_battle_bgm = h[:pre_battle_bgm]
       state.player_flash = h[:player_flash]
+      state.player_route = h[:player_route]
+      state.player_through = h[:player_through] ? true : false
       state.player_transparent = h[:player_transparent] ? true : false
       state.weather.load_h(h[:weather])
       state.screen.load_h(h[:screen])
