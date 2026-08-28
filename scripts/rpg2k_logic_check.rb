@@ -11008,6 +11008,61 @@ check 'to_lsd/from_lsd round-trips a foreground and a common-event call-stack sn
   eq({}, via_marshal.common_event_exec)
 end
 
+# Cycle #193: chunk 111's own SAVE_MOVABLE field 108 (parallel_event_execstate)
+# now round-trips a genuine Game::Interpreter call-stack snapshot for a MAP
+# event's own Parallel Process, the identical mechanism the check just above
+# already proves for chunks 113/114 -- see Game::State#map_event_exec's own
+# comment for why this needed its own separate hash/field (a map event's own
+# id is per-map, not global, unlike a common event's). This exercises the
+# Game::State-level contract in isolation; scripts/rpg2k_scene_check.rb's own
+# "a fresh Scene::Map genuinely resumes a saved map event's own Parallel
+# Process" check drives the same mechanism end to end through #new_parallel.
+check "to_lsd/from_lsd round-trips a map event's own Parallel Process " \
+      'call-stack snapshot (chunk 111 field 108)' do
+  players = {
+    1 => FakePlayerRow.new('Hero', '', 0, 5,
+                           max_hp: 100, max_mp: 30, atk: 10, def: 8),
+  }
+  db = FakeActorDB.new(players, [1])
+  st = Game::State.new(Game::Party.new(db), 1, 0, 0)
+
+  # Map event 5's own Parallel Process Calls map event 6's page 1 (Call
+  # Event mode 1: [mode, event_ref, page]), which itself parks on a Wait --
+  # mid a nested Call Event, the same shape cycle #191's own common-event
+  # check above exercises, not merely a clean between-commands cursor.
+  me_it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0]), FakeCmd.new(IC::WAIT, [1])]
+  me_it.resolver = FakeResolver.new(maps: { 6 => { 1 => called } })
+  me_it.start([FakeCmd.new(IC::CALL_EVENT, [1, 6, 1])])
+  me_it.event_id = 5
+  me_it.update # enters the call, parks mid the nested Call Event's own Wait
+  ok me_it.resumable_index.nil?, 'sanity: not capturable the old, coarser way'
+  st.map_event_exec[5] = me_it.call_stack_snapshot
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  frames = round.map_event_exec[5]
+  ok !frames.nil?, "chunk 111 field 108 came back for map event 5's own entry"
+  eq 2, frames.size, 'the suspended caller frame plus the called frame, not collapsed'
+  eq 5, frames[0][:event_id], "the outer frame is this Parallel Process's own event, 5"
+  eq 6, frames[1][:event_id], 'the called frame is map event 6, the Call Event target'
+  eq 2, frames[1][:current_command], 'the called frame is parked right after its own Wait'
+  ok round.map_event_exec[12].nil?, 'no entry at all for a map event nothing ever ran'
+
+  # Absent when nothing was mid-execution -- the overwhelming common case --
+  # matching every other "nothing to restore" chunk in #to_lsd.
+  bare = Game::State.new(Game::Party.new(db), 1, 0, 0)
+  bare_round = Game::State.from_lsd(db, bare.to_lsd)
+  eq({}, bare_round.map_event_exec)
+
+  # The portable Marshal save (#to_h/.load) never carries this field at all
+  # either -- deliberately, see #map_event_exec's own comment -- so loading
+  # one restores "nothing to resume", whatever #map_event_exec held before
+  # it was dumped.
+  st.map_event_exec[5] = me_it.call_stack_snapshot
+  via_marshal = Game::State.load(db, st.to_h)
+  eq({}, via_marshal.map_event_exec)
+end
+
 check 'shown pictures round-trip through this engine\'s own internal Marshal-style ' \
       'save (Game::State#to_h/.load), not just through a genuine .lsd (#to_lsd/.from_lsd)' do
   # Cycle #158: #to_h never mentioned @pictures at all, so any picture on screen

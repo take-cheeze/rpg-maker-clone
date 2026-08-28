@@ -14939,9 +14939,11 @@ module Game
     # Full `Game::Interpreter` call-stack snapshots of every currently-
     # running Common Event Parallel Process (Scene::Map's own @parallels,
     # the `common_event_id`-non-nil entries only -- a Map Event's own
-    # parallel process is excluded, matching #common_event_progress's
-    # identical scope and its own "always restarts fresh" reasoning): common
-    # event id => Game::Interpreter#call_stack_snapshot's own return value.
+    # parallel process has its own, separate #map_event_exec below, added by
+    # cycle #193; this comment previously read "excluded... matching
+    # #common_event_progress's identical scope", true when cycle #191 wrote
+    # it, no longer true as of #map_event_exec's own addition): common event
+    # id => Game::Interpreter#call_stack_snapshot's own return value.
     #
     # Snapshotted every tick by Scene::Map#record_parallel_progress
     # (superseding #common_event_progress for anything that has ever
@@ -14964,7 +14966,60 @@ module Game
     # Array of LCF::EventCommand objects) every tick, for every running
     # Parallel Process, is unnecessary weight that path's own callers (dev
     # tooling, this test suite's own round-trip checks) have no need for.
+    #
+    # Unlike #map_event_exec below, a common event id is global (unique
+    # across the whole database, not per-map), so this hash is safe to carry
+    # forward across an ordinary Transfer Player untouched -- though in
+    # practice #new_parallel never actually needs to for that case, since
+    # #build_parallels already keeps the live Game::Interpreter object
+    # itself across a same-session teleport (see its own comment); this hash
+    # only ever gets a real look-in at Continue time, when there is no live
+    # object to inherit from at all.
     attr_accessor :common_event_exec
+    # Full `Game::Interpreter` call-stack snapshots of every currently-
+    # running Map Event Parallel Process (a map event whose own page trigger
+    # is Parallel Process -- distinct from #common_event_exec just above,
+    # which is a Common Event's own Parallel Process): map event id =>
+    # Game::Interpreter#call_stack_snapshot's own return value. Added by
+    # cycle #193, closing the gap cycles #191/#192 both left open (a Map
+    # Event's own Parallel Process previously had no persistence mechanism
+    # at all -- not even the older, coarser #resumable_index-style cursor
+    # #common_event_progress gives common events, since no such cursor ever
+    # existed for map events in the first place -- see
+    # Scene::Map#record_parallel_progress's own comment, which used to
+    # document this as a deliberate no-op).
+    #
+    # Snapshotted every tick by the same Scene::Map#record_parallel_progress
+    # that maintains #common_event_exec (the `p[:event]`, `p[:common_event_id]`-
+    # nil entries of @parallels), consumed by Scene::Map#new_parallel via
+    # Game::Interpreter#restore_call_stack exactly the same way, keyed by
+    # the owning map event's own id instead of a common event id.
+    #
+    # Scoped to the single currently-loaded map only, UNLIKE
+    # #common_event_exec: a map event's own id is per-map, not global (ids
+    # repeat across maps -- see #map_event_positions' own comment on the
+    # identical hazard), so carrying a stale entry across a genuine map
+    # change risks feeding a same-numbered but wholly unrelated event on the
+    # destination map someone else's captured call stack. Scene::Map
+    # #perform_teleport clears this to `{}` for exactly that reason,
+    # alongside #map_event_positions/#map_event_route_index (see there) --
+    # which also means, unlike a Common Event's own Parallel Process, a Map
+    # Event's own Parallel Process still always restarts fresh across an
+    # ordinary Transfer Player (the pre-existing, deliberate behaviour
+    # #build_parallels' own comment documents: "a real 'visit' gives a map
+    # event's own parallel process no id that means anything on the map
+    # being left"); this hash's full-fidelity resume is reachable only
+    # through a genuine Save/Continue on the SAME map, the one channel
+    # #perform_teleport's own reset does not touch.
+    #
+    # `.lsd`-only, the same rationale #common_event_exec's own comment gives
+    # (round-trips through chunk 111's own SAVE_MOVABLE field 108,
+    # LCF::Schema::SAVE_MOVABLE, one entry per live map event, nested inside
+    # the same Array2D #map_event_positions/#map_event_route_index already
+    # share -- see #to_lsd/.from_lsd) -- never added to the portable Marshal
+    # save (#to_h/.load), which already gets full fidelity for free within
+    # one process exactly the way #common_event_exec's own comment explains.
+    attr_accessor :map_event_exec
     # The current map's own live event positions, event id => [x, y, direction],
     # snapshotted every frame by Scene::Map#record_map_event_positions. Real
     # RPG_RT's SaveMapEvent chunk carries exactly this (plus a move-route index,
@@ -15055,6 +15110,7 @@ module Game
       @common_event_progress = {}
       @foreground_event_exec = nil
       @common_event_exec = {}
+      @map_event_exec = {}
       @map_event_positions = {}
       @map_event_route_index = {}
       @tile_substitutions = [{}, {}]
@@ -16092,11 +16148,12 @@ module Game
 
       # Chunk 111 (SAVE_MAP_EVENT/SAVE_MOVABLE) is the currently-loaded map's
       # own live event table, mirrored straight from #map_event_positions/
-      # #map_event_route_index, plus its Tile Substitution table
-      # (#tile_substitutions, fields 21/22), a live Change Encounter Rate
-      # override (#encounter_rate, field 3), a live Change Parallax
+      # #map_event_route_index/#map_event_exec (the last added by cycle
+      # #193, field 108 -- see its own comment), plus its Tile Substitution
+      # table (#tile_substitutions, fields 21/22), a live Change Encounter
+      # Rate override (#encounter_rate, field 3), a live Change Parallax
       # Background override (#parallax, fields 32-38), and the camera scroll
-      # (fields 1/2) -- all six scoped to the current map only, see their own
+      # (fields 1/2) -- all scoped to the current map only, see their own
       # doc comments above. Camera scroll is the view's top-left pixel in
       # 1/16 pixel, computed the same way `Scene::Map#camera_position` does
       # every frame (`Game.camera_offset` against the hero's pixel centre and
@@ -16109,8 +16166,8 @@ module Game
       # with no map loaded (e.g. a fresh, unplayed save), the same "absent
       # means nothing to restore" rule the unplaced-vehicle chunks above use.
       lower_subs, upper_subs = @tile_substitutions
-      if self.map || !@map_event_positions.empty? || !lower_subs.empty? ||
-         !upper_subs.empty? || @encounter_rate || @parallax
+      if self.map || !@map_event_positions.empty? || !@map_event_exec.empty? ||
+         !lower_subs.empty? || !upper_subs.empty? || @encounter_rate || @parallax
         mapev = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MAP_EVENT })
         if self.map
           hero_px = @x * TILE + TILE / 2
@@ -16120,16 +16177,29 @@ module Game
           mapev[1] = cam_x * LCF::Schema::SCROLL_UNITS_PER_PIXEL
           mapev[2] = cam_y * LCF::Schema::SCROLL_UNITS_PER_PIXEL
         end
-        unless @map_event_positions.empty?
+        # The union of #map_event_positions' and #map_event_exec's own ids:
+        # in practice every map event with a live Parallel Process call-stack
+        # snapshot also has a position (both are recorded every frame, by
+        # #record_map_event_positions/#record_parallel_progress, for as long
+        # as the event has a live Game::Character at all), but the two are
+        # deliberately not assumed to stay in lockstep here -- an id present
+        # in only one still gets its own entry, with just that one field set.
+        unless @map_event_positions.empty? && @map_event_exec.empty?
           events = LCF::Array2D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-          @map_event_positions.each do |id, pos|
-            x, y, direction = pos
+          ids = @map_event_positions.keys | @map_event_exec.keys
+          ids.each do |id|
             e = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
-            e[12] = x
-            e[13] = y
-            e[22] = CharSet::DIR_ROW[direction] || 2
-            idx = @map_event_route_index[id]
-            e[43] = idx if idx
+            pos = @map_event_positions[id]
+            if pos
+              x, y, direction = pos
+              e[12] = x
+              e[13] = y
+              e[22] = CharSet::DIR_ROW[direction] || 2
+              idx = @map_event_route_index[id]
+              e[43] = idx if idx
+            end
+            frames = @map_event_exec[id]
+            e[108] = self.class.build_event_exec_state(frames) if frames && !frames.empty?
             events[id] = e
           end
           mapev[11] = events
@@ -16687,27 +16757,41 @@ module Game
       # before this landed, or one taken before any battle ever finished.
       state.last_battle_turns = inv.turns unless inv.turns.nil?
       # The currently-loaded map's own live event table (chunk 111,
-      # #to_lsd's write above): position/facing into #map_event_positions and
-      # a page's custom-route cursor (field 43) into #map_event_route_index.
-      # An absent chunk (a save written before this landed, or a state that
-      # never recorded any positions) leaves the constructor's empty {}
-      # defaults in place; an entry with no field 43 restores its position
-      # but nothing for #map_event_route_index, matching build_event's
-      # existing "no saved index means start the custom route from the top"
-      # fallback.
+      # #to_lsd's write above): position/facing into #map_event_positions, a
+      # page's custom-route cursor (field 43) into #map_event_route_index,
+      # and (cycle #193) a map event's own Parallel Process call-stack
+      # snapshot (field 108, SAVE_EVENT_EXEC_STATE) into #map_event_exec --
+      # see that attribute's own comment. An absent chunk (a save written
+      # before this landed, or a state that never recorded any positions)
+      # leaves the constructor's empty {} defaults in place; an entry with no
+      # field 43 restores its position but nothing for
+      # #map_event_route_index, matching build_event's existing "no saved
+      # index means start the custom route from the top" fallback; an entry
+      # with no field 108 (the overwhelming majority -- most map events run
+      # no Parallel Process at all) simply gets no #map_event_exec entry,
+      # matching #new_parallel's own "nothing to restore" fallback to a
+      # fresh start. Field 108 is read independently of whether `mv.x`/`mv.y`
+      # are present, unlike positions/route_index just below -- see
+      # #map_event_exec's own comment on why the two are not assumed to
+      # always co-occur.
       map_events = save[111]
       saved_events = map_events && map_events.events
       if saved_events
         positions = {}
         route_index = {}
+        exec_snapshots = {}
         saved_events.each do |id, mv|
-          next unless mv.x && mv.y
-          positions[id] = [mv.x, mv.y, EventGraphic.numpad_direction(mv.direction)]
-          idx = mv.move_route_index
-          route_index[id] = idx unless idx.nil?
+          if mv.x && mv.y
+            positions[id] = [mv.x, mv.y, EventGraphic.numpad_direction(mv.direction)]
+            idx = mv.move_route_index
+            route_index[id] = idx unless idx.nil?
+          end
+          frames = read_event_exec_frames(mv.parallel_event_execstate)
+          exec_snapshots[id] = frames if frames
         end
         state.map_event_positions = positions
         state.map_event_route_index = route_index
+        state.map_event_exec = exec_snapshots
       end
       # The same chunk's Tile Substitution table (fields 21/22): absent on a
       # save that never rewrote a tile, or one written before this landed.

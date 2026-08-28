@@ -1697,6 +1697,40 @@ class RPG2k
 
       # -- event execution ----------------------------------------------------
 
+      # Cycle #193 investigation (docs/TODO.md, following up on cycle #191's
+      # own "restoring a mid-wait UI request is out of scope" note): every
+      # entry here except `@interpreter.waiting?` is either the single shared
+      # FOREGROUND interpreter or genuinely scene-wide state
+      # (@message/@number_input, set identically whichever interpreter --
+      # foreground or any @parallels entry -- raised the Show Message/Show
+      # Choices/Input Number that opened them, see #message_window_open?'s
+      # own comment; @battle, similarly shared regardless of which
+      # interpreter opened it, just above). Confirmed by tracing
+      # #drive_parallel_wait's own :message/:choice/:number cases
+      # (mruby-rpg2k/mrblib/scene/map.rb): a Parallel Process's own Show
+      # Message/Choices/Input Number opens the exact same @message/
+      # @number_input #open_message/#open_number_input already write for the
+      # foreground, not a per-interpreter mechanism of its own -- so a
+      # genuine Save is unreachable while ANY interpreter sits on one of
+      # those three specific waits, not merely the foreground's own.
+      #
+      # This method never inspects any @parallels entry's own #waiting?/
+      # #wait_kind directly, though -- so a wait kind that neither sets
+      # @message/@number_input nor opens @battle is NOT covered when it is a
+      # *parallel* process (not the foreground) sitting on it. The one such
+      # wait kind reachable without a message window already blocking it
+      # first: a waiting Key Input Proc (Cmd::KEY_INPUT_PROC, 11610, wait
+      # flag set) issued from a Common Event's or a Map Event's own Parallel
+      # Process -- see scripts/rpg2k_scene_check.rb's own check proving this
+      # reachable (a Parallel Process genuinely parked on Key Input, no
+      # message window up anywhere, still lets #try_open_menu's ordinary
+      # Cancel-key shortcut open the menu). Judged out of scope to restore
+      # this cycle (a documented follow-up, not silently dropped) --
+      # #call_stack_snapshot's own "does not restore a mid-wait UI request"
+      # scope limit already covers what actually happens: the save still
+      # resumes at the right command, just past the Wait For Key Input
+      # entirely, with the requested variable left holding 0 rather than a
+      # genuine key code.
       def event_busy?
         @message || @number_input || @interpreter.running? || @interpreter.waiting? ||
           # A battle a Parallel Process opened (#drive_parallel_wait's :battle
@@ -1864,7 +1898,16 @@ class RPG2k
       # Player, or the very first build for this scene), matching the existing
       # per-visit-reset behaviour: a real "visit" gives a map event's own
       # parallel process no id that means anything on the map being left, so
-      # there is nothing sound to reuse.
+      # there is nothing sound to reuse. This still holds after cycle #193:
+      # #new_parallel now *can* resume a map event's own Parallel Process
+      # from a captured call stack (Game::State#map_event_exec), but only
+      # across a genuine Save/Continue on the SAME map -- #perform_teleport
+      # deliberately clears #map_event_exec on every map change for the
+      # identical reason it already clears #map_event_positions (a map
+      # event's own id is per-map, not global, so a stale entry would
+      # misapply to an unrelated same-numbered event on the destination map)
+      # -- so an ordinary Transfer Player still finds nothing there to
+      # resume from and rebuilds fresh, exactly as before.
       #
       # `preserve_map_events:` is the one exception, passed only by
       # #rebuild_events_preserving_positions: that call does not change maps at
@@ -1886,12 +1929,15 @@ class RPG2k
       #
       # On the very first build for this scene (a brand new game, or the fresh
       # Scene::Map Continue/#initialize builds from a loaded save), there is no
-      # previous @parallels to reuse from, so #new_parallel instead
-      # fast-forwards a fresh interpreter to whatever position #step_parallel
-      # last recorded on Game::State before the game was last saved (see
-      # Game::State#common_event_progress) -- a coarser, index-only
-      # continuation, since nothing was kept alive across a save to resume with
-      # full fidelity.
+      # previous @parallels to reuse from, so #new_parallel instead consults
+      # whatever Game::State carries from the save it was built from: for a
+      # common event, #common_event_exec's own full call-stack snapshot first,
+      # falling back to the coarser, index-only #common_event_progress cursor
+      # only when that has nothing; for a map event (cycle #193), the
+      # identically-shaped #map_event_exec -- there is no older coarse-cursor
+      # fallback to fall back to here, since none ever existed for a map
+      # event's own Parallel Process before this.
+      #
       def build_parallels(preserve_map_events: false)
         previous_common = {}
         previous_map = {}
@@ -1968,18 +2014,25 @@ class RPG2k
       # it keys both the teleport-time reuse in #build_parallels above and the
       # save-file continuation this seeds from below.
       #
-      # Genuine full-fidelity continuation (Game::State#common_event_exec,
-      # driven from a real .lsd's chunk 114 -- see that attribute's own
-      # comment) is tried first: unlike the older #common_event_progress
-      # cursor, it also covers a process saved mid a nested Call Event.
-      # #common_event_progress only ever gets a look-in when this has
-      # nothing for the id (an older save, or one written before cycle
-      # #191).
+      # Genuine full-fidelity continuation is tried first: Game::State
+      # #common_event_exec (driven from a real .lsd's chunk 114) for a common
+      # event, or -- cycle #193 -- Game::State#map_event_exec (chunk 111
+      # field 108) for a map event's own Parallel Process, keyed by `event`'s
+      # own id rather than `common_event_id` since a map event has none.
+      # Unlike the older #common_event_progress cursor, either one also
+      # covers a process saved mid a nested Call Event. #common_event_progress
+      # only ever gets a look-in when this has nothing for the id (an older
+      # save, or one written before cycle #191); there is no equivalent
+      # fallback for a map event, since no such cursor ever existed for one.
       def new_parallel(commands, gate_switch, event, common_event_id)
         it = Game::Interpreter.new(@state)
         it.resolver = @interpreter.resolver
         it.map_info = self
-        saved_frames = common_event_id && @state.common_event_exec[common_event_id]
+        saved_frames = if common_event_id
+                         @state.common_event_exec[common_event_id]
+                       elsif event
+                         @state.map_event_exec[event[:id]]
+                       end
         if saved_frames && !saved_frames.empty?
           it.restore_call_stack(saved_frames)
         else
@@ -2124,32 +2177,47 @@ class RPG2k
         nil
       end
 
-      # Snapshot a Common Event Parallel Process's current position onto
-      # Game::State, so a fresh Scene::Map built later from this state (a
-      # genuine save/load, not a Transfer Player -- see #build_parallels) can
-      # resume it instead of restarting at the top. A no-op for a map event's
-      # own parallel process (p[:common_event_id] is nil there), which never
-      # gets a checkpoint at all -- it always restarts fresh, unchanged.
+      # Snapshot a Parallel Process's current position onto Game::State, so a
+      # fresh Scene::Map built later from this state (a genuine save/load,
+      # not a Transfer Player -- see #build_parallels) can resume it instead
+      # of restarting at the top. Handles both halves of @parallels:
       #
-      # Records two things, cycle #191 having added the second on top of the
-      # pre-existing first:
-      #   - Game::State#common_event_progress (Game::Interpreter
-      #     #resumable_index): only overwrites the stored checkpoint when the
-      #     interpreter's position is cleanly capturable right now; a tick
-      #     that returns nil (mid a nested Call Event) simply leaves the last
-      #     known-good checkpoint in place rather than clearing it. Still the
-      #     only mechanism the portable Marshal save (#to_h/.load) carries.
-      #   - Game::State#common_event_exec (Game::Interpreter
-      #     #call_stack_snapshot): the fuller call-stack snapshot a real
-      #     `.lsd`'s chunk 114 now backs, captured whenever the interpreter is
-      #     running at all -- including mid a nested Call Event, unlike
-      #     #resumable_index above.
+      #   - A Common Event's own Parallel Process (`p[:common_event_id]`
+      #     non-nil) records two things, cycle #191 having added the second
+      #     on top of the pre-existing first:
+      #       - Game::State#common_event_progress (Game::Interpreter
+      #         #resumable_index): only overwrites the stored checkpoint when
+      #         the interpreter's position is cleanly capturable right now; a
+      #         tick that returns nil (mid a nested Call Event) simply leaves
+      #         the last known-good checkpoint in place rather than clearing
+      #         it. Still the only mechanism the portable Marshal save
+      #         (#to_h/.load) carries.
+      #       - Game::State#common_event_exec (Game::Interpreter
+      #         #call_stack_snapshot): the fuller call-stack snapshot a real
+      #         `.lsd`'s chunk 114 now backs, captured whenever the
+      #         interpreter is running at all -- including mid a nested Call
+      #         Event, unlike #resumable_index above.
+      #   - A Map Event's own Parallel Process (`p[:event]` non-nil,
+      #     `p[:common_event_id]` nil -- cycle #193) records only the fuller
+      #     snapshot, into Game::State#map_event_exec, keyed by the owning
+      #     map event's own id: there is no #common_event_progress-style
+      #     coarse cursor to maintain in parallel here, since none ever
+      #     existed for a map event's own Parallel Process before this (see
+      #     #map_event_exec's own comment). Previously this method returned
+      #     immediately for this case (`return unless p[:common_event_id]`)
+      #     -- a map event's own Parallel Process got no checkpoint
+      #     whatsoever and always restarted fresh; see this method's own
+      #     history in docs/TODO.md for why.
       def record_parallel_progress(p)
-        return unless p[:common_event_id]
-        idx = p[:interp].resumable_index
-        @state.common_event_progress[p[:common_event_id]] = idx if idx
-        frames = p[:interp].call_stack_snapshot
-        @state.common_event_exec[p[:common_event_id]] = frames if frames
+        if p[:common_event_id]
+          idx = p[:interp].resumable_index
+          @state.common_event_progress[p[:common_event_id]] = idx if idx
+          frames = p[:interp].call_stack_snapshot
+          @state.common_event_exec[p[:common_event_id]] = frames if frames
+        elsif p[:event]
+          frames = p[:interp].call_stack_snapshot
+          @state.map_event_exec[p[:event][:id]] = frames if frames
+        end
       end
 
       def drive_parallel_wait(p, it)
@@ -8243,9 +8311,20 @@ class RPG2k
         # applies to a saved custom-route cursor: dropped alongside so a
         # destination event beginning its own page's route starts at the top,
         # not part-way through wherever a same-numbered event on the map being
-        # left happened to be.
+        # left happened to be. And (cycle #193) to a saved map-event Parallel
+        # Process call-stack snapshot (#map_event_exec): dropped for the
+        # identical reason -- without this, a destination map's own event
+        # sharing the same numeric id as one still mid a Parallel Process on
+        # the map being left could pick up that unrelated snapshot's captured
+        # command list, running the wrong event's bytecode entirely rather
+        # than merely mispositioning a sprite. This is exactly why a map
+        # event's own Parallel Process still always restarts fresh across an
+        # ordinary Transfer Player (see #build_parallels' own comment) even
+        # though #new_parallel now knows how to resume one -- this reset is
+        # what keeps that true.
         @state.map_event_positions = {}
         @state.map_event_route_index = {}
+        @state.map_event_exec = {}
         # Tiles #warn_stale_terrain has already reported are per-visit too, same
         # reasoning as the tables above -- a stale reference on the map being
         # left says nothing about the destination.

@@ -1267,6 +1267,17 @@ module LCF
       # ever been boarded that session -- see SAVE_DATA's own 105-107
       # comment for the larger discovery this field was found alongside.
       101 => { name: :vehicle, type: :int },
+      # Field 108 (0x6C, `parallel_event_execstate` -- liblcf's own
+      # `SaveMapEvent`, generator/csv/fields.csv) is added just below
+      # SAVE_EVENT_EXEC_STATE's own definition further down this file, not
+      # inline here: its `elements:` is that very struct, which is not
+      # defined yet at this point in the file (SAVE_MOVABLE is one of the
+      # earliest tables declared; SAVE_EVENT_EXEC_STATE, added by cycle #191,
+      # comes much later). See that assignment's own comment for the field
+      # itself, and for why fields 101 (already spoken for, above) and
+      # 102/103 (liblcf's own `waiting_execution`/`original_move_route_index`
+      # /`triggered_by_decision_key` neighbours) are deliberately left
+      # unmodelled here.
     }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
@@ -1832,6 +1843,52 @@ module LCF
       41 => { name: :keyinput_timed, type: :bool, default: false },
       42 => { name: :wait_key_enter, type: :bool, default: false },
     }
+
+    # SAVE_MOVABLE field 108 (0x6C, liblcf's own `SaveMapEvent.
+    # parallel_event_execstate`, generator/csv/fields.csv) -- a map event's
+    # OWN Parallel Process's full call-stack snapshot, the identical
+    # SAVE_EVENT_EXEC_STATE struct chunk 111's own sibling chunks 113/114
+    # (SAVE_FOREGROUND_EVENT/SAVE_COMMON_EVENT) already use. Assigned here,
+    # after SAVE_EVENT_EXEC_STATE's own definition just above, rather than
+    # inline in SAVE_MOVABLE's own literal further up this file -- see that
+    # table's own field-108 comment for why (a forward-reference: this
+    # struct did not exist yet at that point in the file).
+    #
+    # Cycle #193 closes the one gap cycle #191/#192's own foreground/
+    # common-event call-stack persistence deliberately left open: a Map
+    # Event's own Parallel Process (trigger Parallel Process on the event's
+    # own page, distinct from a Common Event's Parallel Process, already
+    # covered by SAVE_COMMON_EVENT) previously had no persistence at all --
+    # not even the older, coarser #resumable_index-style cursor
+    # `Game::State#common_event_progress` gives common events, since no such
+    # cursor ever existed for map events (`Scene::Map#build_parallels`'s own
+    # comment: "a real 'visit' gives a map event's own parallel process no
+    # id that means anything on the map being left"). See
+    # `Game::State#map_event_exec`'s own comment (game.rb) for the full
+    # engine-side wiring this field now backs, and why -- unlike
+    # `#common_event_exec` -- it is scoped to the currently-loaded map only,
+    # matching `#map_event_positions`.
+    #
+    # liblcf's own two neighbouring fields on `SaveMapEvent` --
+    # `waiting_execution` (0x65/101, "this event is waiting for foreground
+    # execution") and `original_move_route_index` (0x66/102) /
+    # `triggered_by_decision_key` (0x67/103) -- are deliberately left
+    # unmodelled: 101 collides with this same shared SAVE_MOVABLE table's
+    # pre-existing, differently-typed `:vehicle` field (chunks 105-107's own
+    # boat/ship/airship ordinal, write-only byte parity with no reader), so
+    # giving it a second meaning here is not possible without splitting
+    # SAVE_MOVABLE into per-chunk tables -- out of scope for this cycle,
+    # which only needs field 108. 102/103 are real, uncontested fields this
+    # codebase's own `Game::State` simply has no distinct "original route
+    # before an override"/"triggered by decision key" concept to source for
+    # a map event specifically (the latter is already carried per-frame
+    # inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`, field 13, which
+    # is what this codebase's reader actually consults) -- left for a future
+    # cycle alongside SAVE_MOVABLE's own already-catalogued larger gaps (see
+    # that table's own comment on the hero's unmodelled move-route chunk/
+    # `through`/movement timers).
+    SAVE_MOVABLE[108] = { name: :parallel_event_execstate, type: :Array1D,
+                          elements: SAVE_EVENT_EXEC_STATE }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by
     # common-event id -- 505 entries in a real Nepheshel save (this codebase's
