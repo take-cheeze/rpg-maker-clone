@@ -14707,6 +14707,12 @@ following this paragraph as the original record.
   character, the same fallback an ordinary Auto-Start common event already
   has).
 
+  **Superseded by cycle #193, 2026-08-28, on the Map Event exclusion
+  specifically**: the paragraph just above says a Map Event's own parallel
+  process "is still excluded from any of this" — true when written; cycle
+  #193 closed exactly that gap (`Game::State#map_event_exec`, SAVE_MOVABLE
+  field 108). See cycle #193's own entry below.
+
   **Superseded by cycle #192, 2026-08-27, on one specific point**: this
   entry's own writeup above (and `LCF::Schema::SAVE_EVENT_EXEC_FRAME`'s
   schema.rb comment as it read at the time) claimed each frame's `event_id`/
@@ -14801,6 +14807,170 @@ following this paragraph as the original record.
   per-frame `event_id` values) is verified by a fresh-state round trip, not
   a genuine wine-saved multi-frame `.lsd`, same open point cycle #191 itself
   already carried forward.
+- ✅ **Follow-up (cycle #193, 2026-08-28): a Map Event's own Parallel Process
+  now persists through a genuine `.lsd` Save/Continue too**, closing the one
+  gap cycles #191/#192 both left open on purpose (see cycle #191's own entry
+  above, now annotated). A Common Event's own Parallel Process
+  (`Game::State#common_event_exec`, chunk 114) and the shared foreground
+  interpreter (`#foreground_event_exec`, chunk 113) already had full
+  call-stack persistence; a Map Event whose own page trigger is Parallel
+  Process — a distinct thing from a Common Event's Parallel Process — had
+  none at all, not even the older, coarser `Game::Interpreter
+  #resumable_index`-style cursor `#common_event_progress` gives common
+  events, since no such cursor ever existed for a map event's own process in
+  the first place.
+
+  `LCF::Schema::SAVE_MOVABLE` (the per-map-event record chunk 111's own field
+  11 `Array2D` elements are, shared with the hero/vehicle chunks 104-107)
+  gained field 108 (`0x6C`, liblcf's own `SaveMapEvent.
+  parallel_event_execstate`, generator/csv/fields.csv): `type: :Array1D,
+  elements: SAVE_EVENT_EXEC_STATE`, the identical struct chunks 113/114
+  already use. Declared after `SAVE_EVENT_EXEC_STATE`'s own definition
+  further down `schema.rb`, not inline in `SAVE_MOVABLE`'s own literal
+  (`SAVE_MOVABLE[108] = {...}`), since that struct did not exist yet at
+  `SAVE_MOVABLE`'s own point in the file — a plain forward-reference, not a
+  design choice. Two of liblcf's other `SaveMapEvent` fields the same brief
+  flagged were deliberately left out: field 101 (`waiting_execution`) already
+  means something else entirely in this same shared table (`SaveVehicleLocation
+  .vehicle`, chunks 105-107's own boat/ship/airship ordinal) — giving one
+  field id two meanings in one shared table is not possible without
+  splitting `SAVE_MOVABLE` into per-chunk tables, out of scope here; fields
+  102/103 (`original_move_route_index`/`triggered_by_decision_key`) are real
+  and uncontested but this codebase has no distinct "route before an
+  override" concept to source the former from, and the latter is already
+  carried per-frame inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`
+  field 13 — left for a future cycle alongside `SAVE_MOVABLE`'s own other
+  already-catalogued gaps (the hero's unmodelled move-route chunk, `through`,
+  movement timers).
+
+  `Game::State` gained `#map_event_exec`, a `{map event id => call-stack
+  frames}` Hash mirroring `#common_event_exec`'s own shape and consumed the
+  same way, but scoped differently in one deliberate respect:
+  `#common_event_exec` is safe to carry across an ordinary Transfer Player
+  (a common event id is global), while `#map_event_exec` is NOT (a map event
+  id repeats across maps, the same hazard `#map_event_positions` already
+  has) — so `Scene::Map#perform_teleport` resets it to `{}` on every map
+  change, alongside `#map_event_positions`/`#map_event_route_index`. This is
+  exactly what keeps a Map Event's own Parallel Process still always
+  restarting fresh across an ordinary same-session Transfer Player, matching
+  the pre-existing, deliberate behaviour `#build_parallels`'s own comment
+  documents — the new mechanism is reachable only through a genuine
+  Save/Continue on the SAME map, the one channel `#perform_teleport`'s reset
+  does not touch. `Scene::Map#record_parallel_progress` (which used to
+  `return unless p[:common_event_id]`, a documented no-op for a map event's
+  own process) now snapshots the `p[:event]`-non-nil half too, keyed by the
+  owning map event's own id; `#new_parallel` consults `#map_event_exec[event
+  [:id]]` the same way it already consults `#common_event_exec
+  [common_event_id]`, with no older-cursor fallback to fall back to (none
+  ever existed). `#to_lsd`/`.from_lsd`'s chunk 111 writer/reader were
+  extended to carry field 108 alongside the pre-existing position/route-index
+  fields, keyed by the union of `#map_event_positions`' and
+  `#map_event_exec`'s own ids (the two are recorded independently, though in
+  practice always together, by `#record_map_event_positions`/
+  `#record_parallel_progress` alike).
+
+  Verified the same way cycle #191 verified chunks 113/114 (a from-scratch
+  round trip, not a genuine wine-saved fixture — none was available):
+  `scripts/rpg2k_logic_check.rb` gained a `to_lsd`/`from_lsd` round-trip
+  check at the `Game::State` level, built around a map event Calling a
+  *different* map event's page and parking mid that nested call's own Wait
+  (mirroring cycle #191's own common-event check, confirming per-frame
+  `event_id`s 5/6 read back correctly, not collapsed or swapped);
+  `scripts/rpg2k_scene_check.rb` gained an end-to-end check building a real
+  `Scene::Map`, capturing the same mid-nested-call snapshot from a live
+  `#step_parallel` tick, then building a *second*, brand-new `Scene::Map`
+  from a fresh `Game::State` carrying only `#map_event_exec` (no live
+  `Game::Interpreter` object, standing in for a genuine Continue) and
+  confirming it resumes exactly where the snapshot left off — the called
+  frame's own follow-up command runs, then control returns to the caller's
+  trailing command, all without either of the two markers that ran *before*
+  the snapshot ever re-running — rather than restarting both map events from
+  the top. The pre-existing "Transfer Player ... always rebuilds a map
+  event's [interpreter]" check (cycle #191) needed no change and still
+  passes unmodified, confirming the two channels (live Transfer Player vs.
+  genuine Continue) stay correctly distinguished. Full check-suite baselines
+  after this cycle: `rpg2k_scene_check.rb`=931 (up from 929: +1 for this
+  part's own resume check, +1 for the part-2 Key Input Proc reachability
+  check below), `rpg2k_logic_check.rb`=1174 (up from 1173 — note: cycle
+  #192's own entry recorded 1172 as its final total, but the actual
+  pre-cycle-#193 baseline measured directly against this branch's own HEAD
+  was 1173, one higher than documented; not investigated further, harmless
+  either way since this cycle's own +1 is verified against the real,
+  measured baseline rather than the possibly-stale documented one),
+  `rpg2k_render_check.rb`=41, `rpg2k3_battle_row_check.rb`=19/0,
+  `rpg2k3_battle_gauge_check.rb`=15/0, `rpg2k_save_load_check.rb`'s 3 known
+  pre-existing failures unchanged, and the `mruby_test` ctest suite passes
+  after a clean rebuild.
+
+  Deliberately left open, matching cycle #191/#192's own carried-forward
+  points: no genuine wine-saved fixture confirms the exact byte layout
+  against real RPG_RT; and the same per-frame `event_id`/`triggered_by_decision_key`
+  simplifications cycles #191/#192 already documented for chunks 113/114
+  apply identically here, since field 108 reuses the exact same
+  `SAVE_EVENT_EXEC_STATE`/`SAVE_EVENT_EXEC_FRAME` structs and
+  `Game::Interpreter#call_stack_snapshot`/`#restore_call_stack` machinery,
+  unchanged by this cycle.
+- ✅ **Investigated (cycle #193, 2026-08-28): is saving mid a Show
+  Message/Choices/Key Input wait reachable?** Following up on cycle #191's
+  own "restoring a mid-wait UI request is out of scope" note (`#call_stack_
+  snapshot` captures the command-list position but not `@waiting`/
+  `@wait_kind`/etc.), this asked whether that gap is even reachable at all,
+  for any interpreter — the shared foreground one, a Common Event Parallel
+  Process, or (after this same cycle's own part above) a Map Event's own
+  Parallel Process.
+
+  **Confirmed unreachable for Show Message/Show Choices/Input Number,
+  specifically**: `Scene::Map#event_busy?` (which gates `#try_open_menu`,
+  the only path to an ordinary player-driven Save) checks `@message`/
+  `@number_input` — genuinely scene-wide state, not per-interpreter. Traced
+  `#drive_parallel_wait`'s own `:message`/`:choice`/`:number` cases: a
+  Parallel Process's own Show Message/Show Choices/Input Number opens the
+  *exact same* `@message`/`@number_input` `#open_message`/
+  `#open_number_input` already write for the foreground (confirmed by
+  reading the call sites directly, not inferred) — matching
+  `#message_window_open?`'s own comment, "anywhere in the scene, including a
+  still-running parallel process". So a genuine Save is unreachable while
+  ANY interpreter, foreground or parallel, sits on one of these three
+  specific waits — the gap `#call_stack_snapshot`'s own scope limit
+  describes is real but never actually exercised for them, the same
+  "investigated, confirmed unreachable" verdict this project's culture
+  prefers over leaving the question open.
+
+  **Confirmed reachable for a Key Input Proc's own wait (Cmd::KEY_INPUT_PROC,
+  11610), when issued from a Parallel Process specifically**: `#event_busy?`
+  only ever inspects the single shared foreground `@interpreter`'s own
+  `#waiting?`/`#running?` plus the scene-wide `@message`/`@number_input`/
+  `@battle` — it never looks at any `@parallels` entry's own `#wait_kind` at
+  all. A waiting Key Input Proc (`wait` param set) first blocks-and-retries
+  behind a genuinely open message window (`#block_pending_key_input_
+  command`), but once past that guard (no message window open anywhere) it
+  parks the issuing interpreter on a bare `:key_input` wait with nothing else
+  in the scene reflecting it. For the FOREGROUND interpreter this is already
+  covered — `@interpreter.waiting?` alone makes `#event_busy?` true — but a
+  Common Event's (or, after this cycle's own part 1, a Map Event's) own
+  Parallel Process parked there sets none of `#event_busy?`'s own conditions,
+  so the ordinary Cancel-key menu shortcut — and with it, a genuine Save —
+  stays reachable. Confirmed with a new `scripts/rpg2k_scene_check.rb` check:
+  a Common Event Parallel Process genuinely parked on `:key_input` (Decision
+  only accepted, so the Cancel key used to open the menu cannot also resolve
+  the proc itself) still lets `#try_open_menu` push `Scene::Menu`.
+
+  Judged out of scope to actually restore this cycle, and left as a
+  documented follow-up rather than silently dropped: the call-stack position
+  itself is already captured/restored correctly regardless (a save taken
+  here still resumes at the right command) — only the live request itself
+  (target variable id, accepted-key flags) has no restore path, so a save
+  taken here today silently resumes past the Wait For Key Input entirely,
+  leaving the requested variable at 0 (its own "reset every retried frame"
+  default) rather than a genuine key code. `SAVE_EVENT_EXEC_STATE`'s
+  `keyinput_*` field cluster already exists schema-only for exactly this
+  (see that struct's own schema.rb comment) — restoring it for real would
+  need `#call_stack_snapshot`/`#restore_call_stack` to also carry
+  `@key_input_request`/`@wait_kind`/`@waiting` for the `:key_input` case
+  specifically (and only that case — Show Message/Choices/Input Number are
+  confirmed unreachable above, and a plain Wait/`:wait_key_enter` already
+  round-trip correctly per cycle #191), a real but narrow follow-up left for
+  a future cycle rather than built speculatively here.
 
 #### Confirmed already correct (no action needed)
 - Wait 0.0 seconds already costs exactly one frame (not a no-op) —

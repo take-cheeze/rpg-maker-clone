@@ -2720,6 +2720,83 @@ check "Transfer Player reuses a common event's Parallel Process interpreter " \
      "the rebuilt map event's parallel process starts over at the top"
 end
 
+# Cycle #193: a map event's own Parallel Process now DOES survive a genuine
+# Save/Continue on the same map -- Game::State#map_event_exec (chunk 111
+# field 108), consulted by #new_parallel exactly the way #common_event_exec
+# already is for a common event's own Parallel Process. This is deliberately
+# NOT in tension with the check just above: that one pins an ordinary
+# Transfer Player (a live, same-session #perform_teleport, which still
+# always rebuilds a map event's process fresh -- #perform_teleport clears
+# #map_event_exec on every map change specifically to keep that true); this
+# one pins the OTHER channel, a brand new Scene::Map built from a state that
+# only carries the captured snapshot, standing in for a genuine Continue.
+check "a fresh Scene::Map genuinely resumes a saved map event's own Parallel " \
+      'Process from its captured call stack (mid a nested Call Event), not ' \
+      'from the top' do
+  ic = Game::Interpreter::Cmd
+  caller_page = page(trigger: 4) # Parallel Process
+  caller_page.event_commands = [add_var_cmd(3), ECmd.new(ic::CALL_EVENT, [1, 6, 1]),
+                                 add_var_cmd(4)]
+  # Never auto-runs on its own (action-key trigger, the `page` default) --
+  # reached only via the Call Event above, so it contributes nothing to
+  # @parallels itself and cannot be confused with event 5's own entry.
+  callee_page = page(trigger: 0)
+  callee_page.event_commands = [add_var_cmd(5), ECmd.new(ic::WAIT, [1]), add_var_cmd(6)]
+  events = { 5 => event(2, 2, caller_page), 6 => event(3, 3, callee_page) }
+  db = fake_db(nil)
+
+  scene = new_scene(events)
+  st = scene.instance_variable_get(:@state)
+  scene.update # marker 3, enters the call, marker 5, parks on the called Wait
+  eq 1, st.variables[3]
+  eq 1, st.variables[5]
+  eq 0, st.variables[4], 'has not returned from the call yet'
+  eq 0, st.variables[6], "hasn't reached the Wait's own follow-up yet"
+
+  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:event] && pp[:event][:id] == 5 }
+  frames = p[:interp].call_stack_snapshot
+  ok frames && frames.size == 2, 'sanity: genuinely captured mid a nested Call Event'
+
+  # A brand new Game::State/Scene::Map, standing in for Continue: no live
+  # Game::Interpreter object carries over (unlike the ordinary-Transfer-
+  # Player check above), only the captured snapshot on #map_event_exec --
+  # exactly what a real .lsd's chunk 111 field 108 would decode into (see
+  # the Game::State-level round trip in scripts/rpg2k_logic_check.rb for
+  # that half of the mechanism).
+  fresh_state = Game::State.new(fake_party, 1, 0, 0)
+  fresh_state.map = fake_map(1, events)
+  fresh_state.map_event_exec[5] = frames
+  parent = FakeParent.new(db) { |id| fake_map(id, events) }
+  fresh_scene = RPG2k::Scene::Map.new(parent, fresh_state)
+
+  new_p = fresh_scene.instance_variable_get(:@parallels)
+                      .find { |pp| pp[:event] && pp[:event][:id] == 5 }
+  restored_it = new_p[:interp]
+  ok !restored_it.instance_variable_get(:@call_stack).empty?,
+     'restored with the caller frame still on the call stack, not a fresh empty one'
+  eq 0, fresh_state.variables[3],
+     "marker 3 must not re-run on this fresh state -- it belongs to the OLD " \
+     "state's own history, not this resume"
+  eq 0, fresh_state.variables[5], 'nor marker 5 -- both already ran before the save'
+
+  # #restore_call_stack's own restored cursor already sits just PAST the
+  # Wait command (matching #call_stack_snapshot's own "@index always sits
+  # just past the command that raised the wait" contract) -- there is no
+  # in-flight countdown left to restore (the same documented scope limit
+  # every other captured-mid-a-wait case has), so the very next tick runs
+  # straight through the called frame's own follow-up, back out of the call,
+  # and to the caller's own trailing command, all in one #update. Checked
+  # after exactly one tick, before the process has any chance to finish and
+  # loop back to the top for a second lap (which would genuinely re-run
+  # markers 3/5, a real but unrelated, pre-existing "parallel processes loop
+  # forever" behaviour -- see the Transfer Player check further below).
+  fresh_scene.update
+  eq 1, fresh_state.variables[6], "the called frame's own follow-up ran, past the restored Wait"
+  eq 1, fresh_state.variables[4], "control returned to the caller's own trailing command"
+  eq 0, fresh_state.variables[3], 'marker 3 still never re-ran -- this was a resume, not a restart'
+  eq 0, fresh_state.variables[5], 'nor marker 5'
+end
+
 check "a common event's Parallel Process's own Transfer Player command " \
       'actually warps the party, then keeps running on the new map' do
   ic = Game::Interpreter::Cmd
@@ -3651,6 +3728,70 @@ check 'Key Input Proc (RPG2003 Numbers layout) ignores a digit key when Numbers 
   eq 5, st.variables[1]
   scene.update
   ok st.switches[5]
+end
+
+# Cycle #193 investigation (docs/TODO.md, following up on cycle #191's own
+# "restoring a mid-wait UI request is out of scope" note): every OTHER
+# blocking wait a Show Message/Show Choices/Input Number can raise sets the
+# scene-wide @message/@number_input (#message_window_open?'s own comment:
+# "anywhere in the scene, ... including a still-running parallel process"),
+# which #event_busy? already checks and #try_open_menu already gates on --
+# confirming a genuine Save simply cannot happen while any interpreter,
+# foreground or parallel, sits on one of those three. A Parallel Process's
+# own waiting Key Input Proc (Cmd::KEY_INPUT_PROC, 11610, wait flag set) is
+# different: #event_busy? only ever inspects the single FOREGROUND
+# @interpreter's own #waiting?/@battle plus the scene-wide @message/
+# @number_input -- it never looks at any entry in @parallels at all. So
+# nothing gates the ordinary Cancel-key menu shortcut (and with it, a
+# genuine Save) while a Common Event's -- or, after this same cycle's own
+# map-event Parallel Process persistence, a Map Event's -- own Parallel
+# Process sits fully parked on a Wait For Key Input, with no message window
+# involved anywhere in the scene. #event_busy?'s own mechanism draws no
+# distinction between @parallels entries by `common_event_id`/`event`, so
+# this reachability is identical for both; only a Common Event is exercised
+# below; a Map Event's own entry would fail the same assertions for the
+# identical reason (see Scene::Map#event_busy?'s own comment for this).
+#
+# Judged out of scope to actually restore for this cycle (kept as a
+# documented follow-up rather than silently dropped, per docs/TODO.md):
+# unlike the call-stack position itself (already captured and restored
+# unconditionally by #call_stack_snapshot/#restore_call_stack, so a save
+# taken here still resumes at the right command), the live Key Input Proc
+# request itself (target variable id, which buttons were accepted) has no
+# field on SAVE_EVENT_EXEC_STATE this codebase's own writer populates
+# (`keyinput_*`, schema-only -- see that struct's own schema.rb comment) and
+# no restore path back into a freshly-restored interpreter's own
+# @key_input_request/@wait_kind/@waiting. A save taken here today resumes
+# past the Wait For Key Input entirely, silently: the requested variable is
+# simply left holding whatever #do_key_input's own "reset every retried
+# frame" default (0) wrote before the wait parked, per #call_stack_snapshot's
+# own "does not restore a mid-wait UI request" scope limit, which already
+# covers this the same way it covers Show Message/Wait/Open Save Menu.
+check "a Common Event Parallel Process's own waiting Key Input Proc leaves " \
+      "#event_busy?/#try_open_menu completely unguarded, unlike a message " \
+      "window or the foreground interpreter's own wait" do
+  ic = Game::Interpreter::Cmd
+  # Decision only accepted (cancel param 0) -- so the Cancel-key press used
+  # below to open the menu can never also be read as the very key this proc
+  # is itself waiting for, keeping the two concerns cleanly separated.
+  ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
+                      event: [ECmd.new(ic::KEY_INPUT_PROC, [1, 1, 0, 1, 0, 0, 0, 0, 0, 0])])
+  scene = new_scene({}, common: { 7 => ce })
+  parent = scene.instance_variable_get(:@parent)
+  scene.update # the Parallel Process arms the wait -- genuinely parked, no message window up
+  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:common_event_id] == 7 }
+  eq :key_input, p[:interp].wait_kind,
+     'genuinely parked on Key Input (no message window to block-and-retry against)'
+  ok !scene.send(:event_busy?),
+     "#event_busy? never looks at a parallel process's own wait_kind at all"
+
+  RGSS::Input.triggered = [RGSS::Input::B] # the field map's own Cancel-key menu shortcut
+  scene.update
+  eq :key_input, p[:interp].wait_kind,
+     "the proc's own wait is unaffected -- Cancel is not among its accepted keys"
+  eq 1, parent.pushed.length,
+     "yet the menu opened anyway -- a real Save is reachable while this " \
+     "Parallel Process's own Wait For Key Input is still live"
 end
 
 check 'parallel processes keep running while a message window is open (yado.tk)' do
