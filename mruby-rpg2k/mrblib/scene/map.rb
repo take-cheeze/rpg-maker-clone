@@ -3132,32 +3132,64 @@ class RPG2k
       # Mix_FadeInMusic works identically for the one-shot ME channel as it
       # does for the looping BGM channel underneath -- both are the same
       # Mix_Music stream, just started with a different loop count.
+      #
+      # `balance` (cycle #220): the same `BGM`-struct field 5 gap cycle #219
+      # closed for #battle_bgm/#inn_bgm/#vehicle_bgm/#play_map_bgm and
+      # Scene::GameOver, but left this one call site alone -- its own TODO
+      # entry assumed closing it would need a new, unverified native
+      # signature change to RGSS::Audio.me_play the way #fadein needed
+      # (cycle #204), the same real work #204 actually did. That assumption
+      # does not hold for panning: unlike a fade-in (which has to reach
+      # Mix_FadeInMusic at the moment a track *starts*), `RGSS::Audio.
+      # bgm_pan` is a live, already-established call with no dependency on
+      # which helper started the track -- its own doc comment (`#play_bgm`,
+      # above) already documents that it re-applies unconditionally,
+      # same-file-or-not, and every other BGM entry point (Play BGM, Play
+      # Memorized BGM, #play_bgm itself) already calls it as its own last
+      # step after playback starts, ME included: `#me_play`'s own doc
+      # comment already establishes the fanfare shares the ordinary BGM
+      # channel's one underlying `Mix_Music` stream, which is exactly what
+      # `bgm_pan`'s `Mix_SetPanning(MIX_CHANNEL_POST, ...)` re-pans (see
+      # `include/rgss_audio.hxx`'s own doc comment: "pans the whole final
+      # mixed output"). So the fanfare's own configured balance was simply
+      # never read into the hash below and never handed to the
+      # already-existing `bgm_pan` call every sibling BGM entry point
+      # already makes -- no native change needed at all, just the same
+      # mechanical plumbing cycle #219 did for its own five call sites.
+      # Without this, the victory fanfare played back panned to whatever
+      # `bgm_pan` value the *battle* track last set (stale, since nothing
+      # re-applied one of its own), not its own database/override balance.
       def play_victory_bgm
         music = victory_bgm
         return unless music
         RGSS::Audio.me_play(music[:name], music[:volume] || 100,
                             music[:tempo] || 100, music[:fadein] || 0)
+        RGSS::Audio.bgm_pan(music[:balance] || 50)
       rescue StandardError => e
         $stderr.puts "[RPG2k] victory BGM failed: #{e.message}"
       end
 
-      # The victory BGM to play as { name:, volume:, tempo:, fadein: }, or
-      # nil when neither source names a file. Prefers a Change System BGM
-      # override for the victory slot over the database's own System
-      # battle_end_music -- the same override-then-default idiom #battle_bgm
-      # uses for the battle slot, `fadein` included (cycle #204) the same way
-      # #battle_bgm / #inn_bgm already carry theirs.
+      # The victory BGM to play as { name:, volume:, tempo:, fadein:,
+      # balance: }, or nil when neither source names a file. Prefers a
+      # Change System BGM override for the victory slot over the database's
+      # own System battle_end_music -- the same override-then-default idiom
+      # #battle_bgm uses for the battle slot, `fadein` included (cycle #204)
+      # the same way #battle_bgm / #inn_bgm already carry theirs, `balance`
+      # now included too (cycle #220) -- see #play_victory_bgm's own doc
+      # comment.
       def victory_bgm
         ov = @state.system_bgm[SYSTEM_BGM_VICTORY]
         if ov && ov[:name] && !ov[:name].to_s.empty?
           return { name: ov[:name], volume: ov[:volume] || 100,
-                    tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0 }
+                    tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0,
+                    balance: ov[:balance] || 50 }
         end
         name = music_name(db.system.battle_end_music)
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(db.system.battle_end_music),
           tempo: music_tempo(db.system.battle_end_music),
-          fadein: music_fadein(db.system.battle_end_music) }
+          fadein: music_fadein(db.system.battle_end_music),
+          balance: music_balance(db.system.battle_end_music) }
       end
 
       # Restore the BGM that was playing before the fight started. A no-op

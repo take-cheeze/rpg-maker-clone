@@ -8003,6 +8003,49 @@ check 'Enemy Encounter scene: a Change System BGM victory override\'s own fade-i
      'override-then-default precedence #battle_bgm already uses for name/volume/tempo'
 end
 
+# Cycle #220: the same `BGM`-struct field-5 (`balance`) gap cycle #219 closed
+# for #battle_bgm/#inn_bgm/#vehicle_bgm/#play_map_bgm and Scene::GameOver, but
+# left #play_victory_bgm's own ME channel alone -- see its own doc comment for
+# why no native RGSS::Audio.me_play signature change was actually needed
+# (unlike the fade-in checks just above, which did need one, cycle #204).
+check 'Enemy Encounter scene: victory fanfare forwards battle_end_music\'s own balance ' \
+      'to bgm_pan, not dropped (cycle #220)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_end_music =
+    OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105, balance: 20)
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100, balance: 50 }
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [20], RGSS::Audio.bgm_pan_calls,
+     "the database battle_end_music's own balance reaches bgm_pan, not whatever the " \
+     'battle track last left there'
+end
+
+check 'Enemy Encounter scene: a Change System BGM victory override\'s own balance ' \
+      'reaches bgm_pan too (cycle #220)' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  scene.db.system.battle_end_music = OpenStruct.new(file: 'VictoryBGM', volume: 90, pitch: 105)
+  st.system_bgm[1] = { name: 'CustomVictory', fadein: 0, volume: 60, tempo: 130,
+                       balance: 77 }
+  2.times { scene.update } # opens the battle UI (see battle_attack_to_end above)
+  RGSS::Audio.reset_bgm
+  battle_attack_to_end(scene) # Attack the Slimes each round until they fall
+  eq [77], RGSS::Audio.bgm_pan_calls,
+     "the override's own balance reaches bgm_pan, the same override-then-default " \
+     'precedence #battle_bgm already uses for name/volume/tempo/fadein'
+end
+
 check 'Enemy Encounter scene: losing shows the defeat result, no rewards' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
