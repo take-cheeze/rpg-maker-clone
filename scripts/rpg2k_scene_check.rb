@@ -14165,6 +14165,25 @@ check 'without HideTitle the picture shows and the window docks near its foot' d
      'the command window docks near the picture, as RPG_RT does'
 end
 
+# Cycle #217: title_music's own liblcf `BGM`-struct fade_in (field 2,
+# mruby-lcf/mrblib/schema.rb) was read off the record by #play_title_bgm and
+# then dropped before reaching Audio.bgm_play, the same gap cycle #202/#203
+# already fixed for Play BGM, Play Memorized BGM and the battle/inn/vehicle/
+# game-over BGM helpers (Scene::Map/Scene::GameOver) -- the title screen's own
+# BGM was the one source those two cycles never reached. `fake_db` names no
+# title_music at all (every other check above only cares that a title picture
+# and command window are built), so this sets one locally rather than
+# widening the shared fixture for every other Title check.
+check 'the title screen forwards the database title_music fade-in to bgm_play, not dropped (cycle #217)' do
+  db = fake_db
+  db.system.title_music = OpenStruct.new(file: 'TitleBGM', volume: 90, pitch: 100, fade_in: 350)
+  parent = TitleParent.new(db, nil, false)
+  RGSS::Audio.reset_bgm
+  RPG2k::Scene::Title.new(parent)
+  eq [['TitleBGM', 90, 100, 0, 350]], RGSS::Audio.bgm_calls,
+     "the database title_music's own fade_in reaches bgm_play's 5th argument"
+end
+
 # -- Continue disabled without save data --------------------------------------
 #
 # RPG_RT grays out Continue on the title screen when there is no save to

@@ -1722,6 +1722,54 @@ The work below is roughly ordered by the critical path to a walkable game
   repo-wide EasyRPG-citation-hygiene sweep cycle #174's own note (256
   unswept instances, last counted then) already tracks separately --
   that sweep is unrelated to this fix and still needs a future cycle.
+  ✅ **Follow-up (cycle #217, 2026-08-28): the title screen's own database
+  BGM (`System > title music`) was the one BGM source cycle #202/#203's
+  fade-in wiring never reached, dropping a configured `fade_in` on the
+  floor instead of fading the music in.** Method: with the doc-level
+  backlog and this file's own comment-drift sweep both already closed
+  (cycles #215/#216), this cycle widened the search per the standing
+  instructions — check-suite coverage gaps first. Cross-referencing every
+  `Scene::` BGM call site (`grep -rn bgm_play mruby-rpg2k/mrblib`) against
+  cycle #202's own "Play BGM's fade-in parameter now actually fades the
+  music in" fix and cycle #203's follow-on ("battle/inn/vehicle, and the
+  Game Over screen now honour a configured BGM fade-in") turned up exactly
+  one remaining 3-argument `Audio.bgm_play` call left over from both
+  passes: `Scene::Title#play_title_bgm` (`mruby-rpg2k/mrblib/scene/
+  title.rb`), whose own doc comment claimed "the audio backend can fade a
+  BGM out, not in (see ADR 0006)" — a statement that was already false by
+  the time it was written (`git blame` dates that comment to 2026-08-22,
+  cycle #202's `Mix_FadeInMusic` wiring landed 2026-08-28) and ADR 0006
+  itself never makes that claim at all (it only documents pitch/tempo as
+  unsupported). `scripts/rpg2k_scene_check.rb`'s own `fake_db` fixture
+  names no `title_music` at all, so the gap was invisible to the whole
+  check suite — no check exercised `play_title_bgm`'s `Audio.bgm_play`
+  call at all before this cycle. Fixed by threading `bgm.fade_in || 0`
+  through as the 5th `Audio.bgm_play` argument, the same idiom every
+  sibling BGM helper already uses, and rewriting the stale doc comment.
+  **Verification**: a new `rpg2k_scene_check.rb` check sets a local
+  `db.system.title_music` (not the shared fixture, to avoid perturbing
+  every other Title check) with `fade_in: 350` and asserts
+  `Audio.bgm_calls == [['TitleBGM', 90, 100, 0, 350]]`; confirmed to fail
+  against the pre-fix code first (`git stash` on just `title.rb`, which
+  reproduced the expected 3-argument call and failed the assertion) then
+  pass after (`git stash pop`). Full suite: `rpg2k_scene_check.rb` 944
+  passed (943 baseline + 1 new check); `rpg2k_logic_check.rb` 1187 passed
+  (unchanged, no `mrblib` file it loads was touched); `rpg2k_render_
+  check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+  load_check.rb` exit 0, zero known failures (unchanged); `cd build &&
+  ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixture), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb`
+  and `rgss_cruby_compat.rb` needed no attention. No wine session was run
+  this cycle (audio timing is not screenshot-diffable, matching every
+  earlier BGM-fade-in cycle's own note) and no EasyRPG source was
+  consulted for any new behavioral claim — this is first-principles code
+  reading (the native fade-in mechanism was already proven for every
+  other BGM path in cycles #202/#203; this cycle is the same mechanical
+  plumbing to the one call site those cycles missed) plus a factual
+  correction of a comment that had gone stale the moment it was written.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
