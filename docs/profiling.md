@@ -275,6 +275,40 @@ audio calls are the ones that touch the decoder, not the ones that mix.
   can move; `Mix_PlayMusic`/`Mix_PlayChannel` and the `g_chunks` cache should
   stay owned by one thread.
 
+## Per-frame object allocation
+
+Separate from frame *time*: how many mruby objects the map scene allocates
+each frame, tracked because a string of fixes (skip_to's terminator arrays
+hoisted to frozen constants; `Scene::Map#events_dirty?`/
+`#record_map_event_positions` reusing Arrays instead of rebuilding them every
+frame; `#step_parallels` and four other `@events.each` loops rewritten as
+block-free `while` loops; `Game::Interpreter#range` returning a `Range`
+instead of a throwaway Array; `Array#include?` given a native-equivalent
+override because mruby's own falls through to a block-allocating
+`Enumerable#include?`) cut it by well over half across several rounds — see
+`changelog.d/` for each one's own measurement.
+
+Measured the same way as the time baseline above (same command, same
+Nepheshel run), reading `RGSS::Profiler.stats[:object_types]`'s cumulative
+`:allocs` per type at two points in a steady window rather than the summary
+line's live counts (those rise and fall with GC and cannot answer "how many
+were allocated between two points"):
+
+| type | allocs/sec |
+| --- | ---: |
+| `Array` | ~4000 |
+| `Proc` | ~1650 |
+| `env` | ~985 |
+
+`scripts/rpg2k_alloc_regression_check.rb` automates exactly this measurement
+(via the profiler trace's `mruby_type_allocs` counter series, see
+[README.md](../README.md#profiling)) and fails if any of the three exceeds a
+ceiling set from this table — the standing regression guard for the fixes
+above, run in CI alongside the other RPG2000 boot smokes. Re-run it with
+`--report` to see fresh rates without asserting, e.g. after a deliberate new
+per-frame feature that genuinely needs to raise a ceiling (with a comment in
+the script saying why), or while investigating whether a change regressed one.
+
 ## Caveats on these numbers
 
 - Software rendering under Xvfb with `SDL_AUDIODRIVER=dummy`. Absolute
