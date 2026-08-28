@@ -17906,6 +17906,75 @@ check 'a battle animation cell blits scaled at its own zoom' do
   # mutated cell does not leak into the next check.
 end
 
+# Each animation cell also carries its own four tone fields (LCF
+# `battle_anime` chunk 19's per-cell fields 6-9 -- mruby-lcf/mrblib/schema.rb,
+# schema default 100/neutral each), decoded all along and never read the same
+# way `zoom`/`transparency` were before the checks above.
+# #animation_cell_tone is the pure-logic half.
+check "animation_cell_tone reads a cell's four tone fields with schema defaults" do
+  scene, = battle_at_command
+  t = ->(cell) { scene.send(:animation_cell_tone, cell) }
+  eq [100, 100, 100, 100],
+     t.call(OpenStruct.new(cell_id: 0, tone_red: 100, tone_green: 100,
+                            tone_blue: 100, tone_gray: 100)),
+     'the schema default: neutral on every channel'
+  eq [40, 160, 70, 130],
+     t.call(OpenStruct.new(cell_id: 0, tone_red: 40, tone_green: 160,
+                            tone_blue: 70, tone_gray: 130)),
+     'each channel reads independently'
+  eq [100, 100, 100, 100], t.call(OpenStruct.new(cell_id: 0)),
+     'a cell carrying none of the four fields reads as all-neutral, not nil'
+  ok !scene.send(:toned_animation_cell?, OpenStruct.new(cell_id: 0, tone_red: 100,
+                  tone_green: 100, tone_blue: 100, tone_gray: 100)),
+     'an all-neutral cell is not toned'
+  ok scene.send(:toned_animation_cell?, OpenStruct.new(cell_id: 0, tone_red: 40,
+                 tone_green: 100, tone_blue: 100, tone_gray: 100)),
+     'a single off-neutral channel is enough to count as toned'
+end
+
+check 'a toned battle animation cell tones through a cached crop instead of blitting the raw sheet' do
+  scene, = battle_at_command
+  scene.instance_variable_get(:@battle).send(:start_battle_animation,
+             { attacker: 'Hero', target: 'Slime', damage: 7, skill: 'Fire',
+               skill_id: 8, target_index: 0, target_ally: false })
+  ma = scene.instance_variable_get(:@map_animation)
+  bmp = scene.instance_variable_get(:@animation_bmp)
+  cell = ma[:frames][0].cells[1]
+
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  eq 1, bmp.blt_calls.size, 'sanity: still one cell'
+  ok bmp.blt_calls.first[2].equal?(ma[:sheet]),
+     'an untoned cell blits straight from the raw sheet, exactly as before this fix'
+
+  cell.tone_red = 40
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  eq 1, bmp.blt_calls.size, 'still one cell'
+  toned_src = bmp.blt_calls.first[2]
+  ok !toned_src.equal?(ma[:sheet]),
+     'a toned cell blits from a different bitmap, not the raw sheet'
+  rect = bmp.blt_calls.first[3]
+  eq [0, 0, 96, 96], [rect.x, rect.y, rect.width, rect.height],
+     'the toned copy is already cropped to the cell, so its own source rect starts at (0,0)'
+  eq [ma[:targets][0][:tx] - 48, ma[:targets][0][:ty] - 48], bmp.blt_calls.first[0, 2],
+     'and still lands in exactly the same place -- only the source changed'
+  eq 255, bmp.blt_calls.first[4], 'opacity is unaffected by tone'
+
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  ok bmp.blt_calls.first[2].equal?(toned_src),
+     'redrawing the same tone reuses the cached toned copy rather than re-toning'
+
+  cell.tone_red = 100
+  bmp.clear_blt_calls
+  scene.send(:draw_map_animation, 500, 400)
+  ok bmp.blt_calls.first[2].equal?(ma[:sheet]),
+     'back to neutral, the cell blits from the raw sheet again'
+  # The fixture database is rebuilt per scene (#new_scene -> #fake_db), so the
+  # mutated cell does not leak into the next check.
+end
+
 check 'the battle status window shows each ally condition, or the normal term' do
   scene, ui = battle_at_command
   texts = window_texts(ui[:status_win])

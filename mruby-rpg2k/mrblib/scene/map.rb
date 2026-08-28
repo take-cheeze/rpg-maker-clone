@@ -340,6 +340,12 @@ class RPG2k
                                # Monster/<name> (battler graphics)
         @animation_cache = LRUBitmapCache.new(constrained_scale(ANIMATION_CACHE_BYTES))
                                # Battle/<name> (battle animation sheets)
+        # Toned copies of individual animation cells, keyed by sheet identity
+        # + cell id + tone (see #toned_animation_cell_src) -- the same
+        # per-content-key cache shape @picture_tone_cache uses below, sized
+        # per cell (96x96) rather than per whole picture since only one
+        # 96x96 square of a shared sheet is ever toned at a time.
+        @animation_tone_cache = {}
         @battlecharset_cache =
           LRUBitmapCache.new(constrained_scale(BATTLECHARSET_CACHE_BYTES))
                                # BattleCharSet/<name> (RPG2003 actor battler sprites)
@@ -579,6 +585,7 @@ class RPG2k
         @upper_viewport.dispose if @upper_viewport
         @flash_buffer.dispose if @flash_buffer
         @flash_out_buffer.dispose if @flash_out_buffer
+        @animation_cell_crop_buffer.dispose if @animation_cell_crop_buffer
         # Held by no sprite (see #setup_sprites), so nothing else frees these.
         @lower_tiles.dispose if @lower_tiles
         @upper_tiles.dispose if @upper_tiles
@@ -8322,8 +8329,8 @@ class RPG2k
       # render pass (the camera is known here): each visible cell of the frame is
       # blitted from the sheet's 96x96 grid to the target's screen position plus
       # the cell's offset, at that cell's own transparency
-      # (#animation_cell_opacity). Zoom / tone are still approximated as a plain
-      # blit.
+      # (#animation_cell_opacity) and zoom (#animation_cell_zoom) and tone
+      # (#toned_animation_cell?).
       def draw_map_animation(cam_x, cam_y)
         return unless @animation_sprite
         ma = @map_animation
@@ -8444,6 +8451,90 @@ class RPG2k
         [dx, dy, w, w]
       end
 
+      # A cell's own four tone fields (LCF `battle_anime` chunk 19's per-cell
+      # fields 6-9: tone_red/green/blue/gray, mruby-lcf/mrblib/schema.rb),
+      # each defaulting to 100 (neutral) -- exactly the same 0..200,
+      # 100-is-neutral shape `Game::Picture`'s own red/green/blue/saturation
+      # carry (confirmed by the matching `current_tone_red`/etc. save-field
+      # defaults declared in the same schema file, chunk 103), so this reuses
+      # `#toned?`'s reasoning: decoded off the real database and never read
+      # before this -- every cell drew the sheet's raw, undialled colours no
+      # matter what its author set the tone to. Defensive `respond_to?`/nil
+      # guards match `#animation_cell_opacity`/`#animation_cell_zoom`'s own
+      # shape for a bare test double.
+      def animation_cell_tone(cell)
+        [cell.respond_to?(:tone_red)   ? (cell.tone_red   || 100) : 100,
+         cell.respond_to?(:tone_green) ? (cell.tone_green || 100) : 100,
+         cell.respond_to?(:tone_blue)  ? (cell.tone_blue  || 100) : 100,
+         cell.respond_to?(:tone_gray)  ? (cell.tone_gray  || 100) : 100]
+      end
+
+      # Whether a cell asks for any tint at all.
+      def toned_animation_cell?(cell)
+        animation_cell_tone(cell).any? { |v| v != 100 }
+      end
+
+      # The transient, reused-every-call scratch a cell's raw 96x96 square is
+      # lifted into before toning -- `Bitmap#tone_blt` needs a same-size
+      # destination that is not the source (see `#toned_picture_src`'s own
+      # comment), and unlike a picture's source (one bitmap per shown
+      # picture) every cell shares one 480x480/640x640 sheet, so there is no
+      # single "whole source" to keep a toned copy of. Cropping the wanted
+      # 96x96 square into this fixed-size buffer first, the same way
+      # `#flashed_charset` lifts a CharSet frame before toning it, means the
+      # cache below only ever needs to hold cell-sized (not sheet-sized)
+      # toned copies.
+      def animation_cell_crop_buffer
+        @animation_cell_crop_buffer ||= Bitmap.new(ANIM_CELL, ANIM_CELL)
+      end
+
+      # The cell's raw sheet square with its tone baked in, cached per (sheet,
+      # cell id, tone) so the software tone pass runs when a new tone/cell
+      # combination is first drawn rather than every frame -- the same
+      # caching shape `#toned_picture_src` uses for Show Picture, sized down
+      # to one cell instead of a whole picture. Keyed by the sheet bitmap's
+      # own `#object_id` rather than its name (there is no cell-level name to
+      # key by, and unlike `@picture_cache`'s entries `ma[:sheet]` is already
+      # held live for the animation's whole run once fetched -- see
+      # `#draw_vehicle_frame`/`#draw_player_frame`'s own `charset.object_id`
+      # frame-memo keys for the same identity-key precedent in this file); a
+      # sheet reload after cache eviction simply keys fresh entries under the
+      # new object, leaving the old ones to age out of the bound below same
+      # as any other.
+      def toned_animation_cell_src(sheet, cid, sx, sy, tr, tg, tb, ty)
+        key = [sheet.object_id, cid, tr, tg, tb, ty]
+        cached = @animation_tone_cache[key]
+        return cached if cached
+        buf = animation_cell_crop_buffer
+        buf.clear
+        buf.blt 0, 0, sheet, Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+        scratch = Bitmap.new(ANIM_CELL, ANIM_CELL)
+        tone = Tone.new(Scene::Map.tone_channel(tr), Scene::Map.tone_channel(tg),
+                        Scene::Map.tone_channel(tb),
+                        # Mirrors `#toned_picture_src`'s own sign flip for
+                        # Show Picture's `saturation` field: RPG2000's
+                        # tone-gray/saturation channel runs the other way
+                        # from RGSS's grey, so a channel under 100 becomes
+                        # positive desaturation. Carried over unconfirmed --
+                        # NOT independently verified against genuine RPG_RT
+                        # under wine for this specific field.
+                        Scene::Map.tone_channel(ty) * -1)
+        scratch.tone_blt buf, tone
+        # Bounded the same way #toned_picture_src bounds
+        # @picture_tone_cache -- see its own comment.
+        @animation_tone_cache.delete(@animation_tone_cache.keys.first) if
+          @animation_tone_cache.size >= constrained_scale(ANIMATION_CELL_TONE_CACHE_MAX)
+        @animation_tone_cache[key] = scratch
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] animation cell ##{cid} tone failed, drawn untinted: #{e.message}"
+        nil
+      end
+
+      # How many toned animation-cell variants to keep before evicting the
+      # oldest -- see #PICTURE_TONE_CACHE_MAX's own comment for why this is
+      # bounded at all.
+      ANIMATION_CELL_TONE_CACHE_MAX = 16
+
       def blit_animation_cell(sheet, cell, cx, cy)
         opacity = animation_cell_opacity(cell)
         # A fully transparent cell contributes nothing; skipping it spares the
@@ -8453,7 +8544,16 @@ class RPG2k
         cid = cell.cell_id || 0
         sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
         sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
+        src_bmp = sheet
         src_rect = Rect.new(sx, sy, ANIM_CELL, ANIM_CELL)
+        if toned_animation_cell?(cell)
+          tr, tg, tb, ty = animation_cell_tone(cell)
+          toned = toned_animation_cell_src(sheet, cid, sx, sy, tr, tg, tb, ty)
+          if toned
+            src_bmp = toned
+            src_rect = Rect.new(0, 0, ANIM_CELL, ANIM_CELL)
+          end
+        end
         zoom = animation_cell_zoom(cell)
         if zoom == 100
           # The common case (a cell whose author never touched the zoom field,
@@ -8462,11 +8562,11 @@ class RPG2k
           # destination are the same size.
           dx = cx + (cell.x || 0) - ANIM_CELL / 2
           dy = cy + (cell.y || 0) - ANIM_CELL / 2
-          @animation_bmp.blt dx, dy, sheet, src_rect, opacity
+          @animation_bmp.blt dx, dy, src_bmp, src_rect, opacity
         else
           dx, dy, w, h = animation_cell_dest_rect(cell, cx, cy)
           return if w <= 0 || h <= 0
-          @animation_bmp.stretch_blt Rect.new(dx, dy, w, h), sheet, src_rect, opacity
+          @animation_bmp.stretch_blt Rect.new(dx, dy, w, h), src_bmp, src_rect, opacity
         end
       rescue StandardError
         nil
