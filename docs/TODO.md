@@ -6351,6 +6351,85 @@ The work below is roughly ordered by the critical path to a walkable game
   a non-Nepheshel RPG2000 test bed whose own content happens to author a
   cleaner route; (2) the `Map0102.lmu` event 8 page 2 rendering gap found
   along the way.**
+  ✅ **Follow-up (cycle #201, 2026-08-28): picked up item (2) above --
+  `Map0102.lmu` event 8 page 2's rendering gap. Root-caused: not an engine
+  bug. The page draws correctly; the save-editing methodology used to test it
+  (both cycle #200's own, and this cycle's own first attempt) had two
+  independent mistakes that together reproduce the exact symptom.** Built the
+  pristine switch-265 scenario two ways: (a) this project's own CRuby
+  `rpg2k_scene_check.rb` harness, loading `Map0102.lmu` event 8's real,
+  unmodified 3 pages straight off disk (via `mruby-lcf`) into a real
+  `Scene::Map`; (b) the actual compiled `./build/rpg_maker_clone` mruby
+  binary, booted headlessly under Xvfb (`--rpg2k_continue`) on a genuinely
+  edited `Save01.lsd` moved to map 102 (34,4) with switch 265 set. Both agree,
+  unambiguously: `Game::EventPage.select` picks page 2, `#build_event` wires
+  up a `Game::Character` with the correct charset ("emy2324", opaque,
+  transparency 0), and `#render`'s real draw path
+  (`#draw_layers`->`#draw_events`->`#draw_event`->`#draw_event_charset`)
+  blits it every single frame from the first one -- confirmed in the real
+  binary with temporary instrumentation in `draw_event`/`build_events`
+  (`$stderr.puts` guarded to event id 8, added, exercised, then fully
+  reverted -- `git diff` on `mruby-rpg2k/mrblib/scene/map.rb` is empty).
+  **Why the earlier test looked like a bug:** hand-editing a save's switches
+  bit array via `LCF::SaveData` has two real pitfalls, both hit while
+  building this cycle's own first (failed) repro attempt before being caught
+  and fixed: (1) `Game::State.from_lsd`'s switches loader maps raw
+  (0-indexed) array entry `i` to *game* switch id `i+1`
+  (`mruby-rpg2k/mrblib/game.rb` ~16670), so writing raw index 265 sets game
+  switch **266**, not 265 -- an off-by-one that silently arms the wrong
+  switch; (2) a nested `Array1D` field (`save[101]`, the `:system` chunk)
+  mutated in place (`sys[32] = new_switches`) and never written back onto the
+  outer root (`save[101] = sys`) round-trips fine *in-process* (re-reading
+  the same live `sys` object shows the edit) but is completely invisible to
+  `#to_lcf`, which serialises straight from each object's own raw `@data` --
+  the edit silently evaporates the moment the file is saved and reloaded.
+  `gen-rpg2k-save.rb` already dodges both (its own `hero = save[104]; ...;
+  save[104] = hero` idiom writes the mutated nested chunk back), which is
+  presumably why its own output was never suspected; a bespoke scratch
+  script editing switches directly has no such guardrail. Both mistakes
+  compound and reproduce cycle #200's exact symptom -- a page that looks
+  correctly selected by inspection (a `Game::EventPage.select` call against
+  an in-memory switches hash the tester built by hand can still show page 2
+  "selected" while the *file* the real game actually reads never carried
+  that switch at all) but never ends up drawn, because the running game
+  never actually saw switch 265 go on. **Verification:** `ruby -c` clean on
+  `scripts/rpg2k_scene_check.rb` (the only file with a net diff -- `map.rb`'s
+  debug instrumentation was fully added and then fully removed, confirmed by
+  an empty `git diff` on it); `cd build && ninja && ctest -R mruby_test`
+  passed (6.67s) on both the instrumented and the reverted build.
+  `scripts/rpg2k_scene_check.rb` baseline moved from 932 to **935** (+3, all
+  passing) -- a deliberate addition, not drift: no existing check ever drove
+  `Scene::Map#render`'s real event-sprite path at all (every prior check
+  inspected `#chars(scene)`'s built `Game::Character`s directly), so a
+  regression in `#draw_event`/`#draw_event_charset`/opacity/`event_target_
+  buffer` could have shipped invisibly; the three new checks cover an
+  ordinary charset event actually being blitted, a translucent page's 128
+  opacity, and a switch-gated page drawing only once its switch is set (the
+  cycle #200/#201 scenario itself, via `page()`/`event()` synthetic fixtures,
+  not the raw Nepheshel file). `rpg2k_logic_check.rb` (1176),
+  `rpg2k_render_check.rb` (41), `rpg2k3_battle_row_check.rb` (19/0),
+  `rpg2k3_battle_gauge_check.rb` (15/0) all matched their existing baselines
+  exactly; `rpg2k_save_load_check.rb` reconfirmed at exactly its 3 known
+  pre-existing failures (BGM `balance` x2, picture `show_x`/`show_y`).
+  `scripts/rpg2k_boot_check.bash` re-run against Nepheshel and mtf-meido-
+  action after reverting the debug instrumentation: both reached their
+  scene cleanly. No changelog fragment (no shipped engine-behaviour change --
+  the engine was already correct; only test coverage and this entry are new).
+  `data/` left byte-identical: `Map0102.lmu` was never touched this cycle
+  (sha256 `fbf36e3e...`, matching a fresh extraction of the checked-in
+  `data/Nepheshel206beta.zip` throughout); `Save01.lsd` was repositioned/
+  switch-edited several times via `gen-rpg2k-save.rb` and scratch scripts,
+  then restored from this cycle's own pre-edit backup (sha256
+  `55f73bf2...`), reconfirmed byte-identical at the end. Every scratch file
+  (`scripts/_scratch_*.rb`) was deleted before finishing; every Xvfb process
+  this cycle started was confirmed terminated (`ps aux` clean) before
+  finishing. No EasyRPG source was consulted for any behavioral claim (this
+  investigation never needed genuine RPG_RT.exe at all -- the question was
+  entirely about this engine's own code, confirmed correct against its own
+  two independent execution paths); no web search was used. **Left open:**
+  none specific to this item -- it is resolved (confirmed correct, not a
+  bug). The SPEED_UP ceiling question (item (1) in cycle #200's own list,
+  above) remains untouched by this cycle.
   ✅ **Follow-up (cycle #184, 2026-08-27): resumed the EasyRPG-citation sweep
   on the two `scripts/rpg2k_logic_check.rb`/`rpg2k_scene_check.rb` check
   files cycle #177 flagged as untouched (item (4) above) -- explicitly a
