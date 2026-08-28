@@ -21110,6 +21110,41 @@ check 'Call Common Event with no resolver or an unknown id is a safe no-op' do
   eq true, st2.switches[1]
 end
 
+# The "safe no-op" check above never actually reaches the resolver's own
+# `common_event_commands(id)` lookup at all -- both its sub-cases default to
+# a non-RPG2003 `new_state`, so #do_call_common_event's own `rpg2003?` guard
+# bails out first either way. This one drives a genuine RPG2003 state with a
+# resolver present but no entry for the called id, matching the "common
+# event" case docs/TODO.md's runtime error catalog lists (a database shrink
+# leaves a dangling id) -- the diagnostic map-side Call Event already reports
+# for its own common-event mode (see the "runs a common event" checks above).
+check 'Call Common Event reports a dangling common event id instead of a silent no-op' do
+  st = new_state(rpg2003: true)
+  it = Game::Interpreter.new(st)
+  it.resolver = FakeResolver.new(common: {})
+  out = capture_stderr do
+    it.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4]),
+              FakeCmd.new(IC::CONTROL_SWITCHES, [0, 1, 1, 0])])
+    it.update
+  end
+  ok out.include?('[RPG2k] Call Common Event: common event 4 not found'),
+     "expected a not-found diagnostic naming id 4, got: #{out.inspect}"
+  eq true, st.switches[1], 'control still passed through past the unresolved call, same as before'
+
+  # The happy path (a real target) must stay silent -- no spurious diagnostic
+  # on every ordinary call.
+  st2 = new_state(rpg2003: true)
+  called = [FakeCmd.new(IC::CONTROL_SWITCHES, [0, 9, 9, 0])]
+  it2 = Game::Interpreter.new(st2)
+  it2.resolver = FakeResolver.new(common: { 4 => called })
+  out2 = capture_stderr do
+    it2.start([FakeCmd.new(IC::CALL_COMMON_EVENT, [4])])
+    it2.update
+  end
+  eq '', out2, 'a resolvable target logs nothing'
+  eq true, st2.switches[9], 'and still actually ran'
+end
+
 # -- RPG2003 English-release (2k3e) system commands ---------------------------
 
 check 'Open Load Menu and Exit Game raise their scene requests' do

@@ -26364,7 +26364,7 @@ nonexistent map id — error text includes the literal missing filename;
 fixed, see the ✅ below);
 invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
 chipset, common event (skill/enemy/enemy-group/battle-animation/terrain/
-chipset fixed, see the ✅ entries below; all: a database shrink leaves a
+chipset/common-event fixed, see the ✅ entries below; all: a database shrink leaves a
 dangling id reference somewhere, shown as "?" in the editor);
 event-call recursion past 1000. Several of these errors are **deferred**
 until the stale reference is actually exercised at runtime rather than
@@ -26798,6 +26798,82 @@ behaviour itself is unchanged, this is diagnostics only. Covered by a new
 alongside the unchanged blank name/graphic and default-passable/terrain
 behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
 bare fixture all stay silent.
+✅ **Follow-up (cycle #213, 2026-08-28): RPG2003's battle-page Call Common
+Event command no longer swallows a dangling common event id with no
+trace** — the last unfixed name in the "invalid hero, skill, item, enemy,
+enemy group, battle animation, terrain, chipset, common event" list above
+(the parenthetical there previously said only "skill/enemy/enemy-group/
+battle-animation/terrain/chipset fixed", silently leaving "common event"
+off; now closed too). Method: per the standing instruction to skim broadly
+first, checked `scripts/rpg2k_field_audit.rb` (unchanged since cycle #211 —
+same 8 hits, all already self-documented editor-only bookkeeping or
+formula-less RPG2003 fields, nothing new), `docs/rpgxp-rgss-api-gap.md`'s
+own remaining items (the `Window` source-rect entry is already ✅ in
+practice, `Tilemap`'s only open item is the already-declined
+formula-less `flash_data`), and several other TODO.md sections (Message
+window text codes -- exhaustively already ported per cycle #212's own
+audit; Menu screens; Database field defaults) before finding this one:
+this runtime error catalog's own parenthetical was the one place in the
+document that still literally named an un-fixed case from a list every
+sibling entry had already closed. Confirmed genuinely reachable, not
+theoretical, by direct code reading: `Interpreter#do_call_common_event`
+(`mruby-rpg2k/mrblib/interpreter.rb`), the RPG2003-only battle-page
+sibling of the map's Call Event (mode 0), resolved its target id through
+the shared `#common_event_commands` wrapper and simply `return`ed on a
+`nil` result -- unlike `#resolve_call`'s own mode-0 branch (the map-side
+Call Event targeting a common event), which already logs `"[RPG2k] Call
+Event: common event #{id} not found"` for the identical dangling-id case.
+Fixed by mirroring `#resolve_call`'s own shape exactly: `#do_call_common_event`
+now calls `@resolver.common_event_commands(id)` directly (bypassing the
+shared wrapper, whose own genuine-exception-only rescue+log stays reserved
+for its other caller, `#start_death_handler` -- deliberately not touched
+this cycle, since its own event-id-0-means-unconfigured semantics and
+"NOT independently confirmed against genuine RPG_RT under wine" framing are
+a separate, larger question this narrow fix does not need to reopen) and
+logs `"[RPG2k] Call Common Event: common event #{id} not found"` itself
+when the lookup misses, plus its own local `rescue StandardError` (moved
+out of the shared wrapper, mirroring `#resolve_call`'s own top-level
+rescue) for the genuine-exception case. Behaviour is completely unchanged
+-- the command was already a correct, harmless no-op either way (control
+simply continues past it into the page's next command) -- only the
+missing trace is now visible, the same "diagnostics only" shape every
+other entry in this catalog already uses. Covered by a new
+`scripts/rpg2k_logic_check.rb` check (a genuine RPG2003 state with a
+resolver present but no entry for the called id logs the diagnostic and
+still lets control pass through; a resolvable target stays completely
+silent), confirmed to fail against the pre-fix code first (`git stash`/
+`git stash pop` on just `mruby-rpg2k/mrblib/interpreter.rb`:
+`RuntimeError: expected a not-found diagnostic naming id 4, got: ""`) then
+pass after. (The pre-existing "Call Common Event with no resolver or an
+unknown id is a safe no-op" check's own second half turned out to never
+actually reach the resolver at all -- it defaults to a non-RPG2003
+`new_state`, so `#do_call_common_event`'s own `rpg2003?` guard bails out
+first regardless of the resolver's contents; left as-is, since it still
+correctly covers what its own no-resolver-at-all first half claims, and
+the new check exercises the genuine RPG2003 dangling-id path it was
+missing.) **Verification:** `scripts/rpg2k_scene_check.rb` 943 passed
+(unchanged, no scene-check-reachable file touched); `rpg2k_logic_check.rb`
+1186 passed (1185 baseline + 1 new check, 0 failures); `rpg2k_render_
+check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+`rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+load_check.rb` still reports exactly the same 1 known pre-existing
+failure (the unrelated Show Picture field-shape mismatch), unaffected;
+`rpg2k3_battle_command_check.rb` still decodes cleanly (unchanged);
+`scripts/rpg2k_command_soak.rb` clean on all four test beds (184166/
+184166/4042/3430 commands, no new gaps -- only the pre-existing "Open
+Video Options" line on Ch.1, present before this cycle too; notably no
+real game bed actually exercises a dangling Call Common Event id, so the
+new diagnostic never fires there, consistent with this catalog's other
+diagnostics-only fixes). No `.cxx`/`.hxx` file was touched (pure `mrblib`
+Ruby plus a check-script addition), so the pinned `clang-format` step does
+not apply; `cd build && ninja` clean rebuild succeeded; `ctest -R
+mruby_test` passed. No RGSS-side Ruby or C++ was touched, so
+`scripts/rgss_cruby_test_check.rb` does not apply this cycle. No wine
+session was run and no EasyRPG source was consulted for this fix's own
+behavioral claim -- there isn't one: this is a pure diagnostics-only
+addition to an already-correct, already-tested no-op path, mirroring an
+established in-repo pattern (`#resolve_call`'s own identical common-event
+case) rather than introducing any new behavioral assumption.
 ✅ **The Equip and Status screens no longer show a dangling equipped item id
 with no trace** — the "item" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list
@@ -29848,6 +29924,111 @@ them, mirroring how the RPG2000 side was staged. Full rationale:
   `docs/rpgxp-rgss-api-gap.md`'s own Tilemap section updated to record the
   fix and drop this item from its "Remaining" list (the per-row scheme
   itself and `flash_data` are unaffected, still open).
+  ✅ **Follow-up (cycle #212, 2026-08-28): the priority "above" layer's own
+  "Remaining" note was stale — the per-row scheme it named as a follow-up
+  had already landed — and the eager allocation behind it was a real,
+  unrelated resource-waste bug, now fixed.** Method: skimmed broadly first
+  (per the standing instruction) — `docs/TODO.md`'s own "Full-site sweep"
+  clusters, the RPG2000-side message/window text-code parser
+  (`Game::Message.scan`, exhaustively already implements `\v`/`\n`/`\c`/`\s`/
+  `\.`/`\|`/`\!`/`\^`/`\$`/`\>`/`\<`/`\\`/`\_`), `scripts/rpg2k_command_soak.rb`
+  run fresh against both real game beds (clean except the already-documented,
+  deliberate `Toggle Fullscreen`/`Open Video Options` backend-limitation
+  no-ops), `mruby-lcf/mrblib/schema.rb` and every `grep`-able "not
+  implemented"/"unimplemented" comment across `mruby-rpg2k`/`mruby-lcf`/
+  `mruby-rgss` — nearly everything reachable this way was already ✅ or
+  explicitly out of scope (the RPG2003 terrain-condition back-attack/pincer
+  system cycle #211 already declined for lack of a citable formula; the
+  Maniac Patch's own Wait mode-byte encoding, explicitly a third-party
+  extension; the CBA battle-animation sprite format, a genuinely large
+  feature). Pivoted to re-reading `docs/rpgxp-rgss-api-gap.md`'s own Tilemap
+  entry line by line against the actual code it describes (`mruby-rgss/src/
+  lib.cxx`) rather than trusting the doc text, since it is the one item both
+  the api-gap doc and this doc's own cycle #211 note still listed as
+  "Remaining." That comparison found the doc (and cycle #211's note) wrong,
+  not just outdated: `docs/adr/0022-rpgxp-tilemap-priority-layering.md`'s own
+  header already says "Accepted — implemented 2026-08-06," and the code has
+  `TILEMAP_PRIO_SPAN`/`tilemap_strip`/the per-`(row+priority)`-bucket strip
+  pool right there in `tilemap_refresh` — the real per-row scheme, not the
+  flat single-canvas approximation the doc prose (and the stale code comment
+  directly above `TILEMAP_ABOVE_Z`, still labelled "INTERIM") described. Both
+  landed in the same large merge (`bd91734`) that also introduced the
+  now-outdated doc text, so the prose was never updated to match the code it
+  shipped alongside — an easy thing to miss since nothing re-reads a
+  "Remaining" line once it is written, which is exactly what let cycle #211
+  carry the same stale claim forward without checking it against `lib.cxx`
+  either. Confirmed genuinely reachable, not just theoretical, once the doc
+  claim was corrected: with the per-row strips doing all of XP's own priority
+  work, the second, flat `@_tm_above_obj`/`@_tm_above_canvas` companion
+  canvas (`TILEMAP_ABOVE_Z`, created unconditionally in `tilemap_init`) is
+  drawn into *only* by `tilemap_refresh_vx` (the VX/VX Ace tile model, which
+  still uses a flat "above characters" layer — mkxp's own fixed z=200 layer
+  for that maker, not a gap there per `docs/rpgvx-rgss-api-gap.md` item 1) —
+  never by the XP path, which routes every priority tile through
+  `tilemap_strip` exclusively. So every XP tilemap (the common case: one per
+  running game, via `Spriteset_Map`) permanently allocated a 1.17 MiB
+  (640×480 ARGB8888) canvas it could never draw a single pixel into, and
+  `tilemap_apply_viewport_tone` walked all of its pixels on every refresh
+  whenever the map has a viewport tone active — real, measurable memory and
+  CPU waste with zero possible visual benefit, on the same psp/wio-shared
+  code ADR 0022 itself spent a whole "Strip height" section budgeting
+  carefully (a bare 21×1.17 MiB naive reading was explicitly rejected there
+  as "unaffordable," yet this one always-blank 1.17 MiB canvas shipped
+  unconditionally regardless). Fixed with a new `tilemap_ensure_above`
+  (`mruby-rgss/src/lib.cxx`), mirroring `tilemap_strip`'s own lazy shape:
+  `tilemap_init` no longer allocates the above canvas/object at all;
+  `tilemap_refresh` calls `tilemap_ensure_above` only when
+  `vx_has_sheets(@bitmaps)` is true (the same condition that already gates
+  the VX branch), and the helper syncs the new companion object's `z`/hidden
+  state to the tilemap's *current* `@z`/`@visible` ivars rather than the
+  fixed always-visible/`z=TILEMAP_ABOVE_Z` defaults the old eager call in
+  `tilemap_init` could safely assume (it always ran before a script had any
+  chance to touch either; a lazy create now can run well after one has).
+  Every existing call site that touches the above object
+  (`tilemap_set_visible`, `tilemap_set_z`, `tilemap_dispose`, the trailing
+  tone/invalidate calls in `tilemap_refresh` itself) was already null-safe
+  (`mrb_test(above) && ...`), so none needed changing — an absent-until-first-
+  VX-refresh above object is indistinguishable to them from the
+  already-handled "never went through `tilemap_init`" case cycle #211's own
+  unit test exercises via `.allocate`. **Verification:** `mruby-rgss`'s test
+  binary has no live display (the same limitation ADR 0022 and cycle #211
+  both recorded — `Tilemap.new` needs `lv_canvas_create`), so this could not
+  be pinned the same `.allocate`-plus-ivar-stub way cycle #211's `z=` test
+  was; construction-timing is exactly the thing under test here, which
+  `.allocate` bypasses entirely. Extended the *display-backed* probe instead
+  (`RGSS.effect_probe`, run under Xvfb by the `render_probe` ctest and
+  `--rgss_effect_probe`) with a new `tilemap_above_layer_probe`: builds one
+  XP-shaped `Tilemap` (`tileset=`/`map_data=`, no `bitmaps`) and one
+  VX-shaped one (`bitmaps[0] =` a live `Bitmap`, then `map_data=`), and reads
+  each one's own `@_tm_above_obj` ivar directly after — a dead canvas that is
+  never drawn into leaves no pixel trace either way for `frame_mean` to
+  sample, so this reads the allocation itself rather than the frame.
+  Confirmed to fail against the pre-fix code first (`git stash` on just
+  `mruby-rgss/src/lib.cxx`, rebuild, rerun): `xp_allocated=true` (should be
+  `false`) failed the probe and the `render_probe` ctest with it — then
+  passed clean (`xp_allocated=false vx_allocated=true`) after restoring the
+  fix. Full suite (only `mruby-rgss` touched, not `mruby-rpg2k`, so no change
+  expected and none seen): `rpg2k_scene_check.rb` 943, `rpg2k_logic_check.rb`
+  1185, `rpg2k_render_check.rb` 41, `rpg2k3_battle_row_check.rb` 19/0,
+  `rpg2k3_battle_gauge_check.rb` 15/0 all unchanged; `rpg2k_save_load_check.rb`
+  still reports exactly the same 1 known pre-existing failure (the unrelated
+  Show Picture field-shape mismatch), unaffected. `ctest` (all 8 targets,
+  including `mruby_test` and the newly-touched `render_probe`) and
+  `scripts/rgss_cruby_test_check.rb` (the separate CRuby-hosted mirror of
+  `mruby-rgss/test/test.rb`, unaffected since it never calls this engine's
+  actual native `Tilemap` code at all) both pass. `mruby-rgss/src/lib.cxx`
+  run through the pinned `clang-format` 22.1.8 with **no reformatting at all**
+  (clean diff, matched the file's existing style exactly). `cd build && ninja`
+  clean rebuild succeeded throughout. No wine session was run this cycle:
+  like cycle #211's own fix in this same area, this is purely an internal
+  resource-allocation question with no pixel-visible effect either way (a
+  canvas nothing ever draws into looks identical whether it exists or not),
+  so there is no RPG_RT/RGSS behavior to compare against — correctness here
+  is "does the above layer still exist exactly when something needs to draw
+  into it," which the new probe pins directly against a live display.
+  `docs/rpgxp-rgss-api-gap.md`'s own Tilemap entry rewritten in place to
+  describe the real per-row scheme instead of the stale flat-approximation
+  prose, and to record this fix.
 - ~~🚧 **Event system**~~ — **superseded, not current.** This bullet describes
   the reimplemented `mruby-rpgxp/mrblib/interpreter.rb` `Game::Interpreter` /
   `game.rb` party-actor model that used to stand in for a game's own scripts;

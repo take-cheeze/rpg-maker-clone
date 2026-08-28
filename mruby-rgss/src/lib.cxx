@@ -4858,6 +4858,65 @@ void tilemap_apply_viewport_tone(mrb_state* M,
   }
 }
 
+// Lazily create the priority "above" layer the first time it is actually
+// needed. Before ADR 0022's per-row scheme (TILEMAP_PRIO_SPAN below), this
+// flat companion canvas was the *only* place a priority tile could draw, so
+// tilemap_init created it unconditionally for every Tilemap. Now only
+// tilemap_refresh_vx (the VX/VX Ace tile model, which still uses this flat
+// "above characters" layer -- see the ADR's own "only the XP path moved")
+// ever draws into it; XP's own priorities route through the per-row strips
+// exclusively and never touch this canvas at all. Left eagerly allocated
+// anyway, every XP tilemap paid a permanent, always-blank 1.17 MiB canvas (at
+// XP's 640x480) plus a wasted per-refresh viewport-tone pass walking every
+// one of its pixels (tilemap_apply_viewport_tone) for a layer that could
+// never show anything -- dead weight on every RPG Maker XP game, including
+// the psp/wio targets this code is shared with (see TILEMAP_STRIP_SLOTS's own
+// comment on why that budget matters here). Mirrors tilemap_strip's own lazy
+// shape: created once, held on the tilemap so the GC keeps it alive, torn
+// down by tilemap_dispose exactly as before.
+void tilemap_ensure_above(mrb_state* M, mrb_value self, int w, int h) {
+  const mrb_value existing =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
+  if (mrb_test(existing) && DATA_PTR(existing))
+    return;
+
+  const mrb_value vp = mrb_iv_get(M, self, mrb_intern_lit(M, "@viewport"));
+  lv_obj_t* ac = lv_canvas_create(parent_object(M, vp));
+  lv_obj_set_pos(ac, 0, 0);
+  const mrb_value above_obj = mrb_obj_value(
+      mrb_data_object_alloc(M, mrb_obj_class(M, self), ac, &obj_type));
+  lv_obj_set_user_data(ac, mrb_ptr(above_obj));
+  lv_obj_add_event_cb(ac, on_lv_delete, LV_EVENT_DELETE, nullptr);
+  register_zobj(M, above_obj);
+  // Sync to whatever this tilemap's own z/visible already are, rather than
+  // the fixed z=TILEMAP_ABOVE_Z/always-visible the old eager tilemap_init
+  // call hardcoded: that always ran before a script had any chance to touch
+  // either, so it was trivially right by construction, but a lazy create can
+  // now run well after a script has already set `z=`/`visible=` on the
+  // tilemap (its first VX-path refresh, not its construction).
+  const mrb_value self_z = mrb_iv_get(M, self, mrb_intern_lit(M, "@z"));
+  const mrb_int z = mrb_test(self_z) ? mrb_as_int(M, self_z) : 0;
+  mrb_iv_set(M, above_obj, mrb_intern_lit(M, "@z"),
+             mrb_fixnum_value(z + TILEMAP_ABOVE_Z));
+  const mrb_value self_visible =
+      mrb_iv_get(M, self, mrb_intern_lit(M, "@visible"));
+  if (!mrb_nil_p(self_visible) && !mrb_test(self_visible))
+    lv_obj_add_flag(ac, LV_OBJ_FLAG_HIDDEN);
+  update_z(M);
+
+  RClass* bmp_class =
+      mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Bitmap");
+  const mrb_value above_canvas_v =
+      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
+  Bitmap& above_canvas = DataType<Bitmap>::get(M, above_canvas_v);
+  std::fill(above_canvas.buffer.begin(), above_canvas.buffer.end(),
+            static_cast<uint8_t>(0));
+  lv_canvas_set_buffer(ac, above_canvas.buffer.data(), w, h,
+                       LV_COLOR_FORMAT_ARGB8888);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_obj"), above_obj);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_canvas"), above_canvas_v);
+}
+
 void tilemap_refresh(mrb_state* M, mrb_value self) {
   lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
   if (!obj)
@@ -4869,9 +4928,23 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
   Bitmap& dst = DataType<Bitmap>::get(M, canvas_v);
   std::fill(dst.buffer.begin(), dst.buffer.end(), static_cast<uint8_t>(0));
 
-  // The priority "above" canvas (companion object created in tilemap_init) and
-  // its LVGL object, so priority tiles can be routed to it and it can be
-  // invalidated alongside the ground canvas.
+  const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
+  const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
+
+  // RPG Maker VX / VX Ace address their nine sheets through `bitmaps` instead
+  // of XP's single `tileset` + `autotiles`, and describe each tile with the
+  // `flags` table rather than `priorities`. A tilemap that has been given any
+  // sheet is drawn the VX way; everything below stays the XP path.
+  const mrb_value bmps_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
+  const bool is_vx =
+      vx_has_sheets(M, bmps_v) && mrb_test(md_v) && DATA_PTR(md_v);
+
+  // The priority "above" canvas and its LVGL object, so priority tiles can be
+  // routed to it and it can be invalidated alongside the ground canvas -- see
+  // tilemap_ensure_above's own comment for why this is only ever created for
+  // the VX path.
+  if (is_vx)
+    tilemap_ensure_above(M, self, dst.width, dst.height);
   const mrb_value above_v =
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_canvas"));
   Bitmap* above = (mrb_test(above_v) && DATA_PTR(above_v))
@@ -4893,15 +4966,7 @@ void tilemap_refresh(mrb_state* M, mrb_value self) {
                   ? &DataType<Table>::get(M, pr_v)
                   : nullptr;
 
-  const mrb_value ts_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@tileset"));
-  const mrb_value md_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@map_data"));
-
-  // RPG Maker VX / VX Ace address their nine sheets through `bitmaps` instead
-  // of XP's single `tileset` + `autotiles`, and describe each tile with the
-  // `flags` table rather than `priorities`. A tilemap that has been given any
-  // sheet is drawn the VX way; everything below stays the XP path.
-  const mrb_value bmps_v = mrb_iv_get(M, self, mrb_intern_lit(M, "@bitmaps"));
-  if (vx_has_sheets(M, bmps_v) && mrb_test(md_v) && DATA_PTR(md_v)) {
+  if (is_vx) {
     const mrb_value anim_v =
         mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_anim"));
     const bool animated = tilemap_refresh_vx(
@@ -5133,30 +5198,9 @@ mrb_value tilemap_init(mrb_state* M, mrb_value self) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@oy"), mrb_fixnum_value(0));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_anim"), mrb_fixnum_value(0));
 
-  // Priority "above" layer: a second canvas in the same parent, wrapped as an
-  // internal companion display object so the shared z-order (gfx_update) sorts
-  // it against the character sprites. It is held on the tilemap so the GC keeps
-  // it alive, and torn down in tilemap_dispose. Follows the same
-  // wrap_lv_obj/on_lv_delete/register_zobj pattern as a Sprite.
-  lv_obj_t* ac = lv_canvas_create(parent_object(M, vp));
-  lv_obj_set_pos(ac, 0, 0);
-  const mrb_value above_obj = mrb_obj_value(
-      mrb_data_object_alloc(M, mrb_obj_class(M, self), ac, &obj_type));
-  lv_obj_set_user_data(ac, mrb_ptr(above_obj));
-  lv_obj_add_event_cb(ac, on_lv_delete, LV_EVENT_DELETE, nullptr);
-  register_zobj(M, above_obj);
-  mrb_iv_set(M, above_obj, mrb_intern_lit(M, "@z"),
-             mrb_fixnum_value(TILEMAP_ABOVE_Z));
-  update_z(M);
-  const mrb_value above_canvas_v =
-      DataType<Bitmap>::make(M, bmp_class, w, h, LV_COLOR_FORMAT_ARGB8888);
-  Bitmap& above_canvas = DataType<Bitmap>::get(M, above_canvas_v);
-  std::fill(above_canvas.buffer.begin(), above_canvas.buffer.end(),
-            static_cast<uint8_t>(0));
-  lv_canvas_set_buffer(ac, above_canvas.buffer.data(), w, h,
-                       LV_COLOR_FORMAT_ARGB8888);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_obj"), above_obj);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@_tm_above_canvas"), above_canvas_v);
+  // Priority "above" layer: no longer created here. It is only ever drawn
+  // into by the VX/VX Ace tile model, so it is now allocated lazily on the
+  // first VX-path refresh instead -- see tilemap_ensure_above's own comment.
   return self;
 }
 
