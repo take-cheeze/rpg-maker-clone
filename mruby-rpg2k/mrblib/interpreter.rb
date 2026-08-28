@@ -799,15 +799,34 @@ module Game
       # applies for its own "message window still open" case, just triggered
       # here instead of by the interpreter's own next #update.
       live_index = (@waiting && @wait_kind == :key_input) ? @index - 1 : @index
-      frames = @call_stack + [[@list, live_index, @call_frame_event_id || @event_id || 0]]
-      frames.each_with_index.map do |(list, index, event_id), i|
-        {
+      # A plain preallocated Array + while loop instead of building
+      # @call_stack + [[...]] (two more array literals to hold the current
+      # frame's own tuple) and walking it via #each_with_index.map (an
+      # Enumerator, one boxed [item, index] pair per iteration, and a block
+      # Proc+env) -- same frame-by-frame values, one Array allocated instead
+      # of one per @call_stack entry plus the Enumerator machinery. The
+      # current (innermost) frame is handled after the loop since it never
+      # actually lived in @call_stack.
+      n = @call_stack.size
+      out = Array.new(n + 1)
+      i = 0
+      while i < n
+        list, index, event_id = @call_stack[i]
+        out[i] = {
           commands: list,
           current_command: index,
           event_id: (i.zero? ? @event_id : event_id) || 0,
           triggered_by_decision_key: i.zero? && !!@triggered_by_decision_key,
         }
+        i += 1
       end
+      out[n] = {
+        commands: @list,
+        current_command: live_index,
+        event_id: n.zero? ? (@event_id || 0) : (@call_frame_event_id || @event_id || 0),
+        triggered_by_decision_key: n.zero? && !!@triggered_by_decision_key,
+      }
+      out
     end
 
     # Restore a previously #call_stack_snapshot-captured stack (or the
@@ -1849,6 +1868,17 @@ module Game
 
     # -- state commands -------------------------------------------------------
 
+    # Returns a Range rather than the [a, b] pair the name might suggest: both
+    # callers immediately turn a/b right back into (a..b) to iterate it, so
+    # building the Range once here and handing it straight to them skips both
+    # that redundant reconstruction and the throwaway 2-element Array a plain
+    # `a, b = range(cmd)` destructure would otherwise cost on every single
+    # Control Switches/Variables command -- confirmed the dominant single
+    # source of interpreter-side per-command Array churn by a section-level
+    # RGSS::Profiler.stats[:object_types] pass. #begin/#end on the result give
+    # back the same two scalars for a caller that still needs them separately
+    # (#do_control_vars, for its own `a < b` check and the range-variable
+    # split).
     def range(cmd)
       mode = cmd.param(0)
       a = cmd.param(1)
@@ -1861,26 +1891,36 @@ module Game
         # variable slot 0 or a negative one. An already-empty range gets the
         # same "does nothing" result do_control_switches/do_control_vars
         # already produce for a descending batch range.
-        return [1, 0] if a <= 0
+        return 1..0 if a <= 0
         b = a
       end
-      [a, b]
+      a..b
     end
 
     def do_control_switches(cmd)
-      a, b = range(cmd)
       op = cmd.param(3) # 0 on, 1 off, 2 toggle
-      (a..b).each do |id|
-        case op
-        when 0 then switches[id] = true
-        when 1 then switches[id] = false
-        when 2 then switches.flip(id)
-        end
+      r = range(cmd)
+      # The overwhelmingly common case (a single-switch target, mode 0 or a
+      # resolved-to-one-id mode 2) needs no iteration at all -- skip straight
+      # to #set_switch instead of paying a block's Proc+env for a one-element
+      # Range every single time. A genuine multi-id batch (mode 1) still
+      # walks the whole range.
+      return set_switch(r.begin, op) if r.begin == r.end
+      r.each { |id| set_switch(id, op) }
+    end
+
+    def set_switch(id, op)
+      case op
+      when 0 then switches[id] = true
+      when 1 then switches[id] = false
+      when 2 then switches.flip(id)
       end
     end
 
     def do_control_vars(cmd)
-      a, b = range(cmd)
+      r = range(cmd)
+      a = r.begin
+      b = r.end
       op = cmd.param(3)  # 0 =, 1 +, 2 -, 3 *, 4 /, 5 %
       # A random operand (type 3) rolls independently for each variable in the
       # range, matching RPG_RT -- a batch "Var[1..5] = random 1~6" is five
@@ -1903,8 +1943,15 @@ module Game
       # operand out of the same range it writes).
       live = cmd.param(4) == 3 || cmd.param(4) == 2
       return do_control_vars_range_variable(cmd, a, b, op) if !live && cmd.param(4) == 1 && a < b
+      # The overwhelmingly common case (a single-variable target) needs no
+      # iteration at all, and reading the operand exactly once either way
+      # makes "before the loop" vs. "inside its one iteration" the same
+      # moment -- skip straight to the write instead of paying a block's
+      # Proc+env for a one-element Range every single time. A genuine
+      # multi-id batch still walks the whole range.
+      return variables[a] = apply(op, variables[a], operand_value(cmd)) if a == b
       val = operand_value(cmd) unless live
-      (a..b).each { |id| variables[id] = apply(op, variables[id], live ? operand_value(cmd) : val) }
+      r.each { |id| variables[id] = apply(op, variables[id], live ? operand_value(cmd) : val) }
     end
 
     # A batch (range) Control Variables write whose operand is itself a plain
