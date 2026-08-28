@@ -289,8 +289,9 @@ jobs:
       # on the editor bed plus script host on Pray for You, each its own step
       # and its own display so they run concurrently rather than the four of
       # them serially in one step; 116..119 stays free for another pass to be
-      # added without renumbering anything else) and the RGSSAD packed-asset
-      # smoke=120..121 (two runs, one per arm of its A/B) below. Every
+      # added without renumbering anything else), the RGSSAD packed-asset
+      # smoke=120..121 (two runs, one per arm of its A/B) and the RPG2k
+      # per-frame allocation regression check=122 below. Every
       # smoke here must use a distinct --server-num (never `-a`), or its
       # non-atomic probe can steal exe_open's display and fail that required
       # check.
@@ -472,6 +473,21 @@ jobs:
           # per game. See ADR 0021.
           - name: RPG2k real-game boot smoke test
             run: ./scripts/rpg2k_boot_check.bash 109
+
+          # Regression guard for the RPG2000 map scene's per-frame mruby
+          # object churn (Array/Proc/env allocations/sec): boots the engine on
+          # Nepheshel, samples RGSS::Profiler's own cumulative per-type alloc
+          # counters (mirrored into the profiler trace as the
+          # `mruby_type_allocs` counter series) at two points in a steady
+          # window, and fails if the measured rate exceeds a ceiling set from
+          # this scene's own measured baseline (docs/profiling.md) -- a
+          # reverted per-frame optimization (see the script's own header for
+          # the list) shows up as a failing check instead of just a quieter
+          # frame budget nobody happens to notice. Display 122.
+          - name: RPG2k per-frame allocation regression check
+            env:
+              SERVER_NUM: 122
+            run: ./scripts/rpg2k_alloc_regression_check.rb
 
           # The same guard for the RPG Maker XP runtime: the XP checks above run
           # mruby-rpgxp's sources under CRuby, so only booting the real binary

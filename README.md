@@ -691,12 +691,25 @@
   specific window (e.g. one battle) with
   `RGSS::Profiler.trace_start("trace.json")` / `RGSS::Profiler.trace_stop`. The
   stream stays loadable even if the process is killed mid-run, so it is safe to
-  trace a long session and stop it with `Ctrl-C`
+  trace a long session and stop it with `Ctrl-C`. Alongside `mruby_types`
+  (live counts, which rise and fall with GC) each sample also writes
+  `mruby_type_allocs`: the same per-type breakdown as **cumulative**,
+  never-reset allocation counts, so diffing two samples' values by their
+  timestamps gives a real per-second (or per-frame, dividing by the frame
+  count over the same span) allocation *rate* — exactly what
+  `scripts/rpg2k_alloc_regression_check.rb` checks
 - [`docs/profiling.md`](docs/profiling.md) records a measured baseline for the
   RPG2000 map scene — what the sections above currently say, which one is the
   bottleneck, and why moving audio to another thread does not help the frame
   rate (SDL_mixer already mixes on its own thread; only asset load blocks the
   game loop)
+- `scripts/rpg2k_alloc_regression_check.rb` boots the engine against a real
+  game, samples `mruby_type_allocs` at two points in a steady window and fails
+  if the measured per-second Array/Proc/env allocation rate exceeds a ceiling
+  set from the RPG2000 map scene's own measured baseline — a regression guard
+  for the per-frame object-churn fixes documented in `changelog.d/`, so a
+  reverted one (or a new per-frame `.each { }`/throwaway-Array pattern) shows
+  up as a failing check instead of just a quieter frame budget nobody notices
 
 ### Performance
 

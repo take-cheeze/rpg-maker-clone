@@ -383,16 +383,30 @@ void report(uint64_t now) {
                   static_cast<long long>(g_live_blocks));
     trace_counter("mruby_blocks", now, args);
     if (!types.empty()) {
-      std::string type_args;
+      std::string type_args, alloc_args;
       for (const TypeCount& t : types) {
-        if (!type_args.empty())
+        if (!type_args.empty()) {
           type_args += ',';
+          alloc_args += ',';
+        }
         type_args += "\"";
         type_args += json_escape(t.name);
         type_args += "\":";
         type_args += std::to_string(t.live);
+        alloc_args += "\"";
+        alloc_args += json_escape(t.name);
+        alloc_args += "\":";
+        alloc_args += std::to_string(t.allocs);
       }
       trace_counter("mruby_types", now, type_args);
+      // Cumulative (never-reset) allocation counts per type, the same source
+      // `types[i].allocs` -- as opposed to `mruby_types`' live counts, which
+      // rise and fall with GC and so cannot answer "how many objects of this
+      // type were allocated between two points in the run": a script sampling
+      // this series at two timestamps and dividing the delta by the elapsed
+      // frame count gets a real per-frame allocation rate. See
+      // scripts/rpg2k_alloc_regression_check.rb.
+      trace_counter("mruby_type_allocs", now, alloc_args);
     }
     std::fflush(g_trace_file);
   }
