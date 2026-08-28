@@ -22400,7 +22400,7 @@ check 'Scene::Map re-derives Save/Teleport/Escape access from the map tree ' \
 end
 
 # One map-tree node's BGM settings (Game::MapBgm, fields 11 bgm_type / 12 bgm).
-FakeBgmChunk = Struct.new(:file, :volume, :pitch)
+FakeBgmChunk = Struct.new(:file, :volume, :pitch, :fade_in)
 FakeBgmTreeNode = Struct.new(:bgm_type, :bgm, :parent_map_id)
 
 check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
@@ -22431,6 +22431,33 @@ check 'Scene::Map auto-plays the map own BGM on load and on Teleport' do
   eq [], RGSS::Audio.bgm_calls,
      'map 3 is type 1 (none): the still-playing map-1 track is left alone, nothing restarts'
   eq 'Town', state.current_bgm[:name], 'so the tracked current BGM is untouched too'
+end
+
+# Cycle #218: the map-tree node's own `bgm` chunk is the same liblcf `BGM`
+# struct (mruby-lcf/mrblib/schema.rb) as battle_music/inn_music/boat_music/
+# ship_music/airship_music -- whose own field 2 `fade_in` cycle #203 already
+# threaded through to `RGSS::Audio.bgm_play`'s 5th argument -- but
+# #play_map_bgm was the one call site #203 missed, so a map's own Autoplay
+# BGM fade-in was read off nothing and silently dropped.
+check "Scene::Map's own map BGM autoplay carries its fade-in through to " \
+     'bgm_play, same as battle/inn/vehicle BGM already do' do
+  parent = fake_parent(fake_db)
+  parent.map_tree = fake_map_tree(
+    1 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Town', 90, 105, 400), 0),
+    2 => FakeBgmTreeNode.new(2, FakeBgmChunk.new('Cave', 80, 95, 0), 0)
+  )
+  state = Game::State.new(fake_party, 1, 0, 0)
+  state.map = fake_map(1, {})
+  RGSS::Audio.reset_bgm
+  scene = RPG2k::Scene::Map.new(parent, state)
+  eq [['Town', 90, 105, 0, 400]], RGSS::Audio.bgm_calls,
+     "map 1's own fade_in (400) reaches bgm_play's 5th argument on load"
+  eq 400, state.current_bgm[:fadein], 'and is tracked on state too'
+
+  RGSS::Audio.reset_bgm
+  scene.send(:perform_teleport, [2, 0, 0, 0])
+  eq [['Cave', 80, 95, 0, 0]], RGSS::Audio.bgm_calls,
+     "a zero (default/unset) fade_in on map 2's own BGM still reaches bgm_play as zero"
 end
 
 check 'Scene::Map does not auto-play the map BGM while the party is boarded' do

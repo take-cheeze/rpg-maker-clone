@@ -1770,6 +1770,58 @@ The work below is roughly ordered by the critical path to a walkable game
   other BGM path in cycles #202/#203; this cycle is the same mechanical
   plumbing to the one call site those cycles missed) plus a factual
   correction of a comment that had gone stale the moment it was written.
+  ✅ **Follow-up (cycle #218, 2026-08-28): a map's own Autoplay BGM
+  (the map-tree node's `bgm` chunk, Map Properties in the editor) was a
+  second BGM source cycle #203's fade-in wiring never reached.** Method:
+  per the standing instruction to repeat cycle #217's systematic-sweep
+  pattern rather than blind reading, this cycle grepped every call site of
+  `#music_fadein` (the helper cycle #203 added specifically to read a
+  liblcf `BGM`-struct's field 2 `fade_in`, `mruby-lcf/mrblib/schema.rb`)
+  across `mruby-rpg2k/mrblib/scene/map.rb`. Three call sites already read
+  it (`#battle_bgm`, `#vehicle_bgm`, and `#restore_pre_inn_bgm`'s source
+  `db.system.inn_music` via cycle #203's own fix), but `#play_map_bgm` —
+  which resolves `Game::MapBgm.chunk_for` (the same `BGM`-struct shape,
+  `map_properties` field 12) on every initial map load and every Transfer
+  Player — built its `{ name:, volume:, tempo: }` hash for `#play_bgm`
+  without ever calling `#music_fadein`, so a fade-in configured on a
+  map-tree node's own BGM was always read as 0 and the track always
+  restarted at full volume instantly. Fixed by passing
+  `fadein: music_fadein(bgm)` through, the same idiom `#battle_bgm`/
+  `#vehicle_bgm` already use. **Verification**: extended
+  `rpg2k_scene_check.rb`'s existing `FakeBgmChunk` fixture struct with a
+  `fade_in` field (defaults to `nil` when omitted, so every pre-existing
+  call site building one with 3 positional args is unaffected) and added a
+  new check asserting a map's own `fade_in: 400` reaches
+  `Audio.bgm_calls` as `['Town', 90, 105, 0, 400]`, plus a sibling map
+  with an unset fade-in still reaching bgm_play as 0. Confirmed to fail
+  against the pre-fix `map.rb` first (`git show HEAD:mruby-rpg2k/mrblib/
+  scene/map.rb` swapped in in place of the working copy, ran the check,
+  got the expected `RuntimeError: expected [...0, 400]], got [...0, 0]]`
+  failure) then restored the fix and reran clean. Full suite:
+  `rpg2k_scene_check.rb` 945 passed (944 baseline + 1 new check);
+  `rpg2k_logic_check.rb` 1187 passed (unchanged); `rpg2k_render_check.rb`
+  41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+  load_check.rb` exit 0, zero known failures (unchanged); `cd build &&
+  ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixture), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb` and
+  `rgss_cruby_compat.rb` needed no attention. No wine session was run this
+  cycle (audio timing is not screenshot-diffable, matching every earlier
+  BGM-fade-in cycle's own note) and no EasyRPG source was consulted for
+  any new behavioral claim — the `BGM`-struct shape and `#music_fadein`
+  mechanism were already established by cycle #203; this cycle is the
+  same mechanical plumbing to a call site that cycle missed. **Left
+  open**: the systematic sweep of `Audio.bgm_play`/`#music_fadein` call
+  sites is now exhausted (every remaining call site — `resume_saved_bgm`,
+  `RGSS::Audio.bgm_play` in `interpreter.rb`'s Play BGM/Play Memorized
+  BGM branches, `Scene::Title`, `Scene::GameOver` — already threads
+  fade-in correctly or deliberately bypasses it with a cited reason); a
+  similar sweep of `Audio.se_play`/SE-struct call sites found every one
+  already consistent (the `SE` struct's `balance` field is dropped
+  everywhere, but that matches `Audio.se_play`'s own 3-argument signature,
+  which has no pan parameter to receive it — not a missed call site).
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
