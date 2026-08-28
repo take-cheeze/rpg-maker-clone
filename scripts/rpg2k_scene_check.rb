@@ -5836,9 +5836,11 @@ check 'Set Move Route targeting a genuinely nonexistent event id does not freeze
   scene = new_scene({ 1 => event(0, 4, auto) }, player: [5, 5])
   st = scene.instance_variable_get(:@state)
 
-  20.times { scene.update }
+  out = capture_stderr { 20.times { scene.update } }
   ok st.switches[1],
      'a Move Event with no matching event id at all is a plain no-op, not the hidden-event freeze'
+  ok out.include?('[RPG2k] Move Event:') && out.include?('99') && out.include?('not found'),
+     "expected a [RPG2k] Move Event diagnostic naming the missing id, got: #{out.inspect}"
 end
 
 check "Proceed With Movement also waits on a vehicle's forced route" do

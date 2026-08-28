@@ -22015,6 +22015,85 @@ not yet verified:
   asserts continuing north (the newly faced direction) instead of east (the
   old, wrong "last walked" assertion) — confirmed to fail against the
   pre-fix code before the fix.
+  ✅ **Follow-up (cycle #208, 2026-08-28): closed the non-jump sibling of
+  cycle #207's own fix -- the identical diagonal-discarding bug in
+  `#turn_right`/`#turn_left`/`#turn_around` themselves, outside any jump
+  block.** Method: skimmed several other sections of this file first
+  (menus/save/battle, the untriaged/full-site-sweep backlog, database
+  field semantics, an exhaustive scan for schema fields never read
+  anywhere in `mrblib`) looking for a fresher, unrelated candidate — most
+  open-looking leads there either needed a genuine wine session this
+  environment doesn't have this cycle, needed a citation this project's
+  own ground rules forbid (EasyRPG source for a fresh behavioral claim,
+  beyond liblcf's field-id/type table), or turned out to already be
+  resolved by an earlier cycle once read in full. Came back to the jump/
+  diagonal cluster cycles #206-207 had just closed and re-read
+  `Character#turn_right`/`#turn_left`/`#turn_around` directly (the
+  2026-08-21 follow-up two entries above this one is what gave them their
+  own `@last_move_direction` assignment in the first place) — each one
+  still wrote `@last_move_direction = @direction`, copying the
+  newly-turned *cardinal* facing, exactly the same shape of bug
+  `#jump_face_direction` had before cycle #207: `@last_move_direction` can
+  hold a diagonal `[horizontal, vertical]` pair after `#move_diagonal`
+  (see its own citation), so a Turn Right/Left/180 (or Turn Random, which
+  calls `#turn_right`/`#turn_left` directly) right after a diagonal
+  move-route sub-command — still outside any jump block — silently
+  discarded that pair instead of rotating it, and a following Move Forward
+  walked the pre-turn diagonal collapsed onto one cardinal axis rather
+  than the turned diagonal. This is a self-contained, code-only
+  consistency fix needing no fresh behavioral citation: `Character::
+  TURN_RIGHT`/`TURN_LEFT`/`TURN_180` already carry the four diagonal-pair
+  keys cycle #207 added (rotated 90/180 degrees around the same 8-way
+  compass the existing cardinal entries already sit on) for the identical
+  rotation inside a jump block, so the fix reuses them verbatim: each
+  method now looks `@last_move_direction` itself up in its table (a
+  cardinal or a diagonal pair alike) instead of re-deriving it from the
+  freshly-turned `@direction` — `@direction` (the always-cardinal, on-
+  screen facing) is untouched and keeps rotating exactly as it already
+  did, the same "leave the visible representation alone, fix only the
+  internal continuation state" split cycle #207 relied on. Also corrected
+  the stale doc comment on the `TURN_RIGHT`/`TURN_LEFT`/`TURN_180` hash
+  literals, which claimed "only `#jump_face_direction` ever looks up a
+  diagonal key here ... since a character's own on-map `@direction` is
+  always cardinal" — true of `@direction`, but not of `@last_move_
+  direction`, which is exactly what made this bug reachable. **Verified**:
+  hand-traced the fix's own arithmetic before writing the checks
+  (character at `(2, 2)` facing Down, `Move Upper-Right / Turn Right /
+  Move Forward` — diagonal step adds `(1, -1)` landing at `(3, 1)`, facing
+  Up; Turn Right rotates `@direction` to Right and rotates the tracked
+  `[6, 8]` pair to Down-Right's `[6, 2]`; Move Forward then adds `(1, 1)`,
+  landing at `(4, 2)` — pre-fix this reads `expected [4, 2], got [4, 1]`,
+  since the pre-fix code collapsed to a plain Right move; a second check
+  swapped Turn Right for Turn 180, rotating to Down-Left's `[4, 2]` pair,
+  whose `(-1, 1)` delta exactly cancels the diagonal step's `(1, -1)` and
+  lands back at the start `(2, 2)` as an ordinary, non-jump move
+  (`Character#jumped` stays false throughout, unlike the jump-block
+  sibling's own net-zero-but-still-a-jump case) — pre-fix this reads
+  `expected [2, 2], got [3, 2]`). Both new `scripts/rpg2k_logic_check.rb`
+  checks were confirmed to fail against the pre-fix code first (`git
+  stash`/`git stash pop` on just `mruby-rpg2k/mrblib/game.rb`: `[4, 1]`
+  and `[3, 2]` respectively, matching the hand trace exactly) then pass
+  after. Full suite: `rpg2k_logic_check.rb` 1184 passed (1182 baseline + 2
+  new, 0 failures); `rpg2k_scene_check.rb` 943 passed (unchanged, this
+  cycle touches no `scene/*.rb` file); `rpg2k_render_check.rb` 41 passed
+  (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_
+  gauge_check.rb` 15/0 (both unchanged, no battle code touched); `rpg2k_
+  save_load_check.rb` still reports exactly the same 1 known pre-existing
+  failure (the unrelated Show Picture field-shape mismatch), unaffected.
+  No `.cxx`/`.hxx` file was touched (pure `mrblib` Ruby plus a
+  check-script addition), so the pinned `clang-format` step does not
+  apply; `cd build && ninja` clean rebuild succeeded with no new warnings;
+  `ctest -R mruby_test` passed (7.30s). No wine session was run this cycle
+  and no EasyRPG source was consulted for this fix's own behavioral claim
+  — the rule being extended (a diagonal `[horizontal, vertical]` pair
+  tracked as a character's own continuation state rotates the same way
+  under Turn Right/Left/180 whether or not a jump block is in progress) is
+  the identical, already-established, already-cited one cycle #207's own
+  fix carries for the jump-block case; this cycle only recognized that the
+  non-jump `#turn_right`/`#turn_left`/`#turn_around` methods never
+  received the same treatment when they gained their own
+  `@last_move_direction` assignment on 2026-08-21, a gap discoverable by
+  direct code reading, needing no fresh reference confirmation.
 - A move-route "Change Graphic" sub-command (hero, event, or vehicle) is
   **not persistent** — it reverts to the base graphic on save-load or map
   transfer, unlike the dedicated Change Graphic event commands. ✅ **All three
@@ -26311,7 +26390,9 @@ resolving to no match", plus invalid-event-page as a distinct message from
 invalid-event-id). The remaining "invalid event ID" cause — a stale
 Variable-Op/Move-Route target — is a different command family, not part
 of Call Event; **the Variable-Op half is now fixed too** (see the ✅ entry
-below), leaving only Move-Route open. **Store Event ID has no analogous gap**:
+below), leaving only Move-Route open. ✅ **Follow-up (cycle #209, 2026-08-28):
+the Move-Route half is closed too** — see the dedicated bullet later in this
+file (search "Move Event: target event"). **Store Event ID has no analogous gap**:
 unlike Call Event it never targets an event *by id*, only by tile position
 (`#do_store_event_id`), and "no event on this tile" (stored as `0`) is a
 genuine, correctly-modelled answer rather than a stale reference — nothing
@@ -26488,6 +26569,66 @@ the now-dangling tile, and asserts the diagnostic fires exactly once (not
 once per the two call sites that both read the same landed-on tile in a
 single step, and not again on further re-queries of the same tile) while
 terrain damage/bush depth both fall back to their harmless defaults.
+✅ **Follow-up (cycle #209, 2026-08-28): "Move Event: target event ..." — Set
+Move Route targeting a genuinely nonexistent event id now reports a
+diagnostic too, closing the last of the four "invalid event ID" causes this
+catalog names (the "leaving only Move-Route open" note above).** Method:
+skimmed several sections of this file broadly first — battle command
+resolution, message/window text processing, database field defaults,
+picture/sprite rendering, the RGSS (XP/VX/VXAce) material, the RPG Maker
+JS/MZ section, and the viprpg-dev backlog — specifically to stay away from
+the move-route diagonal-direction family cycles #206-208 had just
+exhausted; nearly everything skimmed in those other sections turned out
+either already resolved by an earlier cycle, to need a genuine wine session
+this environment doesn't have this cycle, or (the item-drop-rate 1% floor,
+the within-frame Autorun restart, the browser-check dependency) to be
+explicitly flagged elsewhere as too large/uncertain for one cycle. This
+Move-Route diagnostic was the one item that was simultaneously *named as
+still open* by this file's own text (not a fresh guess) and small,
+self-contained, and low-risk (adding a log line to an already-correct,
+already-tested no-op path — no behavioral claim needing external
+verification at all, the same "internal consistency, no wine needed"
+category the picture-round-trip and Party#effective_* fixes earlier in this
+file used). Confirmed by direct code reading: `Scene::Map#apply_move_request`
+(`mruby-rpg2k/mrblib/scene/map.rb`)'s three-way target lookup — an id
+already backing a live `Game::Character` (`@events`), a real-but-hidden id
+in the map's own raw event table (`@map.unit.events`, the already-handled
+freeze case), or neither — had no `else` arm for the third case at all; the
+request was simply dropped, with the method's own comment explicitly
+noting "a genuinely nonexistent event id is a different, unmodelled
+error-dialog case ... and does not land here," i.e. already self-flagged as
+the gap this cycle closes. Fixed by adding the missing `else` arm, logging
+a `[RPG2k] Move Event: target event #<id> not found on this map, dropping
+the route` diagnostic in the same `[RPG2k] <Command>: <detail>` shape every
+other entry in this catalog already uses (Call Event, Enemy Encounter,
+Control Variables' Character operand, Terrain) — behaviour itself is
+untouched, the request was already correctly a silent, non-freezing no-op
+(confirmed by the pre-existing "Set Move Route targeting a genuinely
+nonexistent event id does not freeze" `scripts/rpg2k_scene_check.rb` check
+this same fix extends, rather than a new one), only the missing trace is
+now visible. **Verification:** extended that exact pre-existing check to
+also `capture_stderr` and assert the new diagnostic line names the
+unresolved id (99) and says "not found," confirmed to fail against the
+pre-fix code first (`git stash`/`git stash pop` on just
+`mruby-rpg2k/mrblib/scene/map.rb`: `expected a [RPG2k] Move Event
+diagnostic naming the missing id, got: ""`) then pass after. Full suite:
+`rpg2k_scene_check.rb` 943 passed (unchanged count — an existing check was
+extended, not a new one added; 0 failures); `rpg2k_logic_check.rb` 1184
+passed (unchanged, no `interpreter.rb`/`game.rb` touched); `rpg2k_render_
+check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+`rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, no battle code
+touched); `rpg2k_save_load_check.rb` still reports exactly the same 1
+known pre-existing failure (the unrelated Show Picture field-shape
+mismatch), unaffected. No `.cxx`/`.hxx` file was touched (pure `mrblib`
+Ruby plus a check-script extension), so the pinned `clang-format` step
+does not apply; `cd build && ninja` clean rebuild succeeded with no new
+warnings; `ctest -R mruby_test` passed (7.00s). No wine session was run
+this cycle and no EasyRPG source was consulted for this fix's own
+behavioral claim — there isn't one: this is a pure diagnostics-only
+addition to an already-correct, already-verified-elsewhere no-op path,
+following an established in-repo pattern (the four sibling diagnostics
+this same catalog already names) rather than introducing any new
+behavioral assumption.
 ✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
 are wired up** — ~~parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
 chunk was first decoded (ADR 0034)~~ (see the Follow-up below — `footstep`
