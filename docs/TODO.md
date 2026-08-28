@@ -26629,6 +26629,87 @@ addition to an already-correct, already-verified-elsewhere no-op path,
 following an established in-repo pattern (the four sibling diagnostics
 this same catalog already names) rather than introducing any new
 behavioral assumption.
+✅ **Follow-up (cycle #210, 2026-08-28): the "invalid hero" case of this same
+catalog — never actually closed, just never named as still-open the way
+Move-Route was — is fixed too.** Method: per the standing instruction to
+pick a genuinely different area from cycles #206-209's Event-system run
+(move-route diagonal direction, then the Move-Route diagnostic just above),
+skimmed several other sections broadly first — Message window/Show Choices,
+Screen effects, BGM/SE, Variables & Switches, Database field semantics,
+Party/Actor/Vehicle, the RPG2003-only cluster, the "Flagged for priority
+triage" list, the RGSS (XP/VX/VXAce) section, the viprpg-dev wiki backlog —
+and found nearly every leaf bullet in each already carries its own ✅; the
+`2000/デフォ戦/デフォ戦botまとめ` bot-trivia dump and the RGSS browser-
+rebuild item are the two remaining large, explicitly-flagged-as-too-big
+items, and the VX Ace `$!`/exception-global gap is mid-flight in a sibling
+session's own uncommitted `3rd/mruby` changes this session was told not to
+touch. This catalog's own intro sentence just above ("invalid hero, skill,
+item, enemy, enemy group, battle animation, terrain, chipset, common event
+... skill/enemy/enemy-group/battle-animation/terrain/chipset fixed")
+conspicuously omits "hero" from its own parenthetical fixed-list even
+though the sentence names it first — a mismatch worth checking directly
+rather than assuming stale bookkeeping either way. Traced every actor-id
+consuming site in `mruby-rpg2k/mrblib/interpreter.rb` (`stat_targets`,
+`identity_target`, `actor_operand`, `actor_condition`, `#do_name_input`,
+`#resume_name_input`, `#do_change_party`'s Add branch) and confirmed they
+already resolve a dangling hero id through `party.roster[id]` —
+`Game::Actors#[]` (`mruby-rpg2k/mrblib/game.rb`) — which already raises,
+catches and logs a deduped `[RPG2k] actor #<id> could not be built: No such
+actor: <id>` diagnostic for exactly this case (confirmed live: a scratch
+probe built off this file's own `party_state`/`FakeActorDB` fixtures showed
+`roster[999]`, `identity_target`-backed Change Actor Name/Title/etc., and
+Change Party Member's own Add branch all already emit it). The **one**
+asymmetric gap found: Change Party Member's **Remove** branch
+(`Game::Party#remove_actor`) never consulted the roster at all — it only
+ever filtered the current `@actors` list by id match, so a stale/dangling
+id reaching Remove (as opposed to Add, which shares the identical
+`cmd.param`-resolved id in `#do_change_party`) silently no-opped with no
+trace whatsoever, the exact "invalid hero" gap this catalog names, just on
+only one of Change Party Member's two radio-button settings. Fixing this
+needed more than reusing `#[]` directly, though: `Game::Actors#[]`
+instantiates-and-caches the actor into `@all`, which `Party#to_h`'s own
+`@roster.each` walks to build what the save writes out (`#existing`'s own
+doc comment already flags this exact hazard for a read-only path like
+`\N[n]`) — so naively calling `@roster[id]` from `#remove_actor` for the
+overwhelmingly common case (an ordinary, perfectly valid id that simply
+isn't a current member) would have silently enrolled a
+never-otherwise-met actor into the save data as a side effect of merely
+asking, a regression Add's own lookup does not risk (Add always needs the
+actor object for real, to add it). Fixed with a new
+`Game::Actors#known_invalid?(id)`, sharing `#[]`'s exact message and its
+`@missing` dedup table (so the same id logs once whichever path first
+reaches it) but checking `@db.player[id]` directly rather than
+instantiating anything — true (and logged) only for a positive id with no
+database row and not already a live entry in `@all`, false with no side
+effect otherwise. `#remove_actor` now calls it exactly when the id matched
+no current member, closing the gap without changing save behaviour for the
+ordinary case. **Verification:** a new `scripts/rpg2k_logic_check.rb` check
+(`git stash`/`git stash pop` on just `mruby-rpg2k/mrblib/game.rb`) confirmed
+to fail against the pre-fix code first (`RuntimeError: ` — the diagnostic
+line never appeared) then pass after; it asserts all four cases in one
+pass: a dangling id via Remove reports the diagnostic and is not enrolled
+(`party.roster.all` stays `[1]`, the starting leader only); a second
+occurrence of the same dangling id is deduped (empty stderr); an ordinary
+valid-but-never-met id (`2`, present in the fixture's own player table)
+removed while not a member stays completely silent **and** is still not
+enrolled; and removing an id that genuinely is a current member behaves
+exactly as before (silent, genuinely removed). Full suite:
+`rpg2k_scene_check.rb` 943 passed (unchanged, no `scene/map.rb` touched);
+`rpg2k_logic_check.rb` 1184 → **1185** passed (the one new check);
+`rpg2k_render_check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb`
+19/0 and `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged, no battle
+code touched); `rpg2k_save_load_check.rb` still reports exactly the same 1
+known pre-existing failure (the unrelated Show Picture field-shape
+mismatch), unaffected. No `.cxx`/`.hxx` file was touched (pure `mrblib`
+Ruby plus a check-script addition), so the pinned `clang-format` step does
+not apply; `cd build && ninja` clean rebuild succeeded; `ctest -R
+mruby_test` passed (8.60s). No wine session was run this cycle — the fix
+is inferred by symmetry with Add's own already-established, already-tested
+behaviour (both branches of the same command resolve the identical
+`cmd.param`-sourced id) rather than independently confirmed against genuine
+RPG_RT, the same honesty standard this catalog's own sibling entries
+(Call Event, Enemy Encounter, the Move-Route entry just above) already
+apply to themselves.
 ✅ **Terrain's `footstep` and `on_damage_se` fields (chunk 16 elements 15/16)
 are wired up** — ~~parsed by `mruby-lcf/mrblib/schema.rb` since the terrain
 chunk was first decoded (ADR 0034)~~ (see the Follow-up below — `footstep`

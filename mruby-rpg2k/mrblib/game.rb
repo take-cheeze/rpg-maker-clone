@@ -3665,6 +3665,25 @@ module Game
     # naming an actor does not enrol them in the roster the save writes out.
     def existing(id); id.nil? ? nil : @all[id]; end
 
+    # Whether `id` is a genuinely dangling reference -- a positive id with no
+    # matching database row at all -- **without** instantiating (and so
+    # without enrolling) the actor the way #[] does. A caller that only needs
+    # to tell "not currently relevant" apart from "this id doesn't even exist
+    # in the database" (#remove_actor's own no-op case, below) must not
+    # enroll a merely-never-met-but-otherwise-valid actor into the save data
+    # as a side effect of asking. Logs and dedupes through the exact same
+    # `@missing` table and message #[] uses, so an id already reported by one
+    # path doesn't double-report through the other.
+    def known_invalid?(id)
+      return false if id.nil? || id <= 0 || @all[id]
+      return false if @db.player[id]
+      unless @missing[id]
+        @missing[id] = true
+        $stderr.puts "[RPG2k] actor ##{id} could not be built: No such actor: #{id}"
+      end
+      true
+    end
+
     # Every instantiated actor, in ascending database id order.
     def all; @all.keys.sort.map { |i| @all[i] }; end
 
@@ -4055,6 +4074,20 @@ module Game
       before = @actors.size
       @actors.reject! { |a| a.id == id }
       @revision += 1 unless @actors.size == before
+      return unless @actors.size == before
+      # The id matched no current member -- the ordinary "not currently in
+      # the party" case, harmless and silent. But #add_actor already reports
+      # a positive id with no matching database row at all (a database
+      # shrink leaving a stale Change Party Member target, the "invalid
+      # hero" catalog case) via its own #roster[] lookup; #remove_actor had
+      # no equivalent check at all, so the identical stale id silently did
+      # nothing with no trace when the command's "Remove" radio button
+      # happened to be selected instead of "Add". #known_invalid? reports
+      # that exact same case without #[]'s side effect of building and
+      # enrolling the actor into the save data -- unlike Add, a Remove of a
+      # merely-never-met-but-otherwise-valid actor must not have that
+      # side effect.
+      @roster.known_invalid?(id)
     end
 
     # Make an already-rostered actor the leader (party slot 0). If they are
