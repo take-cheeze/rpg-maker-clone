@@ -3218,9 +3218,24 @@ module Game
     #
     # Current HP/SP survive the change, re-clamped to the refreshed maxima.
     # Returns whether the class actually changed — false for a class id this
-    # database does not define, which RPG_RT leaves entirely alone.
+    # database does not define, which RPG_RT leaves entirely alone. A
+    # database shrink deleting a class (chunk 30) an event still references
+    # -- shown as "?" in the editor -- is now reported too, rather than
+    # silently no-opping with no trace: docs/TODO.md's runtime error catalog
+    # lists this exact shape for hero/skill/item/enemy/enemy-group/battle-
+    # animation/terrain/chipset/common-event ids, but never named "class" as
+    # one of them. `respond_to?`-guarded the same way those are, so a bare
+    # test fixture (or any RPG2000 database, which carries no job table at
+    # all) stays quiet -- this only fires for a genuine dangling id in a
+    # database that does have one.
     def change_class(class_id, new_level, skill_mode, param_mode)
-      return false if class_id > 0 && class_row_for(class_id).nil?
+      if class_id > 0 && class_row_for(class_id).nil?
+        if @db.respond_to?(:job) && @db.job
+          $stderr.puts "[RPG2k] Change Class: class ##{class_id} not found " \
+                       'in database, actor left unchanged'
+        end
+        return false
+      end
 
       unequip(EQUIP_ORDER.size)
       hp = @hp

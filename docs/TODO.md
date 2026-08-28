@@ -26874,6 +26874,75 @@ behavioral claim -- there isn't one: this is a pure diagnostics-only
 addition to an already-correct, already-tested no-op path, mirroring an
 established in-repo pattern (`#resolve_call`'s own identical common-event
 case) rather than introducing any new behavioral assumption.
+✅ **Follow-up (cycle #214, 2026-08-28): RPG2003's Change Class command no
+longer swallows a dangling class id with no trace — a lookup this
+catalog's own "invalid hero, skill, item, enemy, enemy group, battle
+animation, terrain, chipset, common event" list never named at all.**
+Method: per the standing instruction to skim broadly first rather than
+default to the nearest recent entries, read across battle mechanics,
+message/window text processing, database field defaults, picture/sprite
+rendering, save-file round-tripping, both RGSS API-gap docs
+(`docs/rpgxp-rgss-api-gap.md`, `docs/rpgvx-rgss-api-gap.md`) and the
+viprpg-dev/yado.tk untriaged backlogs; nearly every leaf bullet in each was
+already resolved by an earlier cycle, needed a genuine wine session this
+environment doesn't have, or was already explicitly flagged as too large/
+uncertain for one cycle by cycles #209-#213 (the デフォ戦botまとめ
+140-item dump, the SPEED_UP ceiling investigation, the within-frame
+Autorun-restart feature, the RGSS browser-rebuild item, the VX Ace `$!`
+gap mid-flight in a sibling session, and the Approach-Hero-plus-Autorun
+freeze **Bug** bullet a few thousand lines up, itself already passed over
+by cycles #209/#211 as event/movement-adjacent). Re-ran the same
+`class_row_for`/`db_item`/`db_enemy_group` family of database-lookup call
+sites this catalog's own prior entries fixed, this time specifically
+checking every RPG2003-only field/command this codebase resolves through
+a similar `respond_to?`-guarded database lookup for one the catalog's own
+intro sentence had not yet named: `Game::Actor#change_class`
+(`mruby-rpg2k/mrblib/game.rb`), the Change Class (1008) event command's
+own backing method, already had the identical shape — `return false if
+class_id > 0 && class_row_for(class_id).nil?`, a silent no-op for a
+database shrink deleting a class (chunk 30) an event still references,
+shown as "?" in the editor exactly like every other entry in this catalog
+— but never reported the gap. Confirmed genuinely reachable: `Interpreter
+#do_change_class`'s only production call site passes `cmd.param(2)`
+straight through with no validation of its own, so any RPG2003 project
+whose database once had more classes than it does now reaches this path
+the instant a leftover Change Class command runs. Fixed by adding a
+`[RPG2k] Change Class: class #<id> not found in database, actor left
+unchanged` diagnostic right before the existing early return, guarded by
+the identical `@db.respond_to?(:job) && @db.job` check `class_row_for`
+itself already uses, so a database with no class table at all (every
+RPG2000 project, which can never even reach this method — `do_change_class`
+gates on `party.rpg2003?` first) stays quiet; behaviour itself is
+completely unchanged, only the missing trace is now visible. Covered by a
+new `scripts/rpg2k_logic_check.rb` check (a dangling class id against a
+database that does carry a class table logs the diagnostic and still
+leaves the actor's `class_id`/stats untouched; the identical call against
+a database with no class table at all — `jobs: nil`, matching a genuine
+RPG2000 `.ldb`'s own absent chunk — stays silent), confirmed to fail
+against the pre-fix code (`git stash`/`git stash pop` on just
+`mruby-rpg2k/mrblib/game.rb`: `RuntimeError: expected a not-found
+diagnostic naming class id 99`) then pass after. **Verification:**
+`scripts/rpg2k_scene_check.rb` 943 passed (unchanged, no scene-check-
+reachable file touched); `rpg2k_logic_check.rb` 1187 passed (1186
+baseline + 1 new check, 0 failures); `rpg2k_render_check.rb` 41 passed
+(unchanged); `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_
+gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_load_check.rb` still
+reports exactly the same 1 known pre-existing failure (the unrelated Show
+Picture field-shape mismatch), unaffected; `scripts/rpg2k_command_soak.rb`
+clean on all four test beds (184166/184166/4042/3430 commands, no new
+gaps — only the pre-existing "Open Video Options" line on Ch.1, present
+before this cycle too; no real game bed actually exercises a dangling
+Change Class id, so the new diagnostic never fires there, consistent with
+this catalog's other diagnostics-only fixes). No `.cxx`/`.hxx` file was
+touched (pure `mrblib` Ruby plus a check-script addition), so the pinned
+`clang-format` step does not apply; `cd build && ninja` clean rebuild
+succeeded; `ctest -R mruby_test` passed. No RGSS-side Ruby or C++ was
+touched, so `scripts/rgss_cruby_test_check.rb` does not apply this cycle.
+No wine session was run and no EasyRPG source was consulted for this
+fix's own behavioral claim — there isn't one: this is a pure diagnostics-
+only addition to an already-correct, already-tested no-op path, mirroring
+this catalog's own established in-repo pattern rather than introducing
+any new behavioral assumption.
 ✅ **The Equip and Status screens no longer show a dangling equipped item id
 with no trace** — the "item" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list
