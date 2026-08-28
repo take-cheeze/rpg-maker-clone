@@ -8211,8 +8211,11 @@ class RPG2k
       # #fire_target_flash in battle, #fire_map_target_flash on the map), plus
       # screen_shaking 2 (whole screen) / 1 (the animation's own target --
       # #fire_target_shake in battle only, see there for why the map path is a
-      # genuine no-op rather than a gap). RPG2000 stores the flash colour /
-      # power as 0..31, scaled up to the 0..255 range every flash path uses.
+      # genuine no-op rather than a gap), plus (below) the timing's own `se`,
+      # played unconditionally in both battle and map context -- a sound has
+      # no "screen vs target" split to gate on. RPG2000 stores the flash
+      # colour / power as 0..31, scaled up to the 0..255 range every flash
+      # path uses.
       def fire_animation_flashes(ma)
         ma[:timings].each do |t|
           next unless (t.frame || 0) == ma[:frame_i]
@@ -8265,6 +8268,30 @@ class RPG2k
               end
             end
           end
+          # A timing's own `se` (the Timing struct's field 2, mruby-lcf/
+          # mrblib/schema.rb) sits in this exact same per-frame struct as
+          # flash_scope/screen_shaking just above, decoded the same way, but
+          # was never read here at all -- the identical "decoded, never
+          # wired up" shape those two fields each already needed fixing for
+          # in this very method (see their own comments above). The only
+          # place an animation's own sound ever played before this fix was
+          # #play_animation_se (Scene::Base) -- a deliberately narrower,
+          # single-shot summary (the *first* timing across the *whole*
+          # animation with a real sound, played once before the animation
+          # itself even starts, for the field item/skill menu's own success
+          # cue -- see that method's own citation) -- not a substitute for a
+          # genuine battle round or a Show Battle Animation (11210/13260)
+          # command actually sounding each frame's own timing as that frame
+          # arrives, exactly the way flash_scope/screen_shaking already do a
+          # few lines up. NOT independently confirmed against genuine
+          # RPG_RT under wine (no EasyRPG source consulted this cycle, per
+          # this project's own standing rule against new citations there);
+          # the blank/"(OFF)" no-op convention mirrors #play_animation_se's
+          # own already-established handling of the identical field.
+          se = t.respond_to?(:se) ? t.se : nil
+          name = se && se.respond_to?(:file) ? se.file : nil
+          next unless name && !name.empty? && name != '(OFF)'
+          RGSS::Audio.se_play name, (se.volume || 100), (se.pitch || 100), (se.balance || 50)
         end
       end
 

@@ -2192,6 +2192,82 @@ The work below is roughly ordered by the critical path to a walkable game
   Int32 default 100) already matched `mruby-lcf/mrblib/schema.rb` exactly —
   no EasyRPG C++ source, and no other new behavioral claim, was consulted.
 
+  ✅ **Follow-up (cycle #224, 2026-08-28): a battle animation *timing*'s own
+  `se` field is now honoured too — a genuine battle round or a Show Battle
+  Animation command played its flash/shake but stayed silent.** Method:
+  cycles #222/#223 closed the animation *cell* struct's zoom/tone gap, so
+  this cycle swept the sibling `Timing` struct on the same `battle_anime`
+  schema (chunk 19 field 6→`timings`, `mruby-lcf/mrblib/schema.rb`: `frame`,
+  `se`, `flash_scope`, `flash_red`/`_green`/`_blue`/`_power`,
+  `screen_shaking`) for the same shape of gap. `Scene::Map
+  #fire_animation_flashes` (`mruby-rpg2k/mrblib/scene/map.rb`) is the single
+  choke point every live animation's timings are walked frame-by-frame
+  through — already reading `flash_scope`/`screen_shaking` there (each fixed
+  in an earlier cycle, per that method's own pre-existing comments) — but
+  never `se`, confirmed by grepping `mruby-rpg2k` for any `.se`/`t.se` read
+  outside `flash_scope`/`screen_shaking`'s own name: the only hit was
+  `Scene::Base#play_animation_se`, a narrower, pre-existing helper (added a
+  few cycles back for the field item/skill menu's own success cue) that
+  plays a single-shot summary — the *first* timing across the *whole*
+  animation with a real sound, once, before the animation itself even starts
+  — never called from `scene/battle.rb` or from the map's own Show Battle
+  Animation path at all, so neither a battle round nor 11210/13260 ever
+  played any of an animation's own per-frame sounds. Fixed by reading `t.se`
+  inside `#fire_animation_flashes`'s existing per-matching-timing loop
+  (alongside the flash/shake it already fires there) and playing it via
+  `RGSS::Audio.se_play` with volume/pitch/balance forwarded — the same
+  four-argument call shape `#play_animation_se` already established for the
+  identical field, including its blank/`"(OFF)"` no-op convention. Fires
+  unconditionally in both the map and battle-round context (`ma[:battle]`
+  true or false): unlike its flash/shake siblings, a sound has no
+  "screen vs target" split to gate on. No EasyRPG source was consulted for
+  this claim — the field sits in the same per-frame struct beside
+  `flash_scope`/`screen_shaking`, decoded by the same schema, fired by the
+  same per-frame loop, so "play the named sound when its frame arrives" is
+  read directly off the struct's own shape (a `frame` paired with an `se`),
+  not from any new external citation. **Verification**: added 3 new
+  `rpg2k_scene_check.rb` checks — a hand-built timing's `se` plays through
+  the map path (`ma[:battle]` absent) with volume/pitch/balance forwarded
+  exactly; a blank name and the literal `"(OFF)"` sentinel both play nothing
+  (mirroring `#play_animation_se`'s own already-established handling); and
+  the identical `se` also plays through the battle-round path
+  (`ma[:battle]` true). Confirmed all three fail against the pre-fix
+  `mruby-rpg2k/mrblib/scene/map.rb` (`git show HEAD:...` swapped in for the
+  working copy in its place, never `git stash`, to avoid disturbing any
+  concurrent session's own uncommitted work — `3rd/mruby`'s own
+  working-tree modification was left untouched throughout): the map-path and
+  battle-round checks failed with "got nil" (no `se_play` call recorded at
+  all), the other 958 checks (957 baseline + the blank/`"(OFF)"` no-op check,
+  which passes against old code too since it plays nothing either way)
+  untouched — then restored the fix and reran clean. Full suite:
+  `rpg2k_scene_check.rb` 960 passed (957 baseline + 3 new checks);
+  `rpg2k_logic_check.rb` 1188 passed (unchanged); `rpg2k_render_check.rb` 41
+  passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged);
+  `rpg2k_save_load_check.rb` exit 0, zero known failures (unchanged);
+  `cd build && ninja` clean rebuild; `ctest --test-dir build` 8/8 passing. No
+  `.cxx`/`.hxx` file was touched (a pure-Ruby fix plus its check-script
+  fixtures), so the pinned `clang-format` step does not apply, and no
+  `mruby-rgss` file was touched either, so `rgss_cruby_test_check.rb`/
+  `rgss_cruby_compat.rb` needed no attention. No wine session was run this
+  cycle — this sandbox has no genuine RPG_RT.exe, so the fix is verified by
+  the check suite's recorded `se_play` call arguments only, and (as stated
+  above) the "SE fires per-frame, unconditionally of battle/map context"
+  reading is inferred from the struct's own shape and this codebase's own
+  established `#play_animation_se` convention, not independently confirmed
+  against genuine RPG_RT. Left open for a future cycle: `battle_anime`'s own
+  *top-level* `scope` (0 single/1 all), `large` (2003, 0: 480x480/1:
+  640x640) and `grid` fields (chunk 19 fields 9/3/11) are similarly decoded
+  by the schema but never read anywhere in `mruby-rpg2k` (confirmed by the
+  same grep method as above, done this cycle) — genuinely set by real
+  test-bed data (`scope` 1 on roughly half of Nepheshel/mtf-meido-action's
+  battle animations, not a rare edge case), but their exact runtime effect
+  on rendering/positioning is not established from the schema's own
+  transcribed comment alone, so implementing a concrete behavior for them
+  now would be guessing a formula the same way `terrain.grid_location`
+  (cycle #211's own note above) already declined to do — left as a genuine,
+  documented lead rather than an implemented guess.
+
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
