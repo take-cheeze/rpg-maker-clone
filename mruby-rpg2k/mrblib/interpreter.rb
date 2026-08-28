@@ -2384,15 +2384,25 @@ module Game
     # from the database terms; this build uses a plain English line for now.
     #
     # Also queues one line per skill the growth/class table teaches at that
-    # exact level, appended onto the same page as the level's own line -- the
-    # missing half of this feature. This design (ported from EasyRPG Player's
-    # source, NOT independently confirmed against genuine RPG_RT under wine):
-    # `Game_Actor::ChangeLevel` calls LearnLevelSkills(old_level+1, new_level, pm)
-    # right after pushing the level-up line and before PushPageEnd, and
-    # LearnSkill only pushes ActorMessage::GetLearningMessage (the
-    # `skill_learned` database term glued onto the skill's own name) for a
-    # skill not already IsSkillLearned -- both are only reachable from
-    # #do_change_exp/#do_change_level, which already call #set_level (and so
+    # exact level, appended onto the same page as the level's own line --
+    # confirmed against genuine RPG_RT.exe under wine (cycle #198): a
+    # synthetic autostart Change Level (10420) on Nepheshel's own actor 2
+    # (ファル, level 1/0 exp in the established clean Save01_clean.lsd, per a
+    # fresh read of that save's own chunk 108), +1 level (no skill at level
+    # 2) showed a single-line message box reading "ファルはレベル２になった！";
+    # the identical setup with +2 levels instead (crossing level 3, which
+    # `RPG_RT.ldb`'s own actor-skill table teaches skill 4, バマー, at) showed
+    # a *two*-line box in the same window, "ファルはレベル３になった！" followed
+    # immediately by "バマーも覚えた！" -- decisively matching this
+    # implementation's own "one line per skill, same page as the level line"
+    # design, not a separate page/box. This design was originally ported from
+    # EasyRPG Player's source (`Game_Actor::ChangeLevel` calls
+    # LearnLevelSkills(old_level+1, new_level, pm) right after pushing the
+    # level-up line and before PushPageEnd, and LearnSkill only pushes
+    # ActorMessage::GetLearningMessage -- the `skill_learned` database term
+    # glued onto the skill's own name -- for a skill not already
+    # IsSkillLearned) -- both are only reachable from #do_change_exp/
+    # #do_change_level, which already call #set_level (and so
     # Actor#learn_level_skills) before this runs, so `before_skills` -- the
     # actor's own skill list snapshotted before that happened -- is what tells
     # a *newly* taught skill apart from one the actor already knew (an earlier

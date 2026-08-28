@@ -7014,6 +7014,100 @@ The work below is roughly ordered by the critical path to a walkable game
   `rpg2k_scene_check.rb` and `scene/map.rb`. Not checked this cycle; left
   for a future one to grep both battle-check scripts against the citation
   list this cycle just fixed.
+  ✅ **Follow-up (cycle #198, 2026-08-28): closed cycle #190's own item (3)
+  above (checked, clean, no fix needed), then landed a genuine
+  RPG_RT.exe-under-wine confirmation for `queue_level_up_messages`'s own
+  "one line per skill, same page as the level line" citation.** **Item (3):**
+  grepped `scripts/rpg2k3_battle_row_check.rb`/`rpg2k3_battle_gauge_check.rb`
+  for every `EasyRPG`/`src/*.cpp` mention and cross-checked each against
+  `scene/battle.rb`'s own (cycle #197-disclosed) citations -- every one of
+  the eight hits already carries its own inline "NOT independently confirmed
+  against genuine RPG_RT under wine" disclosure (`rpg2k3_battle_row_check.rb`
+  lines 5-7/103-104/268-269, `rpg2k3_battle_gauge_check.rb` lines 96/129-130/
+  165-167), so this cross-file leakage shape (present once before, between
+  `rpg2k_scene_check.rb` and `scene/map.rb`, cycle #189) does not recur here;
+  both suites reconfirmed at their exact baselines (19/0 and 15/0 failures)
+  with no edit needed. **Main investigation:** `Interpreter#queue_level_up_
+  messages` (`mruby-rpg2k/mrblib/interpreter.rb`) already implements "a
+  newly-learned skill announces on the same message page as the level-up
+  line, not a separate box," ported from EasyRPG's source and flagged NOT
+  independently confirmed -- picked this specific, narrow, event-command-area
+  claim to verify since a genuine RPG_RT.exe-under-wine test was tractable
+  with no ambiguity about pass/fail. First tried Song-of-the-Sea (a genuine
+  RPG2003 `RPG_RT.exe`, needed for an unrelated Wait-command investigation
+  this cycle abandoned -- see below) but it pops a blocking "RPG Maker 2003
+  RTP is not found." dialog and exits the instant it is dismissed, with or
+  without any synthetic edit (confirmed against the untouched original
+  Map0001.lmu too) -- this sandbox has no RTP and no network path to fetch
+  one, so that game is not usable for wine verification here; noted for any
+  future cycle tempted to reach for it. Pivoted to Nepheshel (confirmed
+  genuinely RPG2000 via `LCF::Database#rpg2003?`, so this particular claim
+  --  which fires on any edition -- was still testable there) and its own
+  actor 2 (ファル), level 1/0 exp in the established clean `Save01_clean.lsd`
+  (verified by a fresh raw read of that save's own chunk 108), who
+  `RPG_RT.ldb`'s own actor-skill table teaches skill 4 (バマー) at level 3 and
+  nothing at level 2. Built a synthetic autostart Change Level (10420) event
+  on a copy of the genuine `Map0012.lmu`, two variants differing only in the
+  level delta (+1: control, no skill crossed; +2: treatment, crosses level
+  3). **A first attempt with just the two probe commands produced solid-black
+  `xwd` screenshots throughout** -- alarming at first, but this is exactly
+  the pre-existing "short synthetic autostart list of >= 2 commands with
+  nothing appended" capture artifact cycles #150/#151 already root-caused
+  and documented (their own `err:d3d:context_choose_pixel_format` count-4
+  signature; genuine RPG_RT.exe is almost certainly still alive and correct
+  underneath, `xwd` just cannot capture its client area in that state) --
+  recognized from this file's own history rather than re-diagnosed from
+  scratch, and worked around exactly as cycle #159 already established: page
+  id 1 (not 0) in the pages table, and the genuine 89-command tail copied
+  verbatim off `Map0478.lmu` event 2 page 2 appended after the two probe
+  commands, which cycle #151 found suppresses the signature entirely. With
+  that fix, screenshots rendered normally. **Result, decisive and
+  reproducible:** the +1 run showed a single-line message box, exactly
+  "ファルはレベル２になった！"; the +2 run showed a *two*-line box in the same
+  window, "ファルはレベル３になった！" immediately followed by "バマーも覚えた！"
+  -- directly matching this implementation's own design (one skill line per
+  newly-crossed learn-level, appended to the level line's own page, not a
+  separate page) and ruling out the alternative EasyRPG's own source does not
+  by itself rule out (a same-page vs. separate-page/box difference would
+  have been visible as either a taller single box or a second Decision-gated
+  page). **No code or behavior change** -- the citation was already correct,
+  this cycle only earned the confirmation the comment already claimed to
+  lack; the comment on `queue_level_up_messages` was rewritten to record the
+  wine evidence in place of "NOT independently confirmed." No changelog
+  fragment (comment-only) and no new check (the existing `scripts/
+  rpg2k_logic_check.rb` coverage -- "level_up_message/skill_learned_message
+  compose...", "Change Class announces each newly-learned skill...", and the
+  dedicated level-up-message block -- already locks in the exact same-page
+  invariant this cycle confirmed against genuine RPG_RT.exe). **Verification:**
+  `ruby -c` clean; `git diff -- mruby-rpg2k/mrblib/interpreter.rb | grep -E
+  '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' |
+  grep -vE '^[+-][[:space:]]*$'` empty, confirming every changed line is a
+  comment; full rebuild (`cd build && ninja`) and `ctest -R mruby_test` both
+  passed; `scripts/rpg2k_scene_check.rb` (932), `scripts/rpg2k_logic_check.rb`
+  (1176), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19/0) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15/0) all exactly matched their baselines; `scripts/rpg2k_save_load_check.rb`
+  reconfirmed at its exact 3 known pre-existing failures. Every `data/`
+  fixture this cycle touched (`Map0012.lmu`, `Save01.lsd` -- both Nepheshel;
+  `Map0001.lmu` -- Song-of-the-Sea, freshly downloaded this cycle and left in
+  place, gitignored, for any future cycle that wants a genuine RPG2003
+  `RPG_RT.exe` for something other than a fresh boot) was restored to its
+  exact original bytes and reconfirmed byte-identical by `md5sum` (Nepheshel:
+  `c2fa69a0.../3ab5bb01...`, matching every prior cycle back to #148;
+  Song-of-the-Sea: `92765c2c...`); `git status` on `data/` came back clean
+  (it is fully gitignored); no Save02/03.lsd scratch files were left behind;
+  every wine/Xvfb/matchbox process this cycle started was confirmed
+  terminated before finishing. No EasyRPG source was consulted for any
+  behavioral claim this cycle, and no web search was used. **Left open for a
+  future cycle:** the RPG2003 Wait-command "wait until Decision is pressed"
+  citation (`Interpreter#do_wait`, `mruby-rpg2k/mrblib/interpreter.rb`,
+  "ignoring param0 entirely ... NOT independently confirmed") this cycle
+  originally set out to verify -- blocked entirely by Song-of-the-Sea's
+  missing-RTP dialog before a synthetic autostart event could even run; a
+  future cycle would need either a different genuine RPG2003 `RPG_RT.exe`
+  fixture that does not require the RTP, or a legitimate way to obtain the
+  RTP itself, neither available this cycle; everything else already listed
+  as open by cycle #197 above, unchanged.
   **Enemy Encounter** (10710) starts the battle path: `Game::Enemy` / `Game::Troop`
   instantiate a database enemy group into live members and total its EXP / gold
   (and `Troop#drops` rolls each member's treasure item against its `drop_prob`,
