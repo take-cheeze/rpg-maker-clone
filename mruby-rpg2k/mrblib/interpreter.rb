@@ -3144,14 +3144,28 @@ module Game
     # #call_stack_snapshot's own scope, Game::State#foreground_event_exec/
     # #common_event_exec), per-frame identity there is deliberately out of
     # scope for this cycle.
+    #
+    # A database shrink can leave `param0` pointing at a common event id
+    # that no longer exists -- the "common event" case in docs/TODO.md's
+    # runtime error catalog, which the map-side Call Event (mode 0,
+    # #resolve_call above) already reports but this RPG2003 battle-only
+    # sibling never did: it silently swallowed the gap via the shared
+    # #common_event_commands wrapper's own `cmds.nil?` no-op. Reported the
+    # same "[RPG2k] <Command>: ..." way, diagnostics only -- the command was
+    # already a correct, harmless no-op either way, only the missing trace
+    # is new.
     def do_call_common_event(cmd)
       return unless @resolver && @state.party.rpg2003?
-      cmds = common_event_commands(cmd.param(0))
+      id = cmd.param(0)
+      cmds = @resolver.common_event_commands(id)
+      $stderr.puts "[RPG2k] Call Common Event: common event #{id} not found" if cmds.nil?
       return if cmds.nil? || cmds.empty?
       return if @call_stack.size >= MAX_CALL_DEPTH
       @call_stack.push [@list, @index, 0]
       @list = cmds
       @index = 0
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Call Common Event #{id} failed: #{e.message}"
     end
 
     def common_event_commands(id)

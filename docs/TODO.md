@@ -26364,7 +26364,7 @@ nonexistent map id — error text includes the literal missing filename;
 fixed, see the ✅ below);
 invalid hero, skill, item, enemy, enemy group, battle animation, terrain,
 chipset, common event (skill/enemy/enemy-group/battle-animation/terrain/
-chipset fixed, see the ✅ entries below; all: a database shrink leaves a
+chipset/common-event fixed, see the ✅ entries below; all: a database shrink leaves a
 dangling id reference somewhere, shown as "?" in the editor);
 event-call recursion past 1000. Several of these errors are **deferred**
 until the stale reference is actually exercised at runtime rather than
@@ -26798,6 +26798,82 @@ behaviour itself is unchanged, this is diagnostics only. Covered by a new
 alongside the unchanged blank name/graphic and default-passable/terrain
 behaviour, plus that an existing id, id `0`, a `nil` id and a chipset-less
 bare fixture all stay silent.
+✅ **Follow-up (cycle #213, 2026-08-28): RPG2003's battle-page Call Common
+Event command no longer swallows a dangling common event id with no
+trace** — the last unfixed name in the "invalid hero, skill, item, enemy,
+enemy group, battle animation, terrain, chipset, common event" list above
+(the parenthetical there previously said only "skill/enemy/enemy-group/
+battle-animation/terrain/chipset fixed", silently leaving "common event"
+off; now closed too). Method: per the standing instruction to skim broadly
+first, checked `scripts/rpg2k_field_audit.rb` (unchanged since cycle #211 —
+same 8 hits, all already self-documented editor-only bookkeeping or
+formula-less RPG2003 fields, nothing new), `docs/rpgxp-rgss-api-gap.md`'s
+own remaining items (the `Window` source-rect entry is already ✅ in
+practice, `Tilemap`'s only open item is the already-declined
+formula-less `flash_data`), and several other TODO.md sections (Message
+window text codes -- exhaustively already ported per cycle #212's own
+audit; Menu screens; Database field defaults) before finding this one:
+this runtime error catalog's own parenthetical was the one place in the
+document that still literally named an un-fixed case from a list every
+sibling entry had already closed. Confirmed genuinely reachable, not
+theoretical, by direct code reading: `Interpreter#do_call_common_event`
+(`mruby-rpg2k/mrblib/interpreter.rb`), the RPG2003-only battle-page
+sibling of the map's Call Event (mode 0), resolved its target id through
+the shared `#common_event_commands` wrapper and simply `return`ed on a
+`nil` result -- unlike `#resolve_call`'s own mode-0 branch (the map-side
+Call Event targeting a common event), which already logs `"[RPG2k] Call
+Event: common event #{id} not found"` for the identical dangling-id case.
+Fixed by mirroring `#resolve_call`'s own shape exactly: `#do_call_common_event`
+now calls `@resolver.common_event_commands(id)` directly (bypassing the
+shared wrapper, whose own genuine-exception-only rescue+log stays reserved
+for its other caller, `#start_death_handler` -- deliberately not touched
+this cycle, since its own event-id-0-means-unconfigured semantics and
+"NOT independently confirmed against genuine RPG_RT under wine" framing are
+a separate, larger question this narrow fix does not need to reopen) and
+logs `"[RPG2k] Call Common Event: common event #{id} not found"` itself
+when the lookup misses, plus its own local `rescue StandardError` (moved
+out of the shared wrapper, mirroring `#resolve_call`'s own top-level
+rescue) for the genuine-exception case. Behaviour is completely unchanged
+-- the command was already a correct, harmless no-op either way (control
+simply continues past it into the page's next command) -- only the
+missing trace is now visible, the same "diagnostics only" shape every
+other entry in this catalog already uses. Covered by a new
+`scripts/rpg2k_logic_check.rb` check (a genuine RPG2003 state with a
+resolver present but no entry for the called id logs the diagnostic and
+still lets control pass through; a resolvable target stays completely
+silent), confirmed to fail against the pre-fix code first (`git stash`/
+`git stash pop` on just `mruby-rpg2k/mrblib/interpreter.rb`:
+`RuntimeError: expected a not-found diagnostic naming id 4, got: ""`) then
+pass after. (The pre-existing "Call Common Event with no resolver or an
+unknown id is a safe no-op" check's own second half turned out to never
+actually reach the resolver at all -- it defaults to a non-RPG2003
+`new_state`, so `#do_call_common_event`'s own `rpg2003?` guard bails out
+first regardless of the resolver's contents; left as-is, since it still
+correctly covers what its own no-resolver-at-all first half claims, and
+the new check exercises the genuine RPG2003 dangling-id path it was
+missing.) **Verification:** `scripts/rpg2k_scene_check.rb` 943 passed
+(unchanged, no scene-check-reachable file touched); `rpg2k_logic_check.rb`
+1186 passed (1185 baseline + 1 new check, 0 failures); `rpg2k_render_
+check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+`rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+load_check.rb` still reports exactly the same 1 known pre-existing
+failure (the unrelated Show Picture field-shape mismatch), unaffected;
+`rpg2k3_battle_command_check.rb` still decodes cleanly (unchanged);
+`scripts/rpg2k_command_soak.rb` clean on all four test beds (184166/
+184166/4042/3430 commands, no new gaps -- only the pre-existing "Open
+Video Options" line on Ch.1, present before this cycle too; notably no
+real game bed actually exercises a dangling Call Common Event id, so the
+new diagnostic never fires there, consistent with this catalog's other
+diagnostics-only fixes). No `.cxx`/`.hxx` file was touched (pure `mrblib`
+Ruby plus a check-script addition), so the pinned `clang-format` step does
+not apply; `cd build && ninja` clean rebuild succeeded; `ctest -R
+mruby_test` passed. No RGSS-side Ruby or C++ was touched, so
+`scripts/rgss_cruby_test_check.rb` does not apply this cycle. No wine
+session was run and no EasyRPG source was consulted for this fix's own
+behavioral claim -- there isn't one: this is a pure diagnostics-only
+addition to an already-correct, already-tested no-op path, mirroring an
+established in-repo pattern (`#resolve_call`'s own identical common-event
+case) rather than introducing any new behavioral assumption.
 ✅ **The Equip and Status screens no longer show a dangling equipped item id
 with no trace** — the "item" case from the "invalid hero, skill, item,
 enemy, enemy group, battle animation, terrain, chipset, common event" list
