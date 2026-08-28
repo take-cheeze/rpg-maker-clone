@@ -1228,15 +1228,24 @@ module Game
     # stays base_pattern by construction); the ordinary types walk (cycling
     # columns) while moving/continuous and rest on the page pattern when idle.
     def self.frame(anim_type, base_dir, base_pattern, char_dir, phase, moving)
+      [frame_dir(anim_type, char_dir, phase),
+       frame_col(anim_type, base_pattern, phase, moving)]
+    end
+
+    # The direction half of #frame, split out so a caller that only needs it
+    # (map.rb's per-event redraw signature, checked every event every frame)
+    # can skip building and immediately discarding the two-element array.
+    def self.frame_dir(anim_type, char_dir, phase)
+      anim_type == SPIN ? spin_direction(phase) : char_dir
+    end
+
+    # The column half of #frame, split out for the same reason as #frame_dir.
+    def self.frame_col(anim_type, base_pattern, phase, moving)
       case anim_type
-      when SPIN
-        [spin_direction(phase), base_pattern]
-      when FIXED_GRAPHIC
-        [char_dir, base_pattern]
+      when SPIN, FIXED_GRAPHIC
+        base_pattern
       else
-        col = (moving || continuous?(anim_type)) ? pattern_column(phase)
-                                                  : base_pattern
-        [char_dir, col]
+        (moving || continuous?(anim_type)) ? pattern_column(phase) : base_pattern
       end
     end
   end
