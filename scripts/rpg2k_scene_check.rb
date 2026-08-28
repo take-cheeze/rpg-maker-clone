@@ -10650,6 +10650,53 @@ check 'a map-context screen-scope animation shake triggers the same Game::Screen
   ok st.screen.shaking?, 'the screen shake started on the map path too'
 end
 
+# `se` (the Timing struct's own field 2, mruby-lcf/mrblib/schema.rb) was
+# decoded but never read by #fire_animation_flashes at all -- the same
+# "decoded, never wired up" shape the flash_scope/screen_shaking checks
+# above already caught for their own fields. Before this fix an animation's
+# own per-frame sound only ever played through #play_animation_se (the
+# field item/skill menu's own single-shot success cue, a different method
+# entirely) -- a genuine battle round or a map-triggered Show Battle
+# Animation played its flash/shake but stayed silent. No :battle key (the
+# map path) isolates this from the battle-round SE check further down; the
+# volume/pitch/balance forwarding mirrors #play_animation_se's own already-
+# established convention for the identical field.
+check "a timing's own se plays through the map path, forwarding volume/pitch/balance" do
+  scene = new_scene({})
+  RGSS::Audio.reset_se
+  timing = OpenStruct.new(frame: 0, se: OpenStruct.new(file: 'Zap1', volume: 90, pitch: 110, balance: 25))
+  ma = { frame_i: 0, timings: [timing] } # no :battle key -- the map path
+  scene.send(:fire_animation_flashes, ma)
+  eq ['Zap1', 90, 110, 25], RGSS::Audio.se_calls.last, "the timing's own se played with its own fields forwarded"
+end
+
+# A blank name or the literal "(OFF)" sentinel (liblcf's own schema default)
+# is a no-op, matching #play_animation_se's own already-established
+# handling of the identical field on the same struct.
+check "a timing with no se (or the literal (OFF) sentinel) plays nothing" do
+  scene = new_scene({})
+  RGSS::Audio.reset_se
+  blank = OpenStruct.new(frame: 0, se: OpenStruct.new(file: '', volume: 100, pitch: 100, balance: 50))
+  off = OpenStruct.new(frame: 0, se: OpenStruct.new(file: '(OFF)', volume: 100, pitch: 100, balance: 50))
+  none = OpenStruct.new(frame: 0)
+  ma = { frame_i: 0, timings: [blank, off, none] }
+  scene.send(:fire_animation_flashes, ma)
+  eq [], RGSS::Audio.se_calls, 'no timing here names a real sound'
+end
+
+# The battle-round path (ma[:battle] true) plays a timing's own se exactly
+# the same way the map path above does -- se has no "screen vs target"
+# split to gate on, unlike flash_scope/screen_shaking just above it in
+# #fire_animation_flashes.
+check "a timing's own se plays through the battle-round path too" do
+  scene = new_scene({})
+  RGSS::Audio.reset_se
+  timing = OpenStruct.new(frame: 0, se: OpenStruct.new(file: 'Zap1', volume: 100, pitch: 100, balance: 50))
+  ma = { frame_i: 0, timings: [timing], battle: true, targets: [] }
+  scene.send(:fire_animation_flashes, ma)
+  eq ['Zap1', 100, 100, 50], RGSS::Audio.se_calls.last, 'the timing SE plays in battle context too'
+end
+
 # screen_shaking 1 ("target") on a map-triggered Show Battle Animation is a
 # genuine no-op per EasyRPG Player's source (NOT independently confirmed
 # against genuine RPG_RT under wine), not a dropped feature: its `BattleAnimationMap::
