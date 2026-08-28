@@ -420,6 +420,56 @@ check 'faces inside a jump steer the next move without moving anything' do
   eq [4, 5], [c.x, c.y]
 end
 
+check 'Move Forward inside a jump repeats the diagonal just walked, not the ' \
+      'pre-diagonal direction it had in hand' do
+  # Mirrors the already-fixed non-jump "Move Upper-Right, Move Forward"
+  # case (#do_diagonal_dir / Character#last_move_direction): a diagonal
+  # move-route sub-command must leave its own [horizontal, vertical] pair
+  # in hand, not the direction from before it ran, so a Move Forward right
+  # after it inside the *same* jump block repeats the diagonal rather than
+  # sliding back onto one cardinal axis. Character starts facing Down (2);
+  # Move Upper-Right then Move Forward should land two tiles up-right of
+  # start, not one tile up-right plus one tile down (the pre-fix bug: the
+  # second command re-read the stale pre-jump `dir`, Down).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::MOVE_FORWARD),
+                 mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 0], [c.x, c.y], 'the diagonal in hand repeats twice, landing (2,-2) away'
+end
+
+check 'a Turn Right inside a jump rotates the diagonal in hand, not just a ' \
+      'cardinal' do
+  # Sibling gap to the check above: a Turn/Face command between a diagonal
+  # move and a following Move Forward, still inside the same jump block.
+  # Character::TURN_RIGHT/TURN_LEFT/TURN_180 used to have only cardinal-int
+  # keys, so looking one up with the diagonal's own [horizontal, vertical]
+  # pair missed and fell back to `|| dir`, silently leaving the pair
+  # unrotated -- Move Forward then repeated the pre-turn diagonal instead of
+  # the turned one. Begin Jump, Move Upper-Right, Turn Right, Move Forward:
+  # Up-Right (dx +1, dy -1) rotated 90 degrees clockwise is Down-Right (dx
+  # +1, dy +1), so Move Forward should add (+1, +1), not repeat (+1, -1).
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::TURN_RIGHT),
+                 mc(R::MOVE_FORWARD), mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 2], [c.x, c.y], 'Up-Right then a 90-degree right turn to Down-Right'
+end
+
+check 'a Turn 180 inside a jump flips the diagonal in hand' do
+  # Same gap, exercising Character::TURN_180's own new diagonal keys: Begin
+  # Jump, Move Upper-Right, Turn 180, Move Forward. Up-Right (dx +1, dy -1)
+  # flipped 180 degrees is Down-Left (dx -1, dy +1), which exactly cancels
+  # the diagonal step just walked, so the block lands back where it started
+  # -- still a jump (see Character#jumped), just a net-zero one.
+  route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_UPRIGHT), mc(R::TURN_180),
+                 mc(R::MOVE_FORWARD), mc(R::END_JUMP)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y], 'Up-Right then a 180-degree flip to Down-Left cancels out'
+  eq true, c.jumped
+end
+
 check 'a jump only tests where it lands, not what it clears' do
   # (1, 0) is a wall; the jump passes straight over it onto (2, 0).
   route = R.new([mc(R::BEGIN_JUMP), mc(R::MOVE_RIGHT), mc(R::MOVE_RIGHT),
@@ -538,6 +588,47 @@ check 'Move Forward continues a diagonal last move diagonally, not along ' \
   eq :moved, route.step(c, FakeWorld.new)
   eq [4, 0], [c.x, c.y], 'continues diagonally -- both axes advance again, ' \
      'not just the vertical one'
+end
+
+check 'a Turn Right after a diagonal move (outside a jump) rotates the ' \
+      'diagonal in hand, not just a collapsed cardinal' do
+  # Sibling gap to the already-fixed jump-block case (`docs/TODO.md`'s
+  # cycle #207 entry, "a Turn Right inside a jump rotates the diagonal in
+  # hand"): #turn_right/#turn_left/#turn_around used to always copy the
+  # freshly-turned *cardinal* @direction into #last_move_direction, so a
+  # Turn Right right after a diagonal move-route sub-command (still outside
+  # any jump block) silently discarded the `[horizontal, vertical]` pair
+  # #move_diagonal had just left there -- a following Move Forward then
+  # continued along one collapsed cardinal axis instead of the turned
+  # diagonal. Move Upper-Right, Turn Right, Move Forward, starting Down
+  # (2): Up-Right (dx +1, dy -1) rotated 90 degrees clockwise is
+  # Down-Right (dx +1, dy +1), so Move Forward should add (+1, +1) on top
+  # of the diagonal step already taken, not repeat/collapse onto (+1, 0).
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::TURN_RIGHT), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [3, 1], [c.x, c.y], 'Up-Right lands one tile up-right of start'
+  eq :turned, route.step(c, FakeWorld.new)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [4, 2], [c.x, c.y], 'Move Forward then walks the turned Down-Right ' \
+     'diagonal, not the pre-turn one collapsed to a single cardinal'
+end
+
+check 'a Turn 180 after a diagonal move (outside a jump) flips the ' \
+      'diagonal in hand' do
+  # Same gap, exercising TURN_180's own diagonal keys: Move Upper-Right,
+  # Turn 180, Move Forward. Up-Right (dx +1, dy -1) flipped 180 degrees is
+  # Down-Left (dx -1, dy +1), which exactly cancels the diagonal step just
+  # walked -- an ordinary (non-jump) net-zero move, landing back at the
+  # start with Character#jumped left false throughout.
+  route = R.new([mc(R::MOVE_UPRIGHT), mc(R::TURN_180), mc(R::MOVE_FORWARD)])
+  c = Game::Character.new(2, 2, 2)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq :turned, route.step(c, FakeWorld.new)
+  eq :moved, route.step(c, FakeWorld.new)
+  eq [2, 2], [c.x, c.y], 'Up-Right then a 180-degree flip to Down-Left ' \
+     'cancels out'
+  eq false, c.jumped, 'an ordinary move, not a jump'
 end
 
 # Ported from EasyRPG Player's source, NOT independently confirmed against
@@ -5918,6 +6009,39 @@ check 'add_actor no-ops once the party already holds MAX_SIZE (4) members' do
   party.add_actor(5)
   eq [1, 3, 4, 5], party.actors.map(&:id),
      'adding is allowed again once a member has left and freed a slot'
+end
+
+check 'Change Party Member "Remove" targeting a dangling hero id reports the ' \
+      'same diagnostic Add already does, without enrolling the id into the ' \
+      'roster the save writes out' do
+  db = roster_db
+  party = Game::Party.new(db)
+
+  out = capture_stderr { party.remove_actor(99) }
+  ok out.include?('[RPG2k] actor #99 could not be built: No such actor: 99'), out
+  eq [1], party.roster.all.map(&:id), 'the dangling id was NOT built-and-enrolled ' \
+                                      '(only the starting leader, #1, is)'
+
+  # A second occurrence of the same dangling id is deduped, matching #[]'s
+  # own "logs once" behaviour (they share one @missing table).
+  out2 = capture_stderr { party.remove_actor(99) }
+  eq '', out2
+
+  # Removing an id that is simply not a *current* member -- but genuinely
+  # exists in the database -- stays completely silent, the ordinary case,
+  # and correctly does not enroll them either (matching the "merely naming
+  # an actor" rule #existing's own doc comment already establishes for a
+  # read path like `\N[n]`).
+  out3 = capture_stderr { party.remove_actor(2) }
+  eq '', out3
+  eq [1], party.roster.all.map(&:id), 'a valid-but-never-met id is not enrolled by a Remove either'
+
+  # Removing an id that *is* a current member behaves exactly as before:
+  # silent, no diagnostic, genuinely removed.
+  party.add_actor(2)
+  out4 = capture_stderr { party.remove_actor(2) }
+  eq '', out4
+  eq false, party.include_actor?(2)
 end
 
 check 'Party#reorder applies a picked front-to-back permutation, ' \

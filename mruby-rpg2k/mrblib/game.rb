@@ -3665,6 +3665,25 @@ module Game
     # naming an actor does not enrol them in the roster the save writes out.
     def existing(id); id.nil? ? nil : @all[id]; end
 
+    # Whether `id` is a genuinely dangling reference -- a positive id with no
+    # matching database row at all -- **without** instantiating (and so
+    # without enrolling) the actor the way #[] does. A caller that only needs
+    # to tell "not currently relevant" apart from "this id doesn't even exist
+    # in the database" (#remove_actor's own no-op case, below) must not
+    # enroll a merely-never-met-but-otherwise-valid actor into the save data
+    # as a side effect of asking. Logs and dedupes through the exact same
+    # `@missing` table and message #[] uses, so an id already reported by one
+    # path doesn't double-report through the other.
+    def known_invalid?(id)
+      return false if id.nil? || id <= 0 || @all[id]
+      return false if @db.player[id]
+      unless @missing[id]
+        @missing[id] = true
+        $stderr.puts "[RPG2k] actor ##{id} could not be built: No such actor: #{id}"
+      end
+      true
+    end
+
     # Every instantiated actor, in ascending database id order.
     def all; @all.keys.sort.map { |i| @all[i] }; end
 
@@ -4088,6 +4107,20 @@ module Game
       before = @actors.size
       @actors.reject! { |a| a.id == id }
       @revision += 1 unless @actors.size == before
+      return unless @actors.size == before
+      # The id matched no current member -- the ordinary "not currently in
+      # the party" case, harmless and silent. But #add_actor already reports
+      # a positive id with no matching database row at all (a database
+      # shrink leaving a stale Change Party Member target, the "invalid
+      # hero" catalog case) via its own #roster[] lookup; #remove_actor had
+      # no equivalent check at all, so the identical stale id silently did
+      # nothing with no trace when the command's "Remove" radio button
+      # happened to be selected instead of "Add". #known_invalid? reports
+      # that exact same case without #[]'s side effect of building and
+      # enrolling the actor into the save data -- unlike Add, a Remove of a
+      # merely-never-met-but-otherwise-valid actor must not have that
+      # side effect.
+      @roster.known_invalid?(id)
     end
 
     # Make an already-rostered actor the leader (party slot 0). If they are
@@ -6520,9 +6553,26 @@ module Game
     # numpad direction -> [dx, dy] step in tiles.
     DIR_DELTA = { 8 => [0, -1], 2 => [0, 1], 4 => [-1, 0], 6 => [1, 0] }.freeze
     # 90-degree clockwise / counter-clockwise rotations and the 180-degree flip.
-    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8 }.freeze
-    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8 }.freeze
-    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4 }.freeze
+    # Diagonal directions (as the [horizontal, vertical] pairs #move_diagonal /
+    # MoveRoute's own DIAGONAL table use, e.g. [6, 8] for Up-Right) are keyed
+    # in too, rotated the same 90/180 degrees around the 8-way compass these
+    # four cardinals sit on (Up=0, Up-Right=1, Right=2, Down-Right=3, Down=4,
+    # Down-Left=5, Left=6, Up-Left=7; a turn moves +-2 steps, 180 moves 4) --
+    # #jump_face_direction looks up a diagonal key here for a Turn/Face
+    # command that follows a diagonal move inside a jump block; #turn_right/
+    # #turn_left/#turn_around look one up too, for the identical
+    # non-jump case, rotating #last_move_direction rather than the always-
+    # cardinal @direction (see #last_move_direction's own citation for why
+    # the two can diverge).
+    TURN_RIGHT = { 8 => 6, 6 => 2, 2 => 4, 4 => 8,
+                   [6, 8] => [6, 2], [6, 2] => [4, 2],
+                   [4, 2] => [4, 8], [4, 8] => [6, 8] }.freeze
+    TURN_LEFT  = { 8 => 4, 4 => 2, 2 => 6, 6 => 8,
+                   [6, 8] => [4, 8], [4, 8] => [4, 2],
+                   [4, 2] => [6, 2], [6, 2] => [6, 8] }.freeze
+    TURN_180   = { 8 => 2, 2 => 8, 4 => 6, 6 => 4,
+                   [6, 8] => [4, 2], [4, 2] => [6, 8],
+                   [6, 2] => [4, 8], [4, 8] => [6, 2] }.freeze
     # The four cardinal directions, indexable for random selection.
     CARDINALS = [2, 4, 6, 8].freeze
 
@@ -6744,19 +6794,36 @@ module Game
       @jumped = false
     end
 
+    # Sibling gap to #jump_face_direction's own diagonal-Array fix
+    # (MoveRoute, `docs/TODO.md`'s cycle #207 entry): the non-jump path had
+    # the identical bug. `#last_move_direction` is what a following Move
+    # Forward reads (see its own citation above) and can hold a diagonal
+    # `[horizontal, vertical]` pair after #move_diagonal, but these three
+    # methods used to just copy the newly-turned *cardinal* `@direction`
+    # into it -- discarding any diagonal pair outright, rather than rotating
+    # it, whenever a Turn Right/Left/180 (or Turn Random, which calls
+    # #turn_right/#turn_left directly) followed a diagonal move-route
+    # sub-command. `TURN_RIGHT`/`TURN_LEFT`/`TURN_180` already carry the
+    # diagonal-pair keys `#jump_face_direction` needed for the identical
+    # rotation inside a jump block, so the fix is the same one-line idiom:
+    # look `@last_move_direction` itself up in the table (a plain cardinal
+    # or a diagonal pair alike) instead of re-deriving it from `@direction`.
+    # `@direction` (the visible, always-cardinal facing -- see
+    # #last_move_direction's own citation) is untouched by this fix and
+    # keeps rotating exactly as it already did.
     def turn_right
       @direction = TURN_RIGHT[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_RIGHT[@last_move_direction] || @last_move_direction
     end
 
     def turn_left
       @direction = TURN_LEFT[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_LEFT[@last_move_direction] || @last_move_direction
     end
 
     def turn_around
       @direction = TURN_180[@direction] || @direction
-      @last_move_direction = @direction
+      @last_move_direction = TURN_180[@last_move_direction] || @last_move_direction
     end
 
     # Direction pointing from this character toward (tx, ty). ~~Ties (and
@@ -7216,21 +7283,40 @@ module Game
 
     # The direction a move command inside a jump block contributes. The moves
     # that would pick a direction at run time (random, toward / away from the
-    # hero) still pick one; Move Forward keeps the direction in hand.
+    # hero) still pick one; Move Forward keeps the direction in hand. A
+    # diagonal now leaves its own `[horizontal, vertical]` pair in hand too
+    # (mirroring #move_diagonal's `#last_move_direction` outside a jump) --
+    # it used to fall into the bare `else dir` catch-all alongside Move
+    # Forward itself, so the diagonal never actually updated the running
+    # `dir` a *later* Move Forward in the same jump block reads: "Begin
+    # Jump, Move Upper-Right, Move Forward, End Jump" repeated the
+    # *pre*-diagonal direction instead of the diagonal just walked, the same
+    # root cause #last_move_direction was introduced for outside a jump (see
+    # #move_diagonal's own doc comment), just never carried into this
+    # separate jump-scan path. This still leaves the diagonal step's own
+    # delta correct even before this fix, since #jump_delta computes it
+    # straight from `id`, not `dir` -- only a *following* Move Forward was
+    # affected.
     def jump_move_direction(id, dir, character, world)
       case id
       when MOVE_UP, MOVE_RIGHT, MOVE_DOWN, MOVE_LEFT then MOVE_DIR[id]
+      when MOVE_UPRIGHT, MOVE_DOWNRIGHT, MOVE_DOWNLEFT, MOVE_UPLEFT then DIAGONAL[id]
       when MOVE_RANDOM then Character::CARDINALS[world.random(4)]
       when MOVE_TOWARD_HERO then toward_hero(character, world)
       when MOVE_AWAY_HERO then away_hero(character, world)
-      else dir # Move Forward, and the diagonals (which carry their own delta)
+      else dir # Move Forward: keeps whatever direction (cardinal or diagonal pair) is in hand
       end
     end
 
-    # The tile offset a move command inside a jump block adds. A diagonal moves
-    # on both axes at once; everything else moves one tile along `dir`.
+    # The tile offset a move command inside a jump block adds. A diagonal
+    # moves on both axes at once -- whether it comes from an explicit
+    # diagonal sub-command (`id` itself names one) or from Move Forward
+    # continuing a diagonal `dir` a prior diagonal command left in hand (a
+    # two-element `[horizontal, vertical]` pair, see #jump_move_direction
+    # above); everything else moves one tile along the cardinal `dir`.
     def jump_delta(id, dir)
-      if (pair = DIAGONAL[id])
+      pair = DIAGONAL[id] || (dir if dir.is_a?(Array))
+      if pair
         horizontal, vertical = pair
         hx, = Character::DIR_DELTA[horizontal] || [0, 0]
         _, vy = Character::DIR_DELTA[vertical] || [0, 0]
@@ -7242,6 +7328,17 @@ module Game
 
     # The direction a face / turn command inside a jump block leaves in hand. It
     # contributes no offset of its own — it only steers the next move command.
+    # A Turn Right/Left/180 (or the matching half of Turn 90 Right/Left/180
+    # Random) right after a diagonal move in the same block used to be a
+    # silent no-op: `dir` was the diagonal's own `[horizontal, vertical]`
+    # pair by then (see #jump_move_direction above), and Character::
+    # TURN_RIGHT/TURN_LEFT/TURN_180 only had cardinal-int keys, so the hash
+    # lookup missed and `|| dir` left the pair completely unrotated -- a
+    # following Move Forward kept walking the pre-turn diagonal instead of
+    # the turned one. Fixed by keying those three hashes with the four
+    # diagonal pairs too (see their own doc comment), rotated the same
+    # 90/180 degrees the cardinal entries already encode; the lookups here
+    # are unchanged.
     def jump_face_direction(id, dir, character, world)
       case id
       when FACE_UP, FACE_RIGHT, FACE_DOWN, FACE_LEFT then FACE_DIR[id]
