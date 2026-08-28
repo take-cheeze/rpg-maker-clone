@@ -1822,6 +1822,142 @@ The work below is roughly ordered by the critical path to a walkable game
   already consistent (the `SE` struct's `balance` field is dropped
   everywhere, but that matches `Audio.se_play`'s own 3-argument signature,
   which has no pan parameter to receive it — not a missed call site).
+  ✅ **Follow-up (cycle #219, 2026-08-28): the `BGM`-struct's own `balance`
+  (pan) field, not `fade_in`, was the field cycle #202/#203/#218's fade-in
+  sweep never checked — and it turned out to have the exact same gap.**
+  Method: continuing the same systematic-sweep instruction, this cycle
+  looked for other fields a shared helper forwards selectively. The
+  `rpg2k-bgm-pan` cycle had wired Play BGM's own balance parameter through
+  to `RGSS::Audio.bgm_pan` (`Game::Interpreter#play_audio`'s `:bgm`
+  branch), and Play Memorized BGM already calls it too, but grepping
+  `bgm_pan` across `mruby-rpg2k/mrblib` turned up no other call site at
+  all: `Scene::Map#play_bgm` — the shared choke point `#battle_bgm`/
+  `#inn_bgm`/`#vehicle_bgm`/`#restore_pre_*_bgm`/`#play_map_bgm` all
+  funnel through — never called it, and neither did `Scene::GameOver
+  #play_gameover_bgm`. Worse, `#battle_bgm`/`#inn_bgm`/`#vehicle_bgm`
+  didn't even read `balance` off their Change System BGM override hash or
+  the database `BGM` struct in the first place, despite already reading
+  every other field of the identical struct (`volume`/`tempo`/`fadein`) —
+  confirmed live: `rpg2k_scene_check.rb`'s own pre-existing fixtures
+  already set `balance: 50` on several `system_bgm` override hashes in
+  tests that predate this cycle, and nothing ever asserted it reached
+  playback, because it never did. Also confirmed the database's own
+  `BGM` struct genuinely carries this field (`mruby-lcf/mrblib/
+  schema.rb`'s field 5, default 50) and that continue-from-save already
+  round-trips it into `current_bgm` (`Game.bgm_from_chunk`,
+  `mruby-rpg2k/mrblib/game.rb`) — so resuming a save never re-applied the
+  saved pan either, since `#play_bgm` dropped it regardless of source.
+  Fixed by adding a `#music_balance` helper alongside the existing
+  `#music_fadein` (same defensive `rescue nil`-then-default-50 shape),
+  threading `balance:` through `#battle_bgm`/`#inn_bgm`/`#vehicle_bgm`/
+  `#play_map_bgm`'s returned hashes and through `Scene::GameOver`'s two
+  `_gameover_bgm` helpers, and having `#play_bgm` (and
+  `#play_gameover_bgm`) call `RGSS::Audio.bgm_pan(music[:balance] || 50)`
+  unconditionally on every play, same-file-or-not, matching Play BGM/Play
+  Memorized BGM's own idiom. **Verification**: added 5 new
+  `rpg2k_scene_check.rb` checks (inn, battle, vehicle/boat, Game Over,
+  and map Autoplay BGM), each asserting a database-configured and a
+  Change System BGM override balance both reach `RGSS::Audio.bgm_pan`
+  (extended `FakeBgmChunk` with a `balance` field the same
+  backward-compatible way cycle #218 added `fade_in`). Confirmed all 5
+  fail against the pre-fix `map.rb`/`game_over.rb` (`git show HEAD:...`
+  swapped in for both files in place of the working copy — all 5 new
+  checks failed with `expected [N], got []`, the other 945 untouched)
+  then restored the fix and reran clean. Full suite: `rpg2k_scene_check.rb`
+  950 passed (945 baseline + 5 new checks); `rpg2k_logic_check.rb` 1187
+  passed (unchanged); `rpg2k_render_check.rb` 41 passed (unchanged);
+  `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_gauge_check.rb`
+  15/0 (both unchanged); `rpg2k_save_load_check.rb` exit 0, zero known
+  failures (unchanged); `cd build && ninja` clean rebuild; `ctest
+  --test-dir build` 8/8 passing. No `.cxx`/`.hxx` file was touched (a
+  pure-Ruby fix plus its check-script fixtures), so the pinned
+  `clang-format` step does not apply, and no `mruby-rgss` file was
+  touched either, so `rgss_cruby_test_check.rb`/`rgss_cruby_compat.rb`
+  needed no attention. No wine session was run this cycle (audio pan is
+  not screenshot-diffable, matching every earlier BGM cycle's own note)
+  and no EasyRPG source was consulted for any new behavioral claim — the
+  `bgm_pan` native entry point and its "re-apply unconditionally,
+  same-file-or-not" idiom were already established by the `rpg2k-bgm-pan`
+  cycle for Play BGM; this cycle is the same mechanical plumbing to call
+  sites that cycle didn't reach. **Left open**: the victory fanfare
+  (`#play_victory_bgm`, which plays through the distinct one-shot
+  `RGSS::Audio.me_play` "ME" channel) still never calls `bgm_pan` at all —
+  deliberately left alone since no prior cycle ever established that
+  panning should apply to the ME channel in the first place (unlike
+  `fade_in`, which cycle #204 explicitly extended `me_play`'s own native
+  signature to support), so wiring it now would be a new, unverified
+  behavioral claim rather than plumbing an already-established one.
+
+  ✅ **Follow-up (cycle #220, 2026-08-28): the victory fanfare's own left-open
+  gap closed after all — no native signature change was actually needed.**
+  Method: continued the same systematic sweep, starting from cycle #219's own
+  "Left open" note just above. Re-examined its stated reason for leaving
+  `#play_victory_bgm` alone (that wiring pan to the ME channel would need a
+  new native `RGSS::Audio.me_play` argument, the way `fade_in` genuinely
+  needed one from cycle #204) and found the premise doesn't hold: a fade-in
+  has to reach `Mix_FadeInMusic` at the exact moment a track starts, so it
+  really does need its own argument threaded through `me_play`/`me_play_mem`
+  — but `RGSS::Audio.bgm_pan` is not like that. Its own doc comment (already
+  in the codebase, `Scene::Map#play_bgm`) says it "re-applies unconditionally,
+  same-file-or-not" with no dependency on which helper started the track, and
+  `#me_play`'s own pre-existing doc comment already establishes the fanfare
+  plays through the *same* underlying `Mix_Music` stream as ordinary BGM
+  ("both are the same underlying Mix_Music stream, just started with a
+  different loop count") — exactly the stream `bgm_pan`'s
+  `Mix_SetPanning(MIX_CHANNEL_POST, ...)` re-pans (`include/rgss_audio.hxx`'s
+  own doc comment: "pans the whole final mixed output"). So calling the
+  already-existing, already-verified `RGSS::Audio.bgm_pan` right after
+  `me_play` starts the fanfare is genuinely just the same mechanical plumbing
+  cycle #219 did for its own five call sites — no `.cxx`/`.hxx` file touched,
+  no new native entry point, nothing beyond forwarding a field the struct
+  already carries to a call that already exists and already works. Fixed by
+  adding `balance:` to `Scene::Map#victory_bgm`'s returned hash (both the
+  Change System BGM (10660) victory-slot override branch and the database
+  `battle_end_music` branch, reusing the existing `#music_balance` helper —
+  the identical shape `#battle_bgm`/`#inn_bgm` already use) and having
+  `#play_victory_bgm` call `RGSS::Audio.bgm_pan(music[:balance] || 50)`
+  immediately after `me_play`. Without this, the fanfare played back panned
+  to whatever `bgm_pan` value the *battle* track had last set (stale, left
+  over from before the fight ended), never its own configured balance.
+  **Verification**: added 2 new `rpg2k_scene_check.rb` checks (database
+  `battle_end_music.balance` and a Change System BGM victory-slot override's
+  `balance`, both asserting the value reaches `Audio.bgm_pan_calls` rather
+  than the fake harness's empty default), mirroring the shape of cycle #219's
+  own battle/inn/vehicle/game-over checks. Confirmed both fail against the
+  pre-fix `map.rb` (`git show HEAD:...` swapped in for the working copy in
+  its place — both new checks failed with `expected [N], got []`, the other
+  950 untouched) then restored the fix and reran clean. Full suite:
+  `rpg2k_scene_check.rb` 952 passed (950 baseline + 2 new checks);
+  `rpg2k_logic_check.rb` 1187 passed (unchanged); `rpg2k_render_check.rb` 41
+  passed (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_load_
+  check.rb` exit 0, zero known failures (unchanged); `cd build && ninja`
+  clean rebuild; `ctest --test-dir build` 8/8 passing. No `.cxx`/`.hxx` file
+  was touched (a pure-Ruby fix plus its check-script fixtures), so the pinned
+  `clang-format` step does not apply, and no `mruby-rgss` file was touched
+  either, so `rgss_cruby_test_check.rb`/`rgss_cruby_compat.rb` needed no
+  attention. No wine session was run this cycle (audio pan is not
+  screenshot-diffable, matching every earlier BGM/ME pan cycle's own note)
+  and no EasyRPG source was consulted for any new behavioral claim — the
+  `bgm_pan` native entry point, its "re-apply unconditionally" idiom, and
+  `#me_play`'s own "same underlying Mix_Music stream" citation were all
+  already established by prior cycles (`rpg2k-bgm-pan`, #204, #219); this
+  cycle only re-read what was already documented and drew the conclusion
+  cycle #219 didn't. Also swept `RGSS::Audio.se_play`/its dozen-odd
+  `mruby-rpg2k` call sites (System SE, skill/animation SE, terrain footstep
+  SE, Move Route "Play SE") looking for the same shape of gap on the `SE`
+  struct's own identical field-5 `balance`: every one of them reads
+  `volume`/`pitch` off the same struct or hash consistently but none forward
+  `balance` at all, `RGSS::Audio.se_play`'s own native signature has no pan
+  parameter to forward it to, and — unlike the BGM/ME case just fixed — there
+  is no already-existing, already-working `se_pan`-shaped call to plumb a
+  read value into: SDL_mixer's one-shot SE channels are individually
+  addressable (`Mix_PlayChannel`/`Mix_SetPanning(chan, ...)`, not the
+  postmix-only technique BGM/ME are stuck with), so closing this gap for real
+  would mean adding a genuinely new native capability, not forwarding an
+  existing one — a materially different, larger-scoped change than either
+  this cycle's fix or cycle #219's, and left alone rather than guessing at an
+  unverified panning curve for it.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the
