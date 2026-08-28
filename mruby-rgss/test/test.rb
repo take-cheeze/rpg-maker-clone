@@ -1658,8 +1658,8 @@ assert "RGSS::Audio prefers a loose file over the archive" do
   archive = FakeArchive.new({ "Audio/SE/test-packed-se.wav" => "packed" })
   class << RGSS::Audio
     alias _se_play_orig2 _se_play
-    def _se_play(p, v, pi)
-      $audio_se_capture = [p, v, pi]
+    def _se_play(p, v, pi, pa = 50)
+      $audio_se_capture = [p, v, pi, pa]
       nil
     end
   end
@@ -1689,8 +1689,8 @@ assert "RGSS::Audio finds an upper-case extension on disk" do
   File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
   class << RGSS::Audio
     alias _se_play_orig3 _se_play
-    def _se_play(p, v, pi)
-      $audio_se_capture = [p, v, pi]
+    def _se_play(p, v, pi, pa = 50)
+      $audio_se_capture = [p, v, pi, pa]
       nil
     end
   end
@@ -1723,8 +1723,8 @@ assert "RGSS::Audio skips a directory that shadows a track name" do
   File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
   class << RGSS::Audio
     alias _se_play_orig4 _se_play
-    def _se_play(p, v, pi)
-      $audio_se_capture = [p, v, pi]
+    def _se_play(p, v, pi, pa = 50)
+      $audio_se_capture = [p, v, pi, pa]
       nil
     end
   end
@@ -1818,14 +1818,14 @@ end
 
 assert "RGSS::Audio.se_play resolves a name to a real file" do
   # Capture what the public API forwards to the native primitive so we can
-  # assert the filename was resolved (extension appended) and volume/pitch
-  # passed through.
+  # assert the filename was resolved (extension appended) and
+  # volume/pitch/pan passed through.
   path = "test-se-fixture.wav"
   File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
   class << RGSS::Audio
     alias _se_play_orig _se_play
-    def _se_play(p, v, pi)
-      $audio_se_capture = [p, v, pi]
+    def _se_play(p, v, pi, pa = 50)
+      $audio_se_capture = [p, v, pi, pa]
       nil
     end
   end
@@ -1836,6 +1836,15 @@ assert "RGSS::Audio.se_play resolves a name to a real file" do
     assert_equal "test-se-fixture.wav", $audio_se_capture[0]
     assert_equal 80, $audio_se_capture[1]
     assert_equal 90, $audio_se_capture[2]
+    # pan (cycle #221) defaults to 50 (centre) when the caller -- every real
+    # RGSS script -- passes only the original 3 arguments.
+    assert_equal 50, $audio_se_capture[3]
+
+    # RPG2000's own system-SFX/Play Sound Effect balance parameter reaches
+    # the native primitive as this 4th argument when given explicitly.
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-se-fixture", 80, 90, 20)
+    assert_equal 20, $audio_se_capture[3]
 
     # A name that resolves to nothing skips the native call entirely.
     $audio_se_capture = nil

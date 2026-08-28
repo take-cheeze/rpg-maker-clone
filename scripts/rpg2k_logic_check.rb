@@ -3903,7 +3903,27 @@ check 'Play SE with a real file name plays it, not a stop-all' do
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::PLAY_SE, [80, 100], string: 'cursor')])
   it.update
-  eq [[:se, 'cursor', 80, 100]], RGSS::Audio.log
+  # [volume, tempo] only -- no 3rd (balance) element at all -- defaults to
+  # centre (50), the same convention Play BGM's own omitted-balance check
+  # uses just below.
+  eq [[:se, 'cursor', 80, 100, 50]], RGSS::Audio.log
+end
+
+check 'Play SE with an explicit balance parameter forwards it as pan' do
+  RGSS::Audio.log = []
+  st = new_state
+  it = Game::Interpreter.new(st)
+  # PlaySE parameters: [volume, tempo, balance] -- param(2) is balance, here
+  # full left (0) then full right (100). Cycle #221: this parameter was
+  # documented right in #play_audio's own comment but never actually read,
+  # since RGSS::Audio.se_play had no pan argument to forward it to.
+  it.start([
+    FakeCmd.new(IC::PLAY_SE, [80, 100, 0], string: 'cursor'),
+    FakeCmd.new(IC::PLAY_SE, [80, 100, 100], string: 'cursor'),
+  ])
+  it.update
+  ses = RGSS::Audio.log.select { |e| e[0] == :se }.map { |e| e[4] }
+  eq [0, 100], ses, 'each Play SE forwards its own balance parameter as pan'
 end
 
 check 'Play BGM with the literal "(OFF)" name stops the current track' do

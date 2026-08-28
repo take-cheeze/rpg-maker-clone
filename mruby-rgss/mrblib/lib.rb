@@ -1246,10 +1246,16 @@ module RGSS
         _me_fade(time)
       end
 
-      def se_play(filename, volume = 100, pitch = 100)
+      # `pan` (cycle #221) is not part of any real RGSS Audio.se_play
+      # signature (RGSS1/2/3 scripts never pass a 4th argument here either) --
+      # it exists for RPG2000's own Play Sound Effect / system-SFX balance
+      # parameter (the LCF `SE` struct's field 5), the same 0..100 scale
+      # `#bgm_pan` already carries for BGM. 50 (centre) keeps the original
+      # unpanned behaviour.
+      def se_play(filename, volume = 100, pitch = 100, pan = 50)
         path = resolve(filename, SOUND_DIRS)
-        return _se_play(path, volume, pitch) if path
-        play_packed(:se, filename, volume, pitch)
+        return _se_play(path, volume, pitch, pan) if path
+        play_packed(:se, filename, volume, pitch, 0, 0, pan)
       end
 
       def se_stop
@@ -1295,8 +1301,11 @@ module RGSS
       # packed-path split as `pos` for the identical reason: RPG2000's Play
       # BGM / Change System BGM fade-in has to reach a released game's packed
       # archive too, not just loose files -- ME ignores `pos` (it never
-      # resumes mid-track) exactly like every non-BGM kind above.
-      def play_packed(kind, filename, volume, pitch, pos = 0, fadein = 0)
+      # resumes mid-track) exactly like every non-BGM kind above. `pan`
+      # (cycle #221) is SE's own balance parameter, the identical disk-path/
+      # packed-path split as `pos`/`fadein` for the identical reason -- every
+      # other kind ignores it.
+      def play_packed(kind, filename, volume, pitch, pos = 0, fadein = 0, pan = 50)
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
         name, bytes = archive ? find_packed(archive, kind, filename) : nil
@@ -1320,7 +1329,7 @@ module RGSS
         when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos, fadein)
         when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
         when :me then _me_play_mem(name, bytes, volume, pitch, fadein)
-        else _se_play_mem(name, bytes, volume, pitch)
+        else _se_play_mem(name, bytes, volume, pitch, pan)
         end
         nil
       end

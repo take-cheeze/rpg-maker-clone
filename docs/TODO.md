@@ -1958,6 +1958,93 @@ The work below is roughly ordered by the critical path to a walkable game
   existing one — a materially different, larger-scoped change than either
   this cycle's fix or cycle #219's, and left alone rather than guessing at an
   unverified panning curve for it.
+
+  ✅ **Follow-up (cycle #221, 2026-08-28): the SE-balance gap cycle #220
+  correctly left open is now closed, with the genuinely new native capability
+  it named.** Method: continued the same systematic sweep one struct further
+  — cycle #217-#220 closed the `BGM` struct's `balance` family; this cycle
+  re-read cycle #220's own "left open" note above and, unlike a purely
+  Ruby-side gap, actually implemented the native plumbing it correctly
+  declined to guess at. Read `include/rgss_audio.hxx`, `mruby-rgss/src/
+  audio.cxx` and `src/sdl_audio.cxx` to confirm `start_se`'s existing
+  `Mix_PlayChannel(-1, chunk, 0)` already returns and uses a channel id
+  (`Mix_Volume(ch, ...)` right after it) — exactly the "already tracks a
+  channel id it just doesn't use" shape that made this safe to attempt
+  rather than a restructuring. `RgssAudioBackend::se_play`/`se_play_mem`
+  grew a 4th `pan` argument; `start_se` now also calls
+  `Mix_SetPanning(ch, left, right)` on that same channel, right after
+  `Mix_Volume` — genuine per-effect panning (SDL_mixer's `Mix_SetPanning`
+  works directly on an ordinary `Mix_Chunk` channel, unlike `bgm_pan`'s
+  `MIX_CHANNEL_POST` master-bus workaround, which exists only because a
+  `Mix_Music` stream has no channel of its own to target), set
+  unconditionally on every play so a channel SDL_mixer recycles from an
+  earlier, differently-panned SE never keeps stale panning.
+  `RGSS::Audio.se_play`/`_se_play_mem` gained the identical optional 4th
+  argument (default 50/centre), the same "grew a trailing argument no real
+  RGSS script ever passes" shape `me_play`'s own `fadein_ms` (cycle #204)
+  already established, so no real-RGSS call site (XP/VX/VXAce's own
+  `RPG::SE#play`/`Audio.se_play`, which never gained this argument) changes
+  behaviour. Every RPG2000 call site that builds an `SE` struct's audio was
+  then swept the same way cycle #219 swept `BGM`'s call sites, and now
+  forwards `balance` through the new argument: the Play Sound Effect (11550)
+  event command (`Interpreter#play_audio`'s own comment had named `balance`
+  as a parameter for cycles without the code ever reading it), both halves
+  of `Scene::Base#system_se` (the Change System SFX (10670) override path
+  already tracked `balance` in its stashed hash; `#db_system_se`, the
+  database-default path, never read `.balance` off the LCF struct at all —
+  its own genuinely new gap, not just the previously-undeliverable one),
+  `MapWorld`/`VehicleWorld#play_sound` (a Move Route "Play SE" sub-command —
+  previously accepted as a `_balance` parameter and immediately discarded,
+  now genuinely forwarded), `#play_animation_se` (a battle animation's own
+  timing SE), `Scene::SkillMenu#play_skill_sound_effect` (a Switch/Escape
+  skill's own `sound_effect` field), `Scene::Title#play_cursor_se`, and
+  `Scene::Map#play_terrain_footstep_se` (RPG2003's terrain footstep, whose
+  own doc comment already named `balance` as part of the full `Sound`
+  struct it reads). **Verification**: extended `mruby-rgss/test/test.rb`'s
+  existing `RGSS::Audio.se_play resolves a name to a real file` check to
+  assert the new argument defaults to 50 and forwards an explicit value (the
+  four pre-existing `_se_play` overrides elsewhere in that file needed their
+  fixed 3-arg signature widened to accept it too, or they would raise
+  `ArgumentError` once `se_play` started always passing 4); added a new
+  `rpg2k_logic_check.rb` check (`Play SE` with an explicit balance parameter
+  reaches `se_play`'s 4th argument, both full-left and full-right) and a new
+  `rpg2k_scene_check.rb` check (RPG2003 terrain footstep forwards a non-
+  default balance), plus widened five pre-existing `rpg2k_scene_check.rb`
+  assertions on exact `se_calls` arrays that would otherwise now under-count
+  their own recorded arguments. Confirmed every new/widened check actually
+  fails pre-fix: `interpreter.rb`, `scene/base.rb` and `scene/map.rb` were
+  each swapped for their `git show HEAD:...` version in turn (never
+  `git stash`, to avoid disturbing any concurrent session's own uncommitted
+  work) — the `interpreter.rb` swap failed both the widened "plays it, not a
+  stop-all" check and the new explicit-balance check with `got [nil, nil]`;
+  the `scene/map.rb` swap failed both footstep checks; the `scene/base.rb`
+  swap failed the widened `MapWorld#play_sound` check plus five `SkillMenu`
+  checks that all route through `#play_system_se`/`#play_skill_sound_effect`
+  — then each file was restored from the working tree and the suite reran
+  clean. Full suite: `rpg2k_scene_check.rb` 953 passed (952 baseline + 1 new
+  check); `rpg2k_logic_check.rb` 1188 passed (1187 baseline + 1 new check);
+  `rpg2k_render_check.rb` 41 passed (unchanged); `rpg2k3_battle_row_check.rb`
+  19/0 and `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_
+  load_check.rb` exit 0, zero known failures (unchanged); `cd build && ninja`
+  clean rebuild; `ctest --test-dir build` 8/8 passing (including `mruby_test`,
+  which runs the widened `test.rb` under real mruby). `.cxx`/`.hxx` files
+  were touched this cycle (`include/rgss_audio.hxx`, `src/sdl_audio.cxx`,
+  `mruby-rgss/src/audio.cxx`), so `clang-format -i` was run over all three
+  before building; `rgss_cruby_test_check.rb` (the pure-Ruby CRuby compat
+  shim, which already accepted `_se_play(*)`/`_se_play_mem(*)` variadically
+  with no ivar-based behaviour to keep in sync) passed unchanged. No wine
+  session was run this cycle — same limitation as every prior BGM/ME pan
+  cycle, audio panning is not screenshot-diffable and this sandbox has no
+  genuine RPG_RT.exe or real audio device — so the native `Mix_SetPanning`
+  call itself, and its interaction with `bgm_pan`'s own pre-existing
+  `MIX_CHANNEL_POST` master-bus effect when a game's BGM and an SE are
+  simultaneously panned off-centre (the two compound: the SE's own pan
+  applies first, then `bgm_pan`'s postmix pan applies again on top of the
+  already-mixed result), are unverified against genuine hardware/DirectSound
+  behaviour — documented as such directly in `include/rgss_audio.hxx`'s own
+  doc comment rather than left implicit. No EasyRPG source was consulted for
+  any new behavioral claim.
+
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

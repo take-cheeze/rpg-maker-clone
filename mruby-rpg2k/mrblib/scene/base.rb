@@ -330,14 +330,15 @@ class RPG2k
       def play_system_se(slot)
         se = system_se(slot)
         return unless se
-        Audio.se_play se[:name], se[:volume] || 100, se[:tempo] || 100
+        Audio.se_play se[:name], se[:volume] || 100, se[:tempo] || 100,
+                      se[:balance] || 50
       rescue StandardError => e
         $stderr.puts "[RPG2k] system SE '#{slot}' playback failed: #{e.message}"
       end
 
-      # The audio for a system slot as { name:, volume:, tempo: } — the state
-      # override (set by Change System SFX) first, then the database default for
-      # that slot, or nil when neither names a file.
+      # The audio for a system slot as { name:, volume:, tempo:, balance: } —
+      # the state override (set by Change System SFX) first, then the
+      # database default for that slot, or nil when neither names a file.
       def system_se(slot)
         ov = @state && @state.respond_to?(:system_sfx) ? @state.system_sfx[slot] : nil
         return ov if ov && ov[:name] && !ov[:name].empty?
@@ -358,8 +359,13 @@ class RPG2k
         # if (se.name == "(OFF)") { ...; return; }` -- treats blank *and*
         # the literal "(OFF)" sentinel identically as "nothing to play."
         return nil if name.nil? || name.empty? || name == '(OFF)'
+        # balance (cycle #221): the database's own SE struct carries it (LCF
+        # schema field 5, the same field id `#do_change_system_sfx`'s own
+        # override hash already tracks below), but this DB-default path never
+        # read it at all until now -- see #play_system_se's own citation.
         { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
-          tempo: (se.respond_to?(:pitch) ? se.pitch : 100) }
+          tempo: (se.respond_to?(:pitch) ? se.pitch : 100),
+          balance: (se.respond_to?(:balance) ? se.balance : 50) }
       end
 
       # Plays a battle_anime row's own sound effect -- ported from
@@ -389,7 +395,7 @@ class RPG2k
           se = t.respond_to?(:se) ? t.se : nil
           name = se && se.file
           next if name.nil? || name.empty? || name == '(OFF)'
-          Audio.se_play name, se.volume, se.pitch
+          Audio.se_play name, se.volume, se.pitch, se.balance
           return
         end
       rescue StandardError => e
@@ -446,9 +452,12 @@ class RPG2k
       # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
       # (Polish for "missing" -- a legacy artifact unique to this one
       # command in the whole reference codebase, found nowhere else in it).
-      def play_sound(name, volume, tempo, _balance)
+      # `balance` (cycle #221) was accepted and immediately discarded here
+      # (a `_balance` parameter) until RGSS::Audio.se_play grew a native pan
+      # argument to forward it to -- see that method's own doc comment.
+      def play_sound(name, volume, tempo, balance)
         return if name.nil? || name.empty? || name == '(OFF)' || name == '(Brak)'
-        RGSS::Audio.se_play(name, volume, tempo)
+        RGSS::Audio.se_play(name, volume, tempo, balance)
       rescue StandardError => e
         $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"
         nil
@@ -499,9 +508,12 @@ class RPG2k
       # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
       # (Polish for "missing" -- a legacy artifact unique to this one
       # command in the whole reference codebase, found nowhere else in it).
-      def play_sound(name, volume, tempo, _balance)
+      # `balance` (cycle #221) was accepted and immediately discarded here
+      # (a `_balance` parameter) until RGSS::Audio.se_play grew a native pan
+      # argument to forward it to -- see that method's own doc comment.
+      def play_sound(name, volume, tempo, balance)
         return if name.nil? || name.empty? || name == '(OFF)' || name == '(Brak)'
-        RGSS::Audio.se_play(name, volume, tempo)
+        RGSS::Audio.se_play(name, volume, tempo, balance)
       rescue StandardError => e
         $stderr.puts "[RPG2k] event SE '#{name}' playback failed: #{e.message}"
         nil

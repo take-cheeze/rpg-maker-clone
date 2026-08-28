@@ -22069,8 +22069,10 @@ check 'RPG2k::Scene::MapWorld#play_sound skips the "(OFF)"/"(Brak)" ' \
   world.play_sound('(OFF)', 90, 100, 50)
   world.play_sound('(Brak)', 90, 100, 50)
   eq [], RGSS::Audio.se_calls, 'neither sentinel plays anything'
-  world.play_sound('bell', 90, 100, 50)
-  eq [['bell', 90, 100]], RGSS::Audio.se_calls, 'a real name still plays normally'
+  # balance (cycle #221) now reaches RGSS::Audio.se_play's own 4th (pan)
+  # argument too, here off-centre (20) to confirm it is not just defaulted.
+  world.play_sound('bell', 90, 100, 20)
+  eq [['bell', 90, 100, 20]], RGSS::Audio.se_calls, 'a real name still plays normally, balance included'
 end
 
 # Ported from EasyRPG Player's source, NOT independently confirmed against
@@ -22282,7 +22284,7 @@ check 'Scene::SkillMenu: choosing a currently-unusable skill just buzzes and sta
   RGSS::Input.reset
   eq :skills, scene.instance_variable_get(:@mode), 'no target-confirm screen opens'
   eq [], party.cast_skill_calls, 'the skill is never actually cast'
-  eq [['Buzzer1', 100, 100]], RGSS::Audio.se_calls, 'buzzer only -- no Decision SE plays at all'
+  eq [['Buzzer1', 100, 100, 50]], RGSS::Audio.se_calls, 'buzzer only -- no Decision SE plays at all'
 
   # The castable skill right next to it still works normally.
   RGSS::Input.triggered = [RGSS::Input::LEFT]
@@ -22293,7 +22295,7 @@ check 'Scene::SkillMenu: choosing a currently-unusable skill just buzzes and sta
   scene.update
   RGSS::Input.reset
   eq :target, scene.instance_variable_get(:@mode), 'a usable skill still opens target-confirm'
-  eq [['Decision1', 100, 100]], RGSS::Audio.se_calls
+  eq [['Decision1', 100, 100, 50]], RGSS::Audio.se_calls
 end
 
 check 'Scene::SkillMenu: a listed-but-unusable skill row reads the windowskin\'s ' \
@@ -22384,8 +22386,9 @@ check 'Scene::SkillMenu: a Switch skill plays its own sound_effect on a successf
   scene.update
   RGSS::Input.reset
   eq true, state.switches[17], 'the switch turned on'
-  eq [['Decision1', 100, 100], ['SwitchOn', 90, 110]], RGSS::Audio.se_calls,
-     "the ordinary Decision SE (confirming the choice) then the skill's own sound_effect"
+  eq [['Decision1', 100, 100, 50], ['SwitchOn', 90, 110, 30]], RGSS::Audio.se_calls,
+     "the ordinary Decision SE (confirming the choice) then the skill's own sound_effect, " \
+     "each with its own balance (the system default 50, then the skill's own 30)"
 end
 
 check 'Scene::SkillMenu: a successful Switch skill closes the whole menu ' \
@@ -22420,7 +22423,7 @@ check 'Scene::SkillMenu: a Switch skill with a blank sound_effect plays nothing 
   scene.update
   RGSS::Input.reset
   eq true, state.switches[18], 'the switch still turned on'
-  eq [['Decision1', 100, 100]], RGSS::Audio.se_calls,
+  eq [['Decision1', 100, 100, 50]], RGSS::Audio.se_calls,
      'only the ordinary Decision SE -- the blank sound_effect filename makes #play_sound no-op silently'
 end
 
@@ -22439,7 +22442,7 @@ check 'Scene::SkillMenu: a failed Switch cast plays only Buzzer, not the skill\'
   scene.update
   RGSS::Input.reset
   ok !state.switches[17] && !state.switches[18], 'no switch flipped'
-  eq [['Decision1', 100, 100], ['Buzzer1', 100, 100]], RGSS::Audio.se_calls,
+  eq [['Decision1', 100, 100, 50], ['Buzzer1', 100, 100, 50]], RGSS::Audio.se_calls,
      "Decision then Buzzer -- the configured sound_effect never plays on a failed cast"
 end
 
@@ -22455,7 +22458,7 @@ check 'Scene::SkillMenu: an Escape skill plays its own sound_effect on a success
   scene.update
   RGSS::Input.reset
   eq [9, 1, 2, 0], state.pending_teleport, 'queued straight from the one registered escape target'
-  eq [['Decision1', 100, 100], ['SwitchOn', 90, 110]], RGSS::Audio.se_calls,
+  eq [['Decision1', 100, 100, 50], ['SwitchOn', 90, 110, 30]], RGSS::Audio.se_calls,
      "the ordinary Decision SE then the skill's own sound_effect, before the warp closes the menu"
 end
 
@@ -23646,7 +23649,17 @@ check 'RPG2003 terrain footstep plays with its own configured volume/pitch, ' \
   scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
                      footstep: OpenStruct.new(file: 'Step2', volume: 80, pitch: 120))
   walk(scene, 1)
-  eq ['Step2', 80, 120], RGSS::Audio.se_calls.find { |c| c[0] == 'Step2' }
+  eq ['Step2', 80, 120, 50], RGSS::Audio.se_calls.find { |c| c[0] == 'Step2' }
+end
+
+check 'RPG2003 terrain footstep forwards its own configured balance too, ' \
+      'not just volume/pitch (cycle #221)' do
+  RGSS::Audio.reset_se
+  hero = SlipActor.new([])
+  scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: true,
+                     footstep: OpenStruct.new(file: 'Step3', volume: 80, pitch: 120, balance: 20))
+  walk(scene, 1)
+  eq ['Step3', 80, 120, 20], RGSS::Audio.se_calls.find { |c| c[0] == 'Step3' }
 end
 
 check 'a terrain footstep explicitly set to "(OFF)" plays nothing, matching ' \
