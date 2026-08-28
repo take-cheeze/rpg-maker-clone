@@ -25318,6 +25318,115 @@ check 'battle_scene_class treats an edition-less database as RPG2000' do
      'a fixture database with no #rpg2003? keeps the 2000 scene'
 end
 
+# A page a real map event is built from is only half of what gets a sprite on
+# screen -- #build_events/#build_event wire up the Game::Character, but the
+# actual pixels come from #render -> #draw_layers -> #draw_events -> #draw_event
+# -> #draw_event_charset's own blt, a path no existing check here ever drove
+# (every check above inspects the built #chars(scene) hash directly, never
+# calls #render at all). Cycle #201 (2026-08-28) went looking for a suspected
+# rendering bug -- a genuinely reproducible-looking case from cycle #200,
+# Nepheshel's own Map0102.lmu event 8 page 2, switch-gated and (per cycle #200)
+# "correctly selected... but never drew a sprite" -- and instead found the real
+# gap was upstream of rendering entirely: a scratch script hand-editing a
+# Save<N>.lsd's switches bit array made two independent mistakes any future
+# save-editing scratch script could easily repeat -- see gen-rpg2k-save.rb's
+# own `hero = save[104]; ...; save[104] = hero` idiom, which happens to dodge
+# both:
+#   1. `Game::State.from_lsd`'s switches loader (`sw.each_with_index { |v, i|
+#      switches[i + 1] = v }`) maps the save's raw *0-indexed* switches array
+#      entry i to *game* switch id i+1 -- so game switch 265 lives at raw
+#      index 264, not 265. Writing raw index 265 sets game switch **266**
+#      instead, leaving 265 untouched.
+#   2. A nested Array1D field (`save[101]`, the :system chunk) mutated in
+#      place (`sys[32] = new_switches`) and never written back onto the outer
+#      root (`save[101] = sys`) is invisible to `#to_lcf`: `Array1D#to_lcf`
+#      serialises straight from its own raw `@data`, which a nested object's
+#      *own* internal mutation never touches -- the edit round-trips fine
+#      in-process (re-reading `sys` from the same live object) but silently
+#      evaporates the moment the file is saved and reloaded.
+# Both mistakes compound (each looks correct in isolation -- the first still
+# "sets a switch", just the wrong one; the second still "returns true" from a
+# write that never reaches disk) and together they reproduce cycle #200's
+# exact symptom: a page that looks correctly selected by inspection but never
+# ends up drawn, because the switch the real running game reads was never
+# actually the one that got set. With both mistakes fixed, two independent
+# reproductions -- this project's own CRuby scene-check harness loading
+# Map0102.lmu's real event 8 (all 3 pages, unmodified) directly, and the
+# actual compiled mruby engine booted headlessly on a genuine, correctly-
+# edited Save01.lsd -- agree page 2 selects, builds and draws its sprite
+# ("emy2324") every single frame from the first one, opaque, exactly where
+# expected. Cycle #200's finding was a save-editing artifact, not an engine
+# bug; Game::EventPage.select, #build_events/#build_event and the whole
+# #render -> ... -> #draw_event_charset chain are all correct here. See
+# docs/TODO.md's cycle #201 follow-up for the full account.
+#
+# What *was* a genuine, standing gap -- and what these two checks close --
+# is that nothing before cycle #201 ever exercised #render's own event-sprite
+# path at all, so a real regression there (a broken opacity calc, a page
+# switch that stopped invalidating the draw cache, `event_target_buffer`
+# picking the wrong layer) could ship with every check above still green.
+
+# `RGSS::Bitmap#blt_calls` records every #blt this scene's own tile buffers
+# receive; a call's 3rd element is the source bitmap (`event_charset`'s own
+# cached CharSet load) and its 5th is the opacity #draw_event computed
+# (128 for a translucent page, 255 otherwise -- see #draw_event).
+def event_blt_calls(scene, charset_name)
+  bmps = [scene.instance_variable_get(:@lower_bmp),
+          scene.instance_variable_get(:@upper_bmp)]
+  bmps.flat_map { |b| b.blt_calls || [] }
+      .select { |call| call[2].respond_to?(:load_name) &&
+                        call[2].load_name == "CharSet/#{charset_name}" }
+end
+
+check 'a map event with a real charset is actually blitted through #render, ' \
+      'not just built as a Game::Character' do
+  ev = event(2, 2, page(charset_name: 'hero1', charset_index: 3))
+  scene = new_scene({ 1 => ev }, player: [0, 0])
+  scene.update # #update's own final phase renders every frame (see #update)
+  hits = event_blt_calls(scene, 'hero1')
+  ok hits.any?, 'expected at least one blt of CharSet/hero1 through the real render path'
+  eq 255, hits.first[4], 'an ordinary (non-translucent) page draws fully opaque'
+end
+
+check 'a translucent event page blits at half (128) opacity, and an ' \
+      'action-trigger page with no active page condition draws nothing' do
+  translucent_ev = event(3, 2, page(charset_name: 'ghost1', translucent: true))
+  scene = new_scene({ 1 => translucent_ev }, player: [0, 0])
+  scene.update
+  hits = event_blt_calls(scene, 'ghost1')
+  ok hits.any?, 'expected the translucent page to still draw'
+  eq 128, hits.first[4], 'Set Transparent Flag-style page translucency halves opacity'
+end
+
+# The exact shape cycle #200 flagged and cycle #201 (see the long comment
+# above) traced to a save-editing mistake rather than an engine bug: a page
+# gated on a switch draws once that switch is on, through the real render
+# path end to end -- #build_events' own Game::EventPage.select, #build_event's
+# Game::Character wiring and #render's own #draw_event_charset blt, not just
+# one of those inspected in isolation.
+check 'a switch-gated event page draws its own sprite once its switch is set, ' \
+      'through the real #build_events -> #render path' do
+  gated_page = page(charset_name: 'wisp1', charset_index: 0)
+  gated_page.condition = OpenStruct.new(flags: Game::EventPage::SWITCH_A,
+                                        switch_a_id: 40)
+  ev = event(4, 2, gated_page)
+  scene = new_scene({ 1 => ev }, player: [0, 0])
+  scene.update
+  ok event_blt_calls(scene, 'wisp1').empty?,
+     'the gated page should not draw before its switch is set'
+
+  state = scene.instance_variable_get(:@state)
+  state.switches[40] = true
+  scene.send(:build_events) # a switch flip alone does not auto-rebuild; the
+                            # scene's own switch-command handlers call this,
+                            # mirrored here rather than driving a whole
+                            # Control Switches command through the interpreter.
+  scene.update
+  hits = event_blt_calls(scene, 'wisp1')
+  ok hits.any?, 'expected the now-selected page to draw once its switch is on'
+  eq 255, hits.first[4]
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
