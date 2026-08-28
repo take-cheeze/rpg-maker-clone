@@ -1551,6 +1551,78 @@ The work below is roughly ordered by the critical path to a walkable game
   timing is not screenshot-diffable, and nothing here touched a `data/`
   fixture) — this is first-principles schema-and-code reading, not a
   wine-verified timing match.
+  ✅ **Follow-up (cycle #204, 2026-08-28): picked up the `#victory_bgm`/
+  `#play_victory_bgm` gap cycle #203 left deliberately untouched above,
+  extending the native "ME" playback path to accept a fade-in rather than
+  just forwarding an already-plumbed value.** Method: read
+  `src/sdl_audio.cxx`'s `me_play`/`me_play_mem` alongside `bgm_play`/
+  `bgm_play_mem` first, since cycle #203's own note already named the exact
+  reason this one was out of scope (`me_play` had no `fadein_ms` parameter
+  at all) — found that both ME entry points already funnel into the same
+  `play_music`/`play_music_mem` helpers `bgm_play` uses, and those helpers
+  already accept a `fadein_ms` defaulted to 0 (added in cycle #202 for BGM),
+  so `me_play`/`me_play_mem` only needed to gain the parameter and pass it
+  through one layer down — not a new fade-in mechanism, just plumbing the
+  existing one to a second pair of call sites. Confirmed `Mix_FadeInMusic`
+  itself has no notion of "BGM vs ME": `start_music` (the shared tail
+  `play_music`/`play_music_mem` both call) picks `Mix_FadeInMusic` over
+  `Mix_PlayMusic` purely off `fadein_ms > 0`, with no other BGM-specific
+  state involved, so the extension is mechanically identical to `bgm_play`'s
+  cycle #202 one. Extended the whole chain end to end: `RgssAudioBackend::
+  me_play`/`me_play_mem` (`include/rgss_audio.hxx`) each gained a trailing
+  `fadein_ms` parameter; `sdl_audio.cxx`'s implementations forward it to
+  `play_music(path, volume, 1, 0, fadein_ms)` /
+  `play_music_mem(name, data, size, volume, 1, 0, fadein_ms)`; the gem-side
+  `mruby-rgss/src/audio.cxx` `me_play`/`me_play_mem` mrb functions each grew
+  a matching optional trailing argument (`me_play_mem` needed its own
+  dedicated function, no longer sharing the generic `play_mem`/`PlayMemFn`
+  helper still used by `bgs_play_mem`/`se_play_mem`, the same shape
+  `bgm_play_mem` already has for the identical reason); and
+  `mruby-rgss/mrblib/lib.rb`'s public `Audio.me_play(filename, volume, pitch,
+  fadein = 0)` forwards to `_me_play` on the loose-file path and threads
+  `fadein` through `#play_packed`'s `:me` branch to `_me_play_mem` for the
+  packed-archive path, the same disk/packed split `#bgm_play` already has.
+  On the mrblib call-site side, `Scene::Map#victory_bgm` (`mruby-rpg2k/
+  mrblib/scene/map.rb`) now reads `fade_in`/`fadein` off both the database's
+  `battle_end_music` (via the existing `#music_fadein` helper cycle #203
+  added) and a Change System BGM victory-slot override, returning it as a
+  `fadein:` key the same shape `#battle_bgm`/`#inn_bgm` already return; and
+  `#play_victory_bgm` forwards it as `RGSS::Audio.me_play`'s new 4th
+  argument, `|| 0` defaulted the same way volume/tempo already are. Checked
+  for other native or mrblib call sites that pass a fixed positional argument
+  count to `Audio.me_play`/`_me_play`/`_me_play_mem` that an added optional
+  argument could break (`mruby-rpgvx/mrblib/rgss2_runtime.rb`,
+  `mruby-mvjs/mrblib/mv.rb`, `scripts/rgss_cruby_compat.rb`'s stub, and
+  `mruby-rgss/test/test.rb`'s probe) — all call with 3 or fewer arguments, so
+  the new optional 4th/5th argument defaulting to 0 changes nothing for any
+  of them. Regression-covered by 2 new `scripts/rpg2k_scene_check.rb` checks
+  (a non-zero `fade_in` from the database's `battle_end_music`, and from a
+  Change System BGM victory override, each reach `RGSS::Audio.me_play`'s new
+  4th argument), both confirmed to fail against the pre-fix code (asserting a
+  4-argument `me_calls` tuple against code that still only ever passed 3)
+  before the fix; the suite's 2 pre-existing victory-fanfare `me_calls`
+  assertions were also updated to expect the now-explicit trailing `0`
+  (no fade-in configured in either fixture), both independently confirmed to
+  fail against the pre-fix code too (the old 3-argument shape) before being
+  updated. **Verification**: `scripts/rpg2k_scene_check.rb` 941 passed (939
+  baseline + 2 new checks, 0 failures); `rpg2k_logic_check.rb` 1179 passed
+  (unchanged — it never instantiates `Scene::Map`, so untouched by this
+  cycle, matching cycle #203's own note); `rpg2k_render_check.rb` 41 passed
+  (unchanged); `rpg2k3_battle_row_check.rb` 19/0 and
+  `rpg2k3_battle_gauge_check.rb` 15/0 (both unchanged); `rpg2k_save_load_check.rb`
+  still reports the same 1 known pre-existing failure (the unrelated Show
+  Picture field-shape mismatch) before and after; `scripts/rpg2k_command_soak.rb`
+  clean on both Nepheshel test-beds (184166 commands each, no gaps or
+  raises); the touched `.cxx`/`.hxx` files were run through the exact pinned
+  `clang-format==22.1.8` before committing (idempotent — a second run made no
+  further changes); `cd build && ninja` clean rebuild with no new warnings;
+  `ctest -R mruby_test` passed. No wine session was run this cycle, for the
+  same reason cycles #202/#203 gave (audio timing is not screenshot-diffable,
+  and nothing here touched a `data/` fixture) — this is first-principles
+  code reading (the native fade-in mechanism was already proven correct for
+  BGM in cycle #202; this cycle is mechanical plumbing of that same
+  mechanism to a second, structurally identical call path) rather than a
+  wine-verified timing match.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

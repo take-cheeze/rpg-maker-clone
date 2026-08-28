@@ -1180,10 +1180,16 @@ module RGSS
         _bgs_pos
       end
 
-      def me_play(filename, volume = 100, pitch = 100)
+      # `fadein` is not part of any real RGSS Audio.me_play signature (RGSS2/
+      # RGSS3 scripts never pass a 4th argument here either) -- it exists for
+      # RPG2000's own Change System BGM fade-in parameter reaching the
+      # victory fanfare's one-shot ME channel (`Scene::Map#play_victory_bgm`,
+      # cycle #204), the same reason #bgm_play grew its own `fadein` in cycle
+      # #202. 0 (the default) keeps the original instant-start behavior.
+      def me_play(filename, volume = 100, pitch = 100, fadein = 0)
         path = resolve(filename, MUSIC_DIRS)
-        return _me_play(path, volume, pitch) if path
-        play_packed(:me, filename, volume, pitch)
+        return _me_play(path, volume, pitch, fadein) if path
+        play_packed(:me, filename, volume, pitch, 0, fadein)
       end
 
       def me_stop
@@ -1238,10 +1244,12 @@ module RGSS
       # just the disk path in #bgm_play, because a released game's whole
       # Audio/ tree is packed into one encrypted archive with nothing loose on
       # disk (see RGSS.asset_archive) -- this is the path that actually
-      # carries a resume for a released game. `fadein` (cycle #202) is BGM's
-      # own fade-in-from-silence duration, the same disk-path/packed-path
-      # split as `pos` for the identical reason: RPG2000's Play BGM has to
-      # reach a released game's packed archive too, not just loose files.
+      # carries a resume for a released game. `fadein` (cycle #202 for BGM,
+      # #204 for ME) is a fade-in-from-silence duration, the same disk-path/
+      # packed-path split as `pos` for the identical reason: RPG2000's Play
+      # BGM / Change System BGM fade-in has to reach a released game's packed
+      # archive too, not just loose files -- ME ignores `pos` (it never
+      # resumes mid-track) exactly like every non-BGM kind above.
       def play_packed(kind, filename, volume, pitch, pos = 0, fadein = 0)
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
@@ -1265,7 +1273,7 @@ module RGSS
         case kind
         when :bgm then _bgm_play_mem(name, bytes, volume, pitch, pos, fadein)
         when :bgs then _bgs_play_mem(name, bytes, volume, pitch)
-        when :me then _me_play_mem(name, bytes, volume, pitch)
+        when :me then _me_play_mem(name, bytes, volume, pitch, fadein)
         else _se_play_mem(name, bytes, volume, pitch)
         end
         nil

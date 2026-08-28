@@ -76,8 +76,14 @@ struct RgssAudioBackend {
   void (*bgs_fade)(int ms);
   int (*bgs_pos)(void);
 
-  // Music effect: plays once over the music, then the interrupted BGM resumes.
-  void (*me_play)(const char* path, int volume, int pitch);
+  // Music effect: plays once over the music, then the interrupted BGM
+  // resumes. fadein_ms is the same fade-in-from-silence duration as
+  // bgm_play's, above (RPG2000's own Play BGM / Change System BGM fade-in
+  // parameter, reaching the victory fanfare's ME channel this way starting
+  // cycle #204) -- SDL_mixer's Mix_FadeInMusic applies identically to a
+  // one-shot ME as to a looping BGM, since both are the same underlying
+  // Mix_Music stream, just started with a different loop count.
+  void (*me_play)(const char* path, int volume, int pitch, int fadein_ms);
   void (*me_stop)(void);
   void (*me_fade)(int ms);
 
@@ -113,7 +119,8 @@ struct RgssAudioBackend {
                       const void* data,
                       int size,
                       int volume,
-                      int pitch);
+                      int pitch,
+                      int fadein_ms);
   void (*se_play_mem)(const char* name,
                       const void* data,
                       int size,
