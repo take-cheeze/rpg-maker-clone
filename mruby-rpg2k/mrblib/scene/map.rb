@@ -1529,13 +1529,34 @@ class RPG2k
       # into Game::State#map_event_route_index, so the same restore resumes an
       # in-progress custom route at its exact command rather than the top.
       def record_map_event_positions
-        @events.each do |e|
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame.
+        i = 0
+        size = @events.size
+        while i < size
+          e = @events[i]
           ch = e[:char]
-          @state.map_event_positions[e[:id]] = [ch.x, ch.y, ch.direction]
-          @state.map_event_route_index[e[:id]] = e[:route].index if e[:route]
+          id = e[:id]
+          # A stationary event's tuple reads the same every frame -- reuse the
+          # Array already sitting in @state.map_event_positions instead of
+          # allocating an identical replacement each time; #event_last_position
+          # (below) shares that same object rather than a second copy of it.
+          # Neither hash's own entries are ever mutated in place elsewhere
+          # (only reassigned wholesale, e.g. #set_char_location's own hidden-
+          # target @event_last_position write), so sharing the reference is
+          # safe.
+          cur = @state.map_event_positions[id]
+          if cur && cur[0] == ch.x && cur[1] == ch.y && cur[2] == ch.direction
+            pos = cur
+          else
+            pos = [ch.x, ch.y, ch.direction]
+            @state.map_event_positions[id] = pos
+          end
+          @state.map_event_route_index[id] = e[:route].index if e[:route]
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
-          @event_last_position[e[:id]] = [ch.x, ch.y, ch.direction]
+          @event_last_position[id] = pos
+          i += 1
         end
       end
 
@@ -2057,8 +2078,18 @@ class RPG2k
       # (narrower) actual pause conditions.
       def step_parallels
         # Iterate a copy: an Erase Event in a parallel process removes it from
-        # @parallels mid-loop (see erase_event).
-        @parallels.dup.each { |p| step_parallel(p) }
+        # @parallels mid-loop (see erase_event). A plain while loop instead of
+        # #each avoids allocating a Proc+env for the block on every single
+        # frame -- mruby's `for` is sugar for the identical #each call (see
+        # its NODE_FOR codegen), so it would not save anything here; only a
+        # loop with no block at all does.
+        snapshot = @parallels.dup
+        i = 0
+        size = snapshot.size
+        while i < size
+          step_parallel(snapshot[i])
+          i += 1
+        end
       end
 
       # Keep a Parallel Process's own battle advancing once it has opened one
@@ -2078,8 +2109,16 @@ class RPG2k
         return unless @battle
         owner = @battle.owner
         return if owner.nil? || owner.equal?(@interpreter)
-        p = @parallels.find { |pp| pp[:interp].equal?(owner) }
-        step_parallel(p) if p
+        i = 0
+        size = @parallels.size
+        while i < size
+          pp = @parallels[i]
+          if pp[:interp].equal?(owner)
+            step_parallel(pp)
+            return
+          end
+          i += 1
+        end
       end
 
       def step_parallel(p)
@@ -3345,7 +3384,18 @@ class RPG2k
       # case #update calls this a second way (allow_trigger: false) while a
       # message window is open; see #events_move_during_message?.
       def step_events(allow_trigger: true)
-        @events.each { |e| step_event(e, allow_trigger: allow_trigger) }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup
+        # (unlike #step_parallels' own loop): #step_event only sets up the
+        # interpreter via #start_event, it never drives it, so no command --
+        # Erase Event included -- can run synchronously here to shrink
+        # @events mid-loop.
+        i = 0
+        size = @events.size
+        while i < size
+          step_event(@events[i], allow_trigger: allow_trigger)
+          i += 1
+        end
       end
 
       # Run `route`'s sub-commands until one actually costs a frame of pacing
@@ -3460,7 +3510,16 @@ class RPG2k
       # Game::EventGraphic.frame reads @moving / @anim_phase to pick the drawn
       # column, and event_pixel reads the slide for the draw position.
       def animate_events
-        @events.each { |e| animate_event(e) }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup:
+        # #animate_event only advances an event's own slide/animation
+        # counters, it never touches @events itself.
+        i = 0
+        size = @events.size
+        while i < size
+          animate_event(@events[i])
+          i += 1
+        end
       end
 
       def animate_event(e)
@@ -4256,7 +4315,17 @@ class RPG2k
         # replaced by the plain one instead of staying baked in.
         @last_frame = nil if @state.player_flash
         @state.player_flash = tick_flash(@state.player_flash)
-        @events.each { |e| e[:flash] = tick_flash(e[:flash]) if e[:flash] }
+        # A plain while loop instead of #each avoids allocating a Proc+env for
+        # the block on every single frame. Safe without a defensive #dup:
+        # #tick_flash only mutates the flash hash it is handed, it never
+        # touches @events itself.
+        i = 0
+        size = @events.size
+        while i < size
+          e = @events[i]
+          e[:flash] = tick_flash(e[:flash]) if e[:flash]
+          i += 1
+        end
         # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
         # decay here (its visuals are the native sprite #update_vehicle_flashes
         # already drives) -- @flash_wait's `:vehicle` marker is only ever set
