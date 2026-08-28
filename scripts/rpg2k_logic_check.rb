@@ -6011,6 +6011,39 @@ check 'add_actor no-ops once the party already holds MAX_SIZE (4) members' do
      'adding is allowed again once a member has left and freed a slot'
 end
 
+check 'Change Party Member "Remove" targeting a dangling hero id reports the ' \
+      'same diagnostic Add already does, without enrolling the id into the ' \
+      'roster the save writes out' do
+  db = roster_db
+  party = Game::Party.new(db)
+
+  out = capture_stderr { party.remove_actor(99) }
+  ok out.include?('[RPG2k] actor #99 could not be built: No such actor: 99'), out
+  eq [1], party.roster.all.map(&:id), 'the dangling id was NOT built-and-enrolled ' \
+                                      '(only the starting leader, #1, is)'
+
+  # A second occurrence of the same dangling id is deduped, matching #[]'s
+  # own "logs once" behaviour (they share one @missing table).
+  out2 = capture_stderr { party.remove_actor(99) }
+  eq '', out2
+
+  # Removing an id that is simply not a *current* member -- but genuinely
+  # exists in the database -- stays completely silent, the ordinary case,
+  # and correctly does not enroll them either (matching the "merely naming
+  # an actor" rule #existing's own doc comment already establishes for a
+  # read path like `\N[n]`).
+  out3 = capture_stderr { party.remove_actor(2) }
+  eq '', out3
+  eq [1], party.roster.all.map(&:id), 'a valid-but-never-met id is not enrolled by a Remove either'
+
+  # Removing an id that *is* a current member behaves exactly as before:
+  # silent, no diagnostic, genuinely removed.
+  party.add_actor(2)
+  out4 = capture_stderr { party.remove_actor(2) }
+  eq '', out4
+  eq false, party.include_actor?(2)
+end
+
 check 'Party#reorder applies a picked front-to-back permutation, ' \
       'and can change the leader' do
   # RPG2003's Order menu command -- see Scene::Order (mruby-rpg2k/mrblib/
