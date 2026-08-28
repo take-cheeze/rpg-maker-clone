@@ -19647,6 +19647,88 @@ not yet verified:
   of re-arming — three of the four confirmed to fail against the pre-fix
   code before the fix (the fallback check already passed, since the
   pre-fix code always behaved as mode 0 regardless).
+  ✅ **Follow-up (cycle #199, 2026-08-28): wine-confirmed the "an RPG2000
+  project's own Shake Screen always falls back to one-shot mode 0, even when
+  a 5th (RPG2003-only) parameter is physically present in the command"
+  half of the citation above -- narrowed but, honestly, not fully settled
+  (see caveat below).** Single-parameter-spliced Nepheshel's own genuine
+  Map0325 event 3 ("earthquake trap 2", a real player-touch earthquake trap
+  whose page is Play SE -> two genuine back-to-back Shake Screen commands ->
+  Erase Screen -> Teleport -> Show Screen) on a copy of the genuine
+  `Map0325.lmu`: the first Shake Screen's own real 4-parameter list
+  (`[3,5,30,1]`) grown to 5 (`[3,5,30,1,1]`, appending param4=1, "begin a
+  repeating strobe"), with `MAP_EVENT_PAGE` field 51
+  (`event_command_size`) recomputed per cycle #181's own established
+  discipline (`page[51] = LCF.encode_event_commands(cmds).bytesize`) so the
+  stale-length black-screen hang that cycle found does not recur.
+  Repositioning a save onto the trap needed its own detour: the first
+  attempt stood the party directly on the trap's own south neighbour (8,5),
+  which turned out to be an impassable chasm tile (chipset 13's own
+  `passable_data_lower` flags = 0 for every direction) that this codebase's
+  own `ChipSet#passable?`/`#lower_index` correctly refuses to route *into* --
+  not a bug, just this cycle's own bad choice of standing tile, caught by
+  replicating that exact lookup in a scratch script against the map's real
+  chipset table before spending a wine cycle on it, then fixed by standing
+  one tile further out (9,4) instead, whose neighbour passability flags (15
+  -- open on all four sides) `scripts/gen-rpg2k-save.rb --at 9,4 --facing
+  left` reaches cleanly with a single step onto (8,4). Booted genuine
+  RPG_RT.exe under wine (the June-2003-PE-timestamped `Nepheshel206Rbeta`
+  binary cycle #181 first identified), loaded the spliced save, stepped
+  onto the trap tile, and timed the Erase Screen blackout (mean pixel
+  brightness on a dense 0.25s-interval `xwd` screenshot series dropping from
+  its steady ~0.17-0.18 baseline to ~0 and back) against an identical run on
+  the byte-for-byte untouched original map, same save, same two-key-press
+  script. **Result: both landed the blackout at the same ~4.0s mark,
+  indistinguishable** -- matching this codebase's own prediction (mode stays
+  0, so both Shake Screen commands still block for their own param3-gated
+  full duration) rather than the alternative a genuinely honoured param4=1
+  would produce (the first Shake becoming a non-blocking Begin, per this
+  codebase's own `#shake_begin`, which never waits at all -- the second
+  Shake and the Erase Screen right behind it would then have run
+  immediately, landing the blackout 2-3 seconds earlier than observed, a gap
+  far larger than any run-to-run input-timing jitter this method could
+  plausibly produce). The `do_shake_screen` comment was rewritten in place
+  with this finding, replacing the bare "NOT independently confirmed"
+  flag -- no behavior change, since the citation was already correct.
+  **Left open, honestly:** only the one `Nepheshel206Rbeta` binary and this
+  one maker=2000-format database were exercised. Nepheshel has no
+  maker=2003-format sibling to test the *positive* case against (a genuine
+  2003 project actually honouring param4), and neither the sibling
+  `Nepheshel206Nbeta` binary (cycle #181's own May-2001-dated one) nor
+  Song-of-the-Sea's genuine RPG2003 `RPG_RT.exe` (still blocked by the
+  missing-RTP dialog cycle #198 documented) were tried this cycle -- so this
+  result cannot by itself distinguish "the mode gate genuinely reads the
+  project's own maker edition" (this codebase's design, and EasyRPG's own
+  `Player::IsRPG2k3Commands()` citation) from "this specific 2003-PE-dated
+  binary simply never implements the strobe extension at all, regardless of
+  which project it is fed" -- both predict the exact null result actually
+  observed here. A future cycle wanting the positive case would need either
+  a working genuine RPG2003 `RPG_RT.exe` test-bed or a legitimate way around
+  Song-of-the-Sea's RTP requirement. **Verification:** `ruby -c` clean;
+  `git diff -- mruby-rpg2k/mrblib/interpreter.rb | grep -E '^[+-]' | grep
+  -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*#' | grep -vE
+  '^[+-][[:space:]]*$'` empty, confirming every changed line is a comment;
+  full rebuild (`cd build && ninja`) and `ctest -R mruby_test` both passed;
+  `scripts/rpg2k_scene_check.rb` (932), `scripts/rpg2k_logic_check.rb`
+  (1176), `scripts/rpg2k_render_check.rb` (41), `scripts/
+  rpg2k3_battle_row_check.rb` (19/0) and `scripts/rpg2k3_battle_gauge_check.rb`
+  (15/0) all exactly matched their recorded baselines; `scripts/
+  rpg2k_save_load_check.rb` reconfirmed at its exact 3 known pre-existing
+  failures (BGM `balance` x2, picture `show_x`/`show_y`), its own printed
+  save summary (`leader="Renamed" ... map=12 pos=(40,15)`) confirming
+  `Save01.lsd` was back to its pre-cycle state. Both `data/` fixtures this
+  cycle touched (`Save01.lsd`, `Map0325.lmu`, both Nepheshel) were backed up
+  before editing and restored byte-identical afterward, reconfirmed by
+  `md5sum` against the exact values every prior cycle back to #148 recorded
+  for `Save01.lsd` (`3ab5bb01...`) and this cycle's own first read of
+  `Map0325.lmu` (`7bc298752c...`); `git status --porcelain -- data/` stayed
+  empty throughout (the directory is fully gitignored regardless); no
+  `save*.mrb` scratch files were left behind; every wine/Xvfb/matchbox
+  process this cycle started was confirmed killed (`ps aux` clean,
+  `wineserver -k`) before finishing. No EasyRPG source was consulted for any
+  behavioral claim this cycle (only read, long after this cycle's own
+  independent wine finding, to phrase the citation's remaining gap
+  precisely), and no web search was used.
 - ✅ **A troop battle-event page's Show Battle Animation now honours RPG2003's
   Ally/Enemy target-type flag instead of always indexing the enemy troop —
   an "Ally #1" target used to play over the troop's own *second* monster in
