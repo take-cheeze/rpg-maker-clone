@@ -3911,11 +3911,44 @@ module Game
       end
     end
 
-    def include_actor?(id); @actors.any? { |a| a.id == id }; end
-    def actor_by_id(id); @actors.find { |a| a.id == id }; end
+    # Plain while loops instead of #any?/#find blocks -- Conditional Branch's
+    # "actor in party" sub-condition (actor_condition, interpreter.rb) calls
+    # #include_actor? every time it runs, confirmed via a per-condition-type
+    # RGSS::Profiler.stats[:object_types] pass to be the single largest
+    # source of interpreter-side Proc/env churn in a real playthrough -- a
+    # block literal allocates a Proc plus its closure env on every call in
+    # this mruby, however small the block body.
+    def include_actor?(id)
+      i = 0
+      n = @actors.size
+      while i < n
+        return true if @actors[i].id == id
+        i += 1
+      end
+      false
+    end
+
+    def actor_by_id(id)
+      i = 0
+      n = @actors.size
+      while i < n
+        a = @actors[i]
+        return a if a.id == id
+        i += 1
+      end
+      nil
+    end
 
     # Whether any party member is still standing. An empty party counts as wiped.
-    def any_alive?; @actors.any? { |a| !a.dead? }; end
+    def any_alive?
+      i = 0
+      n = @actors.size
+      while i < n
+        return true unless @actors[i].dead?
+        i += 1
+      end
+      false
+    end
 
     # Whether the whole party is knocked out (戦闘不能) -- the game-over condition.
     def all_dead?; !any_alive?; end
