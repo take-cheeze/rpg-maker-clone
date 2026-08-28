@@ -197,6 +197,21 @@ int to_mix_volume(int rpg_volume) {
   return rpg_volume * MIX_MAX_VOLUME / 100;
 }
 
+// RPG2000's balance scale (0 full left .. 50 centre .. 100 full right) to a
+// Mix_SetPanning left/right pair. "True panning" per SDL_mixer.h's own doc
+// comment on Mix_SetPanning is Mix_SetPanning(chan, left, 255 - left), so
+// right alone (0..255) is derived from pan and left is its complement --
+// shared by bgm_pan (below, applied to MIX_CHANNEL_POST) and start_se
+// (applied directly to the SE's own channel).
+void pan_to_lr(int pan, Uint8* left, Uint8* right) {
+  if (pan < 0)
+    pan = 0;
+  if (pan > 100)
+    pan = 100;
+  *right = (Uint8)(pan * 255 / 100);
+  *left = (Uint8)(255 - *right);
+}
+
 // Load a sample, caching it. Returns null (and logs once) on failure.
 Mix_Chunk* load_chunk(const std::string& path) {
   auto it = g_chunks.find(path);
@@ -436,16 +451,11 @@ void bgm_volume(int volume) {
 // alternative for music (see the doc comment on Mix_SetPanning in
 // SDL_mixer.h: "the panning will be done to the final mixed stream"). pan is
 // RPG2000's own Play BGM balance scale: 0 full left, 50 centre, 100 full
-// right. "True panning" per that same doc comment is Mix_SetPanning(chan,
-// left, 255 - left), so right alone (0..255) is derived from pan and left is
-// its complement.
+// right -- see pan_to_lr, above, for the left/right conversion this shares
+// with start_se's own, genuinely per-channel, SE panning.
 void bgm_pan(int pan) {
-  if (pan < 0)
-    pan = 0;
-  if (pan > 100)
-    pan = 100;
-  Uint8 right = (Uint8)(pan * 255 / 100);
-  Uint8 left = (Uint8)(255 - right);
+  Uint8 left, right;
+  pan_to_lr(pan, &left, &right);
   Mix_SetPanning(MIX_CHANNEL_POST, left, right);
 }
 
@@ -589,24 +599,47 @@ void me_fade(int ms) {
 
 // -- SE ---------------------------------------------------------------------
 
-void start_se(Mix_Chunk* chunk, int volume) {
+// pan (cycle #221): unlike bgm_pan's MIX_CHANNEL_POST master-bus hack (the
+// only way to reach a Mix_Music stream at all -- see bgm_pan's own doc
+// comment), Mix_SetPanning works directly on an ordinary Mix_Chunk channel,
+// so this is genuine per-effect panning applied straight to the channel
+// Mix_PlayChannel just handed back -- not a postmix effect, and not shared
+// with any other channel. Set unconditionally on every play (not only when
+// pan differs from centre) so a channel SDL_mixer recycles from an earlier,
+// differently-panned SE never keeps that stale panning: Mix_SetPanning's own
+// per-channel registration otherwise persists until explicitly overwritten
+// or the channel is closed, well past that earlier SE finishing and
+// se_stop's Mix_HaltChannel. Note this does compound with bgm_pan's own
+// postmix effect when a game's Play BGM balance is simultaneously off
+// centre: the final output is this SE's own pan applied first, then
+// bgm_pan's master-bus pan applied again on top of the already-mixed
+// result -- an accepted consequence of bgm_pan's own pre-existing
+// MIX_CHANNEL_POST compromise (its doc comment already discloses that it
+// "also pans BGS and SE, since there is no channel-scoped alternative for
+// music"), not something this SE-side fix introduces on its own.
+void start_se(Mix_Chunk* chunk, int volume, int pan) {
   if (!chunk)
     return;
   int ch = Mix_PlayChannel(-1, chunk, 0);
-  if (ch >= 0)
-    Mix_Volume(ch, to_mix_volume(volume));
+  if (ch < 0)
+    return;
+  Mix_Volume(ch, to_mix_volume(volume));
+  Uint8 left, right;
+  pan_to_lr(pan, &left, &right);
+  Mix_SetPanning(ch, left, right);
 }
 
-void se_play(const char* path, int volume, int /*pitch*/) {
-  start_se(load_chunk(path), volume);
+void se_play(const char* path, int volume, int /*pitch*/, int pan) {
+  start_se(load_chunk(path), volume, pan);
 }
 
 void se_play_mem(const char* name,
                  const void* data,
                  int size,
                  int volume,
-                 int /*pitch*/) {
-  start_se(load_chunk_mem(name, data, size), volume);
+                 int /*pitch*/,
+                 int pan) {
+  start_se(load_chunk_mem(name, data, size), volume, pan);
 }
 
 void se_stop(void) {

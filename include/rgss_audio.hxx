@@ -87,8 +87,18 @@ struct RgssAudioBackend {
   void (*me_stop)(void);
   void (*me_fade)(int ms);
 
-  // Sound effect: a one-shot sample; several can overlap.
-  void (*se_play)(const char* path, int volume, int pitch);
+  // Sound effect: a one-shot sample; several can overlap. pan is not part of
+  // any real RGSS Audio.se_play signature -- it carries RPG2000's own Play
+  // Sound Effect / system-SFX balance parameter (cycle #221, the same shape
+  // as bgm_play's fadein_ms above), 0..100 on the same full-left/centre/
+  // full-right scale as bgm_pan. Unlike bgm_pan, SDL_mixer's Mix_SetPanning
+  // works directly on the Mix_Chunk channel each SE plays on -- no
+  // MIX_CHANNEL_POST master-bus trick needed -- so this is genuine
+  // per-effect panning, independent of whatever the BGM's own balance is
+  // currently set to. 50 (every real-RGSS call site's implicit value, and
+  // every RPG2000 SE struct's own schema default) is centred, matching the
+  // pre-existing unpanned behaviour exactly.
+  void (*se_play)(const char* path, int volume, int pitch, int pan);
   void (*se_stop)(void);
 
   // Called once per frame from Graphics.update so the backend can drive
@@ -125,7 +135,8 @@ struct RgssAudioBackend {
                       const void* data,
                       int size,
                       int volume,
-                      int pitch);
+                      int pitch,
+                      int pan);
 
   // Non-zero when the backend resolved a MIDI instrument configuration, i.e.
   // when a .mid BGM/ME is expected to be audible rather than silent. Lets the

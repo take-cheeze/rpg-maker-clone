@@ -319,7 +319,7 @@ class RPG2k
         return unless se
         name = se.file
         return if name.nil? || name.empty?
-        Audio.se_play name, se.volume, se.pitch
+        Audio.se_play name, se.volume, se.pitch, se.balance
       rescue StandardError => e
         $stderr.puts "[RPG2k] skill SE '#{name}' playback failed: #{e.message}"
       end

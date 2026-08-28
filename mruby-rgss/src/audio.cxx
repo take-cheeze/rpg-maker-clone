@@ -36,11 +36,11 @@ void get_play_args(mrb_state* M,
   mrb_get_args(M, "z|ii", path, volume, pitch);
 }
 
-// The bgs_play_mem/se_play_mem twins take (name, bytes, volume=100,
-// pitch=100) -- bgm_play_mem and me_play_mem each grew extra trailing
-// arguments (pos_ms/fadein_ms, and fadein_ms respectively) and so define
-// their own mrb functions below rather than sharing this one. `name` is an
-// archive entry name rather than a path -- see include/rgss_audio.hxx.
+// bgs_play_mem takes (name, bytes, volume=100, pitch=100) -- bgm_play_mem,
+// me_play_mem and se_play_mem each grew extra trailing arguments
+// (pos_ms/fadein_ms, fadein_ms, and pan respectively) and so define their
+// own mrb functions below rather than sharing this one. `name` is an archive
+// entry name rather than a path -- see include/rgss_audio.hxx.
 using PlayMemFn = void (*)(const char*, const void*, int, int, int);
 
 mrb_value play_mem(mrb_state* M, PlayMemFn fn) {
@@ -163,11 +163,18 @@ mrb_value me_fade(mrb_state* M, mrb_value self) {
 }
 
 mrb_value se_play(mrb_state* M, mrb_value self) {
+  // SE grew its own 4th (pan, cycle #221) argument, so -- like me_play's own
+  // 4th (fadein_ms) argument above -- it reads its args directly rather than
+  // sharing get_play_args (bgs_play still does). pan is RPG2000's own Play
+  // Sound Effect / system-SFX balance parameter, not part of any real RGSS
+  // Audio.se_play signature; 50 (centre) keeps the original unpanned
+  // behaviour for every real-RGSS script call site, which never passes a 4th
+  // argument. See rgss_audio.hxx's own doc comment on the backend's se_play.
   const char* path;
-  mrb_int volume, pitch;
-  get_play_args(M, &path, &volume, &pitch);
+  mrb_int volume = 100, pitch = 100, pan = 50;
+  mrb_get_args(M, "z|iii", &path, &volume, &pitch, &pan);
   if (g_backend.se_play)
-    g_backend.se_play(path, (int)volume, (int)pitch);
+    g_backend.se_play(path, (int)volume, (int)pitch, (int)pan);
   return mrb_nil_value();
 }
 
@@ -229,7 +236,18 @@ mrb_value me_play_mem(mrb_state* M, mrb_value self) {
 }
 
 mrb_value se_play_mem(mrb_state* M, mrb_value self) {
-  return play_mem(M, g_backend.se_play_mem);
+  // Not the shared play_mem helper: like se_play above, SE's packed-archive
+  // twin also grew its own 5th (pan, cycle #221) argument -- see se_play's
+  // own comment.
+  const char* name;
+  const char* data;
+  mrb_int size;
+  mrb_int volume = 100, pitch = 100, pan = 50;
+  mrb_get_args(M, "zs|iii", &name, &data, &size, &volume, &pitch, &pan);
+  if (g_backend.se_play_mem && size > 0)
+    g_backend.se_play_mem(name, data, (int)size, (int)volume, (int)pitch,
+                          (int)pan);
+  return mrb_nil_value();
 }
 
 // Whether this build can play audio it did not read from a file. False with no
@@ -279,7 +297,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_me_play", me_play, MRB_ARGS_ARG(1, 3));
   mrb_define_module_function(M, audio, "_me_stop", me_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_me_fade", me_fade, MRB_ARGS_REQ(1));
-  mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 2));
+  mrb_define_module_function(M, audio, "_se_play", se_play, MRB_ARGS_ARG(1, 3));
   mrb_define_module_function(M, audio, "_se_stop", se_stop, MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_update", audio_update,
                              MRB_ARGS_NONE());
@@ -292,7 +310,7 @@ void rgss_audio_define(mrb_state* M, RClass* rgss) {
   mrb_define_module_function(M, audio, "_me_play_mem", me_play_mem,
                              MRB_ARGS_ARG(2, 3));
   mrb_define_module_function(M, audio, "_se_play_mem", se_play_mem,
-                             MRB_ARGS_ARG(2, 2));
+                             MRB_ARGS_ARG(2, 3));
   mrb_define_module_function(M, audio, "_midi_available", midi_available,
                              MRB_ARGS_NONE());
   mrb_define_module_function(M, audio, "_can_play_mem?", can_play_mem,

@@ -9714,7 +9714,10 @@ class RPG2k
       # Sound&, bool)` (`src/game_system.cpp`), which treats a blank name
       # *or* the literal "(OFF)" sentinel as silent no-ops, the same
       # convention every other Sound-typed field in this codebase already
-      # follows (see `#db_system_se`/`#play_animation_se`).
+      # follows (see `#db_system_se`/`#play_animation_se`). `balance` (cycle
+      # #221) now reaches `RGSS::Audio.se_play`'s own native pan argument too
+      # -- previously dropped along with every other SE call site's, before
+      # the backend had anywhere to forward it to.
       def play_terrain_footstep_se(row, damaged)
         return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
         return unless row && row.respond_to?(:footstep) && row.respond_to?(:on_damage_se)
@@ -9722,7 +9725,8 @@ class RPG2k
         se = row.footstep
         name = se && se.respond_to?(:file) ? se.file : nil
         return if name.nil? || name.empty? || name == '(OFF)'
-        RGSS::Audio.se_play(name, se.volume, se.pitch)
+        balance = se.respond_to?(:balance) ? se.balance : 50
+        RGSS::Audio.se_play(name, se.volume, se.pitch, balance)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Terrain: footstep SE playback failed: #{e.message}"
       end

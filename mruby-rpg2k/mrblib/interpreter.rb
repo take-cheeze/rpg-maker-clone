@@ -4804,10 +4804,16 @@ module Game
         @state.bgm_stopping = false
         RGSS::Audio.bgm_pan(balance)
       else
-        # PlaySE parameters: [volume, tempo, balance].
+        # PlaySE parameters: [volume, tempo, balance]. balance (cycle #221)
+        # was documented right here but never actually read -- RGSS::Audio.
+        # se_play had no pan argument to forward it to until this cycle's own
+        # native `pan` addition (see rgss_audio.hxx's own doc comment on the
+        # backend's se_play, and RGSS::Audio.bgm_pan's identical balance
+        # scale for BGM).
         volume = cmd.parameters.size > 0 ? cmd.param(0) : 100
         pitch = cmd.parameters.size > 1 ? cmd.param(1) : 100
-        RGSS::Audio.se_play(name, volume, pitch)
+        balance = cmd.parameters.size > 2 ? cmd.param(2) : 50
+        RGSS::Audio.se_play(name, volume, pitch, balance)
       end
     rescue StandardError => e
       $stderr.puts "[RPG2k] #{kind} playback failed for '#{name}': #{e.message}"
