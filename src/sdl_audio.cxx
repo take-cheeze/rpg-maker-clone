@@ -270,11 +270,14 @@ void free_music(void) {
 // Mix_FadeInMusic instead of jumping straight there via Mix_PlayMusic; 0 (the
 // default, and every caller here before this cycle) is the original instant
 // start.
-bool start_music(const std::string& what, int volume, int loops, int pos_ms,
+bool start_music(const std::string& what,
+                 int volume,
+                 int loops,
+                 int pos_ms,
                  int fadein_ms = 0) {
   Mix_VolumeMusic(to_mix_volume(volume));
   const int rc = fadein_ms > 0 ? Mix_FadeInMusic(g_music, loops, fadein_ms)
-                                : Mix_PlayMusic(g_music, loops);
+                               : Mix_PlayMusic(g_music, loops);
   if (rc < 0) {
     LOG(WARNING) << "Audio: failed to play music '" << what
                  << "': " << Mix_GetError();
@@ -403,8 +406,11 @@ bool replay_bgm(void) {
 
 // -- BGM --------------------------------------------------------------------
 
-void bgm_play(const char* path, int volume, int /*pitch*/, int pos_ms,
-             int fadein_ms) {
+void bgm_play(const char* path,
+              int volume,
+              int /*pitch*/,
+              int pos_ms,
+              int fadein_ms) {
   g_me_active = false;
   g_bgm_valid = true;
   g_bgm_path = path;

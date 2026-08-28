@@ -44,7 +44,10 @@ struct RgssAudioBackend {
   // starts at once, matching every prior build; > 0 is expected to ramp up
   // from silence to `volume` over that many milliseconds instead of jumping
   // there immediately.
-  void (*bgm_play)(const char* path, int volume, int pitch, int pos_ms,
+  void (*bgm_play)(const char* path,
+                   int volume,
+                   int pitch,
+                   int pos_ms,
                    int fadein_ms);
   // Re-applies volume to the BGM stream already playing, with no restart --
   // unlike bgm_play, which always starts its track over. Used when a Play BGM

@@ -191,7 +191,7 @@ mrb_value bgm_play_mem(mrb_state* M, mrb_value self) {
   mrb_int size;
   mrb_int volume = 100, pitch = 100, pos_ms = 0, fadein_ms = 0;
   mrb_get_args(M, "zs|iiii", &name, &data, &size, &volume, &pitch, &pos_ms,
-              &fadein_ms);
+               &fadein_ms);
   if (g_backend.bgm_play_mem && size > 0)
     g_backend.bgm_play_mem(name, data, (int)size, (int)volume, (int)pitch,
                            (int)pos_ms, (int)fadein_ms);
