@@ -1531,11 +1531,26 @@ class RPG2k
       def record_map_event_positions
         @events.each do |e|
           ch = e[:char]
-          @state.map_event_positions[e[:id]] = [ch.x, ch.y, ch.direction]
-          @state.map_event_route_index[e[:id]] = e[:route].index if e[:route]
+          id = e[:id]
+          # A stationary event's tuple reads the same every frame -- reuse the
+          # Array already sitting in @state.map_event_positions instead of
+          # allocating an identical replacement each time; #event_last_position
+          # (below) shares that same object rather than a second copy of it.
+          # Neither hash's own entries are ever mutated in place elsewhere
+          # (only reassigned wholesale, e.g. #set_char_location's own hidden-
+          # target @event_last_position write), so sharing the reference is
+          # safe.
+          cur = @state.map_event_positions[id]
+          if cur && cur[0] == ch.x && cur[1] == ch.y && cur[2] == ch.direction
+            pos = cur
+          else
+            pos = [ch.x, ch.y, ch.direction]
+            @state.map_event_positions[id] = pos
+          end
+          @state.map_event_route_index[id] = e[:route].index if e[:route]
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
-          @event_last_position[e[:id]] = [ch.x, ch.y, ch.direction]
+          @event_last_position[id] = pos
         end
       end
 
