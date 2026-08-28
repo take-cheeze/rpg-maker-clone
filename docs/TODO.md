@@ -1676,6 +1676,52 @@ The work below is roughly ordered by the critical path to a walkable game
   internal consistency (the corrected fixture's own field values against
   `Game::State.restore_pictures`'s already-shipped, already-cited-elsewhere
   behavior), not a new behavioral claim about genuine RPG_RT.
+  ✅ **Follow-up (cycle #216, 2026-08-28): with the backlog above still
+  fully closed, this cycle went looking (per this file's own cycle #215
+  note that the doc-level sweep was exhausted) for code-quality issues
+  instead, and found four live doc comments in `mruby-rpg2k/mrblib/`
+  describing already-shipped features as "still to come" -- pure
+  documentation drift, no behavioral bug and no code change.** Method: a
+  repo-wide grep for "still to come"/"does not yet draw"/"deliberately
+  simple first cut" style phrasing across `mrblib`, cross-checked against
+  this file's own history for each claim (rather than trusted at face
+  value) -- three of the four resolved instances are large open questions
+  this file already answers elsewhere ("The screen tone reaches the map
+  now as well" above; the game-over screen and weather rendering are both
+  long-shipped features, confirmed by reading `Scene::Map#perform_game_
+  over`/`#draw_weather` directly), and the fourth (`Game::Battle`'s class
+  doc calling itself "a deliberately simple first cut") was checked
+  directly against the class body, which turned out to already implement
+  both named gaps (`#attempt_escape`, `#inflict_state` fed from an enemy's
+  own skill picks via `#choose_enemy_action`) and has grown to ~4000 lines
+  -- the actual engine behind `Scene::Battle`'s live fights, not a
+  stand-in for one. Fixed by rewriting each of the four comments to
+  describe the current, correct state (`Game::Screen`'s class doc,
+  `Interpreter#do_weather`'s doc, `Scene::Map#perform_game_over`'s doc --
+  which had two contradictory paragraphs stacked back to back, the stale
+  one describing a "return to the title screen" outcome the very next
+  sentence already correctly overrides with "show the Game Over screen"
+  -- and `Game::Battle`'s class doc). No behavioral code changed anywhere
+  (`git diff` on all three touched `mrblib` files is comments only), so no
+  regression check applies, matching cycle #169/#171/#215's own precedent
+  for citation/comment-only fixes. **Verification**: `scripts/
+  rpg2k_scene_check.rb` 943 passed (unchanged), `rpg2k_logic_check.rb`
+  1187 passed (unchanged), `rpg2k_render_check.rb` 41 passed (unchanged),
+  `rpg2k3_battle_row_check.rb` 19/0 and `rpg2k3_battle_gauge_check.rb`
+  15/0 (both unchanged), `rpg2k_save_load_check.rb` still reports zero
+  known failures; `cd build && ninja` clean rebuild with no new warnings;
+  `ctest -R mruby_test` passed; `ruby scripts/rgss_cruby_test_check.rb`
+  passed (run for completeness -- no RGSS-side file was touched). No
+  `.cxx`/`.hxx` file was touched, so the pinned `clang-format` step does
+  not apply. No wine session was run and no EasyRPG source was consulted
+  for any behavioral claim this cycle (the one EasyRPG-sourced citation
+  read in passing, `Game::Battle`'s `#inflict_state` doc a few hundred
+  lines below the fixed class doc, was read only to confirm the feature
+  exists, not cited as a new behavioral claim). **Left open**: this was a
+  narrow, targeted grep for one specific phrasing pattern, not the
+  repo-wide EasyRPG-citation-hygiene sweep cycle #174's own note (256
+  unswept instances, last counted then) already tracks separately --
+  that sweep is unrelated to this fix and still needs a future cycle.
   **Show Inn** (10730) is a playable game-mode: a priced inn opens a greeting
   window with Accept / Cancel choices (Accept gated on whether the party can
   afford it) plus a gold window, staying deducts the price and fully heals the

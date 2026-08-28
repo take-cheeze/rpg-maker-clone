@@ -4474,10 +4474,10 @@ module Game
 
     # Weather Effects: set the map weather type (param0 — 0 none, 1 rain, 2 snow;
     # the RPG2003 additions come through as higher values) and strength (param1 —
-    # 0 weak .. 2 strong) on the shared game state. Non-blocking; like the picture
-    # / tint overlays this records the Ruby-half model only — compositing the
-    # rain/snow particles is native renderer work still to come — but the setting
-    # is applied and persists through Save / Continue.
+    # 0 weak .. 2 strong) on the shared game state. Non-blocking; sets the model
+    # here, and `Scene::Map#draw_weather` composites the actual rain streaks /
+    # snow drift onto its own overlay sprite from it every frame — the setting
+    # is applied, drawn, and persists through Save / Continue.
     # Ported from EasyRPG Player's `Game_Interpreter::CommandWeatherEffects`,
     # NOT independently confirmed against genuine RPG_RT under wine:
     # `strength = std::min(str, 2)` unconditionally

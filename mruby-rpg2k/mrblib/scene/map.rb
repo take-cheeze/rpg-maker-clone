@@ -6988,11 +6988,10 @@ class RPG2k
       end
 
       # Game over: the party was wiped in an encounter that ends the game on
-      # defeat (also the target of the Game Over event command). Stop the event
-      # and return to the title screen — the faithful end state. (RPG2000 shows a
-      # Game Over graphic first; that screen is native renderer work still to come.)
-      # Game Over (12420), and a battle defeat the encounter marked "game over":
-      # show the Game Over screen, which returns to the title once dismissed.
+      # defeat, or the event command itself named the target directly — either
+      # way, RPG2000 shows the Game Over graphic first: Game Over (12420) and a
+      # battle defeat the encounter marked "game over" both route here to show
+      # the Game Over screen, which returns to the title once dismissed.
       # Nothing resumes, so the event is stopped rather than released.
       #
       # `interp` is whichever interpreter actually raised the :game_over wait --

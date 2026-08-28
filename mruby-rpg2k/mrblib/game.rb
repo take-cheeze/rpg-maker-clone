@@ -8520,16 +8520,19 @@ module Game
     end
   end
 
-  # Screen-effect state driven by the screen event commands. Models two effects
-  # so far:
+  # Screen-effect state driven by the screen event commands. Models tint,
+  # shake, flash, pan and fade (Flash/Pan/Fade were later additions to this
+  # class; each now has its own accessors and `update` branch below, the same
+  # way Tint/Shake do):
   #
   # * **Tint** (Tint Screen, 11030): a colour multiplier given as RPG2000's four
   #   0..200 channels (red / green / blue / saturation, 100 = neutral). `tint_to`
   #   starts a transition to a target over N frames and `update` steps the
   #   channels toward it with the classic RPG2000/RGSS
   #   `cur += (target - cur) / frames_left` interpolation, which lands exactly on
-  #   the target on the final frame. Applying the tint as an `RGSS::Viewport`
-  #   tone is the native (C++) half still to come, so the tint does not yet draw.
+  #   the target on the final frame. `Scene::Map#update_map_tone` applies this
+  #   as the shared map `Viewport`'s `RGSS::Viewport` tone (and, while a fight
+  #   is open, the battle backdrop's), so the tint does draw.
   # * **Shake** (Shake Screen, 11050): a horizontal camera offset that oscillates
   #   while active. `shake` starts a timed shake and `update` advances it with
   #   a direct port of EasyRPG Player's own `Shake::NextPosition`/`Shake::Update`
@@ -8548,8 +8551,7 @@ module Game
   #   reads `shake_offset` and offsets the camera by it, so the shake *is*
   #   visible.
   #
-  # `update` (called once per frame by the scene) advances both. Flash will join
-  # the class the same way.
+  # `update` (called once per frame by the scene) advances all of them.
   class Screen
     NEUTRAL = 100 # a channel value that leaves the screen unchanged
 
@@ -10472,11 +10474,17 @@ module Game
     end
   end
 
-  # resolution. It works on Combatant snapshots, so the caller can resolve a
-  # battle without mutating the real party. This is a deliberately simple first
-  # cut — escape and enemy-cast state infliction are still to come, and the
-  # turn-based battle *screen* wires the refinements (skills, items, criticals,
-  # elemental attributes, damage variance) into a live fight.
+  # A headless combat model driving both the live turn-based fight
+  # (Scene::Battle holds one as its own `@ui[:battle]`) and, separately, an
+  # out-of-battle skill/item cast resolved on Combatant snapshots so the
+  # caller can compute an effect without mutating the real party. Escape
+  # (#attempt_escape) and enemy-cast state infliction (#inflict_state, fed
+  # from an enemy's own #choose_enemy_action skill pick the same way an
+  # ally's does) are both implemented directly on this class, not a
+  # still-to-come refinement — this stopped being a "deliberately simple
+  # first cut" some time ago. The field-only skill/item formulas
+  # (#skill_effect, #skill_defence_term and friends) still live on
+  # Game::Party, reused by both the field menu and this class.
   class Battle
     # RPG2003 front/back row. A purely RPG2003 concept (RPG2000 never sets it):
     # the row changes a battler's hit and damage the way EasyRPG's
