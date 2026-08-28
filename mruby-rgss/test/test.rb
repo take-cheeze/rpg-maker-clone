@@ -2407,6 +2407,39 @@ assert "RGSS::Tilemap API surface" do
   end
 end
 
+# The priority "above" layer (see tilemap_init/lib.cxx) is a second, separate
+# LVGL object holding priority-tile pixels (roofs, tree crowns) so they sort
+# over the character sprites. Its own `z` used to be set once at construction
+# and never touched again -- only `self`'s own `@z` moved when a script
+# assigned `tilemap.z = ...`, so the "above sorts higher than the tilemap"
+# relationship the two layers are supposed to keep in lockstep drifted apart
+# the moment a script ever reassigned a tilemap's z (`tilemap_set_visible`
+# right above already had to learn this same "propagate to the above layer"
+# lesson for visibility; z= never did). `Tilemap.allocate` (no live display
+# needed, like the Sprite#width/#height test above -- `z=` never touches the
+# native LVGL pointer, only ivars) with a plain stand-in object standing in
+# for the above canvas is enough to prove the offset without a real display.
+assert "RGSS::Tilemap#z= keeps the priority \"above\" layer offset above it" do
+  tm = RGSS::Tilemap.allocate
+  above = Object.new
+  tm.instance_variable_set(:@_tm_above_obj, above)
+
+  tm.z = 100
+  offset = above.instance_variable_get(:@z) - 100
+  tm.z = 500
+  assert_equal offset, above.instance_variable_get(:@z) - 500,
+               "above layer must track a reassigned tilemap z by a fixed offset"
+  tm.z = -2000
+  assert_equal offset, above.instance_variable_get(:@z) - (-2000),
+               "above layer must track a reassigned tilemap z by a fixed offset"
+
+  # A Tilemap with no above-layer ivar set at all (never went through
+  # tilemap_init, e.g. this same #allocate) must not raise.
+  bare = RGSS::Tilemap.allocate
+  bare.z = 42
+  assert_equal 42, bare.instance_variable_get(:@z)
+end
+
 # RGSS::Sprite.new needs an initialized display (it references RGSS::_display),
 # which the headless mrbtest build does not set up, so the Sprite extended
 # properties cannot be exercised here — they are load-verified with the rest of
