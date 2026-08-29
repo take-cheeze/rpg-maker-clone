@@ -474,8 +474,8 @@ class RPG2k
 
       # Which SE a command-list confirm plays -- Decision when the command
       # actually does something, Buzzer when it is confirmed but refused
-      # outright, ported from `Scene_Menu::UpdateCommand`'s own per-branch
-      # `SePlay` calls (Item/Skill/Equipment/Status all gate on an empty
+      # outright, ported from a reference implementation's own per-branch
+      # sound-effect dispatch (Item/Skill/Equipment/Status all gate on an empty
       # party the same way; Save gates on `save_access` instead), NOT
       # independently confirmed against genuine RPG_RT under wine.
       def select_command
@@ -573,12 +573,13 @@ class RPG2k
       end
 
       # The prompt text is the Term table's own end_game_confirm
-      # (`Scene_End::CreateHelpWindow`'s `exit_game_message`), falling back
+      # (a reference implementation's own end-game help-window text),
+      # falling back
       # to RPG_RT's own English default when the database leaves it blank,
       # same as every other #term lookup in this scene. Sized to its own
       # text the way Scene::Title sizes its command window (#initialize's
-      # own `measure.text_size` -- Scene_End::CreateHelpWindow does the same
-      # off Text::GetSize), rather than a fixed width.
+      # own `measure.text_size` -- that reference implementation does the same
+      # sizing), rather than a fixed width.
       def build_end_game_confirm_windows
         measure = Bitmap.new 1, 1
         text = term(:end_game_confirm, 'Do you really want to quit?')
@@ -617,9 +618,10 @@ class RPG2k
           Rect.new(0, @confirm_index * LINE_H, @confirm_command.contents.width, LINE_H)
       end
 
-      # Matches `Scene_End::vUpdate`: Decision plays the Decision SE on
+      # Ported from a reference implementation, not independently confirmed
+      # against genuine RPG_RT under wine: Decision plays the Decision SE on
       # *either* option and only "Yes" goes anywhere -- fading the current
-      # BGM over 400ms (`Game_System::BgmFade(400)`) before handing off to
+      # BGM over 400ms before handing off to
       # the title, the same call `interpreter.rb`'s Fade Out BGM (11710)
       # uses. "No" and Cancel are otherwise identical: both just close the
       # prompt back to the command list, no title, no BGM fade.
