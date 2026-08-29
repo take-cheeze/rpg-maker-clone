@@ -1,7 +1,9 @@
 - **A same-file Play BGM (or a battle/vehicle/inn/map BGM, or a Play
   Memorized BGM, matching the already-playing track) now re-applies its own
   volume live instead of leaving the previous volume in place.** RPG_RT's
-  single native BGM entry point, `Game_System::BgmPlay`, does not restart a
+  single native BGM entry point, ported from a reference implementation's
+  own BGM-play code and not independently confirmed against genuine
+  RPG_RT under wine, does not restart a
   track that names the file already playing, but it does "adjust volume and
   speed" on it — this codebase's existing same-file no-restart logic
   (`Game::Interpreter#play_audio`, `Scene::Map#play_bgm`,

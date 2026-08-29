@@ -9,8 +9,10 @@
   `#play_victory_bgm` is called from `#enter_battle_result` on a win, right
   alongside the two slot-0/3-5 lookups `#battle_bgm`/`#vehicle_bgm` already
   had and the slot-6 one `Scene::GameOver` already had — victory (slot 1) was
-  the one remaining `Game_System::sys_bgm` slot Change System BGM could set
-  but nothing ever played. Covered by two new `scripts/rpg2k_scene_check.rb`
+  the one remaining slot in RPG_RT's own system-BGM array (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine) that Change System BGM could set but nothing ever
+  played. Covered by two new `scripts/rpg2k_scene_check.rb`
   checks (the database `battle_end_music` plays over the result screen and
   the field BGM resumes only once it is dismissed; a Change System BGM
   override on slot 1 beats the database default), both confirmed to fail
