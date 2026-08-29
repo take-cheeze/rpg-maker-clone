@@ -838,8 +838,9 @@ assert "RGSS::Bitmap mosaic_blt" do
   8.times { |c| assert_equal(c * 10.0, identity.get_pixel(c, 0).red) }
 
   # block_size 4 resamples each pixel from the pixel nearest the centre of
-  # its 4px block (EasyRPG's own `off = block_size / 2` centring, ported
-  # verbatim in mruby-rgss/src/lib.cxx's bmp_mosaic_blt) -- columns 2..5 all
+  # its 4px block (a reference implementation's `off = block_size / 2`
+  # centring, ported verbatim in mruby-rgss/src/lib.cxx's bmp_mosaic_blt, not
+  # independently confirmed against genuine RPG_RT under wine) -- columns 2..5 all
   # land on the same centred block and read column 2's colour, the
   # pixelation RPG_RT's Mosaic transition applies to the whole screen.
   dst = RGSS::Bitmap.new(8, 1)

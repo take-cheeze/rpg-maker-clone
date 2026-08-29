@@ -1006,10 +1006,10 @@ module LCF
       # Timer1 has counted down to timer_sec seconds or below -- see
       # Game::EventPage::TIMER.
       8 => { name: :timer_sec, type: :int, default: 0 },
-      # RPG2003-only: a second timer condition (flags bit 0x40, gated on
-      # Player::IsRPG2k3Commands() in EasyRPG's source, NOT independently
-      # confirmed against genuine RPG_RT under wine) and the variable
-      # comparison operator, both now read by Game::EventPage -- see its own
+      # RPG2003-only: a second timer condition (flags bit 0x40, gated on an
+      # RPG2003 command check ported from a reference implementation, NOT
+      # independently confirmed against genuine RPG_RT under wine) and the
+      # variable comparison operator, both now read by Game::EventPage -- see its own
       # TIMER2 / compare_operator handling there.
       9 => { name: :timer2_sec, type: :int, default: 0 },
       # 0 == 1 >= 2 <= 3 > 4 < 5 != (liblcf's EventPageCondition::Comparison
@@ -1230,8 +1230,9 @@ module LCF
       41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
       # SaveMapEventBase's own move-route cursor: how far into a page's
       # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
-      # sourced from EasyRPG's liblcf generator/csv/fields.csv (0x2B == 43).
-      # liblcf also has a SaveMapEvent.original_move_route_index (0x66/102),
+      # ported from a reference implementation's schema field layout, not
+      # independently confirmed against genuine RPG_RT under wine (0x2B ==
+      # 43). liblcf also has a SaveMapEvent.original_move_route_index (0x66/102),
       # tracking the route in force *before* a Set Move Route override --
       # left undecoded, since this codebase's own Game::State
       # #map_event_route_index has no separate "original vs current route"
@@ -1494,7 +1495,8 @@ module LCF
     # 100's title only ever carried the leader's). Field 2 (the actor's
     # renamable title, Change Actor Title) was a single byte constant in the
     # one sampled save, so it was not provable from that save alone; it is now
-    # confirmed against EasyRPG's `liblcf` (`generator/csv/fields.csv`), whose
+    # inferred from a reference implementation's schema (not independently
+    # confirmed against genuine RPG_RT under wine), whose
     # `SaveActor` struct documents field `0x02` as `title` (`String`) right
     # next to `0x01` `name` — and every other already-confirmed field in this
     # table matches liblcf's hex tag decimal-for-decimal (`0x1F`→31 `level`,
@@ -1977,7 +1979,7 @@ module LCF
       # wrong tags symmetrically, so a same-engine save/load round-trip
       # never caught it -- only a genuine RPG_RT save using Change System
       # Graphics (10680), or this engine's own export opened in real
-      # RPG_RT/EasyRPG, would ever disagree.
+      # RPG_RT, would ever disagree.
       21 => { name: :system_graphic, type: :string },
       22 => { name: :wallpaper_type, type: :int },
       23 => { name: :font, type: :int },

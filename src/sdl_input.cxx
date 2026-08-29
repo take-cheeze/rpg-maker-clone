@@ -139,7 +139,7 @@ int map_key(SDL_Keycode k) {
     case SDLK_F12:
       return KEY_F12;
     // Numbers: both the main-row digit keys and the numeric keypad produce
-    // the same digit (real RPG_RT/EasyRPG accept either), so both feed the
+    // the same digit (real RPG_RT accepts either), so both feed the
     // same RGSS::Input id.
     case SDLK_0:
     case SDLK_KP_0:

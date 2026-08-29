@@ -2231,9 +2231,9 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
 // per block-size step across a 41-frame transition (see docs/TODO.md's
 // "Screen effects" entry).
 //
-// Ported from EasyRPG Player's `Transition::Draw` (`src/transition.cpp`),
-// `TransitionMosaicIn`/`TransitionMosaicOut` case: each output pixel samples
-// the pixel nearest the centre of its `block_size`x`block_size` block --
+// Ported from a reference implementation's mosaic-transition case, not
+// independently confirmed against genuine RPG_RT under wine: each output
+// pixel samples the pixel nearest the centre of its `block_size`x`block_size` block --
 // `off = block_size / 2`, `src = clamp(((pos + off) / block_size) *
 // block_size - off, 0, len - 1)` on each axis -- rather than a block average,
 // which is why a 1px block is the identity (`off` is 0, `src == pos`). RPG_RT
@@ -2284,13 +2284,13 @@ mrb_value bmp_mosaic_blt(mrb_state* M, V self) {
 // no longer covers are left as whatever is already in `self` (the caller
 // fills black first, matching RPG_RT drawing the wave over a cleared frame).
 //
-// Ported from EasyRPG Player's `Bitmap::WaverBlit` (`src/bitmap.cpp`) as
-// called from `Transition::Draw`'s `TransitionWaveIn`/`TransitionWaveOut`
-// case with no scale (`zoom_x = zoom_y = 1`): row `y`'s offset is
-// `trunc(2 * depth * sin(phase + y * 2*pi / 32))`, `depth`/`phase` supplied
-// per frame by `Game::Transition#wave_params` (mruby-rpg2k/mrblib/game.rb),
-// itself the same `p * 5 * pi / tf_off + pi` ramp EasyRPG's own transition
-// code computes.
+// Ported from a reference implementation's wave-blit routine, not
+// independently confirmed against genuine RPG_RT under wine, as called from
+// its wave-transition case with no scale (`zoom_x = zoom_y = 1`): row `y`'s
+// offset is `trunc(2 * depth * sin(phase + y * 2*pi / 32))`, `depth`/`phase`
+// supplied per frame by `Game::Transition#wave_params`
+// (mruby-rpg2k/mrblib/game.rb), itself the same `p * 5 * pi / tf_off + pi`
+// ramp that reference implementation's own transition code computes.
 mrb_value bmp_wave_blt(mrb_state* M, V self) {
   Bitmap& dst = bmp_self(M, self);
   V src_v;
