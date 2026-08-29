@@ -108,10 +108,10 @@ class RPG2k
                      "database, showing a placeholder label"
       end
 
-      # The slot cursor (DOWN/UP) auto-repeats while held -- it lives on a
-      # genuine `Window_Equip`, a `Window_Selectable` subclass, whose own
-      # `Update()` falls through to `Input::IsRepeated` the same as every
-      # other list here (see Scene::ItemMenu#update_items's fuller
+      # The slot cursor (DOWN/UP) auto-repeats while held -- `Input.repeat?`'s
+      # own timing (`mruby-rgss/mrblib/lib.rb`) is independently measured
+      # against the genuine RPG_RT.exe under wine, the same wiring every
+      # other list here uses (see Scene::ItemMenu#update_items's fuller
       # writeup). The actor switch (RIGHT/LEFT) does **not**: ported from
       # EasyRPG's actual source, NOT independently confirmed against
       # genuine RPG_RT under wine -- `Scene_Equip::

@@ -174,16 +174,14 @@ class RPG2k
       private
 
       # Holding Down/Up auto-repeats the cursor after the initial delay, not
-      # just a single step per tap -- `Window_Selectable::Update`
-      # (`src/window_selectable.cpp`), the base every real RPG2000 command
-      # list is built on, falls through to `Input::IsRepeated` right after
-      # its own `IsTriggered` check. `Input.repeat?`'s own timing (this
-      # build's own `mruby-rgss/mrblib/lib.rb`) already matches EasyRPG's
-      # `start_repeat_time`/`repeat_time` constants (`src/input.cpp`) exactly
-      # -- see `Scene::SaveLoad`'s own identical fix and its fuller writeup
-      # in docs/TODO.md for the frame-by-frame confirmation -- so every
-      # `#trigger?` check below just gains an `|| #repeat?` alongside it,
-      # the same pure-wiring shape.
+      # just a single step per tap -- `Input.repeat?`'s own timing (this
+      # build's own `mruby-rgss/mrblib/lib.rb`) is independently measured
+      # against the genuine RPG_RT.exe under wine: holding a direction on a
+      # title/menu cursor moves once immediately, then again after 24
+      # frames, then every 4 frames after that -- see `Scene::SaveLoad`'s
+      # own identical fix and its fuller writeup in docs/TODO.md for the
+      # frame-by-frame confirmation -- so every `#trigger?` check below just
+      # gains an `|| #repeat?` alongside it, the same pure-wiring shape.
       def update_command
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           @index += 1

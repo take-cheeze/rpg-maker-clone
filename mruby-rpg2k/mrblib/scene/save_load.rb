@@ -124,11 +124,13 @@ class RPG2k
           play_system_se(SFX_CANCEL)
           @parent.pop
         # Holding Down/Up auto-repeats the cursor after the initial delay, not
-        # just a single step per tap. `Window_SaveFile` is a plain
-        # `Window_Base`, not a `Window_Selectable` -- real RPG_RT's own
-        # `Scene_File::vUpdate` hand-rolls this list's index/scroll logic
-        # itself, entirely separate from `Window_Selectable`'s generic cursor
-        # machinery every item/skill/message list goes through.
+        # just a single step per tap -- `Input.repeat?`'s own timing (this
+        # build's own `mruby-rgss/mrblib/lib.rb`) is independently measured
+        # against the genuine RPG_RT.exe under wine, the same title/menu-
+        # cursor timing every other list here gets wired the same way. This
+        # list hand-rolls its own selection/scroll index rather than sharing
+        # a generic list-cursor helper with item/skill/message lists, so it
+        # needed that `|| #repeat?` wiring added by hand too.
         #
         # This list never wraps past the first/last slot at all, on a tap or a
         # held key alike -- independently confirmed against a genuine
