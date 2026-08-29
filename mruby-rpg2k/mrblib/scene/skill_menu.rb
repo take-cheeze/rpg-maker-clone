@@ -20,8 +20,8 @@ class RPG2k
     # actor-switch. Real RPG_RT
     # instead hands input focus to the *menu's own party list* when Skill
     # is selected there, letting the player pick which actor first
-    # (`Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row`
-    # branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
+    # (a reference implementation's own command-selection dispatch for the
+    # Skill/Equipment/Status/Row branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
     # passes the chosen actor's index in here as the third constructor
     # argument (default 0, the leader, for callers that never had a picker
     # to begin with, e.g. the host test harnesses).
@@ -437,8 +437,9 @@ class RPG2k
       # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
       # every menu on top of it in one step. A registered target's own switch
       # (Set Teleport Target / Set Escape Target's optional flag) turns on the
-      # instant the warp is queued, matching real RPG_RT's own
-      # `Game_Player::ReserveTeleport(const SaveTarget&)` -- see
+      # instant the warp is queued, ported from a reference implementation's
+      # own teleport-target reservation, not independently confirmed
+      # against genuine RPG_RT under wine -- see
       # Game::Party#cast_escape_skill/#cast_teleport_skill.
       def queue_teleport(target)
         @state.switches[target[:switch_id]] = true if target[:switch_id]

@@ -592,8 +592,9 @@ class RPG2k
         end
       end
 
-      # The item's own success cue -- confirmed against RPG_RT's own live
-      # source: `Scene_ActorTarget::UpdateItem` plays the invoked skill's own
+      # The item's own success cue -- ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT
+      # under wine: its own actor-target update plays the invoked skill's own
       # animation SE for a Type_special item or a `use_skill`-flagged
       # weapon/shield/armor/helmet/accessory item (the identical `do_skill`
       # condition `Game::Party#use_special_escape_item` already mirrors for
