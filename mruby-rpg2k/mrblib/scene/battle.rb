@@ -1956,7 +1956,7 @@ class RPG2k
       def open_battle_item
         @ui[:items] = @state.party.battle_items
         # See #start_skill's identical comment -- the same Decision/
-        # Buzzer split, ported from `Scene_Battle::ItemSelected`.
+        # Buzzer split, ported from that reference implementation.
         if @ui[:items].empty?
           play_system_se(SFX_BUZZER)
           return
@@ -2137,8 +2137,9 @@ class RPG2k
           draw_battle_ally_target
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C) && !allies.empty?
-          # `Scene_Battle::AllySelected` was not itself fetched verbatim,
-          # but it is one of the same family of "Selected" callbacks as
+          # A reference implementation's own ally-selection callback was not
+          # itself fetched verbatim, but it is one of the same family of
+          # "Selected" callbacks as
           # Attack/Defend/Item/Skill above, every one of which plays
           # Decision as its own first statement before acting.
           play_system_se(SFX_DECISION)
@@ -3544,8 +3545,9 @@ class RPG2k
       # wide stretch of the fill tile at `System2` `(48, 32 + 16*which, 16,
       # 16)` -- except an exactly-full gauge (`cur == max`) reads the
       # visually distinct "full" fill tile 16px over, at `(64, ...)`,
-      # instead of the normal partial-fill one. Ported from
-      # `Window_BattleStatus::DrawGaugeSystem2` exactly, including its
+      # instead of the normal partial-fill one. Ported from a reference
+      # implementation's own gauge-drawing routine, not independently
+      # confirmed against genuine RPG_RT under wine, including its
       # `max == 0` no-draw guard (a stat with no pool at all, e.g. an actor
       # with 0 max SP, draws no fill for that row).
       def draw_gauge_system2(c, system2, x, y, cur, max, which)
@@ -3558,8 +3560,9 @@ class RPG2k
 
       # Right-aligned up-to-4-digit number in 8x16 glyph cells (`System2`
       # `(digit * 8, 80, 8, 16)`), leading zeros suppressed rather than drawn
-      # -- ported from `Window_BattleStatus::DrawNumberSystem2` exactly,
-      # including its exact leading-zero cascade: a thousands (or hundreds)
+      # -- ported from a reference implementation's own number-drawing
+      # routine, not independently confirmed against genuine RPG_RT under
+      # wine, including its exact leading-zero cascade: a thousands (or hundreds)
       # digit that comes out to 0 still lets the *next* digit down draw via
       # its own `handle_zero` carry, so 100 draws all three digits ("100")
       # while 7 draws only the ones cell (three blank cells then "7") and 42

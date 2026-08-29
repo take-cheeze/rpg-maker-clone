@@ -180,7 +180,7 @@ module Game
     end
 
     # Character reference ids a command uses instead of a map event id, from
-    # liblcf's `Game_Character::CharPlayer..CharThisEvent` (10002-10004, the
+    # liblcf's own character-reference enum (10002-10004, the
     # three vehicle slots, sit between them and are only recognised by the scene,
     # which owns the vehicles). **This event** is the event whose page is running
     # the command list: the editor writes 10005, and a bare 0 means the same
@@ -2299,13 +2299,14 @@ module Game
     # byte-for-byte unchanged. Both are exactly the no-op this guard
     # predicts (Add with a negative value, or Remove with a positive one);
     # genuine RPG_RT.exe really does refuse to apply either, matching the
-    # asymmetric-no-op description below. `Game_Interpreter::
-    # CommandChangeItems` computes its signed
+    # asymmetric-no-op description below. A reference implementation's own
+    # Change Items command handler computes its signed
     # `value` through the same `OperateValue` a variable-sourced amount can
     # make negative even under "Add", then refuses to apply it at all --
     # "Add item can't be used to remove an item and remove item can't be
     # used to add one" -- unless the sign still matches the chosen
-    # operation. `Game_Interpreter::CommandChangeGold` calls the identical
+    # operation. That reference implementation's Change Gold command handler
+    # calls the identical
     # `OperateValue` with no such guard, so this asymmetric no-op is
     # specific to Change Items. Without it, a variable holding a negative
     # amount silently flips Add into a removal (or Remove into a gain)
@@ -4692,7 +4693,8 @@ module Game
         if blank || name == '(OFF)'
           RGSS::Audio.bgm_stop
           @state.current_bgm = nil
-          # `Game_System::BgmPlay` clears `data.music_stopping` unconditionally
+          # A reference implementation's own BGM-play routine clears
+          # `data.music_stopping` unconditionally
           # at the very end, including this stop branch -- see Game::State
           # #bgm_stopping's own doc comment.
           @state.bgm_stopping = false
