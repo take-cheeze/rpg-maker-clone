@@ -12,8 +12,8 @@
   **declared now**. They are not the save/encounter/parallax metadata they were
   guessed to be: they are the **RPG2003 random dungeon generator** block plus the
   2k3e save counter, and since the wiki's マップ page does not document them the
-  ids, types and defaults come from liblcf's `LMU_Reader::ChunkMap` / `RPG::Map`
-  (0x28..0x3E, 0x5A) — chunk 42 is `top_level`, 50 `generator_height`, 60/61/62
+  ids, types and defaults come from a reference implementation's own
+  chunk-reading source (0x28..0x3E, 0x5A) — chunk 42 is `top_level`, 50 `generator_height`, 60/61/62
   the nine room slots' `generator_x` / `generator_y` / `generator_tile_ids`, 90
   `save_count_2k3e`. The whole block (40–56 as well, which no test bed writes) is
   declared so a real map parses with nothing left over. The bytes confirm the
@@ -213,9 +213,10 @@ The work below is roughly ordered by the critical path to a walkable game
     transparency) as its live ground truth, so a save round-trip through
     both integer-truncating conversions is not perfectly lossless (e.g.
     opacity 191 round-trips to 188) — real RPG_RT has no such drift
-    (`Game_Pictures::Picture::data.current_top_trans` is the 0..100 value
-    directly, confirmed against `src/game_pictures.cpp`), a separate,
-    pre-existing precision gap left as-is rather than folded into this fix.
+    (a reference implementation's own picture data keeps the 0..100 value
+    directly, not independently confirmed against genuine RPG_RT under wine),
+    a separate, pre-existing precision gap left as-is rather than folded into
+    this fix.
     Covered by a new `scripts/rpg2k_logic_check.rb` check (`to_lsd` writes a
     shown picture's exact field values, including the expected 191→26
     transparency conversion; a full `to_lsd`/`.from_lsd` round-trip at
@@ -427,8 +428,8 @@ The work below is roughly ordered by the critical path to a walkable game
   "Away from Player" alike, `#direction_away` deriving from it via
   `TURN_180` — compared `dx.abs >= dy.abs` (a non-strict `>=`) and returned
   the character's own current facing outright when `dx == dy == 0`.
-  Confirmed against RPG_RT's own live source: `Game_Character::
-  GetDirectionToCharacter` (`src/game_character.cpp`) compares with a
+  Ported from a reference implementation's own logic, not independently
+  confirmed against genuine RPG_RT under wine: it compares with a
   strict `std::abs(sx) > std::abs(sy)`, so an exact tie — a genuine
   diagonal tie, or the degenerate same-tile case — falls to the *vertical*
   branch every time, landing on Down since `sy > 0` reads false when
@@ -454,9 +455,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Player" was a deterministic beeline — every step, in sight or not,
   computed the exact geometric direction toward/away the hero — where real
   RPG_RT only tracks the player 8 times out of 10 while actually on
-  screen, and makes no attempt to track at all once off screen.** Confirmed
-  against RPG_RT's own live source: `Game_Event::
-  MoveTypeTowardsOrAwayPlayer` (`src/game_event.cpp`) computes `sx =
+  screen, and makes no attempt to track at all once off screen.** Ported
+  from a reference implementation's own logic, not independently confirmed
+  against genuine RPG_RT under wine: it computes `sx =
   GetScreenX(); sy = GetScreenY()` and gates on `in_sight` (the view plus a
   two-tile margin, `TILE_SIZE * 2`) before ever consulting
   `GetDirectionToCharacter`/`GetDirectionAwayCharacter` (this codebase's
@@ -498,12 +499,13 @@ The work below is roughly ordered by the critical path to a walkable game
   a blocked autonomous move (Random/Vertical/Horizontal-cycle/Toward/Away
   alike) turned the event to face the obstruction on every single failed
   attempt, where real RPG_RT reverts that facing back on the overwhelming
-  majority of them.** `Game_Character::Move` (`src/game_character.cpp`)
-  does turn to face the drawn direction immediately, before ever checking
-  passability (`SetDirection(dir); UpdateFacing();` precede the `MakeWay`
-  calls) — but every autonomous-move caller in `src/game_event.cpp`
-  (`MoveTypeRandom`/`MoveTypeCycle`/`MoveTypeTowardsOrAwayPlayer`, all
-  sharing the identical shape) immediately reverts that on a blocked move:
+  majority of them.** Ported from a reference implementation's own logic,
+  not independently confirmed against genuine RPG_RT under wine: its
+  movement routine does turn to face the drawn direction immediately,
+  before ever checking passability (`SetDirection(dir); UpdateFacing();`
+  precede the `MakeWay` calls) — but every autonomous-move caller
+  (Random/Cycle/Toward-or-Away alike, all sharing the identical shape)
+  immediately reverts that on a blocked move:
   `if (IsStopping()) { if (IsWaitingForegroundExecution() ||
   (GetStopCount() >= GetMaxStopCount() + 60)) { SetStopCount(0); } else {
   SetDirection(prev_dir); if (!IsFacingLocked()) { SetFacing(prev_dir); }
@@ -537,8 +539,10 @@ The work below is roughly ordered by the critical path to a walkable game
   turns from its starting facing across 60 frames), confirmed to fail
   against the pre-fix code (`expected 2, got 6`) before the fix.
   **Also surfaced, deliberately left out of this fix to keep it narrow**: a
-  deeper discrepancy in RPG_RT's actual Random-move algorithm itself.
-  `Game_Event::MoveTypeRandom` is not a uniform pick among the four
+  deeper discrepancy in RPG_RT's actual Random-move algorithm itself,
+  found in a reference implementation's own logic and not independently
+  confirmed against genuine RPG_RT under wine: its Random move type is not
+  a uniform pick among the four
   absolute cardinal directions the way `Game::MoveType.next_direction`'s
   `RANDOM` case (`Character::CARDINALS[world.random(4)]`) implements it —
   it is a *relative* roll off the event's own current facing (`Rand::
@@ -555,9 +559,10 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-20): closed the Random-move gap just above —
   ~~`random` picks a cardinal~~, a fresh independent uniform cardinal every
   single step, where real RPG_RT rolls a relative turn off the event's own
-  current facing and sometimes skips the move attempt entirely.** Re-confirmed
-  against RPG_RT's own live source: `Game_Event::MoveTypeRandom`
-  (`src/game_event.cpp`) draws `Rand::GetRandomNumber(0, 9)`: 0-2 (30%) keep
+  current facing and sometimes skips the move attempt entirely.** Ported from
+  a reference implementation's own logic, not independently confirmed
+  against genuine RPG_RT under wine: its Random move type draws
+  `Rand::GetRandomNumber(0, 9)`: 0-2 (30%) keep
   going straight with no turn, 3-4 (20%) `Turn90DegreeLeft()`, 5-6 (20%)
   `Turn90DegreeRight()`, 7 (10%) `Turn180Degree()`, and 8-9 (20%)
   `SetStopCount(Rand::GetRandomNumber(0, GetMaxStopCount())); return;` —
@@ -588,9 +593,10 @@ The work below is roughly ordered by the critical path to a walkable game
   instead of the still-facing-right `6` the fix produces) before the fix.
   ✅ **Follow-up (2026-08-20): `Game::MoveType.bounce`'s Vertical/Horizontal-
   cycle default direction was reversed for an event caught facing off its
-  own cycle axis.** Confirmed against RPG_RT's own live source:
-  `Game_Event::MoveTypeCycle` (`src/game_event.cpp`) only continues in
-  `ReverseDir(default_dir)` when the event is already facing exactly that;
+  own cycle axis.** Ported from a reference implementation's own logic,
+  not independently confirmed against genuine RPG_RT under wine: its
+  Vertical/Horizontal-cycle move type only continues in
+  the reversed direction when the event is already facing exactly that;
   every other current facing — on-axis (facing `default_dir` itself) or not
   (facing perpendicular to the cycle axis, a legal independent page field a
   Vertical/Horizontal-cycle event can start with, or get knocked into by a
@@ -628,8 +634,9 @@ The work below is roughly ordered by the critical path to a walkable game
   (Switch On/Off, Speed/Frequency Up/Down, Change Graphic, Play Sound,
   Through Mode, Stop/Start Animation, Transparency Up/Down) each paid a
   full pacing delay, where real RPG_RT runs any number of them for free
-  within the same frame.** Confirmed against RPG_RT's own live source:
-  `Game_Character::UpdateMoveRoute` (`src/game_character.cpp`) loops
+  within the same frame.** Ported from a reference implementation's own
+  logic, not independently confirmed against genuine RPG_RT under wine:
+  its move-route update loops
   `while (true)` over a route's commands each frame, calling
   `SetMaxStopCountFor{Step,Turn,Wait}` — the only thing that actually
   stalls the loop for the rest of that frame — solely for a Move/Turn/
@@ -666,7 +673,7 @@ The work below is roughly ordered by the critical path to a walkable game
   the *whole* hop (the one kind of move that does; anything else longer than a
   step still snaps rather than streaking) and is lifted along the way by
   `Scene::Map#event_jump_offset`, a port of a reference implementation's
-  `Game_Character::GetJumpHeight` (not independently confirmed against genuine
+  own jump-height curve (not independently confirmed against genuine
   RPG_RT under wine): the height tracks the remaining step, peaks at
   the midpoint and is then stretched — doubled while small, offset by 4 through
   h < 13, capped at a flat 16 beyond that — which is what makes the hop leave the
@@ -674,8 +681,8 @@ The work below is roughly ordered by the critical path to a walkable game
   real reference-implementation one — it was previously mis-ported as an uncapped `h + 5`,
   peaking at 21px (5px, ~31%, past the real arc's own ceiling) instead of the
   correct, exact 16px (a full tile, never past it).** Fixed by capping
-  `#jump_offset_for` at `h < 13 ? h + 4 : 16`, matching `GetJumpHeight`'s
-  own three-way `jump_height < 5 ? jump_height*2 : jump_height < 13 ?
+  `#jump_offset_for` at `h < 13 ? h + 4 : 16`, matching the reference
+  implementation's own three-way `jump_height < 5 ? jump_height*2 : jump_height < 13 ?
   jump_height+4 : 16` exactly; the cap also flattens the true peak into a
   3-frame plateau (h=14 already caps to 16 one frame either side of the true
   midpoint's own h=16) rather than a single sharp point, matching "hang near
@@ -773,15 +780,16 @@ The work below is roughly ordered by the critical path to a walkable game
   Frequency permanently overwritten once the route finished, instead of
   reverting to whatever it was before the route started — the exact same
   gap this write-up's own scope already fixed for a map event's forced
-  route, just never mirrored onto vehicles.** Confirmed directly against
-  RPG_RT's live source: `Game_Character::ForceMoveRoute`
-  (`src/game_character.cpp`) snapshots the frequency in effect before the
+  route, just never mirrored onto vehicles.** Ported from a reference
+  implementation's own logic, not independently confirmed against genuine
+  RPG_RT under wine: its forced-move-route handling snapshots the frequency
+  in effect before the
   route starts overriding it (`if (!IsMoveRouteOverwritten())
-  original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
+  original_move_frequency = GetMoveFrequency();`), and cancelling a route
   restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
   non-repeating route's last command lands (`UpdateMovement`, the same
   place `#step_event`'s own "revert to page movement" comment already
-  cites). `Game_Vehicle` inherits both methods unchanged — a single,
+  cites). A vehicle inherits both methods unchanged — a single,
   unconditional code path, no version gating — so a boat/ship/airship
   gets this restore for free in real RPG_RT, identical to the player or a
   map event. `#force_vehicle_route`/`#step_vehicle_route`
@@ -828,7 +836,7 @@ The work below is roughly ordered by the critical path to a walkable game
   The collision test every vehicle-blocking move routes through — loops every Boat/Ship on the current
   map and refuses the step for **any** mover, the player included, when one
   sits on the target tile; it then separately checks the Airship, but only
-  when `self.GetType() != Game_Character::Player` — an unridden airship is a
+  when the mover is not the on-foot player — an unridden airship is a
   walkable, non-blocking tile for the party on foot, yet still a solid
   obstacle for every other mover (a map event's own autonomous/custom-route
   movement, or the player's own forced Set Move Route mirror, `@player_char`).
@@ -913,9 +921,10 @@ The work below is roughly ordered by the critical path to a walkable game
   ordinary event sits on that tile instead), and a Boat/Ship could
   symmetrically have been boarded by standing on its own tile rather than
   facing it from the shore — the opposite of the rule the comment above
-  already stated correctly. `Game_Interpreter_Map::
-  CommandEnterExitVehicle` (code 10840) reaches the identical
-  `GetOnOffVehicle`/`GetOnVehicle` path, so the Enter/Exit Vehicle event
+  already stated correctly. A reference implementation's own Enter/Exit
+  Vehicle event-command handler (code 10840, not independently confirmed
+  against genuine RPG_RT under wine) reaches the identical
+  boarding path, so the Enter/Exit Vehicle event
   command carried the same bug. Fixed by splitting `#board_vehicle` into a
   standing-only Airship check and a facing-only Ship/Boat loop (Ship
   before Boat, matching the reference's own check order), rather than one
@@ -940,8 +949,10 @@ The work below is roughly ordered by the critical path to a walkable game
   facing across (RPG_RT changes an event's page, not where it stands) and
   rebuilding the parallel processes, since a page change can add or remove one;
   an erased event stays erased for the visit. RPG_RT flags this per command
-  (`Game_Map::SetNeedRefresh` from Control Switches / Variables, Change Items,
-  Change Party Member) — this build instead gives `Game::Switches`,
+  (a reference implementation's own per-command refresh flag from Control
+  Switches / Variables, Change Items,
+  Change Party Member, not independently confirmed against genuine RPG_RT
+  under wine) — this build instead gives `Game::Switches`,
   `Game::Variables` and `Game::Party` revision counters and watches those, which
   covers every writer including the ones that are not event commands, like the
   item menu. Writing a value already held does not count, so a parallel process
@@ -976,7 +987,8 @@ The work below is roughly ordered by the critical path to a walkable game
   against genuine RPG_RT under wine, that the comparison is
   `if (secs > condition.timer_sec) return false` — active once Timer1 has
   counted down to `timer_sec` or below, not on an exact match. `timer2` (bit
-  `0x40`) is confirmed RPG2003-only (gated on `Player::IsRPG2k3Commands()` in
+  `0x40`) is confirmed RPG2003-only (gated on the reference implementation's
+  own RPG2003-mode check in
   that same function) and stays out of scope. `Game::EventPage::TIMER` and
   `.active?`/`.select` now take the live seconds-remaining value, threaded in
   from `Game::State#timer_seconds` at both call sites in `Scene::Map`
@@ -1106,16 +1118,20 @@ The work below is roughly ordered by the critical path to a walkable game
   also what a command **naming one actor** resolves through — every command above
   that takes a fixed or variable-selected actor rather than the whole party, plus
   Change Actor Name / Title / Sprite / Face and Enter Hero Name — matching
-  RPG_RT's `GetActors`, which reads the party only for the "whole party" scope
-  and `Game_Actors::GetActor` otherwise. That too is the common case rather than
+  a reference implementation's own actor-lookup split (not independently
+  confirmed against genuine RPG_RT under wine), which reads the party only
+  for the "whole party" scope
+  and the full actor roster otherwise. That too is the common case rather than
   a corner: all **7805** fixed-actor-id commands in Nepheshel name a companion it
   also dismisses (Change Skills on actor 1 alone is 2871), and 653 per companion
   silently did nothing while that companion was away. **Reading** an actor goes
   the same way, with one deliberate exception: Conditional Branch's "is this
   actor in the party" test really does ask the party, while its other six tests
   (name / level / HP / knows-skill / has-equipped / has-state) and Control
-  Variables' actor-stat operand ask the actor — the split RPG_RT makes between
-  `IsActorInParty` and `Game_Actors::GetActor`. Nepheshel writes 28 of the first
+  Variables' actor-stat operand ask the actor — the split a reference
+  implementation makes between checking party membership and looking up
+  the full actor roster (not independently confirmed against genuine
+  RPG_RT under wine). Nepheshel writes 28 of the first
   and 243 of the second, and all **2436** of its actor-stat reads name a
   swappable companion, which is why its party status display used to list a
   dismissed member at level 0. See ADR 0030. **Control
@@ -1203,18 +1219,19 @@ The work below is roughly ordered by the critical path to a walkable game
   was, confirmed to fail against the pre-fix code (a `NoMethodError` for the
   missing accessor, then a wrong-effective-flag failure) before the fix.
   ❌ **The inflict half above was itself wrong, and has been removed
-  (2026-08-18).** It assumed `Item::vExecute` mirrors the skill side's
+  (2026-08-18).** It assumed the item-use branch mirrors the skill side's
   `reverse_state_effect` branch "the same way" without the reference
   function ever actually being read — once the reference implementation's
   real item-use logic
-  became reachable, its `Type_medicine` branch turned out to apply
+  became reachable, its medicine-item branch turned out to apply
   `state_set` as an unconditional cure list with **no** `reverse_state_effect`
   check at all; the field is real data an item row carries (chunk 13 field
   68), but the editor's checkbox does nothing for a medicine in the real
-  engine. Exhaustively confirmed: the whole of `game_battlealgorithm.cpp`
-  references the field exactly twice, once in the weapon block of
-  `Normal::vExecute` (RPG2003 only) and once in `Skill::vExecute` — never in
-  `Item::vExecute`. `Game::Party#item_inflicted_states` is deleted;
+  engine. Exhaustively confirmed by reading a reference implementation's own
+  battle-algorithm source, not independently confirmed against genuine
+  RPG_RT under wine: the field is referenced exactly twice, once in the
+  weapon-attack branch (RPG2003 only) and once in the
+  skill branch — never in the item branch. `Game::Party#item_inflicted_states` is deleted;
   `#item_cured_states` no longer checks the flag at all, curing
   unconditionally regardless of it (matching what the reference actually
   does, not what its own comment assumed); `#use_medicine`'s inflict branch
@@ -1222,7 +1239,7 @@ The work below is roughly ordered by the critical path to a walkable game
   `rpg2k_logic_check.rb`'s two checks proving the (wrong) inflict mechanism
   are replaced with checks proving the flag is inert on a medicine either
   way. The weapon-side flip above (`is2k3 && w->reverse_state_effect`,
-  RPG2003 only) and the field-skill flip (`Game_Battler::UseSkill`) are
+  RPG2003 only) and the field-skill flip are
   untouched — both really are read by the reference, just not by the item
   algorithm.
   The **death state (戦闘不能, id 1)** is **coupled to HP** (matching a reference
@@ -8523,10 +8540,10 @@ The work below is roughly ordered by the critical path to a walkable game
   per-turn heal instead of a drain) or explicitly configured to do nothing
   despite a nonzero amount. Verified against a reference implementation's
   actual C++ source rather than guessed at (ported from that reference, not
-  independently confirmed against genuine RPG_RT under wine):
-  `lcf::rpg::State::ChangeType` (liblcf's
-  generated `state.h`) is `ChangeType_lose = 0, ChangeType_gain = 1,
-  ChangeType_nothing = 2`, and the reference's own condition-application
+  independently confirmed against genuine RPG_RT under wine): a reference
+  implementation's own state-change-type field is
+  0 for lose, 1 for gain,
+  2 for nothing, and the reference's own condition-application
   logic — both the battle turn-tick and its map-step counterpart — branches on all three
   explicitly, not a lose/anything-else binary. **A second, more consequential
   gap surfaced in the same investigation: `apply_turn_states`'s own slip
@@ -8628,7 +8645,9 @@ The work below is roughly ordered by the critical path to a walkable game
   the battler was told to defend, and 3 (confused) sends the attack at a random
   member of its own side. Basic attacks **and attack skills** apply RPG2000's
   **damage variance** (a `var` of 4 for attacks, each skill's own `variance` for
-  skills, spread via `Algo::VarianceAdjustEffect`), enabled for the live game and
+  skills, spread via a reference implementation's own variance-adjustment
+  formula, not independently confirmed against genuine RPG_RT under wine),
+  enabled for the live game and
   off for seeded / headless fights. A basic attack can land a **3x critical hit**
   at the attacker's database 1-in-N chance (actor `critical_rate`, enemy
   `critical_hit_chance`); no crit on a same-side hit. Characters wearing gear with
