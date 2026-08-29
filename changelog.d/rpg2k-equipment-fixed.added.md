@@ -7,9 +7,10 @@
   opening it and rejecting a choice, matching a reference implementation's
   own equip-selection handling (not independently confirmed against genuine
   RPG_RT under wine). `Game::Party`'s own bag-swapping methods
-  are deliberately left unguarded — RPG_RT's `Game_Actor::ChangeEquipment`
-  (used by both the menu's low-level swap and the Change Equipment event
-  command) does not check the flag either, so the gate belongs to the menu
+  are deliberately left unguarded — a reference implementation's own
+  equip-change handling (used by both the menu's low-level swap and the
+  Change Equipment event command), not independently confirmed against
+  genuine RPG_RT under wine, does not check the flag either, so the gate belongs to the menu
   scene alone. Left unbuilt: the state-table `cursed` (呪い) half of the
   equipment-lock check, which also locks equipment while an inflicted state is
   flagged cursed — no state in either test bed carries the flag, so there is

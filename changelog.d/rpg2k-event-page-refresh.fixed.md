@@ -8,8 +8,9 @@
   carrying each event's **position and facing** across (RPG_RT changes an
   event's page, not where it stands) and rebuilding the parallel processes,
   since a page change can add or remove one. Erased events stay erased. Rather
-  than flagging each command the way RPG_RT's `Game_Map::SetNeedRefresh` does —
-  which misses any path that is not an event command, such as using an item from
+  than flagging each command the way a reference implementation's own
+  refresh-flagging does (not independently confirmed against genuine RPG_RT
+  under wine) — which misses any path that is not an event command, such as using an item from
   the menu — `Game::Switches`, `Game::Variables` and `Game::Party` each carry a
   revision counter the scene watches, so every writer is covered by
   construction. Writing a value that is already there does not count, so a

@@ -5,8 +5,9 @@
   `Game::Actor#slot_cursed?` reads the item currently occupying a slot;
   `Scene::EquipMenu` refuses to even open that slot's item list, the same
   way it already does for `#equipment_fixed?` (an unrelated actor/class
-  trait). Same split as that flag: RPG_RT's own `Game_Actor::ChangeEquipment`
-  does not consult `cursed` either, so `Game::Party#equip_from_bag` /
+  trait). Same split as that flag: a reference implementation's own
+  equip-change handling, not independently confirmed against genuine
+  RPG_RT under wine, does not consult `cursed` either, so `Game::Party#equip_from_bag` /
   `#unequip_to_bag` stay unguarded — a Change Equipment event command can
   still force a cursed item off, only the menu gates on it. Not part of this:
   the *other* "cursed" flag, on the state table (2003 only, `situation.cursed`

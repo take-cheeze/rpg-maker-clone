@@ -1,5 +1,6 @@
 - **Vehicles:** boarding now uses the correct trigger per vehicle type,
-  matching RPG_RT's own `Game_Player::GetOnVehicle` -- the Airship boards
+  matching a reference implementation's own vehicle-boarding handling, not
+  independently confirmed against genuine RPG_RT under wine -- the Airship boards
   only by standing on its own tile, and a Boat/Ship boards only by facing
   it from an adjacent tile (the shore). Previously, a single generic check
   applied both triggers to every vehicle type: a placed, grounded Airship
