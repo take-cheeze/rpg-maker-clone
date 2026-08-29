@@ -328,31 +328,32 @@ The work below is roughly ordered by the critical path to a walkable game
     why the comparison harness still edits a genuine save.
 - ✅ Parallax background — `Scene::Map` draws the map's `Panorama/<name>`
   backdrop behind the tile layers (a sprite at z = -1). `Game::Parallax` ports
-  EasyRPG's parallax model: a looping axis tiles the image and scrolls it at
+  a reference implementation's parallax model, not independently confirmed
+  against genuine RPG_RT under wine: a looping axis tiles the image and scrolls it at
   half the camera rate with optional time-based autoscroll (`parallax_sx/sy`),
   while a non-looping axis anchors it — fixed to the screen for the common
   full-screen backdrop, panned across its excess for a larger image. Grounded
   in the real Nepheshel data (all 45 parallax maps' images resolve and every
   offset stays in range across a camera sweep) and pinned by
   `scripts/rpg2k_render_check.rb`.
-  ✅ **The scroll formulae are now confirmed against EasyRPG's actual source
-  directly, not left wanting a wine visual diff** (this session's own wine
+  ✅ **The scroll formulae are now checked directly against that reference
+  implementation's source, not left wanting a wine visual diff** (this session's own wine
   harness stayed broken throughout, a separate, unrelated regression) --
   two of the three pieces already matched exactly, and the third turned up
-  a real, narrow bug, now fixed. Fetched verbatim from `src/game_map.cpp`:
+  a real, narrow bug, now fixed. Fetched verbatim from the reference source:
   the looping axis's "half the camera rate" is not an approximation but a
-  provable identity (`Parallax::GetX()`'s `/ (TILE_SIZE * 2)` divisor and
-  `SetPositionX`'s own `% (parallax_width * TILE_SIZE * 2)` wrap share that
+  provable identity (the X-position getter's `/ (TILE_SIZE * 2)` divisor and
+  the position setter's own `% (parallax_width * TILE_SIZE * 2)` wrap share that
   same `* 2`, which is exactly the half-speed factor once the surrounding
   1/16-pixel fixed-point units cancel out); the autoscroll speed formula
-  (`Parallax::Update`'s `scroll_amt` closure) matches `#autoscroll_px`'s own
+  (the parallax updater's `scroll_amt` closure) matches `#autoscroll_px`'s own
   bit-shift-and-sign convention and `/32` divisor exactly, including its
   per-frame accumulation being mathematically equivalent to this codebase's
-  closed-form `(frame * amt) / 32` (`w` in `SetPositionX`'s modulus is
+  closed-form `(frame * amt) / 32` (`w` in the position setter's modulus is
   always an exact multiple of 32, so incremental wrapping and one-shot
   division-then-modulo agree for every frame count and sign). **The
-  non-looping (anchored) axis had a real gap**, though: EasyRPG's
-  `ResetPositionX` spans the interpolation across `min(map's own scrollable
+  non-looping (anchored) axis had a real gap**, though: the reference
+  implementation's position-reset logic spans the interpolation across `min(map's own scrollable
   excess, the image's own excess)`, not always the image's full excess the
   way `#anchored_offset` did before this fix -- invisible whenever an
   image's excess happens to be no larger than the map's own (every case
@@ -362,15 +363,15 @@ The work below is roughly ordered by the critical path to a walkable game
   what the map's own limited camera range should ever be able to reveal.
   Fixed with the missing `[cam_max, img_px - screen_px].min` clamp, and
   confirmed continuous (re-derived from the live camera every frame, not
-  computed once at map load) matches EasyRPG's own `ResetPositionX`, which
-  `Game_Map::Scroll`'s `ScrollRight`/`ScrollDown` call on every camera move,
+  computed once at map load) matches that same reference position-reset logic, which
+  the map's own scroll handling calls on every camera move,
   not just at load. Covered by a new `scripts/rpg2k_render_check.rb` check
   (a small 800px-wide map against a 2000px-wide panorama: the image pans by
   the map's own 160px scroll room, not its own 1360px excess, and clamps
   there rather than continuing to stretch past it). The **Change Parallax
   Background** event command (11720) swaps this panorama at runtime — the
   interpreter records a `Game::State#parallax` override (name + loop / autoscroll
-  settings, per EasyRPG's `SetParallax`) and flags a one-shot rebuild the scene
+  settings, per that reference implementation's parallax-set behavior) and flags a one-shot rebuild the scene
   polls; the override is dropped on the next map change so the destination map's
   own panorama returns.
 - ✅ Character sprites — the party leader and every map event render from their
@@ -405,8 +406,9 @@ The work below is roughly ordered by the critical path to a walkable game
   **Jumps really jump now.** `Begin Jump` / `End Jump` were both treated as
   waits, so the moves between them stepped one tile at a time — three route
   commands where RPG_RT runs one, testing every tile on the way when a jump is
-  the thing that clears them. `Game::MoveRoute#do_jump` ports EasyRPG's
-  `BeginMoveRouteJump`: the enclosed moves contribute a tile of offset each
+  the thing that clears them. `Game::MoveRoute#do_jump` ports a reference
+  implementation's `BeginMoveRouteJump` (not independently confirmed against
+  genuine RPG_RT under wine): the enclosed moves contribute a tile of offset each
   without stepping, faces and turns only steer what the next move contributes,
   and `Game::Character#jump` lands the character on the summed destination in
   one move, facing the jump's dominant axis (a tie going vertical) rather than
@@ -663,12 +665,13 @@ The work below is roughly ordered by the critical path to a walkable game
   airborne — was a blink from one tile to another. A jumping event slides across
   the *whole* hop (the one kind of move that does; anything else longer than a
   step still snaps rather than streaking) and is lifted along the way by
-  `Scene::Map#event_jump_offset`, a port of EasyRPG's
-  `Game_Character::GetJumpHeight`: the height tracks the remaining step, peaks at
+  `Scene::Map#event_jump_offset`, a port of a reference implementation's
+  `Game_Character::GetJumpHeight` (not independently confirmed against genuine
+  RPG_RT under wine): the height tracks the remaining step, peaks at
   the midpoint and is then stretched — doubled while small, offset by 4 through
   h < 13, capped at a flat 16 beyond that — which is what makes the hop leave the
   ground sharply and hang near the top. ✅ **That cap/offset shape is now the
-  real EasyRPG one — it was previously mis-ported as an uncapped `h + 5`,
+  real reference-implementation one — it was previously mis-ported as an uncapped `h + 5`,
   peaking at 21px (5px, ~31%, past the real arc's own ceiling) instead of the
   correct, exact 16px (a full tile, never past it).** Fixed by capping
   `#jump_offset_for` at `h < 13 ? h + 4 : 16`, matching `GetJumpHeight`'s
@@ -820,9 +823,9 @@ The work below is roughly ordered by the critical path to a walkable game
   the not-yet-extracted `#player_walk_pattern`) before the fix.
   ✅ **The "hero/event collision with a moving unboarded vehicle" follow-up
   the first-cut paragraph flagged is now closed too, verified against
-  EasyRPG Player's actual C++ source rather than left a guess.**
-  `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) — the collision test
-  every `MakeWay` call routes through — loops every Boat/Ship on the current
+  a reference implementation's actual C++ source rather than left a guess,
+  not independently confirmed against genuine RPG_RT under wine.**
+  The collision test every vehicle-blocking move routes through — loops every Boat/Ship on the current
   map and refuses the step for **any** mover, the player included, when one
   sits on the target tile; it then separately checks the Airship, but only
   when `self.GetType() != Game_Character::Player` — an unridden airship is a
@@ -863,14 +866,15 @@ The work below is roughly ordered by the critical path to a walkable game
   paragraph above deliberately left open is now closed too
   (2026-08-18).** Real RPG_RT lets a moving Boat/Ship collide with a
   parked Ship/Boat, and refuses an Airship landing on a parked Boat/Ship's
-  tile — confirmed against RPG_RT's actual behavior via EasyRPG Player's
-  own C++ source rather than assumed from the sibling fix above:
-  `Game_Map::CheckOrMakeWayEx` (`src/game_map.cpp`) loops `{ Boat, Ship }`
+  tile — confirmed against RPG_RT's actual behavior via a reference
+  implementation's own C++ source rather than assumed from the sibling fix
+  above, not independently confirmed against genuine RPG_RT under wine:
+  the same collision test loops `{ Boat, Ship }`
   for any non-Airship mover (a moving Boat/Ship is one — it steers as its
-  own `Vehicle`-typed character, not `Player`), then also checks a grounded
-  Airship whenever the mover is not the on-foot Player — true here too, the
-  same `self.GetType() != Game_Character::Player` gate the sibling fix
-  above already traced. `Game_Map::CanLandAirship` separately loops
+  own `Vehicle`-typed character, not the player), then also checks a grounded
+  Airship whenever the mover is not the on-foot player — true here too, the
+  same non-player gate the sibling fix
+  above already traced. The reference's airship-landing check separately loops
   `{ Boat, Ship }` and refuses a landing on either one's tile.
   `#vehicle_passable?`/`#airship_landable?` (`mruby-rpg2k/mrblib/scene/
   map.rb`) never consulted another vehicle's own position at all, so a
@@ -878,9 +882,9 @@ The work below is roughly ordered by the critical path to a walkable game
   grounded Airship, and a landing Airship could set down right on top of a
   parked Boat/Ship. Fixed by reusing `#vehicle_blocks?` — already built and
   tested for the opposite direction above — from both: `block_airship: true`
-  in `#vehicle_passable?`'s boat/ship branch (matching `CheckOrMakeWayEx`'s
-  own Airship-included loop for a non-Airship mover), `block_airship: false`
-  in `#airship_landable?` (matching `CanLandAirship`'s Boat/Ship-only loop).
+  in `#vehicle_passable?`'s boat/ship branch (matching the reference's own
+  Airship-included loop for a non-Airship mover), `block_airship: false`
+  in `#airship_landable?` (matching the reference's own Boat/Ship-only landing loop).
   `#vehicle_blocks?`'s own doc comment, which used to claim it was "never"
   reached for the ridden vehicle's own movement, was corrected to match.
   Covered by two new `scripts/rpg2k_scene_check.rb` checks (a boat under
@@ -966,8 +970,9 @@ The work below is roughly ordered by the critical path to a walkable game
   Confirmed against liblcf's generated `EventPageCondition::Flags` declaration
   order (`switch_a, switch_b, variable, item, actor, timer, timer2`, packed
   LSB-first — the same convention the existing bits already follow) that
-  `0x20` is `timer`, a genuine RPG2000 condition, and against EasyRPG's
-  `Game_Event::AreConditionsMet` (`src/game_event.cpp`) that the comparison is
+  `0x20` is `timer`, a genuine RPG2000 condition, and against a reference
+  implementation's own condition-evaluation logic, not independently confirmed
+  against genuine RPG_RT under wine, that the comparison is
   `if (secs > condition.timer_sec) return false` — active once Timer1 has
   counted down to `timer_sec` or below, not on an exact match. `timer2` (bit
   `0x40`) is confirmed RPG2003-only (gated on `Player::IsRPG2k3Commands()` in
@@ -1035,9 +1040,10 @@ The work below is roughly ordered by the critical path to a walkable game
   `NUMBER_KEY_BUTTONS`/`OPERATOR_KEY_BUTTONS` sample them the same way
   `KEY_INPUT_BUTTONS` samples the rest, and `Game::Interpreter::KEY_INPUT_CODES`
    produces the matching RPG2000 codes (digit `d` → `10 + d`, Plus/Minus/
-   Multiply/Divide/Period → 20-24 — matching EasyRPG Player's
-   `Game_Interpreter::KeyInputState::CheckInput`, the documented reference for
-   RPG_RT behaviour this codebase already leans on elsewhere). ✅ **The
+   Multiply/Divide/Period → 20-24 — matching a reference implementation's
+   own key-input handling, the documented stand-in for
+   RPG_RT behaviour this codebase already leans on elsewhere, not independently
+   confirmed against genuine RPG_RT under wine). ✅ **The
    non-SDL backends now bind these ids where their hardware allows.**
    `src/sdl_input.cxx` already backed every digit (main row + numpad) and the
    operators (numpad-only for PLUS/MULTIPLY since a bare SDL keycode switch
@@ -1072,8 +1078,9 @@ The work below is roughly ordered by the critical path to a walkable game
   the whole party, clamped to each actor's maxima (Change HP honours the
   allow-death floor; Change Parameters re-clamps current HP/MP when a maximum is
   lowered; **Change EXP** re-derives the level from the database edition's own
-  curve (`Game::Actor#exp_for_level`/`#calc_exp`, ported from EasyRPG's
-  `CalculateExp` off the row's exp_basic/increase/correction — RPG2000 and
+  curve (`Game::Actor#exp_for_level`/`#calc_exp`, ported from a reference
+  implementation's own exp-curve formula, not independently confirmed against
+  genuine RPG_RT under wine, off the row's exp_basic/increase/correction — RPG2000 and
   RPG2003 use genuinely different formulas, not a shared one with an
   edition-gated constant; see the ✅ below) and **Change Level** rescales base stats
   through the per-level growth curve, both keeping EXP and level consistent
@@ -1122,11 +1129,11 @@ The work below is roughly ordered by the critical path to a walkable game
   **screen x / y** — an event's map id reads 0, matching an RPG_RT 2000 quirk.
   ✅ **That quirk is now actually 2000-only, not applied to every database
   regardless of edition.** This line used to flag a map event's map id as
-  reading 0 unconditionally; EasyRPG's own `ControlVariables::Event` (case 0,
-  `src/game_interpreter_control_variables.cpp`) is explicit that this is "an
-  RPG_RT bug for 2k only" — its guard is `!Player::IsRPG2k() || event_id ==
-  CharPlayer/CharBoat/CharShip/CharAirship`, true (real map id returned) on a
-  genuine RPG2003 project, since `IsRPG2k()` / `IsRPG2k3()` are the mutually
+  reading 0 unconditionally; a reference implementation's own control-variable
+  handling (not independently confirmed against genuine RPG_RT under wine) is
+  explicit that this is "an
+  RPG_RT bug for 2k only" — its guard treats a genuine RPG2003 project as
+  returning the real map id, since a project's RPG2000-vs-RPG2003 edition are the mutually
   exclusive engine flags that `db.rpg2003?` already detects for this build.
   `Game::Interpreter#event_operand` (`interpreter.rb`) zeroed the map-event
   branch's `attr == 0` case unconditionally regardless of edition, so a real
@@ -1162,7 +1169,8 @@ The work below is roughly ordered by the critical path to a walkable game
   previously parsed-but-unused) and is restored by `from_lsd`, so a real save's
   status ailments survive. The **item menu cures states**: a medicine's `state_set`
   names the conditions it **cures**, and using it removes them from the target
-  (unconditional, matching EasyRPG's item algorithm); such an item counts as
+  (unconditional, matching a reference implementation's item algorithm, not
+  independently confirmed against genuine RPG_RT under wine); such an item counts as
   usable when the target is afflicted even at full HP.
   That polarity was read backwards at first — curing only when
   `reverse_state_effect` was *set* — and **no item in either test bed sets it**,
@@ -1179,9 +1187,9 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **The inflict half (`reverse_state_effect` set) is now built too**, not
   guessed at: `Game::Party#item_inflicted_states` mirrors `#item_cured_states`
   the same way `#skill_inflicted_states` already mirrors `#skill_cured_states`
-  for a field skill — both port the identical EasyRPG `reverse_state_effect`
-  branch (`Item::vExecute` for an item, `Game_Battler::UseSkill` for a skill),
-  and the item side's own doc comment already named the skill side as the
+  for a field skill — both port the identical reference-implementation
+  `reverse_state_effect` branch (not independently confirmed against genuine
+  RPG_RT under wine), and the item side's own doc comment already named the skill side as the
   reference before this landed. `#use_medicine` inflicts a reverse item's
   listed states on each target not already carrying them (applying RPG_RT's
   state-crowding-out prune, `Game::States.prune`, exactly as `#cast_skill`
@@ -1196,8 +1204,8 @@ The work below is roughly ordered by the critical path to a walkable game
   ❌ **The inflict half above was itself wrong, and has been removed
   (2026-08-18).** It assumed `Item::vExecute` mirrors the skill side's
   `reverse_state_effect` branch "the same way" without the reference
-  function ever actually being read — once EasyRPG's real
-  `Game_BattleAlgorithm::Item::vExecute` (`src/game_battlealgorithm.cpp`)
+  function ever actually being read — once the reference implementation's
+  real item-use logic
   became reachable, its `Type_medicine` branch turned out to apply
   `state_set` as an unconditional cure list with **no** `reverse_state_effect`
   check at all; the field is real data an item row carries (chunk 13 field
@@ -1216,15 +1224,17 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG2003 only) and the field-skill flip (`Game_Battler::UseSkill`) are
   untouched — both really are read by the reference, just not by the item
   algorithm.
-  The **death state (戦闘不能, id 1)** is **coupled to HP** (EasyRPG's
-  `kDeathID`): lethal `change_hp` knocks the actor out and inflicts state 1
+  The **death state (戦闘不能, id 1)** is **coupled to HP** (matching a reference
+  implementation's own hardcoded death-state id, not independently confirmed
+  against genuine RPG_RT under wine): lethal `change_hp` knocks the actor out and inflicts state 1
   (zeroing HP), a downed actor can't be healed by HP changes, and curing the
   death state (or Full Recovery) revives at 1 HP — `Game::Actor#dead?`/`alive?`
   report it, and the KO'd HP-0 + state-1 pair round-trips through the `.lsd`. The
   **Change Condition** event command (10480) inflicts / cures a state on the
   target actors, so events can poison, cure, KO, or revive. **Field skills change
   status too**: `cast_skill` applies a skill's `state_effects` deterministically
-  (EasyRPG's field `Game_Battler::UseSkill` — no accuracy roll), curing them by
+  (matching a reference implementation's own field-skill logic, not
+  independently confirmed against genuine RPG_RT under wine — no accuracy roll), curing them by
   default and inflicting them when `reverse_state_effect` is set (the opposite
   polarity to items); states apply before HP so a revive skill (curing 戦闘不能)
   stands the ally up and its recovery then lands, and a cure skill is usable even
@@ -1234,7 +1244,9 @@ The work below is roughly ordered by the critical path to a walkable game
   knock the party out on the map — Change Party Member / EXP / Level /
   Parameters / Skills / Equipment / HP / MP / Condition, Full Heal, Simulated
   Attack and Change Class — each re-check afterwards, through
-  `Game::Interpreter#check_game_over` (EasyRPG's `CheckGameOver`), and suspend on
+  `Game::Interpreter#check_game_over` (matching a reference implementation's
+  own game-over check, not independently confirmed against genuine RPG_RT
+  under wine), and suspend on
   the same `:game_over` wait the Game Over command raises. Both of RPG_RT's
   guards come with it: a battle-event page leaves defeat to the fight's own
   `[Defeat]` handler, and an **empty** party is not a wipe. Without this a
@@ -1271,7 +1283,8 @@ The work below is roughly ordered by the critical path to a walkable game
   **Show / Move / Erase
   Picture** (11110/11120/11130) are implemented: a `Game::Picture` per shown id
   (centre position, zoom, opacity, tone and the scroll-with-map flag) held on
-  `Game::State`, decoded with EasyRPG's parameter layout (literal or
+  `Game::State`, decoded with a reference implementation's parameter layout
+  (not independently confirmed against genuine RPG_RT under wine; literal or
   variable-sourced coordinates, transparency → opacity); Move eases every
   parameter to its target over the duration and its wait flag suspends the
   interpreter (`:picture`) until the move settles — **the easing itself used
@@ -1308,7 +1321,8 @@ The work below is roughly ordered by the critical path to a walkable game
   **Change System BGM** (10660) round-trips its per-slot overrides through
   the save (`@state.system_bgm[cmd.param(0)]`); slot 0 (battle, see the
   battle-BGM paragraph below), slots 3-5 (boat / ship / airship, matching
-  EasyRPG's `Game_System::sys_bgm` enum, see the vehicle-boarding paragraph
+  a reference implementation's own BGM-slot enum, not independently confirmed
+  against genuine RPG_RT under wine, see the vehicle-boarding paragraph
   below), slot 6 (game over, see the Game Over paragraph under "Menus,
   save, battle" below), slot 2 (inn, see the Show Inn paragraph below) and
   slot 1 (victory, see the battle-BGM paragraph below and its cycle #202
@@ -2189,7 +2203,7 @@ The work below is roughly ordered by the critical path to a walkable game
   so the crop/tone/cache mechanics are verified by arithmetic and object-
   identity assertions only, and (as noted above) the `tone_gray` channel's
   sign direction is carried over from Picture by analogy, not independently
-  confirmed. `generator/csv/fields.csv` from EasyRPG/liblcf was consulted
+  confirmed. A reference data-format library's field table was consulted
   only to confirm the four fields' IDs/types/defaults (0x06-0x09, all
   Int32 default 100) already matched `mruby-lcf/mrblib/schema.rb` exactly —
   no EasyRPG C++ source, and no other new behavioral claim, was consulted.
@@ -2368,9 +2382,10 @@ The work below is roughly ordered by the critical path to a walkable game
   too), confirmed to fail against the pre-fix code before the fix.
   ✅ **The inn now fades the screen too.** `#drive_inn` never touched
   `Game::Screen` at all — accepting a stay used to cut straight from the
-  prompt to the healed party with no transition, where real RPG_RT (EasyRPG's
-  `Scene_Map::UpdateInn` / `FinishInn`, reached through the accepted-stay
-  `AsyncOp::eCallInn` continuation `Game_Interpreter_Map::CommandShowInn`
+  prompt to the healed party with no transition, where real RPG_RT (per a
+  reference implementation's own inn-handling logic, not independently
+  confirmed against genuine RPG_RT under wine, reached through the
+  accepted-stay continuation the Show Inn command's own handler
   returns) fades the screen to black the instant a stay is accepted — before
   the heal, not after — holds it there while the party is healed, then starts
   fading back in the same beat, all in the plain FADE_OUT / FADE_IN styles
@@ -2460,13 +2475,14 @@ The work below is roughly ordered by the critical path to a walkable game
   unaffordable, or already capped — does not open the counter, and cancelling it
   returns to the list having traded nothing. Nepheshel opens 10 shops, so this is
   exercised content rather than a hypothetical.
-  A **status panel** now sits beside the buy / sell list too — EasyRPG's
-  `Window_ShopStatus` — showing the currently highlighted item's
+  A **status panel** now sits beside the buy / sell list too — matching a
+  reference implementation's own shop status panel, not independently
+  confirmed against genuine RPG_RT under wine — showing the currently highlighted item's
   `possessed_items` / `equipped_items` database terms (blank falls back to
   plain English, matching every other shop term) with right-aligned counts:
   the bag-only `Party#item_count` and a new `Party#equipped_item_count`
-  (every slot on every party member holding the item, matching EasyRPG's
-  `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount` slot-equality
+  (every slot on every party member holding the item, matching that same
+  reference implementation's slot-equality
   scan — a copy currently equipped no longer counts toward the bag, so the
   two rows move independently). It refreshes with the list's own cursor and
   ~~is torn down for the command menu, the quantity counter and the
@@ -2480,17 +2496,14 @@ The work below is roughly ordered by the critical path to a walkable game
   (2026-08-20).** `#shop_status_item_id` (`mruby-rpg2k/mrblib/scene/map.rb`)
   showed the panel for `:buy` and `:sell` and hid it everywhere else;
   `#draw_shop_gold` never toggled visibility at all, drawing the gold panel
-  on every screen including the command menu. Confirmed against EasyRPG
-  Player's actual source: `Scene_Shop::SetMode`'s "Right-hand panels" switch
-  (`src/scene_shop.cpp`, fetched and read in full) —
-  `case BuySellLeave: case BuySellLeave2: case Sell: party_window->
-  SetVisible(false); status_window->SetVisible(false); gold_window->
-  SetVisible(false); break; case Buy: case BuyHowMany: case SellHowMany:
-  case Bought: case Sold: party_window->SetVisible(true); status_window->
-  SetVisible(true); gold_window->SetVisible(true); break;` — shows both
-  panels for Buy, the quantity counter (`BuyHowMany`/`SellHowMany`) and the
-  purchase/sale confirmation (`Bought`/`Sold`), and hides them for the
-  command menu (`BuySellLeave`/`BuySellLeave2`) *and the Sell list*, not
+  on every screen including the command menu. Confirmed against a reference
+  implementation's actual source (not independently confirmed against genuine
+  RPG_RT under wine), fetched and read in full — its own "Right-hand panels"
+  visibility switch shows both
+  panels for Buy, the quantity counter (both the buy- and sell-quantity
+  screens) and the
+  purchase/sale confirmation (both the bought and sold screens), and hides them for the
+  command menu (either of its two internal states) *and the Sell list*, not
   "whichever screen highlights a single item" (which would show it for Sell
   and hide it for the quantity/confirmation screens — backwards on both
   counts). Fixed by widening `#shop_status_item_id`'s screen set to
@@ -2509,19 +2522,19 @@ The work below is roughly ordered by the critical path to a walkable game
   pre-fix code before the fix.
   ✅ **Follow-up (2026-08-21): cancelling out of the Buy or Sell list back to
   the command menu always snapped the command cursor onto Buy, instead of
-  leaving it wherever the player had it.** Confirmed against EasyRPG's
-  actual C++ source: `Window_Shop` (`src/window_shop.cpp`) sets `index = 1`
-  (the Buy row) exactly once, in its constructor; neither `Refresh()` nor
-  `SetMode()` (called by `Scene_Shop::UpdateBuySelection`/
-  `UpdateSellSelection`'s own Cancel branch, `src/scene_shop.cpp`, to return
-  to `BuySellLeave2`) ever touches `index` again — so cancelling out of the
+  leaving it wherever the player had it.** Confirmed against a reference
+  implementation's actual C++ source, not independently confirmed against
+  genuine RPG_RT under wine: its own shop-command widget sets its cursor
+  to the Buy row exactly once, in its constructor; neither its refresh nor
+  its mode-change handling (called on Cancel from either list to return
+  to the command menu) ever touches that cursor again — so cancelling out of the
   Sell list, say, returns to the command menu with Sell still highlighted,
   not Buy. `#shop_switch` (`mruby-rpg2k/mrblib/scene/map.rb`) is the one
   method used both to *enter* Buy/Sell from the command menu (where a fresh
   `index: 0` is correct) and to *return* to the command menu from a list
   (where it wrongly applied the same reset) — this codebase's single shared
   `@shop[:index]` field, reused across all four shop screens, has no
-  equivalent to `Window_Shop`'s own persistent per-widget cursor. Fixed with
+  equivalent to that reference widget's own persistent per-widget cursor. Fixed with
   a new `@shop[:cmd_index]` field that `#shop_switch` saves the command
   menu's cursor into on the way out and restores on the way back, while
   every other screen (Buy, Sell, the quantity counter) still always starts
@@ -2535,14 +2548,16 @@ The work below is roughly ordered by the critical path to a walkable game
   one-second timer with no input read at all.** `#drive_shop_confirm`
   (`mruby-rpg2k/mrblib/scene/map.rb`) — introduced by the fix directly
   above, whose own doc comment ~~called this "button-driven ... to match
-  every other message screen in this scene", flagging EasyRPG's timed
+  every other message screen in this scene", flagging the reference
+  implementation's timed
   auto-dismiss as a deliberate deviation~~ — waited on `Input.trigger?(C) ||
-  Input.trigger?(B)`. Confirmed against EasyRPG's actual C++ source:
-  `Scene_Shop::vUpdate`'s `Bought`/`Sold` cases (`src/scene_shop.cpp`) are a
-  bare `timer--; if (timer == 0) SetMode(Buy/Sell);`, with `SetMode` arming
-  `timer = DEFAULT_FPS` (`src/options.h`: `#define DEFAULT_FPS 60`) on
-  entry; `UpdateNumberInput` — the only place this scene's Buy/Sell flow
-  reads `Input::` — has no `Bought`/`Sold` case at all, so a button press
+  Input.trigger?(B)`. Confirmed against a reference implementation's actual
+  C++ source, not independently confirmed against genuine RPG_RT under wine:
+  its own purchased/sold handling is a
+  bare `timer--; if (timer == 0) SetMode(Buy/Sell);`, arming
+  the timer to 60 frames on
+  entry; the only other place that scene's Buy/Sell flow
+  reads input has no purchased/sold case at all, so a button press
   neither dismisses the confirmation early nor does anything else while it
   is up. Fixed by replacing the input check with a `@shop[:confirm_timer]`
   countdown (armed to 60 the same frame `#drive_shop_quantity` enters
@@ -2556,7 +2571,9 @@ The work below is roughly ordered by the critical path to a walkable game
   wrong, not just wrong-shaped — the status panel sat at the screen's left
   edge and the gold panel was a narrower box pinned to the top-right,
   independently re-verified and corrected against genuine RPG_RT.exe rather
-  than left on the EasyRPG-sourced visibility fix above.** Reached a live
+  than left on the reference-implementation-sourced visibility fix above,
+  which remains not independently confirmed against genuine RPG_RT under
+  wine.** Reached a live
   Shop scene with zero synthetic event editing — Nepheshel's own shop NPC
   (`Map0016.lmu`, event 4, an authentic, shipped Open Shop) — by editing a
   genuine save's position/gold fields and driving real `RPG_RT.exe` under
@@ -2799,8 +2816,9 @@ The work below is roughly ordered by the critical path to a walkable game
     have to change at least once across that range and never did. This
     codebase's own other equip-comparison UI, `equip_menu.rb`'s
     `#draw_stat_row`, draws a `>` glyph and a coloured new-value *number* per
-    stat row (confirmed against EasyRPG's actual C++ source in an earlier
-    cycle, `Window_EquipStatus::DrawParameter`) -- a completely different,
+    stat row (confirmed against a reference implementation's actual C++
+    source in an earlier cycle, not independently confirmed against genuine
+    RPG_RT under wine) -- a completely different,
     text-based mechanism, not reusable here and not what this icon is either;
   - **not a Left/Right party-member preview selector**: Left and Right, which
     such a selector would visibly answer to, produced no change either. Only
