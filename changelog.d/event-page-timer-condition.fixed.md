@@ -3,7 +3,9 @@
   on the countdown read as always-active regardless of the real Timer1 value.
   `Game::EventPage::TIMER` and `.active?`/`.select` now compare against
   Timer1's live seconds-remaining value (active once it counts down to
-  `timer_sec` or below, matching EasyRPG's `Game_Event::AreConditionsMet`),
+  `timer_sec` or below, ported from a reference implementation's own
+  conditions-met check, not independently confirmed against genuine RPG_RT
+  under wine),
   threaded through both `Scene::Map` call sites and folded into
   `#page_revision` so a Timer-gated page re-selects the instant the
   displayed second crosses the threshold.

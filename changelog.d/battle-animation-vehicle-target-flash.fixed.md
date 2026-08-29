@@ -1,12 +1,12 @@
 - A map-triggered Show Battle Animation's flash_scope-1 ("target") timing
   aimed at a vehicle (a Move-Event-style target id 10002-10004) now actually
   pulses that vehicle's own on-screen sprite, instead of being silently
-  dropped as an unsupported target. Verified against EasyRPG Player's actual
-  C++ source: `Game_Character::GetCharacter` (`src/game_character.cpp`)
-  resolves `CharBoat`/`CharShip`/`CharAirship` straight to the live
-  `Game_Vehicle` object — a `Game_Character` subclass, same as the player or
-  a map event — so `BattleAnimationMap::FlashTargets`'s `target->Flash(...)`
-  call (`src/battle_animation.cpp`) reaches a vehicle exactly like it reaches
+  dropped as an unsupported target. Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  character-resolution code resolves a boat/ship/airship reference straight
+  to the live vehicle object — a character subclass, same as the player or
+  a map event — so its own target-flash code
+  reaches a vehicle exactly like it reaches
   any other character. `Scene::Map#map_animation_flash_target`
   (`mruby-rpg2k/mrblib/scene/map.rb`) now resolves a vehicle target to its
   own `Game::Vehicle::TYPES` symbol instead of `nil`, and

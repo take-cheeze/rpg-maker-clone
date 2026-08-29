@@ -3,10 +3,10 @@
   instead of always showing hardcoded English ("Gained 10 EXP.", "Found 20
   gold.", "Found Potion."). These four `term` chunk fields (LCF fields 7-10)
   were parsed by the schema and never read anywhere in `mruby-rpg2k`.
-  Confirmed against EasyRPG Player's actual C++ source rather than guessed
-  at: `PartyMessage::GetExperienceGainedMessage`/`GetGoldReceivedMessage`/
-  `GetItemReceivedMessage` (`src/game_message_terms.cpp`) compose, for stock
-  RPG2000 (the non-`Feature::HasPlaceholders`, non-Maniac-Patch branch),
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine, rather than guessed
+  at: its own EXP/gold/item message composers build, for stock
+  RPG2000 (the non-placeholder, non-Maniac-Patch branch),
   `"{exp}{exp_received}"`, `"{gold_received_a} {money}{gold}{gold_received_b}"`
   and `"{item_name}{item_received}"`. `Scene::Map#battle_result_lines`
   (`mruby-rpg2k/mrblib/scene/map.rb`) now composes exactly these three

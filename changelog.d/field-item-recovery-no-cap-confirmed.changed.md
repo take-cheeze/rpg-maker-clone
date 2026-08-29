@@ -1,10 +1,11 @@
 - **The field-menu medicine path has no 999 HP/SP recovery cap, unlike the
   battle skill/item path — confirmed rather than an open yado.tk claim.**
-  Verified against EasyRPG Player's actual C++ source: `Scene_ActorTarget`
-  applies a medicine through `Game_Party::UseItem` -> `Game_Actor::UseItem`
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own field-menu item-target scene
+  applies a medicine through its party/actor use-item path
   and ends in a bare status-window refresh, no popup of any kind, unlike a
   battle round's own floating heal number — and the HP itself is clamped
-  only by `Game_Actor::ClampMaxHpMod`'s `MaxHpValue()`, never a fixed digit
+  only by the actor's own max-HP value, never a fixed digit
   constant. `Game::Party#use_item`/`#use_medicine` already matches this: it
   applies `#item_recovery`'s raw amount straight through `Actor#change_hp`,
   which clamps to `[floor, max_hp]` and nothing tighter, unlike

@@ -6,9 +6,10 @@
   — it is routed instead through `#apply_battle_animation_request`, which
   still just checked whether the shared `@map_animation`/`@anim_wait` slot
   was free and returned immediately otherwise, permanently losing the
-  request rather than displacing whatever already held it. Verified against
-  EasyRPG Player's actual C++ source: `Game_Screen::ShowBattleAnimation` is
-  a bare unconditional `animation.reset(...)` with no branch on the *new*
+  request rather than displacing whatever already held it. Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own show-battle-animation handler unconditionally
+  resets the current animation with no branch on the *new*
   request's own wait flag — only the *issuing* interpreter's resulting wait
   is conditional on that, the cut-off itself is not. Fixed by giving
   `#apply_battle_animation_request` the same unconditional-claim shape

@@ -3,9 +3,10 @@
   screen the instant it happens, instead of the status window and RPG2003's
   actor battle sprites staying pinned to whoever was in the party when the
   fight opened. `Interpreter#do_change_party` notifies the open battle
-  screen the moment a real membership change happens (mirroring EasyRPG's
-  `Game_Party::AddActor`/`RemoveActor` calling `Scene_Battle_Rpg2k::
-  OnPartyChanged` synchronously); the screen builds or disposes that one
+  screen the moment a real membership change happens (mirroring a reference
+  implementation's own party-add/remove calls notifying the battle scene
+  synchronously, not independently confirmed against genuine RPG_RT under
+  wine); the screen builds or disposes that one
   actor's sprite, updates `@battle_ui[:allies]`, and redraws the status
   window immediately -- covering the RPG2003 gauge-card layout
   (`battle_type` 2) the same way as the plain text rows, since both already

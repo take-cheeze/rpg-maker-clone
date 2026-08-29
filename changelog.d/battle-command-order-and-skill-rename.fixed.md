@@ -2,9 +2,10 @@
   honours an actor's Skill-command rename**, instead of assuming Attack /
   Skill / Item / Defend and a fixed "Skill" label for everyone.
   `Scene::Map#battle_commands` built its four labels (and `#select_battle_command`
-  routed its cursor rows) as Attack / Skill / Item / Defend; EasyRPG's own
-  `Scene_Battle_Rpg2k::CreateBattleCommandWindow` builds
-  `{command_attack, command_skill, command_defend, command_item}` — Defend
+  routed its cursor rows) as Attack / Skill / Item / Defend; a reference
+  implementation's own battle-command-window builder (ported from that
+  source, not independently confirmed against genuine RPG_RT under wine)
+  orders the four commands with Defend
   ahead of Item — so every battle menu had two commands swapped, and pressing
   the confirm key on the third row committed Item's sub-menu instead of the
   one-shot Defend RPG_RT puts there. Fixed by reordering the array and the
@@ -16,8 +17,10 @@
   Skill to "Magic") showed the generic term regardless. `Game::Actor
   #rename_skill?` / `#skill_command_name` read the two fields, and
   `Scene::Map#skill_command_label` substitutes the custom name for the
-  current actor's turn, mirroring EasyRPG's `Game_Actor::GetSkillName`
-  (`rename_skill ? skill_name : Data::terms.command_skill`). Covered by new
+  current actor's turn, mirroring a reference implementation's own
+  skill-name lookup (again ported without independent confirmation against
+  genuine RPG_RT under wine): the custom name when the rename flag is set,
+  the database's own "Skill" term otherwise. Covered by new
   `scripts/rpg2k_scene_check.rb` checks (the drawn label order; cmd row 2
   committing Defend rather than opening the Item list; an actor with the
   rename flag showing its custom name; an actor without it keeping the

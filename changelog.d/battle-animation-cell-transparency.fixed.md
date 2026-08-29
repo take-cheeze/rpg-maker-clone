@@ -7,9 +7,10 @@
   translucent glow over a solid one, played every frame at full strength — a
   visibly different animation, not a subtler one. A new
   `Scene::Map#animation_cell_opacity` converts the field's 0-fully-opaque..100-
-  fully-invisible percentage to RGSS's 0..255 opacity exactly the way EasyRPG's
-  own `BattleAnimation::DrawAt` does (`src/battle_animation.cpp`, fetched
-  verbatim): `255 * (100 - cell.transparency) / 100`, integer division and all,
+  fully-invisible percentage to RGSS's 0..255 opacity exactly the way a
+  reference implementation's own animation-drawing code does (ported from
+  that source, not independently confirmed against genuine RPG_RT under
+  wine): `255 * (100 - cell.transparency) / 100`, integer division and all,
   and that opacity is passed straight to `Bitmap#blt`, which already blends in
   straight (non-premultiplied) alpha, so a half-transparent cell lands in the
   animation bitmap at half coverage with its colour intact rather than dragged

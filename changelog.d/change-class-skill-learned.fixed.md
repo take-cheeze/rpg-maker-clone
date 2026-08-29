@@ -1,12 +1,13 @@
 - **Change Class (1008, RPG2003-only) now announces each skill it newly
   teaches, not just the level line**, closing the gap the Change Level /
   Change EXP skill-learned fix (`changelog.d/change-level-skill-learned.fixed.md`)
-  deliberately left open. EasyRPG's `Game_Actor::ChangeClass`
-  (`src/game_actor.cpp`) calls the identical `LearnLevelSkills(1, new_level,
-  pm)` Change Level/Change EXP already use, which pushes
-  `ActorMessage::GetLearningMessage` (`src/game_message_terms.cpp`) for every
+  deliberately left open. Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  class-change code calls the identical learn-level-skills routine
+  Change Level/Change EXP already use, which pushes
+  a learning-announcement message for every
   growth-table skill the class swap teaches, skipping one the actor already
-  knew (`Game_Actor::LearnSkill`'s own `IsSkillLearned` guard). This
+  knew (via that same routine's own already-learned guard). This
   codebase's `Game::Interpreter#do_change_class` (`mruby-rpg2k/mrblib/
   interpreter.rb`) already pushed a single level-up line when the class swap
   raised the level or changed the skill mode, but never named a single skill

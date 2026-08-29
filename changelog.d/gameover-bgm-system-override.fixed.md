@@ -2,16 +2,16 @@
   game-over slot.** `Scene::GameOver#play_gameover_bgm` used to always play
   the database's own `gameover_music`, ignoring a Change System BGM (10660)
   override the event system already stashed on `Game::State#system_bgm`
-  (slot 6 is game over, matching EasyRPG's `Game_System::BGM_GameOver`,
-  confirmed against `Scene_Gameover::Start`'s own
-  `GetSystemBGM(BGM_GameOver)` call). `Game::State` was not even reachable
+  (slot 6 is game over, ported from a reference implementation's own
+  game-over BGM slot, not independently confirmed against genuine RPG_RT
+  under wine). `Game::State` was not even reachable
   from the screen before this — `RPG2k#show_game_over` and
   `Scene::GameOver.new` took no state argument at all, since the whole scene
   stack (and the `Game::State` living on it) is normally gone by the time a
   game-over defeat replaces it — so `Scene::Map#perform_game_over` now
   passes its own `@state` through `show_game_over` to the new screen, which
   resolves the override first and falls back to the database default,
-  mirroring `Game_System::GetAudio`'s "override wins only when its own name
+  mirroring that same reference's own "override wins only when its own name
   is non-empty" rule. The parameter is optional and defaults to `nil`
   (falling back to the database default unconditionally, unchanged from
   before) so the Game Over event command's own reach into this path, and

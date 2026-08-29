@@ -5,11 +5,13 @@
   move stepping onto the player, but `Game::MoveRoute#do_move` — the engine
   both a Set Move Route and a page's own Custom move-type route share —
   just called `world.passable?` and turned to face any obstacle, with no
-  distinction between a wall and the party. Verified against EasyRPG
-  Player's actual C++ source: `Game_Event`'s own move-failure handling
+  distinction between a wall and the party. Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: a map event's own move-failure handling
   starts a Trigger_collision page whenever the blocked tile is the
   player's, with no guard gating it off while a move route is active
-  (unlike `Game_Player`, whose own touch check *is* gated on exactly that —
+  (unlike the hero's own move-failure handling, whose own touch check *is*
+  gated on exactly that —
   confirmed already correct here too, and now documented in `docs/TODO.md`
   with the citation). Fixed by having `do_move` report a new
   `:touched_hero` status — purely a re-classification of an already-refused

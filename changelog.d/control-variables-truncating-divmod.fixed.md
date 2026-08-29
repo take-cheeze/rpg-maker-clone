@@ -13,9 +13,9 @@
   sign) — a real divergence for any game whose Control Variables math ever
   goes negative. Fixed with two new helpers, `#trunc_div`/`#trunc_mod`, the
   same truncating idiom. Divide-by-zero was already correct (`cur`
-  unchanged, matching EasyRPG's `Game_Variables::VarDiv`'s `d != 0 ? n / d :
-  n`, ported from its source and not independently confirmed against
+  unchanged, matching a reference implementation's own variable-divide
+  behaviour, ported from that source and not independently confirmed against
   genuine RPG_RT under wine) and is untouched; **modulo by zero now zeroes
-  the variable instead of leaving it unchanged**, matching EasyRPG's
-  `VarMod`'s own `d != 0 ? n % d : 0` (same unconfirmed basis), which
-  disagrees with `VarDiv`'s behaviour on this exact point.
+  the variable instead of leaving it unchanged**, matching that same
+  reference's own variable-modulo behaviour (same unconfirmed basis), which
+  disagrees with the divide case's behaviour on this exact point.

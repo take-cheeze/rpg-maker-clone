@@ -1,7 +1,8 @@
 - **A move-route Face Direction / Turn sub-command now turns a fixed-direction
   event's sprite too**, instead of the drawn facing staying pinned to the
-  page's own static direction no matter what a route asked for. Verified
-  against EasyRPG Player's actual C++ source: `Game_Character::SetFacingLocked`
+  page's own static direction no matter what a route asked for. Ported from
+  a reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own facing-lock logic
   folds a page's fixed-direction Animation Type (Fixed / Fixed-Continuous /
   Fixed-Graphic) into the same lock an explicit Direction Fix ON sets, but its
   move-route Face-command handling bypasses *any* lock reason unconditionally

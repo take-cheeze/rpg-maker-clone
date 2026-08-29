@@ -1,7 +1,9 @@
 - RPG2000 enemies now run their **行動パターン** (action pattern, enemy chunk 42)
   instead of only ever swinging their fists. `Game::EnemyAction` decodes the
   table, and each turn `Game::Battle` keeps the entries whose condition holds and
-  picks one weighted by `rating` — EasyRPG's rating-based algorithm, including
+  picks one weighted by `rating` — a reference implementation's rating-based
+  algorithm (ported from that source, not independently confirmed against
+  genuine RPG_RT under wine), including
   the rule that drops anything more than 10 below the best rating, so a monster's
   behaviour shifts as its better moves stop being valid. All eight condition
   types are modelled (always / switch / turn / party size / HP% / SP% / party

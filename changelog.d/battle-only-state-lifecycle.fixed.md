@@ -5,11 +5,11 @@
   the database flagged "battle only" survived past battle end exactly as
   much as one flagged "also on map" (`type` 1) — a status the player could
   never have cured outside battle then sat on the field roster indefinitely.
-  Verified against EasyRPG Player's actual C++ source:
-  `Game_Battler::RemoveBattleStates` (`src/game_battler.cpp`), called from
-  `Game_Battle::Quit()`, removes exactly the states whose own
-  `lcf::rpg::State::Persistence` is `Persistence_ends` (0) and leaves
-  `Persistence_persists` (1) alone — this codebase's own `schema.rb` decodes
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own battle-end state cleanup,
+  called when the battle scene quits, removes exactly the states whose own
+  persistence flag says "ends" and leaves
+  the "persists" ones alone — this codebase's own `schema.rb` decodes
   the same field, under the name `type`, with the matching comment ("0:
   battle only, 1: also on map"), but nothing in the runtime ever consulted
   it. Fixed with a new `Game::Battle::STATE_PERSISTS_ON_MAP` constant and a

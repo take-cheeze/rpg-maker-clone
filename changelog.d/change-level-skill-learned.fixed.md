@@ -19,10 +19,12 @@
   one line per growth-table skill scheduled at that exact level and absent
   from the snapshot onto that level's own message page — a skill already
   known going in (an earlier explicit Change Skill teach) stays silent, the
-  same distinction EasyRPG's `IsSkillLearned` check makes. Change Class
-  (1008, RPG2003-only) shares the same underlying gap — EasyRPG's
-  `Game_Actor::ChangeClass` calls the identical `LearnLevelSkills(1,
-  new_level, pm)` — but is left unaddressed here; see `docs/TODO.md`.
+  same distinction a reference implementation's own already-learned check
+  makes (ported from that source, not independently confirmed against
+  genuine RPG_RT under wine). Change Class
+  (1008, RPG2003-only) shares the same underlying gap — that same
+  reference's class-change code calls the identical learn-level-skills
+  routine — but is left unaddressed here; see `docs/TODO.md`.
   Covered by two new `scripts/rpg2k_logic_check.rb` checks (a two-level
   Change Level crossing two learn-table thresholds announces each skill on
   its own level's page; a skill taught early via Change Skills stays quiet

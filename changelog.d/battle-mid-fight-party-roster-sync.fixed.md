@@ -9,9 +9,10 @@
   reuses their existing `Combatant` (so battle-only states/stat modifiers
   survive the round trip rather than resetting) rather than getting a fresh
   one, and a turn already queued when its owner leaves is dropped rather
-  than resolving, matching EasyRPG's `Scene_Battle_Rpg2k::
-  ProcessSceneActionBattle` (`battler->Exists()`) once checked directly
-  against its real source. Every existing `Game::Battle.new` fixture (no
+  than resolving, matching a reference implementation's own
+  battle-action-processing existence check, once checked directly
+  against that source though not independently confirmed against genuine
+  RPG_RT under wine. Every existing `Game::Battle.new` fixture (no
   `party:` argument) is unaffected. This step covers the core mechanic only
   (roster/turn-order/targeting) — the battle screen's status window and actor
   sprites still show the roster as it was when the fight opened; that's

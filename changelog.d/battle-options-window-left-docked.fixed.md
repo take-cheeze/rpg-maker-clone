@@ -1,8 +1,9 @@
 - **RPG2000 battle:** The Battle/Auto Battle/Escape options window now docks
   to the *left* edge of the screen, with the party status panel pushed to its
   right — not the status panel fixed on the left with the options list on the
-  right, which is what every phase of the fight drew before. Ported from
-  EasyRPG Player's own `Scene_Battle_Rpg2k::SetCommandWindowsX`: the options
+  right, which is what every phase of the fight drew before. Ported from a
+  reference implementation's own command-window layout logic, not
+  independently confirmed against genuine RPG_RT under wine: the options
   window and the per-actor Attack/Skill/Defend/Item command window share the
   same 76px shape and never show at once, but they dock to *opposite* edges —
   the options window before the status window, the per-actor command window

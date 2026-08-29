@@ -2,8 +2,9 @@
   simulated. A new `Game::States` reads the display side of the database
   `situation` table, and the screen uses it in three places: the status panel
   gained a condition column carrying the *significant* state — death first, then
-  the highest `priority`, ties to the later id (EasyRPG's
-  `State::GetSignificantState`) — drawn in the state's own palette colour, or the
+  the highest `priority`, ties to the later id (ported from a reference
+  implementation's own significant-state logic, not independently confirmed
+  against genuine RPG_RT under wine) — drawn in the state's own palette colour, or the
   database's `normal_status` term when the battler is clear; the action banner
   announces each condition an action lands or lifts with the state row's own
   sentences (`message_actor` / `message_enemy` / `message_recovery`, worded from

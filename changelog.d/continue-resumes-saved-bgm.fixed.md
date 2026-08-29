@@ -6,8 +6,9 @@
   override mid-flight (a boss theme playing over a field map whose own tree
   default is an ordinary town track, say) wrongly snapped back to the map's
   configured default instead of continuing what was actually playing.
-  Verified against EasyRPG Player's actual C++ source: `Scene_Map::Start`
-  only calls `Game_Map::PlayBgm()` (the map-tree walk) for a fresh map entry
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own map-scene start
+  only walks the map tree's BGM for a fresh map entry
   — resuming a save instead stops whatever's playing and replays the save's
   own remembered track verbatim, always restarted from the top. A new
   `Scene::Map#resume_saved_bgm`, called from `#initialize` in place of
