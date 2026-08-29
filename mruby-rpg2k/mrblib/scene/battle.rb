@@ -483,8 +483,8 @@ class RPG2k
       # Idle, Dead and Defend pose ids within a `db.battleranimations` entry's
       # `poses` table (lcf::rpg::BattlerAnimation::Pose_Idle/Pose_Dead/
       # Pose_Defend -- schema.rb's own comment on chunk 32 lists the full
-      # 12-pose order, and matches EasyRPG's own `AnimationState` enum once
-      # its one-off `AnimationState_Null` head element is subtracted out).
+      # 12-pose order this is drawn from: 0 idle, 4 dead, 7 defend, among the
+      # rest).
       # `ACTOR_BAD_STATUS_POSE` is the same shift applied to
       # `AnimationState_BadStatus` (7) -- the generic pose an active state
       # falls back to when its own `battler_animation_id` field (`Game::
@@ -3290,16 +3290,15 @@ class RPG2k
         "#{sk.name}#{learned}"
       end
 
-      # EasyRPG Player's battle windows share one fixed panel: a 320x80 strip
-      # along the bottom edge with 16px rows -- not the content-fitted,
-      # 14px-row windows this screen used to draw. `Scene_Battle_Rpg2k` /
-      # `Scene_Battle` construct status_window / command_window /
-      # target_window / item_window / skill_window / battle_message_window
-      # all at `(x, screen_height - 80, w, 80)`, and `Window_Selectable`'s
-      # own `menu_item_height` (16, matching this screen's message-window
-      # `MSG_LINE_H`) is what actually spaces their rows -- ported from
-      # EasyRPG's source, NOT independently confirmed against genuine
-      # RPG_RT under wine.
+      # RPG_RT's battle windows share one fixed panel: a 320x80 strip along
+      # the bottom edge with 16px rows -- not the content-fitted, 14px-row
+      # windows this screen used to draw. The panel's own outer rect (x=0,
+      # y=screen_height-80, w=320, h=80) is independently confirmed against
+      # genuine RPG_RT.exe under wine -- see #battle_text_window's own
+      # citation for the capture, run on this same window shape. The 16px
+      # row pitch matches this screen's own message-window `MSG_LINE_H`,
+      # itself measured directly off a wine capture rather than assumed
+      # (scene/map.rb#draw_shop_command_prompt's own citation, cycle #148).
       BATTLE_LINE_H = 16
       BATTLE_PANEL_Y = SCREEN_H - 80
       BATTLE_PANEL_H = 80
@@ -3955,13 +3954,15 @@ class RPG2k
         @ui[:result_win] = battle_panel_window(lines, 320)
       end
 
-      # EasyRPG's own battle message window (the per-action banner, the
+      # RPG_RT's own battle message window (the per-action banner, the
       # result panel) is a fixed 320x80 strip at the bottom of the screen --
       # the same rect as the status/command windows it visually replaces
-      # while it is up (`Window_BattleMessage`, `(0, screen_height - 80,
-      # MENU_WIDTH, 80)`) -- not a panel sized to fit its text. Ported from
-      # EasyRPG's source, NOT independently confirmed against genuine
-      # RPG_RT under wine.
+      # while it is up -- not a panel sized to fit its text. This exact rect
+      # is independently confirmed against genuine RPG_RT.exe under wine --
+      # see #battle_text_window's own citation for the capture; that method
+      # draws the identical BATTLE_PANEL_Y/BATTLE_PANEL_H/SCREEN_W rect this
+      # one does, just for the battle-event message window rather than the
+      # action banner/result panel.
       def battle_panel_window(lines, z)
         inner_w = SCREEN_W - Window::BORDER * 2
         win = Window.new(0, BATTLE_PANEL_Y, SCREEN_W, BATTLE_PANEL_H)
