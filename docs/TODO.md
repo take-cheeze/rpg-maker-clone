@@ -22006,14 +22006,14 @@ not yet verified:
   unlike every fix above, the schema itself had never even modelled the
   chunk.** `mruby-lcf/mrblib/schema.rb`'s own comment on `SAVE_DATA` already
   flagged this honestly: *"Chunk 102 (screen effects) ... left out until
-  confirmed."* Confirmed directly against RPG_RT's live source:
-  `Scene_Save::Save` (`src/scene_save.cpp`) writes `save.screen = Main_Data
-  ::game_screen->GetSaveData()` unconditionally on every save, and `Player::
-  LoadSavegame` (`src/player.cpp`) restores it unconditionally on every load
-  via `Game_Screen::SetSaveData` (`src/game_screen.cpp`) — a wholesale
-  struct replace (`data = std::move(screen);`), so a tint mid-transition
-  resumes interpolating from exactly where it left off, not merely snapped
-  to its finish value. liblcf's own generator table (`generator/csv/
+  confirmed."* The tint chunk is saved and restored unconditionally on every
+  Save/Continue, so a tint mid-transition resumes interpolating from exactly
+  where it left off rather than snapping to its finish value — independently
+  confirmed against a genuine RPG_RT.exe by the wine capture in the very next
+  entry below (a mid-transition tint injected into a real save resumed
+  interpolating toward `finish` exactly as this fix assumes, with
+  `frames_left` behaving as a plain 60fps countdown). liblcf's own generator
+  table (`generator/csv/
   fields.csv`) confirms the wire format: `SaveScreen, tint_finish_red, f,
   Int32, 0x01, 100` through `tint_time_left, f, Int32, 0x0F, 0` (fields 1-4,
   11-14, 15), and `Save, screen, f, SaveScreen, 0x66` places the whole chunk
