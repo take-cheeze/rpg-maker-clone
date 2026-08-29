@@ -6604,7 +6604,7 @@ end
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine:
 # it
-# calls `actor->RemoveState(state_id, !Game_Battle::IsBattleRunning())`,
+# passes whether battle is currently running through to its remove-state call,
 # and its own remove-state handling's own `always_remove_battle_states`
 # parameter skips the cursed-armor lock entirely --
 # but only for a state whose own database Persistence field is "Ends" (0,
@@ -8783,8 +8783,8 @@ check 'an Escape skill is always listed on the field menu, even unavailable, ' \
       'never while flying' do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it
-  # is `if (!Game_Battle::IsBattleRunning()) return
-  # true;` outside battle, with no per-type filter -- a known Escape skill
+  # returns usable
+  # outside battle unconditionally, with no per-type filter -- a known Escape skill
   # is always listed, whether or not it is castable right now.
   # its own skill-usability check's Type_escape arm (access, a registered
   # target, not flying) is what the skill window's own enable-check (greying the
@@ -21056,9 +21056,9 @@ end
 # Combo additionally requires the named actor to be a *current* party
 # member. Ported from a reference implementation, NOT independently confirmed
 # against genuine RPG_RT under wine:
-# it is `if (!Main_Data::game_party->
-# IsActorInParty(actor_id)) { return true; }`, checked before
-# its own actor-lookup accessor is even consulted -- `IsActorInParty` appears in
+# it checks whether the actor is a current party member
+# first, checked before
+# its own actor-lookup accessor is even consulted -- that party-membership check appears in
 # exactly one other place in the whole reference (the Conditional Branch
 # "actor in party" test, already ported as `Game::Party#include_actor?`),
 # and this is its only other call site. A combo targeted at a genuine
