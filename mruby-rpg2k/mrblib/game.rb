@@ -5338,15 +5338,15 @@ module Game
     # Whether skill row `sk` belongs in the field menu.
     #
     # The `occasion_field` / `occasion_battle` flags gate **switch skills only**.
-    # That is not a simplification — it is what RPG_RT does (EasyRPG's
-    # `Algo::IsSkillUsable` reads them in the `Type_switch` arm and nowhere
-    # else), and the RPG2000 editor only offers the 使用可能な場面 checkboxes for
-    # a スイッチ skill in the first place. The bytes agree exactly: Nepheshel
-    # writes chunks 18/19 for 12 of its 306 skills and those 12 are precisely its
-    # 12 switch skills, while mtf-meido-action, which has no switch skill, writes
-    # neither chunk for any of its 134. Gating every skill on `occasion_battle`
-    # (default false, so almost never set) is what used to leave the battle skill
-    # menu holding 12 skills in one game and none at all in the other.
+    # That is not a simplification: the RPG2000 editor only offers the
+    # 使用可能な場面 checkboxes for a スイッチ skill in the first place, so no
+    # non-switch skill row can even carry these flags in a genuine database.
+    # The bytes agree exactly: Nepheshel writes chunks 18/19 for 12 of its 306
+    # skills and those 12 are precisely its 12 switch skills, while
+    # mtf-meido-action, which has no switch skill, writes neither chunk for
+    # any of its 134. Gating every skill on `occasion_battle` (default false,
+    # so almost never set) is what used to leave the battle skill menu
+    # holding 12 skills in one game and none at all in the other.
     #
     # An ordinary skill outside battle needs a target the field can offer (scope
     # >= 2, i.e. self or allies -- there is no enemy to aim at) and has to do
