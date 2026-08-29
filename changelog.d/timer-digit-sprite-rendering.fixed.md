@@ -1,8 +1,8 @@
 - **The game timer now draws as five raw digit-sprite cells cut from the
   System graphic, matching RPG_RT's actual rendering, instead of a bordered
-  window with `draw_text`'d `M:SS`.** Verified against EasyRPG Player's
-  actual C++ source: `Sprite_Timer::Draw` (`src/sprite_timer.cpp`) blits five
-  8x16 cells (minute tens, minute ones, a colon, second tens, second ones)
+  window with `draw_text`'d `M:SS`.** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: it blits
+  five 8x16 cells (minute tens, minute ones, a colon, second tens, second ones)
   straight out of the System graphic into a bare sprite with no window or
   border, and refuses to draw at all with no System graphic loaded — this
   codebase's old `Window`+`draw_text` timer kept showing its digits even

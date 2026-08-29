@@ -1,8 +1,9 @@
 - **Chaining two Show Battle Animation (11210) calls back-to-back — waiting
   for the first, then immediately issuing another — no longer loses an extra
-  real frame between them.** EasyRPG Player's own `Game_Interpreter::Update`
-  (`src/game_interpreter.cpp`) is a loop whose only wait-time check is `if
-  (_state.wait_time > 0) { _state.wait_time--; break; }` — it stops
+  real frame between them.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  interpreter-update loop's only wait-time check is `if
+  (wait_time > 0) { wait_time--; break; }` — it stops
   processing for the frame *only while* the countdown is still above zero, so
   the exact real frame a waited-for animation's own duration reaches 0 falls
   straight through into whatever command follows instead of costing a

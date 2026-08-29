@@ -8,10 +8,9 @@
   shape: `#mosaic_blt(src, block_size)` resamples each pixel from the pixel
   nearest the centre of its `block_size`x`block_size` block, and
   `#wave_blt(src, depth, phase)` displaces each scanline horizontally by a
-  sine wave. Both are ported from EasyRPG Player's real source
-  (`src/transition.cpp`'s `TransitionMosaicIn`/`Out` and
-  `TransitionWaveIn`/`Out` cases, and `Bitmap::WaverBlit` in
-  `src/bitmap.cpp`, fetched verbatim): the mosaic block size ramps
+  sine wave. Both are ported verbatim from a reference implementation's real
+  source, not independently confirmed against genuine RPG_RT under wine: the
+  mosaic block size ramps
   `@frames..1` for a Show (sharpening out of a mosaic) and `1..@frames` for
   an Erase (dissolving into one); the wave depth follows the same ramp with
   `phase = p * 5 * PI / tf_off + PI`. RPG_RT also nudges the mosaic sampling

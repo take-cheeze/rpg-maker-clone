@@ -1,15 +1,15 @@
 - **A state's per-turn battle slip damage can no longer knock a battler out
   by itself, and `hp_change_type`/`sp_change_type` (RPG2003 fields 45/46) are
-  now honoured on both the map and battle slip paths.** Verified against
-  EasyRPG Player's C++ source: `Game_Battler::ApplyConditions`
-  (`src/game_battler.cpp`) calls `ChangeHp(src_hp, /* lethal = */ false)`,
-  flooring at 1 HP regardless of the computed slip — the same non-lethal rule
+  now honoured on both the map and battle slip paths.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its slip-damage application floors at 1 HP regardless
+  of the computed slip — the same non-lethal rule
   this codebase's map-side field-poison drain already followed, but
   `Game::Battle#apply_turn_states` never did, so a large enough
   `hp_change_max` (a boss's own poison-percent-of-max attack, say) could end
-  a battler's turn in death from status alone. Both `ApplyConditions` and its
-  map-step counterpart `Game_Party::ApplyStateDamage` (`src/game_party.cpp`)
-  also branch on `lcf::rpg::State::ChangeType` (`lose`/`gain`/`nothing`),
+  a battler's turn in death from status alone. Both that battle-side logic
+  and its map-step counterpart also branch on a state's own
+  lose/gain/nothing change-type,
   which neither `Game::Battle#apply_turn_states` nor `Game::States.drain`
   (the map-step helper) read at all — every state was treated as an
   unconditional loss. Fixed with a new `Game::States::CHANGE_TYPE_LOSE`/

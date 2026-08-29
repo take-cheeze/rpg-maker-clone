@@ -4,8 +4,9 @@
   jump-landing `char_can_land?`) only ever consulted the lower-layer table, so
   anything drawn on the upper layer — a boulder, a fence post, a shop counter —
   was walked straight through. `ChipSet#passable_tile?` / `#landable_tile?` now
-  mirror EasyRPG's `Game_Map::IsPassableTile`: an upper tile that blocks the
-  direction wins outright; one that permits it but lacks the passage byte's
+  mirror a reference implementation's approach here — ported, not
+  independently confirmed against genuine RPG_RT under wine: an upper tile
+  that blocks the direction wins outright; one that permits it but lacks the passage byte's
   `ABOVE_BIT` is solid ground in its own right and the check stops there;
   otherwise (no upper tile, or one flagged `ABOVE_BIT` for a see-through
   decoration like a painted rug) the lower layer's own passability decides, as

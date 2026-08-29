@@ -7,11 +7,14 @@
   `#attack_side`) instead of just the one chosen target — including under a
   forced attack-enemy/attack-ally restriction (berserk/confusion), and
   including the attacker itself when confusion turns the target's own side
-  into the one being spread across (EasyRPG's `Normal::vStart` / `AddTargets`
-  has no self-exclusion). A weapon flagged `preemptive` jumps its wielder's
+  into the one being spread across (a reference implementation's equivalent
+  code path has no self-exclusion — ported, not independently confirmed
+  against genuine RPG_RT under wine). A weapon flagged `preemptive` jumps its wielder's
   basic Attack to the front of that round's turn order
   (`Battle#turn_order` / `#preemptive_boost?`) — only a basic Attack
   qualifies; a Skill, Item or Defend with the same weapon still equipped
-  keeps its ordinary agility slot, matching EasyRPG's `CreateExecutionOrder`'s
-  own `Type::Normal` guard. Covered by new `scripts/rpg2k_logic_check.rb`
+  keeps its ordinary agility slot, matching a reference implementation's own
+  turn-order guard for basic attacks — ported, not independently confirmed
+  against genuine RPG_RT under wine. Covered by new
+  `scripts/rpg2k_logic_check.rb`
   checks.

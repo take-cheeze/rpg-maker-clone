@@ -1,7 +1,9 @@
 - **Events:** Show Inn issued from a Parallel Process now actually opens the
   inn screen, matching real RPG_RT — it used to be a silent no-op, the same
   defect Open Shop and Enter Hero Name had before their own earlier fixes.
-  Also reproduces a documented RPG_RT quirk EasyRPG's own source calls out: a
+  Also reproduces a documented RPG_RT quirk a reference implementation's own
+  source calls out — ported, not independently confirmed against genuine
+  RPG_RT under wine: a
   *priced* stay issued from a Parallel Process now barges open over an
   already-open message window instead of waiting for it to clear, while a
   *free* stay still waits, matching the asymmetry in real RPG_RT. Covered by

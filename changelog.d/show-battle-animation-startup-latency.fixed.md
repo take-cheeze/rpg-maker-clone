@@ -1,8 +1,8 @@
 - **A waited-for Show Battle Animation (11210) now shows its sprite the same
-  real frame the command runs, instead of one frame late.** Verified against
-  EasyRPG Player's actual C++ source: `Game_Interpreter_Map::
-  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) always calls
-  `Game_Screen::ShowBattleAnimation` in-line — building the animation —
+  real frame the command runs, instead of one frame late.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its show-battle-animation command handler always builds
+  the animation in-line —
   *before* it ever touches its own wait_time, so the sprite's frame-0
   content is visible the instant the command runs. `Game::Interpreter#
   do_show_battle_animation` only ever armed the `:animation` wait itself;
@@ -14,11 +14,11 @@
   (a new `#init_map_animation_this_frame`, factored out of
   `#drive_map_animation`), for both the foreground interpreter and a Common
   Event Parallel Process's own play — deliberately only the *build* moves
-  up, not that first frame's own *advance*: `Game_Map::Update` calls
-  `Game_Screen::Update` (the only thing that ever steps a just-built
-  animation, screen/character-flash stomp included) *before*
-  `UpdateForegroundEvents` each real frame but *after*
-  `UpdateCommonEvents`/`UpdateMapEvents`, so a foreground-built animation
+  up, not that first frame's own *advance*: that reference implementation's
+  map-update step advances the screen (the only thing that ever steps a
+  just-built animation, screen/character-flash stomp included) *before*
+  its foreground-event update each real frame but *after*
+  its common-event/map-event updates, so a foreground-built animation
   gets no extra same-frame advance while a Parallel-Process-built one does.
   Closes the "structural one-frame startup latency" this codebase's own
   request/dispatch split was previously left with. Covered by two new

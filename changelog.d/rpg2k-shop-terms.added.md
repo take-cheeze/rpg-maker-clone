@@ -9,13 +9,16 @@
   for a blank field, and `#shop_header` draws one extra line above whichever
   screen is up: the shopkeeper's greeting on first opening the command menu,
   switching to `shop_regreeting` once the player has gone into Buy or Sell at
-  all this visit (EasyRPG's `Window_Shop` keys this off a per-visit flag, not
-  a persisted "have I shopped here before"), and `shop_buy_select` /
+  all this visit (keying it off a per-visit flag rather than a persisted
+  "have I shopped here before" is ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine), and
+  `shop_buy_select` /
   `shop_sell_select` / `shop_buy_number` / `shop_sell_number` on their own
   screens. The command row labels (`shop_buy` / `shop_sell` / `shop_leave`)
-  replace the hardcoded English outright, the same way EasyRPG's
-  `Window_Shop::Refresh` uses them as the row text directly rather than
-  combining them with anything.
+  replace the hardcoded English outright, the same way a reference
+  implementation uses them as the row text directly rather than combining
+  them with anything — ported, not independently confirmed against genuine
+  RPG_RT under wine.
   Left composed: `shop_purchased` / `shop_sold`, the confirmation line after a
   transaction completes — showing it needs a pause-for-keypress step this
   screen's quantity-counter-then-back-to-list flow doesn't have yet, so it is

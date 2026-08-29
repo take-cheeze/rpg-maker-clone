@@ -2,13 +2,14 @@
   `mruby-lcf/mrblib/schema.rb` already decoded the `possessed_items` /
   `equipped_items` database terms (Term chunk fields 92/93), but nothing in
   `mruby-rpg2k` ever referenced them. `Scene::Map`'s shop code gains
-  `#draw_shop_status`, a panel beside the buy/sell list — EasyRPG's
-  `Window_ShopStatus` — showing the two terms with right-aligned counts for
+  `#draw_shop_status`, a panel beside the buy/sell list — ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine — showing the two terms with right-aligned counts for
   whichever row the cursor sits on: the bag-only count (`Party#item_count`)
   and a new `Party#equipped_item_count`, summing how many slots across every
-  party member currently hold the item — matching EasyRPG's
-  `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount` (a plain
-  slot-equality scan; equipping an item removes it from the bag, so the two
+  party member currently hold the item — the counting itself is likewise
+  ported from a reference implementation rather than independently confirmed
+  (a plain slot-equality scan; equipping an item removes it from the bag, so the two
   counts move independently). `Interpreter#item_operand`'s existing
   equipped-item Control Variables mode now shares the same method instead of
   duplicating the scan inline. The panel refreshes with the list's own

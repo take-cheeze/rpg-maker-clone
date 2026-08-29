@@ -1,9 +1,8 @@
 - **A skill flagged to raise or lower ATK/DEF/SPI/AGI (schema fields 33-36,
   `affect_attack`/`affect_defense`/`affect_spirit`/`affect_agility`) now
   actually does so**, instead of being parsed and read nowhere. Ported from
-  EasyRPG Player's actual C++ source (`src/game_battlealgorithm.cpp`'s
-  `Game_BattleAlgorithm::Skill::vExecute`, `src/game_battler.cpp`'s
-  `Game_Battler::CanChangeAtkModifier` and its DEF/SPI/AGI siblings): each
+  a reference implementation's actual C++ source, not independently
+  confirmed against genuine RPG_RT under wine: each
   flag applies the skill's own signed effect — the identical
   post-attribute-scaling, post-variance, post-cap number `affect_hp`/
   `affect_sp` already use for the same hit — to a per-battle modifier,
@@ -19,10 +18,12 @@
   on both the attack and heal/buff branches. `effective_atk`/`effective_def`/
   `effective_spi`/`effective_agi` now read the modifier — clamped to a new
   `MAX_STAT_BATTLE_VALUE = 9999` — *before* a state's own halve/double is
-  applied on top, matching EasyRPG's own `AdjustParam` ordering. The clamp's
+  applied on top, matching that reference implementation's own stat-adjustment
+  ordering. The clamp's
   lower bound is deliberately `-(base / 2)` (dividing the positive `base`
   first, then negating) rather than the more natural-looking `-base / 2`:
-  EasyRPG's C++ expression truncates toward zero (base 5 → -2), while Ruby's
+  That reference implementation's C++ expression truncates toward zero
+  (base 5 → -2), while Ruby's
   own `/` on a negated numerator floors toward -infinity instead (`-5 / 2`
   = -3) — reproducing this asymmetry between "a special skill's ability-value
   decrease rounds up on ÷2" and "a status effect's own halving rounds down"

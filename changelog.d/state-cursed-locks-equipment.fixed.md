@@ -3,9 +3,10 @@
   table's `cursed` field (LCF field 38) was already parsed by
   `mruby-lcf/mrblib/schema.rb` but read nowhere in `mruby-rpg2k`, so a status
   built for exactly this purpose left the field equip menu fully usable.
-  Verified against EasyRPG Player's actual C++ source: `Game_Actor::
-  IsEquipmentFixed(check_states)` is `data.lock_equipment || (check_states &&
-  any inflicted state's own cursed flag)`, and its equip-menu caller —
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: the equipment-lock check there is
+  `lock_equipment || (check_states && any inflicted state's own cursed
+  flag)`, and its equip-menu caller —
   refusing to even open a slot's item list, rather than opening it and
   rejecting a choice — always passes `check_states: true`. `Game::Actor
   #equipment_fixed?` now also consults a new `#state_cursed?` (scanning the

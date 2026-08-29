@@ -2,13 +2,16 @@
   `.lsd`.** `LCF::Schema::SAVE_PARTY_ACTOR` (chunk 108)'s field 2 was left
   undecoded because it stayed constant in the one sampled real save, so it
   was not provably the title field from that sample alone. It is now
-  confirmed against EasyRPG's `liblcf` (`generator/csv/fields.csv`), whose
-  `SaveActor` struct documents field `0x02` as `title` (`String`) right next
-  to `0x01` `name` — and every other already-confirmed field in this table
-  matches liblcf's hex tag decimal-for-decimal (`0x1F`→31 `level`, `0x20`→32
+  supported by a reference implementation's format-documentation library
+  (its CSV field list), whose `SaveActor` struct documents field `0x02` as
+  `title` (`String`) right next to `0x01` `name` — and every other
+  already-confirmed field in this table matches that library's hex tag
+  decimal-for-decimal (`0x1F`→31 `level`, `0x20`→32
   `exp`, `0x33`→51 `skill_size`, `0x34`→52 `skills`, `0x3D`→61 `equipped`,
   `0x47`→71 `current_hp`, `0x48`→72 `current_sp`, `0x51`→81 `status` count,
-  `0x52`→82 `status`), so `0x02`→2 `title` follows the same scheme; liblcf
+  `0x52`→82 `status`), so `0x02`→2 `title` follows the same scheme — ported
+  from that reference documentation, not independently confirmed against a
+  genuine save under wine; the same library
   also identifies the other two previously-ambiguous constant bytes as
   `hp_mod` (`0x21`→33) and `sp_mod` (`0x22`→34) — unconfirmed stat modifiers,
   not the title. Field 2 (`title`) is now decoded, `Game::State#to_lsd`

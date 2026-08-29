@@ -4,8 +4,9 @@
   forced Set Move Route mirror) and the hero's own manual-input `#passable?`
   only ever consulted `@event_tiles`, built solely from map events — an
   unridden vehicle was never in it, so the party and every map event could
-  walk straight onto or through its tile. Verified against EasyRPG Player's
-  actual C++ source: `Game_Map::CheckOrMakeWayEx` blocks every mover, the
+  walk straight onto or through its tile. Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its movement-blocking check blocks every mover, the
   player included, on a parked Boat/Ship's own tile, but only checks the
   Airship for a non-player mover — a walking hero passes clean over one,
   while a map event's own movement (and the player's forced-route mirror)

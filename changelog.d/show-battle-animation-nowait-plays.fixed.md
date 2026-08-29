@@ -1,8 +1,9 @@
 - **A map-triggered Show Battle Animation (11210) with its "wait until it
   finishes" flag *off* now actually plays**, instead of being recorded and
-  then silently never rendered. EasyRPG Player's own `Game_Interpreter_Map::
-  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) always starts
-  the animation regardless of the wait flag — the flag only gates whether the
+  then silently never rendered. A reference implementation's own show-battle-
+  animation command handler always starts the animation regardless of the
+  wait flag — ported, not independently confirmed against genuine RPG_RT
+  under wine — the flag only gates whether the
   interpreter pauses for it — but `Game::Interpreter#do_show_battle_animation`
   only entered an `:animation` wait when the flag was set, and
   `Scene::Map#drive_map_animation` (the only place anything ever read

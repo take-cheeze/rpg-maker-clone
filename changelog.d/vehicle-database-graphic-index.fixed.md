@@ -3,11 +3,9 @@
   of its CharSet sheet. The System chunk stores each vehicle's on-map graphic
   as a filename *and* a cell index within it (`boat_name`/`boat_index`,
   `ship_name`/`ship_index`, `airship_name`/`airship_index`, System fields
-  11-16), and EasyRPG Player's actual C++ source shows both are read together
-  when a vehicle is built: `Game_Vehicle::Game_Vehicle`
-  (`src/game_vehicle.cpp`) calls `SetSpriteGraphic(ToString(lcf::Data::system.
-  boat_name), lcf::Data::system.boat_index)` (and the ship_/airship_
-  equivalents). `Scene::Map#vehicle_charset` already fell back to the
+  11-16), and a reference implementation's actual C++ source shows both are
+  read together when a vehicle is built — ported, not independently
+  confirmed against genuine RPG_RT under wine. `Scene::Map#vehicle_charset` already fell back to the
   database's `*_name` field when a vehicle's own `charset_name` was never set
   (by Change Vehicle Graphic), but the sibling `#vehicle_charset_index` had no
   matching fallback for `*_index` — it read `Game::Vehicle#charset_index`

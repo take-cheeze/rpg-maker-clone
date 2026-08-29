@@ -2,14 +2,16 @@
   as a plain fade of the right length, the wrong texture, because zoom's own
   in/out direction had nothing in either test bed to confirm it against (see
   the prior "scroll and combine / division" note, which finished every other
-  captured style and left zoom, mosaic/wave and random blocks). EasyRPG's
-  `transition.cpp` settles the direction: zoom always draws the *destination*
+  captured style and left zoom, mosaic/wave and random blocks). Porting from
+  a reference implementation settles the direction, not independently
+  confirmed against genuine RPG_RT under wine: zoom always draws the
+  *destination*
   as the full screen and instead shrinks or grows the *source* crop it
   resamples from, so `ZOOM_IN` shrinks the departing scene down to nothing (an
   Erase) and `ZOOM_OUT` grows the arriving scene back out from nothing (a
   Show), both centred on the screen — `Game::Transition` stays pure logic with
-  no scene/player access, so it does not follow EasyRPG's own hero-position
-  centring on the map. `Scene::Map` snapshots the screen the same way it
+  no scene/player access, so it does not follow that reference
+  implementation's own hero-position centring on the map. `Scene::Map` snapshots the screen the same way it
   already does for scroll and combine / division, but composites zoom's one
   piece with `Bitmap#stretch_blt` instead of `blt`, since the destination and
   source rects now differ in size. The RPG2003 test-bed's real Erase/Show
