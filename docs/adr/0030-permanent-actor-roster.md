@@ -91,7 +91,8 @@ Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
 `Game::Party` to an ordered view over it.
 
 - `Actors#[]` builds an actor from the database on first request and caches it
-  from then on — RPG_RT's `Game_Actors::GetActor`. A missing row logs and
+  from then on, ported from a reference implementation's own actor lookup
+  (not independently confirmed against genuine RPG_RT under wine). A missing row logs and
   returns nil instead of raising, so a game that references an actor the
   database lacks keeps running.
 - `Actors#existing` looks up **without** creating. Read paths use it, so merely
@@ -109,8 +110,10 @@ Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
 - `\N[n]` resolves the live roster actor, falling back to the database row for
   an actor the game has never instantiated; `\N[0]` is the party leader.
 - **A command that names one actor resolves through the roster, not the party.**
-  RPG_RT's `Game_Interpreter::GetActors` reads the party only for scope 0 ("the
-  whole party") and goes to `Game_Actors::GetActor` for a fixed or
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own actor-resolution reads the
+  party only for scope 0 ("the
+  whole party") and goes to the roster lookup for a fixed or
   variable-indexed id, so Change EXP / Level / Parameters / Skills / Equipment /
   HP / MP / Condition / Full Heal / Simulated Attack and the four Change Actor
   Name / Title / Sprite / Face commands (plus Enter Hero Name) all reach a
@@ -127,9 +130,9 @@ Introduce `Game::Actors`, a permanent roster keyed by database id, and demote
   now the companion persists, so the skill is simply never learned.
 - **Reading an actor goes through the roster too**, and the split is the
   interesting part. Conditional Branch type 5 has seven sub-conditions: "is in
-  the party" is a *party* question (`IsActorInParty`) and the other six —
+  the party" is a *party* question and the other six —
   name, level, HP, knows-skill, has-equipped, has-state — are *actor* questions
-  (`Game_Actors::GetActor`). Nepheshel writes 28 of the first kind and 243 of
+  (same reference-implementation roster lookup as above). Nepheshel writes 28 of the first kind and 243 of
   the second, so answering both from the party sent 243 branches down the wrong
   path whenever the companion they named was away. Control Variables' actor-stat
   operand is the same: **all 2436** of Nepheshel's name a swappable companion,

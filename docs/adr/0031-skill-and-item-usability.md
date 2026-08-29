@@ -91,8 +91,9 @@ happened on real data.
 
 ## Decision
 
-Decide usability the way RPG_RT does, from `Algo::IsSkillUsable` and
-`Game_Party::IsItemUsable`:
+Decide usability the way RPG_RT does, ported from a reference
+implementation's own skill/item usability logic (not independently
+confirmed against genuine RPG_RT under wine):
 
 - **Skills.** Escape and teleport are never usable in battle; a switch skill
   consults `occasion_battle` / `occasion_field`; anything else (normal or a 2003
