@@ -1218,10 +1218,10 @@ module LCF
       # 0x29 == 41), the same `MOVE_ROUTE` struct (11/12 move_commands,
       # 21 repeat, 22 skippable) MAP_EVENT_PAGE's own field 41 already uses
       # for a database-configured custom route -- `LCF.parse_move_commands`/
-      # `.encode_move_commands`'s exact byte format is confirmed against
-      # EasyRPG's own liblcf source (src/lmu_movecommand.cpp, fetched
-      # verbatim) and already exercised across the full test-bed corpus
-      # (116076 real move commands, `scripts/lcf_testbed_check.rb`). On the
+      # `.encode_move_commands`'s exact byte format is exercised across the
+      # full test-bed corpus of real editor-authored maps (116076 real move
+      # commands parsed with every `command_id` landing in its valid 0..41
+      # range, `scripts/lcf_testbed_check.rb`). On the
       # hero's own record this is a live Set Move Route (11330) targeting
       # the player, not a database page property -- see Game::State
       # #player_route's own citation in game.rb. Confirmed present with
