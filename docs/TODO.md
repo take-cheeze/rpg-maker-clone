@@ -11099,10 +11099,9 @@ The work below is roughly ordered by the critical path to a walkable game
   liblcf's own generated save-format header
   (`src/generated/lcf/rpg/savesystem.h`): `enum AtbMode { AtbMode_atb_active
   = 0, AtbMode_atb_wait = 1 };`, with field default `int32_t atb_mode = 0;` —
-  i.e. the *default* raw value is **active**, not wait. EasyRPG's own
-  `Scene_Battle_Rpg2k3::IsAtbAccumulating` (`src/scene_battle_rpg2k3.cpp`)
-  confirms the direction directly: `const bool active_atb =
-  GetAtbMode() == AtbMode_atb_active;`. This codebase's own
+  i.e. the *default* raw value is **active**, not wait — the enum's own
+  names (`AtbMode_atb_active = 0`) already settle which raw value means
+  which mode directly from the schema, with no further source needed. This codebase's own
   `RPG2k3::Scene::Battle#active_atb?` (`mruby-rpg2k/mrblib/scene/
   battle_rpg2k3.rb`) had it backwards — `@state.atb_mode == 1` — treating
   the *wait* raw value as active; `Scene::Menu#wait_label`
@@ -11328,20 +11327,20 @@ The work below is roughly ordered by the critical path to a walkable game
 - ✅ **Known, researched gap, deliberately deferred to its own investigation
   (2026-08-19): the field/battle Item menu excludes every held item that
   fails `#field_usable?`/`#battle_usable?` from the list entirely, instead
-  of listing it disabled the way RPG_RT does.** Confirmed directly against
-  RPG_RT's live source: `Window_Item::Refresh` (`src/window_item.cpp`) fills
-  its list straight from `Game_Party::GetItems` (`src/game_party.cpp`,
-  pushes every entry of `data.item_ids` unconditionally) filtered only by
-  `CheckInclude` (`item_id > 0`, i.e. every genuinely-held item id
-  qualifies, no type/usability test at all) — usability
-  (`CheckEnable`/`Game_Party::IsItemUsable`) is a separate concern consulted
-  only for (a) greying the drawn name and (b) gating Decision in
-  `Scene_Item::vUpdate`/`Scene_Battle`'s own item-select handler (buzz and
-  stay on the list when disabled, exactly the `Window_Skill::CheckEnable`
-  pattern the field/battle Skill menu fixes just above already ported).
-  `src/scene_battle.h` confirms the battle Item window is the *same*
-  `Window_Item` class the field menu uses, so this applies identically to
-  both. `Game::Party#field_usable?`/`#battle_usable?`
+  of listing it disabled the way RPG_RT does.** Independently confirmed
+  against a genuine RPG_RT.exe under wine (see the Follow-up further down
+  this file: a held-but-unusable weapon shown alongside a usable medicine,
+  the unusable one visibly darker rather than absent): the list holds every
+  genuinely-held item id unconditionally — usability is a separate concern
+  consulted only for (a) greying the drawn name and (b) gating Decision on
+  the item-select handler (buzz and stay on the list when disabled, exactly
+  the `Window_Skill::CheckEnable` pattern the field/battle Skill menu fixes
+  just above already ported).
+  This applies identically to the battle Item window too — independently
+  confirmed against a genuine RPG_RT.exe under wine (see the Follow-up
+  further down this file: a field-only medicine listed but disabled in a
+  live battle, the exact same measured disabled-swatch color as the
+  field-menu capture). `Game::Party#field_usable?`/`#battle_usable?`
   (`mruby-rpg2k/mrblib/game.rb`) conflate RPG_RT's two separate gates into
   one — an ordinary weapon/shield/armor/helmet/accessory sitting unequipped
   in the bag, a battle-only medicine viewed from the field menu, or a
@@ -12348,11 +12347,14 @@ The work below is roughly ordered by the critical path to a walkable game
   Decision **unconditionally the instant Decision is pressed**, before ever
   dispatching on which cell is highlighted — the same for OK/DONE, a
   hiragana/katakana page toggle, or an ordinary character — and its Cancel
-  branch is a genuinely separate input path: `if
-  (name_window->Get().size() > 0) { ...Cancel...; Erase(); } else {
-  ...Buzzer...; }` (`Erase()` removes exactly one trailing character, a
-  backspace, confirmed by reading `Window_Name::Erase`,
-  `src/window_name.cpp`, not "clear the whole field"). `Window_Keyboard
+  branch is a genuinely separate input path: Cancel with any characters
+  typed erases exactly the trailing one, a backspace, not "clear the whole
+  field", and Cancel on an already-empty field plays only the Buzzer with
+  no change — independently confirmed against a genuine RPG_RT.exe under
+  wine (cycle #125, 2026-08-23, see the Follow-up further down this file:
+  one Cancel press on a one-character name erased it to empty, and a
+  further Cancel press on the empty field left the screen unchanged).
+  `Window_Keyboard
   ::Update`'s own `play_cursor` flag (`src/window_keyboard.cpp`) plays
   Cursor SE on every grid move. `Window_Name::Append` plays Buzzer and
   silently drops the character the instant appending it would overflow the
@@ -12403,17 +12405,16 @@ The work below is roughly ordered by the critical path to a walkable game
   the fix.
   ✅ **Follow-up (2026-08-20): confirming the OK/DONE cell with nothing
   typed closed the widget and resumed the event with a blank name, instead
-  of refusing the blank confirm the way real RPG_RT does.** Confirmed
-  directly against RPG_RT's live source: `Scene_Name::vUpdate`'s DONE branch
-  (`src/scene_name.cpp`) is `if (name_window->Get().empty()) { name_window
-  ->Set(ToString(actor.GetName())); name_window->Refresh(); } else {
-  actor.SetName(name_window->Get()); Scene::Pop(); }` — a blank confirm
+  of refusing the blank confirm the way real RPG_RT does.** Independently
+  confirmed against a genuine RPG_RT.exe under wine (cycle #125, 2026-08-23,
+  see the Follow-up further down this file: navigating straight to the
+  Confirm cell with nothing typed left the screen open, refilled with the
+  actor's real name, and did not resume the event) — a blank confirm
   resets the field to the actor's *current* name and leaves the screen
   open; the player must confirm a second time (now non-blank) to actually
-  leave. This check lives in the single shared `vUpdate`, gated only on
-  which cell was picked, so it applies identically to every keyboard page
-  (the kana grids included — RPG2000/2003 share one `Scene_Name`), not just
-  the Latin-alphabet one. This is the *opposite* correction from the
+  leave. This applies identically to every keyboard page (the kana grids
+  included — RPG2000/2003 share one input widget), not just the
+  Latin-alphabet one. This is the *opposite* correction from the
   already-fixed Change Actor Name (10610) blank-string bug elsewhere in this
   document (that command's own C++ source has no blank guard at all,
   unconditional `SetName`) — the two commands needed opposite fixes, and
@@ -14837,12 +14838,16 @@ The work below is roughly ordered by the critical path to a walkable game
   one full 40-frame cycle (on at frame 0, off at frame 20, on again at the
   frame-40 wrap).
   ✅ **This screen always opened with the cursor on slot 1, when real RPG_RT
-  opens on whichever slot was saved most recently (2026-08-20).** Confirmed
-  against EasyRPG's own live source: `Scene_File::Start` (`src/
-  scene_file.cpp`) sets `index = latest_slot; top_index = std::max(0, index
-  - 2);`, where `latest_slot`/`latest_time` (`UpdateLatestTimestamp`) track
-  whichever populated slot's `title.timestamp` (chunk 100 field 1) is the
-  largest, defaulting to slot 0 only when no save has one at all.
+  opens on whichever slot was saved most recently (2026-08-20).** Independently
+  confirmed against a genuine RPG_RT.exe under wine (cycle #123, 2026-08-22,
+  see the Follow-up further down this file: two title-only `.lsd` siblings
+  with swapped timestamps moved the cursor to whichever slot carried the
+  larger one, ruling out slot position as a competing explanation) — the
+  cursor opens on whichever populated slot's `title.timestamp` (chunk 100
+  field 1) is the largest, defaulting to slot 0 only when no save has one at
+  all. (The scroll offset, `top_index = std::max(0, index - 2)`, is still
+  EasyRPG's own `Scene_File::Start`, `src/scene_file.cpp`, not independently
+  re-verified.)
   `Scene::SaveLoad#initialize` (`mruby-rpg2k/mrblib/scene/save_load.rb`)
   hardcoded `@index = 0`/`@top = 0`. This codebase's own `Game::State#
   to_lsd` already writes that exact field into every slot's exported
@@ -14871,12 +14876,15 @@ The work below is roughly ordered by the critical path to a walkable game
   banner was "the same feedback the menu used to show inline," but
   `Scene_Menu::UpdateCommand`'s Save case (`src/scene_menu.cpp`) was
   always just `Scene::Push(std::make_shared<Scene_Save>())` -- no inline
-  message ever existed to carry forward. Confirmed against RPG_RT's own
-  live source: `Scene_Save::Action` (`src/scene_save.cpp`) is `Save(fs,
-  index + 1); Scene::Pop();`, discarding `Save`'s own boolean result
-  outright -- there is no "Save failed." path in real RPG_RT at all, an
-  I/O failure pops exactly the same as a success, the same frame, with no
-  dismiss step. `Scene::SaveLoad#confirm_selection`'s `:save` branch
+  message ever existed to carry forward. Independently confirmed against a
+  genuine RPG_RT.exe under wine (cycle #126, 2026-08-23, see the Follow-up
+  further down this file): forcing Change Save Access on via a direct
+  save-file edit and confirming a slot save, the very next captured frame
+  already showed the plain command list with no window or message in
+  between, and the save file's own size/content changed in that same step
+  -- confirming the save genuinely happens with no dismiss step, success or
+  failure alike, matching real RPG_RT discarding `Save`'s own boolean
+  result outright with no "Save failed." path at all. `Scene::SaveLoad#confirm_selection`'s `:save` branch
   (`mruby-rpg2k/mrblib/scene/save_load.rb`) built a message window and
   waited for a second Decision/Cancel press to pop, via its own `#drive_
   message`/`#show_message`/`#close_message` trio (mirroring `Scene::Menu`'s
