@@ -20,37 +20,35 @@ same round, or any other mid-round state removal -- was allowed to act.
 Found via community デフォ戦bot trivia: "once afflicted with a 'cannot act'
 status, even if it's cured before your turn comes up, you still can't act
 that turn; the same goes for Silence blocking magic." Checked against
-EasyRPG's real source rather than trusted from the trivia alone, the same
-discipline PR #861 (mid-battle party roster sync) and PR #883 (self-destruct/
-hidden) applied earlier this session:
+a reference implementation's real source rather than trusted from the trivia
+alone, not independently confirmed against genuine RPG_RT under wine, the
+same discipline PR #861 (mid-battle party roster sync) and PR #883
+(self-destruct/hidden) applied earlier this session:
 
-- `Scene_Battle_Rpg2k::SelectNextActor`/`CreateEnemyActions`
-  (`src/scene_battle_rpg2k.cpp`) decide each battler's action for the round.
-  For an actor: `if (!active_actor->CanAct()) { SetBattleAlgorithm(None);
-  battle_actions.push_back(active_actor); ... }` -- a restricted battler is
-  queued with a `None` algorithm right there, at selection time, before the
-  round's `battle_actions` queue is even sorted by `CreateExecutionOrder`.
-- `Game_Battler::AddState` (`src/game_battler.cpp`) fires whenever a state
-  lands on a battler mid-round, live: if the battler's `GetSignificantRestriction()`
-  is no longer `Restriction_normal` (or, for a queued Skill, the skill itself
+- The reference implementation's actor/enemy action-selection routines
+  decide each battler's action for the round: a restricted battler is queued
+  with a do-nothing algorithm right there, at selection time, before the
+  round's action queue is even sorted.
+- The reference implementation's state-application routine fires whenever a
+  state lands on a battler mid-round, live: if the battler's significant
+  restriction is no longer normal (or, for a queued Skill, the skill itself
   becomes unusable -- Silence), it overrides that battler's *already-queued*
-  algorithm to `None`, again right there, live -- this is what stops a
+  algorithm to do-nothing, again right there, live -- this is what stops a
   battler who was fine at selection time but gets put to sleep by an earlier
   action this same round.
-- `Scene_Battle::PrepareBattleAction` (`src/scene_battle.cpp`) runs again
-  immediately before each queued action actually executes (`ePreAction`,
-  right before `eBattleAction`): `if (!battler->CanAct()) { if (...GetType()
-  != None) SetBattleAlgorithm(None); return; }`. This can only ever *tighten*
-  the lock (force `None` if not already); it has no branch that turns an
-  already-`None` algorithm back into a real one.
-- `ProcessBattleActionBegin` (`src/scene_battle_rpg2k.cpp`), the very start of
-  running a queued action, calls `BattleStateHeal()`/`ApplyConditions()` --
-  this codebase's own `#apply_turn_states` -- unconditionally, live, at this
-  exact moment (the same relative timing this codebase already used). But its
-  result (a state healing right here, or not) never feeds back into which
-  algorithm runs: `ProcessBattleActionUsage`'s own gate is `if
-  (action->GetType() == None) { finish without acting; }`, checked against
-  whatever `PrepareBattleAction` already decided, upstream of this call.
+- The reference implementation's pre-action preparation step runs again
+  immediately before each queued action actually executes: if the battler
+  can no longer act, it forces the algorithm to do-nothing if not already.
+  This can only ever *tighten* the lock; it has no branch that turns an
+  already-locked algorithm back into a real one.
+- The reference implementation's action-begin step, the very start of
+  running a queued action, applies turn-start state healing and slip
+  conditions -- this codebase's own `#apply_turn_states` -- unconditionally,
+  live, at this exact moment (the same relative timing this codebase already
+  used). But its result (a state healing right here, or not) never feeds back
+  into which algorithm runs: the action-usage step's own gate is checked
+  against whatever the pre-action preparation step already decided, upstream
+  of this call.
 
 So real RPG_RT's "can this battler act" decision is a **one-way lock**, not a
 live read: a battler is barred from acting the moment a do-nothing (or, for a
@@ -84,8 +82,8 @@ runs" half entirely.
   read, for the "newly restricted mid-round" case `AddState` covers) always
   wins over anything that clears the state in between.
 
-Deliberately not attempted: the full bidirectional ratchet EasyRPG's
-`AddState`/`RemoveStates` implement, where a state landing on a battler
+Deliberately not attempted: the full bidirectional ratchet a reference
+implementation's state-application/removal routines implement, where a state landing on a battler
 *after* the round's queue was built also permanently locks that battler out
 even if it is cured again before their own turn -- e.g. afflicted by an
 earlier ally's stray effect, then cured by a second effect, all before this
@@ -102,8 +100,10 @@ single cure before the queued turn, not a cure-after-a-second-affliction.
 
 The Silence half of the trivia ("cured before your turn, still can't use
 magic") is the same lock mechanism from RPG_RT's side (a Skill queued before
-Silence lands has its algorithm forced to `None`/skipped by `AddState`'s
-`IsSkillUsable` recheck, same as the do-nothing case), but this codebase does
+Silence lands has its algorithm forced to do-nothing, skipped by the
+reference implementation's skill-usability recheck inside its
+state-application routine, same as the do-nothing case -- not independently
+confirmed against genuine RPG_RT under wine), but this codebase does
 not yet consult `#skill_sealed?` when a skill command is being selected at
 all (a battler can freely queue and cast a sealed skill today -- see
 `#skill_sealed?`'s own comment: "nothing consulted either field"). That gap

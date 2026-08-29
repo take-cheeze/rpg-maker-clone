@@ -38,17 +38,20 @@ Read the field, following RPG_RT.
 
 **The split.** RPG_RT stores the depth as a divisor's complement rather than a
 fraction: `split = 4 - depth`, and a split above 3 means no effect, so only
-depths 1..3 do anything (EasyRPG's `Sprite_Character::Draw`). The sunken height
-is `frame_height / split`, which on the standard 32px charset frame is 10, 16
-and 32 rows — exactly the thirds and halves Nepheshel's names promise.
-`Game::CharSet.bush_pixels(depth, height = HEIGHT)` is that arithmetic and
-nothing else, so it is a pure function the render check can pin down.
+depths 1..3 do anything — ported from a reference implementation's sprite-draw
+arithmetic, not independently confirmed against genuine RPG_RT under wine.
+The sunken height is `frame_height / split`, which on the standard 32px
+charset frame is 10, 16 and 32 rows — exactly the thirds and halves
+Nepheshel's names promise. `Game::CharSet.bush_pixels(depth, height = HEIGHT)`
+is that arithmetic and nothing else, so it is a pure function the render check
+can pin down.
 
-**The opacity.** The sunken rows draw at `(opacity + 1) / 2` — RPG_RT's
-`opacity_bottom` default, half the top opacity rather than a fixed 128. Halving
-rather than fixing matters for the one case where it differs: an event already
-drawn translucent (a ghost, a Set Transparent page) wading into grass ends up
-fainter still instead of snapping *up* to 128.
+**The opacity.** The sunken rows draw at `(opacity + 1) / 2` — half the top
+opacity rather than a fixed 128, ported from a reference implementation's
+bottom-opacity default and not independently confirmed against genuine
+RPG_RT under wine. Halving rather than fixing matters for the one case where
+it differs: an event already drawn translucent (a ghost, a Set Transparent
+page) wading into grass ends up fainter still instead of snapping *up* to 128.
 
 **The blit.** `Scene::Map#blt_bushed` lays a frame down as a solid top and a
 half-opacity bottom, two blits from adjacent source rows. A depth of 0 is the
@@ -62,7 +65,8 @@ graphic, so that one scales its split against its own 16px frame rather than the
 **Who sinks.** The hero, unless jumping (they are over the tile, not in it) or
 boarded (the vehicle sprite is drawn instead). An event only on the hero's own
 layer — one drawn below or above is scenery or a treetop, not something standing
-in the grass, which is the `Layers_same` test RPG_RT makes too — and not while
+in the grass, matching the same-layer test a reference implementation makes too
+(not independently confirmed against genuine RPG_RT under wine) — and not while
 jumping. The hero's frame cache key gained the depth, so walking into and out of
 grass redraws the sprite even though the pose has not changed.
 
@@ -73,10 +77,12 @@ Nothing else moves: a tile whose terrain has no `bush_depth` takes the same
 single full-opacity blit it always did, which is every tile of mtf-meido-action
 and all but 28 maps of Nepheshel.
 
-Deliberately left out. **Vehicles** do not sink. RPG_RT exempts only the airship
-(`IsFlying`), so a boat on a bush tile would in principle wade — but water
-terrain carries no `bush_depth` in either test bed, so there is nothing to
-measure the behaviour against and a guess would be worse than the omission.
+Deliberately left out. **Vehicles** do not sink. RPG_RT exempts only the
+airship — ported from a reference implementation's flying check, not
+independently confirmed against genuine RPG_RT under wine — so a boat on a
+bush tile would in principle wade — but water terrain carries no `bush_depth`
+in either test bed, so there is nothing to measure the behaviour against and
+a guess would be worse than the omission.
 **Battle sprites** never had it: bush depth is a map-layer property and RPG_RT's
 battle screen does not consult the terrain for it.
 

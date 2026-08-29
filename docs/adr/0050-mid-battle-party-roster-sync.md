@@ -22,45 +22,42 @@ out keeps acting and keeps being a valid target for the rest of the fight.
 Found via four independent community デフォ戦bot trivia items describing
 this exact class of bug.
 
-Checked against EasyRPG's real source rather than trusted from the trivia
-alone:
+Checked against a reference implementation's real source rather than trusted
+from the trivia alone, not independently confirmed against genuine RPG_RT
+under wine:
 
-- `Game_Party::AddActor`/`RemoveActor` (`src/game_party.cpp`) call
-  `Scene::Find(Scene::Battle)` and, if a battle scene is running,
-  `scene->OnPartyChanged(actor, added)`.
-- `Game_Party::GetBattlers` is read **live** wherever the engine needs the
-  current roster (e.g. `Game_Battle::UpdateAtbGauges`,
-  `src/game_battle.cpp`) — there is no separate cached battle-roster array
-  in EasyRPG at all. Per-battle ephemeral state (ATB gauge, equipment-derived
-  combat flags) lives directly on the persistent `Game_Actor`, which is
-  *why* EasyRPG needs no sync step: reading the party fresh always reflects
-  the truth.
-- `Game_Battler::Exists()` (`game_battler.h`) is
-  `!IsHidden() && !IsDead() && IsInParty()`, and
-  `Scene_Battle_Rpg2k::ProcessSceneActionBattle`'s `ePreAction` substate
-  rechecks it **immediately before running each already-queued action**,
-  discarding the ones that fail
-  (`while (!battle_actions.empty() && !battle_actions.front()->Exists())
-  RemoveCurrentAction();`). `battle_actions` (the turn queue) itself is
-  built once per round, from the live party, by `SelectNextActor`/
-  `CreateEnemyActions`, ahead of `CreateExecutionOrder`'s agility sort.
+- A reference implementation's party add/remove routines call into the
+  running battle scene, notifying it that the roster changed, if one is
+  active.
+- The reference implementation's live-battler accessor is read **live**
+  wherever the engine needs the current roster — there is no separate
+  cached battle-roster array at all. Per-battle ephemeral state (ATB gauge,
+  equipment-derived combat flags) lives directly on the persistent actor
+  object, which is *why* that design needs no sync step: reading the party
+  fresh always reflects the truth.
+- The reference implementation's battler-existence check (not hidden, not
+  dead, still in the party) is rechecked **immediately before running each
+  already-queued action**, discarding the ones that fail. The turn queue
+  itself is built once per round, from the live party, ahead of the
+  agility sort.
 
 That last point **corrects** an initial reading of the trivia this fix was
 scoped from. The trivia's own account ("if a character isn't in the party
 at turn start... they don't act that round" / "swap out then back in still
 lets their queued command execute") reads as: membership is read once, at
 round start, and a queued-but-not-yet-run action is immune to a mid-round
-departure. The first half holds up against `SelectNextActor`/
-`CreateEnemyActions`. The second does not: `Exists()`'s `IsInParty()` term
-is rechecked right before *every* queued action runs, not just once per
-round, so a member who leaves after their action was queued but before
+departure. The first half holds up against the reference implementation's
+once-per-round queue construction. The second does not: its existence
+check is rechecked right before *every* queued action runs, not just once
+per round, so a member who leaves after their action was queued but before
 their turn comes up loses that turn. Only a turn that has already resolved
 is unaffected (nothing rewinds the log) — which is the part of the trivia
 that happens to still be true, just for a narrower reason than stated.
 
 This codebase's own `Game::Battle::Combatant` is a deliberately different
-design from EasyRPG's live-actor model — see the class's own comment — an
-ephemeral per-fight snapshot so battle-only modifiers (`atk_mod`/`def_mod`/
+design from a reference implementation's live-actor model — see the class's
+own comment — an ephemeral per-fight snapshot so battle-only modifiers
+(`atk_mod`/`def_mod`/
 `spi_mod`/`agi_mod`, `attr_ranks` shifts, inflicted `states`) never write
 back to the persistent `Game::Actor` and reset cleanly every fight (ADR
 0033 and the state-halving/doubling work). That design is real and
@@ -89,16 +86,18 @@ incorrectly reset mid-fight.
   update.
 - `Battle#sync_allies_from_party` (private) re-derives `@allies` from the
   live party: a member with no `Combatant` yet gets a fresh one
-  (`.from_actor`) — matching EasyRPG's live-read semantics for a genuinely
-  new participant, no accumulated modifiers; a member who already has one
+  (`.from_actor`) — matching a reference implementation's live-read
+  semantics, not independently confirmed against genuine RPG_RT under wine,
+  for a genuinely new participant, no accumulated modifiers; a member who
+  already has one
   (they left *this* fight and are rejoining) reuses that exact object
   rather than rebuilding it, so accumulated battle-only state survives. A
   `Combatant` whose actor has left the live party is kept in `@allies` (not
   removed) — a later rejoin needs to find it, and `#apply_to_party` still
   needs to write its final state back to the actor at battle end — but
   flagged `member = false`.
-- The sync runs in two places, mirroring the two EasyRPG call sites found
-  above: once per round in `#refill_queue` (decides who is queueable this
+- The sync runs in two places, mirroring the two call sites found in that
+  reference implementation above: once per round in `#refill_queue` (decides who is queueable this
   round, ahead of `#turn_order`), and again in both `#step`/`#step_action`
   right after popping the next queued battler (mirrors `ePreAction`'s
   per-action `Exists()` recheck) — so a battler removed after their action

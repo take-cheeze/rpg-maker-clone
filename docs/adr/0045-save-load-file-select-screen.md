@@ -17,7 +17,7 @@ whichever of slot 1's `.mrb` or *any* slot's `.lsd` happened to exist first
 picker to ask the player which one they meant). `Game::State#to_lsd` already
 writes the file-screen metadata a real save-select screen needs -- the SAVE_TITLE
 chunk's timestamp, leader name/level/HP and up to four party FaceSets (see its
-own doc comment) -- specifically so "a real RPG_RT/EasyRPG file-select screen
+own doc comment) -- specifically so "a real RPG_RT file-select screen
 shows the party"; nothing in this codebase read that data back out for the same
 purpose. The database also already carries the vocabulary such a screen needs
 (`term.save_file_select` / `load_file_select` / `file`, LCF::Schema term ids

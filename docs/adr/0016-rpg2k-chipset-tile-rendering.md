@@ -1,4 +1,4 @@
-# 0016. RPG2000 chipset tile rendering ported from EasyRPG
+# 0016. RPG2000 chipset tile rendering
 
 Date: 2026-08-03
 

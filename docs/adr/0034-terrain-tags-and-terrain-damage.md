@@ -27,10 +27,11 @@ test beds:
 
 That is not corrupt data. RPG_RT omits the whole 162-entry array when every tile
 of the chipset is terrain 1, which is the ordinary case for a chipset nobody
-bothered to tag — so an absent table means *terrain 1*, not *no terrain*.
-EasyRPG's `Game_Map::GetTerrainTag` says so in as many words ("RPG_RT
-optimisation: When the terrain is all 1, no terrain data is stored") and returns
-1.
+bothered to tag — so an absent table means *terrain 1*, not *no terrain*. A
+reference implementation's own terrain-tag accessor says so in as many words
+("RPG_RT optimisation: When the terrain is all 1, no terrain data is stored")
+and returns 1 — ported from that reference implementation, not independently
+confirmed against genuine RPG_RT under wine.
 
 Reading it as 0 meant that on almost every map in both games:
 

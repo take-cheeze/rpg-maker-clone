@@ -29,26 +29,29 @@ it is not a combat modifier: it is a constraint on what may be worn at once.
 ## Decision
 
 The weapon slot and the shield slot are mutually exclusive whenever **either**
-holds a two-handed weapon. Filling one clears the other, matching EasyRPG's
-`Game_Actor::ChangeEquipment`, which does `ChangeEquipment(other_slot, 0)` after
-writing the slot.
+holds a two-handed weapon. Filling one clears the other — ported from a
+reference implementation's equipment-change routine, not independently
+confirmed against genuine RPG_RT under wine, which clears the other slot
+after writing the one being changed.
 
 - **Both slots are tested, not just the one being filled.** Equipping a shield
   over a claymore has to drop the claymore, exactly as equipping the claymore
   drops the shield. Reading only the incoming item would let the shield win by
   going second.
-- **The flag only means anything on a weapon.** RPG_RT tests
-  `item->type == Type_weapon && item->two_handed`, so a shield that happens to
-  carry the bit does not claim the other hand. Neither test bed has one, which is
-  itself worth asserting.
+- **The flag only means anything on a weapon.** RPG_RT tests whether the item
+  is a weapon carrying the flag (ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine), so a shield
+  that happens to carry the bit does not claim the other hand. Neither test
+  bed has one, which is itself worth asserting.
 - **The emptied hand goes back to the bag.** `Party#equip_from_bag` swaps through
   the inventory, so `Actor#equip_item` returns what it displaced and the caller
   returns it — otherwise equipping a claymore would destroy the shield rather
   than unequip it.
 - **A bulk `equip(ids)` does not enforce it.** That path restores a saved
-  loadout and sets initial equipment; RPG_RT stores what it stores, and EasyRPG
-  enforces the rule only in `ChangeEquipment`. Enforcing it on load would
-  silently drop a shield the save really held.
+  loadout and sets initial equipment; RPG_RT stores what it stores, and the
+  reference implementation this was ported from enforces the rule only in its
+  equipment-change routine, not on load. Enforcing it on load would silently
+  drop a shield the save really held.
 
 ## Consequences
 
@@ -76,17 +79,17 @@ that no non-weapon in either game carries the flag.
 
 Date: 2026-08-12
 
-The item left alone above is now implemented, ported from EasyRPG's
-`Window_EquipItem` (the equip menu's candidate-list window) and
-`Game_Actor::ForEachEquipment` rather than guessed at, since the flag has no
-byte pattern of its own to read the way a combat modifier's do — it is purely
-a menu-construction rule.
+The item left alone above is now implemented, ported from a reference
+implementation's equip-menu candidate-list window and its equipment-iteration
+helper rather than guessed at, not independently confirmed against genuine
+RPG_RT under wine, since the flag has no byte pattern of its own to read the
+way a combat modifier's do — it is purely a menu-construction rule.
 
-`Window_EquipItem`'s constructor retargets the whole slot before it filters
-candidates: `if (equip_type == shield && actor.HasTwoWeapons()) equip_type =
-weapon`, and its shield case tests `item->type == Type_shield` with no
-double-hand exception at all — so a double-hand actor's shield slot lists
-weapons and *only* weapons, not weapons alongside shields.
+The reference implementation's candidate-list window retargets the whole slot
+before it filters candidates — a double-hand actor's shield slot is
+retargeted to the weapon slot, and its shield case admits no double-hand
+exception at all — so a double-hand actor's shield slot lists weapons and
+*only* weapons, not weapons alongside shields.
 `Game::Party#equip_candidates(slot, actor)` does the same retargeting, and
 `#equip_candidate_for?` mirrors it as a guard on `#equip_from_bag`, so the two
 can never disagree about what a given slot will accept.
@@ -97,23 +100,26 @@ The harder part was not the candidate list but *placing* the result:
 land in slot 1. It now takes an optional explicit `slot`, and
 `Party#equip_from_bag` passes the one its candidate list was built for — the
 Change Equipment event command's own call is untouched (no slot argument, as
-before), matching EasyRPG's `Game_Actor::ChangeEquipment`, which likewise has
-no notion of "the second weapon slot" and always resolves a weapon to slot 0.
+before), matching a reference implementation's equipment-change routine
+(not independently confirmed against genuine RPG_RT under wine), which
+likewise has no notion of "the second weapon slot" and always resolves a
+weapon to slot 0.
 
 Nothing about *combat* needed a change. `#attack_hit_rate`, `#weapon_crit_bonus`
 and the weapon-only arm of `#equipment_flag?` (二刀流 dual-attack, 必中
 ignore-evasion) already scan every equipped slot for an item whose own
 *type* reads as a weapon, never slot 0 by name, so once a second weapon
 occupies slot 1 they pick it up — and take the *better* of the two, mirroring
-`ForEachEquipment`'s own max-of-both-weapons reduction — for free. The stat
+a reference implementation's own max-of-both-weapons reduction over its
+equipment — for free. The stat
 sum (`#equip_bonus`) was already slot-agnostic for the same reason: it adds
 every equipped item's own bonus field regardless of which slot holds it.
 
 Left alone still: whether the equip screen's slot-1 *label* changes from
-"Shield" to something else for a double-hand actor. Nothing in
-`Window_EquipItem` (which only builds the candidate list) settles that, and it
-would need `Window_Equip`'s own row-label source — not checked here, so the
-label stays "Shield" regardless.
+"Shield" to something else for a double-hand actor. Nothing in the reference
+implementation's candidate-list window (which only builds the candidate list)
+settles that, and it would need its own row-label window's own source — not
+checked here, so the label stays "Shield" regardless.
 
 Covered by `scripts/rpg2k_logic_check.rb`: a double-hand actor's shield slot
 offers the two held weapons and not the shield (with the ordinary weapon slot
