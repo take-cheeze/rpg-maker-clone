@@ -8981,13 +8981,10 @@ module Game
       cur < target ? cur + step : cur - step
     end
 
-    # Pixels moved per frame for a pan speed (1..6). Originally ported from
-    # EasyRPG Player's own `Game_Player::StartPan`/`ResetPan`, which sets
-    # `pan_speed = 2 << speed` there, a value believed to live in a
-    # 1/16-pixel subpixel space (its own `SCREEN_TILE_SIZE = 256`, sixteen
-    # per this codebase's own real TILE = 16 px) -- so the real whole-pixel
-    # rate under that reading is `(2 << speed) / 16.0`: 0.25, 0.5, 1, 2, 4, 8
-    # px/frame for speed 1..6, not a plain doubling starting at a whole
+    # Pixels moved per frame for a pan speed (1..6): `(2 << speed) / 16.0`,
+    # i.e. a raw `2 << speed` step through a 1/16-pixel subpixel space
+    # (sixteen per this codebase's own real TILE = 16 px) -- 0.25, 0.5, 1, 2,
+    # 4, 8 px/frame for speed 1..6, not a plain doubling starting at a whole
     # pixel (1, 2, 4, 8, 16, 32), which was 4x too fast at every setting.
     # @pan_x/@pan_y (see #approach/#pan_offset) accumulate this sub-pixel-
     # per-frame rate exactly at speeds 1/2 (0.25 and 0.5 are both exact
@@ -9534,11 +9531,11 @@ module Game
   # `backdrop_type`: 0 inherits whatever the parent map resolves to, 1
   # explicitly allows it, 2 forbids it. RPG_RT re-derives all three from
   # scratch on every map load -- the initial map and every Teleport --
-  # walking "same as parent" nodes up until one pins Allow/Forbid; a walk that
-  # runs off the root (or loops) defaults to Allow, the schema's own default
-  # for an unset field (EasyRPG's `Game_Map::Setup` does the identical walk
-  # for all three fields, feeding `Game_System::SetAllowSave` /
-  # `SetAllowTeleport` / `SetAllowEscape`). This sits *underneath* the
+  # walking "same as parent" nodes up until one pins Allow/Forbid, the same
+  # tree-walk `Backdrop.name_for` above uses; a walk that runs off the root
+  # (or loops) defaults to Allow, the schema's own default for an unset
+  # field (`mruby-lcf/mrblib/schema.rb`'s `map_properties` fields 31/32/33
+  # all default to 1 = Allow). This sits *underneath* the
   # `Control Save/Teleport/Escape Access` event commands: those commands'
   # runtime toggles (`Game::State#save_access` / `#teleport_access` /
   # `#escape_access`) still win for the rest of the current map's visit, but
@@ -10080,8 +10077,8 @@ module Game
     # existing "poison" state in either test bed relies on this default --
     # 1 is **gain** (a "regen" state that heals instead of drains), 2 is
     # **nothing** (neither, despite a possibly-nonzero configured amount).
-    # Matches EasyRPG's `lcf::rpg::State::ChangeType` enum exactly (verified
-    # against liblcf's generated `state.h`), not guessed at.
+    # Matches liblcf's own generated `lcf::rpg::State::ChangeType` enum
+    # exactly (verified against its generated `state.h`), not guessed at.
     CHANGE_TYPE_LOSE    = 0
     CHANGE_TYPE_GAIN    = 1
     CHANGE_TYPE_NOTHING = 2
