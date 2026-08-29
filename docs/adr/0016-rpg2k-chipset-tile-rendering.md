@@ -35,9 +35,8 @@ Two additional constraints shaped the approach:
 
 ## Decision
 
-Add `Game::ChipsetLayout` (pure Ruby in `mruby-rpg2k/mrblib/game.rb`), a direct
-port of EasyRPG Player's `src/tilemap_layer.cpp` geometry, and drive
-`Scene::Map` from it.
+Add `Game::ChipsetLayout` (pure Ruby in `mruby-rpg2k/mrblib/game.rb`)
+implementing RPG2000's chipset tile geometry, and drive `Scene::Map` from it.
 
 - The chipset image is the fixed RPG2000 480×256 grid of 16×16 chips. A tile id
   maps to a block: water A/B (`0..2999`), animated C (`3000..3149`), terrain D
@@ -45,14 +44,14 @@ port of EasyRPG Player's `src/tilemap_layer.cpp` geometry, and drive
 - `ChipsetLayout.quads(id, abf, cf)` returns the blit rectangles for a tile:
   one 16×16 chip for blocks C/E/F, or four 8×8 quarters for the A/B and D
   autotiles. The quarter-selection tables (`BLOCK_A_SUBTILES`,
-  `BLOCK_D_SUBTILES`) and the block offsets are transcribed verbatim from
-  EasyRPG, including the water A+B combining step and the set-1/set-2 column and
-  row remaps. Because the map already stores the fully-resolved combination id,
-  no neighbour recomputation is needed at render time.
+  `BLOCK_D_SUBTILES`) and the block offsets encode the water A+B combining step
+  and the set-1/set-2 column and row remaps. Because the map already stores the
+  fully-resolved combination id, no neighbour recomputation is needed at render
+  time.
 - Water tiles cycle through three animation columns and the block-C tiles
-  through four frames; `anim_ab`/`anim_c` reproduce EasyRPG's timing (fast/slow
-  = every 12/24 frames; type 0 walks `0,1,2,1`, type 1 cycles `0,1,2`).
-  `Game::ChipSet` now also reads the chipset `animation_type`/`animation_speed`.
+  through four frames; `anim_ab`/`anim_c` cycle on a fast/slow timing (every
+  12/24 frames; type 0 walks `0,1,2,1`, type 1 cycles `0,1,2`). `Game::ChipSet`
+  now also reads the chipset `animation_type`/`animation_speed`.
 - `Scene::Map` loads `ChipSet/<name>` (with the palette-0 transparency flag),
   keeps a per-scene frame counter, and blits every visible lower/upper tile each
   frame via `ChipsetLayout`. When the chipset image is missing it falls back to
@@ -67,7 +66,9 @@ Passability and terrain lookup are unchanged — they keep using the existing
 - Maps now look like the real game: proper ground/wall/water graphics, correct
   autotile borders and cliffs, and animated water/tiles, instead of a mosaic of
   coloured squares. Upper-layer chips blend with transparency over the lower
-  layer as intended.
+  layer as intended. ADR 0021's later side-by-side comparison against a genuine
+  RPG_RT.exe under wine confirmed this geometry pixel-identical on real maps —
+  autotiles, chipset layering and animated water included.
 - The geometry is exercised without any native build or real image by
   `scripts/rpg2k_render_check.rb` (run in CI next to the logic/scene checks),
   which sweeps every water and terrain combination and asserts every quad lands

@@ -76,10 +76,9 @@ one red screen flash and one step counter — a step drains at most once from ea
 source, and a teleport is not a step.
 
 The damage **cannot kill**: it goes through `change_hp` with death disallowed, so
-it floors at 1 HP. RPG2000 has no way to die to the floor, and EasyRPG's
-`easyrpg_damage_can_kill` extension that changes this defaults to false. This
-keeps terrain damage on the same footing as status slip damage: the one pair of
-party-damaging paths that need no game-over re-check.
+it floors at 1 HP. This keeps terrain damage on the same footing as status slip
+damage (ADR 0032): the one pair of party-damaging paths that need no game-over
+re-check.
 
 ## Consequences
 
