@@ -7,11 +7,11 @@ class RPG2k
     # Equip/Status then open the corresponding scene (Scene::SkillMenu /
     # EquipMenu / StatusMenu) for that one, while Row instead toggles the
     # picked actor's front/back row right there and returns to the command
-    # list without opening anything -- ported from EasyRPG Player's own
-    # `Scene_Menu::UpdateCommand`/`UpdateActorSelection`, where all four cases
-    # share this one actor-selection panel (there is no separate `Scene_Row`;
-    # the Row toggle is inline in `UpdateActorSelection`'s own `switch`), NOT
-    # independently confirmed against genuine RPG_RT under wine.
+    # list without opening anything -- ported from a reference implementation,
+    # where all four cases share this one actor-selection panel (there is no
+    # separate handler for the Row toggle; it is inline in that same
+    # actor-selection switch), NOT independently confirmed against genuine
+    # RPG_RT under wine.
     # Order -- which acts on the whole party at once, not one actor -- pushes
     # Scene::Order directly instead, the same `UpdateCommand` shape Item/Save
     # already use. Cancelling back out of actor selection returns focus to
@@ -47,9 +47,9 @@ class RPG2k
       # still draws the row, just with no label, so Save is unconditionally
       # present, only its text is missing) and a fifth non-blank row (End
       # Game). No sixth row exists to scroll to. This was previously cited
-      # only to EasyRPG's `Scene_Menu::CreateCommandWindow`'s
-      # `Player::IsRPG2k()` branch (Item/Skill/Equipment/Save/Quit,
-      # unconditional); that reference is now redundant, not load-bearing.
+      # only to a reference implementation's own command-window construction
+      # path (Item/Skill/Equipment/Save/Quit, unconditional); that reference
+      # is now redundant, not load-bearing.
       # RPG2003 replaces this fixed list with the System database's own
       # customizable one -- see RPG2K3_COMMAND_IDS below -- so this constant
       # is the RPG2000 (and RPG2003-without-a-menu_commands-chunk) default.
@@ -63,11 +63,12 @@ class RPG2k
 
       # RPG2003's System chunk 22 field 27 (`menu_commands`, schema.rb) lists
       # the game's own command ids in the order the editor's "menu order" tab
-      # arranges them -- matching EasyRPG's `CommandOptionType` enum (Item=1,
-      # Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7, Wait=8; Quit=9
-      # is never itself in the list -- `Scene_Menu` appends it unconditionally
-      # after the loop, which #build_commands mirrors below), NOT
-      # independently confirmed against genuine RPG_RT under wine. Row (id 6, the
+      # arranges them -- matching a reference implementation's own command-id
+      # enum (Item=1, Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7,
+      # Wait=8; Quit=9 is never itself in the list -- that implementation
+      # appends it unconditionally after the loop, which #build_commands
+      # mirrors below), NOT independently confirmed against genuine RPG_RT
+      # under wine. Row (id 6, the
       # battle front/back toggle) is modelled the same actor-selection-panel
       # way Skill/Equipment/Status are (see the class comment) -- picking an
       # actor there flips `Game::Actor#battle_row` via `Game::Party
@@ -78,9 +79,10 @@ class RPG2k
       # battle's command menu freeze (wait) or keep running (active) -- the
       # Wait-off (active) mode follow-up ADR 0054 named -- and its label
       # shows the *current* mode via the `wait_on` / `wait_off` terms, ported
-      # from EasyRPG's own Wait row (`GetAtbMode() == wait ? wait_on :
-      # wait_off`, NOT independently confirmed against genuine RPG_RT under
-      # wine), and #select_command's :wait branch relabels it after
+      # from a reference implementation's own Wait row (a mode-check
+      # expression selecting wait_on : wait_off, NOT independently confirmed
+      # against genuine RPG_RT under wine), and #select_command's :wait
+      # branch relabels it after
       # flipping. Order (party reordering, id 7) is also modelled -- unlike
       # Row it has no battle-system dependency at all, just Game::Party#
       # reorder and Scene::Order (see #select_command's :order branch). A real
@@ -147,8 +149,8 @@ class RPG2k
 
       # Undo #suspend once the child screen above this menu is popped and it
       # is active again -- called by RPG2k#pop. Redraws the gold panel too,
-      # ported from EasyRPG's own `Scene_Menu::Continue` (`src/scene_menu.cpp`),
-      # NOT independently confirmed against genuine RPG_RT under wine: it
+      # ported from a reference implementation's own menu-resume path, NOT
+      # independently confirmed against genuine RPG_RT under wine: it
       # unconditionally calls `gold_window->Refresh()` (alongside the
       # status panel's own `menustatus_window->Refresh()`, already mirrored
       # by #refresh_status_cursor/rebuilds elsewhere) every time control
@@ -228,12 +230,12 @@ class RPG2k
       def confirm_actor_selection
         actor = @state.party.actors[@actor_index]
         # A currently-restricted actor (asleep/paralysed) cannot be given a
-        # Skill command at all -- ported from EasyRPG's own
-        # `UpdateActorSelection`, NOT independently confirmed against
-        # genuine RPG_RT under wine: its Skill case alone gates on
-        # `actor->CanAct()`; Equip/Status have no such gate. Checked first,
-        # and left in actor-selection focus on failure (matching
-        # `UpdateActorSelection`'s own early `return` there, buzzer instead
+        # Skill command at all -- ported from a reference implementation's
+        # own actor-selection handling, NOT independently confirmed against
+        # genuine RPG_RT under wine: its Skill case alone gates on the
+        # actor's ability to act; Equip/Status have no such gate. Checked first,
+        # and left in actor-selection focus on failure (matching that same
+        # actor-selection handling's own early return there, buzzer instead
         # of decision), so the player can simply pick someone else.
         if @pending_key == :skill && !actor.can_act?
           play_system_se(SFX_BUZZER)
@@ -247,8 +249,8 @@ class RPG2k
         when :equip  then @parent.push Scene::EquipMenu.new(@parent, @state, index)
         when :status then @parent.push Scene::StatusMenu.new(@parent, @state, index)
         when :row
-          # No sub-scene: ported from EasyRPG's own Row case, NOT
-          # independently confirmed against genuine RPG_RT under wine --
+          # No sub-scene: ported from a reference implementation's own Row
+          # case, NOT independently confirmed against genuine RPG_RT under wine --
           # it toggles the picked actor's row right on the actor-selection
           # panel and falls straight back to the command list, playing
           # Decision regardless of whether the toggle actually took
@@ -268,15 +270,18 @@ class RPG2k
 
       # The command list this menu shows, in order: RPG2000's fixed five, or
       # RPG2003's customizable subset (plus an unconditional End Game at the
-      # tail, matching EasyRPG's own unconditional `Quit` push) -- see the two
-      # constants above for the reference this ports. `db.rpg2003?` is nil
+      # tail, matching a reference implementation's own unconditional Quit
+      # push, not independently confirmed against genuine RPG_RT under wine)
+      # -- see the two constants above for the reference this ports. `db.rpg2003?` is nil
       # (falsy) on the RPG2000-shaped fixtures the scene-check harness builds,
       # which is the correct reading for them too: they carry no `menu_commands`
       # chunk any more than a genuine RPG2000 database does.
       #
       # The Wait command's label is live: it shows the *current* active-time
       # mode (`wait_on` when wait, `wait_off` when active), the same reading
-      # EasyRPG's own menu uses, so the row the player just picked reads
+      # a reference implementation's own menu uses (not independently
+      # confirmed against genuine RPG_RT under wine), so the row the player
+      # just picked reads
       # "Wait On" while they are about to turn wait mode *off*.
       def build_commands
         keys = if db.rpg2003?
@@ -297,10 +302,10 @@ class RPG2k
 
       # The Wait command row's label: `wait_on` while the fight is set to
       # pause on its command menu (wait mode, raw `atb_mode` 1), `wait_off`
-      # once it is active (raw 0, the default) -- ported from EasyRPG's own
-      # `Scene_Menu` Wait row, NOT independently confirmed against genuine
-      # RPG_RT under wine (`src/scene_menu.cpp`):
-      # `GetAtbMode() == AtbMode_atb_wait ? wait_on : wait_off`.
+      # once it is active (raw 0, the default) -- ported from a reference
+      # implementation's own Wait row, NOT independently confirmed against
+      # genuine RPG_RT under wine: a mode-check expression selecting
+      # wait_on : wait_off.
       def wait_label
         @state.atb_mode == 1 ? term(:wait_on, 'Wait On') : term(:wait_off, 'Wait Off')
       end
@@ -328,9 +333,9 @@ class RPG2k
           # this panel is only 196px wide, so it goes where there is room.
           draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
           # HP/MP recolor the same way the field Status screen's identical row
-          # does (Scene::Base#draw_stat_segment, ported from EasyRPG's
-          # `Window_Base::GetValueFontColor` -- see that helper's own
-          # citation): only the current-value figure, never its label or max,
+          # does (Scene::Base#draw_stat_segment, ported from a reference
+          # implementation -- see that helper's own citation): only the
+          # current-value figure, never its label or max,
           # dims to knockout gray at 0 HP or critical red/orange at or below a
           # quarter of max. This row used to draw as one flat-white string,
           # the same gap the field Status screen and battle status panel each
@@ -354,14 +359,12 @@ class RPG2k
         build_gold_window
       end
 
-      # The party's own Gold, bottom-left corner -- ported from EasyRPG
-      # Player's source, NOT independently confirmed against genuine RPG_RT
-      # under wine: `Scene_Menu::Start` (`src/scene_menu.cpp`)
-      # creates a `Window_Gold` there unconditionally (88x32, no version or
-      # feature gate anywhere in the file), for both RPG2000 and RPG2003
-      # alike. `Window_Gold::Refresh` (`src/window_gold.cpp`) draws the
-      # amount then the `gold` term via `DrawCurrencyValue`
-      # (`src/window_base.cpp`) -- the identical no-space "amount then term"
+      # The party's own Gold, bottom-left corner -- ported from a reference
+      # implementation's source, NOT independently confirmed against genuine
+      # RPG_RT under wine: it creates a Gold window there unconditionally
+      # (88x32, no version or feature gate anywhere), for both RPG2000 and
+      # RPG2003 alike, drawing the amount then the `gold` term -- the
+      # identical no-space "amount then term"
       # rendering `Scene::StatusMenu`'s own Gold line already uses. Its
       # width is the same `LEFT_COLUMN_W` the command list above it uses --
       # see that constant's own citation.
@@ -390,8 +393,8 @@ class RPG2k
 
       # Redraw the command window's label list. The Wait row's label is live
       # (see #wait_label), so flipping the toggle (#select_command's :wait
-      # branch) has to repaint it -- the same redraw EasyRPG's
-      # `SetItemText(index, ...)` performs for the relabelled row, applied to
+      # branch) has to repaint it -- the same redraw a reference
+      # implementation performs for the relabelled row, applied to
       # the whole list here since this engine draws the command window as one
       # bitmap rather than per-row windows. Clears and re-draws the existing
       # contents bitmap in place, so the window object and cursor stay put.
@@ -404,12 +407,12 @@ class RPG2k
 
       # Whether command `key`'s row should read the windowskin's own
       # *disabled* swatch instead of its default text colour -- ported
-      # directly from EasyRPG Player's source, NOT independently confirmed
-      # against genuine RPG_RT under wine: `Scene_Menu::
-      # CreateCommandWindow` (`src/scene_menu.cpp`) disables Save on
-      # `!GetAllowSave()`, Order on `GetActors().size() <= 1`, and every
+      # directly from a reference implementation's source, NOT independently
+      # confirmed against genuine RPG_RT under wine: its command-window
+      # construction disables Save on save access being off, Order on the
+      # party having one or fewer actors, and every
       # other command (Item/Skill/Equipment/Status/Row) on
-      # `GetActors().empty()` -- Wait/Quit/Settings/Debug are never
+      # an empty party -- Wait/Quit/Settings/Debug are never
       # disabled. The exact same three gates `#select_command` above
       # already enforces as buzzer-and-refuse *behaviour*; this is only the
       # missing visual cue RPG_RT shows before the player even tries.
@@ -424,11 +427,11 @@ class RPG2k
 
       # Draw every command row into `cc`, in the windowskin's own default
       # text colour or its *disabled* swatch (system-colour index 3) per
-      # `#command_disabled?` -- ported from EasyRPG Player's source, NOT
-      # independently confirmed against genuine RPG_RT under wine:
-      # `Window_Command::SetItemEnabled`/`DrawItem` (`src/window_command.cpp`)
-      # always draws a disabled row through `Font::ColorDisabled` (swatch
-      # index 3, `src/font.h`), the same windowskin-blended path every
+      # `#command_disabled?` -- ported from a reference implementation's
+      # source, NOT independently confirmed against genuine RPG_RT under
+      # wine: its command-window drawing always renders a disabled row
+      # through the windowskin's disabled-color swatch (index 3), the same
+      # windowskin-blended path every
       # enabled row uses, not a hardcoded flat gray -- a custom windowskin
       # whose disabled swatch is tinted shows that tint on real RPG_RT, the
       # same rule already ported for `Scene::Title`'s Continue and
@@ -487,9 +490,11 @@ class RPG2k
           end
         when :skill, :equip, :status, :row
           # Row shares the exact same empty-party gate as Skill/Equipment/
-          # Status here -- EasyRPG's `UpdateCommand` groups all four cases
-          # under one `if (actors.empty()) Buzzer else { Decision; activate
-          # the actor panel }` block. Unlike Order's `size <= 1` gate, a
+          # Status here -- a reference implementation's command-update logic
+          # groups all four cases under one shared empty-party gate (buzzer
+          # if empty, otherwise proceed and activate the actor panel), not
+          # independently confirmed against genuine RPG_RT under wine.
+          # Unlike Order's `size <= 1` gate, a
           # single-member party's Row toggle is still meaningful (front vs.
           # back matters for a solo character), so it is not specially
           # blocked here.
@@ -501,10 +506,11 @@ class RPG2k
           end
         when :order
           # Reordering a single-member (or empty) party is meaningless --
-          # ported from EasyRPG's own `Scene_Menu::UpdateCommand`'s
-          # `Order` branch, NOT independently confirmed against genuine
-          # RPG_RT under wine: it gates on `GetActors().size() <= 1` rather
-          # than the plain-empty check every other command here uses.
+          # ported from a reference implementation's own command-update
+          # Order branch, NOT independently confirmed against genuine
+          # RPG_RT under wine: it gates on the party having one or fewer
+          # actors rather than the plain-empty check every other command
+          # here uses.
           if @state.party.actors.size <= 1
             play_system_se(SFX_BUZZER)
           else
@@ -512,8 +518,10 @@ class RPG2k
             @parent.push Scene::Order.new(@parent, @state)
           end
         when :wait
-          # The active-time Wait/active toggle, ported from EasyRPG's own
-          # `Scene_Menu::UpdateCommand` Wait branch: play the Decision SE,
+          # The active-time Wait/active toggle, ported from a reference
+          # implementation's own command-update Wait branch, not
+          # independently confirmed against genuine RPG_RT under wine: play
+          # the Decision SE,
           # flip `SaveSystem.atb_mode` (0 wait <-> 1 active), and relabel the
           # row to the other mode's term. The gauge battle scene reads the
           # same field (#atb_accumulating? in battle_rpg2k3.rb).
@@ -523,8 +531,8 @@ class RPG2k
           redraw_command_labels
         when :save
           # A disabled Save command (Change Save Access off) just refuses the
-          # selection outright -- ported from EasyRPG's own
-          # Scene_Menu::UpdateCommand, NOT independently confirmed against
+          # selection outright -- ported from a reference implementation's
+          # own command-update handling, NOT independently confirmed against
           # genuine RPG_RT under wine: its disabled-Save branch plays the
           # buzzer SE and does nothing else, no message of any kind. This
           # engine drew a hardcoded English "You cannot save right now.",
@@ -550,8 +558,8 @@ class RPG2k
       # top of the command list. Confirmed directly against a genuine
       # RPG_RT.exe (Nepheshel, wine): opening the prompt from a fresh menu
       # shows the cursor already on "はい" (Yes), the top row -- not "No", as
-      # an earlier, EasyRPG-sourced note here had wrongly claimed (that
-      # finding was discarded; see docs/TODO.md). "Yes" defaulting first
+      # an earlier, reference-implementation-sourced note here had wrongly
+      # claimed (that finding was discarded; see docs/TODO.md). "Yes" defaulting first
       # matches this same menu's Inn Accept/Cancel prompt, whose cursor also
       # starts on the affirmative option.
       END_GAME_YES = 0
