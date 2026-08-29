@@ -13005,8 +13005,9 @@ module Game
         { attacker: b.name, observe: true }
       when EnemyAction::BASIC_CHARGE
         # The next attack this enemy lands does double damage (ported from
-        # EasyRPG's `IsCharged`, spent in #deal_attack, NOT independently
-        # confirmed against genuine RPG_RT under wine) -- any stale charge
+        # a reference implementation's charge flag, spent in #deal_attack,
+        # NOT independently confirmed against genuine RPG_RT under wine) --
+        # any stale charge
         # already spent by #perform_enemy_action above starts fresh here
         # regardless.
         b.charged = true
@@ -13027,18 +13028,17 @@ module Game
     end
 
     # Self-destruction (basic 5): the enemy blows itself up, hitting every living
-    # party member for `atk - def/2` (ported from EasyRPG's
-    # CalcSelfDestructEffect, floored at 0 and spread by the usual variance,
-    # NOT independently confirmed against genuine RPG_RT under wine).
+    # party member for `atk - def/2` (ported from a reference implementation's
+    # self-destruct effect calculation, floored at 0 and spread by the usual
+    # variance, NOT independently confirmed against genuine RPG_RT under wine).
     # Defending halves the blow, and 強力防御 halves it again -- the same
-    # `AdjustDamageForDefend` `#deal_attack` already applies, shared verbatim
-    # by EasyRPG's own `SelfDestruct::vExecute` rather than a
+    # defend-adjustment `#deal_attack` already applies, shared verbatim by
+    # that reference implementation's own self-destruct handling rather than a
     # self-destruct-specific rule (same ported/unconfirmed caveat). It does
-    # not kill the caster itself, though: `Game_BattleAlgorithm::
-    # SelfDestruct::vExecute` (`src/game_battlealgorithm.cpp`) calls
-    # `SetAffectedHp` against the *target* only, never the source, and
-    # `ApplyCustomEffect` reacts to the caster with nothing but
-    # `enemy->SetHidden(true)` (plus an explode-animation timer) -- no HP
+    # not kill the caster itself, though: that reference implementation's
+    # self-destruct handling applies the damage against the *target* only,
+    # never the source, and reacts to the caster with nothing but a hidden
+    # flag (plus an explode-animation timer) -- no HP
     # write at all. So the caster is hidden, exactly like a page's Force Flee
     # or its own basic Escape action, not killed -- this part is independently
     # confirmed by the community デフォ戦bot trivia that a self-destructed
@@ -13065,8 +13065,8 @@ module Game
         t.hp -= dmg
         apply_knockout_reset(t)
         # A survivor's physical-release states shake off here too -- ported
-        # from EasyRPG's `SelfDestruct::vExecute`, NOT independently
-        # confirmed against genuine RPG_RT under wine: it calls the identical
+        # from a reference implementation's self-destruct handling, NOT
+        # independently confirmed against genuine RPG_RT under wine: it calls the identical
         # `BattlePhysicalStateHeal(100, ...)` a basic attack does
         # (#deal_attack's own #shake_off_states call), not a
         # self-destruct-specific omission.
@@ -13074,13 +13074,13 @@ module Game
         entry = { attacker: b.name, target: t.name, damage: dmg, critical: false,
                   autodestruct: true, target_hp: t.hp < 0 ? 0 : t.hp, defeated: t.dead?,
                   target_ally: ally?(t) }
-        # Ported from EasyRPG's own `SelfDestruct::GetStartSe`, NOT
-        # independently confirmed against genuine RPG_RT under wine: the
-        # explosion SE plays unconditionally, once per action, the instant it
-        # starts -- not once per target hit, and not gated on whether the
-        # blast actually kills anyone (`Scene_Battle_Rpg2k::
-        # ProcessBattleActionUsage` calls `GetStartSe()` a single time,
-        # before any target's own damage is even resolved). This multi-target
+        # Ported from a reference implementation's own self-destruct start-SE
+        # handling, NOT independently confirmed against genuine RPG_RT under
+        # wine: the explosion SE plays unconditionally, once per action, the
+        # instant it starts -- not once per target hit, and not gated on
+        # whether the blast actually kills anyone (that reference
+        # implementation's own battle-action dispatch fetches the start SE a
+        # single time, before any target's own damage is even resolved). This multi-target
         # action buffers one entry per
         # target through the same one-at-a-time drain a dual-wield swing
         # does, so only the first entry carries the trigger -- the identical
