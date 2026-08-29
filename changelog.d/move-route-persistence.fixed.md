@@ -11,8 +11,7 @@
   route's own command list reuses this codebase's own already-tested
   `LCF::Schema::MOVE_ROUTE`/`parse_move_commands`/`encode_move_commands`
   (the same byte format `MAP_EVENT_PAGE`'s own custom-route field already
-  exercises across the full test-bed corpus, confirmed against EasyRPG's
-  own liblcf source). Confirmed byte-for-byte against a genuine kk1.12 save
+  exercises across the full test-bed corpus). Confirmed byte-for-byte against a genuine kk1.12 save
   under wine, including the field 21/22 (`repeat`/`skippable`) per-field
   "omit at own default" split. The route's own step-pacing timer is not
   part of either save format, so a save resumed mid-route restarts that

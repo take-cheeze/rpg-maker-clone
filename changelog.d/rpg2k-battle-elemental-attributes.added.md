@@ -6,8 +6,9 @@
   database `attribute_ranks` byte array) are snapshotted onto the `Combatant`.
   `Battle#deal_attack` and the skill path scale the base damage by the target's
   resistance before variance and criticals — rank A..E maps to 200 / 150 / 100 /
-  50 / 0 percent, taking the strongest matching element (EasyRPG's
-  `Attribute::ApplyAttributeMultiplier`), so a foe takes extra damage from a
+  50 / 0 percent, taking the strongest matching element (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine), so a foe takes extra damage from a
   weakness and takes none at all from an element it is immune to. Covered by new
   `scripts/rpg2k_logic_check.rb` checks (weakness amplifies, resistance halves,
   immunity nullifies, the strongest element wins, an unlisted element is

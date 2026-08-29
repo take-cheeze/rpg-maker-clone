@@ -1,7 +1,8 @@
 - The RPG2000 battle screen's windows now match RPG_RT's own layout instead of
-  a generic content-fitted list box. Verified against EasyRPG Player's
-  `Scene_Battle_Rpg2k` / `Window_BattleStatus` sources: rows are 16px, not 14px
-  (`Window_Selectable`'s `menu_item_height`); the status window is a fixed
+  a generic content-fitted list box. Ported from a reference implementation's
+  battle-scene and status-window layout, not independently confirmed
+  against genuine RPG_RT under wine: rows are 16px, not 14px;
+  the status window is a fixed
   244x80 panel docked bottom-left showing only the **party** (RPG2000 is
   front-view — the enemy troop was never listed in a text panel, only shown
   through its battler sprites and, when targeted, the target window's name

@@ -11,8 +11,9 @@
   field order so a `Change System SFX` command naming any of them still lands
   on the right one. Independent checks, not a single winner-takes-it: a
   killing blow plays its damage sound and then its death cry, matching
-  EasyRPG's `Scene_Battle_Rpg2k` firing `SFX_EnemyDamage` and `SFX_EnemyKill`
-  as separate calls rather than one replacing the other. Left silent:
+  a reference implementation's battle scene firing separate damage and
+  death sound effects rather than one replacing the other — not
+  independently confirmed against genuine RPG_RT under wine. Left silent:
   `enemy_attack_se`, RPG_RT's sound for the *start* of an enemy's swing before
   the hit lands — this build's round animation has no separate wind-up moment
   to hang that on (a plain attack is one step: land the hit, then banner and

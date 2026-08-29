@@ -7,7 +7,8 @@
   on; off by default so seeded / headless fights stay reproducible), `deal_attack`
   rolls the attacker's chance and triples the damage on a hit, tagging the log
   entry `critical: true`. No critical lands on a same-side hit (a confused ally
-  striking an ally), matching EasyRPG. Covered by new `scripts/rpg2k_logic_check.rb`
+  striking an ally), matching a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine. Covered by new `scripts/rpg2k_logic_check.rb`
   checks (a 1-in-1 attacker always crits for 3x with criticals on; no crit when
   the flag is off or the attacker's denominator is 0). Elemental attributes and
   `prevent_critical` gear remain follow-ups.

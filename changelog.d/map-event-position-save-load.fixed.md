@@ -4,9 +4,10 @@
   built a fresh `Game::Character` straight from the map's own `ev.x`/`ev.y`
   with no override path at all, so even a plain Save-then-Continue on the
   exact same map reset every NPC that had walked away from its default
-  placement — matching real RPG_RT's own `SaveMapEvent` chunk (x/y/direction,
-  confirmed against EasyRPG Player's `Game_Character::GetX`/`GetY`/
-  `GetDirection`), which this codebase never modelled the save/load half of
+  placement — matching real RPG_RT's own `SaveMapEvent` chunk (x/y/direction
+  — ported from a reference implementation's accessor behavior, not
+  independently confirmed against genuine RPG_RT under wine), which this
+  codebase never modelled the save/load half of
   at all. Fixed with a new `Game::State#map_event_positions`
   (`event_id => [x, y, direction]`, round-tripped through `to_h`/`.load`
   following the existing `common_event_progress` idiom), a new

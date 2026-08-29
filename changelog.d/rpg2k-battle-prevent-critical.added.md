@@ -5,6 +5,8 @@
   `Combatant` (`prevents_crit`). In `deal_attack` the critical roll is now gated
   on the target: a battler protected by prevent-critical gear can never be crit,
   so the attack lands for its ordinary damage even when the attacker's chance
-  rolls a hit. Matches EasyRPG's `Game_Battler::PreventsCritical`. Covered by new
+  rolls a hit. Ported from a reference implementation's prevent-critical
+  check, not independently confirmed against genuine RPG_RT under wine.
+  Covered by new
   `scripts/rpg2k_logic_check.rb` checks (prevent-critical gear blocks the 3x hit;
   `Game::Actor#prevents_critical?` reads the equipped flag).

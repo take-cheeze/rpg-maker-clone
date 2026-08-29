@@ -8,7 +8,8 @@
   `atb_mode` on confirm. In a gauge battle, wait mode (the default) freezes
   the charge gauges while a command menu is open, while active mode keeps
   them filling and lets a ready non-controllable combatant's action
-  **interrupt** the menu — mirroring EasyRPG's `IsAtbAccumulating` and
-  `ProcessSceneActionCommand`. Covered by new `rpg2k_scene_check.rb` checks
+  **interrupt** the menu — mirroring a reference implementation's
+  ATB-accumulation and action-scheduling logic, not independently confirmed
+  against genuine RPG_RT under wine. Covered by new `rpg2k_scene_check.rb` checks
   (freeze / active-fill / menu-interrupt / Wait-row toggle) and an
   `rpg2k_save_load_check.rb` round-trip.

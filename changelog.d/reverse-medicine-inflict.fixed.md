@@ -4,7 +4,9 @@
   was read backwards at first and then left unbuilt when that got fixed,
   even though the identical mechanism was already built and tested on the
   field-skill side (`#skill_inflicted_states`/`#cast_skill`, mirroring the
-  same EasyRPG `reverse_state_effect` branch). `#item_inflicted_states` now
+  same `reverse_state_effect` branch ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine).
+  `#item_inflicted_states` now
   mirrors `#item_cured_states` the same way, `#use_medicine` applies it
   (with RPG_RT's state-crowding-out prune on a landed state, matching
   `#cast_skill`), and `#item_effective?` offers such an item when the target

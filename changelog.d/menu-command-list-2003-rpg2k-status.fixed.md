@@ -2,14 +2,17 @@
   the game, instead of a fixed six commands.** `Scene::Menu` hardcoded Item,
   Skill, Equip, Status, Save, End Game for every project, but RPG2000's own
   menu is only *five* commands — Item, Skill, Equip, Save, End Game, with **no
-  Status entry at all** (EasyRPG's `Scene_Menu::CreateCommandWindow`'s
-  `Player::IsRPG2k()` branch hardcodes exactly that set regardless of database
-  content; RPG2000's party list already shows name/level/HP/MP, and Equip
+  Status entry at all** (a reference implementation's menu-construction code
+  hardcodes exactly that set regardless of database
+  content, per a check not independently confirmed against genuine RPG_RT
+  under wine; RPG2000's party list already shows name/level/HP/MP, and Equip
   already shows the full stat block, so there is nothing for a separate Status
   screen to add). RPG2003 replaces the fixed list with the System database's
   own customizable one (chunk 22 field 27, `menu_commands` — unread until now)
-  matching EasyRPG's `CommandOptionType` enum: Item, Skill, Equipment, Save,
-  Status, Row, Order, Wait, with Quit/End Game appended unconditionally after
+  matching a reference implementation's menu-command ordering, not
+  independently confirmed against genuine RPG_RT under wine: Item, Skill,
+  Equipment, Save, Status, Row, Order, Wait, with Quit/End Game appended
+  unconditionally after
   it. A real RPG2003 game's array both picks *which* commands show (mtf-
   meido-action's is `[1, 2, 3, 4, 5, 6, 7, 8]`, all eight) and their *order* —
   our own Status command had no way to appear via the customizable list, and a

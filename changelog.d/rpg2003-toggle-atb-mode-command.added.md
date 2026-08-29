@@ -1,7 +1,8 @@
 - The **Toggle ATB Mode event command (5003) is implemented**: it flips the
   same save-system `atb_mode` field the field menu's Wait command targets, so
-  a gauge battle switches live between wait and active mid-fight — EasyRPG's
-  `Game_System::ToggleAtbMode()` (`data.atb_mode = !data.atb_mode`). The
+  a gauge battle switches live between wait and active mid-fight — ported
+  from a reference implementation's toggle logic (flipping the stored mode
+  outright), not independently confirmed against genuine RPG_RT under wine. The
   opcode now has a `Cmd::TOGGLE_ATB_MODE` constant (the last of liblcf's
   2k3e 500x block to be wired) and a `do_toggle_atb_mode` handler that runs
   the event straight on. Covered by new `rpg2k_logic_check.rb` checks

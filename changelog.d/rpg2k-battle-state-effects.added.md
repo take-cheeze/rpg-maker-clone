@@ -2,7 +2,9 @@
   turn** in battle. `Game::Battle` accepts the database `situation` (state) table,
   and at the start of a battler's turn `apply_turn_states` applies each afflicting
   state's per-turn effect: **slip damage** — HP (and SP) loss of `hp_change_val +
-  max * hp_change_max / 100`, grounded on EasyRPG's `ApplyConditions` — which can
+  max * hp_change_max / 100`, grounded on a reference implementation's
+  condition-application logic, not independently confirmed against genuine
+  RPG_RT under wine — which can
   knock the battler out, and a **"do nothing" restriction** (`restriction == 1`,
   asleep / paralysed) that **skips its turn**. `Scene::Map` passes `db.situation`,
   so real poison / sleep states take effect; a battle built without a state table

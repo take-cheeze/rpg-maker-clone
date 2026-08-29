@@ -1,8 +1,9 @@
 - RPG Maker 2000: **battle-event pages are checked between every acting
-  battler now, not just once per round.** EasyRPG's
-  `Scene_Battle_Rpg2k::CheckBattleEndAndScheduleEvents` runs before the
-  round-start menu *and* — per its own comment — "before each battler acts
-  and also right after the last battler acts," so a page whose condition
+  battler now, not just once per round.** A reference implementation's
+  battle-event scheduling runs before the
+  round-start menu *and* — per its own source comment — "before each battler acts
+  and also right after the last battler acts," not independently confirmed
+  against genuine RPG_RT under wine, so a page whose condition
   turns true mid-round (an enemy's HP crossing a threshold from an earlier
   attacker's hit, say) fires immediately, before the next battler in the same
   round acts, rather than waiting for the next round's check.

@@ -3,8 +3,8 @@
   living party instead of any of its originally-selected targets.**
   Previously only a single-target Skill's own reflect redirect was
   implemented; a group-scope Skill's own `#apply_command_all` ignored the
-  state entirely. Ported from EasyRPG Player's
-  `AlgorithmBase::ReflectTargets` (`AddTargets(&source->GetParty(), true)`):
+  state entirely. Ported from a reference implementation's reflect-targeting
+  logic, not independently confirmed against genuine RPG_RT under wine:
   the instant any still-pending target in the volley carries Reflect Magic,
   every originally-targeted battler goes unhit and the caster's own side is
   hit in their place — replaced outright, not added on top of the original
