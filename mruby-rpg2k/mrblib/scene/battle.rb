@@ -5,7 +5,8 @@ class RPG2k
     # RPG_RT runs an encounter as a scene of its own: `Scene_Battle` takes the
     # screen over from `Scene_Map` for as long as the fight lasts, which is why
     # its backdrop is all there is behind the troop and why no part of the map
-    # is drawn beside it (EasyRPG Player's `src/scene_battle.cpp`). This port
+    # is drawn beside it (as in a reference implementation, not independently
+    # confirmed against genuine RPG_RT under wine). This port
     # used to run the same screen *inline on the map* instead, as a mode gated
     # on a `@battle_ui` hash living on Scene::Map -- some three thousand lines
     # of phase machine, windows, sprites, round animation and battle-event
@@ -125,11 +126,11 @@ class RPG2k
       end
 
       def start
-        # EasyRPG Player's own `Scene_Battle` constructor (`src/scene_battle.cpp`)
+        # A reference implementation's battle-scene constructor
         # plays the database's Battle Start system SE (`SFX_BeginBattle`) as its
         # very first act, unconditionally and before even the battle BGM swap --
-        # ported from EasyRPG's source, NOT independently confirmed against
-        # genuine RPG_RT under wine.
+        # ported from that reference implementation, not independently confirmed
+        # against genuine RPG_RT under wine.
         # `#play_system_se`/`SFX_BATTLE` already exist (Scene::Base's shared
         # system-SE table, `DB_SE_FIELD`), but nothing here ever called them for
         # this slot: Escape/dodge/damage/death/item all already fire at their
@@ -262,24 +263,23 @@ class RPG2k
         # reached rather than merely armed. A real encounter never sets
         # `headless`, so this line never appears for ordinary play.
         $stderr.puts "[RPG2k-BATTLE] troop=#{@req[:troop_id]}" if @req[:headless]
-        # EasyRPG Player's own `Scene_Battle_Rpg2k::ProcessSceneActionStart`
-        # (`src/scene_battle_rpg2k.cpp`) narrates the encounter before the
-        # party is ever asked for a command -- ported from EasyRPG's source,
-        # NOT independently confirmed against genuine RPG_RT under wine: one
+        # A reference implementation's battle scene narrates the encounter
+        # before the party is ever asked for a command -- ported from that
+        # reference implementation, not independently confirmed against
+        # genuine RPG_RT under wine: one
         # `terms.encounter` line per visible (non-`hidden`) troop member
-        # -- `Game_EnemyParty::GetActiveBattlers`, "not dead or hidden" --
+        # -- the active, "not dead or hidden" battlers --
         # each built by concatenating the enemy's own name in front of the
-        # term (`Window_BattleMessage::PushWithSubject`'s stock, non-
-        # Maniac-Patch branch: `subject + message`, no placeholder), then,
+        # term (stock, non-Maniac-Patch phrasing: `subject + message`, no
+        # placeholder), then,
         # if this encounter is a first-strike ambush
         # (`req[:first_strike]`, already threaded through to `Game::Battle`
         # above for the actual mechanic), a final fixed `terms.
         # special_combat` line with no name substitution -- pushed
         # *in addition to*, not instead of, the per-enemy lines, exactly as
         # real RPG_RT orders them. Nothing shows when the troop is entirely
-        # hidden and the fight is not a first strike, matching
-        # `if (!visible_enemies.empty()) SetWait(...)` gating the whole
-        # substate there.
+        # hidden and the fight is not a first strike, matching the check
+        # that gates the whole substate there.
         lines = battle_encounter_lines(troop, @req)
         if lines.empty?
           return if run_battle_events
@@ -303,25 +303,25 @@ class RPG2k
       end
 
       # How long the encounter banner lingers before the command phase opens.
-      # EasyRPG Player's own source paces this per-line with wordwrap and
-      # per-page wait timers -- `SetWait(4, 4)` before the first line,
-      # `SetWait(8, 8)` between lines that are not the page's last, and
-      # `SetWait(30, 70)` (repeated again for the first-strike line, when
-      # there is one) on whichever line ends a page -- and, per `CheckWait`,
-      # holds the full `max_wait` of each of those unless the player
-      # actively skips ahead. Ported from EasyRPG's source, NOT
+      # A reference implementation paces this per-line with wordwrap and
+      # per-page wait timers -- 4 frames before the first line,
+      # 8 between lines that are not the page's last, and
+      # a 30-skippable/70-full-frame wait (repeated again for the first-strike
+      # line, when there is one) on whichever line ends a page -- and
+      # holds the full wait of each of those unless the player
+      # actively skips ahead. Ported from that reference implementation, not
       # independently confirmed against genuine RPG_RT under wine. This
       # screen has no per-page message window (see #battle_result_lines'
       # own comment on the same simplification), so the whole banner -- every
       # line at once -- holds for one flat beat instead. That beat used to
-      # match only that source's minimum `SetWait(4, 4)` gate, not its real
+      # match only that reference's minimum 4-frame gate, not its real
       # per-line reading pause, which read as barely a flicker; 70 frames
-      # (~1.2s) matches that source's default no-skip hold on a single
-      # encounter line (`SetWait(30, 70)`) instead -- long enough to actually
+      # (~1.2s) matches that reference's default no-skip hold on a single
+      # encounter line instead -- long enough to actually
       # read the banner before the command menu takes over the same screen
       # rect, closer to (if still short of, for a troop with several enemies
-      # or a first strike, both of which stack more `SetWait(30, 70)`s that
-      # this one flat beat cannot represent) that source's own pace.
+      # or a first strike, both of which stack more such holds that
+      # this one flat beat cannot represent) that reference's own pace.
       BATTLE_ENCOUNTER_MSG_FRAMES = 70
 
       # Drive the encounter-message phase: hold the banner for
@@ -378,22 +378,23 @@ class RPG2k
       # Vertical pixel bob for a levitating (`Game::Enemy#levitate`) troop
       # member, or 0 for everyone else. yado.tk only ever says the "airborne"
       # flag "changes its Y position on screen" with no magnitude or edition
-      # given; EasyRPG's own `Game_Enemy::GetFlyingOffset` supplies both
-      # missing facts and, more importantly, the edition gate the yado.tk
-      # source never mentioned at all: `if (!Player::IsRPG2k3() || !IsFlying())
-      # return 0;` -- "2k does not support flying, albeit mentioned in the
-      # help file" (their comment). Ported from EasyRPG's source, NOT
+      # given; a reference implementation's own flying-offset logic supplies
+      # both missing facts and, more importantly, the edition gate the
+      # yado.tk source never mentioned at all -- "2k does not support flying,
+      # albeit mentioned in the help file" (a comment in that source).
+      # Ported from that reference implementation, not
       # independently confirmed against genuine RPG_RT under wine. So a
       # genuine RPG2000 database's own `levitate` flag has no on-screen
       # effect whatsoever, by this account; only an RPG2003 one draws the
       # +/-4px, 256-frame-period sine bob
       # (`round(sin(2*PI*frame/256) * 4)`). Each member bobs on its own
       # randomized phase, not in lockstep -- `#flying_phase`'s own citation
-      # confirms EasyRPG's `frame` is a *per-battler* counter, independently
+      # confirms that reference implementation's `frame` is a *per-battler*
+      # counter, independently
       # seeded 0..63 per battler at battle start, so `member.flying_phase`
       # (rolled once by `Game::Troop#initialize`) is added to this scene's
       # own shared per-frame tick, which still advances every member in
-      # lockstep the way `Game_Battler::UpdateBattle` does.
+      # lockstep the way that reference implementation's battler update does.
       FLYING_AMPLITUDE = 4
       FLYING_PERIOD = 256
       def flying_offset(member)
@@ -412,10 +413,10 @@ class RPG2k
 
       # A troop member's sprite opacity: 160/255 (~63%) for one flagged
       # "Appear Transparent" (`Game::Enemy#transparent`, database field 10),
-      # 255 (fully opaque) for everyone else -- ported from EasyRPG Player's
-      # source, NOT independently confirmed against genuine RPG_RT under
-      # wine: `Sprite_Enemy::Draw`'s `alpha = 160 * alpha
-      # / 255` (`src/sprite_enemy.cpp`), with `alpha` at its 255 baseline since
+      # 255 (fully opaque) for everyone else -- ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT under
+      # wine: alpha is scaled to 160/255 of its baseline, with that baseline held
+      # at 255 since
       # this codebase has no death-fade/explode sprite animation to scale it
       # from. Purely cosmetic, no accuracy/evasion effect, same as
       # #flying_offset -- shared by every site that (re)builds an enemy sprite
@@ -449,8 +450,8 @@ class RPG2k
         end
         # The battler (graphic name + hue) each sprite was drawn from, so a
         # transformation mid-fight is noticed and redrawn (see
-        # #refresh_battle_sprites) -- matching EasyRPG's own
-        # `Sprite_Enemy::Refresh`, which rebuilds on either changing.
+        # #refresh_battle_sprites) -- matching a reference implementation's own
+        # sprite refresh, which rebuilds on either changing.
         @ui[:sprite_names] = @ui[:foes].map { |f| f.battler_name }
         @ui[:sprite_hues] = @ui[:foes].map { |f| f.battler_hue || 0 }
         refresh_battle_sprites
@@ -461,8 +462,9 @@ class RPG2k
       # Game::Party#alternate_battle_layout?), sourced from the database's
       # Battler Animation table (chunk 32, db.battleranimations). Idle,
       # Defend, Dead and "some other active state" are the poses
-      # #build_actor_sprite picks between (EasyRPG's Sprite_Actor::
-      # DoIdleAnimation, src/sprite_actor.cpp).
+      # #build_actor_sprite picks between (ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT
+      # under wine).
       # A fallen member still gets a sprite (the Dead pose, or Idle when the
       # entry defines no Dead pose of its own) rather than none at all -- the
       # party status window shows everyone regardless either way, so this
@@ -502,8 +504,8 @@ class RPG2k
       # #build_actor_sprite).
       ACTOR_POSE_TYPE_BATTLE = 1
       # A BattleCharSet sheet is framed in fixed 48x48 cells, one row per
-      # `battler_index` (EasyRPG's Sprite_Actor::OnBattlercharsetReady --
-      # `SetSrcRect(Rect(0, battler_index * 48, 48, 48))`).
+      # `battler_index` (ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine).
       ACTOR_CHARSET_CELL = 48
       # Clear of both the enemy troop's own z range (#battler_z's 100 +
       # troop_size-1 span) and the animation overlay's z 150, so an actor
@@ -525,20 +527,22 @@ class RPG2k
       # invented" convention for unimplemented behaviour).
       #
       # `defending:`/`dead:` select Pose id 7 (Defend) / 4 (Dead) over Idle
-      # -- ported from EasyRPG's `Sprite_Actor::DoIdleAnimation`, whose very
-      # first check is `battler->IsDefending()`, ahead of everything else,
+      # -- ported from a reference implementation, not independently
+      # confirmed against genuine RPG_RT under wine, whose idle-animation
+      # logic checks defending status first, ahead of everything else,
       # and whose monster branch (the one unambiguous case without a
       # `situation.battler_animation_id` table to consult at all) resolves
-      # the Knockout state straight to `AnimationState_Dead`; a defeated
+      # the Knockout state straight to the dead pose; a defeated
       # actor is treated the same way here rather than through its own
       # state's configurable pose (a real database's Death row conventionally
       # already points there anyway). Defending wins over dead, matching the
       # reference's check order, though the two never actually coincide (a
       # downed actor never has a command to defend with).
       #
-      # Neither defending nor dead: EasyRPG's own remaining branch --
-      # `idling_anim = state ? state->battler_animation_id + 1 : Idle` --
-      # ported from EasyRPG's source, NOT independently confirmed against
+      # Neither defending nor dead: a reference implementation's own
+      # remaining branch -- falling back to the state's own animation pose,
+      # or Idle when there is none --
+      # ported from that reference implementation, not independently confirmed against
       # genuine RPG_RT under wine -- reads `states:` (the combatant's own
       # currently-active state ids, not
       # the field-side `Actor#states` this class never carries battle
@@ -556,10 +560,10 @@ class RPG2k
       # not an error.
       #
       # Position is either `battlecommands.placement` manual (0)'s raw
-      # database `battle_x`/`battle_y` (Game_Actor::GetOriginalPosition) or
-      # automatic (1)'s computed grid slot (#automatic_battle_position, the
-      # EasyRPG Calculate2k3BattlePosition port) -- ported from EasyRPG's
-      # actual C++ source, NOT independently confirmed against genuine
+      # database `battle_x`/`battle_y` or
+      # automatic (1)'s computed grid slot (#automatic_battle_position) --
+      # ported from a reference implementation's
+      # actual C++ source, not independently confirmed against genuine
       # RPG_RT under wine: it splits exactly this way there.
       def build_actor_sprite(actor, i, defending: false, dead: false, states: nil)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
@@ -612,8 +616,8 @@ class RPG2k
 
       # -- automatic battler placement (`battlecommands.placement == 1`) --------
       #
-      # Port of EasyRPG's `CalculateBaseGridPosition` /
-      # `Calculate2k3BattlePosition` (src/game_battle.cpp): when the database
+      # Port of a reference implementation's grid-position calculation, not
+      # independently confirmed against genuine RPG_RT under wine: when the database
       # asks for automatic placement, each party member's sprite sits on a grid
       # slot computed from its party index, the party size and the encounter's
       # terrain (the `grid_top_y` / `grid_elongation` / `grid_inclination`
@@ -623,8 +627,8 @@ class RPG2k
       # runtime does not model). `row_x_offset` reads the `i`-th ally's own
       # row (`Combatant#back_row?`, ADR 0053 -- the in-battle Row command is
       # what actually moves it off the front-row default): a half-width for
-      # front, 0 for back, exactly EasyRPG's own `row_x_offset = actor.
-      # GetBattleRow() == RowType_front ? half_width : 0`.
+      # front, 0 for back, exactly the reference implementation's own
+      # front-row-gets-half-width, back-row-gets-zero rule.
       #
       # Returns [x, y] for the `i`-th member of `@ui[:allies]`, or nil when
       # the database asks for manual placement (the caller falls back to
@@ -637,7 +641,7 @@ class RPG2k
         half = ACTOR_CHARSET_CELL / 2
         ally = @ui[:allies][i]
         row_x_offset = ally && ally.back_row? ? 0 : half
-        # EasyRPG's actor-path x/y for the normal battle condition, then the
+        # The reference implementation's actor-path x/y for the normal battle condition, then the
         # same x clamp (y is deliberately unclamped for actors -- the
         # reference doesn't).
         x = SCREEN_W - (pos[0] + half + row_x_offset)
@@ -645,7 +649,7 @@ class RPG2k
         [Game.clamp(x, half, SCREEN_W - half), y]
       end
 
-      # EasyRPG's `CalculateBaseGridPosition` grid table 0 (src/game_battle.cpp)
+      # The reference implementation's grid table 0
       # -- the only table the ordinary actor path indexes (table_x 0, table_y
       # 0), one row per party size, one fraction per member index.
       GRID_TABLE_0 = [
@@ -658,8 +662,8 @@ class RPG2k
         [0.0, 0.25, 0.33, 0.5, 0.66, 0.75, 1.0],
         [0.0, 0.0, 0.33, 0.33, 0.66, 0.66, 1.0, 1.0]
       ].freeze
-      # EasyRPG's no-terrain defaults (the editor's database-terrain fields
-      # default to 0 / 375 / 16400, but the reference falls back to these when
+      # The reference implementation's no-terrain defaults (the editor's
+      # database-terrain fields default to 0 / 375 / 16400, but the reference falls back to these when
       # no terrain is named, not to the editor defaults).
       GRID_TOP_Y_DEFAULT = 112
       GRID_ELONGATION_DEFAULT = 392
@@ -679,7 +683,7 @@ class RPG2k
       end
 
       # The encounter terrain's grid fields (database terrain chunks 46-48), or
-      # EasyRPG's no-terrain defaults when the party's tile names no terrain.
+      # the reference implementation's no-terrain defaults when the party's tile names no terrain.
       def battle_grid_params
         tid = @map.respond_to?(:terrain_id) ? @map.terrain_id(@state.x, @state.y) : 0
         row = tid && tid > 0 && db.respond_to?(:terrain) && db.terrain ? db.terrain[tid] : nil
@@ -692,9 +696,8 @@ class RPG2k
 
       # Interpreter#do_change_party's hook (via `@ui[:events].
       # battle_screen`, set in #start) for a Change Party Member battle
-      # event that actually added or removed a member -- mirrors EasyRPG's
-      # `Game_Party::AddActor`/`RemoveActor` calling
-      # `Scene_Battle_Rpg2k::OnPartyChanged` synchronously, right when the
+      # event that actually added or removed a member -- mirrors a reference
+      # implementation's party-change hook running synchronously, right when the
       # party changes, rather than leaving the screen to notice on some later
       # redraw. `actor` is the `Game::Actor` (from `Game::Party#roster`, so it
       # resolves the same whether they are still a member or just left).
@@ -778,8 +781,8 @@ class RPG2k
       # end up sharing a Z once enough adds/removes have happened -- e.g.
       # remove index 1 of 3 (leaving index 2's sprite still at its old Z 202),
       # then add a new member at the new index 2, which would also compute Z
-      # 202. Matches EasyRPG's own `ResetAllBattlerZ()`, called for the same
-      # reason right after `OnPartyChanged` adds a sprite.
+      # 202. Matches a reference implementation's own battler-Z reset, called
+      # for the same reason right after a party change adds a sprite.
       def reset_actor_battler_z
         sprites = @ui[:actor_sprites]
         return unless sprites
@@ -816,15 +819,14 @@ class RPG2k
       end
 
       # Where a battle-event page's message panel sits when the database is
-      # RPG2003 -- the top of the screen. Ported from EasyRPG Player's
-      # source, NOT independently confirmed against genuine RPG_RT under
-      # wine: `Game_Message::GetRealPosition` (`src/game_message.cpp`) is
-      # `if (Game_Battle::IsBattleRunning()) { return Feature::
-      # HasRpg2kBattleSystem() ? 2 : 0; }` -- position 2 (bottom) for an
+      # RPG2003 -- the top of the screen. Ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT under
+      # wine: while a battle is running, the message position resolves to
+      # position 2 (bottom) for an
       # RPG2000 database, position 0 (top) for RPG2003 -- overriding any
-      # Message-Options position entirely while a battle is running.
-      # `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is a pure
-      # database-edition check (`Player::IsRPG2k()`), unrelated to
+      # Message-Options position entirely.
+      # That is a pure
+      # database-edition check, unrelated to
       # `battle_type`/gauge mode. See `#battle_text_window`, which picks
       # between this and the bottom (`BATTLE_PANEL_Y`, content-height
       # adjusted) by `@state.party.rpg2003?`.
@@ -832,18 +834,19 @@ class RPG2k
 
       # The backdrop this encounter fights over. Enemy Encounter's own param2
       # selector can override the ordinary map/terrain default per fight,
-      # read from EasyRPG Player's actual C++ source rather than assumed --
-      # ported from EasyRPG's source, NOT independently confirmed against
-      # genuine RPG_RT under wine: `Game_Interpreter_Map::CommandEnemyEncounter`
-      # (`src/game_interpreter_map.cpp`) sets `args.background` to the
+      # read from a reference implementation's actual C++ source rather than
+      # assumed -- ported from that reference implementation, not
+      # independently confirmed against
+      # genuine RPG_RT under wine: the enemy-encounter command handler sets
+      # `args.background` to the
       # command's own string literal for param2==1, or `args.terrain_id` to an
       # explicit terrain id (param8) for param2==2 -- `Interpreter
       # #do_enemy_encounter` threads these onto `@battle_request` as
       # `:background`/`:terrain_id`. An explicit background name wins outright
-      # (`Spriteset_Battle`'s constructor, `src/spriteset_battle.cpp`: `if
-      # (!background_name.empty()) ... else Background(terrain_id)`); an
-      # explicit terrain id reads straight off that terrain's own row
-      # (`Background(int terrain_id)`, `src/background.cpp`) -- bypassing the
+      # (the battle spriteset's constructor uses it when non-empty, else
+      # falls back to the terrain-based background); an
+      # explicit terrain id reads straight off that terrain's own row --
+      # bypassing the
       # map-tree walk entirely, unlike the ordinary default below. Only when
       # neither key is present (param2==0, the ordinary case) does this fall
       # back to whatever `Game::Backdrop` resolves for the current map, given
@@ -874,10 +877,9 @@ class RPG2k
       # backdrop is a top-level sprite, not a child of the toned
       # @map_viewport, so a Change Screen Tone active during a fight would
       # otherwise only reach the (hidden) map and skip the one element on
-      # screen. EasyRPG Player tints the battle background under a Tint
-      # Screen (`Spriteset_Battle::Update`,
-      # `background->SetTone(game_screen->GetTone())`) -- ported from
-      # EasyRPG's source, NOT independently confirmed against genuine RPG_RT
+      # screen. A reference implementation tints the battle background under
+      # a Tint Screen -- ported from
+      # that reference implementation, not independently confirmed against genuine RPG_RT
       # under wine -- so #update_map_tone
       # calls this whenever the tint changes and #build_battle_back seeds it
       # on build.
@@ -1036,16 +1038,16 @@ class RPG2k
       #
       # This is only ever reached for an actual Transform (see
       # #refresh_battle_sprites' own comment: a battler_name/hue change is
-      # its one signal that one ran), so the near-white flash EasyRPG's own
-      # source plays at the moment of the swap belongs here too. Ported from
-      # EasyRPG's actual C++ source, NOT independently confirmed against
-      # genuine RPG_RT under wine:
-      # `Game_BattleAlgorithm::Transform::ApplyCustomEffect`
-      # (`src/game_battlealgorithm.cpp`) calls `enemy->Transform(new_id);
-      # enemy->Flash(31,31,31,31,20);` right after the swap, unconditionally
-      # -- this codebase's own prior fix for this same method (see the
-      # `#enemy_transform_action` doc comment) quoted `ApplyCustomEffect`
-      # for its HP/SP-clamp behaviour but stopped short of this second line,
+      # its one signal that one ran), so the near-white flash a reference
+      # implementation plays at the moment of the swap belongs here too. Ported
+      # from that reference implementation's actual C++ source, not
+      # independently confirmed against
+      # genuine RPG_RT under wine: it
+      # transforms the enemy then flashes it white (31,31,31,31,20)
+      # right after the swap, unconditionally
+      # -- this codebase's own prior fix for this same behaviour (see the
+      # `#enemy_transform_action` doc comment) quoted the reference's
+      # HP/SP-clamp behaviour but stopped short of this second step,
       # so the swap itself has always been a silent instant cut rather than
       # this recognisable flash-of-light cue. Scaled by the same 0..31
       # to 0..255 convention `Interpreter::FLASH_SCALE`/#fire_target_flash
@@ -1073,7 +1075,7 @@ class RPG2k
       # troop's own Enemy object at the same slot -- the one #total_exp/
       # #total_gold/#drops actually read exp/gold/drop_id/drop_prob from,
       # entirely separate from the Combatant this scene fights with -- is
-      # never told: EasyRPG's own `Game_Enemy::Transform` (src/game_enemy.cpp)
+      # never told: a reference implementation's own transform logic
       # repoints a single backing data pointer, so every accessor, combat and
       # reward alike, reads the new monster from that one point on; this port
       # keeps two parallel objects for one troop slot instead, and only the
@@ -1092,14 +1094,14 @@ class RPG2k
       def living_allies; @ui[:allies].reject(&:dead?); end
 
       # Allies selectable as a manually-chosen Battle Item target right now.
-      # Unlike a skill target (still `#living_allies` below -- EasyRPG's own
-      # `Skill::vExecute` dead-target handling is a materially larger state
-      # machine this fix does not touch), an item target is drawn from the
-      # *whole* roster, dead members included: EasyRPG's `Scene_Battle::
-      # ItemSelected`/`AssignSkill` both put the status window into
-      # `Window_BattleStatus::ChoiceMode_All` for a single-target medicine or
-      # an ally-scope skill, and `IsChoiceValid`'s `ChoiceMode_All` case is an
-      # unconditional `return true` (src/window_battlestatus.cpp) -- nothing
+      # Unlike a skill target (still `#living_allies` below -- a reference
+      # implementation's own dead-target handling for skills is a materially
+      # larger state machine this fix does not touch), an item target is
+      # drawn from the *whole* roster, dead members included: a reference
+      # implementation puts the status window into an "all" choice mode for
+      # a single-target medicine or
+      # an ally-scope skill, and validating that mode is an
+      # unconditional pass -- nothing
       # there excludes a KO'd party member. This picker used to start from
       # `#living_allies` instead, so a 蘇生専用 (`ko_only`) revive item could
       # never even be aimed at the ally it was meant to revive. Then narrowed
@@ -1138,8 +1140,10 @@ class RPG2k
       # command_id: }` pair, drawn by `#battle_commands` below and dispatched
       # by `#select_battle_command`. `command_id` is the ref into the
       # database's Battle-Commands table (`db.battlecommands.commands`) the
-      # row came from -- the fixed four map to EasyRPG's default command ids
-      # 1..4 (attack, skill, defense, item), a customized list to its own
+      # row came from -- the fixed four map to a reference implementation's
+      # default command ids 1..4 (attack, skill, defense, item), not
+      # independently confirmed against genuine RPG_RT under wine, a
+      # customized list to its own
       # refs -- which the scene records onto the acting Combatant when the
       # row is chosen, for the RPG2003 battle combo and the battle-page
       # `command_actor` condition.
@@ -1148,9 +1152,8 @@ class RPG2k
       # (`Game::Actor#battle_commands`, edited by Change Battle Commands (1009)
       # or a class change) resolves to at least one usable entry drives the
       # menu; otherwise this falls back to the fixed **Attack, Skill, Defend,
-      # Item** four — EasyRPG's `Scene_Battle_Rpg2k::CreateBattleCommandWindow`
-      # builds that exact array (`command_attack`, `command_skill`,
-      # `command_defend`, `command_item`), not the Item-before-Defend order
+      # Item** four — a reference implementation builds that exact array,
+      # not the Item-before-Defend order
       # this used to assume, read from the database's battle-command terms with
       # the standard RPG2k labels as fallback. The Skill slot is not memoized:
       # it substitutes the acting actor's own RPG2000 rename
@@ -1158,7 +1161,9 @@ class RPG2k
       # change from one actor's turn to the next.
       #
       # The fixed-four ids (1 attack, 2 skill, 3 defense, 4 item) are
-      # EasyRPG's `GetDefaultBattleCommands`, which builds exactly these four
+      # a reference implementation's own default command ids, not
+      # independently confirmed against genuine RPG_RT under wine, which
+      # builds exactly these four
       # entries in this order for an actor with no customized list -- the same
       # ids a real 2003 database's own Battle-Commands table conventionally
       # numbers its first four entries, and the ids the Enable Combo (1007)
@@ -1183,14 +1188,14 @@ class RPG2k
       end
 
       # RPG2003's Row entry is not one of the customizable Battle-Commands
-      # list's own rows -- per the fixed-four list above and per EasyRPG's
-      # own `Game_Actor::GetBattleCommands` comment marking it "not impl"
-      # there too (ported from EasyRPG's source, NOT independently
+      # list's own rows -- per the fixed-four list above and per a reference
+      # implementation's own comment marking it "not impl"
+      # there too (ported from that reference implementation, not independently
       # confirmed against genuine RPG_RT under wine) -- it is a fixed extra
-      # row `Scene_Battle_Rpg2k3` appends after
+      # row that reference implementation appends after
       # whatever list a project customized, present on every RPG2003 fight
-      # (`Feature::HasRow`'s own `easyrpg_disable_row_feature` opt-out is an
-      # EasyRPG-only editor extension with no real LCF field, so there is
+      # (that reference implementation's own row-disabling opt-out is an
+      # editor-only extension with no real LCF field, so there is
       # nothing for a vanilla database to gate this on beyond the edition).
       def row_command_available?
         @ui[:battle] && @ui[:battle].respond_to?(:rpg2003?) && @ui[:battle].rpg2003?
@@ -1204,7 +1209,7 @@ class RPG2k
       # back to the fixed four.
       #
       # Each id is either 0 (Row -- not a menu row here any more than in
-      # EasyRPG's own `Game_Actor::GetBattleCommands`, whose comment marks it
+      # a reference implementation's own equivalent, whose comment marks it
       # "not impl" and skips it the same way), -1 (an empty padding slot,
       # likewise skipped), or a positive ref into the database's own
       # Battle-Commands table (`Game::Actor#battle_command_row`) naming one
@@ -1213,8 +1218,9 @@ class RPG2k
       # (the first actor's own Cancel already offers it) is skipped, same as
       # an unresolvable ref (a project whose database has no Battle-Commands
       # table decoded, or an id it doesn't define). Special is a turn that
-      # does nothing (EasyRPG's `Game_BattleAlgorithm::DoNothing`, queued by
-      # `Scene_Battle_Rpg2k3::SpecialSelected`) -- #select_battle_command
+      # does nothing (ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine) --
+      # #select_battle_command
       # resolves it to a forfeited turn.
       def custom_battle_commands(actor)
         return nil unless actor.respond_to?(:battle_commands)
@@ -1256,8 +1262,8 @@ class RPG2k
       # The Skill command's own label. RPG2000's Actor sheet has a "custom
       # battle command" checkbox + name field (database fields 66/67,
       # `Game::Actor#rename_skill?` / `#skill_command_name`) that renames just
-      # this one slot — EasyRPG's own `Game_Actor::GetSkillName`: `rename_skill
-      # ? skill_name : Data::terms.command_skill`. Parsed by the schema and
+      # this one slot — falling back to the stock Skill term when the actor's
+      # own rename is unset. Parsed by the schema and
       # never read anywhere in this gem before now, so a game that set it (e.g.
       # renaming Skill to "Magic") showed the generic term regardless.
       def skill_command_label
@@ -1271,13 +1277,9 @@ class RPG2k
 
       # Per-actor command menu: Attack, Skill, Defend or Item. Holding Down/Up
       # auto-repeats the cursor after the initial delay -- originally only
-      # confirmed against EasyRPG's source (`Scene_Battle::UpdateUi`, `src/
-      # scene_battle.cpp`, called unconditionally every frame from
-      # `Scene_Battle_Rpg2k::vUpdate`, calling `.Update()` on every one of
-      # `command_window`/`status_window`/`item_window`/`skill_window`/
-      # `target_window`/`options_window` -- all genuine `Window_Selectable`s,
-      # whose own `Update()` is what drives the cursor via the standard
-      # trigger-then-repeat, before `SetActive`/`GetActive` ever gates which
+      # confirmed against a reference implementation (whose per-frame window
+      # update loop drives every selectable window's cursor via the standard
+      # trigger-then-repeat, before active/inactive state ever gates which
       # one's Decision/Cancel handling actually runs), now independently
       # confirmed against a genuine RPG_RT.exe under wine (cycle #130): a
       # synthetic autostart Enemy Encounter (troop 103, its own genuine
@@ -1349,14 +1351,14 @@ class RPG2k
       end
 
       # Whether any living ally could actually be handed a manual command
-      # this round -- EasyRPG's own `IsAnyControllable()` guard inside
-      # `ProcessSceneActionFightAutoEscape`, which skips the options window
+      # this round -- ported from a reference implementation's own guard, not
+      # independently confirmed against genuine RPG_RT under wine, which
+      # skips the options window
       # entirely (straight to actor selection) when the whole party is
       # asleep/paralysed/similarly restricted or already flagged for auto
       # battle, since neither Battle nor Auto Battle would have anything left
-      # to act on. `Game_Actor::IsControllable()` is exactly this pair of
-      # checks: `GetSignificantRestriction() == Restriction_normal &&
-      # !GetAutoBattle()`.
+      # to act on -- exactly this pair of checks: no significant restriction
+      # and not already on auto battle.
       def any_commandable_ally?
         battle = @ui[:battle]
         living_allies.any? { |a| !battle.command_restricted?(a) && !force_ai_actor?(a) }
@@ -1427,10 +1429,10 @@ class RPG2k
           @ui[:phase] = :command
           # `open_next_command`, not a direct `draw_battle_command` -- the
           # window opening never advanced `actor_i` past a restricted/
-          # Forced-AI leading actor (matching EasyRPG's own
-          # `SelectNextActor` doing that skip itself once `State_SelectActor`
-          # is entered from here, not before -- ported from EasyRPG's
-          # source, NOT independently confirmed against genuine RPG_RT
+          # Forced-AI leading actor (matching a reference implementation's own
+          # actor-advance skip happening once actor selection
+          # is entered from here, not before -- ported from that reference
+          # implementation, not independently confirmed against genuine RPG_RT
           # under wine).
           open_next_command
         when :auto_battle
@@ -1475,17 +1477,18 @@ class RPG2k
       # likelier (Game::Battle#attempt_escape). Still within the opening
       # first-strike ambush round (`#first_strike?`), the attempt is
       # unconditionally handed a `preemptive` escape instead of a roll --
-      # EasyRPG's `Scene_Battle::TryEscape` (`src/scene_battle.cpp`) checks its
+      # ported from a reference implementation, not independently confirmed
+      # against genuine RPG_RT under wine: it checks its
       # own `first_strike` flag first, before ever touching `escape_chance`, so
       # a first-strike encounter's opening Escape always succeeds even against
       # enemies fast enough to floor the roll at 0%.
       def try_battle_escape
         battle = @ui[:battle]
         if battle.attempt_escape(battle.first_strike?)
-          # A dedicated Escape SE, not Decision -- ported from EasyRPG's own
-          # ProcessSceneActionEscape, NOT independently confirmed against
-          # genuine RPG_RT under wine: the success branch plays
-          # `GetSystemSE(SFX_Escape)` right before ending the battle. A
+          # A dedicated Escape SE, not Decision -- ported from a reference
+          # implementation's own escape handling, not independently confirmed
+          # against genuine RPG_RT under wine: the success branch plays
+          # its escape SE right before ending the battle. A
           # failed attempt plays no SE at all there, just the message.
           play_system_se(SFX_ESCAPE)
           enter_battle_result(:escape)
@@ -1504,26 +1507,28 @@ class RPG2k
       # still routes to the right handler regardless of where each command
       # landed.
       # Which SE each command plays on confirm -- Decision immediately for
-      # Attack/Defend (`Scene_Battle::AttackSelected`/`DefendSelected` both
-      # play it as their own first statement, before doing anything else),
-      # Skill/Item deferred to #start_skill/#start_item since EasyRPG's own
+      # Attack/Defend (a reference implementation
+      # plays it as their own first statement, before doing anything else),
+      # Skill/Item deferred to #start_skill/#start_item since that reference
+      # implementation's own
       # Decision-on-opening-the-submenu and Buzzer-on-nothing-to-pick are
       # both conditional on that submenu's own state there -- ported from
-      # EasyRPG's source, NOT independently confirmed against genuine
+      # that reference implementation, not independently confirmed against genuine
       # RPG_RT under wine.
       def select_battle_command
         # Record the chosen battle command (its `command_id` ref into
         # `db.battlecommands.commands`, 1..4 for the fixed four -- see
-        # #battle_command_rows) onto the acting Combatant, the way EasyRPG's
-        # Scene_Battle_Rpg2k3 sets `SetLastBattleAction(command->ID)` when the
+        # #battle_command_rows) onto the acting Combatant, the way a reference
+        # implementation records the last battle action when the
         # command window confirms. The RPG2003 battle combo (Enable Combo) and
         # the battle-page `command_actor` condition both read it; RPG2000 never
         # consults either, so recording it for every battle is harmless.
         row = battle_command_rows[@ui[:cmd]]
         # Row carries no real command_id (it is not a Battle-Commands table
         # entry -- see #battle_command_rows), so it clears any previously
-        # recorded command instead of leaving a stale one behind, mirroring
-        # EasyRPG's own `SetLastBattleAction(-1)` right before `RowSelected`.
+        # recorded command instead of leaving a stale one behind, mirroring a
+        # reference implementation's own clearing of the last battle action
+        # right before handling the Row selection.
         if current_actor
           current_actor.last_battle_action = row[:command_id] if row[:command_id]
           current_actor.last_battle_action = nil if row[:action] == :row
@@ -1540,9 +1545,9 @@ class RPG2k
           play_system_se(SFX_DECISION)
           @ui[:battle].command_defend(current_actor)
           # The alternate-layout sprite swaps to its Defend pose the instant
-          # the command commits (EasyRPG's own Sprite_Actor::DoIdleAnimation
-          # checks IsDefending() continuously; this codebase rebuilds
-          # instead, so the trigger has to be explicit) -- #finish_round_
+          # the command commits (a reference implementation's own idle
+          # animation checks the defending flag continuously; this codebase
+          # rebuilds instead, so the trigger has to be explicit) -- #finish_round_
           # animation reverts it once Game::Battle#end_round clears
           # `defending` back to false for the next round.
           reposition_actor_sprite(current_actor)
@@ -1550,8 +1555,9 @@ class RPG2k
         when :item then open_battle_item
         when :special
           # RPG2003's Special battle command is a turn that does nothing:
-          # EasyRPG's `Scene_Battle_Rpg2k3::SpecialSelected` plays the
-          # Decision SE and queues `Game_BattleAlgorithm::DoNothing`, which
+          # a reference implementation, not independently confirmed against
+          # genuine RPG_RT under wine, plays the
+          # Decision SE and queues a no-op action, which
           # consumes the actor's turn (and, in a gauge battle, its charge)
           # with no action, message or animation -- exactly what
           # `Game::Battle#command_skip` resolves to here (#strike returns nil
@@ -1563,7 +1569,7 @@ class RPG2k
           # RPG2003's Row battle command: flip the acting ally's front/back
           # row (ADR 0053), refused with a Buzzer if it would empty the front
           # row (`Game::Battle#toggle_row`/`#can_leave_front_row?`, ported
-          # from EasyRPG's `Scene_Battle_Rpg2k3::RowSelected` guard, NOT
+          # from a reference implementation's guard, not
           # independently confirmed against genuine RPG_RT under wine) --
           # by that account it stays on the command menu rather than
           # committing a turn when that happens, so this only advances on
@@ -1699,10 +1705,10 @@ class RPG2k
           end
         end
         @ui[:skills] = list
-        # EasyRPG's own source always plays Decision opening this list, and
+        # A reference implementation always plays Decision opening this list, and
         # Buzzer only once a confirm inside it finds nothing usable
-        # (`Scene_Battle::SkillSelected`'s own `!skill || !CheckEnable`
-        # check) -- ported from EasyRPG's source, NOT independently
+        # (checking whether the selection is enabled)
+        # -- ported from that reference implementation, not independently
         # confirmed against genuine RPG_RT under wine. This engine instead
         # never opens an empty list at all, so
         # Buzzer plays here, at the one point that same "nothing to pick"
@@ -1719,8 +1725,8 @@ class RPG2k
 
       # Move a battle Item/Skill list cursor by `delta` cells (a row for
       # +-BATTLE_LIST_COLUMN_MAX, a column for +-1), left in place if the
-      # target cell is off the grid -- originally only cited to EasyRPG's
-      # `Window_Selectable::Update` (`src/window_selectable.cpp`), the same
+      # target cell is off the grid -- originally only cited to a reference
+      # implementation's window-update logic, the same
       # column-locked-Down/Up, flat-Right/Left shape `Scene::ItemMenu#
       # move_item_cursor` already uses for the field item/skill grid. Now
       # independently confirmed against a genuine RPG_RT.exe under wine
@@ -1831,10 +1837,10 @@ class RPG2k
       end
 
       # Choose the highlighted skill: if the caster cannot afford its SP, or is
-      # missing a weapon-type Attribute the skill requires, this is EasyRPG's
-      # own Buzzer case (`SkillSelected`'s `CheckEnable` covers both --
-      # ported from EasyRPG's source, NOT independently confirmed against
-      # genuine RPG_RT under wine);
+      # missing a weapon-type Attribute the skill requires, this is a
+      # reference implementation's own Buzzer case (covering both --
+      # ported from that reference implementation, not independently confirmed
+      # against genuine RPG_RT under wine);
       # otherwise Decision, then route to enemy / ally target selection (or
       # cast at once on a self-scope skill).
       def confirm_battle_skill
@@ -1868,9 +1874,10 @@ class RPG2k
       # Commit the pending skill on `target` (SP cost / effect from the model),
       # then move to the next actor. `item_id` set (a special/use_skill battle
       # item invoking this skill, see #drive_battle_item's confirm branch)
-      # makes the item pay instead of the caster's own SP -- EasyRPG's
-      # `Game_BattleAlgorithm::Skill::vStart` (`src/game_battlealgorithm.cpp`)
-      # consumes the item rather than calling `ChangeSp` whenever one backs
+      # makes the item pay instead of the caster's own SP -- ported from a
+      # reference implementation, not independently confirmed against
+      # genuine RPG_RT under wine: it
+      # consumes the item rather than spending SP whenever one backs
       # the cast -- and rides onto the built command for
       # #drive_battle_animate's bag consumption and #reflects_skill?'s own
       # item-casts-are-never-reflected exclusion.
@@ -2049,9 +2056,9 @@ class RPG2k
           elsif @state.party.switch_item?(item_id)
             apply_pending_switch_item
           elsif @state.party.item_all_allies?(it)
-            # The whole roster, dead included -- EasyRPG's own entire_party
-            # branch (`Scene_Battle::ItemSelected`) targets `Main_Data::
-            # game_party.get()` itself, not a living-only subset, which is
+            # The whole roster, dead included -- a reference implementation's
+            # own entire-party branch targets the full party
+            # itself, not a living-only subset, which is
             # what lets an all-party 蘇生専用 item revive every KO'd member
             # in one cast.
             apply_pending_item_all(@ui[:allies])
@@ -2082,8 +2089,9 @@ class RPG2k
       # here, not folded onto the same axis.
       #
       # Independently re-verified (cycle #136, 2026-08-24), overturning a
-      # prior cycle's own claim (which had secretly cited EasyRPG source,
-      # since removed) that Right/Left mirror Down/Up. Confirmed against
+      # prior cycle's own claim (which had secretly cited a reference
+      # implementation's source, since removed) that Right/Left mirror
+      # Down/Up. Confirmed against
       # genuine RPG_RT.exe under wine (Nepheshel), using a technique cycle
       # #135 had time-boxed away from and this cycle finished: a synthetic
       # autostart event on a scratch copy of Map0012, carrying live `Change
@@ -2269,7 +2277,8 @@ class RPG2k
       # command, walking backward from just before the current one and
       # skipping any restricted ally the same way `#skip_restricted_actors`
       # does going forward -- nil once nothing earlier is left to
-      # re-command, matching EasyRPG's `SelectPreviousActor` recursing back
+      # re-command, matching a reference implementation's own actor-select
+      # logic recursing back
       # to the Fight/Auto/Escape menu once it would land on the very first
       # ally.
       def prev_commandable_actor_index
@@ -2286,27 +2295,26 @@ class RPG2k
       # `#battle_animation_playing?` drive the wait when one plays, so this
       # constant is specifically the "just the text" case).
       #
-      # EasyRPG Player's source does not use one flat gate here; it holds
-      # each stage of the action separately (`Scene_Battle_Rpg2k::
-      # SetWait`/`SetWaitForUsage`, `src/scene_battle_rpg2k.cpp`), and
+      # A reference implementation does not use one flat gate here; it holds
+      # each stage of the action separately, and
       # *without* the player holding Decision/Shift to skip ahead,
-      # `CheckWait` always burns the full `max_wait` of every stage it
-      # passes through -- read directly from `CheckWait` itself: it
-      # decrements every frame regardless of input and only short-circuits
+      # it always burns the full wait of every stage it
+      # passes through -- decrementing every frame regardless of input and
+      # only short-circuiting
       # early once a skip key is actually held. All of this is ported from
-      # EasyRPG's source, NOT independently confirmed against genuine
-      # RPG_RT under wine. Tracing
+      # that reference implementation, not independently confirmed against
+      # genuine RPG_RT under wine. Tracing
       # the default (no-skip) path for a plain attack that hits, with no
       # animation, no crit and no state change -- the common case this
       # constant covers -- through every stage that fires:
-      # `ProcessBattleActionBegin` (no state-proc message) `SetWait(4,4)`,
-      # `ProcessBattleActionUsage`'s start-message
-      # `SetWaitForUsage(Normal, 0)` = `SetWait(20,40)`,
-      # `ProcessBattleActionAnimationImpl` with no animation still applies
-      # the same `SetWaitForUsage(Normal, 0)` = `SetWait(20,40)`,
-      # `ProcessBattleActionExecute` `SetWait(4,4)`,
-      # `ProcessBattleActionDamage`'s `eBegin` `SetWait(4,4)`, its `eMessage`
-      # damage line `SetWait(20,40)`, and its `ePost` `SetWait(0,10)` --
+      # the action-begin stage (no state-proc message) 4 frames,
+      # the usage stage's start-message
+      # wait of 40 frames,
+      # the animation stage with no animation still applies
+      # the same 40-frame wait,
+      # the execute stage's 4 frames,
+      # the damage stage's begin 4 frames, its message-line
+      # damage wait of 40 frames, and its post-stage 10 frames --
       # 4+40+40+4+4+40+10 = 142 frames (~2.4s at 60fps) before RPG_RT would
       # move on. This banner shows the "attacks" and "damage" lines at once
       # rather than as RPG_RT's two sequential message pages, so it does not
@@ -2346,7 +2354,7 @@ class RPG2k
           return
         end
         # A battle page is checked once per *acting battler*, not once per
-        # round -- EasyRPG's CheckBattleEndAndScheduleEvents runs "before each
+        # round -- a reference implementation runs this "before each
         # battler acts and also right after the last battler acts" (the
         # latter half is #finish_round_animation's own check, already in
         # place). The boundary between two battlers' actions is exactly where
@@ -2467,22 +2475,23 @@ class RPG2k
       # screen-centre: RPG2000's battle draws no on-screen ally sprite to
       # target at all.
       #
-      # A `target` of -1 is EasyRPG's "whole side" sentinel
-      # (`Game_Interpreter_Battle::CommandShowBattleAnimation`): the animation
+      # A `target` of -1 is a reference implementation's "whole side" sentinel,
+      # not independently confirmed against genuine RPG_RT under wine: the
+      # animation
       # plays over every living troop member at once -- every living enemy
       # when the ally flag is clear, or a single screen-centre animation (the
       # same ally-side fallback above) when it is set, since RPG2000's
       # front-view battle draws no ally sprite to point at.
       # A single-target request (`req[:target] >= 0`) no-ops when the index
-      # names no actual party/troop slot -- ported from EasyRPG Player's
-      # source, NOT independently confirmed against genuine RPG_RT under
-      # wine: `Game_Interpreter_Battle::CommandShowBattleAnimation`
-      # (`src/game_interpreter_battle.cpp`) leaves `battler_target` null (and
-      # so never calls `ShowBattleAnimation` at all) for an Ally index
-      # (1-based, `target -= 1` first) outside `0...GetBattlerCount()`, or an
-      # Enemy index outside `0...GetBattlerCount()` -- both plain party/troop
-      # array bounds checks, dead members included; that source never
-      # consults `Exists()`/`IsDead()` here. `#start_battle_page_animation` used to
+      # names no actual party/troop slot -- ported from a reference
+      # implementation's
+      # source, not independently confirmed against genuine RPG_RT under
+      # wine: it leaves the target unresolved (and
+      # so never plays the animation at all) for an Ally index
+      # (1-based, `target -= 1` first) outside the party's bounds, or an
+      # Enemy index outside the troop's bounds -- both plain party/troop
+      # array bounds checks, dead members included; that reference
+      # implementation never consults liveness here. `#start_battle_page_animation` used to
       # draw an out-of-range Ally target at screen-centre regardless
       # (`elsif req[:allies]` never even looked at the index) and an
       # out-of-range Enemy target through `#battle_animation_pixel`'s own
@@ -2735,11 +2744,11 @@ class RPG2k
         play_system_se(SFX_ESCAPE)
       end
 
-      # The kill sound EasyRPG's own `CommandChangeMonsterHP`
-      # (src/game_interpreter_battle.cpp) plays directly the instant a
-      # scripted Change Monster HP finishes a troop member off
-      # (`SePlay(GetSystemSE(SFX_EnemyKill))`) -- ported from EasyRPG's
-      # source, NOT independently confirmed against genuine RPG_RT under
+      # The kill sound a reference implementation's own scripted
+      # Change-Monster-HP handling plays directly the instant a
+      # scripted Change Monster HP finishes a troop member off --
+      # ported from that reference implementation,
+      # not independently confirmed against genuine RPG_RT under
       # wine -- the same cue an ordinary
       # lethal Attack/Skill already gets via #play_battle_action_se's own
       # `entry[:defeated]` check, which this event-command path never
@@ -2823,8 +2832,8 @@ class RPG2k
         # #last_battle_turns, LCF inventory chunk 109 field 41).
         @state.last_battle_turns = @ui[:battle].turn
         # Tally the Control Variables "Other" battle counters here, together and
-        # unconditionally, matching EasyRPG's `Scene_Battle::EndBattle`
-        # (`src/scene_battle.cpp`): `IncBattleCount()` runs for every result
+        # unconditionally, matching a reference implementation's own
+        # end-of-battle handling: the battle-count tally runs for every result
         # (victory/escape/defeat/abort alike) before the individual win/escape/
         # defeat counter and before the game-over dispatch that can follow a
         # defeat -- not scattered across the moment the encounter is armed (long
@@ -2936,17 +2945,12 @@ class RPG2k
       # string fields) at the database default 0, else the skill's own
       # sentence(s) (`#skill_start`).
       #
-      # Ported from EasyRPG Player's actual C++ source, NOT independently
-      # confirmed against genuine RPG_RT under wine:
-      # `Game_BattleAlgorithm::Skill::GetStartMessage`
-      # (`src/game_battlealgorithm.cpp`) checks `item && item->using_message
-      # == 0` **before** ever looking at the skill's own `using_message1`/
-      # `using_message2`:
-      #   if (item && item->using_message == 0) {
-      #     ...
-      #     return BattleMessage::GetItemStartMessage2k(*GetSource(), *item);
-      #     ...
-      #   }
+      # Ported from a reference implementation's actual C++ source, not
+      # independently confirmed against genuine RPG_RT under wine: it
+      # checks whether the casting item exists and its own `using_message`
+      # is 0 **before** ever looking at the skill's own `using_message1`/
+      # `using_message2`, using the item's own start message instead when
+      # that guard holds.
       # falling through to the skill's own sentence only once that guard
       # fails -- i.e. only when the item sets `using_message` nonzero. Since
       # `mruby-lcf/mrblib/schema.rb`'s item `using_message` field defaults to
@@ -3150,13 +3154,13 @@ class RPG2k
       # all of it, so the console and the screen never disagree.
       # The per-turn state reminder line (Combatant#turn_state_message, via
       # `entry[:state_message]`) opens the banner, ahead of the action's own
-      # lines -- ported from EasyRPG Player's source, NOT independently
-      # confirmed against genuine RPG_RT under wine: `Scene_Battle_Rpg2k::
-      # ProcessBattleActionBegin` (`src/scene_battle_rpg2k.cpp`) shows it
-      # right at the start of the battler's turn, before whatever it goes on
+      # lines -- ported from a reference implementation's source, not
+      # independently confirmed against genuine RPG_RT under wine: it shows
+      # it right at the start of the battler's turn, before whatever it goes on
       # to do. A blank reminder (a healed state with no configured
-      # `message_recovery`, which that source still flashes for but has no
-      # text to show) is dropped rather than rendered as an empty line.
+      # `message_recovery`, which that reference implementation still
+      # flashes for but has no text to show) is dropped rather than rendered
+      # as an empty line.
       def battle_action_lines(entry)
         lines = battle_action_body(entry) + battle_state_lines(entry)
         msg = entry[:state_message]
@@ -3171,12 +3175,10 @@ class RPG2k
       # Game::States::BattleText already reads every per-action line from.
       # The EXP / gold / item lines are composed from their own terms too now
       # (`exp_received`, the `gold_received_a` / `_b` pair, `item_received`),
-      # ported from EasyRPG Player's actual C++ source rather than
-      # guessed at (NOT independently confirmed against genuine RPG_RT
-      # under wine): `PartyMessage::GetExperienceGainedMessage` /
-      # `GetGoldReceivedMessage` / `GetItemReceivedMessage`
-      # (`src/game_message_terms.cpp`), stock-RPG2000 (non-`Feature::
-      # HasPlaceholders`, non-Maniac-Patch) branch -- `exp << terms.
+      # ported from a reference implementation's actual C++ source rather
+      # than guessed at (not independently confirmed against genuine RPG_RT
+      # under wine): its stock-RPG2000 (non-Maniac-Patch)
+      # branch -- `exp << terms.
       # exp_received` (no separating space outside the RPG2k3-English
       # release), `terms.gold_recieved_a << " " << money << terms.gold <<
       # terms.gold_recieved_b`, `item_name << terms.item_recieved`. These
@@ -3186,10 +3188,9 @@ class RPG2k
       # hardcoded English regardless.
       #
       # A level-up (and any skill the growth table teaches at it) is
-      # announced too now, the missing half of the same gap: EasyRPG's
-      # `Scene_Battle_Rpg2k::ProcessSceneActionVictory`
-      # (`src/scene_battle_rpg2k.cpp`) builds the EXP/gold/item summary as one
-      # page, then calls `Game_Actor::ChangeExp` once per active ally right
+      # announced too now, the missing half of the same gap: a reference
+      # implementation builds the EXP/gold/item summary as one
+      # page, then applies each active ally's exp gain right
       # after it, which is exactly `Game::Interpreter#do_change_exp`'s own
       # gain_exp-then-announce shape (`queue_level_up_messages`,
       # `mrblib/interpreter.rb`) -- so each actor's level/skill snapshot is
@@ -3197,9 +3198,9 @@ class RPG2k
       # that interpreter path (still the documented "plain English line for
       # now" simplification), this screen already reads real database terms
       # for every other line, so `#battle_level_up_message` /
-      # `#battle_skill_learned_message` below do too, built from EasyRPG's
-      # `ActorMessage::GetLevelUpMessage` / `GetLearningMessage`
-      # (`src/game_message_terms.cpp`), stock-RPG2000/CP932 branch: `name <<
+      # `#battle_skill_learned_message` below do too, built from that
+      # reference implementation's
+      # stock-RPG2000/CP932 branch: `name <<
       # "は" << terms.level << " " << new_level << " " << terms.level_up` and
       # `skill.name << terms.skill_learned` (no actor name -- it always
       # follows that actor's own level-up line, same as here). RPG_RT shows
@@ -3228,11 +3229,10 @@ class RPG2k
           lines << "#{name}#{term(:item_received, ' obtained.')}"
         end
         @state.party.actors.each do |a|
-          # A KO'd party member earns nothing from the victory -- EasyRPG's own
-          # EXP-granting loop (Scene_Battle_Rpg2k::ProcessSceneActionVictory)
-          # iterates Game_Party_Base::GetActiveBattlers, not the raw roster,
-          # and GetActiveBattlers excludes anyone failing Game_Battler::
-          # Exists() (`!IsHidden() && !IsDead() && IsInParty()`).
+          # A KO'd party member earns nothing from the victory -- a reference
+          # implementation's own EXP-granting loop iterates only the active
+          # battlers, not the raw roster, excluding anyone hidden, dead, or
+          # not in the party.
           next if a.respond_to?(:dead?) && a.dead?
           before_level = a.respond_to?(:level) ? a.level : nil
           before_skills = a.respond_to?(:skills) ? a.skills.dup : []
@@ -3265,8 +3265,8 @@ class RPG2k
       end
 
       # The one line a level-up announces, built from the database's own
-      # `level`/`level_up` terms the way EasyRPG's stock/CP932
-      # `GetLevelUpMessage` branch does (see `#battle_result_lines`'s own
+      # `level`/`level_up` terms the way a reference implementation's
+      # stock/CP932 branch does (see `#battle_result_lines`'s own
       # comment) -- falls back to composed English, matching every other
       # line on this screen, only when the database leaves `level_up` blank
       # (a raw `level_up` term with no `level` term set still gets the
@@ -3278,8 +3278,8 @@ class RPG2k
       end
 
       # The one line a newly-learned skill announces, immediately following
-      # its level's own line above -- EasyRPG's stock/CP932
-      # `GetLearningMessage` branch names only the skill, never the actor,
+      # its level's own line above -- a reference implementation's
+      # stock/CP932 branch names only the skill, never the actor,
       # since it always trails that actor's own level-up line the way it
       # does here too. Falls back to composed English (which does name the
       # actor, since a database leaving `skill_learned` blank gets no
@@ -3303,9 +3303,10 @@ class RPG2k
       BATTLE_PANEL_Y = SCREEN_H - 80
       BATTLE_PANEL_H = 80
       # The actor-command window (and the Battle/Auto Battle/Escape options
-      # window, which shares its rect) is a fixed 76px (`option_command_mov`
-      # in EasyRPG); the status window takes the rest of the row (`MENU_WIDTH
-      # - option_command_mov`).
+      # window, which shares its rect) is a fixed 76px, ported from a
+      # reference implementation, not independently confirmed against
+      # genuine RPG_RT under wine; the status window takes the rest of the
+      # row.
       BATTLE_CMD_W = 76
       BATTLE_STATUS_W = SCREEN_W - BATTLE_CMD_W
       # The enemy target list (`CreateBattleTargetWindow`) is a fixed 136px, and
@@ -3324,26 +3325,25 @@ class RPG2k
       # the player's cursor at all, real RPG_RT included.
       BATTLE_VISIBLE_ROWS = 4
       # The battle Item/Skill lists are a two-column grid, not a single
-      # stacked column -- ported from EasyRPG Player's source, NOT
-      # independently confirmed against genuine RPG_RT under wine:
-      # `Window_Item`/`Window_Skill` (`src/window_item.cpp`/
-      # `src/window_skill.cpp`) both set `column_max = 2` in their own
-      # constructors, and `Window_BattleSkill` (`src/window_skill.h`)
-      # inherits `Window_Skill` unchanged -- `Scene_Battle::CreateUi`
-      # (`src/scene_battle.cpp`) backs the battle screen's item/skill windows
-      # with exactly these classes. The enemy-target list (`Window_Command`,
-      # `column_max = 1`) and the ally-target list (`Window_BattleStatus`,
-      # hand-rolled) are correctly single-column already -- this constant is
+      # stacked column -- ported from a reference implementation's source,
+      # not independently confirmed against genuine RPG_RT under wine: its
+      # item and skill windows both set a two-column layout in their own
+      # constructors, and the battle screen backs its item/skill windows
+      # with exactly those classes. The enemy-target list (single column)
+      # and the ally-target list (hand-rolled) are correctly single-column
+      # already -- this constant is
       # only for #draw_battle_item/#draw_battle_skill.
       BATTLE_LIST_COLUMN_MAX = 2
 
       # Column origins within the status panel's contents, in the order
-      # EasyRPG's battle status window uses them: who, what condition they
+      # a reference implementation's battle status window uses them: who,
+      # what condition they
       # are in, then the gauges. The condition column is why this window is
       # laid out in columns at all — a state is drawn in its *own* palette
       # colour, which a single `draw_text` of a whole line cannot do.
-      # Ported from EasyRPG's source, NOT independently confirmed against
-      # genuine RPG_RT under wine: `Window_BattleStatus::Refresh`, RPG2k
+      # Ported from that reference implementation's source, not
+      # independently confirmed against
+      # genuine RPG_RT under wine: RPG2k
       # branch: name at 4, state at 86, HP at 142, SP at 202 for a party
       # with no maxima over 999.
       #
@@ -3362,7 +3362,9 @@ class RPG2k
       STATUS_HP_X    = 142
       STATUS_MP_X    = 202
 
-      # The status panel's own x, mirroring EasyRPG's `SetCommandWindowsX`:
+      # The status panel's own x, mirroring a reference implementation's own
+      # window-positioning logic, not independently confirmed against
+      # genuine RPG_RT under wine:
       # three windows -- the options window, the status window, then the
       # per-actor command window -- sit left-to-right, but only one of the
       # two 76px command-shaped windows is ever showing at once, so the
@@ -3378,25 +3380,29 @@ class RPG2k
       end
 
       # Rebuild the status panel: the party's HP and SP, each with the one
-      # condition EasyRPG's own source shows — the significant state, or the
-      # database's "normal" term when there is none (ported from EasyRPG's
-      # source, NOT independently confirmed against genuine RPG_RT under
+      # condition a reference implementation's own source shows — the
+      # significant state, or the
+      # database's "normal" term when there is none (ported from that
+      # reference implementation's
+      # source, not independently confirmed against genuine RPG_RT under
       # wine) — so a status inflicted by a skill or
       # by a battle page's Change Monster Condition is visible rather than only
       # simulated. RPG2000 is front-view: the enemy troop is never listed here
-      # (EasyRPG's Scene_Battle_Rpg2k builds exactly one Window_BattleStatus,
-      # defaulted to `enemy: false`) -- it is represented only by its battler
+      # (that reference implementation builds exactly one status window,
+      # defaulted to not showing enemies) -- it is represented only by its
+      # battler
       # sprites and, when targeted, by the target window's name list. The row
       # of whichever actor is currently being commanded gets the cursor,
-      # mirroring `status_window->SetIndex` in EasyRPG's `SelectNextActor`.
+      # mirroring a reference implementation's own actor-select cursor
+      # update.
       #
       # `battle_type` 2 (gauge, `#gauge_battle_layout?`) replaces this whole
       # panel with RPG2003's face/bar "gauge card" layout instead
       # (`#battle_status_gauge_window`) -- `battle_type` 1 (alternative) is
       # unchanged, and still builds the same text rows this always has, since
-      # only 2 asks for the card presentation (EasyRPG's own
-      # `Window_BattleStatus::Refresh`/`RefreshGauge` branch the same way, on
-      # `battle_type == BattleType_gauge` specifically, not on "not
+      # only 2 asks for the card presentation (a reference implementation
+      # branches the same way, on
+      # the gauge battle type specifically, not on "not
       # traditional"). Falls back to the text rows when the gauge window
       # cannot be built (no System2 graphic, or a failed load) rather than
       # leaving the panel blank.
@@ -3453,19 +3459,18 @@ class RPG2k
       # The gauge card layout (`battle_type` 2): one 80px-wide card per party
       # member -- face, HP/SP bars and digit-glyph numbers, drawn straight
       # from the database's own System2 graphic -- ported column-for-column
-      # from EasyRPG's real `Window_BattleStatus::Refresh`/`RefreshGauge`
-      # (the `!enemy && battle_type == BattleType_gauge` branch of each) --
-      # ported from EasyRPG's source, NOT independently confirmed against
-      # genuine RPG_RT under wine. Borderless like EasyRPG's own gauge
-      # window (`Window#transparent=` -- EasyRPG's constructor sets
-      # `border_x = border_y = 0` and
-      # `SetOpacity(0)` for this same case, "simulate a borderless window...
+      # from a reference implementation's real gauge-card drawing
+      # (the equivalent gauge-battle-type branch) --
+      # ported from that reference implementation's source, not
+      # independently confirmed against
+      # genuine RPG_RT under wine. Borderless like that reference
+      # implementation's own gauge
+      # window ("simulate a borderless window...
       # makes the implementation on scene-side easier"), and never gets a
-      # cursor rect: `UpdateCursorRect` returns an empty rect unconditionally
-      # for this battle_type, so no row is ever highlighted here, unlike the
+      # cursor rect: no row is ever highlighted here, unlike the
       # text status window's acting-actor cursor. The ATB/wait gauge row
-      # `RefreshGauge` also draws (`DrawGaugeSystem2(..., GetAtbGauge,
-      # GetMaxAtbGauge, 2)`) is skipped -- this runtime has no ATB/wait-timer
+      # that reference implementation also draws
+      # is skipped -- this runtime has no ATB/wait-timer
       # subsystem to read a value from. Returns nil (so `#refresh_battle_status`
       # falls back to the plain text rows) when the database names no System2
       # graphic, or names one that fails to load -- there is no sensible
@@ -3601,15 +3606,18 @@ class RPG2k
       end
 
       # The current actor's command menu — Attack / Skill / Defend / Item, with
-      # a cursor. EasyRPG's own source does not put the actor's name in this
-      # window at all (`CreateBattleCommandWindow` builds it once from the
-      # four command terms in that order; ported from EasyRPG's source, NOT
+      # a cursor. A reference implementation's own source does not put the
+      # actor's name in this
+      # window at all (it builds it once from the
+      # four command terms in that order; ported from that reference
+      # implementation's source, not
       # independently confirmed against genuine RPG_RT under wine): the
       # acting actor is shown by the cursor
       # `#refresh_battle_status` puts on their row in the status window instead
-      # (EasyRPG's `status_window->SetIndex(actor_index)`). The Skill slot's own
+      # (a reference implementation's own actor-index cursor). The Skill
+      # slot's own
       # label can still change per actor (`#skill_command_label`), the same way
-      # EasyRPG's `RefreshCommandWindow` calls `SetItemText` on that one row
+      # a reference implementation updates that one row's item text
       # after the window is built rather than rebuilding the whole thing.
       def draw_battle_command
         actor = current_actor
@@ -3636,9 +3644,10 @@ class RPG2k
       # the per-actor command window uses (only one of the two is ever on
       # screen at a time), with `#battle_option_rows`' three entries instead
       # of the usual four, but docked to the *left* edge (x=0) rather than
-      # the command window's right one -- EasyRPG's `SetCommandWindowsX` lays
-      # the options window before the status window (`options_window->SetX`
-      # first, then `status_window->SetX` past it), while the per-actor
+      # the command window's right one -- a reference implementation's own
+      # window-positioning logic lays
+      # the options window before the status window, then the status window
+      # past it, while the per-actor
       # command window comes after the status window instead. See
       # `#battle_status_x`, which pushes the status panel to `BATTLE_CMD_W`
       # to make room for this window here.
@@ -3729,11 +3738,12 @@ class RPG2k
       end
 
       # The current actor's battle skills as "Name  cost", with a cursor. Full
-      # width, same rect as the item menu — EasyRPG's own skill and item
-      # windows cover both the status and command windows while open
-      # (`skill_window` / `item_window`, `(0, screen_height - 80,
-      # MENU_WIDTH, 80)`; ported from EasyRPG's source, NOT independently
-      # confirmed against genuine RPG_RT under wine). A listed but not
+      # width, same rect as the item menu — a reference implementation's own
+      # skill and item
+      # windows cover both the status and command windows while open,
+      # ported from that reference implementation's source, not
+      # independently confirmed against genuine RPG_RT under wine. A listed
+      # but not
       # currently castable skill (see
       # #battle_skill_unavailable?) draws in the windowskin's disabled
       # swatch, matching the field Skill menu and #draw_battle_item just
@@ -3785,10 +3795,11 @@ class RPG2k
 
       # The living party members selectable as a heal target ("Name HP h/mh"),
       # with a cursor -- narrowed by #battle_ally_targets when a pending item's
-      # actor_set excludes some of them. EasyRPG's own source reuses the
-      # status window itself for this (`status_window->SetChoiceMode`;
-      # ported from EasyRPG's source, NOT independently confirmed against
-      # genuine RPG_RT under wine); this screen still draws a
+      # actor_set excludes some of them. A reference implementation's own
+      # source reuses the
+      # status window itself for this, ported from that reference
+      # implementation's source, not independently confirmed against
+      # genuine RPG_RT under wine; this screen still draws a
       # separate window, but at the status window's own rect and footprint so
       # it reads the same way -- covering the party's HP display, leaving the
       # command window in view beside it.
@@ -3825,14 +3836,16 @@ class RPG2k
       end
 
       # The system SFX a landed action plays, alongside its banner. Each check
-      # is independent rather than an elsif chain -- EasyRPG's own source
+      # is independent rather than an elsif chain -- a reference
+      # implementation's own source
       # plays its own cue for each thing that happened to the same hit, not
       # one sound standing in for all of them: a killing blow plays the
       # damage sound and then the death cry, and an item that lands a hit
-      # plays the item's own cue alongside the hit's (EasyRPG's
-      # Scene_Battle_Rpg2k fires SFX_EnemyDamage / SFX_AllyDamage and, on top
-      # of a kill, SFX_EnemyKill, as separate calls rather than one replacing
-      # another) -- ported from EasyRPG's source, NOT independently
+      # plays the item's own cue alongside the hit's (that reference
+      # implementation fires the damage cue and, on top
+      # of a kill, the kill cue, as separate calls rather than one replacing
+      # another) -- ported from that reference implementation's source, not
+      # independently
       # confirmed against genuine RPG_RT under wine.
       def play_battle_action_se(entry)
         # `attacker_ally` only rides on a plain Attack's own entry (never a
@@ -3849,8 +3862,8 @@ class RPG2k
         play_system_se(SFX_ITEM) if entry[:item_id]
         # An enemy's own AI-chosen Escape basic action plays the same system
         # escape cue the party hears on its own successful Escape command --
-        # EasyRPG's `Game_BattleAlgorithm::Escape::GetStartSe` returns
-        # `SFX_Escape` whenever the algorithm's *source* is an enemy (an
+        # a reference implementation's own escape-SE logic returns
+        # the escape cue whenever the algorithm's *source* is an enemy (an
         # ally's own Escape defers to the base class's silent default
         # instead, played separately by #try_battle_escape). `entry[:fled]`
         # is only ever produced by `#enemy_basic_action`'s BASIC_ESCAPE arm,
@@ -3858,9 +3871,9 @@ class RPG2k
         # this alongside the party's own escape SE.
         play_system_se(SFX_ESCAPE) if entry[:fled]
         # An enemy's own Auto Destruction basic action plays its own
-        # explosion cue unconditionally -- EasyRPG's own `SelfDestruct::
-        # GetStartSe` (src/game_battlealgorithm.cpp) is `return
-        # &GetSystemSE(SFX_EnemyKill);` with no gate on whether the blast
+        # explosion cue unconditionally -- a reference implementation's own
+        # self-destruct escape-SE logic returns
+        # the kill cue with no gate on whether the blast
         # actually defeats anyone, unlike the ordinary post-hit
         # `SFX_ENEMY_DEATH` line just above (`entry[:defeated] &&
         # !entry[:target_ally]`), which can never fire here at all since
@@ -4153,13 +4166,13 @@ class RPG2k
       end
 
       # The screen_shaking-1 counterpart to #fire_target_flash: arms a timed
-      # shake of just the animation's own target sprite, ported from
-      # EasyRPG's actual C++ source verbatim, NOT independently confirmed
-      # against genuine RPG_RT under wine -- both `BattleAnimationBattle::
-      # ShakeTargets` and `BattleAnimationBattler::ShakeTargets`
-      # (src/battle_animation.cpp) shake every one of the animation's own
-      # battler targets with `battler->ShakeOnce(str, spd, time)`, the exact
-      # same triple `ProcessAnimationTiming` already fires for the screen
+      # shake of just the animation's own target sprite, ported from a
+      # reference implementation's actual C++ source verbatim, not
+      # independently confirmed
+      # against genuine RPG_RT under wine -- it shakes every one of the
+      # animation's own
+      # battler targets, the exact
+      # same triple it already fires for the screen
       # case. This codebase's front-view battle has no per-sprite native
       # shake primitive the way Sprite#flash exists for the colour pulse, so
       # the state is tracked in a plain `@ui[:enemy_shake]` hash
@@ -4182,8 +4195,8 @@ class RPG2k
       # Advance every in-flight #fire_target_shake state by one frame --
       # called from #update every frame, right alongside
       # #update_enemy_flashes/#update_enemy_positions. A direct port of
-      # Game::Screen#update_shake's own step (see there for the EasyRPG
-      # `Shake::NextPosition`/`Shake::Update` provenance), just keyed per
+      # Game::Screen#update_shake's own step (see there for the reference
+      # implementation provenance), just keyed per
       # troop-member index instead of a single screen-wide state, and applied
       # to that member's own sprite x (recomputed from its live database
       # position the same way #update_enemy_positions already recomputes y
