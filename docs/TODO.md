@@ -197,10 +197,10 @@ The work below is roughly ordered by the critical path to a walkable game
     picture used to vanish the instant this engine's own Save/Continue ran,
     even though loading a genuine external RPG_RT save with one already
     worked correctly (that path only ever exercised `.from_lsd`, never
-    `.to_lsd`).** Confirmed directly against RPG_RT's live source:
-    `Scene_Save::Prepare` (`src/scene_save.cpp`) writes `save.pictures =
-    Main_Data::game_pictures->GetSaveData()` unconditionally on every save,
-    and `Player::LoadSavegame` (`src/player.cpp`) restores it unconditionally
+    `.to_lsd`).** Ported from a reference implementation, not independently
+    confirmed against genuine RPG_RT under wine: its own save-preparation
+    writes the pictures unconditionally on every save, and its load path
+    restores them unconditionally
     on every load. Fixed by mirroring `.restore_pictures`' own read exactly —
     same field ids (1 name, 31/32 current_x/current_y, 33 zoom, 34
     transparency, 41-44 tone), same conversions, just in the write direction
@@ -898,9 +898,10 @@ The work below is roughly ordered by the critical path to a walkable game
   boards by facing it from an adjacent tile, an airship only by already
   standing on it~~ — described `#board_vehicle`'s own doc comment
   accurately, but not what the code beneath that comment actually did.**
-  Confirmed directly against RPG_RT's live source: `Game_Player::
-  GetOnVehicle` (`src/game_player.cpp`) checks the Airship only against the
-  player's own tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own vehicle-boarding check checks
+  the Airship only against the
+  player's own tile, in an `if` whose `else` branch is
   the *only* place the faced tile (`front_x`/`front_y`) is computed at
   all — the Airship is never considered there, and Ship/Boat (checked in
   that order) are never considered against the player's own tile.
@@ -21914,15 +21915,16 @@ not yet verified:
   clearing it, the same instant the cursed state landed — the one
   state-infliction call site in this file that never paired `#add_state`
   with the `#Game::States.prune` pass every other one already does.**
-  Confirmed directly against RPG_RT's live source: `State::Add`
-  (`src/state.cpp`) runs its crowding-out pass — clearing any state 10+
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own state-add routine runs its
+  crowding-out pass — clearing any state 10+
   priority points below the resulting significant state, unless a
-  `PermanentStates` exemption applies — unconditionally, inside every
-  single call, with no caller-side opt-out at all; `Game_Battler::AddState`
-  (`src/game_battler.cpp`) calls it via `State::Add(...)` for every
-  infliction path in the engine, and `Game_Actor::AdjustEquipmentStates`
-  (`src/game_actor.cpp`) funnels equip-triggered infliction through that
-  identical `AddState` — so a lethal hit, a landed skill state, and a
+  permanent-states exemption applies — unconditionally, inside every
+  single call, with no caller-side opt-out at all; its own battle-state
+  infliction routine calls it for every
+  infliction path in the engine, and its own equipment-state-adjustment
+  routine funnels equip-triggered infliction through that
+  identical add-state call — so a lethal hit, a landed skill state, and a
   cursed item's forced state all get the identical crowding-out pass in
   real RPG_RT, with no exception for the equip-triggered one.
   `Game::Actor#adjust_equipment_states`'s add branch
@@ -22002,10 +22004,10 @@ not yet verified:
   (2026-08-19).** This document's own earlier claim (well above, the
   paragraph introducing Change Battle Commands) only credits "RPG_RT's
   six-plus-Row capacity rule" as ported, never mentioning the existence
-  check that runs first. Confirmed directly against RPG_RT's live source:
-  `Game_Actor::ChangeBattleCommands` (`src/game_actor.cpp`) is `const
-  auto* cmd = GetElement(Data::battlecommands.commands, id); if (!cmd) {
-  Warning(...); return; }`, entirely before the capacity/duplicate checks
+  check that runs first. Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  Change Battle Commands handler looks up the command element and bails
+  out immediately if it isn't defined, entirely before the capacity/duplicate checks
   below it — an id the table doesn't define never occupies a slot at all.
   `Game::Actor#change_battle_commands`
   (`mruby-rpg2k/mrblib/game.rb`) only ever checked `id > 0` and
@@ -22059,12 +22061,12 @@ not yet verified:
   ✅ **An enemy's own Auto Destruction (self-destruct) basic action played
   no sound at all, unlike the sibling Escape fix just above — the same
   missing per-algorithm `GetStartSe` dispatch, one function over
-  (2026-08-19).** Confirmed directly against RPG_RT's live source:
-  `Game_BattleAlgorithm::SelfDestruct::GetStartSe`
-  (`src/game_battlealgorithm.cpp`) is `return
-  &GetSystemSE(SFX_EnemyKill);` — unconditional, independent of whether
+  (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  self-destruct start-SE handling always returns the enemy-kill system SE
+  — unconditional, independent of whether
   the blast actually defeats anyone, dispatched by the same generic
-  `ProcessBattleActionUsage` call every other action's start-SE already
+  battle-action-usage call every other action's start-SE already
   goes through. `Game::Battle#enemy_autodestruct`
   (`mruby-rpg2k/mrblib/game.rb`) already tags every entry it produces with
   `autodestruct: true`, but `Scene::Battle#play_battle_action_se`'s only
@@ -22095,13 +22097,13 @@ not yet verified:
   the pre-fix code before the fix.
   ✅ **A basic Attack never spent the equipped weapon's own SP cost —
   every 消費SP-flagged weapon in the database was effectively free to swing,
-  forever (2026-08-19).** Confirmed directly against RPG_RT's live source:
-  `Game_BattleAlgorithm::Normal::vStart` (`src/game_battlealgorithm.cpp`) is
-  `source->ChangeSp(-source->CalculateWeaponSpCost(weapon));` — spent
-  unconditionally, once per action (called from `AlgorithmBase::Start()`
-  before any swing/repeat resolves), regardless of whether the swing hits or
-  misses. `Game_Actor::CalculateWeaponSpCost` (`src/game_actor.cpp`) sums
-  `sp_cost` over the weapon slot(s) `weapon` (`WeaponAll`, i.e. every
+  forever (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  normal-attack start handler spends the weapon's SP cost —
+  unconditionally, once per action (before any swing/repeat resolves),
+  regardless of whether the swing hits or
+  misses. Its own weapon-SP-cost calculation sums
+  the per-weapon cost over the weapon slot(s) (every
   equipped weapon-type item, for an ordinary single-weapon actor; just the
   weapon-slot item for a `#double_hand?` two-weapon actor, since
   `Normal::GetWeapon()`'s `GetCurrentRepeat() >= weapon_style` check reads
@@ -22458,10 +22460,10 @@ not yet verified:
   ✅ **Follow-up (2026-08-21): Set Teleport Target (11810) / Set Escape
   Target (11830) had the identical Save/Continue gap — chunk 110 this time,
   not chunk 111, but the same "reader exists, writer doesn't" shape as
-  every fix above.** Confirmed directly against RPG_RT's live source:
-  `Scene_Save::Prepare`/`Player::LoadSavegame` (`src/scene_save.cpp`/`src/
-  player.cpp`) round-trip `save.targets` via `Game_Targets::GetSaveData`/
-  `SetSaveData` (`src/game_targets.cpp`) unconditionally on every save —
+  every fix above.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  save-preparation/load-savegame paths round-trip the targets
+  unconditionally on every save —
   the escape target always written first, at array id 0 (a
   default-constructed, "never set" `SaveTarget` when no Set Escape Target
   ever ran — RPG_RT carries the slot regardless), every teleport target
@@ -24047,11 +24049,11 @@ not yet verified:
   message window or choice list is open, anywhere in the scene, and retries
   once it closes — the same block-and-retry shape as the Show/Move/Erase
   Picture and Transfer Player/Recall to Location fixes just above, on a
-  third command.** Confirmed directly against RPG_RT's live source:
-  `Game_Interpreter_Map::CommandEnemyEncounter`
-  (`src/game_interpreter_map.cpp`, code 10710) opens with `if
-  (Game_Message::IsMessageActive()) { return false; }`, unconditionally —
-  not gated behind `IsRPG2k3Commands()` or `main_flag`, so this is base
+  third command.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  Enemy Encounter command handler bails out immediately whenever a
+  message is active, unconditionally —
+  not gated behind an RPG2003-only check or the parallel-process flag, so this is base
   RPG2000 behaviour and applies the same way to a scripted Enemy Encounter
   command as to any other. This codebase's `Game::Interpreter#
   do_enemy_encounter` (`mruby-rpg2k/mrblib/interpreter.rb`) had no such
@@ -24393,11 +24395,11 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): rain fell and drifted at exactly double
   RPG_RT's own per-frame rate, and snow's own sideways drift bounced back
   and forth in a symmetric wave instead of only ever nudging left.**
-  Confirmed directly against RPG_RT's live source:
-  `Game_Screen::UpdateRain`/`UpdateSnow` (`src/game_screen.cpp`) — rain is
-  `p.y += 4; p.x -= 1` every frame it's alive, snow is `p.y += Rand(2, 3);
-  p.x -= Rand(0, 1)`. Both only ever subtract from `x`; neither engine
-  effect ever drifts a particle rightward. `Scene::Map
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own rain/snow update advances
+  rain 4px down and 1px left every frame it's alive, and snow 2-3px down
+  and 0-1px left. Both only ever subtract from the horizontal axis;
+  neither effect ever drifts a particle rightward. `Scene::Map
   #draw_weather_particle` (`mruby-rpg2k/mrblib/scene/map.rb`) moved rain
   `@anim_frame * 8` down and `@anim_frame * 2` left — exactly 2x real
   RPG_RT on both axes — and `#weather_drift`'s own triangle wave added a
@@ -25191,16 +25193,16 @@ not yet verified:
   fresh key press, never auto-repeating while Up/Down was held — the same
   gap already fixed this pass on the shop lists, hero-name grid, and
   quantity counter, just never checked on the choice list itself
-  (2026-08-19).** Confirmed directly against RPG_RT's live source:
-  `Window_Message` (`src/window_message.h`) is a plain `Window_Selectable`
-  subclass, and `Window_Message::Update` (`src/window_message.cpp`) calls
-  the base `Window_Selectable::Update()` unconditionally every frame,
-  before ever dispatching to its own choice-specific `InputChoice` — so a
+  (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  message window is a plain selectable-window
+  subclass, and its update always runs
+  the base selectable-window update unconditionally every frame,
+  before ever dispatching to its own choice-specific input handling — so a
   held Down/Up scrolls the choice cursor exactly like any other list
-  window (`Window_Selectable::Update`, `src/window_selectable.cpp`, gates
-  on `Input::IsRepeated`, `endless_scrolling = true` by default and never
-  overridden for messages). `Game_Interpreter_Map::CommandShowInn`
-  (`src/game_interpreter_map.cpp`) builds its Accept/Cancel prompt as an
+  window (gated
+  on the repeat-input check, with endless scrolling on by default and never
+  overridden for messages). Its own Show Inn command handler builds its Accept/Cancel prompt as an
   ordinary choice pair (`pm.PushChoice(ToString(accept), can_afford);
   pm.PushChoice(ToString(cancel));`), so it inherits the identical
   behavior. `Scene::Map#drive_message`'s choice branch and `#drive_inn`
@@ -25362,12 +25364,12 @@ not yet verified:
   - **Follow-up (2026-08-21): Simulated Attack read the target's raw, unadjusted
     Defence/Spirit instead of its state-adjusted value — a fourth correction
     to this same command, this time to the damage formula's own stat inputs.**
-    Confirmed directly against RPG_RT's live source: `Game_Interpreter::
-    CommandSimulatedAttack` (`src/game_interpreter.cpp`) computes `atk -
-    actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and
-    `Game_Battler::GetDef`/`GetSpi` (`src/game_battler.cpp`) both route
-    through `AdjustParam`, which folds in a currently-afflicted state's own
-    halve/double Defence/Spirit flag (`affect_defense`/`affect_spirit`) —
+    Ported from a reference implementation, not independently confirmed
+    against genuine RPG_RT under wine: its own Simulated Attack handler
+    computes the damage from the target's Defence/Spirit accessors, which
+    both route
+    through the same state-adjustment logic, which folds in a currently-afflicted state's own
+    halve/double Defence/Spirit flag —
     the same accessor every other damage formula reads, in or out of
     battle. `Interpreter#do_simulated_attack`
     (`mruby-rpg2k/mrblib/interpreter.rb`) instead read the target's raw
@@ -27158,15 +27160,13 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): the same command's test 5 ("Hero uses the
   ... command") is now implemented too, correcting this entry's own stale
   claim that it "reads live battle-UI state the runtime does not
-  model."** Confirmed directly against RPG_RT's live source: `Game_
-  Interpreter_Battle::CommandConditionalBranchBattle`'s `case 5` (`src/
-  game_interpreter_battle.cpp`) is `if (Player::IsRPG2k3Commands() &&
-  current_actor_id == com.parameters[1]) { ... result = actor->
-  GetLastBattleAction() == com.parameters[2]; }`, where `current_actor_id`
+  model."** Ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: its own Conditional Branch
+  battle test 5 checks the currently-acting actor id against the
+  parameter and compares the actor's last battle action against the
+  target parameter, where the currently-acting actor id
   is set once per action, right before that action's own pre-action page
-  events run (`Scene_Battle_Rpg2k3::ProcessBattleActionBegin` calling
-  `interp.SetCurrentActingActorId(actor->GetId())` on the battle's single
-  shared interpreter). This turned out to need nothing new at all:
+  events run. This turned out to need nothing new at all:
   `Game::Battle#actor_command` (`mruby-rpg2k/mrblib/game.rb`) already
   implements the identical actor-id-plus-source check, ported for the
   page-level `command_actor` trigger condition the bullet just above this
@@ -28748,15 +28748,14 @@ above are repeated here)
   ✅ **Follow-up (2026-08-20): the transaction-refusal rule above was
   correct, but this pass never checked whether a price-0 item should still
   *appear* on the sell list at all — it should, and this codebase hid it
-  outright instead.** Confirmed directly against RPG_RT's live source:
-  `Window_ShopSell` (`src/window_shopsell.cpp`) inherits `Window_Item::
-  CheckInclude`/`Refresh` (`src/window_item.cpp`) completely
-  unchanged — a plain `item_id > 0` filter over every item `Game_Party::
-  GetItems` returns, no price check anywhere in it — and only overrides
-  `CheckEnable` (`return item->price > 0;`), which gates the drawn color
-  and, in `Scene_Shop::UpdateSellSelection` (`src/scene_shop.cpp`), Decision
-  (`if (item && item->price > 0) { ...SFX_Decision...; SetMode(SellHowMany);
-  } else { ...SFX_Buzzer... }`). A price-0 (key) item the party holds is
+  outright instead.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  shop-sell window inherits the base item-window's include/refresh logic
+  completely
+  unchanged — a plain presence filter over every item the party holds, no price check anywhere in it — and only overrides
+  the enable check, which gates the drawn color
+  and, in its own sell-selection update, whether Decision
+  proceeds to the quantity screen or buzzes. A price-0 (key) item the party holds is
   listed in real RPG_RT's Sell screen — the same CheckInclude/CheckEnable
   split already found and fixed for the field Skill/Item menus above — just
   refuses the sale with a Buzzer if selected. `Game::Shop#sellable_items`
@@ -30126,10 +30125,11 @@ above are repeated here)
   ✅ **Follow-up (2026-08-21): `apply_knockout_reset` itself had its own gap
   — a defending or charged enemy killed and revived mid-fight kept the
   stale stance, contradicting this very method's own doc comment.**
-  Confirmed directly against RPG_RT's live source: `Game_Battler::
-  AddState`'s Knockout branch (`src/game_battler.cpp`) also fires
-  `SetIsDefending(false)`/`SetCharged(false)` in the identical statement
-  group as the gauge/stat-modifier resets the fixes above already cover.
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own add-state routine's Knockout
+  branch also clears the defending/charged flags in the identical
+  statement group as the gauge/stat-modifier resets the fixes above
+  already cover.
   ~~This codebase's own comment on `apply_knockout_reset` had claimed
   `#defending`/`#charged` were "deliberately not ported: this codebase
   already resets both to false at the start of every command a battler is
@@ -30155,11 +30155,12 @@ above are repeated here)
   ✅ **A curative battle skill's status cure landed unconditionally, with no
   accuracy roll at all — a Silence/Poison-cure skill whose own `hit` field
   is below 100 always cured the status, never missing
-  (2026-08-19).** Confirmed directly against RPG_RT's live source: `Game_
-  BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`) gates
-  *every* state a skill's `state_effects` list touches — heal or inflict
-  alike — behind its own `Rand::PercentChance(to_hit_states)` roll before
-  it takes effect (`if (!Rand::PercentChance(to_hit_states)) { continue; }`,
+  (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  skill-execution handler gates
+  *every* state a skill's state-effects list touches — heal or inflict
+  alike — behind its own per-field accuracy roll before
+  it takes effect (skipping the state entirely on a miss,
   checked *before* branching on `heals_states`), the same fresh-per-field
   idiom this codebase's `#skill_effect_hits?` already gives HP/SP/stat-mod
   effects. `Game::Battle#apply_skill_hit`'s `cured` selection (both the
@@ -30857,14 +30858,13 @@ codebase yet):
   `#effective_agi` — a second, separate copy of these methods from
   `Game::Battle`'s own already-`atk_mod`-aware ones the bullet above this
   one fixed, left behind when `atk_mod`/`def_mod`/`spi_mod`/`agi_mod` were
-  added to `Combatant`. Confirmed directly against RPG_RT's live source:
-  `Game_Battler::GetAtk`/`GetDef`/`GetSpi`/`GetAgi` (`src/game_battler.cpp`)
-  all route through the identical `AdjustParam(base, modifier, maxval,
-  states, affect_flag)` — the per-battle modifier is added *before* a
+  added to `Combatant`. Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  stat accessors
+  all route through the identical state-adjustment helper — the per-battle modifier is added *before* a
   state's own halve/double, exactly what `Battle#effective_atk` already
-  does — and `Algo::CalcSkillEffect` (`src/algo.cpp`) reads `source.
-  GetAtk()`/`source.GetSpi()`/`target.GetDef()`/`target.GetSpi()`, the
-  *exact same* accessors `Algo::CalcNormalAttackEffect` (a basic Attack)
+  does — and its own skill-effect calculation reads the
+  exact same accessors its own normal-attack-effect calculation (a basic Attack)
   reads: there is no separate, unmodified accessor for a Skill in the
   reference at all. So casting a Weaken-type skill on a foe (lowering its
   `def_mod`) correctly blunted a later basic Attack against it, but a
