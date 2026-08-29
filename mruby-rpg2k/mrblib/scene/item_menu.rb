@@ -101,10 +101,10 @@ class RPG2k
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
-        # own edge -- confirmed directly against RPG_RT's live source:
-        # `Window_Selectable::Update` (`src/window_selectable.cpp`) has no
-        # method actually named `CursorRight`/`CursorLeft`; its real Right/
-        # Left branches are a flat `index +- 1`, bounded only by the list's
+        # own edge -- ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # its Right/
+        # Left handling is a flat `index +- 1`, bounded only by the list's
         # own absolute start/end (`index < item_max - 1` / `index > 0`),
         # structurally unlike Down/Up (genuinely column-locked there,
         # `index < item_max - column_max`). #move_item_cursor's own bound
@@ -154,13 +154,14 @@ class RPG2k
                @state.party.db_skill(it.skill_id) : nil
         # Only a genuine type-9 special item warps for an Escape/Teleport
         # skill (or is buzzer-gated on access/target before it even tries)
-        # -- confirmed against genuine RPG_RT's own live source:
-        # `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its whole
-        # ReserveTeleport/Scene_Teleport dispatch behind `item.type ==
-        # Type_special`; a `use_skill`-flagged weapon/shield/armor/helmet/
+        # -- ported from a reference implementation, not independently
+        # confirmed against genuine RPG_RT under wine: its own item-scene
+        # update gates its whole
+        # Escape/Teleport dispatch behind the item being a genuine
+        # special item; a `use_skill`-flagged weapon/shield/armor/helmet/
         # accessory item (schema field 71) invoking the very same skill type
         # always falls to the generic `else` branch there instead (a plain
-        # `Scene_ActorTarget` push), and `Game_Battler::UseSkill`'s own
+        # actor-target push), and its own skill-use
         # Escape/Teleport branch for it plays only the skill's sound effect,
         # no warp at all (see `#use_special_escape_item`'s own citation).
         # `#use_equip_skill_item` already mirrors that exact "SE only, no
@@ -179,10 +180,11 @@ class RPG2k
         # An Escape/Teleport-invoking special item is always listed (see
         # Game::Party#field_skill?, which #field_usable?'s special-item
         # branch now defers to) but only castable once access and a
-        # registered target are there. Confirmed against RPG_RT's own live
-        # source: `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its
-        # *entire* per-type dispatch behind `item_window->CheckEnable
-        # (item_id)` before ever reaching the Escape/Teleport branches --
+        # registered target are there. Ported from a reference
+        # implementation, not independently confirmed against genuine
+        # RPG_RT under wine: its own item-scene update gates its
+        # *entire* per-type dispatch behind the item being enabled
+        # before ever reaching the Escape/Teleport branches --
         # disabled plays only the buzzer and returns, no attempt, no
         # message, exactly like an unavailable skill in
         # Scene::SkillMenu#choose_skill. Left to #apply_escape_item /
@@ -405,8 +407,9 @@ class RPG2k
           move_teleport_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- the same fix as #update_items's identical RIGHT/LEFT
-        # handling (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # handling (ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no
         # row-boundary check), never propagated to this sibling list when
         # that one was corrected.
@@ -555,14 +558,16 @@ class RPG2k
 
       # A used item that changed nothing (everyone already full, an
       # ineffective status cure, ...) plays Buzzer rather than the item's own
-      # success cue -- matching RPG_RT's own invalid-use handling elsewhere in
-      # `Scene_Item` (a rejected action gets the same SE as a confirm on an
-      # empty list or a disabled command, not a silent no-op). A *successful*
+      # success cue -- matching a reference implementation's own invalid-use
+      # handling elsewhere in its item scene (a rejected action gets the same SE as a confirm on an
+      # empty list or a disabled command, not a silent no-op; not
+      # independently confirmed against genuine RPG_RT under wine). A *successful*
       # use stays on this same target screen too, exactly like a no-effect
-      # one -- confirmed against RPG_RT's own live source:
-      # `Scene_ActorTarget::UpdateItem` (`src/scene_actortarget.cpp`) never
-      # calls `Scene::Pop()` on Decision, success or failure alike; the only
-      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # one -- ported from a reference implementation, not independently
+      # confirmed against genuine RPG_RT under wine:
+      # its own actor-target update never
+      # pops the scene on Decision, success or failure alike; the only
+      # scene-pop in the whole handler is its own Cancel branch.
       # `#use_item`'s own `item_count(id) > 0` gate already answers what
       # happens on a repeat use once the item runs out (an empty `affected`,
       # the same Buzzer path), matching the reference's own `GetItemCount(id)

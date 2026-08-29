@@ -94,8 +94,8 @@ class RPG2k
 
       # Holding a direction auto-repeats the cursor after the initial delay,
       # not just a single step per tap -- see Scene::ItemMenu#update_items's
-      # identical comment (`Window_Selectable::Update`, `src/
-      # window_selectable.cpp`, and docs/TODO.md for the fuller writeup);
+      # identical comment (ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine, and docs/TODO.md for the fuller writeup);
       # every check below just gains an `|| #repeat?` alongside it.
       def update_skills
         if Input.trigger?(Input::B)
@@ -107,8 +107,9 @@ class RPG2k
           move_skill_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- see Scene::ItemMenu#update_items's identical comment
-        # (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # (ported from a reference implementation, not independently
+        # confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no row-boundary
         # check, unlike Down/Up's genuine column-lock).
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
@@ -205,12 +206,13 @@ class RPG2k
       # Open the target-confirm screen (`@mode = :target`), locking the
       # cursor when `lock` names who the effect already, unavoidably, lands
       # on: `:self` to the caster's own row, `:party` to the whole list.
-      # Real RPG_RT's `Scene_ActorTarget`/`Window_ActorTarget` do the same --
-      # `Window_Selectable::Update`'s entire cursor-movement block is gated
-      # on `index >= 0` (`src/window_selectable.cpp`), and a self/all-ally
-      # skill starts that index negative (`Window_ActorTarget`'s
-      # `SetIndex(-actor_index-1)` / `SetIndex(-100)`,
-      # `src/scene_actortarget.cpp`) precisely so UP/DOWN never takes effect
+      # Ported from a reference implementation, not independently confirmed
+      # against genuine RPG_RT under wine: its own actor-target screen does
+      # the same --
+      # its own cursor-movement block is gated
+      # on the index being non-negative, and a self/all-ally
+      # skill starts that index negative
+      # precisely so UP/DOWN never takes effect
       # -- Decision (cast) and Cancel (back out) are the only inputs that do
       # anything, but the screen, and its cancel opportunity, is never
       # skipped. `#apply_skill`'s own `target` argument is irrelevant either
@@ -253,17 +255,18 @@ class RPG2k
       # A cast that changed nothing plays Buzzer rather than the skill's own
       # animation SE -- see Scene::ItemMenu#apply_item's identical reasoning.
       # A *successful* cast stays on this same target screen too, exactly
-      # like a no-effect one -- confirmed against RPG_RT's own live source:
-      # `Scene_ActorTarget::UpdateSkill` (`src/scene_actortarget.cpp`) never
-      # calls `Scene::Pop()` on Decision, success or failure alike; the only
-      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # like a no-effect one -- ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine:
+      # its own actor-target skill-update never
+      # pops the scene on Decision, success or failure alike; the only
+      # scene-pop in the whole handler is its own Cancel branch.
       # `#cast_skill`'s own affordability gate already answers what happens
       # on a repeat cast once SP runs out (an empty `affected`, the same
       # Buzzer path), matching the reference's own SP/HP check ahead of
-      # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
+      # its own skill-use -- unaffordable buzzes, it does not auto-exit either.
       #
-      # No confirmation message either way -- `UpdateSkill`'s own success/
-      # failure branches only ever call `SePlay`/`Refresh`, playing the
+      # No confirmation message either way -- its own success/
+      # failure branches only ever play a sound effect and refresh, playing the
       # skill's own `animation_id`-derived SE (`#play_animation_se`) on
       # success, never building a message window; this class used to show
       # "X casts Y!"/"It had no effect." here (and `#update_target` played a
@@ -285,18 +288,19 @@ class RPG2k
       # companion — the switch is what its common event watches.
       # A successful cast closes the whole menu stack at once, exactly like
       # Scene::ItemMenu#apply_switch_item and this same class's own
-      # #apply_escape_skill just below -- confirmed against RPG_RT's own
-      # live source: `Scene_Skill::vUpdate`'s `Type_switch` arm
-      # (`src/scene_skill.cpp`) plays the skill's own sound effect and calls
-      # `Scene::PopUntil(Scene::Map)` on the very same Decision press, with
-      # no confirmation message at all -- the identical shape as `Type_
-      # escape` right below it, not the ordinary target-mode cast's
-      # stay-open-and-show-a-message flow (`Algo::IsNormalOrSubskill`'s own
-      # arm, which pushes a `Scene_ActorTarget` instead). The failure branch
+      # #apply_escape_skill just below -- ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT
+      # under wine: its own switch-skill update
+      # plays the skill's own sound effect and calls
+      # pop-until-map on the very same Decision press, with
+      # no confirmation message at all -- the identical shape as the
+      # escape case right below it, not the ordinary target-mode cast's
+      # stay-open-and-show-a-message flow (which
+      # pushes an actor-target scene instead). The failure branch
       # is unreachable through ordinary play -- `#choose_skill` already
       # buzzes-and-returns on an uncastable skill before ever calling this
-      # (see `#apply_skill`'s own citation for the direct-against-RPG_RT
-      # confirmation that a no-effect Decision never shows a message) -- but
+      # (see `#apply_skill`'s own citation for the same not-independently-
+      # confirmed reasoning that a no-effect Decision never shows a message) -- but
       # it is kept message-free for consistency with every reachable sibling.
       def apply_switch_skill(sid)
         switch = @state.party.cast_switch_skill(caster, sid)
@@ -372,8 +376,9 @@ class RPG2k
           move_teleport_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- the same fix as #update_skills's identical RIGHT/LEFT
-        # handling (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # handling (ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no
         # row-boundary check), never propagated to this sibling list when
         # that one was corrected.
