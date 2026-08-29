@@ -10738,8 +10738,8 @@ The work below is roughly ordered by the critical path to a walkable game
   established for its own free-use gate. `show_message`/`drive_message`/
   `close_message` are untouched otherwise — the Switch/Escape/Teleport
   special-item and special-skill failure paths this same file/its sibling
-  still use them for are a separate `Scene_Skill::vUpdate` code path, not
-  `Scene_ActorTarget`, and were not re-verified here. Covered by two rewritten
+  still use them for are a separate skill-scene update-loop code path, not
+  the actor-target scene, and were not re-verified here. Covered by two rewritten
   `scripts/rpg2k_scene_check.rb` checks (a successful use/cast plays the
   item's own SE or the skill's animation SE, shows no message, and lets the
   very next Decision act on a different target with no dismiss press in
@@ -10749,7 +10749,9 @@ The work below is roughly ordered by the critical path to a walkable game
   that wrong used to leave the battle skill menu **empty in both test beds** —
   306 skills and 134 skills, none offered. `occasion_field` / `occasion_battle`
   gate **switch skills only** (RPG_RT reads them in one arm of
-  `Algo::IsSkillUsable`, and the editor only offers the checkboxes there); an
+  the skill-usability check, per a reference implementation not
+  independently confirmed against genuine RPG_RT under wine, and the editor
+  only offers the checkboxes there); an
   RPG2003 **subskill category** (type >= 4) is an ordinary skill filed under a
   custom battle command, which is 57 of mtf-meido-action's 134 including all its
   healing; and an item's occasion flags are `occasion_field1` (bars battle use),
@@ -10760,7 +10762,9 @@ The work below is roughly ordered by the critical path to a walkable game
   warp the party.** Both were declared unbuilt here — Escape wanting nothing
   more than its one registered target and Teleport wanting "a destination
   picker this build has no screen for" — and both gaps are closed the same way
-  EasyRPG's own `Scene_Skill` closes them: `Algo::IsSkillUsable`'s
+  a reference implementation closes them (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine): the escape/teleport usability check's
   `Type_escape` / `Type_teleport` arms (not in battle — already true, since
   `#battle_skill?` excludes both types unconditionally; the party's access
   flag; a registered target; not flying) became
@@ -10775,20 +10779,25 @@ The work below is roughly ordered by the critical path to a walkable game
   own Teleport command already does, just queued from a different source and
   picked up (then rendered immediately, not left a frame stale) the moment
   `Scene::Map` is next on top of the scene stack. Escape warps straight to its
-  one target with no prompt, matching `Scene_Skill`'s own "no picker" branch;
+  one target with no prompt, matching a reference implementation's own "no
+  picker" branch (not independently confirmed against genuine RPG_RT under
+  wine);
   Teleport opens a third list beside the skill/target ones, built from every
   `Game::State#teleport_targets` entry and named through the map tree's own
-  `map_properties` (`Game_Map::GetMapName`), the same source the battle
+  `map_properties`, the same source the battle
   backdrop's terrain walk already reads. A registered target's own `switch_id`
-  is round-tripped through the save; `Window_Teleport`, `Game_Targets` and
-  `Scene_Teleport` indeed never read it back for the picker list, so
+  is round-tripped through the save; the reference implementation's teleport
+  window, targets table and
+  teleport scene indeed never read it back for the picker list, so
   filtering the list by it would be a guess the real binary does not make —
   **but this note previously over-generalised that into "unconsumed here
   too" full stop, which was wrong: real RPG_RT does consume it, as a switch
   flip the instant the warp itself lands, not a list filter — now fixed, see
   the dedicated bullet below.**
   Casting either skill also forces the party off a ridden boat or ship first
-  (mirroring `Game_Player::ForceGetOffVehicle`), leaving the vehicle parked
+  (mirroring a reference implementation's own force-off-vehicle routine;
+  not independently confirmed against genuine RPG_RT under wine), leaving
+  the vehicle parked
   where it was boarded; the airship is not forced off because it is not
   boarded off at all — `#flying?` (`state.boarded == :airship`) bars both
   skills outright, the one vehicle RPG_RT excludes them from. `Party#unsupported_field_skill?`
@@ -10800,10 +10809,10 @@ The work below is roughly ordered by the critical path to a walkable game
 - ✅ **A registered Escape/Teleport target's own switch never actually turned
   on when the party warped there via the corresponding field skill or
   special item — corrected from this file's own earlier, too-narrow
-  investigation above.** Real RPG_RT's `Game_Player::ReserveTeleport(const
-  lcf::rpg::SaveTarget& target)` (`src/game_player.cpp`, verified against
-  RPG_RT's actual behavior via EasyRPG Player's own C++ source, fetched
-  live) — the overload both `Scene_Teleport::vUpdate` (Decision, picking a
+  investigation above.** Real RPG_RT's own teleport-reservation routine
+  (checked against a reference implementation's own C++ source, fetched
+  live; not independently confirmed against genuine RPG_RT under wine) —
+  the overload both the teleport scene's update loop (Decision, picking a
   destination from the list) and `Scene_Skill`'s Escape branch call — does,
   right after reserving the warp itself: `if (target.switch_on) {
   Main_Data::game_switches->Set(target.switch_id, true); ...}`. This is a
@@ -10834,9 +10843,10 @@ The work below is roughly ordered by the critical path to a walkable game
   list this bullet chain describes above) laid its entries out and moved
   its cursor as a single stacked column, when real RPG_RT's own list here is
   a two-column grid, the same shape this codebase's own item/skill lists
-  already port.** Confirmed directly against RPG_RT's live source:
-  `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2` on
-  construction; `Window_Selectable::Update` (`src/window_selectable.cpp`)
+  already port.** Checked against a reference implementation's live source
+  (not independently confirmed against genuine RPG_RT under wine): its
+  teleport window sets `column_max = 2` on
+  construction; the selectable-window update loop
   moves DOWN/UP by a whole `column_max`-wide row (a no-op with no row
   below/above) and only moves RIGHT/LEFT by one cell, gated on `column_max
   >= wrap_limit` (`wrap_limit` defaults to 2, so a 2-column list qualifies).
@@ -10847,7 +10857,7 @@ The work below is roughly ordered by the critical path to a walkable game
   fixture), DOWN reached the second one and RIGHT did nothing, the inverse
   of genuine RPG_RT, where DOWN is the no-op and RIGHT reaches it; the
   repo's own pre-existing test asserted this inverted behavior as correct,
-  with no citation of `window_teleport.cpp` (unlike the item-list grid test
+  with no citation of a reference source at all (unlike the item-list grid test
   right above it in the same file). Fixed by mirroring
   `#move_item_cursor`/`#move_skill_cursor`'s already-correct, already
   wine-verified grid-cursor pattern (both classes already define
@@ -10866,9 +10876,10 @@ The work below is roughly ordered by the critical path to a walkable game
   grid's own then-current Right/Left row-boundary guard onto the Teleport
   picker — and that pattern itself turned out to be wrong, corrected for
   the item/skill grids by a later fix this same bullet chain never
-  revisited here.** Confirmed directly against RPG_RT's live source:
-  `Window_Teleport` defines no `Update()` of its own, so its cursor comes
-  entirely from `Window_Selectable::Update` (`src/window_selectable.cpp`),
+  revisited here.** Checked against a reference implementation's live
+  source (not independently confirmed against genuine RPG_RT under wine):
+  its teleport window defines no `Update()` of its own, so its cursor comes
+  entirely from the selectable-window update loop,
   whose real RIGHT/LEFT branches are a flat `index +- 1` bounded only by
   the list's own absolute start/end (`index < item_max - 1` / `index >
   0`), with no row-boundary term at all — the exact fact the item/skill
@@ -10897,8 +10908,10 @@ The work below is roughly ordered by the critical path to a walkable game
   landed exactly its deterministic base amount round after round, the one
   thing `#skill_effect`'s own doc comment ("battle applies a +/- variance,
   but field/menu use does not") already said should *not* happen there.
-  RPG2000's `Algo::VarianceAdjustEffect` is one function applied to whichever
-  signed effect `Algo::CalcSkillEffect` produces — a Cure spell's heal
+  RPG2000's variance-adjustment step is one function applied to whichever
+  signed effect the skill-effect calculation produces (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine) — a Cure spell's heal
   wobbles the same way a Fire spell's damage does, there being no
   damage-only/heal-only split in the reference algorithm — so the fix mirrors
   the attack branch rather than inventing a new mechanism:
@@ -10932,14 +10945,16 @@ The work below is roughly ordered by the critical path to a walkable game
   introduced its own uncited claim in the same breath as fixing the original
   gap: "each rolls its own random offset, since HP and SP are two separate
   effect values sharing one base rather than one number applied twice."
-  Confirmed against EasyRPG's actual C++ source: `Algo::CalcSkillEffect`
-  (`src/algo.cpp`) computes one `effect` local — the attribute multiplier and
-  `VarianceAdjustEffect` are each applied exactly once — and
-  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
+  Checked against a reference implementation's source rather than left an
+  uncited guess (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): the skill-effect calculation
+  computes one `effect` local — the attribute multiplier and the variance
+  adjustment step are each applied exactly once — and the battle-algorithm
+  skill-execution routine
   reads that identical raw number into every one of its
   `affect_hp`/`affect_sp`/`affect_attack`/`affect_defense`/`affect_spirit`/
   `affect_agility` branches, each still gated by its own fresh
-  `Rand::PercentChance(to_hit)` roll (that part of the original fix — the
+  to-hit-percentage roll (that part of the original fix — the
   independent *accuracy* gate per field — was already correct and is
   unaffected). So a Cure spell restoring both HP and SP could land two
   different randomized amounts (and burn two RNG draws instead of one,
@@ -10949,9 +10964,10 @@ The work below is roughly ordered by the critical path to a walkable game
   in the recovery branch, only `hp`/`mp` did — another gap from the same
   root cause (three fields computed independently instead of one shared
   effect split three ways at the end) — and `mp` was never clamped to
-  `#recover_cap` the way `hp`/`stat_amount` were, matching EasyRPG's own
-  single `Utils::Clamp(effect, -MaxDamageValue(), MaxDamageValue())` right
-  after `CalcSkillEffect` returns, before any affect_* branch reads it.
+  `#recover_cap` the way `hp`/`stat_amount` were, matching the reference
+  implementation's own single clamp of the effect to the damage-value range
+  right after the skill-effect calculation returns, before any affect_*
+  branch reads it.
   `Game::Battle#apply_skill_hit`'s recovery branch now computes one shared
   `effect` (attribute-multiplied, variance-spread, and capped exactly once)
   and assigns it identically to whichever of `hp`/`mp`/`stat_amount` is
@@ -11001,8 +11017,8 @@ The work below is roughly ordered by the critical path to a walkable game
   was the one skill type this bullet's own routing never covered — reaching
   `#cast_skill` (which has no notion of switches at all) and reporting "It
   had no effect." on every use.** Confirmed directly against RPG_RT's live
-  source: `Scene_Item::vUpdate`'s `Type_switch` skill arm
-  (`src/scene_item.cpp`) sits right beside its already-ported Escape/
+  source: the switch-type skill arm of the field item-target-confirm screen
+  sits right beside its already-ported Escape/
   Teleport siblings — consuming the item, playing the skill's own sound
   effect, and flipping `skill->switch_id` (the *skill's* own field, not the
   item's) on the very same Decision press, no target/picker at all, no
@@ -11087,15 +11103,19 @@ The work below is roughly ordered by the critical path to a walkable game
   4 of Nepheshel's actors and 1 of mtf's), which turns the shield slot into a
   second weapon slot — ADR 0040 named this as the item its own two-handed-gear
   rule left alone. `Game::Party#equip_candidates(slot, actor)` retargets the
-  shield slot to weapon-only candidates for such an actor, ported from
-  EasyRPG's `Window_EquipItem` (which does the identical retarget before
-  filtering, and rejects a shield there outright with no exception); a new
+  shield slot to weapon-only candidates for such an actor, ported from a
+  reference implementation's equip-item window (which does the identical
+  retarget before filtering, and rejects a shield there outright with no
+  exception; not independently confirmed against genuine RPG_RT under
+  wine); a new
   `#equip_candidate_for?` guards `#equip_from_bag` against the reverse. Placing
   the result needed `Actor#equip_item` to take an explicit slot — its old
   always-by-type mapping would put any weapon in slot 0, which is exactly
   wrong for a second one — while the Change Equipment event command's own call
   stays untouched (no notion of "the second weapon slot" there either,
-  matching `Game_Actor::ChangeEquipment`). Combat needed nothing: the weapon-
+  matching the reference implementation's own change-equipment routine;
+  not independently confirmed against genuine RPG_RT under wine). Combat
+  needed nothing: the weapon-
   only scans behind `#attack_hit_rate` / `#weapon_crit_bonus` /
   `#equipment_flag?` and the plain sum behind `#equip_bonus` already read every
   equipped slot by the item's own *type*, not by slot index, so a second
@@ -11113,19 +11133,23 @@ The work below is roughly ordered by the critical path to a walkable game
   on that gap (Wait is now implemented too — its toggle turned out to live on
   the save system, not the battle system; see its own paragraph above). The
   interaction model was
-  confirmed against EasyRPG Player's own `Scene_Order` rather than guessed:
+  checked against a reference implementation's own order scene rather than
+  guessed (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine):
   it is a **pick-and-place build, not a swap or drag-drop** — the player picks
-  party members one at a time from a left column (`UpdateOrder`'s
-  `window_left`), each pick appended to a right column in the order picked
-  (`window_right`), until every member has been placed; a Confirm/Redo prompt
-  then either applies the picked order or clears every pick and starts over
-  (`UpdateConfirm`/`Redo`). Cancel undoes the most recent pick one at a time,
+  party members one at a time from a left column, each pick appended to a
+  right column in the order picked, until every member has been placed; a
+  Confirm/Redo prompt
+  then either applies the picked order or clears every pick and starts over.
+  Cancel undoes the most recent pick one at a time,
   or leaves the screen once nothing is picked yet; re-picking an already-
   picked slot (the row stays selectable even once its name is blanked) is
-  rejected with the Cancel SE, matching `UpdateOrder`'s own duplicate guard.
+  rejected with the Cancel SE, matching the reference implementation's own
+  duplicate guard.
   New `Game::Party#reorder(new_order)` takes a permutation of the current
   member indices and rebuilds `@actors` in that order — the net effect of
-  EasyRPG's `Confirm()` (which removes every member then re-adds them in the
+  the reference implementation's confirm handler (which removes every member
+  then re-adds them in the
   picked order) without replaying the remove/re-add dance — and bumps
   `@revision` the same as the existing `#promote_to_leader`, since
   reordering can change the party leader outright (`#leader` is simply
@@ -11134,7 +11158,9 @@ The work below is roughly ordered by the critical path to a walkable game
   already dispatches Item/Save — pushed directly on confirm, no actor-
   selection step, since Order acts on the whole party at once rather than one
   member — gated on the party holding more than one member (a buzzer refusal
-  otherwise), matching `Scene_Menu::UpdateCommand`'s own `Order` branch
+  otherwise), matching the reference implementation's own menu-command
+  handling for the Order branch (not independently confirmed against
+  genuine RPG_RT under wine)
   rather than the plain empty-party check every other command here uses.
   Covered by a new `scripts/rpg2k_logic_check.rb` check (`#reorder` applies a
   picked permutation and changes the leader) and new
@@ -11150,12 +11176,14 @@ The work below is roughly ordered by the critical path to a walkable game
   differs from the previous leader's left the hero walking around wearing
   the old leader's sprite until some unrelated trigger (a map transfer, or
   a Change Party Member / Change Actor Sprite event) happened to refresh
-  it.** Confirmed directly against RPG_RT's live source:
-  `Scene_Order::Confirm` (`src/scene_order.cpp`) removes then re-adds every
-  member through `Game_Party::RemoveActor`/`AddActor` (`src/game_party.cpp`),
-  and *each* of those calls unconditionally calls `Main_Data::
-  game_player->ResetGraphic()` as a side effect; `Game_Player::
-  ResetGraphic()` (`src/game_player.cpp`) re-reads slot 0's (the new
+  it.** Checked against a reference implementation's source (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine):
+  the order-scene confirm handler removes then re-adds every
+  member through the party's own remove/add-actor calls,
+  and *each* of those calls unconditionally calls a
+  player-graphic-reset routine as a side effect; that routine re-reads
+  slot 0's (the new
   leader's) CharSet name/index/transparency onto the map sprite. The
   `#reorder` fix above deliberately applies the remove/re-add dance's *net
   array effect* directly rather than replaying it command-by-command — a
@@ -11169,7 +11197,8 @@ The work below is roughly ordered by the critical path to a walkable game
   carry it. Fixed by adding `Game::Party#leader_graphic_dirty`/
   `#take_leader_graphic_dirty` (the identical one-shot-read idiom,
   mirroring `Interpreter#take_actor_graphic_changed`), set unconditionally
-  by `#reorder` the same way RPG_RT's own `ResetGraphic()` call is
+  by `#reorder` the same way the reference implementation's own
+  graphic-reset call is
   unconditional, and polled by `Scene::Map#update` as the very first thing
   once the scene is on top again — the same "catch up on whatever the
   pushed screen did" timing `@state.pending_teleport`'s own poll,
@@ -11189,15 +11218,19 @@ The work below is roughly ordered by the critical path to a walkable game
   see the dated follow-up right below**, RPG2003-only). The schema now
   decodes it, `Game::State` carries it (`attr_accessor :atb_mode`, written to
   the save only when non-zero so an RPG2000 save never gains the 2003-only
-  chunk), and `Scene::Menu`'s Wait row flips it — ported from EasyRPG's own
-  `Scene_Menu` Wait branch: the label shows the *current* mode (`wait_on` /
+  chunk), and `Scene::Menu`'s Wait row flips it — ported from a reference
+  implementation's own
+  menu Wait branch (not independently confirmed against genuine RPG_RT
+  under wine): the label shows the *current* mode (`wait_on` /
   `wait_off`, `Terms` fields 121/122), confirming plays the Decision SE and
   relabels the row. In the battle scene (ADR 0054) wait mode freezes the
   gauges while a command menu is open; active mode keeps them filling and a
   ready non-controllable combatant's action **interrupts** the menu —
   `active_atb?` / `atb_accumulating?` / `drive_battle_command`'s interrupt
-  gate mirror EasyRPG's `IsAtbAccumulating` and `ProcessSceneActionCommand`
-  (`GetAtbMode() == active && IsBattleActionPending()`, with
+  gate mirror a reference implementation's own ATB-accumulation and
+  scene-action-command handling (not independently confirmed against
+  genuine RPG_RT under wine)
+  (active mode with a pending battle action, with
   SelectActor/AutoBattle always accumulating). Covered by new
   `scripts/rpg2k_scene_check.rb` checks (wait mode freezes an enemy's gauge
   behind the menu; active mode keeps it filling and a ready enemy's action
@@ -11244,9 +11277,11 @@ The work below is roughly ordered by the critical path to a walkable game
   written, but nothing in `mruby-rpg2k/mrblib` ever read either field —
   `#field_usable?`/`#battle_usable?`/`#use_item` only `case`d on
   `it.type`, and no equipment type (1-5) was ever a reachable branch there,
-  so such an item sat in the bag forever, `use_skill` or not. Confirmed
-  against EasyRPG Player's real source rather than guessed:
-  `Game_Party::UseItem`'s `do_skill` computation is `item->type ==
+  so such an item sat in the bag forever, `use_skill` or not. Checked
+  against a reference implementation's source rather than guessed (ported
+  from a reference implementation, not independently confirmed against
+  genuine RPG_RT under wine):
+  the item-use skill-trigger computation is `item->type ==
   Type_special || (item->use_skill && item->type is one of
   weapon/shield/armor/helmet/accessory)` — the same "item triggers a skill"
   shape a type-9 special item already gets here, just gated on a flag
@@ -11288,15 +11323,17 @@ The work below is roughly ordered by the critical path to a walkable game
    `changelog.d/menu-use-skill-equipment-item.fixed.md`.
    - **Follow-up (2026-08-20):** the relaxed type guard above was never
      verified against real RPG_RT's own live source, only assumed "identical"
-     by analogy to the type-9 special-item cast -- it was not. Confirmed
-     against EasyRPG Player's actual C++, fetched live: `Scene_Item::vUpdate`
-     (`src/scene_item.cpp`) only ever reaches its ReserveTeleport/
-     Scene_Teleport dispatch for `item.type == Type_special && item.skill_id
+     by analogy to the type-9 special-item cast -- it was not. Checked
+     against a reference implementation's actual C++, fetched live (ported
+     from a reference implementation, not independently confirmed against
+     genuine RPG_RT under wine): the field item-target-confirm screen's
+     update loop only ever reaches its reserve-teleport/
+     teleport-scene dispatch for `item.type == Type_special && item.skill_id
      > 0`; a `use_skill`-flagged equipment item invoking the very same
      Escape/Teleport skill always falls to the generic `else` branch there (a
-     plain `Scene_ActorTarget` push), and `Game_Battler::UseSkill`
-     (`src/game_battler.cpp`) — reached from that generic path through
-     `Game_Party::UseItem`/`Game_Battler::UseItem`'s shared `do_skill` gate —
+     plain actor-target push), and the battler's skill-use routine
+     — reached from that generic path through
+     the item-use/battler-use-item shared `do_skill` gate —
      plays only the skill's own `sound_effect` for a `Type_teleport`/
      `Type_escape` skill and sets `was_used = true`; it never calls
      `ReserveTeleport` or performs any warp at all. So the relaxed guard let
@@ -11317,11 +11354,11 @@ The work below is roughly ordered by the critical path to a walkable game
      invoked skill's own success SE) so that once a target is picked and
      confirmed, `Scene::ItemMenu#apply_item`'s existing empty-vs-non-empty
      check plays the skill's animation SE rather than buzzing, matching
-     `Scene_ActorTarget::UpdateItem`'s identical `do_skill`-on-success
+     the reference implementation's identical `do_skill`-on-success
      branch. The Switch-type dispatch (`#apply_special_switch_item`/
      `#use_special_switch_item`) was independently re-verified correct as
-     written for both item kinds and is untouched -- `Game_Battler::
-     UseSkill`'s `Type_switch` branch flips the switch through the identical
+     written for both item kinds and is untouched -- the battler's
+     skill-use routine's `Type_switch` branch flips the switch through the identical
      shared `do_skill` path regardless of which item kind reached it.
      Covered by rewriting the same two `scripts/rpg2k_logic_check.rb` checks
      cited just above (which had baked in the wrong "eventually warps"
@@ -11348,15 +11385,19 @@ The work below is roughly ordered by the critical path to a walkable game
    a skill-invoking item's row never sets) — so confirming such an item
    prompted for an *ally* and then computed a 0 HP/0 SP, no-cure "use"
    that consumed nothing and changed nothing, regardless of what its
-   invoked skill actually did. Confirmed against EasyRPG Player's real
-   source: `Scene_Battle::ItemSelected` (`src/scene_battle.cpp`) resolves
-   the item's `skill_id` and calls `AssignSkill(skill, item)` — the
+   invoked skill actually did. Checked against a reference implementation's
+   real source (ported from a reference implementation, not independently
+   confirmed against genuine RPG_RT under wine): the battle item-selected
+   handler resolves
+   the item's `skill_id` and dispatches it into the same skill-assignment
+   routine — the
    identical dispatch an ordinary Skill-menu pick goes through
-   (`SkillSelected` calls `AssignSkill(skill, nullptr)`), which switches on
+   (passing a null item), which switches on
    the skill's own `scope` to pick enemy/ally/self/all-enemy/all-ally
-   target selection; `Game_BattleAlgorithm::Skill::vStart`
-   (`src/game_battlealgorithm.cpp`) is what actually charges for it —
-   `if (item) ConsumeItemUse(item->ID); else source->ChangeSp(-cost)` — so
+   target selection; the battle-algorithm skill-start
+   routine is what actually charges for it —
+   consuming the item if one triggered the skill, else deducting the SP
+   cost from the caster — so
    the item pays and no SP moves, never both. Fixed by giving
    `#drive_battle_item`'s confirm branch the same scope-based dispatch
    `#confirm_battle_skill` already uses for an ordinary skill pick
@@ -11377,7 +11418,8 @@ The work below is roughly ordered by the critical path to a walkable game
    That `item_id:` is what makes the item consume from the bag when the
    action lands (`#drive_battle_animate`'s existing `entry[:item_id]`
    check, shared with an ordinary medicine) and, matching
-   `Skill::IsReflected`'s own `if (item) return false;`, is what
+   the reference implementation's own reflection check (an item-cast
+   skill never reflects), is what
    `Game::Battle#reflects_skill?`'s pre-existing `cmd[:skill_id] &&
    !cmd[:item_id]` guard already relies on to keep an item-cast skill from
    ever bouncing off a Reflect-warded target the way a caster's own cast
@@ -11404,19 +11446,22 @@ The work below is roughly ordered by the critical path to a walkable game
    `#battle_usable?`'s equipment-type branch to `#field_skill?`/
    `#battle_skill?` — "the same shape a type-9 special item already gets
    here" — reusing that precedent without separately checking it against
-   real RPG_RT's own *usability* function. Confirmed against EasyRPG
-   Player's real source, fetched live: `Game_Party::IsItemUsable`
-   (`src/game_party.cpp`) tests `item->use_skill` **before** its own
+   real RPG_RT's own *usability* function. Checked against a reference
+   implementation's real source, fetched live (ported from a reference
+   implementation, not independently confirmed against genuine RPG_RT
+   under wine): the party's item-usability check tests
+   `item->use_skill` **before** its own
    `switch (item->type)` at all — a completely different, self-contained
-   branch from the one a type-9 Special item takes (`Type_special` calls
-   `Algo::IsSkillUsable`, further down in the same switch, which *is* what
+   branch from the one a type-9 Special item takes (the special-item branch
+   calls
+   the skill-usability check, further down in the same switch, which *is* what
    `#field_skill?`/`#battle_skill?` already correctly mirror) — and its own
    comment names the difference outright: `// RPG_RT BUG: Does not check if
    skill is usable`, followed by `return skill && (in_battle ||
    scope == Scope_self || scope == Scope_ally || scope == Scope_party);`.
    No `affect_hp`/`affect_sp`/inflicted-state requirement at all (unlike
-   `Algo::IsSkillUsable`), and no Escape/Teleport-specific access-or-target
-   check either (unlike `Game_Party::IsSkillUsable`, the *ordinary* Skill-menu
+   the skill-usability check), and no Escape/Teleport-specific access-or-target
+   check either (unlike the party's ordinary Skill-menu
    usability test, itself a third, distinct function) — RPG_RT lists a
    `use_skill` item as soon as its skill's scope is self/ally/party (or
    unconditionally in battle), full stop; only the actual *cast* — a
@@ -11447,7 +11492,7 @@ The work below is roughly ordered by the critical path to a walkable game
   genuinely-held item id unconditionally — usability is a separate concern
   consulted only for (a) greying the drawn name and (b) gating Decision on
   the item-select handler (buzz and stay on the list when disabled, exactly
-  the `Window_Skill::CheckEnable` pattern the field/battle Skill menu fixes
+  the skill-enable-check pattern the field/battle Skill menu fixes
   just above already ported).
   This applies identically to the battle Item window too — independently
   confirmed against a genuine RPG_RT.exe under wine (see the Follow-up
@@ -11488,8 +11533,8 @@ The work below is roughly ordered by the critical path to a walkable game
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
   ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
-  against genuine RPG_RT.exe rather than trusting the EasyRPG-only citation
-  above.** Edited a genuine Nepheshel save's inventory chunk to hold a
+  against genuine RPG_RT.exe rather than trusting the reference-implementation-only
+  citation above.** Edited a genuine Nepheshel save's inventory chunk to hold a
   Medicine (usable, control) and a Weapon (unusable, test subject), resumed
   it under both this engine and real `RPG_RT.exe` under wine, and opened the
   field Item menu on both: real RPG_RT shows both items, the weapon in a
@@ -11510,7 +11555,8 @@ The work below is roughly ordered by the critical path to a walkable game
   identical "buzz and stay, no dispatch" guard `Scene::SkillMenu#choose_skill`
   already has for a disabled entry. **The battle-menu half stays open,
   scoped out of this pass**: `#battle_items`/`#battle_usable?` have the
-  identical shape and the deferred bullet's own EasyRPG citation says both
+  identical shape and the deferred bullet's own reference-implementation
+  citation says both
   windows share the same `Window_Item` class, but that specific claim was
   not independently re-verified against genuine RPG_RT this session, so
   `#battle_items` still filters by `#battle_usable?` pending its own
@@ -11524,7 +11570,7 @@ The work below is roughly ordered by the critical path to a walkable game
   stays on the list) — all four confirmed to fail against the pre-fix code.
   ✅ **Follow-up (2026-08-22): the battle-menu half is now fixed too,
   independently re-verified against genuine RPG_RT.exe rather than trusting
-  the "same `Window_Item` class" EasyRPG citation.** Got a live battle open
+  the "same `Window_Item` class" reference-implementation citation.** Got a live battle open
   under wine against real `RPG_RT.exe` (a genuine, pre-existing Nepheshel
   autostart event's command list swapped for an Enemy Encounter, keeping its
   original trailing `[Victory]`/`[Escape]`/End Battle markers — a bare,
@@ -11632,13 +11678,15 @@ The work below is roughly ordered by the critical path to a walkable game
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
   gap made a special item invoking one of those skills vanish from the
-  field Item list too (2026-08-20).** Confirmed directly against RPG_RT's
-  live source: `Window_Skill::CheckInclude` (`src/window_skill.cpp`) is
+  field Item list too (2026-08-20).** Checked against a reference
+  implementation's live source (ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine): the
+  skill-list-inclusion check is
   `if (!Game_Battle::IsBattleRunning()) return true;` outside battle — every
   known skill is listed, full stop, with no per-type filter at all.
-  `Algo::IsSkillUsable`'s Escape/Teleport arms (access flag, a registered
-  target, not flying) back only `Window_Skill::CheckEnable` — greying the
-  entry and gating `Scene_Skill::vUpdate`'s Decision handler (buzz, no
+  The skill-usability check's Escape/Teleport arms (access flag, a registered
+  target, not flying) back only the skill-list-enable check — greying the
+  entry and gating the skill scene's Decision handler (buzz, no
   attempt, when disabled) — a genuinely separate check from list membership.
   `Game::Party#field_skill?` (`mruby-rpg2k/mrblib/game.rb`) conflated the
   two, routing `SKILL_ESCAPE`/`SKILL_TELEPORT` through
@@ -11648,17 +11696,17 @@ The work below is roughly ordered by the critical path to a walkable game
   greyed. Fixed by making `#field_skill?` return `true` unconditionally for
   both types (list membership only), and moving the availability check to
   `Scene::SkillMenu#choose_skill`, which now Buzzes and does nothing —
-  matching `Scene_Skill::vUpdate`'s CheckEnable gate — instead of silently
+  matching the reference implementation's skill-enable gate — instead of silently
   reaching a caster/skill pair that was never castable to begin with.
   Because `Game::Party#field_usable?`'s `ITEM_SPECIAL` branch already
   deferred to `#field_skill?` for a special item invoking a skill (see the
   `use_skill` fix two entries above), this same change also makes a special
   item invoking an unavailable Escape/Teleport skill listed-but-disabled
-  rather than hidden — independently confirmed against `Window_Item::
-  CheckInclude` (`src/window_item.cpp`, a trivial `item_id > 0` check with
-  no skill-usability test of any kind) and `Scene_Item::vUpdate`
-  (`src/scene_item.cpp`), which gates its *entire* per-type dispatch behind
-  `item_window->CheckEnable(item_id)` before ever reaching the Escape/
+  rather than hidden — also checked against the reference implementation's
+  item-list-inclusion check (a trivial `item_id > 0` check with
+  no skill-usability test of any kind) and its item scene's update loop,
+  which gates its *entire* per-type dispatch behind
+  its own item-enable check before ever reaching the Escape/
   Teleport branches — disabled plays only the buzzer and returns, no
   attempt, no message. `Scene::ItemMenu#choose_item`
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`) previously had no such gate at
@@ -11697,7 +11745,7 @@ The work below is roughly ordered by the critical path to a walkable game
   menu/save/teleport/escape access flags (all SaveSystem chunk 101), the leader's
   on-map CharSet override (hero chunk 104) and the **title chunk (100)** — the
   `:double` timestamp (via the new `LCF.pack_double`), the leader's
-  name/level/HP and the party FaceSets — so a real RPG_RT/EasyRPG file-select
+  name/level/HP and the party FaceSets — so a real RPG_RT file-select
   screen shows the party. ✅ **Both Timer Operation countdowns now round-trip
   through the `.lsd` too.** This line used to call the game timer the one
   field the export "cannot yet carry", guessing it would "need a documented
@@ -11749,13 +11797,15 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **A Change Actor Title override now round-trips through the `.lsd` too.**
   Chunk 108's field 2 stayed constant in the one sampled real save, so it was
   not provably the title field from that sample alone; it is now confirmed
-  against EasyRPG's `liblcf` (`generator/csv/fields.csv`), whose `SaveActor`
+  against a reference save-format schema project's field definitions
+  (`generator/csv/fields.csv`), whose `SaveActor`
   struct documents field `0x02` as `title` (`String`) right next to `0x01`
   `name` — and every other already-confirmed field in `SAVE_PARTY_ACTOR`
-  matches liblcf's hex tag decimal-for-decimal (`0x1F`→31 `level`, `0x20`→32
+  matches that schema's hex tag decimal-for-decimal (`0x1F`→31 `level`, `0x20`→32
   `exp`, `0x33`→51 `skill_size`, `0x34`→52 `skills`, `0x3D`→61 `equipped`,
   `0x47`→71 `current_hp`, `0x48`→72 `current_sp`, `0x51`→81 `status` count,
-  `0x52`→82 `status`), so `0x02`→2 `title` follows the same scheme; liblcf also
+  `0x52`→82 `status`), so `0x02`→2 `title` follows the same scheme; that
+  schema also
   identifies the other two constant bytes as `hp_mod` (`0x21`→33) and `sp_mod`
   (`0x22`→34), unconfirmed stat modifiers rather than the title, closing the
   ambiguity. `LCF::Schema::SAVE_PARTY_ACTOR` now decodes it (`title`),
@@ -11797,10 +11847,11 @@ The work below is roughly ordered by the critical path to a walkable game
   no input loop of its own to drive a second screen. See ADR 0045. ✅ **The
   party face thumbnails a real save-select screen shows are now drawn too**
   (`Game::State#to_lsd`'s title chunk already exported the FaceSets
-  specifically for this, unread until now). Verified against EasyRPG
-  Player's actual C++ source rather than guessed at: `Window_Base::DrawFace`
+  specifically for this, unread until now). Checked against a reference
+  implementation's actual C++ source rather than guessed at: the face-draw
+  helper
   crops a plain 48x48 FaceSet cell with no scaling and never mirrors it on
-  this screen specifically, and `Window_SaveFile` lays up to four of them
+  this screen specifically, and the save-file window lays up to four of them
   out in a row at a 56px pitch. `Scene::SaveLoad#draw_slot_box` used to draw
   only the label/leader-name/level+HP text; a new `#draw_slot_faces` (plus
   `#load_face_bitmap`/`#build_face_cell`, mirroring `Scene::Map`'s own
@@ -11813,7 +11864,8 @@ The work below is roughly ordered by the critical path to a walkable game
   member and a 5th-and-beyond member both draw nothing), both confirmed to
   fail against the pre-fix code before the fix.
   ✅ **Follow-up (2026-08-22): this whole passage's own citations were
-  EasyRPG Player's C++ source, not genuine RPG_RT — and once actually
+  a reference implementation's C++ source, not genuine RPG_RT — and once
+  actually
   checked, both the data source and the row's exact position were wrong.**
   Confirmed directly against a genuine RPG_RT.exe under wine: the file-select
   screen draws each slot's face row from the *save's own title-chunk
@@ -11924,8 +11976,9 @@ The work below is roughly ordered by the critical path to a walkable game
   `ship_bgm`(80) / `airship_bgm`(81) / `gameover_bgm`(82); SFX: `cursor_se`(91)
   through `item_se`(102)). `Game::State#to_lsd` now writes every populated
   slot into its field (a new `SYSTEM_BGM_SAVE_FIELD`/`SYSTEM_SFX_SAVE_FIELD`
-  slot → field map, matching EasyRPG's `Game_System::sys_bgm` enum for BGM
-  and `Scene::Base::DB_SE_FIELD`'s slot order for SFX, reusing `#bgm_chunk`
+  slot → field map, matching a reference implementation's own BGM-slot enum
+  and its SFX slot order (ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine), reusing `#bgm_chunk`
   and a new `#se_chunk`), and `.from_lsd` reads them back (`.bgm_from_chunk`
   and a new `.se_from_chunk`). Covered by a new `scripts/rpg2k_logic_check.rb`
   check (a battle-slot and a game-over-slot BGM override, plus a cursor-slot
@@ -12032,15 +12085,17 @@ The work below is roughly ordered by the critical path to a walkable game
   precisely: row-major fill (item 0 top-left, item 1 top-right, item 2
   second row left, ...), an incomplete last row's second cell left blank
   rather than reflowing, and grid-aware, non-wrapping cursor movement --
-  EasyRPG's own `Window_Selectable::CursorDown/Up/Right/Left` shape with
-  `cycle` off: DOWN/UP move by two (the column count) and do nothing at a
+  a reference implementation's own selectable-window cursor-move shape with
+  `cycle` off (not independently confirmed against genuine RPG_RT under
+  wine): DOWN/UP move by two (the column count) and do nothing at a
   missing cell (confirmed by pressing DOWN off the grid's last, partial row
   -- the cursor simply stayed, not wrapping to the top as the *old*
   single-column code did), RIGHT/LEFT move by one and do nothing at a row's
   own edge. **This RIGHT/LEFT half needs a real re-check, flagged this
-  session rather than changed outright.** `Window_Selectable` has no method
-  actually named `CursorRight`/`CursorLeft` in EasyRPG Player's current
-  source (checked verbatim against `src/window_selectable.cpp`) — its real
+  session rather than changed outright.** The reference implementation's
+  selectable-window class has no method
+  actually named `CursorRight`/`CursorLeft` in its current
+  source (checked verbatim) — its real
   `Update()` RIGHT/LEFT branches are a flat `index ± 1`, bounded only by the
   list's own absolute start/end (`index > 0` / `index < item_max - 1`), with
   **no row-boundary check at all**, structurally unlike DOWN/UP (genuinely
@@ -12049,19 +12104,22 @@ The work below is roughly ordered by the critical path to a walkable game
   cell instead of stopping. Whether the "does nothing at a row's own edge"
   half of this bullet was itself independently wine-confirmed (as the DOWN
   case explicitly was, parenthetically) or inferred by analogy from DOWN/UP
-  and attributed to a EasyRPG method that turns out not to exist is not
+  and attributed to a reference-implementation method that turns out not to
+  exist is not
   possible to settle from this entry's own wording alone, and wine is
   unusable this session (see the harness-quirk notes elsewhere) to re-check
   directly. ~~`#move_item_cursor`/`#move_skill_cursor`
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`, `skill_menu.rb`) currently gate
   RIGHT/LEFT on `(@item_index ± 1) % COLUMN_MAX`, matching this bullet's
   claim as coded — left unchanged pending a real wine re-test (or a fresh
-  EasyRPG source re-read someone is more confident settles it) rather than
+  reference-implementation source re-read someone is more confident settles
+  it) rather than
   risk a blind revert of a claimed direct observation.~~ **Resolved
-  (2026-08-20): a fresh, full re-read of `Window_Selectable::Update`
-  settles it without needing wine.** `src/window_selectable.cpp` has no
-  method actually named `CursorRight`/`CursorLeft` anywhere in EasyRPG
-  Player's current source (confirmed verbatim, the same check this entry
+  (2026-08-20): a fresh, full re-read of the reference implementation's
+  selectable-window update loop
+  settles it without needing wine.** That source has no
+  method actually named `CursorRight`/`CursorLeft` anywhere in its
+  current source (confirmed verbatim, the same check this entry
   already ran) — its real RIGHT/LEFT branches are `if (column_max >=
   wrap_limit && index < item_max - 1) { index += 1; }` and the LEFT mirror
   bounded by `index > 0`: a flat `index ± 1`, checked only against the
@@ -12111,10 +12169,12 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-20): the narrower rule was found, from source
   alone, with no wine needed after all -- it was never about the
   `occasion_field`/`occasion_battle` flags this earlier attempt suspected.**
-  Confirmed directly against RPG_RT's live source: `Algo::IsSkillUsable`
-  (`src/algo.cpp`) takes a `require_states_persist` parameter, and
-  `Game_Battler::IsSkillUsable` — the function that actually backs
-  `Window_Skill::CheckEnable` for the field Skill list — always calls it
+  Checked against a reference implementation's live source, with no wine
+  needed (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): the skill-usability check
+  takes a `require_states_persist` parameter, and
+  the battler-level usability function — the function that actually backs
+  the field Skill list's enable check — always calls it
   `true`. Inside, a state-only skill (no `affect_hp`/`affect_sp`) only
   counts a `state_effects` entry when `state->type ==
   Persistence_persists`: `for (...) { if (inflict) { const auto* state =
@@ -12139,9 +12199,11 @@ The work below is roughly ordered by the critical path to a walkable game
   a perfectly ordinary battle-list entry; a sibling skill curing only a
   persisting state is offered in both), confirmed to fail against the
   pre-fix code (`expected [[13, 2]], got [[12, 2], [13, 2]]`).
-  ✅ **Confirmed via EasyRPG Player's source instead, once the wine
+  ✅ **Checked against a reference implementation's source instead, once the
+  wine
   reference runtime itself stopped rendering past Continue this session
-  (see the harness-quirk notes above), and now fixed.** `Window_Skill`'s
+  (see the harness-quirk notes above), and now fixed (not independently
+  confirmed against genuine RPG_RT under wine).** The skill-list window's
   constructor sets `column_max = 2`, the same two-column shape
   `Scene::ItemMenu` already ported. Its `DrawItem` also settles the
   item-count separator glyph question left open below: it draws each row's
@@ -12154,13 +12216,15 @@ The work below is roughly ordered by the critical path to a walkable game
   screen, and a two-column grid needs LEFT/RIGHT for column navigation
   instead (the same keys `Scene::ItemMenu`'s own grid fix repurposed) --
   the two cannot both live on the same input. Chasing that down through
-  `EasyRPG/Player`'s own source (`scene_skill.cpp`, `scene_skill.h`,
-  `scene_menu.cpp`, `scene_equip.cpp`) resolved it cleanly rather than
-  blocking the fix: genuine RPG_RT/EasyRPG does not support switching
-  actors *inside* the Skill screen at all (`Scene_Skill`'s constructor
-  takes a fixed `actor_index` its `vUpdate()` never changes) -- unlike
-  `Scene_Equip`, whose own `UpdateEquipSelection` *does* handle LEFT/RIGHT
-  by constructing a fresh `Scene_Equip` for the new actor, confirming
+  a reference implementation's own source (its skill scene, menu scene,
+  and equip scene sources; ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine) resolved it
+  cleanly rather than
+  blocking the fix: genuine RPG_RT does not support switching
+  actors *inside* the Skill screen at all (its skill scene's constructor
+  takes a fixed `actor_index` its update loop never changes) -- unlike
+  its equip scene, whose own equip-selection update *does* handle LEFT/RIGHT
+  by constructing a fresh equip scene for the new actor, confirming
   `Scene::EquipMenu`'s existing in-screen actor-switching was already
   correct and did not need touching. `Scene::SkillMenu`'s LEFT/RIGHT
   caster-cycling is simply gone (removed, not replaced -- this engine's
@@ -12168,11 +12232,13 @@ The work below is roughly ordered by the critical path to a walkable game
   has no menu-side actor picker either, so nothing that previously worked
   stopped working), freeing LEFT/RIGHT for the confirmed grid navigation.
   ✅ **Real RPG_RT's actual way to check a *different* actor's skills is now
-  implemented too.** `Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/
+  implemented too (ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine).** The
+  reference implementation's menu-command update's `Skill`/`Equipment`/
   `Status`/`Row` branch (all four, identically) hands input focus to the
   menu's own party list so the player picks an actor there (UP/DOWN)
-  *before* a specific `Scene_Skill`/`Scene_Equip`/etc. is even constructed
-  (`Scene_Menu::UpdateActorSelection`, confirmed with the same source read
+  *before* a specific skill/equip/etc. scene is even constructed
+  (its own actor-selection update, confirmed with the same source read
   that found the Skill grid). `Scene::Menu` gains an `@focus` state
   (`:command` or `:actors`), `#enter_actor_selection`/
   `#confirm_actor_selection`/`#leave_actor_selection`, and a cursor on its
@@ -12183,13 +12249,15 @@ The work below is roughly ordered by the critical path to a walkable game
   index, default 0 for callers with no picker, e.g. the host test
   harnesses) -- `Scene::EquipMenu`/`StatusMenu` keep their own existing
   in-screen LEFT/RIGHT switching once opened (both confirmed via source to
-  have it, `scene_equip.cpp`/`scene_status.cpp`), `Scene::SkillMenu` does
+  have it), `Scene::SkillMenu` does
   not (per the grid fix above). `Game::Actor#can_act?` (a new, host-tested
   method: false only when a currently-active state's `restriction` is
-  `RESTRICTION_DO_NOTHING`, porting EasyRPG's `Game_Battler::CanAct()`
-  exactly, including its deliberate choice not to check death separately)
-  gates the Skill case alone, matching `UpdateActorSelection`'s own
-  `actor->CanAct()` check there -- Equip/Status have no such gate. Verified
+  `RESTRICTION_DO_NOTHING`, porting a reference implementation's own
+  battler act-check
+  exactly, including its deliberate choice not to check death separately;
+  not independently confirmed against genuine RPG_RT under wine)
+  gates the Skill case alone, matching the reference implementation's own
+  actor-selection act-check there -- Equip/Status have no such gate. Verified
   visually with this engine's own build: selecting Skill now shows the
   party-status panel with its own cursor (the command list's cursor
   disappears), and confirming an actor opens Skill for them.
@@ -12205,8 +12273,10 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG_RT shows no text at all.** This one was never wine-verified (the
   comparison never reached this exact state on the reference side, and
   RPG2000's Term table has no obvious slot for such a message), so rather
-  than keep guessing, this got checked against EasyRPG Player's own
-  `Scene_Menu::UpdateCommand` source directly: its disabled-Save branch
+  than keep guessing, this got checked against a reference implementation's
+  own
+  menu-command update source directly (not independently confirmed against
+  genuine RPG_RT under wine): its disabled-Save branch
   plays the buzzer SE (`SFX_Buzzer`) and does nothing else -- no message,
   no scene push, the menu simply stays where it is. `Scene::Menu`'s Save
   branch now does the same: `@parent.push Scene::SaveLoad.new(...) if
@@ -12216,14 +12286,16 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-20): the field menu never grayed out a disabled
   command's label at all -- only the buzzer-and-refuse *behaviour* above
   was fixed, not the visual cue RPG_RT shows before the player even
-  tries.** Confirmed directly against RPG_RT's live source: `Scene_Menu::
-  CreateCommandWindow` (`src/scene_menu.cpp`, the "Disable items" loop)
+  tries.** Checked against a reference implementation's live source (ported
+  from a reference implementation, not independently confirmed against
+  genuine RPG_RT under wine): the menu command-window construction's
+  "Disable items" loop
   disables Save on `!GetAllowSave()`, Order on `GetActors().size() <= 1`,
   and every other command (Item/Skill/Equipment/Status/Row) on
   `GetActors().empty()` -- Wait/Quit/Settings/Debug are never disabled.
-  `Window_Command::SetItemEnabled`/`DrawItem` (`src/window_command.cpp`)
-  then draws a disabled row through `Font::ColorDisabled` (swatch index 3,
-  `src/font.h`), the same windowskin-blended path every row uses, not a
+  The command window's item-enable/draw routine
+  then draws a disabled row through its disabled-font color (swatch index 3),
+  the same windowskin-blended path every row uses, not a
   hardcoded flat gray -- the identical convention already ported for
   `Scene::Title`'s Continue and `Scene::SaveLoad`'s file rows (both
   documented elsewhere in this file), just never carried over to the field
@@ -12248,15 +12320,17 @@ The work below is roughly ordered by the critical path to a walkable game
   played the Decision SE and called `@parent.return_to_title` directly --
   found via the LCF field audit (`scripts/rpg2k_field_audit.rb`), which
   flagged `term.end_game_confirm` (Term chunk 21 field 151) as parsed by the
-  schema and never read anywhere in `mruby-rpg2k`. Confirmed against
-  EasyRPG Player's actual C++ source: `Scene_Menu::UpdateCommand`'s `case
-  Quit:` (`src/scene_menu.cpp`) plays the Decision SE and pushes
-  `Scene_End`, never touching the title directly; `Scene_End::vUpdate`
-  (`src/scene_end.cpp`) plays Decision on *either* option and only "Yes"
-  (`BgmFade(400)` then `ReturnToTitleScene`) goes anywhere, while "No" and
-  Cancel both just `Scene::Pop()` back to the menu; `Scene_End::
-  CreateCommandWindow` defaults the cursor to index 1 ("No"), and
-  `CreateHelpWindow` draws the prompt from `terms.exit_game_message` (this
+  schema and never read anywhere in `mruby-rpg2k`. Checked against a
+  reference implementation's actual C++ source (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine): the menu command update's `case
+  Quit:` branch plays the Decision SE and pushes
+  an end-game scene, never touching the title directly; that scene's update
+  loop plays Decision on *either* option and only "Yes"
+  (fading the BGM then returning to the title) goes anywhere, while "No" and
+  Cancel both just pop back to the menu; the end-game scene's
+  command-window construction defaults the cursor to index 1 ("No"), and
+  its help-window construction draws the prompt from `terms.exit_game_message` (this
   schema's `term.end_game_confirm`), falling back to "Do you really want to
   quit?" when the database leaves it blank. `Scene::Menu` now opens an
   in-scene Yes/No prompt (`@focus = :end_game_confirm`, cursor defaulting to
@@ -12273,7 +12347,8 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmation message to dismiss first" -- now replaced). See
   `changelog.d/menu-end-game-confirmation.fixed.md`.
   ✅ **Follow-up (2026-08-22): the cursor-default half of the bullet above was
-  itself wrong -- it cited EasyRPG's `Scene_End::CreateCommandWindow`
+  itself wrong -- it cited a reference implementation's end-game
+  command-window construction
   defaulting to index 1 ("No"), and that citation was never checked against
   genuine RPG_RT.** Reached the confirm prompt on a real `RPG_RT.exe`
   (Nepheshel, wine) by loading a `--clear-scene` save on map 371, dismissing
@@ -12292,13 +12367,15 @@ The work below is roughly ordered by the critical path to a walkable game
   press). See `changelog.d/menu-end-game-confirm-cursor-default.fixed.md`.
   ✅ **The top-level field menu never showed the party's own Gold at all,
   even though the Status screen's own identical gap was already found and
-  fixed (2026-08-20) — this screen still had nothing.** Confirmed against
-  EasyRPG Player's actual C++ source: `Scene_Menu::Start`
-  (`src/scene_menu.cpp`) creates a `Window_Gold` unconditionally (88x32,
+  fixed (2026-08-20) — this screen still had nothing.** Checked against a
+  reference implementation's actual C++ source (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine): the menu scene's start
+  routine creates a gold window unconditionally (88x32,
   bottom-left corner, no version or feature gate anywhere in the file) for
-  RPG2000 and RPG2003 alike, and `Scene_Menu::Continue` (fired when control
-  returns from a popped child screen) unconditionally calls `gold_window->
-  Refresh()` alongside `menustatus_window->Refresh()`. `Scene::Menu`
+  RPG2000 and RPG2003 alike, and its continue-from-child-screen
+  routine unconditionally refreshes the gold window
+  alongside the status window. `Scene::Menu`
   (`mruby-rpg2k/mrblib/scene/menu.rb`) built only `@command` (the command
   list) and `@status` (the party list) — no gold anywhere. Fixed by adding a
   `@gold` window (`#build_gold_window`/`#draw_gold_window`, same bottom-left
@@ -12338,19 +12415,22 @@ The work below is roughly ordered by the critical path to a walkable game
   got 108`).
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
-  work" the disabled-Save fix above left open.** Confirmed against three
-  separate pieces of EasyRPG Player source, fetched verbatim rather than
-  guessed at: `Window_Selectable::Update()` (`src/window_selectable.cpp`)
+  work" the disabled-Save fix above left open.** Checked against three
+  separate pieces of a reference implementation's source, fetched verbatim
+  rather than
+  guessed at (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): the selectable-window
+  update loop
   plays Cursor SE itself on every successful directional move -- not
-  `SetIndex`/`UpdateCursorRect`, and not the owning scene -- which is why a
+  the index-set/cursor-rect-update helpers, and not the owning scene -- which is why a
   *blocked* move (off the edge of the Item/Skill grid, an empty list) stays
-  silent; `Scene_Menu::UpdateCommand`/`UpdateActorSelection`
-  (`src/scene_menu.cpp`) play Decision right before doing something and
+  silent; the menu scene's command-update/actor-selection-update routines
+  play Decision right before doing something and
   Buzzer instead whenever that same confirm is refused outright (an empty
   party for Item/Skill/Equip/Status, `!GetAllowSave()` for Save,
-  `!actor->CanAct()` for Skill specifically -- confirmed this is a `return`,
+  the can-act check for Skill specifically -- confirmed this is a `return`,
   leaving focus on the party list rather than falling through); and
-  `src/scene.cpp` plays *no* SE at all in `Push`/`Pop`/`Update` -- Cancel SE
+  the base scene class plays *no* SE at all in `Push`/`Pop`/`Update` -- Cancel SE
   is each scene's own responsibility right before it leaves, not
   centralised. `Scene::Base` gained the shared `play_system_se`/
   `system_se`/`db_system_se` lookup (Change System SFX override, falling
@@ -12366,8 +12446,10 @@ The work below is roughly ordered by the critical path to a walkable game
   from an earlier pass, `#play_cursor_se`, reading the database directly
   rather than through a game state that does not exist yet at the title
   screen). ✅ **Now fixed too**, and it turned up a genuine, not just
-  missing-feature, gap along the way: confirmed against EasyRPG's own
-  `Scene_Title::CommandContinue` (`src/scene_title.cpp`, fetched verbatim),
+  missing-feature, gap along the way: checked against a reference
+  implementation's own
+  title-scene continue-command handler (fetched verbatim; not
+  independently confirmed against genuine RPG_RT under wine),
   a grayed-out Continue with no save to resume is **not silent** when
   confirmed -- `if (continue_enabled || Shift) { ...Decision... } else {
   ...Buzzer...; return; }`, i.e. the enabled check lives *inside* the
@@ -12377,8 +12459,10 @@ The work below is roughly ordered by the critical path to a walkable game
   absent SE) -- `Scene::Title#update`'s disabled-Continue branch now plays
   `SFX_BUZZER`, and the New Game / (enabled) Continue / Shutdown branches
   each play `SFX_DECISION` right before acting, matching
-  `CommandNewGame`/`CommandContinue`/`CommandShutdown` exactly (Shutdown
-  has no confirmation dialog either way -- EasyRPG's own version fades out
+  the reference implementation's new-game/continue/shutdown command
+  handlers exactly (Shutdown
+  has no confirmation dialog either way -- the reference implementation's own
+  version fades out
   and pops immediately, same as this engine's plain `exit`).
   `scripts/rpg2k_scene_check.rb`'s existing disabled-Continue check
   (previously titled "...does nothing") is renamed and its comment updated
@@ -12393,22 +12477,25 @@ The work below is roughly ordered by the critical path to a walkable game
   `rpg2k_testbed_logic_check.rb` (125) suites all still pass.
   ✅ **Follow-up (2026-08-21): the title screen hard-cut the BGM on every
   selection instead of fading it the way RPG_RT does for New Game and
-  Continue.** Confirmed directly against RPG_RT's live source: `Player::
-  SetupNewGame` (`src/player.cpp`) is `Main_Data::game_system->BgmFade(800,
-  true); ...` — an 800ms fade, not `BgmStop()`'s immediate cut
-  (`Game_System::BgmFade`/`BgmStop`, `src/game_system.cpp`, are genuinely
-  different calls) — and `Player::LoadSavegame` fades the same way,
-  `if (!load_on_map) { Main_Data::game_system->BgmFade(800); ... }`, true
+  Continue.** Checked against a reference implementation's live source
+  (ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine): the new-game setup
+  routine calls the game-system BGM fade with an 800ms fade — not the
+  immediate-cut BGM-stop call
+  (the fade and stop calls are genuinely
+  different) — and the load-savegame routine fades the same way,
+  guarded so it fires
   whenever Continue is reached from the title (the guard exists only to
   skip the fade when the identical `:load` code path is reached instead
-  from an in-map RPG2003 Open Load Menu event). `Scene_Title::
-  CommandShutdown` (`src/scene_title.cpp`) makes no BGM call at all —
+  from an in-map RPG2003 Open Load Menu event). The title scene's
+  shutdown-command handler makes no BGM call at all —
   confirmed by reading its full body — so Shutdown leaves the music
   playing through its own fade-out screen transition. `Scene::Title#update`
   (`mruby-rpg2k/mrblib/scene/title.rb`) instead ran a blanket
   `Audio.bgm_stop` before every one of the three selections, this
   engine's own `interpreter.rb` doc comment on Fade Out BGM had already
-  named `player.cpp` as one of the three real `BgmFade(...)` call sites
+  named the reference implementation's player-setup source as one of the
+  three real `BgmFade(...)` call sites
   this engine's `RGSS::Audio.bgm_fade` mirrors — the title screen itself
   was simply never updated to use it. Fixed by removing the blanket stop
   and adding `Audio.bgm_fade(800)` to the New Game branch (an unambiguous
@@ -12426,13 +12513,14 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed to fail against the pre-fix code (`expected [[800]], got []`).
 - ✅ **That same SFX audit scoped itself to the separate `Scene::*` menu
   screens and missed `Scene::Map`'s own embedded Input Number widget, which
-  played no sound effects at all (2026-08-18).** Verified against RPG_RT's
-  actual behavior via EasyRPG Player's own C++ source, fetched live:
-  `Window_NumberInput::Update` (`src/window_numberinput.cpp`) plays the
+  played no sound effects at all (2026-08-18).** Checked against a
+  reference implementation's own C++ source, fetched live (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine): the number-input widget's update loop plays the
   Cursor system SE on every UP/DOWN/LEFT/RIGHT digit adjustment (and numpad
   digit entry, which this codebase's widget does not support a way to
   reach at all — a distinct, smaller gap not addressed here), and
-  `Window_Message::InputNumber` (`src/window_message.cpp`) plays Decision
+  the message window's input-number routine plays Decision
   right before committing the entered value on confirm. `Scene::Map
   #drive_number_input` (`mruby-rpg2k/mrblib/scene/map.rb`) had zero
   `play_system_se` calls anywhere in its body — silent on every
@@ -12448,15 +12536,18 @@ The work below is roughly ordered by the critical path to a walkable game
   fail against the pre-fix code. The Enter Hero Name widget
   (`#handle_name_input`/`#handle_kana_name_input`/`#name_input_confirm`/
   `#name_input_backspace`, same file) has an identical gap — verified
-  against `src/scene_name.cpp`/`src/window_name.cpp`, also fetched this
-  pass — left as a follow-up rather than bundled in here, since it touches
+  against the reference implementation's name-scene/name-window source,
+  also fetched this
+  pass (not independently confirmed against genuine RPG_RT under wine) —
+  left as a follow-up rather than bundled in here, since it touches
   several more input branches (Decision on confirm/append, Cancel-then-
   backspace vs. Cancel-with-empty-text Buzzer, an overflowing name) and
   deserves its own dedicated, focused fix.
 - ✅ **That follow-up: the Enter Hero Name widget now plays RPG_RT's system
-  SE on every interaction too (2026-08-18).** Re-verified against EasyRPG
-  Player's own C++ source, fetched live, rather than trusting the note
-  above at face value: `Scene_Name::vUpdate` (`src/scene_name.cpp`) plays
+  SE on every interaction too (2026-08-18).** Re-checked against a
+  reference implementation's own C++ source, fetched live, rather than
+  trusting the note
+  above at face value: the name scene's update loop plays
   Decision **unconditionally the instant Decision is pressed**, before ever
   dispatching on which cell is highlighted — the same for OK/DONE, a
   hiragana/katakana page toggle, or an ordinary character — and its Cancel
@@ -12467,9 +12558,9 @@ The work below is roughly ordered by the critical path to a walkable game
   wine (cycle #125, 2026-08-23, see the Follow-up further down this file:
   one Cancel press on a one-character name erased it to empty, and a
   further Cancel press on the empty field left the screen unchanged).
-  `Window_Keyboard
-  ::Update`'s own `play_cursor` flag (`src/window_keyboard.cpp`) plays
-  Cursor SE on every grid move. `Window_Name::Append` plays Buzzer and
+  The reference implementation's keyboard-window
+  update loop's own `play_cursor` flag plays
+  Cursor SE on every grid move. Its name-window append routine plays Buzzer and
   silently drops the character the instant appending it would overflow the
   field — layered *after* the unconditional Decision already played for
   that same keypress, not instead of it. This codebase's own grid adds an
@@ -12493,13 +12584,16 @@ The work below is roughly ordered by the critical path to a walkable game
   correct SE), confirmed to fail against the pre-fix code.
   ✅ **Follow-up (2026-08-19): the same widget's character-grid cursor only
   moved on a fresh key press, never auto-repeating while a direction was
-  held — the SE pass just above already had `Window_Keyboard::Update` open
+  held — the SE pass just above already had the reference implementation's
+  keyboard-window update loop open
   and quoted its `play_cursor` flag, but never noticed the same function
-  gates every grid move on `Input::IsRepeated` alone.** Confirmed directly
-  against RPG_RT's live source: `Window_Keyboard::Update`
-  (`src/window_keyboard.cpp`) is four `if (Input::IsRepeated(...))` checks,
+  gates every grid move on `Input::IsRepeated` alone.** Checked against a
+  reference implementation's live source (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine): the keyboard-window update loop
+  is four `if (Input::IsRepeated(...))` checks,
   one per direction, with no `IsTriggered` anywhere — and
-  `Input::UpdateSystem` (`src/input.cpp`) defines `repeated[i] =
+  its input-system update routine defines `repeated[i] =
   press_time[i] == 1 || (press_time[i] >= start_repeat_time && ...)`, so
   `IsRepeated` alone fires on both the very first pressed frame and the
   later repeat cadence — exactly the union this codebase's own split
@@ -12552,8 +12646,10 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code before the fix.
   ✅ **Follow-up (2026-08-21): the kana grid's own character table had three
   cells scrambled or outright wrong, typed from memory rather than ported
-  from real data.** Confirmed against EasyRPG's actual C++ source:
-  `Window_Keyboard::layouts[]` (`src/window_keyboard.cpp`), the real RPG_RT
+  from real data.** Checked against a reference implementation's actual
+  C++ source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): its keyboard-layout table,
+  the real RPG_RT
   keyboard table. `NAME_HIRAGANA_ROWS`/`NAME_KATAKANA_ROWS`
   (`mruby-rpg2k/mrblib/scene/map.rb`) had the ま/マ row's small-kana columns
   as ゃゅょっー — small-tsu (っ) had drifted three columns right of its real
@@ -12576,7 +12672,8 @@ The work below is roughly ordered by the critical path to a walkable game
   produces the right characters; the hiragana page's own "vu" cell is
   katakana ヴ), confirmed to fail against the pre-fix code before the fix.
   ✅ **Follow-up (cycle #125, 2026-08-23): the two Cancel/blank-confirm
-  claims above — both cited only to EasyRPG's source, one of them
+  claims above — both cited only to a reference implementation's source,
+  one of them
   mislabeled "RPG_RT's own live source" at the time — are now independently
   confirmed against a genuine RPG_RT.exe, no code change needed.** Built a
   synthetic autostart Enter Hero Name (10740, actor 1 "リト", charset
@@ -12592,7 +12689,7 @@ The work below is roughly ordered by the critical path to a walkable game
   name ("リト"), matching `#commit_name_input`'s blank branch exactly — it
   did not resume the event. Comments on both methods
   (`mruby-rpg2k/mrblib/scene/map.rb`) updated to record the re-verification
-  and stop mislabeling the EasyRPG citation as RPG_RT's own source.
+  and stop mislabeling the reference-implementation citation as RPG_RT's own source.
   **Side finding, not chased further**: charset `2` ("Latin alphabet",
   offered per `#drive_name_input`'s own comment "for English-patched
   games") made real RPG_RT.exe hang on a solid-black screen for 20+ seconds
@@ -12602,24 +12699,27 @@ The work below is roughly ordered by the critical path to a walkable game
   legitimate RPG2000 value versus an RPG2003-only extension, and this
   environment has no genuine RPG_RT2003.exe to settle that distinction.
 - ✅ **The same "silent embedded widget" family, found once more: Open Shop
-  and Show Inn played zero sound effects at all (2026-08-18).** Verified
-  against RPG_RT's actual behavior via EasyRPG Player's own C++ source,
-  fetched live. `Window_Shop::Update` (`src/window_shop.cpp`) plays Cursor
+  and Show Inn played zero sound effects at all (2026-08-18).** Checked
+  against a reference implementation's actual behavior via its own C++
+  source,
+  fetched live (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine). The shop window's update
+  loop plays Cursor
   on every Buy/Sell/Leave move and Decision unconditionally on any confirm
   (all three commands always succeed, so there is no Buzzer case for the
-  command list). `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`
-  (`src/scene_shop.cpp`) play Decision when an item can actually be
+  command list). The shop scene's buy/sell-selection update routines
+  play Decision when an item can actually be
   bought/sold right now and Buzzer instead the moment that check fails —
   this codebase's own `#open_shop_quantity`'s `max < 1` guard is that same
-  check, just never wired to a sound. `Window_ShopNumber::Update`
-  (`src/window_shopnumber.cpp`) plays Cursor **only when the quantity
+  check, just never wired to a sound. The shop-number window's update
+  loop plays Cursor **only when the quantity
   counter's value actually changed** (`if (last_number != number)`) — RIGHT
   past the affordable/held max, or LEFT below one, are silent since the
-  clamp leaves the count unchanged. `Scene_Shop::UpdateNumberInput` plays
+  clamp leaves the count unchanged. The shop scene's number-input update
+  routine plays
   Decision on committing the stack and Cancel on backing out; every Cancel
-  key elsewhere in the shop (`UpdateCommandSelection`/`UpdateBuySelection`/
-  `UpdateSellSelection`) plays Cancel too. Show Inn (`CommandShowInn`,
-  `src/game_interpreter_map.cpp`) is implemented in real RPG_RT on top of
+  key elsewhere in the shop plays Cancel too. Show Inn is
+  implemented in real RPG_RT on top of
   the ordinary Show Message + Show Choices machinery
   (`pm.PushChoice(accept, can_afford); pm.PushChoice(cancel);`) — the same
   generic choice window every other yes/no prompt already gets Cursor/
@@ -12652,12 +12752,12 @@ The work below is roughly ordered by the critical path to a walkable game
   list only moved the cursor on a fresh key press, never auto-repeating
   while Up/Down was held — the same class of gap the shop quantity
   counter had, and missed by the very pass just above despite already
-  having `Window_Shop::Update`'s source in hand.** That earlier pass
-  quoted `Window_Shop::Update` (`src/window_shop.cpp`) for its SFX-on-move
+  having the shop window's update-loop source in hand.** That earlier pass
+  quoted the shop window's update loop for its SFX-on-move
   behavior but never noticed the same quoted function gates its Up/Down
   entirely on `Input::IsRepeated`, not `IsTriggered` — and the buy/sell
-  item lists (`Window_Selectable::Update`, `src/window_selectable.cpp`,
-  the base class both `Window_ShopBuy` and `Window_ShopSell` share) move
+  item lists (the selectable-window update loop,
+  the base class both shop lists share) move
   on `IsTriggered` *or* `IsRepeated` too, the same repeat-while-held
   cursor every RPG2000 list window gets. `#shop_move_cursor`
   (`mruby-rpg2k/mrblib/scene/map.rb`, shared by `#drive_shop_command` and
@@ -12682,15 +12782,18 @@ The work below is roughly ordered by the critical path to a walkable game
   before this method existed at all; a prior comment on the line rationalised
   this as deliberate ("the same fallback path `draw_system_text` itself
   takes when there is no windowskin, reused here on purpose") but that
-  reasoning was never actually checked against the real engine. Confirmed
-  against EasyRPG Player's actual source: `Window_Command::DrawItem`
-  (`src/window_command.cpp`) draws *every* command — enabled or not — through
+  reasoning was never actually checked against the real engine. Checked
+  against a reference implementation's actual source (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine): its command-window draw-item routine draws *every*
+  command — enabled or not — through
   the identical `TextDraw(x, y, color, text)` windowskin-swatch path, the
   only difference being which `Font::SystemColor` index it passes:
-  `ColorDefault` (0) when enabled, `ColorDisabled` (3, `src/font.h`) when not
-  — set via `Scene_Title::Update`'s own `command_window->SetItemEnabled(1,
-  continue_enabled)` (`src/scene_title.cpp`), which routes through
-  `SetItemEnabled`/`DrawItem` exactly the same as every other `Window_Command`
+  `ColorDefault` (0) when enabled, `ColorDisabled` (3) when not
+  — set via the title scene's own update routine enabling/disabling the
+  Continue item, which routes through
+  the same item-enable/draw-item pipeline exactly the same as every other
+  command-window
   instance in the engine (the field menu, the battle command list, ...).
   There is no hardcoded gray anywhere in the reference — a windowskin whose
   own disabled swatch is tinted (blue-ish, brownish, whatever the artist
@@ -12714,13 +12817,17 @@ The work below is roughly ordered by the critical path to a walkable game
   ~~`Scene::Title#initialize`
   (`mruby-rpg2k/mrblib/scene/title.rb`) hardcoded `@selected_index = 0` before
   `@continue_available` was even computed, so the cursor always opened on New
-  Game regardless of save data. Confirmed against EasyRPG Player's actual
-  source: `Scene_Title::Refresh` (`src/scene_title.cpp`) —
+  Game regardless of save data. Checked against a reference implementation's
+  actual
+  source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): its title-scene refresh
+  routine —
   `continue_enabled = FileFinder::HasSavegame(); if (continue_enabled)
   command_window->SetIndex(1);` — moves the cursor to Continue (index 1)
   whenever a save exists, unconditionally alongside (not instead of)
-  `SetItemEnabled(1, continue_enabled)`; `Refresh()` runs from
-  `CreateCommandWindow()` on every title build, and `CommandIndices` fixes
+  `SetItemEnabled(1, continue_enabled)`; that refresh routine runs from
+  the command-window construction on every title build, and its
+  command-index table fixes
   `continue_game = 1` regardless of which optional entries (Import/Settings/
   Translate) exist, so `SetIndex(1)` always targets Continue specifically.
   Fixed by reordering so `@continue_available` is computed first, then
@@ -12755,11 +12862,13 @@ The work below is roughly ordered by the critical path to a walkable game
   line (the file label, and, for an occupied slot, the leader's name and
   level/HP) drew through a bare `draw_text` in a hardcoded flat white,
   with no distinction between an empty slot and an occupied one.
-  Confirmed against EasyRPG Player's actual source: `Window_SaveFile::
-  Refresh` (`src/window_savefile.cpp`) draws every text element through
+  Checked against a reference implementation's actual source (ported from
+  a reference implementation, not independently confirmed against genuine
+  RPG_RT under wine): its save-file window's refresh routine draws every
+  text element through
   `TextDraw(x, y, fc, text)` — the windowskin-swatch path, never a flat
   colour — where `fc` is `has_save ? Font::ColorDefault :
-  Font::ColorDisabled` (system-colour swatch index 0 or 3, `src/font.h`)
+  Font::ColorDisabled` (system-colour swatch index 0 or 3)
   for the file label specifically; the name/level/HP lines only ever draw
   at all once `has_party` is true (an early `return` otherwise, matching
   this codebase's own "an empty slot shows only the label" comment), so
@@ -12779,9 +12888,10 @@ The work below is roughly ordered by the critical path to a walkable game
   wrong even after the swatch-blend fix above — it drew as one
   interpolated string with a literal gap, so a leader's level going from
   one digit to two shifted the "HP" label sideways, something real
-  RPG_RT's fixed-column layout never does.** Confirmed directly against
-  RPG_RT's live source: `Window_SaveFile::Refresh`
-  (`src/window_savefile.cpp`) draws the level and HP fields as four
+  RPG_RT's fixed-column layout never does.** Checked against a reference
+  implementation's live source (ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine): its
+  save-file window's refresh routine draws the level and HP fields as four
   separate `TextDraw` calls at fixed pixel columns — the level label at
   x=4, the HP label always at x=46 regardless of what came before it — each
   number space-padded to a fixed width (`std::setw(2)` for level,
@@ -12808,8 +12918,10 @@ The work below is roughly ordered by the critical path to a walkable game
   pre-fix code before the fix.
   ✅ **`Scene::SaveLoad`'s own cursor never auto-repeated while Down/Up was
   held — one slot per tap only, forever, no matter how long the key stayed
-  down (2026-08-18).** Confirmed against EasyRPG Player's actual source:
-  `Window_Selectable::Update` (`src/window_selectable.cpp`) — the base
+  down (2026-08-18).** Checked against a reference implementation's actual
+  source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): the selectable-window
+  update loop — the base
   class the real save/load file list is built on — checks `IsTriggered`
   first and falls through to `IsRepeated(DOWN/UP)` right after, so holding
   a direction auto-scrolls the list after an initial delay, the same as
@@ -12818,8 +12930,9 @@ The work below is roughly ordered by the critical path to a walkable game
   save_load.rb`) only ever checked `Input.trigger?(DOWN/UP)` — a discrete
   single-frame edge — leaving `Input.repeat?` (this build's own repeat
   signal, `mruby-rgss/mrblib/lib.rb`) unconsulted. The timing genuinely
-  matches already, not just superficially: EasyRPG's `start_repeat_time =
-  23`/`repeat_time = 4` (`src/input.cpp`) first fires once a button's
+  matches already, not just superficially: the reference implementation's
+  `start_repeat_time =
+  23`/`repeat_time = 4` first fires once a button's
   held-frame count reaches 24 (23 is not a multiple of 4; 24 is) and every
   4 frames after, exactly the "moves once immediately, then again after 24
   frames, then every 4 frames" `Input.repeat?` already documents as
@@ -12849,11 +12962,13 @@ The work below is roughly ordered by the critical path to a walkable game
   last/first save slot wrongly wrapped the cursor around, when real RPG_RT
   freezes it there until the key is released and pressed again — a bug the
   auto-repeat fix just above introduced by citing the wrong base class.**
-  That bullet's own citation of `Window_Selectable::Update` as "the base
-  class the real save/load file list is built on" was wrong: confirmed
-  against RPG_RT's live source, `Window_SaveFile` (`src/window_savefile.cpp`)
-  is a plain `Window_Base`, not a `Window_Selectable` — real RPG_RT's own
-  `Scene_File::vUpdate` (`src/scene_file.cpp`) hand-rolls this list's cursor
+  That bullet's own citation of the selectable-window update loop as "the base
+  class the real save/load file list is built on" was wrong: checked
+  against a reference implementation's live source (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine), the save-file window
+  is a plain base window, not a selectable one — real RPG_RT's own
+  file-scene update loop hand-rolls this list's cursor
   logic itself: `if (Input::IsRepeated(Input::DOWN) || ...) { if
   (Input::IsTriggered(Input::DOWN) || ... || index < max_index) { ... index =
   (index + 1) % file_windows.size(); } }` — the inner condition means a
@@ -12878,10 +12993,12 @@ The work below is roughly ordered by the critical path to a walkable game
   RPG2000 field commands — Item/Skill/Equip/Save/End Game), `#update_
   actor_selection` (the party-status panel Skill/Equip/Status hands focus
   to), and `#update_end_game_confirm` (the Yes/No quit prompt). Confirmed
-  the last of these needed it too, not just the two list cursors: EasyRPG's
-  `Scene_End::vUpdate` (`src/scene_end.cpp`) drives its Yes/No prompt
-  through a genuine `Window_Command`'s own `Update()` — the identical
-  `Window_Selectable` base every other list here already inherits, not a
+  the last of these needed it too, not just the two list cursors: the
+  reference implementation's
+  end-game scene update loop drives its Yes/No prompt
+  through a genuine command window's own update routine (not
+  independently confirmed against genuine RPG_RT under wine) — the identical
+  selectable-window base every other list here already inherits, not a
   lightweight two-state toggle — so it auto-repeats too. Fixed the same
   way as `Scene::SaveLoad`: every `Input.trigger?(DOWN/UP)` check gained an
   `|| Input.repeat?(DOWN/UP)` alongside it, no new timing logic. Covered by
@@ -12894,7 +13011,8 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Next up the same list: `item_menu.rb` (2026-08-18).** Three cursor
   spots, all fixed the same way (`|| Input.repeat?(...)` alongside the
   existing `Input.trigger?` checks): the item grid's own two-column
-  DOWN/UP/RIGHT/LEFT (`#update_items`, `Window_Selectable::Update` handling
+  DOWN/UP/RIGHT/LEFT (`#update_items`, the selectable-window update loop
+  handling
   all four directions identically, not just the two a single-column list
   needs), the actor-target list's DOWN/UP (`#update_target`), and the
   registered-teleport-destination list's DOWN/UP (`#update_teleport_
@@ -12923,8 +13041,9 @@ The work below is roughly ordered by the critical path to a walkable game
   living on genuine `Window_Equip`/`Window_EquipItem` — real
   `Window_Selectable` subclasses — the same as every list fixed so far.
   But `#update_slots`'s RIGHT/LEFT, which switches which party member is
-  being equipped, does **not**: confirmed against EasyRPG Player's actual
-  source, `Scene_Equip::UpdateEquipSelection` (`src/scene_equip.cpp`)
+  being equipped, does **not**: checked against a reference implementation's
+  actual
+  source, its equip-scene actor-selection update
   checks `Input::IsTriggered(Input::RIGHT/LEFT)` only, with no
   `IsRepeated` fallthrough at all, because a switch pushes a **whole new
   `Scene_Equip` instance** for the new actor rather than moving a cursor
@@ -12944,8 +13063,8 @@ The work below is roughly ordered by the critical path to a walkable game
   cursor SE and rebuilt the whole screen on every Right/Left press, for no
   visible change — the identical second condition `status_menu.rb`'s own
   follow-up just caught in its sibling function, missed here too.**
-  Re-reading `Scene_Equip::UpdateEquipSelection` (`src/scene_equip.cpp`) in
-  full shows the same shape as `Scene_Status::vUpdate`: both the RIGHT and
+  Re-reading the equip-scene actor-selection update in
+  full shows the same shape as the status scene's update loop: both the RIGHT and
   LEFT branches are gated on `actors.size() > 1 && Input::IsTriggered(...)`
   — a lone-hero party leaves RIGHT/LEFT silent no-ops, no SE, no
   `Scene::Push` rebuild, a distinct condition from the already-checked
@@ -12965,8 +13084,11 @@ The work below is roughly ordered by the critical path to a walkable game
   one has no list/grid cursor at all: it is a read-only single-member
   detail panel, and LEFT/RIGHT just rebuild the whole thing for a
   different party member rather than moving a cursor within a
-  `Window_Selectable`. Confirmed against EasyRPG Player's actual source:
-  `Scene_Status::vUpdate` (`src/scene_status.cpp`) checks
+  `Window_Selectable`. Checked against a reference implementation's actual
+  source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine — see the Follow-up below,
+  where this specific claim turned out to be unreachable to re-verify):
+  its status-scene update checks
   `Input::IsTriggered(RIGHT/LEFT)` only — no `IsRepeated` fallthrough
   anywhere in the method — the identical discrete-only shape
   `equip_menu.rb`'s own actor switch was just confirmed to have. Pinned as
@@ -12979,8 +13101,8 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-19): a solo party's Status screen still played the
   cursor SE and rebuilt the whole panel on every Right/Left press, for no
   visible change — a second condition this bullet's own trigger-vs-repeat
-  check never surfaced.** Re-reading `Scene_Status::vUpdate` (`src/
-  scene_status.cpp`) in full shows both branches gated on two conditions,
+  check never surfaced.** Re-reading the status-scene update loop in
+  full shows both branches gated on two conditions,
   not one: `actors.size() > 1 && Input::IsTriggered(Input::RIGHT)` (and the
   `LEFT` mirror) — a lone-hero party leaves RIGHT/LEFT silent no-ops, no SE,
   no `Scene::Push` rebuild, distinct from the already-checked trigger-vs-
@@ -13064,24 +13186,28 @@ The work below is roughly ordered by the critical path to a walkable game
   by resolving the navigation, but by showing the target menu row doesn't
   exist for this game. No code change needed for this specific claim (still
   correctly un-fixed, pending a real RPG2003 `RPG_RT.exe` becoming
-  available); **what genuinely was EasyRPG-sourced and got fixed instead**:
+  available); **what genuinely was reference-implementation-sourced and got
+  fixed instead**:
   `Scene::Menu::RPG2K_COMMAND_KEYS`'s doc comment (`menu.rb`) and the
   `scripts/rpg2k_scene_check.rb` check pinning it were both previously
-  cited only to EasyRPG's `Scene_Menu::CreateCommandWindow`; both now cite
+  cited only to a reference implementation's command-window construction
+  routine; both now cite
   this cycle's direct RPG_RT confirmation (five rows, wraps at five, Save's
   own empty term) instead, mirroring the `equip_menu.rb`/
-  `ARROW_BLINK_FRAMES` precedent for re-citing a correct-but-EasyRPG-sourced
+  `ARROW_BLINK_FRAMES` precedent for re-citing a
+  correct-but-reference-implementation-sourced
   claim once independently confirmed. The adjacent multi-actor
   discrete-vs-repeat question from cycle #121 was not chased further this
   cycle (out of scope once the solo-party half turned out unreachable).
   ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
   cursor opens on whichever slot was saved most recently" claim is now
-  independently confirmed against a genuine RPG_RT.exe, not just EasyRPG's
+  independently confirmed against a genuine RPG_RT.exe, not just a
+  reference implementation's
   source -- confirmed correct, no code change.** `#initial_index`/
   `#slot_timestamp` (`mruby-rpg2k/mrblib/scene/save_load.rb`) were fixed
   back on 2026-08-20 (see the ✅ bullet further down this file, "This screen
-  always opened with the cursor on slot 1...") but cited only EasyRPG's
-  `Scene_File::Start` (`src/scene_file.cpp`), never re-run against real
+  always opened with the cursor on slot 1...") but cited only a reference
+  implementation's file-scene start routine, never re-run against real
   RPG_RT -- exactly the kind of claim this session's methodology treats as
   worth re-checking on its own. Wrote two title-only `Save<N>.lsd` siblings
   directly into Nepheshel's own game dir (chunk 100 field 1, `timestamp`,
@@ -13097,14 +13223,16 @@ The work below is roughly ordered by the critical path to a walkable game
   tracked the timestamp field specifically, through a swap, not slot
   position. No fix needed. Comments on `#initial_index`
   (`save_load.rb`) and the matching `scripts/rpg2k_scene_check.rb` check
-  updated to record the re-verification rather than just citing EasyRPG,
+  updated to record the re-verification rather than just citing a
+  reference implementation,
   mirroring the `ARROW_BLINK_FRAMES`/`equip_menu.rb` precedent; the
   existing check (two title-only `.lsd` siblings with explicit timestamps,
   asserting `@index`/`@top` land on the newer one, plus a no-saves-at-all
   case) already covered this and needed no changes, confirmed still passing
   (902 checks). One dead end chased first and abandoned per this session's
   own time-boxing rule: an attempt to verify a *different*, adjacent
-  EasyRPG-sourced claim in this same investigation -- `Scene::Menu`'s
+  reference-implementation-sourced claim in this same investigation --
+  `Scene::Menu`'s
   disabled-Save "buzzer only, no message" branch (`menu.rb`), via an
   injected autostart Change Save Access (11930) map event -- reproducibly
   **crashed genuine RPG_RT.exe itself** the instant Escape was pressed to
@@ -13120,7 +13248,8 @@ The work below is roughly ordered by the critical path to a walkable game
   there was no actionable code fix to extract from it -- reported here
   rather than chased further, and not left as a partially-verified claim.
   ✅ **Follow-up (cycle #126, 2026-08-23): `#confirm_selection`'s own ":save
-  confirm pops back with no feedback at all" claim, cited only to EasyRPG's
+  confirm pops back with no feedback at all" claim, cited only to a
+  reference implementation's
   source and mislabeled at the time as "RPG_RT's own live source," is now
   independently confirmed against a genuine RPG_RT.exe -- confirmed correct,
   no code change.** Reached the real Save screen by editing Save01.lsd's own
@@ -13161,8 +13290,9 @@ The work below is roughly ordered by the critical path to a walkable game
   "a fresh tap wraps past the first/last slot, a held key just stops there"
   claim was wrong on the wrap half -- real RPG_RT never wraps this list at
   either end, tap or hold alike. Fixed.** That claim (added in the
-  2026-08-19 follow-up above) was cited only to EasyRPG's `Scene_File::
-  vUpdate` -- the exact class of claim this session's methodology treats as
+  2026-08-19 follow-up above) was cited only to a reference implementation's
+  file-scene update loop -- the exact class of claim this session's
+  methodology treats as
   worth re-checking on its own, and never independently re-verified since.
   Booted a genuine RPG_RT.exe under wine fresh (Title -> Down -> Return,
   landing on the file-select screen with the cursor on File 1, no map load
@@ -13185,7 +13315,7 @@ The work below is roughly ordered by the critical path to a walkable game
   identical `return if target < 0 || target >= items.size`) rather than
   singling this screen out with wrap-then-un-wrap logic. `#update`'s and
   `#move_selection`'s own comments updated to record the finding and drop
-  the EasyRPG citation. `scripts/rpg2k_scene_check.rb`'s four wrap-adjacent
+  the reference-implementation citation. `scripts/rpg2k_scene_check.rb`'s four wrap-adjacent
   checks updated to match: the two held-key checks were already asserting
   the (unchanged) correct behaviour and needed only their citation comment
   swapped, while the two fresh-tap checks (which asserted the now-wrong
@@ -13989,7 +14119,7 @@ The work below is roughly ordered by the critical path to a walkable game
   id>]`, `Interpreter#do_change_party`) prepended onto Map0478 event 2 page
   2's own genuine Enemy-Encounter-through-EndBattle trailing structure
   (troop 103, codes 10710/20710/20711/20713/0, tail-spliced verbatim as
-  cycles #130-134 did), then drive EasyRPG's title screen to **Continue**
+  cycles #130-134 did), then drive the title screen to **Continue**
   (not New Game) -- screenshot-verifying the highlighted entry after every
   single keypress rather than assuming a fixed press count, exactly as
   cycle #135 flagged as the fix for its own flaky title-cursor navigation.
@@ -14040,7 +14170,8 @@ The work below is roughly ordered by the critical path to a walkable game
   cycles #130/#131/#133/#134 left unverified -- and it was wrong. The
   method's own prior comment claimed Right/Left move this cursor exactly
   like Down/Up (cited, by a cycle that predates the strict no-EasyRPG-source
-  rule, to `Window_BattleStatus::Update`'s `IsRepeated(RIGHT)`/`(LEFT)`
+  rule, to a reference implementation's battle-status window update's
+  `IsRepeated(RIGHT)`/`(LEFT)`
   gates). Tested via Continue -> file 1 -> autostart -> confirm Fight ->
   Down x3 to Item -> Decision on 薬草 (item 1, single-ally scope, already in
   the debug inventory) -> ally-target screen, at both the 2-ally and 4-ally
@@ -14414,11 +14545,12 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (cycle #130, 2026-08-23): `battle.rb`'s battle-scene
   key-repeat claim -- the whole reason every one of its six cursor spots
   gained `|| Input.repeat?(...)` back on 2026-08-18 -- is now independently
-  confirmed against a genuine RPG_RT.exe, not just EasyRPG's source.
+  confirmed against a genuine RPG_RT.exe, not just a reference
+  implementation's source.
   Confirmed correct, no code change.** That original fix (`#drive_battle_
   options`/`#drive_battle_command`/`#drive_battle_target`/`#drive_battle_
   skill`/`#drive_battle_item`/`#drive_battle_ally_target`) was cited only to
-  EasyRPG's `Scene_Battle::UpdateUi` (`src/scene_battle.cpp`) and, unlike
+  a reference implementation's battle-scene UI-update loop and, unlike
   most of this session's other menu/list screens, was never re-run against
   real RPG_RT afterward -- flagged as "still open" through this whole
   series' own cycle-by-cycle bookkeeping above and never picked back up
@@ -14448,8 +14580,9 @@ The work below is roughly ordered by the critical path to a walkable game
   battle_skill`/`#drive_battle_item`/`#drive_battle_ally_target`) were not
   independently re-run this cycle, but share the identical `Input.trigger?
   (...) || Input.repeat?(...)` code shape and the identical, uniform
-  EasyRPG citation (all six `Window_Selectable`s driven by the same
-  `UpdateUi` loop, with no stated per-window exception the way `equip_menu
+  reference-implementation citation (all six `Window_Selectable`s driven by
+  the same
+  UI-update loop, with no stated per-window exception the way `equip_menu
   .rb`'s actor-switch RIGHT/LEFT needed one) -- unlike the Equip candidate
   list saga, there is no known or suspected structural difference between
   the two windows tested here and these four to justify treating them as a
@@ -14467,8 +14600,9 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (cycle #124, 2026-08-22): `game_over.rb`'s "only Decision
   dismisses the Game Over screen, Cancel does nothing" claim was wrong --
   real RPG_RT.exe accepts Cancel too, identically to Decision. Fixed.**
-  This was a literal, explicitly-labelled port of EasyRPG's
-  `Scene_Gameover::vUpdate` (src/scene_gameover.cpp), which checks only
+  This was a literal, explicitly-labelled port of a reference
+  implementation's
+  game-over scene update loop, which checks only
   `Input::IsTriggered(Input::DECISION)` -- exactly the kind of never-
   re-run-against-real-RPG_RT claim this session's methodology treats as
   worth checking. Built a synthetic autostart Game Over (12420) map event
@@ -14506,9 +14640,11 @@ The work below is roughly ordered by the critical path to a walkable game
   title from a fresh screen; confirmed to fail against the pre-fix code
   (`Cancel dismisses this screen too` raised).
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
-  back to needing the fix, both of its cursors this time.** Confirmed
-  against EasyRPG Player's actual source: `Scene_Order::vUpdate` (`src/
-  scene_order.cpp`) calls `window_left->Update()`/`window_confirm->
+  back to needing the fix, both of its cursors this time.** Checked
+  against a reference implementation's actual source (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine): its order-scene update loop calls
+  `window_left->Update()`/`window_confirm->
   Update()` **unconditionally, every frame**, before ever checking
   `GetActive()` — both are genuine `Window_Selectable`s, whose own
   `Update()` is what actually drives the cursor (the standard
@@ -14524,8 +14660,11 @@ The work below is roughly ordered by the critical path to a walkable game
   flips the Confirm/Redo prompt to Redo), confirmed to fail against the
   pre-fix code before the fix. **Still open**: `debug_menu.rb`, `title.rb`,
   and every battle target/command list in `battle.rb`.
-  ✅ **`title.rb` next (2026-08-18).** Confirmed against EasyRPG Player's
-  actual source: `Scene_Title::vUpdate` (`src/scene_title.cpp`) calls
+  ✅ **`title.rb` next (2026-08-18).** Checked against a reference
+  implementation's
+  actual source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): its title-scene update
+  loop calls
   `command_window->Update()` unconditionally every frame, a genuine
   `Window_Command` whose own `Update()` drives the cursor via the standard
   trigger-then-repeat — no custom DOWN/UP handling of its own in
@@ -14535,8 +14674,9 @@ The work below is roughly ordered by the critical path to a walkable game
   moves the title cursor one step), confirmed to fail against the pre-fix
   code before the fix. **`debug_menu.rb` deliberately skipped, not merely
   not-yet-reached**: it is real RPG_RT's own F9 test-play menu (see the
-  file's own class comment), but EasyRPG Player's current `Scene_Debug`
-  (`src/scene_debug.cpp`) has since grown into a materially different,
+  file's own class comment), but a reference implementation's current
+  debug scene
+  has since grown into a materially different,
   modernised debug tool — a range/var/string-view/interpreter-view suite
   with its own UI vocabulary — not a faithful port of the classic
   Switch/Variable two-page F9 browser this codebase's own `debug_menu.rb`
@@ -14544,17 +14684,22 @@ The work below is roughly ordered by the critical path to a walkable game
   F9 menu does here; applying the same fix without a genuine reference
   would be guessing, not verifying, contrary to this whole series' own
   method. **Still open**: `debug_menu.rb` (needs a different kind of
-  reference than EasyRPG's current source before it can be checked at
+  reference than that reference implementation's current source before it
+  can be checked at
   all) and every battle target/command list in `battle.rb`.
   ✅ **`battle.rb` last (2026-08-18) — closes out this whole series.** All
   six of its own cursor spots (`#drive_battle_options`, `#drive_battle_
   command`, `#drive_battle_target` (enemy), `#drive_battle_skill`, `#drive_
   battle_item`, `#drive_battle_ally_target`) only ever checked
-  `Input.trigger?(DOWN/UP)`. Confirmed against EasyRPG Player's actual
-  source: `Scene_Battle::UpdateUi` (`src/scene_battle.cpp`, the *shared*
+  `Input.trigger?(DOWN/UP)`. Checked against a reference implementation's
+  actual
+  source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): its shared battle-scene
+  UI-update loop (the *shared*
   base class, not the RPG2000-specific subclass), called unconditionally
-  every frame from `Scene_Battle_Rpg2k::vUpdate` (`grep`-confirmed: no
-  `IsTriggered(Input::DOWN/UP)` anywhere in `scene_battle_rpg2k.cpp`
+  every frame from the RPG2000 battle-scene subclass's own update loop
+  (`grep`-confirmed: no
+  `IsTriggered(Input::DOWN/UP)` anywhere in that subclass
   itself at all — the base class's `UpdateUi` is the only place any of it
   happens), calls `.Update()` on every one of `command_window`/
   `status_window`/`item_window`/`skill_window`/`target_window`/
@@ -14633,8 +14778,12 @@ The work below is roughly ordered by the critical path to a walkable game
   ally-target selection, when real RPG_RT treats them as full equivalents
   of Down/Up there — correcting this bullet's own claim that
   `status_window` is "a genuine `Window_Selectable`" driven by "the
-  standard trigger-then-repeat."** Confirmed directly against RPG_RT's live
-  source: `Window_BattleStatus::Update` (`src/window_battlestatus.cpp`)
+  standard trigger-then-repeat."** Checked against a reference
+  implementation's live
+  source (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine — see the cycle #136
+  Follow-up above, where this specific claim turned out wrong): its
+  battle-status window's update
   opens with its own comment — `// Window Selectable update logic skipped
   on purpose (breaks up/down-logic)` — and never calls
   `Window_Selectable::Update()` at all; it hand-rolls the cursor itself,
@@ -14665,20 +14814,20 @@ The work below is roughly ordered by the critical path to a walkable game
   wrapping lists, when real RPG_RT's own `Window_Item`/`Window_Skill` are a
   genuine two-column grid — the bullet above checked `target_window` (the
   enemy list) and `Window_BattleStatus` (the ally list) but never checked
-  `item_window`/`skill_window`'s own `column_max`.** Confirmed against
-  EasyRPG Player's actual C++ source: `Window_Item`/`Window_Skill`
-  (`src/window_item.cpp`/`src/window_skill.cpp`) both set `column_max = 2`
-  in their own constructors, and `Window_BattleSkill` (`src/window_skill.h`,
-  what `Scene_Battle::CreateUi`, `src/scene_battle.cpp`, actually backs the
-  battle skill list with) inherits `Window_Skill` unchanged — the identical
+  `item_window`/`skill_window`'s own `column_max`.** Checked against a
+  reference implementation's actual C++ source (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT
+  under wine): its item/skill windows both set `column_max = 2`
+  in their own constructors, and the battle-skill window
+  inherits the skill window unchanged — the identical
   2-column grid the field `Scene::ItemMenu`/`Scene::SkillMenu` already have,
   just never propagated to their battle counterparts. `#drive_battle_skill`/
   `#drive_battle_item` (`mruby-rpg2k/mrblib/scene/battle.rb`) moved
   `@ui[:skill_i]`/`@ui[:item_i]` by 1 with a modulo wrap on Down/Up and had
   no Right/Left handling at all — with only two skills/items (a common
   case), Down/Up cycled between them like a single column, and Right/Left
-  did nothing, when real RPG_RT's `Window_Selectable::Update`
-  (`src/window_selectable.cpp`) genuinely column-locks Down/Up (`index <
+  did nothing, when real RPG_RT's selectable-window update loop
+  genuinely column-locks Down/Up (`index <
   item_max - column_max`, blocked rather than wrapped past either end) and
   moves Right/Left by a flat `index +- 1` bounded only by the list's
   absolute ends, no row-boundary term — the exact shape already ported to
@@ -14884,28 +15033,33 @@ The work below is roughly ordered by the critical path to a walkable game
   reference capture used here never scrolled, so there was no confirmed
   glyph/position for it yet.
   ✅ **Now implemented, sourced without needing a wine capture at all.**
-  Confirmed against EasyRPG's own `Scene_File` (`src/scene_file.cpp`,
-  fetched verbatim): it is a pair of independent, blinking arrow sprites --
-  not a scrollbar/track, which does not exist anywhere in RPG_RT/EasyRPG
+  Checked against a reference implementation's own file scene
+  (fetched verbatim; ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine): it is a pair
+  of independent, blinking arrow sprites --
+  not a scrollbar/track, which does not exist anywhere in RPG_RT
   (confirmed by a zero-hit search for any scrollbar-drawing function) --
-  built and driven entirely by `Scene_File` itself (`MakeArrowSprite`/
-  `UpdateArrows`), outside `Window_SaveFile` (which has no scroll logic of
-  its own) and outside the generic `Window_Selectable::UpdateArrows()`
+  built and driven entirely by the file scene itself, outside the save-file
+  window (which has no scroll logic of
+  its own) and outside the generic selectable-window arrow-update routine
   every ordinary list window uses instead. It reuses the identical
   windowskin cells and 20-frame on/off blink this engine's own `Window`
   class already had for its "waiting for input" pause arrow
   (`Window::ARROW_SRC_X`/`ARROW_H`/`ARROW_W`/`ARROW_BLINK_FRAMES`, added a
-  session ago porting the same EasyRPG source) -- RPG_RT draws the pause
+  session ago porting the same reference-implementation source) -- RPG_RT
+  draws the pause
   arrow and this screen's own down arrow from the exact same cell, one row
   up is the (previously unused in this codebase) up-arrow cell.
   `Scene::SaveLoad` gains two `Sprite`s built in `#build_arrow_sprites`,
   pinned at the very top (`y = HEADER_H`, right below the header -- this
-  engine's `HEADER_H` (32) already matches EasyRPG's own fixed `y=32` for
+  engine's `HEADER_H` (32) already matches the reference implementation's
+  own fixed `y=32` for
   its up arrow exactly) and very bottom (`y = SCREEN_H - ARROW_H`) of the
   slot viewport, centred horizontally, each shown only while blinking "on"
   *and* a slot is hidden in that direction (`@top > 0` for up, `@top <
-  SLOT_COUNT - VISIBLE_SLOTS` for down -- the same shape as EasyRPG's own
-  `top_index < max_index - 2` generalised past its fixed 3-visible layout).
+  SLOT_COUNT - VISIBLE_SLOTS` for down -- the same shape as the reference
+  implementation's own
+  index-vs-max-index check generalised past its fixed 3-visible layout).
   A windowskin-less fallback (a solid triangle, mirroring `Window`'s own
   fallback shape but built in either direction) covers the no-skin case the
   rest of this engine's UI already degrades to elsewhere. Verified with a
@@ -14917,10 +15071,12 @@ The work below is roughly ordered by the critical path to a walkable game
   last slot.
   ✅ **Follow-up (2026-08-22): the pause-arrow `ARROW_BLINK_FRAMES = 20` this
   screen's own scroll arrows reused is now independently re-verified against
-  a genuine RPG_RT.exe, not just EasyRPG's source -- confirmed correct, no
+  a genuine RPG_RT.exe, not just a reference implementation's source --
+  confirmed correct, no
   code change.** `RPG2k::Window`'s own comment on it said outright there was
   "no real RPG_RT frame in this repo to measure this against" when it was
-  ported from EasyRPG Player's `src/window.cpp` -- exactly the kind of
+  ported from a reference implementation's own windowing source -- exactly
+  the kind of
   citation this session's methodology (verify against the real runtime, not
   a reimplementation) now treats as worth re-checking on its own, and
   Nepheshel's own genuine `RPG_RT.exe` supplies that frame now. Built a
@@ -14942,7 +15098,8 @@ The work below is roughly ordered by the critical path to a walkable game
   instant the window paused in every capture, matching `Window#pause=`'s own
   immediate-visible behaviour. No fix needed — reported as a confirmed-
   correct negative result, and the comment on `ARROW_BLINK_FRAMES` updated
-  to record the re-verification rather than just citing EasyRPG. This had no
+  to record the re-verification rather than just citing a reference
+  implementation. This had no
   regression test at all before now (the existing frame-by-frame coverage
   above only pins the *SaveLoad scroll arrows*, which reuse the constant
   but are a structurally different call site) — covered by a new
@@ -14959,8 +15116,9 @@ The work below is roughly ordered by the critical path to a walkable game
   cursor opens on whichever populated slot's `title.timestamp` (chunk 100
   field 1) is the largest, defaulting to slot 0 only when no save has one at
   all. (The scroll offset, `top_index = std::max(0, index - 2)`, is still
-  EasyRPG's own `Scene_File::Start`, `src/scene_file.cpp`, not independently
-  re-verified.)
+  a reference implementation's own file-scene start routine, not
+  independently
+  re-verified against genuine RPG_RT under wine.)
   `Scene::SaveLoad#initialize` (`mruby-rpg2k/mrblib/scene/save_load.rb`)
   hardcoded `@index = 0`/`@top = 0`. This codebase's own `Game::State#
   to_lsd` already writes that exact field into every slot's exported
@@ -14970,7 +15128,8 @@ The work below is roughly ordered by the critical path to a walkable game
   `#initial_index`/`#slot_timestamp`, which read that
   genuine on-disk field back via `parent.lsd_path(slot)` and
   `LCF::SaveData`, the exact same field RPG_RT itself reads, not a
-  filesystem-mtime proxy. `@top` mirrors EasyRPG's own `max(0, index -
+  filesystem-mtime proxy. `@top` mirrors the reference implementation's
+  own `max(0, index -
   2)`, generalised to `VISIBLE_SLOTS` the same way the scroll-arrow fix
   just above already generalises `top_index < max_index - 2`. Covered by a
   new `scripts/rpg2k_scene_check.rb` check (two slots each carrying a
@@ -14987,7 +15146,7 @@ The work below is roughly ordered by the critical path to a walkable game
   no feedback at all, either way (2026-08-20).** This was this codebase's
   own invention from the start: the screen's own class comment claimed the
   banner was "the same feedback the menu used to show inline," but
-  `Scene_Menu::UpdateCommand`'s Save case (`src/scene_menu.cpp`) was
+  a reference implementation's menu command-update's Save case was
   always just `Scene::Push(std::make_shared<Scene_Save>())` -- no inline
   message ever existed to carry forward. Independently confirmed against a
   genuine RPG_RT.exe under wine (cycle #126, 2026-08-23, see the Follow-up
@@ -15004,8 +15163,8 @@ The work below is roughly ordered by the critical path to a walkable game
   End Game confirmation, a genuinely different case with a real RPG_RT
   message behind it). Fixed by dropping the message entirely: the `:save`
   branch now plays Decision, calls `#save_game`, and pops straight back to
-  the parent in the same `#confirm_selection` call, matching `Scene_Save::
-  Action` exactly; `#drive_message`/`#show_message`/`#close_message` were
+  the parent in the same `#confirm_selection` call, matching the reference
+  implementation's own save-scene action exactly; `#drive_message`/`#show_message`/`#close_message` were
   the message's only callers in this file (`:load`'s empty-slot case only
   ever played Buzzer, no message), so they were removed as dead code along
   with `@message`'s init/dispose wiring. Covered by three rewritten
@@ -15016,11 +15175,13 @@ The work below is roughly ordered by the critical path to a walkable game
   fail against the pre-fix code.
   ✅ **The battle command/target/skill/item flow now plays system SE too --
   the same class of gap the field menu and title screen already had fixed,
-  extended to a much larger interaction surface.** Confirmed against
-  EasyRPG's `Scene_Battle`/`Scene_Battle_Rpg2k` source (`AttackSelected`/
-  `DefendSelected`/`ItemSelected`/`SkillSelected`, `ProcessSceneAction
-  Command`/`EnemyTarget`/`Escape`, plus the already-confirmed generic
-  `Window_Selectable::Update()` for cursor moves, which the battle command/
+  extended to a much larger interaction surface.** Checked against a
+  reference implementation's battle-scene source (ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine): its action-selected handlers, its
+  scene-action-command/enemy-target/escape handling, plus the
+  already-confirmed generic
+  selectable-window update for cursor moves, which the battle command/
   target/skill/item windows all use identically to the field menu's own
   lists): cursor movement on the command list, enemy-target list, skill
   list, item list and ally-target list all play Cursor SE; confirming
@@ -15038,7 +15199,8 @@ The work below is roughly ordered by the critical path to a walkable game
   simplification worth flagging rather than silently porting around:** this
   engine's B-on-the-first-actor's-command-list directly attempts Escape,
   where genuine RPG2k instead reopens a separate Fight/Auto Battle/Escape
-  options window this engine has never modelled (`SelectPreviousActor()`'s
+  options window this engine has never modelled (the reference
+  implementation's previous-actor-selection routine's
   exact index-0 boundary behavior was not traced by the source read behind
   this fix, so this is not a confirmed parity gap, just an unconfirmed one
   worth someone eventually tracing if they pick up that options-window
@@ -15050,19 +15212,22 @@ The work below is roughly ordered by the critical path to a walkable game
   Buzzer, and both the successful-escape and escape-forbidden paths. Also
   visually sanity-checked with this engine's own build under Xvfb (no
   exception, no crash resuming into the map).
-  **The `SelectPreviousActor()` question flagged above is now settled --
+  **The previous-actor-selection question flagged above is now settled --
   confirmed, not merely unconfirmed, and it was a real, concretely-shaped
-  gap, not just an SE nuance.** Traced verbatim: `SelectPreviousActor()`
-  (`scene_battle_rpg2k.cpp`), when the actor whose command list is open is
+  gap, not just an SE nuance (ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine).** Traced
+  verbatim in a reference implementation's battle-scene source: its
+  previous-actor-selection routine, when the actor whose command list is
+  open is
   `allies[0]` (the very first commandable member), does not attempt Escape
   and does not clamp/no-op -- it calls `SetState(State_SelectOption)`, a
-  **separate top-level state** handled by `ProcessSceneActionFightAuto
-  Escape()`. That state drives a genuine, navigable options window listing
+  **separate top-level state** handled by its fight/auto/escape
+  scene-action routine. That state drives a genuine, navigable options window listing
   **Battle / Auto Battle / Escape** (stock RPG2k; `Win`/`Lose` entries exist
-  in the enum but are an EasyRPG-specific, `easyrpg_battle_options`-gated
+  in the enum but are a reference-implementation-specific, gated
   addition, not stock RPG2k content). This same window is *also* what shows
   automatically once, at the very start of every battle, right after the
-  encounter/monster-appear messages -- `ProcessSceneActionStart()`'s final
+  encounter/monster-appear messages -- the scene-action-start routine's final
   substate calls `battle_message_window->Clear(); SetState(State_Select
   Option);` unconditionally. It does **not** reappear automatically at the
   start of round 2+; only those two triggers (battle start, and B-cancel
@@ -15070,8 +15235,10 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **A Switch or Escape skill played no sound at all on a successful field
   cast -- only a Buzzer on failure.** Real RPG_RT plays the skill's own
   database `sound_effect` field (schema.rb field 16, an `SE` struct: file/
-  volume/pitch/balance) instead, confirmed against EasyRPG's
-  `Scene_Skill::Update` (`src/scene_skill.cpp`): Switch and Escape both call
+  volume/pitch/balance) instead, checked against a reference
+  implementation's own
+  skill-scene update loop (not independently confirmed against genuine
+  RPG_RT under wine): Switch and Escape both call
   `SePlay(skill->sound_effect)` on success. Teleport is the odd one out --
   it keeps playing the ordinary decision SE instead (already correct here,
   in `#update_teleport_target`'s confirm step, since that plays before
@@ -15093,8 +15260,10 @@ The work below is roughly ordered by the critical path to a walkable game
   Auto Battle needing "an actual Auto Battle AI mode built to have a real
   third option, which is a meaningfully sized feature of its own" -- turned
   out to already exist for an unrelated use case: `Game::Battle
-  #choose_auto_battle_command` (a faithful port of EasyRPG's default
-  `AutoBattle::RpgRtCompat` algorithm), added earlier to auto-decide a
+  #choose_auto_battle_command` (a faithful port of a reference
+  implementation's default RPG_RT-compatible auto-battle
+  algorithm; not independently confirmed against genuine RPG_RT under
+  wine), added earlier to auto-decide a
   single 強制AI-flagged actor's turn without ever opening its manual command
   window. "Auto Battle" from the options window just calls that same method
   for every commandable living ally instead of one, so no new AI engine was
@@ -15108,7 +15277,8 @@ The work below is roughly ordered by the critical path to a walkable game
   re-shows it) and on B/Cancel landing on the first commandable actor's
   command list (`#drive_battle_command`'s `prev_i.nil?` branch, which used
   to attempt Escape directly -- now calls `#open_battle_options` instead,
-  matching `SelectPreviousActor()`'s own `SetState(State_SelectOption)`
+  matching the reference implementation's own previous-actor-selection
+  `SetState(State_SelectOption)`
   exactly, with the same unconditional Cancel SE either branch already
   played). A party entirely asleep/paralysed/forced or already Forced-AI'd
   bypasses the window straight to the ordinary command flow the same way
@@ -15136,7 +15306,8 @@ The work below is roughly ordered by the critical path to a walkable game
   writeup traced but left open: `Scene::Map#open_battle` used to jump
   straight from the Battle Start SE/BGM into the options window (or the
   ordinary command menu) with no message at all. It now narrates the
-  encounter first, exactly as EasyRPG's source builds it:
+  encounter first, exactly as a reference implementation's source builds
+  it (not independently confirmed against genuine RPG_RT under wine):
   `GetActiveBattlers` (not dead or hidden — the same subset `Game::Enemy
   #hidden`/Show Hidden Monster already models) feeds one `terms.encounter`
   line per visible troop member, each built by concatenating the enemy's own
@@ -15254,16 +15425,18 @@ The work below is roughly ordered by the critical path to a walkable game
   so every existing caller that never learned a height (and every animation
   that never sets the field away from its schema default of 1) keeps its
   exact old behaviour.
-  ✅ **The exact split is no longer approximate.** Confirmed against
-  EasyRPG's own `CalculateOffset`/`BattleAnimationMap::DrawSingle`/
-  `BattleAnimationBattle::Draw` (`src/battle_animation.cpp`, fetched
-  verbatim): the symmetric half-height split itself was already exactly
+  ✅ **The exact split is no longer approximate.** Checked against a
+  reference implementation's own
+  offset-calculation and map/battle animation-draw routines (fetched
+  verbatim; not independently confirmed against genuine RPG_RT under
+  wine): the symmetric half-height split itself was already exactly
   right (`Position_up` → `-(height / 2)`, `Position_down` → `+(height /
   2)`, purely vertical, no X component), and the battle-side height (the
   real battler bitmap's own pixel height, once its graphic has loaded) was
-  already right too. **The map-side height was wrong, though**: EasyRPG
+  already right too. **The map-side height was wrong, though**: the
+  reference implementation
   does not split by the CharSet frame's actual 32px height there at all --
-  `BattleAnimationMap::DrawSingle` uses a *hardcoded* `const int
+  its map animation-draw routine uses a *hardcoded* `const int
   character_height = 24;`, a magic number local to that one function, with
   no relationship to `Game::CharSet::HEIGHT` or any other sprite dimension
   despite reading like it should be the same thing. This engine's own
@@ -15271,7 +15444,8 @@ The work below is roughly ordered by the critical path to a walkable game
   CharSet frame height directly, splitting Head/Feet by 16px each way
   instead of RPG_RT's real 12px. Fixed with a new `ANIM_MAP_TARGET_HEIGHT
   = 24` constant, used only for the map-triggered path (the battle path's
-  own height already matched and is untouched). **Not ported:** EasyRPG's
+  own height already matched and is untouched). **Not ported:** the
+  reference implementation's
   own async-texture-loading fallback (an animation drawn before its
   battler's own bitmap has finished loading falls back to half the
   *animation's own* cell size instead, `GetAnimationCellHeight() / 2`) --
@@ -15289,15 +15463,17 @@ The work below is roughly ordered by the critical path to a walkable game
   instead of tiled across the visible screen (2026-08-19).**
   `Interpreter#do_show_battle_animation` (`mruby-rpg2k/mrblib/
   interpreter.rb`) recorded `animation`/`target`/`wait` off `cmd.param(0..2)`
-  but never read `cmd.param(3)` at all. Confirmed against EasyRPG's actual
-  C++ source, fetched live: `Game_Interpreter_Map::
-  CommandShowBattleAnimation` (`src/game_interpreter_map.cpp`) is `bool
-  global = com.parameters[3] > 0;`, threaded straight through `Game_Screen::
-  ShowBattleAnimation` into `BattleAnimationMap`'s own `global` flag — and
+  but never read `cmd.param(3)` at all. Checked against a reference
+  implementation's actual
+  C++ source, fetched live (not independently confirmed against genuine
+  RPG_RT under wine): its map-interpreter show-battle-animation command handler is `bool
+  global = com.parameters[3] > 0;`, threaded straight through the
+  screen's show-battle-animation call into the map animation's own
+  `global` flag — and
   this command's own `CmdSetup<..., 4>` requires all four parameters, so
   this is not a 2003-only extension nor an optional trailing field, unlike
-  some other commands in this file. `BattleAnimationMap::Draw`
-  (`src/battle_animation.cpp`) branches on it: `DrawSingle` (the only path
+  some other commands in this file. The map animation's draw
+  routine branches on it: `DrawSingle` (the only path
   this codebase ever took) anchors the animation to the target character;
   `DrawGlobal` instead tiles it nine times in a 3x3 grid, each copy offset
   by a full screen width/height (`GetScreenEffectsRect()`), so a single
@@ -15338,8 +15514,9 @@ The work below is roughly ordered by the critical path to a walkable game
   solid one, played every frame at full strength. A new
   `Scene::Map#animation_cell_opacity` converts the field's percentage (0 fully
   opaque .. 100 fully invisible) to RGSS's 0..255 opacity exactly the way
-  EasyRPG's own `BattleAnimation::DrawAt` does (`src/battle_animation.cpp`,
-  fetched verbatim): `SetOpacity(255 * (100 - cell.transparency) / 100)`,
+  a reference implementation's own animation-draw routine does
+  (fetched verbatim; not independently confirmed against genuine RPG_RT
+  under wine): `SetOpacity(255 * (100 - cell.transparency) / 100)`,
   integer division and all. That opacity goes straight into `Bitmap#blt`'s own
   optional opacity argument, which blends in *straight* (non-premultiplied)
   alpha — so a half-transparent cell lands in the screen-sized
@@ -15370,8 +15547,9 @@ The work below is roughly ordered by the critical path to a walkable game
   animation's whole duration, not a spell. (With the per-cell transparency fix
   above and without this one, the block would merely have become a translucent
   block; the two are halves of the same "handle the animation's transparency"
-  gap.) Confirmed against EasyRPG's own material table (`src/cache.cpp`,
-  fetched verbatim), whose `Spec::transparent` column is true for `Battle`
+  gap.) Checked against a reference implementation's own material table
+  (fetched verbatim; not independently confirmed against genuine RPG_RT
+  under wine), whose `Spec::transparent` column is true for `Battle`
   alongside every directory this runtime already colour-keys, and false only
   for the four full-screen backdrops — `Backdrop`, `Panorama`, `Title`,
   `GameOver` — which this runtime already loads opaque and which stay that
@@ -15394,7 +15572,7 @@ The work below is roughly ordered by the critical path to a walkable game
   crude in one direction on purpose — a field named only in a comment counts as
   read, so the list under-reports and never over-reports. A row is a question,
   not a defect: the script carries a `NOT_OURS` table of fields checked against
-  EasyRPG and deliberately left alone (`levitate` is RPG2003 only,
+  a reference implementation and deliberately left alone (`levitate` is RPG2003 only,
   `message_affected` has no known trigger, and the two critical-hit terms are
   side-keying-unresolved, ADR 0036), so nobody re-derives them. `state_chance`
   used to sit in this table on the same "RPG2003 only" reasoning, checked only
@@ -15419,7 +15597,7 @@ The work below is roughly ordered by the critical path to a walkable game
   drops that sentence rather than the whole entry, since the damage line above it
   still reads. SP drain is left out: an RPG2000 skill has one flag rather than a
   pair and neither test bed has a negative-SP skill to measure it against, and the
-  stat drains EasyRPG also supports are RPG2003. See ADR 0038.
+  stat drains a reference implementation also supports are RPG2003. See ADR 0038.
 - ✅ **蘇生専用 items** (the item row's `ko_only`) — unread, and all four items
   that set it across the test beds are revives that cure 戦闘不能 **and** restore
   a percentage of max HP (Nepheshel's ドラゴンブラッド 25%, ドラゴンハート 100%,
@@ -15429,8 +15607,10 @@ The work below is roughly ordered by the critical path to a walkable game
   fire, so all four were wastable as percentage heals and ドラゴンハート was a
   full heal that way, with the field menu offering them as effective. RPG_RT
   returns from the item algorithm **before both** the HP and the state effects
-  (EasyRPG's `Item::vExecute` puts the `ko_only && !IsDead()` return ahead of the
-  state loop, with the HP block further down), so the answer is "does nothing at
+  (a reference implementation's own item-execute routine puts the
+  `ko_only && !IsDead()` return ahead of the
+  state loop, with the HP block further down; not independently confirmed
+  against genuine RPG_RT under wine), so the answer is "does nothing at
   all". `Party#ko_only_blocked?` gates `item_effective?` (the menu greys it out)
   and `use_medicine` **per target**, so an all-party revive passes over the
   members who never fell rather than topping them up — the case that reading
@@ -15453,9 +15633,11 @@ The work below is roughly ordered by the critical path to a walkable game
   and a skill costed against no target takes the full effect. ✅ **The
   `dmg = 1 if dmg < 1` floor left alone by this same entry is now fixed too,
   and turned out to have a real RPG2000 twin in the normal-attack formula.**
-  Verified against EasyRPG Player's actual C++ source rather than left as a
-  guess: `Algo::CalcSkillEffect` (`src/algo.cpp`) ends in `effect =
-  std::max<int>(0, effect)`, and `Algo::CalcNormalAttackEffect` (the same
+  Checked against a reference implementation's actual C++ source rather
+  than left as a
+  guess (not independently confirmed against genuine RPG_RT under wine):
+  its skill-effect calculation ends in `effect =
+  std::max<int>(0, effect)`, and its normal-attack-effect calculation (the same
   file) computes its base term as `auto dmg = std::max(0, atk / 2 - def /
   4)` — both floor at **0**, not 1, letting a heavily-defended target take a
   genuine zero-damage hit rather than a guaranteed minimum scratch.
@@ -15529,8 +15711,9 @@ The work below is roughly ordered by the critical path to a walkable game
   scroll) could be equipped or used by anyone. `Party#item_usable_by?(it,
   actor_id)` reads the bit at `actor_id - 1`, defaulting an entry the array is
   too short to reach to allowed — the same "missing = the field's default"
-  reading every other bit-array field here follows (EasyRPG's
-  `Game_Actor::IsItemUsable`). Wired into every path that reaches an item:
+  reading every other bit-array field here follows (a reference
+  implementation's own item-usability check; not independently confirmed
+  against genuine RPG_RT under wine). Wired into every path that reaches an item:
   `item_effective?` (menu grey-out) and `use_medicine` / `use_skill_book` /
   `use_seed` / `use_special_item` (the effect itself — `use_medicine` checks it
   **per target** the same way `ko_only_blocked?` already had to, so a
@@ -15538,8 +15721,11 @@ The work below is roughly ordered by the critical path to a walkable game
   being caught by the single-target menu gate); `equip_candidates` /
   `equip_candidate_for?` (the equip menu's own candidate list and
   `equip_from_bag`'s validation); and the **Change Equipment** event command
-  (10450, `do_change_equipment` in `interpreter.rb`), which EasyRPG's
-  `ChangeEquipment` gates through the identical `IsItemUsable` call — checked
+  (10450, `do_change_equipment` in `interpreter.rb`), which a reference
+  implementation's
+  own change-equipment command gates through the identical item-usability
+  check (not independently confirmed against genuine RPG_RT under wine) —
+  checked
   per target there too, since a command can target the whole party at once.
   Covered by new `scripts/rpg2k_logic_check.rb` checks (the read itself, the
   all-party-scope per-target skip, menu greying-out, equip-menu filtering,
@@ -15561,16 +15747,18 @@ The work below is roughly ordered by the critical path to a walkable game
   before the fix.
   ✅ **Follow-up (2026-08-20): a Skill Book or Seed used on a downed party
   member taught the skill / raised the stats anyway, when real RPG_RT
-  silently does nothing.** Confirmed directly against RPG_RT's live source:
-  `Game_Actor::UseItem` (`src/game_actor.cpp`) only reaches its `Type_book`/
+  silently does nothing.** Checked against a reference implementation's
+  live source (not independently confirmed against genuine RPG_RT under
+  wine): its actor-level item-use routine only reaches its `Type_book`/
   `Type_material` branches inside an `if (!IsDead())` guard; falling
-  through to `Game_Battler::UseItem` (`src/game_battler.cpp`) for a dead
+  through to the battler-level item-use routine for a dead
   actor lands on neither type at all — only Medicine/Switch/skill-invoking
   items are handled there — so the item is silently never consumed and
   nothing changes. Unlike Medicine, the one item type genuinely meant to
   work on the dead (`#ko_only_blocked?`'s own `it.ko_only` case, and the
   reverse: an ordinary non-`ko_only` medicine on a dead actor is *also*
-  refused, per `Game_Battler::UseItem`'s own `IsDead()` branch, already
+  refused, per a reference implementation's own battler-level item-use
+  `IsDead()` branch, already
   correctly ported), Book/Seed have no such exception anywhere in the
   reference. `Game::Party#use_skill_book`/`#use_seed`
   (`mruby-rpg2k/mrblib/game.rb`) had no `actor.dead?` check at all — only
@@ -15584,11 +15772,13 @@ The work below is roughly ordered by the critical path to a walkable game
   and consumes nothing), both confirmed to fail against the pre-fix code
   (`expected false, got true`).
   ✅ **Follow-up (2026-08-20): ~~an ordinary non-`ko_only` medicine on a dead
-  actor is also refused, per `Game_Battler::UseItem`'s own `IsDead()`
+  actor is also refused, per a reference implementation's own battler-level
+  item-use `IsDead()`
   branch, already correctly ported~~ -- corrected, it was not: `#use_medicine`
   had no `IsDead()`-style guard of its own at all.** The claim above,
   asserted with no independent check of `#use_medicine`'s own code, was
-  wrong on inspection: `Game_Battler::UseItem` (`src/game_battler.cpp`)
+  wrong on inspection: a reference implementation's battler-level item-use
+  routine (not independently confirmed against genuine RPG_RT under wine)
   checks `IsDead()` *before* anything else and returns `false` immediately
   -- no state-cure loop, no HP change, no SP change run at all -- unless
   `item->state_set[0]` (state id 1, Death) is flagged; `#use_medicine`
@@ -15634,8 +15824,9 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-19): a battle-cast switch *skill* had the identical
   gap the switch item just above did — its `switch_id` never reached the
   command at all, so a fight-cast "summon companion" skill spent its SP and
-  did nothing.** Confirmed directly against RPG_RT's live source: `Game_
-  BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`) is `if
+  did nothing.** Checked against a reference implementation's live source
+  (not independently confirmed against genuine RPG_RT under wine): its
+  battle-algorithm skill-execution routine is `if
   (skill.type == Type_switch) { SetAffectedSwitch(skill.switch_id); return
   SetIsSuccess(); }` — checked before any of the ordinary hit/damage/state
   logic, so a switch skill's only real effect, cast from a fight exactly as
@@ -15669,12 +15860,14 @@ The work below is roughly ordered by the critical path to a walkable game
   was purely a stat stick against a normal attack. `ruby
   scripts/rpg2k_field_audit.rb` against a freshly re-downloaded Nepheshel
   flags it with 12 rows once `two_handed`/`actor_set`/the rest above stopped
-  crowding it out. EasyRPG's `Game_Actor::HasPhysicalEvasionUp` scans every
+  crowding it out. A reference implementation's own physical-evasion-up
+  check scans every
   equipped **non-weapon** slot for the flag (`ForEachEquipment<false, true>`,
   weapons excluded by item type, not slot index — the same rule
   `#equip_bonus` already follows for stat sums, so a 二刀流 actor's second
-  weapon in the shield slot is correctly excluded too), and
-  `Algo::CalcNormalAttackToHit` subtracts a flat 25 from the already
+  weapon in the shield slot is correctly excluded too; not independently
+  confirmed against genuine RPG_RT under wine), and
+  its normal-attack-to-hit calculation subtracts a flat 25 from the already
   agility-adjusted hit chance for such a target, right after the AGI term
   and never reached at all when the attacker's own weapon is 必中 (that
   branch already returns before either term). Ported as
@@ -15693,10 +15886,13 @@ The work below is roughly ordered by the critical path to a walkable game
   this sandbox's network policy) flags it with 127 of 134 skills setting it.
   `Scene::ItemMenu` and `Scene::EquipMenu` already grew the equivalent
   description banner for `item.description` (see the two entries above); only
-  `Scene::SkillMenu` never did. Verified against EasyRPG Player's actual C++
-  source: `Window_Skill::UpdateHelp` (`src/window_skill.cpp`) sets
+  `Scene::SkillMenu` never did. Checked against a reference implementation's
+  actual C++
+  source (not independently confirmed against genuine RPG_RT under wine):
+  its skill window's help-update routine sets
   `help_window`'s text to `ToString(GetSkill()->description)` on every
-  selection change, and `Scene_Skill::Start` wires that same `Window_Help`
+  selection change, and its skill scene's start routine wires that same help
+  window
   in above the skill list — the exact shape `Window_Item`/`Window_Equip`
   already use for their own description banner. Fixed with a new
   `Scene::SkillMenu#build_desc_window`/`#refresh_desc` pair, mirroring
@@ -15722,9 +15918,10 @@ The work below is roughly ordered by the critical path to a walkable game
   skill cast through a battle item (a type-9 special item, or a weapon/
   shield/armour/helmet/accessory flagged `use_skill`) always took
   `#battle_skill_body`'s own `using_message1`/`using_message2` sentence,
-  the same as a skill picked from the Skill menu. Verified against EasyRPG
-  Player's actual C++ source: `Game_BattleAlgorithm::Skill::GetStartMessage`
-  (`src/game_battlealgorithm.cpp`) checks `item && item->using_message == 0`
+  the same as a skill picked from the Skill menu. Checked against a
+  reference implementation's actual C++ source (not independently
+  confirmed against genuine RPG_RT under wine): its battle-algorithm
+  start-message routine checks `item && item->using_message == 0`
   **first**, unconditionally, before ever reading the skill's own message
   fields — `if (item && item->using_message == 0) { ... return
   BattleMessage::GetItemStartMessage2k(*GetSource(), *item); ... }` — and
@@ -15734,10 +15931,11 @@ The work below is roughly ordered by the critical path to a walkable game
   skill-casting item left at its editor default (the common case) is
   supposed to open with its own name ("リトはやくそうを使った！"), never the
   skill's borrowed sentence — this build showed the skill's sentence for
-  *every* such item regardless of the flag. `EasyRPG`'s own
-  `GetFailureMessage` reads only the skill, never the item
-  (`BattleMessage::GetSkillFailureMessage(*GetSource(), *GetTarget(),
-  skill)`), so the fix is scoped to the opening line(s) only — the damage /
+  *every* such item regardless of the flag. The reference implementation's
+  own
+  failure-message routine reads only the skill, never the item
+  (not independently confirmed against genuine RPG_RT under wine), so the
+  fix is scoped to the opening line(s) only — the damage /
   recovery / absorb / failure lines that follow are untouched. Fixed with a
   new `Scene::Battle#skill_start_lines(e, row, caster)`, called from
   `#battle_skill_body` in place of the previous bare `bt.skill_start(row,
