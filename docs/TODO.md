@@ -111,11 +111,13 @@ The work below is roughly ordered by the critical path to a walkable game
 
 #### Map & characters
 - ✅ Tilemap rendering — `Scene::Map` blits the lower/upper layers from the
-  map's real ChipSet graphic via `Game::ChipsetLayout` (a port of EasyRPG
-  Player's `TilemapLayer` geometry): single-chip lower (block E) / upper
-  (block F) tiles, water (blocks A/B) and terrain (block D) autotiles assembled
-  from four 8×8 quarter-tiles per the combination encoded in the tile id, the
-  two animated block-C tiles, and water/animation frame cycling. Falls back to
+  map's real ChipSet graphic via `Game::ChipsetLayout` (the standard RPG2000
+  chipset-tile geometry, confirmed pixel-identical against genuine RPG_RT.exe
+  under wine — see the "Diff an in-game map" render-parity entry below):
+  single-chip lower (block E) / upper (block F) tiles, water (blocks A/B) and
+  terrain (block D) autotiles assembled from four 8×8 quarter-tiles per the
+  combination encoded in the tile id, the two animated block-C tiles, and
+  water/animation frame cycling. Falls back to
   the previous solid-colour blocks when the chipset image is missing.
   Passability still drives collision. Geometry is pinned by
   `scripts/rpg2k_render_check.rb`. **Replace Chipset Tiles** (Tile Substitution,
