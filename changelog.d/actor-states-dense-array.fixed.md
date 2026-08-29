@@ -2,10 +2,9 @@
   count / 82 data) as a dense array, one slot per database state id, instead
   of a sparse list of only the currently-afflicted ids. A genuine kk1.12
   (RPG2003) save under wine carries field 81 as the game's own total state
-  count (30) on every actor, none of them afflicted with anything — matching
-  EasyRPG Player's own live source (`Game_Battler::GetInflictedStates`,
-  `src/game_battler.cpp`), which walks this same dense, per-state-id vector.
-  This codebase's own writer previously wrote nothing at all for an
+  count (30) on every actor, none of them afflicted with anything — not "how
+  many states are currently active," the sparse reading `#to_lsd` used to
+  assume. This codebase's own writer previously wrote nothing at all for an
   unafflicted actor (an empty sparse list) and, for an afflicted one, a
   short array of literal state ids at the wrong field length entirely — a
   save written by this engine's own Save/Continue would have desynced state

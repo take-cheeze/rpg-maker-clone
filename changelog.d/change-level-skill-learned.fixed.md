@@ -1,12 +1,13 @@
 - **Change Level / Change EXP now announce a learned skill alongside the
-  level that teaches it**, matching real RPG_RT. EasyRPG's
-  `Game_Actor::ChangeLevel` (`src/game_actor.cpp`) pushes the level-up line
-  and then calls `LearnLevelSkills(old_level + 1, new_level, pm)`, which
-  pushes `ActorMessage::GetLearningMessage`
-  (`src/game_message_terms.cpp` — the skill's own name glued onto the
-  database's `skill_learned` term) for every growth-table skill the level
-  range teaches, skipping one the actor already knew
-  (`Game_Actor::LearnSkill`'s own `IsSkillLearned` guard). This codebase's
+  level that teaches it**, matching real RPG_RT. Confirmed against genuine
+  RPG_RT.exe under wine: a synthetic autostart Change Level on Nepheshel's
+  own actor 2 (ファル, level 1), +1 level (no skill scheduled at level 2),
+  showed a single-line message box reading "ファルはレベル２になった！"; the
+  identical setup with +2 levels instead (crossing level 3, which the
+  database's own actor-skill table teaches a skill at) showed a two-line box
+  in the same window, the level line immediately followed by "バマーも覚え
+  た！" — one line per skill, appended onto the same page as the level-up
+  line rather than a separate page/box. This codebase's
   `Game::Interpreter#queue_level_up_messages` (`mruby-rpg2k/mrblib/
   interpreter.rb`) already queued the level-up line itself but never
   consulted the growth table at all, so a skill a party member gained by
