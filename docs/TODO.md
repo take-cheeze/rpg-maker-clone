@@ -21267,24 +21267,25 @@ not yet verified:
   confirmed against genuine RPG_RT under wine: its own Shake Screen
   command handler (code 11050) reads a
   `shake_cmd` byte from
-  `com.parameters[4]` only `if (com.parameters.size() > 4 &&
-  Player::IsRPG2k3Commands())`, dispatching to a one-shot shake (mode 0, the
-  existing behaviour), a begin-strobe call (mode 1 — note real
-  RPG_RT's Begin ignores `tenths` too, taking only strength/speed), or
-  an end-strobe call (mode 2). Its own begin-strobe routine sets
-  `shake_time_left` to a large sentinel constant
-  and `shake_continuous = true`; its own shake-update routine
-  re-arms `time_left` back to that same sentinel every time it counts down
-  to 0 while `continuous` holds, instead of settling — an indefinite strobe
-  until `ShakeEnd()` (or a fresh one-shot shake, which `ShakeOnce` always
-  clears `continuous` for) stops it. Exactly the same gap already fixed for
+  `com.parameters[4]` only when the command carries that trailing
+  parameter and the database supports RPG2003 commands, dispatching to a
+  one-shot shake (mode 0, the existing behaviour), a begin-strobe call
+  (mode 1 — note real RPG_RT's Begin ignores `tenths` too, taking only
+  strength/speed), or an end-strobe call (mode 2). Its own begin-strobe
+  routine sets a shake-time-left field to a large sentinel constant and a
+  continuous flag to true; its own shake-update routine re-arms that
+  time-left field back to that same sentinel every time it counts down to
+  0 while the continuous flag holds, instead of settling — an indefinite
+  strobe until its own end-strobe call (or a fresh one-shot shake, which
+  always clears that continuous flag) stops it. Exactly the same gap already fixed for
   Flash Screen's own Begin/End mode. Fixed by mirroring that precedent:
   `do_shake_screen` now dispatches on `cmd.param(4)` gated by
   `@state.party.rpg2003? && cmd.parameters.size > 4`; `Game::Screen` gained
   `#shake_begin`/`#shake_end` and a `SHAKE_CONTINUOUS_FRAMES = 65535`
   sentinel, `#shake` now clears `@shake_continuous` on its own one-shot path
-  (matching `ShakeOnce`, so a plain shake after an earlier Begin settles for
-  good instead of inheriting the re-arm), and `#update_shake` re-arms to the
+  (matching the reference's own one-shot clearing behavior, so a plain
+  shake after an earlier Begin settles for good instead of inheriting the
+  re-arm), and `#update_shake` re-arms to the
   sentinel instead of settling to 0 when `@shake_continuous` is set. Covered
   by four new `scripts/rpg2k_logic_check.rb` checks — Begin starts a shake
   that never pauses the interpreter and re-arms instead of settling at the
@@ -21384,11 +21385,11 @@ not yet verified:
   reference implementation's actual C++ source, not independently
   confirmed against genuine RPG_RT under wine: its own Show Battle
   Animation command handler reads
-  `allies = com.parameters[3] != 0` only `if (Player::IsRPG2k3() &&
-  com.parameters.size() > 3)` — the same trailing-RPG2003-parameter gate
-  already used for Flash/Shake Screen — and, when `allies` is set, resolves
-  the target as `(*Main_Data::game_party)[target - 1]` (party members
-  counted from 1) instead of indexing the enemy troop.
+  the Ally/Enemy flag only when the database is RPG2003 and the command
+  carries that trailing parameter — the same trailing-RPG2003-parameter
+  gate already used for Flash/Shake Screen — and, when that flag is set,
+  resolves the target against the party roster (party members counted from
+  1) instead of indexing the enemy troop.
   `Interpreter#do_show_battle_animation_b`
   (`mruby-rpg2k/mrblib/interpreter.rb`) never read a 4th parameter at all,
   so `@battle_animation[:target]` was always resolved against
@@ -21430,16 +21431,14 @@ not yet verified:
 - ✅ **A troop battle-event page's Show Message/Show Choices window always
   drew at the top of the screen, when real RPG_RT positions it there only
   for an RPG2003 database — an RPG2000 database (this project's primary
-  target) shows it at the bottom instead.** Confirmed directly against
-  RPG_RT's live source: `Game_Message::GetRealPosition`
-  (`src/game_message.cpp`) is `if (Game_Battle::IsBattleRunning()) { return
-  Feature::HasRpg2kBattleSystem() ? 2 : 0; }` — position 2 (bottom) for an
-  RPG2000 database, position 0 (top) for RPG2003 — overriding any
-  Message-Options position entirely while a battle is running.
-  `Feature::HasRpg2kBattleSystem` (`src/feature.cpp`) is a pure
-  database-edition check (`Player::IsRPG2k()`), unrelated to `battle_type`/
-  gauge mode, so this is a base RPG2000-vs-RPG2003 difference, not a
-  gauge-battle-only one. `Scene::Battle::BATTLE_EVENT_MSG_Y`
+  target) shows it at the bottom instead.** Ported from a reference
+  implementation's own message-position lookup, not independently confirmed
+  against genuine RPG_RT under wine: while a battle is running, that lookup
+  returns bottom (2) for an RPG2000 database and top (0) for RPG2003 —
+  overriding any Message-Options position entirely. The battle-system check
+  behind that branch is a pure database-edition check, unrelated to
+  `battle_type`/gauge mode, so this is a base RPG2000-vs-RPG2003 difference,
+  not a gauge-battle-only one. `Scene::Battle::BATTLE_EVENT_MSG_Y`
   (`mruby-rpg2k/mrblib/scene/battle.rb`) hardcoded the top position for
   every edition, justified only by an uncited internal design rationale
   ("so a page talking mid-round does not fight the action banner for the
@@ -21522,7 +21521,7 @@ not yet verified:
   confirmed against genuine RPG_RT under wine: its own battle-page-
   conditions check wraps all *four*
   RPG2003-only condition types — `turn_enemy`, `turn_actor`, `fatigue`, and
-  `command_actor` — in `Player::IsRPG2k3Commands() &&`, but
+  `command_actor` — in a database-edition-and-commands check, but
   `Game::BattlePage.active?` (`mruby-rpg2k/mrblib/game.rb`) only ever
   gated the first three on `ctx.rpg2003?`; `command_actor` kept evaluating
   unconditionally, and the block comment right above even claimed it was
@@ -21552,7 +21551,8 @@ not yet verified:
   active.** Ported from a reference implementation's actual C++ source,
   not independently confirmed against genuine RPG_RT under wine: its own
   death-handler accessors gate all three on
-  `Player::IsRPG2k3() && db.death_handler`, and its own encounter-end
+  a database-edition check together with the death-handler setting, and
+  its own encounter-end
   callback — wired specifically for a *random* encounter, not the scripted
   Battle Processing
   command — pushes the death-handler's own common
@@ -21605,8 +21605,8 @@ not yet verified:
   equip menu and the Change Equipment event command's own route) and adds
   every state a piece of `IsArmorType` (shield/armor/helmet/accessory,
   never a weapon) equipment flags in its `state_set` when
-  `Player::IsRPG2k3() && item->reverse_state_effect`, removing them again
-  when the item comes off. `Actor#equip_item`/`#unequip`/`#equip`
+  the database is RPG2003 and the item's own reverse-state-effect flag is
+  set, removing them again when the item comes off. `Actor#equip_item`/`#unequip`/`#equip`
   (`mruby-rpg2k/mrblib/game.rb`) only ever touched `@equipment` and
   recomputed stats — no code path called `#add_state`/`#remove_state` in
   response to an equip change, so a classic "cursed berserker armor" (item
@@ -21740,8 +21740,8 @@ not yet verified:
   (mirroring a reference implementation's own parameter name) and a new
   `#state_persists_type?` helper reading the state's own `situation` row
   the same way `#can_act?` already does; `Interpreter#do_change_condition`
-  passes `@battle.nil?` — this port's own `!Game_Battle::IsBattleRunning()`
-  — through on every remove. Every other `#remove_state` call site
+  passes `@battle.nil?` — this port's own analog of the reference's own
+  battle-running check — through on every remove. Every other `#remove_state` call site
   (`#use_medicine`, `#cast_skill`) is untouched, keeping its implicit
   `false` default. Covered by two new `scripts/rpg2k_logic_check.rb`
   checks — `#remove_state(state_id, always_remove_battle_states: true)`
@@ -21753,16 +21753,15 @@ not yet verified:
   surviving a map-side cure) before the fix.
   ✅ **A lethal hit stripped a cursed-armor-forced state outright instead
   of leaving it in place, the sibling exemption every fix above this one
-  quoted the surrounding `State::Add` crowding-out loop for but never
-  actually ported (2026-08-19).** Confirmed directly against RPG_RT's live
-  source, the very same function this cluster's fixes already cite:
-  `State::Add` (`src/state.cpp`)'s crowding-out pass is `if
-  (priority <= sig_state->priority - 10 && !ps.Has(i + 1)) { states[i] =
-  0; }` — `ps` being the caller's `PermanentStates`
-  (`Game_Actor::GetPermanentStates`), already ported as `Actor
-  #permanent_states` for `#remove_state`/`#clear_states` above. The
-  `!ps.Has(i + 1)` clause exempts a cursed-item-forced state from this
-  same wipe, so it survives even when it sits well below whatever just
+  quoted the surrounding crowding-out loop for but never
+  actually ported (2026-08-19).** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine, the very
+  same crowding-out logic this cluster's fixes already cite: a newly-landed
+  state's crowding-out pass clears any other same-group state well below its
+  own priority, unless the caller's permanent-states set — already ported as
+  `Actor#permanent_states` for `#remove_state`/`#clear_states` above —
+  already holds it. That exemption protects a cursed-item-forced state from
+  this same wipe, so it survives even when it sits well below whatever just
   landed — most commonly Death itself, conventionally the highest-priority
   state in a real database. `Game::States.prune`
   (`mruby-rpg2k/mrblib/game.rb`) had no such exemption at all: a lethal
@@ -21787,27 +21786,24 @@ not yet verified:
   against the pre-fix code before the fix.
   ✅ **The in-battle `#inflict_state`/`#cure_state` call sites the fix
   above deliberately left out of scope turned out to be a genuine gap
-  too, not a design boundary: `Game_Battler::GetPermanentStates()` (base
-  class) always returns empty and `Game_Enemy` never overrides it, but
-  `Game_Actor::GetPermanentStates()` does — and every
-  `Game_BattleAlgorithm` subclass threads that same
-  `target->GetPermanentStates()` into every in-battle
-  `State::Add`/`State::Remove` call, exactly like the field-side paths
-  already fixed (2026-08-19).** Confirmed directly against RPG_RT's live
-  source across `src/game_battlealgorithm.cpp`,
-  `src/game_battler.cpp:65-66` (the base, always-empty
-  `GetPermanentStates`) and `src/game_actor.cpp:1446`/`src/game_enemy.{h,cpp}`
-  (the override that exists only on `Game_Actor`, confirming a monster
-  genuinely has no such concept, so only an ally's own back-referenced
-  `Actor` matters here). `Game::Battle#inflict_state`
+  too, not a design boundary: a reference implementation's own base battler
+  class always returns an empty permanent-states set and its enemy subclass
+  never overrides that, but its actor subclass does — and every one of its
+  battle-algorithm subclasses threads that same per-target permanent-states
+  lookup into every in-battle state add/remove call, exactly like the
+  field-side paths already fixed (2026-08-19).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: that permanent-states override exists only on the actor class,
+  confirming a monster genuinely has no such concept, so only an ally's own
+  back-referenced Actor matters here. `Game::Battle#inflict_state`
   (`mruby-rpg2k/mrblib/game.rb`) called `Game::States.prune` with no
   `keep:` at all, so the exact same cursed state that now survives a
   lethal hit and Full Recovery on the field could still be silently
   stripped by a lethal *in-battle* hit or state infliction. `#cure_state`
   had a second, independent gap the field-side fix's own citation already
-  named but didn't need to act on there: real RPG_RT's `State::Remove`
-  hard-refuses (`if (ps.Has(state_id)) { return false; }`) removing a
-  cursed-forced state at all, in battle or out — `Actor#remove_state`
+  named but didn't need to act on there: real RPG_RT's own state-removal
+  routine hard-refuses removing a cursed-forced state at all, in battle or
+  out — `Actor#remove_state`
   already carries this lock, but `Game::Battle#cure_state` (used by every
   in-battle curative skill/item) had none, so a battle-side Antidote or
   curative skill could cure a state the worn armor was still actively
@@ -21830,14 +21826,14 @@ not yet verified:
   so a state cured and then reinflicted later in the *same* battle
   inherited a stale "turns held" count instead of restarting at zero,
   making it eligible for its `auto_release_prob` roll far too early
-  (sometimes on the very next tick).** Real RPG_RT cannot have this bug at
-  all: `State::Add`/`State::Remove` (`src/state.cpp`) share one literal
-  field for "state present" and "turns held" — `states[state_id - 1] = 1;`
-  on Add, `st = 0;` on Remove — and `Game_Battler::BattleStateHeal`
-  (`src/game_battler.cpp`) increments that exact same field each turn
-  (`states[i] > lcf::Data::states[i].hold_turn && ...`), so a cure always
-  zeroes the one field a later reinfliction resets to 1; the two states
-  (presence, duration) can never drift apart. This codebase's own other two
+  (sometimes on the very next tick).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: real RPG_RT cannot have this bug at all — its own state-add and
+  state-remove routines share one literal field for "state present" and
+  "turns held", and its own per-turn battle-state-heal step increments that
+  exact same field each turn, so a cure always zeroes the one field a later
+  reinfliction resets to "held"; the two states (presence, duration) can
+  never drift apart. This codebase's own other two
   state-removal sites in the same class — `#apply_turn_states`'s own
   auto-release branch and `#shake_off_states`'s physical-release branch —
   already clear `state_turns` correctly; only `#cure_state`, the shared
@@ -21853,28 +21849,27 @@ not yet verified:
   cursed-armor-forced state the map-side Change Condition exemption above
   had already lifted — every fix in this cluster only ever kept an id
   already present, never re-added a missing one, and RPG_RT's own Full
-  Heal is the one path that does.** Confirmed directly against RPG_RT's
-  live source: `Game_Actor::FullHeal` (`src/game_actor.cpp`) is
-  `RemoveAllStates(); SetHp(GetMaxHp()); SetSp(GetMaxSp());
-  ResetEquipmentStates(true);` — its own comment on the trailing call:
-  "Emulates RPG_RT behavior of resetting even battle equipment states on
-  full heal." `ResetEquipmentStates(true)` walks every equipped slot
-  (Shield/Armor/Helmet/Accessory) and calls `AdjustEquipmentStates(item,
-  true, true)`, which unconditionally re-`AddState`s each of that item's
-  forced states regardless of whether it was already present — so a Full
-  Recovery in real RPG_RT always leaves every currently-cursed-armor-forced
+  Heal is the one path that does.** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  full-heal routine clears every state, restores HP and SP to max, and then
+  unconditionally re-applies every currently-equipped item's forced states —
+  its own comment on that trailing call notes it "emulates RPG_RT behavior
+  of resetting even battle equipment states on full heal." That final step
+  walks every equipped slot (Shield/Armor/Helmet/Accessory) and re-inflicts
+  each item's forced states regardless of whether it was already present —
+  so a Full Recovery in real RPG_RT always leaves every currently-cursed-armor-forced
   state active, even one the map-only exemption two fixes above had just
   lifted. `Game::Actor#full_heal` (`mruby-rpg2k/mrblib/game.rb`) only ever
-  called `#clear_states`, which (mirroring `RemoveAllStates`/`State::
-  RemoveAll`) can only *keep* an id already in `@states`, never re-add a
+  called `#clear_states`, which (mirroring the reference's own state-clear
+  behavior) can only *keep* an id already in `@states`, never re-add a
   missing one — so a state a shrine/blessing map event had legitimately
   lifted via Change Condition's own `always_remove_battle_states` exemption
   stayed gone through a subsequent Full Recovery too, diverging from real
   RPG_RT's unconditional re-inflict. Fixed by having `#full_heal` re-add
-  every `#permanent_states` id after `#clear_states`, mirroring
-  `ResetEquipmentStates(true)`'s own unconditional re-inflict; `RemoveAll
-  States`/`ResetEquipmentStates` are single-call-site in both the reference
-  (only `Game_Actor::FullHeal`) and this port (only `Interpreter#
+  every `#permanent_states` id after `#clear_states`, mirroring the
+  reference's own unconditional re-inflict; that state-clear and
+  equipment-state-reset behavior is single-call-site in both the reference
+  (only its own full-heal routine) and this port (only `Interpreter#
   do_full_heal`), so nothing else changes behavior. Covered by extending
   the existing map-side-exemption `scripts/rpg2k_logic_check.rb` check with
   one more assertion — calling `#full_heal` right after the exemption lifts
@@ -21883,27 +21878,22 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): equipping cursed armor unconditionally
   inflicted its forced state, even when the state's own database
   Persistence was left at its "Ends" default — real RPG_RT silently
-  refuses to add it in that exact case, and only that case.** Confirmed
-  directly against RPG_RT's live source: `Game_Actor::SetEquipment`
-  (`src/game_actor.cpp`) — the single function the equip menu, Change
-  Equipment, and even an actor's own starting-gear loop all funnel through
-  — hard-codes `allow_battle_states: false` on both of its own
-  `AdjustEquipmentStates` calls (`AdjustEquipmentStates(old_item, false,
-  false); AdjustEquipmentStates(new_item, true, false);`), which forwards
-  straight to `AddState(i + 1, allow_battle_states)`. `State::Add`
-  (`src/state.cpp`) opens with `if (!allow_battle_states && state->type ==
-  Persistence_ends) { return false; }` — `Persistence_ends` (0) is the
-  schema default most non-Poison-style states are left at. So equipping a
-  cursed item whose forced state was never explicitly flipped to
-  "Continues after battle" never actually inflicts anything in real
-  RPG_RT at all; only a state an author deliberately set to Persistence 1
-  lands from equipping alone. By contrast, ordinary in-battle/skill
-  infliction (`game_battlealgorithm.cpp`'s `AddState(se.state_id, true)`)
-  and the Change Condition event command (`game_interpreter.cpp`'s
-  `AddState(state_id, true)`) both always pass `true` — this restriction
-  is unique to the equip-triggered path, the add-side mirror of the
-  remove-side `always_remove_battle_states:` exemption two fixes above
-  already ports. `Game::Actor#add_state` (`mruby-rpg2k/mrblib/game.rb`)
+  refuses to add it in that exact case, and only that case.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: the single function the equip menu, Change Equipment,
+  and even an actor's own starting-gear loop all funnel through hard-codes a
+  "no battle-only states" flag on both of its own equipment-state-adjustment
+  calls, which forwards straight into the shared state-add routine. That
+  routine opens by refusing to add a state whenever that flag is set and the
+  state's own Persistence is left at the "Ends" schema default, the default
+  most non-Poison-style states are left at. So equipping a cursed item whose
+  forced state was never explicitly flipped to "Continues after battle"
+  never actually inflicts anything in real RPG_RT at all; only a state an
+  author deliberately set to Persistence 1 lands from equipping alone. By
+  contrast, ordinary in-battle/skill infliction and the Change Condition
+  event command both always add unrestricted — this restriction is unique
+  to the equip-triggered path, the add-side mirror of the remove-side
+  `always_remove_battle_states:` exemption two fixes above already ports. `Game::Actor#add_state` (`mruby-rpg2k/mrblib/game.rb`)
   had no persistence gate at all, and `#adjust_equipment_states`'s add
   branch called it with nothing analogous to `allow_battle_states: false`
   — confirmed by this codebase's own prior test coverage, which built a
@@ -21969,17 +21959,16 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): an RPG2003 fight that started with every
   front-row ally already incapacitated (dead/hidden) never snapped
   back-row survivors to the front, leaving them fighting a whole battle
-  from the back row real RPG_RT would have moved them out of.** Confirmed
-  directly against RPG_RT's live source: `Scene_Battle_Rpg2k3::InitActors`
-  (`src/scene_battle_rpg2k3.cpp`) runs a "ROW ADJUSTMENT" pass before every
-  fight — `force_front_row` starts `true` and is cleared the instant any
-  actor is found `GetBattleRow() == RowType_front && !IsHidden() &&
-  CanActOrRecoverable()`; if it survives the loop over the whole party,
-  every actor's row is force-set to front (`SetBattleRow(RowType_front)`)
-  for the duration. `CanActOrRecoverable` (`src/game_battler.cpp`) is
-  false only for a state with `restriction == Restriction_do_nothing &&
-  auto_release_prob == 0` — the exact concept this codebase already models
-  as `#incapacitated?` (dead/hidden via `#out_of_play?`, plus the same
+  from the back row real RPG_RT would have moved them out of.** Ported from
+  a reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: an RPG2003 fight runs a "ROW ADJUSTMENT" pass before
+  every fight — a front-row-forcing flag starts true and is cleared the
+  instant any actor is found on the front row, not hidden, and not
+  incapacitated; if it survives the loop over the whole party, every actor's
+  row is force-set to front for the duration. That incapacitation check is
+  false only for a state that both fully restricts action and never
+  auto-releases — the exact concept this codebase already models as
+  `#incapacitated?` (dead/hidden via `#out_of_play?`, plus the same
   permanent-restriction check), just never wired into battle setup.
   `Game::Battle#initialize` (`mruby-rpg2k/mrblib/game.rb`) seeded every
   ally's row straight from the actor's persisted `#battle_row` with no
@@ -21999,12 +21988,11 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): the in-battle Row command's own "don't empty
   the front row" guard wrongly dropped a KO'd front-row ally from its
   headcount, so a lone living front-row ally could be blocked from
-  stepping back even though real RPG_RT would have let it.** Confirmed
-  directly against RPG_RT's live source: `Scene_Battle_Rpg2k3::RowSelected`
-  (`src/scene_battle_rpg2k3.cpp`) counts `front_row_battlers` with a raw
-  loop over `Main_Data::game_party->GetActors()` — an unfiltered walk of
-  `Game_Party`'s roster (`src/game_party.cpp`) with no HP or hidden check
-  anywhere; a dead ally's stored `GetBattleRow()` still counts.
+  stepping back even though real RPG_RT would have let it.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: the in-battle Row command's own front-row headcount is
+  a raw, unfiltered walk of the whole party roster, with no HP or hidden
+  check anywhere; a dead ally's stored row still counts.
   `Game::Battle#can_leave_front_row?` (`mruby-rpg2k/mrblib/game.rb`)
   instead ran `allies.reject(&:out_of_play?)` first, which drops any
   `dead?`/`hidden` ally before counting — so a 2-member front row with one
@@ -22012,9 +22000,9 @@ not yet verified:
   toggle with a Buzzer, when the reference's own unfiltered headcount would
   have allowed it. Fixed by counting on `#member?` alone (still excluding
   an ally who has actually left the live party mid-battle — the one case
-  this codebase's `@allies` array can hold that the reference's
-  `data.party`-backed `GetActors()` never would), matching
-  `RowSelected`'s own unfiltered semantics for HP and hidden state. Two new
+  this codebase's `@allies` array can hold that the reference's own
+  party-backed roster lookup never would), matching the reference's own
+  unfiltered semantics for HP and hidden state. Two new
   `scripts/rpg2k3_battle_row_check.rb` checks: a living front-row ally may
   step back when its only front-row companion is dead; a lone front-row
   ally still can't step back with no other front-row ally at all (dead or
@@ -22041,7 +22029,7 @@ not yet verified:
   an added guard on the `add` branch. As a side effect this also makes
   the command correctly inert on a genuine RPG2000 database with no
   `battlecommands` table at all — matching real RPG_RT's own
-  `Player::IsRPG2k3Commands()` gate on the event command itself, which
+  database-edition-and-commands gate on the event command itself, which
   `Interpreter#do_change_battle_commands` does not separately enforce.
   Two of the three existing `scripts/rpg2k_logic_check.rb` checks for this
   command turned out to have been unknowingly relying on the bug: their
@@ -22056,17 +22044,14 @@ not yet verified:
   2, 99, 0]`) before the fix.
   ✅ **An enemy's own AI-chosen Escape basic action left the fight in
   total silence, unlike the party's own successful Escape command, which
-  already plays the dedicated cue (2026-08-19).** Confirmed directly
-  against RPG_RT's live source: `Game_BattleAlgorithm::Escape::
-  GetStartSe` (`src/game_battlealgorithm.cpp`) is `if (source->GetType()
-  == Type_Ally) { return AlgorithmBase::GetStartSe(); } return
-  &GetSystemSE(SFX_Escape);` — an enemy source plays the system escape
-  cue, distinct from an ally's own Escape (silent here, since the party's
-  own escape sound is a separate trigger the scene already plays
-  elsewhere). `Scene_Battle_Rpg2k::ProcessBattleActionUsage`
-  (`src/scene_battle_rpg2k.cpp`) calls `GetStartSe()` unconditionally for
-  every action, the same generic dispatch every other action's start-SE
-  already goes through. `Game::Battle#enemy_basic_action`'s
+  already plays the dedicated cue (2026-08-19).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own per-algorithm start-SE handling for an enemy-side Escape
+  action plays the system escape cue, distinct from an ally's own Escape
+  (silent here, since the party's own escape sound is a separate trigger
+  the scene already plays elsewhere). That start-SE lookup is called
+  unconditionally for every action, the same generic dispatch every other
+  action's start-SE already goes through. `Game::Battle#enemy_basic_action`'s
   `BASIC_ESCAPE` arm (`mruby-rpg2k/mrblib/game.rb`) already produces an
   `entry[:fled]` flag, but `Scene::Battle#play_battle_action_se`
   (`mruby-rpg2k/mrblib/scene/battle.rb`) — the method that already reads
@@ -22127,15 +22112,15 @@ not yet verified:
   misses. Its own weapon-SP-cost calculation sums
   the per-weapon cost over the weapon slot(s) (every
   equipped weapon-type item, for an ordinary single-weapon actor; just the
-  weapon-slot item for a `#double_hand?` two-weapon actor, since
-  `Normal::GetWeapon()`'s `GetCurrentRepeat() >= weapon_style` check reads
-  `false` at the still-zero repeat count `vStart` runs at, resolving to
-  `WeaponPrimary`), then halves it (rounding up, `(cost + 1) / 2`) under
-  MP消費半分 gear (`HasHalfSpCost`) — the identical halving `Game_Battler::
-  CalculateSkillCost` already applies to a skill's own fixed SP cost, ported
-  here as `Game::Party#skill_cost`. `Game_Battler::CalculateWeaponSpCost`
-  (the base class) defaults to 0 and `Game_Enemy` never overrides it, so
-  this only ever fires for a party member. `sp_cost` (item field 16) and
+  weapon-slot item for a `#double_hand?` two-weapon actor, since its own
+  per-repeat weapon-selection check reads false at the still-zero repeat
+  count the start handler runs at, resolving to the primary weapon slot),
+  then halves it (rounding up, `(cost + 1) / 2`) under MP消費半分 gear — the
+  identical halving its own skill-SP-cost calculation already applies to a
+  skill's own fixed SP cost, ported here as `Game::Party#skill_cost`. That
+  same weapon-SP-cost calculation on the base battler class defaults to 0
+  and the enemy subclass never overrides it, so this only ever fires for a
+  party member. `sp_cost` (item field 16) and
   `half_sp_cost` are genuine, already-parsed RPG2000/2003 database fields
   (`mruby-lcf/mrblib/schema.rb`) — `Actor#half_sp_cost?`
   (`mruby-rpg2k/mrblib/game.rb`) already existed and was already wired up,
@@ -22383,20 +22368,20 @@ not yet verified:
   replaced (rather than chained with) an earlier one, and "substituting a
   tile back to its own original id" was modelled as reverting a prior
   substitution — both backwards from real RPG_RT, per an earlier, uncited
-  claim on `Game::Map#substitute_tile`'s own doc comment.** Confirmed
-  directly against RPG_RT's live source: `Game_Map::DoSubstitute`
-  (`src/game_map.cpp`) operates on a *persistent* 144-entry table
-  (`map_info.lower_tiles`/`upper_tiles`, identity-initialized via
-  `std::iota` once per map load) and scans it by **current value**, not
-  original index, on every call: `for (i) if (tiles[i] == old_id) tiles[i]
-  = new_id;`. This means a later substitution whose `old_id` matches an
-  earlier `new_id` retargets the earlier entry too (chaining) rather than
-  replacing it independently, and `old_id == new_id` only resets whichever
-  slots *currently* hold that value back to it — a slot already remapped
-  away from `old_id` is untouched, so "substitute a tile back to its
-  original id" does nothing once a prior substitution has already moved it
-  elsewhere; reverting requires substituting *from* the tile's current
-  (already-rewritten) id instead. `Game::Map#substitute_tile`
+  claim on `Game::Map#substitute_tile`'s own doc comment.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own tile-substitution routine operates on a
+  *persistent* 144-entry table (identity-initialized once per map load) and
+  scans it by **current value**, not original index, on every call,
+  retargeting every slot that currently holds the old id to the new one.
+  This means a later substitution whose old id matches an earlier
+  substitution's new id retargets the earlier entry too (chaining) rather
+  than replacing it independently, and substituting a tile to its own id
+  only resets whichever slots *currently* hold that value back to it — a
+  slot already remapped away from the old id is untouched, so "substitute a
+  tile back to its original id" does nothing once a prior substitution has
+  already moved it elsewhere; reverting requires substituting *from* the
+  tile's current (already-rewritten) id instead. `Game::Map#substitute_tile`
   (`mruby-rpg2k/mrblib/game.rb`) kept a flat `{original_id => new_id}` hash
   applied once against each tile's pristine id on every read, with its own
   comment explicitly claiming "a second substitution of the same tile
@@ -22420,8 +22405,8 @@ not yet verified:
   had the identical Save/Continue gap Tile Substitution just got fixed for
   above — round-tripped through this codebase's own portable Marshal save,
   but never through a real `.lsd`.** Confirmed directly against RPG_RT's
-  live source: `Game_Map::PrepareSave`/`SetEncounterSteps`
-  (`src/game_map.cpp`) restore `SaveMapInfo.encounter_steps` verbatim on
+  live source: its own save-preparation and encounter-steps-restore
+  routines restore the saved encounter-steps value verbatim on
   Continue (a `-1` sentinel meaning "unmodified, use the map's own rate"),
   and liblcf's own generator table confirms the wire format:
   `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...` (`generator/csv/
@@ -22451,18 +22436,18 @@ not yet verified:
   different set of its fields.** This codebase's own `Game::State#@parallax`
   doc comment claimed "RPG2000 resets it to the map's default on every map
   change... so it is not serialised," conflating two genuinely different
-  triggers in real RPG_RT: a map change (Teleport, confirmed correct —
-  `Game_Map::Setup` calls `Parallax::ClearChangedBG()`) versus a Save/
-  Continue on the *same* map (a separate code path, `SetupFromSave`, which
-  never calls `ClearChangedBG`). Confirmed directly against RPG_RT's live
-  source: `SetupFromSave` (`src/game_map.cpp`) does `map_info =
-  std::move(save_map)` unconditionally — the same `SaveMapInfo` struct
-  `encounter_steps` lives in — then ends with `Parallax::ChangeBG(
-  GetParallaxParams())`, whose own helper reads `map_info.parallax_name`
-  first and only falls back to the map's own default when that field is
-  blank; `Parallax::ChangeBG` itself (the Change Parallax Background
-  command's own handler) writes straight onto `map_info.parallax_*`, so a
-  live override sits in the same struct a Save chunk carries wholesale.
+  triggers in real RPG_RT: a map change (Teleport, confirmed correct — its
+  own map-setup routine clears the changed-background flag) versus a Save/
+  Continue on the *same* map (a separate load-from-save code path, which
+  never clears it). Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: that
+  load-from-save path restores the saved map-info struct unconditionally —
+  the same struct the encounter-steps field lives in — then re-applies the
+  parallax background from it, whose own helper reads the saved parallax
+  name first and only falls back to the map's own default when that field
+  is blank; the Change Parallax Background command's own handler writes
+  straight onto that same struct's parallax fields, so a live override sits
+  in the same struct a Save chunk carries wholesale.
   liblcf's own generator table confirms the wire format: `SaveMapInfo,
   parallax_name,f,String,0x20,...` through `...,parallax_vert_speed,f,
   Int32,0x26,...` (`generator/csv/fields.csv`), seven fields (32-38)
@@ -22973,12 +22958,12 @@ not yet verified:
 - ✅ **A diagonal Move Route step (Up-Right/Down-Right/Down-Left/Up-Left)
   always turned the sprite to face that diagonal's *vertical* component,
   discarding a horizontal facing outright, instead of keeping whichever axis
-  the character was already facing (2026-08-20).** Confirmed directly
-  against RPG_RT's live source: `Game_Character::UpdateFacing`
-  (`src/game_character.cpp`) computes the diagonal's two cardinal
-  components (`f1` vertical, `f2` horizontal) and only reverses the prior
-  facing (`SetFacing((facing + 2) % 4)`) when it matches *neither* of
-  them — otherwise the facing is left completely untouched. Since a
+  the character was already facing (2026-08-20).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own facing-update routine computes the diagonal's two cardinal
+  components (vertical and horizontal) and only reverses the prior facing
+  (a 180-degree flip) when it matches *neither* of them — otherwise the
+  facing is left completely untouched. Since a
   180-degree flip of a facing on neither component always lands exactly on
   the component sharing its own axis, this is equivalent to "keep the
   vertical component if already facing vertically, keep the horizontal
@@ -22999,8 +22984,8 @@ not yet verified:
   otherwise) and routing both call sites through it instead of the
   hardcoded component; `#do_diagonal`'s pre-passability-check turn (see the
   "skippable revert" fix above) and `#move_diagonal`'s own post-move turn
-  both go through the same helper, matching `Move`'s single
-  `SetDirection`/`UpdateFacing` pair in the real source. `#last_move_direction`
+  both go through the same helper, matching the real engine's own single
+  facing-update call in its move routine. `#last_move_direction`
   (what Move Forward reads) is unchanged — this fix is about the *visible*
   facing only, the same distinction the "One Step Forward" fix above already
   established. Covered by a new `scripts/rpg2k_logic_check.rb` check (facing
@@ -23044,15 +23029,15 @@ not yet verified:
   walks Down rather than the stale pre-jump direction), confirmed to fail
   against the pre-fix code before the fix.
   ✅ **Follow-up (2026-08-20): Move Forward after a diagonal move collapsed
-  to one cardinal axis instead of continuing diagonally.** Confirmed
-  against RPG_RT's own live source: `Game_Character::Direction`
-  (`src/game_character.h`) is an 8-way enum (Up/Right/Down/Left/UpRight/
-  DownRight/DownLeft/UpLeft), and `UpdateMoveRoute`'s diagonal case
-  (`SetDirection(cmd)`, `src/game_character.cpp`) sets it to the literal
-  diagonal value; `move_forward` does nothing but `break` before
-  `Move(GetDirection())` reuses whatever `GetDirection()` still holds — so
-  a route "Move Upper-Right, Move Forward" moves diagonally *twice* (2
-  tiles right, 2 tiles up), never diagonally-then-straight. `#move_diagonal`
+  to one cardinal axis instead of continuing diagonally.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own direction representation is an 8-way enum
+  (Up/Right/Down/Left/UpRight/DownRight/DownLeft/UpLeft), and its own
+  move-route dispatch sets it to the literal diagonal value on a diagonal
+  step; a following Move Forward does nothing but re-read and reuse
+  whatever direction is still held — so a route "Move Upper-Right, Move
+  Forward" moves diagonally *twice* (2 tiles right, 2 tiles up), never
+  diagonally-then-straight. `#move_diagonal`
   (`mruby-rpg2k/mrblib/game.rb`) stored only the *vertical* component into
   `#last_move_direction`, collapsing this codebase's own 8-way state to
   4-way — a following Move Forward continued along one axis only and
@@ -23235,16 +23220,16 @@ not yet verified:
   sub-command continued in the direction last *physically walked* instead
   of the newly faced direction — the opposite of what the original fix in
   this cluster claimed, and the mirror image of the diagonal bug fixed
-  directly above (which correctly traced the same `UpdateMoveRoute` source
-  but never applied that reading to Face/Turn).** RPG_RT does not have a
-  "last actually walked" concept distinct from "currently faced" at all:
-  `Game_Character::UpdateMoveRoute`'s Face/Turn branch (`src/
-  game_character.cpp`) ends every one of Face Up/Right/Down/Left,
-  `Turn90DegreeRight`/`Turn90DegreeLeft`/`Turn180Degree`/`TurnRandom`/
-  `TurnTowardCharacter`/`TurnAwayFromCharacter` in a `SetDirection(...)`
-  call — the *exact same* `direction` field the Move-command branch's
-  `Move(GetDirection())` reads for a later Move Forward, with no lock check
-  anywhere in the Face/Turn branch. So `Turn Right` immediately followed by
+  directly above (which correctly traced the same move-route dispatch
+  but never applied that reading to Face/Turn).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: RPG_RT does not have a "last actually walked" concept distinct from
+  "currently faced" at all — its own move-route dispatch's Face/Turn branch
+  ends every one of Face Up/Right/Down/Left and every Turn sub-command
+  (90-degree, 180-degree, random, toward/away-from-character) by writing
+  the *exact same* direction field the Move-command branch reads for a
+  later Move Forward, with no lock check anywhere in the Face/Turn branch.
+  So `Turn Right` immediately followed by
   `Move Forward` walks in the *turned* direction in real RPG_RT, lock or no
   lock — never the stale pre-turn direction. `Character#face!`
   (`mruby-rpg2k/mrblib/game.rb`) and `#turn_right`/`#turn_left`/
@@ -23254,8 +23239,8 @@ not yet verified:
   direction from before the Face/Turn command ran. Fixed by having all four
   methods also assign `@last_move_direction`, mirroring `#move`/`#jump`/
   `#move_diagonal`'s existing assignment; `#face` (the lock-respecting
-  variant `#move` itself uses) is untouched, matching `UpdateFacing()`'s
-  own separate lock-respecting path in the reference. Covered by rewriting
+  variant `#move` itself uses) is untouched, matching the reference's own
+  separate lock-respecting facing path. Covered by rewriting
   the existing `scripts/rpg2k_logic_check.rb` check for this exact
   Direction-Fix-then-Face-Up-then-Move-Forward sequence in place — it now
   asserts continuing north (the newly faced direction) instead of east (the
@@ -23434,7 +23419,7 @@ not yet verified:
   `#start_player_slide` (which actually drive a forced route once one is
   set) never consult it either — so a hero-targeted Set Move Route
   categorically never fires a touch trigger for its own steps, matching
-  `IsMoveRouteOverwritten()`'s effect exactly, no code change needed. ✅
+  the reference's own equivalent check's effect exactly, no code change needed. ✅
   **A closely related, genuinely broken case this same investigation
   surfaced — not itself a named backlog bullet — is now fixed: a *map
   event's* own Set Move Route / page-authored custom route stepping onto
@@ -23725,15 +23710,16 @@ not yet verified:
   applied unconditionally whenever the parsed value came out 0, including
   a bracket that parsed nothing at all — `\N[]`, or `\N[x]` where `x` is
   neither a digit nor a recognised `\V[]`/`\v[]` reference — which real
-  RPG_RT leaves blank, not the leader's name.** Confirmed directly against
-  RPG_RT's live source: `Game_Message::ParseParam` (`src/game_message.cpp`)
-  tracks its own `got_valid_number` flag, set only when a literal digit or
-  a resolvable nested `\V[]`/`\v[]` is actually consumed inside the
-  brackets, and gates the substitution on `upper == 'N' && values.front()
-  == 0 && got_valid_number` — not on the value alone. A bracket that reads
+  RPG_RT leaves blank, not the leader's name.** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own message-parameter parser tracks its own "got a valid
+  number" flag, set only when a literal digit or a resolvable nested
+  `\V[]`/`\v[]` is actually consumed inside the brackets, and gates the
+  substitution on that flag together with an actor-name code and a
+  zero-valued bracket — not on the value alone. A bracket that reads
   nothing leaves the id at 0, which is not a valid 1-based actor id; real
-  RPG_RT's `DefaultCommandInserter` (`src/pending_message.cpp`) then misses
-  on `GetActor(0)`, logs `"Invalid Actor Id 0 in message text"`, and
+  RPG_RT's own message-text command inserter then misses on that lookup,
+  logs an "Invalid Actor Id 0" warning, and
   expands to an empty string. `Game::Message.parse_bracket_value`
   (`mruby-rpg2k/mrblib/game.rb`) — the character-scanning port described
   just above — never tracked this flag at all, and `Scene::Map#actor_name`
@@ -23742,9 +23728,10 @@ not yet verified:
   route into it read the same way: an explicit `\N[0]` and a bare `\N[]`
   both named the party leader, where only the former should. Fixed by
   having `parse_bracket_value` return a third element, `got_number`
-  (RPG_RT's own `got_valid_number`, set on the digit branch and the nested-
-  `\V[]` branch alike, mirroring its explicit `got_valid_number = true;` in
-  that branch independent of the recursive call's own result) — the other
+  (mirroring the reference's own "got a valid number" flag, set on the
+  digit branch and the nested-`\V[]` branch alike, mirroring its own
+  explicit assignment of that flag in that branch independent of the
+  recursive call's own result) — the other
   three callers (`\V[]`/`\C[]`/`\S[]`) simply destructure the first two
   elements, which Ruby allows without error. `Message.scan`'s `'n', 'N'`
   case now passes `-1` (a value `#actor_name`'s own zero-check will never
@@ -23833,15 +23820,13 @@ not yet verified:
   56, 42, 28, 14, 0` instead) before the fix.
 - ✅ **A Show Picture not fixed to the map held rock-steady through a Shake
   Screen instead of jittering with the rest of the view, unlike a
-  map-fixed one (2026-08-19).** Confirmed directly against RPG_RT's live
-  source: `ShowParams`'s own default flags (`src/game_pictures.h`) are
-  `int flags = 1 | 32 | 64; // erase_on_map_change | affected_by_flash |
-  affected_by_shake` — every picture is affected by screen shake by
+  map-fixed one (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: a shown
+  picture's own default flags mark it affected by screen shake by
   default (RPG2000 and pre-1.12 RPG2003 have no per-picture way to turn it
-  off at all), and `Sprite_Picture::Draw` (`src/sprite_picture.cpp`)
-  applies it unconditionally of `fixed_to_map`: `if
-  (data.flags.affected_by_shake) { x -= GetShakeOffsetX(); y -=
-  GetShakeOffsetY(); }`. `Scene::Map#draw_picture`
+  off at all), and the reference's own picture-sprite draw routine
+  applies that shake offset unconditionally of whether the picture is
+  fixed to the map. `Scene::Map#draw_picture`
   (`mruby-rpg2k/mrblib/scene/map.rb`) only ever subtracted the shake
   offset for a `fixed_to_map` picture, and only as an accidental side
   effect of `#camera_position` already folding `screen.shake_offset` into
@@ -24037,12 +24022,12 @@ not yet verified:
 - ✅ **Transfer Player / Recall to Location is now blocked (not run) while a
   message window or choice list is open, anywhere in the scene, and retries
   once it closes — the same block-and-retry shape as the Show/Move/Erase
-  Picture fix just above, on a different pair of commands.** Confirmed
-  directly against RPG_RT's live source: `Game_Interpreter_Map::
-  CommandTeleport`/`CommandRecallToLocation` (`src/game_interpreter_map.cpp`,
-  codes 10810/10830) both open with `if (Game_Message::IsMessageActive()) {
-  return false; }`, unconditionally — not gated behind `IsRPG2k3Commands()`,
-  so this is base RPG2000 behaviour, not an RPG2003-only rule. This
+  Picture fix just above, on a different pair of commands.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own handlers for these two map-event commands
+  (codes 10810/10830) both bail out immediately whenever a message is
+  active, unconditionally — not gated behind an RPG2003-only check, so this
+  is base RPG2000 behaviour, not an RPG2003-only rule. This
   codebase's `Game::Interpreter#do_teleport`/`#do_recall_location`
   (`mruby-rpg2k/mrblib/interpreter.rb`) had no such gate at all: a still-running
   parallel process (Message Options' "continue events" flag lets one keep
@@ -24101,15 +24086,15 @@ not yet verified:
   while a message window or choice list is open, and retries once it
   closes — the same block-and-retry shape as the three fixes above, on a
   fourth and fifth command, but conditional on the command's own "show
-  message" flag rather than unconditional.** Confirmed directly against
-  RPG_RT's live source: `Game_Interpreter::CommandChangeExp`/
-  `CommandChangeLevel` (`src/game_interpreter.cpp`, codes 10410/10420) both
-  open with `bool show_msg = com.parameters[5]; if (show_msg &&
-  !Game_Message::CanShowMessage(true)) { return false; }` — guarding the
-  *entire* command, the actor's EXP/level and re-derived base stats
+  message" flag rather than unconditional.** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own handlers for these two commands (codes 10410/10420) both
+  open by reading the command's own "show message" flag and, when set,
+  bailing out entirely unless a message can currently be shown — guarding
+  the *entire* command, the actor's EXP/level and re-derived base stats
   included, not just the level-up message, and only when the flag is set;
-  `CommandChangeGold`/`CommandChangeParameters` (10310/10430) share no such
-  guard, so this is Change EXP/Level-specific, not a general "Change"
+  the sibling Change Gold/Change Parameters commands (10310/10430) share no
+  such guard, so this is Change EXP/Level-specific, not a general "Change"
   command rule. `Interpreter#do_change_exp`/`#do_change_level`
   (`mruby-rpg2k/mrblib/interpreter.rb`) had no such gate at all: a
   still-running parallel process (Message Options' "continue events" flag)
@@ -24582,14 +24567,13 @@ not yet verified:
   track's balance (it was never written into `current_bgm` in the first
   place), so Play Memorized BGM never restored it, and the same shared
   serializer gap silently dropped balance from the current-BGM/stored-BGM
-  and Change System BGM/SFX save-chunk round-trip too.** Confirmed
-  directly against RPG_RT's live source: `Game_System::MemorizeBGM`/
-  `PlayMemorizedBGM` (`src/game_system.h`) are `data.stored_music =
-  data.current_music;` / `BgmPlay(data.stored_music);` — the *whole*
-  `Music` struct is copied and replayed, balance included — and
-  `Game_System::BgmPlay` (`src/game_system.cpp`) re-applies
-  `Audio().BGM_Balance(...)` even on its own same-track path (`if
-  (previous_music.balance != data.current_music.balance) { ... }`).
+  and Change System BGM/SFX save-chunk round-trip too.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own Memorize BGM and Play Memorized BGM handlers
+  copy and replay the *whole* current-music struct, balance included — and
+  its own BGM-play routine re-applies the balance even on its own
+  same-track path, whenever the balance actually differs from what was
+  already playing.
   `#play_audio`'s `:bgm` branch (`mruby-rpg2k/mrblib/interpreter.rb`)
   already called `RGSS::Audio.bgm_pan(balance)` live on every Play BGM —
   that part was correct — but built `@state.current_bgm` as `{ name:,
@@ -24622,14 +24606,14 @@ not yet verified:
   ✅ **Follow-up (2026-08-21): the same-file "does not restart" shortcut
   itself had a missing exception — a Fade Out BGM of the current track
   should force the very next same-name Play BGM/Play Memorized BGM to
-  restart it, and this codebase never modelled that.** Confirmed directly
-  against RPG_RT's live source: `Game_System::BgmPlay` (`src/
-  game_system.cpp`) gates its whole "same track: adjust volume in place"
-  branch on `if (!data.music_stopping && previous_music.name == bgm.name)`
-  — not name equality alone — and `Game_System::BgmFade` (Fade Out BGM,
-  11520) always sets `data.music_stopping = true` alongside the fade
-  itself, regardless of duration; `BgmPlay` clears the flag back to `false`
-  unconditionally at its very end, restart or not. liblcf's own
+  restart it, and this codebase never modelled that.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own BGM-play routine gates its whole "same track:
+  adjust volume in place" branch on a "not currently stopping" flag
+  together with name equality — not name equality alone — and its own Fade
+  Out BGM handler (11520) always sets that stopping flag alongside the fade
+  itself, regardless of duration; the BGM-play routine clears the flag back
+  to false unconditionally at its very end, restart or not. liblcf's own
   `SaveSystem.music_stopping` field (`generator/csv/fields.csv`, field
   `0x3D`/61) documents the exact same rule in its own description: "Music
   is being faded out or had been stopped (Play music with the same music
@@ -24645,11 +24629,11 @@ not yet verified:
   `#do_fadeout_bgm`, folded into both same-file checks as an additional
   `&& !@state.bgm_stopping` term, and cleared unconditionally at the end of
   every BGM-playing path (including the blank/`(OFF)` stop branch), the
-  same shape `data.music_stopping`'s own read/write sites take in
-  `BgmPlay`. Also corrected this file's own doc comment, which had cited
-  yado.tk for the general same-file no-restart behaviour where a direct
-  citation of `BgmPlay`'s own source (already established elsewhere in this
-  file) was available and more precise. `mruby-lcf/mrblib/schema.rb`'s
+  same shape the reference's own stopping-flag read/write sites take in its
+  BGM-play routine. Also corrected this file's own doc comment, which had
+  cited yado.tk for the general same-file no-restart behaviour where a
+  direct citation of the reference's own BGM-play routine (already
+  established elsewhere in this file) was available and more precise. `mruby-lcf/mrblib/schema.rb`'s
   `SAVE_SYSTEM` table does not yet model liblcf field 61 at all, so
   `#bgm_stopping` does not currently round-trip through a real
   Save/Continue either — a separately-scoped follow-up, left for later.
@@ -24757,8 +24741,8 @@ not yet verified:
   leaving the native audio backend never actually told to play anything after
   a fresh process start, the opposite of "always restarted from the top."
   No boarded-vehicle special case is needed here (unlike `#play_map_bgm`,
-  which defers to `#play_vehicle_bgm`): `Scene_Map::Start`'s `from_save_id`
-  branch has no such check either, since `@state.current_bgm` already holds
+  which defers to `#play_vehicle_bgm`): the reference's own map-scene-start
+  routine's resume-from-save branch has no such check either, since `@state.current_bgm` already holds
   whatever was actually playing at save time — the vehicle's own track
   included, if that's what was live — so resuming it verbatim is correct
   regardless of `@state.boarded?`. A save with nothing playing
@@ -24767,8 +24751,8 @@ not yet verified:
   `#play_map_bgm` itself, and every other caller (New Game, every Transfer
   Player via `#perform_teleport`), is completely unaffected — the
   recompute-from-tree behaviour that earlier fix already implemented for
-  those two cases was correct all along, confirmed by the same
-  `Scene_Map::Start` source that settles the Continue half. Covered by two
+  those two cases was correct all along, confirmed by the same reference
+  source that settles the Continue half. Covered by two
   new `scripts/rpg2k_scene_check.rb` checks (a Continue resume replays the
   save's own tracked BGM instead of the destination map's tree default, with
   a control case on the same fixture proving an ordinary, non-Continue entry
@@ -25012,15 +24996,13 @@ not yet verified:
   ✅ **Follow-up (2026-08-19): Input Number's digit cursor started on the
   leftmost (most significant) cell and clamped at either end, when real
   RPG_RT starts it on the rightmost (least significant) cell and wraps
-  Left/Right cyclically instead.** Confirmed directly against RPG_RT's live
-  source: `Window_NumberInput::ResetIndex` (`src/window_numberinput.cpp`) is
-  `index = digits_max - 1 + int(show_operator)` — this widget never shows
-  the operator sign for the Input Number event command
-  (`show_operator = false` at construction, only ever flipped on
-  elsewhere), so this is unconditionally `digits_max - 1`, the last-drawn
-  (rightmost) cell. `Update()`'s own Left/Right handling is genuine modulo
-  wraparound (`index = (index + 1) % (digits_max + (int)show_operator)` and
-  its mirror), never a clamp. `Game::NumberInput`
+  Left/Right cyclically instead.** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  cursor-reset routine starts the index at the last digit cell, plus one if
+  an operator sign is shown — this widget never shows the operator sign for
+  the Input Number event command, so this is unconditionally the last-drawn
+  (rightmost) cell. Its own Left/Right handling is genuine modulo
+  wraparound, never a clamp. `Game::NumberInput`
   (`mruby-rpg2k/mrblib/game.rb`) initialized `@cursor = 0` (leftmost) and
   its `#left`/`#right` methods refused to move past either edge — so every
   Input Number prompt (passwords, quiz answers, any variable-entry dialog)
@@ -25043,11 +25025,12 @@ not yet verified:
   RPG_RT treats Right as a complete no-op there — no move, no sound —
   correcting this file's own previous bullet, which quoted Left/Right as
   "genuine modulo wraparound... and its mirror" without noticing the two
-  are not actually symmetric.** Confirmed directly against RPG_RT's live
-  source: `Window_NumberInput::Update` (`src/window_numberinput.cpp`) gates
-  only its Right branch behind `if (digits_max >= 2) { ...SePlay...;
-  index = (index + 1) % ...; }` — Left has no such guard and always plays
-  `SFX_Cursor`, even on a one-digit widget where its own modulo leaves the
+  are not actually symmetric.** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  per-frame update routine gates only its Right branch behind a
+  "more than one digit" check before playing the cursor sound and
+  advancing the index — Left has no such guard and always plays the cursor
+  sound, even on a one-digit widget where its own modulo leaves the
   single-cell cursor unmoved either way. `#drive_number_input`
   (`mruby-rpg2k/mrblib/scene/map.rb`) treated Left/Right identically, so a
   one-digit Input Number prompt (a common "pick 0-9" dialog) played the
@@ -25352,24 +25335,22 @@ not yet verified:
   - **Follow-up (2026-08-21):** Simulated Attack's result variable is now
     left untouched when its target actor id is invalid, instead of being
     zeroed — a third correction to this same command, this time to the
-    *variable write's own placement*, not the damage formula. Confirmed
-    directly against RPG_RT's live source: `Game_Interpreter::
-    CommandSimulatedAttack` (`src/game_interpreter.cpp`) writes
-    `Main_Data::game_variables->Set(com.parameters[7], result)` *inside*
-    its own `for (const auto& actor : GetActors(com.parameters[0],
-    com.parameters[1]))` loop — never reached at all when that loop is
-    empty. `GetActors` (same file) returns an empty vector, without ever
-    touching the variable, whenever a fixed actor id names a database row
-    that does not exist, or a variable-actor mode's own variable holds an
-    invalid/stale id (`if (!actor) { Output::Warning(...); return actors;
-    }`, modes 1/2). `Interpreter#do_simulated_attack`
+    *variable write's own placement*, not the damage formula. Ported from a
+    reference implementation, not independently confirmed against genuine
+    RPG_RT under wine: its own Simulated Attack command handler writes the
+    result variable *inside* its own loop over the resolved target
+    actors — never reached at all when that loop is empty. Its own
+    actor-resolution helper returns an empty list, without ever touching
+    the variable, whenever a fixed actor id names a database row that does
+    not exist, or a variable-actor mode's own variable holds an
+    invalid/stale id (modes 1/2). `Interpreter#do_simulated_attack`
     (`mruby-rpg2k/mrblib/interpreter.rb`) instead pre-initialized
     `damage = 0` *before* the target loop and wrote the result variable
     *after* it, unconditionally on the "store result" flag alone — so an
     invalid actor id (an authoring mistake, or a variable gone stale after
     that actor left the party) silently zeroed whatever the variable held
     before, where real RPG_RT leaves it exactly as it was. `#stat_targets`
-    (same file) already mirrors `GetActors`'s empty-vector behaviour
+    (same file) already mirrors the reference's own empty-list behaviour
     precisely for an invalid fixed/variable actor id (`Actors#[]`,
     `mruby-rpg2k/mrblib/game.rb`, returns `nil` for a non-positive id or an
     unbuilt database row, `.compact`-ed away) — only the write's own
@@ -25567,15 +25548,15 @@ not yet verified:
   skill, or a Switch-type skill whose battle-occasion flag is off, was
   still fully eligible for the weighted draw — the same `enemy_action_
   valid?`/`enemy_skill_ready?` gap `#skill_helps_troop?` (above) closed for
-  a *different* no-op class, left open for this one.** Confirmed directly
-  against RPG_RT's live source: `EnemyAi::IsActionValid`
-  (`src/enemyai.cpp`) rejects a `Kind_skill` action outright — before its
-  weight is even computed, not merely zeroed out afterward — when
-  `!source.IsSkillUsable(action.skill_id)`; `Game_Battler::IsSkillUsable`
-  (`src/game_battler.cpp`) reaches `Algo::IsSkillUsable` (`src/algo.cpp`),
-  which in battle is unconditionally `false` for a `Type_escape` or
-  `Type_teleport` skill, and for a `Type_switch` skill returns exactly
-  `skill.occasion_battle`. `Game::Battle#enemy_skill_ready?`
+  a *different* no-op class, left open for this one.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own enemy-AI action-validity check rejects a
+  skill action outright — before its weight is even computed, not merely
+  zeroed out afterward — when the skill is not usable by the source; that
+  usability check in turn is unconditionally false in battle for an
+  Escape- or Teleport-type skill, and for a Switch-type skill returns
+  exactly whether the skill is flagged usable in battle.
+  `Game::Battle#enemy_skill_ready?`
   (`mruby-rpg2k/mrblib/game.rb`) checked only skill existence, the silence
   seal, and SP affordability — never the skill's own type or occasion flag
   — so an enemy's action pattern naming such a skill (a designer mistake,
@@ -25603,11 +25584,13 @@ not yet verified:
 - ✅ **Every window's selection cursor now blinks between the windowskin's
   two cursor blocks, matching RPG_RT — it used to draw from a single,
   permanently-static source rect.** Confirmed directly against RPG_RT's
-  live source: `Window::Update` (`src/window.cpp`) advances `cursor_frame`
-  by 1 every frame the window is active, wrapping at 21; `Window::Draw`
-  blits the cursor highlight from the windowskin's `cursor1` block (source
-  x 64) while `cursor_frame <= 10`, or `cursor2` (source x 96) otherwise —
-  base engine behaviour, no RPG2003/`Feature::Has*` gate anywhere in either
+  live source: ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: its own base window-update
+  routine advances a cursor-frame counter by 1 every frame the window is
+  active, wrapping at 21; its own window-draw routine blits the cursor
+  highlight from the windowskin's `cursor1` block (source x 64) while that
+  counter is 10 or below, or `cursor2` (source x 96) otherwise — base
+  engine behaviour, no RPG2003/edition-feature gate anywhere in either
   function. `RPG2k::Window` (`mruby-rpg2k/mrblib/main.rb`) already ported
   the two source-x offsets as `Game::WindowCursor::FRAME1_X`/`FRAME2_X`
   (`mruby-rpg2k/mrblib/game.rb`) — `FRAME2_X` even carried a doc comment
@@ -25620,7 +25603,7 @@ not yet verified:
   were a reason the blink did not need porting, rather than a fixture
   artifact masking the bug. Fixed by adding a `@cursor_frame` counter,
   advanced by `#update` while the window is active (wrapping at 21,
-  mirroring `Window::Update` exactly) and redrawn only at the two actual
+  mirroring the reference's own counter exactly) and redrawn only at the two actual
   transitions (frame 0 and frame 11) rather than every frame, and having
   `#draw_cursor_skin` pick `FRAME1_X`/`FRAME2_X` by `@cursor_frame <= 10`.
   Covered by a new `scripts/rpg2k_scene_check.rb` check driving a real
@@ -25630,13 +25613,14 @@ not yet verified:
   pre-fix code before the fix.
   ✅ **Follow-up (2026-08-21): an inactive window hid its selection cursor
   entirely instead of freezing it — `#draw_cursor` carried a second,
-  uncited `active` check the reference does not have.** Confirmed against
-  RPG_RT's own live source: `Window::Draw`'s cursor block (`src/
-  window.cpp`) reads only `cursor_rect`/`animation_frames`/`cursor_frame`,
-  with no `active` check anywhere; `active` only gates whether `Window::
-  Update` keeps *advancing* `cursor_frame` at all (`if (active) {
-  cursor_frame += 1; ... }`) — an inactive window's highlight simply
-  freezes on whatever frame it last stopped at, it does not vanish.
+  uncited `active` check the reference does not have.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own window-draw routine's cursor block reads only
+  the cursor rect and frame counter, with no active-state check anywhere;
+  the active flag only gates whether its own window-update routine keeps
+  *advancing* the cursor-frame counter at all — an inactive window's
+  highlight simply freezes on whatever frame it last stopped at, it does
+  not vanish.
   `RPG2k::Window#draw_cursor` (`mruby-rpg2k/mrblib/main.rb`) had `return
   unless @active` right after clearing the cursor bitmap, so setting a
   window inactive (`#active=`, which calls `#draw_cursor` immediately) blanked
@@ -25699,11 +25683,12 @@ not yet verified:
   ✅ **Follow-up (2026-08-20): ~~An operand this build does not know stays
   out of the running rather than firing unchecked~~ — corrected, real
   RPG_RT does the opposite: an action pattern's out-of-range
-  `condition_type` fires unconditionally, not excluded.** Confirmed
-  directly against RPG_RT's live source: `EnemyAi::IsActionValid`'s own
-  `switch (action.condition_type)` (`src/enemyai.cpp`) ends `default:
-  return true;`, applying identically on RPG2000 and RPG2003 (no version
-  gate anywhere in the function). `Game::Battle#enemy_action_valid?`'s
+  `condition_type` fires unconditionally, not excluded.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: its own enemy-AI action-validity check's
+  condition-type switch defaults to true for any unrecognized condition
+  type, applying identically on RPG2000 and RPG2003 (no version gate
+  anywhere in the function). `Game::Battle#enemy_action_valid?`'s
   fallthrough `else` branch (`mruby-rpg2k/mrblib/game.rb`) mirrors every
   one of the eight named condition cases correctly but flipped the
   fallthrough's own polarity to `false`, with no citation for that specific
@@ -25756,21 +25741,18 @@ not yet verified:
   land: the "explicit state-cure... writing HP directly rather than
   through any of these three paths" claim was never actually true, and
   the in-battle path never revived anyone at all until now
-  (2026-08-19).** Confirmed directly against RPG_RT's own per-algorithm
-  `IsTargetValid` override (`src/game_battlealgorithm.cpp`), re-checked at
-  *resolution* time, not just when a target is originally picked
-  (`Scene_Battle_Rpg2k::ProcessBattleActionExecute`: `if (!action->
-  IsCurrentTargetValid()) { ...finish, Execute() never runs... }`,
-  `IsCurrentTargetValid()` → `IsTargetValid(**current_target)`). The
-  generic default (`AlgorithmBase::IsTargetValid`, an ordinary attack) is
-  `target.Exists()` — false the instant HP reaches 0, matching this
-  bullet's own correctly-checked plain-heal case. But
-  `Item::IsTargetValid` ignores the target entirely — `return item.type ==
-  Type_medicine || item.type == Type_switch;` — a medicine/switch item's
-  target is *always* valid, dead or alive. `Skill::IsTargetValid` sits
-  between the two: `if (target.IsDead()) return SkillTargetsAllies(skill)
-  && !skill.state_effects.empty() && skill.state_effects[0];` — a
-  Death-curing, ally-scoped skill may still target a downed ally too.
+  (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  per-algorithm target-validity override is re-checked at *resolution*
+  time, not just when a target is originally picked. The generic default
+  (an ordinary attack) requires the target to still exist — false the
+  instant HP reaches 0, matching this bullet's own correctly-checked
+  plain-heal case. But an Item's own target-validity check ignores the
+  target entirely — a medicine/switch item's target is *always* valid,
+  dead or alive. A Skill's own target-validity check sits between the
+  two: a dead target is still valid only for an ally-scoped skill whose
+  own state-effects list names Death as its first entry — a Death-curing
+  skill — so such a skill may still target a downed ally too.
   `Game::Battle#apply_command`/`#apply_command_all`
   (`mruby-rpg2k/mrblib/game.rb`) applied one blanket `target.dead?` gate to
   every command alike, so a revival item/skill queued against an
@@ -25971,14 +25953,14 @@ not yet verified:
   fixed: a revival skill/item could silently fail to revive an ally who'd
   taken heavy overkill damage, even though the item was consumed and the
   log reported the state cured (2026-08-19).** Re-verified directly against
-  RPG_RT's live source: `AlgorithmBase::ApplyHpEffect`
-  (`src/game_battlealgorithm.cpp`) is a hard no-op on an already-dead
-  target (`if (target->IsDead()) return 0;`) — the heal never touches a
-  corpse's raw HP at all — and reviving is handled entirely by
-  `ApplyStateEffect`'s own two-step mechanism quoted above: the state cure
-  sets HP to 1 first, then (only if that cure actually revived the target)
-  `ChangeHp(GetAffectedHp() - 1, false)` layers the skill's heal on top,
-  floored at 1 by `ChangeHp`'s own non-lethal clamp. `Game::Battle
+  RPG_RT's live source: ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  HP-effect application routine is a hard no-op on an already-dead
+  target — the heal never touches a corpse's raw HP at all — and reviving
+  is handled entirely by its own state-effect application's two-step
+  mechanism quoted above: the state cure sets HP to 1 first, then (only if
+  that cure actually revived the target) the skill's heal minus that same
+  1 layers on top, floored at 1 by its own non-lethal HP-change clamp. `Game::Battle
   #apply_skill_hit`'s recovery branch (`mruby-rpg2k/mrblib/game.rb`) did
   the opposite: it added the heal directly onto the target's stale HP
   first (nothing floors HP at 0 mid-fight, so an overkill hit can leave it
@@ -25987,7 +25969,7 @@ not yet verified:
   50-HP revival item on a target sitting at -200 HP wrote `-200 + 50 =
   -150` and left them just as dead as before, silently. Fixed by: skipping
   the initial heal write entirely while the target is still dead (matching
-  `ApplyHpEffect`'s no-op); routing the cure through `#cure_state` (as the
+  the reference's own no-op); routing the cure through `#cure_state` (as the
   attack branch already does) so curing Death sets HP to 1 the same way
   every other cure site in this class does; and, only when that cure just
   revived the target, adding the skill's heal on top of that 1 with the
@@ -26023,11 +26005,12 @@ not yet verified:
   `affect_attr_defence` (resistance-shift buff) skill too, blocking a
   perfectly castable "raise Fire resistance"-style skill whenever its named
   attribute happened to be weapon-type and the caster had no matching weapon
-  equipped.** Confirmed against RPG_RT's own live source: `Game_Actor::
-  IsSkillUsable` (`src/game_actor.cpp`) wraps its *entire* weapon-equip loop
-  in `if (!skill->affect_attr_defence) { ... }` — the exemption sits at
-  exactly this one `Game_Actor` level; neither `Algo::IsSkillUsable` nor
-  `Game_Battler::IsSkillUsable` (`src/algo.cpp`/`src/game_battler.cpp`) has
+  equipped.** Ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: its own actor-level
+  skill-usability check wraps its *entire* weapon-equip loop in a guard
+  that skips it outright for a resistance-shift (`affect_attr_defence`)
+  skill — the exemption sits at exactly that one actor-level check; neither
+  the shared algorithm-level nor the base battler-level usability check has
   any weapon-attribute check at all. The original bullet above (and its
   yado.tk source) never mentioned this exemption, so `#weapon_attribute_
   ready?` never checked it either. Fixed with a single early `return true if
@@ -26250,18 +26233,17 @@ not yet verified:
   specific event id the map has no character for — drew on the player
   instead of not drawing at all, and a "wait until it finishes" request on
   one stalled for the animation's own real duration instead of falling
-  straight through the very same tick.** Confirmed against RPG_RT's own
-  live source: `Game_Interpreter_Map::CommandShowBattleAnimation`
-  (`src/game_interpreter_map.cpp`) calls `GetCharacter(evt_id, ...)`
-  unconditionally, before it ever reads the "Whole screen" flag or computes
-  a frame count, and returns outright when that comes back null — so the
-  *entire* command, "Whole screen" target included, no-ops for an
-  unresolved target. `Game_Interpreter::GetCharacter`
-  (`src/game_interpreter.cpp`) is null both for "This Event" (0) when the
-  calling interpreter has no owning map event (`GetThisEventId() == 0`,
-  exactly what a common event's own Parallel Process is) and for a specific
-  event id the map has no character for; `_state.wait_time = frames` is
-  never reached in either case. `Scene::Map#animation_target_pixel`/
+  straight through the very same tick.** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own map-event Show Battle Animation handler resolves the target
+  character unconditionally, before it ever reads the "Whole screen" flag
+  or computes a frame count, and returns outright when that comes back
+  null — so the *entire* command, "Whole screen" target included, no-ops
+  for an unresolved target. That character-resolution helper is null both
+  for "This Event" when the calling interpreter has no owning map event
+  (exactly what a common event's own Parallel Process is) and for a
+  specific event id the map has no character for; the animation's own wait
+  timer is never armed in either case. `Scene::Map#animation_target_pixel`/
   `#map_animation_flash_target` (`mruby-rpg2k/mrblib/scene/map.rb`) both
   fell back to the player's own pixel/`:player` for these same two cases —
   their own doc comments described this as deliberate, but neither was ever
@@ -26291,14 +26273,14 @@ not yet verified:
   (13260) had the identical gap for an out-of-range Ally/Enemy target
   index — it drew a spurious screen-centre animation instead of no-op'ing,
   and stalled a "wait for completion" request instead of falling through
-  the same tick.** Confirmed against RPG_RT's own live source:
-  `Game_Interpreter_Battle::CommandShowBattleAnimation`
-  (`src/game_interpreter_battle.cpp`) leaves `battler_target` null — and so
-  never calls `ShowBattleAnimation`, `frames` staying 0 — for an Ally index
-  (1-based, `target -= 1` first) outside `0...Game_Party::GetBattlerCount()`
-  (`GetActors().size()`, dead members included, no `Exists()`/`IsDead()`
-  check anywhere in this function), or an Enemy index outside
-  `0...Game_EnemyParty::GetBattlerCount()`. `Scene::Battle
+  the same tick.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  battle-page Show Battle Animation handler leaves the resolved battler
+  target null — and so never starts the animation, the frame count staying
+  0 — for an Ally index (1-based) outside the live party's battler count
+  (dead members included, no separate existence/dead check anywhere in
+  this function), or an Enemy index outside the enemy troop's own battler
+  count. `Scene::Battle
   #start_battle_page_animation`'s own `elsif req[:allies]` branch
   (`mruby-rpg2k/mrblib/scene/battle.rb`) never looked at the target index at
   all, always drawing at screen centre; its `else` (Enemy) branch relied on
@@ -26985,9 +26967,10 @@ not yet verified:
   polarity a self/ally-scoped skill's `state_effects` list applies is
   settled by a reference implementation's own skill-execution formula
   (ported from a reference implementation, not independently confirmed
-  against genuine RPG_RT under wine): `heals_states = IsPositive() ^
-  (IsRPG2k3() && skill.reverse_state_effect)`, and `IsPositive()` is true
-  for every scope but the enemy-single/enemy-all ones — so under the
+  against genuine RPG_RT under wine): a skill's states heal rather than
+  inflict when its scope is "positive" (every scope but the
+  enemy-single/enemy-all ones), XORed with an RPG2003 database's own
+  reverse-state-effect flag — so under the
   RPG2000-only reading this runtime already commits to elsewhere (no
   RPG2003-only gate modelled), `reverse_state_effect` plays **no part** in
   battle cure-vs-inflict
@@ -27217,19 +27200,17 @@ not yet verified:
   fix.
   ✅ **Follow-up (2026-08-21): test 4 ("the currently-targeted troop member
   is param1") is now implemented too, correcting this entry's own claim
-  that it "remains genuinely unimplemented."** Confirmed directly against
-  RPG_RT's live source: `Game_Interpreter_Battle::
-  CommandConditionalBranchBattle`'s `case 4` (`src/
-  game_interpreter_battle.cpp`) is `result = (targets_single_enemy &&
-  target_enemy_index == com.parameters[1]);`. Both fields are set in
-  `Scene_Battle_Rpg2k3::ProcessBattleActionBegin`
-  (`src/scene_battle_rpg2k3.cpp`), right before a page's pre-action events
-  run, from the acting ally's own `GetOriginalSingleTarget()` — the target
-  chosen at command time, before any forced-restriction (Berserk/Confuse)
-  override — and only when that target is itself an enemy; `targets_
-  single_enemy` stays false for an all-target action or one aimed at an
-  ally. Only ever set for an acting ally (`if (source->GetType() ==
-  Type_Ally)`) — an enemy-sourced page run instead inherits whatever the
+  that it "remains genuinely unimplemented."** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own battle-page conditional-branch handler's test-4 case
+  resolves to whether the acting battler currently targets a single enemy
+  and that enemy's index matches. Both fields are set right before a
+  page's pre-action events run, from the acting ally's own
+  originally-chosen single target — the target chosen at command time,
+  before any forced-restriction (Berserk/Confuse) override — and only when
+  that target is itself an enemy; that "targets a single enemy" flag stays
+  false for an all-target action or one aimed at an ally. Only ever set for
+  an acting ally — an enemy-sourced page run instead inherits whatever the
   last acting ally left behind, a real but rarely-observable quirk left
   unmodelled in the fix below. Fixed with a new `Game::Battle
   #target_enemy_index(source)` (`mruby-rpg2k/mrblib/game.rb`), this port's
@@ -27360,21 +27341,21 @@ not yet verified:
   ✅ **Follow-up (2026-08-21): the Through-Mode exemption the fix above
   copied from `#vehicle_passable?`'s boat/ship rule was itself wrong for
   airship landing — RPG_RT never reads Through Mode when deciding whether
-  an event blocks a landing at all.** Confirmed against RPG_RT's own live
-  source: `Game_Map::CanLandAirship` (`src/game_map.cpp`) is a standalone
-  loop over every event — `if (ev.IsInPosition(x, y) && ev.IsActive() &&
-  ev.GetActivePage() != nullptr) return false;` — entirely separate from
-  `WouldCollide`/`CheckOrMakeWayEx`, the function `#vehicle_passable?`'s
-  own boat/ship rule legitimately reads `GetThrough()` from.
-  `CanLandAirship` never calls into that machinery and never reads Through
-  Mode anywhere: an event with Through Mode ON still blocks a landing,
-  unlike a boat/ship's own movement collision — landing is the airship
-  occupying the ground tile outright, not a "pass through" move. Fixed by
-  dropping the Through-Mode filter from `Scene::Map#airship_landable?`
-  entirely (`blockers_at(x, y).any?`, unconditional — `blockers_at` already
-  only ever indexes an event with a currently active page, the same
-  `IsActive() && GetActivePage() != nullptr` test `CanLandAirship` itself
-  uses). The existing `scripts/rpg2k_scene_check.rb` check above was
+  an event blocks a landing at all.** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own airship-landing check is a standalone loop over every event
+  that blocks landing on any tile currently occupied by an active event
+  page — entirely separate from the general movement-collision machinery
+  `#vehicle_passable?`'s own boat/ship rule legitimately reads Through Mode
+  from. The landing check never calls into that machinery and never reads
+  Through Mode anywhere: an event with Through Mode ON still blocks a
+  landing, unlike a boat/ship's own movement collision — landing is the
+  airship occupying the ground tile outright, not a "pass through" move.
+  Fixed by dropping the Through-Mode filter from
+  `Scene::Map#airship_landable?` entirely (`blockers_at(x, y).any?`,
+  unconditional — `blockers_at` already only ever indexes an event with a
+  currently active page, the same active-page test the reference's own
+  landing check itself uses). The existing `scripts/rpg2k_scene_check.rb` check above was
   rewritten in place to assert the opposite of its own final assertion
   (Through Mode no longer lets the airship land), confirmed to fail against
   the pre-fix code before the fix.
@@ -27384,14 +27365,13 @@ not yet verified:
   above already cover, which are about a boat/ship's or airship's own
   separate collision path, not the general character-vs-character one
   every ordinary step (hero or event) goes through (2026-08-21).**
-  Confirmed against RPG_RT's own live source: `WouldCollide` (`src/
-  game_map.cpp`) — the single collision primitive `Game_Character::Move`'s
-  `MakeWay` bottoms out in, for the hero, a map event, or a boarded
-  vehicle alike (`Game_Player::MakeWay` delegates straight to
-  `GetVehicle()->MakeWay`/`Game_Character::MakeWay` depending on
-  `IsAboard()`) — opens with `if (self.GetThrough() || other.GetThrough())
-  { return false; }`, *before* the overlap-forbidden or layer-match tests
-  that follow it, uniformly for every mover type. `Scene::Map#passable?`
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own collision-check primitive —
+  the single one every mover's own way-making check bottoms out in, for
+  the hero, a map event, or a boarded vehicle alike — opens by refusing to
+  block movement at all when either mover has Through Mode on, *before*
+  the overlap-forbidden or layer-match tests that follow it, uniformly for
+  every mover type. `Scene::Map#passable?`
   (the hero's own on-foot step check) and `#char_passable?`/`#char_can_
   land?` (the shared mover-vs-event test every map event's own Move Route,
   and the party's forced-route mirror, use) each only ever tested a
@@ -29232,18 +29212,16 @@ above are repeated here)
   value), all four confirmed to fail against the pre-fix code before the fix.
 - ✅ **The field Status screen and Equip screen showed an actor's ATK/DEF/
   Int(Spirit)/AGI as the raw base stat, ignoring any currently-active
-  halve/double state (2026-08-21).** Confirmed against RPG_RT's own live
-  source: `Window_ParamStatus::Refresh` (`src/window_paramstatus.cpp`)
-  draws `actor.GetAtk()`/`GetDef()`/`GetSpi()`/`GetAgi()` directly (not a
-  "base" variant), and `Game_Battler::GetAtk` et al. (`src/game_battler.cpp`)
-  run the base value through `AdjustParam`, which halves/doubles it against
-  whatever states the actor currently carries (`GetInflictedStates()`, not
-  battle-scoped — whatever is on the actor, in battle or on the field).
-  `Window_EquipStatus::DrawParameter` (`src/window_equipstatus.cpp`) draws
-  the Equip screen's "current" column the same way, and `Scene_Equip::
-  UpdateStatusWindow` (`src/scene_equip.cpp`) finishes its "new" preview
-  column with `actor.CalcValueAfterAtkStates(atk)` — both columns are
-  state-adjusted in the reference. This codebase had already built the
+  halve/double state (2026-08-21).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine: its own field Status screen draws each stat directly (not a "base"
+  variant), and its own per-stat getters run the base value through a
+  state-adjustment step that halves/doubles it against whatever states the
+  actor currently carries (not battle-scoped — whatever is on the actor,
+  in battle or on the field). Its own Equip screen draws the "current"
+  column the same way, and its own equip-screen status-window updater
+  finishes the "new" preview column with the identical state-adjustment
+  step — both columns are state-adjusted in the reference. This codebase had already built the
   correct machinery for exactly this — `Game::Party#effective_atk`/
   `#effective_def`/`#effective_int`/`#effective_agi`, ported for skill power
   formulas with the identical "not a battle-only variant" reasoning cited
@@ -29257,21 +29235,22 @@ above are repeated here)
   ✅ **Follow-up (2026-08-21): the Equip screen's preview column had two
   further gaps in the same method, one of them predating this state-
   adjustment fix — a negative preview total was shown raw and unclamped,
-  and the preview never applied a state's halve/double at all.** Confirmed
-  against RPG_RT's own live source: `Scene_Equip::UpdateStatusWindow`
-  rebuilds the new *base* total (each stat's own `GetBaseAtk(..., equip:
-  false)` plus every equipped item's own point field, the candidate
-  swapped in), clamps it to `actor.MaxStatBaseValue()` (999, floor 1) via
-  `Utils::Clamp`, and only *then* calls `CalcValueAfterAtkStates` — state
-  adjustment is the last step, applied to an already-floored value, not
-  folded additively into the raw item-swap delta and left unclamped. This
+  and the preview never applied a state's halve/double at all.** Ported
+  from a reference implementation, not independently confirmed against
+  genuine RPG_RT under wine: its own equip-screen status-window updater
+  rebuilds the new *base* total (each stat's own base value plus every
+  equipped item's own point field, the candidate swapped in), clamps it to
+  the actor's own max base-stat value (999, floor 1), and only *then*
+  applies the same state-adjustment step — state adjustment is the last
+  step, applied to an already-floored value, not folded additively into
+  the raw item-swap delta and left unclamped. This
   codebase's own `#draw_stat_row` computed `value + delta` with no clamp of
   any kind — a 両手持ち weapon swap that forces off a hefty shield could
   (and, per the check just above, did) preview a genuine negative Def —
   and never reapplied `stat_mode`/`adjust_stat` to the preview at all.
   Fixed by clamping the new base to `1..Game::Actor::MAX_EFFECTIVE_STAT`
   before applying the same `stat_mode`/`adjust_stat` pair the current-value
-  fix above already wired in; `Window_EquipStatus::GetNewParameterColor`
+  fix above already wired in; the reference's own preview-color logic
   compares the two *displayed* (state-adjusted) values, not the raw item
   delta's sign, so the preview's up/down colouring was corrected to match
   (the two agree away from a clamp boundary or an active state, which is
@@ -29558,15 +29537,15 @@ above are repeated here)
   one would).
   ✅ **Follow-up (2026-08-19): `#skill_sealed?`'s own seal — 封印 / Silence —
   never reached the field (out-of-battle) Skill menu at all; only the
-  in-battle one enforced it.** Confirmed directly against RPG_RT's live
-  source: `Game_Battler::IsSkillUsable` (`src/game_battler.cpp`) checks
-  `restrict_skill`/`restrict_magic` unconditionally — there is no in-battle
-  guard anywhere around that loop — and `Window_Skill::CheckEnable`
-  (`src/window_skill.cpp`), the *one* window class the field and battle
-  skill menus both use, is simply `IsSkillLearned && IsSkillUsable` with no
-  context distinction either: a state that seals magic greys out and blocks
-  a skill identically whether the actor is in a fight or standing on the
-  map. `Game::Battle#skill_sealed?` already ports this correctly for the
+  in-battle one enforced it.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  skill-usability check applies the physical/magic seal restriction
+  unconditionally — there is no in-battle guard anywhere around that
+  check — and its own skill-window enable check, the *one* window class the
+  field and battle skill menus both use, is simply "learned and usable"
+  with no context distinction either: a state that seals magic greys out
+  and blocks a skill identically whether the actor is in a fight or
+  standing on the map. `Game::Battle#skill_sealed?` already ports this correctly for the
   in-battle menu, but `Game::Party#can_cast?` — the gate `#field_skill?`/
   `#field_skills`, `#skill_effective?` and `#cast_skill`/`#cast_switch_skill`
   all funnel through — never called it (nor anything that does); `Party` and
@@ -29692,7 +29671,7 @@ above are repeated here)
   identical row-then-class precedence `Game::Actor#strong_defence?` already
   follows for every other actor/class-overridable trait; its own
   select-next-actor routine checks it right after the
-  `CanAct()`/forced-attack-ally/attack-enemy restriction gates and, if set,
+  can-act/forced-attack-ally/attack-enemy restriction gates and, if set,
   runs the default AutoBattle algorithm instead of ever entering
   the command-select state. Fixed with a new `Game::Actor#force_ai?` (the same
   class-row-then-player-row lookup as `#strong_defence?`/`#double_hand?`) and
@@ -29967,16 +29946,16 @@ above are repeated here)
   its stale pre-death charge until then, so an ordinary revival item used
   within the same fight resurrected the target with its old charge still
   intact instead of empty (2026-08-19).** The bullet above's own citation
-  already quotes the relevant line — `Game_Battler::AddState`'s Knockout
-  branch (`src/game_battler.cpp`), `if (state_id == kDeathID) {
-  SetAtbGauge(0); SetHp(0); ... }` — and deliberately scoped the fix to
+  already quotes the relevant behavior — the reference's own
+  state-addition routine's Knockout branch zeroes the gauge and HP the
+  instant Death lands — and deliberately scoped the fix to
   cross-*battle* persistence only (`Battle#apply_to_party`'s own
   `c.hp > 0 ? c.gauge : 0` write-back), reasoning that a `Combatant`'s
   `#dead?` is purely HP-driven so a single end-of-fight check is
   sufficient — true for *whether* the gauge ends up zeroed by the time the
-  fight ends, but not for *when*: real RPG_RT's `AddState(kDeathID)` fires
-  the instant death actually lands (`Game_Battler::ChangeHp` calls it
-  itself the moment `new_hp <= 0`), and nothing between that moment and a
+  fight ends, but not for *when*: real RPG_RT's own Knockout-state routine
+  fires the instant death actually lands (its own HP-change routine calls
+  it itself the moment HP reaches 0), and nothing between that moment and a
   potential same-fight revival re-charges a dead battler's gauge — so a
   revived ally in real RPG_RT always resumes from empty, never from
   whatever it had charged to before dying. Concretely: an ally charged to
@@ -30042,25 +30021,24 @@ above are repeated here)
   4`) before the fix.
   ✅ **An attribute-defence rank shift landed on every targeted attribute
   every single cast, with no accuracy roll at all — RPG_RT rolls one
-  independently per attribute id (2026-08-19).** Confirmed directly against
-  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`,
-  fetched live): the `affect_attr_defence` block loops
-  `for (int i = 0; i < skill.attribute_effects.size(); i++)` and only calls
-  `AddAffectedAttribute`/`SetIsSuccess` when
-  `Rand::PercentChance(to_hit_attribute_shift)` succeeds *for that specific
-  id* — a skill tagged to shift several attributes at once (e.g. a "Ward"
-  skill raising resistance to both Fire and Ice) can land on one and miss
-  the other in the same cast, exactly like this codebase's own
+  independently per attribute id (2026-08-19).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine (fetched live): its own skill-execution routine's attribute-defence
+  block loops over every targeted attribute and only applies the shift when
+  an independent percent-chance roll succeeds *for that specific id* — a
+  skill tagged to shift several attributes at once (e.g. a "Ward" skill
+  raising resistance to both Fire and Ice) can land on one and miss the
+  other in the same cast, exactly like this codebase's own
   `stat_mod_keys`/HP/SP effects already roll independently of each other
   via `#skill_effect_hits?`. `Game::Battle#apply_attr_shift`
   (`mruby-rpg2k/mrblib/game.rb`) applied the shift to every id in
   `cmd[:attr_ids]` unconditionally instead, the same "quoted the C++ branch
   but only ported part of it" gap as the Knockout-reset fixes just above —
-  here the missing part was the roll immediately guarding
-  `AddAffectedAttribute` itself, not a field further down the same
+  here the missing part was the roll immediately guarding the
+  attribute-shift application itself, not a field further down the same
   function. (Separately checked while re-reading the surrounding source:
   `affect_attack`/`affect_defense`/`affect_spirit`/`affect_agility` each
-  roll their own independent `Rand::PercentChance(to_hit)` too, but this
+  roll their own independent percent-chance too, but this
   codebase's existing `stat_keys = (cmd[:stat_mod_keys] ||
   []).select { skill_effect_hits?(cmd) }` already re-invokes
   `#skill_effect_hits?` — a fresh, independent roll — once per key via
@@ -30076,22 +30054,21 @@ above are repeated here)
   the attribute whose own roll hit actually moves, the other keeps its
   starting rank), confirmed to fail against the pre-fix code
   (`expected [1], got [1, 2]`) before the fix. `#skill_attr_shift`'s own
-  `IsImmuneToAttributeDownshifts()` gate on a *negative* shift (also
-  visible in the same C++ block) is a separate, not-yet-investigated
-  question — deliberately out of scope here to keep this fix to the single
-  confirmed gap.
+  immune-to-downshift gate on a *negative* shift (also visible in the same
+  reference code) is a separate, not-yet-investigated question —
+  deliberately out of scope here to keep this fix to the single confirmed
+  gap.
   ✅ **A troop member killed by Change Monster HP (13110) kept its stale
   pre-death stat modifiers, attribute-rank shift and ATB gauge charge
   through a same-fight revival — a fifth Knockout-reset call site both
-  earlier fix passes above missed (2026-08-19).** Confirmed directly
-  against RPG_RT's actual source, fetched live:
-  `Game_Interpreter_Battle::CommandChangeMonsterHP`
-  (`src/game_interpreter_battle.cpp`) doesn't set HP directly at all — it
-  calls `enemy->ChangeHp(change, lethal)`, and `Game_Battler::ChangeHp`
-  (`src/game_battler.cpp`) itself calls `AddState(kDeathID, true)` the
-  instant the new HP reaches 0, running the exact same Knockout branch
-  quoted twice already in the two fixes just above (gauge, then stat
-  mods/attribute ranks). `Game::Interpreter#do_change_monster_hp`
+  earlier fix passes above missed (2026-08-19).** Ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine (fetched live): its own Change Monster HP command handler doesn't
+  set HP directly at all — it calls the shared HP-change routine, which
+  itself triggers the Knockout state the instant the new HP reaches 0,
+  running the exact same Knockout branch quoted twice already in the two
+  fixes just above (gauge, then stat mods/attribute ranks).
+  `Game::Interpreter#do_change_monster_hp`
   (`mruby-rpg2k/mrblib/interpreter.rb`) never went through that shared
   path: it ends with a bare `target.hp = hp` Struct write, the same kind
   of raw assignment the two earlier fixes had already found and patched at
@@ -30113,14 +30090,12 @@ above are repeated here)
   the fix.
   ✅ **A troop member killed by a scripted Change Monster HP died in total
   silence — no enemy-kill sound at all, unlike an ordinary lethal Attack
-  or Skill (2026-08-19).** Confirmed directly against RPG_RT's live
-  source, immediately below the `ChangeHp` call the fix just above already
-  cites: `Game_Interpreter_Battle::CommandChangeMonsterHP`
-  (`src/game_interpreter_battle.cpp`) is `enemy->ChangeHp(change, lethal);
-  ... if (enemy->IsDead()) { Main_Data::game_system->SePlay(Main_Data::
-  game_system->GetSystemSE(Main_Data::game_system->SFX_EnemyKill));
-  enemy->SetDeathTimer(); }` — the command plays the enemy-kill system SE
-  itself, directly, the instant its own kill lands. This codebase's own
+  or Skill (2026-08-19).** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine, immediately
+  below the HP-change call the fix just above already cites: its own
+  Change Monster HP command handler plays the enemy-kill system SE itself,
+  directly, and starts the enemy's own death-fade timer, the instant its
+  own kill lands. This codebase's own
   death cue for an ordinary lethal Attack/Skill already exists —
   `Scene::Battle#play_battle_action_se` plays `SFX_ENEMY_DEATH` off
   `entry[:defeated]`, the hash a combat action returns
@@ -30136,7 +30111,7 @@ above are repeated here)
   newly true, drained every frame by `Scene::Battle
   #apply_battle_event_requests` (already the poll point for those sibling
   queues) into a new `#play_monster_kill_se` (`play_system_se
-  (SFX_ENEMY_DEATH)`). `SetDeathTimer`'s own fade/blink animation has no
+  (SFX_ENEMY_DEATH)`). That death-fade/blink animation has no
   equivalent anywhere in this codebase's sprite system (a dead enemy's
   sprite already simply stops drawing) and is deliberately left out of
   scope — this fix restores only the missing sound. Covered by a new
@@ -30190,10 +30165,9 @@ above are repeated here)
   line) applied every listed, currently-carried state with no roll of any
   kind — the recovery branch's own doc comment even said so explicitly,
   "unconditionally, matching the field item cure", conflating two
-  genuinely different mechanics: `Game_BattleAlgorithm::Item::vExecute`
-  really does cure with no roll at all (`for (...) if (item.state_set[i])
-  if (State::Remove(...)) ...`, no `PercentChance` anywhere in its cure
-  loop), but `Skill::vExecute`'s is roll-gated. Both algorithms share this
+  genuinely different mechanics: the reference's own Item-execution routine
+  really does cure with no roll at all, but its own Skill-execution
+  routine's cure is roll-gated. Both algorithms share this
   codebase's `#apply_skill_hit` (`#command_item`/`#command_skill` both
   feed the same `cmd[:hp]`/`cmd[:cured]` machinery through
   `#apply_command`), so the fix had to stay correct for both at once —
@@ -30211,20 +30185,17 @@ above are repeated here)
   ✅ **A revival skill/item whose own "Affect HP" flag is off — a common
   "cure Death, heal a % of max HP" design, distinct from a flat-amount
   reviver — always revived to a flat 1 HP instead of a percentage of max
-  HP, both in battle and from the field menu (2026-08-19).** Confirmed
-  directly against RPG_RT's live source, in two independent functions:
-  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`,
-  the in-battle path) is `if (IsRevived() && effect > 0) { if
-  (skill.affect_hp) { SetAffectedHp(std::max(0, effect)); } else {
-  SetAffectedHp(target->GetMaxHp() * effect / 100); } }` — reading a
-  *percentage* of max HP instead of the flat-1 the earlier revival fix
-  (just above, `apply_skill_hit`'s cure-then-additive-heal) otherwise
-  falls through to whenever Affect HP is off. `Game_Battler::UseSkill`
-  (`src/game_battler.cpp`, the out-of-battle/field-menu path) implements
-  the identical rule independently via its own `cure_hp_percentage` bool
-  ("If Death is cured and HP is not selected, we set a bool so it later
-  heals HP percentage"), confirming this is a general RPG_RT mechanic, not
-  a battle-only quirk. `Game::Battle#battle_skill_command`
+  HP, both in battle and from the field menu (2026-08-19).** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine, in two independent functions: its own in-battle
+  skill-execution routine reads a *percentage* of max HP instead of the
+  flat-1 the earlier revival fix (just above, `apply_skill_hit`'s
+  cure-then-additive-heal) otherwise falls through to whenever Affect HP
+  is off. Its own out-of-battle/field-menu skill-use routine implements
+  the identical rule independently via its own internal "cure HP
+  percentage" flag, set when Death is cured and HP is not separately
+  selected, confirming this is a general RPG_RT mechanic, not a
+  battle-only quirk. `Game::Battle#battle_skill_command`
   (`mruby-rpg2k/mrblib/game.rb`) forces `hp: 0` in its recovery-branch hash
   whenever a skill's own `affect_hp` is off, regardless of its configured
   Power/rate — so `#apply_skill_hit`'s revival block (added by the earlier
@@ -30243,11 +30214,12 @@ above are repeated here)
   already equals that scaled figure whenever it's nonzero, so no extra
   flag has to ride along in `cmd` to tell the two cases apart; `cast_skill`
   gained a parallel `elsif revived && amount > 0 && t.max_hp` branch
-  mirroring `UseSkill`'s own `ChangeHp(GetMaxHp() * effect / 100 -
-  revived, false)`. An Item is unaffected either way — `#command_item`
-  never sets `cmd[:stat_effect]` at all, so the percentage branch can never
-  trigger for one, matching how `Item::vExecute` has no such override to
-  begin with (it reads `item.recover_hp_rate` directly, a separate,
+  mirroring the reference's own equivalent percentage-heal-minus-revival-
+  floor computation in its skill-use routine. An Item is unaffected either
+  way — `#command_item` never sets `cmd[:stat_effect]` at all, so the
+  percentage branch can never trigger for one, matching how the
+  reference's own Item-execution routine has no such override to begin
+  with (it reads `item.recover_hp_rate` directly, a separate,
   already-correct mechanism). Covered by four new
   `scripts/rpg2k_logic_check.rb` checks (a battle-path and a field-menu-path
   check each for the percentage landing correctly, and for it capping at
@@ -30256,11 +30228,10 @@ above are repeated here)
   50, got 1` / `expected 100, got 1`) before the fix.
   ✅ **Follow-up (2026-08-20): a field-cast skill's SP restoration was not
   blocked on a downed (dead, non-revived) target the way its HP sibling
-  already was.** `Game_Battler::UseSkill`'s own out-of-battle HP/SP
-  branches (`src/game_battler.cpp`, cited above) gate identically: `effect
-  > 0 && skill->affect_hp && !HasFullHp() && !IsDead()` for HP, `effect >
-  0 && skill->affect_sp && !HasFullSp() && !IsDead()` for SP — the same
-  `!IsDead()` guard on both. `Game::Party#cast_skill`
+  already was.** Its own out-of-battle skill-use routine's HP/SP
+  restoration branches (cited above) gate identically: effect present, the
+  corresponding affect flag set, not already full, and not dead — for both
+  HP and SP — the same not-dead guard on both. `Game::Party#cast_skill`
   (`mruby-rpg2k/mrblib/game.rb`) had `t.change_mp(amount) if sk.affect_sp
   && amount > 0` with no dead-target guard of its own; the HP branch
   (`t.change_hp(amount) if sk.affect_hp && amount > 0`, right above it)
@@ -30285,8 +30256,8 @@ above are repeated here)
   than max," so a non-reviving skill with Affect HP or SP set still shows
   as selectable against a downed ally even now that casting it is
   correctly a no-op. Whether real RPG_RT's own field Skill menu greys out
-  a target row by per-target effectiveness at all (`Window_Skill::
-  CheckEnable`, the one greying mechanism independently checked while
+  a target row by per-target effectiveness at all (the reference's own
+  skill-list greying mechanism, independently checked while
   investigating this, only gates the *skill list* by caster-side
   learnedness/usability — it has no target-specific "would this help"
   concept at that layer) was not verified before writing this note, so
@@ -30295,8 +30266,8 @@ above are repeated here)
   both `#use_medicine` and `#cast_skill`'s primary Affect-HP branch,
   over-healed by exactly 1 HP.** `#remove_state` already floors a revived
   target to 1 HP the instant Death comes off, and RPG_RT's own
-  `Game_Battler::UseItem`/`UseSkill` (`src/game_battler.cpp`, cited above)
-  both then add `hp_change - revived`/`effect - revived` on top of that
+  item-use and skill-use routines (cited above)
+  both then add the recovery amount minus the revival floor on top of that
   floor, not the full recovery amount — `revived` is `1` exactly when this
   particular use just cured Death, `0` otherwise, so an ordinary heal on an
   already-standing ally is unaffected. `#cast_skill`'s own sibling
@@ -30351,18 +30322,19 @@ above are repeated here)
   ✅ **Follow-up (2026-08-19): Enable Combo skipped RPG_RT's own "actor must
   be a current party member" gate, unlike every other fixed-id battle-page
   command — a combo targeted at a roster actor who simply wasn't in the
-  active party was armed anyway.** Confirmed directly against RPG_RT's
-  live source: `Game_Interpreter_Battle::CommandEnableCombo` (`src/
-  game_interpreter_battle.cpp`) is `if (!Main_Data::game_party->
-  IsActorInParty(actor_id)) { return true; }`, checked before
-  `Game_Actors::GetActor` is even consulted — unlike Change Class, Change
+  active party was armed anyway.** Ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  Enable Combo command handler checks whether the named actor is
+  currently in the active party and bails out immediately if not, checked
+  before the roster lookup is even consulted — unlike Change Class, Change
   Battle Commands, and Change Actor Name/Title/Sprite/Face, which all
   resolve their fixed-id actor through the roster alone (so an away
   companion is still renamed/re-dressed/re-classed and has it waiting when
   they rejoin, `Interpreter#identity_target`'s own doc comment), Enable
   Combo is the *one* identity-targeted command with this extra membership
-  requirement. `IsActorInParty` appears in exactly one other place in the
-  whole reference — the Conditional Branch "actor in party" test, already
+  requirement. That same "actor in party" check appears in exactly one
+  other place in the whole reference — the Conditional Branch "actor in
+  party" test, already
   correctly ported as `Game::Party#include_actor?` and wired to that
   command — confirming this is a narrow, deliberate exception rather than
   a general rule this port simply generalized correctly elsewhere.
@@ -30389,21 +30361,20 @@ above are repeated here)
   (2026-08-18).** `Scene::Battle#build_actor_sprite` only ever picked
   between Idle, Defend and Dead — the code's own comments already flagged
   this exact gap, citing the same reference this session independently
-  re-fetched and confirmed: `Sprite_Actor::DoIdleAnimation` (`src/
-  sprite_actor.cpp`) checks `IsDefending()` first, unconditionally, but its
-  *remaining* branch for a living party member (one with a real
-  `battler_animation_id`, i.e. not a monster) is `idling_anim = state ?
-  state->battler_animation_id + 1 : AnimationState_Idle` — RPG_RT reads the
-  battler's own *significant active state* (`GetSignificantState`, already
-  the exact function `Game::States.significant` ports) and shows *that
-  state's own configured pose*, falling back to a generic "bad status" pose
-  when the state names none of its own (`if (idling_anim == 101) idling_anim
-  = 7;` — `AnimationState_BadStatus`). Death is not special-cased here at
+  re-fetched and confirmed: ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine, its own
+  battle-sprite idle-animation routine checks whether the actor is
+  defending first, unconditionally, but its *remaining* branch for a
+  living party member (one with a real pose id, i.e. not a monster) reads
+  the battler's own *significant active state* (already the exact function
+  `Game::States.significant` ports) and shows *that state's own configured
+  pose*, falling back to a generic "bad status" pose when the state names
+  none of its own. Death is not special-cased here at
   all for an actor: it reaches the identical state-driven branch (a real
   database's Death row conventionally already points its own
-  `battler_animation_id` at the Dead pose), it is only the *monster* branch
+  pose id at the Dead pose), it is only the *monster* branch
   (no pose table to consult) that hardcodes Death straight to
-  `AnimationState_Dead`. So Poison, Sleep, Confusion, Blindness or any other
+  the dead pose. So Poison, Sleep, Confusion, Blindness or any other
   active status this codebase's own `dead:`/`defending:` special-casing
   never covered left a living, afflicted party member's on-screen battler
   sprite indistinguishable from a perfectly healthy one. Fixed with a new
@@ -30982,14 +30953,13 @@ codebase yet):
   to `yado.tk`/`デフォ戦botまとめ`, never actually checked against real
   source) that a deep debuff keeps "banking" magnitude indefinitely until a
   later raise climbs all the way back through it. Checked directly against
-  RPG_RT's own live C++ this time: `Game_Actor::SetBaseAtk`/`SetBaseDef`/
-  `SetBaseSpi`/`SetBaseAgi` (`src/game_actor.cpp`) each clamp the modifier
-  itself — `data.attack_mod` etc, a shadow entirely separate from the level
-  curve — to `+/-MaxStatBaseValue()` (999) via a `ClampStatMod` helper, on
-  every call, *before* `GetBaseAtk` ever adds the curve and equipment and
-  clamps the combined total again to `1..999`; `SetBaseMaxHp`/`SetBaseMaxSp`
-  clamp `data.hp_mod`/`data.sp_mod` the same way via `ClampMaxHpMod`/
-  `ClampMaxSpMod`. So a deep debuff can never bank more magnitude in the
+  RPG_RT's own live C++ this time: ported from a reference implementation,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  per-stat base-setters each clamp the modifier itself — a shadow entirely
+  separate from the level curve — to its own max-base-stat-value ceiling
+  (999) on every call, *before* the combined total is computed by adding
+  the curve and equipment and clamped again to `1..999`; the max-HP/max-SP
+  setters clamp their own modifiers the same way. So a deep debuff can never bank more magnitude in the
   modifier than its own +/-999 ceiling, and a partial recovery afterward
   reflects immediately once the (already-bounded) modifier crosses back
   over the curve's own threshold — concretely, lowering Attack by 2000 off
@@ -31044,13 +31014,13 @@ codebase yet):
   *both* `@allies` and `@enemies`, so a skill/state that locked an entire
   enemy troop into a restriction-based "do nothing" status (e.g. a
   full-troop Stone with 0% self-cure) ended the fight in an instant,
-  damage-free victory. Checked against RPG_RT's own live source:
-  `Game_Battle::CheckWin`/`CheckLose` (`src/game_battle.cpp`) use two
-  genuinely different predicates, not one shared one — `CheckWin` is
-  `!game_enemyparty->IsAnyActive()`, which bottoms out in
-  `Game_Battler::Exists()` (`src/game_battler.h`, `!IsHidden() && !IsDead()
-  && IsInParty()`) with no restriction/recovery check anywhere in that
-  chain, while only `CheckLose` calls `CanActOrRecoverable()` (the source
+  damage-free victory. Checked against RPG_RT's own live source: ported
+  from a reference implementation, not independently confirmed against
+  genuine RPG_RT under wine: its own win-check and lose-check routines use
+  two genuinely different predicates, not one shared one — the win check
+  is whether any enemy is still simply alive and in the fight, with no
+  restriction/recovery check anywhere in that chain, while only the lose
+  check applies the fuller "can act or will recover" test (the source
   `#incapacitated?` already correctly ports). The ally-side widening exists
   specifically to avoid a stall where the player can never submit another
   command; the enemy side carries no such risk (the player can always keep
