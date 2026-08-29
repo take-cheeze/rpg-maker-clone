@@ -3224,11 +3224,14 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM after battle failed: #{e.message}"
       end
 
-      # System BGM slot index for Change System BGM (10660)'s inn override,
-      # matching EasyRPG Player's Game_System::sys_bgm enum (Battle 0,
-      # Victory 1, Inn 2, ...), NOT independently confirmed against genuine
-      # RPG_RT under wine -- the same enum VEHICLE_SYSTEM_BGM_SLOT below
-      # resolves its own slots against.
+      # System BGM slot index for Change System BGM (10660)'s inn override.
+      # Slot numbering matches liblcf's own System struct field order
+      # (mruby-lcf/mrblib/schema.rb: battle_music 32, battle_end_music 33,
+      # inn_music 34, boat_music 35, ship_music 36, airship_music 37,
+      # gameover_music 38) once title_music (31, which this command has no
+      # slot for) is dropped from the front -- Battle 0, Victory 1, Inn 2,
+      # Boat 3, Ship 4, Airship 5, GameOver 6 -- the same numbering
+      # VEHICLE_SYSTEM_BGM_SLOT below resolves its own slots against.
       SYSTEM_BGM_INN = 2
 
       # Play the inn's own BGM when a Show Inn command opens its stay -- a
@@ -3281,11 +3284,15 @@ class RPG2k
         $stderr.puts "[RPG2k] restoring BGM after inn failed: #{e.message}"
       end
 
-      # System BGM slot indices for Change System BGM (10660), matching
-      # EasyRPG Player's Game_System::sys_bgm enum (Battle 0, Victory 1, Inn 2,
-      # Boat 3, Ship 4, Airship 5, GameOver 6), NOT independently confirmed
-      # against genuine RPG_RT under wine — the boat/ship/airship slots
-      # sit between the ones the battle and game-over BGM already resolve.
+      # System BGM slot indices for Change System BGM (10660). Slot numbering
+      # matches liblcf's own System struct field order (mruby-lcf/mrblib/
+      # schema.rb: battle_music 32, battle_end_music 33, inn_music 34,
+      # boat_music 35, ship_music 36, airship_music 37, gameover_music 38)
+      # once title_music (31, which this command has no slot for) is dropped
+      # from the front -- Battle 0, Victory 1, Inn 2, Boat 3, Ship 4,
+      # Airship 5, GameOver 6 -- the boat/ship/airship slots sit between the
+      # ones the battle and game-over BGM already resolve (SYSTEM_BGM_BATTLE/
+      # SYSTEM_BGM_VICTORY above, SYSTEM_BGM_INN just above).
       VEHICLE_SYSTEM_BGM_SLOT = { boat: 3, ship: 4, airship: 5 }.freeze
 
       # The BGM to play for vehicle `type` as
