@@ -2466,9 +2466,9 @@ end
 # whole real frame's worth of calls. Ported from a reference implementation
 # rather than assumed from the cascading fix's own already-correct
 # writeup above (NOT independently confirmed against genuine RPG_RT under
-# wine): `Game_Interpreter::loop_count`/`loop_limit`
+# wine): its own interpreter's `loop_count`/`loop_limit`
 # are member variables, not a local, and
-# `Game_Map::UpdateForegroundEvents` resets `loop_count`
+# its own foreground-events update resets `loop_count`
 # to 0 exactly once per real frame (`interp.Update(!resume_fg)`) and then
 # keeps calling `Update(false)` -- no reset -- as it cascades through every
 # Auto-Start event that starts and finishes within that same frame. So a
@@ -2564,7 +2564,7 @@ end
 # concurrent -- the engine advances one command block at a time, round-robin,
 # ... in definition/event-ID order." Ported from a reference implementation
 # Player's source rather than guessed at (NOT independently confirmed
-# against genuine RPG_RT under wine): `Game_Map::Update`
+# against genuine RPG_RT under wine): its own map-update handling
 # always calls `UpdateCommonEvents()` before
 # `UpdateMapEvents()`, every real frame, with no interleaving by id across the
 # two groups -- `Game_CommonEvent` only ever builds
@@ -2838,7 +2838,7 @@ check "a common event's Parallel Process's own Transfer Player command is " \
   # Transfer Player in the same list must not run either, until the Transfer
   # Player itself finally succeeds -- the whole interpreter blocks at that
   # exact command, matching the picture-command fix's own citation of
-  # `Game_Interpreter::Update`'s `if (!ExecuteCommand()) { break; }`.
+  # its own dispatch loop's `if (!ExecuteCommand()) { break; }`.
   ic = Game::Interpreter::Cmd
   ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
                       event: [add_var_cmd(3), ECmd.new(ic::TELEPORT, [2, 0, 0, 0]),
@@ -3464,7 +3464,7 @@ end
 check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
       'not just a fresh press' do
   # Per a reference implementation's implementation of this exact prompt as an ordinary
-  # Show Choices pair (`Game_Interpreter_Map::CommandShowInn`; NOT
+  # Show Choices pair (its own Show-Inn command handling; NOT
   # independently confirmed against genuine RPG_RT under wine), it inherits
   # the same `Window_Selectable`
   # auto-repeat every other list cursor gets.
@@ -3910,8 +3910,8 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   # process's first lap.
 
   # -- Show Picture ---------------------------------------------------------
-  # RPG_RT's own dispatch loop (`Game_Interpreter::Update`,
-  # `if (!ExecuteCommand()) { break; }`) breaks the *whole* per-frame command
+  # RPG_RT's own dispatch loop (`if (!ExecuteCommand()) { break; }`) breaks
+  # the *whole* per-frame command
   # loop for this exact interpreter when a picture command's own guard
   # returns false -- not just that one command -- so `add_var_cmd(1)` right
   # after the blocked Show Picture must not run either, until the message
@@ -3986,10 +3986,10 @@ end
 
 check 'a blocked Show Picture resumes the command right after it the same ' \
       'real frame the message window closes, not one frame later' do
-  # RPG_RT's own `Game_Interpreter::Update` loop does not treat a blocked
+  # RPG_RT's own dispatch-loop update does not treat a blocked
   # command specially once it succeeds -- `CommandShowPicture` (`src/
   # game_interpreter.cpp`) just `return true`s like any other command the
-  # instant `Game_Message::IsMessageActive()` reads false, so the *same*
+  # instant its own message-active check reads false, so the *same*
   # `Update()` call keeps going into whatever follows, costing no further
   # frame -- the identical reasoning already fixed for :screen/:picture/
   # :sprite_flash/:movement.
@@ -6659,8 +6659,8 @@ end
 
 # Same distinction, for a Spin-type event's own facing-rotation cadence
 # (ANIM_SPIN_FRAMES[2] = 12) -- per a reference implementation (NOT
-# independently confirmed against genuine RPG_RT under wine), its `Game_Character::
-# GetSpinAnimFrames`, read unconditionally by
+# independently confirmed against genuine RPG_RT under wine), its own
+# spin-animation-frames accessor, read unconditionally by
 # `UpdateAnimation`'s `IsSpinning()` branch, whether the event is moving or
 # not.
 check 'a spin-type event rotates its facing on its own, slower cadence ' \
@@ -6783,7 +6783,7 @@ end
 # Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `ShowParams` defaults every picture's
 # `affected_by_shake` flag on (RPG2000/pre-1.12 RPG2003 games have no way to
-# turn it off at all), and its `Sprite_Picture::Draw`
+# turn it off at all), and its own picture-sprite draw
 # applies the shake offset to a picture's screen position unconditionally of
 # `fixed_to_map`: `if (data.flags.affected_by_shake) { x -=
 # GetShakeOffsetX(); ... }`. A picture NOT fixed to the map used to hold
@@ -7060,7 +7060,7 @@ check 'Open Shop scene: holding a direction auto-repeats the buy list ' \
       'cursor, not just a fresh press' do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it
-  # (the command list) and `Window_Selectable::Update`
+  # (the command list) and its own selectable-window update
   # (the buy/sell item lists) both move the
   # cursor on a held (repeated) Down/Up, not only a fresh trigger.
   ic = Game::Interpreter::Cmd
@@ -7354,10 +7354,10 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenShop`
+# RPG_RT under wine), its own Open-Shop command handling
 # is the exact same method for the foreground
 # and every Parallel Process's own interpreter -- gated only on
-# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# its own message-active check, no "foreground only" restriction. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:shop` branch at all, so
 # a Parallel Process's own Open Shop silently never opened the screen -- the
 # command fell into the generic "background: resume" default and read as a
@@ -7432,7 +7432,7 @@ end
 # every numeric param); 2 names an explicit terrain id instead (param8), read
 # off that terrain's own row directly rather than wherever the party happens
 # to be standing (`Background(int terrain_id)` --
-# which bypasses the map-tree walk `Game_Map::SetupBattle` uses for the
+# which bypasses the map-tree walk its own battle-setup handling uses for the
 # param2==0 default entirely). `Interpreter#do_enemy_encounter` used to read
 # neither at all, so a scripted encounter always fell back to the map/terrain
 # default regardless of what the event author actually chose.
@@ -7546,8 +7546,7 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
 end
 
 # Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: its own EXP-granting loop (Scene_Battle_Rpg2k::
-# ProcessSceneActionVictory) iterates Game_Party_Base::GetActiveBattlers, not
+# genuine RPG_RT under wine: its own EXP-granting loop iterates Game_Party_Base::GetActiveBattlers, not
 # the raw party roster, and GetActiveBattlers excludes anyone failing
 # Game_Battler::Exists() (`!IsHidden() && !IsDead() && IsInParty()`) -- a
 # fallen ally still enrolled in the party at the moment of victory gets
@@ -7643,7 +7642,7 @@ check 'Enemy Encounter scene: a Change System SFX battle-start override wins ove
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Scene_Battle_Rpg2k::ProcessSceneActionStart`
+# RPG_RT under wine), its own scene-action-start handling
 # narrates the encounter before the party is
 # ever asked for a command: `GetActiveBattlers` (not dead or hidden) feeds one
 # `PushWithSubject(terms.encounter, enemy->GetName())` per visible member --
@@ -7689,8 +7688,8 @@ check 'Enemy Encounter scene: a first-strike encounter appends the special_comba
      "matching a reference implementation's own ordering"
 end
 
-# `GetActiveBattlers` is the "not dead or hidden" subset (`Game_Battler::
-# Exists`) -- a troop member the editor placed but flagged invisible
+# `GetActiveBattlers` is the "not dead or hidden" subset (its own exists-check
+# on the battler) -- a troop member the editor placed but flagged invisible
 # (`Game::Enemy#hidden`, the same flag Show Hidden Monster clears) never gets
 # an arrival line, matching the sprite-build skip in #build_battle_sprites.
 check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
@@ -8881,10 +8880,10 @@ check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandEnterHeroName`
+# RPG_RT under wine), its own Enter-Hero-Name command handling
 # is the exact same method for the foreground
 # and every Parallel Process's own interpreter -- gated only on
-# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# its own message-active check, no "foreground only" restriction. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:name_input` branch at
 # all, so a Parallel Process's own Enter Hero Name silently never opened the
 # screen -- the command fell into the generic "background: resume" default
@@ -9469,7 +9468,7 @@ end
 
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it
-# calls `Game_Map::CanDisembarkShip`, which only ever tests the *landing* tile's own passability
+# calls its own disembark-check, which only ever tests the *landing* tile's own passability
 # (`GetPassableMask(x, y, player.GetX(), player.GetY())` derives a single
 # direction bit at `(x, y)` alone) -- unlike an ordinary step's own two-sided
 # `#passable?`, the water tile the party is leaving is never consulted.
@@ -9488,9 +9487,9 @@ check 'a boat disembark only tests the landing tile\'s own passability, ' \
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), `Game_Map::CanDisembarkShip` has
-# no equivalent of `#vehicle_blocks?` at all -- unlike `Game_Map::
-# CanLandAirship`, a few lines above it in the same file, which does loop
+# RPG_RT under wine), its own disembark-check has
+# no equivalent of `#vehicle_blocks?` at all -- unlike its own
+# airship-landing check, a few lines above it in the same file, which does loop
 # `{ Boat, Ship }` explicitly to block a landing -- so a different boat/ship
 # parked on the landing tile never blocks disembarking here.
 check 'disembarking a boat is not blocked by a different vehicle parked on ' \
@@ -9561,7 +9560,7 @@ check 'a boarded boat glides straight through a below-characters event, ' \
       'the same as the walking hero' do
   # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), not a divergence from the hero's
-  # own rule: `Game_Map::CheckOrMakeWayEx` routes a
+  # own rule: its own collision-check routes a
   # moving boat/ship's collision through the exact same generic `WouldCollide`
   # every other mover uses, whose own layer test is `self.GetLayer() ==
   # other.GetLayer()`; `Game_Vehicle`'s constructor
@@ -10017,8 +10016,8 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   eq 6,  scene.send(:anim_frame_period, 3)
   eq 4,  scene.send(:anim_frame_period, 5)
   # Per a reference implementation (NOT independently confirmed against genuine
-  # RPG_RT under wine), its `Game_Character::
-  # GetContinuousAnimFrames` / `GetSpinAnimFrames`:
+  # RPG_RT under wine), its own
+  # `GetContinuousAnimFrames`/`GetSpinAnimFrames` accessors:
   # an idling Continuous/Fixed-Continuous event and a Spin event's own
   # facing-rotation each use their own, slower table -- not the stationary
   # one reused.
@@ -10201,7 +10200,7 @@ end
 # any non-Airship mover, then also checks a grounded Airship whenever the
 # mover is not the on-foot Player -- true for a ridden Boat/Ship, which
 # moves as its own `Vehicle`-typed character, never `Player` -- and
-# `Game_Map::CanLandAirship` separately loops `{ Boat, Ship }` and refuses a
+# its own airship-landing check separately loops `{ Boat, Ship }` and refuses a
 # landing on either's tile. Fixed by reusing `#vehicle_blocks?` (already
 # used for the opposite direction, tested above) from both
 # `#vehicle_passable?` and `#airship_landable?`.
@@ -10940,8 +10939,8 @@ end
 
 # The same "second cuts off the first" rule as the check just above, but for
 # the *no-wait* half of Show Battle Animation, verified against a reference implementation's
-# actual C++ source rather than guessed at: `Game_Screen::ShowBattleAnimation`
-# is a bare unconditional `animation.reset(...)` with no branch on the *new*
+# actual C++ source rather than guessed at: its own show-battle-animation
+# handling is a bare unconditional `animation.reset(...)` with no branch on the *new*
 # request's own wait flag at all -- only the *issuing* interpreter's resulting
 # wait is conditional on that. `#drive_map_animation`'s own cut-off fix is
 # only ever reachable through the `:animation` wait dispatch, so it only ever
@@ -11060,7 +11059,7 @@ end
 # The "starts the same real frame the command runs" fix below (see
 # `#init_map_animation_this_frame`) tightens this further for a Parallel
 # Process specifically -- unlike the foreground path, a reference implementation's own
-# `Game_Map::Update` calls `Game_Screen::Update` (the only thing that ever
+# map-update handling calls its own screen-update (the only thing that ever
 # advances a just-built animation) *after* `UpdateCommonEvents`/
 # `UpdateMapEvents`, so a Parallel Process's own freshly-armed second
 # animation gets its first advance the very same real frame it is built, not
@@ -11102,7 +11101,7 @@ end
 # touched by either one. Ported from a reference implementation rather
 # than left a guess, NOT independently confirmed against genuine RPG_RT
 # under wine: it
-# always calls `Game_Screen::ShowBattleAnimation`
+# always calls its own show-battle-animation handling
 # in-line -- building the animation -- *before* it ever touches its own
 # wait_time, so a waited-for play's sprite is visible the exact same real
 # frame the command runs. `Game::Interpreter#do_show_battle_animation` only
@@ -11561,8 +11560,8 @@ check 'the choice window cursor auto-repeats while a direction is held, ' \
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it is a plain
   # `Window_Selectable` subclass, and
-  # `Window_Message::Update` calls the base
-  # `Window_Selectable::Update()` unconditionally every frame before its
+  # its own message-window update calls the base
+  # selectable-window update unconditionally every frame before its
   # own choice-specific dispatch -- so a held Down/Up scrolls the choice
   # cursor exactly like any other list window.
   ic = Game::Interpreter::Cmd
@@ -11946,8 +11945,8 @@ check 'the timer stays at the top when the last message resolved elsewhere, ' \
   scene.send(:close_message, animate: false)
   # Force the sticky flag on directly (as a top-resolved message would), then
   # confirm a fresh map visit clears it -- matching a genuine RPG_RT
-  # `Scene_Map::Start` rebuilding `Window_Message` from scratch, unlike
-  # `Scene_Map::Continue`'s reuse when merely returning from a pushed scene.
+  # map-scene start rebuilding `Window_Message` from scratch, unlike
+  # the map scene's own continue-reuse when merely returning from a pushed scene.
   scene.instance_variable_set(:@message_window_top, true)
   scene.send(:perform_teleport, [1, 0, 0, 0])
   scene.update
@@ -12176,11 +12175,11 @@ check 'a failed boat disembark (blocked by a shore NPC) falls through to the ' \
       'action-trigger check on that tile, instead of just swallowing the ' \
       'button press' do
   # Per a reference implementation (NOT independently confirmed against genuine
-  # RPG_RT under wine), its `Game_Player::Update` only skips `CheckActionEvent` when
+  # RPG_RT under wine), its own player-update handling only skips `CheckActionEvent` when
   # `GetOnOffVehicle` actually succeeds (`if (!GetOnOffVehicle())
   # CheckActionEvent();`) -- and disembarking a boat/
   # ship fails outright when an active same-layer event occupies the
-  # landing tile (`Game_Map::CanDisembarkShip` loops
+  # landing tile (its own disembark-check loops
   # `GetEvents()` for exactly that before ever checking terrain
   # passability). A failed disembark press must therefore fall through to
   # the ordinary action-trigger check on that same tile, the same way it
@@ -13026,7 +13025,7 @@ check "Enemy Encounter scene: a Special battle command draws a row and forfeits 
   # RPG2003's Special (type 6) command resolves to a turn that does nothing --
   # ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it
-  # queues `Game_BattleAlgorithm::DoNothing`. It must be offered as a menu row (this
+  # queues its own do-nothing battle algorithm. It must be offered as a menu row (this
   # engine used to skip it along with Escape) and, once chosen, commit at once
   # like Defend -- no target/skill/item submenu -- and pass the actor's turn
   # with no action: `Game::Battle#command_skip` sets the Combatant's skip
@@ -13838,8 +13837,8 @@ end
 # "parsed but unused" shape as the `levitate` flag above, and every enemy
 # battler sprite drew fully opaque regardless. Ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: `Sprite_Enemy::Draw`
-# computes `alpha = 160 * alpha / 255` whenever `Game_Enemy::IsTransparent`
+# wine: its own enemy-sprite draw
+# computes `alpha = 160 * alpha / 255` whenever its own transparency check
 # is set, with no accuracy/evasion effect of any kind -- purely cosmetic,
 # like `levitate`. Troop 3's lone Ghost (enemy id 4) is the dedicated
 # fixture, kept off the two-Slime/lone-Bat troops so this never disturbs
@@ -13882,7 +13881,7 @@ end
 # unshifted colour. Ported from a reference implementation, NOT independently
 # confirmed against genuine RPG_RT under wine:
 # it is a bare `enemy->battler_hue`
-# passthrough, and `Sprite_Enemy::OnMonsterSpriteReady`/`Refresh`
+# passthrough, and its own enemy-sprite ready/refresh handling
 # rotate the decoded bitmap through
 # `Bitmap::HueChangeBlit` whenever it is nonzero and rebuild whenever either
 # the sprite name or the hue changes. Troop 4's lone Red Slime (enemy id 5,
@@ -13996,7 +13995,7 @@ end
 # animation shape, only that it "changes its Y position on screen" -- the
 # specific magnitude, period and edition gate below are ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: its `Game_Enemy::GetFlyingOffset` supplies both the missing magnitude
+# wine: its own flying-offset accessor supplies both the missing magnitude
 # (+/-4px) and period (256 frames) *and* an edition gate the site never
 # mentions at all: that source's own comment claims real RPG2000 never
 # renders it ("2k does not support flying, albeit mentioned in the help
@@ -14565,9 +14564,9 @@ check 'selecting New Game fades the title BGM (800ms), per a reference implement
       '(not independently confirmed under wine), not a hard stop' do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it
-  # is `Main_Data::game_system->BgmFade(800, true); ...`
-  # -- an 800ms fade, not `BgmStop()`'s immediate cut (`Game_System::
-  # BgmFade`/`BgmStop` are genuinely different
+  # is its own game-system's `BgmFade(800, true); ...`
+  # -- an 800ms fade, not `BgmStop()`'s immediate cut (its own
+  # `BgmFade`/`BgmStop` being genuinely different
   # calls). A prior version of this method ran a blanket `Audio.bgm_stop`
   # before every title selection, this one included.
   parent = TitleParent.new(fake_db, nil, false, false)
@@ -15092,8 +15091,7 @@ check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' 
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it resolves CharBoat/CharShip/
   # CharAirship (10002-10004) to the live Game_Vehicle object exactly like
-  # CharPlayer/CharThisEvent, so `Game_Interpreter_Map::
-  # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+  # CharPlayer/CharThisEvent, so its own flash-sprite command's `event->Flash(...)` call reaches a vehicle just
   # as it reaches the player or a map event -- nothing in that reference
   # exempts it, unlike this codebase's prior "vehicle target = unresolved,
   # flashes nothing" behaviour.
@@ -15181,8 +15179,8 @@ end
 
 check 'Enter/Exit Vehicle boards the vehicle the party faces' do
   # Per a reference implementation (NOT independently confirmed against genuine
-  # RPG_RT under wine), `Game_Interpreter_Map::CommandEnterExitVehicle`
-  # (code 10840) just calls `Game_Player::GetOnOffVehicle`
+  # RPG_RT under wine), its own enter/exit-vehicle command handling
+  # (code 10840) just calls its own get-on/off-vehicle handling
   # -- the identical function the action button drives -- so a Boat/Ship
   # boards only by facing it from an adjacent tile, never by standing on it
   # (see "board_vehicle applies the wrong boarding trigger" above); only the
@@ -15217,9 +15215,9 @@ check 'Open Main Menu pushes the field menu and resumes when it closes' do
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenMainMenu`
+# RPG_RT under wine), its own Open-Main-Menu command handling
 # is gated only on
-# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# its own message-active check, no `main_flag` restriction, so a
 # Parallel Process can trigger it exactly like the foreground can. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:menu` branch, so it
 # fell into the generic "background: resume" default and a Parallel
@@ -15617,8 +15615,8 @@ end
 # for one, waiting on a choice that #apply_turn_states/#strike (see
 # Game::Battle#command_restricted?) discard or override regardless of what
 # gets picked. Ported from a reference implementation, NOT independently
-# confirmed against genuine RPG_RT under wine: its Scene_Battle_Rpg2k::
-# SelectNextActor recurses straight past exactly these two cases
+# confirmed against genuine RPG_RT under wine: its own next-actor-selection
+# logic recurses straight past exactly these two cases
 # (`!CanAct()` / `GetSignificantRestriction() != Restriction_normal`) with
 # no manual prompt shown at all.
 check 'an asleep ally is skipped straight to the next commandable one, no command prompt for it' do
@@ -16248,8 +16246,8 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
 end
 
 # RPG2003's Ally/Enemy target-type flag on Show Battle Animation
-# (Interpreter#do_show_battle_animation_b's param3, ported from a reference implementation
-# Player's `Game_Interpreter_Battle::CommandShowBattleAnimation`, NOT
+# (Interpreter#do_show_battle_animation_b's param3, ported from a reference
+# implementation's own show-battle-animation command handling, NOT
 # independently confirmed against genuine RPG_RT under wine) used to be
 # dropped entirely: an "Ally #1" target still indexed straight into
 # `@ui[:enemy_sprites]` -- the troop's own *second* monster in any troop
@@ -16572,7 +16570,7 @@ end
 # genuine RPG_RT under wine: it
 # sets `index = 1` (the Buy row) exactly once, in
 # its constructor; neither `Refresh()` nor `SetMode()` (called by
-# `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+# its own buy/sell-selection update's own Cancel
 # branch, to return to `BuySellLeave2`) ever touches
 # `index` again. So the command menu's own cursor persists across a trip
 # into Buy or Sell and back, rather than always snapping back to the first
@@ -16703,10 +16701,10 @@ end
 
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it
-# inherits `Window_Item::CheckInclude`/
+# inherits its own item-window `CheckInclude`/
 # `Refresh` unchanged -- a plain `item_id > 0`
 # filter, no price check -- and only overrides `CheckEnable` (`item->price
-# > 0`), which `Scene_Shop::UpdateSellSelection`
+# > 0`), which its own sell-selection update
 # reads to Buzz instead of opening the quantity counter. A price-0 (key)
 # item the party holds stays on screen in that reference, just refuses the sale.
 check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
@@ -18825,8 +18823,8 @@ check 'a blow that gets through for nothing says so' do
 end
 
 # A critical hit inserts the game's own 会心/痛恨 line between the attack and
-# the damage (Scene_Battle_Rpg2k::ProcessBattleActionCritical runs before
-# ProcessBattleActionApply), keyed on the target taking the crit like the
+# the damage (its own battle-action-critical handling runs before
+# its own battle-action-apply), keyed on the target taking the crit like the
 # damage predicates themselves, not on which side dealt it.
 check 'a critical hit adds the game\'s own line between the attack and the damage' do
   scene, = battle_at_command
@@ -19058,7 +19056,7 @@ end
 
 # A special/use_skill battle item invoking a skill: ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: `Game_BattleAlgorithm::Skill::GetStartMessage` --
+# wine: its own Skill-algorithm start-message logic --
 # `if (item && item->using_message == 0)
 # ... return BattleMessage::GetItemStartMessage2k(...)`, checked *before* ever
 # reading the skill's own `using_message1`/`using_message2`. The item
@@ -19457,10 +19455,10 @@ end
 
 # Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Window_Gold` on this screen --
-# `Scene_Menu::Start`, which creates one
+# its own menu-scene start, which creates one
 # unconditionally (88x32, bottom-left corner, no version/feature gate
 # anywhere in the file) for RPG2000 and RPG2003 alike, and
-# `Scene_Menu::Continue`, which refreshes it every time control returns from
+# its own menu-scene continue, which refreshes it every time control returns from
 # a popped child screen (`Item`/`Skill`/`Equip`/`Status`/`Save`).
 check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
       'a pushed child screen' do
@@ -19980,7 +19978,7 @@ end
 # genuine RPG_RT under wine: it,
 # once the last member is picked, calls
 # `window_left->SetIndex(-1)` before `SetActive(false)` -- distinct from
-# simply going inactive. `Window_Selectable::UpdateCursorRect`
+# simply going inactive. its own selectable-window cursor-rect update
 # special-cases a negative index to
 # `SetCursorRect(Rect())`, so that reference hides the left column's cursor
 # entirely at this transition, rather than freezing it on the now-blank
@@ -20078,8 +20076,8 @@ end
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it
 # removes then re-adds every member through
-# `Game_Party::RemoveActor`/`AddActor`, and each of
-# those calls `Main_Data::game_player->ResetGraphic()`
+# its own remove/add-actor handling, and each of
+# those calls its own game-player's `ResetGraphic()`
 # as a side effect -- re-reading slot 0's (the new leader's) CharSet name
 # onto the map sprite. `Game::Party#reorder` applies the net effect of the
 # remove/re-add dance directly rather than replaying it, so this side effect
@@ -20145,7 +20143,7 @@ check 'Scene::Menu: a disabled command reads the windowskin\'s own disabled ' \
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it disables Save on
   # `!GetAllowSave()` and every other non-Order command on
-  # `GetActors().empty()`; `Window_Command::SetItemEnabled`/`DrawItem`
+  # `GetActors().empty()`; its own command-window enable/draw handling
   # then draws a disabled row through
   # `Font::ColorDisabled` (swatch index 3), the same
   # windowskin-blended path every row uses -- the same convention already
@@ -20657,9 +20655,9 @@ check 'Open Save Menu pushes Scene::SaveLoad in :save mode and resumes the event
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenSaveMenu`
+# RPG_RT under wine), its own Open-Save-Menu command handling
 # is gated only on
-# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# its own message-active check, no `main_flag` restriction, so a
 # Parallel Process can trigger it exactly like the foreground can. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:save_menu` branch, so
 # it fell into the generic "background: resume" default and a Parallel
@@ -22441,8 +22439,8 @@ end
 
 # A party exposing a real #can_cast?, to prove Scene::SkillMenu now gates
 # Decision on it -- per a reference implementation (NOT independently confirmed
-# against genuine RPG_RT under wine), its `Scene_Skill::vUpdate`
-# gates its whole Decision branch on `Window_Skill::CheckEnable`
+# against genuine RPG_RT under wine), its own skill-scene update
+# gates its whole Decision branch on its own skill-window enable-check
 # (`IsSkillLearned && IsSkillUsable`) before playing any SE or opening the
 # target-confirm screen at all; the disabled case just buzzes and stays put.
 # Previously this scene never consulted `#can_cast?`, so choosing a currently
@@ -22540,7 +22538,7 @@ end
 # (no filename set), one Switch skill that always fails (Buzzer only, no
 # skill SE), and an Escape skill with a configured SE. Per a reference implementation's
 # source (NOT independently confirmed against genuine RPG_RT under wine),
-# its `Scene_Skill::Update`: Switch/Escape play `skill->sound_effect`
+# its own skill-scene update: Switch/Escape play `skill->sound_effect`
 # on a successful cast; Teleport does not (it keeps the ordinary decision SE
 # played earlier in #update_teleport_target, already covered above), so it
 # is not repeated here.
@@ -23156,8 +23154,8 @@ class EquipCompareParty < MenuStubParty
 end
 
 # Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it and the inherited `Window_Item::
-# DrawItem` draw only the item's name and stock count, no comparison glyph of
+# genuine RPG_RT under wine: it and the inherited item-window's own draw-item
+# draw only the item's name and stock count, no comparison glyph of
 # any kind -- the summed arrow this candidate list used to draw next to each
 # row (attributed to a fan wiki, yado.tk, rather than ever reading that
 # source in full) does not appear in a reference implementation's implementation. The comparison
@@ -23183,7 +23181,7 @@ end
 # actor name once (`DrawActorName`) and then loops exactly the four battle
 # stats (`DrawParameter`, type 0-3: Attack/Defense/Spirit/Agility) at
 # `y_offset + ((12 + 4) * i)` -- a genuinely separate row per stat, with no
-# HP/MP field anywhere in the window at all. `Scene_Equip::Start`
+# HP/MP field anywhere in the window at all. its own equip-scene start
 # confirms this is the *only* status window on the
 # screen (alongside the plain slot list) -- there is no second window
 # showing HP/MP either. docs/TODO.md's own "Menu scene" entry used to claim
@@ -23214,8 +23212,8 @@ end
 
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it recomputes each of the four
-# battle stats independently and hands them to `Window_EquipStatus::
-# SetNewParameters`, which `DrawParameter`
+# battle stats independently and hands them to its own equip-status window's
+# `SetNewParameters`, which `DrawParameter`
 # draws as its own old -> new pair -- never folded into one net verdict, so
 # a candidate that trades Atk for Def shows both movements at once.
 check 'Scene::EquipMenu: the stats window previews each battle stat ' \
@@ -23251,7 +23249,7 @@ end
 
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it draws `actor.GetAtk()` (the
-# state-adjusted value), and `Scene_Equip::UpdateStatusWindow` computes its own "new" preview by rebuilding the raw
+# state-adjusted value), and its own equip-scene status-window update computes its own "new" preview by rebuilding the raw
 # base+equip total first, clamping to `MaxStatBaseValue()` (999), and only
 # then calling `actor.CalcValueAfterAtkStates` -- the state adjustment is
 # the last step in both the current and the preview column, not skipped or
@@ -23350,7 +23348,7 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Window_EquipStatus::DrawParameter`
+# RPG_RT under wine), its own equip-status window's draw-parameter
 # colours the new value via `GetNewParameterColor` (0 unchanged / 2 up / 3
 # down), blended from the windowskin's own system-colour swatches -- the same
 # convention the disabled title-menu label and the shop status panel already
@@ -23468,7 +23466,7 @@ end
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it
 # draws `actor.GetAtk()`/`GetDef()`/
-# `GetSpi()`/`GetAgi()`, and `Game_Battler::GetAtk` et al. run the base value through `AdjustParam`, which halves
+# `GetSpi()`/`GetAgi()`, and its own battler stat accessors run the base value through `AdjustParam`, which halves
 # or doubles it against whatever states the actor currently carries -- a
 # state that persists onto the map affects this screen too, not just battle
 # math.
@@ -23495,7 +23493,7 @@ end
 # genuine RPG_RT under wine: it draws the Exp row via
 # `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
 # `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
-# `Game_Actor::GetNextExpString` stringifies
+# its own next-exp-string accessor stringifies
 # `GetNextExp()` -- the absolute cumulative-total curve value for the next
 # level, not a subtraction against current EXP. `MenuStubActor` gives
 # `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
@@ -23526,7 +23524,7 @@ end
 
 # Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Window_Gold`, created unconditionally
-# by `Scene_Status::Start` (no visibility gate
+# by its own status-scene start (no visibility gate
 # anywhere in the file) -- missing here entirely.
 check 'the status screen shows the party\'s own Gold' do
   st = menu_state
@@ -23545,7 +23543,7 @@ check 'the status screen shows the party\'s own Gold' do
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), `Window_ActorInfo::DrawInfo` additionally
+# RPG_RT under wine), its own actor-info window's draw-info additionally
 # draws "Front"/"Back" right-aligned at the top of the panel whenever
 # `Feature::HasRow()` holds -- which for a genuine,
 # unmodified project reduces to "the database is RPG2003". An RPG2000
@@ -23571,8 +23569,8 @@ end
 
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it, the shared routine behind
-# `DrawActorHp`/`DrawActorSp` (in turn used by `Window_ActorStatus::
-# DrawStatus`) -- the *current* HP/MP figure
+# `DrawActorHp`/`DrawActorSp` (in turn used by its own actor-status window's
+# draw-status) -- the *current* HP/MP figure
 # alone recolors: knockout gray (index 5) at exactly 0 HP, critical
 # red/orange (index 4) at or below a quarter of max, the ordinary default
 # (index 0) otherwise. SP never shows the knockout colour even at 0
@@ -23842,8 +23840,8 @@ end
 # Confirmed against liblcf's own schema: `generator/csv/fields.csv`
 # (`Terrain,footstep,f,Sound,0x0F,...`) -- the field is a
 # full Sound struct (filename + volume + tempo + balance), not a bare
-# filename. That it is read the same way `Game_System::SePlay(const
-# lcf::rpg::Sound&, bool)` already reads every other Sound-typed database
+# filename. That it is read the same way its own SE-play handling (const
+# lcf::rpg::Sound&, bool) already reads every other Sound-typed database
 # field is ported from a reference implementation, NOT independently confirmed
 # against genuine RPG_RT under wine.
 check 'RPG2003 terrain footstep plays with its own configured volume/pitch, ' \
@@ -24667,7 +24665,7 @@ end
 
 # RPG2000's own 1/32 first-strike roll on a wandering encounter -- per
 # a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Map::PrepareEncounter` is a hard `if (Feature::
+# RPG_RT under wine), its own encounter-preparation handling is a hard `if (Feature::
 # HasRpg2kBattleSystem()) { Rand::ChanceOf(1, 32) ... } else { /* 2003's
 # terrain-condition rolls */ }`, and `Feature::HasRpg2kBattleSystem()`
 # reduces to `Player::IsRPG2k()` for a genuine database --

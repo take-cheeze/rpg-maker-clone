@@ -709,7 +709,7 @@ check 'move forward after an explicit Face command continues in the newly ' \
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine, rather than an uncited
   # yado.tk claim this check used to repeat (the opposite of this):
-  # `Game_Character::UpdateMoveRoute` uses one
+  # a reference implementation's own move-route update uses one
   # single shared `direction` field for both purposes -- its Face/Turn
   # branch's `SetDirection(...)` (Face Up/Right/Down/Left, or
   # Turn90DegreeRight/Left/Turn180Degree/TurnRandom/TurnTowardCharacter/
@@ -2807,9 +2807,11 @@ check 'A pre-RPG2003 or short-parameter Shake Screen command always falls back t
 end
 
 check 'a one-shot Shake Screen after a Begin strobe stops re-arming once it ends' do
-  # Matches `Game_Screen::ShakeOnce` always clearing the continuous flag: a
-  # plain timed shake started after a Begin strobe must settle for good once
-  # its own duration elapses, not keep re-arming from the earlier Begin.
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: a one-shot shake always clears the continuous
+  # flag, so a plain timed shake started after a Begin strobe must settle for
+  # good once its own duration elapses, not keep re-arming from the earlier
+  # Begin.
   st = new_state(rpg2003: true)
   st.screen.shake_begin(5, 4)
   ok st.screen.shaking?
@@ -3658,7 +3660,7 @@ check 'Memorize/Play Memorized BGM stashes and re-applies the current ' \
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it/`PlayMemorizedBGM`
   # copy and replay a whole `Music` struct, balance included --
-  # `Game_System::BgmPlay` re-applies
+  # the same Play BGM handling re-applies
   # `Audio().BGM_Balance(...)` even on its same-track path.
   RGSS::Audio.log = []
   st = new_state
@@ -3773,7 +3775,7 @@ check 'Play BGM with the same file restarts it after a Fade Out BGM, unlike ' \
   # genuine RPG_RT under wine: it
   # gates its "same track: adjust volume in place,
   # don't restart" shortcut on `!data.music_stopping`, and
-  # `Game_System::BgmFade` (Fade Out BGM, 11520) always sets `data.
+  # Fade Out BGM (11520) always sets `data.
   # music_stopping = true` alongside the fade -- so a Play BGM of the exact
   # track just faded out DOES restart it from the top, unlike the ordinary
   # same-file no-restart case the check just above this one covers.
@@ -3794,7 +3796,7 @@ end
 check 'Play Memorized BGM restarts its track after a Fade Out BGM, unlike ' \
       'an ordinary same-file replay' do
   # Same gate as the check above, on Play Memorized BGM's own restart path --
-  # `Game_System::PlayMemorizedBGM` is a bare `BgmPlay` call, so it shares
+  # Play Memorized BGM is a bare `BgmPlay` call, so it shares
   # the identical `!data.music_stopping` shortcut.
   RGSS::Audio.log = []
   st = new_state
@@ -3870,8 +3872,8 @@ end
 # genuine RPG_RT under wine: the editor's "(OFF)" choice
 # is encoded as the literal 5-character string "(OFF)" (liblcf's own schema
 # default for both the Music and Sound structs), not as a blank filename --
-# an uncited assumption this project's own prior fix had made. `Game_System::
-# SePlay` treats the two differently: a genuinely blank
+# an uncited assumption this project's own prior fix had made. Its own SE-play
+# handling treats the two differently: a genuinely blank
 # name is a silent no-op (`if (se.name.empty()) { return; }`), while only the
 # literal "(OFF)" stops every playing SE (`else if (se.name == "(OFF)") {
 # if (stop_sounds) Audio().SE_Stop(); return; }`).
@@ -5155,9 +5157,9 @@ check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
   # round-trip) used to write/read only file (1), volume (3) and pitch (4) --
   # balance (5) is a field of the `Music` struct ported from a reference implementation's
   # source, NOT independently confirmed against genuine RPG_RT under wine
-  # (`Game_Interpreter::CommandPlayBGM`'s `music.balance =
+  # (the Play BGM command's `music.balance =
   # ValueOrVariableBitfield(...)`), copied whole
-  # by `Game_System::MemorizeBGM`/`PlayMemorizedBGM`.
+  # by the Memorize/Play-Memorized BGM handling.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   st.current_bgm = { name: 'town', volume: 80, tempo: 100, balance: 30 }
@@ -6065,8 +6067,8 @@ check 'Party#reorder applies a picked front-to-back permutation, ' \
   # RPG2003's Order menu command -- see Scene::Order (mruby-rpg2k/mrblib/
   # scene/order.rb), which builds exactly this kind of permutation one pick
   # at a time and hands it to #reorder. Per a reference implementation (NOT
-  # independently confirmed against genuine RPG_RT under wine), its
-  # `Scene_Order::Confirm` has the same net effect (remove every
+  # independently confirmed against genuine RPG_RT under wine),
+  # its own Order-scene confirm handling has the same net effect (remove every
   # member, then re-add them in the picked order).
   players = (1..4).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
   db = FakeActorDB.new(players, [1, 2, 3, 4])
@@ -6089,7 +6091,7 @@ check "Party#toggle_actor_row flips an actor's row and refuses to empty the fron
   # genuine RPG_RT under wine: it Row
   # case, restated, blocks only the toggle that would leave every live party
   # member in the back row (no `IsDirectionFlipped` term here -- that quirk
-  # is specific to the in-battle `Scene_Battle_Rpg2k3::RowSelected`, see
+  # is specific to the in-battle battle-scene's own row-selection handling, see
   # Game::Battle#can_leave_front_row?).
   players = (1..3).to_h { |i| [i, FakePlayerRow.new("Actor#{i}", '', 0, 1, max_hp: 10)] }
   db = FakeActorDB.new(players, [1, 2, 3])
@@ -6459,9 +6461,9 @@ check 'equipping RPG2003 cursed armor crowds out a lower-priority state ' \
   # genuine RPG_RT under wine: it
   # runs its crowding-out pass -- clearing any state 10+
   # priority points below the resulting significant state -- unconditionally,
-  # inside every single call, with no caller-side opt-out. `Game_Battler::
-  # AddState` calls it via `State::Add(...)`, and
-  # `Game_Actor::AdjustEquipmentStates` funnels equip-
+  # inside every single call, with no caller-side opt-out. Its own state-add
+  # path calls it via `State::Add(...)`, and its equipment-state adjustment
+  # funnels equip-
   # triggered infliction through the identical `AddState` -- so equipping a
   # cursed item that forces a high-priority state gets the same crowding-out
   # a lethal hit (#knock_out!) or a landed skill state already does in this
@@ -6603,7 +6605,7 @@ end
 # genuine RPG_RT under wine:
 # it
 # calls `actor->RemoveState(state_id, !Game_Battle::IsBattleRunning())`,
-# and `Game_Battler::RemoveState`'s own `always_remove_battle_states`
+# and its own remove-state handling's own `always_remove_battle_states`
 # parameter skips the cursed-armor lock entirely --
 # but only for a state whose own database Persistence field is "Ends" (0,
 # the schema default) rather than "Continues after battle" (1) -- with that
@@ -6639,8 +6641,8 @@ check '#remove_state can lift a cursed-armor-forced state outside battle, but ' 
 
   # A Full Recovery afterward re-inflicts it, still worn -- ported from
   # a reference implementation, NOT independently confirmed against genuine
-  # RPG_RT under wine: its
-  # `Game_Actor::FullHeal` unconditionally calls `ResetEquipmentStates(true)`
+  # RPG_RT under wine: its own
+  # Full Recovery handling unconditionally calls `ResetEquipmentStates(true)`
   # after clearing states, which re-adds every state the actor's currently-
   # equipped cursed armor forces regardless of whether it was already
   # present, unlike `#clear_states` alone (mirroring `RemoveAllStates`),
@@ -6923,7 +6925,7 @@ check 'Actor learns skills from the growth table up to its level' do
   # 25@L1, 32@L1, 27@L5 -- mirrors a real actor whose L5 skill set is 25/27/32.
   # Deliberately learned out of numeric order (27 joins last, place-wise, yet
   # sorts before 32): ported from a reference implementation, NOT independently
-  # confirmed against genuine RPG_RT under wine -- `Game_Actor::LearnSkill`
+  # confirmed against genuine RPG_RT under wine -- its own learn-skill handling
   # is `data.skills.
   # push_back(skill_id); std::sort(data.skills.begin(), data.skills.end());`,
   # so that source's own skill list is always ascending-id-sorted, never in learn
@@ -8008,7 +8010,7 @@ check 'Change Equipment command equips into the type slot and removes' do
   # Remove the weapon slot (op 1, slot param3 0). param4 (99, garbage here) is,
   # per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine) --
-  # `Game_Interpreter::CommandChangeEquipment`
+  # its own Change-Equipment command handling
   # reads the remove-mode slot from `com.parameters[3]` (`slot =
   # com.parameters[3] + 1`), never `[4]`, which is only ever read in the
   # sibling equip-mode branch as the item id's own ValueOrVariable operand --
@@ -8784,8 +8786,8 @@ check 'an Escape skill is always listed on the field menu, even unavailable, ' \
   # is `if (!Game_Battle::IsBattleRunning()) return
   # true;` outside battle, with no per-type filter -- a known Escape skill
   # is always listed, whether or not it is castable right now.
-  # `Algo::IsSkillUsable`'s own Type_escape arm (access, a registered
-  # target, not flying) is what `Window_Skill::CheckEnable` (greying the
+  # its own skill-usability check's Type_escape arm (access, a registered
+  # target, not flying) is what the skill window's own enable-check (greying the
   # entry) and #cast_escape_skill (the actual cast) both gate on instead.
   skills = { 6 => fake_skill(name: 'Escape', type: Game::Party::SKILL_ESCAPE,
                              sp_cost: 4) }
@@ -9033,8 +9035,8 @@ check 'a special item invoking an Escape skill is always listed on the ' \
   # it is a trivial
   # `item_id > 0` check with no per-skill filter at all, so any held item is
   # always listed; `#escape_skill_available?` backs only `CheckEnable`
-  # (`Window_Item::CheckEnable` -> `Game_Party::IsItemUsable` ->
-  # `Algo::IsSkillUsable`), gating whether *casting* it actually does
+  # (the item window's own enable-check -> the party's own item-usability check ->
+  # the skill-usability check), gating whether *casting* it actually does
   # anything, not whether it appears.
   skills = { 6 => fake_skill(name: 'Scroll of Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
@@ -9142,17 +9144,17 @@ check 'a use_skill equipment item invoking an Escape skill is menu-usable purely
   # #use_special_escape_item now never returns a destination for a use_skill
   # equipment item, access/target notwithstanding -- per a reference implementation's
   # source (NOT independently confirmed against genuine RPG_RT under wine):
-  # `Scene_Item::vUpdate`, whose whole ReserveTeleport
+  # the item scene's own update handling, whose whole ReserveTeleport
   # dispatch is gated on `item.type == Type_special`; an equipment item
   # invoking the very same Escape skill instead goes through
-  # `Game_Battler::UseSkill`'s "SE only, no warp, always succeeds" branch
+  # its own use-skill handling's "SE only, no warp, always succeeds" branch
   # (`Game::Party#use_item`/`#use_equip_skill_item` here), regardless of
   # escape access or a registered target -- neither gates it at all, since
   # nothing about the actual warp is ever attempted. A prior version of this
   # test asserted the opposite -- that a use_skill equipment item eventually
   # warped once access and a target both existed, the exact bug
-  # `#use_special_escape_item`'s own doc comment now cites `Scene_Item::
-  # vUpdate` and `Game_Battler::UseSkill` to correct.
+  # `#use_special_escape_item`'s own doc comment now cites the item scene's update handling
+  # and the use-skill handling to correct.
   skills = { 6 => fake_skill(name: 'Blade Escape',
                              type: Game::Party::SKILL_ESCAPE, sp_cost: 4) }
   items = { 3 => fake_item(type: 1, skill_id: 6, use_skill: true, name: 'Escape Blade') }
@@ -9188,8 +9190,8 @@ check 'a use_skill equipment item invoking a Teleport skill is menu-usable purel
       'scope, matching real RPG_RT, but never warps -- only a genuine special item ' \
       'does that' do
   # See the Escape check above for the full citation chain -- identical
-  # reasoning, `Scene_Item::vUpdate`'s Type_special-only ReserveTeleport/
-  # Scene_Teleport gate and `Game_Battler::UseSkill`'s shared "SE only, no
+  # reasoning, the item scene's own update handling's Type_special-only ReserveTeleport/
+  # Scene_Teleport gate and its own use-skill handling's shared "SE only, no
   # warp, always succeeds" branch apply the same way to Teleport.
   skills = { 7 => fake_skill(name: 'Blade Teleport',
                              type: Game::Party::SKILL_TELEPORT, sp_cost: 3) }
@@ -9221,7 +9223,7 @@ check 'a use_skill equipment item invoking a pure stat-buff skill (no HP/SP/stat
   # *before* its own `switch (item->type)`, returning `skill && (in_battle
   # || scope == Scope_self/_ally/_party)` -- nothing about affect_hp /
   # affect_sp / an inflicted state at all, unlike the full usability check a
-  # type-9 Special item goes through (`Algo::IsSkillUsable`, which does
+  # type-9 Special item goes through (the reference implementation's own skill-usability check, which does
   # require one of those). #field_usable?/#battle_usable? used to route a
   # use_skill equipment item through that same full check (reused from the
   # Special-item precedent, never verified against IsItemUsable's own
@@ -9295,7 +9297,7 @@ check "field_skill? excludes a state-only skill whose state is battle-only, " \
       "not flagged to continue after battle" do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it,
-  # called from `Game_Battler::IsSkillUsable` with
+  # called from its own skill-usability check with
   # `require_states_persist` hard-`true` for this exact purpose, only
   # counts a `state_effects` entry when `state->type ==
   # Persistence_persists` -- a battle-only state (the schema default) never
@@ -9822,7 +9824,7 @@ end
 # The shop status panel's "equipped" row (Scene::Map#draw_shop_status) sums
 # every slot on every party member holding the item -- ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: its `Game_Party::GetEquippedItemCount` / `Game_Actor::GetItemCount`
+# wine: its own equipped-item-count and item-count accessors
 # is a plain slot equality scan, so two members (or two slots on one member)
 # each holding a copy count as two, and it moves independently of the bag
 # count.
@@ -10800,7 +10802,7 @@ end
 # Ported from a reference implementation
 # (code 10610), NOT independently confirmed against genuine RPG_RT under
 # wine: it calls `actor->SetName(...)`
-# completely unconditionally, and `Game_Actor::SetName`/`GetName`
+# completely unconditionally, and its own name accessors
 # have no blank-string fallback to the database name --
 # only a same-as-database-name save-space sentinel, unrelated to blankness.
 # A blank Change Actor Name genuinely blanks the actor's displayed name,
@@ -13019,7 +13021,7 @@ end
 # "Appear Transparent" (database field 10) -- a purely cosmetic reduced-opacity
 # battle-sprite flag, ported from a reference implementation, NOT independently
 # confirmed against genuine RPG_RT under wine
-# (`Game_Enemy::IsTransparent`/`Sprite_Enemy::Draw`'s `alpha = 160 * alpha /
+# (its own transparency check/enemy-sprite draw's `alpha = 160 * alpha /
 # 255`) -- was parsed by the schema
 # but never read into `Game::Enemy` at all, the same "parsed but unused" shape
 # `levitate` had before its own fix. The scene-level opacity itself is covered
@@ -13782,7 +13784,7 @@ end
 # equivalent), NOT independently confirmed against genuine RPG_RT under
 # wine: a shield/armor/helmet/accessory that flags a state in its own `state_set`
 # resists it landing at all, by `100 - state_chance` percent, on top of the
-# target's A-E rank. `Game_Enemy::GetStateProbability` never scans equipment
+# target's A-E rank. its own state-probability calculation never scans equipment
 # at all (monsters equip nothing), so only an ally is affected.
 check "an ally's defensive equipment resists a state landing, on top of its A-E rank" do
   items = { 5 => fake_item(type: 5, state_set: [0, 0, 1], state_chance: 50) } # accessory
@@ -14130,8 +14132,7 @@ end
 
 # ランダムに出現 (Appear Randomly, chunk 15 field 6): parsed but never read
 # before this fix -- every troop with the box checked behaved exactly like
-# one without it. Ported from a reference implementation (its
-# `Game_EnemyParty::ResetBattle` equivalent), NOT independently confirmed
+# one without it. Ported from a reference implementation (its own battle-reset equivalent), NOT independently confirmed
 # against genuine RPG_RT under wine: a per-member
 # `Rand::PercentChance(40)` roll in member order, stopping the instant only
 # one member is left visible.
@@ -14564,7 +14565,7 @@ end
  end
 
  # 3 (Switch): per a reference implementation (NOT independently confirmed
- # against genuine RPG_RT under wine), its `Game_BattleAlgorithm::Skill::vExecute`
+ # against genuine RPG_RT under wine), its own Skill-algorithm execution
  # special-cases a switch skill before any of
  # the ordinary hit/damage/state logic -- `SetAffectedSwitch(skill.switch_id);
  # return SetIsSuccess();` -- so casting one in a fight, exactly like on the
@@ -14885,7 +14886,7 @@ check 'Battle#first_strike? is true only for the opening ambush round, ' \
   # higher for every round after, mirroring a reference implementation's own logic
   # flag (NOT independently confirmed against genuine RPG_RT under wine):
   # set for the whole of round 1 and cleared right before round 2's
-  # command phase opens (`Scene_Battle_Rpg2k::ProcessSceneActionOption`'s
+  # command phase opens (its own scene-action-option handling's
   # `ePost` substate).
   hero = combatant('Hero', 40, 0, 5, 100)
   foe = combatant('Slime', 30, 0, 20, 100)
@@ -15584,7 +15585,7 @@ end
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it's Knockout branch
 # is `if (state_id == kDeathID) { SetAtbGauge(0); SetHp(0); ... }`, fired the
-# instant Death lands -- and its `Game_Battler::ChangeHp` calls
+# instant Death lands -- and its own HP-change handling calls
 # `AddState(kDeathID, true)` itself the moment `new_hp <= 0`, so *every*
 # ordinary lethal hit zeroes the gauge mid-fight, not merely once the
 # fight ends (the already-fixed `Battle#apply_to_party` cross-*battle*
@@ -15705,8 +15706,8 @@ check "Battle#apply_to_party clears a battle combo Enable Combo armed, per a ref
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it is `battle_combo_
   # command_id = -1; battle_combo_times = 1;`, called for every actor at
-  # both a battle's start and its end (`Game_Battle::Init`/`Quit`, via
-  # `Game_Actors::ResetBattle`) -- so a combo armed by one battle-event page for one specific fight
+  # both a battle's start and its end (its own battle init/quit handling, via
+  # its own per-actor battle-reset) -- so a combo armed by one battle-event page for one specific fight
   # never carries into the next. #set_battle_combo's own doc comment
   # already claimed the combo stays armed "until battle end", but nothing
   # ever actually cleared it: an Enable Combo fired for a scripted boss
@@ -15956,8 +15957,9 @@ end
 check 'an offensive skill halves its HP effect against a defending target, ' \
       'but leaves the SP effect untouched' do
   # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it has `hp_effect =
-  # IsPositive() ? effect : Algo::AdjustDamageForDefend(effect, *target)` --
+  # genuine RPG_RT under wine: it applies its own
+  # defend-adjustment calculation to the HP effect for a non-positive
+  # (attack-scope) skill --
   # an enemy-scope skill's HP branch gets the same defend-halving a plain
   # Attack already gets, but the SP branch (and the ATK/DEF/SPI/AGI
   # stat-mod branches) read the raw `effect` with no such adjustment.
@@ -16041,7 +16043,7 @@ check 'a skill flagged "attribute defence up/down" picks direction from ' \
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it has
   # `auto shift = IsPositive() ? 1 : -1;`, where IsPositive() comes from
-  # Algo::SkillTargetsAllies(skill) -- purely the skill's own `scope` field.
+  # its own ally-targeting check on the skill -- purely the skill's own `scope` field.
   # reverse_state_effect never enters into it, unlike this codebase's old,
   # explicitly-unconfirmed guess that it did. Every scope/reverse_state_effect
   # combination below targets the same `foe`, proving the flag is inert here:
@@ -16083,7 +16085,7 @@ check 'on an RPG2000 database, a self/ally-scoped skill\'s own state_effects ' \
   # genuine RPG_RT under wine: it has
   # `heals_states = IsPositive() ^ (Player::IsRPG2k3() &&
   # skill.reverse_state_effect)`, and
-  # `IsPositive()` is `Algo::SkillTargetsAllies(skill)` -- true for every scope
+  # `IsPositive()` is its own ally-targeting check on the skill -- true for every scope
   # but Scope_enemy(0)/Scope_enemies(1). On an RPG2000 database the XOR's
   # right-hand term is always false (`Player::IsRPG2k3()` false), so
   # reverse_state_effect never enters into it here, matching #skill_attr_shift's
@@ -16430,7 +16432,7 @@ end
 # already-buffed/debuffed battler still computed its own damage/defence term
 # off the battler's unmodified base stat, as if no buff or debuff were
 # active at all -- per a reference implementation (NOT independently confirmed
-# against genuine RPG_RT under wine), its `Algo::CalcSkillEffect` reads
+# against genuine RPG_RT under wine), its own skill-effect calculation reads
 # `source.GetAtk()`/`target.GetDef()`/`GetSpi()`, the exact same
 # `Game_Battler` accessors a basic Attack's own `CalcNormalAttackEffect`
 # reads -- there is no separate, unmodified accessor for a Skill at all in
@@ -16649,7 +16651,7 @@ check "battle: a heal skill restoring both HP and SP shares one variance " \
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_BattleAlgorithm::Skill::vExecute`
+# RPG_RT under wine), its own Skill-algorithm execution
 # gates every state a skill would cure behind its own `Rand::PercentChance(
 # to_hit_states)` roll -- the same fresh-per-field idiom `#skill_effect_hits?`
 # already gives HP/SP/stat-mod effects -- while `Item::vExecute`'s own cure
@@ -16751,7 +16753,7 @@ end
 # target's raw HP total (nothing floors HP at 0 mid-fight -- an overkill hit
 # can leave it deeply negative). Reviving instead happens entirely through
 # the state cure: removing Death sets HP to 1
-# (`Game_Battler::RemoveStates`), and only then does
+# (its own remove-states handling), and only then does
 # `if (was_dead && !target->IsDead()) target->ChangeHp(GetAffectedHp() - 1,
 # false)` layer the skill's own heal on top of that 1, floored at 1 by
 # ChangeHp's own non-lethal clamp. #apply_skill_hit's recovery branch used
@@ -16842,9 +16844,9 @@ end
 check "battle: a skill/spell attack now rolls its own critical hit too" do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it
-  # rolls Algo::CalcCriticalHitChance(source, target, WeaponAll, ...) -- the
+  # rolls its own critical-hit-chance calculation (source, target, WeaponAll, ...) -- the
   # exact same weapon-inclusive rate #deal_attack's own #critical? already
-  # reads -- and Algo::CalcSkillEffect triples the result the same way a
+  # reads -- and its own skill-effect calculation triples the result the same way a
   # basic attack's own CalcNormalAttackEffect does. Previously nothing in
   # #apply_skill_hit ever rolled a skill/spell critical at all: every
   # offensive skill's damage was capped at its non-critical value on every
@@ -17268,12 +17270,12 @@ check 'Battle command_skill fizzles on a fallen target, sparing the SP' do
 end
 
 # a reference implementation's own per-algorithm `IsTargetValid` override
-# (`Game_BattleAlgorithm::Item::IsTargetValid`), ported here and NOT
+# (its own Item-algorithm target-validity override), ported here and NOT
 # independently confirmed against genuine RPG_RT under wine --
 # ignores the target entirely for a medicine/switch item -- `return
 # item.type == Type_medicine || item.type == Type_switch;` -- always valid,
 # dead or alive -- re-checked at resolution time by
-# `Scene_Battle_Rpg2k::ProcessBattleActionExecute`'s own
+# its own battle-action-execute handling's own
 # `IsCurrentTargetValid()` guard, not just when the target was originally
 # picked. `Skill::IsTargetValid` allows a downed target too, but only when
 # the skill is ally-scoped and cures Death (`state_effects[0]`).
@@ -17549,8 +17551,8 @@ check 'battle: a "do nothing" state (restriction 1) skips the turn' do
 end
 
 # Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: its Scene_Battle_Rpg2k::
-# ProcessBattleActionBegin scans every state id
+# genuine RPG_RT under wine: its own battle-action-begin handling scans
+# every state id
 # the battler either still carries or just had auto-cured this turn (not
 # Game_Battler::GetSignificantState/State::GetSignificantState -- these are
 # two genuinely distinct functions in that source, the
@@ -17626,10 +17628,10 @@ end
 # trivia; the specific mechanism below is ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine
 # (`SelectNextActor`/`CreateEnemyActions`, `PrepareBattleAction`,
-# `Game_Battler::AddState`, all in `src/scene_battle*.cpp`/
+# its own add-state handling, all in `src/scene_battle*.cpp`/
 # `game_battler.cpp`): a do-nothing restriction
-# (`!CanAct()`) locks an actor's queued algorithm to `Game_BattleAlgorithm::
-# None` the moment it is decided -- at `SelectNextActor`/`CreateEnemyActions`
+# (`!CanAct()`) locks an actor's queued algorithm to a no-op
+# battle algorithm the moment it is decided -- at `SelectNextActor`/`CreateEnemyActions`
 # (queue-build time) if already restricted then, or live via `AddState`'s own
 # override if the restriction lands later, mid-round, before the actor's
 # queued turn runs. Nothing in the reference ever reverses that lock once set
@@ -17854,8 +17856,7 @@ end
 
 # yado.tk's "unrecoverable input-blocking state lock" case, next to the
 # empty/all-KO'd-party fix: ported from a reference implementation, NOT
-# independently confirmed against genuine RPG_RT under wine: its
-# Scene_Battle_Rpg2k::SelectNextActor skips the Fight/Skill/Defend/Item
+# independently confirmed against genuine RPG_RT under wine: its own next-actor-selection logic skips the Fight/Skill/Defend/Item
 # prompt entirely for a "do nothing"
 # restriction (asleep/paralysed, !CanAct()) and a forced attack-ally/
 # attack-enemy restriction (confused/berserk, GetSignificantRestriction() !=
@@ -17944,9 +17945,8 @@ end
 # unaffected either way) was already covered by the 全体化/必中 checks above.
 # The berserk-collapses-attack_all half of that same uncited claim does not
 # hold up against a reference implementation, though (NOT independently
-# confirmed against genuine RPG_RT under wine): its `Scene_Battle_Rpg2k::
-# SelectNextActor` constructs an identical
-# single-target `Game_BattleAlgorithm::Normal` for both the attack-ally
+# confirmed against genuine RPG_RT under wine): its own next-actor-selection logic constructs an identical
+# single-target Normal battle algorithm for both the attack-ally
 # (confusion) and attack-enemy (berserk) restrictions -- the same switch just
 # picks which side `GetRandomActiveBattler()` draws from -- and
 # `Normal::vStart()` then unconditionally
@@ -18321,8 +18321,8 @@ end
 # Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: it
 # Attack/Defence/
-# Intelligence/Agility cases (6-9) call straight through `Game_Actor::
-# GetAtk`/`GetDef`/`GetSpi`/`GetAgi`, each routed
+# Intelligence/Agility cases (6-9) call straight through its own stat accessors
+# (Attack/Defence/Intelligence/Agility), each routed
 # through `AdjustParam` -- the same halve/double-by-active-state mechanism
 # ported here as `Game::Party#effective_atk`/`#effective_def`/`#effective_int`/
 # `#effective_agi`, already used elsewhere (Simulated Attack, the Status
@@ -18626,7 +18626,7 @@ check 'map slip damage cannot kill: it floors at 1 HP' do
 
   # A member already down is not skipped outright -- per a reference implementation's
   # source (NOT independently confirmed against genuine RPG_RT under wine),
-  # its `Game_Party::ApplyStateDamage` iterates every actor with no alive/dead
+  # its own party-wide state-damage handling iterates every actor with no alive/dead
   # filter, and only `ChangeHp` (not the caller) has its own dead-guard, so a
   # dead member's affliction is still reported as "hit" even though the HP
   # loss itself silently no-ops via #change_hp.
@@ -18860,7 +18860,7 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   # under wine: it
   # (game_battlealgorithm.cpp) redirects a Skill's target onto its own
   # caster the instant the intended target carries
-  # one, checked by Scene_Battle_Rpg2k::ProcessBattleActionAnimationImpl right
+  # one, checked by its own battle-action-animation handling right
   # before the action's own Execute() step -- so the skill still rolls its own
   # damage/accuracy/variance normally afterward, just against the new target.
   states = { 20 => fake_state(reflect_magic: true), 21 => fake_state }
@@ -19077,8 +19077,7 @@ end
 # 攻撃の回数 (weapon field 70's per-actor Battle Animation table, RPG2003
 # only): a basic Attack's swing count is now multiplied by
 # `Actor#weapon_attack_multiplier`, ported from a reference implementation
-# (NOT independently confirmed against genuine RPG_RT under wine): its
-# `Algo::GetNumberOfAttacks` (`cba[actor_id - 1].attacks + 1`). Previously
+# (NOT independently confirmed against genuine RPG_RT under wine): its own attack-count calculation (`cba[actor_id - 1].attacks + 1`). Previously
 # `Actor#strike_count` ported only the `dual_attack` term of that same
 # function, never reading `attack_times` at all (docs/TODO.md).
 check 'battle: RPG2003 攻撃の回数 multiplies a basic Attack\'s swing count' do
@@ -19530,8 +19529,7 @@ check "Simulated Attack reads the target's state-adjusted Defence/Spirit, " \
       'not its raw base stat' do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it computes `atk -
-  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and its
-  # `Game_Battler::GetDef`/`GetSpi` both route
+  # actor->GetDef() * def / 400 - actor->GetSpi() * spi / 800`, and its own defence/spirit accessors both route
   # through `AdjustParam`, which folds in a currently-afflicted state's own
   # halve/double Defence flag -- the same accessor every other damage
   # formula reads, in or out of battle. A target whose Defence is halved by
@@ -19600,8 +19598,8 @@ end
 # source, all inside `game_battlealgorithm.cpp`'s `Normal`/`Skill`/
 # `SelfDestruct` -- the battle actions that actually draw the fixed-width
 # damage-popup animation the cap exists for. Simulated Attack is a silent
-# map-side HP change with no popup at all: it calls `Algo::
-# VarianceAdjustEffect` (itself uncapped) and `Game_Battler::ChangeHp`
+# map-side HP change with no popup at all: it calls its own
+# variance-adjustment calculation (itself uncapped) and its own HP-change handling
 # directly, neither of which clamps either.
 check 'Simulated Attack does not hard-cap damage the way a real battle-popup ' \
       'action does' do
@@ -19625,8 +19623,8 @@ end
 
 check "Simulated Attack's variance uses RPG_RT's real spread, not a coarser percent model" do
   # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: its CommandSimulatedAttack rolls
-  # Algo::VarianceAdjustEffect(result, var) -- the exact same formula
+  # genuine RPG_RT under wine: its Simulated Attack command rolls
+  # its own variance-adjustment calculation (result, var) -- the exact same formula
   # Game::Battle#varied already applies to a normal attack/skill/
   # self-destruct's own damage. A prior version of this
   # method modelled the spread as a flat +/-(var*5) *percent* of the base
@@ -19719,8 +19717,8 @@ check 'Fade Out BGM fades the music but keeps the current-BGM record intact' do
   # bare millisecond literals).
   #
   # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it calls `Game_System::
-  # BgmFade(fadeout)` with a single argument, and its `Game_System::BgmFade`
+  # genuine RPG_RT under wine: it calls its own
+  # `BgmFade(fadeout)` with a single argument, and its own `BgmFade`
   # only clears `data.current_music` when its
   # second parameter, `clear_current_music`, is explicitly `true` --
   # defaulted `false`, so the event command never clears it. A save taken
@@ -20751,7 +20749,7 @@ end
 # a reference implementation, NOT independently confirmed against genuine
 # RPG_RT under wine: it case 4, `result = (targets_single_enemy
 # && target_enemy_index == com.parameters[1]);`, where both fields are set
-# in `Scene_Battle_Rpg2k3::ProcessBattleActionBegin` from the acting ally's
+# in its own battle-action-begin handling from the acting ally's
 # own `GetOriginalSingle
 # Target()` -- the target chosen at command time -- only when that target
 # is itself an enemy. `Game::Battle#target_enemy_index` is this port's own
@@ -21060,7 +21058,7 @@ end
 # against genuine RPG_RT under wine:
 # it is `if (!Main_Data::game_party->
 # IsActorInParty(actor_id)) { return true; }`, checked before
-# `Game_Actors::GetActor` is even consulted -- `IsActorInParty` appears in
+# its own actor-lookup accessor is even consulted -- `IsActorInParty` appears in
 # exactly one other place in the whole reference (the Conditional Branch
 # "actor in party" test, already ported as `Game::Party#include_actor?`),
 # and this is its only other call site. A combo targeted at a genuine
@@ -21318,8 +21316,7 @@ check 'Show Battle Animation (battle form) waits like the map form' do
   eq true, it.battle_animation[:battle]
 end
 
-# Ported from a reference implementation (its
-# `Game_Interpreter_Battle::CommandShowBattleAnimation`), NOT independently
+# Ported from a reference implementation (its own show-battle-animation command handling), NOT independently
 # confirmed against genuine RPG_RT under wine: it, read
 # only `if (Player::IsRPG2k3() && com.parameters.size() > 3)` -- the same
 # trailing-RPG2003-parameter gate already used for Flash/Shake Screen.
@@ -21811,9 +21808,8 @@ end
 # genuine RPG_RT under wine: it
 # rejects a `Kind_skill` action outright when
 # `!source.IsSkillUsable(action.skill_id)` -- before the action's own weight
-# is ever computed, not merely zeroed out afterward. Its `Algo::IsSkillUsable`,
-# which `Game_Battler::IsSkillUsable`
-# reaches in battle, is unconditionally false for a
+# is ever computed, not merely zeroed out afterward. The skill-usability check that `IsSkillUsable` reaches in
+# battle is unconditionally false for a
 # Teleport- or Escape-type skill, and gated on the skill's own
 # `occasion_battle` flag for a Switch-type one -- an enemy's own action
 # pattern is bound by the exact same rules a field/battle actor cast is.
@@ -22076,8 +22072,8 @@ check 'battle: auto_battle_attack_target_rank includes the RPG2003 attacker ' \
       "row bonus, matching the real attack's own formula" do
   # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: it computes its own
-  # `base_effect` via `Algo::CalcNormalAttackEffect` -- the
-  # *identical* function `Game_BattleAlgorithm::Normal::Execute`
+  # `base_effect` via its own normal-attack-effect calculation -- the
+  # *identical* function the Normal battle algorithm's own execute step
   # calls to resolve the real swing -- so a
   # front-row attacker's ranking must include the same +25% bonus its real
   # attack deals, not merely the raw, unadjusted damage. Two otherwise-
@@ -22120,8 +22116,8 @@ check 'battle: auto_battle_attack_target_rank reads the target\'s ' \
       'state-adjusted Defence, not its raw base stat' do
   # Same source as the row check above (a reference implementation's, NOT independently
   # confirmed against genuine RPG_RT under wine) -- `CalcNormalAttackAutoBattleTarget
-  # Rank` shares `Algo::CalcNormalAttackEffect` with the real attack, and
-  # `Game_Battler::GetDef` folds in a currently-
+  # Rank` shares its own normal-attack-effect calculation with the real attack, and
+  # its own defence accessor folds in a currently-
   # afflicted state's own halve/double Defence flag. A target whose Defence
   # is halved by an active state must rank as easier to damage than an
   # identical, unafflicted one.
@@ -22254,10 +22250,10 @@ end
 # A "true form" boss trick -- transforming into a form with a *smaller* max
 # HP/SP than the current values must not full-heal-then-clamp them down.
 # Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Enemy::Transform` only ever repoints
+# RPG_RT under wine), its own enemy-transform handling only ever repoints
 # the `enemy` database row and refreshes the sprite; it never touches hp/sp
 # at all (those are set to the max exactly once, in the constructor, on the
-# enemy's very first spawn). `Game_BattleAlgorithm::Transform`'s own
+# enemy's very first spawn). The Transform battle algorithm's own
 # `ApplyCustomEffect` never calls `SetAffectedHp`/`SetAffectedSp` either, so
 # the generic post-effect pass (`GetAffectedHp() == 0`) is a no-op for it.
 check 'a transformation carries current HP/SP over unchanged, not reclamped to the new maxima' do
@@ -22804,7 +22800,7 @@ check 'the same item revives an ally who is down, HP and all' do
   # Standing up puts them on 1 HP first (the existing revive path), and the
   # item's 25% of 100 lands on top of that -- but one HP short of the raw
   # 25, since (per a reference implementation, NOT independently confirmed
-  # against genuine RPG_RT under wine) its `Game_Battler::UseItem`
+  # against genuine RPG_RT under wine) its own use-item handling
   # applies `ChangeHp(hp_change - revived, false)` on top of the cure's own
   # floor-to-1, not the full `hp_change`.
   eq 25, hero.hp, 'with the 25% the item restores, one short of the raw 25'
@@ -23256,8 +23252,8 @@ check "battle: an RPG2003 two-weapon actor's swing on a genuine 0%-hit " \
   # not treated as unequipped" above), now for the per-swing #swing_weapon_
   # data/#weapon_roll_data path a two-weapon RPG2003 actor's second swing
   # goes through. Per the same reference-implementation-ported source cited above (NOT
-  # independently confirmed against genuine RPG_RT under wine): `Game_Actor::
-  # GetHitChance`'s `ForEachEquipment<true,false>(..., weapon)` call visits
+  # independently confirmed against genuine RPG_RT under wine): its own hit-chance
+  # calculation's `ForEachEquipment<true,false>(..., weapon)` call visits
   # exactly one slot for a single-weapon query, so `hit = std::max(INT_MIN,
   # item.hit) == item.hit` verbatim -- the `INT_MIN` fallback to 90 only
   # ever fires when that slot holds no weapon at all, never when the
