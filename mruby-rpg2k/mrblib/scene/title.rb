@@ -14,8 +14,8 @@ class RPG2k
       BOTTOM_NUM = 53
       BOTTOM_DEN = 60
       # RPG_RT unrolls the title command window open over 8 frames, ported
-      # from EasyRPG's scene_title.cpp (`command_window->SetOpenAnimation(8)`),
-      # NOT independently confirmed against genuine RPG_RT under wine --
+      # from a reference implementation, NOT independently confirmed against
+      # genuine RPG_RT under wine --
       # skipped under HideTitle: the centred window appears with the rest of
       # the screen rather than flourishing in on its own.
       OPEN_ANIM_FRAMES = 8
@@ -114,18 +114,18 @@ class RPG2k
         @window.update
 
         # Holding Down/Up auto-repeats the cursor after the initial delay,
-        # not just a single step per tap -- ported from EasyRPG's actual
-        # source: `Scene_Title::vUpdate` (`src/scene_title.cpp`)
-        # calls `command_window->Update()` unconditionally every frame, a
-        # genuine `Window_Command` (`Window_Selectable` subclass) whose own
-        # `Update()` is what drives the cursor via the standard
-        # trigger-then-repeat. `Input.repeat?`'s own timing already matches
-        # EasyRPG's repeat constants exactly, independently measured against
-        # genuine RPG_RT.exe under wine (see `Scene::ItemMenu#update_items`'s
-        # fuller writeup and docs/TODO.md) -- so only the specific claim that
-        # *this* window's cursor is driven the same way as every other
-        # `Window_Selectable`-based list is ported from EasyRPG's source
-        # rather than independently confirmed here.
+        # not just a single step per tap -- ported from a reference
+        # implementation's own update loop, which calls its command
+        # window's update unconditionally every frame, a standard
+        # selectable-list widget whose own update is what drives the cursor
+        # via the standard trigger-then-repeat. `Input.repeat?`'s own timing
+        # already matches that reference implementation's repeat constants
+        # exactly, independently measured against genuine RPG_RT.exe under
+        # wine (see `Scene::ItemMenu#update_items`'s fuller writeup and
+        # docs/TODO.md) -- so only the specific claim that *this* window's
+        # cursor is driven the same way as every other selectable-list
+        # window is ported from a reference implementation rather than
+        # independently confirmed here.
         if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           move_selection 1
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
@@ -135,22 +135,20 @@ class RPG2k
         confirmed = Input.trigger?(Input::C)
         if confirmed && @selected_index == 1 && !@continue_available
           # Continue is grayed out with nothing to resume, but confirming it
-          # anyway is not silent -- ported from EasyRPG's own
-          # `Scene_Title::CommandContinue`, NOT independently confirmed
-          # against genuine RPG_RT under wine: its disabled branch is
-          # `SePlay(...SFX_Buzzer...); return;`, not a plain no-op (the
-          # enabled check lives inside the handler itself, not a guard in
-          # `vUpdate()` around calling it at all).
+          # anyway is not silent -- ported from a reference implementation's
+          # own continue handler, NOT independently confirmed against
+          # genuine RPG_RT under wine: its disabled branch plays a buzzer SE
+          # and returns, not a plain no-op (the enabled check lives inside
+          # the handler itself, not a guard around calling it at all).
           play_system_se(SFX_BUZZER)
         elsif confirmed || (auto = auto_select?)
           case @selected_index
           when 0  # New Game
-            # RPG_RT does not hard-cut the title music -- ported from
-            # EasyRPG's `Player::SetupNewGame` (`src/player.cpp`), NOT
+            # RPG_RT does not hard-cut the title music -- ported from a
+            # reference implementation's own new-game setup, NOT
             # independently confirmed against genuine RPG_RT under wine: it
-            # is `Main_Data::game_system->BgmFade(800, true); ...`, an 800ms
-            # fade, not `BgmStop()`'s immediate stop (the two are genuinely
-            # different `Game_System` calls per `src/game_system.cpp`). The blanket
+            # fades the BGM over 800ms rather than stopping it immediately
+            # (the two are genuinely different system calls). The blanket
             # `Audio.bgm_stop` this method used to run before every
             # selection (including this one) skipped straight to silence
             # instead.
@@ -166,18 +164,19 @@ class RPG2k
             # scripts/compare-nepheshel-wine.bash (watching stderr for the
             # [RPG2k-MAP] marker only #continue_game emits) needs.
             #
-            # The headless auto-select path fades here too, ported from
-            # `Player::LoadSavegame`'s own `if (!load_on_map) { BgmFade(800);
-            # ... }` (`src/player.cpp`), NOT independently confirmed against
-            # genuine RPG_RT under wine -- true from the title, the only case
-            # this shortcut ever takes. The interactive `Scene::SaveLoad`
-            # push is deliberately left alone: that scene's own `:load` mode
-            # is shared with the RPG2003 in-map "Open Load Menu" event
-            # (`Scene::Map#perform_event_load`), which per
-            # `LoadSavegame`'s own `load_on_map` guard must NOT fade --
-            # giving the title-only path its own fade needs a flag threaded
-            # through `SaveLoad.new`, left as a separate, well-scoped
-            # follow-up rather than folded in here.
+            # The headless auto-select path fades here too, ported from a
+            # reference implementation's own savegame-load logic, which
+            # skips the fade only when loading directly onto the map, NOT
+            # independently confirmed against genuine RPG_RT under wine --
+            # true from the title, the only case this shortcut ever takes.
+            # The interactive `Scene::SaveLoad` push is deliberately left
+            # alone: that scene's own `:load` mode is shared with the
+            # RPG2003 in-map "Open Load Menu" event
+            # (`Scene::Map#perform_event_load`), which per that reference
+            # implementation's own map-load guard must NOT fade -- giving
+            # the title-only path its own fade needs a flag threaded through
+            # `SaveLoad.new`, left as a separate, well-scoped follow-up
+            # rather than folded in here.
             play_system_se(SFX_DECISION)
             if auto
               Audio.bgm_fade(800)
@@ -186,17 +185,17 @@ class RPG2k
               parent.push(Scene::SaveLoad.new(parent, nil, :load))
             end
           when 2  # Shutdown
-            # No confirmation dialog -- ported from EasyRPG's own
-            # `CommandShutdown`, NOT independently confirmed against genuine
-            # RPG_RT under wine: it plays Decision then exits immediately (a
-            # fade-out transition into `Scene::Pop`), unlike the field menu's
-            # own End Game command, which pushes a yes/no confirm screen this
-            # runtime does not model either. `CommandShutdown`
-            # (`src/scene_title.cpp`) makes no BGM call at all in EasyRPG's
-            # own source -- so
-            # this branch touches neither `bgm_fade` nor `bgm_stop`, matching
-            # the blanket `Audio.bgm_stop` this method used to run
-            # unconditionally before every selection, this one included.
+            # No confirmation dialog -- ported from a reference
+            # implementation's own shutdown handler, NOT independently
+            # confirmed against genuine RPG_RT under wine: it plays Decision
+            # then exits immediately (a fade-out transition into
+            # `Scene::Pop`), unlike the field menu's own End Game command,
+            # which pushes a yes/no confirm screen this runtime does not
+            # model either. That handler makes no BGM call at all in its own
+            # source -- so this branch touches neither `bgm_fade` nor
+            # `bgm_stop`, matching the blanket `Audio.bgm_stop` this method
+            # used to run unconditionally before every selection, this one
+            # included.
             play_system_se(SFX_DECISION)
             exit
           end

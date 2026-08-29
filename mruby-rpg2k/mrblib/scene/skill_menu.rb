@@ -13,10 +13,11 @@ class RPG2k
     # cast_skill / cast_escape_skill / cast_teleport_skill), host-tested;
     # this is the RGSS UI over it.
     #
-    # There is no way to switch caster once this screen is open -- confirmed
-    # against EasyRPG Player's own source (`scene_skill.h`'s `actor_index`
-    # is a constructor parameter `Scene_Skill::vUpdate` never changes,
-    # unlike `Scene_Equip`'s own LEFT/RIGHT actor-switch). Real RPG_RT
+    # There is no way to switch caster once this screen is open -- ported
+    # from a reference implementation's own source, NOT independently
+    # confirmed against genuine RPG_RT under wine: its caster index is
+    # fixed for the whole screen, unlike its own Equip screen's LEFT/RIGHT
+    # actor-switch. Real RPG_RT
     # instead hands input focus to the *menu's own party list* when Skill
     # is selected there, letting the player pick which actor first
     # (`Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row`
@@ -156,24 +157,25 @@ class RPG2k
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
         # A greyed-out (currently unusable) entry is selectable but not
-        # activatable -- EasyRPG's `Scene_Skill::vUpdate` (`src/scene_skill.cpp`)
-        # gates its whole Decision branch on `Window_Skill::CheckEnable`
-        # (`IsSkillLearned && IsSkillUsable`, `src/window_skill.cpp`) before
-        # playing any SE or pushing `Scene_ActorTarget`/dispatching a
-        # switch skill at all; the `else` (disabled) branch just buzzes and
-        # stays on the list. `#skills` (`Game::Party#field_skills`) now
-        # lists a known skill unconditionally -- confirmed against
-        # `Window_Skill::CheckInclude`, trivially `true` outside battle with
-        # no per-type filter at all, a fact this comment previously got
-        # backwards (claiming `#field_skill?` already covered per-type
-        # availability the way `IsSkillUsable`/`CheckEnable` actually does)
-        # -- so every one of `IsSkillUsable`'s checks needs covering here:
-        # `Game::Party#can_cast?` (affordability, the 封印/Silence seal,
-        # weapon-Attribute gating -- `Game_Battler::IsSkillUsable`'s own
-        # pre-`Algo::IsSkillUsable` checks) plus, for the two types
-        # `Algo::IsSkillUsable` special-cases, `#escape_skill_available?`/
-        # `#teleport_skill_available?` (access, a registered target, not
-        # flying).
+        # activatable -- ported from a reference implementation, NOT
+        # independently confirmed against genuine RPG_RT under wine: its
+        # own skill-scene update gates its whole Decision branch on the
+        # skill window's own enable check (learned and usable) before
+        # playing any SE or pushing the actor-target scene/dispatching a
+        # switch skill at all; the disabled branch just buzzes and stays on
+        # the list. `#skills` (`Game::Party#field_skills`) now lists a
+        # known skill unconditionally -- matching that reference
+        # implementation's own include check, trivially `true` outside
+        # battle with no per-type filter at all, a fact this comment
+        # previously got backwards (claiming `#field_skill?` already
+        # covered per-type availability the way the usable/enable checks
+        # actually do) -- so every one of those usability checks needs
+        # covering here: `Game::Party#can_cast?` (affordability, the
+        # 封印/Silence seal, weapon-Attribute gating -- that reference
+        # implementation's own pre-algorithm checks) plus, for the two
+        # types its battle algorithm special-cases,
+        # `#escape_skill_available?`/`#teleport_skill_available?` (access,
+        # a registered target, not flying).
         if skill_unavailable?(sid, sk)
           play_system_se(SFX_BUZZER)
           return
@@ -309,9 +311,9 @@ class RPG2k
 
       # Switch and Escape skills replace the ordinary decision SE with their
       # own database `sound_effect` field (schema.rb field 16) on a
-      # successful cast -- confirmed against EasyRPG's `Scene_Skill::Update`,
-      # which calls `SePlay(skill->sound_effect)` for exactly these two
-      # types. Teleport is the odd one out: it keeps playing the ordinary
+      # successful cast -- matching a reference implementation's own
+      # skill-scene update, which plays that field's SE for exactly these
+      # two types. Teleport is the odd one out: it keeps playing the ordinary
       # decision SE instead (see #update_teleport_target), so it does not
       # call this. Mirrors #play_cursor_se in scene/title.rb (the same
       # Array1D/SE struct, read the same way) -- a no-op on a blank/absent
@@ -604,10 +606,10 @@ class RPG2k
           sk = @state.party.db_skill(sid)
           idx = skill_unavailable?(sid, sk) ? 3 : 0
           draw_system_text(c, x, y, col_w - 40, LINE_H, skill_name(sid), @skin, idx)
-          # "-  5"-style: a separator (a plain hyphen -- confirmed via
-          # EasyRPG's own Window_Skill::DrawItem, which formats this as
-          # `"{separator}{cost:3d}"` with a hyphen default) then the cost
-          # right-aligned in a 3-character field, no MP/SP unit suffix.
+          # "-  5"-style: a separator (a plain hyphen by default) then the
+          # cost right-aligned in a 3-character field, no MP/SP unit suffix
+          # -- ported from a reference implementation, NOT independently
+          # confirmed against genuine RPG_RT under wine.
           draw_system_text(c, x + col_w - 40, y, 40, LINE_H, "-%3d" % cost, @skin, idx)
         end
         @skill_window.contents = c
@@ -702,8 +704,7 @@ class RPG2k
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
-          # (Scene::Base#draw_stat_segment, ported from EasyRPG's
-          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
           # dims to knockout gray at 0 HP or critical red/orange at or below a
           # quarter of max. This target list used to draw both as flat-white
@@ -760,16 +761,17 @@ class RPG2k
       # The registered teleport destinations as `[map_id, name]` pairs,
       # ascending by map id — the same order `Game::State#teleport_targets`
       # (a plain hash built by Set Teleport Target) already keeps them in, and
-      # the same order EasyRPG's `Window_Teleport` lists them in (the order
-      # `Game_Targets::GetTeleportTargets` returns, sorted by map id on insert).
+      # the same order a reference implementation lists them in (sorted by
+      # map id on insert).
       def teleport_targets
         @state.teleport_targets.keys.sort.map { |id| [id, map_display_name(id)] }
       end
 
       # A map's editor name for the teleport picker, or its bare id when the
       # tree carries no name for it (a bare fixture, or an id the tree does not
-      # know) — matching EasyRPG's `Game_Map::GetMapName`, which reads the same
-      # map-tree field this build's #map_properties elsewhere already exposes.
+      # know) — matching a reference implementation's own map-name lookup,
+      # which reads the same map-tree field this build's #map_properties
+      # elsewhere already exposes.
       def map_display_name(map_id)
         row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
         name = row && row.respond_to?(:name) ? row.name.to_s : nil

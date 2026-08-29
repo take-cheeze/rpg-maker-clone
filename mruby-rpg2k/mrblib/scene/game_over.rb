@@ -9,11 +9,11 @@ class RPG2k
     # than running a [Defeat] handler — so both go through Scene::GameOver rather
     # than dropping straight back to the title as they used to.
     class GameOver < Base
-      # System BGM slot for Change System BGM (10660), matching EasyRPG
-      # Player's Game_System::SystemBGM enum (BGM_GameOver = 6), NOT
-      # independently confirmed against genuine RPG_RT under wine — see
-      # Scene_Gameover::Start, which plays GetSystemBGM(BGM_GameOver) rather
-      # than the database's gameover_music directly.
+      # System BGM slot for Change System BGM (10660), matching a reference
+      # implementation's own system-BGM enum, NOT independently confirmed
+      # against genuine RPG_RT under wine — that implementation's own
+      # game-over scene start plays this slot rather than the database's
+      # gameover_music directly.
       SYSTEM_BGM_GAMEOVER = 6
 
       # `state` is the running Game::State (nil when this screen is reached
@@ -35,19 +35,19 @@ class RPG2k
       end
 
       # Confirmed directly against a genuine RPG_RT.exe under wine (not just
-      # EasyRPG's source, which this was originally ported from and which
-      # claims only Decision dismisses this screen -- `Scene_Gameover::
-      # vUpdate`, src/scene_gameover.cpp): **Cancel dismisses the Game Over
-      # screen too, identically to Decision.** A synthetic autostart Game
-      # Over (12420) map event dropped real RPG_RT.exe onto this screen with
-      # nothing else animating; a single, cleanly-isolated Escape press
-      # (sent well after the screen had settled, ruling out the picture's
-      # own brief opening fade as a confound) faded straight to the title
-      # screen -- pixel-for-pixel the same transition a single Return press
-      # produces from the same starting state. So this screen behaves like
-      # every other message/choice/menu window in offering Cancel as a
-      # second way to back out, not the one exception EasyRPG's source
-      # claimed.
+      # the reference implementation's source this was originally ported
+      # from, which claims only Decision dismisses this screen):
+      # **Cancel dismisses the Game Over screen too, identically to
+      # Decision.** A synthetic autostart Game Over (12420) map event
+      # dropped real RPG_RT.exe onto this screen with nothing else
+      # animating; a single, cleanly-isolated Escape press (sent well after
+      # the screen had settled, ruling out the picture's own brief opening
+      # fade as a confound) faded straight to the title screen --
+      # pixel-for-pixel the same transition a single Return press produces
+      # from the same starting state. So this screen behaves like every
+      # other message/choice/menu window in offering Cancel as a second way
+      # to back out, not the one exception that reference implementation's
+      # source claimed -- a claim this wine capture directly contradicts.
       #
       # No arming/pending state of any kind (matching this screen's
       # pre-existing reasoning for Decision, which still holds): `RPG2k#
@@ -81,9 +81,9 @@ class RPG2k
 
       # A Change System BGM (10660) override for the game-over slot, when the
       # running game set one and it names a file, else the database's own
-      # gameover_music. Mirrors EasyRPG Player's Game_System::GetAudio, NOT
-      # independently confirmed against genuine RPG_RT under wine: the override
-      # wins only when its own filename is non-empty.
+      # gameover_music. Mirrors a reference implementation's own audio
+      # lookup, NOT independently confirmed against genuine RPG_RT under
+      # wine: the override wins only when its own filename is non-empty.
       #
       # `fadein` (cycle #203): both sources genuinely carry one, the same as
       # Scene::Map's battle/inn/vehicle BGM helpers -- the override from

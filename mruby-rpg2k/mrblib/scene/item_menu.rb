@@ -30,10 +30,10 @@ class RPG2k
       # which filled row-major (item 0 top-left, item 1 top-right, item 2
       # second row left, ...) and left an incomplete last row's second cell
       # blank rather than reflowing. Cursor movement is grid-aware but not
-      # symmetric between axes -- confirmed directly against EasyRPG's own
-      # `Window_Selectable::Update` (`src/window_selectable.cpp`), which has
-      # no method actually named `CursorDown`/`Up`/`Right`/`Left`: DOWN/UP
-      # move by COLUMN_MAX and are genuinely column-locked, a no-op with no
+      # symmetric between axes -- ported from a reference implementation,
+      # NOT independently confirmed against genuine RPG_RT under wine:
+      # DOWN/UP move by COLUMN_MAX and are genuinely column-locked, a no-op
+      # with no
       # cell below/above (tried pressing DOWN off the last, partial row --
       # the cursor simply stayed); RIGHT/LEFT move by one, bounded only by
       # the list's own absolute start/end, with no row-boundary check at
@@ -84,14 +84,14 @@ class RPG2k
       end
 
       # Holding a direction auto-repeats the cursor after the initial delay,
-      # not just a single step per tap -- `Window_Selectable::Update`
-      # (`src/window_selectable.cpp`), the base every real RPG2000 list is
-      # built on, falls through to `Input::IsRepeated` for all four
-      # directions right after its own `IsTriggered` check. `Input.repeat?`'s
-      # own timing already matches EasyRPG's repeat constants exactly -- see
-      # `Scene::SaveLoad`'s identical fix and its fuller writeup in
-      # docs/TODO.md -- so every check below just gains an `|| #repeat?`
-      # alongside it, the same pure-wiring shape.
+      # not just a single step per tap -- a reference implementation's own
+      # selectable-list update, the base every real RPG2000 list is built
+      # on, falls through to its own repeat check for all four directions
+      # right after its own trigger check. `Input.repeat?`'s own timing
+      # already matches that reference implementation's repeat constants
+      # exactly -- see `Scene::SaveLoad`'s identical fix and its fuller
+      # writeup in docs/TODO.md -- so every check below just gains an
+      # `|| #repeat?` alongside it, the same pure-wiring shape.
       def update_items
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -924,8 +924,7 @@ class RPG2k
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
-          # (Scene::Base#draw_stat_segment, ported from EasyRPG's
-          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
           # dims to knockout gray at 0 HP or critical red/orange at or below a
           # quarter of max. This target list used to draw both as flat-white

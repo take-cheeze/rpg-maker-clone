@@ -493,10 +493,9 @@ class RPG2k
 
       # 999,999 (RPG2000) / 9,999,999 (RPG2003) -- Game::Variables::MAX/MIN
       # vs. RPG2003_MAX/MIN (`mruby-rpg2k/mrblib/game.rb`), the same
-      # edition-gated range EasyRPG Player's `Game_Variables::GetMaxDigits`
-      # derives its debug-menu editor width from (`src/scene_debug.cpp`
-      # sizes and drives its `Window_NumberInput` straight off it), NOT
-      # independently confirmed against genuine RPG_RT under wine --
+      # edition-gated range a reference implementation derives its own
+      # debug-menu editor width from, NOT independently confirmed against
+      # genuine RPG_RT under wine --
       # a flat 6-digit editor structurally cannot enter or display an
       # RPG2003 variable's own top decade.
       EDITOR_DIGITS_2K = 6
