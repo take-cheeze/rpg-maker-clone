@@ -6,10 +6,14 @@
 # pure-Ruby source under CRuby — the geometry has no RGSS/SDL dependency, so it
 # can be verified without the native binary or any real chipset image.
 #
-# It pins the tile-id -> chipset source-rect mapping ported from EasyRPG Player's
-# TilemapLayer: block classification, the single-chip blocks C/E/F, and the four
-# 8x8 quarter assembly of the water (A/B) and terrain (D) autotiles. Every quad
-# it produces must land inside the fixed 480x256 chipset grid.
+# It pins the tile-id -> chipset source-rect mapping: block classification,
+# the single-chip blocks C/E/F, and the four 8x8 quarter assembly of the water
+# (A/B) and terrain (D) autotiles. This geometry is independently confirmed
+# pixel-identical against a genuine RPG_RT.exe under wine (ADR 0021: 0 of
+# 307200 differing pixels across three Nepheshel maps -- town, interior and
+# open-water -- with chipset layers, autotiles and upper/lower layering all
+# landing on RPG_RT's exact pixels). Every quad it produces must land inside
+# the fixed 480x256 chipset grid.
 #
 # Usage: ruby scripts/rpg2k_render_check.rb   (exits non-zero on any failure)
 

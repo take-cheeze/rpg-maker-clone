@@ -13093,11 +13093,11 @@ check 'Troop EXP/gold/drops exclude a member still hidden at victory time (yado.
   eq [7], fled_troop.drops(Game::Rng.new(1)), 'and no drop either'
 
   # A self-destructed member: Game::Battle#enemy_autodestruct only hides its
-  # Combatant (see that method's own comment, verified against EasyRPG's
-  # Game_BattleAlgorithm::SelfDestruct), and Scene::Map#refresh_battle_sprites
-  # mirrors that onto the troop member the same way #remove_fled_monster does
-  # for a scripted Force Flee -- so it drops nothing either, matching the
-  # community デフォ戦bot trivia (自爆した敵は経験値・お金・アイテムを落とさない).
+  # Combatant, never kills it -- confirmed by the community デフォ戦bot
+  # trivia, not EasyRPG's source (see that method's own comment) -- and
+  # Scene::Map#refresh_battle_sprites mirrors that onto the troop member the
+  # same way #remove_fled_monster does for a scripted Force Flee -- so it
+  # drops nothing either (自爆した敵は経験値・お金・アイテムを落とさない).
   exploded_troop = Game::Troop.new(db, 1)
   exploded_troop.members[1].hidden = true # simulates a mid-battle self-destruct
   eq 5, exploded_troop.total_exp, 'a self-destructed member grants no EXP'
