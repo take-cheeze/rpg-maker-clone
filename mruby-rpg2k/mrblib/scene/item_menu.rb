@@ -386,12 +386,11 @@ class RPG2k
       end
 
       # The destination list is a two-column grid too, not a single stacked
-      # column -- confirmed against genuine RPG_RT's own live source:
-      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
-      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
-      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
-      # the identical shape this class's own item list already ports (see
-      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # column -- the identical shape this class's own item list already
+      # ports, confirmed against genuine RPG_RT under wine with a five-item
+      # bag (see `COLUMN_MAX`'s own comment above), carried over on the
+      # strength of that shared shape rather than separately re-measured.
+      # With exactly two destinations, DOWN/UP are
       # no-ops (nothing in the row below/above) and RIGHT reaches the second
       # one -- not DOWN, which this scene wrongly wired to a single-column
       # modulo wrap with no RIGHT/LEFT handling at all.

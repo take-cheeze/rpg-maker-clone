@@ -79,19 +79,20 @@ class RPG2k
         # Render the (unchanging) menu labels once, in the windowskin's own
         # default text colour (system-colour swatch 0) with RPG_RT's
         # one-pixel shadow. A disabled Continue reads the windowskin's own
-        # *disabled* swatch instead -- ported from EasyRPG's
-        # `Window_Command::DrawItem` (`src/window_command.cpp`), NOT
-        # independently confirmed against genuine RPG_RT under wine: driven
-        # by `Scene_Title` via
-        # `command_window->SetItemEnabled(1, continue_enabled)`
-        # (`src/scene_title.cpp`), it always looks up `Font::ColorDisabled`
-        # (`src/font.h`, swatch index 3) rather than hardcoding a flat gray --
+        # *disabled* swatch (index 3) instead of hardcoding a flat gray --
+        # the same enabled(0)/disabled(3) `draw_system_text` swatch
+        # convention confirmed directly against a genuine RPG_RT.exe under
+        # wine for the field/battle Skill lists (see Scene::SkillMenu
+        # #build_skill_window's own citation): a party leader with one
+        # affordable and two unaffordable skills pixel-sampled the
+        # unaffordable rows' glyphs at the same measured "disabled" colour
+        # the Item-list capture found for its own usable/unusable rows -- so
         # a custom windowskin whose disabled swatch is tinted (not neutral
-        # gray) shows that tint on real RPG_RT, with the same drop-shadow
-        # every other label gets. `draw_system_text`'s own no-windowskin
-        # fallback (plain `draw_text` in the current font colour) still
-        # supplies the flat gray when there is no skin to sample, so the
-        # `font.color` set below is unchanged, just no longer the only path.
+        # gray) shows that tint here too, with the same drop-shadow every
+        # other label gets. `draw_system_text`'s own no-windowskin fallback
+        # (plain `draw_text` in the current font colour) still supplies the
+        # flat gray when there is no skin to sample, so the `font.color` set
+        # below is unchanged, just no longer the only path.
         contents = Bitmap.new content_w, content_h
         @menu_items.each_with_index do |item, index|
           y = index * LINE_HEIGHT + TEXT_PAD_Y

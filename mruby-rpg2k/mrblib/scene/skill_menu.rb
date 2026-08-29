@@ -36,9 +36,12 @@ class RPG2k
       DESC_H = LINE_H + Window::BORDER * 2
 
       # The skill list is a two-column grid, the same shape and cursor math
-      # as Scene::ItemMenu's own (see its COLUMN_MAX comment) -- confirmed
-      # via EasyRPG's `Window_Skill` constructor, which sets `column_max =
-      # 2`. LEFT/RIGHT move within a row now that they are not needed for
+      # as Scene::ItemMenu's own -- confirmed against genuine RPG_RT under
+      # wine for that sibling list (see its own COLUMN_MAX comment: a
+      # five-item bag filled row-major and left an incomplete last row's
+      # second cell blank rather than reflowing), ported here on the
+      # strength of the shared shape rather than re-measured independently.
+      # LEFT/RIGHT move within a row now that they are not needed for
       # caster-switching (see the class comment above).
       COLUMN_MAX = 2
 
@@ -348,12 +351,11 @@ class RPG2k
       end
 
       # The destination list is a two-column grid too, not a single stacked
-      # column -- confirmed against genuine RPG_RT's own live source:
-      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
-      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
-      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
-      # the identical shape this class's own skill list already ports (see
-      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # column -- the identical shape this class's own skill list already
+      # ports (see `COLUMN_MAX`'s comment, confirmed against genuine RPG_RT
+      # under wine for the sibling Item list), carried over on the strength
+      # of that shared shape rather than separately re-measured. With
+      # exactly two destinations, DOWN/UP are
       # no-ops (nothing in the row below/above) and RIGHT reaches the second
       # one -- not DOWN, which this scene wrongly wired to a single-column
       # modulo wrap with no RIGHT/LEFT handling at all.
