@@ -100,7 +100,8 @@ def check_game(dir)
   # ...and when the save records a hero sprite, it must be the leader's, so we
   # know the state points at the right actor. A save can legitimately carry
   # *no* sprite: one taken during Nepheshel's opening (as
-  # scripts/gen-lcf-save-wine.bash does, via EasyRPG's F9 debug menu) stores an
+  # scripts/gen-lcf-save-wine.bash does, via a reference implementation's F9
+  # debug menu) stores an
   # empty charset because the hero graphic is not assigned until the opening
   # ends. Asserting equality there compared "unset" against the database default
   # and failed on a perfectly valid save.

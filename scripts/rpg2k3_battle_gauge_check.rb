@@ -93,7 +93,7 @@ check 'advance_gauges is a no-op for battle_type 0' do
 end
 
 # -- gauge fills by the relative curve used for the 2003 gauge presentation ---
-# Ported from EasyRPG Player's source, NOT independently confirmed against
+# Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: every non-hidden battler's AGI is summed (times
 # 100), and each battler's per-frame increment is GAUGE_MAX / (sum_agi /
 # (agi + 1)), all integer-truncated -- so the faster battler fills first but
@@ -126,7 +126,7 @@ check 'ready_combatants is ordered by gauge descending' do
   eq [slow, fast], bat.ready_combatants
 end
 
-# Ported from EasyRPG Player's Scene_Battle_Rpg2k3::atb_order, NOT
+# Ported from a reference implementation's ATB ordering logic, NOT
 # independently confirmed against genuine RPG_RT under wine: among several
 # simultaneously-ready party members -- every ready gauge is clamped to the
 # identical GAUGE_MAX by #advance_gauges, so there is never a real
@@ -162,9 +162,9 @@ check 'a dead battler does not charge or become ready' do
   eq false, dead.gauge_full?
 end
 
-check 'a do-nothing-restricted ally never charges (ported from EasyRPG\'s ' \
-      'CanAct() gate, NOT independently confirmed against genuine RPG_RT ' \
-      'under wine)' do
+check 'a do-nothing-restricted ally never charges (ported from a reference ' \
+      'implementation\'s can-act gate, NOT independently confirmed against ' \
+      'genuine RPG_RT under wine)' do
   asleep = combatant('Asleep', 1, 1, 20, 1)
   asleep.states = [4] # Sleep: restriction 1
   states = { 4 => OpenStruct.new(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }

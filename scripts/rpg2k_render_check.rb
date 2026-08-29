@@ -216,7 +216,8 @@ check 'anim_c cycles 0..3 every 6 frames' do
   eq [0, 1, 2, 3, 0], (0..4).map { |k| L.anim_c(k * 6) }
 end
 
-# -- event tile substitution (EasyRPG Cache::Tile port) -----------------------
+# -- event tile substitution (ported from a reference implementation, not
+#    independently confirmed against genuine RPG_RT under wine) -------------
 
 check 'event_tile_rect maps the three tile palettes to the chipset lower-right' do
   # tile 0 and out-of-range ids fall back to the first (empty) tile.
@@ -334,8 +335,8 @@ end
 
 check 'a non-looping panorama wider than the map\'s own excess pans by the ' \
       'map\'s excess, not the image\'s' do
-  # Ported from EasyRPG Player's Game_Map::Parallax::ResetPositionX, NOT
-  # independently confirmed against genuine RPG_RT under wine: the span
+  # Ported from a reference implementation's parallax reset-position logic,
+  # NOT independently confirmed against genuine RPG_RT under wine: the span
   # panned across is min(map excess, image excess), not always the image's
   # own full excess. A small map (800px,
   # 160px of scroll room) with a much wider panorama (2000px, 1360px of its
@@ -357,7 +358,9 @@ check 'a looping panorama scrolls at half the camera rate and wraps' do
   eq(-44, PX.axis_offset(true, false, 0, 0, 600, 640, 4096, 256)) # 300 % 256 = 44
 end
 
-check 'autoscroll pixel delta follows the speed field (EasyRPG scroll_amt/32)' do
+check 'autoscroll pixel delta follows the speed field (ported from a ' \
+      'reference implementation, not independently confirmed against ' \
+      'genuine RPG_RT under wine)' do
   eq 0, PX.autoscroll_px(0, 1000)
   eq 0, PX.autoscroll_px(nil, 1000)
   eq(-16,  PX.autoscroll_px(4, 32))   # -(1<<4)=-16 per 32 frames

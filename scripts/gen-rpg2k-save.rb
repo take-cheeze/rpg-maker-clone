@@ -26,8 +26,9 @@
 # preserved byte-for-byte, which scripts/lcf_save_roundtrip.rb already proves
 # our writer does.
 #
-# Get the base save with scripts/gen-lcf-save-wine.bash, which drives EasyRPG
-# Player's F9 debug menu under wine to write one without a playthrough.
+# Get the base save with scripts/gen-lcf-save-wine.bash, which drives a
+# reference implementation's F9 debug menu under wine to write one without a
+# playthrough.
 #
 # Like the other host-side checks this loads the mruby/CRuby-common sources
 # under CRuby, shimming the parser's one native dependency (LCF.cp932_to_utf8)
@@ -46,9 +47,10 @@
 #     --out PATH       write here instead of over the input
 # GAME_DIR defaults to the RPG2000 test-bed (Nepheshel).
 #
-# WHY --clear-scene EXISTS: gen-lcf-save-wine.bash saves through EasyRPG's F9
-# debug menu from wherever the game happens to be, and for Nepheshel that is
-# mid-opening -- the save carries the opening demo's choice in chunk 113 and its
+# WHY --clear-scene EXISTS: gen-lcf-save-wine.bash saves through a reference
+# implementation's F9 debug menu from wherever the game happens to be, and for
+# Nepheshel that is mid-opening -- the save carries the opening demo's choice
+# in chunk 113 and its
 # backdrop picture in chunk 103. Resuming it puts both runtimes back into that
 # cutscene, where the frames drift again for the same reason the key-driven
 # harness does: the cutscene is timed. Dropping those two chunks resumes on the
