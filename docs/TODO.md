@@ -287,7 +287,7 @@ The work below is roughly ordered by the critical path to a walkable game
     `.from_lsd` still does not consume `scroll_x`/`scroll_y` and does not
     need to — this engine's own renderer derives the camera live from the
     hero every frame regardless, so an unmodelled reader is not a gap, only
-    real RPG_RT/EasyRPG needs the field populated on the way out. Covered
+    real RPG_RT needs the field populated on the way out. Covered
     by a new `scripts/rpg2k_logic_check.rb` check (a 30x30-tile map, hero
     at tile (10, 10) — far enough from every edge that the camera centres
     rather than clamps, disambiguating "hero-centred" from both "always
@@ -16042,11 +16042,10 @@ following this paragraph as the original record.
   of what its sibling checks two paragraphs below (the faced-tile check,
   the counter-reach loop) already correctly restrict to `LAYER_SAME` only,
   by symmetry with the *below/above*-only rule this very bullet documents.
-  Confirmed against EasyRPG's actual C++ source: `Game_Player::
-  CheckEventTriggerHere` (`src/game_player.cpp`) — the function both the
+  Ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: the function both the
   overlap check and the Trigger_touched/collision-here check in
-  `CheckActionEvent` share — explicitly excludes a same-layer event
-  (`ev.GetLayer() != lcf::rpg::EventPage::Layers_same`). A same-layer event
+  `CheckActionEvent` share — explicitly excludes a same-layer event. A same-layer event
   ordinarily can never reach this branch at all (it blocks the party from
   ever standing on it — the very first bullet in this list), so the missing
   exclusion only mattered for the one way a same-layer event *can* end up
@@ -16114,8 +16113,9 @@ following this paragraph as the original record.
   blocking).
 - ✅ **`overlap_forbidden` (LCF page field 35, "doesn't overlap another
   event") used to block the hero, which real RPG_RT never does.** Checked
-  against EasyRPG Player's actual C++ source (`WouldCollide`,
-  `src/game_map.cpp`) rather than assumed: the flag only ever collides two
+  against a reference implementation's actual C++ source rather than
+  assumed (not independently confirmed against genuine RPG_RT under wine):
+  the flag only ever collides two
   *map events* — `self.GetType() == Event && other.GetType() == Event &&
   (self.IsOverlapForbidden() || other.IsOverlapForbidden())` — the party's
   own type is `Player`, never `Event`, so it can never be what blocks the
@@ -16160,8 +16160,10 @@ following this paragraph as the original record.
   re-evaluated per id inside the loop; every other operand type keeps its
   existing once-up-front evaluation, since nothing establishes RPG_RT
   re-reads a *non-random* source per id. ✅ **The self-referential-range
-  question this same bullet left open is now settled and fixed too, verified
-  against EasyRPG Player's actual C++ source rather than left unverified.** A
+  question this same bullet left open is now settled and fixed too, checked
+  against a reference implementation's actual C++ source rather than left
+  unverified (not independently confirmed against genuine RPG_RT under
+  wine).** A
   direct-variable operand (type 1, "Var A ops B") applied to a genuine
   multi-id range whose own source id falls *inside* the destination range is
   not one value read up front and broadcast to the whole range the way this
@@ -16186,7 +16188,8 @@ following this paragraph as the original record.
   generic path already used, so nothing changes there); every other operand
   type (including random) is untouched. Covered by a new
   `scripts/rpg2k_logic_check.rb` check (a self-referential `+=` range splits
-  at the source exactly as EasyRPG's algorithm predicts — ids after the
+  at the source exactly as a reference implementation's algorithm predicts
+  (not independently confirmed against genuine RPG_RT under wine) — ids after the
   source combine with its post-first-pass value, not its original one; a
   source outside the range still broadcasts a single value, unaffected; a
   self-referential `=` is confirmed unobservably identical either way, since
@@ -21012,7 +21015,7 @@ not yet verified:
   engine itself wrote) never disagreed with itself — it only manifests
   against a genuine third-party `.lsd` (misreading the real `processed`
   flag as a bogus sprite index) or when a `.lsd` this engine exports is
-  opened in real RPG_RT/EasyRPG (the real sprite index landing on
+  opened in real RPG_RT (the real sprite index landing on
   `processed` instead). Fixed by moving `SAVE_MOVABLE`'s `charset_index`
   from tag 75 to 74 and the two `#to_lsd` write sites (leader, and each
   placed vehicle) to match; no read-site changes needed, since both already
@@ -21152,7 +21155,7 @@ not yet verified:
   Save→Continue round-trip (and the Marshal-based save/load test, which
   never touches `.lsd` at all) never disagreed with itself — only a genuine
   RPG_RT save that used Change System Graphics (10680), or this engine's
-  own `.lsd` export opened in real RPG_RT/EasyRPG, would ever surface it.
+  own `.lsd` export opened in real RPG_RT, would ever surface it.
   Field 16/22 (`wallpaper_type`/`message_stretch`) was never actually read
   or written by this engine at all, so its own mistagging had zero live
   effect — fixed for schema correctness regardless, matching the file's own
@@ -21572,8 +21575,9 @@ not yet verified:
   item with its `reverse_state_effect` flag set) now inflicts the states its
   own `state_set` marks the instant it's worn, and cures them the instant
   it comes off — it used to have zero gameplay effect from this mechanic at
-  all.** Confirmed against EasyRPG's actual C++ source: `Game_Actor::
-  AdjustEquipmentStates` (`src/game_actor.cpp`) is called from every
+  all.** Ported from a reference implementation's actual C++ source, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  equipment-state-adjustment routine is called from every
   equip-mutation path (`SetEquipment`, in turn `ChangeEquipment`, both the
   equip menu and the Change Equipment event command's own route) and adds
   every state a piece of `IsArmorType` (shield/armor/helmet/accessory,
@@ -21587,13 +21591,14 @@ not yet verified:
   stat-boosting gear with none of its intended mechanic. Also ported: a
   two-handed weapon bumping a cursed shield out of the other hand
   (`#free_two_handed_slot`) cures that shield's own states too, matching
-  EasyRPG's own `ChangeEquipment(other_slot, 0)` recursion into the
+  the reference implementation's own equip-change recursion into the
   displaced slot. Fixed by adding `Actor#adjust_equipment_states`, wired
   into all three equip-mutation methods, reusing the existing
   `Party::ITEM_SHIELD/ARMOR/HELMET/ACCESSORY` constants already used
   elsewhere in this file for the identical armor-type test. The separate
   "this state can't be healed by ordinary means while the armor stays
-  equipped" rule (EasyRPG's own `GetPermanentStates`) is now implemented (see the ✅ bullet directly below, `Game::Actor#permanent_states` at `game.rb:1842`)
+  equipped" rule (the reference implementation's own permanent-states
+  concept) is now implemented (see the ✅ bullet directly below, `Game::Actor#permanent_states` at `game.rb:1842`)
   here — a real but distinct question this fix left open before a follow-up closed it, the same way
   the session's earlier attribute-defence fix left `reverse_state_effect`'s
   sibling battle-formula question open before a follow-up closed it.
@@ -21607,12 +21612,14 @@ not yet verified:
   ordinary means while the item stays equipped — an Antidote-style
   medicine, a curative skill, Full Recovery, or the Change Condition event
   command all used to cure it just like any other status condition.**
-  Confirmed against EasyRPG's actual C++ source: `Game_Actor::
-  GetPermanentStates` (`src/game_actor.cpp`) scans the same four armor
-  slots `AdjustEquipmentStates` (the previous fix) already reads, and every
-  state-removal path threads its result through — `Game_Battler::
-  RemoveState`/`RemoveAllStates` (`src/game_battler.cpp`) both pass it to
-  `State::Remove`/`State::RemoveAll` (`src/state.cpp`), whose `if
+  Ported from a reference implementation's actual C++ source, not
+  independently confirmed against genuine RPG_RT under wine: its own
+  permanent-states calculation scans the same four armor
+  slots the equipment-state-adjustment routine (the previous fix) already
+  reads, and every
+  state-removal path threads its result through — its own remove-state
+  routines both pass it to
+  its own state-add/remove machinery, whose `if
   (ps.Has(state_id)) return false;` refuses the cure outright. This is the
   sibling rule the previous fix explicitly deferred (`AdjustEquipmentStates`
   only inflicts/cures on equip change; `GetPermanentStates` is what makes a
@@ -21627,8 +21634,8 @@ not yet verified:
   `#remove_state`/`#clear_states` on it. A genuine ordering hazard fell out
   of this: `#equip_item`/`#unequip`/`#equip` must write `@equipment` (or
   the specific slot) *before* calling `#adjust_equipment_states`, the same
-  order EasyRPG's own `SetEquipment` uses (`data.equipped[...] =
-  new_item_id;` precedes both `AdjustEquipmentStates` calls) — otherwise
+  order the reference implementation's own equip-setter uses (`data.equipped[...] =
+  new_item_id;` precedes both equipment-state-adjustment calls) — otherwise
   unequipping a cursed item would see it still equipped in `#permanent_states`
   and refuse to cure the very state it is trying to remove.
   `#equip_item` already had the correct order by construction;
@@ -21652,11 +21659,13 @@ not yet verified:
   shield/armor/helmet/accessory in Database > Actors already carries the
   Curse flag booted up with the item worn but the state simply absent —
   `#permanent_states` would correctly refuse to let it be cured, but there
-  was nothing to cure in the first place. Confirmed against EasyRPG's
-  actual C++ source, fetched live: `Game_Actor::Game_Actor(int actor_id)`
-  (`src/game_actor.cpp`) calls `SetEquipment(i + 1, ids[i])` for every one
+  was nothing to cure in the first place. Ported from a reference
+  implementation's actual C++ source, not independently confirmed against
+  genuine RPG_RT under wine: its own actor constructor
+  calls its equip-setter for every one
   of the five initial-equipment slots at construction — the exact same
-  function, and so the exact same `AdjustEquipmentStates` call, an ordinary
+  function, and so the exact same equipment-state-adjustment call, an
+  ordinary
   mid-game equip change goes through; RPG_RT does not special-case the
   starting loadout at all. A "cursed berserker" or "anti-hero with a
   drawback" starting-gear design — an intentional, editor-supported
@@ -21665,7 +21674,8 @@ not yet verified:
   on (which does go through `#unequip`/`#equip` correctly). Fixed by
   calling `@equipment.each { |id| adjust_equipment_states(id, true) }` at
   the end of `#initialize`, placed after HP/MP are already set to their
-  max — matching `Game_Actor::Game_Actor`'s own ordering (`SetHp`/`SetSp`
+  max — matching the reference implementation's own actor-constructor
+  ordering (its HP/SP setters
   precede the equip loop there), so a maximally cursed starting item whose
   `state_set` includes the Death state itself still leaves the actor at 0
   HP rather than having that overwritten back to full by a later
@@ -21681,14 +21691,13 @@ not yet verified:
   state even though real RPG_RT specifically carves out an exemption for
   exactly this case (2026-08-19).** The two fixes above correctly made
   `#remove_state` refuse a cursed-armor-forced state unconditionally, but
-  RPG_RT's own refusal is not actually unconditional. Confirmed against
-  EasyRPG's actual C++ source, fetched live: `Game_Interpreter::
-  CommandChangeCondition` (`src/game_interpreter.cpp`) calls `actor->
-  RemoveState(state_id, !Game_Battle::IsBattleRunning())`, and
-  `Game_Battler::RemoveState`'s own `always_remove_battle_states`
-  parameter (`src/game_battler.cpp`) is `if (!(always_remove_battle_states
-  && state && state->type == Persistence_ends)) { ps =
-  GetPermanentStates(); }` — the permanent-states lock is skipped entirely
+  RPG_RT's own refusal is not actually unconditional. Ported from a
+  reference implementation's actual C++ source, not independently
+  confirmed against genuine RPG_RT under wine: its own Change Condition
+  handler passes whether battle is currently running through to its
+  remove-state call, and the remove-state routine's own
+  always-remove-battle-states parameter skips the permanent-states lock
+  entirely
   when both true: the cure is running outside battle, *and* the state's
   own database Persistence field is "Ends" (0, the schema default for
   most non-Poison-style ailments) rather than "Continues after battle"
