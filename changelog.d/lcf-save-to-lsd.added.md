@@ -5,7 +5,7 @@
   skills/HP/MP table (108) and the party roster / gold / item bag (109) -- the
   exact inverse of `Game::State.from_lsd`. `save_game` writes it beside the
   Marshal save (best-effort; a failed export never fails the save), so a slot is
-  now readable by real RPG_RT / EasyRPG tooling. To build a save from scratch the
+  now readable by real RPG_RT tooling. To build a save from scratch the
   `mruby-lcf` writer gained `LCF.pack_int16` + an `:int16_array` `encode` branch
   (equipment / skills / item ids), `Array2D#[]=` with an empty-table constructor,
   and an empty `File` constructor (`SaveData.new` with no stream). Continue now
