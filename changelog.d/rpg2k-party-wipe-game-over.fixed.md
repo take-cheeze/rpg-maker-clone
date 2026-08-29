@@ -5,8 +5,9 @@
   — each re-check for it in RPG_RT and drop straight into Game Over, and none of
   them did here. A Simulated Attack damage floor strong enough to kill the party
   (Nepheshel has 850 Simulated Attacks) left the player walking around the map
-  with a dead party. `Game::Interpreter#check_game_over` ports EasyRPG's
-  `CheckGameOver`, including both of its guards: a battle-event page leaves
+  with a dead party. `Game::Interpreter#check_game_over` ports a reference
+  implementation's own game-over check (not independently confirmed against
+  genuine RPG_RT under wine), including both of its guards: a battle-event page leaves
   defeat to the battle's own `[Defeat]` handler, and an **empty** party is not a
   wipe — a game that has taken every member away is between members, not over.
   It suspends on the same `:game_over` wait the Game Over command (12420)

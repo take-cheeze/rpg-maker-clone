@@ -6,6 +6,8 @@
   of asking that question by hand (ADRs 0031-0036), none of them visible to the
   fixture suites — in every case the fixtures encoded the same assumption as the
   code, because they were written to match it. Carries a `NOT_OURS` table of
-  fields already checked against EasyRPG and deliberately left alone (`levitate`
-  and `state_chance` are RPG2003 only, `message_affected` has no known trigger,
-  the two critical-hit terms are unresolved), so nobody re-derives them.
+  fields already checked against a reference implementation (not independently
+  confirmed against genuine RPG_RT under wine) and deliberately left alone
+  (`levitate` and `state_chance` are RPG2003 only, `message_affected` has no
+  known trigger, the two critical-hit terms are unresolved), so nobody
+  re-derives them.

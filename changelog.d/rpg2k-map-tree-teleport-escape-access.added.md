@@ -8,11 +8,11 @@
   Escape / Teleport skills stayed permanently unusable outside a `Change
   Teleport/Escape Access` event command, when RPG_RT allows them by default
   almost everywhere. `Game::MapAccess.teleport_allowed?` / `#escape_allowed?`
-  share the exact tree walk `#save_allowed?` already used (confirmed against
-  EasyRPG's `Game_Map::Setup`, which re-derives all three
-  `Game_System::Allow*` flags from their map-tree fields identically on every
-  map load). `Scene::Map#apply_map_access` (renamed from
-  `#apply_map_save_access`, now setting all three) recomputes
+  share the exact tree walk `#save_allowed?` already used (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: it re-derives all three allow flags from their
+  map-tree fields identically on every map load). `Scene::Map#apply_map_access`
+  (renamed from `#apply_map_save_access`, now setting all three) recomputes
   `Game::State#teleport_access` / `#escape_access` alongside `#save_access` on
   the initial map load and on every Teleport: a `Control Teleport/Escape
   Access` event command can still override either for the rest of that map's

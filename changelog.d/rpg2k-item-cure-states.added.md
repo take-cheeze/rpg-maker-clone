@@ -1,7 +1,9 @@
 - RPG Maker 2000 item menu: a medicine now **cures status conditions**. When an
   item has `reverse_state_effect` set, using it removes the states listed in its
   `state_set` (a byte per state, index i → state id i+1) from the target — the
-  antidote / herb case — unconditionally, matching EasyRPG's item algorithm.
+  antidote / herb case — unconditionally, matching a reference
+  implementation's item algorithm (not independently confirmed against
+  genuine RPG_RT under wine).
   `Game::Party#use_medicine` cures alongside the HP/SP recovery and consumes the
   item when *either* healed or cured; `item_effective?` reports such an item as
   usable when the target is afflicted even at full HP, so it is no longer greyed

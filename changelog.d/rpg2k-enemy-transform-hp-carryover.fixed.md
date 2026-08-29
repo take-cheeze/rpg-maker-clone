@@ -1,5 +1,6 @@
 - **An enemy Transformation no longer heals it back up to the new form's max
-  HP/SP.** Confirmed against EasyRPG Player's source: `Game_Enemy::Transform`
+  HP/SP.** Ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: an enemy Transformation
   only repoints the monster's database row and refreshes its sprite — it
   never touches current HP/SP. This build force-clamped both down to the new
   form's maximum, silently full-healing a boss whenever its "true form"

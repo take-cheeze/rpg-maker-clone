@@ -8,9 +8,10 @@
   blank field, matching every other shop term), `#shop_header` draws it as
   the screen's single line, and it is dismissed on a button press — like
   every other message panel in this scene — back to the buy / sell list it
-  came from. Verified against EasyRPG's `Scene_Shop`/`Window_Shop`
-  (`Bought`/`Sold` modes draw the raw term with no item-name/price
-  interpolation and return to `Buy`/`Sell` respectively); this port swaps
+  came from. Verified against a reference implementation's own shop screen
+  (not independently confirmed against genuine RPG_RT under wine): its
+  bought/sold modes draw the raw term with no item-name/price
+  interpolation and return to the buy/sell list respectively; this port swaps
   their fixed one-second timer for the same button-driven dismissal used
   everywhere else in the scene, since the transition itself already returns
   to the same list. Covered by two new `scripts/rpg2k_scene_check.rb` checks

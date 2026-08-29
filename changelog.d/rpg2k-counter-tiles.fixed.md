@@ -1,6 +1,7 @@
 - **The action button reaches across a counter, and answers an event underfoot.**
   Pressing it only ever looked at the one tile the party faced. RPG_RT looks in
-  three places (EasyRPG's `Game_Player::CheckActionEvent`): the tile the party is
+  three places (ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine): the tile the party is
   *standing on* — which is how a trigger-0 event on a doorway answers the button
   — the tile ahead, and then, when that tile is a **counter**, straight through
   it to whoever stands behind, up to three counters deep. A counter is an

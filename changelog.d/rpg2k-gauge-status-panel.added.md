@@ -3,11 +3,11 @@
   instead of the plain text status window: each living party member's face
   (from the actor's `faceset_name`/`faceset_index`), an HP bar and an SP bar,
   and their current values as digit-glyph numbers, all drawn from the
-  database's own `System2` graphic. Ported column-for-column from EasyRPG
-  Player's actual `Window_BattleStatus::Refresh`/`RefreshGauge`/
-  `DrawGaugeSystem2`/`DrawNumberSystem2` — including the exactly-full gauge
-  reading a visually distinct "full" fill tile, and `DrawNumberSystem2`'s
-  exact leading-zero-suppression cascade. `battle_type == 1` (alternative) is
+  database's own `System2` graphic. Ported column-for-column from a
+  reference implementation's own gauge-card drawing (not independently
+  confirmed against genuine RPG_RT under wine) — including the exactly-full
+  gauge reading a visually distinct "full" fill tile, and its exact
+  leading-zero-suppression cascade. `battle_type == 1` (alternative) is
   unchanged and keeps the existing text status window; a database naming no
   `System2` graphic (or one that fails to load) falls back to the text status
   window instead of drawing a blank or crashing. The ATB/wait gauge row RPG_RT

@@ -10,8 +10,9 @@
   `#unequip_to_bag` stay unguarded — a Change Equipment event command can
   still force a cursed item off, only the menu gates on it. Not part of this:
   the *other* "cursed" flag, on the state table (2003 only, `situation.cursed`
-  at schema.rb:403), which also locks equipment per EasyRPG's
-  `Game_Actor::IsEquipmentFixed` while an inflicted status carries that flag —
+  at schema.rb:403), which also locks equipment per a reference
+  implementation's equipment-lock check (not independently confirmed against
+  genuine RPG_RT under wine) while an inflicted status carries that flag —
   left unbuilt, same as before, since no state in either test bed carries it.
   Covered by two new checks in `scripts/rpg2k_logic_check.rb` and one in
   `scripts/rpg2k_scene_check.rb` (the gate is per-slot: a cursed weapon locks

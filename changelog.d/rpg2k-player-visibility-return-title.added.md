@@ -3,8 +3,9 @@
   `Game::State`; `Scene::Map` hides or shows the party leader's map sprite each
   frame accordingly (combined with the leader graphic's own semi-transparent
   flag), and the flag is persisted through Save / Continue. The polarity
-  (param0 non-zero = transparent) follows EasyRPG's
-  `SetSpriteHidden(parameters[0] != 0)`. **Return to Title Screen** (12510)
+  (param0 non-zero = transparent) follows a reference implementation's own
+  polarity (not independently confirmed against genuine RPG_RT under wine).
+  **Return to Title Screen** (12510)
   suspends on a `:return_title` request the scene answers by stopping the event
   and calling the app's `return_to_title`, tearing the play scenes down and
   showing a fresh title. Player Visibility was one of the two event-command gaps
