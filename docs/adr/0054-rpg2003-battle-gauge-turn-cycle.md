@@ -157,5 +157,6 @@ Behavioral notes and deliberate simplifications:
   event command (5003) is the event-driven path to the same field: it flips
   `atb_mode` just like the menu Wait command, so a gauge battle switches live
   between wait and active mid-fight — `Cmd::TOGGLE_ATB_MODE` /
-  `do_toggle_atb_mode`, matching EasyRPG's `Game_System::ToggleAtbMode()`
-  (`data.atb_mode = !data.atb_mode`).
+  `do_toggle_atb_mode` simply write the boolean's negation, which is all a
+  "Toggle" command can mean for a single on/off `SaveSystem.atb_mode` field
+  with no separate three-way state to preserve.
