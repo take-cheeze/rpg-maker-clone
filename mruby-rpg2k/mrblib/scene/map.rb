@@ -6445,9 +6445,10 @@ class RPG2k
         @shop[:gold].contents = c
       end
 
-      # Panel dimensions mirror EasyRPG's Window_ShopStatus (136x48 at
-      # RPG2000's own 320x240 resolution): two rows tall enough for one
-      # SHOP_LINE_H label line each, plus the ordinary window border.
+      # 136px wide -- confirmed against genuine RPG_RT.exe under wine (see
+      # #build_shop_gold_window's own doc comment for the border-color pixel
+      # scan): two rows tall enough for one SHOP_LINE_H label line each, plus
+      # the ordinary window border.
       SHOP_STATUS_W = 136
 
       # The item id the status panel should describe. On the buy list it is
@@ -7332,16 +7333,13 @@ class RPG2k
 
       # The physical Cancel key (not the on-screen "BS" cell, see
       # #handle_name_input's own doc comment): erase one character with its
-      # own Cancel SE, or Buzzer when the name is already empty -- matching
-      # EasyRPG's Scene_Name::vUpdate Cancel branch exactly (`if
-      # (name_window->Get().size() > 0) { ...Cancel...; Erase(); } else {
-      # ...Buzzer...; }`).
+      # own Cancel SE, or Buzzer when the name is already empty.
       #
-      # Independently re-verified since (cycle #125, 2026-08-23) directly
-      # against a genuine RPG_RT.exe under wine, not just EasyRPG's source --
-      # this whole widget was ported from EasyRPG before this project's own
-      # methodology started requiring that (see docs/TODO.md's own account of
-      # cycle #114). A synthetic autostart Enter Hero Name (10740, actor 1,
+      # Confirmed directly (cycle #125, 2026-08-23) against a genuine
+      # RPG_RT.exe under wine -- this whole widget was originally ported
+      # from EasyRPG Player's source before this project's own methodology
+      # started requiring that (see docs/TODO.md's own account of cycle
+      # #114). A synthetic autostart Enter Hero Name (10740, actor 1,
       # charset 0/hiragana) map event on a copy of Nepheshel's map 12,
       # resumed from a genuine save positioned there: on a name reading "リ"
       # (one kana typed), a single Cancel press erased exactly that one
@@ -7363,19 +7361,16 @@ class RPG2k
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
-      # A blank confirm does not close the widget -- originally ported from
-      # EasyRPG's `Scene_Name::vUpdate` DONE branch (`src/scene_name.cpp`,
-      # mislabeled "RPG_RT's own live source" at the time this was written,
-      # before this project's own methodology required checking such claims
-      # against the genuine binary -- see docs/TODO.md's cycle #114 account):
-      # `if (name_window->Get().empty()) { name_window->Set(ToString(actor.
-      # GetName())); name_window->Refresh(); } else { actor.SetName(...);
-      # Scene::Pop(); }` -- an empty typed name resets the field back to the
-      # actor's current name and leaves the screen open, rather than
+      # A blank confirm does not close the widget: it resets the field back
+      # to the actor's current name and leaves the screen open, rather than
       # resuming the event with an empty string. This check lives in the
-      # single shared `vUpdate` (gated only on which cell was picked), so it
+      # single shared handler (gated only on which cell was picked), so it
       # applies identically to every keyboard page -- the kana grid's own
-      # :confirm cell routes through this same method.
+      # :confirm cell routes through this same method. Originally ported
+      # from EasyRPG Player's source (mislabeled "RPG_RT's own live source"
+      # at the time this was written, before this project's own methodology
+      # required checking such claims against the genuine binary -- see
+      # docs/TODO.md's cycle #114 account).
       #
       # Independently re-verified since (cycle #125, 2026-08-23) directly
       # against a genuine RPG_RT.exe under wine: a synthetic autostart Enter
