@@ -8983,17 +8983,16 @@ The work below is roughly ordered by the critical path to a walkable game
   ✅ **Follow-up (2026-08-20): Change Items (10320) was missing RPG_RT's own
   guard against a variable-sourced amount whose sign contradicts the chosen
   operation, letting Add remove items or Remove add them instead of doing
-  nothing.** Confirmed against RPG_RT's own live source:
-  `Game_Interpreter::CommandChangeItems` (`src/game_interpreter.cpp`)
-  computes its signed `value` through the same `OperateValue` a
-  variable-sourced amount can make negative even under "Add" — "Add item
-  can't be used to remove an item and remove item can't be used to add
-  one" — and no-ops the whole command outright when the resulting sign
-  doesn't match: `if (value > 0) return true;` under Remove, `if (value <
-  0) return true;` under Add. `Game_Interpreter::CommandChangeGold`
-  (10310) calls the identical `OperateValue` with no such guard at all, so
-  this asymmetric no-op is Change Items-specific, not a general
-  Change-command rule. `Interpreter#do_change_items`
+  nothing.** Confirmed against genuine RPG_RT.exe under wine (see cycle
+  #182's 2026-08-26 follow-up below for the full probe): "Add item can't
+  be used to remove an item and remove item can't be used to add one" — a
+  variable-sourced amount whose sign contradicts the chosen operation
+  leaves the whole command a genuine no-op, both for Add-with-a-negative-
+  value and for Remove-with-a-positive-value (`compare -metric AE` against
+  an untouched baseline came back `0` differing pixels in both cases, vs.
+  `56` against a capture where the item count actually changed). Change
+  Gold (10310) carries no such guard, so this asymmetric no-op is Change
+  Items-specific, not a general Change-command rule. `Interpreter#do_change_items`
   (`mruby-rpg2k/mrblib/interpreter.rb`) applied whatever signed count
   `#gain_item` was handed with no sign check of its own: an event driving
   the amount through a variable that can go negative (arithmetic on other
@@ -9475,13 +9474,12 @@ The work below is roughly ordered by the critical path to a walkable game
   a field audit of the database's `skill_learned` `term` chunk field
   (`scripts/rpg2k_field_audit.rb`), which nothing in the runtime named.
   `Game::Interpreter#queue_level_up_messages` already queued one message per
-  level gained but never consulted the growth-table learn list at all, unlike
-  EasyRPG's `Game_Actor::ChangeLevel` (`src/game_actor.cpp`), which pushes the
-  level-up line and then `LearnLevelSkills(old_level + 1, new_level, pm)` —
-  each newly-taught skill gets its own `ActorMessage::GetLearningMessage`
-  line (`src/game_message_terms.cpp`), skipped only for a skill the actor
-  already knew (`Game_Actor::LearnSkill`'s own `IsSkillLearned` guard).
-  Fixed by snapshotting each target's skill list right before the change and
+  level gained but never consulted the growth-table learn list at all.
+  Confirmed against genuine RPG_RT.exe under wine (see cycle #198's
+  follow-up below): crossing a learn-level shows the newly-taught skill's
+  own announcement line appended to the very same message page as the
+  level-up line, not a separate box, skipped only for a skill the actor
+  already knew. Fixed by snapshotting each target's skill list right before the change and
   appending one line per newly-learned growth-table skill onto its own
   level's message page. ✅ **Change Class (1008, RPG2003-only) had the
   identical gap and is now closed too** — EasyRPG's `Game_Actor::ChangeClass`
@@ -9949,12 +9947,16 @@ The work below is roughly ordered by the critical path to a walkable game
   #pan_step_for` (`mruby-rpg2k/mrblib/game.rb`) was `2**(speed-1)` — 1, 2, 4,
   8, 16, 32 px/frame for speed 1..6, a plain doubling starting at a whole
   pixel, self-flagged in its own comment as "An approximation — the exact
-  subpixel rate is a native refinement." EasyRPG Player's own
-  `Game_Player::StartPan`/`ResetPan` (`src/game_player.cpp`) set `pan_speed
-  = 2 << speed`, a value that lives in RPG_RT's own 1/16-pixel subpixel
-  space (`SCREEN_TILE_SIZE = 256`, sixteen per this codebase's own real
-  `Game::TILE = 16` px) — so the real whole-pixel rate is `(2 << speed) /
-  16.0`: 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6, exactly a quarter of
+  subpixel rate is a native refinement." Confirmed against genuine RPG_RT.exe
+  under wine (cycle #178, further up this document): timing a real, already-
+  authored Pan Screen command's fade-to-black at both its authored speed (1)
+  and an in-place edit of the same command to speed 3 measured a ~7.0s gap
+  between the two runs, matching the ~7.2s gap the `(2 << speed) / 16.0`
+  px/frame formula predicts — 0.25, 0.5, 1, 2, 4, 8 px/frame for speed 1..6,
+  a value living in RPG_RT's own 1/16-pixel subpixel space
+  (`SCREEN_TILE_SIZE = 256`, sixteen per this codebase's own real
+  `Game::TILE = 16` px) — and ruling out the rejected plain-doubling
+  alternative's predicted ~1.8s gap outright: exactly a quarter of
   what this codebase used at every setting, so a Pan Screen command used to
   finish in a quarter of the real frame count and visibly raced rather than
   glided. Fixed by correcting the formula and having `@pan_x`/`@pan_y`
