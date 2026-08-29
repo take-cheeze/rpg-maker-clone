@@ -17775,14 +17775,16 @@ Everything below is unverified against the codebase.
   per `Scene::Base#build_field_background`), a message window is not a
   scene push and does not blank the screen at all — it is itself a
   `Window` at z 300, already sitting above the picture layer's z 250 (see
-  `#setup_pictures`). Verified against EasyRPG Player's own C++
-  source rather than left as an assumption: `Sprite_Picture::Draw`
-  (`src/sprite_picture.cpp`) carries no message-window check, and
-  `src/drawable.h`'s z-order enum puts `Priority_PictureOld` (120) below
-  `Priority_Window` (130) — RPG_RT lets an open picture keep compositing
-  and animating under the message window exactly like it does under any
-  other window, relying on ordinary z-order occlusion rather than an
-  explicit hide. This project's own `#render` already reflects that: the
+  `#setup_pictures`). Independently confirmed against a genuine RPG_RT.exe
+  under wine (see the 2026-08-22 follow-up immediately below) rather than
+  left as an assumption sourced only from EasyRPG's C++: RPG_RT lets an
+  open picture keep compositing and animating under the message window
+  exactly like it does under any other window, relying on ordinary
+  z-order occlusion rather than an explicit hide — consistent with
+  EasyRPG's own `Sprite_Picture::Draw` (`src/sprite_picture.cpp`), which
+  carries no message-window check, and `src/drawable.h`'s z-order enum,
+  which puts `Priority_PictureOld` (120) below `Priority_Window` (130).
+  This project's own `#render` already reflects that: the
   picture layer has no `@message` check and never has, so nothing needed
   fixing. (The "Picture commands... suppressed while a message window is
   open" fix mentioned above is a separate, correct behaviour — it only
@@ -18085,8 +18087,11 @@ not yet verified:
   to `scripts/rpg2k_logic_check.rb`: a recovery skill computing a raw 5000
   HP heal against a high-max-HP target clamps at 999, confirmed to fail
   against the pre-fix code. ✅ **The field-menu item-use path is now settled
-  too, confirmed already correct — no code change needed.** Verified against
-  EasyRPG Player's actual C++ source rather than left as a guess:
+  too, confirmed already correct — no code change needed.** Reasoned from
+  EasyRPG Player's actual C++ source rather than left as a guess (the
+  RPG2000 half of this reasoning is independently confirmed against a
+  genuine RPG_RT.exe — see the 2026-08-22 follow-up below; the RPG2003 half
+  remains EasyRPG-sourced only):
   `Scene_ActorTarget` (`src/scene_actortarget.cpp`, the field Item screen's
   target picker) applies a medicine through `Game_Party::UseItem` ->
   `Game_Actor::UseItem` and ends in a bare `status_window->Refresh()` — no
