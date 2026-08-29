@@ -4325,8 +4325,8 @@ end
 # transparent param 0 vs 1, showed the "on" sprite's pixels consistently at
 # ~61-63% of the "off" run's own values -- alpha-blended with the
 # background, never a hide. This corrects a prior version of this comment
-# that mislabelled a reference implementation's own logic/
-# `src/game_character.cpp` as "RPG_RT's own live source". This codebase used
+# that mislabelled a reference implementation's own logic
+# as "RPG_RT's own live source". This codebase used
 # to fold the two into one hide-only flag.
 check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
       'translucent, not hidden' do
@@ -13141,9 +13141,8 @@ class BattleThreeSkillParty < BattleMagicParty
 end
 
 # The battle Item/Skill lists are a genuine two-column grid -- originally
-# only cited to a reference implementation's/`Window_Skill`
-# (`src/window_item.cpp`/`src/window_skill.cpp`, both setting
-# `column_max = 2`) and `Window_Selectable::Update`'s column-locked Down/Up
+# only cited to a reference implementation's item/skill windows (both
+# setting a two-column layout) and its own column-locked Down/Up
 # vs. flat Right/Left. Now independently confirmed for the item side against
 # a genuine RPG_RT.exe under wine (cycle #133) -- see `#drive_battle_item`'s
 # own comment (`mruby-rpg2k/mrblib/scene/battle.rb`) for the full writeup,
@@ -20219,10 +20218,9 @@ end
 # dropped into Nepheshel's own game dir, landed the file-select cursor on
 # whichever slot held the larger one -- and swapping which slot had the
 # larger timestamp swapped which slot the cursor landed on, ruling out "just
-# the highest-numbered occupied slot". Originally ported from a reference implementation's
-# `Scene_File::Start` (`src/scene_file.cpp`, `index = latest_slot;
-# top_index = std::max(0, index - 2);`, tracking whichever populated slot's
-# `title.timestamp` is the largest) -- not always slot 1.
+# the highest-numbered occupied slot". Originally ported from a reference
+# implementation's file-select startup logic (tracking whichever populated
+# slot's timestamp is the largest) -- not always slot 1.
 check 'Scene::SaveLoad opens with the cursor on the most-recently-saved ' \
       'slot, not always the first one' do
   Dir.mktmpdir('rpg2k-save-recency') do |dir|

@@ -11199,7 +11199,7 @@ end
 # param0 *zero* hides the player, non-zero shows it again -- confirmed
 # against genuine RPG_RT.exe under wine (cycle #169; not a reference implementation,
 # correcting a prior comment here that mislabelled a reference implementation's own
-# `src/game_interpreter.cpp` as "RPG_RT's own live source"): see
+# interpreter source as "RPG_RT's own live source"): see
 # `Interpreter#do_player_visibility`'s own comment in interpreter.rb for the
 # full wine-verification evidence.
 check 'Set Transparent Flag toggles the player-transparent state, non-blocking' do
