@@ -2233,8 +2233,8 @@ mrb_value bmp_stretch_blt(mrb_state* M, V self) {
 //
 // Ported from a reference implementation's mosaic-transition case, not
 // independently confirmed against genuine RPG_RT under wine: each output
-// pixel samples the pixel nearest the centre of its `block_size`x`block_size` block --
-// `off = block_size / 2`, `src = clamp(((pos + off) / block_size) *
+// pixel samples the pixel nearest the centre of its `block_size`x`block_size`
+// block -- `off = block_size / 2`, `src = clamp(((pos + off) / block_size) *
 // block_size - off, 0, len - 1)` on each axis -- rather than a block average,
 // which is why a 1px block is the identity (`off` is 0, `src == pos`). RPG_RT
 // also nudges the sampling window by a small per-frame random offset (its own
