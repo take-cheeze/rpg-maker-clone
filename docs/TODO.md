@@ -14787,7 +14787,7 @@ The work below is roughly ordered by the critical path to a walkable game
   battle-status window's update
   opens with its own comment — `// Window Selectable update logic skipped
   on purpose (breaks up/down-logic)` — and never calls
-  `Window_Selectable::Update()` at all; it hand-rolls the cursor itself,
+  the base selectable-window's generic update logic at all; it hand-rolls the cursor itself,
   gating the "next ally" step on `IsRepeated(DOWN) || IsRepeated(RIGHT) ||
   IsTriggered(SCROLL_DOWN)` and the "previous ally" step on the Up/Left/
   SCROLL_UP mirror — deliberately folding Right/Left onto the same up/down
@@ -16169,11 +16169,10 @@ following this paragraph as the original record.
   multi-id range whose own source id falls *inside* the destination range is
   not one value read up front and broadcast to the whole range the way this
   codebase (and every other operand type, source-outside-range included)
-  already treats it. `Game_Interpreter::CommandControlVariables`
-  (`src/game_interpreter.cpp`) dispatches a direct-variable range write to
-  `Game_Variables::SetRangeVariable`/`AddRangeVariable`/etc.
-  (`src/game_variables.cpp`), all thin wrappers over
-  `Game_Variables::WriteRangeVariable`: when the source id falls in
+  already treats it. A reference implementation's own Control Variables
+  dispatch routine sends a direct-variable range write to its own
+  range-variable setters, all thin wrappers over its own range-write
+  helper: when the source id falls in
   `[first_id, last_id]`, it splits into two passes right at the source —
   `first_id..src` is written first from `src`'s value *before* this command
   touched anything, then (only once that first pass has actually run, and
@@ -16203,15 +16202,15 @@ following this paragraph as the original record.
   [A]]`) has the identical live-per-id re-read this same bullet already fixed
   for a direct-variable operand (type 1) — it was never given the same
   treatment, so a batch write through a self-referencing pointer still froze
-  its value once and broadcast it, instead of cascading.** Confirmed directly
-  against RPG_RT's live source: `Game_Interpreter::CommandControlVariables`
-  (`src/game_interpreter.cpp`) dispatches operand type 2 over a range to
-  `Game_Variables::SetRangeVariableIndirect`/`AddRangeVariableIndirect`/etc.
-  (`src/game_variables.cpp`), each a thin wrapper calling the *generic*
+  its value once and broadcast it, instead of cascading.** Checked against
+  a reference implementation's own source, not independently confirmed
+  against genuine RPG_RT under wine: its own Control Variables dispatch
+  routine sends operand type 2 over a range to its own indirect
+  range-variable setters, each a thin wrapper calling the *generic*
   `WriteRange(first_id, last_id, [this,var_id](){ return Get(Get(var_id)); },
-  op)` — unlike type 1's own `WriteRangeVariable`, which closes over one
-  frozen value per (up to two) split half, `WriteRange` itself
-  (`Game_Variables::WriteRange`) calls its value lambda **fresh, once per
+  op)` — unlike type 1's own range-write helper, which closes over one
+  frozen value per (up to two) split half, that generic range-write helper
+  itself calls its value lambda **fresh, once per
   loop iteration** (`v = Clamp(op(v, value()), _min, _max);`), so `Get(Get
   (var_id))` re-resolves against whatever the table holds *right now* on
   every single id. If the pointer's own resolved target id falls inside the
@@ -19148,7 +19147,7 @@ not yet verified:
   its own set-level routine only clamps `data.level` and
   re-clamps current HP/SP — it never touches `data.attack_mod`/
   `defense_mod`/`spirit_mod`/`agility_mod`/`hp_mod`/`sp_mod`. Those `*_mod`
-  fields are zeroed only inside `Game_Actor::ChangeClass`, never by an
+  fields are zeroed only inside its own class-change routine, never by an
   ordinary level-up. `#set_level` instead unconditionally rebuilt both
   `@base` and `@base_raw` from the bare level curve on *every* call,
   silently discarding any live `#change_param` delta the instant the actor's
@@ -19405,8 +19404,9 @@ not yet verified:
   `#swing_weapon_data` hands each RPG2003 two-weapon swing) folded a
   genuine 0%-hit weapon into the "nothing equipped" case and substituted
   the 90% unarmed default — the exact same bug class `#attack_hit_rate`
-  was already fixed for elsewhere in this file (`Game_Actor::
-  GetHitChance`'s own `INT_MIN` sentinel, see that bullet's own citation),
+  was already fixed for elsewhere in this file (a reference implementation's
+  own hit-chance routine's `INT_MIN` sentinel, see that bullet's own
+  citation),
   just never mirrored into this newer, parallel single-weapon path.**
   Confirmed against the identical reference implementation's source, not
   independently confirmed against genuine RPG_RT under wine: its own
@@ -20024,7 +20024,8 @@ not yet verified:
   that flag has no meaning on defensive gear's `state_set`), multiplied into
   `#state_susceptibility`'s existing rank-based result whenever the target
   is an ally (an enemy Combatant carries no `actor`, matching
-  `Game_Enemy::GetStateProbability`'s own equipment-free formula). Covered
+  a reference implementation's own equipment-free enemy state-resistance
+  formula). Covered
   by four new `scripts/rpg2k_logic_check.rb` checks — the Poison-accessory
   trace above (bare vs. equipped), the strongest-of-several-pieces rule (a
   50% and a 90% resist item together yield 90%'s multiplier, not both
@@ -20050,8 +20051,8 @@ not yet verified:
   reached). `Game::Battle#enemy_transform_action`
   (`mruby-rpg2k/mrblib/game.rb`) instead force-clamped `b.hp`/`b.mp` down to
   the new form's max whenever the prior value exceeded it — the comment
-  above it even claimed this matched `Game_Enemy::Transform`, which the
-  actual source contradicts outright. This breaks the classic "damage
+  above it even claimed this matched a reference implementation's own
+  transform routine, which its actual source contradicts outright. This breaks the classic "damage
   carries across a phase transformation" boss design: a monster with
   `max_hp = 1000` sitting at 950 HP that transforms into a "true form" with
   `max_hp = 100` should still take 950 cumulative damage to finish off (its
@@ -20482,9 +20483,9 @@ not yet verified:
   The reference implementation's own comment calls this out explicitly:
   `// Emulates RPG_RT
   behavior (Bug?) Inn's called by parallel events overwrite the current
-  message.` `CanShowMessage` itself (`src/game_message.cpp`) is a thin
-  wrapper over `Game_Message::Window::GetAllowNextMessage`, purely a
-  message-window check, unrelated to the shop/name-input widgets. A *free*
+  message.` That helper itself is a thin wrapper over the message window's
+  own generic check for whether another message can currently be shown,
+  purely a message-window check, unrelated to the shop/name-input widgets. A *free*
   stay (`inn_price == 0`) keeps the ordinary `IsMessageActive()` gate for
   every caller alike — `CommandShowInn`'s own separate `if (inn_price == 0)
   { if (IsMessageActive()) return false; ...` branch never mentions
@@ -21076,12 +21077,13 @@ not yet verified:
   (2) **A wholly separate RPG_RT mechanism — the leader's own actor graphic
   "Transparent" flag (Change Actor Graphic's third parameter, or the
   database Actor's own checkbox) — was folded into the same hide, when real
-  RPG_RT renders it as a *translucent ghost*, not a hide at all.** Confirmed
-  against RPG_RT's own live source: `Game_Actor::SetSprite`
-  (`src/game_actor.cpp`) stores `data.transparency = transparent ? 3 : 0`;
-  `Game_Character::GetOpacity` (`src/game_character.cpp`) is `Clamp((8 -
+  RPG_RT renders it as a *translucent ghost*, not a hide at all.** Checked
+  against a reference implementation's own source, not independently
+  confirmed against genuine RPG_RT under wine: its own actor-graphic-change
+  routine stores `data.transparency = transparent ? 3 : 0`;
+  its own opacity getter is `Clamp((8 -
   GetTransparency()) * 32 - 1, 0, 255)` — level 3 yields opacity 159/255
-  (~62%); and `Game_Character::IsVisible` (`src/game_character.h`) is
+  (~62%); and its own visibility check is
   `IsActive() && !IsSpriteHidden() && GetOpacity() > 0` — `IsSpriteHidden()`
   (Set Transparent Flag's own mechanism) and `GetOpacity()` (the ghost flag)
   are genuinely independent gates, never merged into one. `Scene::Map
@@ -21108,8 +21110,9 @@ not yet verified:
   for the field as if it were already this runtime's own numpad convention,
   with no conversion at all, silently mis-restoring any facing other than
   "down".** `SaveMapEventBase.facing` (`generator/csv/fields.csv`, `0x16` ==
-  22) is `0` up / `1` right / `2` down / `3` left — `Game_Character::
-  Direction`'s own enum order (`src/game_character.h`) — not RPG2000's
+  22) is `0` up / `1` right / `2` down / `3` left — a reference
+  implementation's own character-direction enum order (not independently
+  confirmed against genuine RPG_RT under wine) — not RPG2000's
   numpad scheme (2/4/6/8) this runtime's own `@direction` uses everywhere
   else. `SAVE_MOVABLE`'s field-22 comment claimed "0 = down, 1 = right, 2 =
   up, 3 = left" with no citation at all — itself wrong on both counts (not
