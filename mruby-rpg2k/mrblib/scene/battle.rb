@@ -2027,9 +2027,10 @@ class RPG2k
           # invokes the skill named in its `skill_id` instead of being plain
           # medicine -- the invoked skill's own scope decides where this goes
           # next, exactly like #confirm_battle_skill dispatches an ordinary
-          # skill chosen from the Skill menu (`Scene_Battle::AssignSkill`,
-          # `src/scene_battle.cpp`, dispatches an item-backed skill through
-          # the identical scope switch). `#battle_usable?` already excluded
+          # skill chosen from the Skill menu (a reference implementation's
+          # own skill-assignment routine dispatches an item-backed skill
+          # through the identical scope switch, not independently
+          # confirmed against genuine RPG_RT under wine). `#battle_usable?` already excluded
           # this item from the list entirely unless its skill is battle-usable
           # in the first place (never Escape/Teleport, see #battle_skill?), so
           # every skill reached here is one #battle_skill_target can resolve.
