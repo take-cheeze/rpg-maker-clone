@@ -4564,9 +4564,15 @@ class RPG2k
       # route targeting "this event" reaches the right character.
       def apply_move_requests(interp, this_event)
         reqs = interp.take_move_route_requests
-        # TEMP DEBUG (event-29-direction investigation): show exactly what
-        # take_move_route_requests handed back here.
-        $stderr.puts "[RPG2k][debug] apply_move_requests reqs=#{reqs.inspect}"
+        # TEMP DEBUG (event-29-direction investigation): only log when there is
+        # actually something to report -- a prior version logged every single
+        # call (including every parallel process's empty poll every frame) and
+        # drowned out the one call that matters.
+        unless reqs.nil? || reqs.empty?
+          $stderr.puts "[RPG2k][debug] apply_move_requests reqs=#{reqs.inspect} " \
+                       "this_event_id=#{this_event ? this_event[:id] : 'nil'} " \
+                       "interp_event_id=#{interp.event_id rescue '?'}"
+        end
         return if reqs.nil? || reqs.empty?
         reqs.each { |r| apply_move_request(r, this_event) }
       rescue StandardError => e
@@ -5683,12 +5689,16 @@ class RPG2k
       # apply it to the map / scene. Shared by the foreground event and each
       # parallel process, so both surfaces honour the same commands.
       def apply_interpreter_requests(interp, this_event)
-        # TEMP DEBUG (event-29-direction investigation): confirm this wrapper
-        # (and so apply_move_requests) is actually invoked, and with what
-        # `this_event`, right after an interpreter update.
-        $stderr.puts "[RPG2k][debug] apply_interpreter_requests called " \
+        # TEMP DEBUG (event-29-direction investigation): only log the specific
+        # call chain for event 29 -- this method is shared by every parallel
+        # process on the map, called every single frame, so logging it
+        # unconditionally drowned out the one call that matters.
+        target_id = (this_event && this_event[:id] == 29) || (interp.event_id rescue nil) == 29
+        $stderr.puts "[RPG2k][debug] apply_interpreter_requests(event29) called " \
                      "this_event_id=#{this_event ? this_event[:id] : 'nil'} " \
-                     "interp_event_id=#{interp.event_id rescue '?'}"
+                     "interp_event_id=#{interp.event_id rescue '?'} " \
+                     "interp_running=#{interp.running? rescue '?'} " \
+                     "interp_waiting=#{interp.waiting? rescue '?'}" if target_id
         apply_move_requests(interp, this_event)
         apply_location_requests(interp, this_event)
         apply_erase_request(interp, this_event)
