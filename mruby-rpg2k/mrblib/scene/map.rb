@@ -4563,6 +4563,15 @@ class RPG2k
       # is the map event running that process (or nil for a common event), so a
       # route targeting "this event" reaches the right character.
       def apply_move_requests(interp, this_event)
+        # TEMP DEBUG (event-29-direction investigation): identity check --
+        # confirm this is literally the same interpreter object do_move_event
+        # just pushed onto, and what its queue holds right before draining it.
+        if (interp.event_id rescue nil) == 29
+          $stderr.puts "[RPG2k][debug] apply_move_requests(event29) pre-drain " \
+                       "interp_oid=#{interp.object_id} " \
+                       "queue_oid=#{(interp.instance_variable_get(:@move_route_requests).object_id rescue '?')} " \
+                       "queue_contents=#{(interp.instance_variable_get(:@move_route_requests).inspect rescue '?')}"
+        end
         reqs = interp.take_move_route_requests
         # TEMP DEBUG (event-29-direction investigation): only log when there is
         # actually something to report -- a prior version logged every single

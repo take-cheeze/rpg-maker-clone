@@ -3705,7 +3705,9 @@ module Game
       $stderr.puts "[RPG2k][debug] do_move_event event_id=#{@event_id} " \
                    "target=#{cmd.param(0)} freq=#{cmd.param(1)} " \
                    "repeat=#{cmd.param(2)} skippable=#{cmd.param(3)} " \
-                   "commands=#{decoded.map(&:command_id).inspect}"
+                   "commands=#{decoded.map(&:command_id).inspect} " \
+                   "self_oid=#{object_id} queue_oid_before=#{@move_route_requests.object_id} " \
+                   "queue_size_before=#{@move_route_requests.size}"
       @move_route_requests.push(
         target: cmd.param(0),
         frequency: cmd.param(1),
@@ -3713,6 +3715,10 @@ module Game
         skippable: cmd.param(3) != 0,
         commands: decoded
       )
+      $stderr.puts "[RPG2k][debug] do_move_event after push: " \
+                   "queue_oid_after=#{@move_route_requests.object_id} " \
+                   "queue_size_after=#{@move_route_requests.size} " \
+                   "queue_contents=#{@move_route_requests.inspect}"
     end
 
     # Decode the move-route commands packed into a Move Event's parameter list
