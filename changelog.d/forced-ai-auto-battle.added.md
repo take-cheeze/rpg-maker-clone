@@ -3,8 +3,9 @@
   Attack/Skill/Defend/Item command menu in real RPG_RT — the engine picks
   its action automatically every round — but this codebase always opened
   the manual prompt for one regardless, since the database field was parsed
-  and never read anywhere. Ported EasyRPG Player's default AutoBattle
-  algorithm (`AutoBattle::RpgRtCompat`) as `Game::Battle
+  and never read anywhere. Ported a reference implementation's default
+  auto-battle algorithm, not independently confirmed against genuine RPG_RT
+  under wine, as `Game::Battle
   #choose_auto_battle_command`: a Forced-AI actor's own known skills and a
   plain Attack are each ranked (heal/revive value for an ally-scope skill,
   damage-vs-HP for an enemy-scope one or a basic swing, each with the same

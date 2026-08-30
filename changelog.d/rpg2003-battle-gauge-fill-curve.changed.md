@@ -1,6 +1,7 @@
 - The **RPG2003 gauge battle now charges at the real RPG_RT 2003 pace**, not
-  the placeholder linear curve: `Game::Battle#advance_gauges` ports EasyRPG's
-  `Game_Battle::UpdateAtbGauges` (src/game_battle.cpp) exactly —
+  the placeholder linear curve: `Game::Battle#advance_gauges` ports a
+  reference implementation's ATB-gauge update logic exactly, not
+  independently confirmed against genuine RPG_RT under wine —
   `GAUGE_MAX` is 300000, and each battler's per-frame increment is
   `GAUGE_MAX / (sum_agi / (agi + 1))` over every non-hidden battler's AGI
   (all integer-truncated), so the whole field charges together on a common

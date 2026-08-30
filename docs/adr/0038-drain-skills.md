@@ -19,13 +19,16 @@ in in both games) had nothing to report.
 
 Read the flag, following RPG_RT.
 
-- **Offensive skills only.** EasyRPG gates it on `skill.absorb_damage &&
-  !IsPositive()`, so the flag rides on the attack branch of
+- **Offensive skills only.** Ported from a reference implementation, not
+  independently confirmed against genuine RPG_RT under wine, which gates it on
+  the skill being non-positive, so the flag rides on the attack branch of
   `Party#battle_skill_command` and a healing skill that sets it drains nothing.
-- **The clamp comes first, and that is the whole rule.** EasyRPG clamps the
-  effect to the target's current HP *before* applying it ("Only absorb the hp
-  that were left"), so a 200-damage drain on a 30 HP foe **deals 30 and returns
-  30**. A drain is weaker against a nearly-dead target, not merely capped in what
+- **The clamp comes first, and that is the whole rule.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine, which clamps the effect to the target's current HP
+  *before* applying it, so a 200-damage drain on a 30 HP foe **deals 30 and
+  returns 30**. A drain is weaker against a nearly-dead target, not merely
+  capped in what
   it gives back — reading it the other way round would have the caster heal 30
   off a corpse it hit for 200, which is the natural implementation and the wrong
   one.
@@ -47,13 +50,13 @@ Eighteen skills across the two games do what their rows say. Nothing else moves:
 a skill without the flag takes the same path it always did, and the flag rides as
 `false` on every other command.
 
-Deliberately not in this change: **SP drain**. EasyRPG has a matching
-`ApplySpEffect` / `IsAbsorbSp` pair and a `spirit_points` term for it, but an
-RPG2000 skill has one `absorb_damage` flag rather than a pair, and neither test
-bed has a skill whose SP effect is negative — so there is nothing to measure an
-SP drain against, and which of `affect_hp` / `affect_sp` the single flag governs
-would be a guess. The stat drains EasyRPG also supports
-(`GetAtkAbsorbedMessage` and friends) are RPG2003.
+Deliberately not in this change: **SP drain**. A reference implementation has
+a matching SP-absorb pair and a `spirit_points` term for it, but an RPG2000
+skill has one `absorb_damage` flag rather than a pair, and neither test bed
+has a skill whose SP effect is negative — so there is nothing to measure an SP
+drain against, and which of `affect_hp` / `affect_sp` the single flag governs
+would be a guess. The stat drains some reference implementations also support
+are RPG2003.
 
 Covered by `scripts/rpg2k_logic_check.rb` (the drain line's three differences
 from the recovery line, nil when either the term or the pool name is blank, the

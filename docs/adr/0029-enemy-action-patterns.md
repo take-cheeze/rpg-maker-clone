@@ -54,7 +54,8 @@ collaborator.
   `enemy(id)`, `skill_command(sk, caster, target)`, `switch?` / `set_switch`
   and `party_level`. `Game::Battle` takes one as an optional last argument.
 
-- Selection is a port of EasyRPG's `EnemyAi::AlgorithmRatingBased`: keep the
+- Selection is ported from a reference implementation's rating-based algorithm,
+  not independently confirmed against genuine RPG_RT under wine: keep the
   entries whose condition holds, find the highest rating, adjust every survivor
   to `rating - max + 10` floored at 0 (so anything more than 10 below the best
   drops out), and pick weighted by the adjusted rating.

@@ -59,8 +59,10 @@ and whose actors/classes reference them (see the Consequences below).
   each resolved entry into a `{ label:, action: }` row for the five types
   this engine actually drives (Attack, Skill — Subskill folds into the same
   Skill submenu, there being no single-skill quick-cast modelled — Defense,
-  Item, Special). Special is the RPG2003 "does nothing this turn" command
-  (EasyRPG's `Game_BattleAlgorithm::DoNothing`): it is offered as a row and
+  Item, Special). Special is the RPG2003 "does nothing this turn" command —
+  ported from a reference implementation's do-nothing battle algorithm, not
+  independently confirmed against genuine RPG_RT under wine: it is offered as
+  a row and
   `#select_battle_command` forfeits the actor's turn, spending it (and, in a
   gauge battle, the charge) with no action. Escape (already offered as Cancel
   on the first actor) is skipped, the same "reported gap,

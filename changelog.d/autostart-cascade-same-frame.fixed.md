@@ -1,11 +1,12 @@
 - **A second, distinct Auto-Start map/common event now starts the same frame
   the first one finishes with no Wait, instead of waiting for the next real
-  frame.** Verified against EasyRPG Player's actual C++ source rather than
-  guessed at: `Game_Map::UpdateForegroundEvents` (`src/game_map.cpp`) drives
-  the single shared foreground interpreter inside a `while
-  (!interp.IsRunning() && !interp.ReachedLoopLimit())` loop — the instant a
+  frame.** Ported from a reference implementation's foreground-event driver
+  rather than guessed at, not independently confirmed against genuine
+  RPG_RT under wine: it drives
+  the single shared foreground interpreter inside a loop that keeps going
+  while it is still running and has not hit its own loop limit — the instant a
   pushed event's own command list empties out, that same real-frame call
-  immediately rescans every event's `IsWaitingForegroundExecution()` flag and
+  immediately rescans every event's own waiting-for-foreground-execution flag and
   pushes another eligible one too. `Scene::Map#update`
   (`mruby-rpg2k/mrblib/scene/map.rb`) used to call `#start_autostart` exactly
   once per real frame, so a second, not-yet-run Auto-Start event on the same

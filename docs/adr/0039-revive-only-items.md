@@ -31,9 +31,10 @@ as effective, which is exactly when a player spends one.
 `ko_only` blocks the whole item, not just its states.
 
 RPG_RT returns from the item algorithm **before both** the HP and the state
-effects are computed — EasyRPG's `Item::vExecute` puts
-`if (item.ko_only && !GetTarget()->IsDead()) return SetIsSuccess();` ahead of the
-state loop, and the HP block is further down still. So the answer is "does
+effects are computed — ported from a reference implementation, not
+independently confirmed against genuine RPG_RT under wine, whose
+item-execution path checks `ko_only` against a living target ahead of the
+state loop, with the HP block further down still. So the answer is "does
 nothing at all", not "cures nothing".
 
 `Party#ko_only_blocked?(it, actor)` is that test, and it gates two places:

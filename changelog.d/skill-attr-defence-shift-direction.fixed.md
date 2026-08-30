@@ -2,12 +2,12 @@
   shift direction now comes from the skill's own scope, not
   `reverse_state_effect`.** This was previously an explicitly-unconfirmed
   guess ("neither Nepheshel nor mtf-meido-action ships a skill with the flag
-  set" to check it against). EasyRPG Player's actual source settles it:
-  `Game_BattleAlgorithm::Skill::vExecute` (`src/game_battlealgorithm.cpp`)
-  computes `auto shift = IsPositive() ? 1 : -1;` right where it applies
-  `affect_attr_defence`, and `IsPositive()` was set a few lines earlier from
-  `Algo::SkillTargetsAllies(skill)` (`src/algo.h`) — purely the skill's own
-  `scope` field, true for every scope except Scope_enemy(0)/Scope_enemies(1).
+  set" to check it against). A reference implementation's actual source
+  settles it, ported and not independently confirmed against genuine
+  RPG_RT under wine: the shift comes out positive or negative right where
+  it applies `affect_attr_defence`, with the sign determined purely from
+  the skill's own `scope` field, true for every scope except
+  Scope_enemy(0)/Scope_enemies(1).
   `reverse_state_effect` plays no part in it at all (that flag's own
   state-cure/inflict role is separately gated behind an RPG2003-only check in
   the same function, a wider question left untouched here). Fixed

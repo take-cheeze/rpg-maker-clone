@@ -6,13 +6,12 @@
   ever read either key back into a message — database `term` chunk fields
   30/31/34/35 (`parameter_increase`/`parameter_decrease`/
   `resistance_increase`/`resistance_decrease`) were parsed but named nowhere
-  in `mruby-rpg2k`. EasyRPG Player's actual C++ source confirms this is
-  RPG2000's own battle scene, not an RPG2003-only path:
-  `scene_battle_rpg2k.cpp`'s `ProcessBattleActionStateEffects`/
-  `ProcessBattleActionAttributeEffects` push a message from
-  `BattleMessage::GetAtkChangeMessage`/`GetDefChangeMessage`/
-  `GetSpiChangeMessage`/`GetAgiChangeMessage` and `GetAttributeShiftMessage`
-  (`game_message_terms.cpp`) for every landed action. Ported as
+  in `mruby-rpg2k`. A reference implementation's own source confirms this is
+  RPG2000's own battle scene, not an RPG2003-only path (ported from that
+  source, not independently confirmed against genuine RPG_RT under wine):
+  its RPG2000 battle-scene state- and attribute-effect processing pushes a
+  message from the corresponding ATK/DEF/SPI/AGI and attribute-shift message
+  getters for every landed action. Ported as
   `Game::States::BattleText.parameter_change`/`.attribute_shift`, wired into
   `Scene::Map#battle_state_lines` (`mruby-rpg2k/mrblib/scene/map.rb`)
   alongside the existing inflicted/cured/defeated sentences — one line per

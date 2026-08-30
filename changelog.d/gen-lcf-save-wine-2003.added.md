@@ -1,6 +1,6 @@
 - Real `Save<N>.lsd` fixtures can now be generated **headlessly** and for the
   **RPG Maker 2003** edition. `scripts/gen-lcf-save-wine.bash` boots an RPG
-  2000/2003 game's EasyRPG Player under wine + Xvfb + a window manager and uses
+  2000/2003 game's reference player under wine + Xvfb + a window manager and uses
   the **test-play debug menu** (F9 -> Save) to write a genuine `LcfSaveData` from
   anywhere -- bypassing both Nepheshel's Gate-only saving and the 2003 test
   games' menu-disabled intro, then runs `scripts/lcf_save_check.rb` over the

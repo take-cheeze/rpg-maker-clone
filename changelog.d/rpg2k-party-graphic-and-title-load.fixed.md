@@ -5,8 +5,10 @@
   mechanic through Change Party Member (5205 times), so a swap routinely left
   the map showing a companion who was no longer leading. `Game::Interpreter`
   now sets the same one-shot `actor_graphic_changed` request `Scene::Map`
-  already drains every step, the way RPG_RT's `Game_Player::Refresh` runs on
-  every party change, not only on an explicit sprite change.
+  already drains every step, the way a reference implementation's own
+  player-refresh handling runs on every party change, not only on an
+  explicit sprite change (not independently confirmed against genuine
+  RPG_RT under wine).
 - **The title screen no longer crashes New Game if its title picture fails to
   load.** Every other asset loader in the RPG2000/2003 scene stack (the
   chipset, the charsets, both windowskin loaders, the game-over picture)

@@ -3,8 +3,9 @@
   field (LCF enemy field 10) was parsed but read nowhere in `mruby-rpg2k`,
   the same "parsed but unused" gap `levitate` had before its own fix, so
   every enemy always drew fully opaque regardless of the flag. Confirmed
-  against EasyRPG Player's C++ source (`Game_Enemy::IsTransparent`/
-  `Sprite_Enemy::Draw`): flagged, it draws at 160/255 (~63%) opacity, purely
+  against a reference implementation's own transparency/drawing code, not
+  independently confirmed against genuine RPG_RT under wine: flagged, it
+  draws at 160/255 (~63%) opacity, purely
   cosmetic with no accuracy/evasion effect. Implemented with a new
   `Game::Enemy#transparent` reader and `Scene::Map#battler_opacity`, wired
   into every site that (re)builds an enemy sprite — the initial build, a

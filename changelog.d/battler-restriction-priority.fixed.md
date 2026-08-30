@@ -3,8 +3,7 @@
   `Game::Battle#battler_restriction` used to pick whichever restriction had
   the larger raw database constant (`RESTRICTION_ATTACK_ALLY` = 3 vs
   `RESTRICTION_ATTACK_ENEMY` = 2), which happens to get real RPG_RT's
-  priority backwards. EasyRPG Player's `State::GetSignificantRestriction`
-  (`src/state.cpp`) instead resolves a fixed hierarchy by restriction type —
+  priority backwards. Real RPG_RT instead resolves a fixed hierarchy by restriction type —
   do_nothing > attack_enemy > attack_ally > normal — while scanning every
   afflicted state, with asymmetric upgrade rules (attack_enemy overrides
   attack_ally or normal; attack_ally only overrides normal; a do_nothing

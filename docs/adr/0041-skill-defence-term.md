@@ -12,8 +12,9 @@ An enemy-scope skill's damage was `skill_effect - target.def / 4`. The effect
 half was already RPG_RT's (`power + physical_rate * atk / 20 + magical_rate *
 spi / 40`); the defence half was invented here.
 
-RPG_RT blunts the skill with the **same two rates that built the effect**
-(EasyRPG's `Algo::CalcSkillEffect`):
+RPG_RT blunts the skill with the **same two rates that built the effect** —
+ported from a reference implementation's skill-effect formula, not
+independently confirmed against genuine RPG_RT under wine:
 
 ```
 effect -= physical_rate * target.def / 40

@@ -6,15 +6,17 @@
   `SaveMapEvent` chunk — but `#to_lsd` never wrote chunk 111 at all, and
   `.from_lsd` never read it back, leaving genuine editor saves unable to
   resume either. `LCF::Schema::SAVE_MOVABLE` gains field 43
-  (`move_route_index`, sourced from EasyRPG's liblcf
-  `generator/csv/fields.csv`, `SaveMapEventBase.move_route_index` == 0x2B)
+  (`move_route_index`, sourced from a reference implementation's
+  format-documentation library, not independently confirmed against genuine
+  RPG_RT under wine — hex tag 0x2B)
   alongside the already-documented position fields (12/13/22); `#to_lsd`
   writes both for every event the current map has snapshotted a position for
   (undefaulted, so a save taken before any custom-route cursor was recorded
   leaves the field genuinely absent), and `.from_lsd` restores them the same
   way `Scene::Map#build_event` already consults them for a Marshal-save
-  Continue. `SaveMapEvent.original_move_route_index` (liblcf 0x66, the route
-  in force *before* a Set Move Route override) stays unmodelled: this
+  Continue. The original-route field documented in that same library
+  (hex tag 0x66, the route in force *before* a Set Move Route override,
+  ported and not independently confirmed) stays unmodelled: this
   codebase has no separate "original vs current route" concept to source it
   from. Covered by a new `scripts/rpg2k_logic_check.rb` check: a mid-route
   event's position and cursor round-trip through `to_lsd`/`from_lsd`, and a

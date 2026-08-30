@@ -2,8 +2,9 @@
   does: one database `encounter` line per visible troop member (name +
   term, matching how `victory`/`level_up`/`item_received` already
   substitute), plus a fixed `special_combat` line appended after them on a
-  first-strike ambush — confirmed against EasyRPG Player's
-  `Scene_Battle_Rpg2k::ProcessSceneActionStart` that `special_combat` trails
+  first-strike ambush — ported from a reference implementation's own
+  battle-start scene-action code, not independently confirmed against
+  genuine RPG_RT under wine, which has `special_combat` trail
   the per-enemy lines rather than replacing them. A troop member flagged
   invisible is skipped, matching Show Hidden Monster's own `hidden`
   modelling. Shown via the existing action-banner window (the same one a

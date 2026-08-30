@@ -1,12 +1,12 @@
 - **A map's Show Battle Animation drawing under the picture layer, and
   characters always drawing below every picture, are confirmed already
   correct** — closing two long-standing "still open" z-order questions,
-  verified against EasyRPG Player's actual C++ source rather than guessed
-  at. `Drawable::Priority` (`src/drawable.h`) orders `Priority_PictureOld`
-  (120) above `Priority_BattleAnimation` (110), and `Sprite_Picture`'s
-  constructor (`src/sprite_picture.cpp`) seeds every picture there
+  checked against a reference implementation's source rather than guessed
+  at, though not independently confirmed against genuine RPG_RT under wine.
+  That reference's drawable-priority ordering ranks the old picture layer
+  above the battle-animation layer, and its picture sprites are seeded there
   unconditionally — the lower, animation-above-pictures ordering only
-  applies when `Player::IsMajorUpdatedVersion()` detects the "RPG2000
+  applies when a version check detects the "RPG2000
   Value!" English re-release or a specifically patched RPG2003 runtime, a
   file/version signal this project has no way to observe from a plain
   `.ldb`/`.lmt`/`.lmu` triple and no test-bed game exercises. This runtime's

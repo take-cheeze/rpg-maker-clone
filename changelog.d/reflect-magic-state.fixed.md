@@ -1,8 +1,8 @@
 - **A state flagged "Reflect Magic" (RPG2003) now bounces a single-target
   Skill back onto its own caster.** `reflect_magic` (state schema field 37)
   was parsed but never read anywhere in the battle engine. Ported from
-  EasyRPG Player's `Game_Battler::HasReflectState` /
-  `Game_BattleAlgorithm::Skill::IsReflected`: a genuine Skill cast (not an
+  a reference implementation's reflect-state handling, not independently
+  confirmed against genuine RPG_RT under wine: a genuine Skill cast (not an
   item-cast effect) whose target carries the state and starts on the
   opposite side from its caster now redirects onto the caster instead,
   before any hit-chance/elemental/variance math runs — so the skill still

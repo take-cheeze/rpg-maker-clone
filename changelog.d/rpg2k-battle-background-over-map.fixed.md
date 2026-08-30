@@ -1,12 +1,14 @@
 - **The battle background is actually visible now.** RPG2000's battle backdrop
   was resolved from the game's own data correctly (`Game::Backdrop`'s map-tree
   walk over `backdrop_type`, falling back to the terrain the encounter started
-  on) and then drawn *behind the map*: RPG_RT replaces `Scene_Map` with
-  `Scene_Battle` outright, but this port runs the fight inline on `Scene::Map`,
+  on) and then drawn *behind the map*: real RPG_RT replaces the map scene with
+  a battle scene outright, but this port runs the fight inline on `Scene::Map`,
   whose `#render` kept compositing the tile layers, the parallax, the hero and
-  the events every frame — and the backdrop sprite's z 5 (EasyRPG Player's own
-  `Priority_Background`, correct there precisely because no map is ever drawn
-  beside it) is outranked by both `@map_viewport` (z 100) and `@upper_viewport`
+  the events every frame — and the backdrop sprite's z 5 (matching a reference
+  implementation's own background-priority constant, correct there precisely
+  because no map is ever drawn
+  beside it — not independently confirmed against genuine RPG_RT under wine)
+  is outranked by both `@map_viewport` (z 100) and `@upper_viewport`
   (z 200), whose lower tile layer is opaque. Every fight was therefore fought
   over whatever chip layer the party happened to be standing on, with the
   chosen `Backdrop/<name>` image completely hidden. Both viewports are hidden

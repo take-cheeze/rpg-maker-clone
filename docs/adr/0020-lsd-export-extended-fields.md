@@ -65,7 +65,7 @@ and array type a save needs except the title timestamp.
 ## Consequences
 
 - **The `.lsd` we write is now readable as a real save with the party on the
-  file screen.** A genuine RPG_RT / EasyRPG file-select shows the leader's name,
+  file screen.** A genuine RPG_RT file-select shows the leader's name,
   level, HP and the party portraits from the title chunk we emit.
 - **The round-trip guard grew.** `scripts/rpg2k_save_load_check.rb` mutates every
   new field (message config, BGM, transparency, access flags, leader sprite /

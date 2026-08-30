@@ -2,12 +2,12 @@
   resolves an event whose current page conditions aren't met**, at wherever it
   last stood, instead of reading back 0 there for the rest of the visit. Such
   an event never gets a `Game::Character` built at all (`Scene::Map#build_events`
-  skips it outright whenever no page's conditions are satisfied), but real
-  RPG_RT keeps one `Game_Event` object per map event for the whole visit
-  regardless of page state and answers `Game_Interpreter::CommandStoreEventID`
-  from it with no "is this page active" check at all
-  (`Game_Map::GetEventAt(x, y, /* require_active */ false)`,
-  `src/game_map.cpp`). Fixed with a new per-visit `@event_last_position`
+  skips it outright whenever no page's conditions are satisfied), but a
+  reference implementation keeps one event object per map event for the whole visit
+  regardless of page state and answers Store Event ID
+  from it with no "is this page active" check at all (ported from that
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine). Fixed with a new per-visit `@event_last_position`
   table, seeded from an event's raw map placement the first time it is ever
   seen this visit and kept live for as long as it has an active page, that
   `#event_id_at` now falls back to for any id that is neither currently live

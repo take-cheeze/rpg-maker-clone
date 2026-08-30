@@ -7,4 +7,5 @@
   agility adjustment runs, not the finished, agility-adjusted percentage
   afterward — the two orders disagree whenever attacker and target have
   unequal agility, since the agility term is not linear in its input. Both
-  confirmed against EasyRPG Player's `Algo::CalcNormalAttackToHit`.
+  ported from a reference implementation's to-hit formula, not
+  independently confirmed against genuine RPG_RT under wine.

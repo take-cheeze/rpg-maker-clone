@@ -1,8 +1,9 @@
 - **Erase / Show Screen run their real transition.** The style in parameter 0
   used to be recorded and ignored: every one of them ran the same 32-frame black
   fade, including the **-1 "use the configured transition"** that is 2124 of
-  Nepheshel's 2146 Erase Screens. `Game::Transition` now ports EasyRPG's
-  transition model — the two parameter→style tables, each style's own length (35
+  Nepheshel's 2146 Erase Screens. `Game::Transition` now ports a reference
+  implementation's transition model (not independently confirmed against
+  genuine RPG_RT under wine) — the two parameter→style tables, each style's own length (35
   frames for a fade, 41 for the shaped ones, 1 for a cut, 0 for "none") and the
   frame-by-frame geometry — and a -1 resolves against the Change Screen
   Transitions slot, which `Game::State#seed_screen_transitions` fills in from the

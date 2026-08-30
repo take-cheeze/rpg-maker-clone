@@ -8,10 +8,11 @@
   call sites (`#deal_attack`, `#apply_skill_hit`) floor the *result* at zero,
   so `target.hp -= dmg` applied the negative figure as a genuine heal — on
   every edition, the opposite of RPG2000's real "just don't scale it"
-  behaviour. Verified against EasyRPG Player's actual
-  `Attribute::ApplyAttributeMultiplier` (`src/attribute.cpp`), which guards
-  both the physical and magical bucket-max rate against `auto limit =
-  Player::IsRPG2k() ? -1 : INT_MIN;`: RPG2000 drops a side whose best rate is
+  behaviour. Ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: its own attribute-multiplier
+  code guards
+  both the physical and magical bucket-max rate against an edition-gated
+  limit (-1 on RPG2000, unbounded-negative on RPG2003): RPG2000 drops a side whose best rate is
   negative from consideration entirely, where RPG2003 lets a lone negative
   side scale damage directly and falls back to the *milder* of the two rates
   (not a multiply) once either side is negative and both are present. Ported

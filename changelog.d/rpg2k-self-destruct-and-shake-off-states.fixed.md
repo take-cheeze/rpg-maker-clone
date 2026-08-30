@@ -3,8 +3,9 @@
   halving. A self-destruct against a defending, strong-defence party member
   previously dealt roughly double the correct damage.
 - **A self-destruct and an offensive skill can now shake a survivor's status
-  loose, the same way a basic attack already could.** Confirmed against
-  EasyRPG Player's source: the status-release mechanic is shared across all
+  loose, the same way a basic attack already could.** Ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine: the status-release mechanic is shared across all
   three attack types, scaled by each one's own physical rate (skills scale by
   their own `physical_rate` field; basic attacks and self-destructs always
   apply it in full). A blinded or poisoned target that survived a monster's

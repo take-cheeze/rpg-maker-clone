@@ -4,8 +4,8 @@
   **RPG2003 random dungeon generator** block (`top_level`, `generator_height`,
   and the nine room slots' `generator_x` / `generator_y` / `generator_tile_ids`)
   plus the 2k3e save counter (`save_count_2k3e`). The wiki's マップ page does not
-  document them, so the ids, types and defaults are liblcf's
-  `LMU_Reader::ChunkMap` / `RPG::Map` (0x28..0x3E, 0x5A); the rest of the block
+  document them, so the ids, types and defaults are liblcf's own
+  `RPG::Map` chunk-reading schema (0x28..0x3E, 0x5A); the rest of the block
   (40–56) is declared alongside them even though no test bed writes it. The
   reading is confirmed against real bytes rather than merely tolerated: chunk 62
   read as shorts gives ordinary tile ids (49, 10000/10001/10006/10007) where an

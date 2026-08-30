@@ -1,7 +1,7 @@
 - **Walking into an event-touch event now sets it off.** RPG_RT tests the two
-  touch triggers as one set on every player-side path (EasyRPG's
-  `{Trigger_touched, Trigger_collision}` in `Game_Player::Update` /
-  `UpdateMovement`), so the asymmetry is not the one the trigger names suggest:
+  touch triggers as one set on every player-side path (ported from a
+  reference implementation, not independently confirmed against genuine
+  RPG_RT under wine), so the asymmetry is not the one the trigger names suggest:
   an **event touch** (2) fires whether it walked into the party or the party
   walked into it, while a **player touch** (1) fires only on the party's own
   move — the event side checks trigger 2 alone. This build only accepted

@@ -1,14 +1,17 @@
 - RPG Maker 2003: the **RPG2003-only event commands** now run. The editor emits
   these as low opcodes RPG2000 never had, and until now none of them had a
   handler — the interpreter's opcode table stopped at the shared RPG2000 set.
-  Added, with the parameter layouts taken from liblcf's `EventCommand::Code`
-  enum and EasyRPG Player's own handlers rather than guessed:
+  Added, with the parameter layouts taken from a reference implementation's
+  format-documentation library and its own command handlers rather than
+  guessed — ported, not independently confirmed against genuine RPG_RT
+  under wine:
   - **Change Class** (1008) moves an actor to a database class (職業, chunk 30 —
     `db.job`), following RPG_RT's order of operations: equipment is stripped
     first, the class swap re-points the actor at the *class's* growth curve,
     skill learn table and EXP curve (`Game::Actor#curve_row`, matching how
-    EasyRPG's `GetBaseMaxHp` / `LearnLevelSkills` / `CalculateExp` all branch on
-    `class_id > 0`), and EXP is reset to the new level's threshold even when the
+    a reference implementation's equivalent methods all branch on
+    `class_id > 0` — ported, not independently confirmed against genuine
+    RPG_RT under wine), and EXP is reset to the new level's threshold even when the
     level is unchanged. Both the skill mode (keep / reset / add) and the
     parameter mode (keep / halve / the new class's level-1 or current-level
     values) are honoured, as is the "show level-up message" flag. An actor whose
@@ -26,7 +29,9 @@
     **Exit Game** (5002), which leave the map for the loader and quit outright.
     **Toggle Fullscreen** (5004) and **Open Video Options** (5005) are logged
     no-ops: this build's display backend has neither mode, which is also what
-    EasyRPG does on a platform whose window cannot change.
+    a reference implementation does on a platform whose window cannot
+    change — a parallel, not an independent confirmation against genuine
+    RPG_RT under wine.
 
   A class change and its battle-command edits survive Save / Continue. RPG2000
   data is unaffected — those databases carry no class table, so every actor stays

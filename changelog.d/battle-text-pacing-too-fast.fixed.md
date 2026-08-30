@@ -4,11 +4,12 @@
   (`Scene::Map#drive_battle_animate`, `mruby-rpg2k/mrblib/scene/map.rb`), and
   the encounter banner ("Slime appeared!") held for
   `BATTLE_ENCOUNTER_MSG_FRAMES`. Both were flat, arbitrarily short constants
-  (20 and 4 frames) rather than derived from RPG_RT's own pacing. Checking
-  real RPG_RT's source (`Scene_Battle_Rpg2k::SetWait`/`SetWaitForUsage`,
-  `src/scene_battle_rpg2k.cpp`) shows it holds each message stage for its
+  (20 and 4 frames) rather than derived from RPG_RT's own pacing. Ported
+  from a reference implementation, not independently confirmed against
+  genuine RPG_RT under wine: its own wait-scheduling
+  shows it holds each message stage for its
   full `max_wait` unless the player actively holds Decision/Shift to skip
-  ahead (confirmed by reading `CheckWait` itself, which decrements every
+  ahead (its own wait-check decrements every
   frame regardless of input and only short-circuits early once a skip key is
   actually held) — tracing a plain attack that hits, with no animation, no
   crit and no state change through every stage that fires comes to 142

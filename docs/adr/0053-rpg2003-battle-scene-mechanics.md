@@ -56,8 +56,9 @@ its own:
   `Game::Battle::Combatant` (front/back, default from
   `battlecommands.placement` for manual placement), thread it through
   `Game::Battle`'s hit/evade rolls and melee-reach check, and adjust accuracy
-  the way RPG_RT / EasyRPG (`Game_Battler::GetHitChance`,
-  `src/game_battler.cpp`) does. No scene timing change; still turn-based.
+  the way RPG_RT / a reference implementation's hit-chance calculation does
+  (not independently confirmed against genuine RPG_RT under wine). No scene
+  timing change; still turn-based.
 - **Phase 2 — active-time / gauge timing.** Introduce a per-combatant time /
   charge gauge advanced every frame by `Scene::Battle#update`, gated on
   `battle_type` (presentation 2 always, presentation 1 for enemy turns), and
@@ -83,26 +84,29 @@ Landed in `mruby-rpg2k/mrblib/game.rb`:
   `battlecommands.placement` (field 2) + the actor's `battle_x`/`battle_y` is
   the remaining data step and is intentionally **not** guessed here — the
   placement→row mapping is an RPG_RT 2003 presentation rule that needs the spec.
-- **Row adjustments are ported from EasyRPG's `Algo` (src/algo.cpp)**, once
-  that source became reachable, which resolved the earlier guesses. The row
-  mechanic is richer than "back-row is hard to hit": `Algo::IsRowAdjusted`
-  decides whether a battler's row matters at all, by *battle condition* and
-  *role*. This engine models no battle conditions, so only the normal (`none`)
-  branch holds, and `Game::Battle#row_adjusted?(battler, offense)` is that
-  branch: an actor standing on the offense row is row-adjusted (a **front-row
-  attacker deals +25% damage** — the deferred attacker-side piece; an *enemy*
-  attacker is never row-adjusted, `allow_enemy=false`), and a **back-row
-  defender is 25 harder to hit and takes -25% damage**. This replaces the
-  pre-reference `row_hit_modifier` guess of a flat **50% multiplier**: the
-  reference's `CalcNormalAttackToHit` subtracts a flat 25 (`to_hit -= 25`,
-  `ROW_HIT_PENALTY`), and `CalcNormalAttackEffect` scales damage by 125/100
-  (attacker, before the weapon's elemental multiplier) and 75/100 (defender,
-  after it). RPG2000 never sets a row, so every term is a no-op there.
-- **Skills are deliberately not row-adjusted.** EasyRPG's `CalcSkillToHit` /
-  `CalcSkillEffect` gate their row terms behind `skill.easyrpg_affected_by_row_
-  modifiers`, an EasyRPG-only field the RPG Maker 2003 editor cannot set
-  (absent from every real 2003 file), so vanilla skills are untouched by rows;
-  the earlier `Party#skill_to_hit` row penalty is removed to match.
+- **Row adjustments are ported from a reference implementation's
+  row-adjustment logic**, once that source became reachable, which resolved
+  the earlier guesses — not independently confirmed against genuine RPG_RT
+  under wine. The row mechanic is richer than "back-row is hard to hit": its
+  row-adjustment gate decides whether a battler's row matters at all, by
+  *battle condition* and *role*. This engine models no battle conditions, so
+  only the normal (`none`) branch holds, and
+  `Game::Battle#row_adjusted?(battler, offense)` is that branch: an actor
+  standing on the offense row is row-adjusted (a **front-row attacker deals
+  +25% damage** — the deferred attacker-side piece; an *enemy* attacker is
+  never row-adjusted), and a **back-row defender is 25 harder to hit and
+  takes -25% damage**. This replaces the pre-reference `row_hit_modifier`
+  guess of a flat **50% multiplier**: the reference implementation's
+  normal-attack hit calculation subtracts a flat 25, and its normal-attack
+  effect calculation scales damage by 125/100 (attacker, before the weapon's
+  elemental multiplier) and 75/100 (defender, after it). RPG2000 never sets a
+  row, so every term is a no-op there.
+- **Skills are deliberately not row-adjusted.** A reference implementation
+  gates its skill row terms behind a field the RPG Maker 2003 editor cannot
+  set (absent from every real 2003 file, and specific to that reference
+  implementation) — not independently confirmed against genuine RPG_RT under
+  wine — so vanilla skills are untouched by rows; the earlier
+  `Party#skill_to_hit` row penalty is removed to match.
 
 Verification: `scripts/rpg2k3_battle_row_check.rb` (13 checks) exercises the
 row model, `#row_adjusted?` (front-row ally attacker adjusted, back-row / enemy
@@ -140,9 +144,11 @@ once a 2003 project reaches a fight.
   gauge; defaults to 0) and the gauge engine:
   - `advance_gauges(ticks)` fills every charging battler's gauge, clamped to
     `GAUGE_MAX`. The exact curve was settled later, in the ADR 0054 follow-on,
-    as EasyRPG's `Game_Battle::UpdateAtbGauges` port (`GAUGE_MAX` 300000,
-    per-frame increment `GAUGE_MAX / (sum_agi / (agi + 1))` over every
-    non-hidden battler's AGI) — the original placeholder (`effective_agi *
+    ported from a reference implementation's ATB-gauge update routine
+    (`GAUGE_MAX` 300000, per-frame increment
+    `GAUGE_MAX / (sum_agi / (agi + 1))` over every non-hidden battler's AGI),
+    not independently confirmed against genuine RPG_RT under wine — the
+    original placeholder (`effective_agi *
     GAUGE_AGI_RATE * ticks`, max 100) is gone. It is a
     **no-op unless `battle_type == 2`**, so RPG2000 and the 2003 traditional
     presentation keep running the turn-based machine untouched.
@@ -167,7 +173,8 @@ once a 2003 project reaches a fight.
   intentionally **not** wired yet — doing so requires the per-frame
   `Scene::Battle#update` loop and a 2003 project to run it (Phase 3). The
   exact fill curve was also deferred — the ADR 0054 follow-on resolved it
-  against EasyRPG's own RPG_RT 2003 port once that source was reachable.
+  against a reference implementation's RPG2003 port once that source was
+  reachable, not independently confirmed against genuine RPG_RT under wine.
 
 Verification: `scripts/rpg2k3_battle_gauge_check.rb` (14 checks) exercises the
 inert turn-based path, the real relative fill curve, full/ready selection,
@@ -273,31 +280,34 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   open until the battle conditions are modelled.
 - **The in-battle Row command landed (2026-08-18).** The earlier framing above
   ("per-battler row derivation from `battlecommands.placement`") turned out to
-  be the wrong model once EasyRPG's actual `Game_Actor` source was reachable:
-  row is not derived from the placement table or the actor's manual
-  `battle_x`/`battle_y` at all -- it is its own persisted field
-  (`data.row`/`GetBattleRow`/`SetBattleRow`, liblcf's `SaveActor` field
-  `0x5B`), defaulting to the front row and changed only by the player, via the
-  Row battle-menu command. `Game::Actor#battle_row`/`#battle_row=` now carry
-  that state (schema.rb's `SAVE_PARTY_ACTOR` field 91, both the LCF `.lsd`
-  round-trip and the portable Marshal save), `Combatant.from_actor` seeds a
-  fight's row from it, and `Scene::Battle`'s command window appends a fixed
-  Row entry (`#row_command_available?`, gated on `battle.rpg2003?` since the
-  EasyRPG-only `easyrpg_disable_row_feature` opt-out this mirrors has no real
-  LCF field for a vanilla database to set) that flips it via the new
+  be the wrong model once a reference implementation's actual actor-state
+  source was reachable: row is not derived from the placement table or the
+  actor's manual `battle_x`/`battle_y` at all -- it is its own persisted
+  field (liblcf's `SaveActor` field `0x5B`), defaulting to the front row and
+  changed only by the player, via the Row battle-menu command.
+  `Game::Actor#battle_row`/`#battle_row=` now carry that state (schema.rb's
+  `SAVE_PARTY_ACTOR` field 91, both the LCF `.lsd` round-trip and the
+  portable Marshal save), `Combatant.from_actor` seeds a fight's row from it,
+  and `Scene::Battle`'s command window appends a fixed Row entry
+  (`#row_command_available?`, gated on `battle.rpg2003?` since the
+  reference-implementation-only opt-out this mirrors has no real LCF field
+  for a vanilla database to set) that flips it via the new
   `Game::Battle#toggle_row`, a `DoNothing` turn like the Special command,
   refusing a toggle that would empty the front row
-  (`#can_leave_front_row?`, ported from EasyRPG's `RowSelected` guard) with
-  the reference's own Buzzer SE. `scripts/rpg2k3_battle_row_check.rb` and
+  (`#can_leave_front_row?`, ported from a reference implementation's
+  row-selection guard, not independently confirmed against genuine RPG_RT
+  under wine) with the reference implementation's own Buzzer SE.
+  `scripts/rpg2k3_battle_row_check.rb` and
   `rpg2k_scene_check.rb` stay green. The automatic-placement `row_x_offset`
   landed the same day too (ADR 0054's own follow-up note). Still open: the
   pincer-surround grid tables, which need the battle conditions this runtime
   does not model.
 - **The field-menu Row command landed (2026-08-18).** There is no separate
   `Scene_Row` in the reference after all -- that earlier guess was wrong too:
-  EasyRPG's `Scene_Menu::UpdateActorSelection` handles Row inline, on the
+  a reference implementation's actor-selection menu handles Row inline, on the
   exact same party-status actor-selection panel Skill/Equipment/Status
-  already share (confirmed against the reference source), just toggling the
+  already share (confirmed against the reference source, not independently
+  confirmed against genuine RPG_RT under wine), just toggling the
   picked actor's row and falling straight back to the command list instead of
   pushing a sub-scene. `RPG2K3_COMMAND_IDS` gains id 6 (`:row`), `select_command`
   folds `:row` into the existing Skill/Equip/Status actor-selection branch
@@ -305,8 +315,9 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
   character's row still matters), and `confirm_actor_selection` dispatches it
   to a new `Game::Party#toggle_actor_row` -- the field-menu counterpart to
   `Game::Battle#toggle_row`, with the identical "don't empty the front row"
-  guard restated over the live party's actors (EasyRPG's own field-menu Row
-  case has no `IsDirectionFlipped` term and, unlike the in-battle version,
+  guard restated over the live party's actors (the reference implementation's
+  own field-menu Row case lacks the in-battle version's direction-flip term
+  and, unlike the in-battle version,
   always plays Decision -- never Buzzer -- even when the toggle is silently
   refused; ported exactly rather than unified with the in-battle asymmetry).
   Covered by a new `rpg2k_logic_check.rb` check pinning the guard directly
@@ -317,20 +328,20 @@ fatal). Scene checks pin the `headless_battle_troop` flag plumbing and
 - **A knocked-out party member's battle sprite landed (2026-08-18).** Idle
   and Defend were the only two poses `#build_actor_sprite` picked between; a
   dead member fell through to no sprite at all, `next nil if ally.dead?`
-  right alongside a hidden troop member never getting one either. EasyRPG's
-  `Sprite_Actor::DoIdleAnimation` (`src/sprite_actor.cpp`, confirmed against
-  the reference source) checks `IsDefending()` first, then resolves the
-  battler's `GetSignificantState()`: for a monster (no battler-animation
-  table to consult) that is a direct `state->ID == 1 ? AnimationState_Dead :
-  AnimationState_Idle`, still drawn rather than hidden. A defeated party
+  right alongside a hidden troop member never getting one either. A reference
+  implementation's idle-animation routine (confirmed against that reference
+  source, not independently confirmed against genuine RPG_RT under wine)
+  checks whether the battler is defending first, then resolves its most
+  significant state: for a monster (no battler-animation table to consult)
+  that reduces to a direct dead/idle branch on whether the state is Death,
+  still drawn rather than hidden. A defeated party
   member is now treated the same unambiguous way -- `#build_actor_sprite`
   gained a `dead:` keyword selecting Pose id 4 (Dead), alongside the
   existing `defending:` -> Pose id 7, both falling back to Idle when the
-  entry defines no such pose of its own. The reference's *other* branch --
-  an actor's own active state (not just Death) swapping in that state's own
-  `situation.battler_animation_id` pose (`+1`/the `101` "no override" ->
-  `AnimationState_BadStatus` sentinel, worked out from `sprite_actor.h`'s
-  `AnimationState` enum but not yet exercised here) -- stays unimplemented,
+  entry defines no such pose of its own. The reference implementation's
+  *other* branch -- an actor's own active state (not just Death) swapping in
+  that state's own battler-animation pose (worked out from the reference's
+  animation-state enum but not yet exercised here) -- stays unimplemented,
   same deferral this ADR's Phase 1 notes already used for the condition-gated
   row rules. `Game::Battle::Combatant#states` is not itself kept in sync with
   the Knockout state id the way `Game::Actor#states` is (nothing here needed

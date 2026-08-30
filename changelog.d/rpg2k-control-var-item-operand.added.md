@@ -2,7 +2,8 @@
   the **party size**. Operand type 4 (item) was previously unhandled and silently
   returned the item id; it now returns the number of that item held in the bag
   (mode 0) or the number equipped across the whole party (mode 1, each equipping
-  slot counted), matching EasyRPG's `ControlVariables::Item`. Operand type 7
+  slot counted), matching a reference implementation's behavior (not
+  independently confirmed against genuine RPG_RT under wine). Operand type 7
   (other game quantities) gained selector 2, the number of party members, next to
   the existing gold and timer selectors. So an event can branch on "how many
   Potions do I have", "is the sword equipped", or "how big is the party". Covered

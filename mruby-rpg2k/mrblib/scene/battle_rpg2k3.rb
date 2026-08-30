@@ -28,9 +28,9 @@ module RPG2k3
     # safe for them.
     class Battle < RPG2k::Scene::Battle
       # The gauge phases that count as "the command menu is open" for the
-      # wait/active toggle, named after EasyRPG Player's State_SelectCommand /
-      # SelectItem / SelectSkill / SelectEnemyTarget / SelectAllyTarget (NOT
-      # independently confirmed against genuine RPG_RT under wine): in wait mode
+      # wait/active toggle, named after a reference implementation's own
+      # menu-phase states (NOT independently confirmed against genuine
+      # RPG_RT under wine): in wait mode
       # gauges freeze here, in active mode they keep filling.
       ATB_MENU_PHASES = [:command, :target, :skill, :item, :ally_target].freeze
 
@@ -44,9 +44,9 @@ module RPG2k3
         gauge_battle? && @state.atb_mode != 1
       end
 
-      # Whether the active-time gauges advance this frame -- ported from
-      # EasyRPG Player's `IsAtbAccumulating` (src/scene_battle_rpg2k3.cpp),
-      # NOT independently confirmed against genuine RPG_RT under wine: always in the
+      # Whether the active-time gauges advance this frame -- ported from a
+      # reference implementation's own accumulation check, NOT independently
+      # confirmed against genuine RPG_RT under wine: always in the
       # idle loop (SelectActor / AutoBattle), only in active mode while a
       # command/target/skill/item menu is open, and never during action
       # resolution, the encounter banner or a battle event.
@@ -181,11 +181,11 @@ module RPG2k3
       # in active mode a ready combatant whose action would fire on its own
       # (an enemy, or a restricted / Forced-AI actor -- anyone the idle loop
       # would act automatically rather than prompt) interrupts the menu
-      # instead of waiting behind it. Ported from EasyRPG Player's source,
-      # NOT independently confirmed against genuine RPG_RT under wine: its
-      # own `ProcessSceneActionCommand`
-      # does exactly this: `if (GetAtbMode() == AtbMode_atb_active &&
-      # IsBattleActionPending()) SetState(State_Battle)`. The interrupting
+      # instead of waiting behind it. Ported from a reference
+      # implementation's source, NOT independently confirmed against
+      # genuine RPG_RT under wine: its own scene action-command processing
+      # does exactly this, interrupting the menu when in active mode with a
+      # battle action pending. The interrupting
       # turn plays out, then -- because the commanded actor's gauge is still
       # held full -- the idle loop reopens its menu. In wait mode this check
       # is skipped and the menu stays up until the player commits, matching

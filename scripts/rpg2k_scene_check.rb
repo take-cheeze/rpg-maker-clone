@@ -455,7 +455,7 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
                          actor_hp_absorbed: '奪われた！',
                          # An affect_attack/defense/spirit/agility skill's stat-mod
                          # message and an affect_attr_defence skill's resistance-shift
-                         # message (EasyRPG's GetParameterChangeMessage /
+                         # message (a reference implementation's /
                          # GetAttributeShiftMessage) -- see #battle_state_lines.
                          parameter_increase: '上がった！', parameter_decrease: '下がった！',
                          resistance_increase: '耐性が上がった！',
@@ -990,8 +990,8 @@ end
 
 check 'RPG2k::Window blinks its selection cursor between the windowskin\'s ' \
       'two cursor blocks (source x 64/96), matching RPG_RT' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window::Update`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # advances `cursor_frame` by 1 every frame the window
   # is active, wrapping at 21, and `Window::Draw` blits from the
   # windowskin's `cursor1` block (source x 64, Game::WindowCursor::FRAME1_X)
@@ -1018,7 +1018,7 @@ end
 
 check 'RPG2k::Window pause arrow blinks on a 20-frame-on/20-frame-off cycle, ' \
       'starting visible, matching RPG_RT' do
-  # ARROW_BLINK_FRAMES (main.rb) was ported from EasyRPG Player's
+  # ARROW_BLINK_FRAMES (main.rb) was ported from a reference implementation's
   # src/window.cpp with no genuine-RPG_RT measurement behind it -- the
   # comment on it said so outright. Independently re-verified under wine: a
   # synthetic autostart Show Message event injected into a genuine Nepheshel
@@ -1052,8 +1052,8 @@ end
 
 check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
       'inactive -- it does not hide it' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window::Draw`'s cursor
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it's cursor
   # block reads only `cursor_rect`/`cursor_frame`, with
   # no `active` check anywhere -- `active` only gates whether
   # `Window::Update` keeps *advancing* (blinking) `cursor_frame` at all.
@@ -1249,7 +1249,7 @@ check 'the map layers composite in a fixed order, under the overlays' do
   # A previously "still open" question, now settled directly rather than only
   # transitively through the two checks above: a map's Show Battle Animation
   # (@animation_sprite) must draw *under* the picture layer, not over it.
-  # Per EasyRPG Player's own Priority enum, NOT independently confirmed
+  # Per a reference implementation's own Priority enum, NOT independently confirmed
   # against genuine RPG_RT under wine: it puts
   # Priority_PictureOld (120) above Priority_BattleAnimation (110) for every
   # standard RPG2000/RPG2003 database -- see the citation next to
@@ -1460,7 +1460,7 @@ end
 check "a fixed-direction event's own explicit Face Direction sub-command still " \
       'turns its drawn sprite, even though ordinary movement never does' do
   # yado.tk: "Face Direction always overrides Fixed Direction/Animation Type" --
-  # ported from EasyRPG Player's source, NOT independently confirmed against
+  # ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine (see the pure-logic
   # checks in scripts/rpg2k_logic_check.rb for the exact citations). This is the
   # full-stack version: Scene::Map#build_event now wires a page's own
@@ -1539,8 +1539,8 @@ end
 check 'a blocked autonomous move does not turn the event to face the ' \
       'obstacle -- RPG_RT reverts that facing back on nearly every failed ' \
       'attempt' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Character::Move`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # does turn to face the drawn direction before
   # ever checking passability, but every autonomous-move caller
   # (MoveTypeRandom/MoveTypeCycle/
@@ -1618,8 +1618,8 @@ end
 
 check "a same-layer event with its own Through Mode on lets the hero walk " \
       'straight through it' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `WouldCollide`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # checks `self.GetThrough() || other.GetThrough()` first
   # and unconditionally, before any layer test at all -- a blocker's own
   # Through Mode (a common authoring technique so an NPC never blocks the
@@ -1640,7 +1640,7 @@ check 'events on different layers pass through each other via Move Route' do
   # A below-layer event sits at (3,2); an above-layer event runs a custom
   # route straight through its column. #char_passable? gates layer on an
   # *exact* match between the mover's own layer and the blocker's
-  # (matching EasyRPG Player's `WouldCollide`: `self.GetLayer() ==
+  # (matching a reference implementation: `self.GetLayer() ==
   # other.GetLayer()`; NOT independently confirmed against genuine RPG_RT
   # under wine), so a below-layer blocker never
   # stops an above-layer mover -- the layers simply don't match.
@@ -1694,7 +1694,7 @@ check "an event's own Through Mode lets another event's Move Route pass " \
       'through it, even on a matching layer' do
   # The event-vs-event equivalent of "a same-layer event with its own
   # Through Mode on lets the hero walk straight through it" above:
-  # per EasyRPG Player's source (NOT independently confirmed against genuine
+  # per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), `WouldCollide` checks `self.GetThrough() ||
   # other.GetThrough()` before the layer-match test, so a blocking event's
   # own Through Mode exempts it from #char_passable?'s layer gate too, not
@@ -1712,7 +1712,7 @@ check "an event's own Through Mode lets another event's Move Route pass " \
 end
 
 check 'overlap_forbidden does not block the hero on an ordinary step' do
-  # The "doesn't overlap" page flag (LCF field 35), per EasyRPG Player's
+  # The "doesn't overlap" page flag (LCF field 35), per a reference implementation's
   # source (NOT independently confirmed against genuine RPG_RT under wine),
   # only ever fires between
   # two map events (`WouldCollide`:
@@ -1915,7 +1915,7 @@ check 'player-touch (trigger 1) on a same-layer event: walking into it runs ' \
       'it, no move' do
   ic = Game::Interpreter::Cmd
   # Same-layer only: like a closed door, the event blocks like any other
-  # LAYER_SAME obstacle, so the touch fires as a bump (per EasyRPG Player's
+  # LAYER_SAME obstacle, so the touch fires as a bump (per a reference implementation's
   # `CheckEventTriggerThere`; NOT independently confirmed against genuine
   # RPG_RT under wine) and the party stays put. A below/above-
   # characters touch event is the opposite case, see the check just below.
@@ -2011,9 +2011,9 @@ check 'event-touch (trigger 2): a custom-route event stepping into the ' \
   # driven through Game::MoveRoute#do_move) never fired Event Touch at all
   # when it stepped a map event onto the party's tile, unlike an autonomous
   # Random/Approach/Away-type move (#move_autonomous's own dedicated check,
-  # already covered by the check just above). Ported from EasyRPG
+  # already covered by the check just above). Ported from a reference implementation
   # Player's source, NOT independently confirmed against genuine RPG_RT
-  # under wine: `Game_Character::Move`'s
+  # under wine: it's
   # `CheckCollisonOnMoveFailure` starts a Trigger_collision page the same way
   # regardless of whether a move route is driving the character, with no
   # `IsMoveRouteOverwritten`-style guard the way the *player's* own touch
@@ -2142,8 +2142,8 @@ check 'action (trigger 0) does not fire on mere contact' do
   ok !st.switches[4], 'a trigger-0 event must not run just from being bumped'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Player::CheckActionEvent`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # checks `{Trigger_touched, Trigger_collision}`
 # (Player Touch / Event Touch) on the faced tile unconditionally, before it
 # ever looks for an action-triggered event there -- a same-layer touch event
@@ -2276,9 +2276,8 @@ check 'an action event under the player answers the action button' do
   ok st.switches[4], 'the event under the party ran'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Player::
-# CheckEventTriggerHere` -- the overlap check
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it -- the overlap check
 # `#try_action_trigger`'s own "under the player" branch above ports --
 # explicitly excludes a same-layer event (`ev.GetLayer() != lcf::rpg::
 # EventPage::Layers_same`), the same restriction the faced-tile check a few
@@ -2379,7 +2378,7 @@ end
 
 # RPG2003's own Wait dialog adds a "wait until the Decision key is pressed"
 # mode (Interpreter#do_wait's own `:wait_key_enter`, param1 nonzero) that
-# ignores the timed duration in param0 entirely -- ported from EasyRPG
+# ignores the timed duration in param0 entirely -- ported from a reference implementation
 # Player's `CommandWait`, NOT independently confirmed against genuine
 # RPG_RT under wine. Drives the
 # same #message_window_open?-gated convention every other suppressed
@@ -2407,9 +2406,9 @@ end
 # yado.tk "Untriaged backlog": "Autorun cascading within one frame" -- if the
 # lowest-id eligible Autorun map event's content contains no wait-including
 # command, real RPG_RT lets the next-lowest-id eligible Autorun event start
-# immediately in the same frame. Ported from EasyRPG Player's source, NOT
+# immediately in the same frame. Ported from a reference implementation, NOT
 # independently confirmed against genuine RPG_RT under wine:
-# `Game_Map::UpdateForegroundEvents` drives the shared foreground
+# it drives the shared foreground
 # interpreter inside a `while (!interp.IsRunning() && ...)` loop that rescans
 # for another eligible event the instant one's own command list drains, all
 # within the same real-frame call -- see `Scene::Map#drive_autostart_cascade`.
@@ -2464,12 +2463,12 @@ end
 # The cascade above (and Game::Interpreter#update generally) used to give
 # *every* #update call its own fresh MAX_STEPS budget -- a local `steps = 0`
 # reset at the top of the method -- rather than sharing one budget across a
-# whole real frame's worth of calls. Ported from EasyRPG Player's source
+# whole real frame's worth of calls. Ported from a reference implementation
 # rather than assumed from the cascading fix's own already-correct
 # writeup above (NOT independently confirmed against genuine RPG_RT under
-# wine): `Game_Interpreter::loop_count`/`loop_limit`
+# wine): its own interpreter's `loop_count`/`loop_limit`
 # are member variables, not a local, and
-# `Game_Map::UpdateForegroundEvents` resets `loop_count`
+# its own foreground-events update resets `loop_count`
 # to 0 exactly once per real frame (`interp.Update(!resume_fg)`) and then
 # keeps calling `Update(false)` -- no reset -- as it cascades through every
 # Auto-Start event that starts and finishes within that same frame. So a
@@ -2481,7 +2480,7 @@ end
 # (`#reset_frame_steps`, called from `Scene::Map#update` for the foreground
 # interpreter and from `#step_parallel` for each Parallel Process's own,
 # independent budget), and checking it *before* running each command rather
-# than after, matching EasyRPG's `for (; loop_count < loop_limit; ...)`
+# than after, matching a reference implementation's
 # exactly -- otherwise a same-frame call arriving after the budget is already
 # spent would still sneak in one more command apiece.
 check "an Auto-Start cascade shares one real frame's step budget, not a " \
@@ -2563,9 +2562,9 @@ end
 
 # yado.tk "Full-site sweep": "Multiple simultaneous parallel processes are not
 # concurrent -- the engine advances one command block at a time, round-robin,
-# ... in definition/event-ID order." Ported from EasyRPG
+# ... in definition/event-ID order." Ported from a reference implementation
 # Player's source rather than guessed at (NOT independently confirmed
-# against genuine RPG_RT under wine): `Game_Map::Update`
+# against genuine RPG_RT under wine): its own map-update handling
 # always calls `UpdateCommonEvents()` before
 # `UpdateMapEvents()`, every real frame, with no interleaving by id across the
 # two groups -- `Game_CommonEvent` only ever builds
@@ -2830,9 +2829,8 @@ end
 check "a common event's Parallel Process's own Transfer Player command is " \
       'blocked (not dropped) while a message window is open, and retries once ' \
       'it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter_Map::
-  # CommandTeleport`/`CommandRecallToLocation` (codes 10810/10830) both open
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it/`CommandRecallToLocation` (codes 10810/10830) both open
   # with `if (Game_Message::IsMessageActive()) {
   # return false; }`, unconditionally -- the identical block-and-retry shape
   # already ported for Show/Move/Erase Picture (see
@@ -2840,7 +2838,7 @@ check "a common event's Parallel Process's own Transfer Player command is " \
   # Transfer Player in the same list must not run either, until the Transfer
   # Player itself finally succeeds -- the whole interpreter blocks at that
   # exact command, matching the picture-command fix's own citation of
-  # `Game_Interpreter::Update`'s `if (!ExecuteCommand()) { break; }`.
+  # its own dispatch loop's `if (!ExecuteCommand()) { break; }`.
   ic = Game::Interpreter::Cmd
   ce = OpenStruct.new(start_term: 4, need_flag: false, switch_id: nil,
                       event: [add_var_cmd(3), ECmd.new(ic::TELEPORT, [2, 0, 0, 0]),
@@ -2864,9 +2862,8 @@ end
 check "a common event's Parallel Process's own Message Options command is " \
       'blocked (not dropped) while a different message window is open, and ' \
       'retries once it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter::
-  # CommandMessageOptions`/`CommandChangeFaceGraphic` (codes 10120/10130)
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it/`CommandChangeFaceGraphic` (codes 10120/10130)
   # both open with `if (!Game_
   # Message::CanShowMessage(main_flag)) { return false; }` -- the identical
   # guard Show Message/Show Choices/Input Number themselves use, and the
@@ -2903,9 +2900,8 @@ end
 check "a common event's Parallel Process's own Erase Screen command is " \
       'blocked (not dropped) while a message window is open, and retries ' \
       'once it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter::
-  # CommandEraseScreen`/`CommandShowScreen` (codes 11010/11020) both open
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it/`CommandShowScreen` (codes 11010/11020) both open
   # with `if (Game_Message::IsMessageActive()) {
   # return false; }`, unconditionally -- not gated behind
   # `IsEnglish()`/`IsPatchUnlockPics()` the way Show/Move/Erase Picture are --
@@ -3336,7 +3332,7 @@ end
 
 check 'Show Inn scene: an accepted stay fades to black, holds through the heal, ' \
       'then fades back in over the RPG_RT default 35 frames' do
-  # Per EasyRPG Player's Scene_Map::UpdateInn / FinishInn (the async
+  # Per a reference implementation / FinishInn (the async
   # eCallInn path CommandShowInn's accepted-stay continuation triggers; NOT
   # independently confirmed against genuine RPG_RT under wine), real RPG_RT
   # is modeled to fade
@@ -3416,7 +3412,7 @@ check 'Show Inn scene: an unaffordable Accept is ignored' do
 end
 
 check 'Show Inn scene: plays the RPG_RT system SE on every interaction' do
-  # Per EasyRPG Player's Window_Selectable-style Cursor plays and
+  # Per a reference implementation's Window_Selectable-style Cursor plays and
   # Scene::Map's own Show Choices, plus CommandShowInn's own
   # `pm.PushChoice(accept, can_afford)` (NOT independently confirmed against
   # genuine RPG_RT under wine): a
@@ -3467,8 +3463,8 @@ end
 
 check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
       'not just a fresh press' do
-  # Per EasyRPG Player's implementation of this exact prompt as an ordinary
-  # Show Choices pair (`Game_Interpreter_Map::CommandShowInn`; NOT
+  # Per a reference implementation's implementation of this exact prompt as an ordinary
+  # Show Choices pair (its own Show-Inn command handling; NOT
   # independently confirmed against genuine RPG_RT under wine), it inherits
   # the same `Window_Selectable`
   # auto-repeat every other list cursor gets.
@@ -3574,7 +3570,7 @@ check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BG
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
 
-# Per EasyRPG Player's `Game_Interpreter_Map::CommandShowInn` (NOT
+# Per a reference implementation (NOT
 # independently confirmed against genuine RPG_RT under wine), which
 # is the exact same method for the foreground
 # and every Parallel Process's own interpreter, like Open Shop/Enter Hero
@@ -3603,7 +3599,7 @@ check 'Show Inn (priced) issued from a Parallel Process barges over an open ' \
   6.times { scene.update; inn_window = scene.instance_variable_get(:@inn_window); break if inn_window }
   ok inn_window, 'the priced inn prompt opened for a Parallel-Process-issued ' \
                  'command despite an open, unrelated message window -- matches ' \
-                 "EasyRPG's own documented RPG_RT quirk rather than silently " \
+                 "a reference implementation's own documented RPG_RT quirk rather than silently " \
                  'no-opping (the pre-fix behavior) or blocking on the message ' \
                  '(a plausible-looking but wrong fix)'
 end
@@ -3649,9 +3645,8 @@ end
 
 check 'a waiting Key Input Proc issued from a Parallel Process is blocked ' \
       '(not armed) while a message window is open, and retries once it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter::
-  # CommandKeyInputProc` (code 11610) resets the
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it (code 11610) resets the
   # target variable to 0 every retried frame, *then* checks `if (wait &&
   # Game_Message::IsMessageActive()) { return false; }` -- unconditionally,
   # the same block-and-retry shape already ported for Show/Move/Erase
@@ -3915,8 +3910,8 @@ check 'Show/Move/Erase Picture from an independently-running parallel process ar
   # process's first lap.
 
   # -- Show Picture ---------------------------------------------------------
-  # RPG_RT's own dispatch loop (`Game_Interpreter::Update`,
-  # `if (!ExecuteCommand()) { break; }`) breaks the *whole* per-frame command
+  # RPG_RT's own dispatch loop (`if (!ExecuteCommand()) { break; }`) breaks
+  # the *whole* per-frame command
   # loop for this exact interpreter when a picture command's own guard
   # returns false -- not just that one command -- so `add_var_cmd(1)` right
   # after the blocked Show Picture must not run either, until the message
@@ -3991,10 +3986,10 @@ end
 
 check 'a blocked Show Picture resumes the command right after it the same ' \
       'real frame the message window closes, not one frame later' do
-  # RPG_RT's own `Game_Interpreter::Update` loop does not treat a blocked
+  # RPG_RT's own dispatch-loop update does not treat a blocked
   # command specially once it succeeds -- `CommandShowPicture` (`src/
   # game_interpreter.cpp`) just `return true`s like any other command the
-  # instant `Game_Message::IsMessageActive()` reads false, so the *same*
+  # instant its own message-active check reads false, so the *same*
   # `Update()` call keeps going into whatever follows, costing no further
   # frame -- the identical reasoning already fixed for :screen/:picture/
   # :sprite_flash/:movement.
@@ -4300,8 +4295,8 @@ check "Halt All Movement lands an in-progress jump but drops the route's trailin
 end
 
 # param0 zero hides -- confirmed against genuine RPG_RT.exe under wine
-# (cycle #169; not EasyRPG source, correcting a prior comment here that
-# mislabelled EasyRPG Player's own `src/game_interpreter.cpp` as "RPG_RT's
+# (cycle #169; not a reference implementation, correcting a prior comment here that
+# mislabelled a reference implementation's own logic as "RPG_RT's
 # own live source"): see `Interpreter#do_player_visibility`'s own comment in
 # mruby-rpg2k/mrblib/interpreter.rb for the full wine-verification evidence.
 check 'Set Transparent Flag hides and shows the player sprite' do
@@ -4330,8 +4325,8 @@ end
 # transparent param 0 vs 1, showed the "on" sprite's pixels consistently at
 # ~61-63% of the "off" run's own values -- alpha-blended with the
 # background, never a hide. This corrects a prior version of this comment
-# that mislabelled EasyRPG Player's own `src/game_actor.cpp`/
-# `src/game_character.cpp` as "RPG_RT's own live source". This codebase used
+# that mislabelled a reference implementation's own logic
+# as "RPG_RT's own live source". This codebase used
 # to fold the two into one hide-only flag.
 check 'the leader actor graphic\'s Transparent flag makes the player sprite ' \
       'translucent, not hidden' do
@@ -4360,7 +4355,7 @@ check 'Return to Title Screen hands control back to the app' do
   ok parent.returned_to_title, 'the app was told to return to the title screen'
 end
 
-# Per EasyRPG Player's `Game_Interpreter::CommandReturnToTitleScreen` (NOT
+# Per a reference implementation (NOT
 # independently confirmed against genuine RPG_RT under wine), which
 # is a plain `Game_Interpreter` method with no
 # `main_flag` gate at all, so every interpreter -- foreground or a Parallel
@@ -4447,7 +4442,7 @@ end
 # erased event silently did nothing at all -- worse for Trade Event
 # Locations, whose #apply_location_request aborts the *entire* swap
 # (`return unless a && b`) the moment either side resolves to nil, so even
-# the live participant failed to move. Ported from EasyRPG Player's
+# the live participant failed to move. Ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine:
 # CommandChangeEventLocation and
 # CommandTradeEventLocations both resolve their
@@ -4568,8 +4563,8 @@ check 'Input Number opens a widget; confirming stores the entered value' do
 end
 
 check 'Input Number plays the Cursor SE on every digit move and Decision on confirm' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: Window_NumberInput::Update (every
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it (every
   # UP/DOWN/LEFT/RIGHT plays SFX_Cursor) and
   # Window_Message::InputNumber (Decision on
   # confirm) -- the same SE Show Choices already plays, just missing here.
@@ -4610,7 +4605,7 @@ end
 
 check 'Input Number: on a single-digit widget, Right is a silent no-op but ' \
       'Left still plays the cursor SE' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine, Window_NumberInput::Update: Right is guarded
   # behind `if (digits_max >=
   # 2)` -- no move, no sound, on a one-digit widget -- but Left has no such
@@ -4998,7 +4993,7 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
     break if frames > 20
   end
   ok reveal.pending_pause, 'the \\. pause is reached'
-  # Per EasyRPG Player's own port comment (NOT independently confirmed
+  # Per a reference implementation's own port comment (NOT independently confirmed
   # against genuine RPG_RT under wine): "Despite documentation saying 1/4
   # second, RPG_RT waits for 16 frames" -- one frame past the documented/naive 15
   # (a quarter of 60fps), the same "natural reading is wrong" shape this
@@ -5014,9 +5009,8 @@ end
 
 check 'an ordinary Decision press held throughout a \\. pause does not cut it ' \
       'short -- only Test Play\'s own Shift fast-forward may' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Message::
-  # Update` decrements `wait_count` (the counter
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it decrements `wait_count` (the counter
   # `\.`/`\|` set via `SetWaitForNonPrintable`) and returns unconditionally
   # while it is still positive -- entirely before the separate
   # `GetPause()`/`WaitForInput()` branch that checks
@@ -5052,7 +5046,7 @@ check 'an ordinary Decision press held throughout a \\. pause does not cut it ' 
 end
 
 check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
-  # Per EasyRPG Player's own comment (NOT independently confirmed against
+  # Per a reference implementation's own comment (NOT independently confirmed against
   # genuine RPG_RT under wine), which calls this "a bug(??)":
   # `SetWaitForNonPrintable(16
   # + Utils::Clamp(speed - 16, 0, 4))`, where `speed` is whatever `\s[n]`
@@ -5098,7 +5092,7 @@ check 'a \\| pause holds the reveal for RPG_RT\'s real 61 frames, not the docume
     break if frames > 20
   end
   ok reveal.pending_pause, 'the \\| pause is reached'
-  # Per EasyRPG Player's own port comment (NOT independently confirmed
+  # Per a reference implementation's own port comment (NOT independently confirmed
   # against genuine RPG_RT under wine): "Despite documentation saying 1
   # second, RPG_RT waits for 61 frames" -- one frame past the
   # documented/naive 60.
@@ -5666,7 +5660,7 @@ check 'Store Event ID resolves an event whose page conditions have never been me
   # yado.tk's "Get Event ID at Location" claim had a second, previously-open
   # half: an event whose current page conditions simply aren't met never gets
   # a Game::Character built at all (#build_events skips it outright), so
-  # there was no position to answer from. Ported from EasyRPG Player's
+  # there was no position to answer from. Ported from a reference implementation's
   # source rather than guessed at, NOT independently confirmed against
   # genuine RPG_RT under wine: that source keeps one
   # Game_Event object per map event for the whole visit regardless of page
@@ -5718,7 +5712,7 @@ end
 # Conditional Branch's "Character Direction is" test) used to search only
 # @events -- the live/active-page list -- and answer nil for anything else,
 # unlike its sibling #event_id_at just above, which already falls back to
-# @event_last_position for the identical reason. Ported from EasyRPG
+# @event_last_position for the identical reason. Ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
 # wine: Game_Interpreter::GetCharacter ->
 # Game_Character::GetCharacter -> Game_Map::GetEvent is an
@@ -5790,8 +5784,8 @@ end
 
 check 'Proceed With Movement resumes the command right after it the same ' \
       'real frame the forced route finishes, not one frame later' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its `Game_Interpreter::Update` loop does not
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it loop does not
   # unconditionally `break` on `_state.wait_movement` either -- `if
   # (_state.wait_movement) { if (Game_Map::IsAnyMovePending()) break;
   # _state.wait_movement = false; }` -- once every targeted route finishes, that
@@ -5901,7 +5895,7 @@ check "a wandered map event's position and facing survive a save/load, but " \
   # not survive a save/load specifically" half never names event positions,
   # meaning they are expected to survive one, matching real RPG_RT's own
   # SaveMapEvent chunk (x/y/direction; the field shape is ported from
-  # EasyRPG Player's Game_Event, NOT independently confirmed against
+  # a reference implementation's Game_Event, NOT independently confirmed against
   # genuine RPG_RT under wine -- see Game::State#map_event_positions). This
   # codebase had no
   # mechanism at all for the save/load half: Scene::Map#build_event always
@@ -6461,7 +6455,7 @@ end
 
 check 'Tint Screen resumes the command right after it the same real frame the ' \
       'tint settles, not one frame later' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Tint Screen's own wait flag uses the identical
   # `_state.wait_time` countdown the plain Wait command uses (`SetupWait`),
   # not a "poll until still animating"
@@ -6643,9 +6637,8 @@ check 'a continuous-animation event advances even while standing still' do
   ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its `Game_Character::
-# GetContinuousAnimFrames`: an idling Continuous
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it: an idling Continuous
 # event's own cadence (ANIM_CONTINUOUS_FRAMES[2] = 10 at the default
 # move_speed) is slower than the sliding/stationary cadence
 # (ANIM_STATIONARY_FRAMES[2] = 8) the same event would use while actually
@@ -6665,9 +6658,9 @@ check 'a continuous-animation event standing still cycles on its own, ' \
 end
 
 # Same distinction, for a Spin-type event's own facing-rotation cadence
-# (ANIM_SPIN_FRAMES[2] = 12) -- per EasyRPG Player's source (NOT
-# independently confirmed against genuine RPG_RT under wine), its `Game_Character::
-# GetSpinAnimFrames`, read unconditionally by
+# (ANIM_SPIN_FRAMES[2] = 12) -- per a reference implementation (NOT
+# independently confirmed against genuine RPG_RT under wine), its own
+# spin-animation-frames accessor, read unconditionally by
 # `UpdateAnimation`'s `IsSpinning()` branch, whether the event is moving or
 # not.
 check 'a spin-type event rotates its facing on its own, slower cadence ' \
@@ -6725,7 +6718,7 @@ end
 # #build_field_background), a message window is not a scene push and does not
 # blank the screen -- it is itself a z=300 Window sitting above the z=250
 # picture layer (see the "below the message window" assertion just above).
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine): its Draw() carries no message-window check for pictures
 # either -- its Sprite_Picture::Draw and Scene_Map --
 # `Priority_PictureOld` sits below `Priority_Window`, and
@@ -6787,10 +6780,10 @@ check 'pictures composite in ascending id order, independent of show order' do
      'lower id drawn first, higher id drawn last (on top), regardless of show order'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `ShowParams` defaults every picture's
 # `affected_by_shake` flag on (RPG2000/pre-1.12 RPG2003 games have no way to
-# turn it off at all), and its `Sprite_Picture::Draw`
+# turn it off at all), and its own picture-sprite draw
 # applies the shake offset to a picture's screen position unconditionally of
 # `fixed_to_map`: `if (data.flags.affected_by_shake) { x -=
 # GetShakeOffsetX(); ... }`. A picture NOT fixed to the map used to hold
@@ -6799,7 +6792,7 @@ end
 # fold the shake in too, as a side effect of #camera_position already
 # including it.
 check 'a picture not fixed to the map still shakes with Shake Screen ' \
-      '(per EasyRPG Player, not independently confirmed under wine)' do
+      '(per a reference implementation, not independently confirmed under wine)' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
   st.show_picture(1, name: 'pic', x: 160, y: 120, zoom: 100, opacity: 255)
@@ -7027,7 +7020,7 @@ check 'Open Shop scene: buying then leaving runs the Transaction branch' do
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
   # The "purchased" confirmation only leaves once its own 60-frame timer
-  # expires -- per EasyRPG Player's source (NOT independently confirmed
+  # expires -- per a reference implementation (NOT independently confirmed
   # against genuine RPG_RT under wine), its Scene_Shop::vUpdate's Bought case
   # never reads Input::, so a button press does not skip it.
   60.times { scene.update }
@@ -7065,9 +7058,9 @@ end
 # key across frames without it also reading as a fresh trigger.
 check 'Open Shop scene: holding a direction auto-repeats the buy list ' \
       'cursor, not just a fresh press' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its `Window_Shop::Update`
-  # (the command list) and `Window_Selectable::Update`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
+  # (the command list) and its own selectable-window update
   # (the buy/sell item lists) both move the
   # cursor on a held (repeated) Down/Up, not only a fresh trigger.
   ic = Game::Interpreter::Cmd
@@ -7138,7 +7131,7 @@ check 'Open Shop scene: the counter steps by one on the horizontal axis and ' \
 end
 
 check 'Open Shop scene: the counter steps by ten on the vertical axis' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Window_ShopNumber::Update: RIGHT/LEFT step by
   # one, UP/DOWN by ten -- the tens step is vertical, not horizontal.
   scene, _st = shop_quantity_scene(999_999)
@@ -7156,8 +7149,8 @@ end
 # key across frames without it also reading as a fresh trigger.
 check 'Open Shop scene: holding a direction auto-repeats the quantity counter, ' \
       'not just a fresh press' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its Window_ShopNumber::Update gates all four directions on
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it gates all four directions on
   # Input::IsRepeated, not IsTriggered -- the same repeat-while-held cursor
   # semantics every other in-game list uses.
   scene, _st = shop_quantity_scene(999_999)
@@ -7184,7 +7177,7 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
   eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), it auto-dismisses the confirmation after a flat
   # one-second (60 frame) timer -- Scene_Shop::vUpdate's Bought/Sold cases
   # never read Input:: at all -- so a button press alone does nothing here.
@@ -7240,7 +7233,7 @@ check 'Open Shop scene: an unaffordable good never opens the counter' do
 end
 
 check 'Open Shop scene: the command list plays the RPG_RT system SE' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Window_Shop::Update:
   # Cursor on every move, Decision on any of Buy/Sell/Leave (all three
   # always succeed, so there is no Buzzer case here); Cancel on B
@@ -7273,7 +7266,7 @@ check 'Open Shop scene: the command list plays the RPG_RT system SE' do
 end
 
 check 'Open Shop scene: the buy list plays cursor/decision SE, buzzer for an unaffordable good' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Scene_Shop::UpdateBuySelection: Decision opens
   # the quantity counter for an
   # affordable good, Buzzer instead the moment `buy_window->CheckEnable`
@@ -7304,7 +7297,7 @@ check 'Open Shop scene: the buy list plays cursor/decision SE, buzzer for an una
 end
 
 check 'Open Shop scene: the quantity counter plays cursor/decision/cancel SE' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Window_ShopNumber::Update (cursor only when the
   # count actually
   # changed) and Scene_Shop::UpdateNumberInput (decision on commit, cancel on B).
@@ -7360,11 +7353,11 @@ check 'Open Shop scene: leaving without buying runs the No Transaction branch' d
   ok st.switches[2], 'the No Transaction branch ran'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenShop`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own Open-Shop command handling
 # is the exact same method for the foreground
 # and every Parallel Process's own interpreter -- gated only on
-# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# its own message-active check, no "foreground only" restriction. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:shop` branch at all, so
 # a Parallel Process's own Open Shop silently never opened the screen -- the
 # command fell into the generic "background: resume" default and read as a
@@ -7401,7 +7394,7 @@ check 'Open Shop issued from a Parallel Process opens the shop screen too' do
   eq 400, st.party.gold, 'one Potion bought'
   eq 1, st.party.item_count(3)
   # The "purchased" confirmation only leaves once its own 60-frame timer
-  # expires -- per EasyRPG Player's source (NOT independently confirmed
+  # expires -- per a reference implementation (NOT independently confirmed
   # against genuine RPG_RT under wine), its Scene_Shop::vUpdate's Bought case
   # never reads Input::, so a button press does not skip it.
   60.times { scene.update }
@@ -7430,16 +7423,16 @@ def battle_event_commands(ic, escape_mode: 0, second_switch_code: nil, troop_id:
 end
 
 # Enemy Encounter's own param2 selects the battle backdrop's source. Ported
-# from EasyRPG Player's source, NOT independently confirmed against genuine
+# from a reference implementation, NOT independently confirmed against genuine
 # RPG_RT under wine:
-# `Game_Interpreter_Map::CommandEnemyEncounter`
+# it
 # `switch`es on it -- 0 (the only case previously modelled) leaves the ordinary
 # map/terrain default in place; 1 names an explicit background image directly
 # on the command (its own free-text `string` field, entirely separate from
 # every numeric param); 2 names an explicit terrain id instead (param8), read
 # off that terrain's own row directly rather than wherever the party happens
 # to be standing (`Background(int terrain_id)` --
-# which bypasses the map-tree walk `Game_Map::SetupBattle` uses for the
+# which bypasses the map-tree walk its own battle-setup handling uses for the
 # param2==0 default entirely). `Interpreter#do_enemy_encounter` used to read
 # neither at all, so a scripted encounter always fell back to the map/terrain
 # default regardless of what the event author actually chose.
@@ -7552,9 +7545,8 @@ check 'Enemy Encounter scene: winning (per-actor Attack) grants rewards, runs Vi
   ok !st.switches[2], 'the Escape handler was skipped'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its own EXP-granting loop (Scene_Battle_Rpg2k::
-# ProcessSceneActionVictory) iterates Game_Party_Base::GetActiveBattlers, not
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: its own EXP-granting loop iterates Game_Party_Base::GetActiveBattlers, not
 # the raw party roster, and GetActiveBattlers excludes anyone failing
 # Game_Battler::Exists() (`!IsHidden() && !IsDead() && IsInParty()`) -- a
 # fallen ally still enrolled in the party at the moment of victory gets
@@ -7600,7 +7592,7 @@ check 'Enemy Encounter scene: finish_battle captures the round count as last_bat
      "(got #{st.last_battle_turns.inspect})"
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Scene_Battle` constructor plays the
 # database's Battle Start system SE (`SFX_BeginBattle`) as its very first act,
 # unconditionally, before even swapping to the battle BGM -- `Scene::Map
@@ -7649,8 +7641,8 @@ check 'Enemy Encounter scene: a Change System SFX battle-start override wins ove
      'the database default is fully superseded, not layered alongside it'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Scene_Battle_Rpg2k::ProcessSceneActionStart`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own scene-action-start handling
 # narrates the encounter before the party is
 # ever asked for a command: `GetActiveBattlers` (not dead or hidden) feeds one
 # `PushWithSubject(terms.encounter, enemy->GetName())` per visible member --
@@ -7672,8 +7664,8 @@ check 'Enemy Encounter scene: opening a battle narrates each visible enemy with 
      'both troop members are named, once each, using the database term'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its `ProcessSceneActionStart`'s `eFirstStrike`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it's `eFirstStrike`
 # substate pushes `terms.special_combat` (no subject, a fixed line) *after*
 # every per-enemy `encounter` line, only when the encounter is a
 # first-strike ambush -- it is appended to the same narration, not a
@@ -7693,11 +7685,11 @@ check 'Enemy Encounter scene: a first-strike encounter appends the special_comba
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！', '先制攻撃！'],
      window_texts(ui[:action_win]),
      'special_combat trails the per-enemy lines rather than replacing them, ' \
-     "matching EasyRPG Player's own ordering"
+     "matching a reference implementation's own ordering"
 end
 
-# `GetActiveBattlers` is the "not dead or hidden" subset (`Game_Battler::
-# Exists`) -- a troop member the editor placed but flagged invisible
+# `GetActiveBattlers` is the "not dead or hidden" subset (its own exists-check
+# on the battler) -- a troop member the editor placed but flagged invisible
 # (`Game::Enemy#hidden`, the same flag Show Hidden Monster clears) never gets
 # an arrival line, matching the sprite-build skip in #build_battle_sprites.
 check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
@@ -8148,8 +8140,8 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
 end
 
 # The real RPG2k Battle/Auto Battle/Escape options window -- ported from
-# EasyRPG Player's source, NOT independently confirmed against genuine
-# RPG_RT under wine: its `scene_battle_rpg2k.cpp`, `State_SelectOption` /
+# a reference implementation, NOT independently confirmed against genuine
+# RPG_RT under wine: it, `State_SelectOption` /
 # `ProcessSceneActionFightAutoEscape` -- traced verbatim in docs/TODO.md's
 # "SelectPreviousActor" writeup: shown automatically once per battle, right
 # after the encounter/turn-0-event messages resolve
@@ -8263,8 +8255,8 @@ check 'Enemy Encounter scene: selecting Escape from the options window runs Esca
   ok st.switches[2], 'the Escape handler ran'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its Scene_Battle::TryEscape checks its own
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it checks its own
 # `first_strike` flag first, before ever touching `escape_chance` -- so a
 # first-strike encounter's
 # opening Escape always succeeds, even against enemies fast enough to floor
@@ -8372,8 +8364,8 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   RGSS::Input.triggered = []
   ok parent.game_over_shown, 'a game-over defeat reached the Game Over screen'
   ok !st.switches[5], 'the rest of the event never ran'
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its `Scene_Battle::EndBattle` (`src/
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it (`src/
   # scene_battle.cpp`) bumps the "Other" battle counters there,
   # unconditionally, before the Game Over dispatch that can follow a
   # defeat -- a game-over-ending defeat still counts, even though the event
@@ -8561,7 +8553,7 @@ end
 
 check "Game Over's very first #update already honours a Decision trigger " \
       '-- there is no arming delay' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Scene_Gameover::vUpdate is a bare
   # `if (Input::IsTriggered(Input::DECISION)) { ReturnToTitleScene(); }` --
   # no arming/pending state of any kind. An earlier version here required a
@@ -8592,9 +8584,9 @@ end
 # fade), and both alike faded straight to the title screen. This screen
 # behaves like every other message/choice/menu window in this engine
 # (every one of which accepts Cancel as well as Decision) -- unlike what
-# EasyRPG's `Scene_Gameover::vUpdate` (src/scene_gameover.cpp) does, which
+# a reference implementation's (src/scene_gameover.cpp) does, which
 # checks only `Input::IsTriggered(Input::DECISION)`. This check used to
-# pin the EasyRPG-sourced claim ("Cancel does nothing here"); it now pins
+# pin the reference-implementation-sourced claim ("Cancel does nothing here"); it now pins
 # the confirmed opposite.
 check 'the Cancel button dismisses the Game Over screen, same as Decision' do
   parent = fake_parent(fake_db)
@@ -8670,9 +8662,8 @@ end
 
 check "a Common Event Parallel Process's own Battle Processing is blocked " \
       '(not run) while a message window is open, and retries once it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter_Map::
-  # CommandEnemyEncounter` (code 10710) opens
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it (code 10710) opens
   # with `if (Game_Message::IsMessageActive()) { return false; }`,
   # unconditionally -- the identical block-and-retry shape already ported for
   # Show/Move/Erase Picture and Transfer Player/Recall to Location, see
@@ -8794,8 +8785,8 @@ check 'Enter Hero Name: typing on the grid and confirming renames the actor' do
   ok st.switches[5], 'the event resumed after entry'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Name::vUpdate`'s DONE
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it's DONE
 # branch is `if (name_window->Get().empty()) {
 # name_window->Set(ToString(actor.GetName())); name_window->Refresh(); }
 # else { actor.SetName(...); Scene::Pop(); }` -- an empty typed name resets
@@ -8840,7 +8831,7 @@ check 'Enter Hero Name: confirming a blank name refills it and stays open, ' \
 end
 
 check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its Scene_Name::vUpdate (
   # Cursor on every grid move, Decision unconditionally on every C press
   # before dispatching on the highlighted cell), Window_Name::Append (
@@ -8888,11 +8879,11 @@ check 'Enter Hero Name plays the RPG_RT system SE on every interaction' do
   eq RPG2k::Scene::Map::NAME_MAX, ui[:name].length, 'the character was not appended'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandEnterHeroName`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own Enter-Hero-Name command handling
 # is the exact same method for the foreground
 # and every Parallel Process's own interpreter -- gated only on
-# `Game_Message::IsMessageActive()`, no "foreground only" restriction. Before
+# its own message-active check, no "foreground only" restriction. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:name_input` branch at
 # all, so a Parallel Process's own Enter Hero Name silently never opened the
 # screen -- the command fell into the generic "background: resume" default
@@ -9004,8 +8995,8 @@ end
 # key across frames without it also reading as a fresh trigger.
 check 'Enter Hero Name: holding a direction auto-repeats the character grid ' \
       'cursor, not just a fresh press' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Keyboard::Update`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # gates all four grid directions on
   # `Input::IsRepeated` alone, which fires on both the first pressed frame
   # and every later repeat tick.
@@ -9183,13 +9174,12 @@ check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
   ok st.switches[5], 'and the event resumed'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_Keyboard::
-# layouts[]` -- the ま row's small-kana columns are っゃゅょゎ (small-tsu, then
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it -- the ま row's small-kana columns are っゃゅょゎ (small-tsu, then
 # small-ya/yu/yo, then small-wa), and the last row's "vu" cell is katakana ヴ
 # even on the hiragana page (hiragana has no glyph of its own there in that
 # reference table).
-check 'Enter Hero Name: the ま row and "vu" cell match EasyRPG Player\'s own ' \
+check 'Enter Hero Name: the ま row and "vu" cell match a reference implementation\'s own ' \
       'keyboard table (not independently confirmed under wine), not a ' \
       'scrambled small-kana order' do
   ic = Game::Interpreter::Cmd
@@ -9408,9 +9398,8 @@ end
 check "a common event's Parallel Process's own show-message Change Level " \
       'command is blocked (not applied) while a message window is open, and ' \
       'retries once it closes' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Interpreter::
-  # CommandChangeExp`/`CommandChangeLevel` both
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it/`CommandChangeLevel` both
   # open with `bool show_msg = com.parameters[5]; if (show_msg &&
   # !Game_Message::CanShowMessage(true)) { return false; }`, guarding the
   # entire command -- the actor's level itself, not just the level-up
@@ -9477,9 +9466,9 @@ check 'boarding a boat and disembarking onto the shore' do
   eq [0, 1], [boat.x, boat.y], 'the boat stayed where the party left it'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Player::GetOffVehicle`
-# calls `Game_Map::CanDisembarkShip`, which only ever tests the *landing* tile's own passability
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
+# calls its own disembark-check, which only ever tests the *landing* tile's own passability
 # (`GetPassableMask(x, y, player.GetX(), player.GetY())` derives a single
 # direction bit at `(x, y)` alone) -- unlike an ordinary step's own two-sided
 # `#passable?`, the water tile the party is leaving is never consulted.
@@ -9497,10 +9486,10 @@ check 'a boat disembark only tests the landing tile\'s own passability, ' \
   eq 1, calls.size, 'exactly one tile is asked about passability -- the landing tile alone'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), `Game_Map::CanDisembarkShip` has
-# no equivalent of `#vehicle_blocks?` at all -- unlike `Game_Map::
-# CanLandAirship`, a few lines above it in the same file, which does loop
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own disembark-check has
+# no equivalent of `#vehicle_blocks?` at all -- unlike its own
+# airship-landing check, a few lines above it in the same file, which does loop
 # `{ Boat, Ship }` explicitly to block a landing -- so a different boat/ship
 # parked on the landing tile never blocks disembarking here.
 check 'disembarking a boat is not blocked by a different vehicle parked on ' \
@@ -9533,8 +9522,8 @@ end
 
 check 'each vehicle type has exactly one boarding trigger: the airship only ' \
       'by standing on it, a boat/ship only by facing it' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Player::GetOnVehicle`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # checks the Airship only against the player's own
   # tile (`GetX()`/`GetY()`), in an `if` whose `else` branch is the only
   # place the faced tile is computed at all -- the Airship is never
@@ -9569,9 +9558,9 @@ end
 
 check 'a boarded boat glides straight through a below-characters event, ' \
       'the same as the walking hero' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), not a divergence from the hero's
-  # own rule: `Game_Map::CheckOrMakeWayEx` routes a
+  # own rule: its own collision-check routes a
   # moving boat/ship's collision through the exact same generic `WouldCollide`
   # every other mover uses, whose own layer test is `self.GetLayer() ==
   # other.GetLayer()`; `Game_Vehicle`'s constructor
@@ -9660,9 +9649,8 @@ end
 
 check "a vehicle's forced Move Route frequency reverts once the (non-" \
       "repeating) route finishes, not stuck forever" do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Character::
-  # ForceMoveRoute` snapshots the frequency in
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it snapshots the frequency in
   # effect before the route starts (`if (!IsMoveRouteOverwritten())
   # original_move_frequency = GetMoveFrequency();`), and `CancelMoveRoute`
   # restores it (`SetMoveFrequency(original_move_frequency)`) the instant a
@@ -9702,7 +9690,7 @@ check "a boat's move route is blocked by terrain the same way ordinary sailing i
   eq 0, boat.x, 'terrain blocked it before it ever moved'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Game_Player::MakeWay unconditionally
 # delegates to the ridden vehicle's own MakeWay whenever IsAboard(), with no
 # separate branch for move-route-driven movement vs. ordinary input
@@ -9742,9 +9730,8 @@ end
 check 'a move route runs consecutive effect-only sub-commands in the same ' \
       'frame as the Move that follows them, only the Move itself spending ' \
       "the route's own pacing delay" do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Character::
-  # UpdateMoveRoute` only calls
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it only calls
   # `SetMaxStopCountFor{Step,Turn,Wait}` for a Move/Turn/Wait/Jump
   # sub-command; every other sub-command (Switch On/Off, Speed/Frequency
   # Up/Down, Change Graphic, Play Sound, Through Mode, Stop/Start
@@ -9789,7 +9776,7 @@ check 'a Move Route request targeting a currently-ridden vehicle is ignored' do
      'the route request was dropped rather than fighting #follow_vehicle'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Game_Interpreter::CommandMoveEvent (code 11330):
 # "If the event is a vehicle in use, push the
 # commands to the player instead" -- a Move Event targeting a boat the party
@@ -9822,7 +9809,7 @@ check 'Move Event targeting a currently-ridden vehicle redirects onto the ' \
      'no separate vehicle-character route was ever armed for the boat itself'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its CommandSetVehicleLocation: "Check
 # if the party is in the current vehicle and transfer the party together with
 # it" -- boarding the boat and issuing Set Vehicle Location for the *same*
@@ -9940,8 +9927,8 @@ end
 
 check 'boarding and landing the airship snaps the hero to face left, matching RPG_RT ' \
       '(2026-08-18)' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: Game_Player::GetOnVehicle's airship branch
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it's airship branch
   # (src/game_player.cpp) calls SetFacing(Left) unconditionally the instant
   # boarding begins (that source's own comment there claims "RPG_RT ignores
   # the lock_facing flag here!", a claim this codebase has not itself
@@ -9972,7 +9959,7 @@ end
 
 check 'boarding a boat/ship does not force any particular facing' do
   # Control for the airship-specific check above: per the same
-  # EasyRPG-ported source (NOT independently confirmed against genuine
+  # reference-implementation-ported source (NOT independently confirmed against genuine
   # RPG_RT under wine), its boat/ship boarding branch never calls SetFacing
   # on the player at all.
   scene = new_scene({}, player: [0, 0])
@@ -9990,10 +9977,10 @@ check 'boarding a boat/ship does not force any particular facing' do
 end
 
 check 'boarding the airship doubles the party\'s per-frame slide speed; boat/ship do not' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: Game_Vehicle's constructor
-  # gives Boat/Ship `MoveSpeed_normal` -- identical to
-  # the player's own on-foot default -- but the Airship `MoveSpeed_double`,
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: vehicle construction
+  # gives Boat/Ship the normal move speed -- identical to
+  # the player's own on-foot default -- but the Airship double that,
   # twice the per-frame step. #player_slide_speed is the port target.
   scene = new_scene({}, player: [0, 0])
   st = scene.instance_variable_get(:@state)
@@ -10013,7 +10000,7 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   # walk_slide_step/jump_slide_step/anim_frame_period take the *internal*
   # (real RPG_RT Move Speed - 1) scale -- see #page_move_speed. Internal 0..5
   # maps to real Move Speed 1..6, giving frames/tile 64,32,16,8,4,2 (matching
-  # EasyRPG Player's source, `1 << (1 + GetMoveSpeed())`, exactly -- not
+  # a reference implementation, `1 << (1 + GetMoveSpeed())`, exactly -- not
   # independently confirmed against genuine RPG_RT under wine).
   # Internal 3 (real 4, the player's own default) keeps the prior hardcoded
   # 8-frames/tile baseline unchanged; internal 0 (real 1, the slowest) used
@@ -10028,9 +10015,9 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   # Animation cadence is move_speed-dependent; internal 3 keeps the prior 6.
   eq 6,  scene.send(:anim_frame_period, 3)
   eq 4,  scene.send(:anim_frame_period, 5)
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
-  # RPG_RT under wine), its `Game_Character::
-  # GetContinuousAnimFrames` / `GetSpinAnimFrames`:
+  # Per a reference implementation (NOT independently confirmed against genuine
+  # RPG_RT under wine), its own
+  # `GetContinuousAnimFrames`/`GetSpinAnimFrames` accessors:
   # an idling Continuous/Fixed-Continuous event and a Spin event's own
   # facing-rotation each use their own, slower table -- not the stationary
   # one reused.
@@ -10106,9 +10093,9 @@ check 'the airship cannot land on a tile a map event occupies, Through ' \
   # (#vehicle_passable?'s airship branch never reads @event_tiles), so the
   # airship can cruise -- and be boarded -- directly over a below-characters
   # event a walking hero would just as happily overlap; landing there must
-  # still refuse it. Ported from EasyRPG Player's source, NOT independently
+  # still refuse it. Ported from a reference implementation, NOT independently
   # confirmed against genuine RPG_RT under wine:
-  # `Game_Map::CanLandAirship` is a standalone loop
+  # it is a standalone loop
   # over every event's `IsInPosition`/`IsActive`/`GetActivePage`, entirely
   # separate from `WouldCollide`/`CheckOrMakeWayEx` (the function
   # #vehicle_passable?'s own boat/ship rule reads Through Mode from) -- it
@@ -10143,7 +10130,7 @@ check 'the airship cannot land on a tile a map event occupies, Through ' \
 end
 
 check 'an unridden boat/ship blocks the hero on foot, but an unridden airship does not' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine): its Game_Map::
   # CheckOrMakeWayEx blocks every character type (the player included) on a
   # parked Boat/Ship's own tile, but only checks the Airship when
@@ -10171,7 +10158,7 @@ end
 
 check 'an unridden boat/ship/airship all block a map event\'s own custom-route movement' do
   # Unlike the hero (checked above), an event's own movement has no Player
-  # exemption for the Airship: per EasyRPG Player's source (NOT independently
+  # exemption for the Airship: per a reference implementation (NOT independently
   # confirmed against genuine RPG_RT under wine), its CheckOrMakeWayEx only skips the
   # Airship check when self.GetType() == Player, so every other mover -- a
   # map event's autonomous/custom route, and the player's own forced Set
@@ -10208,12 +10195,12 @@ end
 # consulted another vehicle's own position, so a party riding a Boat could
 # sail straight through a parked Ship or a grounded Airship, and a landing
 # Airship could set down right on top of a parked Boat/Ship. Ported from
-# EasyRPG Player's source, NOT independently confirmed against genuine
-# RPG_RT under wine: `Game_Map::CheckOrMakeWayEx` loops `{ Boat, Ship }` for
+# a reference implementation, NOT independently confirmed against genuine
+# RPG_RT under wine: it loops `{ Boat, Ship }` for
 # any non-Airship mover, then also checks a grounded Airship whenever the
 # mover is not the on-foot Player -- true for a ridden Boat/Ship, which
 # moves as its own `Vehicle`-typed character, never `Player` -- and
-# `Game_Map::CanLandAirship` separately loops `{ Boat, Ship }` and refuses a
+# its own airship-landing check separately loops `{ Boat, Ship }` and refuses a
 # landing on either's tile. Fixed by reusing `#vehicle_blocks?` (already
 # used for the opposite direction, tested above) from both
 # `#vehicle_passable?` and `#airship_landable?`.
@@ -10308,7 +10295,7 @@ end
 # #missing_animation_wait's own two branches, pinned directly (see its own
 # doc comment in mruby-rpg2k/mrblib/scene/map.rb): an invalid/unknown
 # animation id waits 0 real frames -- no one-frame floor, ported from
-# EasyRPG Player's source (NOT independently confirmed against genuine
+# a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine): its Game_Interpreter wait_time == 0 fallthrough --
 # while a valid row
 # with real frame data waits that row's own real duration regardless of
@@ -10353,7 +10340,7 @@ check 'Show Battle Animation plays: an animation sprite shows and a flash fires'
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its own Game_Interpreter_Map::CommandShowBattleAnimation
 # always starts the animation through
 # Game_Screen::ShowBattleAnimation regardless of the wait flag -- the flag only
@@ -10390,7 +10377,7 @@ check 'Show Battle Animation with the wait flag off still plays, without blockin
   ok !spr.visible, 'the animation sprite is hidden once it finishes'
 end
 
-# yado.tk trivia; the specific mechanism is ported from EasyRPG Player's
+# yado.tk trivia; the specific mechanism is ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine
 # (see #hold_animation_screen_flash's comment): Screen Flash is capped to 1/30s of
 # display while a Battle Animation is playing, since the animation
@@ -10430,7 +10417,7 @@ check 'A Screen Flash concurrent with a Show Battle Animation is capped to the c
 end
 
 # yado.tk's own "Character Flash" half of the same claim, capped the same way
-# and for the same reason; the specific mechanism is ported from EasyRPG
+# and for the same reason; the specific mechanism is ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
 # wine (see #hold_animation_target_flash's comment):
 # `BattleAnimation::Update` calls `UpdateTargetFlash()` unconditionally right
@@ -10510,12 +10497,12 @@ end
 # #start_map_animation can hand #animation_position_offset a real height
 # unconditionally, unlike the battle path's ally-side "no sprite" fallback.
 # That height is ANIM_MAP_TARGET_HEIGHT (24), not Game::CharSet::HEIGHT
-# (32) -- per EasyRPG Player's source (NOT independently confirmed against
+# (32) -- per a reference implementation (NOT independently confirmed against
 # genuine RPG_RT under wine), its BattleAnimationMap::DrawSingle uses
 # `const int character_height = 24;`, a
 # hardcoded constant unrelated to the actual CharSet frame's pixel height
 # despite reading like it should be the same thing.
-check "a map-triggered Show Battle Animation carries EasyRPG Player's own 24px " \
+check "a map-triggered Show Battle Animation carries a reference implementation's own 24px " \
       "map-target height (not independently confirmed under wine)" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
@@ -10538,9 +10525,9 @@ end
 
 check "Show Battle Animation's Whole Screen option (param3) tiles the animation " \
       'across the screen, not just over the target character' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine:
-  # `Game_Interpreter_Map::CommandShowBattleAnimation`
+  # it
   # reads `bool global = com.parameters[3] >
   # 0;` and threads it through to `BattleAnimationMap::DrawGlobal`,
   # which draws the animation nine times in a
@@ -10628,7 +10615,7 @@ end
 
 # screen_shaking (LCF database field 8 on an animation timing: 0 none / 1
 # target / 2 screen, decoded by mruby-lcf/mrblib/schema.rb) was decoded but
-# never read by #fire_animation_flashes at all. Ported from EasyRPG
+# never read by #fire_animation_flashes at all. Ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
 # wine: `BattleAnimation::ProcessAnimationTiming`, screen_shaking 2 fires
 # `screen->ShakeOnce(3, 5, 32)` from the shared base class, with no
@@ -10698,7 +10685,7 @@ check "a timing's own se plays through the battle-round path too" do
 end
 
 # screen_shaking 1 ("target") on a map-triggered Show Battle Animation is a
-# genuine no-op per EasyRPG Player's source (NOT independently confirmed
+# genuine no-op per a reference implementation (NOT independently confirmed
 # against genuine RPG_RT under wine), not a dropped feature: its `BattleAnimationMap::
 # ShakeTargets` is an empty
 # method body -- `void BattleAnimationMap::ShakeTargets(int, int, int) {}` --
@@ -10707,7 +10694,7 @@ end
 # only calls #fire_target_shake when `ma[:battle]`, matching that real split
 # rather than treating the map path as an oversight to fill in.
 check 'a map-context target-scope animation shake is a real no-op, matching ' \
-      'EasyRPG Player\'s BattleAnimationMap::ShakeTargets (not independently ' \
+      'a reference implementation\'s map-target-shake handling (not independently ' \
       'confirmed under wine)' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
@@ -10775,7 +10762,7 @@ end
 
 # A map-triggered Show Battle Animation's flash_scope-1 timing aimed at a
 # vehicle now actually pulses that vehicle's own on-screen sprite, instead of
-# being silently dropped as an "unsupported target." Ported from EasyRPG
+# being silently dropped as an "unsupported target." Ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
 # wine (previously assumed unsupported without checking that source at all):
 # Game_Character::GetCharacter resolves
@@ -10897,8 +10884,8 @@ end
 
 # yado.tk: only one Battle Animation is ever on screen, and a *second* one
 # forcibly cuts the first off rather than queueing behind it -- consistent
-# with EasyRPG Player's source (Game_Screen::ShowBattleAnimation, a bare
-# unconditional unique_ptr::reset(); NOT independently confirmed against
+# with a reference implementation (its show-battle-animation entry point does
+# a bare unconditional reset; NOT independently confirmed against
 # genuine RPG_RT under wine), see
 # #drive_map_animation's own comment. Before this fix a second request while
 # the shared slot was held simply sat there doing nothing every frame until
@@ -10951,9 +10938,9 @@ check 'a second Show Battle Animation forcibly cuts off a still-playing first on
 end
 
 # The same "second cuts off the first" rule as the check just above, but for
-# the *no-wait* half of Show Battle Animation, verified against EasyRPG's
-# actual C++ source rather than guessed at: `Game_Screen::ShowBattleAnimation`
-# is a bare unconditional `animation.reset(...)` with no branch on the *new*
+# the *no-wait* half of Show Battle Animation, verified against a reference implementation's
+# actual C++ source rather than guessed at: its own show-battle-animation
+# handling is a bare unconditional `animation.reset(...)` with no branch on the *new*
 # request's own wait flag at all -- only the *issuing* interpreter's resulting
 # wait is conditional on that. `#drive_map_animation`'s own cut-off fix is
 # only ever reachable through the `:animation` wait dispatch, so it only ever
@@ -11017,10 +11004,9 @@ end
 
 # yado.tk: "Battle Animation... chaining two Show Battle Animation calls
 # back-to-back produces a visible one-frame stutter." Settled against
-# EasyRPG's actual C++ source rather than guessed at: `Game_Interpreter::
-# Update`'s own per-frame loop is `if (_state.wait_time > 0) { _state.wait_time
-# --; break; }` -- it only breaks early *while* wait_time is still above zero,
-# so the exact real frame a waited-for Show Battle Animation's own countdown
+# a reference implementation's actual source rather than guessed at: its
+# per-frame interpreter loop only breaks early *while* wait_time is still
+# above zero, so the exact real frame a waited-for Show Battle Animation's own countdown
 # reaches 0 falls straight through into whatever command follows instead of
 # costing a further frame. `#drive_event`'s `:animation` case used to just call
 # `#drive_map_animation` and stop -- unlike the `:wait`/`:battle` cases right
@@ -11072,8 +11058,8 @@ end
 #
 # The "starts the same real frame the command runs" fix below (see
 # `#init_map_animation_this_frame`) tightens this further for a Parallel
-# Process specifically -- unlike the foreground path, EasyRPG's own
-# `Game_Map::Update` calls `Game_Screen::Update` (the only thing that ever
+# Process specifically -- unlike the foreground path, a reference implementation's own
+# map-update handling calls its own screen-update (the only thing that ever
 # advances a just-built animation) *after* `UpdateCommonEvents`/
 # `UpdateMapEvents`, so a Parallel Process's own freshly-armed second
 # animation gets its first advance the very same real frame it is built, not
@@ -11112,10 +11098,10 @@ end
 
 # docs/TODO.md's own "still open" note on the chained-animation fixes above:
 # this codebase's own extra, structural one-frame startup latency was not
-# touched by either one. Ported from EasyRPG Player's source rather
+# touched by either one. Ported from a reference implementation rather
 # than left a guess, NOT independently confirmed against genuine RPG_RT
-# under wine: `Game_Interpreter_Map::CommandShowBattleAnimation`
-# always calls `Game_Screen::ShowBattleAnimation`
+# under wine: it
+# always calls its own show-battle-animation handling
 # in-line -- building the animation -- *before* it ever touches its own
 # wait_time, so a waited-for play's sprite is visible the exact same real
 # frame the command runs. `Game::Interpreter#do_show_battle_animation` only
@@ -11183,9 +11169,8 @@ check "a Common Event Parallel Process's own waited-for Show Battle Animation sh
   ok !st.switches[5], "the process is still held on its own wait that same frame, not resumed already"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Interpreter_Map::
-# CommandShowBattleAnimation` calls
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it calls
 # `GetCharacter(evt_id, ...)` unconditionally, before it ever reads `global`
 # or computes a frame count, and returns outright when that comes back null
 # -- `GetCharacter` is null for "This Event" (0)
@@ -11328,7 +11313,7 @@ check 'the airship floats above a ground shadow; a boat casts none' do
   # the airship sprite's own y is drawn CharSet::HEIGHT - TILE pixels above
   # that already (every vehicle/character sprite's own feet-alignment,
   # unrelated to floating), plus AIRSHIP_ALTITUDE on top of that -- a full
-  # tile (16px), not half. Ported from EasyRPG Player's source, NOT
+  # tile (16px), not half. Ported from a reference implementation, NOT
   # independently confirmed against genuine RPG_RT under wine: its own
   # Game_Vehicle::GetAltitude() is SCREEN_TILE_SIZE / (SCREEN_TILE_SIZE /
   # TILE_SIZE) once fully airborne, 256 / (256 / 16) = 16 with those
@@ -11572,11 +11557,11 @@ end
 # key across frames without it also reading as a fresh trigger.
 check 'the choice window cursor auto-repeats while a direction is held, ' \
       'not just a fresh press' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Message` is a plain
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it is a plain
   # `Window_Selectable` subclass, and
-  # `Window_Message::Update` calls the base
-  # `Window_Selectable::Update()` unconditionally every frame before its
+  # its own message-window update calls the base
+  # selectable-window update unconditionally every frame before its
   # own choice-specific dispatch -- so a held Down/Up scrolls the choice
   # cursor exactly like any other list window.
   ic = Game::Interpreter::Cmd
@@ -11704,7 +11689,7 @@ end
 
 check 'auto-relocation uses RPG_RT\'s real 112px/160px zone thresholds and ' \
       'the feet position, not the earlier SCREEN_H/2 approximation' do
-  # Ported from EasyRPG Player's own Game_Message::GetRealPosition(), NOT
+  # Ported from a reference implementation's own logic(), NOT
   # independently confirmed against genuine RPG_RT under wine: the zone
   # boundaries are 16*7=112 and 16*10=160 real pixels -- not this build's
   # old SCREEN_H/2=120 guess -- measured off the hero's
@@ -11762,7 +11747,7 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   st.weather.set(1, 2) # heavy rain
   scene.update
   ok wsp.visible, 'rain draws an overlay'
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its num_rain_or_snow_particles table is the
   # literal { 20, 60, 100 } for strength 0/1/2 -- a real, non-uniform step
   # (+40, +40), not a fixed multiple of the lightest strength's own count.
@@ -11779,11 +11764,11 @@ check 'Weather draws a particle overlay when active and hides it when clear' do
   ok !wsp.visible, 'clearing weather hides the overlay'
 end
 
-check 'Weather rain falls and drifts at EasyRPG Player\'s own per-frame rate ' \
+check 'Weather rain falls and drifts at a reference implementation\'s own per-frame rate ' \
       '(not independently confirmed under wine), and ' \
       'snow only ever drifts left, never bounces back right' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: Game_Screen::UpdateRain/
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it/
   # UpdateSnow -- rain falls 4px down and 1px left
   # every frame it's alive (`p.y += 4; p.x -= 1`), snow drifts leftward
   # only, never rightward (`p.x -= Rand::GetRandomNumber(0, 1)`).
@@ -11832,7 +11817,7 @@ check 'the timer draws M:SS as digit-sprite cells cut from the System graphic, a
   eq 4, spr.x, 'parked at the screen'"'"'s left edge'
   eq 4, spr.y, 'parked at the top outside of battle'
   # 75 s = 1:15 -> cells [0, 1, :, 1, 5], each an 8x16 blit from the System
-  # graphic's digit row (per EasyRPG Player's Sprite_Timer::Draw, not
+  # graphic's digit row (per a reference implementation, not
   # independently confirmed against genuine RPG_RT under wine).
   calls = spr.bitmap.blt_calls
   eq [[0, 0, 32, 32, 8, 16], [8, 0, 40, 32, 8, 16], [16, 0, 112, 32, 8, 16],
@@ -11850,7 +11835,7 @@ end
 check 'a timer past 99 minutes draws its minute-tens value across both ' \
       'leading cells, a duplicated colon, and only the seconds-tens digit -- ' \
       'not the naive out-of-range single-glyph index' do
-  # Confirmed against a genuine RPG_RT.exe, not EasyRPG's source: 107 min 34 s
+  # Confirmed against a genuine RPG_RT.exe, not a reference implementation: 107 min 34 s
   # (mins / 10 == 10, a genuine two-digit overflow, reachable via an uncapped
   # Control-Variables-sourced Timer Set -- see Game::Timer#set's own comment)
   # draws [1, 0, :, :, 3] across the five 8x16 cells -- the two decimal digits
@@ -11932,7 +11917,7 @@ check 'the timer drops to the bottom edge once a message resolves to the ' \
   scene.update
   eq RPG2k::Scene::Map::SCREEN_H - 20, spr.y,
      'the timer slides down to keep clear of the top-parked message'
-  # Closing the message does not undo it -- ported from EasyRPG Player's
+  # Closing the message does not undo it -- ported from a reference implementation's
   # source, NOT independently confirmed against genuine RPG_RT under wine:
   # its own Window_Message#y is never reset on FinishMessageProcessing
   # either.
@@ -11960,8 +11945,8 @@ check 'the timer stays at the top when the last message resolved elsewhere, ' \
   scene.send(:close_message, animate: false)
   # Force the sticky flag on directly (as a top-resolved message would), then
   # confirm a fresh map visit clears it -- matching a genuine RPG_RT
-  # `Scene_Map::Start` rebuilding `Window_Message` from scratch, unlike
-  # `Scene_Map::Continue`'s reuse when merely returning from a pushed scene.
+  # map-scene start rebuilding `Window_Message` from scratch, unlike
+  # the map scene's own continue-reuse when merely returning from a pushed scene.
   scene.instance_variable_set(:@message_window_top, true)
   scene.send(:perform_teleport, [1, 0, 0, 0])
   scene.update
@@ -12123,9 +12108,9 @@ check 'boarding a vehicle forwards a database or override balance to bgm_pan, no
 end
 
 check 'boarding a vehicle with no configured BGM stops the field music instead of leaving it ' \
-      'playing, per EasyRPG Player (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its Game_System::BgmPlay is unconditional --
+      'playing, per a reference implementation (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)' do
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it is unconditional --
   # a blank/"(OFF)" track still hits its own `else { BgmStop(); }` branch
   # ("(OFF) means play nothing"), silencing whatever was already playing.
   # Boarding a vehicle whose database BGM field is blank (and no Change
@@ -12157,7 +12142,7 @@ check 'disembarking back onto a map with no field BGM stops the vehicle music th
       '(2026-08-18)' do
   # The mirror image of the check just above: #restore_pre_vehicle_bgm ports
   # the identical unconditional `BgmPlay(GetBeforeVehicleMusic())` call from
-  # EasyRPG Player's source (NOT independently confirmed against genuine
+  # a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), so a pre-boarding field with no BGM playing at
   # all must silence the vehicle's own track on disembark, not leave it
   # running now that the party is back on foot.
@@ -12189,12 +12174,12 @@ end
 check 'a failed boat disembark (blocked by a shore NPC) falls through to the ' \
       'action-trigger check on that tile, instead of just swallowing the ' \
       'button press' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
-  # RPG_RT under wine), its `Game_Player::Update` only skips `CheckActionEvent` when
+  # Per a reference implementation (NOT independently confirmed against genuine
+  # RPG_RT under wine), its own player-update handling only skips `CheckActionEvent` when
   # `GetOnOffVehicle` actually succeeds (`if (!GetOnOffVehicle())
   # CheckActionEvent();`) -- and disembarking a boat/
   # ship fails outright when an active same-layer event occupies the
-  # landing tile (`Game_Map::CanDisembarkShip` loops
+  # landing tile (its own disembark-check loops
   # `GetEvents()` for exactly that before ever checking terrain
   # passability). A failed disembark press must therefore fall through to
   # the ordinary action-trigger check on that same tile, the same way it
@@ -12382,14 +12367,12 @@ check 'Enemy Encounter scene: casting an attack Skill damages a foe and spends S
   eq 7, ui[:allies].first.mp, 'the caster spent 3 SP (10 -> 7)'
 end
 
-# Originally only confirmed against EasyRPG's source (Scene_Battle::UpdateUi,
-# src/scene_battle.cpp, called unconditionally every frame from
-# Scene_Battle_Rpg2k::vUpdate, calling .Update() on every one of
-# command_window/status_window/item_window/skill_window/target_window/
-# options_window -- all genuine Window_Selectables, whose own Update() drives
-# the cursor via the standard trigger-then-repeat, before SetActive/GetActive
-# ever gates which one's Decision/Cancel handling runs; see Scene::Order's
-# identical shape) -- now independently confirmed against a genuine RPG_RT.exe
+# Originally only confirmed against a reference implementation (its
+# battle-UI update path is called unconditionally every frame and drives
+# every one of the command/status/item/skill/target/options sub-windows'
+# own cursor update via the standard trigger-then-repeat, before active-window
+# gating decides which one's Decision/Cancel handling runs; see the menu
+# scene's identical shape) -- now independently confirmed against a genuine RPG_RT.exe
 # under wine too (cycle #130, see battle.rb's #drive_battle_command comment):
 # a single continuous hold of Down in a real encounter moved the options and
 # command-window cursors through multiple rows -- including a mid-hold wrap
@@ -12468,7 +12451,7 @@ check 'Enemy Encounter scene: using an Item heals and consumes one from the bag'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'ItemUse' }, 'the item SE played too'
 end
 
-# SFX_ENEMY_ATTACK (Scene::Base::DB_SE_FIELD slot 6): ported from EasyRPG
+# SFX_ENEMY_ATTACK (Scene::Base::DB_SE_FIELD slot 6): ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT
 # under wine (scene_battle_rpg2k.cpp's ProcessBattleActionUsage) -- it
 # fires once, at the very start of an *enemy's* plain Attack action, never
@@ -12508,7 +12491,7 @@ check 'Enemy Encounter scene: the enemy-attack SE plays for an enemy Attack, ' \
 end
 
 # The battle command/target/skill/item flow's own system SE -- ported from
-# EasyRPG Player's source the same way the field menu and title screen
+# a reference implementation the same way the field menu and title screen
 # already were, NOT independently confirmed against genuine RPG_RT under
 # wine (Scene_Battle::AttackSelected/DefendSelected/
 # ItemSelected/SkillSelected, Window_Selectable::Update() for cursor moves,
@@ -12890,7 +12873,7 @@ check 'Enemy Encounter scene: the command menu is drawn Attack / Skill / Defend 
   ui = battle_to_command(scene)
   labels = ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
   eq %w[Attack Skill Defend Item], labels,
-     "EasyRPG's own CreateBattleCommandWindow order (ported from that " \
+     "a reference implementation's own logic order (ported from that " \
      "source, NOT independently confirmed against genuine RPG_RT under " \
      "wine), not Item ahead of Defend"
 end
@@ -13003,9 +12986,9 @@ check "Enemy Encounter scene: a reordered Defense command still commits at once,
 end
 
 check 'selecting a battle command records its command id on the acting Combatant, ' \
-      'the way EasyRPG sets SetLastBattleAction (ported from that source, ' \
+      'the way a reference implementation sets SetLastBattleAction (ported from that source, ' \
       'NOT independently confirmed against genuine RPG_RT under wine)' do
-  # The fixed four map to EasyRPG's default command ids 1..4 (attack, skill,
+  # The fixed four map to a reference implementation's default command ids 1..4 (attack, skill,
   # defense, item) -- what the RPG2003 battle combo (Enable Combo) and the
   # `command_actor` page condition compare against. This pins the recording,
   # not the spending (the model-side combo math lives in rpg2k_logic_check.rb).
@@ -13040,9 +13023,9 @@ end
 
 check "Enemy Encounter scene: a Special battle command draws a row and forfeits the actor's turn" do
   # RPG2003's Special (type 6) command resolves to a turn that does nothing --
-  # ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its `Scene_Battle_Rpg2k3::SpecialSelected`
-  # queues `Game_BattleAlgorithm::DoNothing`. It must be offered as a menu row (this
+  # ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
+  # queues its own do-nothing battle algorithm. It must be offered as a menu row (this
   # engine used to skip it along with Escape) and, once chosen, commit at once
   # like Defend -- no target/skill/item submenu -- and pass the actor's turn
   # with no action: `Game::Battle#command_skip` sets the Combatant's skip
@@ -13073,7 +13056,7 @@ end
 check "Enemy Encounter scene: an RPG2003 fight offers Row after the fixed four " \
       "and refuses to empty the front row" do
   # A lone party member can never leave the front row (Game::Battle
-  # #can_leave_front_row?, ported from EasyRPG's `RowSelected` guard) --
+  # #can_leave_front_row?, ported from a reference implementation's guard) --
   # RPG_RT buzzes and stays on the command menu rather than spending the
   # turn, exactly like the reference's own "nothing to pick" Buzzer cases.
   ic = Game::Interpreter::Cmd
@@ -13157,9 +13140,8 @@ class BattleThreeSkillParty < BattleMagicParty
 end
 
 # The battle Item/Skill lists are a genuine two-column grid -- originally
-# only cited to EasyRPG's `Window_Item`/`Window_Skill`
-# (`src/window_item.cpp`/`src/window_skill.cpp`, both setting
-# `column_max = 2`) and `Window_Selectable::Update`'s column-locked Down/Up
+# only cited to a reference implementation's item/skill windows (both
+# setting a two-column layout) and its own column-locked Down/Up
 # vs. flat Right/Left. Now independently confirmed for the item side against
 # a genuine RPG_RT.exe under wine (cycle #133) -- see `#drive_battle_item`'s
 # own comment (`mruby-rpg2k/mrblib/scene/battle.rb`) for the full writeup,
@@ -13529,7 +13511,7 @@ end
 
 check 'Enemy Encounter scene: Right/Left are dead input on the ally target cursor' do
   # Overturns this check's own prior claim ("Right/Left move the cursor
-  # exactly like Down/Up", sourced from a since-removed EasyRPG-source
+  # exactly like Down/Up", sourced from a since-removed a reference implementation-source
   # citation). Independently re-verified against genuine RPG_RT.exe under
   # wine (cycle #136, 2026-08-24, Nepheshel): a real 2-member party (デモ用
   # + ファル, grown in-memory by a live synthetic `Change Party Member`
@@ -13703,8 +13685,8 @@ check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Id
   ok spr.z < 300, 'sits below the UI windows (z >= 300)'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its Sprite_Actor::DoIdleAnimation resolves a
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it resolves a
 # monster's Knockout state straight to AnimationState_Dead rather than
 # hiding it; a party member is treated the same way here
 # (#build_actor_sprite's `dead:` keyword, Pose id 4) -- so a member already
@@ -13733,8 +13715,8 @@ check "Enemy Encounter scene: a party member already KO'd going into the fight d
      'the living member still gets the Idle pose'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Sprite_Actor::DoIdleAnimation` does not
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it does not
 # stop at Defend/Dead -- once neither applies, it reads the battler's
 # significant active state (`GetSignificantState`) and shows *that state's
 # own* configured pose (`state->battler_animation_id`), not plain Idle.
@@ -13853,10 +13835,10 @@ end
 # The "Appear Transparent" flag (field 10, `Game::Enemy#transparent`) was
 # parsed by the schema but read nowhere in mruby-rpg2k -- the same
 # "parsed but unused" shape as the `levitate` flag above, and every enemy
-# battler sprite drew fully opaque regardless. Ported from EasyRPG
+# battler sprite drew fully opaque regardless. Ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: `Sprite_Enemy::Draw`
-# computes `alpha = 160 * alpha / 255` whenever `Game_Enemy::IsTransparent`
+# wine: its own enemy-sprite draw
+# computes `alpha = 160 * alpha / 255` whenever its own transparency check
 # is set, with no accuracy/evasion effect of any kind -- purely cosmetic,
 # like `levitate`. Troop 3's lone Ghost (enemy id 4) is the dedicated
 # fixture, kept off the two-Slime/lone-Bat troops so this never disturbs
@@ -13873,7 +13855,7 @@ check 'Enemy Encounter scene: an "Appear Transparent" enemy draws at reduced ' \
   member = ui[:troop].members[0]
   ok member.transparent, 'the fixture enemy (id 4, Ghost) carries the flag'
   eq 160, ui[:enemy_sprites][0].opacity,
-     'build_battle_sprites draws it at 160/255 opacity, matching EasyRPG exactly'
+     'build_battle_sprites draws it at 160/255 opacity, matching a reference implementation exactly'
 
   # A mid-fight transformation redraw (#rebuild_battler_sprite) keeps the
   # reduced opacity, not just the initial build.
@@ -13896,10 +13878,10 @@ end
 # unused" shape as `levitate`/`transparent` above, so a game reusing one
 # Monster/<name> bitmap for several palette-swapped monsters (a common
 # RPG2000 authoring trick) always drew every one of them in the file's own
-# unshifted colour. Ported from EasyRPG Player's source, NOT independently
+# unshifted colour. Ported from a reference implementation, NOT independently
 # confirmed against genuine RPG_RT under wine:
-# `Game_Enemy::GetHue` is a bare `enemy->battler_hue`
-# passthrough, and `Sprite_Enemy::OnMonsterSpriteReady`/`Refresh`
+# it is a bare `enemy->battler_hue`
+# passthrough, and its own enemy-sprite ready/refresh handling
 # rotate the decoded bitmap through
 # `Bitmap::HueChangeBlit` whenever it is nonzero and rebuild whenever either
 # the sprite name or the hue changes. Troop 4's lone Red Slime (enemy id 5,
@@ -13929,7 +13911,7 @@ check 'Enemy Encounter scene: a battle-graphic hue shift rotates the battler ' \
      'a same-file, zero-hue enemy decodes its own unrotated bitmap'
 
   # A mid-fight transformation redraw (#rebuild_battler_sprite) picks up the
-  # new hue too, matching EasyRPG's `Sprite_Enemy::Refresh` rebuilding on
+  # new hue too, matching a reference implementation's rebuilding on
   # either the sprite name or the hue changing -- not just the initial build.
   ui[:foes][0].battler_name = 'Slime'
   ui[:foes][0].battler_hue = 0
@@ -13971,7 +13953,7 @@ end
 # 2000_battle_bot / デフォ戦bot trivia: 自爆した敵は、経験値・お金・アイテムを落と
 # さない。しかもデータ内部では逃走した状態と同じ扱いになっており、敵ＨＰを変数に
 # 代入してみると0になっていない。更に自爆後にイベントコマンド「敵キャラの出現」で
-# 指定すると何喰わぬ顔で元に戻る。The specific mechanism is ported from EasyRPG
+# 指定すると何喰わぬ顔で元に戻る。The specific mechanism is ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
 # wine (see Game::Battle#enemy_autodestruct's own comment in mrblib/game.rb):
 # Game_BattleAlgorithm::SelfDestruct never writes the caster's own HP, only
@@ -14011,9 +13993,9 @@ end
 
 # yado.tk's own text on the "airborne" enemy flag names no pixel offset or
 # animation shape, only that it "changes its Y position on screen" -- the
-# specific magnitude, period and edition gate below are ported from EasyRPG
+# specific magnitude, period and edition gate below are ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: its `Game_Enemy::GetFlyingOffset` supplies both the missing magnitude
+# wine: its own flying-offset accessor supplies both the missing magnitude
 # (+/-4px) and period (256 frames) *and* an edition gate the site never
 # mentions at all: that source's own comment claims real RPG2000 never
 # renders it ("2k does not support flying, albeit mentioned in the help
@@ -14076,7 +14058,7 @@ check 'Scene::Map#update_enemy_positions: an RPG2003 fight actually bobs the spr
                         '#flying_offset in isolation'
 
   # The identical troop and flag, fought with no rpg2003? flag on the party,
-  # never bobs at all -- matching EasyRPG's own edition gate, not merely a
+  # never bobs at all -- matching a reference implementation's own edition gate, not merely a
   # missing test.
   scene2 = new_scene({ 1 => event(2, 2, auto) })
   st2 = scene2.instance_variable_get(:@state)
@@ -14469,7 +14451,7 @@ end
 # Scene::Title's own `continue_available?` (ADR 0012, extended by ADR 0045 to
 # cover every slot rather than just slot 1). The cursor can still reach the
 # grayed-out entry, and confirming it is not silent -- it plays Buzzer
-# (ported from EasyRPG Player's own Scene_Title::CommandContinue, NOT
+# (ported from a reference implementation's own logic, NOT
 # independently confirmed against genuine RPG_RT under wine) rather than
 # doing nothing at all, but still never opens the file-select screen.
 
@@ -14510,7 +14492,7 @@ check 'no save data: pressing the selection key on Continue plays Buzzer and ope
   eq 1, scene.instance_variable_get(:@selected_index), 'the selection is left untouched'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Window_Command::DrawItem draws every
 # command through the windowskin's own system-colour palette, chosen by
 # Font::ColorDisabled (index 3) once Scene_Title disables
@@ -14552,7 +14534,7 @@ check 'a save exists: Continue is flagged available and its selection key opens 
   eq :load, pushed.instance_variable_get(:@mode), 'opened in :load mode'
 end
 
-# EasyRPG Player's own `Scene_Title::Refresh` calls `command_window->SetIndex(1)`
+# a reference implementation's own logic calls `command_window->SetIndex(1)`
 # whenever a save exists, unconditionally alongside `SetItemEnabled` -- which
 # would put the cursor on Continue, not New Game, on boot whenever a save
 # exists. The check right below found this does NOT match genuine RPG_RT
@@ -14563,7 +14545,7 @@ check 'a save exists: the title cursor still starts on New Game, not Continue' d
   # un-grayed, confirmed by successfully opening a correctly-populated
   # file-select screen from it), the title cursor sat on New Game every
   # time. A prior version of this check asserted the opposite, sourced only
-  # from EasyRPG's source rather than the genuine runtime -- see the dated
+  # from a reference implementation rather than the genuine runtime -- see the dated
   # Follow-up on the title-screen entry in docs/TODO.md.
   parent = TitleParent.new(fake_db, nil, false, true)
   scene = RPG2k::Scene::Title.new(parent)
@@ -14578,13 +14560,13 @@ check 'no save data: the title cursor still starts on New Game' do
      'with nothing to resume, the cursor starts on New Game as before'
 end
 
-check 'selecting New Game fades the title BGM (800ms), per EasyRPG Player ' \
+check 'selecting New Game fades the title BGM (800ms), per a reference implementation ' \
       '(not independently confirmed under wine), not a hard stop' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Player::SetupNewGame`
-  # is `Main_Data::game_system->BgmFade(800, true); ...`
-  # -- an 800ms fade, not `BgmStop()`'s immediate cut (`Game_System::
-  # BgmFade`/`BgmStop` are genuinely different
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
+  # is its own game-system's `BgmFade(800, true); ...`
+  # -- an 800ms fade, not `BgmStop()`'s immediate cut (its own
+  # `BgmFade`/`BgmStop` being genuinely different
   # calls). A prior version of this method ran a blanket `Audio.bgm_stop`
   # before every title selection, this one included.
   parent = TitleParent.new(fake_db, nil, false, false)
@@ -14600,10 +14582,10 @@ check 'selecting New Game fades the title BGM (800ms), per EasyRPG Player ' \
 end
 
 check "the headless --rpg2k_continue auto-select fades the title BGM " \
-      "(800ms) before resuming, per EasyRPG Player's LoadSavegame " \
+      "(800ms) before resuming, per a reference implementation's " \
       "(not independently confirmed under wine)" do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Player::LoadSavegame`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it
   # is `if (!load_on_map) { Main_Data::game_system->
   # BgmFade(800); ... }` -- true from the title screen, the only path this
   # headless single-slot shortcut ever takes (the interactive
@@ -14894,7 +14876,7 @@ check 'mosaic transitions resample the capture through a shrinking/growing block
   RGSS::Graphics.snapshot = snap
 
   # Erase (MOSAIC_OUT): starts sharp (block size 1) and gets chunkier --
-  # per EasyRPG Player's source (NOT independently confirmed against genuine
+  # per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), `m_size = current_frame + 1` in its
   # TransitionMosaicOut case.
   st.screen.erase(Game::Transition::MOSAIC_OUT)
@@ -14946,7 +14928,7 @@ check 'wave transitions resample the capture through the depth/phase ramp' do
   RGSS::Graphics.snapshot = snap
 
   # Erase (WAVE_OUT): depth/phase grow as the screen prepares to vanish --
-  # per EasyRPG Player's source (NOT independently confirmed against genuine
+  # per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), `p = current_frame + 1` in its
   # TransitionWaveOut case (itself Bitmap::WaverBlit's depth/phase args).
   st.screen.erase(Game::Transition::WAVE_OUT)
@@ -15106,12 +15088,10 @@ end
 
 check 'Flash Sprite targeting a vehicle (Boat) pulses the native sprite flash ' \
       'and decays, instead of silently dropping the target' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Game_Character::
-  # GetCharacter` resolves CharBoat/CharShip/
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it resolves CharBoat/CharShip/
   # CharAirship (10002-10004) to the live Game_Vehicle object exactly like
-  # CharPlayer/CharThisEvent, so `Game_Interpreter_Map::
-  # CommandFlashSprite`'s `event->Flash(...)` call reaches a vehicle just
+  # CharPlayer/CharThisEvent, so its own flash-sprite command's `event->Flash(...)` call reaches a vehicle just
   # as it reaches the player or a map event -- nothing in that reference
   # exempts it, unlike this codebase's prior "vehicle target = unresolved,
   # flashes nothing" behaviour.
@@ -15198,9 +15178,9 @@ check 'Tile Substitution survives a Save/Continue on the same map, unlike an ord
 end
 
 check 'Enter/Exit Vehicle boards the vehicle the party faces' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
-  # RPG_RT under wine), `Game_Interpreter_Map::CommandEnterExitVehicle`
-  # (code 10840) just calls `Game_Player::GetOnOffVehicle`
+  # Per a reference implementation (NOT independently confirmed against genuine
+  # RPG_RT under wine), its own enter/exit-vehicle command handling
+  # (code 10840) just calls its own get-on/off-vehicle handling
   # -- the identical function the action button drives -- so a Boat/Ship
   # boards only by facing it from an adjacent tile, never by standing on it
   # (see "board_vehicle applies the wrong boarding trigger" above); only the
@@ -15234,10 +15214,10 @@ check 'Open Main Menu pushes the field menu and resumes when it closes' do
   eq 1, st.variables[6], 'the event resumed after the menu closed'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenMainMenu`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own Open-Main-Menu command handling
 # is gated only on
-# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# its own message-active check, no `main_flag` restriction, so a
 # Parallel Process can trigger it exactly like the foreground can. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:menu` branch, so it
 # fell into the generic "background: resume" default and a Parallel
@@ -15370,7 +15350,7 @@ check 'a command_actor troop page fires at the acting battler\'s turn in a gauge
 end
 
 # The Special command in a gauge fight: choosing it forfeits the ready actor's
-# turn (per the same EasyRPG-ported DoNothing reading in the round-based
+# turn (per the same reference-implementation-ported DoNothing reading in the round-based
 # Special check above, NOT independently confirmed against genuine RPG_RT
 # under wine), spending the held gauge and returning to the ATB idle loop
 # without any action -- the active-time counterpart to that check.
@@ -15396,7 +15376,7 @@ end
 
 # -- automatic battler placement (`battlecommands.placement == 1`) -------------
 #
-# Ported from EasyRPG Player's source (its Calculate2k3BattlePosition), NOT
+# Ported from a reference implementation (its Calculate2k3BattlePosition), NOT
 # independently confirmed against genuine RPG_RT under wine: a
 # placement-1 database computes each party member's battle sprite position
 # from a grid keyed by party index/size and the encounter terrain, instead of
@@ -15491,8 +15471,8 @@ check 'the Row command moves an automatic-placement actor sprite by row_x_offset
 end
 
 check 'a defending actor draws the Defend pose, reverting to Idle once the round ends' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its Sprite_Actor::DoIdleAnimation checks
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it checks
   # IsDefending() before anything else -- ported as #build_actor_sprite's
   # `defending:` keyword
   # (Pose id 7), driven by #reposition_actor_sprite right when Defend
@@ -15634,9 +15614,9 @@ end
 # only #dead?) used to still open the ordinary Attack/Skill/Defend/Item prompt
 # for one, waiting on a choice that #apply_turn_states/#strike (see
 # Game::Battle#command_restricted?) discard or override regardless of what
-# gets picked. Ported from EasyRPG Player's source, NOT independently
-# confirmed against genuine RPG_RT under wine: its Scene_Battle_Rpg2k::
-# SelectNextActor recurses straight past exactly these two cases
+# gets picked. Ported from a reference implementation, NOT independently
+# confirmed against genuine RPG_RT under wine: its own next-actor-selection
+# logic recurses straight past exactly these two cases
 # (`!CanAct()` / `GetSignificantRestriction() != Restriction_normal`) with
 # no manual prompt shown at all.
 check 'an asleep ally is skipped straight to the next commandable one, no command prompt for it' do
@@ -15677,9 +15657,9 @@ end
 
 # 強制AI (mruby-lcf/mrblib/schema.rb, player/job field 23, force_ai) --
 # parsed but never read anywhere in mruby-rpg2k before this fix. Mirrors the
-# two restricted-actor checks directly above: ported from EasyRPG Player's
+# two restricted-actor checks directly above: ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine:
-# its own `Scene_Battle_Rpg2k::SelectNextActor` checks `GetAutoBattle()`
+# it checks `GetAutoBattle()`
 # right after the CanAct()/forced-restriction gates and, if set, queues an
 # action via the
 # default AutoBattle algorithm instead of ever opening `State_SelectCommand`
@@ -15768,7 +15748,7 @@ check 'a battle page with no condition ticked at all never fires' do
   ok !st.switches[15], 'RPG_RT reads an unticked condition box as never, not always'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
+# Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine: its CheckBattleEndAndScheduleEvents runs
 # "before each battler acts and also right after the last battler acts",
 # not just once between rounds -- Scene::Map#drive_battle_animate now
@@ -15937,7 +15917,7 @@ end
 # screen during a fight at all -- the Backdrop/<name> image is the whole
 # background. This port runs the fight inline on Scene::Map, and #render used
 # to keep compositing the map every frame underneath it: the backdrop sprite's
-# z 5 (ported from EasyRPG Player's own Priority_Background constant, NOT
+# z 5 (ported from a reference implementation's own Priority_Background constant, NOT
 # independently confirmed against genuine RPG_RT under wine) is outranked by
 # @map_viewport (z 100) and @upper_viewport (z 200), and the lower tile layer
 # is opaque, so the correctly resolved backdrop was drawn entirely behind
@@ -16009,8 +15989,8 @@ check 'Terminate Battle matches neither Win/Escape/Defeat and only bumps the bat
   eq 0, st.defeat_count
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Battle::EndBattle`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # only ever bumps `IncBattleCount()` there, at
 # battle *end* -- not when the encounter is first armed, well before the
 # fight screen has even opened.
@@ -16072,7 +16052,7 @@ check 'a page can wound a monster through Change Monster HP' do
   eq foe.max_hp - 7, foe.hp, 'the page took 7 HP off the first troop member'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `CommandChangeMonsterHP`
 # plays the enemy-kill system SE directly the instant its own `IsDead()`
 # check goes true, the same cue an ordinary lethal Attack/Skill already gets
@@ -16080,7 +16060,7 @@ end
 # event-command path never produces, so a scripted kill (a damage-over-time
 # battle-event page, say) used to fell a monster in total silence.
 check 'a page killing a monster through Change Monster HP plays the ' \
-      'enemy-kill SE (per EasyRPG Player, not independently confirmed under wine)' do
+      'enemy-kill SE (per a reference implementation, not independently confirmed under wine)' do
   ic = Game::Interpreter::Cmd
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_MONSTER_HP, [0, 1, 0, 9999, 1])]) }
   scene, _st = battle_scene_with_pages(pages)
@@ -16161,9 +16141,8 @@ check "a battle page's Show Battle Animation actually holds the page, not resumi
   ok st.switches[21], 'the page ran on once the animation actually finished'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Interpreter_Battle::
-# CommandShowBattleAnimation` leaves
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it leaves
 # `battler_target` null -- and so never calls `ShowBattleAnimation` at all --
 # for an Ally index (1-based, `target -= 1` first) outside
 # `0...GetBattlerCount()`, or an Enemy index outside `0...GetBattlerCount()`.
@@ -16267,8 +16246,8 @@ check "a battle page's Show Battle Animation target-scope flash pulses the named
 end
 
 # RPG2003's Ally/Enemy target-type flag on Show Battle Animation
-# (Interpreter#do_show_battle_animation_b's param3, ported from EasyRPG
-# Player's `Game_Interpreter_Battle::CommandShowBattleAnimation`, NOT
+# (Interpreter#do_show_battle_animation_b's param3, ported from a reference
+# implementation's own show-battle-animation command handling, NOT
 # independently confirmed against genuine RPG_RT under wine) used to be
 # dropped entirely: an "Ally #1" target still indexed straight into
 # `@ui[:enemy_sprites]` -- the troop's own *second* monster in any troop
@@ -16378,9 +16357,8 @@ check 'a battle page shows its message in a battle panel and waits for a key' do
      'the panel closed with the message'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Message::
-# GetRealPosition` is `if (Game_Battle::
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it is `if (Game_Battle::
 # IsBattleRunning()) { return Feature::HasRpg2kBattleSystem() ? 2 : 0; }` --
 # position 2 (bottom) for an RPG2000 database, position 0 (top) for
 # RPG2003 -- overriding any Message-Options position outright while a
@@ -16588,11 +16566,11 @@ check 'Open Shop scene: the command menu\'s own cursor lives in the prompt ' \
      'the list window carries no cursor rect while on the command menu'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_Shop`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # sets `index = 1` (the Buy row) exactly once, in
 # its constructor; neither `Refresh()` nor `SetMode()` (called by
-# `Scene_Shop::UpdateBuySelection`/`UpdateSellSelection`'s own Cancel
+# its own buy/sell-selection update's own Cancel
 # branch, to return to `BuySellLeave2`) ever touches
 # `index` again. So the command menu's own cursor persists across a trip
 # into Buy or Sell and back, rather than always snapping back to the first
@@ -16660,7 +16638,7 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度あり！') },
      'the confirmation line uses the database shop_purchased term'
 
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Scene_Shop::vUpdate's Bought case is a bare
   # `timer--; if (timer == 0) SetMode(Buy);` with no Input:: read at all, so
   # a button press does nothing here -- only the flat 60-frame timer (armed
@@ -16674,7 +16652,7 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   59.times { scene.update }
   shop = scene.instance_variable_get(:@shop)
   eq :buy, shop[:screen], 'the timer expiring on its own returns to the buy list, ' \
-                          'same as EasyRPG\'s Bought -> Buy transition'
+                          'same as a reference implementation\'s Bought -> Buy transition'
 end
 
 check 'Open Shop scene: selling shows the shop_sold confirmation, then returns ' \
@@ -16706,7 +16684,7 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度！') },
      'the confirmation line uses the database shop_sold term'
 
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Scene_Shop::vUpdate's Sold case never reads Input::
   # either -- B does not dismiss it early any more than C does.
   RGSS::Input.triggered = [RGSS::Input::B]
@@ -16718,15 +16696,15 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   59.times { scene.update }
   shop = scene.instance_variable_get(:@shop)
   eq :sell, shop[:screen], 'the timer expiring on its own returns to the sell list, ' \
-                           'same as EasyRPG\'s Sold -> Sell'
+                           'same as a reference implementation\'s Sold -> Sell'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_ShopSell`
-# inherits `Window_Item::CheckInclude`/
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
+# inherits its own item-window `CheckInclude`/
 # `Refresh` unchanged -- a plain `item_id > 0`
 # filter, no price check -- and only overrides `CheckEnable` (`item->price
-# > 0`), which `Scene_Shop::UpdateSellSelection`
+# > 0`), which its own sell-selection update
 # reads to Buzz instead of opening the quantity counter. A price-0 (key)
 # item the party holds stays on screen in that reference, just refuses the sale.
 check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
@@ -16837,7 +16815,7 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
   eq :quantity, shop[:screen]
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Scene_Shop::SetMode keeps the right-hand panels
   # visible through BuyHowMany/Bought just like Buy itself -- the panel
   # still describes the item the counter was opened for, not "no panel".
@@ -16857,7 +16835,7 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
      'the purchase confirmation keeps the status panel visible too (Scene_Shop::SetMode\'s Bought case)'
 
   # The confirmation only leaves once its own 60-frame timer runs out --
-  # per EasyRPG Player's source (NOT independently confirmed against genuine
+  # per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Scene_Shop::vUpdate's Bought case never reads
   # Input:: at all.
   60.times { scene.update } # the timer expires, back to the buy list
@@ -16873,7 +16851,7 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   ok shop[:status].nil?, 'the command menu still shows no panel'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), Scene_Shop::SetMode's own right-hand-panel switch
 # hides the party/status/gold panels for BuySellLeave and Sell alike, and
 # shows them for Buy, BuyHowMany/SellHowMany and Bought/Sold -- the gold
@@ -17380,8 +17358,8 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
      'a successful escape also plays the dedicated Escape SE'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its `Game_BattleAlgorithm::Escape::GetStartSe`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # (src/game_battlealgorithm.cpp) returns `SFX_Escape` whenever the
 # algorithm's own *source* is an enemy (an ally's own Escape defers to the base
 # class's silent default instead, played separately by the check just
@@ -17404,13 +17382,12 @@ check "an enemy's own AI-chosen Escape basic action plays the dedicated " \
   RGSS::Audio.reset_se
   battle.send(:play_battle_action_se, { attacker: 'Slime', fled: true })
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Escape1' },
-     "matches the EasyRPG-ported Escape::GetStartSe for an enemy source " \
+     "matches the reference-implementation-ported Escape::GetStartSe for an enemy source " \
      "(NOT independently confirmed against genuine RPG_RT under wine)"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its `Game_BattleAlgorithm::SelfDestruct::
-# GetStartSe` (src/game_battlealgorithm.cpp) is
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it (src/game_battlealgorithm.cpp) is
 # `return &GetSystemSE(SFX_EnemyKill);` --
 # unconditional, unlike the ordinary post-hit death SE just above
 # (`entry[:defeated] && !entry[:target_ally]`), which can never fire for a
@@ -17525,8 +17502,8 @@ check 'a target-scope animation flash pulses the hit enemy, not the screen or a 
 end
 
 # screen_shaking 2 ("screen") on a battle-round animation. Ported from
-# EasyRPG Player's source, NOT independently confirmed against genuine
-# RPG_RT under wine: `BattleAnimation::ProcessAnimationTiming`'s
+# a reference implementation, NOT independently confirmed against genuine
+# RPG_RT under wine: it's
 # `screen->ShakeOnce(3, 5, 32)`
 # -- the exact same Game::Screen#shake call and (power, speed, frames)
 # argument order the Shake Screen event command (11050) already drives (see
@@ -17543,7 +17520,7 @@ check 'a screen-scope animation shake triggers the same Game::Screen#shake state
   scene.send(:fire_animation_flashes, ma)
   ok st.screen.shaking?, 'the screen shake started'
   RPG2k::Scene::Map::ANIM_SHAKE_FRAMES.times { st.screen.update }
-  ok !st.screen.shaking?, "settled after EasyRPG's own fixed 32-frame duration"
+  ok !st.screen.shaking?, "settled after a reference implementation's own fixed 32-frame duration"
 end
 
 # The default (0, "none") screen_shaking must stay a regression-safe no-op --
@@ -17561,7 +17538,7 @@ check 'a screen_shaking-0 (default) timing triggers no shake' do
   ok !st.screen.shaking?, 'screen_shaking 0 (the schema default) never touches the screen shake'
 end
 
-# screen_shaking 1 ("target"): per EasyRPG Player's source (NOT
+# screen_shaking 1 ("target"): per a reference implementation (NOT
 # independently confirmed against genuine RPG_RT under wine), its
 # `BattleAnimationBattle::ShakeTargets`/`BattleAnimationBattler::ShakeTargets`
 # shake every one of the animation's own battler targets
@@ -17607,7 +17584,7 @@ check 'a target-scope shake with no resolvable target sprite is a silent no-op' 
   ok true, 'no exception targeting nothing'
 end
 
-# ANIM_FLASH_FRAMES itself, pinned against EasyRPG Player's source (NOT
+# ANIM_FLASH_FRAMES itself, pinned against a reference implementation (NOT
 # independently confirmed against genuine RPG_RT under wine) rather
 # than against its own value (the checks above derive their expectations from
 # the constant, so a wrong constant would still "pass" them). Its
@@ -17622,7 +17599,7 @@ end
 # tick after) to land on delta_frames 10 and 11 without needing a full fixture
 # animation or 60 real `scene.update` calls.
 check 'a fired animation screen flash stays alive for exactly 11 real frames, matching ' \
-      "EasyRPG Player's UpdateFlashGeneric delta_frames <= 10 (not independently " \
+      "a reference implementation's delta_frames <= 10 (not independently " \
       'confirmed under wine)' do
   scene = new_scene({})
   st = scene.instance_variable_get(:@state)
@@ -17760,7 +17737,7 @@ check 'the round waits for the animation instead of the banner timer' do
   ok !scene.instance_variable_get(:@battle).send(:battle_animation_playing?)
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its BattleAnimation::Update
 # ticks an internal frame counter once per logical 60fps update and shows
 # `GetFrame() / 2` as the current cell -- so every real (LCF) animation frame
@@ -17775,7 +17752,7 @@ check 'each battle animation frame is held for exactly ANIM_CELL_FRAMES ticks (2
   ma = scene.instance_variable_get(:@map_animation)
   ok ma, 'the fixture animation (id 8, 4 frames) armed'
   eq 2, RPG2k::Scene::Map::ANIM_CELL_FRAMES,
-     'matches EasyRPG BattleAnimation::Update -- GetRealFrame() == GetFrame() / 2'
+     'matches a reference implementation -- GetRealFrame() == GetFrame() / 2'
   eq 0, ma[:frame_i], 'starts on the first frame'
   2.times { scene.send(:step_map_animation) }
   eq 0, ma[:frame_i], 'still the first frame after 2 ticks'
@@ -17855,7 +17832,7 @@ check 'animation_position_offset splits head/center/feet around the target sprit
   eq 0, scene.send(:animation_position_offset, { height: nil }, 0),
      'no known height (the ally-side screen-centre fallback) is never offset'
   # The real map-target value every #start_map_animation caller actually
-  # hands this (ANIM_MAP_TARGET_HEIGHT, 24 -- EasyRPG Player's own hardcoded
+  # hands this (ANIM_MAP_TARGET_HEIGHT, 24 -- a reference implementation's own hardcoded
   # constant, not the 32px CharSet frame, per its source; not independently
   # confirmed against genuine RPG_RT under wine), split at its own halves.
   eq(-12, scene.send(:animation_position_offset,
@@ -17901,7 +17878,7 @@ end
 # (`Bitmap.new`'s second argument) the same way every other sprite sheet this
 # runtime loads is. `Battle/` was the one sheet directory asking for an opaque
 # decode, which made every cell blit a solid 96x96 rectangle of background over
-# its target. Per EasyRPG Player's source (NOT independently confirmed against
+# its target. Per a reference implementation (NOT independently confirmed against
 # genuine RPG_RT under wine), its material table sets
 # `Spec::transparent` true for Battle, and false only for the four full-screen
 # backdrops this runtime already loads opaque.
@@ -17921,7 +17898,7 @@ end
 # Each animation cell carries its own `transparency` (LCF battle_anime chunk
 # 19's per-cell field 10 -- mruby-lcf/mrblib/schema.rb), decoded all along and
 # never read, so every cell drew fully opaque no matter what its author asked
-# for. #animation_cell_opacity is the pure-logic half, ported from EasyRPG
+# for. #animation_cell_opacity is the pure-logic half, ported from a reference implementation
 # Player's own `BattleAnimation::DrawAt` (NOT independently confirmed
 # against genuine RPG_RT under wine): `SetOpacity(255 * (100 -
 # cell.transparency) / 100)`.
@@ -18105,7 +18082,7 @@ check 'the battle status window shows each ally condition, or the normal term' d
   scene.instance_variable_get(:@battle).send(:refresh_battle_status)
   texts = window_texts(ui[:status_win])
   ok texts.include?('Sleep'), 'the afflicted ally shows its state'
-  # RPG2000 is front-view: ported from EasyRPG Player's source, NOT
+  # RPG2000 is front-view: ported from a reference implementation, NOT
   # independently confirmed against genuine RPG_RT under wine: its
   # Scene_Battle_Rpg2k builds exactly one Window_BattleStatus, defaulted to
   # `enemy: false` -- the troop is never listed on this panel, only shown
@@ -18225,7 +18202,7 @@ end
 check 'the status panel swaps sides with whichever 76px window is showing beside it' do
   battle_mod = RPG2k::Scene::Battle
   # During the top-level Battle/Auto Battle/Escape choice, ported from
-  # EasyRPG Player's source (NOT independently confirmed against genuine
+  # a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine): its SetCommandWindowsX lays the options window at
   # x=0 and pushes the status window to its right (BATTLE_CMD_W); the
   # per-actor command window (off
@@ -18269,8 +18246,8 @@ end
 # specifically for battle_type 2, distinct from `#alternate_battle_layout?`
 # (true for both 1 and 2) -- see #refresh_battle_status's own comment,
 # scene/map.rb. These checks exercise the dispatch and the card's own
-# drawing, ported from EasyRPG Player's real `Window_BattleStatus::Refresh`/
-# `RefreshGauge`/`DrawGaugeSystem2`/`DrawNumberSystem2`, NOT independently
+# drawing, ported from a reference implementation's own battle-status/gauge
+# drawing logic, NOT independently
 # confirmed against genuine RPG_RT under wine.
 
 check 'battle_type 0 (no gauge layout) still draws the plain text status row' do
@@ -18393,7 +18370,7 @@ check 'DrawGaugeSystem2 stretches the fill by 25 * cur / max, and reads the ' \
   eq nil, c.stretch_calls.last, 'max == 0 draws nothing at all, matching the real max_value guard'
 end
 
-check 'DrawNumberSystem2 leading-zero cascade matches EasyRPG exactly (7, 42, 100, 999)' do
+check 'DrawNumberSystem2 leading-zero cascade matches a reference implementation exactly (7, 42, 100, 999)' do
   battle = RPG2k::Scene::Battle.allocate
   system2 = RGSS::Bitmap.new(80, 96)
   c = RGSS::Bitmap.new(64, 16)
@@ -18495,7 +18472,7 @@ check 'a ready but restricted (asleep) party member\'s gauge fires a silent no-o
   ok ui, 'the battle opened to the active-time idle loop'
   hero = ui[:battle].all_combatants.first
   # The restricted ally never *charges* under the real fill curve (ported
-  # from EasyRPG Player's source, NOT independently confirmed against
+  # from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: its CanAct() gate -- the new
   # rpg2k3_battle_gauge_check.rb check pins that), so
   # seed its gauge directly: a full gauge it somehow holds still fires its
@@ -18514,9 +18491,9 @@ end
 # menu's Wait command -- *not* a Battle Commands database field, correcting
 # the ADR's own premise. In active mode (raw 0, the default) the gauges keep
 # filling while any command menu is open and a ready non-controllable
-# combatant's action interrupts the menu (ported from EasyRPG Player's
+# combatant's action interrupts the menu (ported from a reference implementation's
 # source, NOT independently confirmed against genuine RPG_RT under wine:
-# its `ProcessSceneActionCommand`'s
+# it's
 # `GetAtbMode() == active && IsBattleActionPending()`
 # gate); in wait mode (raw 1) they freeze -- confirmed against liblcf's own
 # generated `AtbMode` enum (`AtbMode_atb_active = 0, AtbMode_atb_wait = 1`),
@@ -18789,7 +18766,7 @@ check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
 end
 
 check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
-      'per EasyRPG Player\'s ResetAllBattlerZ (ported from that source, NOT ' \
+      'per a reference implementation\'s ResetAllBattlerZ (ported from that source, NOT ' \
       'independently confirmed against genuine RPG_RT under wine)' do
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
@@ -18846,8 +18823,8 @@ check 'a blow that gets through for nothing says so' do
 end
 
 # A critical hit inserts the game's own 会心/痛恨 line between the attack and
-# the damage (Scene_Battle_Rpg2k::ProcessBattleActionCritical runs before
-# ProcessBattleActionApply), keyed on the target taking the crit like the
+# the damage (its own battle-action-critical handling runs before
+# its own battle-action-apply), keyed on the target taking the crit like the
 # damage predicates themselves, not on which side dealt it.
 check 'a critical hit adds the game\'s own line between the attack and the damage' do
   scene, = battle_at_command
@@ -18928,7 +18905,7 @@ end
 # An affect_attack/defense/spirit/agility skill (Game::Battle#apply_stat_mods)
 # and an affect_attr_defence skill (Game::Battle#apply_attr_shift) both already
 # moved the target's numbers with no line ever announcing it -- ported from
-# EasyRPG Player's source, NOT independently confirmed against genuine
+# a reference implementation, NOT independently confirmed against genuine
 # RPG_RT under wine: its GetParameterChangeMessage / GetAttributeShiftMessage
 # read `term.parameter_increase` / `_decrease` and `term.resistance_increase`
 # / `_decrease` for exactly this, matching every other landed-condition
@@ -18962,7 +18939,7 @@ end
 
 check 'an affect_attr_defence skill announces which way the target\'s ' \
       'resistance moved, by the attribute\'s own name -- no magnitude, ' \
-      'per the same EasyRPG-ported GetAttributeShiftMessage reading above ' \
+      'per the same reference-implementation-ported GetAttributeShiftMessage reading above ' \
       '(NOT independently confirmed against genuine RPG_RT under wine)' do
   scene, = battle_at_command
   raised = scene.instance_variable_get(:@battle).send(:battle_state_lines,
@@ -19077,9 +19054,9 @@ check 'an item that did nothing keeps the composed line' do
      .first.include?('no effect')
 end
 
-# A special/use_skill battle item invoking a skill: ported from EasyRPG
+# A special/use_skill battle item invoking a skill: ported from a reference implementation
 # Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: `Game_BattleAlgorithm::Skill::GetStartMessage` --
+# wine: its own Skill-algorithm start-message logic --
 # `if (item && item->using_message == 0)
 # ... return BattleMessage::GetItemStartMessage2k(...)`, checked *before* ever
 # reading the skill's own `using_message1`/`using_message2`. The item
@@ -19445,8 +19422,8 @@ check 'the menu party list shows each member condition' do
   ok !texts.include?('Normal'), 'the normal term is replaced, not added to'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_Base::GetValueFontColor`, the shared
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it, the shared
 # routine behind `DrawActorHp`/`DrawActorSp` -- the *current* HP/MP figure
 # alone recolors: knockout gray (index 5) at exactly 0 HP, critical
 # red/orange (index 4) at or below a quarter of max, the ordinary default
@@ -19476,12 +19453,12 @@ check 'the main menu party list colours a knocked-out HP figure and a ' \
      'the HP max figure stays the default colour (index 0)'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Window_Gold` on this screen --
-# `Scene_Menu::Start`, which creates one
+# its own menu-scene start, which creates one
 # unconditionally (88x32, bottom-left corner, no version/feature gate
 # anywhere in the file) for RPG2000 and RPG2003 alike, and
-# `Scene_Menu::Continue`, which refreshes it every time control returns from
+# its own menu-scene continue, which refreshes it every time control returns from
 # a popped child screen (`Item`/`Skill`/`Equip`/`Status`/`Save`).
 check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
       'a pushed child screen' do
@@ -19548,8 +19525,8 @@ check 'Scene::Menu: the main command cursor wraps around' do
   eq 0, scene.instance_variable_get(:@index), 'Down from the last command wraps to the first'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its Window_Selectable::Update (the base every
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it (the base every
 # RPG2000 command list is modelled on there) falls through to
 # Input::IsRepeated right after its own IsTriggered check, so holding
 # Down/Up auto-scrolls the cursor after the
@@ -19588,7 +19565,7 @@ end
 
 check 'Scene::Menu: choosing Skill/Equip hands focus to the party-status panel, ' \
       'a second confirm there opens the scene for the picked actor' do
-  # Ported from EasyRPG Player's own Scene_Menu::UpdateCommand /
+  # Ported from a reference implementation's own logic /
   # UpdateActorSelection, NOT independently confirmed against genuine
   # RPG_RT under wine: Skill/Equipment/Status don't open immediately --
   # the command list goes inactive, the party-status panel goes active, and
@@ -19653,7 +19630,7 @@ end
 
 check 'Scene::Menu: a restricted actor cannot be given the Skill command, ' \
       'unlike Equip' do
-  # Ported from EasyRPG Player's own Scene_Menu::UpdateActorSelection, NOT
+  # Ported from a reference implementation's own logic, NOT
   # independently confirmed against genuine RPG_RT under wine: its Skill
   # case alone gates on actor->CanAct(); Equipment/Status do not.
   st = wrap_menu_state
@@ -19761,7 +19738,7 @@ check 'Scene::Menu: RPG2000 (no rpg2003? flag) never offers Status at all' do
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
   keys = scene.instance_variable_get(:@commands).map(&:first)
   eq [:item, :skill, :equip, :save, :end_game], keys,
-     'the fixed RPG2000 five, per the EasyRPG-ported Player::IsRPG2k() ' \
+     'the fixed RPG2000 five, per the reference-implementation-ported Player::IsRPG2k() ' \
      'branch (NOT independently confirmed against genuine RPG_RT under ' \
      'wine) -- no Status, since a real RPG2000 database never customizes the menu'
 end
@@ -19776,7 +19753,7 @@ check 'Scene::Menu: an RPG2003 database drives the command list from ' \
   # save-system `atb_mode` field (ADR 0054's follow-up) and is offered with
   # its current-mode label; Order (7) has no battle-system dependency at all,
   # just party reordering; End Game is appended unconditionally, ported from
-  # EasyRPG Player's own unconditional Quit push outside the customized
+  # a reference implementation's own unconditional Quit push outside the customized
   # loop (NOT independently confirmed against genuine RPG_RT under wine).
   db = fake_db(rpg2003: true, menu_commands: [1, 2, 3, 4, 5, 6, 7, 8])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
@@ -19787,7 +19764,7 @@ end
 
 # The enum values are confirmed against liblcf's own generated `AtbMode`
 # enum (`AtbMode_atb_active = 0, AtbMode_atb_wait = 1`); the label mapping
-# itself is ported from EasyRPG Player's source (its `Scene_Menu` Wait row:
+# itself is ported from a reference implementation (its `Scene_Menu` Wait row:
 # `GetAtbMode() == AtbMode_atb_wait ? wait_on :
 # wait_off`), NOT independently confirmed against genuine RPG_RT under wine
 # -- raw 0 (the default) is active mode and labels `wait_off`, raw
@@ -19838,9 +19815,8 @@ end
 check 'Scene::Menu: choosing Order pushes Scene::Order directly, no actor-' \
       'selection step' do
   # Unlike Skill/Equip/Status, Order acts on the whole party at once --
-  # ported from EasyRPG Player's own Scene_Menu::UpdateCommand, NOT
-  # independently confirmed against genuine RPG_RT under wine: its `case
-  # Order:` pushes Scene_Order straight away, the same shape as Item/Save,
+  # ported from a reference implementation's own logic, NOT
+  # independently confirmed against genuine RPG_RT under wine: it pushes Scene_Order straight away, the same shape as Item/Save,
   # not the Skill/Equipment/Status/Row actor-selection branch.
   db = fake_db(rpg2003: true, menu_commands: [1, 7])
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
@@ -19858,7 +19834,7 @@ end
 check 'Scene::Menu: choosing Row hands focus to the actor-selection panel, ' \
       'and confirming an actor toggles their row with no scene pushed' do
   # Unlike Order, Row shares Skill/Equipment/Status' actor-selection shape
-  # (the class comment, and EasyRPG Player's own UpdateCommand grouping,
+  # (the class comment, and a reference implementation's own logic grouping,
   # ported from that source and NOT independently confirmed against
   # genuine RPG_RT under wine) -- but unlike those three, confirming an
   # actor never opens anything: the toggle happens right on the panel and
@@ -19888,7 +19864,7 @@ end
 
 check 'Scene::Menu: Order refuses a single-member party with the buzzer, ' \
       'no scene pushed' do
-  # Ported from EasyRPG Player's own Scene_Menu::UpdateCommand's `Order`
+  # Ported from a reference implementation's own logic's `Order`
   # branch, NOT independently confirmed against genuine RPG_RT under wine:
   # it gates on `GetActors().size() <= 1` rather than the plain
   # empty-party check every other command here uses -- reordering a single
@@ -19904,7 +19880,7 @@ end
 
 # -- Scene::Order: RPG2003's party-reordering screen --------------------------
 #
-# Ported from EasyRPG Player's own `Scene_Order::UpdateOrder`/
+# Ported from a reference implementation's own logic/
 # `UpdateConfirm`/`Redo`/`Confirm`, NOT independently confirmed against
 # genuine RPG_RT under wine: the player picks party members one at a
 # time from a left column (building a right column in the picked order), then
@@ -19998,11 +19974,11 @@ check 'Scene::Order: picking every member opens the Confirm/Redo prompt, ' \
   ok scene.parent.pop_called, 'the screen closes on Confirm'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Order::UpdateOrder`,
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it,
 # once the last member is picked, calls
 # `window_left->SetIndex(-1)` before `SetActive(false)` -- distinct from
-# simply going inactive. `Window_Selectable::UpdateCursorRect`
+# simply going inactive. its own selectable-window cursor-rect update
 # special-cases a negative index to
 # `SetCursorRect(Rect())`, so that reference hides the left column's cursor
 # entirely at this transition, rather than freezing it on the now-blank
@@ -20059,7 +20035,7 @@ check 'Scene::Order: Redo clears every pick and returns to the left column, ' \
   eq original_order, state.party.actors.map(&:object_id), 'the party is untouched'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Scene_Order::vUpdate calls window_left->
 # Update()/window_confirm->Update() unconditionally, every frame -- both
 # genuine Window_Selectables whose own Update() drives the cursor
@@ -20097,11 +20073,11 @@ check 'Scene::Order: holding Down auto-repeats both the left-column pick ' \
      'a held (repeated, not triggered) Down still flips the prompt cursor to Redo'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Order::Confirm`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # removes then re-adds every member through
-# `Game_Party::RemoveActor`/`AddActor`, and each of
-# those calls `Main_Data::game_player->ResetGraphic()`
+# its own remove/add-actor handling, and each of
+# those calls its own game-player's `ResetGraphic()`
 # as a side effect -- re-reading slot 0's (the new leader's) CharSet name
 # onto the map sprite. `Game::Party#reorder` applies the net effect of the
 # remove/re-add dance directly rather than replaying it, so this side effect
@@ -20146,7 +20122,7 @@ check 'Scene::Menu: choosing Save opens Scene::SaveLoad in :save mode' do
 end
 
 check 'Scene::Menu: Save access forbidden refuses the selection silently, no message' do
-  # Ported from EasyRPG Player's own Scene_Menu::UpdateCommand, NOT
+  # Ported from a reference implementation's own logic, NOT
   # independently confirmed against genuine RPG_RT under wine: a disabled
   # Save command just refuses the selection (plays a buzzer SE this engine
   # does not yet model any menu SE for), no message of any kind -- unlike
@@ -20164,11 +20140,10 @@ end
 
 check 'Scene::Menu: a disabled command reads the windowskin\'s own disabled ' \
       'swatch, not the default text colour' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Scene_Menu::
-  # CreateCommandWindow` disables Save on
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it disables Save on
   # `!GetAllowSave()` and every other non-Order command on
-  # `GetActors().empty()`; `Window_Command::SetItemEnabled`/`DrawItem`
+  # `GetActors().empty()`; its own command-window enable/draw handling
   # then draws a disabled row through
   # `Font::ColorDisabled` (swatch index 3), the same
   # windowskin-blended path every row uses -- the same convention already
@@ -20241,10 +20216,9 @@ end
 # dropped into Nepheshel's own game dir, landed the file-select cursor on
 # whichever slot held the larger one -- and swapping which slot had the
 # larger timestamp swapped which slot the cursor landed on, ruling out "just
-# the highest-numbered occupied slot". Originally ported from EasyRPG's
-# `Scene_File::Start` (`src/scene_file.cpp`, `index = latest_slot;
-# top_index = std::max(0, index - 2);`, tracking whichever populated slot's
-# `title.timestamp` is the largest) -- not always slot 1.
+# the highest-numbered occupied slot". Originally ported from a reference
+# implementation's file-select startup logic (tracking whichever populated
+# slot's timestamp is the largest) -- not always slot 1.
 check 'Scene::SaveLoad opens with the cursor on the most-recently-saved ' \
       'slot, not always the first one' do
   Dir.mktmpdir('rpg2k-save-recency') do |dir|
@@ -20301,8 +20275,8 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
                                               'reference capture, unlike this screen\'s old layout'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_SaveFile::Refresh`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # draws the level and HP fields as four separate
 # `TextDraw` calls at fixed pixel columns (x=4, x=46), each number
 # `std::setw`-padded to a fixed width -- so the "HP" label never shifts
@@ -20338,7 +20312,7 @@ check 'Scene::SaveLoad: HP is space-padded to width 4 on RPG2003, not 3' do
   ok texts.include?('  80'), 'RPG2003 widens the HP field to 4 characters, not 3'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Window_SaveFile::Refresh draws every
 # text element through TextDraw(x, y, fc, text) -- never a flat colour --
 # with `fc` itself `has_save ? Font::ColorDefault : Font::ColorDisabled`
@@ -20464,8 +20438,8 @@ check 'Scene::SaveLoad: a member with no FaceSet draws no thumbnail; only the fi
      'only members 2/3/4 (of 5) draw a face'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Save::Action`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # is just `Save(fs, index + 1); Scene::Pop();`,
 # discarding `Save`'s own boolean result outright -- a save I/O failure
 # pops exactly the same as a success, no "Save failed." path exists at
@@ -20529,7 +20503,7 @@ check 'Scene::SaveLoad: Down/Up move the cursor and clamp, never wrap, at ' \
      'UP from the last slot moves up by one, same as any other slot'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Window_Selectable::Update falls
 # through to Input::IsRepeated(DOWN/UP) right after its own IsTriggered
 # check, so holding a direction auto-scrolls the cursor after the initial
@@ -20610,7 +20584,7 @@ end
 
 # The scroll indicator: two independent blinking arrow sprites, not a
 # scrollbar -- see the class comment above Scene::SaveLoad::VISIBLE_SLOTS.
-# Ported from EasyRPG Player's own Scene_File
+# Ported from a reference implementation's own Scene_File
 # (MakeArrowSprite/UpdateArrows), NOT independently confirmed against
 # genuine RPG_RT under wine.
 check 'Scene::SaveLoad: at the top of the list, only the down arrow can show, ' \
@@ -20680,10 +20654,10 @@ check 'Open Save Menu pushes Scene::SaveLoad in :save mode and resumes the event
   eq 1, st.variables[7], 'the event resumed after the picker closed'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Interpreter_Map::CommandOpenSaveMenu`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own Open-Save-Menu command handling
 # is gated only on
-# `Game_Message::IsMessageActive()`, no `main_flag` restriction, so a
+# its own message-active check, no `main_flag` restriction, so a
 # Parallel Process can trigger it exactly like the foreground can. Before
 # this fix, `Scene::Map#drive_parallel_wait` had no `:save_menu` branch, so
 # it fell into the generic "background: resume" default and a Parallel
@@ -20810,8 +20784,8 @@ check 'the item / skill target list shows who is afflicted' do
   end
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_Base::GetValueFontColor`, the shared
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it, the shared
 # routine behind `DrawActorHp`/`DrawActorSp` -- the *current* HP/MP figure
 # alone recolors: knockout gray (index 5) at exactly 0 HP, critical
 # red/orange (index 4) at or below a quarter of max, the ordinary default
@@ -21078,9 +21052,8 @@ end
 
 check 'Scene::ItemMenu: Right/Left cross a row boundary rather than ' \
       'stopping at the row edge' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Selectable::
-  # Update` has no method actually named
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it has no method actually named
   # `CursorRight`/`CursorLeft` -- its Right/Left branches are a flat
   # `index +- 1` bounded only by the list's own absolute start/end, no
   # row-boundary check, structurally unlike Down/Up's genuine column-lock.
@@ -21102,8 +21075,8 @@ check 'Scene::ItemMenu: Right/Left cross a row boundary rather than ' \
      'Left from a row\'s first cell flows back into the previous row\'s last cell'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its Window_Selectable::Update (the base every
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it (the base every
 # RPG2000 list is modelled on there) falls through to Input::IsRepeated for
 # all four directions right after its own IsTriggered check, so holding a
 # direction auto-repeats the cursor after the initial delay -- see
@@ -21176,10 +21149,9 @@ class MedicineItemStubParty < WrapMenuParty
 end
 
 check 'Scene::ItemMenu: a successful use stays on the target screen, ' \
-      'per EasyRPG Player (not independently confirmed under wine), instead of dropping back to the item list' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Scene_ActorTarget::
-  # UpdateItem` never calls `Scene::Pop()` on
+      'per a reference implementation (not independently confirmed under wine), instead of dropping back to the item list' do
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it never calls `Scene::Pop()` on
   # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
   # does, and it never builds a message window either: only `SePlay`/
   # `Refresh`. A successful use lets the player keep using the same item on
@@ -21661,9 +21633,9 @@ check 'Scene::ItemMenu: a special item invoking Teleport opens a destination ' \
      'both registered destinations, ascending by map id (this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  # The destination list is itself a two-column grid (per EasyRPG Player's
+  # The destination list is itself a two-column grid (per a reference implementation's
   # source, NOT independently confirmed against genuine RPG_RT under wine:
-  # `Window_Teleport` sets `column_max = 2`) -- with only two destinations, DOWN is a
+  # it sets `column_max = 2`) -- with only two destinations, DOWN is a
   # no-op (nothing in the row below) and RIGHT is what reaches the second
   # one, not DOWN.
   RGSS::Input.triggered = [RGSS::Input::DOWN]        # no cell below -- a no-op
@@ -21682,9 +21654,8 @@ end
 
 check 'Scene::ItemMenu: the Teleport destination list crosses a row ' \
       'boundary on Right/Left rather than stopping at the row edge' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Selectable::
-  # Update` -- Right/Left are a flat `index +-
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it -- Right/Left are a flat `index +-
   # 1` bounded only by the list's own absolute start/end, no row-boundary
   # check, the same shape already fixed for the item/skill grids. A third
   # destination is needed here: with only two, both fit in the first row
@@ -21784,7 +21755,7 @@ check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, '
       'the target cursor does wrap' do
   scene = menu_scene(RPG2k::Scene::SkillMenu, wrap_menu_state)
   eq 0, scene.instance_variable_get(:@skill_index), 'starts on the first skill'
-  # The skill list is a two-column grid (ported from EasyRPG Player's own
+  # The skill list is a two-column grid (ported from a reference implementation's own
   # Window_Skill, NOT independently confirmed against genuine RPG_RT under
   # wine, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
   # both sit in the same row, so UP/DOWN have no cell to move to.
@@ -21806,7 +21777,7 @@ check 'Scene::SkillMenu: the skill grid cursor does not wrap, caster is fixed, '
   eq 0, scene.instance_variable_get(:@skill_index), 'Left moves back onto the first skill'
 
   # There is no way to switch caster inside this screen -- ported from
-  # EasyRPG Player's own Scene_Skill, NOT independently confirmed against
+  # a reference implementation's own Scene_Skill, NOT independently confirmed against
   # genuine RPG_RT under wine: its actor_index is fixed at
   # construction (see the class comment); LEFT/RIGHT above are grid
   # navigation now, not a caster switch.
@@ -21839,9 +21810,8 @@ end
 
 check 'Scene::SkillMenu: Right/Left cross a row boundary rather than ' \
       'stopping at the row edge' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Selectable::
-  # Update` has no method actually named
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it has no method actually named
   # `CursorRight`/`CursorLeft` -- its Right/Left branches are a flat
   # `index +- 1` bounded only by the list's own absolute start/end, no
   # row-boundary check, structurally unlike Down/Up's genuine column-lock.
@@ -21973,7 +21943,7 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
   parent = fake_parent(fake_db)
   state = escape_teleport_state
   scene = RPG2k::Scene::SkillMenu.new(parent, state)
-  # The skill list is a two-column grid (ported from EasyRPG Player's own
+  # The skill list is a two-column grid (ported from a reference implementation's own
   # Window_Skill, NOT independently confirmed against genuine RPG_RT under
   # wine, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
   # the second sits beside the first in the same row, reached by RIGHT.
@@ -21989,9 +21959,9 @@ check 'Scene::SkillMenu: a Teleport skill opens a destination list and queues th
      '(this fixture parent carries no map tree)'
   ok state.pending_teleport.nil?, 'opening the list does not warp yet'
 
-  # The destination list is itself a two-column grid (per EasyRPG Player's
+  # The destination list is itself a two-column grid (per a reference implementation's
   # source, NOT independently confirmed against genuine RPG_RT under wine:
-  # `Window_Teleport` sets `column_max = 2`) -- RIGHT is what reaches the second
+  # it sets `column_max = 2`) -- RIGHT is what reaches the second
   # destination, not DOWN.
   RGSS::Input.triggered = [RGSS::Input::RIGHT]       # move onto the second destination (map 20)
   scene.update
@@ -22005,9 +21975,8 @@ end
 
 check 'Scene::SkillMenu: the Teleport destination list crosses a row ' \
       'boundary on Right/Left rather than stopping at the row edge' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Window_Selectable::
-  # Update` -- Right/Left are a flat `index +-
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it -- Right/Left are a flat `index +-
   # 1` bounded only by the list's own absolute start/end, no row-boundary
   # check, the same shape already fixed for the item/skill grids. A third
   # destination is needed here: with only two, both fit in the first row
@@ -22065,7 +22034,7 @@ check 'Scene::SkillMenu: cancelling the destination list returns to the skill li
   parent = fake_parent(fake_db)
   state = escape_teleport_state
   scene = RPG2k::Scene::SkillMenu.new(parent, state)
-  # The skill list is a two-column grid (ported from EasyRPG Player's own
+  # The skill list is a two-column grid (ported from a reference implementation's own
   # Window_Skill, NOT independently confirmed against genuine RPG_RT under
   # wine, see Scene::SkillMenu::COLUMN_MAX): with only two skills,
   # the second sits beside the first in the same row, reached by RIGHT.
@@ -22151,10 +22120,9 @@ class NormalTargetSkillStubParty < WrapMenuParty
 end
 
 check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
-      'per EasyRPG Player (not independently confirmed under wine), instead of dropping back to the skill list' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Scene_ActorTarget::
-  # UpdateSkill` never calls `Scene::Pop()` on
+      'per a reference implementation (not independently confirmed under wine), instead of dropping back to the skill list' do
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it never calls `Scene::Pop()` on
   # Decision, success or failure alike -- only `vUpdate`'s own Cancel branch
   # does, and it never builds a message window either: only `SePlay`/
   # `Refresh`, playing the invoked skill's own `animation_id`-derived SE. A
@@ -22201,9 +22169,8 @@ check 'Scene::SkillMenu: a successful cast stays on the target screen, ' \
   eq :skills, scene.instance_variable_get(:@mode)
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_System::
-# SePlay(const RPG::Animation&)` skips a timing
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it skips a timing
 # whose sound name fails `IsStopSoundFilename` -- true for a genuinely
 # blank name *or* the literal "(OFF)" sentinel (liblcf's own "no sound set"
 # default), not blank alone -- and falls through to the next timing's own
@@ -22296,9 +22263,9 @@ check 'Scene::SkillMenu: the description banner and skill-list box both ' \
   eq RPG2k::Scene::SkillMenu::SCREEN_W, skill_win.width, 'Cancel: skill grid is back to full width'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
+# Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine:
-# `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect` case
+# it's `Code::play_sound_effect` case
 # -- `if (move_command.parameter_string !=
 # "(OFF)" && move_command.parameter_string != "(Brak)") { ...SePlay...; }`
 # -- a Move Route "Play SE" sub-command skips playback for either sentinel
@@ -22318,9 +22285,8 @@ check 'RPG2k::Scene::MapWorld#play_sound skips the "(OFF)"/"(Brak)" ' \
   eq [['bell', 90, 100, 20]], RGSS::Audio.se_calls, 'a real name still plays normally, balance included'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_System::
-# SePlay(const lcf::rpg::Sound&, bool)` -- `if
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it -- `if
 # (se.name.empty()) { return; } else if (se.name == "(OFF)") { ...; return;
 # }` -- a system SFX slot (cursor/decision/cancel/buzzer) set to the
 # literal "(OFF)" sentinel plays nothing, the same as a genuinely blank
@@ -22336,11 +22302,11 @@ check 'Scene::Base#play_system_se treats a "(OFF)" system SFX slot as no ' \
 end
 
 # A party whose two field skills are self (2) and all-ally (4) scope -- per
-# EasyRPG Player's source (`Scene_Skill::vUpdate`'s `Algo::IsNormalOrSubskill`
-# branch, scope-independent), NOT independently confirmed against genuine
+# a reference implementation's skill-scope handling (scope-independent),
+# NOT independently confirmed against genuine
 # RPG_RT under wine, it still pushes a target-confirm
 # screen for both, cursor locked to who the effect already lands on
-# (`Scene_ActorTarget::Start`), rather than
+# (that same reference implementation's actor-target-start logic), rather than
 # applying on the very first Decision -- Game::Party's own scope-resolution
 # logic (#skill_targets) is covered by scripts/rpg2k_logic_check.rb; this
 # stub only has to hand the scene something that behaves the same way, so
@@ -22472,9 +22438,9 @@ check 'Scene::SkillMenu: the "MP cost" box shows the right cost for a ' \
 end
 
 # A party exposing a real #can_cast?, to prove Scene::SkillMenu now gates
-# Decision on it -- per EasyRPG Player's source (NOT independently confirmed
-# against genuine RPG_RT under wine), its `Scene_Skill::vUpdate`
-# gates its whole Decision branch on `Window_Skill::CheckEnable`
+# Decision on it -- per a reference implementation (NOT independently confirmed
+# against genuine RPG_RT under wine), its own skill-scene update
+# gates its whole Decision branch on its own skill-window enable-check
 # (`IsSkillLearned && IsSkillUsable`) before playing any SE or opening the
 # target-confirm screen at all; the disabled case just buzzes and stays put.
 # Previously this scene never consulted `#can_cast?`, so choosing a currently
@@ -22510,7 +22476,7 @@ class SkillGateStubParty < MenuStubParty
 end
 
 check 'Scene::SkillMenu: choosing a currently-unusable skill just buzzes and stays ' \
-      'on the list, matching EasyRPG Player\'s own CheckEnable gate ' \
+      'on the list, matching a reference implementation\'s own CheckEnable gate ' \
       '(not independently confirmed under wine)' do
   parent = fake_parent(fake_db)
   state = Game::State.new(SkillGateStubParty.new, 1, 0, 0)
@@ -22570,9 +22536,9 @@ end
 # #apply_escape_skill's own `sound_effect` playback (schema.rb field 16) --
 # one Switch skill with a configured SE, one Switch skill with a blank one
 # (no filename set), one Switch skill that always fails (Buzzer only, no
-# skill SE), and an Escape skill with a configured SE. Per EasyRPG Player's
+# skill SE), and an Escape skill with a configured SE. Per a reference implementation's
 # source (NOT independently confirmed against genuine RPG_RT under wine),
-# its `Scene_Skill::Update`: Switch/Escape play `skill->sound_effect`
+# its own skill-scene update: Switch/Escape play `skill->sound_effect`
 # on a successful cast; Teleport does not (it keeps the ordinary decision SE
 # played earlier in #update_teleport_target, already covered above), so it
 # is not repeated here.
@@ -22636,8 +22602,8 @@ end
 
 check 'Scene::SkillMenu: a successful Switch skill closes the whole menu ' \
       'stack at once, with no confirmation message' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: `Scene_Skill::vUpdate`'s
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it's
   # `Type_switch` arm plays the skill's own sound
   # effect and calls `Scene::PopUntil(Scene::Map)` on the very same Decision
   # press, with no confirmation message at all -- the identical shape as
@@ -22705,7 +22671,7 @@ check 'Scene::SkillMenu: an Escape skill plays its own sound_effect on a success
      "the ordinary Decision SE then the skill's own sound_effect, before the warp closes the menu"
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Window_Skill::UpdateHelp feeds the
 # database skill's own `description` straight to Scene_Skill's Window_Help
 # banner every time the selection changes -- the exact mechanism
@@ -23076,7 +23042,7 @@ end
 # The slot and candidate cursors live on genuine Window_Selectable
 # subclasses (Window_Equip/Window_EquipItem) whose own Update() auto-repeats
 # DOWN/UP the same as every other list -- see Scene::ItemMenu#update_items's
-# fuller writeup. The actor switch (RIGHT/LEFT) is, per EasyRPG Player's
+# fuller writeup. The actor switch (RIGHT/LEFT) is, per a reference implementation's
 # source (NOT independently confirmed against genuine RPG_RT under wine),
 # NOT auto-repeating: its Scene_Equip::UpdateEquipSelection checks
 # Input::IsTriggered(RIGHT/LEFT) only, no IsRepeated, since each switch
@@ -23110,9 +23076,8 @@ check 'Scene::EquipMenu: holding Down auto-repeats the slot and candidate ' \
      'a held (repeated, not triggered) Down still moves the candidate cursor one row'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Equip::
-# UpdateEquipSelection` gates both the RIGHT and LEFT
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it gates both the RIGHT and LEFT
 # branches on `actors.size() > 1`, not just the key trigger itself -- a solo
 # party's Equip screen plays no cursor SE and rebuilds nothing on either key.
 check 'Scene::EquipMenu: a solo party leaves Right/Left as silent no-ops' do
@@ -23188,13 +23153,12 @@ class EquipCompareParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1], [3, 1], [4, 1]]; end
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_EquipItem::
-# CheckInclude` and the inherited `Window_Item::
-# DrawItem` draw only the item's name and stock count, no comparison glyph of
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it and the inherited item-window's own draw-item
+# draw only the item's name and stock count, no comparison glyph of
 # any kind -- the summed arrow this candidate list used to draw next to each
 # row (attributed to a fan wiki, yado.tk, rather than ever reading that
-# source in full) does not appear in EasyRPG Player's implementation. The comparison
+# source in full) does not appear in a reference implementation's implementation. The comparison
 # lives entirely in the stats window instead, checked below.
 check 'Scene::EquipMenu: the candidate list draws only a name and count, no comparison glyph' do
   state = Game::State.new(EquipCompareParty.new, 1, 0, 0)
@@ -23211,13 +23175,13 @@ check 'Scene::EquipMenu: the candidate list draws only a name and count, no comp
      'no arrow glyph anywhere in the candidate list, and nothing drawn for Remove'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
+# Ported from a reference implementation, NOT independently confirmed against
 # genuine RPG_RT under wine:
-# `Window_EquipStatus::Refresh` draws the
+# it draws the
 # actor name once (`DrawActorName`) and then loops exactly the four battle
 # stats (`DrawParameter`, type 0-3: Attack/Defense/Spirit/Agility) at
 # `y_offset + ((12 + 4) * i)` -- a genuinely separate row per stat, with no
-# HP/MP field anywhere in the window at all. `Scene_Equip::Start`
+# HP/MP field anywhere in the window at all. its own equip-scene start
 # confirms this is the *only* status window on the
 # screen (alongside the plain slot list) -- there is no second window
 # showing HP/MP either. docs/TODO.md's own "Menu scene" entry used to claim
@@ -23246,11 +23210,10 @@ check 'Scene::EquipMenu: the stats window shows no HP/MP, and each battle ' \
      'each stat on its own row below the name row, one RPG2k::Scene::EquipMenu::LINE_H apart'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Equip::
-# UpdateStatusWindow` recomputes each of the four
-# battle stats independently and hands them to `Window_EquipStatus::
-# SetNewParameters`, which `DrawParameter`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it recomputes each of the four
+# battle stats independently and hands them to its own equip-status window's
+# `SetNewParameters`, which `DrawParameter`
 # draws as its own old -> new pair -- never folded into one net verdict, so
 # a candidate that trades Atk for Def shows both movements at once.
 check 'Scene::EquipMenu: the stats window previews each battle stat ' \
@@ -23284,10 +23247,9 @@ check 'Scene::EquipMenu: the stats window previews each battle stat ' \
   eq false, texts.include?('>'), 'back on the slot list, the preview arrow is gone entirely'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_EquipStatus::
-# DrawParameter` draws `actor.GetAtk()` (the
-# state-adjusted value), and `Scene_Equip::UpdateStatusWindow` computes its own "new" preview by rebuilding the raw
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it draws `actor.GetAtk()` (the
+# state-adjusted value), and its own equip-scene status-window update computes its own "new" preview by rebuilding the raw
 # base+equip total first, clamping to `MaxStatBaseValue()` (999), and only
 # then calling `actor.CalcValueAfterAtkStates` -- the state adjustment is
 # the last step in both the current and the preview column, not skipped or
@@ -23348,9 +23310,8 @@ class TwoHandedEquipParty < MenuStubParty
   def equip_candidates(_slot, _actor = nil); [[2, 1]]; end
 end
 
-# Ported from EasyRPG Player's actual C++ source, NOT independently
-# confirmed against genuine RPG_RT under wine: `Scene_Equip::
-# UpdateStatusWindow` also subtracts the *other* hand's item when either it
+# Ported from a reference implementation's actual C++ source, NOT independently
+# confirmed against genuine RPG_RT under wine: it also subtracts the *other* hand's item when either it
 # or the candidate is 両手持ち, since equipping either one forces the
 # opposite slot empty -- the exact side effect `Actor#equip_item` /
 # `#free_two_handed_slot` already applies for real. The per-stat preview
@@ -23375,7 +23336,7 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
   ok texts.include?('40'),
      'Atk rises: stub actor\'s own 20 + delta (claymore 40 - sword 20 = 20) = 40'
   # Def falls in the same preview: stub actor's own 12 + delta (0 -
-  # forced-off shield's 25 = -25) = -13 -- but per EasyRPG Player's source
+  # forced-off shield's 25 = -25) = -13 -- but per a reference implementation
   # (NOT independently confirmed against genuine RPG_RT under wine), it
   # clamps the new base total to 1..999 (`Utils::Clamp(atk, 1, limit)`)
   # *before* ever displaying it, the same clamp #draw_stat_row now applies,
@@ -23386,8 +23347,8 @@ check 'Scene::EquipMenu: a 両手持ち candidate previews Atk rising and Def ' 
      'the raw, unclamped negative total should not be shown at all'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Window_EquipStatus::DrawParameter`
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own equip-status window's draw-parameter
 # colours the new value via `GetNewParameterColor` (0 unchanged / 2 up / 3
 # down), blended from the windowskin's own system-colour swatches -- the same
 # convention the disabled title-menu label and the shop status panel already
@@ -23421,7 +23382,7 @@ check "Scene::EquipMenu: browsing the shield slot with a 両手持ち weapon " \
       'already worn shows the same forced-unequip side effect' do
   # Symmetric case: any candidate landing in the shield slot forces the
   # weapon slot's own 両手持ち weapon off, even an ordinary (non-two-handed)
-  # shield candidate -- per EasyRPG Player's source (NOT independently
+  # shield candidate -- per a reference implementation (NOT independently
   # confirmed against genuine RPG_RT under wine), its guard is
   # `other_old_item->two_handed || current_item->two_handed`, either side
   # qualifies.
@@ -23439,7 +23400,7 @@ end
 
 check "Scene::EquipMenu: Remove never triggers the 両手持ち forced-unequip " \
       'side effect' do
-  # Per EasyRPG Player's source (NOT independently confirmed against genuine
+  # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), its own guard is `current_item && ...` -- id 0
   # (Remove) has no candidate item at all, so the other hand is never touched
   # by removing
@@ -23480,8 +23441,8 @@ check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild,
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_ActorInfo::DrawInfo`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # always draws a labelled Class/Profession row
 # (`TextDraw(..., "Class"); DrawActorClass(actor, ...)`), with no version
 # gate around it -- an RPG2000 database with no class table still gets the
@@ -23502,10 +23463,10 @@ check 'the status screen shows a labelled Class row' do
   ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_ParamStatus::Refresh`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # draws `actor.GetAtk()`/`GetDef()`/
-# `GetSpi()`/`GetAgi()`, and `Game_Battler::GetAtk` et al. run the base value through `AdjustParam`, which halves
+# `GetSpi()`/`GetAgi()`, and its own battler stat accessors run the base value through `AdjustParam`, which halves
 # or doubles it against whatever states the actor currently carries -- a
 # state that persists onto the map affects this screen too, not just battle
 # math.
@@ -23528,12 +23489,11 @@ check 'the status screen shows a battle stat halved by an active state, ' \
   ok !stat_line.match?(/\b20\b/), "the raw base Atk (20) should not still appear: #{stat_line.inspect}"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_ActorStatus::
-# DrawStatus` draws the Exp row via
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it draws the Exp row via
 # `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
 # `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
-# `Game_Actor::GetNextExpString` stringifies
+# its own next-exp-string accessor stringifies
 # `GetNextExp()` -- the absolute cumulative-total curve value for the next
 # level, not a subtraction against current EXP. `MenuStubActor` gives
 # `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
@@ -23562,9 +23522,9 @@ check 'the status screen gives the condition a labelled row' do
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its `Window_Gold`, created unconditionally
-# by `Scene_Status::Start` (no visibility gate
+# by its own status-scene start (no visibility gate
 # anywhere in the file) -- missing here entirely.
 check 'the status screen shows the party\'s own Gold' do
   st = menu_state
@@ -23573,7 +23533,7 @@ check 'the status screen shows the party\'s own Gold' do
                          .instance_variable_get(:@window))
   ok texts.include?('1234G'), "Gold is drawn as its own line, got: #{texts.inspect}"
 
-  # Per EasyRPG Player's source (not independently confirmed under wine),
+  # Per a reference implementation (not independently confirmed under wine),
   # its Window_Gold draws unconditionally, including at 0 -- not only
   # once the party has money.
   st.party.instance_variable_set(:@gold, 0)
@@ -23582,8 +23542,8 @@ check 'the status screen shows the party\'s own Gold' do
   ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), `Window_ActorInfo::DrawInfo` additionally
+# Per a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own actor-info window's draw-info additionally
 # draws "Front"/"Back" right-aligned at the top of the panel whenever
 # `Feature::HasRow()` holds -- which for a genuine,
 # unmodified project reduces to "the database is RPG2003". An RPG2000
@@ -23607,11 +23567,10 @@ check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
   ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Window_Base::
-# GetValueFontColor`, the shared routine behind
-# `DrawActorHp`/`DrawActorSp` (in turn used by `Window_ActorStatus::
-# DrawStatus`) -- the *current* HP/MP figure
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it, the shared routine behind
+# `DrawActorHp`/`DrawActorSp` (in turn used by its own actor-status window's
+# draw-status) -- the *current* HP/MP figure
 # alone recolors: knockout gray (index 5) at exactly 0 HP, critical
 # red/orange (index 4) at or below a quarter of max, the ordinary default
 # (index 0) otherwise. SP never shows the knockout colour even at 0
@@ -23654,7 +23613,7 @@ end
 # this screen for the same key-repeat gap already fixed on every other menu
 # screen (see docs/TODO.md). Unlike a genuine cursor inside a
 # Window_Selectable list, this screen has no list at all: LEFT/RIGHT just
-# rebuild the whole panel for a different party member, and per EasyRPG
+# rebuild the whole panel for a different party member, and per a reference implementation
 # Player's source (NOT independently confirmed against genuine RPG_RT under
 # wine), its Scene_Status::vUpdate checks
 # Input::IsTriggered(RIGHT/LEFT) only -- no IsRepeated fallthrough anywhere
@@ -23662,7 +23621,7 @@ end
 # reference either. This check pins that as a ported assumption, not an
 # independently confirmed one.
 check 'Scene::StatusMenu: holding Right does NOT auto-cycle the actor -- ' \
-      'matching EasyRPG Player\'s own discrete-only gate (not independently ' \
+      'matching a reference implementation\'s own discrete-only gate (not independently ' \
       'confirmed under wine)' do
   scene = menu_scene(RPG2k::Scene::StatusMenu, wrap_menu_state)
   RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
@@ -23672,8 +23631,8 @@ check 'Scene::StatusMenu: holding Right does NOT auto-cycle the actor -- ' \
      'a held (repeated, not triggered) Right does not cycle the actor'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Scene_Status::vUpdate`
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it
 # gates both the RIGHT and LEFT branches on
 # `actors.size() > 1`, not just the key trigger itself -- a solo party's
 # Status screen plays no cursor SE and rebuilds nothing on either key.
@@ -23758,10 +23717,10 @@ check 'walking slips HP from a poisoned member every fourth tile' do
   eq 99, hero.hp, 'the fourth tile slips 1 HP'
 end
 
-# Ported from EasyRPG Player's source (its `Game_Party::ApplyStateDamage`),
+# Ported from a reference implementation (its state-damage-application logic),
 # NOT independently confirmed against genuine RPG_RT under wine: its
 # `damage` bool is only ever set inside a `ChangeType_lose` branch, never a
-# `ChangeType_gain` one, and `Game_Player::UpdateNextMovementAction` gates the
+# `ChangeType_gain` one, and its next-movement-action step gates the
 # red step-damage flash on exactly that bool. Regen's map-step tick heals, so
 # it must never redden the screen the way Poison's does.
 check "walking a GAIN-type state's own map-step tick heals without flashing the screen" do
@@ -23822,8 +23781,8 @@ check 'harmless ground takes nothing' do
 end
 
 check 'a negative terrain damage heals every tile instead of hurting' do
-  # Ported from EasyRPG Player's actual C++ source, NOT independently
-  # confirmed against genuine RPG_RT under wine: Game_Player::Move applies
+  # Ported from a reference implementation's actual C++ source, NOT independently
+  # confirmed against genuine RPG_RT under wine: it applies
   # `hero->ChangeHp(-terrain->damage, ...)` regardless of sign, so a terrain
   # row with a negative `damage` field (a "recovery floor") heals rather than
   # hurts -- `-(-3) = +3`. Party#apply_terrain_damage's own doc comment is the
@@ -23837,7 +23796,7 @@ check 'a negative terrain damage heals every tile instead of hurting' do
 end
 
 check '地形ダメージ無効 gear does NOT block a healing tile -- only a damaging one' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine: its own gate is
   # `terrain->damage < 0 || !hero->PreventsTerrainDamage()`
   # -- a negative damage value short-circuits the immunity check entirely, so
@@ -23850,8 +23809,8 @@ check '地形ダメージ無効 gear does NOT block a healing tile -- only a dam
 end
 
 check 'a healing tile never flashes the screen, unlike a damaging one' do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its Game_Player::Move only sets `red_flash`
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it only sets `red_flash`
   # for positive `damage` (`if (terrain->damage > 0) red_flash = true`) --
   # a heal never flashes.
   hero = SlipActor.new([], 70)
@@ -23863,8 +23822,8 @@ end
 
 # -- footstep SE (RPG2003 歩行音, ADR 0034 follow-up) --------------------------
 #
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its Game_Player::Move plays terrain->footstep
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it plays terrain->footstep
 # behind a Player::IsRPG2k3() gate -- RPG2000 never plays it -- and
 # on_damage_se repurposes the same field into a damage-tick-only SE instead
 # of an ordinary per-step one: `!terrain->on_damage_se || red_flash`. See
@@ -23881,9 +23840,9 @@ end
 # Confirmed against liblcf's own schema: `generator/csv/fields.csv`
 # (`Terrain,footstep,f,Sound,0x0F,...`) -- the field is a
 # full Sound struct (filename + volume + tempo + balance), not a bare
-# filename. That it is read the same way `Game_System::SePlay(const
-# lcf::rpg::Sound&, bool)` already reads every other Sound-typed database
-# field is ported from EasyRPG Player's source, NOT independently confirmed
+# filename. That it is read the same way its own SE-play handling (const
+# lcf::rpg::Sound&, bool) already reads every other Sound-typed database
+# field is ported from a reference implementation, NOT independently confirmed
 # against genuine RPG_RT under wine.
 check 'RPG2003 terrain footstep plays with its own configured volume/pitch, ' \
       'not the schema defaults' do
@@ -23921,7 +23880,7 @@ check 'RPG2000 never plays a terrain footstep, even when one is set' do
   scene = new_scene({}, player: [0, 0], members: [hero], rpg2003: false, footstep: 'Step1')
   walk(scene, 3)
   ok RGSS::Audio.se_calls.none? { |c| c[0] == 'Step1' },
-     'footstep is an RPG2003-only feature (EasyRPG gates it on Player::IsRPG2k3())'
+     'footstep is an RPG2003-only feature (a reference implementation gates it on the 2003 edition check)'
 end
 
 check 'on_damage_se withholds the footstep on a harmless step, and plays it on a damaging one' do
@@ -23942,8 +23901,8 @@ check 'on_damage_se withholds the footstep on a harmless step, and plays it on a
 end
 
 # Riding the airship skips terrain damage and the footstep SE entirely --
-# ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: its `Game_Player::Move` returns via
+# ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it returns via
 # `InAirship()`'s own early check *before* it ever looks up the
 # stepped-on tile's terrain row, so neither
 # fires while airborne. `InAirship()` alone, not a general `boarded?`
@@ -24401,14 +24360,14 @@ check 'a forced player jump arcs the hero the way it arcs an event' do
   eq 0, scene.send(:player_jump_offset), 'and the hero is back on it once landed'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Game_Character::GetJumpHeight is
 # `jump_height &lt; 5 ? jump_height * 2 : jump_height &lt; 13 ? jump_height + 4 :
 # 16` -- doubled while small, offset by 4 through h < 13, and capped at a
 # flat 16 beyond that. #jump_offset_for used to mis-port this as an
 # uncapped `h + 5`, peaking at 21px instead of that arc's own 16px
 # ceiling (a full tile, never past it).
-check "#jump_offset_for's piecewise arc matches EasyRPG Player's " \
+check "#jump_offset_for's piecewise arc matches a reference implementation's " \
       "GetJumpHeight exactly (not independently confirmed under wine)" do
   scene = new_scene({})
   jh = ->(move_count) { scene.send(:jump_offset_for, move_count) }
@@ -24491,7 +24450,7 @@ check 'a vehicle Change Graphic overrides its sprite without persisting to Game:
      'Transfer Player drops the mirror, reverting the override'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine): its Game_Vehicle::Game_Vehicle seeds a fresh vehicle with
 # `SetSpriteGraphic(ToString(lcf::Data::system.boat_name), lcf::Data::system.
 # boat_index)` (and the ship_/airship_ equivalents) -- the database's System
@@ -24623,9 +24582,9 @@ check 'a transformed monster is redrawn with its new battler graphic' do
   ok !ui[:enemy_sprites][0].equal?(before), 'its sprite is rebuilt'
   eq 'Dragon', ui[:sprite_names][0], 'and tracked against the new battler'
   ok ui[:enemy_sprites][0].visible, 'still on the field'
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
+  # Ported from a reference implementation, NOT independently confirmed against
   # genuine RPG_RT under wine:
-  # `Game_BattleAlgorithm::Transform::ApplyCustomEffect` calls `enemy->Flash(31,31,31,31,20)`
+  # it calls `enemy->Flash(31,31,31,31,20)`
   # unconditionally right after the swap -- the near-white "flash of
   # light" that reference's transformation shows, on the 0..31 raw scale this
   # codebase already multiplies by 8 elsewhere (Interpreter::FLASH_SCALE).
@@ -24645,7 +24604,7 @@ end
 # (Game::Battle#enemy_transform_action), but the troop's own Enemy object at
 # the same slot -- the one #total_exp/#total_gold/#drops actually read
 # exp/gold/drop_id/drop_prob from -- is a separate object nothing else keeps
-# in sync. Per EasyRPG Player's own Game_Enemy::Transform (ported from that
+# in sync. Per a reference implementation's own logic (ported from that
 # source, NOT independently confirmed against genuine RPG_RT under wine),
 # it repoints a single backing data pointer, so reward accessors read the
 # new monster too; this port's
@@ -24705,8 +24664,8 @@ check 'a random encounter opens a battle with the map-tree node\'s own troop' do
 end
 
 # RPG2000's own 1/32 first-strike roll on a wandering encounter -- per
-# EasyRPG Player's source (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Game_Map::PrepareEncounter` is a hard `if (Feature::
+# a reference implementation (NOT independently confirmed against genuine
+# RPG_RT under wine), its own encounter-preparation handling is a hard `if (Feature::
 # HasRpg2kBattleSystem()) { Rand::ChanceOf(1, 32) ... } else { /* 2003's
 # terrain-condition rolls */ }`, and `Feature::HasRpg2kBattleSystem()`
 # reduces to `Player::IsRPG2k()` for a genuine database --
@@ -24752,8 +24711,8 @@ check 'an empty encounter list never starts a random battle' do
      'the roll succeeds but there is nothing to fight, so no battle opens'
 end
 
-# Ported from EasyRPG Player's source, NOT independently confirmed against
-# genuine RPG_RT under wine: `Game_Map::GetEncountersAt`: an "Area" map-tree node (field 4 `type` == 2, a
+# Ported from a reference implementation, NOT independently confirmed against
+# genuine RPG_RT under wine: it: an "Area" map-tree node (field 4 `type` == 2, a
 # rectangular sub-region the RPG2000/2003 editor lets an author carve out of
 # a map with its own independent encounter list, field 41) is a *direct
 # child* of its owning map (field 2 `parent_map_id`) and contributes its own
@@ -24815,7 +24774,7 @@ end
 
 check 'a forced move route does not roll for a random encounter' do
   # A Move Event route driving the player is a forced step (@player_forced_step),
-  # not ordinary input-driven walking -- ported from EasyRPG Player's
+  # not ordinary input-driven walking -- ported from a reference implementation's
   # source, NOT independently confirmed against genuine RPG_RT under wine:
   # its UpdateEncounterSteps only ever runs from the latter (see the
   # comment on @player_forced_step).
@@ -24869,9 +24828,9 @@ check 'standing on an Event Touch tile still rolls for a random encounter' do
 end
 
 check "a chipset cell whose terrain id has no database row never rolls for a random " \
-      "encounter, per EasyRPG Player (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)" do
-  # Ported from EasyRPG Player's source, NOT independently confirmed against
-  # genuine RPG_RT under wine: its Game_Player::UpdateEncounterSteps returns
+      "encounter, per a reference implementation (2026-08-18, NOT independently confirmed against genuine RPG_RT under wine)" do
+  # Ported from a reference implementation, NOT independently confirmed against
+  # genuine RPG_RT under wine: it returns
   # outright when the tile's terrain row can't be resolved at all --
   # `if (!terrain) { Output::Warning(...); return; }` -- no fallback rate, no
   # encounter_total increment, no roll, as if the step never happened. This
@@ -25227,7 +25186,7 @@ check 'B cancels the debug menu variable editor without changing the value' do
   eq 5, st.variables[1], 'cancelling left the variable untouched'
 end
 
-# Per EasyRPG Player's source (NOT independently confirmed against genuine
+# Per a reference implementation (NOT independently confirmed against genuine
 # RPG_RT under wine), its Game_Variables::GetMaxDigits derives
 # the debug menu's own Window_NumberInput width from the same edition-gated
 # range Game::Variables::MAX/RPG2003_MAX already carries -- 6 digits on

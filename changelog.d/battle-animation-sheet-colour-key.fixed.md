@@ -8,8 +8,9 @@
   colour, so every cell `#blit_animation_cell` laid down painted an opaque
   96x96 rectangle of that background over its target: a solid block sitting on
   the enemy for the animation's whole duration rather than a spell. Confirmed
-  against EasyRPG's own material table (`src/cache.cpp`, fetched verbatim),
-  whose `Spec::transparent` column is true for `Battle` — alongside every
+  against a reference implementation's own material table (ported from
+  that source, not independently confirmed against genuine RPG_RT under
+  wine), whose transparency spec is true for `Battle` — alongside every
   other directory this runtime already colour-keys — and false only for the
   four full-screen backdrops (`Backdrop`, `Panorama`, `Title`, `GameOver`),
   which this runtime already loads opaque and which stay that way. Covered by a

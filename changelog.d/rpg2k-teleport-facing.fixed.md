@@ -10,5 +10,6 @@
   (`scripts/download-mtf-meido-action.bash`): 25 of its 26 teleports set a
   facing, and 22 of them arrived wrong. An RPG2000 project writes 0 here — the
   edition has no such argument — so Nepheshel's 2021 teleports were unaffected,
-  which is why converting unconditionally is the same as EasyRPG's
-  `IsRPG2k3Commands` guard for the games that can emit it.
+  which is why converting unconditionally is the same as a reference
+  implementation's version-gating guard for the games that can emit it —
+  ported, not independently confirmed against genuine RPG_RT under wine.

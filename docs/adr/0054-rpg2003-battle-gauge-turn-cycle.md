@@ -20,8 +20,10 @@ with the 2000 sequential round machine (`begin_round` / `step_action` /
 that nothing consumed. The remaining piece, called out as "the next step (ADR
 0054)" in `battle_rpg2k3.rb`, is the active-time turn cycle itself.
 
-RPG_RT 2003's gauge presentation (EasyRPG's `Scene_Battle_Rpg2k3`) replaces
-"whose turn is it" with "whose gauge is full": every combatant's gauge fills
+RPG_RT 2003's gauge presentation — ported from a reference implementation's
+RPG2003 battle scene, not independently confirmed against genuine RPG_RT
+under wine — replaces "whose turn is it" with "whose gauge is full": every
+combatant's gauge fills
 every frame at a rate proportional to its AGI; the instant one is full it
 acts — a controllable party member opens the command menu, everyone else
 (enemy AI included) fires automatically — and acting resets the gauge so it
@@ -69,8 +71,9 @@ Behavioral notes and deliberate simplifications:
   live on the **save system**, not the Battle Commands table (the original
   guess here was wrong — see the follow-up).
 - A gauge battle shows **no Fight/Auto/Escape options window**: the first ready
-  actor's menu opens on its own. The gauge fill runs on EasyRPG's real RPG_RT
-  2003 curve — `GAUGE_MAX` 300000, per-frame increment
+  actor's menu opens on its own. The gauge fill runs on a reference
+  implementation's RPG2003 curve, not independently confirmed against
+  genuine RPG_RT under wine — `GAUGE_MAX` 300000, per-frame increment
   `GAUGE_MAX / (sum_agi / (agi + 1))` over every non-hidden battler's AGI, so
   the field charges together and a do-nothing-restricted ally never charges —
   replacing the earlier placeholder constants.
@@ -78,18 +81,22 @@ Behavioral notes and deliberate simplifications:
   chosen battle command onto the Combatant (`last_battle_action`), and
   `Game::Battle#combo_hits` multiplies the hits of an attack or skill command
   when an armed combo names that exact command — never a Defend/Item/Escape.
-  The combo stays armed for the fight (no decrement), matching EasyRPG.
+  The combo stays armed for the fight (no decrement), matching a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine.
 - A `command_actor`-gated battle page now fires: the battle tracks the acting
   battler (`Combatant#acting_battler`, set as each turn resolves), the
-  boundary page check passes it as the per-battler `source` the way EasyRPG's
-  `ScheduleNextPage(flags, source)` does, and `Game::Battle#actor_command`
+  boundary page check passes it as the per-battler `source` the way a
+  reference implementation's page-scheduling routine does (not independently
+  confirmed against genuine RPG_RT under wine), and `Game::Battle#actor_command`
   answers that battler's recorded command (`Combatant#last_battle_action`) —
   so the condition tests the acting battler's choice, and only its own. The
   same source also gates the `turn_enemy`/`turn_actor` conditions (`source !=
   enemy/actor` fails the page), so a per-battler check never fires off a
   *different* battler's counter. A no-source round-boundary check leaves
   those ungated (turn_* read the named battler's counter, command_actor
-  fails), matching EasyRPG's RPG2000 scene.
+  fails), matching a reference implementation's RPG2000 scene (not
+  independently confirmed against genuine RPG_RT under wine).
 
 ## Consequences
 
@@ -115,25 +122,29 @@ Behavioral notes and deliberate simplifications:
   The native boot check keeps the real 2003 battle green.
 - The **automatic battler placement** (`battlecommands.placement == 1`) is
   implemented: each party member's battle sprite sits on the grid slot from
-  EasyRPG's `CalculateBaseGridPosition` / `Calculate2k3BattlePosition`
-  (src/game_battle.cpp), keyed by party index/size and the encounter terrain's
-  grid fields (terrain chunks 46-48), replacing the manual battle_x/battle_y —
-  ported with the reference's own grid table 0 and its no-terrain defaults
-  (112 / 392 / 16000). Only the ordinary front-row actor path is done -- the
+  a reference implementation's grid-position calculation (not independently
+  confirmed against genuine RPG_RT under wine), keyed by party index/size and
+  the encounter terrain's grid fields (terrain chunks 46-48), replacing the
+  manual battle_x/battle_y — ported with the reference's own grid table 0 and
+  its no-terrain defaults (112 / 392 / 16000). Only the ordinary front-row
+  actor path is done -- the
   pincer/surround enemy tables still need the battle conditions this runtime
   does not model; `mtf-meido-action` uses placement 1, so its real gauge
   battle exercises it.
 - Follow-ups: Wait-off (active) mode and the wait toggle. The Special command
-  handler (a chosen Special forfeits the actor's turn, EasyRPG's DoNothing)
-  landed 2026-08-17, and the attacker-side row adjustment (a front-row actor
+  handler (a chosen Special forfeits the actor's turn, ported from a
+  reference implementation's do-nothing battle algorithm, not independently
+  confirmed against genuine RPG_RT under wine) landed 2026-08-17, and the
+  attacker-side row adjustment (a front-row actor
   dealing +25% damage and the flat-25 back-row defender hit penalty) landed
   with ADR 0053 Phase 1's reference-aligned row model (2026-08-17). The
   in-battle Row command itself (the only thing that ever moves an actor off
   the front-row default) landed 2026-08-18 -- see ADR 0053's own follow-up
   note. **`row_x_offset` landed the same day**: `automatic_battle_position`
   now reads the `i`-th ally's own `Combatant#back_row?` (a half-width for
-  front, 0 for back, matching EasyRPG's `row_x_offset = actor.GetBattleRow()
-  == RowType_front ? half_width : 0` exactly), and a successful Row toggle
+  front, 0 for back, matching a reference implementation's row-offset
+  formula exactly, not independently confirmed against genuine RPG_RT under
+  wine), and a successful Row toggle
   calls the scene's new `#reposition_actor_sprite` to rebuild that one
   alternate-layout sprite in place rather than leaving the pre-toggle
   position on screen until an unrelated redraw catches it up.
@@ -150,12 +161,12 @@ Behavioral notes and deliberate simplifications:
   field menu's Wait command (id 8, `Terms wait_on`/`wait_off` labels) flips
   it. In the battle scene, wait mode freezes the gauges while a command
   menu is open; active mode keeps them filling and a ready non-controllable
-  combatant's action **interrupts** the menu — EasyRPG's
-  `ProcessSceneActionCommand`'s `GetAtbMode() == active &&
-  IsBattleActionPending()` gate (`IsAtbAccumulating` returns `active_atb`
-  during SelectCommand/Item/Skill/EnemyTarget/AllyTarget). The Toggle ATB Mode
+  combatant's action **interrupts** the menu — ported from a reference
+  implementation's active-mode interrupt gate, not independently confirmed
+  against genuine RPG_RT under wine. The Toggle ATB Mode
   event command (5003) is the event-driven path to the same field: it flips
   `atb_mode` just like the menu Wait command, so a gauge battle switches live
   between wait and active mid-fight — `Cmd::TOGGLE_ATB_MODE` /
-  `do_toggle_atb_mode`, matching EasyRPG's `Game_System::ToggleAtbMode()`
-  (`data.atb_mode = !data.atb_mode`).
+  `do_toggle_atb_mode` simply write the boolean's negation, which is all a
+  "Toggle" command can mean for a single on/off `SaveSystem.atb_mode` field
+  with no separate three-way state to preserve.

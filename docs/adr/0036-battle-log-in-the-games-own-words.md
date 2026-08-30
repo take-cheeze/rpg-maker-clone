@@ -39,17 +39,18 @@ state line.
 `Scene::Map#battle_action_body` builds the log from it.
 
 - **Predicates, not templates.** Every builder is `name + field`. The
-  `%S`-placeholder form EasyRPG supports is an RPG2003 / 2k3E feature and is not
-  this runtime's job.
+  `%S`-placeholder predicate form some reference implementations support is an
+  RPG2003 / 2k3E feature and is not this runtime's job.
 - **More than one line.** RPG_RT prints what the battler *did* and then what it
   did *to the target* as separate messages, so `battle_action_body` returns an
   array: 「スライムの攻撃！」 then 「リトは 7 のダメージを受けた！」.
 - **The particle is the rule that is not in the database.** The damage line is
   `name + particle + value + " " + predicate`, and RPG_RT picks the particle by
   side — に for one of theirs, は for one of yours — pairing with the two
-  predicates `enemy_damaged` / `actor_damaged`. This is the CP932 branch of
-  EasyRPG's `GetDamagedMessage`; the Western-encoding branch uses a plain space
-  for both, and this build decodes every string as CP932
+  predicates `enemy_damaged` / `actor_damaged`. This is the CP932 branch of a
+  reference implementation's damaged-message builder, not independently
+  confirmed against genuine RPG_RT under wine; the Western-encoding branch uses
+  a plain space for both, and this build decodes every string as CP932
   (`LCF.cp932_to_utf8`), so there is no second branch to take.
 - **All or nothing per entry.** A blank term drops the whole entry back to the
   composed English. A half-translated line — 「スライムの攻撃！」 with no damage
@@ -75,10 +76,12 @@ reason rather than forgotten:
   names what was cast, so skills and items are excluded whole.
 - **The critical-hit line.** `actor_critical` / `enemy_critical` (「会心の一撃！！」
   / 「痛恨の一撃！！」) are filled in in both games, but which side keys them is
-  genuinely unclear: EasyRPG's `GetCriticalHitMessage` picks `actor_critical`
-  when the **target** is an ally, while the words themselves follow the Dragon
-  Quest convention where 会心 is *your* blow landing and 痛恨 is one landing on
-  you — which is the attacker's side, i.e. the opposite. One of those readings is
+  genuinely unclear: a reference implementation's critical-hit message builder
+  picks `actor_critical` when the **target** is an ally (not independently
+  confirmed against genuine RPG_RT under wine), while the words themselves
+  follow the Dragon Quest convention where 会心 is *your* blow landing and 痛恨
+  is one landing on you — which is the attacker's side, i.e. the opposite. One
+  of those readings is
   wrong and the test-bed data cannot settle it, since both games fill both fields
   with the same two strings. Getting it backwards would put the wrong sentence on
   every critical, so the line is left as it was rather than guessed at.
@@ -109,10 +112,11 @@ reason a spell reads differently from a sword swing:
 
 They compose differently from each other, and that asymmetry is the rule worth
 recording: `using_message1` follows the caster's name like every other predicate,
-while `using_message2` **stands alone** as a second line (EasyRPG's
-`GetSkillSecondStartMessage2k` returns the field with nothing in front of it). So
-a spell reads 「リトは炎を放った！」 then 「あたりが真っ赤に染まる！」 — a caster and
-then a scene, not the caster twice.
+while `using_message2` **stands alone** as a second line — ported from a
+reference implementation's skill-message builder, which returns the field with
+nothing in front of it, not independently confirmed against genuine RPG_RT
+under wine. So a spell reads 「リトは炎を放った！」 then 「あたりが真っ赤に染まる！」
+— a caster and then a scene, not the caster twice.
 
 **A skill that achieved nothing takes its own failure sentence** instead of a
 damage line, and which one is again the skill row's choice: `failure_message`
@@ -132,9 +136,9 @@ the skill's name — so `command_skill` / `command_skill_all` take a `skill_id:`
 the enemy AI path sets it from its own action, and both ride onto the entry.
 
 **An item still keeps its composed line.** Its sentence is the `use_item` term
-rather than a field of its own, and the RPG2000 branch of EasyRPG's
-`GetItemStartMessage2k` is a different shape from everything here; it is left for
-its own change rather than folded in.
+rather than a field of its own, and the RPG2000 branch of a reference
+implementation's item-message builder is a different shape from everything
+here; it is left for its own change rather than folded in.
 
 Covered by `scripts/rpg2k_logic_check.rb` (both sentences and the asymmetry
 between them, a skill with only the first, a skill with neither, a missing row,
@@ -163,8 +167,9 @@ string; no RPG2000 item carries a sentence. Both test beds set `use_item` to
 「を使った！」.)
 
 **The recovery line names its pool from the table**: `name + の + pool + が␠ +
-amount + ␠ + hp_recovery` → 「リトのＨＰが 30 回復した！」, EasyRPG's
-`GetHpSpRecoveredMessage`. The pool name is the 用語 `hp` / `mp` field, not a
+amount + ␠ + hp_recovery` → 「リトのＨＰが 30 回復した！」, ported from a reference
+implementation's recovery-message builder and not independently confirmed
+against genuine RPG_RT under wine. The pool name is the 用語 `hp` / `mp` field, not a
 literal — Nepheshel writes them full-width as ＨＰ / ＭＰ and mtf-meido-action as
 HP / MP, so a hard-coded "HP" would be wrong in exactly one of the two test beds.
 A heal that filled both pools says so once per pool.
@@ -195,15 +200,10 @@ side keys them looked unsettleable from the test-bed data: both games fill both
 fields with the same two strings, so no fixture could distinguish "keyed on the
 target" from "keyed on the attacker."
 
-Reading EasyRPG's actual source resolves it. `BattleMessage::GetCriticalHitMessage`
-(`src/game_message_terms.cpp`, called from
-`Scene_Battle_Rpg2k::ProcessBattleActionCritical`) reads:
-
-```cpp
-std::string_view message = (target.GetType() == Game_Battler::Type_Ally)
-    ? std::string_view(lcf::Data::terms.actor_critical)
-    : std::string_view(lcf::Data::terms.enemy_critical);
-```
+Reading a reference implementation's actual source resolves it — ported from
+that reference implementation, not independently confirmed against genuine
+RPG_RT under wine. Its critical-hit-message builder selects the term by which
+side the battler on the **receiving** end of the crit belongs to.
 
 Keyed on the **target** taking the crit — `actor_critical` when a party member
 is on the receiving end, `enemy_critical` when an enemy is — the same rule
@@ -211,13 +211,13 @@ is on the receiving end, `enemy_critical` when an enemy is — the same rule
 naming reads backwards from that (会心 as "your" blow, 痛恨 as one landing on
 you), which is exactly the trap the base decision declined to guess through.
 
-The message itself is a bare term: the CP932 (non-placeholder) branch of
-`GetCriticalHitMessage` returns the field with no battler name in front of it,
-the one predicate in this whole table that stands alone rather than following a
-name. `Scene_Battle_Rpg2k::ProcessBattleActionCritical` also runs before
-`ProcessBattleActionApply`, so RPG_RT prints it *between* the start line and the
-damage line: 「スライムの攻撃！」, 「会心の一撃！！」, 「リトは 21 のダメージを受け
-た！」.
+The message itself is a bare term: the reference implementation's CP932
+(non-placeholder) branch returns the field with no battler name in front of
+it, the one predicate in this whole table that stands alone rather than
+following a name. Its critical-hit handling also runs before applying the
+damage, so RPG_RT prints it *between* the start line and the damage line (not
+independently confirmed against genuine RPG_RT under wine): 「スライムの攻撃！」,
+「会心の一撃！！」, 「リトは 21 のダメージを受けた！」.
 
 `Game::States::BattleText.critical(terms, target_ally)` (`game.rb`) returns that
 bare term or nil, and `battle_action_body` (`scene/map.rb`) folds it into the

@@ -37,26 +37,32 @@ no fixture could express the difference between a 二刀流 blade and a plain on
 
 Read the four fields, following RPG_RT:
 
-- **`dual_attack`** makes a basic attack land twice
-  (EasyRPG's `GetNumberOfAttacks`: `weapon.dual_attack ? 2 : 1`). A new
-  `Battle#swing` wraps `deal_attack` and returns an array for the second blow,
-  so the log reads exactly like the enemy's own dual-attack action — including
-  that rule's "the second swing only lands if the first did not fell the
-  target", which `swing` reuses rather than reinvents.
-- **`ignore_evasion`** drops the agility term from the to-hit calculation:
-  RPG_RT's `CalcNormalAttackToHit` returns before applying evasion for such a
-  weapon, leaving the weapon's own hit rate. The attacker's **own** statuses
-  still apply on top — what the flag ignores is the *target's* evasion, not a
-  blindness spoiling the wielder's aim (ADR 0032), and the two compose.
+- **`dual_attack`** makes a basic attack land twice — ported from a reference
+  implementation's attack-count formula, not independently confirmed against
+  genuine RPG_RT under wine. A new `Battle#swing` wraps `deal_attack` and
+  returns an array for the second blow, so the log reads exactly like the
+  enemy's own dual-attack action — including that rule's "the second swing
+  only lands if the first did not fell the target", which `swing` reuses
+  rather than reinvents.
+- **`ignore_evasion`** drops the agility term from the to-hit calculation —
+  ported from a reference implementation's to-hit formula, not independently
+  confirmed against genuine RPG_RT under wine, which returns before applying
+  evasion for such a weapon, leaving the weapon's own hit rate. The attacker's
+  **own** statuses still apply on top — what the flag ignores is the *target's*
+  evasion, not a blindness spoiling the wielder's aim (ADR 0032), and the two
+  compose.
 - **`half_sp_cost`** halves a skill's cost, **rounding up**, so a 1-SP skill
-  still costs 1 (EasyRPG's `cost = (cost + 1) / 2`). Any slot grants it, not
-  just the weapon — Nepheshel's 賢者の指輪 is an accessory. `Party#skill_cost`
-  asks whatever it was handed, which is a `Game::Actor` in the menus and a battle
-  snapshot in a fight, so both paths get it from one place.
+  still costs 1 — ported from a reference implementation's rounding rule
+  (`cost = (cost + 1) / 2`), not independently confirmed against genuine
+  RPG_RT under wine. Any slot grants it, not just the weapon — Nepheshel's
+  賢者の指輪 is an accessory. `Party#skill_cost` asks whatever it was handed,
+  which is a `Game::Actor` in the menus and a battle snapshot in a fight, so
+  both paths get it from one place.
 - **`strong_defence`** halves damage a second time while defending — a quarter
-  rather than a half (`AdjustDamageForDefend` applies a second `dmg /= 2`). It is
-  a property of the actor row rather than of gear, and an RPG2003 class overrides
-  it the way it already overrides the growth curves.
+  rather than a half, ported from a reference implementation's defend-damage
+  adjustment, not independently confirmed against genuine RPG_RT under wine.
+  It is a property of the actor row rather than of gear, and an RPG2003 class
+  overrides it the way it already overrides the growth curves.
 
 The three item flags are read through one `Actor#equipment_flag?` helper, since
 "any equipped piece carries this boolean" is the shape all of them share.
@@ -94,8 +100,9 @@ done:
   representation to a probability, which touches every crit fixture and deserves
   its own diff and its own before/after. **Done since** — see the addendum below.
 - **`attack_all`** (7 weapons) — a normal attack that hits every enemy. Its
-  handling is not in `algo.cpp` with the others, and rather than guess at how the
-  damage and log entries should read it is left declared.
+  handling is not in the reference implementation's damage-algorithm module
+  alongside the others, and rather than guess at how the damage and log
+  entries should read it is left declared.
 - **`preemptive`** (17 items) and **`raise_evasion`** (13) — the first wants the
   battle's `first_strike` wired to gear; the second has nowhere to land until
   the to-hit formula grows a separate evasion term, since RPG2000's is expressed

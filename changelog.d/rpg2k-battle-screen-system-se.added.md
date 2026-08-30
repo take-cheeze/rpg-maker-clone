@@ -5,5 +5,6 @@
   plays Decision (or Buzzer when Skill/Item would open with nothing usable,
   or a chosen skill is unaffordable); every cancel plays Cancel; and a
   successful Escape plays a dedicated Escape SE right before the battle
-  ends, while a failed attempt plays nothing at all -- all confirmed
-  against EasyRPG Player's `Scene_Battle`/`Scene_Battle_Rpg2k` source.
+  ends, while a failed attempt plays nothing at all -- all ported from a
+  reference implementation's battle-scene source, not independently
+  confirmed against genuine RPG_RT under wine.

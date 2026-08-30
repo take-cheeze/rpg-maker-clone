@@ -1,5 +1,6 @@
 - **A skill/spell attack now rolls its own critical hit**, instead of never
-  critting at all. Confirmed against EasyRPG Player's source: a skill rolls
+  critting at all. Ported from a reference implementation, not independently
+  confirmed against genuine RPG_RT under wine: a skill rolls
   the caster's ordinary weapon-inclusive crit rate, the same rate a basic
   attack already uses, and triples the damage the same way — every offensive
   skill's damage was previously capped at its non-critical value on every

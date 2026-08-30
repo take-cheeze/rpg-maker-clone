@@ -1,6 +1,7 @@
 - **Battle-page Show Battle Animation (13260)** now supports `target -1`, the
-  "whole side" sentinel EasyRPG's `Game_Interpreter_Battle::
-  CommandShowBattleAnimation` uses: one animation plays over every living troop
+  "whole side" sentinel a reference implementation's battle-animation command
+  handler uses — ported, not independently confirmed against genuine RPG_RT
+  under wine: one animation plays over every living troop
   member at once instead of a single index. The animation player
   (`Scene::Map#build_animation`) was generalised from a single `target_index`
   to a `targets` array, so `#draw_map_animation` blits each frame over every

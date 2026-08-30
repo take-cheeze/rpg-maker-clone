@@ -2,8 +2,8 @@
 # encoding: UTF-8
 #
 # Host-side unit checks for the RPG2003 front/back row battle mechanic
-# (ADR 0053 Phase 1, ported from EasyRPG Player's Algo::IsRowAdjusted /
-# CalcNormalAttackToHit / CalcNormalAttackEffect -- NOT independently
+# (ADR 0053 Phase 1, ported from a reference implementation's row-adjustment
+# and normal-attack accuracy/effect logic -- NOT independently
 # confirmed against genuine RPG_RT under wine). The row is an
 # RPG2003-only concept: it changes how the fight treats a battler -- a back-row
 # defender is 25 harder to hit and takes -25% damage, a front-row actor deals
@@ -11,7 +11,7 @@
 # adjusted at all. RPG2000 never sets a row, so the path is a no-op there and
 # these checks exercise the 2003 behaviour directly on the shared helpers in
 # mruby-rpg2k/mrblib/game.rb. Skills are deliberately NOT row-adjusted (the
-# EasyRPG reference implementation gates that behind a field absent from
+# reference implementation gates that behind a field absent from
 # real database files).
 #
 # Usage: ruby scripts/rpg2k3_battle_row_check.rb   (exits non-zero on failure)
@@ -100,7 +100,7 @@ check 'setting ROW_BACK makes back_row? true' do
 end
 
 # -- can_leave_front_row?/toggle_row (RowSelected's front_row_battlers
-#    headcount, ported from EasyRPG Player's source -- NOT independently
+#    headcount, ported from a reference implementation -- NOT independently
 #    confirmed against genuine RPG_RT under wine -- unfiltered by HP/hidden,
 #    only a party member who has actually left the roster drops out) -------
 check 'a KO\'d front-row ally still counts toward keeping the front row ' \
@@ -226,8 +226,8 @@ check 'a back-row attacker loses the +25% bonus' do
   eq 50, back_entry[:damage]
 end
 
-# -- skills are NOT row-adjusted (reference: gated behind an EasyRPG-only
-#    field absent from real files) -------------------------------------------
+# -- skills are NOT row-adjusted (reference: gated behind a reference
+#    implementation-only field absent from real files) ----------------------
 party = fake_party
 src = actor_combatant('Src', 50, 0, 20)
 sk = Object.new
@@ -265,7 +265,7 @@ check 'from_actor leaves a battler in the front row by default' do
   eq false, c.back_row?
 end
 
-# -- row safety net (ported from EasyRPG Player's source -- NOT
+# -- row safety net (ported from a reference implementation -- NOT
 #    independently confirmed against genuine RPG_RT under wine): a fight
 #    that would start with nobody able to act in the front row forces
 #    everyone to the front, so back-row survivors are never stuck behind a

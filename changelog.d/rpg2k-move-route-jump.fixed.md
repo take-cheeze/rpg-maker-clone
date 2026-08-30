@@ -2,9 +2,10 @@
   (25) were treated as plain waits, so the moves between them stepped one tile
   at a time: three route commands where RPG_RT runs one, and each intervening
   tile tested for passability when a jump is precisely the thing that clears
-  them. `Game::MoveRoute#do_jump` ports EasyRPG's
-  `Game_Character::BeginMoveRouteJump` — the enclosed moves contribute a tile of
-  offset each without stepping, the face / turn commands only steer what the
+  them. `Game::MoveRoute#do_jump` ports a reference implementation's own
+  move-route jump handling (not independently confirmed against genuine
+  RPG_RT under wine) — the enclosed moves contribute a tile of offset each
+  without stepping, the face / turn commands only steer what the
   next move contributes, and the character then lands on the summed destination
   in a single move via the new `Game::Character#jump`, facing the jump's
   dominant axis (vertical winning a tie) rather than its last move. Only the

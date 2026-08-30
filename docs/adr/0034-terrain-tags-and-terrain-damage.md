@@ -27,10 +27,11 @@ test beds:
 
 That is not corrupt data. RPG_RT omits the whole 162-entry array when every tile
 of the chipset is terrain 1, which is the ordinary case for a chipset nobody
-bothered to tag — so an absent table means *terrain 1*, not *no terrain*.
-EasyRPG's `Game_Map::GetTerrainTag` says so in as many words ("RPG_RT
-optimisation: When the terrain is all 1, no terrain data is stored") and returns
-1.
+bothered to tag — so an absent table means *terrain 1*, not *no terrain*. A
+reference implementation's own terrain-tag accessor says so in as many words
+("RPG_RT optimisation: When the terrain is all 1, no terrain data is stored")
+and returns 1 — ported from that reference implementation, not independently
+confirmed against genuine RPG_RT under wine.
 
 Reading it as 0 meant that on almost every map in both games:
 
@@ -76,10 +77,9 @@ one red screen flash and one step counter — a step drains at most once from ea
 source, and a teleport is not a step.
 
 The damage **cannot kill**: it goes through `change_hp` with death disallowed, so
-it floors at 1 HP. RPG2000 has no way to die to the floor, and EasyRPG's
-`easyrpg_damage_can_kill` extension that changes this defaults to false. This
-keeps terrain damage on the same footing as status slip damage: the one pair of
-party-damaging paths that need no game-over re-check.
+it floors at 1 HP. This keeps terrain damage on the same footing as status slip
+damage (ADR 0032): the one pair of party-damaging paths that need no game-over
+re-check.
 
 ## Consequences
 

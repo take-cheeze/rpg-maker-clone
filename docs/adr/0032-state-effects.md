@@ -47,24 +47,28 @@ Read the three fields, following RPG_RT:
 
 - **`reduce_hit_ratio`** scales the attacker's to-hit chance. Where a battler
   carries several such states the **lowest** ratio wins rather than the product
-  — EasyRPG's `Game_Battler::GetHitChanceModifierFromStates` keeps a running
-  `std::min`. A state without the field reads as 100, not 0; the existing
-  `state_field` helper defaults to 0, which here would have meant "always miss",
-  so this field gets its own reader.
+  — ported from a reference implementation's running minimum, not
+  independently confirmed against genuine RPG_RT under wine. A state without
+  the field reads as 100, not 0; the existing `state_field` helper defaults to
+  0, which here would have meant "always miss", so this field gets its own
+  reader.
 - **`release_by_attack`** rolls per state after a **normal attack** that the
-  target survives. Normal attacks only: EasyRPG calls `BattlePhysicalStateHeal`
-  from `Normal::vExecute` and from nowhere else, so a skill never shakes a status
-  loose. Its `release_by_damage * physical_rate / 100` reduces to the stored
-  percentage for a normal attack, which is wholly physical. The ids removed ride
-  back on the attack's log entry as `:woke` so the battle log can report them.
+  target survives. Normal attacks only — ported from a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine, where the equivalent call is made only from the normal-attack path and
+  nowhere else, so a skill never shakes a status loose. Its
+  `release_by_damage * physical_rate / 100` reduces to the stored percentage
+  for a normal attack, which is wholly physical. The ids removed ride back on
+  the attack's log entry as `:woke` so the battle log can report them.
 - **`restrict_skill` / `restrict_magic`** seal a skill whose `physical_rate` /
-  `magical_rate` reaches the state's matching threshold
-  (`Game_Actor::IsSkillUsable`). A threshold of 1 — what all three sealing states
-  in the test beds use — seals everything with any magic in it and leaves a
-  purely physical skill alone. `Game::Battle#skill_sealed?` is public because
-  both the battle menu and the enemy AI consult it: a silenced enemy's action
-  entry no longer fires, and a silenced actor's sealed skills come off the menu
-  rather than being offered and then refused.
+  `magical_rate` reaches the state's matching threshold — ported from a
+  reference implementation's skill-usability check, not independently
+  confirmed against genuine RPG_RT under wine. A threshold of 1 — what all
+  three sealing states in the test beds use — seals everything with any magic
+  in it and leaves a purely physical skill alone. `Game::Battle#skill_sealed?`
+  is public because both the battle menu and the enemy AI consult it: a
+  silenced enemy's action entry no longer fires, and a silenced actor's sealed
+  skills come off the menu rather than being offered and then refused.
 
 ## Consequences
 
@@ -135,8 +139,10 @@ reported nothing.
 
 Silence is the wrong answer, and not for a cosmetic reason. RPG_RT counts an
 already-carried state as a **success**, and it decides that *before* rolling the
-skill's accuracy — EasyRPG's `AddAffectedState(StateEffect::AlreadyInflicted)`
-`continue`s ahead of the `PercentChance`. So a Poison Sting on an already
+skill's accuracy — ported from a reference implementation, not independently
+confirmed against genuine RPG_RT under wine, whose equivalent
+already-inflicted handling short-circuits ahead of the chance roll. So a
+Poison Sting on an already
 poisoned foe always announces itself, where a roll would have gone quiet some of
 the time, and a 0%-accuracy skill announces it too. Making the report depend on
 the roll would have been the natural guess and it is wrong.
@@ -154,8 +160,10 @@ wrote and expected to see.
 **`message_affected` is deliberately still unread.** 15 and 4 states fill it in,
 and the wordings (「は眠っている・・・」, 「は麻痺していて動けない！」,
 「は毒で80のダメージを受けた!」) read like the line for a turn a state costs the
-battler. But EasyRPG defines `GetStateAffectedMessage` and never calls it from
-either battle scene, so there is nothing to pin *when* RPG_RT prints it. Guessing
+battler. But a reference implementation defines an analogous message accessor
+and never calls it from either battle scene — a gap not independently
+confirmed against genuine RPG_RT under wine — so there is nothing to pin
+*when* RPG_RT prints it. Guessing
 would put invented text in the battle log, which is the thing this ADR set out to
 stop.
 

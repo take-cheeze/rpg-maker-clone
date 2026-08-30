@@ -1,6 +1,7 @@
 - **Opening a battle now plays the database's Battle Start system SE**,
-  matching real RPG_RT's `Scene_Battle` constructor (`src/scene_battle.cpp`),
-  which plays `SFX_BeginBattle` as its very first act — before even swapping
+  ported from a reference implementation, not independently confirmed
+  against genuine RPG_RT under wine: its own battle-scene constructor
+  plays the battle-start SE as its very first act — before even swapping
   to the battle BGM. `Scene::Map#open_battle` already had every other
   system-SE slot wired up (cursor/decision/cancel/buzzer, Escape, the
   per-hit sounds) but never called `#play_system_se(SFX_BATTLE)`, so the

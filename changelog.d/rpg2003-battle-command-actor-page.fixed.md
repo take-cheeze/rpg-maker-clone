@@ -2,7 +2,8 @@
   closing the "never satisfiable" gap that the ADR 0054 turn-cycle work left
   open. The battle tracks the acting battler (`Game::Battle#acting_battler`,
   set as each turn resolves), the per-battler boundary page check passes it as
-  the `source` the way EasyRPG's `ScheduleNextPage(flags, source)` does, and
+  the `source` the way a reference implementation's page-scheduling does
+  (not independently confirmed against genuine RPG_RT under wine), and
   `Game::Battle#actor_command` answers that battler's recorded command
   (`Combatant#last_battle_action`) — so the page fires for the battler who
   actually chose the command, and only its own. The same source gates the

@@ -1,9 +1,11 @@
 - **A "see-through" upper-layer decoration no longer silently overrides a
   blocked lower tile.** `ChipSet::ABOVE_BIT`, the passage-byte bit that marks
   an upper tile as decorative ground deferring to the lower layer instead of
-  standing in for it, was `0x20`. EasyRPG's `Passable` enum (`src/map_data.h`)
-  puts `Above` at `0x10` — `0x20` is a different flag, `Wall`, used only for a
-  narrow autotile-corner carve-out on the lower layer's terrain block.
+  standing in for it, was `0x20`. A reference implementation's passability
+  enum puts `Above` at `0x10` — `0x20` is a different flag, `Wall`, used only for a
+  narrow autotile-corner carve-out on the lower layer's terrain block. This
+  bit mapping is ported from that reference, not independently confirmed
+  against genuine RPG_RT under wine.
   Checking the wrong bit meant every upper tile actually flagged `Above` read
   as solid ground instead, so `passable_tile?`/`landable_tile?` skipped the
   lower-layer check they exist to make and answered passable from the upper

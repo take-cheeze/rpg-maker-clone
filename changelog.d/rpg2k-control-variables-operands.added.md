@@ -2,8 +2,10 @@
   position** (operand 6, selectors 4 / 5) is measured against the live camera —
   `Scene::Map#camera_position` is extracted out of `render` so the interpreter
   can ask where the view is looking — with RPG_RT's own asymmetric offsets: X
-  from the tile's centre, Y from its bottom (EasyRPG's `GetScreenX` subtracts
-  half a tile after adding a whole one, `GetScreenY` only adds the whole one).
+  from the tile's centre, Y from its bottom (ported from a reference
+  implementation's formula — X subtracts half a tile after adding a whole
+  one, Y only adds the whole one — not independently confirmed against
+  genuine RPG_RT under wine).
   An **equipped item's id** (operand 5, selectors 10..14) reads the weapon,
   shield, armour, helmet and accessory slots. And RPG2003's **battle operand**
   (operand 8) reads a troop member's HP / SP / max HP-SP / attack / defence /

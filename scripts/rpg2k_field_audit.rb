@@ -51,17 +51,21 @@ load File.join(ROOT, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
 
 # Fields this runtime should **not** grow, with the reason, so nobody spends an
-# afternoon rediscovering it. Each was checked against EasyRPG Player's source
-# as a reference for what real games do with the field (NOT independently
+# afternoon rediscovering it. Each was checked against a reference
+# implementation's source as a reference for what real games do with the
+# field (NOT independently
 # confirmed against genuine RPG_RT under wine), rather than guessed at, and
 # each would otherwise sit near the top of the list below.
 NOT_OURS = {
-  levitate: 'RPG2003 only — EasyRPG\'s Game_Enemy::GetFlyingOffset returns 0 ' \
-            'outside 2k3: "2k does not support flying, albeit mentioned in ' \
-            'the help file"',
-  message_affected: 'no known trigger — EasyRPG defines ' \
-                    'GetStateAffectedMessage and never calls it from either ' \
-                    'battle scene, so nothing pins when RPG_RT prints it',
+  levitate: 'RPG2003 only — ported from a reference implementation, not ' \
+            'independently confirmed against genuine RPG_RT under wine: ' \
+            'returns 0 outside 2k3: "2k does not support flying, albeit ' \
+            'mentioned in the help file"',
+  message_affected: 'no known trigger — a reference implementation defines a ' \
+                    'hook for it and never calls it from either battle scene ' \
+                    '(ported from that source, not independently confirmed ' \
+                    'against genuine RPG_RT under wine), so nothing pins ' \
+                    'when RPG_RT prints it',
   hp_change_type: 'RPG2003 only — the schema marks it so, and RPG2000 has one ' \
                   'flat/percentage reading rather than a selector',
   sp_change_type: 'see hp_change_type',
@@ -211,5 +215,5 @@ end
 
 puts
 puts 'A row here is a question, not a defect. Check what RPG_RT does with the'
-puts 'field (EasyRPG Player is the reference) before implementing anything, and'
+puts 'field (a reference implementation is used as the cross-check) before implementing anything, and'
 puts 'add it to NOT_OURS above if the answer is "nothing, on RPG2000".'

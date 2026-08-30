@@ -2,8 +2,9 @@
   implemented, closing the RPG2000 event-command set outside battle pages.
   **Change Skills** (10440) teaches or removes a skill on the usual actor scopes
   (constant or variable skill id, id 0 ignored); **Simulated Attack** (10500)
-  hurts the target actors with EasyRPG's `atk - def * p_def / 400 - spi *
-  p_spi / 800` formula, spread by ±(variance × 5) percent, floored at 0 and
+  hurts the target actors with a reference implementation's `atk - def *
+  p_def / 400 - spi * p_spi / 800` formula (not independently confirmed
+  against genuine RPG_RT under wine), spread by ±(variance × 5) percent, floored at 0 and
   optionally storing the damage in a variable; **Change Actor Face** (10640)
   overrides an actor's FaceSet; **Enter/Exit Vehicle** (10840) boards or leaves a
   vehicle from an event, reusing the action-button toggle; **Flash Sprite**

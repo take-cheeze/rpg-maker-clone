@@ -1,6 +1,7 @@
 - **Battle turn order now rolls a random Agility jitter each round, instead
-  of sorting purely by raw Agility.** Confirmed against EasyRPG Player's
-  source: `Scene_Battle_Rpg2k::CreateExecutionOrder` rolls `agi + Rand(0,
+  of sorting purely by raw Agility.** Ported from a reference implementation's
+  turn-order jitter formula, not independently confirmed against genuine
+  RPG_RT under wine: it rolls `agi + Rand(0,
   agi / 4 + 3)` fresh for every battler each round before sorting. This
   engine sorted by raw Agility alone, with a fixed tie-break rule (ally
   before enemy, then lower actor id) that doesn't exist in the real game —

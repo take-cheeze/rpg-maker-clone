@@ -734,11 +734,11 @@ class RPG2k
   end
 
   # Pop every scene down to (and stopping at) the base `Scene::Map`, disposing
-  # each in turn. Mirrors EasyRPG's `Scene::PopUntil(Scene::Map)`: casting an
-  # Escape / Teleport field skill closes the whole menu stack in one step
-  # rather than leaving the player to cancel out of it manually -- ported
-  # from EasyRPG's source, NOT independently confirmed against genuine
-  # RPG_RT under wine.
+  # each in turn. Mirrors a reference implementation's own pop-until-map
+  # helper: casting an Escape / Teleport field skill closes the whole menu
+  # stack in one step rather than leaving the player to cancel out of it
+  # manually -- ported from that reference implementation's source, NOT
+  # independently confirmed against genuine RPG_RT under wine.
   def pop_to_map
     pop while @scenes.size > 1
   end
@@ -967,7 +967,8 @@ class RPG2k
   # the authoritative save (it still carries the two fields the .lsd export does
   # not model -- the game timer and per-actor name/title overrides for non-leader
   # members). Alongside it we also export a near-parity editor Save<slot>.lsd via
-  # State#to_lsd, so the slot is readable by real RPG_RT/EasyRPG tooling. The
+  # State#to_lsd, so the slot is readable by real RPG_RT and other
+  # RPG2000/2003 tooling. The
   # export is best-effort: a failure there is logged but never fails the save.
   def save_game state, slot = 1
     state.save_count += 1 # RPG2000 counts each save; persisted in the dump below

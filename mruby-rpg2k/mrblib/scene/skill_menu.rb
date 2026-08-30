@@ -13,14 +13,15 @@ class RPG2k
     # cast_skill / cast_escape_skill / cast_teleport_skill), host-tested;
     # this is the RGSS UI over it.
     #
-    # There is no way to switch caster once this screen is open -- confirmed
-    # against EasyRPG Player's own source (`scene_skill.h`'s `actor_index`
-    # is a constructor parameter `Scene_Skill::vUpdate` never changes,
-    # unlike `Scene_Equip`'s own LEFT/RIGHT actor-switch). Real RPG_RT
+    # There is no way to switch caster once this screen is open -- ported
+    # from a reference implementation's own source, NOT independently
+    # confirmed against genuine RPG_RT under wine: its caster index is
+    # fixed for the whole screen, unlike its own Equip screen's LEFT/RIGHT
+    # actor-switch. Real RPG_RT
     # instead hands input focus to the *menu's own party list* when Skill
     # is selected there, letting the player pick which actor first
-    # (`Scene_Menu::UpdateCommand`'s `Skill`/`Equipment`/`Status`/`Row`
-    # branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
+    # (a reference implementation's own command-selection dispatch for the
+    # Skill/Equipment/Status/Row branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
     # passes the chosen actor's index in here as the third constructor
     # argument (default 0, the leader, for callers that never had a picker
     # to begin with, e.g. the host test harnesses).
@@ -36,9 +37,12 @@ class RPG2k
       DESC_H = LINE_H + Window::BORDER * 2
 
       # The skill list is a two-column grid, the same shape and cursor math
-      # as Scene::ItemMenu's own (see its COLUMN_MAX comment) -- confirmed
-      # via EasyRPG's `Window_Skill` constructor, which sets `column_max =
-      # 2`. LEFT/RIGHT move within a row now that they are not needed for
+      # as Scene::ItemMenu's own -- confirmed against genuine RPG_RT under
+      # wine for that sibling list (see its own COLUMN_MAX comment: a
+      # five-item bag filled row-major and left an incomplete last row's
+      # second cell blank rather than reflowing), ported here on the
+      # strength of the shared shape rather than re-measured independently.
+      # LEFT/RIGHT move within a row now that they are not needed for
       # caster-switching (see the class comment above).
       COLUMN_MAX = 2
 
@@ -90,8 +94,8 @@ class RPG2k
 
       # Holding a direction auto-repeats the cursor after the initial delay,
       # not just a single step per tap -- see Scene::ItemMenu#update_items's
-      # identical comment (`Window_Selectable::Update`, `src/
-      # window_selectable.cpp`, and docs/TODO.md for the fuller writeup);
+      # identical comment (ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine, and docs/TODO.md for the fuller writeup);
       # every check below just gains an `|| #repeat?` alongside it.
       def update_skills
         if Input.trigger?(Input::B)
@@ -103,8 +107,9 @@ class RPG2k
           move_skill_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- see Scene::ItemMenu#update_items's identical comment
-        # (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # (ported from a reference implementation, not independently
+        # confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no row-boundary
         # check, unlike Down/Up's genuine column-lock).
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
@@ -153,24 +158,25 @@ class RPG2k
         sid, = skills[@skill_index]
         sk = @state.party.db_skill(sid)
         # A greyed-out (currently unusable) entry is selectable but not
-        # activatable -- EasyRPG's `Scene_Skill::vUpdate` (`src/scene_skill.cpp`)
-        # gates its whole Decision branch on `Window_Skill::CheckEnable`
-        # (`IsSkillLearned && IsSkillUsable`, `src/window_skill.cpp`) before
-        # playing any SE or pushing `Scene_ActorTarget`/dispatching a
-        # switch skill at all; the `else` (disabled) branch just buzzes and
-        # stays on the list. `#skills` (`Game::Party#field_skills`) now
-        # lists a known skill unconditionally -- confirmed against
-        # `Window_Skill::CheckInclude`, trivially `true` outside battle with
-        # no per-type filter at all, a fact this comment previously got
-        # backwards (claiming `#field_skill?` already covered per-type
-        # availability the way `IsSkillUsable`/`CheckEnable` actually does)
-        # -- so every one of `IsSkillUsable`'s checks needs covering here:
-        # `Game::Party#can_cast?` (affordability, the 封印/Silence seal,
-        # weapon-Attribute gating -- `Game_Battler::IsSkillUsable`'s own
-        # pre-`Algo::IsSkillUsable` checks) plus, for the two types
-        # `Algo::IsSkillUsable` special-cases, `#escape_skill_available?`/
-        # `#teleport_skill_available?` (access, a registered target, not
-        # flying).
+        # activatable -- ported from a reference implementation, NOT
+        # independently confirmed against genuine RPG_RT under wine: its
+        # own skill-scene update gates its whole Decision branch on the
+        # skill window's own enable check (learned and usable) before
+        # playing any SE or pushing the actor-target scene/dispatching a
+        # switch skill at all; the disabled branch just buzzes and stays on
+        # the list. `#skills` (`Game::Party#field_skills`) now lists a
+        # known skill unconditionally -- matching that reference
+        # implementation's own include check, trivially `true` outside
+        # battle with no per-type filter at all, a fact this comment
+        # previously got backwards (claiming `#field_skill?` already
+        # covered per-type availability the way the usable/enable checks
+        # actually do) -- so every one of those usability checks needs
+        # covering here: `Game::Party#can_cast?` (affordability, the
+        # 封印/Silence seal, weapon-Attribute gating -- that reference
+        # implementation's own pre-algorithm checks) plus, for the two
+        # types its battle algorithm special-cases,
+        # `#escape_skill_available?`/`#teleport_skill_available?` (access,
+        # a registered target, not flying).
         if skill_unavailable?(sid, sk)
           play_system_se(SFX_BUZZER)
           return
@@ -200,12 +206,13 @@ class RPG2k
       # Open the target-confirm screen (`@mode = :target`), locking the
       # cursor when `lock` names who the effect already, unavoidably, lands
       # on: `:self` to the caster's own row, `:party` to the whole list.
-      # Real RPG_RT's `Scene_ActorTarget`/`Window_ActorTarget` do the same --
-      # `Window_Selectable::Update`'s entire cursor-movement block is gated
-      # on `index >= 0` (`src/window_selectable.cpp`), and a self/all-ally
-      # skill starts that index negative (`Window_ActorTarget`'s
-      # `SetIndex(-actor_index-1)` / `SetIndex(-100)`,
-      # `src/scene_actortarget.cpp`) precisely so UP/DOWN never takes effect
+      # Ported from a reference implementation, not independently confirmed
+      # against genuine RPG_RT under wine: its own actor-target screen does
+      # the same --
+      # its own cursor-movement block is gated
+      # on the index being non-negative, and a self/all-ally
+      # skill starts that index negative
+      # precisely so UP/DOWN never takes effect
       # -- Decision (cast) and Cancel (back out) are the only inputs that do
       # anything, but the screen, and its cancel opportunity, is never
       # skipped. `#apply_skill`'s own `target` argument is irrelevant either
@@ -248,17 +255,18 @@ class RPG2k
       # A cast that changed nothing plays Buzzer rather than the skill's own
       # animation SE -- see Scene::ItemMenu#apply_item's identical reasoning.
       # A *successful* cast stays on this same target screen too, exactly
-      # like a no-effect one -- confirmed against RPG_RT's own live source:
-      # `Scene_ActorTarget::UpdateSkill` (`src/scene_actortarget.cpp`) never
-      # calls `Scene::Pop()` on Decision, success or failure alike; the only
-      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # like a no-effect one -- ported from a reference implementation, not
+      # independently confirmed against genuine RPG_RT under wine:
+      # its own actor-target skill-update never
+      # pops the scene on Decision, success or failure alike; the only
+      # scene-pop in the whole handler is its own Cancel branch.
       # `#cast_skill`'s own affordability gate already answers what happens
       # on a repeat cast once SP runs out (an empty `affected`, the same
       # Buzzer path), matching the reference's own SP/HP check ahead of
-      # `UseSkill` -- unaffordable buzzes, it does not auto-exit either.
+      # its own skill-use -- unaffordable buzzes, it does not auto-exit either.
       #
-      # No confirmation message either way -- `UpdateSkill`'s own success/
-      # failure branches only ever call `SePlay`/`Refresh`, playing the
+      # No confirmation message either way -- its own success/
+      # failure branches only ever play a sound effect and refresh, playing the
       # skill's own `animation_id`-derived SE (`#play_animation_se`) on
       # success, never building a message window; this class used to show
       # "X casts Y!"/"It had no effect." here (and `#update_target` played a
@@ -280,18 +288,19 @@ class RPG2k
       # companion — the switch is what its common event watches.
       # A successful cast closes the whole menu stack at once, exactly like
       # Scene::ItemMenu#apply_switch_item and this same class's own
-      # #apply_escape_skill just below -- confirmed against RPG_RT's own
-      # live source: `Scene_Skill::vUpdate`'s `Type_switch` arm
-      # (`src/scene_skill.cpp`) plays the skill's own sound effect and calls
-      # `Scene::PopUntil(Scene::Map)` on the very same Decision press, with
-      # no confirmation message at all -- the identical shape as `Type_
-      # escape` right below it, not the ordinary target-mode cast's
-      # stay-open-and-show-a-message flow (`Algo::IsNormalOrSubskill`'s own
-      # arm, which pushes a `Scene_ActorTarget` instead). The failure branch
+      # #apply_escape_skill just below -- ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT
+      # under wine: its own switch-skill update
+      # plays the skill's own sound effect and calls
+      # pop-until-map on the very same Decision press, with
+      # no confirmation message at all -- the identical shape as the
+      # escape case right below it, not the ordinary target-mode cast's
+      # stay-open-and-show-a-message flow (which
+      # pushes an actor-target scene instead). The failure branch
       # is unreachable through ordinary play -- `#choose_skill` already
       # buzzes-and-returns on an uncastable skill before ever calling this
-      # (see `#apply_skill`'s own citation for the direct-against-RPG_RT
-      # confirmation that a no-effect Decision never shows a message) -- but
+      # (see `#apply_skill`'s own citation for the same not-independently-
+      # confirmed reasoning that a no-effect Decision never shows a message) -- but
       # it is kept message-free for consistency with every reachable sibling.
       def apply_switch_skill(sid)
         switch = @state.party.cast_switch_skill(caster, sid)
@@ -306,9 +315,9 @@ class RPG2k
 
       # Switch and Escape skills replace the ordinary decision SE with their
       # own database `sound_effect` field (schema.rb field 16) on a
-      # successful cast -- confirmed against EasyRPG's `Scene_Skill::Update`,
-      # which calls `SePlay(skill->sound_effect)` for exactly these two
-      # types. Teleport is the odd one out: it keeps playing the ordinary
+      # successful cast -- matching a reference implementation's own
+      # skill-scene update, which plays that field's SE for exactly these
+      # two types. Teleport is the odd one out: it keeps playing the ordinary
       # decision SE instead (see #update_teleport_target), so it does not
       # call this. Mirrors #play_cursor_se in scene/title.rb (the same
       # Array1D/SE struct, read the same way) -- a no-op on a blank/absent
@@ -348,12 +357,11 @@ class RPG2k
       end
 
       # The destination list is a two-column grid too, not a single stacked
-      # column -- confirmed against genuine RPG_RT's own live source:
-      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
-      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
-      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
-      # the identical shape this class's own skill list already ports (see
-      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # column -- the identical shape this class's own skill list already
+      # ports (see `COLUMN_MAX`'s comment, confirmed against genuine RPG_RT
+      # under wine for the sibling Item list), carried over on the strength
+      # of that shared shape rather than separately re-measured. With
+      # exactly two destinations, DOWN/UP are
       # no-ops (nothing in the row below/above) and RIGHT reaches the second
       # one -- not DOWN, which this scene wrongly wired to a single-column
       # modulo wrap with no RIGHT/LEFT handling at all.
@@ -368,8 +376,9 @@ class RPG2k
           move_teleport_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- the same fix as #update_skills's identical RIGHT/LEFT
-        # handling (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # handling (ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no
         # row-boundary check), never propagated to this sibling list when
         # that one was corrected.
@@ -428,8 +437,9 @@ class RPG2k
       # Queue the warp for Scene::Map (see Game::State#pending_teleport) and pop
       # every menu on top of it in one step. A registered target's own switch
       # (Set Teleport Target / Set Escape Target's optional flag) turns on the
-      # instant the warp is queued, matching real RPG_RT's own
-      # `Game_Player::ReserveTeleport(const SaveTarget&)` -- see
+      # instant the warp is queued, ported from a reference implementation's
+      # own teleport-target reservation, not independently confirmed
+      # against genuine RPG_RT under wine -- see
       # Game::Party#cast_escape_skill/#cast_teleport_skill.
       def queue_teleport(target)
         @state.switches[target[:switch_id]] = true if target[:switch_id]
@@ -602,10 +612,10 @@ class RPG2k
           sk = @state.party.db_skill(sid)
           idx = skill_unavailable?(sid, sk) ? 3 : 0
           draw_system_text(c, x, y, col_w - 40, LINE_H, skill_name(sid), @skin, idx)
-          # "-  5"-style: a separator (a plain hyphen -- confirmed via
-          # EasyRPG's own Window_Skill::DrawItem, which formats this as
-          # `"{separator}{cost:3d}"` with a hyphen default) then the cost
-          # right-aligned in a 3-character field, no MP/SP unit suffix.
+          # "-  5"-style: a separator (a plain hyphen by default) then the
+          # cost right-aligned in a 3-character field, no MP/SP unit suffix
+          # -- ported from a reference implementation, NOT independently
+          # confirmed against genuine RPG_RT under wine.
           draw_system_text(c, x + col_w - 40, y, 40, LINE_H, "-%3d" % cost, @skin, idx)
         end
         @skill_window.contents = c
@@ -700,8 +710,7 @@ class RPG2k
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
-          # (Scene::Base#draw_stat_segment, ported from EasyRPG's
-          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
           # dims to knockout gray at 0 HP or critical red/orange at or below a
           # quarter of max. This target list used to draw both as flat-white
@@ -758,16 +767,17 @@ class RPG2k
       # The registered teleport destinations as `[map_id, name]` pairs,
       # ascending by map id — the same order `Game::State#teleport_targets`
       # (a plain hash built by Set Teleport Target) already keeps them in, and
-      # the same order EasyRPG's `Window_Teleport` lists them in (the order
-      # `Game_Targets::GetTeleportTargets` returns, sorted by map id on insert).
+      # the same order a reference implementation lists them in (sorted by
+      # map id on insert).
       def teleport_targets
         @state.teleport_targets.keys.sort.map { |id| [id, map_display_name(id)] }
       end
 
       # A map's editor name for the teleport picker, or its bare id when the
       # tree carries no name for it (a bare fixture, or an id the tree does not
-      # know) — matching EasyRPG's `Game_Map::GetMapName`, which reads the same
-      # map-tree field this build's #map_properties elsewhere already exposes.
+      # know) — matching a reference implementation's own map-name lookup,
+      # which reads the same map-tree field this build's #map_properties
+      # elsewhere already exposes.
       def map_display_name(map_id)
         row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
         name = row && row.respond_to?(:name) ? row.name.to_s : nil

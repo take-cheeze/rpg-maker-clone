@@ -6,7 +6,7 @@
   access flags** (121-124), plus the leader's on-map **CharSet override** in the
   hero chunk (104). It also now writes the **title chunk (100)** — the OLE
   timestamp, the leader's name / level / current HP and each party member's
-  FaceSet — so a real RPG_RT / EasyRPG file-select screen shows the party. The
+  FaceSet — so a real RPG_RT file-select screen shows the party. The
   timestamp is a `:double`, so the `mruby-lcf` writer gained `LCF.pack_double`
   (a byte-wise IEEE-754 encoder, the inverse of `unpack_double`) and a `:double`
   `encode` branch. The only live-state fields still not in the `.lsd` are the

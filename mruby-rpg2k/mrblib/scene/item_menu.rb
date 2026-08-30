@@ -30,10 +30,10 @@ class RPG2k
       # which filled row-major (item 0 top-left, item 1 top-right, item 2
       # second row left, ...) and left an incomplete last row's second cell
       # blank rather than reflowing. Cursor movement is grid-aware but not
-      # symmetric between axes -- confirmed directly against EasyRPG's own
-      # `Window_Selectable::Update` (`src/window_selectable.cpp`), which has
-      # no method actually named `CursorDown`/`Up`/`Right`/`Left`: DOWN/UP
-      # move by COLUMN_MAX and are genuinely column-locked, a no-op with no
+      # symmetric between axes -- ported from a reference implementation,
+      # NOT independently confirmed against genuine RPG_RT under wine:
+      # DOWN/UP move by COLUMN_MAX and are genuinely column-locked, a no-op
+      # with no
       # cell below/above (tried pressing DOWN off the last, partial row --
       # the cursor simply stayed); RIGHT/LEFT move by one, bounded only by
       # the list's own absolute start/end, with no row-boundary check at
@@ -84,14 +84,14 @@ class RPG2k
       end
 
       # Holding a direction auto-repeats the cursor after the initial delay,
-      # not just a single step per tap -- `Window_Selectable::Update`
-      # (`src/window_selectable.cpp`), the base every real RPG2000 list is
-      # built on, falls through to `Input::IsRepeated` for all four
-      # directions right after its own `IsTriggered` check. `Input.repeat?`'s
-      # own timing already matches EasyRPG's repeat constants exactly -- see
-      # `Scene::SaveLoad`'s identical fix and its fuller writeup in
-      # docs/TODO.md -- so every check below just gains an `|| #repeat?`
-      # alongside it, the same pure-wiring shape.
+      # not just a single step per tap -- a reference implementation's own
+      # selectable-list update, the base every real RPG2000 list is built
+      # on, falls through to its own repeat check for all four directions
+      # right after its own trigger check. `Input.repeat?`'s own timing
+      # already matches that reference implementation's repeat constants
+      # exactly -- see `Scene::SaveLoad`'s identical fix and its fuller
+      # writeup in docs/TODO.md -- so every check below just gains an
+      # `|| #repeat?` alongside it, the same pure-wiring shape.
       def update_items
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
@@ -101,10 +101,10 @@ class RPG2k
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
-        # own edge -- confirmed directly against RPG_RT's live source:
-        # `Window_Selectable::Update` (`src/window_selectable.cpp`) has no
-        # method actually named `CursorRight`/`CursorLeft`; its real Right/
-        # Left branches are a flat `index +- 1`, bounded only by the list's
+        # own edge -- ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # its Right/
+        # Left handling is a flat `index +- 1`, bounded only by the list's
         # own absolute start/end (`index < item_max - 1` / `index > 0`),
         # structurally unlike Down/Up (genuinely column-locked there,
         # `index < item_max - column_max`). #move_item_cursor's own bound
@@ -154,13 +154,14 @@ class RPG2k
                @state.party.db_skill(it.skill_id) : nil
         # Only a genuine type-9 special item warps for an Escape/Teleport
         # skill (or is buzzer-gated on access/target before it even tries)
-        # -- confirmed against genuine RPG_RT's own live source:
-        # `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its whole
-        # ReserveTeleport/Scene_Teleport dispatch behind `item.type ==
-        # Type_special`; a `use_skill`-flagged weapon/shield/armor/helmet/
+        # -- ported from a reference implementation, not independently
+        # confirmed against genuine RPG_RT under wine: its own item-scene
+        # update gates its whole
+        # Escape/Teleport dispatch behind the item being a genuine
+        # special item; a `use_skill`-flagged weapon/shield/armor/helmet/
         # accessory item (schema field 71) invoking the very same skill type
         # always falls to the generic `else` branch there instead (a plain
-        # `Scene_ActorTarget` push), and `Game_Battler::UseSkill`'s own
+        # actor-target push), and its own skill-use
         # Escape/Teleport branch for it plays only the skill's sound effect,
         # no warp at all (see `#use_special_escape_item`'s own citation).
         # `#use_equip_skill_item` already mirrors that exact "SE only, no
@@ -179,10 +180,11 @@ class RPG2k
         # An Escape/Teleport-invoking special item is always listed (see
         # Game::Party#field_skill?, which #field_usable?'s special-item
         # branch now defers to) but only castable once access and a
-        # registered target are there. Confirmed against RPG_RT's own live
-        # source: `Scene_Item::vUpdate` (`src/scene_item.cpp`) gates its
-        # *entire* per-type dispatch behind `item_window->CheckEnable
-        # (item_id)` before ever reaching the Escape/Teleport branches --
+        # registered target are there. Ported from a reference
+        # implementation, not independently confirmed against genuine
+        # RPG_RT under wine: its own item-scene update gates its
+        # *entire* per-type dispatch behind the item being enabled
+        # before ever reaching the Escape/Teleport branches --
         # disabled plays only the buzzer and returns, no attempt, no
         # message, exactly like an unavailable skill in
         # Scene::SkillMenu#choose_skill. Left to #apply_escape_item /
@@ -386,12 +388,11 @@ class RPG2k
       end
 
       # The destination list is a two-column grid too, not a single stacked
-      # column -- confirmed against genuine RPG_RT's own live source:
-      # `Window_Teleport` (`src/window_teleport.cpp`) sets `column_max = 2`
-      # (`Window_Selectable`'s `wrap_limit` default is also 2, the exact
-      # threshold `Window_Selectable::Update`'s RIGHT/LEFT handling gates on),
-      # the identical shape this class's own item list already ports (see
-      # `COLUMN_MAX`'s comment). With exactly two destinations, DOWN/UP are
+      # column -- the identical shape this class's own item list already
+      # ports, confirmed against genuine RPG_RT under wine with a five-item
+      # bag (see `COLUMN_MAX`'s own comment above), carried over on the
+      # strength of that shared shape rather than separately re-measured.
+      # With exactly two destinations, DOWN/UP are
       # no-ops (nothing in the row below/above) and RIGHT reaches the second
       # one -- not DOWN, which this scene wrongly wired to a single-column
       # modulo wrap with no RIGHT/LEFT handling at all.
@@ -406,8 +407,9 @@ class RPG2k
           move_teleport_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
         # own edge -- the same fix as #update_items's identical RIGHT/LEFT
-        # handling (confirmed directly against `Window_Selectable::Update`,
-        # `src/window_selectable.cpp`: Right/Left are a flat `index +- 1`
+        # handling (ported from a reference implementation, not
+        # independently confirmed against genuine RPG_RT under wine:
+        # Right/Left are a flat `index +- 1`
         # bounded only by the list's own absolute start/end, no
         # row-boundary check), never propagated to this sibling list when
         # that one was corrected.
@@ -556,14 +558,16 @@ class RPG2k
 
       # A used item that changed nothing (everyone already full, an
       # ineffective status cure, ...) plays Buzzer rather than the item's own
-      # success cue -- matching RPG_RT's own invalid-use handling elsewhere in
-      # `Scene_Item` (a rejected action gets the same SE as a confirm on an
-      # empty list or a disabled command, not a silent no-op). A *successful*
+      # success cue -- matching a reference implementation's own invalid-use
+      # handling elsewhere in its item scene (a rejected action gets the same SE as a confirm on an
+      # empty list or a disabled command, not a silent no-op; not
+      # independently confirmed against genuine RPG_RT under wine). A *successful*
       # use stays on this same target screen too, exactly like a no-effect
-      # one -- confirmed against RPG_RT's own live source:
-      # `Scene_ActorTarget::UpdateItem` (`src/scene_actortarget.cpp`) never
-      # calls `Scene::Pop()` on Decision, success or failure alike; the only
-      # `Scene::Pop()` in the whole file is `vUpdate`'s own Cancel branch.
+      # one -- ported from a reference implementation, not independently
+      # confirmed against genuine RPG_RT under wine:
+      # its own actor-target update never
+      # pops the scene on Decision, success or failure alike; the only
+      # scene-pop in the whole handler is its own Cancel branch.
       # `#use_item`'s own `item_count(id) > 0` gate already answers what
       # happens on a repeat use once the item runs out (an empty `affected`,
       # the same Buzzer path), matching the reference's own `GetItemCount(id)
@@ -588,8 +592,9 @@ class RPG2k
         end
       end
 
-      # The item's own success cue -- confirmed against RPG_RT's own live
-      # source: `Scene_ActorTarget::UpdateItem` plays the invoked skill's own
+      # The item's own success cue -- ported from a reference
+      # implementation, not independently confirmed against genuine RPG_RT
+      # under wine: its own actor-target update plays the invoked skill's own
       # animation SE for a Type_special item or a `use_skill`-flagged
       # weapon/shield/armor/helmet/accessory item (the identical `do_skill`
       # condition `Game::Party#use_special_escape_item` already mirrors for
@@ -925,8 +930,7 @@ class RPG2k
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
                       "#{term(:level_short, 'Lv')} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
-          # (Scene::Base#draw_stat_segment, ported from EasyRPG's
-          # `Window_Base::GetValueFontColor` -- see that helper's own
+          # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
           # dims to knockout gray at 0 HP or critical red/orange at or below a
           # quarter of max. This target list used to draw both as flat-white

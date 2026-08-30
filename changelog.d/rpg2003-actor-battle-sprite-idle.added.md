@@ -3,8 +3,9 @@
   (which keeps showing HP/SP/party info exactly as before). Sourced from the
   database's Battler Animation table (`@db.battleranimations`, decoded in a
   prior change): the actor's resolved pose-set id (`Game::Actor
-  #battler_animation_id`, mirroring EasyRPG's `Game_Actor::
-  GetBattleAnimationId` fallback chain — a runtime override from an actual
+  #battler_animation_id`, mirroring a reference implementation's
+  battle-animation-id fallback chain, not independently confirmed against
+  genuine RPG_RT under wine — a runtime override from an actual
   Change Class event, else the current class's own default, else the
   actor's own database default) supplies the Idle pose (Pose id 0), whose
   `battler_name`/`battler_index` frame a `BattleCharSet/<name>` sheet in

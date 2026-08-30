@@ -189,20 +189,20 @@ class RPG2k
 
       # Draw an actor's condition, the same field-window fixture every
       # database-driven scene shows it in -- the menu party list, the item /
-      # skill target list and the status screen. Ported from EasyRPG
-      # Player's source (Window_Base#DrawActorState), NOT independently
-      # confirmed against genuine RPG_RT under wine.
+      # skill target list and the status screen. Ported from a reference
+      # implementation's source, NOT independently confirmed against
+      # genuine RPG_RT under wine.
       def draw_actor_state(bmp, actor, x, y, w, h, skin, align = 0)
         text, color = state_display(actor.states)
         draw_system_text bmp, x, y, w, h, text, skin, color, align
       end
 
       # The palette colour index an actor's live HP/SP figure draws in --
-      # ported verbatim from EasyRPG's live `Window_Base::GetValueFontColor`
-      # (`src/window_base.cpp`), NOT independently confirmed against genuine
-      # RPG_RT under wine -- the shared routine behind `DrawActorHp`/
-      # `DrawActorSp`: knockout gray (5) at exactly 0 with `can_knockout` set
-      # (HP only -- `DrawActorSp` always passes false, so SP never shows this
+      # ported verbatim from a reference implementation's live font-color
+      # routine, NOT independently confirmed against genuine RPG_RT under
+      # wine -- the shared routine behind drawing an actor's HP/SP:
+      # knockout gray (5) at exactly 0 with `can_knockout` set
+      # (HP only -- the SP path always passes false, so SP never shows this
       # colour even at 0), else critical red/orange (4) at or below a quarter
       # of `max`, else the ordinary default (0). These are `\c[n]`-style
       # system-palette indices, the same ones #state_display already returns
@@ -300,17 +300,16 @@ class RPG2k
       # `enemy_attack_se` (slot 6) is played from
       # Scene::Map#play_battle_action_se, gated on Battle#deal_attack's
       # `attacker_ally: false` (an enemy's own plain Attack, never a
-      # skill/item hit -- EasyRPG's Game_BattleAlgorithm::Normal::GetStartSe
-      # returns SFX_EnemyAttacks only for an enemy source, and only the
-      # Normal algorithm ever returns it). Ported from EasyRPG Player's
-      # source (scene_battle_rpg2k.cpp), NOT independently confirmed against
-      # genuine RPG_RT under wine: ProcessBattleActionUsage plays
-      # GetStartSe() before ProcessBattleActionAnimation and
-      # ProcessBattleActionExecute -- the very start of the action, before
-      # any sprite swing or hit/miss/damage resolution -- and, for a
-      # repeated (dual-attack) action, ProcessBattleActionFinished re-enters
-      # at Execute rather than Usage, so it plays once per action, not once
-      # per swing (mirrored here by nilling `attacker_ally` on the dual
+      # skill/item hit -- a reference implementation's own battle-algorithm
+      # code returns this SE only for an enemy source, and only for the
+      # normal attack algorithm). Ported from a reference implementation's
+      # source, NOT independently confirmed against genuine RPG_RT under
+      # wine: its action-usage step plays the start SE before the action's
+      # animation and execution steps -- the very start of the action,
+      # before any sprite swing or hit/miss/damage resolution -- and, for a
+      # repeated (dual-attack) action, its action-finished step re-enters at
+      # the execute step rather than usage, so it plays once per action, not
+      # once per swing (mirrored here by nilling `attacker_ally` on the dual
       # attack's second entry, see #enemy_basic_action).
       #
       # This build's round has no separate wind-up beat to hang that lead-in
@@ -350,14 +349,12 @@ class RPG2k
         return nil unless field && db.system.respond_to?(field)
         se = db.system.send(field)
         name = se && se.respond_to?(:file) ? se.file : nil
-        # Ported from EasyRPG's actual C++ source, NOT independently
-        # confirmed against genuine RPG_RT under wine (matching the
-        # identical, already-disclosed convention `Interpreter#play_audio`
-        # carries for the Play SE/Play BGM event commands, see there):
-        # `Game_System::SePlay(const lcf::rpg::Sound&, bool)`
-        # (`src/game_system.cpp`) -- `if (se.name.empty()) { return; } else
-        # if (se.name == "(OFF)") { ...; return; }` -- treats blank *and*
-        # the literal "(OFF)" sentinel identically as "nothing to play."
+        # Ported from a reference implementation's actual C++ source, NOT
+        # independently confirmed against genuine RPG_RT under wine
+        # (matching the identical, already-disclosed convention
+        # `Interpreter#play_audio` carries for the Play SE/Play BGM event
+        # commands, see there): treats blank *and* the literal "(OFF)"
+        # sentinel identically as "nothing to play."
         return nil if name.nil? || name.empty? || name == '(OFF)'
         # balance (cycle #221): the database's own SE struct carries it (LCF
         # schema field 5, the same field id `#do_change_system_sfx`'s own
@@ -369,19 +366,19 @@ class RPG2k
       end
 
       # Plays a battle_anime row's own sound effect -- ported from
-      # EasyRPG's actual C++ source, NOT independently confirmed against
-      # genuine RPG_RT under wine: `Game_System::SePlay(const RPG::
-      # Animation&)` (`src/game_system.cpp`) walks the animation's own
-      # `timings` and plays only the *first* one with a real SE, then
-      # returns; it never plays every timing's SE, and never draws the
-      # animation itself (no Show Battle Animation flash/shake/sprite here --
-      # this is the field item/skill success cue, which real RPG_RT plays as
-      # sound only). A no-op for a nil/dangling animation id, an animation
-      # with no timings, or (mirroring `#play_skill_sound_effect`'s own
-      # simpler convention elsewhere in this codebase) every timing's SE
-      # being blank -- or, per `IsStopSoundFilename`'s own guard (called
-      # right here, `src/game_system.cpp` line ~213), the literal "(OFF)"
-      # sentinel, which is not a blank string but liblcf's own "no sound set"
+      # a reference implementation's actual C++ source, NOT independently
+      # confirmed against genuine RPG_RT under wine: it walks the
+      # animation's own `timings` and plays only the *first* one with a
+      # real SE, then returns; it never plays every timing's SE, and never
+      # draws the animation itself (no Show Battle Animation flash/shake/
+      # sprite here -- this is the field item/skill success cue, which real
+      # RPG_RT plays as sound only). A no-op for a nil/dangling animation
+      # id, an animation with no timings, or (mirroring
+      # `#play_skill_sound_effect`'s own simpler convention elsewhere in
+      # this codebase) every timing's SE being blank -- or, per that
+      # reference implementation's own stop-sound-filename guard, the
+      # literal "(OFF)" sentinel, which is not a blank string but liblcf's
+      # own "no sound set"
       # default: a timing left at that default is skipped exactly like a
       # blank one, so the scan correctly falls through to a *later* timing's
       # genuine sound instead of trying (and failing) to play a file
@@ -442,16 +439,13 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
-      # Ported from EasyRPG's actual C++ source, NOT independently
-      # confirmed against genuine RPG_RT under wine:
-      # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
-      # case (`src/game_character.cpp`) -- `if (move_command.
-      # parameter_string != "(OFF)" && move_command.parameter_string !=
-      # "(Brak)") { ...SePlay...; }` -- a Move Route "Play SE" sub-command
-      # skips playback for either of two sentinel strings, not just a blank
-      # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
-      # (Polish for "missing" -- a legacy artifact unique to this one
-      # command in the whole reference codebase, found nowhere else in it).
+      # Ported from a reference implementation's actual C++ source, NOT
+      # independently confirmed against genuine RPG_RT under wine: a Move
+      # Route "Play SE" sub-command skips playback for either of two
+      # sentinel strings, not just a blank name: "(OFF)" (liblcf's own "no
+      # sound set" default) and "(Brak)" (Polish for "missing" -- a legacy
+      # artifact unique to this one command in the whole reference
+      # codebase, found nowhere else in it).
       # `balance` (cycle #221) was accepted and immediately discarded here
       # (a `_balance` parameter) until RGSS::Audio.se_play grew a native pan
       # argument to forward it to -- see that method's own doc comment.
@@ -498,16 +492,13 @@ class RPG2k
         @scene.state.switches[id] = on
       end
 
-      # Ported from EasyRPG's actual C++ source, NOT independently
-      # confirmed against genuine RPG_RT under wine:
-      # `Game_Character::MoveTypeCustomCommand`'s `Code::play_sound_effect`
-      # case (`src/game_character.cpp`) -- `if (move_command.
-      # parameter_string != "(OFF)" && move_command.parameter_string !=
-      # "(Brak)") { ...SePlay...; }` -- a Move Route "Play SE" sub-command
-      # skips playback for either of two sentinel strings, not just a blank
-      # name: "(OFF)" (liblcf's own "no sound set" default) and "(Brak)"
-      # (Polish for "missing" -- a legacy artifact unique to this one
-      # command in the whole reference codebase, found nowhere else in it).
+      # Ported from a reference implementation's actual C++ source, NOT
+      # independently confirmed against genuine RPG_RT under wine: a Move
+      # Route "Play SE" sub-command skips playback for either of two
+      # sentinel strings, not just a blank name: "(OFF)" (liblcf's own "no
+      # sound set" default) and "(Brak)" (Polish for "missing" -- a legacy
+      # artifact unique to this one command in the whole reference
+      # codebase, found nowhere else in it).
       # `balance` (cycle #221) was accepted and immediately discarded here
       # (a `_balance` parameter) until RGSS::Audio.se_play grew a native pan
       # argument to forward it to -- see that method's own doc comment.

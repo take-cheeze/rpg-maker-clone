@@ -18,12 +18,11 @@ alternate-battle-screen initiative, ADR 0043/0044-era work, `Scene::Map
 #build_actor_sprites`/`#build_actor_sprite`) still showed whoever was in the
 party when the fight opened, for the fight's whole duration.
 
-Checked against EasyRPG Player's real source rather than assumed:
-`Scene_Battle_Rpg2k::OnPartyChanged(Game_Actor*, bool added)`
-(`src/scene_battle_rpg2k.cpp`) builds or tears down that one actor's
-`Sprite_Actor` and is called **synchronously**, at the exact moment the party
-changes, from `Game_Party::AddActor`/`RemoveActor` (`src/game_party.cpp`) via
-`Scene::Find(Scene::Battle)`. This codebase's render layer is event-driven,
+Checked against a reference implementation's real source rather than
+assumed, not independently confirmed against genuine RPG_RT under wine: its
+battle scene builds or tears down that one actor's sprite and is called
+**synchronously**, at the exact moment the party changes, from its party
+add/remove routines. This codebase's render layer is event-driven,
 not polled — `#refresh_battle_status` already runs reactively at specific
 moments (opening the battle, selecting a command, opening the options
 window) — but nothing fired when a battle-event page's `Change Party Member`
@@ -47,8 +46,10 @@ signal that anything had happened at all.
   `party.include_actor?` before/after — `#add_actor`/`#remove_actor` both
   silently no-op on a full party, an unknown roster id, or a redundant
   add/remove) and calls `@battle_screen.on_battle_party_changed(actor,
-  added)`, mirroring EasyRPG's `Game_Party::AddActor`/`RemoveActor` calling
-  `OnPartyChanged` at the exact point of mutation, not on some later poll.
+  added)`, mirroring a reference implementation's party add/remove routines
+  calling into the battle scene at the exact point of mutation (not
+  independently confirmed against genuine RPG_RT under wine), not on some
+  later poll.
 - `Scene::Map#on_battle_party_changed` builds (`#add_battle_actor_sprite`) or
   disposes (`#remove_battle_actor_sprite`) that one actor's sprite, updates
   `@battle_ui[:allies]`, and calls `#refresh_battle_status` immediately —
@@ -81,8 +82,9 @@ signal that anything had happened at all.
   insertion recomputes independently — e.g. removing index 1 of 3 leaves
   index 2's sprite at its old Z (202); adding a new member back in at the
   new index 2 would then compute the same Z 202, and the two sprites would
-  collide. Matches EasyRPG's own `ResetAllBattlerZ()`, called for the same
-  reason right after `OnPartyChanged` adds a sprite.
+  collide. Matches a reference implementation's own full Z-recompute, called
+  for the same reason right after its party-changed handler adds a sprite —
+  not independently confirmed against genuine RPG_RT under wine.
 
 ## Consequences
 

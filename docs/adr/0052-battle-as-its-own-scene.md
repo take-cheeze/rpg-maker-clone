@@ -35,10 +35,10 @@ ported), but it meant:
   scripted/debug battle, a battle-only test harness, a different call site
   entirely) could construct and drive on its own.
 
-RPG_RT itself keeps the two as genuinely separate scenes (`Scene_Map` /
-`Scene_Battle`, EasyRPG Player's own `src/scene_battle.cpp`); this ADR brings
-the port's own structure in line with that, without changing any observable
-behaviour.
+RPG_RT itself keeps the two as genuinely separate scenes — ported from how a
+reference implementation structures them, not independently confirmed
+against genuine RPG_RT under wine; this ADR brings the port's own structure
+in line with that, without changing any observable behaviour.
 
 ## Decision
 
@@ -88,7 +88,9 @@ behaviour.
   `#dispose`, plus a second `public :...` list once the rest are defined).
   The two map-triggered/battle-round twins of the same mechanism
   (`#fire_target_flash`/`#fire_map_target_flash`,
-  `#fire_target_shake`/(no map twin — a documented EasyRPG no-op),
+  `#fire_target_shake`/(no map twin — a documented no-op in a reference
+  implementation, not independently confirmed against genuine RPG_RT under
+  wine),
   `#clear_target_flash`/`#clear_map_target_flash`) split the same way: the
   battle-only half moved to `Scene::Battle`, the map-only half stayed, and
   `Scene::Map#fire_animation_flashes`/`#hold_animation_target_flash` dispatch
