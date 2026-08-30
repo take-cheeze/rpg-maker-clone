@@ -4574,11 +4574,18 @@ class RPG2k
       def apply_move_request(r, this_event)
         route = Game::MoveRoute.new(r[:commands], repeat: r[:repeat],
                                     skippable: r[:skippable])
+        # TEMP DEBUG (event-29-direction investigation): confirm the request
+        # reaches here, whether the route parsed non-empty, and what
+        # `this_event` resolved to for a "this event" target.
+        $stderr.puts "[RPG2k][debug] apply_move_request target=#{r[:target]} " \
+                     "route_empty=#{route.empty?} this_event_id=#{this_event ? this_event[:id] : 'nil'}"
         return if route.empty?
         case r[:target]
         when MOVE_TARGET_PLAYER
           start_player_route(route, r[:frequency])
         when 0, MOVE_TARGET_THIS
+          $stderr.puts "[RPG2k][debug] apply_move_request: this-event branch, " \
+                       "this_event=#{this_event ? 'present' : 'NIL - route dropped'}"
           force_event_route(this_event, route, r[:frequency]) if this_event
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
@@ -4789,6 +4796,11 @@ class RPG2k
         ev[:forced_route] = route
         ev[:forced_freq] = valid_move_freq(freq)
         ev[:move_timer] = 0
+        # TEMP DEBUG (event-29-direction investigation): confirm the route was
+        # actually armed on the target event's own runtime hash.
+        $stderr.puts "[RPG2k][debug] force_event_route armed on event_id=#{ev[:id]} " \
+                     "at (#{ev[:char].x},#{ev[:char].y}) dir=#{ev[:char].direction} " \
+                     "forced_freq=#{ev[:forced_freq]}"
       end
 
       # Give vehicle `type` a forced route (Move Event / Set Move Route
@@ -5056,7 +5068,14 @@ class RPG2k
         e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
         ox = ch.x
         oy = ch.y
-        run_route_step(e[:forced_route], ch, @world) unless e[:forced_route].done?
+        unless e[:forced_route].done?
+          status = run_route_step(e[:forced_route], ch, @world)
+          # TEMP DEBUG (event-29-direction investigation): show each forced
+          # route step actually executing, and its effect on position/facing.
+          $stderr.puts "[RPG2k][debug] step_forced_event id=#{e[:id]} status=#{status} " \
+                       "pos=(#{ch.x},#{ch.y}) dir=#{ch.direction} through=#{ch.through} " \
+                       "route_index=#{e[:forced_route].index} route_done=#{e[:forced_route].done?}"
+        end
         e[:forced_route] = nil if e[:forced_route].done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.

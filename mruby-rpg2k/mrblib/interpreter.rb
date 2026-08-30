@@ -3699,12 +3699,19 @@ module Game
     def do_move_event(cmd)
       params = cmd.parameters || []
       return if params.empty?
+      decoded = decode_move_route(params, cmd.string || '')
+      # TEMP DEBUG (event-29-direction investigation): confirm a Move Event
+      # command is actually reached and decoded, and by which event.
+      $stderr.puts "[RPG2k][debug] do_move_event event_id=#{@event_id} " \
+                   "target=#{cmd.param(0)} freq=#{cmd.param(1)} " \
+                   "repeat=#{cmd.param(2)} skippable=#{cmd.param(3)} " \
+                   "commands=#{decoded.map(&:command_id).inspect}"
       @move_route_requests.push(
         target: cmd.param(0),
         frequency: cmd.param(1),
         repeat: cmd.param(2) != 0,
         skippable: cmd.param(3) != 0,
-        commands: decode_move_route(params, cmd.string || '')
+        commands: decoded
       )
     end
 
