@@ -1731,7 +1731,14 @@ class RPG2k
           return
         end
         play_system_se(SFX_DECISION)
-        @ui[:skill_i] = 0
+        # Community デフォ戦bot/@2000_battle_bot trivia: the last skill this
+        # actor chose (or had Auto-Battle choose for them, #last_skill_id's
+        # own citation) is where the cursor reopens, not always the top of
+        # the list -- falls back to 0 when nothing was ever chosen yet, or
+        # that skill no longer appears in this list (forgotten, or newly
+        # sealed by a status effect).
+        remembered = current_actor.last_skill_id
+        @ui[:skill_i] = remembered && @ui[:skills].index { |sid, _cost| sid == remembered } || 0
         @ui[:phase] = :skill
         draw_battle_skill
       end
@@ -1864,6 +1871,7 @@ class RPG2k
           return
         end
         play_system_se(SFX_DECISION)
+        current_actor.last_skill_id = sid
         @ui[:pending] = { kind: :skill, sk: sk, sid: sid }
         close_battle_skill
         case @state.party.battle_skill_target(sk)

@@ -22184,6 +22184,47 @@ check 'battle: a Forced-AI actor picks a clearly-better Skill over Attack, with 
   eq foe2, b2.action, 'an ordinary Attack was queued instead, aimed at the only living foe'
 end
 
+check 'battle: an Auto-Battle-picked skill (single or all-target) records ' \
+      '#last_skill_id the same way a manual pick does' do
+  # Community デフォ戦bot/@2000_battle_bot trivia: the skill-menu cursor
+  # remembers the last skill chosen, even when Auto-Battle picked it on the
+  # actor's behalf rather than the player -- Scene::Battle#open_battle_skill
+  # reads this back to reopen the list where it left off (cycle #232).
+  fire = FakeAiSkill.new(name: 'Fire', scope: 0, power: 200, sp_cost: 4,
+                         physical_rate: 0, magical_rate: 10, affect_hp: true)
+  skills = { 1 => fire }
+  st = force_ai_state(skills)
+  hero = st.party.actor_by_id(1)
+  hero.learn_skill(1)
+  ai = FakeAiEnv.new(skills, st)
+  foe = combatant('Foe', 0, 0, 5, 100)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1),
+                         nil, false, false, false, false, nil, ai)
+  b = bat.allies.first
+  eq nil, b.last_skill_id, 'nothing chosen yet this fight'
+  bat.choose_auto_battle_command(b)
+  eq 1, b.command[:skill_id], 'the single-target Fire skill was queued'
+  eq 1, b.last_skill_id, 'and remembered, exactly like a manual pick would be'
+
+  # The all-target (#queue_auto_battle_group_skill) path separately, since it
+  # is a distinct method from the single-target one just exercised above.
+  storm = FakeAiSkill.new(name: 'Storm', scope: 1, power: 200, sp_cost: 4,
+                          physical_rate: 0, magical_rate: 10, affect_hp: true)
+  skills2 = { 2 => storm }
+  st2 = force_ai_state(skills2)
+  hero2 = st2.party.actor_by_id(1)
+  hero2.learn_skill(2)
+  ai2 = FakeAiEnv.new(skills2, st2)
+  foe2a = combatant('Foe A', 0, 0, 5, 100)
+  foe2b = combatant('Foe B', 0, 0, 5, 100)
+  bat2 = Game::Battle.new([Game::Battle.from_actor(hero2)], [foe2a, foe2b], Game::Rng.new(1),
+                          nil, false, false, false, false, nil, ai2)
+  b2 = bat2.allies.first
+  bat2.choose_auto_battle_command(b2)
+  eq 2, b2.command[:skill_id], 'the all-target Storm skill was queued'
+  eq 2, b2.last_skill_id, 'and remembered too'
+end
+
 check 'battle: a Forced-AI actor revives a downed ally instead of attacking' do
   # The "downed target" half of #auto_battle_heal_rank -- ported from
   # a reference implementation, NOT independently confirmed against genuine
