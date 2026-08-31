@@ -16358,6 +16358,37 @@ check 'battle: leaving and rejoining the same fight keeps accumulated battle-onl
   eq 7, rejoined.atk_mod, 'the accumulated stat modifier survived the round trip'
 end
 
+# デフォ戦botまとめ battle trivia triage (docs/TODO.md, cycle #233): a
+# mid-battle Change Equipment event command (#equip_item_from_bag, calling
+# the same underlying Actor#equip_item exercised directly below) updates the
+# persistent Actor immediately, but previously left the fighting Combatant's
+# own atk/def/spi/agi pinned to their battle-start #from_actor snapshot for
+# the rest of the fight. #sync_allies_from_party -- already re-run every
+# round via #refill_queue for the unrelated roster-membership check -- now
+# also refreshes those four fields for an already-fighting ally.
+check 'battle: a mid-battle Change Equipment resyncs the fighting ' \
+      "Combatant's own atk, not just the persisted Actor" do
+  items = { 7 => fake_item(atk: 50, type: 1) } # weapon -> slot 0, +50 atk
+  db = FakeActorDB.new(
+    { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8, agi: 20) },
+    [1], items)
+  party = Game::Party.new(db)
+  hero = party.leader
+  bat = Game::Battle.new(party.actors.map { |a| Game::Battle.from_actor(a) }, [watcher],
+                         Game::Rng.new(1), nil, false, false, false, false, nil, nil,
+                         party: party)
+  fighting_hero = bat.ally_by_actor_id(1)
+  eq 10, fighting_hero.atk, "sanity: the battle-start snapshot matches the actor's starting atk"
+
+  hero.equip_item(7)
+  eq 60, hero.atk, "sanity: the actor's own atk already reflects the new weapon (base 10 + 50)"
+  eq 10, fighting_hero.atk,
+     'not yet resynced onto the fighting Combatant -- still the stale battle-start snapshot'
+
+  bat.begin_round # round 2: #refill_queue re-syncs @allies from the live party
+  eq 60, fighting_hero.atk, "the fight's own Combatant now matches the actor's new gear"
+end
+
 # -- Ability-value change (schema fields 33-36: affect_attack/defense/spirit/
 # agility) -- a skill's own per-battle ATK/DEF/SPI/AGI modifier, distinct from
 # both attribute-defence rank shifting (above) and a *state*'s halve/double
@@ -17701,6 +17732,36 @@ check 'battle: a do-nothing state inflicted after queueing still blocks the turn
   ok entries.none? { |e| e[:attacker] == 'Victim' },
      'newly afflicted before its turn -- a purely queue-time-locked implementation (no live ' \
      'recheck at dequeue) would wrongly let Victim act here'
+end
+
+# デフォ戦botまとめ battle trivia triage (docs/TODO.md, cycle #233): an
+# enemy's plain basic Attack now locks its target when this round's queue is
+# built (#refill_queue's new `queued_target` Combatant field), instead of
+# re-rolling it live at #attack_target's own call inside #strike -- the same
+# "lock at queue-build time" shape #queued_no_act already established above.
+check 'battle: an enemy locks its basic-Attack target when the round\'s ' \
+      'queue is built, and fizzles rather than retargeting if that ally ' \
+      'falls before its turn' do
+  weak = combatant('Weak', 0, 0, 100, 1)      # fastest -- acts first, harmless (0 atk)
+  strong = combatant('Strong', 0, 0, 50, 100) # acts second, harmless (0 atk)
+  slime = combatant('Slime', 10, 0, 5, 100)   # slowest -- attacks last this round
+  bat = Game::Battle.new([weak, strong], [slime], Game::Rng.new(1))
+
+  bat.begin_round
+  target = slime.queued_target
+  ok target, 'the enemy\'s attack target is locked in when the round\'s queue is built, before anyone has acted'
+
+  # Both allies (100/50 agi) outrank the enemy (5 agi) and act first; neither
+  # deals any damage (0 atk vs 0 def), so nothing here kills the enemy's own
+  # locked target -- that happens next, standing in for whatever actually
+  # would in a real fight (another attacker, slip damage, a battle event).
+  2.times { bat.step_action }
+  target.hp = 0
+
+  entry = bat.step_action
+  eq nil, entry,
+     "the enemy's attack fizzles once its locked target has already fallen -- a purely-live " \
+     're-roll at execution time would wrongly retarget whoever else remains instead'
 end
 
 check 'battle poison slips SP too when the battler has max SP' do
@@ -21861,7 +21922,14 @@ check 'an enemy heals a fellow monster with an ally-scoped skill' do
   hurt = combatant('Brute', 10, 0, 1, 500)
   hurt.hp = 100
   [hero, medic, hurt].each { |c| c.spi ||= 0 }
-  b = Game::Battle.new([hero], [medic, hurt], Game::Rng.new(1), nil, false,
+  # Seed 2, not 1: #refill_queue now also rolls and locks a `queued_target`
+  # for every enemy in the round's queue (this check's own Medic and Brute
+  # both included) the moment the round begins, per this cycle's own
+  # `queued_target` fix -- shifting which RNG draws land on the skill's own
+  # ally-scope target roll below. Picked simply to keep landing on Brute
+  # (the actually-hurt monster) the way this check's own name and intent
+  # already assume, not because of anything specific to the value 2.
+  b = Game::Battle.new([hero], [medic, hurt], Game::Rng.new(2), nil, false,
                        false, false, false, nil, ai)
   b.begin_round
   b.step_action                                # the hero swings
