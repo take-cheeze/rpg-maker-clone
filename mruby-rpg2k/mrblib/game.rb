@@ -14531,11 +14531,10 @@ module Game
         was_dead = target.dead?
         # Whether this same hit's own cure list includes Death -- the one
         # thing that may still affect an already-dead target at all. Ported
-        # from EasyRPG Player's own Game_BattleAlgorithm::vExecute (read
-        # directly from that reference implementation's source, not a wine
-        # guess; NOT independently confirmed against genuine RPG_RT under
-        # wine): every one of its affect_hp/affect_sp/state-cure branches is
-        # a hard no-op against a target that `!Exists()` unless the hit also
+        # from EasyRPG Player's source, NOT independently confirmed against
+        # genuine RPG_RT under wine: its Game_BattleAlgorithm::vExecute makes
+        # every one of its affect_hp/affect_sp/state-cure branches a hard
+        # no-op against a target that `!Exists()` unless the hit also
         # revives it first. #command_targets_dead_ok? already keeps an
         # ordinary Skill from ever reaching this branch with a dead target
         # unless it cures Death -- but an Item's own #command_targets_dead_ok?
