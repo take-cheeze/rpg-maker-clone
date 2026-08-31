@@ -31219,20 +31219,37 @@ codebase yet):
   when nothing has been chosen yet or the remembered skill no longer
   appears in this list (forgotten mid-battle, or newly sealed).
   - 🚧 **Not fixed this cycle — confirmed bugs, left for a dedicated pass:**
-    - An enemy's single-target Attack re-rolls its target live at the exact
-      moment it executes (`Game::Battle#attack_target`), rather than
-      locking one target when the round's turn order is built the way an
-      ally's own Skill/Item command already does — so unlike a real RPG_RT
-      round, an enemy attack here can never "fizzle" from a mid-round party
-      swap; it just retargets whoever remains.
-    - A mid-battle Change Equipment event command updates the persistent
-      `Actor` but never resyncs the fighting `Combatant`'s own
-      `atk`/`def`/`spi`/`agi` snapshot (`Combatant.from_actor` only runs
-      once, at battle start) — a real gap wider than the single "-200
-      up!" display glitch the trivia describes, since every stat-mod clamp
-      computed against that snapshot for the rest of the fight is stale.
-      Needs `#sync_allies_from_party` (or equivalent) to also refresh those
-      four fields from the live actor each round.
+    - ✅ **Follow-up (cycle #233, 2026-08-31): fixed.** An enemy's
+      single-target Attack re-rolled its target live at the exact moment it
+      executed (`Game::Battle#attack_target`), rather than locking one
+      target when the round's turn order was built the way an ally's own
+      Skill/Item command already does — so unlike a real RPG_RT round, an
+      enemy attack here could never "fizzle" from a mid-round party swap; it
+      just retargeted whoever remained. `#refill_queue` now rolls and locks
+      a new `queued_target` Combatant field for every enemy in the round's
+      queue right alongside its existing `queued_no_act` lock, and
+      `#attack_target` reads that lock back for an enemy instead of
+      re-rolling — fizzling (nil, no swing) if the locked target has since
+      fallen or left, the same rule an ally's own locked Skill/Item target
+      already gets from `#apply_command`. A forced attack-ally/attack-enemy
+      restriction (berserk/confusion) is unaffected — it still rolls its own
+      target live via `#restricted_target`, since this trivia item and its
+      fix are about an unforced basic Attack only. See
+      `changelog.d/battle-enemy-attack-target-locked.fixed.md`.
+    - ✅ **Follow-up (cycle #233, 2026-08-31): fixed.** A mid-battle Change
+      Equipment event command updated the persistent `Actor` but never
+      resynced the fighting `Combatant`'s own `atk`/`def`/`spi`/`agi`
+      snapshot (`Combatant.from_actor` only ran once, at battle start) — a
+      real gap wider than the single "-200 up!" display glitch the trivia
+      describes, since every stat-mod clamp computed against that snapshot
+      for the rest of the fight was stale too. `#sync_allies_from_party`
+      (already re-run every round via `#refill_queue`, and before every
+      single action via `#step_action`, for the unrelated roster-membership
+      check) now also refreshes an already-fighting ally's four stat fields
+      from its live actor each time it runs, so equipment changed mid-fight
+      changes this fight's own damage/hit-rate math from that point on. HP/MP
+      are deliberately left untouched — live battle state, not a re-derivable
+      stat. See `changelog.d/battle-equipment-change-resyncs-stats.fixed.md`.
     - A skill/item command's target is resolved to a specific `Combatant`
       object at selection time and stays bound to that object even if the
       party roster changes mid-round — this codebase is architecturally

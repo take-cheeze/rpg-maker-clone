@@ -10792,7 +10792,28 @@ module Game
                             # bot/@2000_battle_bot trivia. nil (an actor who has
                             # never cast a skill this fight) reads as "top of
                             # the list" wherever this is consulted.
-                            :last_skill_id) do
+                            :last_skill_id,
+                            # An enemy's plain basic-Attack target, locked in
+                            # for the round by #refill_queue at queue-build
+                            # time rather than re-rolled live when the action
+                            # actually executes (#attack_target). Ported from
+                            # a reference implementation's own
+                            # CreateExecutionOrder/algorithm-init step, which
+                            # resolves a basic attack's target once, the
+                            # moment the round's execution order is built --
+                            # NOT independently confirmed against genuine
+                            # RPG_RT under wine, but the same "lock at queue
+                            # time" shape #queued_no_act already ports for the
+                            # do-nothing-restriction case. Only ever set for
+                            # an enemy (an ally's own target instead comes
+                            # from its `action` field, chosen at command time
+                            # and always current); nil (never queued this
+                            # round yet -- a fixture/test calling
+                            # #attack_target directly without going through
+                            # #refill_queue first) falls back to the old live
+                            # roll, matching #queued_no_act's own documented
+                            # default.
+                            :queued_target) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -12534,6 +12555,15 @@ module Game
       # to that, it never lets a battler restricted here act again once its
       # state clears before its turn comes up.
       @queue.each { |b| b.queued_no_act = do_nothing_restricted?(b) }
+      # Lock this round's plain basic-Attack target for every enemy right
+      # here too, alongside `queued_no_act` above -- see `queued_target`'s
+      # own field comment and #attack_target. A forced attack-ally/
+      # attack-enemy restriction (berserk/confusion) still rolls its own
+      # target live via #restricted_target, unaffected by this: this trivia
+      # item and its fix are about an *unforced* basic Attack only.
+      @queue.each do |b|
+        b.queued_target = random_living(@allies) if side_of(b) == :enemy
+      end
     end
 
     # Re-derive @allies from the live Game::Party (`party:` on #initialize) --
@@ -12566,7 +12596,30 @@ module Game
       @allies.each { |c| c.member = false if c.actor && !live_ids[c.actor.id] }
       @party.actors.each do |a|
         existing = @allies.find { |c| c.actor && c.actor.id == a.id }
-        existing ? (existing.member = true) : @allies.push(self.class.from_actor(a))
+        if existing
+          existing.member = true
+          # A mid-battle Change Equipment event command (#equip_item_from_bag)
+          # writes straight to the persistent Actor, but this Combatant's own
+          # atk/def/spi/agi are otherwise a one-shot snapshot taken once at
+          # #from_actor, battle start -- refreshed here from the live actor
+          # every time this already-recurring resync runs (every round via
+          # #refill_queue, every action via #step_action) so gear changed
+          # mid-fight actually changes this fight's own damage/hit-rate math
+          # from that point on, not just the next one. Community デフォ戦bot
+          # trivia's own "-200 up!" display glitch is one narrower symptom of
+          # this same stale-snapshot gap; every stat-mod clamp computed
+          # against atk/def/spi/agi for the rest of the fight was stale too,
+          # not just the number shown once. HP/MP are deliberately left
+          # alone: they are this Combatant's own live battle state (current
+          # HP, current MP), not a re-derivable stat, and overwriting them
+          # here would erase mid-fight damage the moment this resync next runs.
+          existing.atk = a.atk
+          existing.def = a.def
+          existing.spi = a.int
+          existing.agi = a.agi
+        else
+          @allies.push(self.class.from_actor(a))
+        end
       end
     end
 
@@ -14075,19 +14128,34 @@ module Game
     def restricted_target(b, r)
       own = side_of(b) == :ally ? @allies : @enemies
       pool = r == RESTRICTION_ATTACK_ALLY ? own : (side_of(b) == :ally ? @enemies : @allies)
-      living = pool.reject(&:out_of_play?)
-      living.empty? ? nil : living[@rng.random(living.size)]
+      random_living(pool)
     end
 
     # The living target `b` attacks: an ally uses its chosen target while it
-    # lives, otherwise a random living foe; enemies always pick a random party
-    # member.
+    # lives, otherwise a random living foe. An enemy instead uses the party
+    # member #refill_queue already locked onto it when this round's queue was
+    # built (`b.queued_target`) -- fizzling (nil, no swing) if that member has
+    # since fallen or left, rather than silently retargeting whoever remains,
+    # the same fizzle rule an ally's own locked Skill/Item target already gets
+    # (#apply_command's `target.dead? && !command_targets_dead_ok?`). See
+    # `queued_target`'s own field comment for the reference-implementation
+    # citation and the "never went through #refill_queue" fallback.
     def attack_target(b)
-      if side_of(b) == :ally && b.action && !b.action.dead?
-        return b.action
+      if side_of(b) == :ally
+        return b.action if b.action && !b.action.dead?
+        return random_living(@enemies)
       end
-      foes = (side_of(b) == :ally ? @enemies : @allies).reject(&:out_of_play?)
-      foes.empty? ? nil : foes[@rng.random(foes.size)]
+      return random_living(@allies) if b.queued_target.nil?
+      b.queued_target.out_of_play? ? nil : b.queued_target
+    end
+
+    # A uniformly random living (not #out_of_play?) member of `pool`, or nil
+    # when none remain -- the shared random-target roll #attack_target and
+    # #restricted_target each already made independently before this helper
+    # existed.
+    def random_living(pool)
+      living = pool.reject(&:out_of_play?)
+      living.empty? ? nil : living[@rng.random(living.size)]
     end
 
     def side_of(b); @allies.any? { |a| a.equal?(b) } ? :ally : :enemy; end
