@@ -1483,14 +1483,18 @@ check "a fixed-direction event's own explicit Face Direction sub-command still "
   end
 
   # Move Right fires once move_timer (EVENT_MOVE_DELAY[frequency 6] == 6)
-  # elapses; Face Up fires 6 frames after that.
+  # elapses; Face Up only fires once that step's own 16-frame glide (Move
+  # Speed 3, internal 2 -- #walk_slide_step) has actually landed the event on
+  # its destination tile, plus 6 more frames of Move Frequency pacing after
+  # that -- a new move decision cannot preempt a still-gliding one (see
+  # #step_event's `event_sliding?` gate).
   8.times { scene.update }
   ok event_hashes(scene)[1][:char].x > 2, 'the Move Right step landed first'
   ok !event_hashes(scene)[1][:route].done?, "Face Up hasn't run yet"
   dir, = frame_of.call
   eq 2, dir, "ordinary movement never turns a fixed-direction event's sprite"
 
-  10.times { scene.update }
+  30.times { scene.update }
   ok event_hashes(scene)[1][:route].done?, 'the Face Up step ran too'
   dir, = frame_of.call
   eq 8, dir, 'an explicit Face Direction sub-command still turns it, though'
@@ -2002,7 +2006,12 @@ check 'event-touch (trigger 2): an event walking into the player runs it' do
   pg.event_commands = [ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]
   scene = new_scene({ 1 => event(3, 0, pg) }, player: [0, 0])
   ch = chars(scene)[1]
-  20.times { scene.update }
+  # Two tiles to close (x: 3 -> 1), each a 16-frame glide (default Move Speed
+  # 3, internal 2) gated to start only once the previous one lands -- a
+  # move decision can no longer preempt a still-gliding step (see
+  # #step_event's `event_sliding?` gate) -- plus frequency 8's own 1-frame
+  # pacing wait between them.
+  40.times { scene.update }
   st = scene.instance_variable_get(:@state)
   ok st.switches[5], 'event-touch event ran'
   eq [1, 0], [ch.x, ch.y], 'event stopped adjacent, did not enter the player'
@@ -5994,8 +6003,13 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   eq c.x, re[:char].x, 'the character position agrees (the already-fixed position half)'
 
   # Driving the restored scene onward finishes only the *remaining* distance,
-  # not the full 4-tile route replayed from scratch.
-  40.times { fresh.update }
+  # not the full 4-tile route replayed from scratch. Each remaining tile now
+  # needs its own 6-frame Move Frequency wait plus the full 16-frame glide
+  # (Move Speed 3, internal 2) before the next Move Right can even be
+  # decided (see #step_event's `event_sliding?` gate), so this budgets for
+  # up to 4 whole tiles' worth of that combined pace rather than the old,
+  # racing-slide budget.
+  100.times { fresh.update }
   fc = fresh.instance_variable_get(:@events).first[:char]
   eq 4, fc.x, 'the route completes to its actual endpoint from the resumed cursor'
 end
@@ -10030,6 +10044,34 @@ check 'Move Speed is no longer dead: it drives the per-frame slide, jump and ani
   eq 6,  scene.send(:anim_continuous_period, 5)
   eq 8,  scene.send(:anim_spin_period, 3)
   eq 4,  scene.send(:anim_spin_period, 5)
+end
+
+check 'a fast Move Frequency cannot outrace a slow Move Speed -- a new move ' \
+      "decision waits for the previous glide to actually land first" do
+  # Nepheshel's own Map0007 wandering "puppet" NPCs pair a slow Move Speed
+  # ("2", internal 1 -- 32 frames/tile, #walk_slide_step) with the fastest
+  # Move Frequency (8, #EVENT_MOVE_DELAY 1 frame) -- exactly the combination
+  # that used to race: a fresh decision fired every single frame, long before
+  # the previous tile's own 32-frame glide had actually landed, snapping the
+  # event's logical tile forward far faster than its Move Speed says it
+  # should travel (reported as an NPC "moving too fast" on that map).
+  pg = page(x_move_type: Game::MoveType::CUSTOM, frequency: 8, move_speed: 2,
+            route: move_route([R::MOVE_RIGHT, R::MOVE_RIGHT], repeat: false))
+  scene = new_scene({ 1 => event(0, 0, pg) })
+  ch = chars(scene)[1]
+
+  # The first Move Right's own decision fires immediately (frequency 8's
+  # 1-frame wait): the logical tile advances right away, and the render
+  # glide (#walk_slide_step) starts toward it -- but a *second* decision must
+  # not fire until that glide actually lands 32 frames later.
+  scene.update
+  eq 1, ch.x, 'the first Move Right decides (and steps the logical tile) at once'
+
+  31.times { scene.update } # still gliding to tile 1 the whole way
+  eq 1, ch.x, "the second Move Right has not raced ahead of the first tile's own glide"
+
+  scene.update # frame 33: the first glide lands, so the second decision can fire
+  eq 2, ch.x, 'the second tile lands too, once its own glide actually finishes'
 end
 
 check "an event's database Move Speed converts from RPG_RT's real 1..6 scale, not fed through raw" do
