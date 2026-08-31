@@ -14529,8 +14529,28 @@ module Game
         # (possibly deeply negative, nothing floors HP at 0 mid-fight)
         # HP total -- reviving is handled entirely by the cure step below.
         was_dead = target.dead?
+        # Whether this same hit's own cure list includes Death -- the one
+        # thing that may still affect an already-dead target at all. Ported
+        # from EasyRPG Player's own Game_BattleAlgorithm::vExecute (read
+        # directly from that reference implementation's source, not a wine
+        # guess; NOT independently confirmed against genuine RPG_RT under
+        # wine): every one of its affect_hp/affect_sp/state-cure branches is
+        # a hard no-op against a target that `!Exists()` unless the hit also
+        # revives it first. #command_targets_dead_ok? already keeps an
+        # ordinary Skill from ever reaching this branch with a dead target
+        # unless it cures Death -- but an Item's own #command_targets_dead_ok?
+        # is unconditionally true (`Item::IsTargetValid` ignores the
+        # target's state entirely), so a status-curing item (an Antidote,
+        # say) used on a downed ally could still reach here without
+        # reviving it. Currently unreachable in practice:
+        # `Scene::Battle#battle_ally_targets` excludes every dead ally from
+        # item/skill targeting in battle at all (a separate,
+        # already-documented deferred gap) -- fixed here anyway as defense
+        # in depth in this shared method itself, not only at the outer
+        # target-selection layer.
+        cures_death = (cmd[:cured] || []).include?(Game::States::DEATH_ID)
         target.hp = [target.hp + hp, target.max_hp].min if hp > 0 && !was_dead && skill_effect_hits?(cmd)
-        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd)
+        target.mp = [before_mp + mp, target.max_mp].min if mp > 0 && target.max_mp && skill_effect_hits?(cmd) && (!was_dead || cures_death)
         # Cure the target's status conditions, routed through #cure_state
         # (like the attack branch's own `cured.each` above) so curing Death
         # also sets HP to 1 the same way every other cure site in this class
@@ -14552,7 +14572,7 @@ module Game
         # `#battle_skill_command` does), and the helper's own `cmd[:chance]
         # || 100` fallback makes an absent chance an unconditional hit,
         # exactly matching Item's own roll-free cure.
-        cured = (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
+        cured = (was_dead && !cures_death) ? [] : (cmd[:cured] || []).select { |s| target.state?(s) && skill_effect_hits?(cmd) }
         cured.each { |s| cure_state(target, s) }
         # A revival (this skill's own cure just took Death off the target)
         # layers a heal on top of that HP-to-1 instead of the heal being

@@ -17355,6 +17355,52 @@ check 'Battle command_skill revives a downed ally when the skill cures ' \
   eq 5, mage.mp, 'SP was spent, unlike a fizzled cast'
 end
 
+# デフォ戦botまとめ battle trivia triage (docs/TODO.md, cycle #234): EasyRPG
+# Player's own Game_BattleAlgorithm::vExecute leaves *every* affect_* field a
+# no-op against a target that has already fallen, unless the same hit also
+# cures Death -- ported from that reference implementation's source directly,
+# NOT independently confirmed against genuine RPG_RT under wine. An ordinary
+# Skill can never reach a downed target without curing Death in the first
+# place (#command_targets_dead_ok?'s own gate), but an Item's own target is
+# *always* valid regardless of the target's state (the check just above this
+# one), so a status-curing or SP-restoring item used on a downed ally could
+# previously still clear a non-death status or top up SP off a corpse it
+# never revived.
+check 'Battle command_item does not cure a non-death status off a downed ' \
+      'ally it does not also revive' do
+  user = combatant('User', 0, 0, 20, 100)
+  downed = combatant('Downed', 0, 0, 5, 100)
+  downed.hp = 0
+  downed.states = [Game::States::DEATH_ID, 3] # dead, and poisoned (state 3)
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([user, downed], [foe], Game::Rng.new(1))
+  # An Antidote: cures only Poison (3), not Death.
+  b.command_item(user, downed, item_id: 6, name: 'Antidote', cured: [3])
+  b.begin_round
+  e = b.step_action
+  ok e[:recover], 'the item still resolves -- an Item target is always valid, dead or alive'
+  eq [], e[:cured], 'nothing is cured -- the target is still dead and this item does not revive it'
+  ok downed.dead?, 'still dead'
+  ok downed.state?(3), 'the poison is not cured off a corpse this item never revived'
+end
+
+check 'Battle command_item does not restore MP on a downed ally it does ' \
+      'not also revive' do
+  user = combatant('User', 0, 0, 20, 100)
+  downed = combatant_mp('Downed', 0, 0, 5, 100, 20)
+  downed.hp = 0
+  downed.mp = 0
+  downed.states = [Game::States::DEATH_ID]
+  foe = combatant('Foe', 0, 0, 1, 100)
+  b = Game::Battle.new([user, downed], [foe], Game::Rng.new(1))
+  b.command_item(user, downed, item_id: 7, name: 'Full Ether', mp: 20)
+  b.begin_round
+  e = b.step_action
+  ok e[:recover]
+  eq 0, downed.mp, 'MP is not restored on a target this hit does not revive'
+  ok downed.dead?
+end
+
 check 'Battle command_item restores HP and tags the entry for bag consumption' do
   user = combatant('User', 0, 0, 20, 100)
   ally = combatant('Ally', 0, 0, 5, 50)
