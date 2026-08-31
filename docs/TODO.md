@@ -31127,6 +31127,65 @@ codebase yet):
   half (a much *faster* target) already floors at the existing `Game.clamp(…,
   0, 100)`, unverified against a specific nonzero floor since neither test
   bed's own accuracy math suggests RPG_RT keeps one there.
+  ✅ **Follow-up (cycle #230, 2026-08-31): the full raw list (182 items) has
+  now been fetched — the user supplied the wiki page's saved HTML directly,
+  since automated fetches of both `wikiwiki.jp/viprpg-dev` and this specific
+  page return HTTP 403 from this environment, consistent with every prior
+  session's own note that this mirror is unreachable here — and triaged item
+  by item against this codebase's actual battle code (`game.rb`, `battle.rb`,
+  `schema.rb`).** This section is no longer raw/untriaged. Result: the
+  overwhelming majority (well over 100 of the 182) are either already
+  correctly implemented — many confirmed by working through the actual
+  formula math, not just reading a comment — or out of scope (editor/RTP/
+  meta trivia, or a different engine subsystem like shops/events/terrain
+  rather than the battle formulas themselves). Two items are worth recording
+  here since they're the only two that are *not* simply closed out:
+  - 🚧 **Absorbing HP triggers neither the ally-hit screen shake nor the
+    enemy-hit sprite flash that an ordinary damaging hit does.** This
+    codebase currently has *no* automatic per-hit flash/shake reaction to
+    taking HP damage at all — only Battle Animation frame data drives
+    `#fire_target_flash`/`#fire_target_shake`, and those are gated on the
+    animation's own `flash_scope`/`screen_shaking` fields, not on the fact
+    of taking damage. So this is a real gap, not a wrong existing behaviour,
+    and the *rule* itself (suppress on absorb) is plainly stated by the
+    trivia and easy to gate on this codebase's own `entry[:absorbed_hp]`
+    field (`game.rb`'s attack/skill-application code already produces it).
+    What's missing to actually implement it is the reaction's own
+    magnitude — flash color/power/duration for the enemy sprite, shake
+    power/speed/duration for the screen — which this trivia item doesn't
+    state and which this session could not pin down even by fetching a
+    reference implementation's own public source directly (`game_battler.cpp`,
+    `game_battlealgorithm.cpp`, `scene_battle.cpp`, `sprite_battler.cpp` all
+    checked: the `Flash()`/`ShakeOnce()` primitives exist, `game_battler.cpp`'s
+    own Transform flash call `(31,31,31,31,20)` is confirmed identical to
+    what this codebase already ports at `battle.rb`'s `#rebuild_battler_sprite`
+    — but no call site tying either primitive to an ordinary damage hit
+    turned up in any of those four files, so reusing the Transform flash's
+    numbers here would be a guess dressed up as reuse, not a real citation).
+    Left unimplemented rather than guessed; a future pass either needs to
+    find that call site in the reference implementation's actual sources
+    directly (not a fetch-and-summarize pass) or a wine capture of a plain
+    damaging hit's exact flash colour and shake amplitude.
+  - 🚧 **Possible dispute with an already-shipped fix:** this list's own
+    item states that an all-target weapon still hits every enemy when its
+    wielder is confused, *not* just one — flatly contradicting the
+    "attack-all narrows to single-target under Berserk/Confusion" behaviour
+    this codebase ported, reversed, and re-confirmed against a reference
+    implementation twice already (see the struck-through paragraph on
+    `game.rb`'s own `all_target_narrows_under_restriction`-equivalent logic
+    for the full history). Both this trivia source and that reference
+    implementation are cited as independent authorities elsewhere in this
+    same file, so a flat contradiction between the two is worth a fresh wine
+    A/B (afflict a party member with Confusion, give them an attack-all
+    weapon, count how many enemies actually take damage) rather than
+    trusting either source over the other from a comment alone.
+  Everything else — roughly two dozen items on turn-order/command-timing
+  edge cases, item/skill category interactions, and a few battle-event
+  presentation questions (state turn-message colour, screen-shake bleed
+  across the battle/map boundary, message fast-forward) — reads as genuinely
+  ambiguous from the trivia's own wording alone and would need the same
+  wine A/B treatment before being actionable; none of it is a clean,
+  drop-in fix the way the rest of this file's ✅ entries were.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
