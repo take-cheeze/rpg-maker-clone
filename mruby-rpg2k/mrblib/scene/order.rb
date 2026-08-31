@@ -46,6 +46,13 @@ class RPG2k
       end
 
       def update
+        # Every live window needs its own #update called every frame to
+        # advance its selection-cursor blink (RPG2k::Window#update) -- this
+        # scene never called it at all, the same gap Scene::Menu's own
+        # #update had (see its own citation).
+        @left_window.update if @left_window
+        @right_window.update if @right_window
+        @confirm_window.update if @confirm_window
         @focus == :confirm ? update_confirm : update_left
       end
 

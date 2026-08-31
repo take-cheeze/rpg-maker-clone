@@ -69,6 +69,14 @@ class RPG2k
       end
 
       def update
+        # Every live window needs its own #update called every frame to
+        # advance its selection-cursor blink (RPG2k::Window#update) -- this
+        # scene never called it at all, the same gap Scene::Menu's own
+        # #update had (see its own citation).
+        @desc_window.update if @desc_window
+        @skill_window.update if @skill_window
+        @target_window.update if @target_window
+        @teleport_window.update if @teleport_window
         case @mode
         when :target then update_target
         when :teleport_target then update_teleport_target

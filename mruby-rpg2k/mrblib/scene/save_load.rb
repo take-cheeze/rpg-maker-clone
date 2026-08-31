@@ -117,6 +117,12 @@ class RPG2k
       end
 
       def update
+        # Every live window needs its own #update called every frame to
+        # advance its selection-cursor blink (RPG2k::Window#update) -- this
+        # scene never called it at all, the same gap Scene::Menu's own
+        # #update had (see its own citation).
+        @header_window.update if @header_window
+        @slot_windows.each(&:update)
         tick_arrows
 
         if Input.trigger?(Input::B)
