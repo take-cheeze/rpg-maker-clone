@@ -31140,7 +31140,7 @@ codebase yet):
   meta trivia, or a different engine subsystem like shops/events/terrain
   rather than the battle formulas themselves). Two items are worth recording
   here since they're the only two that are *not* simply closed out:
-  - 🚧 **Absorbing HP triggers neither the ally-hit screen shake nor the
+  - ✅ **Absorbing HP triggers neither the ally-hit screen shake nor the
     enemy-hit sprite flash that an ordinary damaging hit does.** This
     codebase currently has *no* automatic per-hit flash/shake reaction to
     taking HP damage at all — only Battle Animation frame data drives
