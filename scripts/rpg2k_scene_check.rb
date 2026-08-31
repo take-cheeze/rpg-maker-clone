@@ -1055,13 +1055,15 @@ check 'RPG2k::Window pause arrow blinks on a 20-frame-on/20-frame-off cycle, ' \
   ok arrow.visible, 'back on at the 40-frame wrap'
 end
 
-check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
-      'inactive -- it does not hide it' do
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it's cursor
-  # block reads only `cursor_rect`/`cursor_frame`, with
-  # no `active` check anywhere -- `active` only gates whether
-  # `Window::Update` keeps *advancing* (blinking) `cursor_frame` at all.
+check 'RPG2k::Window hides its selection cursor outright once inactive' do
+  # A prior pass here had this exact check pinned the other way ("keeps its
+  # cursor visible, frozen, once inactive"), citing a reference
+  # implementation's cursor-drawing block, which reads only `cursor_rect`/
+  # `cursor_frame` with no `active` check at all. That reading does not
+  # survive contact with a genuine RPG_RT.exe: real play (Scene::Menu's
+  # party-status panel, backing out of Skill/Equip/Status to the command
+  # list) shows the highlight vanish the instant the window loses focus,
+  # not freeze in place -- see RPG2k::Window#draw_cursor's own citation.
   win = RPG2k::Window.new(0, 0, 64, 64)
   win.windowskin = Bitmap.new('System/Skin1', true)
   win.cursor_rect = Rect.new(0, 0, 16, 16)
@@ -1070,18 +1072,22 @@ check "RPG2k::Window keeps its selection cursor visible, frozen, once " \
 
   bmp.clear_blt_calls
   win.active = false
-  ok bmp.blt_calls && !bmp.blt_calls.empty?,
-     'still drawn the instant it goes inactive, not hidden'
-  eq 64, bmp.blt_calls.first[3].x,
-     'frozen on whatever frame it stopped at (still the steady block here)'
+  ok bmp.blt_calls.nil? || bmp.blt_calls.empty?,
+     'hidden the instant it goes inactive'
 
-  # 20+ frames of #update while inactive never advance/blink it (the
-  # already-correct half of this gate) -- and, per the fix, never hide it
-  # either: the frozen bitmap from the moment it went inactive stays put.
+  # 20+ frames of #update while inactive never redraw it either -- it never
+  # advanced/blinked before the fix and still does not now.
   bmp.clear_blt_calls
   25.times { win.update }
   ok bmp.blt_calls.nil? || bmp.blt_calls.empty?,
      'an inactive window never redraws its cursor from #update at all'
+
+  # Reactivating brings it straight back, at the same frame it left off --
+  # `#active=` calls #draw_cursor unconditionally on every change, so this
+  # does not wait for the next natural blink tick.
+  bmp.clear_blt_calls
+  win.active = true
+  ok bmp.blt_calls && !bmp.blt_calls.empty?, 'redrawn the instant it reactivates'
 end
 
 check 'Scene::Map builds and ticks with no events without raising' do
