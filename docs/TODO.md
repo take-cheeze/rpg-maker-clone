@@ -31259,10 +31259,10 @@ codebase yet):
       fix.
     - ✅ **Follow-up (cycle #234, 2026-08-31): fixed.** A Skill/Item's
       ally-recovery effect application had no "must also cure Death to
-      affect a dead target at all" gate the way EasyRPG Player's
-      `Game_BattleAlgorithm`'s own `vExecute` does (confirmed by reading
-      that reference implementation's actual source directly, not a wine
-      guess) — `Game::Battle#apply_skill_hit`'s recover branch cured a
+      affect a dead target at all" gate the way EasyRPG Player's source does
+      (`Game_BattleAlgorithm::vExecute`; NOT independently confirmed against
+      genuine RPG_RT under wine) —
+      `Game::Battle#apply_skill_hit`'s recover branch cured a
       non-death status, or restored MP, on an already-dead target
       unconditionally whenever such a cure/restore was queued. An ordinary
       Skill can never actually reach this branch with a dead target unless
