@@ -9702,7 +9702,25 @@ class RPG2k
           # the party cold, just silently) is unaffected.
           if touched && touch_trigger?(touched[:trigger]) && touched[:commands] &&
              !touched[:crossed_hero_this_frame]
-            start_event(touched)
+            # A same-frame confirm press defers to #try_action_trigger instead
+            # of starting the event here, when this same tile would also
+            # answer the action button (#action_touch_trigger?) -- otherwise
+            # this bump starts it with by_decision_key false (the ordinary
+            # touch path), and the busy interpreter that leaves behind makes
+            # #try_action_trigger's own #event_busy? guard bail out later this
+            # same frame, so a page that gates its reveal on "the decision key
+            # started this event" (yado.tk: Nepheshel map 23 event 29's own
+            # flagless "HiddenDoor" -- see changelog.d/move-event-queue-bare-
+            # hash-push.fixed.md) only actually answers the button on a lucky
+            # frame where no direction key happens to be held at the same
+            # instant. #try_action_trigger, called later this same frame,
+            # already re-discovers the identical event on the freshly updated
+            # @state.direction (set just above, before this branch) and starts
+            # it correctly with by_decision_key true -- so skipping the bump
+            # here does not lose the activation, only its wrong flag.
+            unless Input.trigger?(Input::C) && action_touch_trigger?(touched)
+              start_event(touched)
+            end
             # A same-layer touch event blocks like a closed door: it fires but
             # the party stays put, exactly as before. A below/above-characters
             # touch event (the common "invisible SE tile" pattern) is a

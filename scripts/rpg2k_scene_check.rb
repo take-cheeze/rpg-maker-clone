@@ -15317,6 +15317,40 @@ check 'the action key marks the event it started for the type-8 branch' do
   ok st.switches[9], 'the decision-key branch ran'
 end
 
+check 'a same-frame confirm press still starts a player-touch/same-layer ' \
+      'event by decision key even while the direction key toward it is ' \
+      'still held' do
+  # Nepheshel map 23 event 29's own flagless "HiddenDoor" (its own comment:
+  # フラグを使用しない隠し扉) gates its reveal on exactly this type-8
+  # branch -- and the natural way to reach it is walking up to (holding the
+  # direction key toward) the sealed wall, then pressing confirm, often
+  # without releasing that direction key first. #step_movement used to run
+  # before #try_action_trigger every frame and, on a frame where both are
+  # true, unconditionally bumped this same tile's touch trigger with
+  # by_decision_key false -- #event_busy? during that trivial script then
+  # made #try_action_trigger bail out for the rest of that same frame, so the
+  # decision-key branch below only actually ran on the lucky frame where the
+  # direction key was not also held. Confirmed to fail (switches[9] stays
+  # false) against the pre-fix code before the fix.
+  pg = page(trigger: 1, layer: RPG2k::Scene::Map::LAYER_SAME) # player touch
+  pg.event_commands = [
+    ECmd.new(IC2::CONDITIONAL, [8], indent: 0),
+    ECmd.new(Game::Interpreter::Cmd::CONTROL_SWITCHES, [0, 9, 9, 0], indent: 1),
+    ECmd.new(IC2::END_BRANCH, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(1, 0, pg) }, player: [0, 0])
+  st = scene.instance_variable_get(:@state)
+  st.direction = 6 # already facing the event
+  RGSS::Input.dir_value = 6 # still holding right, into the event at (1,0)
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.dir_value = 0
+  RGSS::Input.triggered = []
+  3.times { scene.update }
+  ok st.switches[9], 'the decision-key branch ran despite the held direction key'
+  eq [0, 0], [st.x, st.y], 'the party did not step onto the event'
+end
+
 # -- battle-event pages --------------------------------------------------------
 
 # A troop battle-event page. The default condition is the turn test at base 0 /
