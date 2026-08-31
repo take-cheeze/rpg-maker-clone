@@ -31166,6 +31166,18 @@ codebase yet):
     find that call site in the reference implementation's actual sources
     directly (not a fetch-and-summarize pass) or a wine capture of a plain
     damaging hit's exact flash colour and shake amplitude.
+    **Update (2026-08-31, direct user request — battle felt like it had no
+    hit feedback in play):** implemented anyway rather than continuing to
+    leave it unimplemented, reusing this codebase's own already-established
+    magnitudes instead of inventing new ones — the enemy side reuses
+    `#fire_target_flash`'s own near-white `Sprite#flash` pulse at
+    `Map::ANIM_FLASH_FRAMES`, the party side reuses the same whole-screen
+    `Game::Screen#shake` call (`Map::ANIM_SHAKE_POWER`/`SPEED`/`FRAMES`) a
+    `screen_shaking`-1 Battle Animation timing already fires. See
+    `battle.rb`'s `#react_to_landed_hit` and
+    `changelog.d/battle-hit-flash-shake.added.md`. Still not independently
+    confirmed against genuine RPG_RT under wine — if a future wine capture
+    finds different numbers, adjust there.
   - 🚧 **Possible dispute with an already-shipped fix:** this list's own
     item states that an all-target weapon still hits every enemy when its
     wielder is confused, *not* just one — flatly contradicting the
