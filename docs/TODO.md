@@ -31257,17 +31257,29 @@ codebase yet):
       a member who leaves and is replaced never "leaks" onto the
       replacement here). Left as a real design difference, not a one-line
       fix.
-    - A Skill's ally/recovery effect application has no "must also cure
-      Death to affect a dead target at all" gate the way EasyRPG Player's
+    - ✅ **Follow-up (cycle #234, 2026-08-31): fixed.** A Skill/Item's
+      ally-recovery effect application had no "must also cure Death to
+      affect a dead target at all" gate the way EasyRPG Player's
       `Game_BattleAlgorithm`'s own `vExecute` does (confirmed by reading
       that reference implementation's actual source directly, not a wine
-      guess) — `Game::Battle#apply_skill_hit`'s ally branch cures/heals a
-      dead target unconditionally when a non-death cure is queued. Currently
-      unreachable in practice, though: `Scene::Battle#battle_ally_targets`
-      already excludes every dead ally from being selected as a skill
-      target in battle at all (a separate, already-documented deferred
-      gap), so this fix has no observable effect until that upstream
-      restriction is lifted.
+      guess) — `Game::Battle#apply_skill_hit`'s recover branch cured a
+      non-death status, or restored MP, on an already-dead target
+      unconditionally whenever such a cure/restore was queued. An ordinary
+      Skill can never actually reach this branch with a dead target unless
+      it cures Death in the first place (`#command_targets_dead_ok?`'s own
+      gate), but an Item's own target is *always* valid regardless of the
+      target's state (`Item::IsTargetValid` ignores it entirely), so a
+      status-curing or SP-restoring item used on a downed ally could still
+      reach here without reviving it. `#apply_skill_hit` now skips the
+      whole cured-states loop and the MP write alike whenever the target
+      was already dead and this same hit does not also cure Death — the HP
+      write already had the equivalent guard. Still unreachable via the
+      in-battle UI today, though: `Scene::Battle#battle_ally_targets`
+      excludes every dead ally from item/skill targeting in battle at all
+      (a separate, already-documented deferred gap) — fixed anyway as
+      defense in depth in this shared method itself, not only at the outer
+      target-selection layer, and covered directly at the `#command_item`
+      level. See `changelog.d/battle-skill-item-no-effect-on-corpse.fixed.md`.
     - The inn BGM should play all the way through before the post-stay
       fade-in starts (so a long inn track holds the screen black for as
       long as it takes), using the same `@state.bgm_looped` "played once"
