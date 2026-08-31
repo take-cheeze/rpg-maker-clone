@@ -898,6 +898,21 @@ jobs:
           - name: MZ test-bed data check
             run: ruby scripts/mz_testbed_check.rb data/mz-sample
 
+          # Static, maker-agnostic source scan across every mruby-*/mrblib tree:
+          # a bare, unbraced trailing keyword-style hash into Array#push/
+          # #unshift/#concat silently pushes nothing at all on this project's
+          # mruby (a builtin C-defined method has no declared keyword
+          # parameters, so mruby does not fall back to CRuby's "no keyword
+          # params declared -> treat it as one positional Hash" conversion),
+          # with no exception anywhere to catch it -- a class of bug the
+          # CRuby-hosted checks below cannot see at all, since they run these
+          # same sources unchanged under CRuby. Found via
+          # Interpreter#do_move_event silently no-op'ing (Nepheshel map 23
+          # event 29's own HiddenDoor investigation); see
+          # changelog.d/move-event-queue-bare-hash-push.fixed.md.
+          - name: mruby bare-hash-push check
+            run: ruby scripts/mruby_bare_hash_push_check.rb
+
           - name: RPG2k game-logic checks
             run: |
               ruby scripts/rpg2k_logic_check.rb
