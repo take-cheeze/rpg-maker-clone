@@ -282,8 +282,19 @@ class RPG2k
         # that gates the whole substate there.
         lines = battle_encounter_lines(troop, @req)
         if lines.empty?
+          # #settle_already_finished_battle must run before #run_battle_events,
+          # not after (the order these two calls used to run in): an empty
+          # enemy troop is already `battle.finished?` from frame one (see that
+          # method's own comment), but a page's own turn-0 condition alone
+          # can't tell an empty troop apart from a full one, so a battle event
+          # authored to fire "at turn 0" would otherwise still run once before
+          # this method got a chance to notice the fight was already over.
+          # Community デフォ戦bot/@2000_battle_bot trivia: an empty enemy
+          # troop's own turn-0 battle event never fires at all, the whole
+          # encounter just ends instantly instead.
+          return if settle_already_finished_battle
           return if run_battle_events
-          settle_already_finished_battle || enter_command_phase
+          enter_command_phase
         else
           show_battle_banner(lines)
           @ui[:phase] = :encounter_message
@@ -327,7 +338,8 @@ class RPG2k
       # Drive the encounter-message phase: hold the banner for
       # `BATTLE_ENCOUNTER_MSG_FRAMES`, then drop it and fall into the same
       # turn-0-battle-event / command-phase flow #start used to reach
-      # directly.
+      # directly -- same settle-before-events ordering as #start's own empty-
+      # troop branch, and for the identical reason (see that comment).
       def drive_battle_encounter_message
         if @ui[:anim_timer] > 0
           @ui[:anim_timer] -= 1
@@ -335,8 +347,9 @@ class RPG2k
         end
         close_battle_action
         @ui[:phase] = :command
+        return if settle_already_finished_battle
         return if run_battle_events
-        settle_already_finished_battle || enter_command_phase
+        enter_command_phase
       end
 
       # An encounter can start already decided — an empty party (every member

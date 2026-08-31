@@ -575,7 +575,12 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
         4 => OpenStruct.new(enemy_id: 2, x: 190, y: 80, invisible: false),
         5 => OpenStruct.new(enemy_id: 2, x: 240, y: 80, invisible: false),
         6 => OpenStruct.new(enemy_id: 2, x: 290, y: 80, invisible: false) },
-        pages: nil) },
+        pages: nil),
+      # An empty troop -- no members at all -- for the cycle #230 (デフォ戦bot
+      # trivia item 134) turn-0-battle-event-vs-empty-troop check. Carries the
+      # harness's own `troop_pages` too, the same way troop 1 does, so a
+      # check can attach a turn-0 page here and assert it never runs.
+      6 => OpenStruct.new(name: 'Empty', members: {}, pages: troop_pages) },
     # A drawable battle animation (id 8): four frames, with a screen flash timing
     # on frame 1. (Id 7 is intentionally absent so that test exercises the
     # 0-frame invalid-id wait, see #missing_animation_wait.)
@@ -15605,6 +15610,34 @@ check 'entering a battle with an all-KO\'d party is instant defeat too' do
   ok ui, 'the battle is open'
   eq :result, ui[:phase], 'no living ally settles the fight immediately instead of stalling in :command'
   eq :defeat, ui[:result]
+end
+
+# Community デフォ戦bot/@2000_battle_bot trivia (docs/TODO.md, デフォ戦botまとめ,
+# cycle #230): an empty enemy troop's own turn-0 battle event never fires at
+# all -- the encounter just ends instantly. `#settle_already_finished_battle`
+# used to run *after* `#run_battle_events` in both `#start` and
+# `#drive_battle_encounter_message`, so a page conditioned on turn 0 alone
+# (the harness's own `troop_page` default) fired once before either method
+# noticed `battle.finished?` was already true for a 0-member troop -- fixed
+# by settling first.
+check 'an empty enemy troop skips its own turn-0 battle event and settles as an instant victory' do
+  ic = Game::Interpreter::Cmd
+  pages = { 1 => troop_page([ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0])]) }
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic, troop_id: 6) # the empty troop
+  scene = new_scene({ 1 => event(2, 2, auto) }, troop_pages: pages)
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  90.times do
+    scene.update
+    ui = battle_ui(scene)
+    break if ui && ui[:phase] == :result
+  end
+  ui = battle_ui(scene)
+  ok ui, 'the battle is open'
+  eq :result, ui[:phase], 'an empty troop settles immediately instead of stalling in :command'
+  eq :victory, ui[:result], 'no enemies at all reads the same as defeating them all'
+  eq false, st.switches[5], 'the turn-0 page never got a chance to run'
 end
 
 # The "unrecoverable input-blocking state lock" case flagged as still open next

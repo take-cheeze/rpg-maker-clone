@@ -31179,13 +31179,97 @@ codebase yet):
     A/B (afflict a party member with Confusion, give them an attack-all
     weapon, count how many enemies actually take damage) rather than
     trusting either source over the other from a comment alone.
-  Everything else — roughly two dozen items on turn-order/command-timing
-  edge cases, item/skill category interactions, and a few battle-event
-  presentation questions (state turn-message colour, screen-shake bleed
-  across the battle/map boundary, message fast-forward) — reads as genuinely
-  ambiguous from the trivia's own wording alone and would need the same
-  wine A/B treatment before being actionable; none of it is a clean,
-  drop-in fix the way the rest of this file's ✅ entries were.
+  ✅ **Follow-up (cycle #231, 2026-08-31): the ~30 items flagged
+  NEEDS-VERIFICATION above were pushed to real verdicts** by re-reading the
+  relevant code far more patiently than the first triage pass had time for,
+  and (for the one item where it was actually tractable) fetching a
+  reference implementation's own public source directly rather than reading
+  a comment about it. Most turned out CONFIRMED-CORRECT — the code already
+  matches the trivia, several confirmed by working the actual formula math
+  (agility-scaled hit-rate asymptotes, the independent-roll compound-chance
+  arithmetic, the asymmetric ceil/floor stat-clamp rounding, HP/MP color
+  tiers, and more). A handful turned out to be genuine, previously-unknown
+  gaps:
+  - ✅ **Fixed this cycle: an empty enemy troop no longer runs its own
+    turn-0 battle event before the fight settles as an instant victory** —
+    see the dedicated changelog fragment and `Scene::Battle#start`/
+    `#drive_battle_encounter_message`'s own comments for the fix
+    (`#settle_already_finished_battle` now runs before
+    `#run_battle_events`, not after).
+  - 🚧 **Not fixed this cycle — confirmed bugs, left for a dedicated pass:**
+    - The skill-menu cursor position is never remembered across turns
+      (`Scene::Battle#open_battle_skill` hardcodes index 0 every time it
+      opens, including after Auto-Battle picks a skill on an actor's
+      behalf) — needs a new per-actor last-skill-index store.
+    - An enemy's single-target Attack re-rolls its target live at the exact
+      moment it executes (`Game::Battle#attack_target`), rather than
+      locking one target when the round's turn order is built the way an
+      ally's own Skill/Item command already does — so unlike a real RPG_RT
+      round, an enemy attack here can never "fizzle" from a mid-round party
+      swap; it just retargets whoever remains.
+    - A mid-battle Change Equipment event command updates the persistent
+      `Actor` but never resyncs the fighting `Combatant`'s own
+      `atk`/`def`/`spi`/`agi` snapshot (`Combatant.from_actor` only runs
+      once, at battle start) — a real gap wider than the single "-200
+      up!" display glitch the trivia describes, since every stat-mod clamp
+      computed against that snapshot for the rest of the fight is stale.
+      Needs `#sync_allies_from_party` (or equivalent) to also refresh those
+      four fields from the live actor each round.
+    - A skill/item command's target is resolved to a specific `Combatant`
+      object at selection time and stays bound to that object even if the
+      party roster changes mid-round — this codebase is architecturally
+      immune to the slot-index quirk the trivia describes (an item aimed at
+      a member who leaves and is replaced never "leaks" onto the
+      replacement here). Left as a real design difference, not a one-line
+      fix.
+    - A Skill's ally/recovery effect application has no "must also cure
+      Death to affect a dead target at all" gate the way EasyRPG Player's
+      `Game_BattleAlgorithm`'s own `vExecute` does (confirmed by reading
+      that reference implementation's actual source directly, not a wine
+      guess) — `Game::Battle#apply_skill_hit`'s ally branch cures/heals a
+      dead target unconditionally when a non-death cure is queued. Currently
+      unreachable in practice, though: `Scene::Battle#battle_ally_targets`
+      already excludes every dead ally from being selected as a skill
+      target in battle at all (a separate, already-documented deferred
+      gap), so this fix has no observable effect until that upstream
+      restriction is lifted.
+    - The inn BGM should play all the way through before the post-stay
+      fade-in starts (so a long inn track holds the screen black for as
+      long as it takes), using the same `@state.bgm_looped` "played once"
+      signal Conditional Branch type 9 already reads. Investigated and
+      **not implemented**: `Scene::Map#play_bgm` (the battle/inn/vehicle
+      BGM entry point) never resets `@state.bgm_looped = false` on a fresh
+      track the way every other BGM-start path
+      (`Game::Interpreter#play_audio`'s `:bgm` branch, `#do_play_memorized_bgm`)
+      already does — a prerequisite bug in its own right — and this
+      project's existing inn check-suite coverage
+      (`scripts/rpg2k_scene_check.rb`, "Show Inn scene: inn BGM plays on
+      entry...") drives the fade with a bare 35-frame loop and a
+      call-log-only `RGSS::Audio` stub with no real position tracking, so
+      gating `#finish_inn` on `bgm_looped` would silently hang that
+      existing, currently-passing check rather than exercise the new
+      behaviour. Needs the harness's audio stub extended to simulate a
+      loop before this is safe to implement.
+  - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
+    battle-animation sound effects on frame 21+ get cut (no such frame-based
+    SE cutoff exists in this codebase for anyone, so this can't be
+    confirmed by reading); the exact inter-hand frame gap in a dual-wield
+    attack's own animation timing; whether becoming staggered/surprised
+    releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
+    code near this, is gated on death and never runs for a non-lethal
+    flinch); whether a battle event's "actor is able to act" condition
+    should also exclude Berserk/Confusion (the code's own comment already
+    flags this as unconfirmed and currently reads the opposite way);
+    whether holding Cancel pauses battle-message pacing (no Input polling
+    of any kind currently drives that timer, Decision/Shift included — a
+    pre-existing, separately-documented gap); and whether a
+    zero-effective-damage MP-only skill against an already-0-MP target
+    should suppress its whole hit (states, stat mods, everything) the way
+    a truly-missed hit does. The attack-all-under-Confusion dispute above
+    now has concrete Nepheshel fixture ids for whoever runs that wine test:
+    weapon ids 82-86/96/656 carry the attack-all flag, state 5 is 混乱
+    (Confusion, restriction 3) and state 6 is 暴走 (Berserk, restriction 2)
+    in `RPG_RT.ldb`.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
