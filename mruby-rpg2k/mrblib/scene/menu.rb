@@ -326,7 +326,7 @@ class RPG2k
         sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
         sc.font.color = Color.new(255, 255, 255, 255)
         @state.party.actors.each_with_index do |a, i|
-          y = i * 40
+          y = i * STATUS_ROW_H
           sc.draw_text 0, y, sc.width, 14, a.name.to_s
           # The condition rides on the name row, right-aligned. RPG_RT sits it
           # beside the level, but that row already carries HP and MP here and
@@ -348,6 +348,16 @@ class RPG2k
                                  "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
           draw_stat_segment(sc, x + gutter, row_y, sc.width, 14,
                              "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
+          # EXP, current over the next level's absolute threshold -- this row
+          # was missing entirely (confirmed against a genuine RPG_RT.exe
+          # screenshot: its own field-menu party panel draws an "EX" row
+          # under Lv/HP/MP for every member, current build drew none at all).
+          # Same "current/absolute-threshold" reading the field Status
+          # screen's own EXP row already uses (see StatusMenu's own citation
+          # on why the threshold is absolute, not the remaining delta), with
+          # the same '---' stand-in at an actor's max level, where there is
+          # no next threshold to show.
+          draw_exp_row sc, a, row_y + 16
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see
@@ -389,6 +399,21 @@ class RPG2k
       def refresh_cursor
         @command.cursor_rect =
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
+      end
+
+      # An actor's EXP row on the party-status panel: current EXP over the
+      # next level's absolute threshold (`Game::Actor#next_level_exp`), or
+      # '---' once there is no next level to show -- the same reading and
+      # fallback the field Status screen's own EXP row already uses (see
+      # StatusMenu#build_window's own citation on the absolute-vs-remaining
+      # distinction). Plain system text, not #draw_stat_segment: that
+      # helper's colouring means "getting low, watch out" (HP/MP), which
+      # does not apply to EXP progress.
+      def draw_exp_row(bmp, actor, y)
+        nxt = actor.next_level_exp
+        draw_system_text bmp, 0, y, bmp.width, 14,
+                          "#{term(:exp_short, 'EXP')} #{actor.exp}/#{nxt.nil? ? '---' : nxt}",
+                          @skin
       end
 
       # Redraw the command window's label list. The Wait row's label is live
@@ -452,8 +477,11 @@ class RPG2k
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *
-      # 40`) -- the party-status panel's cursor cell spans one whole row.
-      STATUS_ROW_H = 40
+      # STATUS_ROW_H`) -- the party-status panel's cursor cell spans one
+      # whole row. Three 16px lines (name/condition, Lv/HP/MP, EXP) rather
+      # than the previous two -- widened alongside #draw_exp_row's own EXP
+      # row, which needed a third line under HP/MP and no longer fits in 40.
+      STATUS_ROW_H = 48
 
       def refresh_status_cursor
         @status.cursor_rect =
