@@ -31196,11 +31196,17 @@ codebase yet):
     `#drive_battle_encounter_message`'s own comments for the fix
     (`#settle_already_finished_battle` now runs before
     `#run_battle_events`, not after).
+  ✅ **Follow-up (cycle #232, 2026-08-31): the skill-menu cursor now
+  remembers the last skill this actor cast, across turns and Auto-Battle
+  picks alike.** `Game::Battle::Combatant#last_skill_id` (a new field, set
+  by `Scene::Battle#confirm_battle_skill`'s manual pick and by
+  `#queue_single_auto_battle_skill`/`#queue_auto_battle_group_skill`'s own
+  automatic ones) records the database skill id chosen;
+  `#open_battle_skill` looks it up in the freshly-built list each time it
+  opens rather than always starting at index 0, falling back to the top
+  when nothing has been chosen yet or the remembered skill no longer
+  appears in this list (forgotten mid-battle, or newly sealed).
   - 🚧 **Not fixed this cycle — confirmed bugs, left for a dedicated pass:**
-    - The skill-menu cursor position is never remembered across turns
-      (`Scene::Battle#open_battle_skill` hardcodes index 0 every time it
-      opens, including after Auto-Battle picks a skill on an actor's
-      behalf) — needs a new per-actor last-skill-index store.
     - An enemy's single-target Attack re-rolls its target live at the exact
       moment it executes (`Game::Battle#attack_target`), rather than
       locking one target when the round's turn order is built the way an

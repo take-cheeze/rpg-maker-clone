@@ -13187,6 +13187,31 @@ check 'Enemy Encounter scene: the skill list cursor is a column-locked ' \
   eq 0, ui[:skill_i], 'Left flows back across the row boundary the same way'
 end
 
+# Community デフォ戦bot/@2000_battle_bot trivia: the skill-menu cursor
+# reopens on the last skill chosen this fight, not always the top of the
+# list (cycle #232, Game::Battle::Combatant#last_skill_id).
+check 'Enemy Encounter scene: reopening the skill list puts the cursor back ' \
+      'on the last skill chosen this fight' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleThreeSkillParty.new)
+  ui = battle_to_command(scene)
+  battle = scene.instance_variable_get(:@battle)
+  actor = battle.send(:current_actor)
+  eq nil, actor.last_skill_id, 'nothing chosen yet this fight'
+
+  actor.last_skill_id = 2 # as if skill id 2 (list index 1) was picked last turn
+  battle.send(:open_battle_skill)
+  eq 1, ui[:skill_i], 'reopens on the remembered skill, not index 0'
+
+  actor.last_skill_id = 99 # no longer in the list (forgotten, or never valid)
+  battle.send(:open_battle_skill)
+  eq 0, ui[:skill_i], 'falls back to the top when the remembered skill is not in this list'
+end
+
 # A hero with three battle items, mirroring BattleThreeSkillParty above.
 class BattleThreeItemParty < BattleMagicParty
   def initialize

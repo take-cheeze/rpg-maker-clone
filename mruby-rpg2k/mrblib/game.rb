@@ -10781,7 +10781,18 @@ module Game
                             # single highest-`priority` state (ties to the
                             # higher id) the battler either still carries or
                             # just had auto-cured -- not accumulated across turns.
-                            :turn_state_message) do
+                            :turn_state_message,
+                            # The database skill id this actor last chose from
+                            # the Skill menu (or had an Auto-Battle pick queue
+                            # on their behalf -- see #queue_single_auto_battle_skill/
+                            # #queue_auto_battle_group_skill's own citation),
+                            # so Scene::Battle#open_battle_skill can reopen the
+                            # list with the cursor back on it next turn instead
+                            # of always resetting to the top. Community デフォ戦
+                            # bot/@2000_battle_bot trivia. nil (an actor who has
+                            # never cast a skill this fight) reads as "top of
+                            # the list" wherever this is consulted.
+                            :last_skill_id) do
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -13576,6 +13587,7 @@ module Game
       return command_skip(b) unless cmd
       b.command = skill_command_hash(sk, cmd, target)
       b.command[:skill_id] = sid
+      b.last_skill_id = sid
     end
 
     def queue_auto_battle_group_skill(b, sk, sid, targets)
@@ -13586,6 +13598,7 @@ module Game
         c = @ai.skill_command(sk, b, t)
         c ? { target: t, hp: c[:hp] || 0, mp: c[:mp] || 0 } : nil
       end.compact
+      b.last_skill_id = sid
       command_skill_all(b, effects, name: skill_name_of(sk), skill_id: sid,
                         absorb: meta[:absorb] ? true : false, attack: meta[:attack],
                         cost: meta[:cost], inflict: meta[:inflict], chance: meta[:chance],
