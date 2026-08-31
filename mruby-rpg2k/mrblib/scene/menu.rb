@@ -165,6 +165,19 @@ class RPG2k
       end
 
       def update
+        # Every live window needs its own #update called every frame to
+        # advance its selection-cursor blink (RPG2k::Window#update, gated on
+        # `active` -- see its own citation) -- this scene never called it at
+        # all, so every cursor here (command list, party-status panel, the
+        # End Game confirm prompt) sat frozen on its first frame instead of
+        # blinking the way every other window-driven screen in this codebase
+        # does (Scene::Title's own #update already does this for its one
+        # window).
+        @command.update if @command
+        @status.update if @status
+        @gold.update if @gold
+        @confirm_help.update if @confirm_help
+        @confirm_command.update if @confirm_command
         return drive_message if @message
         case @focus
         when :actors then update_actor_selection
@@ -325,13 +338,36 @@ class RPG2k
         @status.windowskin = @skin
         sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
         sc.font.color = Color.new(255, 255, 255, 255)
+        # Text starts clear of the face portrait (see #draw_actor_face) --
+        # matching the message window's own face-graphic layout
+        # (Scene::Map's `text_x = FACE_SIZE + FACE_MARGIN`, FACE_SIZE/
+        # FACE_MARGIN below are the same constants).
+        text_x = FACE_SIZE + FACE_MARGIN
         @state.party.actors.each_with_index do |a, i|
-          y = i * 40
-          sc.draw_text 0, y, sc.width, 14, a.name.to_s
-          # The condition rides on the name row, right-aligned. RPG_RT sits it
-          # beside the level, but that row already carries HP and MP here and
-          # this panel is only 196px wide, so it goes where there is room.
-          draw_actor_state sc, a, 0, y, sc.width, 14, @skin, 2
+          y = i * STATUS_ROW_H
+          draw_actor_face sc, a, 0, y
+          # Name and EXP share the top row: EXP right-aligned into whatever
+          # room the (typically short) name leaves, rather than a fourth
+          # line of its own -- the portrait's 48px height is exactly three
+          # 16px text lines (name; Lv+condition; HP/MP), so a fourth line
+          # would either overflow the portrait or force every party
+          # member's row taller than it needs to be.
+          sc.draw_text text_x, y, sc.width - text_x, 14, a.name.to_s
+          draw_exp_row sc, a, text_x, y, sc.width - text_x
+          # The condition now rides the Lv row, right after the level --
+          # confirmed against a genuine RPG_RT.exe screenshot (Nepheshel):
+          # its own field-menu panel reads "LV 2  <condition>" together, not
+          # the name row this used to share with a hidden portrait spelled
+          # out below. Left-aligned right after "Lv N ", not right-aligned
+          # to the panel's far edge as before -- with a portrait now eating
+          # the row's left column there is no far-right space to spare, and
+          # the reference screenshot itself reads left-to-right in that
+          # order rather than split to opposite edges.
+          row_y = y + 16
+          lvl_label = "#{term(:level_short, 'Lv')} #{a.level}  "
+          draw_system_text sc, text_x, row_y, sc.width - text_x, 14, lvl_label, @skin
+          cond_x = text_x + sc.text_size(lvl_label).width
+          draw_actor_state sc, a, cond_x, row_y, sc.width - cond_x, 14, @skin
           # HP/MP recolor the same way the field Status screen's identical row
           # does (Scene::Base#draw_stat_segment, ported from a reference
           # implementation -- see that helper's own citation): only the
@@ -340,20 +376,18 @@ class RPG2k
           # quarter of max. This row used to draw as one flat-white string,
           # the same gap the field Status screen and battle status panel each
           # had before their own earlier fixes (see docs/TODO.md).
-          row_y = y + 16
-          lvl_label = "#{term(:level_short, 'Lv')} #{a.level}  "
-          draw_system_text sc, 0, row_y, sc.width, 14, lvl_label, @skin
+          hp_mp_y = row_y + 16
           gutter = sc.text_size('  ').width
-          x = draw_stat_segment(sc, sc.text_size(lvl_label).width, row_y, sc.width, 14,
+          x = draw_stat_segment(sc, text_x, hp_mp_y, sc.width, 14,
                                  "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
-          draw_stat_segment(sc, x + gutter, row_y, sc.width, 14,
+          draw_stat_segment(sc, x + gutter, hp_mp_y, sc.width, 14,
                              "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see
-        # #enter_actor_selection) -- Window#draw_cursor draws nothing at all
-        # while a window is inactive, the same mechanism the command list's
-        # own cursor disappears through once focus leaves it.
+        # #enter_actor_selection) -- an inactive window now hides its cursor
+        # outright (RPG2k::Window#draw_cursor, see its own citation) rather
+        # than leaving a stale highlight frozen in place.
         @status.active = false
 
         build_gold_window
@@ -389,6 +423,58 @@ class RPG2k
       def refresh_cursor
         @command.cursor_rect =
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
+      end
+
+      # An actor's EXP row on the party-status panel: current EXP over the
+      # next level's absolute threshold (`Game::Actor#next_level_exp`), or
+      # '---' once there is no next level to show -- the same reading and
+      # fallback the field Status screen's own EXP row already uses (see
+      # StatusMenu#build_window's own citation on the absolute-vs-remaining
+      # distinction). Plain system text, not #draw_stat_segment: that
+      # helper's colouring means "getting low, watch out" (HP/MP), which
+      # does not apply to EXP progress. Right-aligned into `[x, x+w)`: it
+      # shares the name row rather than a line of its own (see
+      # #build_windows's own citation).
+      def draw_exp_row(bmp, actor, x, y, w)
+        nxt = actor.next_level_exp
+        draw_system_text bmp, x, y, w, 14,
+                          "#{term(:exp_short, 'EXP')} #{actor.exp}/#{nxt.nil? ? '---' : nxt}",
+                          @skin, 0, 2
+      end
+
+      # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells. Matches
+      # Scene::Map's own `FACE_SIZE`/`FACE_MARGIN` (message-window face
+      # graphics) exactly, but kept as this scene's own copy rather than
+      # shared -- Scene::Map's version supports the Change Face Graphic
+      # mirror flag this one has no use for, and neither is `private` in a
+      # way the other could reach cleanly.
+      FACE_SIZE = 48
+      FACE_MARGIN = 4
+
+      # Load a FaceSet graphic by name, or nil for a blank name or a missing
+      # file. Colour-keyed like the other character art: a FaceSet's
+      # palette entry 0 is its background.
+      def load_face_bitmap(name)
+        return nil unless name && !name.empty?
+        Bitmap.new "FaceSet/#{name}", true
+      rescue StandardError => e
+        $stderr.puts "[RPG2k] face graphic '#{name}' load failed: #{e.message}"
+        nil
+      end
+
+      # Blit `actor`'s own FaceSet cell at (x, y) -- the party-status panel
+      # never drew a portrait at all before this (confirmed against a
+      # genuine RPG_RT.exe screenshot: its own field-menu panel shows one
+      # beside every member's name). A no-op for an actor with no face
+      # graphic set or whose file failed to load, leaving just the text
+      # columns #build_windows already draws.
+      def draw_actor_face(bmp, actor, x, y)
+        name = actor.respond_to?(:face_name) ? actor.face_name : nil
+        sheet = load_face_bitmap(name)
+        return unless sheet
+        index = actor.respond_to?(:face_index) ? (actor.face_index || 0) : 0
+        src = Rect.new((index % 4) * FACE_SIZE, (index / 4) * FACE_SIZE, FACE_SIZE, FACE_SIZE)
+        bmp.blt x, y, sheet, src
       end
 
       # Redraw the command window's label list. The Wait row's label is live
@@ -452,8 +538,11 @@ class RPG2k
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *
-      # 40`) -- the party-status panel's cursor cell spans one whole row.
-      STATUS_ROW_H = 40
+      # STATUS_ROW_H`) -- the party-status panel's cursor cell spans one
+      # whole row. Three 16px lines (name/condition, Lv/HP/MP, EXP) rather
+      # than the previous two -- widened alongside #draw_exp_row's own EXP
+      # row, which needed a third line under HP/MP and no longer fits in 40.
+      STATUS_ROW_H = 48
 
       def refresh_status_cursor
         @status.cursor_rect =

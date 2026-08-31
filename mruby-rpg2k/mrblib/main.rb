@@ -448,18 +448,20 @@ class RPG2k
     # off a genuine RPG_RT frame. Without a windowskin there is nothing to blit,
     # so the old solid bar stays as the fallback.
     #
-    # An inactive window still draws its cursor: `active` only gates whether
-    # `#update` keeps *advancing* `@cursor_frame` (and so blinking) at all --
-    # an inactive window's highlight simply freezes on whichever frame it
-    # last stopped at instead of vanishing. `#update`'s own `@cursor_frame`
-    # advance already gates on `active` correctly; this method used to add a
-    # second, uncited one of its own that hid the highlight outright. This
-    # "inactive window freezes rather than hides its cursor" behavior is NOT
-    # independently confirmed against genuine RPG_RT under wine; removing the
-    # duplicate, undocumented gate is a straightforward internal-consistency
-    # correction independent of that open question.
+    # An inactive window hides its cursor outright rather than freezing it on
+    # whichever frame it last stopped at -- confirmed directly against real
+    # gameplay (Scene::Menu's party-status panel left its actor-selection
+    # highlight visibly stuck in place after backing out of Skill/Equip/
+    # Status back to the command list, where genuine RPG_RT shows no cursor
+    # at all once a window loses focus). A prior pass here removed this exact
+    # gate on the theory that RPG_RT freezes instead of hides, believed
+    # unconfirmed at the time; that theory does not hold up against a real
+    # play session, so the gate is restored. `#active=` and `#cursor_rect=`
+    # both already call this on every change, so hiding takes effect the
+    # instant a window goes inactive, not just on its next blink tick.
     def draw_cursor
       @cursor_bmp.clear
+      return unless @active
       r = @cursor_rect
       return if r.width <= 0 || r.height <= 0
 

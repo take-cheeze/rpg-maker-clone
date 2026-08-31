@@ -52,6 +52,14 @@ class RPG2k
       end
 
       def update
+        # Every live window needs its own #update called every frame to
+        # advance its own animation/blink state (RPG2k::Window#update) --
+        # this scene never called it at all, the same gap Scene::Menu's own
+        # #update had (see its own citation). This screen sets no
+        # `cursor_rect` of its own, so there is no selection highlight to
+        # blink here, but the call is still correct to make for
+        # consistency and any future animated window state.
+        @window.update if @window
         party = @state.party.actors
         if Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
