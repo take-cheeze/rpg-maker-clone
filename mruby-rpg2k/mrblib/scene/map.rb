@@ -4563,25 +4563,7 @@ class RPG2k
       # is the map event running that process (or nil for a common event), so a
       # route targeting "this event" reaches the right character.
       def apply_move_requests(interp, this_event)
-        # TEMP DEBUG (event-29-direction investigation): identity check --
-        # confirm this is literally the same interpreter object do_move_event
-        # just pushed onto, and what its queue holds right before draining it.
-        if (interp.event_id rescue nil) == 29
-          $stderr.puts "[RPG2k][debug] apply_move_requests(event29) pre-drain " \
-                       "interp_oid=#{interp.object_id} " \
-                       "queue_oid=#{(interp.instance_variable_get(:@move_route_requests).object_id rescue '?')} " \
-                       "queue_contents=#{(interp.instance_variable_get(:@move_route_requests).inspect rescue '?')}"
-        end
         reqs = interp.take_move_route_requests
-        # TEMP DEBUG (event-29-direction investigation): only log when there is
-        # actually something to report -- a prior version logged every single
-        # call (including every parallel process's empty poll every frame) and
-        # drowned out the one call that matters.
-        unless reqs.nil? || reqs.empty?
-          $stderr.puts "[RPG2k][debug] apply_move_requests reqs=#{reqs.inspect} " \
-                       "this_event_id=#{this_event ? this_event[:id] : 'nil'} " \
-                       "interp_event_id=#{interp.event_id rescue '?'}"
-        end
         return if reqs.nil? || reqs.empty?
         reqs.each { |r| apply_move_request(r, this_event) }
       rescue StandardError => e
@@ -4592,18 +4574,11 @@ class RPG2k
       def apply_move_request(r, this_event)
         route = Game::MoveRoute.new(r[:commands], repeat: r[:repeat],
                                     skippable: r[:skippable])
-        # TEMP DEBUG (event-29-direction investigation): confirm the request
-        # reaches here, whether the route parsed non-empty, and what
-        # `this_event` resolved to for a "this event" target.
-        $stderr.puts "[RPG2k][debug] apply_move_request target=#{r[:target]} " \
-                     "route_empty=#{route.empty?} this_event_id=#{this_event ? this_event[:id] : 'nil'}"
         return if route.empty?
         case r[:target]
         when MOVE_TARGET_PLAYER
           start_player_route(route, r[:frequency])
         when 0, MOVE_TARGET_THIS
-          $stderr.puts "[RPG2k][debug] apply_move_request: this-event branch, " \
-                       "this_event=#{this_event ? 'present' : 'NIL - route dropped'}"
           force_event_route(this_event, route, r[:frequency]) if this_event
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
@@ -4814,11 +4789,6 @@ class RPG2k
         ev[:forced_route] = route
         ev[:forced_freq] = valid_move_freq(freq)
         ev[:move_timer] = 0
-        # TEMP DEBUG (event-29-direction investigation): confirm the route was
-        # actually armed on the target event's own runtime hash.
-        $stderr.puts "[RPG2k][debug] force_event_route armed on event_id=#{ev[:id]} " \
-                     "at (#{ev[:char].x},#{ev[:char].y}) dir=#{ev[:char].direction} " \
-                     "forced_freq=#{ev[:forced_freq]}"
       end
 
       # Give vehicle `type` a forced route (Move Event / Set Move Route
@@ -5086,14 +5056,7 @@ class RPG2k
         e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
         ox = ch.x
         oy = ch.y
-        unless e[:forced_route].done?
-          status = run_route_step(e[:forced_route], ch, @world)
-          # TEMP DEBUG (event-29-direction investigation): show each forced
-          # route step actually executing, and its effect on position/facing.
-          $stderr.puts "[RPG2k][debug] step_forced_event id=#{e[:id]} status=#{status} " \
-                       "pos=(#{ch.x},#{ch.y}) dir=#{ch.direction} through=#{ch.through} " \
-                       "route_index=#{e[:forced_route].index} route_done=#{e[:forced_route].done?}"
-        end
+        run_route_step(e[:forced_route], ch, @world) unless e[:forced_route].done?
         e[:forced_route] = nil if e[:forced_route].done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
@@ -5698,16 +5661,6 @@ class RPG2k
       # apply it to the map / scene. Shared by the foreground event and each
       # parallel process, so both surfaces honour the same commands.
       def apply_interpreter_requests(interp, this_event)
-        # TEMP DEBUG (event-29-direction investigation): only log the specific
-        # call chain for event 29 -- this method is shared by every parallel
-        # process on the map, called every single frame, so logging it
-        # unconditionally drowned out the one call that matters.
-        target_id = (this_event && this_event[:id] == 29) || (interp.event_id rescue nil) == 29
-        $stderr.puts "[RPG2k][debug] apply_interpreter_requests(event29) called " \
-                     "this_event_id=#{this_event ? this_event[:id] : 'nil'} " \
-                     "interp_event_id=#{interp.event_id rescue '?'} " \
-                     "interp_running=#{interp.running? rescue '?'} " \
-                     "interp_waiting=#{interp.waiting? rescue '?'}" if target_id
         apply_move_requests(interp, this_event)
         apply_location_requests(interp, this_event)
         apply_erase_request(interp, this_event)
