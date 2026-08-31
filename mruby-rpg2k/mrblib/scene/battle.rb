@@ -2408,6 +2408,7 @@ class RPG2k
           refresh_battle_sprites
           show_battle_action(entry)
           play_battle_action_se(entry)
+          react_to_landed_hit(entry)
           # When an animation plays, it is the wait; otherwise the banner timer
           # is, exactly as before.
           @ui[:anim_timer] =
@@ -2692,6 +2693,9 @@ class RPG2k
         unless @ui[:event_win]
           lines = it.wait_kind == :choice ? it.choice_labels : it.message_lines
           @ui[:event_win] = battle_text_window(lines || [], 340)
+          # Same player-input wait as the map's Show Message/Show Choices, so
+          # it gets the same blinking keypress arrow (Window#pause).
+          @ui[:event_win].pause = true
           return # shown this frame; take the button from the next one
         end
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
@@ -3990,6 +3994,11 @@ class RPG2k
 
       def open_battle_result(lines)
         @ui[:result_win] = battle_panel_window(lines, 320)
+        # The result panel is a player-input wait the same shape as a map
+        # message box (see #drive_battle_result), so it gets the same
+        # blinking keypress arrow (Window#pause, native primitive at
+        # mruby-rgss/src/lib.cxx:5845-5855).
+        @ui[:result_win].pause = true
       end
 
       # RPG_RT's own battle message window (the per-action banner, the
@@ -4188,6 +4197,44 @@ class RPG2k
         spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
                             (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
                   Map::ANIM_FLASH_FRAMES)
+      end
+
+      # A landed, non-absorbed damaging hit gets its own automatic flash/shake
+      # reaction, independent of whatever Battle Animation the action itself
+      # plays -- or doesn't: a plain enemy Attack against the party currently
+      # resolves no animation at all (Actor#attack_animation_id has no
+      # enemy-side counterpart), so without this it landed with zero on-screen
+      # feedback beyond the banner text and the HP number ticking down. No
+      # reference-implementation call site tying Flash()/ShakeOnce() to an
+      # ordinary damaging hit turned up in a previous pass over that
+      # implementation's own game_battler.cpp/game_battlealgorithm.cpp/
+      # scene_battle.cpp/sprite_battler.cpp (see docs/TODO.md's "Absorbing HP
+      # triggers neither the ally-hit screen shake nor the enemy-hit sprite
+      # flash" entry), so rather than invent a magnitude from nothing this
+      # reuses this codebase's own already-established ones: the enemy-side
+      # reaction is the same near-white #fire_target_flash pulse strength
+      # (31,31,31,31) at the same Map::ANIM_FLASH_FRAMES duration a Battle
+      # Animation's own flash_scope-1 timing already fires, and the
+      # party-side reaction is the same whole-screen Game::Screen#shake call,
+      # at the same Map::ANIM_SHAKE_POWER/SPEED/FRAMES, a screen_shaking-1
+      # timing already fires (Scene::Map#fire_animation_flashes) --
+      # RPG2000's front-view battle draws no ally sprite for a per-sprite
+      # reaction to land on (the same fact #battle_animation_pixel's own
+      # ally branch already documents), so the screen-wide shake stands in
+      # for it. Skips an absorbed hit, matching that same TODO entry's own
+      # stated rule (a 吸収 skill's own drain line already says what
+      # happened; RPG_RT's flash/shake is for an ordinary loss, not a
+      # transfer).
+      def react_to_landed_hit(entry)
+        return unless entry[:damage] && entry[:damage] > 0
+        return if entry[:absorbed_hp] && entry[:absorbed_hp] > 0
+        if entry[:target_ally]
+          @state.screen.shake(Map::ANIM_SHAKE_POWER, Map::ANIM_SHAKE_SPEED, Map::ANIM_SHAKE_FRAMES)
+        else
+          sprites = @ui && @ui[:enemy_sprites]
+          spr = entry[:target_index] && sprites ? sprites[entry[:target_index]] : nil
+          spr.flash(Color.new(31 * 8, 31 * 8, 31 * 8, 31 * 8), Map::ANIM_FLASH_FRAMES) if spr
+        end
       end
 
       # The screen_shaking-1 counterpart to #fire_target_flash: arms a timed
