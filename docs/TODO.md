@@ -31014,9 +31014,9 @@ codebase yet):
   *both* `@allies` and `@enemies`, so a skill/state that locked an entire
   enemy troop into a restriction-based "do nothing" status (e.g. a
   full-troop Stone with 0% self-cure) ended the fight in an instant,
-  damage-free victory. Checked against RPG_RT's own live source: ported
-  from a reference implementation, not independently confirmed against
-  genuine RPG_RT under wine: its own win-check and lose-check routines use
+  damage-free victory. Ported from a reference implementation's own source,
+  not independently confirmed against genuine RPG_RT under wine: its own
+  win-check and lose-check routines use
   two genuinely different predicates, not one shared one — the win check
   is whether any enemy is still simply alive and in the fight, with no
   restriction/recovery check anywhere in that chain, while only the lose
