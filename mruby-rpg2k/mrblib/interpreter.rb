@@ -3699,13 +3699,28 @@ module Game
     def do_move_event(cmd)
       params = cmd.parameters || []
       return if params.empty?
-      @move_route_requests.push(
+      decoded = decode_move_route(params, cmd.string || '')
+      # Braced explicitly (not the bare `push(target: ..., ...)` keyword-style
+      # call this used to be written as): a builtin C-defined method like
+      # Array#push has no declared keyword parameters, and this build's mruby
+      # does not fall back to CRuby's "no keyword params declared -> treat a
+      # bare trailing hash as one positional Hash" conversion for a method
+      # like that -- the bare-keyword form silently pushed nothing at all,
+      # with no error, so a Move Event's queued request never reached
+      # apply_move_requests (see docs/TODO.md's Nepheshel map 23 event 29
+      # "HiddenDoor" investigation: the SE played, meaning this handler did
+      # run, but the door never actually moved or turned because the request
+      # it should have queued here never existed by the time the scene drained
+      # it). An explicit Hash literal is passed as one ordinary positional
+      # argument in every Ruby implementation, keyword-parameter destructuring
+      # included, so this same shape is unambiguous everywhere.
+      @move_route_requests.push({
         target: cmd.param(0),
         frequency: cmd.param(1),
         repeat: cmd.param(2) != 0,
         skippable: cmd.param(3) != 0,
-        commands: decode_move_route(params, cmd.string || '')
-      )
+        commands: decoded
+      })
     end
 
     # Decode the move-route commands packed into a Move Event's parameter list
@@ -3826,14 +3841,18 @@ module Game
 
     def do_flash_sprite(cmd)
       frames = cmd.param(5) * FRAMES_PER_TENTH
-      @sprite_flash_requests.push(
+      # Braced explicitly -- see #do_move_event's own citation for why a bare
+      # `push(target: ..., ...)` keyword-style call silently pushes nothing
+      # at all against a builtin C-defined method like Array#push on this
+      # build's mruby.
+      @sprite_flash_requests.push({
         target: cmd.param(0),
         red: cmd.param(1) * FLASH_CHANNEL_SCALE,
         green: cmd.param(2) * FLASH_CHANNEL_SCALE,
         blue: cmd.param(3) * FLASH_CHANNEL_SCALE,
         power: cmd.param(4) * FLASH_CHANNEL_SCALE,
         frames: frames
-      )
+      })
       return unless cmd.param(6) != 0
       @wait_kind = :sprite_flash
       @waiting = true
