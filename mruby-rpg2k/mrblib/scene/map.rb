@@ -3495,6 +3495,24 @@ class RPG2k
         # is the "keep moving during the message" pass, which is *always*
         # called while busy (that is the point) and must not immediately bail.
         return if allow_trigger && event_busy?
+        # Still gliding to the tile the *previous* decision picked -- hold off
+        # on a new one. Real RPG_RT only resumes counting its own stop_count
+        # (this port's move_timer, inverted) once `IsStopping()` -- i.e. once
+        # UpdateMovement has landed the character on its destination tile --
+        # so the Move Frequency wait runs entirely *after* a step finishes,
+        # never overlapping it (`Game_Character::Update`: `if (IsStopping())
+        # { ... UpdateNextMovementAction ... }`, and `UpdateMovement` calls
+        # `SetStopCount(0)` every frame a character is mid-step). Without this
+        # gate, a high Move Frequency (paced by #EVENT_MOVE_DELAY, as low as 1
+        # frame at frequency 8) fires a fresh move decision long before a slow
+        # Move Speed's own multi-frame glide (#walk_slide_step) finishes,
+        # snapping the event's logical tile forward every single frame --
+        # visibly far faster than its Move Speed says it should travel, on
+        # any event whose frequency-to-speed ratio makes that possible. The
+        # player's own step input already refuses a new step the same way
+        # (`return nil if @moving`, `#step_movement`) -- events had no
+        # equivalent.
+        return if event_sliding?(e)
         ch = e[:char]
         e[:move_timer] -= 1
         return if e[:move_timer] > 0
