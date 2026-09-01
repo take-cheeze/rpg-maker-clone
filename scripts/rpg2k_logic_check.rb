@@ -18049,18 +18049,19 @@ end
 # honour 'hits twice'/'ignores evasion,' while Berserk additionally collapses
 # an 'attack all' weapon down to a single target and disables 'always acts
 # first'." The confusion half (attack_all still spreading, hit-twice/必中
-# unaffected either way) was already covered by the 全体化/必中 checks above.
-# The berserk-collapses-attack_all half of that same uncited claim does not
-# hold up against a reference implementation, though (NOT independently
-# confirmed against genuine RPG_RT under wine): its own next-actor-selection logic constructs an identical
-# single-target Normal battle algorithm for both the attack-ally
-# (confusion) and attack-enemy (berserk) restrictions -- the same switch just
-# picks which side `GetRandomActiveBattler()` draws from -- and
-# `Normal::vStart()` then unconditionally
-# re-expands *any* single-target Normal algorithm to the whole side once the
-# weapon carries attack_all, with no restriction check anywhere in that path.
-check 'battle: a berserk battler with an attack_all weapon still hits every ' \
-      'living enemy, same as an unforced attack_all would' do
+# unaffected either way) is already covered by the 全体化/必中 checks above.
+# The berserk-collapses-attack_all half of that same claim was previously
+# reversed in favour of a reference implementation's own source reading (its
+# next-actor-selection logic constructs an identical single-target Normal
+# battle algorithm for both the attack-ally (confusion) and attack-enemy
+# (berserk) restrictions, then unconditionally re-expands it to the whole
+# side once the weapon carries attack_all) -- but that reading is wrong:
+# confirmed against genuine RPG_RT.exe under wine (Nepheshel, see
+# docs/TODO.md's own dispute entry and #strike's citation) that a Berserk
+# leader wielding an attack_all weapon (item 82) against two Slimes only
+# ever logs one target's own hit/evade line, never both.
+check 'battle: a berserk battler with an attack_all weapon still hits only ' \
+      'one enemy, unlike an unforced attack_all' do
   states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
   hero = combatant('Hero', 20, 0, 20, 100)
   hero.states = [7]
@@ -18068,9 +18069,9 @@ check 'battle: a berserk battler with an attack_all weapon still hits every ' \
   foe1 = combatant('Foe1', 0, 5, 5, 50)
   foe2 = combatant('Foe2', 0, 5, 5, 50)
   bat = Game::Battle.new([hero], [foe1, foe2], Game::Rng.new(1), states)
-  entries = bat.send(:strike, hero)
-  eq 2, entries.size, 'berserk with an attack_all weapon still spreads across every enemy'
-  ok foe1.hp < 50 && foe2.hp < 50, 'both enemies actually took a hit, not just one'
+  entries = strike_entries(bat, hero)
+  eq 1, entries.size, 'berserk collapses an attack_all weapon down to a single target'
+  ok (foe1.hp < 50) ^ (foe2.hp < 50), 'exactly one enemy took a hit, not both'
 end
 
 check 'battle: a berserk battler still swings twice with a 二刀流 weapon' do
