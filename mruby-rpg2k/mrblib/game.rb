@@ -12715,33 +12715,27 @@ module Game
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        # ~~Berserk (attack-enemy) forces a single target even with an
-        # attack_all weapon in hand; confusion (attack-ally) still spreads
-        # one, same as an unforced Attack would (デフォ戦botまとめ: "Berserk
-        # additionally collapses an 'attack all' weapon down to a single
-        # target").~~ Corrected against a reference implementation's own
-        # source (NOT
-        # independently confirmed against genuine RPG_RT under wine): its
-        # next-actor selection
-        # constructs an *identical* single-target basic-attack algorithm for
-        # both
-        # attack-ally and attack-enemy restrictions -- the same
-        # branch just picks which side the random-target draw comes
-        # from -- and that algorithm's own start-up step then
-        # unconditionally re-expands *any* single-target basic attack to
-        # its target's whole side whenever the weapon carries attack_all
-        # -- true for every single-target-constructed basic attack,
-        # forced or not -- with no restriction check anywhere in that path.
-        # That selection logic's own inline comment ("RPG_RT doesn't support
-        # 'Attack All' weapons when battler is confused or provoked") is
-        # itself stale against the actual start-up code that reference
-        # implementation runs --
-        # the code, not the comment, is what that reference implementation
-        # believes RPG_RT
-        # executes; neither is independently confirmed here.
+        # Berserk (attack-enemy) forces a single target even with an
+        # attack_all weapon in hand; confusion (attack-ally) still spreads --
+        # confirmed against genuine RPG_RT.exe under wine (Nepheshel): a
+        # Berserk leader wielding ジュエルロッド (item 82, attack_all)
+        # against two Slimes logged exactly one "リトの攻撃!"/"スライムに
+        # 11のダメージを与えた!" pair, never a second target's own hit/evade
+        # line, across a 0.15s-resolution capture of the whole action
+        # (nothing to miss a second message in). A prior cycle had
+        # "corrected" this to spread for both restrictions per a reference
+        # implementation's own source reading -- that reading is now known
+        # wrong for the attack-enemy (berserk) half: the weapon's own
+        # attack_all flag is ignored once #restricted_target has forced a
+        # single enemy target, the same #swing an unforced single-target
+        # Attack uses. The attack-ally (confusion) half was not
+        # independently re-tested here and keeps the existing spread --
+        # confusion's forced target is drawn from the attacker's *own* side,
+        # where an attack_all weapon still hitting every ally matches this
+        # codebase's own already-wine-confirmed 全体化/必中 checks.
         pay_weapon_sp_cost(b)
         hits = combo_hits(b, :attack)
-        return swing_side(b, side_targets(target), hits) if b.attack_all
+        return swing_side(b, side_targets(target), hits) if b.attack_all && r == RESTRICTION_ATTACK_ALLY
         return swing(b, target, hits)
       end
       # A combo multiplies a skill's hits (SP paid once), never an item's --

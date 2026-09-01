@@ -31111,6 +31111,16 @@ codebase yet):
   enemy, same as an unforced attack_all would"), confirmed to fail against
   the pre-fix code (`expected 2, got 11` — a single Hash entry, not a
   two-entry array) before the fix.
+  ✅ **Superseded (cycle #232, 2026-09-01): this follow-up itself was
+  wrong, per an actual wine A/B against genuine RPG_RT.exe this time
+  instead of a second reading of the same reference-implementation
+  source.** See the "Possible dispute with an already-shipped fix" entry
+  below for the full wine methodology and result: Berserk (attack-enemy)
+  does collapse an attack_all weapon to a single target after all, the
+  reference implementation's own `vStart()` reading above notwithstanding.
+  `Game::Battle#strike` narrows the attack-enemy restriction back to a
+  single `#swing` regardless of `b.attack_all`; the attack-ally
+  (confusion) restriction's own spread is untouched by this reversal.
   **Confirmed already correct, no change needed**: hit rate's
   floor/ceiling relative to a skill's configured rate by relative Agility (a
   90%-accuracy skill can't exceed 95% actual hit even against a much slower
@@ -31178,19 +31188,47 @@ codebase yet):
     `changelog.d/battle-hit-flash-shake.added.md`. Still not independently
     confirmed against genuine RPG_RT under wine — if a future wine capture
     finds different numbers, adjust there.
-  - 🚧 **Possible dispute with an already-shipped fix:** this list's own
-    item states that an all-target weapon still hits every enemy when its
-    wielder is confused, *not* just one — flatly contradicting the
-    "attack-all narrows to single-target under Berserk/Confusion" behaviour
-    this codebase ported, reversed, and re-confirmed against a reference
-    implementation twice already (see the struck-through paragraph on
-    `game.rb`'s own `all_target_narrows_under_restriction`-equivalent logic
-    for the full history). Both this trivia source and that reference
-    implementation are cited as independent authorities elsewhere in this
-    same file, so a flat contradiction between the two is worth a fresh wine
-    A/B (afflict a party member with Confusion, give them an attack-all
-    weapon, count how many enemies actually take damage) rather than
-    trusting either source over the other from a comment alone.
+  ✅ **Resolved (cycle #232, 2026-09-01), by an actual wine A/B against
+    genuine RPG_RT.exe:** this list's own item states that an all-target
+    weapon still hits every enemy when its wielder is confused, *not* just
+    one — flatly contradicting the "attack-all narrows to single-target
+    under Berserk/Confusion" behaviour this codebase ported, reversed, and
+    re-confirmed against a reference implementation twice already (see the
+    struck-through paragraph on `game.rb`'s own `strike` for the full
+    history). Both this trivia source and that reference implementation are
+    cited as independent authorities elsewhere in this same file, so rather
+    than trusting either from a comment alone, this cycle actually built and
+    ran the A/B genuine RPG_RT itself: a synthetic Nepheshel save/map fixture
+    (`Game::State#to_lsd` plus a hand-injected autostart map event splicing
+    a real `Change Condition` → `Enemy Encounter` → `[Victory]`/`[Escape]`/
+    `EndBattle` command structure, tail-matching a genuine event's own
+    branch skeleton) equips the party leader with `ジュエルロッド` (item 82,
+    attack-all) and inflicts 暴走 (state 6, Berserk/attack-enemy) live via
+    the event's own `Change Condition` command immediately before the
+    encounter starts (a state baked into the save ahead of time instead
+    turned out to be silently dropped — its own database row is `type=0`,
+    "battle only", and genuine RPG_RT does not carry a battle-only state
+    over from a Continue-load snapshot taken outside battle, only one
+    inflicted live). Run headlessly under wine (Xvfb + `LIBGL_ALWAYS_
+    SOFTWARE=1`, matching `scripts/compare-nepheshel-wine.bash`'s own
+    recipe) against a troop of two Slimes, with the whole action captured at
+    0.15s-per-frame resolution (nothing fast enough to hide a second
+    target's message from that cadence): the Berserk-forced attack logged
+    exactly one "リトの攻撃!" / "スライムに11のダメージを与えた!" pair,
+    never a second target's own hit/evade line. **Berserk does collapse an
+    attack_all weapon to a single target**, exactly as the reference
+    implementation reading had gotten backwards and the original,
+    since-reversed code had correctly modeled — this list's own trivia item
+    is the one that was wrong (or is specifically about Confusion, which
+    this fixture did not touch and this codebase still spreads, matching
+    the already-wine-confirmed 全体化/必中 checks and the trivia's own
+    "Berserk *additionally* collapses" phrasing that implies Confusion does
+    not). `Game::Battle#strike` (`mruby-rpg2k/mrblib/game.rb`) now narrows
+    the attack-enemy (berserk) restriction back to a single-target `#swing`
+    regardless of `b.attack_all`, while leaving the attack-ally (confusion)
+    restriction's own spread untouched. `scripts/rpg2k_logic_check.rb`'s
+    "still hits every living enemy" check was rewritten back to assert the
+    single-target narrowing, confirmed to fail against the pre-fix code.
   ✅ **Follow-up (cycle #231, 2026-08-31): the ~30 items flagged
   NEEDS-VERIFICATION above were pushed to real verdicts** by re-reading the
   relevant code far more patiently than the first triage pass had time for,
