@@ -3515,6 +3515,25 @@ check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' d
   eq 'Field', st.current_bgm[:name]
 end
 
+# `Scene::Map#play_bgm` is the shared choke point for battle/inn/vehicle BGM
+# (see its own doc comment), but unlike every other path that genuinely
+# starts a fresh track (`Game::Interpreter#play_audio`'s `:bgm` branch,
+# `#do_play_memorized_bgm`, `#resume_saved_bgm`), it never reset
+# `@state.bgm_looped` on one -- so a Conditional Branch type 9 ("BGM has
+# looped") checked right after entering an inn (or battle, or boarding/
+# leaving a vehicle) could still read `true` left over from whatever track
+# was playing before, even though the new track had not played a single
+# frame yet.
+check 'Show Inn scene: a fresh inn BGM resets bgm_looped, not left stale from before' do
+  scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
+  st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
+  st.bgm_looped = true # the field BGM had already played through once before the inn
+  RGSS::Audio.reset_bgm
+  5.times { scene.update } # inn command runs; the greeting prompt opens, InnBGM starts
+  eq 'InnBGM', st.current_bgm[:name], 'sanity: a genuinely different track started'
+  eq false, st.bgm_looped, "the fresh InnBGM has not looped yet, regardless of Field's own history"
+end
+
 check 'Show Inn scene: a Change System BGM inn override beats the database default' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   # System BGM slot 2 is inn -- see the Game::Interpreter::Cmd note near

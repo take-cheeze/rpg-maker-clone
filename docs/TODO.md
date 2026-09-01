@@ -31284,19 +31284,37 @@ codebase yet):
       fade-in starts (so a long inn track holds the screen black for as
       long as it takes), using the same `@state.bgm_looped` "played once"
       signal Conditional Branch type 9 already reads. Investigated and
-      **not implemented**: `Scene::Map#play_bgm` (the battle/inn/vehicle
-      BGM entry point) never resets `@state.bgm_looped = false` on a fresh
-      track the way every other BGM-start path
-      (`Game::Interpreter#play_audio`'s `:bgm` branch, `#do_play_memorized_bgm`)
-      already does — a prerequisite bug in its own right — and this
-      project's existing inn check-suite coverage
-      (`scripts/rpg2k_scene_check.rb`, "Show Inn scene: inn BGM plays on
-      entry...") drives the fade with a bare 35-frame loop and a
-      call-log-only `RGSS::Audio` stub with no real position tracking, so
-      gating `#finish_inn` on `bgm_looped` would silently hang that
-      existing, currently-passing check rather than exercise the new
-      behaviour. Needs the harness's audio stub extended to simulate a
-      loop before this is safe to implement.
+      **not implemented** as of the note above, which also claimed the
+      harness's `RGSS::Audio` stub was call-log-only with no real position
+      tracking — stale even at the time this follow-up was written: a later
+      cycle had already given it a simulated `pos` (`scripts/rpg2k_scene_check.rb`'s
+      own "a BGM position that jumps backwards counts as one play-through"
+      check, `Scene::Map#update`'s own `bgm_looped = true if pos < prev`),
+      so gating `#finish_inn` on `bgm_looped` was never actually blocked on
+      harness work at all.
+      - ✅ **Follow-up (cycle #235, 2026-08-31): the prerequisite bug is
+        fixed.** `#play_bgm` now resets `@state.bgm_looped = false` in its
+        own fresh-track branch, matching every sibling BGM-start path.
+        This was a real, independently-valuable bug beyond just the inn
+        case this bullet describes: since `#play_bgm` is the shared entry
+        point for battle *and* vehicle boarding/restore BGM too (see its
+        own doc comment), a Conditional Branch type 9 check right after
+        entering battle, an inn, or a vehicle could previously still read a
+        stale `true` left over from whatever track was playing before,
+        even though the new track had not played a single frame yet.
+        Covered by a new `scripts/rpg2k_scene_check.rb` check (a fresh inn
+        BGM resets `bgm_looped` even when the field BGM it replaced had
+        already looped), confirmed to fail against the pre-fix code. See
+        `changelog.d/battle-inn-vehicle-bgm-looped-reset.fixed.md`.
+        **Still not implemented:** actually gating `#finish_inn`'s
+        post-stay fade-in on `bgm_looped` — that needs `#finish_inn`'s own
+        flow restructured into a new per-frame wait state (mirroring
+        `@inn_fading_out`'s existing polling shape) instead of resuming the
+        interpreter immediately once the screen finishes erasing, plus
+        updating the existing "inn BGM plays on entry, field BGM resumes
+        after a stay" check to simulate a full loop via `RGSS::Audio.pos`
+        rather than its current bare 35-frame drain. Left for a dedicated
+        pass rather than folded into this prerequisite fix.
   - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be

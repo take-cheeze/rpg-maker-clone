@@ -2979,6 +2979,19 @@ class RPG2k
           # fields, schema.rb, field 2 `fade_in`) genuinely carry a fade-in
           # value that this helper used to read the struct for and then drop
           # before reaching RGSS::Audio.bgm_play's 5th argument.
+          #
+          # `bgm_looped` reset (a fresh track has not looped yet): every other
+          # path that genuinely starts a new track already does this --
+          # `Game::Interpreter#play_audio`'s `:bgm` branch and
+          # `#do_play_memorized_bgm` (interpreter.rb) and `#resume_saved_bgm`
+          # (this file) -- but this shared battle/inn/vehicle choke point
+          # never did, so entering battle, an inn, or boarding/leaving a
+          # vehicle left a stale `true` from whatever track was playing
+          # before in place, which a Conditional Branch type 9 ("BGM has
+          # looped") checked right after would misread as already having
+          # played through once, or -- once a real `#finish_inn` fade-in
+          # gate someday reads this same flag -- would skip the wait outright.
+          @state.bgm_looped = false
           RGSS::Audio.bgm_play(music[:name], music[:volume] || 100, music[:tempo] || 100,
                                0, music[:fadein] || 0)
         end
