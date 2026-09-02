@@ -3300,25 +3300,35 @@ module Game
     end
 
     # Whether actor `cmd.param(1)` can act right now -- true unless it is
-    # dead or carries a "do nothing" restriction (asleep / paralysed), and
-    # false if it is not even in this fight. Ported from a reference
-    # implementation's own battler can-act check, not independently confirmed against genuine
-    # RPG_RT under wine (via that implementation's own
-    # Conditional Branch (battle) actor case): a Berserk (attack_enemy) or Confusion (attack_ally)
-    # restriction does NOT fail this test -- such an ally still "can act",
-    # it just acts on a forced target instead of the chosen command, which
-    # is why this calls Game::Battle's do_nothing-only check rather than its
-    # broader #command_restricted? (which also flags Berserk/Confusion
-    # because it answers a different question: "does this ally get a normal
-    # command menu"). A prior version of this method branched on
-    # `cmd.param(2)` as if the real command offered a menu of sub-tests ("is
-    # in the party" / "afflicted by a status" / "can use a battle command")
-    # -- the real command has no such thing; RPG_RT's own editor Actor tab
-    # offers only this one condition, and the real C++ source never reads a
-    # second parameter for it at all.
+    # dead or carries a "do nothing" (asleep / paralysed) or forced
+    # attack-enemy/attack-ally (berserk / confused) restriction, and false
+    # if it is not even in this fight. Ported from a reference
+    # implementation's own battler can-act check. Independently confirmed
+    # against genuine RPG_RT.exe under wine (cycle #233, Nepheshel): a
+    # synthetic troop battle-event page (Conditional Branch (battle), "Actor
+    # 1: Can Fight") showed "CANACT_YES" for a Normal leader and
+    # "CANACT_NO" once the same leader was afflicted with 暴走 (Berserk,
+    # state 6) via a live Change Condition immediately before the encounter
+    # -- the opposite of what this method used to assume. A Berserk
+    # (attack_enemy) or Confusion (attack_ally) restriction DOES fail this
+    # test, the same as the do-nothing (asleep/paralysed) restriction
+    # already did, so this now calls Game::Battle's broader
+    # #command_restricted? rather than its narrower do_nothing-only check --
+    # they answer the same question after all ("can this ally act on its own
+    # chosen command"), not two different ones as a prior version of this
+    # comment assumed. Confusion was not independently re-run under wine
+    # this cycle, but shares #command_restricted?'s identical treatment of
+    # both restrictions everywhere else in this codebase, and the trivia
+    # this fix confirms already grouped them ("actor is able to act... should
+    # also exclude Berserk/Confusion"). A prior version of this method
+    # branched on `cmd.param(2)` as if the real command offered a menu of
+    # sub-tests ("is in the party" / "afflicted by a status" / "can use a
+    # battle command") -- the real command has no such thing; RPG_RT's own
+    # editor Actor tab offers only this one condition, and the real C++
+    # source never reads a second parameter for it at all.
     #
     # The explicit `!ally.dead?` term has no counterpart in that reference
-    # implementation's own can-act check (again, not independently confirmed against genuine
+    # implementation's own can-act check (not independently confirmed against genuine
     # RPG_RT under wine) -- there, adding the death state is an inseparable side effect
     # of every HP-zeroing path, so a dead battler
     # always already carries the Death state and the do-nothing scan alone
@@ -3331,22 +3341,23 @@ module Game
     # `#dead?` explicitly closes that gap rather than assuming it away.
     def battle_actor_condition(cmd)
       ally = @battle && @battle.ally_by_actor_id(cmd.param(1))
-      ally ? !ally.dead? && !@battle.do_nothing_restricted?(ally) : false
+      ally ? !ally.dead? && !@battle.command_restricted?(ally) : false
     end
 
     # The troop-member analogue of #battle_actor_condition above: whether
     # enemy `cmd.param(1)` can act right now, on the same
-    # ported-from-a-reference-implementation, not-independently-confirmed
+    # ported-from-a-reference-implementation, wine-confirmed
     # basis as that method: the identical can-act check
     # (same function, same actor-id-only
     # signature) -- not, as a prior version of this method modelled it, a
     # `cmd.param(2)`-selected choice between "is present" and "afflicted by
     # a status". See #battle_actor_condition just above for why the
     # `#dead?` term is still spelled out explicitly rather than folded into
-    # a states-only scan.
+    # a states-only scan, and for the wine evidence behind
+    # #command_restricted? over the narrower do-nothing-only check.
     def battle_enemy_condition(cmd)
       foe = @battle && @battle.enemy(cmd.param(1))
-      foe ? !foe.dead? && !@battle.do_nothing_restricted?(foe) : false
+      foe ? !foe.dead? && !@battle.command_restricted?(foe) : false
     end
 
     # Whether actor `cmd.param(1)`'s chosen command this round is

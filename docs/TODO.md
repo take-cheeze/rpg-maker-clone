@@ -31353,6 +31353,73 @@ codebase yet):
         after a stay" check to simulate a full loop via `RGSS::Audio.pos`
         rather than its current bare 35-frame drain. Left for a dedicated
         pass rather than folded into this prerequisite fix.
+  - ✅ **Resolved (cycle #233, 2026-09-02), by wine: "holding Cancel pauses
+    battle-message pacing" is real, but not the way the name suggests — it
+    is not a pause at all.** Reused the same Nepheshel Berserk/attack-all
+    battle fixture as the dispute above (`Change Condition` → `Enemy
+    Encounter` autostart on a scratch Map0012), loaded it under genuine
+    RPG_RT.exe, and held Escape (Cancel) down continuously (`xdotool
+    keydown`, no `keyup`) from the moment the encounter-start menu appeared,
+    capturing a frame every 0.15s for 4.5s straight: the screen stayed
+    frozen on the very first "スライムが出現!" line the entire time — no
+    Berserk announcement, no attack, nothing — then the instant Cancel was
+    released, the screen jumped straight to the *round-2* command menu with
+    the leader already at 12/50 HP. Two controls rule out a capture
+    artifact: holding an unbound key (F5) instead progresses normally frame
+    by frame (encounter → Berserk → attack → damage → enemy turn → round 2,
+    exactly like the original unheld capture), and holding Decision
+    (Return) instead also progresses normally. `ps` sampled during the
+    Escape hold shows RPG_RT.exe's CPU steady at ~59% throughout — identical
+    to its normal running load, not a stall. So genuine RPG_RT does not
+    pause anything while Cancel is held: the simulation (including message
+    timers) keeps running at full, un-throttled speed exactly as if nothing
+    were held, and only the *screen redraw* is suppressed, catching up to
+    whatever the simulation reached the instant Cancel is released. This
+    codebase already has the exact primitive this needs, just not wired to
+    input: `--render_fps` (`src/main.cxx`, `render_due()` in
+    `mruby-rgss/src/lib.cxx`) already separates "run game logic and advance
+    `Graphics.frame_count` every call" from "actually reach the LVGL
+    redraw," skipping only the latter on frames a lower render rate doesn't
+    need. Implementing this for real needs `render_due()` to also skip the
+    redraw unconditionally while a battle-scoped flag is set (checked ahead
+    of the existing `render_fps` accumulator, so it never disturbs a
+    device's own permanent `RENDER_FPS` setting), with `Scene::Battle`
+    setting that flag from `Input.press?(Input::B)` each frame and clearing
+    it on leaving the scene — a native (`mruby-rgss/src/lib.cxx`) change,
+    not a pure-Ruby one, so it did not go in during this same pass; left
+    for a dedicated cycle that can rebuild and re-test the native extension
+    (this one only had the mrblib/wine toolchain set up).
+  - ✅ **Resolved (cycle #233, 2026-09-02), by wine: a battle event's "actor
+    is able to act" condition DOES exclude Berserk/Confusion, reversing
+    this codebase's own prior assumption.** Injected a new battle-event
+    page (id 19 -- troop 1's own 18 genuine pages are numbered
+    contiguously 1-18, and reusing that same contiguous numbering mattered:
+    a first attempt at id 99 produced visibly garbled sprites/screen tint
+    under genuine RPG_RT, gone once the id-gap was removed) running a
+    Conditional Branch (battle) "Actor 1: Can Fight" that shows
+    `CANACT_YES` or `CANACT_NO` depending on the result -- gated on switch 1
+    (flags=0/unconditional, matching none of troop 1's own real pages, was
+    a second dead end: same corruption). Set from the map event with a
+    Control Switches command right before the encounter. Against a Normal
+    leader: `CANACT_YES`. Against the identical leader with 暴走 (Berserk)
+    inflicted live via Change Condition immediately before the encounter
+    (the same technique the dispute above uses): `CANACT_NO`. A forced
+    attack-enemy restriction fails this test, exactly like a "do nothing"
+    (asleep/paralysed) restriction already did and exactly opposite this
+    codebase's prior assumption (that Berserk/Confusion still "can act,"
+    just on a forced target). `Interpreter#battle_actor_condition`/
+    `#battle_enemy_condition` (`mruby-rpg2k/mrblib/interpreter.rb`) now
+    delegate to `Game::Battle#command_restricted?` (which already flagged
+    Berserk/Confusion for a different question, "does this ally get a
+    normal command menu" -- now known to be the *same* question after all)
+    instead of the narrower `#do_nothing_restricted?`. Confusion itself was
+    not independently re-run under wine, but shares identical treatment
+    with Berserk everywhere else in this codebase and the trivia this fix
+    confirms already grouped the two together. See
+    `scripts/rpg2k_logic_check.rb`'s rewritten "matches command_restricted?,
+    not the narrower do-nothing-only CanAct" check, confirmed to fail
+    against the pre-fix code, and
+    `changelog.d/battle-can-act-condition-excludes-forced-restriction.fixed.md`.
   - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be
@@ -31360,17 +31427,12 @@ codebase yet):
     attack's own animation timing; whether becoming staggered/surprised
     releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
     code near this, is gated on death and never runs for a non-lethal
-    flinch); whether a battle event's "actor is able to act" condition
-    should also exclude Berserk/Confusion (the code's own comment already
-    flags this as unconfirmed and currently reads the opposite way);
-    whether holding Cancel pauses battle-message pacing (no Input polling
-    of any kind currently drives that timer, Decision/Shift included — a
-    pre-existing, separately-documented gap); and whether a
-    zero-effective-damage MP-only skill against an already-0-MP target
-    should suppress its whole hit (states, stat mods, everything) the way
-    a truly-missed hit does. The attack-all-under-Confusion dispute above
-    now has concrete Nepheshel fixture ids for whoever runs that wine test:
-    weapon ids 82-86/96/656 carry the attack-all flag, state 5 is 混乱
+    flinch); and whether a zero-effective-damage MP-only skill against an
+    already-0-MP target should suppress its whole hit (states, stat mods,
+    everything) the way a truly-missed hit does. The attack-all-under-
+    Confusion dispute above now has concrete Nepheshel fixture ids for
+    whoever runs that wine test: weapon ids 82-86/96/656 carry the
+    attack-all flag, state 5 is 混乱
     (Confusion, restriction 3) and state 6 is 暴走 (Berserk, restriction 2)
     in `RPG_RT.ldb`.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
