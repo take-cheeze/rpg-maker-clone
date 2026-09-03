@@ -16008,6 +16008,32 @@ check 'an enemy-scope attack skill with affect_sp but not affect_hp deals ' \
   eq 18, foe.mp, '50 - 32'
 end
 
+# Independently confirmed against genuine RPG_RT.exe under wine (cycle
+# #234, Nepheshel): a real, non-immune skill (恐怖の咆吼, affect_sp only,
+# no affect_hp, bundled with a state effect) cast against a Slime -- every
+# Slime in this database has max_sp 0, so its own MP damage always floors
+# to a no-op -- logged only the skill's own failure sentence
+# ("スライムには効かなかった!"), never a state-landed message, exactly like
+# a missed hit. A prior version of this codebase rolled the state
+# independently of whether the MP hit actually changed anything, so a
+# skill like this always inflicted its state on a 0-MP target regardless.
+check 'battle: an MP-only skill against an already-0-MP target achieves ' \
+      'nothing, suppressing its accompanying state the same way a miss does' do
+  foe = combatant_mp('Foe', 0, 0, 5, 100, 0) # max_mp 0 -- already floored
+  mage = combatant_mp('Mage', 10, 0, 20, 100, 30)
+  b = Game::Battle.new([mage], [foe], Game::Rng.new(1))
+  b.command_skill(mage, foe, name: 'MP Drain', cost: 0, mp: -1, attack: true,
+                  inflict: [3], chance: 100)
+  b.begin_round
+  e = b.step_action
+  eq 0, foe.mp, 'no real MP change: already floored at 0, still 0 after'
+  eq [], e[:inflicted], 'the accompanying state does not land either'
+  ok !foe.state?(3), 'sanity: the state genuinely never landed'
+  ok e[:no_effect],
+     'the log entry flags the whole hit as having achieved nothing, ' \
+     'the same field Scene::Battle#skill_achieved_nothing? reads'
+end
+
 check "a dual HP+SP attack skill's killing blow leaves SP untouched -- HP " \
       'reaching 0 blocks the SP damage on the same swing' do
   # Ported from a reference implementation, NOT independently confirmed against

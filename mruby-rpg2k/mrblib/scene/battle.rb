@@ -3088,10 +3088,13 @@ class RPG2k
         lines
       end
 
-      # A skill with nothing to show for itself: a heal that restored no HP or SP
-      # and cured nothing, or an attack that was dodged.
+      # A skill with nothing to show for itself: a heal that restored no HP or
+      # SP and cured nothing, an attack that was dodged, or an attack whose
+      # accuracy roll succeeded but changed neither of the pools it targets
+      # (`Game::Battle#apply_skill_hit`'s `no_effect` -- wine-confirmed,
+      # cycle #234: an MP-only skill against an already-0-MP target).
       def skill_achieved_nothing?(e)
-        return true if e[:missed]
+        return true if e[:missed] || e[:no_effect]
         return false unless e[:recover]
         (e[:recover_hp] || 0) <= 0 && (e[:recover_mp] || 0) <= 0 &&
           (e[:cured] || []).empty? && (e[:inflicted] || []).empty?

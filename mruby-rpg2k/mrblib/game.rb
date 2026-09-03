@@ -14375,6 +14375,7 @@ module Game
         # merely capped in what it gives.
         absorbed = 0
         hp_dmg = 0
+        hp_before = target.hp
         if hits && hp != 0
           hp_dmg = dmg
           # An offensive skill's HP effect is halved (quartered under 強力防御)
@@ -14416,20 +14417,38 @@ module Game
         # independently confirmed against @2000_battle_bot/デフォ戦bot's own
         # trivia: "HPがゼロになった場合、MPは減らない".
         sp_dmg = 0
+        mp_before = target.mp
         if mp != 0 && !target.dead? && target.mp && target.max_mp && skill_effect_hits?(cmd)
           sp_dmg = dmg
           target.mp = [target.mp - sp_dmg, 0].max
         end
+        # A hit that landed (accuracy roll succeeded) but changed neither pool
+        # it was aimed at -- an MP-only skill against a target already at 0
+        # MP, the case genuine RPG_RT.exe under wine confirms (cycle #234,
+        # Nepheshel): a real, non-enemy-immune state effect bundled onto
+        # 恐怖の咆吼 (skill 19, affect_sp only, no affect_hp) against a Slime
+        # (max_sp 0, so always a floor-clamped no-op MP change) logged
+        # "スライムには効かなかった!" -- the skill's own failure sentence, not
+        # a damage/state line -- with no state landing, exactly like a missed
+        # hit. `hp != 0`/`mp != 0` is "this skill's affect_hp/affect_sp is
+        # actually enabled", not merely "the target had some HP/MP" -- a
+        # skill with neither flag set (a pure stat-mod/state skill) is
+        # unaffected by this and keeps landing its effects normally.
+        no_effect = hits && (hp != 0 || mp != 0) &&
+                    (hp == 0 || target.hp == hp_before) &&
+                    (mp == 0 || target.mp == mp_before)
         # An attack skill may inflict its states -- or, under the RPG2003
         # reverse_state_effect flip #battle_skill_command's own `heals_states`
         # already resolved, cure them instead -- and shift attribute defence
         # ranks, each rolled/applied only if the target lived through the
-        # damage. These roll independently of the HP hit above (ported from
-        # a reference implementation's own fresh accuracy roll for each
-        # `affect_*` gate, NOT independently confirmed against genuine RPG_RT
-        # under wine), so a skill's buff/state can still land on a swing whose
-        # damage missed, or vice versa.
-        if target.dead?
+        # damage and the hit actually changed something. These roll
+        # independently of the HP hit above (ported from a reference
+        # implementation's own fresh accuracy roll for each `affect_*` gate,
+        # NOT independently confirmed against genuine RPG_RT under wine), so
+        # a skill's buff/state can still land on a swing whose damage missed,
+        # or vice versa -- but not on a swing that landed and changed
+        # nothing at all (wine-confirmed above).
+        if target.dead? || no_effect
           inflicted = already = cured = shifted = woke = []
           stat_changed = {}
         else
@@ -14456,6 +14475,7 @@ module Game
           woke = hits ? shake_off_states(target, cmd[:physical_rate] || 0) : []
         end
         { attacker: b.name, target: target.name, damage: hp_dmg, missed: !hits,
+          no_effect: no_effect,
           critical: crit,
           target_hp: target.hp < 0 ? 0 : target.hp, defeated: target.dead?,
           inflicted: inflicted, already: already, cured: cured, woke: woke,
