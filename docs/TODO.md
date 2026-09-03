@@ -5811,6 +5811,69 @@ The work below is roughly ordered by the critical path to a walkable game
   confirmed by `md5sum` on every `.lmu`/`.lmt` touched during the wine
   probes, and all wine/Xvfb/matchbox processes were confirmed terminated
   before finishing.
+  ✅ **Follow-up (cycle #238, 2026-09-03): resolved -- `Game::
+  Parallax.anchored_offset`'s clamp formula is confirmed correct against
+  genuine RPG_RT.exe under wine, and cycle #172's own dialog mystery is
+  explained (a PNG format mismatch, not a map/chipset property).** The
+  dialog turned out to have nothing to do with Teleport, or with which map
+  is targeted: it reproduced identically loading a genuine Continue save
+  positioned directly on three unrelated maps (Map0008, Map0057, and
+  Map0362 -- the last one a map that already ships with a *real*, working
+  panorama of its own) with no Teleport command involved at all, and
+  stopped reproducing the instant the root cause was found and fixed.
+  Activating the dialog's own window (`xdotool windowactivate`, which
+  brought its custom-drawn chrome into view for the first time) showed
+  exactly cycle #172's own description -- a small window with a cyan
+  titlebar reading the game's own title, an X close button, and a
+  completely blank body -- confirming it is the same dialog, just
+  invisible in an unfocused screenshot (its custom titlebar apparently only
+  paints while focused, which is why cycle #172's own screenshots, and
+  this cycle's first few attempts, read as looking blank/not investigated
+  further rather than "there but unfocused"). **Root cause:** every one of
+  Nepheshel's own shipped `Panorama/*.png` files is an 8-bit indexed/
+  palette PNG (`png:IHDR.color_type: 3`); a synthetic test image built with
+  plain ImageMagick `xc:`+`+append` came out a 24-bit truecolor PNG
+  instead, and swapping a map's `parallax_name` to point at it is what
+  actually triggered the dialog -- confirmed by re-running the identical
+  map+position combination with the *only* change being `convert
+  ... -colors 2 PNG8:...` to re-encode the same image as indexed: the
+  dialog stopped appearing, on all three previously-affected maps, with no
+  other change. **Verification of the formula itself:** patched Map0001
+  (width 40, `cam_max_x` 320px, already shipping a real, working panorama
+  used as a lake backdrop -- confirmed visible through the shoreline tiles
+  at this exact position in earlier screenshots, sidestepping the
+  "does this map even have a void to show it through" question cycle #172
+  never got to) with a 1320px-wide indexed test panorama (red for its first
+  700px, blue for the rest -- an excess of 1000px, comfortably past
+  `cam_max`), and stood the party at the map's own far scroll edge (`cam_x
+  = cam_max = 320`, via a genuine Continue-loadable save, `Game::
+  State#to_lsd`). The clamped formula (`span = min(cam_max, excess) =
+  320`) and the naive "always the image's own full excess" alternative
+  (`span = excess = 1000`) predict disjoint source windows of the test
+  image at this exact camera position -- `[320, 640)`, entirely inside the
+  red band, versus `[1000, 1320)`, entirely inside the blue one -- so
+  either color reading is an unambiguous, non-guessable verdict. Genuine
+  RPG_RT.exe filled the entire visible lake with solid red
+  (`srgb(255,0,0)` sampled at three separate points), matching the clamped
+  formula and ruling out the naive one. **No code change**: `Game::
+  Parallax.anchored_offset` (`mruby-rpg2k/mrblib/game.rb`) already
+  implements the confirmed-correct clamp; only its own doc comment and
+  `scripts/rpg2k_render_check.rb`'s matching check ("a non-looping panorama
+  wider than the map's own excess pans by the map's excess, not the
+  image's") lost their "NOT independently confirmed" caveats, gaining this
+  cycle's wine evidence instead. No changelog fragment applies (a
+  confirmation of already-correct behavior, not a behavioral fix).
+  **Verification:** `ruby -c` clean on both edited files; `scripts/
+  rpg2k_render_check.rb` (41), `scripts/rpg2k_scene_check.rb` (969),
+  `scripts/rpg2k_logic_check.rb` (1195), `scripts/rpg2k3_battle_row_check.rb`
+  (19) and `scripts/rpg2k3_battle_gauge_check.rb` (15) all passed. Every
+  `.lmu` touched during the wine probes (Map0001, Map0012, Map0057,
+  Map0362) and `RPG_RT.ldb` were confirmed `md5sum`-identical to their
+  starting values once restored, the three scratch `Panorama/claudetest*
+  .png` files this cycle added were deleted afterward, `git status` on
+  `data/` came back clean, and every wine/Xvfb/matchbox process this cycle
+  started was confirmed terminated before finishing. No EasyRPG source was
+  consulted and no web search was used.
   ✅ **Follow-up (cycle #173, 2026-08-26): attempted to verify the `Game::
   Shop#sellable_items` citation (`mruby-rpg2k/mrblib/game.rb`, "a price-0
   item a player holds still shows up in the Sell list") via a genuine

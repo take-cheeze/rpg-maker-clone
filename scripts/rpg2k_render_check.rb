@@ -336,9 +336,10 @@ end
 check 'a non-looping panorama wider than the map\'s own excess pans by the ' \
       'map\'s excess, not the image\'s' do
   # Ported from a reference implementation's parallax reset-position logic,
-  # NOT independently confirmed against genuine RPG_RT under wine: the span
-  # panned across is min(map excess, image excess), not always the image's
-  # own full excess. A small map (800px,
+  # confirmed against genuine RPG_RT.exe under wine (Nepheshel, Map0001 --
+  # see Game::Parallax.anchored_offset's own citation): the span panned
+  # across is min(map excess, image excess), not always the image's own
+  # full excess. A small map (800px,
   # 160px of scroll room) with a much wider panorama (2000px, 1360px of its
   # own excess) must stop at the map's own 160px scroll limit -- the image
   # never fully reveals its own far edge, since there is nowhere left on the
