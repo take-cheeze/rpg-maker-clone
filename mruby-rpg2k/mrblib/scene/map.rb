@@ -427,6 +427,7 @@ class RPG2k
         @inn_window = nil
         @inn_bgm_started = false
         @inn_fading_out = false
+        @inn_waiting_bgm = false
         @inn_interp = nil
         @shop = nil
         # The running fight, or nil between encounters -- see Scene::Battle.
@@ -5815,6 +5816,12 @@ class RPG2k
         if @inn_fading_out
           return if @state.screen.fading?
           @inn_fading_out = false
+          start_inn_bgm_wait(it)
+          return
+        end
+        if @inn_waiting_bgm
+          return unless @state.bgm_looped || @bgm_pos_unavailable
+          @inn_waiting_bgm = false
           finish_inn(true, it)
           return
         end
@@ -5872,16 +5879,37 @@ class RPG2k
       # Begin the accepted-stay fade to black (Erase Screen's own FADE_OUT
       # style, its default 35-frame length) and park in the :inn wait until it
       # settles -- #drive_inn's `@inn_fading_out` branch above resumes it and
-      # calls #finish_inn once the screen is fully black. A screen already
-      # erased (e.g. an event faded to black right before the Show Inn command)
-      # is a no-op transition, per #Game::Screen#erase, so it resolves at once
-      # exactly like Erase Screen onto Erase Screen does.
+      # moves on to the BGM wait below once the screen is fully black. A
+      # screen already erased (e.g. an event faded to black right before the
+      # Show Inn command) is a no-op transition, per #Game::Screen#erase, so
+      # it goes straight to the BGM wait instead, exactly like Erase Screen
+      # onto Erase Screen does.
       def start_inn_fade_out(it = @interpreter)
         @state.screen.erase(Game::Transition::FADE_OUT)
         if @state.screen.fading?
           @inn_fading_out = true
         else
+          start_inn_bgm_wait(it)
+        end
+      end
+
+      # Park in the :inn wait until the inn's own BGM (#play_inn_bgm, started
+      # back when the stay was first requested) has played through once --
+      # `@state.bgm_looped`, the same "BGM played once" signal Conditional
+      # Branch type 9 reads, watched every frame by #watch_bgm_loop
+      # regardless of what else is going on. So a long inn track holds the
+      # screen black for as long as it takes, rather than #finish_inn's own
+      # fade back in starting the instant the fade-out alone finishes. A
+      # backend that cannot report a BGM position (`@bgm_pos_unavailable`,
+      # #watch_bgm_loop's own fallback) would otherwise never set
+      # `bgm_looped` at all -- that case skips the wait outright rather than
+      # parking here forever, matching how every other `bgm_looped` reader in
+      # this codebase already degrades when playback position is unavailable.
+      def start_inn_bgm_wait(it)
+        if @bgm_pos_unavailable
           finish_inn(true, it)
+        else
+          @inn_waiting_bgm = true
         end
       end
 

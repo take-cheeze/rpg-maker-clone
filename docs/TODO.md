@@ -31344,15 +31344,26 @@ codebase yet):
         BGM resets `bgm_looped` even when the field BGM it replaced had
         already looped), confirmed to fail against the pre-fix code. See
         `changelog.d/battle-inn-vehicle-bgm-looped-reset.fixed.md`.
-        **Still not implemented:** actually gating `#finish_inn`'s
-        post-stay fade-in on `bgm_looped` — that needs `#finish_inn`'s own
-        flow restructured into a new per-frame wait state (mirroring
-        `@inn_fading_out`'s existing polling shape) instead of resuming the
-        interpreter immediately once the screen finishes erasing, plus
-        updating the existing "inn BGM plays on entry, field BGM resumes
-        after a stay" check to simulate a full loop via `RGSS::Audio.pos`
-        rather than its current bare 35-frame drain. Left for a dedicated
-        pass rather than folded into this prerequisite fix.
+        - ✅ **Follow-up (cycle #236, 2026-09-03): implemented.** A new
+          `@inn_waiting_bgm` per-frame wait state, mirroring
+          `@inn_fading_out`'s existing polling shape exactly: once the
+          accepted-stay fade-out lands (screen fully black),
+          `#start_inn_fade_out`/`#drive_inn` now park in this new state via
+          `#start_inn_bgm_wait` instead of calling `#finish_inn` right away,
+          and only advance to it once `@state.bgm_looped` goes true — so a
+          long inn track holds the screen black for as long as it takes, the
+          heal/charge and the fade back in both waiting on it. A backend
+          that cannot report a BGM position (`@bgm_pos_unavailable`,
+          `#watch_bgm_loop`'s own fallback) skips the wait outright rather
+          than parking forever, the same graceful-degradation shape every
+          other `bgm_looped` reader in this codebase already has. Updated
+          the four existing checks this exact bullet named as needing it
+          (`scripts/rpg2k_scene_check.rb`) to drive `RGSS::Audio.pos`
+          through a loop (the same idiom "a BGM position that jumps
+          backwards counts as one play-through" already established) at the
+          point they used to just resume immediately after the fade-out
+          landed, all four confirmed to fail against the pre-fix code. See
+          `changelog.d/inn-fade-in-waits-for-bgm-loop.fixed.md`.
   - ✅ **Resolved (cycle #233, 2026-09-02), by wine: "holding Cancel pauses
     battle-message pacing" is real, but not the way the name suggests — it
     is not a pause at all.** Reused the same Nepheshel Berserk/attack-all
