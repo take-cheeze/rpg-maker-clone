@@ -3325,8 +3325,14 @@ check 'Show Inn scene: accepting heals the party, spends gold, runs Stay branch'
   scene.update # accept: fades the screen to black instead of resuming at once
   ok st.screen.fading?, 'the accepted stay fades out before the heal'
   eq 1000, st.party.gold, 'not charged yet -- the heal waits for the fade to land'
-  40.times { scene.update } # drain the fade-out (35 frames) and the Stay branch after
-  eq 900, st.party.gold, 'the price was deducted once the screen went black'
+  35.times { scene.update } # drain the fade-out (35 frames): screen is now fully black
+  eq 1000, st.party.gold, 'still not charged -- now waiting on the inn BGM to play through'
+  RGSS::Audio.pos = 5000
+  scene.update
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  5.times { scene.update } # the loop lands the heal/charge and runs the Stay branch after
+  RGSS::Audio.pos = 0
+  eq 900, st.party.gold, 'the price was deducted once the inn BGM played through'
   eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'party healed'
   ok st.switches[1], 'the Stay branch ran'
   ok !st.switches[2], 'the No Stay branch was skipped'
@@ -3350,17 +3356,23 @@ check 'Show Inn scene: the prompt window is a fixed 320x80 panel flush to ' \
   eq map_mod::MSG_WIN_H, win.height, 'and the message window\'s own fixed height'
 end
 
-check 'Show Inn scene: an accepted stay fades to black, holds through the heal, ' \
-      'then fades back in over the RPG_RT default 35 frames' do
+check 'Show Inn scene: an accepted stay fades to black, holds through the heal ' \
+      'and the inn BGM playing through, then fades back in over the RPG_RT ' \
+      'default 35 frames' do
   # Per a reference implementation / FinishInn (the async
   # eCallInn path CommandShowInn's accepted-stay continuation triggers; NOT
   # independently confirmed against genuine RPG_RT under wine), real RPG_RT
   # is modeled to fade
   # out the instant a stay is accepted -- before the heal, not after -- holds
-  # black while the party is healed, then starts the fade back in the same
-  # beat, all in the plain FADE_OUT / FADE_IN styles Erase/Show Screen use at
-  # their own default length (Game::Transition.default_frames), not some
-  # inn-specific duration.
+  # black while the party is healed, then starts the fade back in, all in the
+  # plain FADE_OUT / FADE_IN styles Erase/Show Screen use at their own
+  # default length (Game::Transition.default_frames), not some inn-specific
+  # duration. Between the fade-out landing and the fade back in starting,
+  # this codebase now also waits for the inn's own BGM to play through once
+  # (`@state.bgm_looped`) -- so a long inn track holds the screen black for
+  # as long as it takes, matching Conditional Branch type 9's own "BGM
+  # played once" signal rather than resuming the instant the fade-out alone
+  # finishes.
   eq 35, Game::Transition.default_frames(Game::Transition::FADE_OUT)
   eq 35, Game::Transition.default_frames(Game::Transition::FADE_IN)
 
@@ -3373,10 +3385,20 @@ check 'Show Inn scene: an accepted stay fades to black, holds through the heal, 
   34.times { scene.update } # the remaining fade-out frames (35 total)
   ok st.screen.fading?, 'one frame short of the fade-out landing, still holding'
   eq 1000, st.party.gold, 'still not charged -- the screen has not gone fully black yet'
-  scene.update # the 35th fade-out frame: lands fully black, heals, starts the fade back in
-  eq 900, st.party.gold, 'charged the moment the screen went fully black'
+  scene.update # the 35th fade-out frame: lands fully black, now waiting on the inn BGM
+  ok !st.screen.fading?, 'the fade-out has landed -- fully black'
+  eq 1000, st.party.gold, 'still not charged -- holding black until the inn BGM plays through'
+  10.times { scene.update } # holds fully black however long the inn BGM takes
+  ok !st.screen.fading?, 'still holding fully black, not fading either way'
+  eq 1000, st.party.gold, 'ten more silent frames changed nothing'
+  RGSS::Audio.pos = 5000
+  scene.update
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  scene.update # the loop lands: heals, charges, starts the fade back in this same frame
+  RGSS::Audio.pos = 0
+  eq 900, st.party.gold, 'charged the moment the inn BGM played through'
   eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'healed the same frame'
-  ok st.screen.fading?, 'the fade back in starts immediately, not a separate wait'
+  ok st.screen.fading?, 'the fade back in starts immediately once the BGM wait ends'
   34.times { scene.update } # the fade-in's own remaining frames (35 total)
   ok st.screen.fading?, 'one frame short of the fade-in landing'
   scene.update # the fade-in's 35th frame lands fully visible again
@@ -3498,7 +3520,8 @@ check 'Show Inn scene: the Accept / Cancel cursor auto-repeats while held, ' \
   eq 1, scene.instance_variable_get(:@inn_choice), 'a held (repeated) Up still moves the cursor'
 end
 
-check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' do
+check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a ' \
+      'stay once it has played through' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 100))
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 } # the map's own BGM
   RGSS::Audio.reset_bgm
@@ -3510,8 +3533,14 @@ check 'Show Inn scene: inn BGM plays on entry, field BGM resumes after a stay' d
   RGSS::Input.triggered = [RGSS::Input::C] # cursor starts on Accept (affordable)
   scene.update # accept: starts the fade-out, the BGM swap waits for it to land
   35.times { scene.update } # drain the 35-frame fade-out
+  eq [], RGSS::Audio.bgm_calls, 'still holding on InnBGM -- it has not played through yet'
+  RGSS::Audio.pos = 5000
+  scene.update
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  scene.update # the inn BGM has played through: the field BGM replaces it this frame
+  RGSS::Audio.pos = 0
   eq [['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
-     'the field BGM that was playing before the stay replays once the fade lands'
+     'the field BGM that was playing before the stay replays once InnBGM played through'
   eq 'Field', st.current_bgm[:name]
 end
 
@@ -3590,21 +3619,30 @@ check 'Show Inn scene: database or override inn balance forwards to bgm_pan, not
      "a Change System BGM inn override's own balance reaches bgm_pan too"
 end
 
-check 'Show Inn scene: a free stay (price 0) still plays and restores the inn BGM' do
+check 'Show Inn scene: a free stay (price 0) still plays and restores the ' \
+      'inn BGM once it has played through' do
   scene, st = inn_scene(1000, inn_commands(Game::Interpreter::Cmd, 0), guard: true) # price 0 skips the prompt
   st.current_bgm = { name: 'Field', volume: 100, tempo: 100 }
   RGSS::Audio.reset_bgm
   # No greeting window opens for a free stay, so this reaches the inn BGM in a
   # couple of frames of ordinary event processing (unlike the priced-prompt
   # tests, no player input is needed) -- but a free stay still auto-accepts,
-  # so it still fades to black (35 frames) before the field BGM restores and
-  # the resolved Stay branch runs, same as a prompted Accept.
+  # so it still fades to black (35 frames), holds until the inn BGM plays
+  # through, then restores the field BGM and runs the resolved Stay branch,
+  # same as a prompted Accept.
   3.times { scene.update }
   eq [['InnBGM', 75, 105, 0, 0]], RGSS::Audio.bgm_calls, 'the inn BGM played'
   ok st.screen.fading?, 'a free stay auto-accepts, so it fades out too'
-  40.times { scene.update } # drain the fade-out (35 frames) and the Stay branch after
+  35.times { scene.update } # drain the fade-out (35 frames): screen is now fully black
+  eq [['InnBGM', 75, 105, 0, 0]], RGSS::Audio.bgm_calls,
+     'still holding on InnBGM -- it has not played through yet'
+  RGSS::Audio.pos = 5000
+  scene.update
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  5.times { scene.update } # the loop restores the field BGM and runs the Stay branch after
+  RGSS::Audio.pos = 0
   eq [['InnBGM', 75, 105, 0, 0], ['Field', 100, 100, 0, 0]], RGSS::Audio.bgm_calls,
-     'the field BGM was restored once the fade landed'
+     'the field BGM was restored once the inn BGM played through'
   eq 'Field', st.current_bgm[:name]
   ok st.switches[1], 'the Stay branch ran (a free stay always stays)'
 end
@@ -3656,7 +3694,12 @@ check 'Show Inn (free stay) issued from a Parallel Process still waits for an ' 
   ok !st.screen.fading?, 'a free stay must not auto-accept while a message window is still open'
   ok !st.switches[1], 'the Stay branch has not run yet either'
   scene.send(:close_message)
-  40.times { scene.update } # the free stay proceeds, fades out (35 frames) and resolves
+  36.times { scene.update } # the free stay proceeds and fades out (35 frames)
+  RGSS::Audio.pos = 5000
+  scene.update
+  RGSS::Audio.pos = 10 # SDL_mixer seeks back to the start to loop
+  5.times { scene.update } # the loop lands and resolves the Stay branch after
+  RGSS::Audio.pos = 0
   ok st.switches[1], 'the free stay ran through to its Stay branch once the message cleared'
 end
 
