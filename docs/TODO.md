@@ -31420,16 +31420,45 @@ codebase yet):
     not the narrower do-nothing-only CanAct" check, confirmed to fail
     against the pre-fix code, and
     `changelog.d/battle-can-act-condition-excludes-forced-restriction.fixed.md`.
+  - ✅ **Resolved (cycle #234, 2026-09-02), by wine: a zero-effective-damage
+    MP-only skill against an already-0-MP target DOES suppress its whole
+    hit, confirming this list's own hypothesis.** Used a genuine,
+    already-authored Nepheshel skill rather than a synthetic one: skill 19
+    (恐怖の咆吼, affect_sp only, no affect_hp, bundled with a real state
+    effect on state 4/恐怖) is normally enemy-only, so this test copy
+    flipped `occasion_battle` so the player could cast it, forced `hit=100`
+    (its real 80% would confound a genuine miss with the zero-effective-
+    damage question) and `sp_cost=0`. Every Slime in this database already
+    has `max_sp=0` -- a guaranteed floor-clamped no-op MP change -- but
+    Slime's own `state_ranks` turned out to carry a flat 0% resistance to
+    state 4 specifically (a first run's "no effect" result was confounded
+    by this pre-existing immunity until the state_ranks entry was patched
+    to a normal tier for the test copy, ruling it out). With that confound
+    removed: casting the skill on a Slime still logged only
+    "スライムには効かなかった!" (the skill's own failure sentence) — never a
+    damage or state-landed line, and the state never actually applied. This
+    codebase's own `skill_achieved_nothing?` (`mruby-rpg2k/mrblib/scene/
+    battle.rb`) already implemented this exact suppression for recovery
+    (heal) skills hitting a ceiling, but never for attack skills hitting a
+    floor -- `Game::Battle#apply_skill_hit` rolled state infliction/stat
+    mods unconditionally once the accuracy check passed, regardless of
+    whether the designated affect_hp/affect_sp pool actually changed.
+    `apply_skill_hit` now computes a `no_effect` flag (hit landed, but
+    every enabled affect_hp/affect_sp pool ended up unchanged) and
+    suppresses inflicted/cured/shifted/stat_changed the same way a dead
+    target already does; `skill_achieved_nothing?` now also returns true
+    for it. See `scripts/rpg2k_logic_check.rb`'s new "an MP-only skill
+    against an already-0-MP target" check, confirmed to fail against the
+    pre-fix code, and `changelog.d/skill-no-effect-suppresses-secondary-
+    effects.fixed.md`.
   - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be
     confirmed by reading); the exact inter-hand frame gap in a dual-wield
-    attack's own animation timing; whether becoming staggered/surprised
+    attack's own animation timing; and whether becoming staggered/surprised
     releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
     code near this, is gated on death and never runs for a non-lethal
-    flinch); and whether a zero-effective-damage MP-only skill against an
-    already-0-MP target should suppress its whole hit (states, stat mods,
-    everything) the way a truly-missed hit does. The attack-all-under-
+    flinch). The attack-all-under-
     Confusion dispute above now has concrete Nepheshel fixture ids for
     whoever runs that wine test: weapon ids 82-86/96/656 carry the
     attack-all flag, state 5 is 混乱
