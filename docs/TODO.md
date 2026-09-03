@@ -31451,11 +31451,34 @@ codebase yet):
     against an already-0-MP target" check, confirmed to fail against the
     pre-fix code, and `changelog.d/skill-no-effect-suppresses-secondary-
     effects.fixed.md`.
+  - ✅ **Answered (cycle #235, 2026-09-03), by wine: there is no fixed
+    "inter-hand frame gap" to hard-code for a dual-wield attack — genuine
+    RPG_RT paces the second swing off the first swing's own Battle
+    Animation actually finishing, exactly matching this codebase's
+    existing architecture.** Flipped a genuine weapon's (item 82,
+    ジュエルロッド) `dual_attack` (二刀流) flag on for a test copy, boosted
+    the target Slime's `max_hp` so it survives both swings, and recorded
+    the fight with `ffmpeg -f x11grab` (screenshot polling is too coarse to
+    resolve single-frame timing; a continuous 30fps capture, started well
+    before the input so its own startup latency couldn't eat the window,
+    was not) rather than screenshots. Extracted frames show swing 1's
+    impact flash and swing 2's impact flash 4 video frames apart (~133ms,
+    roughly 8 engine frames at RPG_RT's native 60fps) — but that gap is
+    just however long the weapon's own animation (id 28, 15 animation
+    frames, its own flash timing entry sitting near the end) takes to play
+    out, not a separate constant. `Scene::Battle#drive_battle_animate`
+    already implements exactly this: `start_battle_animation` sets
+    `@ui[:anim_timer]` to 0 whenever an entry actually plays a Battle
+    Animation, so the *next* entry (a dual-wield swing's second hit
+    included) waits on `battle_animation_playing?` rather than the fixed
+    `BATTLE_ANIM_FRAMES` (90) banner-only fallback — i.e. the gap is
+    already data-driven by whichever weapon's animation is playing, the
+    same shape genuine RPG_RT's own timing turned out to have. No code
+    change indicated by this evidence.
   - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be
-    confirmed by reading); the exact inter-hand frame gap in a dual-wield
-    attack's own animation timing; and whether becoming staggered/surprised
+    confirmed by reading); and whether becoming staggered/surprised
     releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
     code near this, is gated on death and never runs for a non-lethal
     flinch). The attack-all-under-
