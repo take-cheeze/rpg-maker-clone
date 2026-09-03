@@ -31220,15 +31220,16 @@ codebase yet):
     implementation reading had gotten backwards and the original,
     since-reversed code had correctly modeled — this list's own trivia item
     is the one that was wrong (or is specifically about Confusion, which
-    this fixture did not touch and this codebase still spreads, matching
-    the already-wine-confirmed 全体化/必中 checks and the trivia's own
-    "Berserk *additionally* collapses" phrasing that implies Confusion does
-    not). `Game::Battle#strike` (`mruby-rpg2k/mrblib/game.rb`) now narrows
-    the attack-enemy (berserk) restriction back to a single-target `#swing`
-    regardless of `b.attack_all`, while leaving the attack-ally (confusion)
-    restriction's own spread untouched. `scripts/rpg2k_logic_check.rb`'s
-    "still hits every living enemy" check was rewritten back to assert the
-    single-target narrowing, confirmed to fail against the pre-fix code.
+    this fixture did not touch, and which this codebase still spread at the
+    time — **cycle #237 below found that assumption wrong too: Confusion
+    collapses an attack_all weapon exactly the same way**). `Game::
+    Battle#strike` (`mruby-rpg2k/mrblib/game.rb`) now narrows the
+    attack-enemy (berserk) restriction back to a single-target `#swing`
+    regardless of `b.attack_all` (this cycle left the attack-ally/confusion
+    restriction's own spread untouched — see cycle #237 for that half).
+    `scripts/rpg2k_logic_check.rb`'s "still hits every living enemy" check
+    was rewritten back to assert the single-target narrowing, confirmed to
+    fail against the pre-fix code.
   ✅ **Follow-up (cycle #231, 2026-08-31): the ~30 items flagged
   NEEDS-VERIFICATION above were pushed to real verdicts** by re-reading the
   relevant code far more patiently than the first triage pass had time for,
@@ -31486,18 +31487,48 @@ codebase yet):
     already data-driven by whichever weapon's animation is playing, the
     same shape genuine RPG_RT's own timing turned out to have. No code
     change indicated by this evidence.
-  - 🚧 **Still open, genuinely needs wine:** whether an enemy skill's
+  - ✅ **Resolved (cycle #237, 2026-09-03), by wine: Confusion (混乱) also
+    collapses an `attack_all` weapon down to a single target, matching
+    Berserk -- the "attack-all-under-Confusion" half of the dispute above
+    was never actually tested and had kept the old spread behavior.** Used
+    the same fixture technique and the concrete Nepheshel ids this bullet
+    used to record (weapon id 82 carries `attack_all`; state 5 is 混乱
+    Confusion, restriction 3), inflicted live on the leader alone via
+    Change Condition immediately before an autostart Enemy Encounter,
+    exactly like the Berserk test. A solo-party fixture only ever showed
+    the confused leader targeting itself (RESTRICTION_ATTACK_ALLY's target
+    pool is the attacker's own side, and a lone party member's only "ally"
+    is itself) -- not by itself conclusive, since a one-member party can't
+    tell "narrows to one" from "spreads to every ally" apart (both produce
+    exactly one line). A two-member party resolved that ambiguity partway
+    (one confused swing landed on the *other* party member, never both in
+    the same swing) but still couldn't rule out "spreads to every ally
+    except the attacker" (indistinguishable from "narrows to one" when
+    there's only one *other* ally either way). A **three**-member party
+    (leader confused + two other living allies, Slime `max_hp` boosted to
+    999 so the fight lasts long enough for the confused leader to actually
+    get a turn before the AI-controlled allies finish the encounter) closed
+    the gap: across multiple confused swings (self-targeted and
+    ally-targeted alike, `オート` auto-battle driving the other two
+    members), every single one logged exactly one target line, never two,
+    regardless of which of the three party members ended up as the random
+    forced target. `Game::Battle#strike` (`mruby-rpg2k/mrblib/game.rb`) now
+    narrows *both* forced restrictions to a plain `#swing` unconditionally
+    -- the `swing_side`/attack_all spread branch that only ever fired for
+    the attack-ally (confusion) case is gone; dual-wield's extra swing
+    still lands on that one forced target either way. `scripts/
+    rpg2k_logic_check.rb`'s confusion/attack_all checks (the single-target
+    check, the dual-wield-still-doubles check, and the dedicated "全体化
+    does NOT spread a forced attack" check) were rewritten to assert the
+    single-target outcome, all three confirmed to fail against the pre-fix
+    code. See `changelog.d/confusion-attack-all-single-target.fixed.md`.
+    Still open, genuinely needs wine: whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be
     confirmed by reading); and whether becoming staggered/surprised
     releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
     code near this, is gated on death and never runs for a non-lethal
-    flinch). The attack-all-under-
-    Confusion dispute above now has concrete Nepheshel fixture ids for
-    whoever runs that wine test: weapon ids 82-86/96/656 carry the
-    attack-all flag, state 5 is 混乱
-    (Confusion, restriction 3) and state 6 is 暴走 (Berserk, restriction 2)
-    in `RPG_RT.ldb`.
+    flinch).
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the

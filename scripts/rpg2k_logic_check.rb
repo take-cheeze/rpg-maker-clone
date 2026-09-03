@@ -18074,18 +18074,20 @@ end
 # デフォ戦botまとめ: "Berserk/Confusion override target selection but still
 # honour 'hits twice'/'ignores evasion,' while Berserk additionally collapses
 # an 'attack all' weapon down to a single target and disables 'always acts
-# first'." The confusion half (attack_all still spreading, hit-twice/必中
-# unaffected either way) is already covered by the 全体化/必中 checks above.
-# The berserk-collapses-attack_all half of that same claim was previously
-# reversed in favour of a reference implementation's own source reading (its
+# first'." This claim's own "Confusion still spreads attack_all" implication
+# and the berserk-collapses-attack_all half were both previously reversed in
+# favour of a reference implementation's own source reading (its
 # next-actor-selection logic constructs an identical single-target Normal
 # battle algorithm for both the attack-ally (confusion) and attack-enemy
 # (berserk) restrictions, then unconditionally re-expands it to the whole
-# side once the weapon carries attack_all) -- but that reading is wrong:
-# confirmed against genuine RPG_RT.exe under wine (Nepheshel, see
-# docs/TODO.md's own dispute entry and #strike's citation) that a Berserk
-# leader wielding an attack_all weapon (item 82) against two Slimes only
-# ever logs one target's own hit/evade line, never both.
+# side once the weapon carries attack_all) -- but that reading is wrong for
+# both halves: confirmed against genuine RPG_RT.exe under wine (Nepheshel,
+# see docs/TODO.md's own dispute entry and #strike's citation) that a
+# Berserk leader wielding an attack_all weapon (item 82) against two Slimes
+# only ever logs one target's own hit/evade line, never both, and that the
+# same weapon under Confusion against a two- and three-member party also
+# only ever logs one target line per swing, whether the forced target ends
+# up being the attacker itself or another ally.
 check 'battle: a berserk battler with an attack_all weapon still hits only ' \
       'one enemy, unlike an unforced attack_all' do
   states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
@@ -18111,7 +18113,22 @@ check 'battle: a berserk battler still swings twice with a 二刀流 weapon' do
   eq 2, entries.size, "berserk still gets the weapon's dual-wield extra swing"
 end
 
-check 'battle: a confused, dual-wielding, attack_all battler swings twice per target' do
+check 'battle: a confused battler with an attack_all weapon still hits only ' \
+      'one party member, unlike an unforced attack_all' do
+  states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
+  hero = combatant('Hero', 20, 0, 20, 100)
+  hero.states = [6]
+  hero.attack_all = true                                  # 全体化
+  ally2 = combatant('Ally2', 20, 0, 5, 100)
+  slime = combatant('Slime', 0, 0, 5, 50)
+  bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
+  entries = strike_entries(bat, hero)
+  eq 1, entries.size, 'confusion collapses an attack_all weapon down to a single target too'
+  ok (hero.hp < 100) ^ (ally2.hp < 100), 'exactly one party member took a hit, not both'
+end
+
+check 'battle: a confused, dual-wielding, attack_all battler still swings ' \
+      'twice at its single forced target' do
   states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
   hero = combatant('Hero', 20, 0, 1, 100)
   hero.states = [6]
@@ -18121,8 +18138,7 @@ check 'battle: a confused, dual-wielding, attack_all battler swings twice per ta
   slime = combatant('Slime', 0, 0, 5, 100)
   bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
   entries = bat.send(:strike, hero)
-  eq 4, entries.size,
-     'the confused, 全体化, 二刀流 attacker swings twice at itself and twice at its ally'
+  eq 2, entries.size, "confusion still gets the weapon's dual-wield extra swing, on one target"
 end
 
 # -- stat-halving/doubling states (affect_type / affect_attack & friends) ----
@@ -19463,14 +19479,18 @@ check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy 
   ok foe1b.hp < 50 && foe2b.hp < 50, 'both enemies took damage'
 end
 
-check 'battle: 全体化 spreads a forced (confused) attack across the whole ally side too' do
-  # Per the same reference-implementation-ported Normal::vStart reading above (NOT
-  # independently confirmed against genuine RPG_RT under wine), it spreads
-  # across whichever side the already-resolved single target belongs to --
-  # confusion resolves that target from
-  # the attacker's own side, so a 全体化 weapon spreads across allies here,
-  # the attacker included (AddTargets pushes the whole party with no
-  # self-exclusion).
+check 'battle: 全体化 does NOT spread a forced (confused) attack across the ' \
+      'whole ally side, unlike an unforced attack' do
+  # A reference-implementation-ported Normal::vStart reading once had this
+  # spreading across whichever side the already-resolved single target
+  # belongs to (confusion resolves that target from the attacker's own
+  # side, so a 全体化 weapon would spread across allies, the attacker
+  # included). That reading is wrong -- confirmed against genuine RPG_RT.exe
+  # under wine (Nepheshel): the same 全体化 weapon (item 82) under Confusion
+  # against a two- and three-member party only ever logged one target line
+  # per swing, whether the forced target ended up being the attacker itself
+  # or another ally, never both in the same swing. See #strike's own
+  # citation and docs/TODO.md.
   states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
   hero = combatant('Hero', 40, 0, 1, 100)
   hero.states = [6]
@@ -19479,11 +19499,10 @@ check 'battle: 全体化 spreads a forced (confused) attack across the whole all
   slime = combatant('Slime', 0, 0, 5, 100)
   bat = Game::Battle.new([hero, ally2], [slime], Game::Rng.new(1), states)
   bat.command_attack(hero, slime)
-  entries = bat.send(:strike, hero)
+  entries = strike_entries(bat, hero)
   eq 100, slime.hp, 'confusion still spares the enemy side'
-  eq 2, entries.size, 'one hit for the confused attacker, one for its ally'
-  ok hero.hp < 100, 'the confused attacker struck itself too'
-  ok ally2.hp < 100, 'and its ally'
+  eq 1, entries.size, 'only one target took the confused swing'
+  ok (hero.hp < 100) ^ (ally2.hp < 100), 'exactly one of the attacker/its ally was struck'
 end
 
 check "battle: a 先制攻撃 weapon jumps a basic Attack to the front of the round" do
