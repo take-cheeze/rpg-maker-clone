@@ -1309,9 +1309,18 @@ module Game
     # The excess actually panned across is `[cam_max, img_px - screen_px].min`,
     # not always the image's own full excess -- ported from a reference
     # implementation's equivalent clamp (the map's own scrollable excess
-    # capped by the panorama's excess width), NOT
-    # independently confirmed against genuine RPG_RT under wine. Without this clamp, a panorama image wider
-    # than the map's own scroll range would report an offset past what
+    # capped by the panorama's excess width). Confirmed against genuine
+    # RPG_RT.exe under wine (Nepheshel, Map0001): patched a custom
+    # non-looping panorama (a plain red/blue split image, 1320px wide, far
+    # wider than the map's own 320px scroll excess) onto a real map with an
+    # already-visible panorama window (a lake), stood the party at the map's
+    # far scroll edge, and read which color filled the screen. The clamped
+    # formula and the naive "always the image's own full excess" alternative
+    # predict different, non-overlapping source regions of the test image at
+    # that camera position -- the clamped one entirely inside the red band,
+    # the naive one entirely inside the blue -- and the screen came back
+    # solid red, matching the clamp. Without this clamp, a panorama image
+    # wider than the map's own scroll range would report an offset past what
     # `cam_max` worth of scrolling should ever reveal -- unreachable when the
     # image's excess happens to be no bigger than the map's own (every case
     # this codebase's own render checks exercised until now), but a real
