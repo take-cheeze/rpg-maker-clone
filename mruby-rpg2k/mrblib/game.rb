@@ -12715,27 +12715,26 @@ module Game
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        # Berserk (attack-enemy) forces a single target even with an
-        # attack_all weapon in hand; confusion (attack-ally) still spreads --
-        # confirmed against genuine RPG_RT.exe under wine (Nepheshel): a
-        # Berserk leader wielding ジュエルロッド (item 82, attack_all)
-        # against two Slimes logged exactly one "リトの攻撃!"/"スライムに
-        # 11のダメージを与えた!" pair, never a second target's own hit/evade
-        # line, across a 0.15s-resolution capture of the whole action
-        # (nothing to miss a second message in). A prior cycle had
-        # "corrected" this to spread for both restrictions per a reference
-        # implementation's own source reading -- that reading is now known
-        # wrong for the attack-enemy (berserk) half: the weapon's own
-        # attack_all flag is ignored once #restricted_target has forced a
-        # single enemy target, the same #swing an unforced single-target
-        # Attack uses. The attack-ally (confusion) half was not
-        # independently re-tested here and keeps the existing spread --
-        # confusion's forced target is drawn from the attacker's *own* side,
-        # where an attack_all weapon still hitting every ally matches this
-        # codebase's own already-wine-confirmed 全体化/必中 checks.
+        # Both forced restrictions force a single target even with an
+        # attack_all weapon in hand -- confirmed against genuine RPG_RT.exe
+        # under wine (Nepheshel). Berserk (attack-enemy): a Berserk leader
+        # wielding ジュエルロッド (item 82, attack_all) against two Slimes
+        # logged exactly one "リトの攻撃!"/"スライムに11のダメージを与えた!"
+        # pair, never a second target's own hit/evade line, across a
+        # 0.15s-resolution capture of the whole action (nothing to miss a
+        # second message in). Confusion (attack-ally): the same weapon,
+        # confused instead of berserk, against a two- and a three-member
+        # party, logged exactly one target line every time regardless of
+        # whether the forced target was another ally or the attacker itself
+        # -- never a second line for a second party member in the same
+        # swing. A prior cycle had "corrected" this to spread for both
+        # restrictions per a reference implementation's own source reading
+        # -- that reading is now known wrong for both halves: the weapon's
+        # own attack_all flag is ignored once #restricted_target has forced
+        # a single target, the same #swing an unforced single-target Attack
+        # uses.
         pay_weapon_sp_cost(b)
         hits = combo_hits(b, :attack)
-        return swing_side(b, side_targets(target), hits) if b.attack_all && r == RESTRICTION_ATTACK_ALLY
         return swing(b, target, hits)
       end
       # A combo multiplies a skill's hits (SP paid once), never an item's --
