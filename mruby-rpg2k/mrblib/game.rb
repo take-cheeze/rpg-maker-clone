@@ -16005,28 +16005,44 @@ module Game
 
       leader = @party.leader
       members = @party.actors
+      # Chunk 100 (the file-select screen's own title/preview data) used to be
+      # written only when there was a leader to name, which left an entirely
+      # empty party -- kk1.12's own genuine starting state, all five members
+      # joining later through Change Party Member events, confirmed via a
+      # genuine wine-driven capture (scripts/gen-lcf-save-wine.bash) taken
+      # right after New Game -- with no chunk 100 at all rather than merely a
+      # zero timestamp. That is the exact same failure mode ADR 0021 already
+      # fixed for a *populated* party (a zero OLE date reads as an empty file
+      # slot and Continue silently refuses it): a missing chunk leaves
+      # `timestamp` at its own no-default nil, not the schema's own implicit
+      # 0.0, but nil is exactly as unloadable as 0. The timestamp -- the one
+      # field ADR 0021 actually pinned -- is now written unconditionally;
+      # only the leader-specific name/level/hp fields, which have nothing to
+      # read from an empty party, stay conditional.
+      title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
+      title[1] = timestamp.to_f
       if leader
-        title = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_TITLE })
-        title[1] = timestamp.to_f
         title[11] = leader.name
         title[12] = leader.level
         title[13] = leader.hp
-        # Up to four party faces fill the file-screen portrait slots (21/22 ..
-        # 27/28), one FaceSet name+index pair per member.
-        face_fields = [[21, 22], [23, 24], [25, 26], [27, 28]]
-        members.each_index do |i|
-          break if i >= face_fields.size
-          nf, xf = face_fields[i]
-          title[nf] = members[i].faceset_name
-          # Elided at its own default (0) -- confirmed against a genuine
-          # kk1.12 save under wine, whose leader's own FaceSet index was 0
-          # and left field 22 (this member's own index slot) absent rather
-          # than an explicit 0.
-          idx = members[i].faceset_index
-          title[xf] = idx if idx != 0
-        end
-        save[100] = title
       end
+      # Up to four party faces fill the file-screen portrait slots (21/22 ..
+      # 27/28), one FaceSet name+index pair per member -- a no-op loop for an
+      # empty party, `members` being the same array `leader` is `.first`-ed
+      # from.
+      face_fields = [[21, 22], [23, 24], [25, 26], [27, 28]]
+      members.each_index do |i|
+        break if i >= face_fields.size
+        nf, xf = face_fields[i]
+        title[nf] = members[i].faceset_name
+        # Elided at its own default (0) -- confirmed against a genuine
+        # kk1.12 save under wine, whose leader's own FaceSet index was 0
+        # and left field 22 (this member's own index slot) absent rather
+        # than an explicit 0.
+        idx = members[i].faceset_index
+        title[xf] = idx if idx != 0
+      end
+      save[100] = title
 
       hero = LCF::Array1D.new('', { elements: LCF::Schema::SAVE_MOVABLE })
       hero[11] = @map_id
@@ -16892,9 +16908,33 @@ module Game
     # Game::Interpreter#call_stack_snapshot-shaped frames array, outermost
     # frame first (`stack`'s own #each already yields ascending by array id,
     # which .build_event_exec_state always writes in that same
-    # outer-to-inner order). nil for an absent chunk, or one whose own stack
-    # is absent or empty -- both mean "nothing to restore" to
-    # Scene::Map#restore_foreground_event_exec/#new_parallel alike.
+    # outer-to-inner order). nil for an absent chunk, a stack absent/empty,
+    # or one this reader cannot make sense of -- all three mean "nothing to
+    # restore" to Scene::Map#restore_foreground_event_exec/#new_parallel
+    # alike.
+    #
+    # The third case is real, not defensive-programming boilerplate: a
+    # genuine kk1.12 save (scripts/gen-lcf-save-wine.bash, EasyRPG Player's
+    # F9 debug-menu Save) carries a chunk 113 whose own field 1 does not
+    # decode as this schema's SAVE_EVENT_EXEC_STATE at all -- `stack`'s own
+    # bytes are a single 0x01, which Array2D#initialize reads as "1 row" and
+    # then has nothing left to read that row's own id from, raising
+    # "truncated BER integer" out of LCF.read_ber. SAVE_EVENT_EXEC_STATE's
+    # own schema.rb comment already flags exactly this risk ("not confirmed
+    # against a genuine multi-frame capture, since none was available"),
+    # and this is that capture, not matching. Rather than guess a corrected
+    # byte layout with nothing to confirm it against (the discipline every
+    # other schema field here is held to -- see SAVE_DATA's own chunk
+    # 112/200 comment), a malformed capture degrades the same way an absent
+    # one already does: Continue starts the affected event/process fresh
+    # instead of crashing outright -- confirmed against this exact kk1.12
+    # save, which used to abort Game::State.from_lsd entirely and now loads
+    # cleanly. Whether this is a genuine liblcf field-layout gap or an
+    # artifact of EasyRPG's own F9 debug-save path (never RPG_RT.exe's own
+    # Open Save Menu command, the only save-taking path this schema's own
+    # field-108/113/114 comments were written against) is not yet known --
+    # left for whoever gets a genuine RPG_RT.exe capture of this chunk
+    # populated to compare against.
     def self.read_event_exec_frames(exec_state)
       return nil unless exec_state
       stack = exec_state.stack
@@ -16909,6 +16949,10 @@ module Game
         }
       end
       frames.empty? ? nil : frames
+    rescue StandardError => e
+      $stderr.puts "[RPG2k] Save: chunk 113/114 execution state did not " \
+                   "decode (#{e.class}: #{e.message}), resuming without it"
+      nil
     end
 
     # Build a BGM chunk (an LCF::Array1D over the BGM schema) from our stored

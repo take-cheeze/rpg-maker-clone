@@ -2292,6 +2292,26 @@ check 'SAVE_EVENT_EXEC_STATE round-trips a captured call-stack snapshot through 
   ok !it2.running?, 'the whole restored call stack unwound correctly'
 end
 
+check '.read_event_exec_frames degrades to nil instead of raising on a chunk ' \
+      'it cannot decode' do
+  # A genuine kk1.12 save (scripts/gen-lcf-save-wine.bash, EasyRPG Player's F9
+  # debug-menu Save) carries a chunk 113 whose own `stack` field is a single
+  # 0x01 byte -- Array2D#initialize reads that as "1 row" and then has
+  # nothing left to read that row's own id from, raising "truncated BER
+  # integer" out of LCF.read_ber. That used to abort Game::State.from_lsd
+  # entirely; a malformed capture now degrades the same way an absent one
+  # already does (see .read_event_exec_frames's own comment for the full
+  # citation) -- reproduced here with the exact byte shape, not just any
+  # broken bytes, so this pins that specific real-world case rather than
+  # "some exception, somewhere" genuinely masking a different regression.
+  malformed = LCF::Array1D.new("\x01\x01\x01\x00".b,
+                                { elements: LCF::Schema::SAVE_EVENT_EXEC_STATE })
+  frames = nil
+  out = capture_stderr { frames = Game::State.read_event_exec_frames(malformed) }
+  ok frames.nil?, 'a chunk that fails to decode reads back as "nothing to restore"'
+  ok out.include?('[RPG2k]'), "the failure is reported, not silently swallowed (got #{out.inspect})"
+end
+
 # A resolver that counts every Call Event lookup instead of answering with
 # real commands, so a Call Event round trip stays a one-command no-op (the
 # empty-target early return in do_call_event) whose count is still visible.
@@ -4818,6 +4838,39 @@ check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
   ok !title.key?(22), 'face index 0 is absent, not an explicit 0'
   eq [['LeaderFace', 0]], Game::State.from_lsd(db, zero_index_st.to_lsd).preview_faces[0, 1],
      'and still round-trips back to index 0 on load'
+end
+
+check 'to_lsd writes chunk 100 (with a real timestamp) even for a party ' \
+      'with no leader at all' do
+  # kk1.12's own genuine starting state -- an entirely empty party, all five
+  # members joining later through Change Party Member events -- confirmed via
+  # a genuine wine-driven capture (scripts/gen-lcf-save-wine.bash) taken
+  # right after New Game. #to_lsd used to write chunk 100 (the file-select
+  # screen's title/preview data) only when @party.leader was truthy, so an
+  # empty party wrote no chunk 100 at all -- not merely a zero timestamp in
+  # one, ADR 0021's own already-fixed case for a *populated* party (a zero
+  # OLE date reads as an empty file slot and Continue silently refuses it).
+  # An absent chunk leaves #from_lsd's own `timestamp` read at its schema
+  # no-default nil rather than 0.0, but nil is exactly as unloadable as 0 by
+  # that same ADR 0021 finding -- so an empty-party save risked being
+  # invisible to Continue the identical way, just via a different missing
+  # value.
+  players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30,
+                                     atk: 10, def: 8) }
+  db = FakeActorDB.new(players, [])
+  st = Game::State.new(Game::Party.new(db, []), 1, 0, 0)
+  ok st.party.leader.nil?, 'the fixture party really is empty'
+
+  title = st.to_lsd[100]
+  ok !title.nil?, 'chunk 100 is written even with no leader'
+  stamp = title && title[1]
+  ok !stamp.nil? && stamp > 0,
+     "the timestamp is still real, not the schema's own absent-field nil " \
+     "(got #{stamp.inspect})"
+  ok !title.key?(11), 'no leader name to write, so field 11 stays absent'
+
+  round = Game::State.from_lsd(db, st.to_lsd)
+  ok round.party.leader.nil?, 'and the round trip still reads back an empty party'
 end
 
 check 'to_lsd/from_lsd round-trips the file-select screen\'s level/HP snapshot ' \
