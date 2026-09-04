@@ -31588,10 +31588,40 @@ codebase yet):
     Still open, genuinely needs wine: whether an enemy skill's
     battle-animation sound effects on frame 21+ get cut (no such frame-based
     SE cutoff exists in this codebase for anyone, so this can't be
-    confirmed by reading); and whether becoming staggered/surprised
-    releases the Defend flag (`Game::Battle#apply_knockout_reset`, the only
-    code near this, is gated on death and never runs for a non-lethal
-    flinch).
+    confirmed by reading — a reference implementation's own
+    `battle_animation.cpp`/`game_battle.cpp` were fetched and read directly
+    for this cycle too, confirming no such cutoff exists there either, so
+    this genuinely isn't answerable without a wine capture); and whether
+    becoming staggered/surprised (a non-lethal flinch from taking damage)
+    releases the Defend flag specifically — still open, still needs wine,
+    `Game::Battle#apply_knockout_reset` is still gated on death and still
+    never runs for a non-lethal flinch.
+    - ✅ **Follow-up (2026-09-04): a related but distinct gap, found by
+      reading that same reference implementation's source rather than
+      guessing at the flinch question above, is fixed.** Its own `AddState`
+      does not gate the Defend/Charge reset on death alone: *any*
+      newly-landed state that leaves the target under a forced-action
+      restriction (do-nothing/berserk/confusion,
+      `GetSignificantRestriction() != Restriction_normal`, this codebase's
+      own `#battler_restriction`) resets `SetIsDefending(false)`/
+      `SetCharged(false)` right there too — a living ally or enemy that was
+      Defending or holding a charged attack when it got put to sleep,
+      berserked, or confused kept the stale flag here, since
+      `#inflict_state` only ever cleared either field through
+      `#apply_knockout_reset`'s own death-only branch. No matching reset for
+      a queued command/battle-algorithm was needed: this codebase already
+      re-derives a restricted battler's action at round-execution time
+      (`#command_restricted?`'s own doc comment) rather than caching one
+      that would need invalidating. Fixed by clearing both fields in
+      `#inflict_state` itself whenever `#battler_restriction(target)` is
+      non-zero after the state lands, alongside the existing knockout reset.
+      Ported from a reference implementation, NOT independently confirmed
+      against genuine RPG_RT under wine. Covered by a new
+      `scripts/rpg2k_logic_check.rb` check (a living, Defending/Charged
+      battler newly inflicted with a berserk-type state drops both
+      immediately; an ordinary, non-restricting state leaves them
+      untouched), confirmed to fail against the pre-fix code. See
+      `changelog.d/battle-restriction-clears-defend-charge.fixed.md`.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
@@ -32979,7 +33009,7 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `.lmu` in every configured test-bed game (1099 maps across three games),
   confirmed to fail on all 1099 (each exactly one byte short) against the
   pre-fix code before the fix.
-- 🚧 Editor with [imgui](https://github.com/ocornut/imgui) — no in-repo
-  level/database editor exists yet; there is no `imgui` submodule under `3rd/`
-  and nothing in `src/`/`include/` references it. Every maker here plays a
+- ✅ **Not planned: in-repo editor with [imgui](https://github.com/ocornut/imgui).**
+  No `imgui` submodule under `3rd/` and nothing in `src/`/`include/`
+  references it, and none is planned — every maker here plays a
   project authored by that maker's own commercial/official editor

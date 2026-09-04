@@ -15754,6 +15754,39 @@ check 'a lethal attack also clears a defending or charged enemy\'s stance, ' \
   eq false, defender.defending, 'a revived enemy does not keep its stale pre-death Defend stance'
 end
 
+# Ported from a reference implementation's own `AddState`, NOT independently
+# confirmed against genuine RPG_RT under wine: a newly-inflicted state that
+# leaves the target under a forced-action restriction (do-nothing, berserk,
+# or confusion) also drops Defend/Charge immediately, not only on death --
+# distinct from (and in addition to) `apply_knockout_reset`'s own death-only
+# reset the two checks above cover.
+check 'inflicting a forced-action restriction state clears a living, ' \
+      'defending/charged battler\'s stance too, not only a lethal one' do
+  states = { 7 => fake_state(restriction: Game::Battle::RESTRICTION_ATTACK_ENEMY) } # berserk
+  defender = combatant('Defender', 0, 0, 5, 100)
+  defender.defending = true
+  bat = Game::Battle.new([], [defender], Game::Rng.new(1), states)
+  bat.send(:inflict_state, defender, 7)
+  ok !defender.dead?, 'the state landed on a living target'
+  eq false, defender.defending, 'berserk lands and immediately drops the stale Defend stance'
+
+  charger = combatant('Charger', 0, 0, 5, 100)
+  charger.charged = true
+  bat2 = Game::Battle.new([], [charger], Game::Rng.new(1), states)
+  bat2.send(:inflict_state, charger, 7)
+  eq false, charger.charged, 'and the stale Charge too'
+
+  # A state with no forced-action restriction (an ordinary poison, say)
+  # leaves an existing Defend/Charge alone -- the reset is specific to
+  # #battler_restriction becoming non-normal, not to gaining any state at all.
+  states2 = { 9 => fake_state(restriction: 0) }
+  unrestricted = combatant('Unrestricted', 0, 0, 5, 100)
+  unrestricted.defending = true
+  bat3 = Game::Battle.new([], [unrestricted], Game::Rng.new(1), states2)
+  bat3.send(:inflict_state, unrestricted, 9)
+  eq true, unrestricted.defending, 'an ordinary, non-restricting state does not touch Defend'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, per a reference implementation " \
       "(2026-08-19, NOT independently confirmed against genuine RPG_RT under wine)" do
   # Ported from a reference implementation, NOT independently confirmed against
