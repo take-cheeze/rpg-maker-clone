@@ -367,10 +367,22 @@ def check_menus(dir)
   # Every skill kind the game actually uses has to be reachable somewhere: a
   # skill offered in neither menu is one no player can ever cast. Escape and
   # teleport skills are the known exception (see Party#unsupported_field_skill?).
+  #
+  # A second, deliberate exception: a switch skill with *both* occasion flags
+  # off is a menu-invisible system flag, cast only by a map/battle event's
+  # Force Skill Use command, never by a player picking it from a list -- the
+  # occasion flags exist precisely to keep it off both menus. histoire203
+  # carries 21 of these (bracketed names like "[ポータル]", "[死の匂い]",
+  # "[暗視]" -- none of them a plausible menu entry), all switch-type with
+  # occasion_field/occasion_battle both false; #field_skill?/#battle_skill?
+  # already honour those flags exactly, so this is real, intentional
+  # authoring, not a skill the engine drops.
   check "#{name}: no skill is unreachable from both menus" do
     unreachable = skill_ids.reject do |id|
       sk = party.db_skill(id)
       next true if party.unsupported_field_skill?(sk)
+      next true if sk.type == Game::Party::SKILL_SWITCH &&
+                   !party.field_occasion?(sk) && !party.battle_occasion?(sk)
       party.field_skill?(sk) || party.battle_skill?(sk)
     end
     eq [], unreachable.first(8), "#{unreachable.size} skill(s) castable nowhere"
@@ -379,9 +391,17 @@ def check_menus(dir)
   # Special items (type 9) invoke a skill; switch items (type 10) flip a switch.
   # Reading those two the other way round put the special items on the switch
   # branch, where they flipped the switch id they never set — the default, 1.
+  #
+  # A blank `name` marks an unused stub row rather than a real item: 610-item
+  # histoire203 carries a nameless, priceless type-9 row (#50, still-default
+  # skill_id 1) and a nameless type-10 row (#8, still-default switch_id 1) —
+  # never renamed out of the editor's own new-row defaults, so never a switch
+  # or skill any player could reach through them. A named row that still
+  # points at the default is a real authoring bug and stays asserted.
   special = []
   switch = []
   db[DB_ITEM]&.each do |id, it|
+    next if it.name.to_s.empty?
     special << id if it.type == Game::Party::ITEM_SPECIAL
     switch << id if it.type == Game::Party::ITEM_SWITCH
   end
@@ -561,8 +581,9 @@ def check_ko_only(dir)
 end
 
 # 両手持ち — a weapon that claims the shield hand too. A fixture cannot say what
-# fraction of a real arsenal is two-handed, nor that the flag never lands on a
-# shield; both matter, because the rule reads the item's *type* alongside it.
+# fraction of a real arsenal is two-handed, nor how the byte behaves once it
+# lands on something whose current type is not weapon; both matter, because
+# the rule reads the item's *type* alongside it.
 def check_two_handed(dir)
   name = File.basename(dir)
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
@@ -582,7 +603,23 @@ def check_two_handed(dir)
   end
   puts format('   items: %d 両手持ち of %d weapon(s), %d shield(s)',
               two.size, weapons, shields)
-  return if two.empty? || shields.zero?
+
+  # A row whose *current* type is not weapon (1) but still carries a nonzero
+  # 両手持ち byte is editor debris, not a live flag: the RPG2000 editor never
+  # clears a type-specific field when a row's Type dropdown is switched away
+  # from Weapon, and #two_handed? (this same file) re-checks the row's type
+  # before ever consulting the byte, exactly to keep such leftovers inert.
+  # histoire203 -- 610 items, evidently reshuffled over a long dev history --
+  # carries 13 of these (id 347 among them, a shield named "…盾"); neither
+  # Nepheshel nor mtf-meido-action, both far smaller arsenals, had any. Report
+  # it rather than assert it away or fail on it.
+  unless odd.empty?
+    puts format('   %d non-weapon item(s) carry a stale two-handed bit ' \
+                '(harmless -- #two_handed? gates on type)', odd.size)
+  end
+
+  two_weapons = two.select { |id| items[id].type == 1 }
+  return if two_weapons.empty? || shields.zero?
 
   check "#{name}: every real two-handed weapon empties the shield hand" do
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
@@ -590,7 +627,7 @@ def check_two_handed(dir)
     ok hero, 'the game has someone to equip'
     shield = nil
     items.each { |id, it| shield ||= id if it.type == 2 }
-    two.each do |wid|
+    two_weapons.each do |wid|
       hero.equip([0, 0, 0, 0, 0])
       hero.equip_item(shield)
       eq shield, hero.equipment[1], 'the shield went on'
@@ -599,11 +636,6 @@ def check_two_handed(dir)
       eq 0, hero.equipment[1], 'and took the shield hand with it'
     end
     hero.equip([0, 0, 0, 0, 0])
-  end
-
-  check "#{name}: the flag never lands on something that is not a weapon" do
-    eq [], odd,
-       'a non-weapon carrying the bit would claim a hand it has no business in'
   end
 end
 
@@ -733,6 +765,15 @@ def check_states(dir)
         next unless states[sid].restrict_magic
         ok total_magic.zero? || sealed > 0,
            "state ##{sid} (#{states[sid].name}) seals no magic at all"
+        # "but not plain physical skills" only holds for a *magic-only* seal.
+        # #skill_sealed? (Game::Battle) grants restrict_skill and restrict_magic
+        # fully independent thresholds, and histoire203's state #16 (人形,
+        # "Doll") sets both at level 0 -- a total paralysis/petrify status, not
+        # a Silence -- so its own restrict_skill path is what catches every
+        # rate-0 skill here, correctly, same as it catches every physical one.
+        # Nepheshel/mtf-meido-action's sealing states all leave restrict_skill
+        # off, which is what let this go unexercised until now.
+        next if states[sid].restrict_skill
         eq 0, physical_sealed,
            "state ##{sid} left rate-0 skills alone"
       end

@@ -171,6 +171,7 @@ jobs:
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
           ./scripts/download-killer-knights.bash
+          ./scripts/download-histoire.bash
 
       - name: Download MV test game
         id: dl-mv
@@ -849,6 +850,7 @@ jobs:
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
           ./scripts/download-killer-knights.bash
+          ./scripts/download-histoire.bash
           ./scripts/download-monodori.bash
 
       - parallel:
