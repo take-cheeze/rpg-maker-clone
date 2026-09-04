@@ -968,9 +968,12 @@ plays its music, reads input, drives frames, lays out its windows, draws its map
 tints, flashes and fades the screen, dissolves between scenes, unrolls and tints
 its windows, and — packed or loose — finds its graphics and its music, and
 reopens its own stock `RPG::` script sections without a superclass mismatch.
-Tilemap item 1's remaining polish (the flat "above characters" layer) is the
-only item left in the six sections above; item 7's `$!`/bare-`raise` gap is
-now fixed too (`patches/mruby-dollar-bang-scoped.patch`, above), so the same
+All seven sections above are done — item 1's flat "above characters" layer
+turned out to be correct RGSS2/RGSS3 behavior, not remaining polish (see its
+own entry: mkxp's `TilemapVX` puts it at a fixed z too, unlike XP's per-row
+`priorities`), so there is no follow-up item left there. Item 7's
+`$!`/bare-`raise` gap is now fixed too (`patches/mruby-dollar-bang-scoped.patch`,
+above), so the same
 real release's own crash-reporter add-on now sees the actual exception
 instead of masking it behind an unrelated `NoMethodError`, and re-raises it
 correctly. Eighteen real bugs have been found and fixed this way so far
