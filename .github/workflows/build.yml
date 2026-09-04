@@ -152,6 +152,7 @@ jobs:
         timeout-minutes: 10
         run: |
           ./scripts/rtp_install.bash
+          ./scripts/rtp_2003_install.bash
           ./scripts/rtp_xp_install.bash
 
       - name: Download game

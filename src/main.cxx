@@ -580,6 +580,21 @@ fs::path reg2path(std::string r) {
   return r;
 }
 
+// Used for both RPG2000 and RPG2003 projects (see the dispatch in main()
+// below) under the shared assumption that both editions register their RTP
+// under this one legacy key. That holds for a 2000 RTP install, but the
+// genuine RPG2003 RTP installer (scripts/rtp_2003_install.bash, extracted and
+// inspected directly since no real 2003 project/RTP was available when this
+// function was first wired up) actually writes its own separate
+// Software\Enterbrain\RPG2003\RuntimePackagePath key, pointing at its own
+// install directory -- never this one. So a 2003 project whose *only*
+// installed RTP is the 2003 one still resolves to an empty/wrong path here.
+// Fixing this properly needs the project's own edition (RPG2000 vs RPG2003),
+// which -- unlike the cheap directory-shape checks is_xp_game/is_rpgvx_game
+// use below -- only LCF::Database#rpg2003? can currently answer (chunk 30's
+// presence in RPG_RT.ldb), and that lives in the mruby-lcf gem, not yet
+// loaded at the point RTP_DIR is resolved. Left unresolved rather than
+// guessed at.
 fs::path rtp_path() {
   inicpp::IniManager ini = get_reg("user.reg");
   return reg2path(
