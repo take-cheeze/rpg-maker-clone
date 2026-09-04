@@ -164,6 +164,20 @@ def soak(dir)
       captured.lines.each do |line|
         text = line.strip
         next if text.empty?
+        # A variable-driven Enemy Encounter (param0 1: #do_enemy_encounter reads
+        # `variables[cmd.param(1)]` for the troop id) is executed here against a
+        # freshly-built Game::State that never ran whatever earlier Control
+        # Variables command the real event list uses to fill that variable in
+        # -- an unavoidable consequence of soaking each command in isolation
+        # (see this file's own doc comment). LCF tables are 1-indexed, so an
+        # unset variable's default 0 can never name a real troop either way,
+        # making "enemy group 0 not found" the harness's own fingerprint for
+        # this, not a gap in the game's data or the engine's handling of it --
+        # #skip_invalid_troop already has real fixture coverage
+        # (rpg2k_logic_check.rb) for the dangling-reference case this same log
+        # line also covers. histoire203, 774 maps of encounter-table variety,
+        # is the first test bed with a variable-driven Enemy Encounter at all.
+        next if text =~ /\A\[RPG2k\] Enemy Encounter: enemy group 0 not found, skipping (?:battle|random encounter)\z/
         logs[text] << "#{name}##{i}"
       end
     end
