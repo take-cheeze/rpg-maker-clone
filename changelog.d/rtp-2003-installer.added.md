@@ -10,10 +10,10 @@
   different default install directory (`Program Files (x86)\Enterbrain\RPG2003`)
   than the shared `Software\ASCII\RPG2000` key 2000 and XP use, so both editions'
   RTPs can be installed side by side in the same `WINEPREFIX` without
-  conflict. RPG Maker VX, VX Ace, MV and MZ have no equivalent: their RTPs
-  (and MV/MZ's bundled runtime assets) are commercial and were never hosted as
-  a free download the way 2000/2003/XP's were (confirmed against
-  `cdn.tkool.jp`'s own naming pattern), so no installer script is possible for
-  them here. `src/main.cxx`'s `rtp_path()` does not yet read the new key — see
+  conflict. `src/main.cxx`'s `rtp_path()` does not yet read the new key — see
   its own comment — so a 2003 project whose only installed RTP is this one
-  still needs that follow-up to be found by the engine.
+  still needs that follow-up to be found by the engine. RPG Maker VX and VX
+  Ace get their own installers too — see the VX/VX Ace changelog entry; MV and
+  MZ still have no equivalent, since their bundled runtime assets were never
+  hosted as a free download the way 2000/2003/XP/VX/VX Ace's were (confirmed
+  against `cdn.tkool.jp`'s own naming pattern).
