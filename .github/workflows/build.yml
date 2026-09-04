@@ -849,6 +849,7 @@ jobs:
           ./scripts/download-prayforyou.bash
           ./scripts/download-yumenikki.bash
           ./scripts/download-killer-knights.bash
+          ./scripts/download-monodori.bash
 
       - parallel:
           - name: LCF test-bed smoke check
@@ -880,13 +881,18 @@ jobs:
           - name: RPG XP script-host smoke check
             run: ruby scripts/rpgxp_script_host_check.rb
 
-          # RPG Maker VX / VX Ace data layer. Neither edition has a fetchable
-          # open-source test bed (the editors and their RTPs are commercial), so
-          # this check builds a full project per edition and drives the loader
-          # over it — loose on disk and repacked into the edition's encrypted
-          # archive — plus an audit that every field in the data has an accessor
-          # in the schema. It also picks up any real VX/VX Ace project that a
-          # future download step unpacks under data/.
+          # RPG Maker VX / VX Ace data layer. Commercial editors and RTPs mean
+          # there is close to no fetchable open-source test bed for either
+          # edition, so this check also builds a full project per edition and
+          # drives the loader over it — loose on disk and repacked into the
+          # edition's encrypted archive — plus an audit that every field in the
+          # data has an accessor in the schema. download-monodori.bash supplies
+          # a real one for VX proper: a freeware release packed entirely into
+          # Game.rgss2a with no loose Data/, picked up automatically here.
+          # download-sanctuary-of-the-ruler.bash is the VX Ace counterpart, but
+          # stays a manual/local download (see its own comment) rather than a
+          # CI one: at ~400MB it is well past this repo's 100MB CI budget for a
+          # downloaded test bed.
           - name: RPG VX / VX Ace data check
             run: ruby scripts/rpgvx_testbed_check.rb
 

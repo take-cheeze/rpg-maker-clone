@@ -1023,8 +1023,13 @@ class Checker
     sys = db.system
     expect(sys.is_a?(RPG::System), "System is #{sys.class}, not RPG::System")
     expect(sys.start_map_id.to_i > 0, "System.start_map_id must be positive")
-    expect(sys.party_members.is_a?(Array) && !sys.party_members.empty?,
-           "System.party_members must be a non-empty Array")
+    # Not required to be non-empty: a real released game (download-monodori.bash)
+    # ships an empty System#party_members and builds its starting party through
+    # event commands (Add Actor / Change Party Member) on the first map instead
+    # of the database's initial roster -- a shape none of the other test beds
+    # here happen to use, so only a real game caught it.
+    expect(sys.party_members.is_a?(Array),
+           "System.party_members must be an Array")
     expect(sys.terms.is_a?(RPG::System::Terms), "System.terms missing")
     expect(sys.title_bgm.is_a?(RPG::AudioFile),
            "System.title_bgm must be an AudioFile")
@@ -1084,13 +1089,18 @@ class Checker
                "tileset #{t.id} must name 9 sheets (A1-A5, B-E)")
       end
     else
-      expect(db.areas.is_a?(Array), "VX needs an Areas table")
+      # A real released game that never used the Areas feature (download-
+      # monodori.bash) ships Data/Areas.rvdata as a Marshal-dumped empty Hash
+      # rather than the usual nil-padded Array every other table here uses --
+      # accepted as "no areas defined", the same claim an empty Array would make.
+      areas_empty = db.areas.is_a?(Hash) && db.areas.empty?
+      expect(db.areas.is_a?(Array) || areas_empty, "VX needs an Areas table")
       expect(db.tilesets.nil?, "VX has no Tilesets table")
       db.areas.compact.each do |a|
         expect(a.rect.is_a?(Rect), "area #{a.id} rect must be a Rect")
         expect(db.map_infos.key?(a.map_id) || a.map_id.to_i.zero?,
                "area #{a.id}: map_id #{a.map_id} does not resolve")
-      end
+      end unless areas_empty
     end
   end
 
@@ -1288,8 +1298,10 @@ class Checker
     return unless disk
     edition = disk.edition
     ext = disk.ext
-    files = Dir[File.join(dir, "Data", "*#{ext}")].sort.map do |f|
-      ["Data\\#{File.basename(f)}", File.binread(f)]
+    files = archive_source_data(dir, disk, ext)
+    if files.empty?
+      fail "#{dir}: no Data/*#{ext} to pack, loose or archived"
+      return
     end
     # A released game packs its Graphics/ tree in the same archive as its Data/,
     # and that is the only copy — nothing is loose on disk. Pack one so the
@@ -1363,6 +1375,22 @@ class Checker
     fail "#{dir}: archive check raised: #{ex.class}: #{ex.message}"
   end
 
+  # The Data/ entries to re-pack, as [archive name, bytes]. An editor project
+  # (or a generated sample) has them loose on disk; a *released* game — the
+  # shape a real, freeware VX bed ships in — has none, only the entries inside
+  # its own Game.rgss2a / Game.rgss3a. Reading those back out and re-packing
+  # them keeps the round-trip meaningful there instead of failing on an empty
+  # Data/, mirroring rpgxp_testbed_check.rb's archive_source_data.
+  def archive_source_data(dir, disk, ext)
+    loose = Dir[File.join(dir, "Data", "*#{ext}")].sort.map do |f|
+      ["Data\\#{File.basename(f)}", File.binread(f)]
+    end
+    return loose unless loose.empty?
+    return [] unless disk.archived?
+    disk.archive.names.sort.select { |n| n =~ /\AData[\\\/].*#{Regexp.escape(ext)}\z/i }
+        .map { |n| [n, disk.archive.read(n)] }
+  end
+
   def report
     puts "checked #{@projects} project(s), #{@events} event pages, " \
          "#{@commands} event commands"
@@ -1378,9 +1406,16 @@ end
 
 def discover_games(root)
   return [] unless Dir.exist?(root)
-  %w[rvdata rvdata2].flat_map do |ext|
+  loose = %w[rvdata rvdata2].flat_map do |ext|
     Dir.glob(File.join(root, "**", "Data", "System.#{ext}"))
-  end.map { |f| File.dirname(File.dirname(f)) }.sort.uniq
+  end.map { |f| File.dirname(File.dirname(f)) }
+  # A released game (e.g. download-monodori.bash) packs its whole Data/ into
+  # Game.rgss2a / Game.rgss3a with nothing loose to glob for — same shape as
+  # rpgxp_testbed_check.rb's discover_games handles for Game.rgssad.
+  packed = %w[Game.rgss2a Game.rgss3a].flat_map do |name|
+    Dir.glob(File.join(root, "**", name))
+  end.map { |f| File.dirname(f) }
+  (loose + packed).sort.uniq
 end
 
 if ARGV[0] == "--write"
