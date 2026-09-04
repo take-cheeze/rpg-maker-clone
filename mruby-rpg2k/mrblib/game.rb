@@ -14866,12 +14866,28 @@ module Game
       actor && actor.respond_to?(:permanent_states) ? actor.permanent_states : []
     end
 
+    # A newly-inflicted state that leaves `target` under a forced-action
+    # restriction (do-nothing/berserk/confusion, #battler_restriction) also
+    # drops its Defend stance and any charged-attack flag, matching a
+    # reference implementation's own `AddState`, NOT independently confirmed
+    # against genuine RPG_RT under wine: it resets both unconditionally
+    # whenever the post-add significant restriction is non-normal, not only
+    # on death (`apply_knockout_reset`'s own, narrower death-only reset is a
+    # separate case already covered there). No equivalent reset for a queued
+    # command/battle-algorithm is needed here: this codebase already
+    # re-derives a restricted battler's action at round-execution time
+    # instead of caching one to invalidate (#command_restricted?'s own doc
+    # comment).
     def inflict_state(target, sid)
       return if target.state?(sid)
       target.states = Game::States.prune((target.states || []) + [sid], @states,
                                           keep: combatant_permanent_states(target))
       target.hp = 0 if sid == Game::States::DEATH_ID
       apply_knockout_reset(target)
+      if battler_restriction(target) != 0
+        target.defending = false if target.respond_to?(:defending=)
+        target.charged = false if target.respond_to?(:charged=)
+      end
     end
 
     # Cure a state from `target`, reviving it to 1 HP when curing state 1 is
