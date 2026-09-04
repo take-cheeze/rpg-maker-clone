@@ -6,4 +6,6 @@
   `rpgvx_testbed_check.rb` for the VX bed. Unlike that one, it checks clean
   with no schema or invariant changes needed: 468 maps, 16 295 event pages,
   155 784 event commands, all parsing through the existing VX Ace schema.
-  Wired into CI alongside the other RPG2k/XP/VX downloads.
+  Not wired into CI: at ~400MB it is well past this repo's 100MB budget for a
+  downloaded test bed there, so it stays development/manual-use only, the
+  same call made for `download-egoicanswers.bash`.

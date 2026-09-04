@@ -29,6 +29,11 @@ cd $(dirname $0)/../data
 # error against the 180 MB archive and 216 MB of Audio), so the whole archive
 # is just extracted.
 #
+# NOT wired into CI: this repo keeps a downloaded test bed's CI footprint
+# under 100MB, and this one's ~400MB zip (~180MB just for Game.rgss3a) is well
+# past that. Development/manual use only -- run it by hand to point
+# rpgvx_testbed_check.rb at a real VX Ace project locally.
+#
 # See download-nepheshel.bash for why wget/unar are quietened.
 if [ ! -f Sanctuary_Of_the_Ruler.zip ] ; then
     wget -nv -O Sanctuary_Of_the_Ruler.zip "$(proxied_url "https://dl12.fgamearchives.com/archives/win/15451/Sanctuary_Of_the_Ruler.zip")"
