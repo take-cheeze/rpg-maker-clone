@@ -396,6 +396,14 @@ module RPG
                   :start_y, :terms, :battler_name, :battler_hue, :edit_map_id
     # (VX) the game-wide tileset's 8192-entry passage table.
     attr_accessor :passages
+    # (VX) a stray integer ivar found on RPG::System in a real released game's
+    # Data/System.rvdata (download-monodori.bash), alongside every field above
+    # -- present in that game's editor-written data but undocumented by any
+    # RGSS2 reference; kept as an opaque accessor rather than dropped so a real
+    # game's database round-trips exactly, the same way an unknown field would
+    # surface via the audit in scripts/rpgvx_testbed_check.rb if this were
+    # missing.
+    attr_accessor :_
     # (Ace)
     attr_accessor :japanese, :currency_unit, :skill_types, :weapon_types,
                   :armor_types, :title1_name, :title2_name, :opt_draw_title,
