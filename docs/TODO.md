@@ -32474,15 +32474,24 @@ screen (544×416). Full rationale:
   its script bundle, and ADR 0030 removed the XP side's reimplementation for the
   same reason. A project that ships no scripts reports that instead of showing a
   blank window.
-- **A real test bed.** Neither editor nor its RTP is redistributable and no
-  open-source VX/VX Ace project ships a genuine `Data/*.rvdata(2)` tree, so
-  `scripts/rpgvx_testbed_check.rb` builds a full project per edition instead and
-  drives the loader over it (loose, then repacked into the real archive
-  formats). A generated bed cannot prove a *field name* — the names are
-  transcribed from the RGSS2/RGSS3 references — so the check also audits that
-  every field in the data has an accessor, which is what makes running it
-  against a user's real game (`ruby scripts/rpgvx_testbed_check.rb path/to/Game`)
-  worthwhile. Finding a redistributable bed for CI remains open.
+- ✅ **A real test bed** — resolved for VX, found (but not CI-sized) for VX Ace.
+  Neither editor nor its RTP is redistributable and no open-source VX/VX Ace
+  project ships a genuine `Data/*.rvdata(2)` tree, so `scripts/rpgvx_testbed_check.rb`
+  also builds a full project per edition and drives the loader over it (loose,
+  then repacked into the real archive formats) — a generated bed cannot prove a
+  *field name* (the names are transcribed from the RGSS2/RGSS3 references), so
+  the check audits that every field in the data has an accessor too, which is
+  what makes running it against a user's real game
+  (`ruby scripts/rpgvx_testbed_check.rb path/to/Game`) worthwhile regardless.
+  `scripts/download-monodori.bash` ("Monochrome Dreamer" / モノクローム・ドリー
+  マー, freeware, fgamearchives) is now a real, fetchable VX bed — a 171-map
+  project packed entirely into `Game.rgss2a`, wired into CI alongside the other
+  RPG2k/XP downloads. `scripts/download-sanctuary-of-the-ruler.bash` ("Sanctuary
+  Of the Ruler", freeware, fgamearchives) is the VX Ace counterpart — 468 maps,
+  155 784 event commands, checks clean against the existing schema with no
+  changes needed — but at ~400 MB it is well past this repo's 100 MB budget for
+  a downloaded test bed there, so it stays development/manual-use only, same as
+  `download-egoicanswers.bash` on the MZ side.
 
 ## RPG Maker with JavaScript
 
