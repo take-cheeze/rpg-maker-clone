@@ -850,6 +850,7 @@ jobs:
           ./scripts/download-yumenikki.bash
           ./scripts/download-killer-knights.bash
           ./scripts/download-monodori.bash
+          ./scripts/download-sanctuary-of-the-ruler.bash
 
       - parallel:
           - name: LCF test-bed smoke check
@@ -886,9 +887,10 @@ jobs:
           # edition, so this check also builds a full project per edition and
           # drives the loader over it — loose on disk and repacked into the
           # edition's encrypted archive — plus an audit that every field in the
-          # data has an accessor in the schema. download-monodori.bash supplies
-          # a real one for VX proper: a freeware release packed entirely into
-          # Game.rgss2a with no loose Data/, picked up automatically here.
+          # data has an accessor in the schema. download-monodori.bash (VX) and
+          # download-sanctuary-of-the-ruler.bash (VX Ace) supply real ones —
+          # both freeware releases packed entirely into their edition's archive
+          # with no loose Data/, picked up automatically here.
           - name: RPG VX / VX Ace data check
             run: ruby scripts/rpgvx_testbed_check.rb
 
