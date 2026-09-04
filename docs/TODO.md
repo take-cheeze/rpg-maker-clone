@@ -31622,6 +31622,56 @@ codebase yet):
       immediately; an ordinary, non-restricting state leaves them
       untouched), confirmed to fail against the pre-fix code. See
       `changelog.d/battle-restriction-clears-defend-charge.fixed.md`.
+      - ✅ **Follow-up (2026-09-04): confirmed against genuine RPG_RT.exe
+        under wine, not just ported from a reference implementation.**
+        wine (win32 + 32-bit libGL) is installed in this session
+        specifically to check this rather than continue trusting the
+        reference source alone. A synthetic Nepheshel fixture (`LCF::Database`/
+        `MapUnit` edited directly under CRuby, mirroring `scripts/
+        lcf_testbed_check.rb`'s own load pattern, and a save built from
+        scratch via `Game::State#to_lsd` rather than editing a real one) put
+        a solo, 500-HP, `strong_defence` leader (リト, already `strong_defence`
+        in the real database) into a custom troop: one enemy whose only
+        action casts a new skill inflicting Berserk on the leader (100% hit,
+        no HP/SP effect), agility-ordered to act before a second enemy whose
+        only action is a plain, ~100-power Attack. The leader chose Defend
+        the instant the round opened; the encounter's own battle log,
+        captured via repeated `xwd` screenshots under Xvfb, showed Berserk
+        landing ("リトは怒りに我を忘れた！") before the second enemy's attack
+        resolved — and that attack then dealt 116 damage (500 → 384 HP),
+        matching the full, undefended range, not the ~21-29 quarter-damage
+        range a **control** run (the identical fixture minus the
+        Berserk-casting enemy) confirmed for a genuinely-uninterrupted
+        Defend against the identical attacker (500 → 479 HP, 21 damage).
+        Genuine RPG_RT clears the stale Defend stance the instant the
+        forced-restriction state lands, exactly matching this fix — the
+        "staggered/surprised" question two bullets up remains a separate,
+        still-open question (a non-lethal flinch with no state involved),
+        not settled by this capture.
+        - 🚧 **Side finding from building this fixture, untriaged, a
+          separate question from the one above:** an enemy casting a
+          scope-0 ("single enemy") skill with `reverse_state_effect`
+          cleared inflicted nothing and instead *cured* Berserk from the
+          leader (message `落ち着きを取り戻した！`, state 6's own recovery
+          line) — the opposite of what `Game::Battle#battle_skill_command`'s
+          `heals_states = !enemy_scope` currently predicts for an
+          RPG2000 database (`enemy_scope` true for scope 0/1, so
+          `heals_states` should be `false` — inflict). Setting
+          `reverse_state_effect` instead (the "wrong" value by this
+          codebase's own reading of the flag) produced the inflict message
+          reliably instead. Not chased further this cycle — the fixture
+          this surfaced from is a synthetic, single-purpose skill (no HP/SP
+          effect, `physical_rate` 0) built only to answer the Defend
+          question above, and this codebase's own polarity claim carries
+          its own long "NOT independently confirmed against genuine RPG_RT
+          under wine" caveat already; a real, functioning enemy-scope
+          debuff/status skill already shipped in a test-bed game (if one
+          exists) would be a more representative probe than re-deriving one
+          from this narrow fixture. Left as a flagged, reproducible lead
+          (the fixture-building script itself is not checked in, being a
+          throwaway scratch tool per this file's own established
+          convention) for whichever future cycle picks up the battle-skill
+          state-effect polarity question in earnest.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
