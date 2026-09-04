@@ -35,7 +35,10 @@
 #   game_dir defaults to data/mtf-meido-action/Debug (a real RPG2003 project,
 #            already part of the testbed download set; ships EasyRPG Player.exe).
 #            Pass data/Nepheshel206beta/Nepheshel206Rbeta for the RPG2000 case
-#            (needs a name-entry step -- see NEPHESHEL notes below).
+#            (needs a name-entry step -- see NEPHESHEL notes below), or
+#            data/histoire203 for a *different* RPG2000 game that needs none
+#            of that (see the same notes) -- whether the name-entry step is
+#            needed depends on the game's own opening, not its edition.
 #   slot     save file number (default 1) -> Save0<slot>.lsd.
 
 set -eux -o pipefail
@@ -135,7 +138,11 @@ sleep 6
 # the kana grid to <決定> and Return to accept the default name) before the F9
 # save. The RPG2003 test-bed drops straight into a controllable cutscene, so the
 # generic path below (advance a few messages, then F9 -> Save) reaches a saveable
-# state without any game-specific steps.
+# state without any game-specific steps. This is a per-game opening, not a
+# per-edition one, though: histoire203 (also RPG2000, download-histoire.bash)
+# has no demo-skip prompt or name-entry grid of its own and reaches a saveable
+# state on the fully generic path below, producing a clean Save01.lsd -- pass
+# its game_dir here with no changes needed, unlike Nepheshel.
 hold_key 0.2 Return Return Return
 sleep 2
 
