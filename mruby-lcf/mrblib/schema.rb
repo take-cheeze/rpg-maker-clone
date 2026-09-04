@@ -2274,7 +2274,11 @@ module LCF
     # SavePanorama's own field layout has not been identified, and with no
     # capture yet showing it populated there is nothing to confirm one
     # against -- left out along with 200 (a non-standard high-id extension
-    # chunk) until one is.
+    # chunk) until one is. A second genuine capture, histoire203's own Save01
+    # (774 maps against kk1.12's 128), agrees with kk1.12 on both counts,
+    # chunk for chunk: 112 present but the same empty one-byte terminator,
+    # 200 present at the identical 5 bytes -- the same shape from an
+    # unrelated, much larger database, not merely a kk1.12 coincidence.
     SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
