@@ -386,8 +386,13 @@ def check_game(dir)
        "to_lsd: actor #{untouched.id}'s sprite_changed? stays false untouched"
   end
 
-  puts "  leader=#{state.party.leader.name.inspect} hp=#{state.party.leader.hp} " \
-       "mp=#{state.party.leader.mp} map=#{state.map_id} " \
+  # kk1.12's own genuine capture (see the to_lsd citation above) is a real,
+  # reachable "leader" nil: an empty party, not a decode failure -- printed
+  # plainly rather than guarded away, the same way this summary already
+  # reports every other field as read.
+  leader = state.party.leader
+  puts "  leader=#{leader && leader.name.inspect} hp=#{leader && leader.hp} " \
+       "mp=#{leader && leader.mp} map=#{state.map_id} " \
        "pos=(#{state.x},#{state.y}) gold=#{state.party.gold} " \
        "items=#{state.party.items.size} switches_on=#{on.size} vars_set=#{nonzero.size}"
 rescue => e
