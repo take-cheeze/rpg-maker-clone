@@ -149,11 +149,16 @@ jobs:
       - name: Download RTP
         id: dl-rtp
         background: true
-        timeout-minutes: 10
+        # VX Ace's RTP alone is ~186 MiB (its BGM ships as .ogg, not .mid),
+        # against ~15-40 MiB for each of the other four; widened from 10
+        # minutes to give five sequential downloads + wine installs room.
+        timeout-minutes: 20
         run: |
           ./scripts/rtp_install.bash
           ./scripts/rtp_2003_install.bash
           ./scripts/rtp_xp_install.bash
+          ./scripts/rtp_vx_install.bash
+          ./scripts/rtp_vxace_install.bash
 
       - name: Download game
         id: dl-game
