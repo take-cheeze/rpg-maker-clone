@@ -31591,11 +31591,29 @@ codebase yet):
     confirmed by reading — a reference implementation's own
     `battle_animation.cpp`/`game_battle.cpp` were fetched and read directly
     for this cycle too, confirming no such cutoff exists there either, so
-    this genuinely isn't answerable without a wine capture); and whether
-    becoming staggered/surprised (a non-lethal flinch from taking damage)
-    releases the Defend flag specifically — still open, still needs wine,
-    `Game::Battle#apply_knockout_reset` is still gated on death and still
-    never runs for a non-lethal flinch.
+    this genuinely isn't answerable without a wine capture).
+    - ✅ **Follow-up (2026-09-05), by an actual wine capture: an ordinary
+      non-lethal hit does NOT release Defend — only a forced-restriction
+      state landing does (the follow-up directly below this one).** Same
+      synthetic-fixture technique (a fresh troop built by editing a scratch
+      copy's `RPG_RT.ldb`/`Map0012.lmu` directly under CRuby, a save built
+      from scratch via `Game::State#to_lsd`): a solo, 500-HP, `strong_defence`
+      leader chose Defend, then took two plain Attacks in the same round from
+      two custom enemies with no skills or states involved at all — "Jab"
+      (high agility, a small ~9-power hit, landing first) then "Striker" (the
+      same ~100-power probe hit the state-infliction test below uses).
+      Jab's own hit landed quartered (2 damage, matching Defend +
+      `strong_defence` halving twice), and — the actual question — a
+      "リトは身を守っている！" ("Rito is still guarding!") reminder showed
+      between the two hits, then Striker's hit landed quartered too (22
+      damage, the same ~21-29 band the control run below measured for an
+      uninterrupted Defend, nowhere near the ~80-120 undefended band).
+      Taking a hit that does not otherwise change the target's state is not
+      itself a "stagger" that breaks guard in genuine RPG_RT — this settles
+      the question the bullet above left open, distinctly from (and
+      confirming the necessity of) the state-restriction case fixed and
+      confirmed just below: it is specifically the *state* landing that
+      clears Defend, not any incoming hit.
     - ✅ **Follow-up (2026-09-04): a related but distinct gap, found by
       reading that same reference implementation's source rather than
       guessing at the flinch question above, is fixed.** Its own `AddState`

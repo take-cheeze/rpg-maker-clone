@@ -15787,6 +15787,29 @@ check 'inflicting a forced-action restriction state clears a living, ' \
   eq true, unrestricted.defending, 'an ordinary, non-restricting state does not touch Defend'
 end
 
+# Confirmed against genuine RPG_RT.exe under wine (2026-09-05): an ordinary
+# non-lethal hit does NOT clear Defend, unlike a forced-restriction state
+# landing (the check above). A synthetic Nepheshel fixture had a Defending,
+# strong_defence leader take two plain Attacks in the same round with no
+# skills/states involved at all -- the first (a small, survivable hit)
+# landed quartered, and the second landed quartered too, both in the same
+# ~21-29 band a control run (no interrupting hit at all) measured for an
+# uninterrupted Defend -- nowhere near the ~80-120 undefended band. Taking
+# a hit is not by itself a "stagger" that breaks guard.
+check 'a non-lethal hit does not clear Defend, unlike a forced-action state' do
+  defender = combatant('Defender', 0, 0, 5, 100)
+  defender.defending = true
+  bat = Game::Battle.new([combatant('Hero', 10, 0, 5, 100)], [defender],
+                         Game::Rng.new(1))
+  bat.send(:deal_attack, bat.instance_variable_get(:@allies).first, defender)
+  ok !defender.dead?, 'the hit was survivable'
+  eq true, defender.defending, 'an ordinary hit alone does not drop Defend'
+
+  entry = bat.send(:deal_attack, bat.instance_variable_get(:@allies).first, defender)
+  ok entry[:damage] > 0, 'a second hit still lands'
+  eq true, defender.defending, 'Defend is still up for it too'
+end
+
 check "Battle#apply_to_party clears a battle combo Enable Combo armed, per a reference implementation " \
       "(2026-08-19, NOT independently confirmed against genuine RPG_RT under wine)" do
   # Ported from a reference implementation, NOT independently confirmed against
