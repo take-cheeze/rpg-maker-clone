@@ -31885,6 +31885,31 @@ codebase yet):
   correct, just newly confirmed. The *charge* interaction (a charge
   doubling both swings, not only the first) remains a separate, still NOT
   independently confirmed claim, left as such in the updated comment.
+- **Follow-up (2026-09-05), by an actual wine capture: `Game::Battle#
+  shake_off_states`'s "release_by_attack scales an unconditional roll"
+  formula is contradicted for an *enemy* target -- not fixed this cycle,
+  since the correct replacement isn't known yet either.** A custom state
+  forced to `release_by_attack` 100 (the formula's own `chance = base *
+  rate / 100` computes an unconditional release at rate 100, a basic
+  Attack's own rate) was cast onto a passive enemy (its own real
+  inflict/recovery message text, borrowed from Nepheshel's actual state 18
+  and skill 87 rather than a hand-built row, after a hand-built skill +
+  ITEM_SPECIAL wrapper version of this same probe consistently showed "had
+  no effect" for reasons that traced to the fixture, not genuine RPG_RT --
+  see this citation's own earlier revision in git history if that dead end
+  needs revisiting). The state stuck through two separate landed, 100%-hit
+  basic Attacks in a row -- each its own confirmed "Xに Yのダメージを与えた!"
+  log line with no accompanying "woke" line either time, and the state's
+  own affected-message reminder ("Mirrorは止まっている!") still fired on the
+  enemy's own intervening turn, confirming it was still afflicted going
+  into the second attack, not merely re-inflicted by a stray retry. Whether
+  genuine RPG_RT applies release_by_attack only to an *ally* target (this
+  codebase's own call sites make no such distinction), gates it behind
+  something specific to this one state's own fields (restriction 1 --
+  do-nothing -- the same as an ordinary sleep/paralysis row), or something
+  else entirely is not settled by this one capture. Left for a dedicated
+  follow-up rather than guessed at. See `Game::Battle#shake_off_states`'s
+  own updated citation.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
