@@ -250,6 +250,20 @@ DEFINE_bool(
     "For RPG Maker MV: once on the map, hold a direction for a spell (implies "
     "--mv_new_game to reach the map) and log the player's start/end tile, so a "
     "headless run confirms input actually moves the player. Used in CI");
+DEFINE_int32(
+    move_settle_max_frames,
+    0,
+    "Override for MV::MOVE_SETTLE_MAX_FRAMES (mruby-mvjs/mrblib/mv.rb), the "
+    "safety cap on how long --mv_move_test/--mz_move_test wait for a busy "
+    "opening event to clear before holding a direction. Shared by the MV and "
+    "MZ move probes. 0 (default) keeps the built-in 180-frame cap, which is "
+    "enough for an ordinary game's opening dialogue; a real release whose own "
+    "scripted intro runs far longer (a wall of Show Text/Wait/forced-battle "
+    "steps well past 180 frames) needs a larger one-off value here to get the "
+    "probe past it at all instead of reporting blocked=true. Left as a "
+    "per-run override rather than a bigger default so every other check keeps "
+    "its short safety cap. Used by scripts/mz_boot_check.bash's "
+    "MZ_MOVE_SETTLE_MAX_FRAMES");
 DEFINE_bool(
     mv_message_test,
     false,
@@ -1126,6 +1140,7 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_mv_new_game, "mv_new_game");
   reset_int(FLAGS_mv_battle_test, "mv_battle_test");
   reset_bool(FLAGS_mv_move_test, "mv_move_test");
+  reset_int(FLAGS_move_settle_max_frames, "move_settle_max_frames");
   reset_bool(FLAGS_mv_message_test, "mv_message_test");
   reset_bool(FLAGS_mv_menu_test, "mv_menu_test");
   reset_bool(FLAGS_mv_save_test, "mv_save_test");
@@ -1689,6 +1704,9 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_MOVE_TEST"),
                 mrb_bool_value(FLAGS_mv_move_test));
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "MOVE_SETTLE_MAX_FRAMES_OVERRIDE"),
+                mrb_fixnum_value(FLAGS_move_settle_max_frames));
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "MV_MESSAGE_TEST"),
                 mrb_bool_value(FLAGS_mv_message_test));
