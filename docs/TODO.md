@@ -19136,6 +19136,19 @@ not yet verified:
   `scripts/rpg2k_logic_check.rb` check (a dual HP+SP drain skill against a
   defending target: the HP hit is halved, the SP hit is not), confirmed to
   fail against the pre-fix code before the fix.
+  ✅ Follow-up (2026-09-05), by an actual wine capture: the 強力防御 half of
+  this claim is now independently confirmed for the skill path specifically.
+  A purely magical real skill cast at a defending, Strong-Defence-flagged
+  target dealt 11 damage, versus an identically defending target with the
+  flag off taking 24 (predicted base 48, halved once to ~24, halved again to
+  ~12) -- the quartering is real here. Notably, the *structurally
+  identical-looking* `strong_defence` read in `#enemy_autodestruct` (a
+  self-destruct's own damage) was checked the same session and found NOT to
+  apply at all (see that method's own citation and its dedicated TODO.md
+  follow-up above) -- these are separate call sites in genuine RPG_RT, not a
+  shared routine, and they behave differently from each other despite
+  looking like ports of the same rule. No code change for the skill path;
+  only the citation lost its "NOT independently confirmed" caveat.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   a reference implementation's source.** `Interpreter#do_simulated_attack`

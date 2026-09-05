@@ -13207,11 +13207,14 @@ module Game
     # flagged, defending target's own damage across two separately-run,
     # otherwise-identical captures (97 and 98 -- not the ~48-49 a second
     # halving predicts) landed in the same range as an ordinary defending
-    # target with the flag left off. Reverted; see #deal_attack's own
-    # citation and #apply_skill_hit's for the sibling strong_defence reads
-    # this specific finding does NOT extend to -- neither has been tested
-    # against genuine RPG_RT and either may turn out equally fictional, or
-    # may not; self-destruct simply does not consult the flag at all here. It
+    # target with the flag left off. Reverted; this finding does NOT extend
+    # to the sibling `strong_defence` read in `#apply_skill_hit` (a skill's
+    # own HP effect), which a separate wine capture confirms DOES quarter
+    # correctly -- see that method's own citation. `#deal_attack`'s own read
+    # (the ordinary-attack path) remains untested either way. These are
+    # three separate call sites in genuine RPG_RT, not a shared routine, and
+    # at least two of them behave differently from each other; self-destruct
+    # simply does not consult the flag at all here. It
     # does not kill the caster itself, though: that reference implementation's
     # self-destruct handling applies the damage against the *target* only,
     # never the source, and reacts to the caster with nothing but a hidden
@@ -14501,13 +14504,19 @@ module Game
           # against a defending target, the same `AdjustDamageForDefend` a
           # basic attack already gets (`#deal_attack_with_current_weapon`
           # above) — ported from a reference implementation's skill-execution
-          # handling, NOT independently confirmed
-          # against genuine RPG_RT under wine: it applies the same defend
-          # adjustment to every enemy-scoped skill's HP branch, not just a
-          # plain Attack. The SP effect and the ATK/DEF/SPI/AGI stat-mod
-          # branches read the same raw `effect` with no such adjustment,
-          # so only `hp_dmg` gets this
-          # treatment here.
+          # handling. Confirmed against genuine RPG_RT under wine (2026-09-05):
+          # a purely magical real skill cast at a defending, Strong-Defence
+          # (強力防御)-flagged target dealt 11 damage, versus an identically
+          # defending target with the flag off taking 24 (predicted base 48,
+          # halved once to ~24, halved again to ~12) — the quartering is real
+          # here, unlike the *structurally identical-looking* `strong_defence`
+          # read this same session found NOT to apply to a self-destruct's own
+          # damage (`#enemy_autodestruct`'s own citation): these are two
+          # separate call sites in genuine RPG_RT, not a shared routine, and
+          # they behave differently. The SP effect and the ATK/DEF/SPI/AGI
+          # stat-mod branches read the same raw `effect` with no such
+          # adjustment, so only `hp_dmg` gets this treatment here -- that half
+          # of the claim remains unconfirmed.
           if target.defending && hp_dmg > 0
             hp_dmg /= 2
             hp_dmg /= 2 if target.strong_defence
