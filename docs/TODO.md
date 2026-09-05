@@ -15851,6 +15851,17 @@ The work below is roughly ordered by the critical path to a walkable game
   which turns the shield slot into a second weapon slot — the same pair and the
   opposite rule, and the menu's candidate list for slot 1 has to change with it.
   See ADR 0040.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: the two-handed/
+  shield mutual exclusion is real, confirming `Game::Actor
+  #free_two_handed_slot`'s own citation.** Rito, with a real shield (item
+  176) already equipped, was handed a real two-handed weapon (item 66)
+  through the actual in-game Equip menu — a purely field/menu-level test,
+  no battle involved. The candidate-select screen's own stat preview
+  already showed defence dropping before confirming (the shield's own
+  bonus about to be lost), and confirming the equip left the weapon slot
+  holding the new sword with the shield slot reading empty, not holding
+  both. No code change: already correctly implemented, just newly
+  confirmed.
 - ✅ **使用可能キャラ item restriction** (`actor_set` / `actor_set_size`, item
   field 62/61) — parsed by the schema but never consulted, so an item or piece
   of gear reserved for one named character (a signature weapon, a class-locked
