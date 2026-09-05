@@ -15895,6 +15895,17 @@ The work below is roughly ordered by the critical path to a walkable game
   Death, used on a target carrying both, leaves the Poison, HP, MP and item
   count all untouched), confirmed to fail against the pre-fix code
   (Poison cured, MP restored, item spent) before the fix.
+  ✅ Follow-up (2026-09-05), by an actual wine capture: the `actor_set`
+  restriction itself is now independently confirmed as a genuine RPG_RT
+  behavior. A solo party's only member, with damaged HP and a real Medicine
+  item in the bag whose `actor_set` explicitly excluded that one actor,
+  could still select the item and target itself in the field Item menu --
+  neither the item nor the target was greyed out -- but confirming the use
+  did nothing at all: no HP restored, no item consumed. A control run with
+  the identical setup and an unmodified (unrestricted) `actor_set` healed
+  normally and consumed the item, ruling out a fixture-level bug as the
+  explanation. No code change; `Party#item_usable_by?`'s own citation lost
+  its "NOT independently confirmed" caveat.
 - ✅ **A battle switch item now actually flips its switch.** A switch item
   (type 10) was already listed in the battle Item command
   (`Game::Party#battle_usable?` / `#battle_items` both include `ITEM_SWITCH`,

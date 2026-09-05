@@ -4676,8 +4676,15 @@ module Game
 
     # 使用可能キャラ (`actor_set`, item field 62) / RPG2003's 使用可能クラス
     # (`class_set`, item field 73): whether item `it` may be used or equipped
-    # by `actor_id` at all. Ported from a reference implementation,
-    # NOT independently confirmed against genuine RPG_RT under wine: it
+    # by `actor_id` at all. Ported from a reference implementation. The
+    # actor_set half is confirmed against genuine RPG_RT under wine
+    # (2026-09-05): a solo party's only member, with damaged HP and a real
+    # Medicine item in the bag whose actor_set explicitly excluded that one
+    # actor, could select the item and target itself in the field Item menu
+    # -- both stayed selectable, not greyed out -- but confirming the use
+    # did nothing at all: no HP restored, no item consumed. A control run
+    # with the identical setup and an unmodified (unrestricted) actor_set
+    # healed normally and consumed the item, ruling out a fixture bug. It
     # reads exactly one of the two restriction lists per
     # item, chosen by a single *global*, database-wide RPG2003 toggle --
     # `System#equipment_setting` (LDB chunk 22 field 97) -- never both at
