@@ -13898,14 +13898,31 @@ module Game
     # called when the target lived through the blow.
     #
     # Ported from a reference implementation's physical-state-heal handling,
-    # NOT independently confirmed against genuine RPG_RT under wine: it is
-    # shared by three call sites, not just a basic attack as a prior version
-    # of this comment claimed: `Normal::vExecute` (a basic attack, always the full
-    # `physical_rate` 100 -- #deal_attack's own call), `SelfDestruct::vExecute`
-    # (also a flat 100 -- #enemy_autodestruct's own call), and
-    # `Skill::vExecute` (`skill.physical_rate * 10`, an attack skill's own
-    # 0-10 field scaled to a percent -- #apply_skill_hit's own call, 0 for a
-    # purely magical skill, which is the same as never rolling at all).
+    # NOT independently confirmed against genuine RPG_RT under wine -- and a
+    # wine capture this session actively contradicts this formula for an
+    # *enemy* target: a custom state forced to release_by_attack=100 (which
+    # this formula computes as chance=100, an unconditional release) stayed
+    # on a passive enemy through two separate landed basic Attacks in a row
+    # (each its own confirmed "N damage" log line, no accompanying "woke"
+    # line either time, and the state's own affected-message reminder
+    # still fired on the enemy's intervening turn, confirming it was still
+    # afflicted). Whether this is an ally-vs-enemy asymmetry genuine RPG_RT
+    # applies (this codebase's own #shake_off_states, #enemy_autodestruct
+    # and #apply_skill_hit call sites make no such distinction), a quirk of
+    # this specific state's own fields (restriction 1 -- do-nothing -- same
+    # as an ordinary sleep/paralysis state), or something else entirely is
+    # NOT settled by this one capture; left for a dedicated follow-up rather
+    # than guessed at, since the correct replacement formula isn't known yet
+    # either. See docs/TODO.md.
+    #
+    # It is shared by three call sites, not just a basic attack as a prior
+    # version of this comment claimed: `Normal::vExecute` (a basic attack,
+    # always the full `physical_rate` 100 -- #deal_attack's own call),
+    # `SelfDestruct::vExecute` (also a flat 100 -- #enemy_autodestruct's own
+    # call), and `Skill::vExecute` (`skill.physical_rate * 10`, an attack
+    # skill's own 0-10 field scaled to a percent -- #apply_skill_hit's own
+    # call, 0 for a purely magical skill, which is the same as never rolling
+    # at all).
     #
     # Without this, "asleep" meant asleep until the state's own timer expired, no
     # matter how hard it was hit: Nepheshel's 睡眠 wakes on 80% of blows and its
