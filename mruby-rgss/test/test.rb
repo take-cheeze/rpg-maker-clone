@@ -1799,6 +1799,108 @@ assert "RGSS::Audio survives an archive that raises" do
   end
 end
 
+# ---- Playing a loose MV/MZ *encrypted* asset -------------------------------
+#
+# Unlike the RPG2000/XP/VX/Ace archive above, an MV/MZ project with "Encrypt
+# Audio" ticked never packs its Audio/ tree -- each file sits loose on disk,
+# individually obfuscated (scripts/gen-mz-encrypted.py's own `encrypt`, which
+# this mirrors) and renamed with a trailing `.ogg_`/`.m4a_` (MZ) or
+# `.rpgmvo`/`.rpgmvm` (MV). Found missing against a real downloaded MZ release
+# (EgoicAnswers) whose every BGM/SE logged "no BGM/SE found" despite the file
+# being right there -- see mruby-mvjs/mrblib/mv.rb's
+# #maybe_enable_audio_decryption for the boot-time wiring this backs.
+assert "RGSS::Audio.decrypt_mv_asset reverses gen-mz-encrypted.py's own scheme" do
+  # Independently produced by that script's own `encrypt()` for the plaintext
+  # below and a fixed key, not round-tripped through this method itself --
+  # this checks the reverse of a real reference encoding, not just internal
+  # self-consistency.
+  key = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+         0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10]
+  encrypted = [82, 80, 71, 77, 86, 0, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0,
+               83, 75, 69, 66, 113, 99, 116, 124, 94, 75, 93, 73, 107, 103,
+               119, 100, 117, 114, 101, 45, 101, 120, 116, 114, 97, 45, 116,
+               97, 105, 108].pack("C*")
+  decrypted = RGSS::Audio.decrypt_mv_asset(encrypted, key)
+  assert_equal "RIFFtestWAVEfixture-extra-tail", decrypted
+
+  # Too short to even carry the 16-byte header + 16-byte XORed prefix.
+  assert_nil RGSS::Audio.decrypt_mv_asset("short", key)
+end
+
+assert "RGSS::Audio plays a loose MZ-encrypted track once encryption_key is set" do
+  key = [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+         0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10]
+  encrypted = [82, 80, 71, 77, 86, 0, 0, 0, 0, 3, 1, 0, 0, 0, 0, 0,
+               83, 75, 69, 66, 113, 99, 116, 124, 94, 75, 93, 73, 107, 103,
+               119, 100, 117, 114, 101, 45, 101, 120, 116, 114, 97, 45, 116,
+               97, 105, 108].pack("C*")
+  path = "test-encrypted-se.ogg_"
+  File.open(path, "wb") { |io| io.write(encrypted) }
+  class << RGSS::Audio
+    alias _se_play_mem_orig _se_play_mem
+    alias _can_play_mem_orig3 _can_play_mem?
+    def _se_play_mem(name, bytes, volume, pitch, pan = 50)
+      $audio_mem_capture = [name, bytes, volume, pitch, pan]
+      nil
+    end
+    def _can_play_mem? = true
+  end
+  begin
+    # Untouched by default: no project has ever called the setter, so a
+    # plain miss still reports "no SE found" rather than reading a random
+    # nearby file as if it were encrypted audio.
+    assert_nil RGSS::Audio.encryption_key
+    $audio_mem_capture = nil
+    RGSS::Audio.se_play("test-encrypted-se")
+    assert_true $audio_mem_capture.nil?,
+                "must not play before encryption_key is set"
+
+    RGSS::Audio.encryption_key = key
+    $audio_mem_capture = nil
+    RGSS::Audio.se_play("test-encrypted-se")
+    assert_false $audio_mem_capture.nil?, "expected the encrypted SE to play"
+    assert_equal path, $audio_mem_capture[0]
+    assert_equal "RIFFtestWAVEfixture-extra-tail", $audio_mem_capture[1]
+  ensure
+    RGSS::Audio.encryption_key = nil
+    class << RGSS::Audio
+      alias _se_play_mem _se_play_mem_orig
+      alias _can_play_mem? _can_play_mem_orig3
+    end
+    File.delete(path) if File.exist?(path)
+  end
+end
+
+assert "RGSS::Audio prefers a loose plain file over an encrypted one" do
+  # Mirrors "prefers a loose file over the archive" above: the ordinary disk
+  # search (a real, playable file under the plain name) must win before
+  # encrypted loose lookup is even attempted.
+  path = "test-plain-wins-se.wav"
+  File.open(path, "wb") { |io| io.write("RIFFtestWAVEfixture") }
+  enc_path = "test-plain-wins-se.ogg_"
+  File.open(enc_path, "wb") { |io| io.write("would-be-wrong-if-read") }
+  RGSS::Audio.encryption_key = [0] * 16
+  class << RGSS::Audio
+    alias _se_play_orig5 _se_play
+    def _se_play(p, v, pi, pa = 50)
+      $audio_se_capture = [p, v, pi, pa]
+      nil
+    end
+  end
+  begin
+    $audio_se_capture = nil
+    RGSS::Audio.se_play("test-plain-wins-se")
+    assert_equal path, $audio_se_capture[0]
+  ensure
+    RGSS::Audio.encryption_key = nil
+    class << RGSS::Audio
+      alias _se_play _se_play_orig5
+    end
+    File.delete(path) if File.exist?(path)
+    File.delete(enc_path) if File.exist?(enc_path)
+  end
+end
+
 # RGSS3's own `pos` argument (VX Ace added it over XP/VX's 3-argument form),
 # used to resume a BGM from where a prior track left off -- a real VX Ace
 # volume-control add-on calls `Audio.bgm_play(name, vol, pitch, pos)`
