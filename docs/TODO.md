@@ -31199,12 +31199,15 @@ codebase yet):
   to 1, a preemptive weapon equipped, and a custom berserk state
   (`RESTRICTION_ATTACK_ENEMY`, granted directly via `Game::Actor#add_state`
   so no accuracy roll gates it onto the battler) went *second*, not first,
-  against a single enemy with agi forced to 250: the enemy's own attack
-  message ("Mirrorの攻撃！") was already complete by the very first capture
+  against a single enemy with agi 30 (enemy schema field 9 -- this cycle's
+  own fixture mislabeled field 8, spirit, as agi and set *that* to 250,
+  leaving the real agility at 30): the enemy's own attack message
+  ("Mirrorの攻撃！") was already complete by the very first capture
   after loading into the fight, and the berserked leader's own forced
   attack message ("リトの攻撃！") only started afterward — the reverse of
-  what an unconditional +9999 turn-order bonus predicts against that big an
-  agi gap. The 2026-08-20 follow-up's reference-implementation-source
+  what an unconditional +9999 turn-order bonus predicts against *any*
+  ordinary agi gap this small. The 2026-08-20 follow-up's
+  reference-implementation-source
   reading (identical `Type::Normal`-attack algorithm for both restrictions,
   no restriction dependency in the execution-order bonus) was never itself
   checked against genuine RPG_RT, and this capture contradicts it for

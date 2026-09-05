@@ -2,7 +2,7 @@
   of the round drops when its wielder is forced to attack under Berserk,
   confirmed against a genuine RPG_RT.exe under wine: a berserked, agi-1
   wielder of a preemptive weapon went *second*, not first, against a single
-  agi-250 enemy. A prior revision of this fragment claimed the opposite
+  agi-30 enemy. A prior revision of this fragment claimed the opposite
   (that the jump does *not* drop under Berserk, "matching RPG_RT's own
   `CreateExecutionOrder`") based on reading a reference implementation's
   source as treating Berserk and Confusion identically; that reading was

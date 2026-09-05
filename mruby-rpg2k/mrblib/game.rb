@@ -12736,10 +12736,13 @@ module Game
     # with agi forced to 1, a preemptive weapon equipped, and a custom
     # berserk state (`RESTRICTION_ATTACK_ENEMY`, granted straight through
     # `#add_state` so no accuracy roll gates it) went *second* against a
-    # single enemy with agi forced to 250 -- the enemy's own attack message
-    # was already complete before the leader's forced attack ever started,
-    # the reverse of what an unconditional +9999 turn-order bonus predicts
-    # against that big an agi gap. This directly reverses this method's own
+    # single enemy with agi 30 (the enemy schema's own field 9 -- a
+    # mislabeled fixture in this cycle's own capture wrote 250 to field 8,
+    # spirit, not agility, so the real gap tested was only 1 vs 30) -- the
+    # enemy's own attack message was already complete before the leader's
+    # forced attack ever started, the reverse of what an unconditional +9999
+    # turn-order bonus predicts against *any* ordinary agi gap this small.
+    # This directly reverses this method's own
     # prior conclusion (see git history for the superseded comment and its
     # citation): a reference implementation's source was read as building an
     # identical basic-attack algorithm for both attack-ally (confusion) and
