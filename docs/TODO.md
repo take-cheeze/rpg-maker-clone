@@ -29749,6 +29749,32 @@ above are repeated here)
   begin with — never redirect even at an identically warded target),
   confirmed to fail against the pre-fix code (`expected ["Ally", "Mage"],
   got ["Plain Foe", "Warded Foe"]`) before the fix.
+  ❌ **Follow-up (2026-09-05), reverted by an actual wine capture: the
+  "Avoid Attacks" (`avoid_attacks`) half of this whole entry was wrong —
+  genuine RPG_RT does not appear to read the flag at all, and the
+  `#evades_all_physical?` short-circuit this entry originally added to
+  `#to_hit` has been removed.** A solo party member carrying a
+  freshly-authored, `avoid_attacks`-flagged custom state (added directly to
+  the pre-battle save data, bypassing any cast) with no other restriction
+  still took a steady, ordinary stream of hits from a plain enemy Attack
+  across eight full rounds under a genuine RPG_RT.exe run under wine — not
+  the zero hits in eight a real "dodge every basic attack unconditionally"
+  effect predicts (a few-in-a-billion coincidence at the enemy's own real
+  ~90% base hit rate if the state were actually doing anything). The
+  fixture's own database state confirmed the flag really was set
+  (`avoid_attacks=true`, `restriction=0`) and the actor's own dense
+  per-state save array had the bit on, ruling out a save-encoding mistake;
+  the hits simply landed anyway, round after round. Reverted by dropping
+  `return 0 if evades_all_physical?(target)` from `Game::Battle#to_hit` and
+  deleting the now-dead `#evades_all_physical?` method outright, rather than
+  leaving a confirmed-fictional check parsed-but-inert forever. `#to_hit`'s
+  own citation and a rewritten `scripts/rpg2k_logic_check.rb` check (now
+  asserting the flag changes nothing, rather than asserting it forces a flat
+  0%) cover this going forward. The sibling `reflects_magic?`/`reflect_magic`
+  check this same entry added is built the identical way and has **not**
+  been tested against genuine RPG_RT — left as-is, but flagged in its own
+  comment as a live candidate for the same kind of reversal, not assumed
+  correct merely because this one turned out wrong.
 - ✅ **強制AI (Forced AI, player/job field 23, `force_ai`) is now implemented —
   found while re-checking the actor/class row's own trait cluster
   (`strong_defence`/`double_hand`/`equipment_fixed`, all already wired) for
