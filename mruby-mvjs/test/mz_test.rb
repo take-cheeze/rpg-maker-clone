@@ -1077,3 +1077,133 @@ assert 'the Effekseer shim routes a real .efkefc through native simulation, not 
     MV::JS.base_dir = ""
   end
 end
+
+assert 'the Effekseer shim renders real, visible pixels through the exact call sequence Sprite_Animation._render uses (M6.2 addendum 4)' do
+  # Everything above proves simulation only: a real .efkefc parses and plays
+  # through a real Effekseer::Manager, but nothing before this addendum ever
+  # called EffekseerRendererGL::Renderer -- beginDraw/drawHandle/endDraw/
+  # setProjectionMatrix/setCameraMatrix were no-ops (see EFFEKSEER_SHIM_JS's
+  # history). This test is the pixel-level proof the house style demands
+  # (docs/TODO.md's M6.3i: a probe that merely *ran* proves nothing) that the
+  # renderer half now actually draws, driven through the *real* WebGL bridge
+  # a real game uses -- not mvefk.hxx's own isolated `smoke_test`, which
+  # creates its own throwaway mvgl::Context and never touches the JS shim at
+  # all.
+  #
+  # data/EgoicAnswers ships its own copy of MZ's stock "Flash" RTP effect
+  # (the same content data/labyria's own Flash.efkefc test fixture uses,
+  # confirmed identical in shape while developing this test), so this
+  # verification does not depend on data/labyria (absent in most sandboxes)
+  # at all.
+  path = "../../data/EgoicAnswers/effects/Flash.efkefc"
+  skip "no such fixture (data/EgoicAnswers not downloaded)" unless File.exist?(path)
+  skip "Effekseer backend unavailable" unless MV::Effekseer.available?
+  skip "WebGL backend unavailable" unless MV::GL.available?
+
+  w, h = 200, 200
+  MV::JS.base_dir = File.expand_path("../../data/EgoicAnswers", Dir.pwd)
+  begin
+    MV::JS.eval(MZ.effekseer_shim_js)
+
+    # A real WebGLRenderingContext via the exact same getContext('webgl')
+    # path PIXI itself uses (kWebGLPreamble, mvwebgl.cxx) -- not a bespoke
+    # test-only context, so this exercises the real handle-resolution
+    # `ctx.init(gl)` -> `__mv_efkInit` -> `mv_webgl_make_current` does.
+    MV::JS.eval(<<~JS)
+      globalThis.__canvas5 = document.createElement('canvas');
+      __canvas5.width = #{w}; __canvas5.height = #{h};
+      globalThis.__gl5 = __canvas5.getContext('webgl');
+    JS
+    gl_handle = MV::JS.eval("__gl5.__gl").to_i
+    assert_true gl_handle > 0, "getContext('webgl') did not return a real context"
+
+    MV::JS.eval(
+      "globalThis.__ctx5 = effekseer.createContext(); __ctx5.init(__gl5);"
+    )
+    MV::JS.eval(
+      "globalThis.__effect5 = __ctx5.loadEffect('effects/Flash.efkefc', 1, " \
+      "function(){}, function(){});"
+    )
+    assert_true MV::JS.eval("__effect5._native") != 0,
+                "Flash.efkefc failed to parse natively"
+
+    MV::JS.eval("globalThis.__h5 = __ctx5.play(__effect5, 0, 0, 0);")
+    # Sprite_Animation.updateEffectGeometry's own defaults (scale 100%,
+    # no rotation) -- exercised for real, not skipped, since a handle that
+    # never receives them is not what a real animation sprite does.
+    MV::JS.eval(
+      "__h5.setLocation(0, 0, 0); __h5.setRotation(0, 0, 0); " \
+      "__h5.setScale(1, 1, 1); __h5.setSpeed(1);"
+    )
+    # SceneManager.updateEffekseer calls update() once per real frame;
+    # 15 matches mvefk.hxx's own smoke_test warmup default closely enough to
+    # land mid-burst (proven while developing this test: this effect's live
+    # instance count is still in the hundreds at this point, not the hollowed
+    # -out tail end of the burst).
+    15.times { MV::JS.eval("__ctx5.update(1);") }
+    assert_true MV::JS.eval("__h5.exists"), "effect finished simulating too soon"
+
+    # PIXI's own renderer.render() clears colour *and* depth at the start of
+    # every real frame, before Sprite_Animation (or anything else) ever
+    # draws -- this off-screen context has never had a frame rendered into
+    # it at all, so this stands in for that. (Found the hard way: without
+    # it, an uninitialised depth buffer failed every fragment's depth test
+    # and every draw call above visibly executed -- real program, real
+    # texture, zero GL errors, GetDrawCallCount() > 0 -- yet the framebuffer
+    # never changed. Not a rendering-pipeline bug; a missing per-frame clear
+    # this test itself owed, since a real game's PIXI already does it.)
+    MV::JS.eval(
+      "__gl5.clearColor(0, 0, 0, 1); " \
+      "__gl5.clear(__gl5.COLOR_BUFFER_BIT | __gl5.DEPTH_BUFFER_BIT);"
+    )
+
+    baseline = RGSS::Bitmap.new(w, h)
+    MV::JS.present_gl(baseline, gl_handle)
+    base_px = baseline.get_pixel(w / 2, h / 2)
+
+    # Sprite_Animation.setProjectionMatrix/setCameraMatrix's own formulas
+    # (rmmz_sprites.js), mirror=false, _viewportSize's real constant (4096),
+    # `renderer.view.height` standing in for our own canvas height -- the
+    # exact matrices a real playing animation sprite would compute for a
+    # canvas this size, not stand-in values.
+    p = -(4096.0 / h)
+    MV::JS.eval(<<~JS)
+      __ctx5.setProjectionMatrix([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, #{p}, 0, 0, 0, 1]);
+      __ctx5.setCameraMatrix([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -10, 1]);
+      __ctx5.beginDraw();
+      __ctx5.drawHandle(__h5);
+      __ctx5.endDraw();
+    JS
+
+    drawn = RGSS::Bitmap.new(w, h)
+    MV::JS.present_gl(drawn, gl_handle)
+
+    # The cheapest real proof: sample a grid (a full per-pixel walk through
+    # get_pixel is slow, matching RGSS.frame_mean's own tradeoff, mrbgems/
+    # mruby-rgss/mrblib/lib.rb) and count pixels that differ from the
+    # cleared baseline by more than a small tolerance -- the same idiom
+    # mvefk.hxx's own smoke_test uses for exactly the same reason.
+    lit = 0
+    sampled = 0
+    y = 0
+    while y < h
+      x = 0
+      while x < w
+        c = drawn.get_pixel(x, y)
+        if (c.red - base_px.red).abs > 8 || (c.green - base_px.green).abs > 8 ||
+           (c.blue - base_px.blue).abs > 8
+          lit += 1
+        end
+        sampled += 1
+        x += 2
+      end
+      y += 2
+    end
+    assert_true lit > 0,
+                "expected real Effekseer content to change the framebuffer " \
+                "(sampled #{sampled} pixels, #{lit} differed from the " \
+                "cleared baseline)"
+  ensure
+    MV::JS.base_dir = ""
+  end
+end

@@ -219,6 +219,10 @@ namespace {
 // destroys it, but context_destroy exists for tests.
 struct Context {
   Effekseer::ManagerRef manager;
+  // Null until init_render succeeds -- see mvefk.hxx's own comment on why
+  // this is a separate step from context_create, mirroring the real
+  // effekseer.js createContext()/init(gl) split.
+  EffekseerRendererGL::RendererRef renderer;
   // Effects loaded into this context, by EffectId (index + 1; 0 is null),
   // kept alive here since Effekseer::Handle alone does not hold a strong
   // reference the caller can query back.
@@ -265,12 +269,31 @@ void context_destroy(ContextId ctx) {
 EffectId effect_load(ContextId ctx,
                      const std::uint8_t* bytes,
                      std::size_t len,
-                     float magnification) {
+                     float magnification,
+                     const char* path) {
   Context* c = find_context(ctx);
   if (!c || !bytes || len == 0)
     return 0;
+
+  // See mvefk.hxx's own comment on why this is needed at all: without it,
+  // every texture/model/material the effect references fails to load and it
+  // draws nothing. `mv_resolve_path` (mvhost.hxx/mvjs.cxx) is the same
+  // game-dir-rooting every other MZ asset load already goes through, so this
+  // materialPath is an absolute filesystem directory -- immune to whatever
+  // this process' own CWD happens to be, unlike a bare relative path handed
+  // straight to Effekseer's own DefaultFileInterface.
+  char16_t material_path16[1024] = {};
+  if (path && *path) {
+    const std::string abs = mv_resolve_path(path);
+    const std::size_t slash = abs.find_last_of('/');
+    const std::string dir =
+        slash == std::string::npos ? std::string() : abs.substr(0, slash + 1);
+    Effekseer::ConvertUtf8ToUtf16(material_path16, 1024, dir.c_str());
+  }
+
   Effekseer::EffectRef effect = Effekseer::Effect::Create(
-      c->manager, bytes, static_cast<int32_t>(len), magnification);
+      c->manager, bytes, static_cast<int32_t>(len), magnification,
+      material_path16[0] ? material_path16 : nullptr);
   if (!effect)
     return 0;
   c->effects.push_back(effect);
@@ -357,6 +380,92 @@ void stop_all(ContextId ctx) {
   if (!c)
     return;
   c->manager->StopAllEffects();
+}
+
+bool init_render(ContextId ctx) {
+  Context* c = find_context(ctx);
+  if (!c)
+    return false;
+  if (c->renderer)
+    return true;  // already attached -- see mvefk.hxx's own comment.
+
+  // Same instance/sprite cap as smoke_test's own Renderer::Create -- headroom
+  // for a real game's several-animations-at-once case, not tuned per-effect.
+  c->renderer = EffekseerRendererGL::Renderer::Create(
+      2000, EffekseerRendererGL::OpenGLDeviceType::OpenGLES3);
+  if (!c->renderer) {
+    warn("init_render: EffekseerRendererGL::Renderer::Create failed", nullptr);
+    return false;
+  }
+  c->manager->SetSpriteRenderer(c->renderer->CreateSpriteRenderer());
+  c->manager->SetRibbonRenderer(c->renderer->CreateRibbonRenderer());
+  c->manager->SetRingRenderer(c->renderer->CreateRingRenderer());
+  c->manager->SetModelRenderer(c->renderer->CreateModelRenderer());
+  c->manager->SetTrackRenderer(c->renderer->CreateTrackRenderer());
+  c->manager->SetTextureLoader(c->renderer->CreateTextureLoader());
+  c->manager->SetModelLoader(c->renderer->CreateModelLoader());
+  c->manager->SetMaterialLoader(c->renderer->CreateMaterialLoader());
+  return true;
+}
+
+void set_projection_matrix(ContextId ctx, const float m[16]) {
+  Context* c = find_context(ctx);
+  if (!c || !c->renderer)
+    return;
+  Effekseer::Matrix44 mat;
+  std::memcpy(mat.Values, m, sizeof(mat.Values));
+  c->renderer->SetProjectionMatrix(mat);
+}
+
+void set_camera_matrix(ContextId ctx, const float m[16]) {
+  Context* c = find_context(ctx);
+  if (!c || !c->renderer)
+    return;
+  Effekseer::Matrix44 mat;
+  std::memcpy(mat.Values, m, sizeof(mat.Values));
+  c->renderer->SetCameraMatrix(mat);
+}
+
+void begin_draw(ContextId ctx) {
+  Context* c = find_context(ctx);
+  if (!c || !c->renderer)
+    return;
+  c->renderer->BeginRendering();
+}
+
+void draw_handle(ContextId ctx, std::int32_t handle) {
+  Context* c = find_context(ctx);
+  if (!c || !c->renderer || handle < 0)
+    return;
+  // GetCameraProjectionMatrix must be read after BeginRendering, not before
+  // -- see smoke_test's own comment on this exact pitfall (it silently
+  // returns a stale/unset value with no error from either library). No
+  // explicit Flip() here (unlike smoke_test's one-shot simulate-then-draw):
+  // this is called every real frame, and Manager::Create's autoFlip default
+  // (true, used by context_create) already syncs the render-visible DrawSet
+  // at the *start* of each `update()` call -- adding a second flip here would
+  // desync that from the one-frame-behind cadence every other engine
+  // (including the real effekseer.js/WASM build, whose DrawHandle has no
+  // such call either) relies on.
+  Effekseer::Manager::DrawParameter draw_param;
+  draw_param.ViewProjectionMatrix = c->renderer->GetCameraProjectionMatrix();
+  c->manager->DrawHandle(handle, draw_param);
+}
+
+void end_draw(ContextId ctx) {
+  Context* c = find_context(ctx);
+  if (!c || !c->renderer)
+    return;
+  // The actual GL draw calls DrawHandle queued (via each node's
+  // AddVertexData) are not flushed until here: EffekseerRendererGL's
+  // StandardRenderer only issues glDraw*/increments GetDrawCallCount() from
+  // ResetAndRenderingIfRequired(), which BeginRendering()/EndRendering() call
+  // -- not DrawHandle() itself. Confirmed directly while proving this
+  // (temporary instrumentation on GetDrawCallCount() at each of these three
+  // calls showed 0 after DrawHandle, 3 only once EndRendering ran) -- so
+  // calling begin_draw/draw_handle without a matching end_draw leaves
+  // whatever was drawn this frame stuck in the vertex buffer, unflushed.
+  c->renderer->EndRendering();
 }
 
 }  // namespace mvefk
@@ -448,7 +557,20 @@ JSValue js_efk_effect_load(JSContext* ctx,
       argc > 1 ? efk_view_bytes(ctx, argv[1], &len, &hold) : nullptr;
   const float mag =
       argc > 2 ? static_cast<float>(gd(ctx, argc, argv, 2)) : 1.0f;
-  const mvefk::EffectId eid = mvefk::effect_load(cid, bytes, len, mag);
+  // The same `url` EFFEKSEER_SHIM_JS's loadEffect(url, ...) was given --
+  // needed so effect_load can derive Effekseer's materialPath (see
+  // mvefk.hxx's own comment on why). std::string, not a bare `const char*`
+  // into JS-owned memory: JS_FreeCString below invalidates that pointer.
+  std::string path;
+  if (argc > 3) {
+    const char* p = JS_ToCString(ctx, argv[3]);
+    if (p) {
+      path = p;
+      JS_FreeCString(ctx, p);
+    }
+  }
+  const mvefk::EffectId eid =
+      mvefk::effect_load(cid, bytes, len, mag, path.empty() ? nullptr : path.c_str());
   JS_FreeValue(ctx, hold);
   return JS_NewUint32(ctx, eid);
 }
@@ -556,6 +678,91 @@ JSValue js_efk_stop_all(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
+// __mv_efkInit(ctx, glHandle) -> bool. `glHandle` is a WebGLRenderingContext's
+// `.__gl` id (EFFEKSEER_SHIM_JS's ctx.init(gl) passes `gl.__gl`) -- resolve it
+// to a real native GL context and make it current *before* attaching
+// Effekseer's renderer, so `EffekseerRendererGL::Renderer::Create` (which
+// queries the current context) attaches to the exact context/FBO PIXI's own
+// WebGL renderer draws into, not merely whatever happened to be current.
+// `glHandle <= 0` (real MZ never does this; a hand-written test fixture
+// might) skips the make-current and lets init_render fail its own way if
+// nothing is current.
+JSValue js_efk_init(JSContext* ctx,
+                    JSValueConst,
+                    int argc,
+                    JSValueConst* argv) {
+  const mvefk::ContextId cid =
+      static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0));
+  const int32_t gl_handle = gi(ctx, argc, argv, 1);
+  if (gl_handle > 0)
+    mv_webgl_make_current(gl_handle);
+  return JS_NewBool(ctx, mvefk::init_render(cid));
+}
+
+// A JS numeric array/TypedArray of (at least) 16 elements -> a flat float[16],
+// for setProjectionMatrix/setCameraMatrix's mat4 argument. Deliberately
+// separate from mvwebgl.cxx's own `num_array` (a different translation unit,
+// and that one returns doubles for a variable-length uniform upload; this one
+// always wants exactly 16 floats).
+void read_mat4(JSContext* ctx, JSValueConst v, float out[16]) {
+  for (uint32_t i = 0; i < 16; ++i) {
+    JSValue e = JS_GetPropertyUint32(ctx, v, i);
+    double d = 0;
+    JS_ToFloat64(ctx, &d, e);
+    JS_FreeValue(ctx, e);
+    out[i] = static_cast<float>(d);
+  }
+}
+
+JSValue js_efk_set_projection_matrix(JSContext* ctx,
+                                     JSValueConst,
+                                     int argc,
+                                     JSValueConst* argv) {
+  float m[16] = {};
+  if (argc > 1)
+    read_mat4(ctx, argv[1], m);
+  mvefk::set_projection_matrix(
+      static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)), m);
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_set_camera_matrix(JSContext* ctx,
+                                 JSValueConst,
+                                 int argc,
+                                 JSValueConst* argv) {
+  float m[16] = {};
+  if (argc > 1)
+    read_mat4(ctx, argv[1], m);
+  mvefk::set_camera_matrix(
+      static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)), m);
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_begin_draw(JSContext* ctx,
+                         JSValueConst,
+                         int argc,
+                         JSValueConst* argv) {
+  mvefk::begin_draw(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_draw_handle(JSContext* ctx,
+                          JSValueConst,
+                          int argc,
+                          JSValueConst* argv) {
+  mvefk::draw_handle(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
+                     gi(ctx, argc, argv, 1));
+  return JS_UNDEFINED;
+}
+
+JSValue js_efk_end_draw(JSContext* ctx,
+                       JSValueConst,
+                       int argc,
+                       JSValueConst* argv) {
+  mvefk::end_draw(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
+  return JS_UNDEFINED;
+}
+
 void reg(JSContext* ctx,
          JSValue g,
          const char* name,
@@ -570,7 +777,7 @@ void mv_install_effekseer(JSContext* ctx) {
   JSValue g = JS_GetGlobalObject(ctx);
   reg(ctx, g, "__mv_efkContextCreate", js_efk_context_create, 0);
   reg(ctx, g, "__mv_efkContextDestroy", js_efk_context_destroy, 1);
-  reg(ctx, g, "__mv_efkEffectLoad", js_efk_effect_load, 3);
+  reg(ctx, g, "__mv_efkEffectLoad", js_efk_effect_load, 4);
   reg(ctx, g, "__mv_efkEffectRelease", js_efk_effect_release, 2);
   reg(ctx, g, "__mv_efkPlay", js_efk_play, 5);
   reg(ctx, g, "__mv_efkSetLocation", js_efk_set_location, 5);
@@ -581,6 +788,12 @@ void mv_install_effekseer(JSContext* ctx) {
   reg(ctx, g, "__mv_efkExists", js_efk_exists, 2);
   reg(ctx, g, "__mv_efkUpdate", js_efk_update, 2);
   reg(ctx, g, "__mv_efkStopAll", js_efk_stop_all, 1);
+  reg(ctx, g, "__mv_efkInit", js_efk_init, 2);
+  reg(ctx, g, "__mv_efkSetProjectionMatrix", js_efk_set_projection_matrix, 2);
+  reg(ctx, g, "__mv_efkSetCameraMatrix", js_efk_set_camera_matrix, 2);
+  reg(ctx, g, "__mv_efkBeginDraw", js_efk_begin_draw, 1);
+  reg(ctx, g, "__mv_efkDrawHandle", js_efk_draw_handle, 2);
+  reg(ctx, g, "__mv_efkEndDraw", js_efk_end_draw, 1);
   JS_FreeValue(ctx, g);
 }
 
@@ -609,7 +822,8 @@ void context_destroy(ContextId /*ctx*/) {}
 EffectId effect_load(ContextId /*ctx*/,
                      const std::uint8_t* /*bytes*/,
                      std::size_t /*len*/,
-                     float /*magnification*/) {
+                     float /*magnification*/,
+                     const char* /*path*/) {
   return 0;
 }
 
@@ -647,6 +861,15 @@ bool handle_exists(ContextId /*ctx*/, std::int32_t /*handle*/) {
 
 void update(ContextId /*ctx*/, float /*delta_frame*/) {}
 void stop_all(ContextId /*ctx*/) {}
+
+bool init_render(ContextId /*ctx*/) {
+  return false;
+}
+void set_projection_matrix(ContextId /*ctx*/, const float /*m*/[16]) {}
+void set_camera_matrix(ContextId /*ctx*/, const float /*m*/[16]) {}
+void begin_draw(ContextId /*ctx*/) {}
+void draw_handle(ContextId /*ctx*/, std::int32_t /*handle*/) {}
+void end_draw(ContextId /*ctx*/) {}
 
 }  // namespace mvefk
 

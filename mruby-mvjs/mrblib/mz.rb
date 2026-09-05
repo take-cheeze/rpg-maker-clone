@@ -309,14 +309,30 @@ class MZ
   # whose animations are all Effekseer looks like it is running fine with no
   # indication anything was skipped.
   #
-  # This still does not draw particles: only `Effekseer::Manager`
-  # (simulation) is wired here, not `EffekseerRendererGL::Renderer` (drawing
-  # real MZ animations needs Effekseer's renderer to share the exact GL
-  # context/FBO PIXI's own WebGL renderer, mvwebgl.cxx, is using mid-frame —
-  # a separate, higher-risk integration staged as its own follow-up; see
-  # docs/TODO.md's Effekseer entry). What real simulation buys over the old
-  # synthetic stub: `loadEffect` on a genuinely valid `.efkefc` gets a real
-  # native effect handle, and `play()` on that handle drives a real
+  # `Effekseer::Manager` (simulation) has always been wired here (M6.2
+  # addendum 3); `init`/`beginDraw`/`drawHandle`/`endDraw`/
+  # `setProjectionMatrix`/`setCameraMatrix` below now route to a real
+  # `EffekseerRendererGL::Renderer` too (M6.2 addendum 4), attached to
+  # whichever native GL context backs `Graphics._app.renderer.gl` —
+  # `Graphics._createEffekseerContext` (rmmz_core.js) calls
+  # `effekseer.createContext().init(this._app.renderer.gl)` immediately after
+  # building PIXI's own WebGL context, exactly the moment `init` below
+  # resolves that JS-side `WebGLRenderingContext` handle
+  # (`gl.__gl`, the id `__mv_glCreate` returned) into the matching native one
+  # (`mv_webgl_make_current`, mvwebgl.cxx) and attaches the renderer to it.
+  # `EffekseerRendererGL`'s own `BeginRendering`/`EndRendering` save and
+  # restore every piece of GL state the renderer touches (bound program/VAO/
+  # buffers/textures, blend/depth/cull) but never the framebuffer/viewport/
+  # scissor (confirmed by reading
+  # `EffekseerRendererGL.Renderer.cpp` directly, not assumed) — so nesting a
+  # `beginDraw`/`drawHandle`/`endDraw` inside PIXI's own mid-frame render pass,
+  # exactly where `Sprite_Animation._render` (rmmz_sprites.js) calls them, at
+  # the sprite's own z-order, draws into whichever FBO PIXI already has bound
+  # without corrupting PIXI's own GL state — matching that method's own
+  # `onAfterRender`, which resyncs PIXI's *state caches* (not the GL state
+  # itself) from GL afterward regardless. What real simulation buys over the
+  # old synthetic stub: `loadEffect` on a genuinely valid `.efkefc` gets a
+  # real native effect handle, and `play()` on that handle drives a real
   # `Effekseer::Manager::Update` loop, so `handle.exists`/animation timing
   # reflect the effect's own authored duration instead of an arbitrary
   # 20-frame placeholder. Content that merely *looks* like an effect (right
@@ -345,7 +361,18 @@ class MZ
       function makeContext() {
         var ctx = { _handles: [] };
         var nativeCtx = haveNative ? g.__mv_efkContextCreate() : 0;
-        ctx.init = function () {};
+        // `gl` is the WebGLRenderingContext PIXI's own renderer already built
+        // (Graphics._createEffekseerContext passes `this._app.renderer.gl`);
+        // `.__gl` is the native handle mvwebgl.cxx's getContext('webgl')
+        // stamped on it (see kWebGLPreamble). __mv_efkInit resolves that
+        // handle to the real native GL context, makes it current, and
+        // attaches an EffekseerRendererGL::Renderer sharing it -- see
+        // mvefk.cxx's js_efk_init for exactly why that resolution (not
+        // merely relying on some context already being current) matters.
+        ctx.init = function (gl) {
+          var glHandle = (gl && gl.__gl) ? gl.__gl : 0;
+          if (nativeCtx && glHandle) g.__mv_efkInit(nativeCtx, glHandle);
+        };
         ctx.setRestorationOfStatesFlag = function () {};
         ctx.loadEffect = function (url, mag, onLoad, onError) {
           var exists = (typeof g.__mv_existsSync === 'function') && g.__mv_existsSync(url);
@@ -363,7 +390,12 @@ class MZ
           // bytes, an unsupported sub-format) is not treated as a load
           // error: isLoaded/magicOk above are still honest either way, and
           // play() below falls back to the synthetic handle for it.
-          var nativeEffect = nativeCtx ? g.__mv_efkEffectLoad(nativeCtx, bytes, mag || 1) : 0;
+          // `url` (the effect's own game-relative path) is passed through so
+          // the native side can derive Effekseer's materialPath -- the
+          // directory every texture/model/material this effect references
+          // gets resolved against. Without it those all fail to load and the
+          // effect draws nothing (see mvefk.hxx's own comment).
+          var nativeEffect = nativeCtx ? g.__mv_efkEffectLoad(nativeCtx, bytes, mag || 1, url) : 0;
           if (!nativeEffect && typeof console !== 'undefined' && console.warn) {
             console.warn('[Effekseer] effect requested but native particle ' +
               'rendering is not implemented: ' + url + ' (' + bytes.length +
@@ -427,11 +459,32 @@ class MZ
           this._handles.push(h);
           return h;
         };
-        ctx.beginDraw = function () {};
-        ctx.drawHandle = function () {};
-        ctx.endDraw = function () {};
-        ctx.setProjectionMatrix = function () {};
-        ctx.setCameraMatrix = function () {};
+        // Called in exactly this order, once per playing animation sprite,
+        // from Sprite_Animation._render (rmmz_sprites.js) -- setProjectionMatrix
+        // and setCameraMatrix first (they only store the matrices; Effekseer
+        // combines them internally at BeginRendering), then
+        // beginDraw/drawHandle/endDraw. `m` is a flat 16-element mat4 array;
+        // __mv_efkSetProjectionMatrix/__mv_efkSetCameraMatrix copy it
+        // straight into an Effekseer::Matrix44 with no reordering, the same
+        // bit-for-bit copy the real effekseer.js wrapper does.
+        ctx.setProjectionMatrix = function (m) {
+          if (nativeCtx) g.__mv_efkSetProjectionMatrix(nativeCtx, m);
+        };
+        ctx.setCameraMatrix = function (m) {
+          if (nativeCtx) g.__mv_efkSetCameraMatrix(nativeCtx, m);
+        };
+        ctx.beginDraw = function () {
+          if (nativeCtx) g.__mv_efkBeginDraw(nativeCtx);
+        };
+        ctx.drawHandle = function (handle) {
+          if (nativeCtx && handle && handle._native !== undefined &&
+              handle._native >= 0) {
+            g.__mv_efkDrawHandle(nativeCtx, handle._native);
+          }
+        };
+        ctx.endDraw = function () {
+          if (nativeCtx) g.__mv_efkEndDraw(nativeCtx);
+        };
         return ctx;
       }
       g.effekseer = { createContext: makeContext };
