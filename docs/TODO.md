@@ -31585,13 +31585,40 @@ codebase yet):
     does NOT spread a forced attack" check) were rewritten to assert the
     single-target outcome, all three confirmed to fail against the pre-fix
     code. See `changelog.d/confusion-attack-all-single-target.fixed.md`.
-    Still open, genuinely needs wine: whether an enemy skill's
-    battle-animation sound effects on frame 21+ get cut (no such frame-based
-    SE cutoff exists in this codebase for anyone, so this can't be
-    confirmed by reading — a reference implementation's own
-    `battle_animation.cpp`/`game_battle.cpp` were fetched and read directly
-    for this cycle too, confirming no such cutoff exists there either, so
-    this genuinely isn't answerable without a wine capture).
+    ✅ Whether an enemy skill's battle-animation sound effects on frame 21+
+    get cut is now confirmed, by an actual wine capture — no such
+    frame-based SE cutoff existed in this codebase for anyone (a reference
+    implementation's own `battle_animation.cpp`/`game_battle.cpp` don't have
+    one either), so this couldn't have been confirmed by reading alone.
+    - ✅ **Follow-up (2026-09-05), by an actual wine capture: an enemy
+      skill's battle-animation sound effect stops sounding once its
+      `frame` reaches 21, and this codebase now matches that.** A
+      synthetic animation (25 empty, invisible frames — just placeholders
+      to hold playback time) carried two acoustically distinct real sound
+      cues: an early one (frame 5, `roar` — long, ~3.06s) and a late one
+      (frame 21, `attack` — short, ~0.15s), cast by a custom enemy on the
+      party leader every round. A PulseAudio capture (`auto_null` null-sink
+      + `parecord`) of genuine RPG_RT.exe playing several rounds of this
+      showed only the frame-5 cue's own ~3.3s envelope each time, never a
+      second burst. Comparing an isolated copy of the roar sound file
+      directly against the in-game capture initially looked ambiguous (some
+      elevated ratios turned up, but turned out to be an artifact of
+      comparing an isolated file's own envelope to genuine in-game mixing,
+      not evidence of anything): the correct comparison instead used a
+      same-pipeline **control** fixture, an otherwise-identical build with
+      the frame-21 cue removed entirely, captured the exact same way. That
+      control's own frame-5 envelope tracked the two-cue capture's
+      frame-5 envelope at a ratio of ~1.0 across the entire ~3.3s decay —
+      no anomalous energy anywhere, at any plausible animation frame rate
+      the frame-21 cue could have fired at, confirming frame 21's cue never
+      sounds. `Scene::Map#fire_animation_flashes` (`mruby-rpg2k/mrblib/
+      scene/map.rb`) now skips a timing's own `se` once its `frame` exceeds
+      the new `ANIM_SE_MAX_FRAME` (20) constant, leaving its flash/shake
+      handling (untested by this capture) unchanged. Covered by two new
+      `scripts/rpg2k_scene_check.rb` checks (frame 20, the last allowed
+      frame, still sounds; frame 21 never does, on both the map and
+      battle-round paths), confirmed to fail against the pre-fix code. See
+      `changelog.d/battle-animation-se-frame-cutoff.fixed.md`.
     - ✅ **Follow-up (2026-09-05), by an actual wine capture: an ordinary
       non-lethal hit does NOT release Defend — only a forced-restriction
       state landing does (the follow-up directly below this one).** Same

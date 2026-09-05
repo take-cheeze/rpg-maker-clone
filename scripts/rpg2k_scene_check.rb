@@ -10799,6 +10799,42 @@ check "a timing's own se plays through the battle-round path too" do
   eq ['Zap1', 100, 100, 50], RGSS::Audio.se_calls.last, 'the timing SE plays in battle context too'
 end
 
+# A timing's own se stops sounding once its frame reaches 21 (ANIM_SE_MAX_FRAME,
+# Scene::Map's own citation), confirmed against genuine RPG_RT.exe under wine:
+# a synthetic animation with an early (frame 5) and late (frame 21) se cue,
+# each a real distinct sound, showed only the frame-5 cue's own envelope in a
+# captured battle round -- a same-pipeline control fixture with the frame-21
+# cue removed entirely produced a statistically indistinguishable capture.
+# Frame 20 (the last frame the cutoff still allows) is the boundary this check
+# actually exercises, since the wine capture only ever tested frame 5 (well
+# inside) and frame 21 (right at the claimed cutoff) directly.
+check "a timing's own se stops sounding once its frame reaches 21" do
+  scene = new_scene({})
+  RGSS::Audio.reset_se
+  allowed = OpenStruct.new(frame: 20, se: OpenStruct.new(file: 'Zap1', volume: 100, pitch: 100, balance: 50))
+  ma = { frame_i: 20, timings: [allowed] }
+  scene.send(:fire_animation_flashes, ma)
+  eq ['Zap1', 100, 100, 50], RGSS::Audio.se_calls.last, "frame 20 (the last allowed frame) still sounds"
+
+  RGSS::Audio.reset_se
+  cutoff = OpenStruct.new(frame: 21, se: OpenStruct.new(file: 'Zap1', volume: 100, pitch: 100, balance: 50))
+  ma = { frame_i: 21, timings: [cutoff] }
+  scene.send(:fire_animation_flashes, ma)
+  eq [], RGSS::Audio.se_calls, 'frame 21 is past the cutoff, so its own se never plays'
+end
+
+# The frame-21+ se cutoff applies identically on the battle-round path --
+# #fire_animation_flashes's own se-play line has no "map vs battle" split to
+# gate the cutoff on, unlike flash_scope/screen_shaking above it.
+check "the frame-21+ se cutoff applies on the battle-round path too" do
+  scene = new_scene({})
+  RGSS::Audio.reset_se
+  timing = OpenStruct.new(frame: 21, se: OpenStruct.new(file: 'Zap1', volume: 100, pitch: 100, balance: 50))
+  ma = { frame_i: 21, timings: [timing], battle: true, targets: [] }
+  scene.send(:fire_animation_flashes, ma)
+  eq [], RGSS::Audio.se_calls, 'frame 21 is past the cutoff in battle context too'
+end
+
 # screen_shaking 1 ("target") on a map-triggered Show Battle Animation is a
 # genuine no-op per a reference implementation (NOT independently confirmed
 # against genuine RPG_RT under wine), not a dropped feature: its `BattleAnimationMap::

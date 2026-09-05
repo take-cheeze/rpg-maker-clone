@@ -7647,6 +7647,21 @@ class RPG2k
       ANIM_SHAKE_POWER = 3
       ANIM_SHAKE_SPEED = 5
       ANIM_SHAKE_FRAMES = 32
+      # Confirmed by an actual wine capture (2026-09-05): a timing's own se
+      # never sounds once its `frame` reaches 21, regardless of how many real
+      # frames the animation still has left to play. A synthetic animation
+      # with an early (frame 5) and a late (frame 21) se cue, both real
+      # distinct sound files, showed only the frame-5 cue's own envelope in a
+      # PulseAudio capture of genuine RPG_RT.exe -- a direct in-game
+      # comparison against a same-pipeline control fixture carrying only the
+      # frame-5 cue (removing frame 21 entirely) found no anomalous energy
+      # anywhere across the frame-5 cue's own ~3s decay, at any plausible
+      # animation frame rate the frame-21 cue could have fired at. No such
+      # cutoff exists in a reference implementation's own
+      # `battle_animation.cpp`/`game_battle.cpp` either, so this is a genuine
+      # RPG_RT-only quirk, not something a reference implementation's own
+      # source could have confirmed by reading.
+      ANIM_SE_MAX_FRAME = 20
       # RPG2000 battle-animation cells: a 96x96 grid, 5 cells across the sheet.
       ANIM_CELL = 96
       ANIM_SHEET_COLS = 5
@@ -8283,6 +8298,9 @@ class RPG2k
           se = t.respond_to?(:se) ? t.se : nil
           name = se && se.respond_to?(:file) ? se.file : nil
           next unless name && !name.empty? && name != '(OFF)'
+          # See ANIM_SE_MAX_FRAME's own citation: a timing at frame 21+ never
+          # sounds under genuine RPG_RT, confirmed by an actual wine capture.
+          next if (t.frame || 0) > ANIM_SE_MAX_FRAME
           RGSS::Audio.se_play name, (se.volume || 100), (se.pitch || 100), (se.balance || 50)
         end
       end
