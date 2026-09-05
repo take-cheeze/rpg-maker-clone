@@ -16213,30 +16213,39 @@ check 'a skill flagged "attribute defence up/down" picks direction from ' \
      'enemy scope (all enemies), reverse_state_effect ON -> still -1, the flag is irrelevant')
 end
 
-check 'on an RPG2000 database, a self/ally-scoped skill\'s own state_effects ' \
-      'cure in battle, ignoring reverse_state_effect (an enemy-scoped one ' \
-      'still inflicts)' do
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it has
-  # `heals_states = IsPositive() ^ (Player::IsRPG2k3() &&
-  # skill.reverse_state_effect)`, and
-  # `IsPositive()` is its own ally-targeting check on the skill -- true for every scope
-  # but Scope_enemy(0)/Scope_enemies(1). On an RPG2000 database the XOR's
-  # right-hand term is always false (`Player::IsRPG2k3()` false), so
-  # reverse_state_effect never enters into it here, matching #skill_attr_shift's
-  # own already-settled reading of the identical formula: only scope decides
-  # cure vs. inflict. See the RPG2003 check just below for the flag actually
-  # mattering. state_effects index i -> state id i+1.
+check 'on an RPG2000 database, a self/ally/enemy-scoped skill\'s own ' \
+      'state_effects XOR with reverse_state_effect, same as RPG2003' do
+  # Confirmed against genuine RPG_RT.exe under wine (2026-09-05), NOT
+  # independently confirmed past the one enemy-scope case actually run
+  # there: a hand-authored RPG2000-edition database (no RPG2003-only
+  # section) enemy-scope skill with reverse_state_effect set cured its
+  # target instead of inflicting, and the identical skill with the flag
+  # clear inflicted normally -- reversed from what this codebase used to
+  # assume (a reference implementation's own source gates the reverse term
+  # behind `Player::IsRPG2k3()`, matching #skill_attr_shift's own citation
+  # of the identical formula, and this codebase used to port that gate
+  # too). RPG_RT reads the bit under RPG2000 regardless -- unsurprising in
+  # hindsight, on the same footing as the "physical" skill-formula bit
+  # (`#skill_to_hit`'s own citation) a stock 2000 editor also cannot set
+  # but RPG_RT still honours -- so the gate is gone: only the plain scope
+  # rule holds when the flag is clear (state_effects index i -> state id
+  # i+1), and it inverts either direction once the flag is set, on an
+  # RPG2000 database exactly as on an RPG2003 one (see the parity check
+  # just below).
   cure_single = fake_skill(name: 'Antidote (ally)', scope: 3, sp_cost: 0, power: 0,
                             state_effects: [0, 1], reverse_state: false)
-  cure_all_reversed = fake_skill(name: 'Antidote (all allies, reverse flag set)',
-                                  scope: 4, sp_cost: 0, power: 0,
-                                  state_effects: [0, 1], reverse_state: true)
   cure_self = fake_skill(name: 'Focus (self)', scope: 2, sp_cost: 0, power: 0,
                           state_effects: [0, 1], reverse_state: false)
+  ally_reversed = fake_skill(name: 'Berserk (self, reverse flag set)', scope: 2,
+                              sp_cost: 0, power: 0, state_effects: [0, 1],
+                              reverse_state: true)
   attack = fake_skill(name: 'Poison Sting (enemy)', scope: 0, sp_cost: 0, power: 0,
-                       state_effects: [0, 1])
-  skills = { 7 => cure_single, 8 => cure_all_reversed, 9 => cure_self, 10 => attack }
+                       state_effects: [0, 1], reverse_state: false)
+  enemy_reversed = fake_skill(name: 'Cleanse Curse (enemy, reverse flag set)',
+                               scope: 0, sp_cost: 0, power: 0,
+                               state_effects: [0, 1], reverse_state: true)
+  skills = { 7 => cure_single, 8 => cure_self, 9 => ally_reversed,
+             10 => attack, 11 => enemy_reversed }
   st = skill_party(skills)
   caster = Game::Battle.from_actor(st.party.actor_by_id(1))
   foe = combatant('Foe', 0, 0, 5, 100)
@@ -16244,35 +16253,32 @@ check 'on an RPG2000 database, a self/ally-scoped skill\'s own state_effects ' \
   eq [2], st.party.battle_skill_command(st.party.db_skill(7), caster, foe)[:cured],
      'ally scope (single ally) -> cures state 2, reverse_state_effect off'
   eq [2], st.party.battle_skill_command(st.party.db_skill(8), caster, foe)[:cured],
-     'ally scope (all allies), reverse_state_effect ON -> still cures, the flag is irrelevant'
-  eq [2], st.party.battle_skill_command(st.party.db_skill(9), caster, foe)[:cured],
-     'self scope -> cures too'
+     'self scope, reverse off -> cures too'
+
+  c = st.party.battle_skill_command(st.party.db_skill(9), caster, foe)
+  eq [], c[:cured], 'self scope, reverse ON, RPG2000 -> no longer cures...'
+  eq [2], c[:inflict], '...inflicts the flagged state on the caster\'s own side instead'
+
   c = st.party.battle_skill_command(st.party.db_skill(10), caster, foe)
-  eq [], c[:cured], 'enemy scope cures nothing -- it inflicts instead'
+  eq [], c[:cured], 'enemy scope, reverse off, cures nothing -- it inflicts instead'
   eq [2], c[:inflict], 'the same flagged state, on the attack branch, is an inflict roll'
+
+  c = st.party.battle_skill_command(st.party.db_skill(11), caster, foe)
+  eq [2], c[:cured], 'enemy scope, reverse ON, RPG2000 -> cures the target instead...'
+  eq [], c[:inflict], '...of inflicting a new state on it'
 end
 
-check 'on an RPG2003 database, reverse_state_effect flips a skill\'s own ' \
-      'state_effects between curing and inflicting' do
-  # The gap this closes: #battle_skill_command used to apply the plain
-  # scope-only rule (ally cures / enemy inflicts) unconditionally, the same
-  # simplification #skill_attr_shift's own sibling formula settled for good
-  # reason -- but unlike attribute-defence direction, per the same
-  # reference-implementation-ported `heals_states` reading above (NOT independently
-  # confirmed against genuine RPG_RT under wine), that line does gate on
-  # `Player::IsRPG2k3()`, so a real RPG2003 database with
-  # `reverse_state_effect` set can invert either scope: an ally/self skill
-  # inflicts its listed states on its own side (a self-scoped Berserk that
-  # confuses its own caster), and an enemy skill cures its target's states
-  # instead of adding new ones.
+check 'reverse_state_effect flips a skill\'s own state_effects identically ' \
+      'on an RPG2003 database (edition parity, not RPG2003-gated)' do
+  # A control pair confirming the RPG2000 behaviour just above is not itself
+  # somehow RPG2000-specific: the same two skills read against an RPG2003
+  # fixture database produce the identical cure/inflict split.
   ally_reversed = fake_skill(name: 'Berserk (self, reverse flag set)', scope: 2,
                               sp_cost: 0, power: 0, state_effects: [0, 1],
                               reverse_state: true)
   enemy_reversed = fake_skill(name: 'Cleanse Curse (enemy, reverse flag set)',
                                scope: 0, sp_cost: 0, power: 0,
                                state_effects: [0, 1], reverse_state: true)
-  # A control pair on the same RPG2003 database with the flag off, proving
-  # the plain scope rule still holds when reverse_state_effect isn't set.
   ally_plain = fake_skill(name: 'Focus (self)', scope: 2, sp_cost: 0, power: 0,
                            state_effects: [0, 1], reverse_state: false)
   enemy_plain = fake_skill(name: 'Poison Sting (enemy)', scope: 0, sp_cost: 0,

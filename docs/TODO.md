@@ -31663,33 +31663,44 @@ codebase yet):
         Defend against the identical attacker (500 → 479 HP, 21 damage).
         Genuine RPG_RT clears the stale Defend stance the instant the
         forced-restriction state lands, exactly matching this fix — the
-        "staggered/surprised" question two bullets up remains a separate,
-        still-open question (a non-lethal flinch with no state involved),
-        not settled by this capture.
-        - 🚧 **Side finding from building this fixture, untriaged, a
-          separate question from the one above:** an enemy casting a
-          scope-0 ("single enemy") skill with `reverse_state_effect`
-          cleared inflicted nothing and instead *cured* Berserk from the
-          leader (message `落ち着きを取り戻した！`, state 6's own recovery
-          line) — the opposite of what `Game::Battle#battle_skill_command`'s
-          `heals_states = !enemy_scope` currently predicts for an
-          RPG2000 database (`enemy_scope` true for scope 0/1, so
-          `heals_states` should be `false` — inflict). Setting
-          `reverse_state_effect` instead (the "wrong" value by this
-          codebase's own reading of the flag) produced the inflict message
-          reliably instead. Not chased further this cycle — the fixture
-          this surfaced from is a synthetic, single-purpose skill (no HP/SP
-          effect, `physical_rate` 0) built only to answer the Defend
-          question above, and this codebase's own polarity claim carries
-          its own long "NOT independently confirmed against genuine RPG_RT
-          under wine" caveat already; a real, functioning enemy-scope
-          debuff/status skill already shipped in a test-bed game (if one
-          exists) would be a more representative probe than re-deriving one
-          from this narrow fixture. Left as a flagged, reproducible lead
-          (the fixture-building script itself is not checked in, being a
-          throwaway scratch tool per this file's own established
-          convention) for whichever future cycle picks up the battle-skill
-          state-effect polarity question in earnest.
+        "staggered/surprised" question further up is a separate question
+        (a non-lethal flinch with no state involved), settled by its own
+        dedicated capture instead (see the follow-up above this whole
+        Berserk sub-thread).
+        - ✅ **Follow-up (2026-09-05): the side finding this same fixture
+          turned up is fixed too.** Casting the scope-0 ("single enemy")
+          skill with `reverse_state_effect` cleared inflicted Berserk
+          normally, but with the flag *set* it instead *cured* Berserk from
+          the leader (message `落ち着きを取り戻した！`, state 6's own
+          recovery line) — the opposite of what
+          `Game::Battle#battle_skill_command`'s `heals_states = !enemy_scope`
+          predicted for an RPG2000 database (`enemy_scope` true for scope
+          0/1, so `heals_states` should be `false` — inflict, regardless of
+          the flag). Re-run as its own dedicated A/B (only `skill[20]`
+          differed between the two wine captures): genuine RPG_RT reads and
+          honours `reverse_state_effect` under RPG2000 too, the same way it
+          already honours the "physical" skill-formula bit
+          (`#skill_to_hit`'s own citation) a stock 2000 editor also cannot
+          set. A reference implementation's own source gates the reverse
+          term behind `Player::IsRPG2k3()` (matching `#skill_attr_shift`'s
+          own citation of the identical formula), and this codebase had
+          faithfully ported that gate too, on the (wrong) assumption that a
+          stock RPG2000 editor's own inability to set the bit meant RPG_RT
+          would never honour it there either. Fixed by dropping the
+          `rpg2003? &&` gate in `#battle_skill_command`; a database only the
+          2000 editor itself ever produced behaves identically either way,
+          since it can never carry the bit set. Covered by two rewritten
+          `scripts/rpg2k_logic_check.rb` checks (the RPG2000 case now
+          asserts the flag flips cure/inflict exactly as an RPG2003 database
+          already did, plus a same-database edition-parity check), confirmed
+          to fail against the pre-fix code. See
+          `changelog.d/skill-reverse-state-effect-rpg2000.fixed.md`. Not
+          independently confirmed past the one enemy-scope case actually run
+          under wine — a self/ally-scope re-run of the same probe produced
+          no observable message either way (a self-scope "cure nothing to
+          cure" apparently prints nothing at all, unlike the single-enemy
+          case), so the fix's self/ally-scope half rests on the formula
+          being the same one shared XOR rather than a second capture.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
