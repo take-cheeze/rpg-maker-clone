@@ -63,6 +63,10 @@ std::vector<mvgl::Context*> g_gl;
 // Parallel to g_gl (same handle, grown in lockstep in js_gl_create).
 std::vector<bool> g_premultiply;
 
+// UNPACK_FLIP_Y_WEBGL's current value per context, the same shape as
+// g_premultiply just above (see js_gl_pixel_storei and flip_y_rgba below).
+std::vector<bool> g_flip_y;
+
 // Handle -> context, making it (and its FBO) current on the calling thread.
 // Tracks the last-bound handle so the common single-context case skips the
 // redundant eglMakeCurrent. Returns nullptr for an unknown handle.
@@ -171,6 +175,7 @@ JSValue js_gl_create(JSContext* ctx,
     return JS_NewInt32(ctx, 0);
   g_gl.push_back(c);
   g_premultiply.push_back(false);
+  g_flip_y.push_back(false);
   g_current = static_cast<int>(g_gl.size());
   return JS_NewInt32(ctx, g_current);
 }
@@ -385,24 +390,38 @@ JSValue js_gl_front_face(JSContext* ctx,
   return JS_UNDEFINED;
 }
 
-// WebGL's own UNPACK_FLIP_Y_WEBGL enum value (see kWebGLPreamble's `K`); no
-// real GL equivalent, tracked below instead of forwarded.
+// WebGL's own UNPACK_FLIP_Y_WEBGL/UNPACK_PREMULTIPLY_ALPHA_WEBGL enum values
+// (see kWebGLPreamble's `K`); neither has a real GL equivalent, so both are
+// tracked below instead of forwarded.
+constexpr GLenum kUnpackFlipYWebGL = 0x9240;
 constexpr GLenum kUnpackPremultiplyAlphaWebGL = 0x9241;
 
 // WebGL's own UNPACK_* pixel-store parameters (FLIP_Y, PREMULTIPLY_ALPHA,
 // COLORSPACE_CONVERSION; 0x9240..0x9245) are not real GL enums and would
 // raise GL_INVALID_ENUM if forwarded, so real ones (UNPACK/PACK_ALIGNMENT)
-// aside, this only swallows them -- except PREMULTIPLY_ALPHA, which PIXI
-// actually sets on every ordinary texture upload (BaseTexture's default
-// alphaMode premultiplies on upload) and is now honoured by premultiplying
-// pixels before the real upload call (see premultiply_rgba and its callers).
-// FLIP_Y stays a pure swallow: nothing in a stock PIXI v5 build ever sets it
-// true (only an explicit `false` reset), so there is nothing to reproduce yet.
+// aside, this only swallows the rest -- except FLIP_Y and PREMULTIPLY_ALPHA,
+// each honoured by transforming pixels before the real upload call (see
+// flip_y_rgba/premultiply_rgba and their callers). PREMULTIPLY_ALPHA is the
+// one that matters for a stock PIXI v5 build (BaseTexture's default alphaMode
+// premultiplies on upload); FLIP_Y is tracked and genuinely applied the same
+// way, but as of this writing no real content this project has driven
+// through the engine (including a full played-out battle against a real
+// downloaded MZ release, data/EgoicAnswers -- see docs/TODO.md's M6.3c) has
+// ever been observed setting it `true` rather than resetting it to the
+// already-default `false` -- see gl_test.rb's own pixel-level coverage for
+// proof this path works regardless of whether real content has reached it
+// yet.
 JSValue js_gl_pixel_storei(JSContext* ctx,
                            JSValueConst,
                            int argc,
                            JSValueConst* argv) {
   const GLenum pname = static_cast<GLenum>(gi(ctx, argc, argv, 1));
+  if (pname == kUnpackFlipYWebGL) {
+    const int handle = gi(ctx, argc, argv, 0);
+    if (handle >= 1 && static_cast<size_t>(handle) <= g_flip_y.size())
+      g_flip_y[static_cast<size_t>(handle) - 1] = gi(ctx, argc, argv, 2) != 0;
+    return JS_UNDEFINED;
+  }
   if (pname == kUnpackPremultiplyAlphaWebGL) {
     const int handle = gi(ctx, argc, argv, 0);
     if (handle >= 1 && static_cast<size_t>(handle) <= g_premultiply.size())
@@ -941,6 +960,32 @@ bool premultiply_enabled(int handle) {
          g_premultiply[static_cast<size_t>(handle) - 1];
 }
 
+// Reverse RGBA8 pixel data's row order top-to-bottom, matching what
+// UNPACK_FLIP_Y_WEBGL does during a real browser's texture upload. GLES has
+// no equivalent pixel-store flag (js_gl_pixel_storei above), so this is done
+// on the CPU before the real upload call, the same story as premultiply_rgba
+// just above (and, like it, applied to a `src` that is left untouched --
+// it may be a canvas' own live pixel buffer, read again later by game code
+// -- with the flipped copy going into `out`).
+void flip_y_rgba(const uint8_t* src,
+                 int width,
+                 int height,
+                 std::vector<uint8_t>& out) {
+  const size_t row_bytes = static_cast<size_t>(width) * 4;
+  out.resize(row_bytes * static_cast<size_t>(height));
+  for (int y = 0; y < height; ++y) {
+    std::memcpy(&out[static_cast<size_t>(y) * row_bytes],
+                src + static_cast<size_t>(height - 1 - y) * row_bytes,
+                row_bytes);
+  }
+}
+
+// Whether context `handle` currently has UNPACK_FLIP_Y_WEBGL set.
+bool flip_y_enabled(int handle) {
+  return handle >= 1 && static_cast<size_t>(handle) <= g_flip_y.size() &&
+         g_flip_y[static_cast<size_t>(handle) - 1];
+}
+
 JSValue js_gl_create_texture(JSContext* ctx,
                              JSValueConst,
                              int argc,
@@ -994,11 +1039,16 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
     JSValue hold;
     size_t len = 0;
     uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
-    std::vector<uint8_t> premul;
-    if (p && format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
-        premultiply_enabled(handle)) {
-      premultiply_rgba(p, len / 4, premul);
-      p = premul.data();
+    std::vector<uint8_t> flipped, premul;
+    if (p && format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
+      if (flip_y_enabled(handle)) {
+        flip_y_rgba(p, w, h, flipped);
+        p = flipped.data();
+      }
+      if (premultiply_enabled(handle)) {
+        premultiply_rgba(p, len / 4, premul);
+        p = premul.data();
+      }
     }
     glTexImage2D(target, level, internalformat, w, h, border, format, type, p);
     JS_FreeValue(ctx, hold);
@@ -1010,8 +1060,9 @@ JSValue js_gl_tex_image_2d(JSContext* ctx,
 }
 
 // texImage2D from a 2D canvas source: upload the canvas' RGBA buffer. The
-// source overload PIXI uses to turn a rendered canvas into a texture. (The
-// UNPACK_FLIP_Y convention stays open -- see js_gl_pixel_storei's comment.)
+// source overload PIXI uses to turn a rendered canvas into a texture. (See
+// js_gl_pixel_storei's comment for UNPACK_FLIP_Y_WEBGL/
+// UNPACK_PREMULTIPLY_ALPHA_WEBGL, both honoured below.)
 JSValue js_gl_tex_image_2d_canvas(JSContext* ctx,
                                   JSValueConst,
                                   int argc,
@@ -1022,7 +1073,11 @@ JSValue js_gl_tex_image_2d_canvas(JSContext* ctx,
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 6), &cw, &ch);
   if (px) {
-    std::vector<uint8_t> premul;
+    std::vector<uint8_t> flipped, premul;
+    if (flip_y_enabled(handle)) {
+      flip_y_rgba(px, cw, ch, flipped);
+      px = flipped.data();
+    }
     if (premultiply_enabled(handle)) {
       premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
                        premul);
@@ -1050,22 +1105,28 @@ JSValue js_gl_tex_sub_image_2d(JSContext* ctx,
     return JS_UNDEFINED;
   if (argc <= 9 || JS_IsNull(argv[9]) || JS_IsUndefined(argv[9]))
     return JS_UNDEFINED;
+  const GLsizei w = gi(ctx, argc, argv, 5);
+  const GLsizei h = gi(ctx, argc, argv, 6);
   JSValue hold;
   size_t len = 0;
   uint8_t* p = view_bytes(ctx, argv[9], &len, &hold);
   if (p) {
     const GLenum format = static_cast<GLenum>(gi(ctx, argc, argv, 7));
     const GLenum type = static_cast<GLenum>(gi(ctx, argc, argv, 8));
-    std::vector<uint8_t> premul;
-    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
-        premultiply_enabled(handle)) {
-      premultiply_rgba(p, len / 4, premul);
-      p = premul.data();
+    std::vector<uint8_t> flipped, premul;
+    if (format == GL_RGBA && type == GL_UNSIGNED_BYTE) {
+      if (flip_y_enabled(handle)) {
+        flip_y_rgba(p, w, h, flipped);
+        p = flipped.data();
+      }
+      if (premultiply_enabled(handle)) {
+        premultiply_rgba(p, len / 4, premul);
+        p = premul.data();
+      }
     }
     glTexSubImage2D(static_cast<GLenum>(gi(ctx, argc, argv, 1)),
                     gi(ctx, argc, argv, 2), gi(ctx, argc, argv, 3),
-                    gi(ctx, argc, argv, 4), gi(ctx, argc, argv, 5),
-                    gi(ctx, argc, argv, 6), format, type, p);
+                    gi(ctx, argc, argv, 4), w, h, format, type, p);
   }
   JS_FreeValue(ctx, hold);
   return JS_UNDEFINED;
@@ -1089,7 +1150,11 @@ JSValue js_gl_tex_sub_image_2d_canvas(JSContext* ctx,
   int cw = 0, ch = 0;
   const uint8_t* px = mv_canvas_pixels(gi(ctx, argc, argv, 7), &cw, &ch);
   if (px) {
-    std::vector<uint8_t> premul;
+    std::vector<uint8_t> flipped, premul;
+    if (flip_y_enabled(handle)) {
+      flip_y_rgba(px, cw, ch, flipped);
+      px = flipped.data();
+    }
     if (premultiply_enabled(handle)) {
       premultiply_rgba(px, static_cast<size_t>(cw) * static_cast<size_t>(ch),
                        premul);
@@ -1831,8 +1896,9 @@ const char* kWebGLPreamble = R"MVJS(
         g.__mv_glTexImage2DCanvas(this.__gl, target, level, internalformat, a, b, src.canvas.__h);
       }
       // Image elements route through the same __h canvas handle (they are
-      // backed by a canvas, see mvcanvas.cxx); UNPACK_FLIP_Y_WEBGL stays
-      // unimplemented (js_gl_pixel_storei's comment says why).
+      // backed by a canvas, see mvcanvas.cxx); UNPACK_FLIP_Y_WEBGL is
+      // honoured on this path the same as UNPACK_PREMULTIPLY_ALPHA_WEBGL --
+      // see js_gl_pixel_storei's comment and js_gl_tex_image_2d_canvas.
     }
   };
   // texSubImage2D has the same two overloads as texImage2D, one argument
