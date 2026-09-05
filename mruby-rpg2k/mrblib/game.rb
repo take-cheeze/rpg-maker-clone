@@ -6320,15 +6320,18 @@ module Game
       if enemy_scope # an attack skill
         dmg = base - skill_defence_term(sk, target)
         # Floored at 0, not 1: ported from a reference implementation's own
-        # skill-effect formula,
-        # NOT independently confirmed against genuine RPG_RT under wine,
-        # which clamps the effect to a non-negative value, letting a
-        # heavily-defended
-        # target take a genuine zero-damage hit rather than guaranteeing a
-        # minimum scratch. `#apply_skill_hit` used to tell this branch apart
-        # from a recovery skill purely by the sign of `hp` (negative = attack),
-        # which broke exactly at this boundary once `dmg` could reach 0 --
-        # `attack: true` below now says so explicitly instead.
+        # skill-effect formula, confirmed against a genuine RPG_RT.exe under
+        # wine (2026-09-05): a purely-magical real skill (Nepheshel's own
+        # skill 191, power 25, magical_rate 10) cast by a low-spirit enemy
+        # against a target with spirit forced to 999 -- deeply negative
+        # pre-clamp (dmg = 27 - 124 = -97) -- landed as a genuine
+        # zero-damage hit, with RPG_RT printing its stock
+        # "...はダメージを受けていない!" (took no damage) line rather than any
+        # minimum-1 scratch message. `#apply_skill_hit` used to tell this
+        # branch apart from a recovery skill purely by the sign of `hp`
+        # (negative = attack), which broke exactly at this boundary once
+        # `dmg` could reach 0 -- `attack: true` below now says so explicitly
+        # instead.
         dmg = 0 if dmg < 0
         { cost: cost,
           # `hp`/`mp` each independently gate on their own affect_hp/affect_sp
@@ -12736,10 +12739,13 @@ module Game
     # with agi forced to 1, a preemptive weapon equipped, and a custom
     # berserk state (`RESTRICTION_ATTACK_ENEMY`, granted straight through
     # `#add_state` so no accuracy roll gates it) went *second* against a
-    # single enemy with agi forced to 250 -- the enemy's own attack message
-    # was already complete before the leader's forced attack ever started,
-    # the reverse of what an unconditional +9999 turn-order bonus predicts
-    # against that big an agi gap. This directly reverses this method's own
+    # single enemy with agi 30 (the enemy schema's own field 9 -- a
+    # mislabeled fixture in this cycle's own capture wrote 250 to field 8,
+    # spirit, not agility, so the real gap tested was only 1 vs 30) -- the
+    # enemy's own attack message was already complete before the leader's
+    # forced attack ever started, the reverse of what an unconditional +9999
+    # turn-order bonus predicts against *any* ordinary agi gap this small.
+    # This directly reverses this method's own
     # prior conclusion (see git history for the superseded comment and its
     # citation): a reference implementation's source was read as building an
     # identical basic-attack algorithm for both attack-ally (confusion) and

@@ -19698,7 +19698,9 @@ end
 check "battle: a preemptive weapon's turn-order jump is dropped under berserk" do
   # Confirmed against a genuine RPG_RT.exe under wine (2026-09-05): a
   # berserked, agi-1 wielder of a preemptive weapon went second, not first,
-  # against a single agi-250 enemy -- the reverse of what an unconditional
+  # against a single agi-30 enemy (that cycle's own fixture mislabeled
+  # enemy schema field 8, spirit, as agi and set *that* to 250, leaving the
+  # real agility at 30) -- still the reverse of what an unconditional
   # +9999 turn-order bonus predicts. See Game::Battle#preemptive_boost?'s
   # own updated citation.
   items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }

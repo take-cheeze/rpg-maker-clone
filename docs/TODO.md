@@ -15769,6 +15769,19 @@ The work below is roughly ordered by the critical path to a walkable game
   `ArgumentError: unknown keyword: :attack` on the new end-to-end check,
   confirming it genuinely exercises the new code path rather than passing
   vacuously.
+  ✅ Follow-up (2026-09-05), by an actual wine capture: the "floor at 0, not
+  1" half of this claim (`skill_effect`/`skill_defence_term`,
+  `mruby-rpg2k/mrblib/game.rb`) is now independently confirmed rather than
+  resting only on a reference implementation's C++ source. A purely magical
+  real skill (Nepheshel's own skill 191, power 25, magical_rate 10) cast by
+  a near-baseline enemy against a target with spirit forced to 999 gives a
+  deeply negative pre-clamp result (base 27 − defence 124 = −97, using the
+  exact ported formula) — under genuine RPG_RT.exe this landed as a true
+  zero-damage hit, printing the stock "…はダメージを受けていない!" (took no
+  damage) line rather than any minimum-1 scratch message, matching this
+  codebase's existing `dmg = 0 if dmg < 0` exactly. No code change; only
+  the citation lost its "NOT independently confirmed" caveat for this half
+  of the claim.
 - ✅ **両手持ち weapons** (the item row's `two_handed`) — unread, so a claymore
   and a shield could be worn together and both bonuses counted. Not a rare flag:
   **35 of Nepheshel's 104 weapons** and **14 of mtf's 26**, more than half that
@@ -31199,12 +31212,15 @@ codebase yet):
   to 1, a preemptive weapon equipped, and a custom berserk state
   (`RESTRICTION_ATTACK_ENEMY`, granted directly via `Game::Actor#add_state`
   so no accuracy roll gates it onto the battler) went *second*, not first,
-  against a single enemy with agi forced to 250: the enemy's own attack
-  message ("Mirrorの攻撃！") was already complete by the very first capture
+  against a single enemy with agi 30 (enemy schema field 9 -- this cycle's
+  own fixture mislabeled field 8, spirit, as agi and set *that* to 250,
+  leaving the real agility at 30): the enemy's own attack message
+  ("Mirrorの攻撃！") was already complete by the very first capture
   after loading into the fight, and the berserked leader's own forced
   attack message ("リトの攻撃！") only started afterward — the reverse of
-  what an unconditional +9999 turn-order bonus predicts against that big an
-  agi gap. The 2026-08-20 follow-up's reference-implementation-source
+  what an unconditional +9999 turn-order bonus predicts against *any*
+  ordinary agi gap this small. The 2026-08-20 follow-up's
+  reference-implementation-source
   reading (identical `Type::Normal`-attack algorithm for both restrictions,
   no restriction dependency in the execution-order bonus) was never itself
   checked against genuine RPG_RT, and this capture contradicts it for
