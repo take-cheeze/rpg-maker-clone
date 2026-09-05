@@ -15806,6 +15806,15 @@ The work below is roughly ordered by the critical path to a walkable game
   codebase's existing `dmg = 0 if dmg < 0` exactly. No code change; only
   the citation lost its "NOT independently confirmed" caveat for this half
   of the claim.
+  ✅ Follow-up (2026-09-05), same wine session: `Battle.attack_damage`'s own
+  floor-at-0 (the basic-Attack path this whole entry's fix was modeled on,
+  quoted above as "already correctly ported") is now independently
+  confirmed too. An atk-1 enemy's basic Attack against a def-999 (the
+  battle stat cap) target -- deeply negative pre-floor (1/2 - 999/4 = -249)
+  -- landed as a genuine zero-damage hit under wine, printing RPG_RT's own
+  "…はダメージを受けていない!" line, distinct from an ordinary miss's own
+  "…は攻撃をかわした!" line seen on other rounds of the same fight. No code
+  change; citation only.
 - ✅ **両手持ち weapons** (the item row's `two_handed`) — unread, so a claymore
   and a shield could be worn together and both bonuses counted. Not a rare flag:
   **35 of Nepheshel's 104 weapons** and **14 of mtf's 26**, more than half that
