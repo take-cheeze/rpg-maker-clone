@@ -2754,6 +2754,11 @@ class MZ
     # silent Web Audio stub.
     MV::JS.eval(self.class.audio_bridge_js)
     MV.maybe_enable_audio_decryption(@game_dir)
+    # Before anything can draw (game_font() -- mvcanvas.cxx -- caches its
+    # choice on the first text draw, and the frame pump has not started yet):
+    # tell it which of the project's fonts/*.woff is the real dialogue font.
+    # See MV.maybe_set_main_font's own comment (mv.rb).
+    MV.maybe_set_main_font(@game_dir)
 
     # Replaces window.effekseer with the diagnostic stub (see
     # EFFEKSEER_SHIM_JS) before Graphics.initialize runs -- SceneManager.run

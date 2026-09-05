@@ -33473,6 +33473,146 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         only issues its queued GL draw calls from `ResetAndRenderingIfRequired`,
         called by `BeginRendering`/`EndRendering`, not by `DrawHandle` itself)
         and the missing-depth-clear pitfall in this test's own first draft.
+      - ✅ **`EgoicAnswers` played past the intro with `battle_play`: real
+        Effekseer, in a real fight, playing correctly (2026-09-05).** With
+        `MZ_MOVE_SETTLE_MAX_FRAMES` in place (the entry above this one),
+        `MZ_MODE=battle_play MZ_MOVE_SETTLE_MAX_FRAMES=8000
+        scripts/mz_boot_check.bash 112 data/EgoicAnswers` reaches
+        `Scene_Battle`, taps through the party/actor/target command windows,
+        watches the troop's HP fall (`hp_before=100 hp_after=2 alive=2
+        damaged=true ended=true`) and hands the scene back to `Scene_Map` —
+        this project's first played-out battle against real, downloaded
+        commercial content, and the first time the M6.2-addendum-4 Effekseer
+        rendering has run inside an actual play-through rather than an
+        isolated test: the captured frame shows a genuine lit particle arc
+        (a fire-slash skill effect) over the real actor/enemy sprites, not a
+        placeholder. `battle_play`/`battle_test` reach the fight the same way
+        for every bed, `EgoicAnswers` included: `MZ.battle_probe_js` injects
+        `{code:301 (Battle Processing), troop, ...}` straight into
+        `$gameMap._interpreter` the instant `Scene_Map` is reached, which
+        *replaces* whatever that interpreter was already running — so this
+        plays a synthetic troop-1 fight, not literally the intro's own
+        scripted forced battle (which never runs at all once this fires:
+        confirmed by capturing the full log, which shows `auto battle test:
+        troop 1` landing immediately after the first `Scene_Map`, with none
+        of the intro's ~49 message boxes in between). No bug: this is the
+        same shortcut `battle`/`battle_play` use against every other bed
+        (`data/mz-sample` included), by design, precisely so CI need not
+        walk an arbitrary game's own script to reach a fight.
+      - ✅ **The wrong `.woff` was loaded for MZ's `GameFont` when a project
+        ships more than one — found via `EgoicAnswers`, root-caused down to
+        the exact missing glyph, fixed (2026-09-05).** `MZ_MODE=message`
+        against `EgoicAnswers` passed its own `[MZ-MSG] busy=true
+        window_open=true` assertion but the captured frame showed corrupted
+        text: `MZ message smoke test` rendered as "M" and "Z" overlapping, a
+        visible tofu box before every space, and Latin letters with wrong
+        proportions — e.g. `data/EgoicAnswers/js/...` battle screenshots
+        (`battle_play`, above) showed the same corruption in the game's own
+        Japanese text (`ムズリエルの　攻撃　!`) before this fix. Root-caused
+        by reading `mvcanvas.cxx`'s `font_dir_first_font`: it scans a
+        project's `fonts/` dir with a bare `readdir()` loop and keeps
+        "whichever `.woff` it saw first" — `data/mz-sample` and every other
+        test bed ship exactly one font, so this heuristic was never wrong by
+        accident before. `data/EgoicAnswers` ships **two**:
+        `mplus-1m-regular.woff` (1,007,484 bytes, `System.json`'s
+        `advanced.mainFontFilename` — the real dialogue font, full Latin +
+        Japanese coverage) and `mplus-2p-bold-sub.woff` (7,020 bytes,
+        `advanced.numberFontFilename` — a 95-glyph subset meant only for
+        `Sprite_Damage`'s battle-number digits, ASCII `0x21`-`0x7e` only, no
+        Japanese at all), and `readdir()`'s order is unspecified — on this
+        filesystem it happened to return the *number* font first, so every
+        window in the game (its actual Japanese dialogue included, not just
+        the diagnostic Latin probe string) drew through a font that cannot
+        represent a single character of it. Confirmed directly against the
+        real font bytes with `MV::Font.smoke_test` (bypasses `game_font()`'s
+        process-lifetime cache, so this is the exact bytes on disk, not a
+        theory): codepoint 32 (space) rasterises as an 8x16, 72-ink bitmap
+        (a visible box — `mplus-2p-bold-sub.woff`'s charmap has no entry for
+        `U+0020` at all, so `stbtt_FindGlyphIndex` falls through to glyph 0,
+        `.notdef`, which this particular font draws as a box) versus a
+        correct, empty 0x0 in `mplus-1m-regular.woff`; `fontTools` confirms
+        the same charmap gap independently (`cmap.get(0x20) is None`) and
+        that `mplus-2p-bold-sub.woff`'s 94 mapped codepoints span only
+        `0x21`-`0x7e` (`cmap.get(0x3042)` — hiragana あ — and
+        `cmap.get(0x653b)` — 攻, from 攻撃 — both `None`), so this was not a
+        cosmetic-only gap for this game: its entire Japanese script would
+        have drawn as boxes had this font kept winning.
+        Fixed the way real MZ itself decides, rather than guessing better:
+        `Scene_Boot` calls `FontManager.load("rmmz-mainfont",
+        $dataSystem.advanced.mainFontFilename)`, i.e. the corescript already
+        knows the one correct filename — this project's own `FontFace` shim
+        (`HOST_GLOBALS_JS`, `mz.rb`) already receives it as `source` but
+        never threaded it anywhere. Reading it back out of the JS `FontFace`
+        object was rejected in favor of the same pattern
+        `MV.maybe_enable_audio_decryption` already established for
+        `System.json`'s `encryptionKey`/`hasEncryptedAudio` (`mv.rb`): a new
+        `MV.maybe_set_main_font(game_dir)` regex-scans
+        `data/System.json` for `"mainFontFilename":"..."` (MZ-only; a plain
+        scan, matching the existing precedent, over adding a JSON dependency
+        for one string field) and calls a new `MV::Font.preferred_filename=`
+        (mrb binding, `mvjs.cxx`) — backed by `mv_font_set_preferred_filename`
+        (`mvcanvas.cxx`) setting a module-level `g_preferred_font_filename` —
+        called from `mz.rb`'s `boot_probe` right after
+        `MV.maybe_enable_audio_decryption`, well before the frame pump starts
+        (and so before `game_font()`'s first, cache-priming call). Extracted
+        `font_dir_first_font`'s scan into a standalone `pick_font_from_dir(dir,
+        preferred)`: `preferred`, when it names a file actually present in
+        `dir`, wins outright over the pre-existing `.ttf`/`.otf`-then-`.woff`
+        fallback; empty (every bed before this one) reproduces the old
+        behavior exactly. Does not give the number font its own identity —
+        `game_font()` is still one process-lifetime singleton for the whole
+        engine's `GameFont`, so `Sprite_Damage` digits now render in the
+        *main* font instead of their own subset — a cosmetic-only residual
+        gap, and strictly better than the alternative it replaces (every
+        window's dialogue silently unable to draw a space, or in this game's
+        case, unable to draw at all).
+        Covered by two new `mz_test.rb` assertions against `MV::Font.pick`
+        (a new mrb binding wrapping `pick_font_from_dir` directly, bypassing
+        both the new global and `game_font()`'s cache — same reason
+        `MV::Font.smoke_test` bypasses it): a scratch `fonts/` dir with two
+        files proves the named one wins regardless of which the bare
+        extension scan would have preferred between them, that an
+        unmatched name falls back to "some usable font" rather than nothing,
+        and that a missing/empty directory returns `nil`. Verified against
+        the real release: the `MZ message smoke test` probe string and the
+        game's own Japanese battle log line both render cleanly after the
+        fix (screenshots before/after compared directly), `battle_play`'s
+        `damaged=true ended=true` result is unchanged, and `MZ_MODE=play
+        scripts/mz_boot_check.bash 111 data/mz-sample` — one font, so nothing
+        for `preferred_filename` to disambiguate — is unaffected.
+      - Investigated but not a bug: `MZ_MODE=menu_play`/`save`/`message`
+        against `EgoicAnswers` each either cannot reach their target UI, or
+        report their own probe's assertion correctly while
+        `mz_frame_check.rb`'s auxiliary art-sanity check reports a false
+        failure — both root-caused to this game's own script, not this
+        engine. `menu_play`: `maybe_menu_test`'s own probe budget
+        (`MENU_PROBE_FRAMES`, 60 frames) starts counting the instant
+        `Scene_Map` is reached, not once the map is actually idle — unlike
+        `maybe_move_test`, it has no settle-wait and nothing threads
+        `MZ_MOVE_SETTLE_MAX_FRAMES` into it. Against a bed whose own
+        opening keeps `$gameMap.isEventRunning()` true for ~650+ frames
+        (this game's own scripted intro — see the entry above this
+        section), the menu never gets a chance to open before the budget
+        runs out and `[MZ-MENU] reached_menu=false scene=Scene_Map` is
+        reported — `Scene_Map.updateCallMenu` refusing to open the menu
+        during an event is exactly real MZ's own behavior, not a defect
+        here. `save`/`message`: both probes manipulate `$game*` state or
+        `$gameMessage` directly through `MV::JS.eval`, so they do not need
+        the map to be idle and both pass their own real assertions
+        (`[MZ-SAVE] saved=true exists=true loaded=true restored=true`,
+        `[MZ-MSG] busy=true window_open=true`) — but the screenshot each
+        captures lands during the game's own opening moment, and
+        `Map010.json`'s event 1 (the very first thing New Game runs) issues
+        `{code:223 (Change Screen Color Tone), params:[[-255,-255,-255,0],
+        1, true]}` — a fully-black tone, applied before `Transfer Player`
+        moves off that map — so a screenshot taken in the following handful
+        of frames is legitimately almost entirely black underneath its
+        (correctly undimmed) windows, tripping
+        `mz_frame_check.rb`'s "≤90% single colour" heuristic. Not fixed:
+        the probes' own claims are true and worth keeping exactly as
+        strict as they are for every other bed; the heuristic doing its job
+        correctly here (a black frame really is what got drawn) is not a
+        reason to loosen it project-wide.
 
 ## Tooling
 

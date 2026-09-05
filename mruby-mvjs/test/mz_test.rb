@@ -989,6 +989,63 @@ assert 'MZ .woff unpacking: MV::Font.smoke_test/unpack_woff reject non-fonts' do
   assert_nil MV::Font.unpack_woff("wOFF" + ("\x00" * 4)) # too short to hold a table dir
 end
 
+# MV::Font.pick's own selection logic (pick_font_from_dir, mvcanvas.cxx) --
+# the fix for the real bug docs/TODO.md's M6.3c EgoicAnswers font entry
+# describes: a project shipping *two* `.woff` files (its real dialogue font
+# plus a separately-subsetted `advanced.numberFontFilename`) had only luck
+# deciding which one `readdir()` happened to return first, and the wrong one
+# rendered every window's ordinary text with a font missing a `space` glyph
+# entirely (a visible box at every word boundary) among other wrong metrics.
+# Exercised against real files under a scratch dir with MV::Font.pick directly
+# (bypassing both MV::Font.preferred_filename='s global and game_font()'s
+# process-lifetime cache, the same reason MV::Font.smoke_test bypasses it) so
+# the two-file case has deterministic CI coverage independent of directory
+# iteration order, which a bed shipping only one font (every one before this)
+# can never exercise regardless of how it is scanned.
+assert 'MZ font selection: MV::Font.pick prefers the named file over either candidate' do
+  dir = "mvjs_font_pick_fixture"
+  begin
+    Dir.mkdir(dir) rescue nil
+    File.open("#{dir}/NumberFont.woff", "wb") { |f| f.write(MZ_TINY_WOFF) }
+    File.open("#{dir}/MainFont.woff", "wb") { |f| f.write(MZ_TINY_WOFF) }
+
+    # No preference named: some usable font wins over none at all -- which
+    # one is exactly the pre-existing, order-dependent behaviour this does
+    # not try to pin down.
+    assert_true %W[#{dir}/NumberFont.woff #{dir}/MainFont.woff]
+                .include?(MV::Font.pick(dir))
+
+    # The named file wins outright, regardless of which of the two a bare
+    # extension-based scan would have preferred between them.
+    assert_equal "#{dir}/MainFont.woff", MV::Font.pick(dir, "MainFont.woff")
+    assert_equal "#{dir}/NumberFont.woff",
+                 MV::Font.pick(dir, "NumberFont.woff")
+
+    # A name that names nothing present falls back to the pre-existing
+    # behaviour rather than coming up empty -- e.g. a project whose
+    # `mainFontFilename` and its actual fonts/ dir disagree should still draw
+    # with *something* rather than the engine's own default silently
+    # replacing every glyph.
+    assert_true %W[#{dir}/NumberFont.woff #{dir}/MainFont.woff]
+                .include?(MV::Font.pick(dir, "NoSuchFont.woff"))
+  ensure
+    File.delete("#{dir}/NumberFont.woff") rescue nil
+    File.delete("#{dir}/MainFont.woff") rescue nil
+    Dir.rmdir(dir) rescue nil
+  end
+end
+
+assert 'MZ font selection: MV::Font.pick returns nil for an empty or missing dir' do
+  assert_nil MV::Font.pick("mvjs_font_pick_fixture_missing_dir")
+  dir = "mvjs_font_pick_fixture_empty"
+  begin
+    Dir.mkdir(dir) rescue nil
+    assert_nil MV::Font.pick(dir)
+  ensure
+    Dir.rmdir(dir) rescue nil
+  end
+end
+
 assert 'MV::Effekseer.available? tracks the same GLES3-capable backend as MV::GL' do
   # mvefk.cxx compiles its real implementation only where mvgl.cxx's own
   # EGL/GLES2 backend is present *and* the GLES3 header Effekseer's
