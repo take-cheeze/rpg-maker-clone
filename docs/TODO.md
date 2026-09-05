@@ -15961,6 +15961,25 @@ The work below is roughly ordered by the critical path to a walkable game
   0..100 floor, 必中 skipping the term entirely, weapon-slot exclusion, and
   an end-to-end `Battle.from_actor` wiring check), confirmed to fail against
   the pre-fix code before the fix.
+  - ✅ **Follow-up (2026-09-05), by an actual wine capture: `raise_evasion`
+    substantially reduces an attacker's hit chance against the wearer,
+    matching this ported flat -25.** A custom armour piece (no weapon, so
+    only the shield/armour/helmet/accessory scan applies) on the leader,
+    `raise_evasion` set per a control/test toggle, against a custom enemy
+    whose own agility matched the leader's default exactly (so
+    `Game::Battle#to_hit`'s AGI term cancels to exactly its base rate,
+    isolating the flag as the only variable) and whose `miss` flag gives a
+    70 base (`Game::Enemy#attack_hit_rate`) comfortably clear of both 0 and
+    100. Across two independent, equal-length batches of real battle
+    rounds, the `raise_evasion` fixture took roughly half the total damage
+    the control fixture took over the same span (a captured
+    "Puncherの攻撃！リトは攻撃をかわした！" miss line confirmed directly, not only
+    inferred from HP) — consistent with a substantial flat hit-chance cut,
+    not merely ported from a reference implementation's source untested.
+    Exact per-round hit/miss tallying proved impractical this session (the
+    in-game HP counter's own dot-matrix font resists reliable digit-by-digit
+    reading at this capture resolution), so the confirmation is a clear
+    directional/magnitude one, not a claim of the literal -25 figure itself.
 - ✅ **The field Skill screen now shows the highlighted skill's own flavour
   text in a one-line banner across the top** — `skill.description`, unread
   by `mruby-rpg2k` anywhere. `ruby scripts/rpg2k_field_audit.rb` against
