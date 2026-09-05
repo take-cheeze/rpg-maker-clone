@@ -31164,6 +31164,33 @@ codebase yet):
   to assert the opposite ("berserk keeps a 先制攻撃 weapon's turn-order jump,
   same as confusion"), confirmed to fail against the pre-fix code before the
   fix.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: the 2026-08-20
+  follow-up above was itself wrong — RPG_RT *does* drop a `preemptive`
+  weapon's turn-order jump under Berserk after all, reverting back to the
+  original デフォ戦botまとめ-sourced behavior.** A solo actor with agi forced
+  to 1, a preemptive weapon equipped, and a custom berserk state
+  (`RESTRICTION_ATTACK_ENEMY`, granted directly via `Game::Actor#add_state`
+  so no accuracy roll gates it onto the battler) went *second*, not first,
+  against a single enemy with agi forced to 250: the enemy's own attack
+  message ("Mirrorの攻撃！") was already complete by the very first capture
+  after loading into the fight, and the berserked leader's own forced
+  attack message ("リトの攻撃！") only started afterward — the reverse of
+  what an unconditional +9999 turn-order bonus predicts against that big an
+  agi gap. The 2026-08-20 follow-up's reference-implementation-source
+  reading (identical `Type::Normal`-attack algorithm for both restrictions,
+  no restriction dependency in the execution-order bonus) was never itself
+  checked against genuine RPG_RT, and this capture contradicts it for
+  Berserk specifically. `Game::Battle#preemptive_boost?` now returns
+  `false` for `RESTRICTION_ATTACK_ENEMY` again, ahead of the
+  `RESTRICTION_ATTACK_ALLY` case (confusion, still untested against genuine
+  RPG_RT either way — this cycle's capture only put the leader in the
+  attack-*enemy* restriction). The `scripts/rpg2k_logic_check.rb` check the
+  2026-08-20 follow-up rewrote ("berserk keeps a 先制攻撃 weapon's
+  turn-order jump, same as confusion") was rewritten back to assert the
+  original claim ("a preemptive weapon's turn-order jump is dropped under
+  berserk"), confirmed to fail against the pre-fix (i.e. 2026-08-20's)
+  code before this fix. See `Game::Battle#preemptive_boost?`'s own updated
+  citation and `changelog.d/preemptive-weapon-berserk-turn-order.fixed.md`.
   ✅ **Follow-up (2026-08-21): the attack-all-collapses-under-Berserk half of
   that same デフォ戦botまとめ claim above was wrong too — RPG_RT does not
   collapse an attack_all weapon to a single target under Berserk either.**
