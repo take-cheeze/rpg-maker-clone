@@ -372,15 +372,19 @@ class MV
       $stderr.puts "[MV] error reading audio encryption key: #{e.message}"
     end
 
-    # Reads `<game_dir>/data/System.json`'s `advanced.mainFontFilename` (MZ
-    # only -- MV's System.json has no such field, and MV projects call this
-    # too, so a missing match is silent, not an error) and tells game_font()
-    # (mvcanvas.cxx, via MV::Font.preferred_filename=) to load exactly that
-    # file rather than guessing from whichever extension `readdir()` happens
-    # to see first. Same read style as #maybe_enable_audio_decryption just
-    # above (a plain regex scan over the raw JSON, not a parse) and the same
-    # reason: one specific string field, not a reason to add a JSON dependency
-    # to this translation unit.
+    # Reads `<game_dir>/data/System.json`'s `advanced.mainFontFilename` and
+    # tells game_font() (mvcanvas.cxx, via MV::Font.preferred_filename=) to
+    # load exactly that file rather than guessing from whichever extension
+    # `readdir()` happens to see first. Called only from MZ's own boot path
+    # (mz.rb) -- MV's System.json has no such field, and unlike
+    # #maybe_enable_audio_decryption just above (which both makers call,
+    # since encrypted audio is a real MV feature too), MV's own boot never
+    # calls this at all; a missing/empty field is a silent no-op here
+    # regardless (any MZ project shipping only one font, or an older
+    # System.json predating this key), not an error. Same read style as
+    # #maybe_enable_audio_decryption (a plain regex scan over the raw JSON,
+    # not a parse) and the same reason: one specific string field, not a
+    # reason to add a JSON dependency to this translation unit.
     #
     # Matters once a project ships more than one font file: real MZ projects
     # commonly name a *second*, separately-subsetted `advanced.numberFontFilename`
