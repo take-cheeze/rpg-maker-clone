@@ -1,7 +1,11 @@
-- **A self-destruct now applies the same strong-defence double-halving a
-  basic attack does**, instead of stopping at ordinary Defend's single
-  halving. A self-destruct against a defending, strong-defence party member
-  previously dealt roughly double the correct damage.
+- ~~A self-destruct now applies the same strong-defence double-halving a
+  basic attack does, instead of stopping at ordinary Defend's single
+  halving.~~ **Reverted:** a genuine wine capture showed a defending,
+  strong-defence target's own self-destruct damage lands the same as an
+  ordinary defending target with the flag off, not halved a second time —
+  genuine RPG_RT does not appear to read `strong_defence` in this formula at
+  all. `Game::Battle#enemy_autodestruct` only ever applies Defend's ordinary
+  single halving again now, regardless of the flag.
 - **A self-destruct and an offensive skill can now shake a survivor's status
   loose, the same way a basic attack already could.** Ported from a
   reference implementation, not independently confirmed against genuine

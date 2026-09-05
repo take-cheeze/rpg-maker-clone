@@ -18382,14 +18382,17 @@ check 'battle: a self-destruct also reads state-adjusted ATK / DEF' do
   eq 80, entry[:damage], 'doubled atk 80 - def 0 / 2 = 80'
 end
 
-check "battle: a self-destruct's 強力防御 halves a defending target's blow twice" do
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it calls the identical
-  # AdjustDamageForDefend a basic attack (#deal_attack) already applies --
-  # not a self-destruct-specific halving rule. A prior version of this
-  # method only ever halved
-  # once, for plain Defend, ignoring the second halving a 強力防御 (strong
-  # defence) target's own gear/class adds.
+check "battle: a self-destruct's 強力防御 does NOT halve a defending target's blow twice" do
+  # Reverted: a prior revision of this check asserted 強力防御 (Strong
+  # Defence) halves a self-destruct's blow a second time, on top of the
+  # ordinary Defend halving, ported from a reference implementation's
+  # AdjustDamageForDefend without independent confirmation. Falsified under
+  # genuine RPG_RT under wine (2026-09-05): a Strong-Defence-flagged,
+  # defending target's own damage across two separately-run, otherwise-
+  # identical captures (97 and 98) landed in the same range as an ordinary
+  # defending target with the flag left off -- not the ~48-49 a second
+  # halving predicts. #enemy_autodestruct no longer reads strong_defence at
+  # all.
   bomber = combatant('Bomber', 50, 0, 5, 1)
   plain = combatant('Plain', 0, 0, 5, 100)
   plain.defending = true
@@ -18401,13 +18404,12 @@ check "battle: a self-destruct's 強力防御 halves a defending target's blow t
   guarded.defending = true
   guarded.strong_defence = true
   bat2 = Game::Battle.new([guarded], [bomber], Game::Rng.new(1))
-  eq 12, bat2.send(:enemy_autodestruct, bomber).first[:damage],
-     'base 50, halved twice: once for Defend, again for 強力防御 (25 -> 12)'
+  eq 25, bat2.send(:enemy_autodestruct, bomber).first[:damage],
+     'base 50, halved only once: 強力防御 changes nothing here'
 end
 
 check "battle: a self-destruct's defend-halving carries no floor either, matching RPG_RT (2026-08-18)" do
-  # Same AdjustDamageForDefend bare `dmg /= 2` this method shares verbatim
-  # with #deal_attack -- no std::max floor of any kind.
+  # A bare `dmg /= 2` -- no std::max floor of any kind.
   weak_bomber = combatant('Bomber', 1, 0, 5, 1) # base: atk 1 - def 0 / 2 = 1
   plain = combatant('Plain', 0, 0, 5, 100)
   plain.defending = true
@@ -18420,8 +18422,8 @@ check "battle: a self-destruct's defend-halving carries no floor either, matchin
   guarded.defending = true
   guarded.strong_defence = true
   bat2 = Game::Battle.new([guarded], [bomber], Game::Rng.new(1))
-  eq 0, bat2.send(:enemy_autodestruct, bomber).first[:damage],
-     'base 3, halved twice (3 -> 1 -> 0), not floored to 1 at either step'
+  eq 1, bat2.send(:enemy_autodestruct, bomber).first[:damage],
+     'base 3, halved once (3 -> 1): 強力防御 no longer applies a second halving'
 end
 
 check 'battle: a self-destruct shakes loose a survivor\'s status the same as a basic attack' do

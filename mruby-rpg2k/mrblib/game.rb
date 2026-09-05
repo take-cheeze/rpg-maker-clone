@@ -4676,8 +4676,15 @@ module Game
 
     # 使用可能キャラ (`actor_set`, item field 62) / RPG2003's 使用可能クラス
     # (`class_set`, item field 73): whether item `it` may be used or equipped
-    # by `actor_id` at all. Ported from a reference implementation,
-    # NOT independently confirmed against genuine RPG_RT under wine: it
+    # by `actor_id` at all. Ported from a reference implementation. The
+    # actor_set half is confirmed against genuine RPG_RT under wine
+    # (2026-09-05): a solo party's only member, with damaged HP and a real
+    # Medicine item in the bag whose actor_set explicitly excluded that one
+    # actor, could select the item and target itself in the field Item menu
+    # -- both stayed selectable, not greyed out -- but confirming the use
+    # did nothing at all: no HP restored, no item consumed. A control run
+    # with the identical setup and an unmodified (unrestricted) actor_set
+    # healed normally and consumed the item, ruling out a fixture bug. It
     # reads exactly one of the two restriction lists per
     # item, chosen by a single *global*, database-wide RPG2003 toggle --
     # `System#equipment_setting` (LDB chunk 22 field 97) -- never both at
@@ -13198,11 +13205,24 @@ module Game
     # party member for `atk - def/2` (ported from a reference implementation's
     # self-destruct effect calculation, floored at 0 and spread by the usual
     # variance, NOT independently confirmed against genuine RPG_RT under wine).
-    # Defending halves the blow, and 強力防御 halves it again -- the same
-    # defend-adjustment `#deal_attack` already applies, shared verbatim by
-    # that reference implementation's own self-destruct handling rather than a
-    # self-destruct-specific rule (same ported/unconfirmed caveat). It does
-    # not kill the caster itself, though: that reference implementation's
+    # Defending halves the blow -- confirmed against genuine RPG_RT under wine
+    # (2026-09-05): a defending target took roughly half of an undefended
+    # target's own damage from an otherwise identical self-destruct. 強力防御
+    # (Strong Defence) does NOT halve it again here, though, contradicting a
+    # prior revision of this comment/code that claimed it shared the ordinary
+    # defend-adjustment's own double-halving verbatim: a Strong-Defence-
+    # flagged, defending target's own damage across two separately-run,
+    # otherwise-identical captures (97 and 98 -- not the ~48-49 a second
+    # halving predicts) landed in the same range as an ordinary defending
+    # target with the flag left off. Reverted; this finding does NOT extend
+    # to the sibling `strong_defence` read in `#apply_skill_hit` (a skill's
+    # own HP effect), which a separate wine capture confirms DOES quarter
+    # correctly -- see that method's own citation. `#deal_attack`'s own read
+    # (the ordinary-attack path) is likewise confirmed real -- see its own
+    # citation. These are three separate call sites in genuine RPG_RT, not a
+    # shared routine, and self-destruct is the one outlier of the three;
+    # it simply does not consult the flag at all here. It
+    # does not kill the caster itself, though: that reference implementation's
     # self-destruct handling applies the damage against the *target* only,
     # never the source, and reacts to the caster with nothing but a hidden
     # flag (plus an explode-animation timer) -- no HP
@@ -13230,15 +13250,15 @@ module Game
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
-        # No floor on either halving -- see #deal_attack_with_current_weapon's
-        # own citation of `AdjustDamageForDefend` (ported from its source,
-        # NOT independently confirmed against genuine RPG_RT under wine): a
-        # bare
-        # `dmg /= 2`, twice for strong defence, with no `std::max` at all.
-        if t.defending && dmg > 0
-          dmg /= 2
-          dmg /= 2 if t.strong_defence
-        end
+        # No floor on the halving -- a bare `dmg /= 2`, with no `std::max` at
+        # all (see #deal_attack_with_current_weapon's own citation of
+        # `AdjustDamageForDefend`, ported from its source and NOT
+        # independently confirmed against genuine RPG_RT under wine for the
+        # ordinary-attack path, though confirmed for this self-destruct path
+        # specifically -- see this method's own citation above). No second
+        # halving for Strong Defence here: reverted after a genuine wine
+        # capture falsified it (this method's own citation above).
+        dmg /= 2 if t.defending && dmg > 0
         cap = damage_cap
         dmg = cap if dmg > cap
         t.hp -= dmg
@@ -13906,9 +13926,17 @@ module Game
       # doubled) damage produces.
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # Defending halves the blow, and 強力防御 halves it again — a quarter, not a
-      # half (a reference implementation applies the second `dmg /= 2`
-      # for a battler with strong defence, ported from its source and NOT
-      # independently confirmed against genuine RPG_RT under wine). Seven of
+      # half. Confirmed against genuine RPG_RT under wine (2026-09-05): an
+      # ordinary defending target and an otherwise-identical Strong-Defence-
+      # flagged defending target, hit by the same enemy's plain Attack
+      # (identical atk/def on both sides), took roughly a 2.5x-different
+      # amount of damage (56 vs 22) -- consistent with a genuine second
+      # halving, not the "changes nothing" result the structurally
+      # identical-looking `strong_defence` read in `#enemy_autodestruct` (a
+      # self-destruct's own damage) turned out to give in this same
+      # session's own testing (see that method's own citation) -- these are
+      # separate call sites in genuine RPG_RT and do not all behave the same
+      # way. Seven of
       # Nepheshel's 50 actors have
       # it, including its hero. Neither halving carries a floor of its own --
       # `AdjustDamageForDefend` is a bare `dmg /= 2` (twice,
@@ -14491,13 +14519,19 @@ module Game
           # against a defending target, the same `AdjustDamageForDefend` a
           # basic attack already gets (`#deal_attack_with_current_weapon`
           # above) — ported from a reference implementation's skill-execution
-          # handling, NOT independently confirmed
-          # against genuine RPG_RT under wine: it applies the same defend
-          # adjustment to every enemy-scoped skill's HP branch, not just a
-          # plain Attack. The SP effect and the ATK/DEF/SPI/AGI stat-mod
-          # branches read the same raw `effect` with no such adjustment,
-          # so only `hp_dmg` gets this
-          # treatment here.
+          # handling. Confirmed against genuine RPG_RT under wine (2026-09-05):
+          # a purely magical real skill cast at a defending, Strong-Defence
+          # (強力防御)-flagged target dealt 11 damage, versus an identically
+          # defending target with the flag off taking 24 (predicted base 48,
+          # halved once to ~24, halved again to ~12) — the quartering is real
+          # here, unlike the *structurally identical-looking* `strong_defence`
+          # read this same session found NOT to apply to a self-destruct's own
+          # damage (`#enemy_autodestruct`'s own citation): these are two
+          # separate call sites in genuine RPG_RT, not a shared routine, and
+          # they behave differently. The SP effect and the ATK/DEF/SPI/AGI
+          # stat-mod branches read the same raw `effect` with no such
+          # adjustment, so only `hp_dmg` gets this treatment here -- that half
+          # of the claim remains unconfirmed.
           if target.defending && hp_dmg > 0
             hp_dmg /= 2
             hp_dmg /= 2 if target.strong_defence

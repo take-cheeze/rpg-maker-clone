@@ -15895,6 +15895,17 @@ The work below is roughly ordered by the critical path to a walkable game
   Death, used on a target carrying both, leaves the Poison, HP, MP and item
   count all untouched), confirmed to fail against the pre-fix code
   (Poison cured, MP restored, item spent) before the fix.
+  ✅ Follow-up (2026-09-05), by an actual wine capture: the `actor_set`
+  restriction itself is now independently confirmed as a genuine RPG_RT
+  behavior. A solo party's only member, with damaged HP and a real Medicine
+  item in the bag whose `actor_set` explicitly excluded that one actor,
+  could still select the item and target itself in the field Item menu --
+  neither the item nor the target was greyed out -- but confirming the use
+  did nothing at all: no HP restored, no item consumed. A control run with
+  the identical setup and an unmodified (unrestricted) `actor_set` healed
+  normally and consumed the item, ruling out a fixture-level bug as the
+  explanation. No code change; `Party#item_usable_by?`'s own citation lost
+  its "NOT independently confirmed" caveat.
 - ✅ **A battle switch item now actually flips its switch.** A switch item
   (type 10) was already listed in the battle Item command
   (`Game::Party#battle_usable?` / `#battle_items` both include `ITEM_SWITCH`,
@@ -18995,6 +19006,20 @@ not yet verified:
      `target.HasStrongDefense()`. A self-destruct against a defending,
      strong-defence party member (7 of Nepheshel's 50 actors, including its
      hero) dealt roughly double the correct damage.
+     ❌ **Follow-up (2026-09-05), reverted by an actual wine capture: this
+     entire item 1 was wrong.** A defending, Strong-Defence-flagged target's
+     own self-destruct damage across two separately-run, otherwise-identical
+     captures under genuine RPG_RT (97 and 98 -- not the ~48-49 a second
+     halving predicts) landed in the same range as an ordinary defending
+     target with the flag left off. Genuine RPG_RT does not appear to
+     consult `strong_defence` in this formula at all. Reverted:
+     `Game::Battle#enemy_autodestruct` now only ever applies Defend's
+     ordinary single halving, regardless of `strong_defence`. This finding
+     is scoped to the self-destruct path specifically -- the sibling
+     `strong_defence` reads in `#deal_attack` (the ordinary-attack path) and
+     `#apply_skill_hit` (the skill path) are separate, independent call
+     sites, not a shared helper, and remain untested against genuine RPG_RT;
+     either may turn out equally fictional, or may not.
   2. **Neither a self-destruct nor an offensive skill ever shook a
      survivor's status loose**, only a basic attack did. This codebase's own
      `#shake_off_states` comment claimed the reference implementation calls
@@ -19122,6 +19147,30 @@ not yet verified:
   `scripts/rpg2k_logic_check.rb` check (a dual HP+SP drain skill against a
   defending target: the HP hit is halved, the SP hit is not), confirmed to
   fail against the pre-fix code before the fix.
+  ✅ Follow-up (2026-09-05), by an actual wine capture: the 強力防御 half of
+  this claim is now independently confirmed for the skill path specifically.
+  A purely magical real skill cast at a defending, Strong-Defence-flagged
+  target dealt 11 damage, versus an identically defending target with the
+  flag off taking 24 (predicted base 48, halved once to ~24, halved again to
+  ~12) -- the quartering is real here. Notably, the *structurally
+  identical-looking* `strong_defence` read in `#enemy_autodestruct` (a
+  self-destruct's own damage) was checked the same session and found NOT to
+  apply at all (see that method's own citation and its dedicated TODO.md
+  follow-up above) -- these are separate call sites in genuine RPG_RT, not a
+  shared routine, and they behave differently from each other despite
+  looking like ports of the same rule. No code change for the skill path;
+  only the citation lost its "NOT independently confirmed" caveat.
+  ✅ Follow-up (2026-09-05), same wine session: the third and last
+  `strong_defence` read (`Game::Battle#deal_attack`, a basic Attack) is
+  likewise confirmed real, completing the trio. An ordinary defending
+  target and an otherwise-identical Strong-Defence-flagged defending
+  target, hit by the same enemy's plain Attack (identical atk/def on both
+  sides), took roughly a 2.5x-different amount of damage (56 vs 22) --
+  consistent with a genuine second halving. So of the three separate
+  `strong_defence` call sites in `Game::Battle`, only `#enemy_autodestruct`
+  turned out fictional; `#deal_attack` and `#apply_skill_hit` both check
+  out. No code change for the basic-attack path; only the citation lost its
+  caveat.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   a reference implementation's source.** `Interpreter#do_simulated_attack`
