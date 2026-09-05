@@ -19315,7 +19315,11 @@ def geared_party(items, strong_defence = false)
   Game::State.new(Game::Party.new(db), 1, 0, 0)
 end
 
-check 'battle: a 二刀流 weapon swings twice' do
+check 'battle: a solo 二刀流 weapon does not swing twice' do
+  # Confirmed under genuine RPG_RT via wine (2026-09-05, see
+  # Actor#strike_count's own citation): a lone equipped dual_attack weapon
+  # logs exactly one damage line per Attack command, same as an ordinary
+  # weapon -- #dual_attack? by itself has no effect on #strike_count.
   items = { 7 => fake_item(type: 1, atk: 5, dual_attack: true),
             8 => fake_item(type: 1, atk: 5) }
   st = geared_party(items)
@@ -19328,11 +19332,29 @@ check 'battle: a 二刀流 weapon swings twice' do
   entry = bat.send(:swing, bat.allies[0], foe)
   ok entry.is_a?(Hash), 'one swing, one log entry'
 
-  hero.equip([7, 0, 0, 0, 0])                      # 二刀流
+  hero.equip([7, 0, 0, 0, 0])                      # solo 二刀流, second slot empty
   foe2 = combatant('Foe', 0, 0, 5, 10_000)
   bat2 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe2], Game::Rng.new(1))
-  eq 2, bat2.allies[0].strike_count
-  entries = bat2.send(:swing, bat2.allies[0], foe2)
+  eq 1, bat2.allies[0].strike_count, "a solo dual_attack weapon's own flag does not double it"
+  entry2 = bat2.send(:swing, bat2.allies[0], foe2)
+  ok entry2.is_a?(Hash), 'still one swing, one log entry'
+end
+
+check 'battle: two equipped weapons swing twice, and #swing skips a second ' \
+      'swing once the first fells the target' do
+  # Two occupied weapon-type slots -- not #dual_attack? -- is what actually
+  # drives a second swing (Actor#strike_count's own two-weapon branch); using
+  # two ordinary (non-dual_attack) weapons here keeps this test independent of
+  # that branch's own still-unconfirmed per-weapon dual_attack summation.
+  items = { 7 => fake_item(type: 1, atk: 5),
+            8 => fake_item(type: 1, atk: 5) }
+  st = geared_party(items)
+  hero = st.party.leader
+  hero.equip([7, 8, 0, 0, 0])
+  foe = combatant('Foe', 0, 0, 5, 10_000)
+  bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
+  eq 2, bat.allies[0].strike_count
+  entries = bat.send(:swing, bat.allies[0], foe)
   eq 2, entries.size, 'two swings, two log entries'
   ok entries[0][:damage] > 0 && entries[1][:damage] > 0
 
@@ -19400,7 +19422,7 @@ end
 check 'battle: a basic Attack spends its weapon\'s own SP cost, once per action' do
   items = { 7 => fake_item(type: 1, atk: 5, sp_cost: 6),
             8 => fake_item(type: 1, atk: 5, sp_cost: 5, half_sp_cost: true),
-            9 => fake_item(type: 1, atk: 5, sp_cost: 3, dual_attack: true),
+            9 => fake_item(type: 1, atk: 5, sp_cost: 3),
             10 => fake_item(type: 1, atk: 5) } # no sp_cost named -> 0
   st = geared_party(items)
   hero = st.party.leader
@@ -19422,9 +19444,9 @@ check 'battle: a basic Attack spends its weapon\'s own SP cost, once per action'
   bat2.send(:strike, bat2.allies[0])
   eq 47, hero.mp, 'half_sp_cost rounds (5+1)/2 = 3 SP up, not down'
 
-  # A 二刀流 weapon still swings twice, but only pays once -- vStart runs
-  # before any swing, not once per hit.
-  hero.equip([9, 0, 0, 0, 0])
+  # A two-weapon actor still swings twice, but only pays the primary slot's
+  # own cost once -- vStart runs before any swing, not once per hit.
+  hero.equip([9, 10, 0, 0, 0])
   hero.mp = 50
   foe3 = combatant('Foe', 0, 0, 5, 10_000)
   bat3 = Game::Battle.new([Game::Battle.from_actor(hero)], [foe3], Game::Rng.new(1))
@@ -19432,7 +19454,7 @@ check 'battle: a basic Attack spends its weapon\'s own SP cost, once per action'
   bat3.command_attack(bat3.allies[0], foe3)
   entries = bat3.send(:strike, bat3.allies[0])
   eq 2, entries.size, 'both swings still land'
-  eq 47, hero.mp, 'the 二刀流 weapon\'s own sp_cost is spent exactly once, not per swing'
+  eq 47, hero.mp, 'the primary weapon\'s own sp_cost is spent exactly once, not per swing'
 
   # An item naming no sp_cost costs nothing, same as being unarmed.
   hero.equip([10, 0, 0, 0, 0])
@@ -19545,17 +19567,24 @@ check 'battle: a plain attack carries its attacker\'s weapon animation and targe
   eq nil, back[:target_index], 'the target is a party member -- no enemy-side sprite to index'
 end
 
-check 'battle: 二刀流\'s second swing plays the same weapon animation as the first' do
-  items = { 7 => fake_item(type: 1, atk: 5, dual_attack: true, animation_id: 3) }
+check 'battle: a two-weapon actor\'s second swing plays the same weapon ' \
+      'animation as the first' do
+  # #attack_animation_id only ever reads the primary weapon slot (its own doc
+  # comment above), so this holds regardless of what the second slot holds --
+  # tested here with a second, ordinary (non-dual_attack) weapon so the
+  # vehicle for a second swing is #strike_count's own two-weapon branch, not
+  # the (separately confirmed) solo-#dual_attack? no-op above.
+  items = { 7 => fake_item(type: 1, atk: 5, animation_id: 3),
+            8 => fake_item(type: 1, atk: 5) }
   st = geared_party(items)
   hero = st.party.leader
-  hero.equip([7, 0, 0, 0, 0])
+  hero.equip([7, 8, 0, 0, 0])
   foe = combatant('Foe', 0, 0, 5, 10_000) # never dies, so both swings land
 
   bat = Game::Battle.new([Game::Battle.from_actor(hero)], [foe], Game::Rng.new(1))
   first, second = bat.send(:swing, bat.allies[0], foe)
   eq 3, first[:attack_animation_id]
-  eq 3, second[:attack_animation_id], 'both of a 二刀流 weapon\'s blows carry the identical id'
+  eq 3, second[:attack_animation_id], 'both of a two-weapon actor\'s blows carry the identical id'
 end
 
 check 'battle: 必中 still suffers the wielder\'s own blindness' do

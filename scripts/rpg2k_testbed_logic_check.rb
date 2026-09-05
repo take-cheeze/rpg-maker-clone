@@ -853,12 +853,15 @@ def check_equipment(dir)
               crit_weapons.size, crit_others.size)
 
   unless dual.empty?
-    check "#{name}: a 二刀流 weapon makes its wielder swing twice" do
+    check "#{name}: a solo 二刀流 weapon does not make its wielder swing twice" do
+      # Confirmed under genuine RPG_RT via wine (2026-09-05,
+      # Actor#strike_count's own citation): a lone equipped dual_attack
+      # weapon does not double the swing count.
       dual.each do |iid|
         a = Game::Actor.new(db, first_actor_id(db))
         a.equip([iid, 0, 0, 0, 0])
         eq true, a.dual_attack?, "item ##{iid} (#{items[iid].name}) grants it"
-        eq 2, Game::Battle.from_actor(a).strike_count
+        eq 1, Game::Battle.from_actor(a).strike_count
       end
     end
   end

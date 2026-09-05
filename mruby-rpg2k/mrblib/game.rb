@@ -2548,34 +2548,42 @@ module Game
       end
     end
 
-    # 二刀流 — an equipped weapon that swings **twice** per basic attack
-    # (ported from a reference implementation's number-of-attacks routine,
-    # NOT independently confirmed against genuine RPG_RT under wine).
-    # Nepheshel gives 13 of its weapons this.
+    # 二刀流 — a weapon flag genuine RPG_RT reads, but which does NOT by
+    # itself make a lone equipped copy swing twice: confirmed by an actual
+    # wine capture (2026-09-05, see #strike_count's own citation) with both
+    # a custom probe weapon and Nepheshel's own real dual_attack weapon
+    # (item 36, サクリファイス) equipped solo -- a plain basic Attack logged
+    # exactly one damage line, in the same ~19-29 band a non-dual_attack
+    # control weapon of matching stats produced, never a second line or a
+    # roughly-doubled total. Kept readable (`#strike_count`'s own two-weapon
+    # branch below still reads it) since a solo equip's own null effect
+    # does not by itself say what a *second* equipped weapon's own flag
+    # does.
     def dual_attack?; equipment_flag?(:dual_attack, true); end
 
-    # A basic Attack's total swing count. Ordinarily this is just
-    # `#dual_attack?`'s 2-or-1 (the higher of whatever weapon-type items are
-    # equipped, which collapses to one item's own flag for a single weapon).
-    # But a `#double_hand?` actor with a weapon in *both* the weapon and
-    # shield slots is a genuinely different case: ported from a reference
-    # implementation's battle-algorithm init routine, NOT independently confirmed
-    # against genuine RPG_RT under wine (
-    # the dual-weapon "multi-hit" style RPG2003 uses by default whenever
-    # both equipped slots hold a real weapon) sums each
-    # weapon's own hit count instead of taking the higher of the two the way
-    # that reference implementation's ordinary single-weapon max does --
-    # so a two-weapon actor swings **at least twice** even when *neither*
-    # individual weapon is itself flagged 二刀流, the common case for a
-    # dual-wield setup built from two ordinary weapons. Each weapon's own
-    # `#weapon_attack_multiplier` (RPG2003's 攻撃の回数 Battle Animation field)
-    # scales its own term before the two are summed, exactly as that
-    # reference implementation's own number-of-attacks routine scales the
-    # dual-attack term by the weapon's per-actor hit multiplier
-    # before maxing/summing per weapon.
+    # A basic Attack's total swing count. A solo weapon's own #dual_attack?
+    # does not double it -- confirmed by an actual wine capture (2026-09-05):
+    # both a custom 100%-hit probe weapon and Nepheshel's own real
+    # dual_attack weapon (item 36, サクリファイス, hit 100) equipped alone
+    # against a passive, durable enemy logged exactly one
+    # "Xに Yのダメージを与えた!" line per Attack command, in the same band a
+    # matching non-dual_attack control weapon produced (27-29 vs 19-29) --
+    # never a second line, and never roughly double the total. A
+    # `#double_hand?` actor with a weapon in *both* the weapon and shield
+    # slots is a genuinely different, NOT independently confirmed case: a
+    # wine capture of a double_hand leader with the same real dual_attack
+    # weapon in both slots logged a higher total (48) in a single line, not
+    # two -- consistent with either two summed rolls or an entirely
+    # different combined-damage formula, so that branch (ported from a
+    # reference implementation's battle-algorithm init routine, sums each
+    # weapon's own hit count -- RPG2003's dual-wield "multi-hit" style
+    # whenever both equipped slots hold a real weapon, rather than taking
+    # the higher of the two the way that reference implementation's
+    # ordinary single-weapon max does) is left untouched pending further
+    # wine work, not assumed correct.
     def strike_count
       weapons = equipped_weapons
-      return (dual_attack? ? 2 : 1) * weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
+      return weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
       weapons[0, 2].reduce(0) do |s, it|
         s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) * weapon_attack_multiplier(it)
       end

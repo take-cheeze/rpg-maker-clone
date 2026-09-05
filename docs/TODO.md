@@ -31832,6 +31832,37 @@ codebase yet):
   (60, 62) — a stark, unambiguous contrast, not merely a shifted
   probability. No code change: already correctly implemented, just newly
   confirmed.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: a lone equipped
+  `dual_attack` (二刀流) weapon does not make a solo basic Attack swing
+  twice, contradicting `Game::Actor#strike_count`'s previous
+  `dual_attack? ? 2 : 1` single-weapon term.** Two independent probes agreed:
+  a custom 100%-hit weapon (`dual_attack` set per a control/test fixture
+  pair, matching stats otherwise) equipped alone against a passive, durable
+  enemy logged exactly one "Xに Yのダメージを与えた!" line per Attack command
+  in both builds, the test build's own damage (29) in the same band as the
+  control's (27), never a second line or a roughly-doubled total; re-run
+  with Nepheshel's own real `dual_attack` weapon (item 36, サクリファイス,
+  equipped solo) instead of the custom probe gave the same single-line
+  result (19 damage, the same magnitude a single ordinary swing produces).
+  `Actor#strike_count`'s single-weapon branch (`mruby-rpg2k/mrblib/game.rb`)
+  no longer multiplies by `dual_attack? ? 2 : 1`; `#dual_attack?` itself is
+  kept (still read by `#strike_count`'s own two-weapon branch). A genuinely
+  different, still **NOT independently confirmed** case: a `#double_hand?`
+  (二刀流 actor-row flag) leader with that same real weapon in *both* the
+  weapon and shield slots logged a single combined, higher-damage line (48)
+  rather than either a no-op or two separate lines — consistent with either
+  two summed rolls or an entirely different combined-damage formula from a
+  single data point, so the existing two-weapon `strike_count` branch (each
+  slot's own `dual_attack`-derived hit count summed, rather than the
+  higher of the two) is left untouched pending further wine work, not
+  assumed correct either way. Covered by rewriting the existing "a 二刀流
+  weapon swings twice" `scripts/rpg2k_logic_check.rb` check (renamed to "a
+  solo 二刀流 weapon does not swing twice") plus two further checks that had
+  used a solo `dual_attack` weapon merely as a vehicle for a second swing
+  (an SP-cost check and a swing-animation-id check), switched to a genuine
+  two-weapon-slot vehicle instead so they stay independent of this finding
+  — all three confirmed to fail against the pre-fix code. See
+  `changelog.d/dual-attack-does-not-double-solo.fixed.md`.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
