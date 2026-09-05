@@ -620,6 +620,184 @@ assert 'UNPACK_PREMULTIPLY_ALPHA_WEBGL premultiplies a texSubImage2D-from-canvas
   assert_equal truth[3], got[3] # alpha itself is untouched
 end
 
+# --- UNPACK_FLIP_Y_WEBGL addendum --------------------------------------------
+#
+# Unlike UNPACK_PREMULTIPLY_ALPHA_WEBGL above, no real content this project has
+# driven through the engine (including a full played-out battle against a real
+# downloaded MZ release, data/EgoicAnswers) has ever been observed setting
+# this `true` rather than leaving it at its already-default `false` -- a stock
+# PIXI v5 build never sets it (see js_gl_pixel_storei's comment). It is
+# implemented anyway: it is unambiguous, spec-mandated WebGL behaviour (row
+# order is reversed on upload), not a guess, and the wrapper already applies
+# the analogous CPU-side transform for UNPACK_PREMULTIPLY_ALPHA_WEBGL at the
+# same four call sites (flip_y_rgba mirrors premultiply_rgba in mvwebgl.cxx).
+# These two tests only prove the row-reversal itself works; they do not (and
+# cannot, absent such content) prove any real game relies on it.
+
+assert 'UNPACK_FLIP_Y_WEBGL reverses row order on a raw texImage2D upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # A 1x2 texture whose two rows are solid, distinct colours, sampled onto a
+  # full-viewport quad with NEAREST filtering so the bottom and top of the
+  # viewport read back exactly one texel each. The assertions only check that
+  # flipping swaps which texel lands at the bottom vs. the top -- not which
+  # absolute GL row convention (top-down vs. bottom-up) applies -- so the test
+  # does not depend on that convention either way.
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 4, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      function drawWith(flip) {
+        var tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 2, 0, gl.RGBA,
+                      gl.UNSIGNED_BYTE, new Uint8Array([
+                        255, 0, 0, 255,  // row 0 (first in the buffer): red
+                        0, 0, 255, 255,  // row 1 (last in the buffer): blue
+                      ]));
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); // PIXI resets it
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+        var bottom = new Uint8Array(4), top = new Uint8Array(4);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, bottom);
+        gl.readPixels(0, H - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, top);
+        gl.deleteTexture(tex);
+        return bottom.join(',') + '/' + top.join(',');
+      }
+
+      return drawWith(false) + ' | ' + drawWith(true);
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  unflipped, flipped = out.split(" | ")
+  unflipped_bottom, unflipped_top = unflipped.split("/")
+  flipped_bottom, flipped_top = flipped.split("/")
+  assert_true unflipped_bottom != unflipped_top # sanity: the two rows differ
+  assert_equal unflipped_bottom, flipped_top    # flip reverses row order:
+  assert_equal unflipped_top, flipped_bottom    # bottom<->top swap
+end
+
+assert 'UNPACK_FLIP_Y_WEBGL reverses row order on a texSubImage2D-from-canvas upload' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  # Same swap as the raw-upload test above, but through the canvas-source
+  # overload (js_gl_tex_sub_image_2d_canvas) that carries most of MZ's actual
+  # pixels (see the texSubImage2D test near the top of this file).
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var W = 4, H = 8;
+      var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      function shader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src); gl.compileShader(s);
+        return gl.getShaderParameter(s, gl.COMPILE_STATUS) ? s : null;
+      }
+      var vs = shader(gl.VERTEX_SHADER,
+        '#version 100\nattribute vec2 aPos;\nvarying vec2 vUv;\n' +
+        'void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos,0.0,1.0); }\n');
+      var fs = shader(gl.FRAGMENT_SHADER,
+        '#version 100\nprecision mediump float;\nvarying vec2 vUv;\n' +
+        'uniform sampler2D uTex;\nvoid main(){ gl_FragColor = texture2D(uTex, vUv); }\n');
+      if (!vs || !fs) return 'shader-failed';
+      var p = gl.createProgram();
+      gl.attachShader(p, vs); gl.attachShader(p, fs);
+      gl.bindAttribLocation(p, 0, 'aPos');
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return 'link-failed';
+      gl.useProgram(p);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.BLEND);
+
+      var quad = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+      gl.bufferData(gl.ARRAY_BUFFER,
+        new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform1i(gl.getUniformLocation(p, 'uTex'), 0);
+
+      // A 1x2 source canvas, top pixel red, bottom pixel blue.
+      var srcCv = document.createElement('canvas'); srcCv.width = 1; srcCv.height = 2;
+      var sctx = srcCv.getContext('2d');
+      sctx.fillStyle = '#ff0000'; sctx.fillRect(0, 0, 1, 1);
+      sctx.fillStyle = '#0000ff'; sctx.fillRect(0, 1, 1, 1);
+
+      function drawWith(flip) {
+        var tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, srcCv);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.finish();
+        var bottom = new Uint8Array(4), top = new Uint8Array(4);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, bottom);
+        gl.readPixels(0, H - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, top);
+        gl.deleteTexture(tex);
+        return bottom.join(',') + '/' + top.join(',');
+      }
+
+      return drawWith(false) + ' | ' + drawWith(true);
+    })()
+  JS
+
+  assert_false ["no-context", "shader-failed", "link-failed"].include?(out)
+  unflipped, flipped = out.split(" | ")
+  unflipped_bottom, unflipped_top = unflipped.split("/")
+  flipped_bottom, flipped_top = flipped.split("/")
+  assert_true unflipped_bottom != unflipped_top # sanity: the two rows differ
+  assert_equal unflipped_bottom, flipped_top    # flip reverses row order:
+  assert_equal unflipped_top, flipped_bottom    # bottom<->top swap
+end
+
 assert 'the stencil test masks inside a render texture, where MZ actually draws' do
   skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
 

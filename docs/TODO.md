@@ -33151,16 +33151,28 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         advertised and cached like the other two, and a `Uint32Array`-indexed
         draw (with an index value that would not fit a 16-bit buffer) renders
         correctly.
-      - 🚧 Remaining: `UNPACK_FLIP_Y_WEBGL` (genuinely inert against a stock
-        PIXI v5 build — never set `true`, only reset to `false`) and
-        uniform-introspection polish, as real content exercises them. Checked
-        again against a real downloaded MZ release with a far richer script
-        (EgoicAnswers — a ~50-message, particle-effect-laden scripted opening;
-        see the encrypted-audio entry below for the same bed) by instrumenting
-        `js_gl_pixel_storei` (`mvwebgl.cxx`) to log every
-        `UNPACK_*`-range `pixelStorei` call: exactly one call for the whole
-        boot, `UNPACK_FLIP_Y_WEBGL` with `value=0` — still never set `true`.
-        Still open.
+      - ✅ **`UNPACK_FLIP_Y_WEBGL`.** Confirmed genuinely inert against every
+        real MZ release this project has driven through the engine so far —
+        checked against EgoicAnswers (a ~50-message, particle-effect-laden
+        scripted opening plus a full played-out battle; see the
+        encrypted-audio entry below for the same bed) by instrumenting
+        `js_gl_pixel_storei` (`mvwebgl.cxx`) to log every `UNPACK_*`-range
+        `pixelStorei` call: exactly one call for the whole boot,
+        `UNPACK_FLIP_Y_WEBGL` with `value=0` — never set `true` by a stock
+        PIXI v5 build. Implemented anyway: unlike guessing at real-content
+        behaviour, this is unambiguous, spec-mandated WebGL behaviour (source
+        rows are reversed on upload), and the wrapper already applied the
+        analogous CPU-side transform for `UNPACK_PREMULTIPLY_ALPHA_WEBGL`
+        (above) at the same four call sites — `flip_y_rgba` mirrors
+        `premultiply_rgba`, applied before it so both flags can be set
+        together, same as a real browser. Covered by `gl_test.rb`: a raw
+        `texImage2D` upload and a canvas-source `texSubImage2D` upload each
+        come back with their rows swapped top-to-bottom with the flag on, and
+        unchanged with it off (the default) — proof the path works
+        correctly, not proof any real game relies on it, since none observed
+        so far does.
+      - 🚧 Remaining: uniform-introspection polish, as real content
+        exercises it.
       - ✅ **Encrypted MV/MZ audio.** A project with "Encrypt Audio" ticked
         never has a plain `audio/bgm/foo.ogg` on disk — only
         `audio/bgm/foo.ogg_` (MZ) or `foo.rpgmvo` (MV), obfuscated with a
