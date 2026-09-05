@@ -565,7 +565,15 @@ class MV
     return if @frames < 120
 
     @shot_taken = true
-    ok = MV::JS.screenshot(path)
+    # See #present's comment: a WebGL-rendered frame lives in the native
+    # GLES2 FBO, not the plain Canvas2D buffer MV::JS.screenshot reads, so
+    # this needs the same GL-handle branch #present already has.
+    handle = mv_gl_handle
+    ok = if handle && handle > 0
+      MV::JS.screenshot_gl(path, handle)
+    else
+      MV::JS.screenshot(path)
+    end
     $stderr.puts "[MV] screenshot #{ok ? "saved" : "failed"}: #{path}"
   rescue StandardError => e
     $stderr.puts "[MV] screenshot error: #{e.message}"
@@ -1057,11 +1065,56 @@ class MV
     @screen_sprite.z = 0
   end
 
-  # Copy MV's current canvas frame onto the on-screen bitmap. MV renders through
-  # PIXI into its canvas during pump; this blits that canvas into the sprite's
-  # bitmap (marking it dirty) so Graphics.update draws it.
+  # Copy MV's current rendered frame onto the on-screen bitmap.
+  #
+  # `Graphics._rendererType` defaults to `'auto'` (rpg_core.js), and
+  # `PIXI.autoDetectRenderer` picks `WebGLRenderer` whenever
+  # `canvas.getContext('webgl')` succeeds -- which it now always does, since
+  # mvwebgl.cxx installs that bridge globally, for every maker, not just MZ.
+  # A `WebGLRenderer` draws into the native GLES2 backend's own FBO
+  # (mvgl.cxx), never touching the plain Canvas2D pixel buffer `MV::JS.present`
+  # reads -- so once WebGL support landed (M6), every MV game silently started
+  # rendering into a buffer nothing ever copied to the screen, while the one
+  # actually on screen stayed at its untouched initial blank white. Mirrors
+  # MZ's own #present (mz.rb): resolve a WebGL handle and use #present_gl when
+  # one exists, falling back to the plain-canvas path only for the
+  # `PIXI.CanvasRenderer` a `--mv_force_canvas`-style project could still pick
+  # (`Graphics.isWebGL()`, rpg_core.js's own feature check, agrees whenever a
+  # handle resolves).
   def present
-    MV::JS.present(@screen_bitmap) if @screen_bitmap
+    return unless @screen_bitmap
+    handle = mv_gl_handle
+    if handle && handle > 0
+      MV::JS.present_gl(@screen_bitmap, handle)
+    else
+      MV::JS.present(@screen_bitmap)
+    end
+  end
+
+  # Resolve the integer handle of MV's main WebGL context (the id stored as
+  # `.__gl` on the WebGLRenderingContext the wrapper returns), the MV
+  # equivalent of MZ's `#mz_gl_handle`. MV's `Graphics` is a static
+  # object (unlike MZ's instance-based `Graphics._app`), so the renderer sits
+  # directly on `Graphics._renderer` once `Graphics._createRenderer` has run;
+  # fall back to the canvas' own cached context for the brief window before
+  # that. Cached once non-zero (the renderer is created once, at boot) --
+  # cheap either way, but this also means a project that starts on
+  # `PIXI.CanvasRenderer` and never gets a handle keeps re-querying every
+  # frame, matching a renderer that could reasonably not exist yet.
+  def mv_gl_handle
+    return @mv_gl_handle if @mv_gl_handle && @mv_gl_handle > 0
+    @mv_gl_handle = MV::JS.eval(<<~'JS').to_i
+      (function () {
+        try {
+          if (typeof Graphics === 'undefined') return 0;
+          var gl = (Graphics._renderer && Graphics._renderer.gl) || null;
+          if (!gl && Graphics._canvas && Graphics._canvas.getContext) {
+            gl = Graphics._canvas.getContext('webgl');
+          }
+          return (gl && gl.__gl) ? gl.__gl : 0;
+        } catch (e) { return 0; }
+      })();
+    JS
   end
 
   # Advance the game's timer/requestAnimationFrame queue by one host frame. Time

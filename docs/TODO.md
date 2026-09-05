@@ -32997,6 +32997,41 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     one. Covered by `mruby-mvjs/test/canvas_test.rb` (asserts the exact
     fallback value for a non-"GameFont" shorthand, independent of whether a
     real font happens to be loaded in the test environment).
+  - ✅ **Every MV game rendered as a blank screen, on-screen and in every
+    screenshot, from the moment mvwebgl.cxx (M6) landed.** Found by actually
+    running `data/Lunatic-Core` (a real downloaded MV game) through the CI
+    smokes above and looking at the captured frames instead of trusting the
+    `[MV-MOVE] moved=true`-style state assertions, which all kept passing
+    throughout — a real MV game's title screen, map and battle all came back
+    solid white (or black, for the log's own small thumbnail), despite the
+    engine correctly tracking every bit of game *state*. Root cause:
+    `Graphics._rendererType` (rpg_core.js) defaults to `'auto'`, and
+    `PIXI.autoDetectRenderer` picks `WebGLRenderer` whenever
+    `canvas.getContext('webgl')` succeeds — which mvwebgl.cxx made
+    unconditionally true for every maker the day it landed, not only MZ, so
+    every MV game has silently rendered through WebGL (PIXI v4's own
+    `WebGLRenderer`) ever since, into the native GLES2 backend's FBO
+    (mvgl.cxx) — while `MV#present`/`#maybe_screenshot` (`mv.rb`), written
+    before that backend existed, kept reading back the plain Canvas2D pixel
+    buffer PIXI's `WebGLRenderer` never draws into, which stayed at its
+    initial blank white for the entire run. `mz.rb` already solved this
+    exact problem for MZ (`#mz_gl_handle`/`#present`'s WebGL branch) the day
+    the WebGL wrapper landed; `mv.rb` never got the equivalent because MV
+    predates it and nothing exercised the visual output afterward — every
+    existing MV CI check only greps log lines for game-state markers
+    (`moved=true`, `reached_battle=true`), never inspects a pixel. Fixed by
+    adding the same `#mv_gl_handle`/present-and-screenshot branch to `mv.rb`,
+    mirroring `mz.rb`'s. Covered by two new `gl_test.rb` cases that fake just
+    enough of `Graphics` (`_renderer.gl`, MV's equivalent of MZ's
+    `Graphics._app.renderer.gl`) to exercise `#mv_gl_handle` and `#present`'s
+    branch without a full corescript boot — and confirmed against the real
+    bed: the WebGL FBO readback costs real wall-clock time roughly
+    proportional to the 816x624 canvas (not scene complexity), so
+    `.github/workflows/build.yml`'s MV screenshot steps needed a timeout bump
+    (5-8s → 15-30s) to keep capturing successfully, on `data/mv-sample` too,
+    not just `data/Lunatic-Core`. `data/Lunatic-Core`'s title screen and a
+    battle intro now capture their real, richly detailed art instead of a
+    blank frame.
 - 🚧 **M6 — MZ.** A WebGL-subset backend on LVGL so PIXI v5 / RPG Maker MZ runs
   on the same foundation (`js/rmmz_*.js`).
   - ✅ M6.1 foundation: an `MZ` class (`mruby-mvjs/mrblib/mz.rb`) detects an MZ

@@ -1173,3 +1173,76 @@ assert 'drawArraysInstancedANGLE draws one primitive per instance at its own off
   assert_true parts[1].to_i < 60  # midpoint between them: untouched
   assert_true parts[2].to_i > 200 # right instance (offset +0.5): drawn
 end
+
+# --- MV (not just MZ) presenting a WebGL frame ------------------------------
+#
+# mvwebgl.cxx installs canvas.getContext('webgl') globally, for every maker --
+# not only MZ. rpg_core.js's `Graphics._rendererType` defaults to `'auto'`,
+# and PIXI.autoDetectRenderer picks WebGLRenderer whenever that call succeeds,
+# which it now always does; a plain MV game (PIXI v4) therefore renders
+# through WebGL exactly like MZ (PIXI v5) does. MV#present/#maybe_screenshot
+# (mv.rb) predate the WebGL wrapper and still read the plain Canvas2D buffer
+# WebGLRenderer never touches, so every MV game rendered as a blank screen the
+# moment mvwebgl.cxx landed -- found by actually running data/Lunatic-Core (a
+# real downloaded MV game) and finding every captured frame blank white,
+# despite `[MV-MOVE] moved=true` and friends all reporting success (they check
+# only game *state*, never what the screen shows). Fixed by giving MV its own
+# `#mv_gl_handle` (mirrors MZ's `#mz_gl_handle`) and branching #present and
+# #maybe_screenshot on it exactly like mz.rb already does -- these two tests
+# fake just enough of MV's own `Graphics` global (`_renderer.gl`, the MV
+# equivalent of MZ's `Graphics._app.renderer.gl`) to exercise that resolution
+# and the present path without needing a full corescript boot.
+def cleanup_fake_graphics
+  MV::JS.eval("delete globalThis.Graphics;")
+end
+
+assert 'MV#mv_gl_handle resolves the handle from Graphics._renderer.gl' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  handle = MV::JS.eval(<<~'JS').to_i
+    (function () {
+      var cv = document.createElement('canvas'); cv.width = 4; cv.height = 4;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 0;
+      globalThis.Graphics = { _renderer: { gl: gl } };
+      return gl.__gl;
+    })();
+  JS
+  assert_true handle > 0
+
+  resolved = MV.allocate.send(:mv_gl_handle)
+  assert_equal handle, resolved
+ensure
+  cleanup_fake_graphics
+end
+
+assert 'MV#present reads the real WebGL frame once Graphics._renderer.gl resolves' do
+  skip 'EGL/GLES2 backend not compiled into this build' unless MV::GL.available?
+
+  out = MV::JS.eval(<<~'JS')
+    (function () {
+      var cv = document.createElement('canvas'); cv.width = 8; cv.height = 8;
+      var gl = cv.getContext('webgl');
+      if (!gl) return 'no-context';
+      gl.viewport(0, 0, 8, 8);
+      gl.clearColor(0, 1, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.finish();
+      globalThis.Graphics = { _renderer: { gl: gl } };
+      return 'ok';
+    })()
+  JS
+  assert_equal 'ok', out
+
+  mv = MV.allocate
+  bmp = RGSS::Bitmap.new(8, 8)
+  mv.instance_variable_set(:@screen_bitmap, bmp)
+  mv.send(:present)
+
+  c = bmp.get_pixel(4, 4)
+  assert_true c.green > 200 # the cleared green frame, read back off the FBO
+  assert_true c.red < 60    # not the plain Canvas2D buffer (untouched, blank)
+  assert_true c.blue < 60
+ensure
+  cleanup_fake_graphics
+end
