@@ -1388,7 +1388,8 @@ class MZ
   # the probe would report "did not move" not because the engine failed to
   # walk the player, but because it never got a turn against the game's own
   # event. If either is true, confirm gets tapped (see MV.confirm_settle_tap)
-  # until both clear or MV::MOVE_SETTLE_MAX_FRAMES runs out; if neither was
+  # until both clear or MV.move_settle_max_frames runs out (MOVE_SETTLE_MAX_FRAMES,
+  # or the --move_settle_max_frames override — see that method); if neither was
   # busy to begin with, movement starts immediately, exactly as before this
   # existed. If the interpreter is *still* running once the probe ends, the
   # "end" line says so (`blocked=true`) rather than a bare `moved=false`
@@ -1411,7 +1412,7 @@ class MZ
     unless @move_settled
       @move_settle_frame ||= 0
       if (MV.message_busy? || MV.event_running?) &&
-         @move_settle_frame < MV::MOVE_SETTLE_MAX_FRAMES
+         @move_settle_frame < MV.move_settle_max_frames
         MV.confirm_settle_tap(@move_settle_frame)
         @move_settle_frame += 1
         return

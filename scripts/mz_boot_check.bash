@@ -62,6 +62,33 @@
 # if it has not been fetched the check skips with a message rather than failing,
 # the same way the RPG2k/XP boot checks skip an absent downloaded game.
 #
+# Other knobs, all optional:
+#
+#   MZ_TROOP               troop id for battle/battle_play (default 1)
+#   MZ_SCREENSHOT           path to save the captured frame to (default per-mode)
+#   MZ_TIMEOUT_MS           overrides the per-mode wall-clock ceiling below
+#   MZ_MOVE_SETTLE_MAX_FRAMES
+#                           overrides MV::MOVE_SETTLE_MAX_FRAMES (mv.rb), the cap
+#                           on how long the `play` mode's move probe waits for a
+#                           busy opening event to clear before it starts holding
+#                           a direction. The 180-frame default is sized for an
+#                           ordinary game's opening dialogue; a real release
+#                           whose own scripted intro runs far longer needs a
+#                           bigger one-off value to get the probe past it
+#                           instead of reporting blocked=true (see
+#                           mruby-mvjs/mrblib/mv.rb and docs/TODO.md's
+#                           EgoicAnswers entry for how this was found, and why
+#                           the *default* stays 180). E.g. against the real
+#                           downloaded data/EgoicAnswers release: 2000 still
+#                           reports blocked=true (the intro is not done), but
+#                           8000 clears it — the run walks straight through the
+#                           whole cutscene into Scene_Battle (a forced battle
+#                           ends the intro, so `play` mode still cannot report
+#                           moved=true for this bed; see docs/TODO.md):
+#                             MZ_MODE=play MZ_TIMEOUT_MS=280000 \
+#                               MZ_MOVE_SETTLE_MAX_FRAMES=8000 \
+#                               ./scripts/mz_boot_check.bash 112 data/EgoicAnswers
+#
 # Usage: MZ_MODE=<mode> ./scripts/mz_boot_check.bash [server_num] [game_dir]
 
 set -eu -o pipefail
@@ -148,6 +175,12 @@ case "${MODE}" in
 esac
 SHOT="${MZ_SCREENSHOT:-${DEFAULT_SHOT}}"
 TIMEOUT_MS="${MZ_TIMEOUT_MS:-${DEFAULT_TIMEOUT_MS}}"
+# 0 (unset) leaves MV::MOVE_SETTLE_MAX_FRAMES's own 180-frame default alone;
+# see the header comment above for what a larger value is for.
+MOVE_SETTLE_MAX_FRAMES="${MZ_MOVE_SETTLE_MAX_FRAMES:-0}"
+if [ "${MOVE_SETTLE_MAX_FRAMES}" -ne 0 ] ; then
+    FLAGS+=("--move_settle_max_frames=${MOVE_SETTLE_MAX_FRAMES}")
+fi
 
 if [ ! -x "${ENGINE}" ] ; then
     echo "error: ${ENGINE} not built; run cmake --build build first" >&2
