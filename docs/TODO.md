@@ -8970,6 +8970,30 @@ The work below is roughly ordered by the critical path to a walkable game
   entry, same as every other field here — the composed English fallback already
   carried its own `' (critical!)'` suffix (`battle_action_line`), so nothing is
   lost by falling back whole.
+  ❌ **Follow-up (2026-09-05), reverted by an actual wine capture: the
+  target-keyed reading above was backwards.** Confirmed by swapping the
+  database's own `actor_critical`/`enemy_critical` terms for distinct ASCII
+  markers, then forcing a guaranteed critical hit in both directions: an
+  ally's own critical hit against an enemy showed the `actor_critical`
+  marker, and a separate enemy's critical hit against that same ally showed
+  the `enemy_critical` marker — keyed on the **attacker's** side after all,
+  the "obvious from the words themselves" reading this entry originally
+  talked itself out of. `Scene::Map#battle_action_body`
+  (`mruby-rpg2k/mrblib/scene/battle.rb`) now passes `e[:attacker_ally]`
+  instead of `e[:target_ally]` to `Game::States::BattleText.critical`; that
+  method's own second parameter is renamed to match (its boolean-to-term
+  mapping itself is unchanged, only what the caller now passes it). Reached
+  only for a plain Attack's own log entry (a skill's own crit line was never
+  wired up at all, a separate, pre-existing gap outside this fix's scope),
+  which is exactly the one entry shape that always carries `attacker_ally`
+  (see `#deal_attack_with_current_weapon`'s own citation on that field), so
+  the swap needed no new plumbing. `actor_damaged`/`enemy_damaged`
+  (mentioned above as sharing the old, wrong rule) are genuinely
+  target-keyed and unaffected by this fix — only the critical-hit line
+  itself was wrong. Both affected `scripts/rpg2k_logic_check.rb` and
+  `scripts/rpg2k_scene_check.rb` checks rewritten in place, confirmed to
+  fail against the pre-fix code (wrong term selected in both directions)
+  before the fix.
   The **field windows show a condition too** — the menu party list, the item and
   skill target lists and the status screen (a labelled row of its own), which are
   the three RPG_RT draws one in (`Window_MenuStatus`, `Window_ActorTarget`,

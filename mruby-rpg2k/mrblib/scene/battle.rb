@@ -2920,8 +2920,20 @@ class RPG2k
         want_crit = e[:critical] ? true : false
         start = want_start && battle_start_line(t, e, want_start)
         result = want_result && battle_result_line(t, e)
+        # Keyed on the *attacker's* side, not the target's -- reverted after a
+        # genuine wine capture (2026-09-05) contradicted the citation this
+        # replaced: with the database's own actor_critical/enemy_critical
+        # terms swapped for distinct ASCII markers, an ally's own critical
+        # hit against an enemy showed the actor_critical marker, and an
+        # enemy's critical hit against that same ally showed the
+        # enemy_critical marker -- the opposite of "keyed on the target"
+        # (which would have shown enemy_critical for the first case and
+        # actor_critical for the second). Only reached for a plain Attack
+        # entry (skill/recover already returned above), which is exactly the
+        # one entry shape that always carries `attacker_ally` (see
+        # `#deal_attack_with_current_weapon`'s own citation on that field).
         crit = want_crit &&
-               Game::States::BattleText.critical(t, e[:target_ally] ? true : false)
+               Game::States::BattleText.critical(t, e[:attacker_ally] ? true : false)
         # All or nothing per entry: a half-translated line ("スライムの攻撃！"
         # with no damage sentence under it) reads worse than the composed
         # English, so a blank term drops the whole entry back to the fallback
