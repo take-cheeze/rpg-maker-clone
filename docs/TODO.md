@@ -31116,6 +31116,20 @@ codebase yet):
   enemy troop, still at full HP, does not end the fight — the fight only
   ends once they're actually reduced to 0 HP), confirmed to fail against
   the pre-fix code before the fix.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: the 2026-08-20
+  follow-up above is confirmed — a fully-restricted (do-nothing) enemy
+  troop, still at full HP, really does not end the fight.** Nepheshel's
+  real skill 87 (時の砂) inflicting real state 18 (restriction 1 /
+  do-nothing) landed on a solo enemy in an otherwise-empty troop; the
+  battle did not end there. The enemy's own next turn still came up (its
+  state's own affected-message reminder, "Mrrorは止まっている!", fired,
+  proving it was still an active combatant rather than defeated), the
+  command menu returned to normal afterward, and re-opening Attack still
+  listed the enemy at full HP as a live target — no Victory screen at any
+  point despite the enemy never taking a single point of damage. No code
+  change: `Game::Battle#finished?`/`#enemy_active?`'s existing
+  implementation was already correct, just newly confirmed. See
+  `Game::Battle#finished?`'s own updated citation.
   ✅ **Berserk/Confusion override target selection but still
   honour "hits twice"/"ignores evasion," while Berserk additionally
   collapses an "attack all" weapon down to a single target and disables
