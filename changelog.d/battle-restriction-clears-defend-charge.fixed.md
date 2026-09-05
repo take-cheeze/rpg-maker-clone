@@ -6,9 +6,10 @@
   held attack) when it got put to sleep, berserked, or confused kept the
   stale flag — wrongly halving incoming damage, or wrongly doubling its own
   next attack, until something else happened to clear it. Ported from a
-  reference implementation's own `AddState` (NOT independently confirmed
-  against genuine RPG_RT under wine): it resets both fields unconditionally
-  whenever the post-add significant restriction (`#battler_restriction`) is
-  non-normal, not only on death. Covered by a new
+  reference implementation's own `AddState`, and confirmed against genuine
+  RPG_RT.exe under wine: a Defending, `strong_defence` leader took a
+  quarter-damage hit (21) when nothing interrupted the Defend, but the same
+  attack against the same leader landed for full, undefended damage (116)
+  once a Berserk-inflicting skill hit mid-round. Covered by a new
   `scripts/rpg2k_logic_check.rb` check, confirmed to fail against the pre-fix
   code.

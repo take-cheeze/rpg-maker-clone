@@ -6183,10 +6183,11 @@ module Game
     # a few lines earlier from whether the skill targets allies,
     # which is simply the negation of targeting enemies -- true for every scope
     # except Scope_enemy(0)/Scope_enemies(1). `reverse_state_effect` plays no
-    # part in this at all (that flag's own state-cure/inflict role is,
-    # per the same function, `IsPositive() ^ (Player::IsRPG2k3() &&
-    # skill.reverse_state_effect)` -- see #battle_skill_command's own
-    # `heals_states`, which implements exactly that formula, gate and all).
+    # part in this at all (that flag's own state-cure/inflict role is
+    # `IsPositive() ^ reverse` -- see #battle_skill_command's own
+    # `heals_states`, confirmed against genuine RPG_RT under wine to apply
+    # under RPG2000 too, not gated to RPG2003 the way a reference
+    # implementation's own source guards it).
     # So the direction is purely the skill's own target scope: an ally-scoped
     # skill (self/single ally/all allies, the "buff"
     # shape) always raises resistance, an enemy-scoped one (single/all
@@ -6271,21 +6272,29 @@ module Game
       stat_keys = skill_stat_mod_keys(sk)
       enemy_scope = sk.scope == 0 || sk.scope == 1 # single or all enemies
       # A skill's own `state_effects` list normally cures on an ally/self scope
-      # and inflicts on an enemy scope -- ported from a reference
-      # implementation, NOT independently confirmed
-      # against genuine RPG_RT under wine: it computes whether the skill heals
-      # states as "targets allies" XORed with an RPG2003-only reverse flag,
-      # where "targets allies" is simply "this skill targets allies". Under
-      # RPG2000 the XOR's
-      # right-hand term is always false, so this collapses to exactly that
-      # plain scope rule (matching #skill_attr_shift's own already-settled
-      # reading of the identical formula) -- but an RPG2003 database with
-      # `reverse_state_effect` set flips it either way: an ally-scoped skill
-      # inflicts its listed states instead of curing them (a self-scoped
-      # Berserk that confuses its own caster, say), and an enemy-scoped one
-      # cures its target's states instead of inflicting new ones.
+      # and inflicts on an enemy scope, XORed with `reverse_state_effect`:
+      # an ally-scoped skill with it set inflicts its listed states instead of
+      # curing them (a self-scoped Berserk that confuses its own caster, say),
+      # and an enemy-scoped one with it set cures its target's states instead
+      # of inflicting new ones. A reference implementation guards the reverse
+      # term behind an RPG2003-only check (`IsPositive() ^ (Player::IsRPG2k3()
+      # && skill.reverse_state_effect)`, matching #skill_attr_shift's own
+      # citation of the identical formula) -- this codebase used to port that
+      # gate too, on the assumption that a stock RPG2000 editor has no UI to
+      # set the bit anyway (true) and so RPG_RT would never honour it there
+      # regardless (unconfirmed). Checked directly against genuine RPG_RT.exe
+      # under wine (2026-09-05), NOT independently confirmed further than
+      # this one scope: a hand-authored RPG2000 database (real edition byte,
+      # no RPG2003-only section) enemy-scope skill with the bit set cured a
+      # state on its target instead of inflicting it, and the identical skill
+      # with the bit clear inflicted normally -- RPG_RT reads and honours
+      # `reverse_state_effect` under RPG2000 too, same as the already-known
+      # "physical" skill-formula bit (`#skill_to_hit`'s own citation) the 2000
+      # editor also cannot set but RPG_RT still reads. The gate is dropped
+      # here to match; a database only the 2000 editor itself ever produced
+      # still behaves identically, since it can never carry the bit set.
       reverse = sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
-      heals_states = !enemy_scope ^ (rpg2003? && reverse)
+      heals_states = !enemy_scope ^ reverse
       state_ids = skill_state_ids(sk)
       cure_ids = heals_states ? state_ids : []
       inflict_ids = heals_states ? [] : state_ids

@@ -31591,11 +31591,29 @@ codebase yet):
     confirmed by reading — a reference implementation's own
     `battle_animation.cpp`/`game_battle.cpp` were fetched and read directly
     for this cycle too, confirming no such cutoff exists there either, so
-    this genuinely isn't answerable without a wine capture); and whether
-    becoming staggered/surprised (a non-lethal flinch from taking damage)
-    releases the Defend flag specifically — still open, still needs wine,
-    `Game::Battle#apply_knockout_reset` is still gated on death and still
-    never runs for a non-lethal flinch.
+    this genuinely isn't answerable without a wine capture).
+    - ✅ **Follow-up (2026-09-05), by an actual wine capture: an ordinary
+      non-lethal hit does NOT release Defend — only a forced-restriction
+      state landing does (the follow-up directly below this one).** Same
+      synthetic-fixture technique (a fresh troop built by editing a scratch
+      copy's `RPG_RT.ldb`/`Map0012.lmu` directly under CRuby, a save built
+      from scratch via `Game::State#to_lsd`): a solo, 500-HP, `strong_defence`
+      leader chose Defend, then took two plain Attacks in the same round from
+      two custom enemies with no skills or states involved at all — "Jab"
+      (high agility, a small ~9-power hit, landing first) then "Striker" (the
+      same ~100-power probe hit the state-infliction test below uses).
+      Jab's own hit landed quartered (2 damage, matching Defend +
+      `strong_defence` halving twice), and — the actual question — a
+      "リトは身を守っている！" ("Rito is still guarding!") reminder showed
+      between the two hits, then Striker's hit landed quartered too (22
+      damage, the same ~21-29 band the control run below measured for an
+      uninterrupted Defend, nowhere near the ~80-120 undefended band).
+      Taking a hit that does not otherwise change the target's state is not
+      itself a "stagger" that breaks guard in genuine RPG_RT — this settles
+      the question the bullet above left open, distinctly from (and
+      confirming the necessity of) the state-restriction case fixed and
+      confirmed just below: it is specifically the *state* landing that
+      clears Defend, not any incoming hit.
     - ✅ **Follow-up (2026-09-04): a related but distinct gap, found by
       reading that same reference implementation's source rather than
       guessing at the flinch question above, is fixed.** Its own `AddState`
@@ -31622,6 +31640,67 @@ codebase yet):
       immediately; an ordinary, non-restricting state leaves them
       untouched), confirmed to fail against the pre-fix code. See
       `changelog.d/battle-restriction-clears-defend-charge.fixed.md`.
+      - ✅ **Follow-up (2026-09-04): confirmed against genuine RPG_RT.exe
+        under wine, not just ported from a reference implementation.**
+        wine (win32 + 32-bit libGL) is installed in this session
+        specifically to check this rather than continue trusting the
+        reference source alone. A synthetic Nepheshel fixture (`LCF::Database`/
+        `MapUnit` edited directly under CRuby, mirroring `scripts/
+        lcf_testbed_check.rb`'s own load pattern, and a save built from
+        scratch via `Game::State#to_lsd` rather than editing a real one) put
+        a solo, 500-HP, `strong_defence` leader (リト, already `strong_defence`
+        in the real database) into a custom troop: one enemy whose only
+        action casts a new skill inflicting Berserk on the leader (100% hit,
+        no HP/SP effect), agility-ordered to act before a second enemy whose
+        only action is a plain, ~100-power Attack. The leader chose Defend
+        the instant the round opened; the encounter's own battle log,
+        captured via repeated `xwd` screenshots under Xvfb, showed Berserk
+        landing ("リトは怒りに我を忘れた！") before the second enemy's attack
+        resolved — and that attack then dealt 116 damage (500 → 384 HP),
+        matching the full, undefended range, not the ~21-29 quarter-damage
+        range a **control** run (the identical fixture minus the
+        Berserk-casting enemy) confirmed for a genuinely-uninterrupted
+        Defend against the identical attacker (500 → 479 HP, 21 damage).
+        Genuine RPG_RT clears the stale Defend stance the instant the
+        forced-restriction state lands, exactly matching this fix — the
+        "staggered/surprised" question further up is a separate question
+        (a non-lethal flinch with no state involved), settled by its own
+        dedicated capture instead (see the follow-up above this whole
+        Berserk sub-thread).
+        - ✅ **Follow-up (2026-09-05): the side finding this same fixture
+          turned up is fixed too.** Casting the scope-0 ("single enemy")
+          skill with `reverse_state_effect` cleared inflicted Berserk
+          normally, but with the flag *set* it instead *cured* Berserk from
+          the leader (message `落ち着きを取り戻した！`, state 6's own
+          recovery line) — the opposite of what
+          `Game::Battle#battle_skill_command`'s `heals_states = !enemy_scope`
+          predicted for an RPG2000 database (`enemy_scope` true for scope
+          0/1, so `heals_states` should be `false` — inflict, regardless of
+          the flag). Re-run as its own dedicated A/B (only `skill[20]`
+          differed between the two wine captures): genuine RPG_RT reads and
+          honours `reverse_state_effect` under RPG2000 too, the same way it
+          already honours the "physical" skill-formula bit
+          (`#skill_to_hit`'s own citation) a stock 2000 editor also cannot
+          set. A reference implementation's own source gates the reverse
+          term behind `Player::IsRPG2k3()` (matching `#skill_attr_shift`'s
+          own citation of the identical formula), and this codebase had
+          faithfully ported that gate too, on the (wrong) assumption that a
+          stock RPG2000 editor's own inability to set the bit meant RPG_RT
+          would never honour it there either. Fixed by dropping the
+          `rpg2003? &&` gate in `#battle_skill_command`; a database only the
+          2000 editor itself ever produced behaves identically either way,
+          since it can never carry the bit set. Covered by two rewritten
+          `scripts/rpg2k_logic_check.rb` checks (the RPG2000 case now
+          asserts the flag flips cure/inflict exactly as an RPG2003 database
+          already did, plus a same-database edition-parity check), confirmed
+          to fail against the pre-fix code. See
+          `changelog.d/skill-reverse-state-effect-rpg2000.fixed.md`. Not
+          independently confirmed past the one enemy-scope case actually run
+          under wine — a self/ally-scope re-run of the same probe produced
+          no observable message either way (a self-scope "cure nothing to
+          cure" apparently prints nothing at all, unlike the single-enemy
+          case), so the fix's self/ally-scope half rests on the formula
+          being the same one shared XOR rather than a second capture.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
