@@ -33106,6 +33106,44 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         (not just round-tripped through the same method), the loose-file
         search itself, and that a real loose plain file still wins over an
         encrypted one sitting right beside it.
+        - ✅ **CI actually exercises the decrypt path now**, not just the unit
+          test above and one hand-run against the 924 MB downloaded
+          `EgoicAnswers` release. That gap was real: this fix's *own*
+          `mz_encrypted_check.bash` run had zero encrypted audio bytes to
+          decrypt. `scripts/gen-mz-encrypted.py`'s `MZ_EXT` only sweeps
+          `.png`/`.ogg`/`.m4a` into the derived encrypted project (matching
+          real MZ — the fetched corescript's `AudioManager.audioFileExt`
+          unconditionally returns `.ogg`,
+          `data/mz-sample/js/rmmz_managers.js:1418-1420` — ships no `.wav`
+          at all), but `scripts/gen-mz-sample.py`'s only audio fixture was
+          `audio/se/Beep.wav` — a `.wav` chosen purely because `write_wav`
+          is the one audio encoder this project can hand-roll with no
+          library (see its own docstring). So the derived project's
+          `Beep.wav` was copied through *unencrypted*, `--mz_audio_test`'s
+          probe resolved and played it through the ordinary plain-disk
+          search, and the encrypted-loose fallback (`find_encrypted_loose`/
+          `decrypt_mv_asset`) was never reached even once by any check CI
+          runs. Fixed by renaming the fixture to `audio/se/Beep.ogg` — same
+          `write_wav` bytes, no new dependency, no new probe — so
+          `gen-mz-encrypted.py` now folds it into `Beep.ogg_` like any other
+          audio asset and the existing `play`-mode `--mz_audio_test` probe
+          decrypts and plays it for real. Verified genuinely decodable
+          (not merely "the bytes are handed to `_se_play_mem`"): SDL_mixer's
+          `Mix_LoadWAV_RW` (`src/sdl_audio.cxx`'s `load_chunk_mem`) sniffs
+          the codec from the RIFF magic in the decrypted byte stream itself
+          — there is no filename once the bytes come from an in-memory
+          `SDL_RWFromConstMem`, the very RWops both the encrypted-loose and
+          packed-archive routes use — so a plain WAV body plays back
+          correctly regardless of the (fake) `.ogg` name on disk. Checked
+          `flake.nix` first for a free CLI encoder before choosing this: only
+          the SDL2_mixer *library* (a decoder, not an encoder) is a devShell
+          input; no `ffmpeg`/`oggenc`/`vorbis-tools`/`sox` is present, so
+          reusing `write_wav` under a different extension was the fix that
+          added no dependency rather than the one that merely avoided
+          looking for one. `data/mv-sample` is untouched: MV's bed has its
+          own separate `gen-mv-sample.py`/`write_wav`/`Beep.wav`, and no
+          script runs `gen-mz-encrypted.py --mv` against it. See
+          `changelog.d/mz-encrypted-audio-fixture.changed.md`.
       - ✅ **`MZ_MOVE_SETTLE_MAX_FRAMES`: a per-invocation override for
         `mz_boot_check.bash`'s `play` mode, so it can be driven manually past
         a real game's whole scripted opening instead of only its short

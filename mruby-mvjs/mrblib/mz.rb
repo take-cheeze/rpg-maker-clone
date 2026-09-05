@@ -2391,7 +2391,9 @@ class MZ
   # AudioManager once the map is up, so a headless run proves the whole audio
   # chain — AudioManager -> the bridge's op queue -> #pump_audio -> RGSS::Audio
   # -> the SDL mixer — rather than only that the bridge is installed. The sample
-  # ships an authored `audio/se/Beep.wav` for exactly this. One-shot; a no-op
+  # ships an authored `audio/se/Beep.ogg` for exactly this (named `.ogg` so
+  # scripts/gen-mz-encrypted.py's own encryption sweep picks it up too --
+  # see scripts/gen-mz-sample.py's comment on that asset). One-shot; a no-op
   # during normal play. Mirrors MV#maybe_audio_test.
   def maybe_audio_test
     return if @audio_test_done
