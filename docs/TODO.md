@@ -31844,6 +31844,51 @@ codebase yet):
   for 200 damage (999 → 799 HP) — double the ordinary ~80-120 undefended
   band, not that band itself. No code change: already correctly
   implemented, just newly confirmed.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: `Game::Battle#strike`'s
+  "a charged enemy never runs its own pattern, forced into a plain Attack"
+  behavior was wrong — genuine RPG_RT still consults the pattern while
+  charged, and only collapses an Attack-type pick's own swing count to
+  one.** A synthetic enemy's AI had Charge on turn 1 only and Defend (no
+  Attack action at all) on turn 2 and every turn after — a pattern of
+  nothing but Defend, which this codebase's own prior `#strike` would
+  never even have looked at while charged. Genuine RPG_RT's turn-2 battle
+  log showed "Duelistは身を守っている!" (Duelist is defending!), not a
+  forced attack — contradicting this method's own prior citation (a
+  reading of a reference implementation's source claiming a charged enemy
+  "can never end up Defending... it is guaranteed exactly one doubled
+  Attack"), which had never itself been checked against genuine RPG_RT.
+  Re-examining an earlier wine capture from this same cycle (a Charge +
+  BASIC_DUAL_ATTACK fixture, set aside at the time as too noisy to draw a
+  conclusion from and never written up) in light of this finding resolves
+  it too: that fixture's own offline "verification" script called
+  `#perform_enemy_action` directly
+  with the dual-attack action already chosen, bypassing `#strike`'s real
+  charged-dispatch entirely, so its "both swings land doubled" prediction
+  never actually described what `#strike` does in a real fight. The wine
+  capture itself — one landed hit's worth of damage on the charged turn
+  against two landed hits on the later uncharged turns, across two
+  independent trials — was the correct signal all along: genuine RPG_RT
+  caps a charged Dual Attack pattern pick at a single swing, exactly what
+  `#strike`'s pre-existing (and still-correct) "forced single Attack even
+  when the pattern says Attack Twice" handling already did. Fixed by
+  narrowing `#strike`'s charged short-circuit: it now runs
+  `#choose_enemy_action` unconditionally and only substitutes the
+  plain-Attack fallback when the *drawn* action is itself `BASIC_ATTACK` or
+  `BASIC_DUAL_ATTACK` — Defend, a Skill, Self-Destruct, Escape or a fresh
+  Charge all run through `#perform_enemy_action` normally regardless of
+  charge, none of them independently re-confirmed by this same capture but
+  sharing no special-casing with Defend in either `#strike` or the debunked
+  citation either. Left open, not independently confirmed either way: does
+  a charge survive being spent on a Defend (to double a *later* attack), or
+  is it lost the instant any action runs, win or lose? This fixture's
+  pattern was Defend-only forever, so no later attack was ever available to
+  check `#perform_enemy_action`'s own unconditional `b.charged = false`
+  against. Covered by rewriting the existing
+  `scripts/rpg2k_logic_check.rb` check in place (now "a charged enemy
+  still runs a non-Attack pattern action like Defend normally, instead of
+  being forced to attack"), confirmed to fail against the pre-fix code. See
+  `Game::Battle#strike`'s own updated citation and
+  `changelog.d/enemy-charge-forces-attack.fixed.md`.
 - ✅ **Follow-up (2026-09-05), by an actual wine capture: a weapon's 必中
   (ignore_evasion) flag really does bypass the target's agility-based
   evasion, confirming `Game::Actor#ignores_evasion?`'s own citation

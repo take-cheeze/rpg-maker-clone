@@ -12798,28 +12798,47 @@ module Game
       # reads 1.
       return apply_command(b, combo_hits(b, :skill)) if b.command
       return nil if side_of(b) == :ally && b.defending # defending = no attack
-      # An enemy with a 行動パターン chooses from it rather than always swinging
-      # -- except while charged, which forces a plain single Attack instead,
-      # bypassing the pattern draw entirely. Ported from a reference
-      # implementation's own state-restricted-action check, NOT independently
-      # confirmed
-      # against genuine RPG_RT under wine: it checks
-      # whether the source is charged right after its attack_ally/attack_enemy
-      # restriction branches (both already handled above) and, if set, forces
-      # a single attack and returns *before* the
-      # rating-weighted pattern picker is ever consulted
-      # -- so a charged enemy can never end up
-      # Defending, casting a Skill, self-destructing, or gathering another
-      # Charge; it is guaranteed exactly one doubled swing. `choose_enemy_action`
-      # is skipped outright rather than filtered afterward, falling through to
-      # the same forced-attack path below an empty pattern already uses --
-      # which already reads and spends `b.charged` itself
-      # (#deal_attack_with_current_weapon's own `charged.nil?` fallback).
+      # An enemy with a 行動パターン chooses from it rather than always swinging,
+      # even while charged -- charge only forces the *swing count* of an
+      # Attack-type pick (plain Attack or Dual Attack) down to a single
+      # blow, it does not bypass the pattern draw itself. Confirmed against
+      # genuine RPG_RT under wine (2026-09-05), two separate findings:
+      #
+      # A charged enemy still runs a non-Attack pattern pick normally -- a
+      # synthetic enemy whose only turn-2+ action was Defend (no Attack
+      # action in its pattern at all past the charging turn) showed
+      # "Duelistは身を守っている!" (Duelist is defending!) on its charged
+      # turn, not a forced attack. This directly contradicts this method's
+      # own prior citation ("a charged enemy can never end up Defending,
+      # casting a Skill, self-destructing, or gathering another Charge; it
+      # is guaranteed exactly one doubled swing"), which was only ever a
+      # reading of a reference implementation's source, never itself
+      # checked against genuine RPG_RT. Skill, self-destruct, escape and a
+      # fresh Charge are not independently re-confirmed by this same
+      # capture, but share no special-casing with Defend in either this
+      # method or that debunked citation, so they are assumed to behave
+      # the same (run normally) rather than guessed at differently.
+      #
+      # A charged enemy's own Dual Attack pattern pick DOES still collapse
+      # to a single swing, though: a separate fixture whose only turn-2+
+      # action was BASIC_DUAL_ATTACK (charged turn 2, uncharged from turn 3
+      # on) logged exactly one landed hit's worth of damage on the charged
+      # turn against two landed hits on the later uncharged turns, across
+      # two independent trials -- consistent with genuine RPG_RT capping an
+      # Attack-type pattern pick's own swing count at one while charged,
+      # not with both swings landing doubled the way a naive "charge just
+      # sets a flag `enemy_basic_action` reads twice" port would predict.
+      # See `EnemyAction::BASIC_DUAL_ATTACK`'s own citation in
+      # #enemy_basic_action.
       if side_of(b) == :enemy
         # A guard raised last turn expires as this one begins (the allies' is
         # cleared by #end_round; an enemy acts on its own schedule).
         b.defending = false
-        act = b.charged ? nil : choose_enemy_action(b)
+        act = choose_enemy_action(b)
+        attack_type_pick = act && act.basic? &&
+                           [EnemyAction::BASIC_ATTACK, EnemyAction::BASIC_DUAL_ATTACK]
+                             .include?(act.basic)
+        act = nil if b.charged && attack_type_pick
         return perform_enemy_action(b, act) if act
       end
       target = attack_target(b)
@@ -13106,12 +13125,15 @@ module Game
         # action was BASIC_DUAL_ATTACK logged two distinct "Duelistの攻撃!"
         # message screens in a single round (52 then 41 damage, each its own
         # confirm-gated box, not one combined line), never a single hit.
-        # Ported from a reference implementation's own dual attack; the
-        # *charge* interaction below is a separate, still NOT independently
-        # confirmed claim: one basic-attack algorithm with a repeat count of
-        # 2, not two separate algorithm instances -- its own init step (and
-        # so `charged_attack`) runs once for the whole action, so a charge
-        # doubles *both* swings, not only the one that happens to run first.
+        # Ported from a reference implementation's own dual attack. `charged`
+        # is always false/nil here now: #strike collapses a charged enemy's
+        # own Dual Attack pattern pick to a single swing through the
+        # plain-Attack fallback before this method is ever reached with it
+        # (confirmed against genuine RPG_RT under wine, 2026-09-05 -- see
+        # #strike's own citation), so the "does charge double both swings or
+        # only the first" question this comment used to raise for this
+        # branch cannot come up: this branch itself is never called while
+        # charged at all.
         first = deal_attack(b, target, 0, charged: charged)
         # The second swing only lands if the first did not fell the target.
         return [first] if target.dead?

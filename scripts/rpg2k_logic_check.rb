@@ -21832,24 +21832,30 @@ check 'a charge doubles the enemy next attack, then is spent' do
   ok !foe.charged, 'and the charge is spent'
 end
 
-check 'a charged enemy is forced to attack, never running a pattern action ' \
-      'like Defend even when the pattern would otherwise choose it' do
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it checks
-  # source.IsCharged() right after its attack_ally/attack_enemy restriction
-  # branches and, if set, calls MakeAttack(source, 1) and returns *before*
-  # SetEnemyAiAction (the rating-weighted pattern picker) is ever consulted
-  # (its `if (!SetStateRestrictedAction(*enemy)) ...
-  # SetEnemyAiAction(...)`) -- so a charged enemy can never end up Defending
-  # (or casting a Skill, self-destructing, ...); it is guaranteed exactly one
-  # doubled Attack. #strike now skips #choose_enemy_action outright while
-  # charged, matching that gate -- it used to run the pattern normally, so a
-  # single-entry Defend pattern would win the draw and spend the charge for
-  # nothing (that reference's own Game_BattleAlgorithm::AlgorithmBase::Start()
-  # unconditional SetCharged(false) still fires for *any* algorithm once one
-  # actually runs, and is ported by
-  # #perform_enemy_action -- that part was already correct, it just used to
-  # be reachable by the wrong action kind).
+check 'a charged enemy still runs a non-Attack pattern action like Defend ' \
+      'normally, instead of being forced to attack' do
+  # Confirmed against genuine RPG_RT under wine (2026-09-05): a synthetic
+  # enemy whose only turn-2+ action was Defend (no Attack action in its
+  # pattern at all past the charging turn) showed "Duelistは身を守ってい
+  # る!" (Duelist is defending!) on its charged turn, not a forced attack.
+  # This directly contradicts what this check used to assert (a reading of
+  # a reference implementation's source claiming a charged enemy "can
+  # never end up Defending... it is guaranteed exactly one doubled
+  # Attack") -- that reading was never itself checked against genuine
+  # RPG_RT, and this capture contradicts it. #strike now runs
+  # #choose_enemy_action normally regardless of charge, and only substitutes
+  # the plain-Attack fallback when the *drawn* action is itself an Attack
+  # or Dual Attack (see #strike's own updated citation) -- a single-entry
+  # Defend pattern wins the draw and runs, exactly as it would uncharged.
+  #
+  # Whether the charge itself survives a Defend (to double a *later*
+  # attack) or is spent for nothing the instant any action runs, win or
+  # lose, is NOT independently confirmed either way by this capture (the
+  # fixture's pattern was Defend-only forever, so no later attack was ever
+  # available to check against) -- #perform_enemy_action's own unconditional
+  # `b.charged = false` (ported from that same reference implementation's
+  # claim that its own SetCharged(false) fires for *any* algorithm once one
+  # runs) is left as-is rather than guessed at differently. See docs/TODO.md.
   foe = combatant('Slime', 40, 0, 5, 500)
   charge = enemy_action(kind: 0, basic: 4)
   defend = enemy_action(kind: 0, basic: 2)
@@ -21857,13 +21863,12 @@ check 'a charged enemy is forced to attack, never running a pattern action ' \
   b.begin_round; b.step_action
   eq true, b.step_action[:charge], 'the monster gathers strength'
   ok foe.charged, 'the charge is held'
-  # A pattern of nothing but Defend would win the draw outright if consulted.
+  # A pattern of nothing but Defend wins the draw outright, charged or not.
   foe.actions = [defend]
   b.end_round; b.begin_round; b.step_action
   e = b.step_action
-  ok !e[:defend], 'the Defend pattern never runs while charged'
-  eq 40, e[:damage], 'a plain Attack runs instead, doubled by the charge'
-  ok !foe.charged, 'and the charge is spent by it'
+  eq true, e[:defend], 'the Defend pattern runs normally even while charged'
+  ok !foe.charged, 'and the charge is gone regardless (not independently confirmed either way)'
 end
 
 check 'a charged enemy is forced to a single Attack even when its pattern ' \
