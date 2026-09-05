@@ -4321,9 +4321,12 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # #state_field, matching the schema's own false default.
                           :avoid_attacks,
                           # ... and the RPG2003 "Reflect Magic" flag (state
-                          # field 37, `reflect_magic`): a Skill cast at a
-                          # battler carrying it bounces back onto its own
-                          # caster. Appended last, same reason again.
+                          # field 37, `reflect_magic`): parsed, but genuine
+                          # RPG_RT does not appear to wire it into a Skill's
+                          # own targeting at all (#apply_command's own
+                          # citation) -- kept here purely so a fake state row
+                          # can still assert the flag is inert. Appended last,
+                          # same reason again.
                           :reflect_magic,
                           # ... and the RPG2003 "cursed" flag (state field 38,
                           # `cursed`): a battler carrying it can't change
@@ -19129,16 +19132,16 @@ check "battle: a state's reduce_hit_ratio folds into the base hit rate before " 
      '90*50/100=45 scaled by the state first, then 100-(100-45)*30/40=59 by agility'
 end
 
-check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its own caster' do
-  # Parsed (mruby-lcf/mrblib/schema.rb state field 37, reflect_magic) but never
-  # read anywhere in Game::Battle before this fix -- ported from a reference implementation
-  # Player's source, NOT independently confirmed against genuine RPG_RT
-  # under wine: it
-  # (game_battlealgorithm.cpp) redirects a Skill's target onto its own
-  # caster the instant the intended target carries
-  # one, checked by its own battle-action-animation handling right
-  # before the action's own Execute() step -- so the skill still rolls its own
-  # damage/accuracy/variance normally afterward, just against the new target.
+check 'battle: a "Reflect Magic" (RPG2003) state does NOT bounce a Skill back onto its caster' do
+  # Reverted: a prior revision of this check asserted a Reflect-Magic-flagged
+  # target's own single-target Skill hit redirects onto the caster instead,
+  # ported from a reference implementation's own IsReflected/ReflectTargets
+  # logic without independent confirmation. Falsified under genuine RPG_RT
+  # under wine (2026-09-05): a party member carrying a freshly-authored
+  # reflect_magic-flagged state kept taking an enemy's own single-target
+  # Skill damage directly, across two separately-landed casts, never once
+  # redirecting it back onto the caster. `Game::Battle#apply_command` no
+  # longer consults reflect_magic at all.
   states = { 20 => fake_state(reflect_magic: true), 21 => fake_state }
   mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
   warded_foe = combatant('Warded Foe', 0, 0, 5, 100)
@@ -19149,23 +19152,21 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   bat.command_skill(mage, warded_foe, name: 'Fire', cost: 6, hp: -30, skill_id: 7)
   bat.begin_round
   e = bat.step_action
-  eq 'Mage', e[:target], 'the hit lands on the caster, not the warded foe'
-  eq 100, warded_foe.hp, 'the warded foe itself takes nothing'
-  eq 70, mage.hp, 'the caster eats its own 30-damage Fire instead'
-  eq 4, mage.mp, 'SP is still spent exactly once, same as an unreflected cast'
+  eq 'Warded Foe', e[:target], 'the hit lands on the originally-targeted foe, not the caster'
+  eq 70, warded_foe.hp, 'the warded foe takes the Fire damage normally'
+  eq 100, mage.hp, 'the caster is untouched -- reflect_magic changes nothing'
+  eq 4, mage.mp, 'SP is spent exactly once, same as any other cast'
 
-  # An unafflicted target is unaffected -- the reflected case above is not a
-  # blanket redirect of every Skill this caster ever casts.
-  mage.hp = 100
+  # An unafflicted target behaves identically -- reflect_magic is a no-op
+  # either way.
   bat.command_skill(mage, plain_foe, name: 'Fire', cost: 0, hp: -30, skill_id: 7)
   bat.begin_round
   e2 = bat.step_action
-  eq 'Plain Foe', e2[:target],
-     'an unrelated, unflagged state does not itself reflect (#state_flag, not #state_field)'
+  eq 'Plain Foe', e2[:target], 'an unrelated, unflagged state behaves the same as the flagged one'
   eq 70, plain_foe.hp
 
   # Symmetric across sides: an enemy's own Skill cast at a reflect-warded ally
-  # bounces back onto that enemy itself, not just the player's own casts.
+  # still lands on that ally directly, not on the enemy caster.
   warded_ally = combatant('Warded Ally', 0, 0, 1, 100) # slow: acts after the caster below
   warded_ally.states = [20]
   caster_foe = combatant_mp('Caster Foe', 0, 0, 20, 100, 10)
@@ -19173,46 +19174,14 @@ check 'battle: a "Reflect Magic" (RPG2003) state bounces a Skill back onto its o
   bat2.command_skill(caster_foe, warded_ally, name: 'Dark', cost: 6, hp: -25, skill_id: 9)
   bat2.begin_round
   e3 = bat2.step_action
-  eq 'Caster Foe', e3[:target], 'the enemy caster eats its own reflected Skill'
-  eq 100, warded_ally.hp
-  eq 75, caster_foe.hp
-
-  # A skill's own reflect check requires a genuine skill cast (cmd[:skill_id]) --
-  # an item-cast effect (per the same reference-implementation-ported IsReflected "item" guard
-  # above, NOT independently confirmed against genuine RPG_RT under wine)
-  # never reflects even against the identical warded target, and neither
-  # does a skill
-  # whose target starts on the *same* side as its caster (an ally/self-scoped
-  # skill never legitimately reaches the opposing side to begin with).
-  bare = Game::Battle.new([mage], [warded_foe], Game::Rng.new(1), states)
-  ok !bare.send(:reflects_skill?, mage, warded_foe,
-                 { skill_id: 7, item_id: 3 }), 'an item-cast effect never reflects'
-  ok !bare.send(:reflects_skill?, mage, warded_foe, { item_id: 3 }),
-     'no skill_id at all (a bare item command) never reflects either'
-  ok bare.send(:reflects_skill?, mage, warded_foe, { skill_id: 7 }),
-     'a genuine skill cast at the warded foe does reflect'
-  mage.states = [20] # hypothetically warded itself, for the same-side check below
-  ok !bare.send(:reflects_skill?, mage, mage, { skill_id: 7 }),
-     'a same-side (ally/self-scoped) skill never reflects, warded target or not'
+  eq 'Warded Ally', e3[:target], 'the warded ally takes the enemy Skill directly'
+  eq 75, warded_ally.hp
+  eq 100, caster_foe.hp, 'the enemy caster is untouched'
 end
 
-check "battle: an all-enemy Skill's own reflect redirects the whole volley onto the caster's entire party" do
-  # Ported from a reference implementation, NOT independently confirmed against
-  # genuine RPG_RT under wine: it
-  # (game_battlealgorithm.cpp), for the `party_target` (all-enemies/
-  # all-allies scope) shape the single-target
-  # reflect fix's own comment names as a "materially different shape" left
-  # unaddressed: `AddTargets(&source->GetParty(), true)` both adds every
-  # member of the caster's own party as new targets *and* repoints the
-  # still-to-execute cursor there, so none of the volley's originally-selected
-  # enemies (this build's own cmd[:targets]) end up hit at all once any one of
-  # them carries Reflect Magic -- the caster's whole living side does, in
-  # their place, not merely the one foe that reflected.
-  # #apply_command is exercised directly (as #reflects_skill?'s own checks
-  # above do), sidestepping #step_action's round machinery entirely -- an
-  # enemy combatant with no 行動パターン and no queued command would
-  # otherwise take its own default swing at a random ally on its turn,
-  # noise this check has no interest in filtering back out.
+check "battle: an all-enemy Skill's volley does NOT redirect onto the caster's entire party" do
+  # Reverted alongside the single-target check above -- the same wine
+  # capture falsifies both shapes of the mechanic alike.
   states = { 20 => fake_state(reflect_magic: true) }
   mage = combatant_mp('Mage', 0, 0, 20, 100, 10)
   ally = combatant('Ally', 0, 0, 5, 100)
@@ -19223,46 +19192,11 @@ check "battle: an all-enemy Skill's own reflect redirects the whole volley onto 
   bat.command_skill_all(mage, [{ target: warded_foe, hp: -30 }, { target: plain_foe, hp: -30 }],
                         name: 'Meteor', cost: 6, skill_id: 7)
   entries = bat.send(:apply_command, mage)
-  eq ['Ally', 'Mage'], entries.map { |e| e[:target] }.sort,
-     "the whole volley lands on the caster's own party, not the two original foes"
-  eq [70, 70], [mage.hp, ally.hp], 'each ally eats the same -30 the reflecting foe would have taken'
-  eq 100, warded_foe.hp, 'the warded foe itself takes nothing'
-  eq 100, plain_foe.hp, 'the unwarded foe is untouched too -- the whole group redirects, not just the warded one'
-  eq 4, mage.mp, 'SP is still spent exactly once for the whole volley, reflected or not'
-
-  # A dead ally is skipped from the redirected side too, the same #dead?
-  # filter the un-reflected path already applies to its own targets.
-  dead_ally = combatant('Dead Ally', 0, 0, 5, 0)
-  mage2 = combatant_mp('Mage', 0, 0, 20, 100, 10)
-  warded_foe2 = combatant('Warded Foe', 0, 0, 5, 100)
-  warded_foe2.states = [20]
-  plain_foe2 = combatant('Plain Foe', 0, 0, 5, 100)
-  bat2 = Game::Battle.new([mage2, dead_ally], [warded_foe2, plain_foe2], Game::Rng.new(1), states)
-  bat2.command_skill_all(mage2, [{ target: warded_foe2, hp: -30 }, { target: plain_foe2, hp: -30 }],
-                         name: 'Meteor', cost: 6, skill_id: 7)
-  entries2 = bat2.send(:apply_command, mage2)
-  eq ['Mage'], entries2.map { |e| e[:target] },
-     'only the one living party member -- the caster itself -- is hit, the dead ally never joins'
-
-  # Neither an all-target Item nor an all-*ally* Skill (never reaching the
-  # opposing side to begin with) ever redirects, even at an identically
-  # warded target.
-  mage3 = combatant_mp('Mage', 0, 0, 20, 100, 10)
-  warded_foe3 = combatant('Warded Foe', 0, 0, 5, 100)
-  warded_foe3.states = [20]
-  bat3 = Game::Battle.new([mage3], [warded_foe3], Game::Rng.new(1), states)
-  bat3.command_item_all(mage3, [{ target: warded_foe3, hp: -30 }], item_id: 5, name: 'Bomb')
-  entries3 = bat3.send(:apply_command, mage3)
-  eq 'Warded Foe', entries3.first[:target], 'an all-target item never reflects, even at a warded foe'
-
-  healer = combatant_mp('Healer', 0, 0, 20, 100, 10)
-  mate = combatant('Mate', 0, 0, 5, 100); mate.hp = 60
-  mate.states = [20] # hypothetically warded -- irrelevant, same side as the caster
-  bat4 = Game::Battle.new([healer, mate], [combatant('Foe', 0, 0, 1, 1)], Game::Rng.new(1), states)
-  bat4.command_skill_all(healer, [{ target: mate, hp: 20 }], name: 'Heal', cost: 4, skill_id: 8)
-  entries4 = bat4.send(:apply_command, healer)
-  eq 'Mate', entries4.first[:target], "an all-ally heal never redirects -- its target shares the caster's own side"
-  eq 80, mate.hp
+  eq ['Plain Foe', 'Warded Foe'], entries.map { |e| e[:target] }.sort,
+     'the whole volley lands on the two original foes, not the caster\'s own party'
+  eq [70, 70], [warded_foe.hp, plain_foe.hp], 'both foes take the -30 Meteor normally'
+  eq [100, 100], [mage.hp, ally.hp], "the caster's own party is untouched"
+  eq 4, mage.mp, 'SP is still spent exactly once for the whole volley'
 end
 
 check 'battle: a normal attack can shake a state off its target' do

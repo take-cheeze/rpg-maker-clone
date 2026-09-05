@@ -29857,6 +29857,20 @@ above are repeated here)
   been tested against genuine RPG_RT — left as-is, but flagged in its own
   comment as a live candidate for the same kind of reversal, not assumed
   correct merely because this one turned out wrong.
+  ❌ **Follow-up (2026-09-05), reverted by an actual wine capture: the
+  `reflects_magic?`/`reflect_magic` candidate flagged above turned out
+  equally fictional.** A party member carrying a freshly-authored
+  `reflect_magic`-flagged custom state (added directly to the pre-battle
+  save data) kept taking an enemy's own single-target Skill damage
+  directly, across two separately-landed casts, never once redirecting it
+  back onto the caster. Reverted by removing `#apply_command`'s
+  `target = b if reflects_skill?(b, target, cmd)` redirect and
+  `#apply_command_all`'s matching whole-party redirect, and deleting the
+  now-dead `#reflects_magic?`/`#reflects_skill?`/`#reflecting_target_all`
+  methods outright, the same way `#evades_all_physical?` was handled
+  above. Both affected `scripts/rpg2k_logic_check.rb` checks rewritten in
+  place to assert the flag changes nothing, in either the single-target or
+  all-target shape.
 - ✅ **強制AI (Forced AI, player/job field 23, `force_ai`) is now implemented —
   found while re-checking the actor/class row's own trait cluster
   (`strong_defence`/`double_hand`/`equipment_fixed`, all already wired) for

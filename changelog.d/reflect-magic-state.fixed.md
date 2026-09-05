@@ -1,14 +1,15 @@
-- **A state flagged "Reflect Magic" (RPG2003) now bounces a single-target
-  Skill back onto its own caster.** `reflect_magic` (state schema field 37)
-  was parsed but never read anywhere in the battle engine. Ported from
-  a reference implementation's reflect-state handling, not independently
-  confirmed against genuine RPG_RT under wine: a genuine Skill cast (not an
-  item-cast effect) whose target carries the state and starts on the
-  opposite side from its caster now redirects onto the caster instead,
-  before any hit-chance/elemental/variance math runs — so the skill still
-  rolls its own accuracy and damage normally, just against the new target.
-  Works symmetrically for both player- and enemy-cast skills. Scoped to a
-  single-target Skill only; an all-enemies-scope skill's own group-wide
-  reflect behaviour (redirecting the caster's entire party) is a separate,
-  unaddressed shape. Covered by a new `scripts/rpg2k_logic_check.rb` check,
-  confirmed to fail against the pre-fix code before the fix.
+- **A state flagged "Reflect Magic" (RPG2003) no longer bounces a
+  single-target Skill back onto its own caster**, reverting a prior
+  revision of this fragment. That revision ported a reference
+  implementation's own reflect-state handling without independently
+  confirming it against genuine RPG_RT, on the theory that a status parsed
+  but never read was meant to redirect an enemy-cast Skill back at its
+  caster. Confirmed wrong under wine: a party member carrying a
+  freshly-authored `reflect_magic`-flagged state kept taking an enemy's own
+  single-target Skill damage directly, across two separately-landed casts,
+  never once redirecting it back onto the caster. Genuine RPG_RT does not
+  appear to wire the flag into a Skill's own targeting at all. Reverted by
+  removing the redirect from `Game::Battle#apply_command` and deleting the
+  now-dead `#reflects_magic?`/`#reflects_skill?` methods. Covered by
+  rewriting the existing `scripts/rpg2k_logic_check.rb` check in place, now
+  asserting the flag is inert rather than asserting it redirects the hit.
