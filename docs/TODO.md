@@ -31910,6 +31910,24 @@ codebase yet):
   else entirely is not settled by this one capture. Left for a dedicated
   follow-up rather than guessed at. See `Game::Battle#shake_off_states`'s
   own updated citation.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: `Game::Actor#
+  weapon_sp_cost` really is spent unconditionally by a basic Attack,
+  confirming its own citation (previously "NOT independently confirmed
+  against genuine RPG_RT under wine").** A solo actor's max_mp and current
+  mp were both forced to exactly 20 and a custom weapon's own sp_cost field
+  set to exactly 20, so a single basic Attack should leave mp at exactly 0
+  -- a one-glyph value very different from the two-glyph "20" it started
+  at, sidestepping this session's own repeatedly-confirmed HP/MP dot-matrix
+  font legibility problems (no precise digit reading needed). The status
+  panel read mp 20 through the Fight/Attack/target-select menus, then
+  exactly 0 immediately after confirming the attack against a passive
+  enemy (the weapon's own 90% hit meant the swing itself may or may not
+  have actually landed -- the deduction did not wait to find out either
+  way, matching `#pay_weapon_sp_cost`'s own call site, before the swing
+  count is even resolved). No code change: `Game::Actor#weapon_sp_cost` and
+  `Game::Battle#pay_weapon_sp_cost`'s existing implementation was already
+  correct, just newly confirmed. See `Game::Actor#weapon_sp_cost`'s own
+  updated citation.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
