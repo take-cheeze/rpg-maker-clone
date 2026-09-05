@@ -1820,11 +1820,11 @@ assert "RGSS::Audio.decrypt_mv_asset reverses gen-mz-encrypted.py's own scheme" 
                83, 75, 69, 66, 113, 99, 116, 124, 94, 75, 93, 73, 107, 103,
                119, 100, 117, 114, 101, 45, 101, 120, 116, 114, 97, 45, 116,
                97, 105, 108].pack("C*")
-  decrypted = RGSS::Audio.decrypt_mv_asset(encrypted, key)
+  decrypted = RGSS::Audio.send(:decrypt_mv_asset, encrypted, key)
   assert_equal "RIFFtestWAVEfixture-extra-tail", decrypted
 
   # Too short to even carry the 16-byte header + 16-byte XORed prefix.
-  assert_nil RGSS::Audio.decrypt_mv_asset("short", key)
+  assert_nil RGSS::Audio.send(:decrypt_mv_asset, "short", key)
 end
 
 assert "RGSS::Audio plays a loose MZ-encrypted track once encryption_key is set" do
