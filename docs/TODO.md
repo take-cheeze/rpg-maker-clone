@@ -32118,6 +32118,29 @@ codebase yet):
   two-weapon-slot vehicle instead so they stay independent of this finding
   — all three confirmed to fail against the pre-fix code. See
   `changelog.d/dual-attack-does-not-double-solo.fixed.md`.
+- **Follow-up (2026-09-05), by an actual wine capture: the `#double_hand?`
+  two-weapon combined-damage question above is muddied further, not
+  settled, by a second attempt with different parameters.** Two custom,
+  non-`dual_attack`, 100%-hit weapons (atk_points1 100 each, deliberately
+  identical to the original real-weapon capture so a "combine both
+  weapons' atk into one swing" reading predicts roughly double a solo
+  swing's own damage) equipped double_hand against a passive enemy whose
+  HP was set to exactly 75 — comfortably above a solo/unboosted swing's own
+  top end (a 100-atk, 0-defence swing varies roughly 30-70) but below a
+  doubled-atk swing's own bottom end (roughly 60-140) — survived that first
+  swing outright. That single result leans toward "no boost" (a doubled
+  swing would have killed it about four times in five), the opposite lean
+  from the original identical-weapon capture's own higher (48 vs a lone
+  swing's own 19) total. Neither capture is more than one data point.
+  Re-entering a second battle in the same wine session to gather more (the
+  same fixture, walking back onto the encounter tile right after the first
+  fight ended) hung indefinitely on the battle-transition screen and then
+  exited with no crash trace — this session's own established "re-
+  triggering an encounter mid-session is unreliable under wine" finding
+  recurring, not a new data point about the damage formula itself. The
+  existing two-weapon `strike_count` branch remains untouched pending
+  further wine work — if anything, less settled now than before this
+  follow-up. See `Game::Actor#strike_count`'s own updated citation.
 - ✅ **Follow-up (2026-09-05), by an actual wine capture: an enemy's own
   二段攻撃 basic action (`BASIC_DUAL_ATTACK`) really does swing twice at the
   same target, confirming `Game::Battle#enemy_basic_action`'s own citation
