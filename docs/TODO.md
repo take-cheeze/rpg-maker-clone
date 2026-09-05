@@ -8869,7 +8869,24 @@ The work below is roughly ordered by the critical path to a walkable game
   transitions) and a new `scripts/rpg2k_scene_check.rb` check (a first-strike
   encounter's Escape succeeds against enemies fast enough to floor the roll
   at 0%, driven through the real options-window UI), both confirmed to fail
-  against the pre-fix code before the fix. Basic
+  against the pre-fix code before the fix.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: the preemptive
+  first-strike Escape guarantee itself is real, confirming this fix's own
+  citation.** A scripted Enemy Encounter's Preemptive Attack flag, with the
+  party/enemy agility ratio set up to floor `#compute_escape_chance`'s
+  ordinary roll at a genuine 0% (party agi 1, enemy agi 999), still let a
+  round-1 Escape succeed outright — the battle ended and the screen faded
+  back to the map on the very first attempt. An identical setup without the
+  Preemptive Attack flag, same 0% floor, left the same Escape command
+  failing every attempt instead (silently: RPG_RT shows no message for a
+  failed Escape either way, only resets the command-menu cursor to its
+  default entry, so the fight simply continuing was the only visible
+  signal). No code change: `Game::Battle#first_strike?`/`#attempt_escape`
+  were already correct, just newly confirmed. The narrower round-1/round-2
+  *boundary* `#first_strike?` draws (whether `@rounds` reads 0 for the whole
+  of round 1's command phase specifically, not just its first instant) was
+  not separately isolated by this capture and remains as described in that
+  method's own citation. Basic
   attacks can also **miss**: `Battle#to_hit` takes the attacker's base hit rate
   (weapon / unarmed 90, a "miss"-flagged enemy 70) and applies a reference
   implementation's agility-ratio adjustment (`100 - (100 - base)*(srcAgi + tgtAgi)/(2*srcAgi)`,

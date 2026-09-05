@@ -11636,10 +11636,22 @@ module Game
     # round 1), so it is still 0 for the whole of that opening command phase and
     # 1-or-higher for every round after -- the same "still round 1, before it's
     # actually begun" window a reference implementation's own `first_strike`
-    # flag covers (ported
-    # from its source, NOT independently confirmed against genuine RPG_RT
-    # under wine): its own post-round substate handling clears
-    # it to `false` right before opening round 2's own command phase.
+    # flag covers (ported from its source). The overall guarantee this feeds
+    # -- a first-strike round's Escape command always succeeding -- is
+    # confirmed via wine (2026-09-05): a scripted Enemy Encounter's own
+    # Preemptive Attack flag made a round-1 Escape succeed outright even with
+    # the party/enemy agility ratio (`#compute_escape_chance`) set up to
+    # floor the ordinary roll's own base chance at a genuine 0; an identical
+    # setup without that flag left the same Escape command failing every
+    # time under that same 0%-chance floor (silently -- the command menu
+    # just resets to its default selection, no message either way, so a
+    # failed attempt is legible only by the fight still being on afterward,
+    # not by any on-screen text). The exact round-1/round-2 *boundary* this
+    # method draws (whether `@rounds` is still 0 for the whole of round 1's
+    # command phase, not just its very first moment) was not separately
+    # isolated by that capture -- only the overall preemptive-escape
+    # guarantee itself was under test; its own post-round substate handling
+    # clears it to `false` right before opening round 2's own command phase.
     def first_strike?
       @first_strike && @rounds.zero?
     end
