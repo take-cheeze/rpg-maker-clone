@@ -52,6 +52,18 @@ class MV
   # instead: a game with no opening event (both false the instant Scene_Map
   # appears) pays nothing and moves exactly as before; MOVE_SETTLE_MAX_FRAMES
   # is only a safety cap on a game that is genuinely still busy.
+  #
+  # 180 covers an ordinary game's opening dialogue with room to spare, but a
+  # real commercial release can script an opening far longer than that: driving
+  # data/EgoicAnswers (see docs/TODO.md's M6.3c-area EgoicAnswers entry)
+  # through this probe found roughly 650+ frames of blocking waits alone before
+  # the player gets a turn, on top of ~49 message boxes and a forced battle —
+  # over 3x this cap, by design (it is a title's whole scripted intro, not a
+  # dialogue box). Rather than raise the default and make every other run's
+  # safety cap that much slower to trip on a genuine hang, .move_settle_max_frames
+  # (see below) reads a per-invocation override so a run against a specific
+  # long-opening game can ask for more without changing what every other run
+  # waits for.
   MOVE_SETTLE_MAX_FRAMES = 180
   CONFIRM_TAP_EVERY = 20
   CONFIRM_TAP_HOLD = 4
@@ -223,6 +235,27 @@ class MV
       ) == true
     rescue StandardError
       false
+    end
+
+    # MOVE_SETTLE_MAX_FRAMES, unless a per-run override was requested via the
+    # --move_settle_max_frames launcher flag (main.cxx), surfaced here as the
+    # MOVE_SETTLE_MAX_FRAMES_OVERRIDE global. 0 (the flag's default, and
+    # whatever this reads as before the flag machinery has run at all) means
+    # "no override"; a positive value replaces the cap outright. Kept as a
+    # method rather than folded into the constant itself so the 180-frame
+    # default — sized for an ordinary game's opening dialogue, not a
+    # multi-hundred-frame scripted intro — stays the one every other run gets,
+    # and only a deliberate per-invocation ask pays for anything larger. See
+    # scripts/mz_boot_check.bash's MZ_MOVE_SETTLE_MAX_FRAMES and the
+    # EgoicAnswers entry in docs/TODO.md.
+    def move_settle_max_frames
+      v = begin
+        MOVE_SETTLE_MAX_FRAMES_OVERRIDE
+      rescue StandardError
+        0
+      end
+      v = v.is_a?(Integer) ? v : 0
+      v.positive? ? v : MOVE_SETTLE_MAX_FRAMES
     end
 
     # JS that pushes a pointer sample (canvas x/y, left-button pressed) into MV's
@@ -645,8 +678,9 @@ class MV
   # probe would report "did not move" not because the engine failed to walk
   # the player, but because it never got a turn against the game's own event.
   # If either is true, confirm gets tapped (see .confirm_settle_tap) until
-  # both clear or MOVE_SETTLE_MAX_FRAMES runs out; if neither was busy to
-  # begin with, movement starts immediately, exactly as before this existed.
+  # both clear or .move_settle_max_frames runs out (MOVE_SETTLE_MAX_FRAMES, or
+  # the --move_settle_max_frames override — see that method); if neither was
+  # busy to begin with, movement starts immediately, exactly as before this existed.
   # If the interpreter is *still* running once the probe ends, the "end" line
   # says so (`blocked=true`) rather than reporting a bare `moved=false`
   # indistinguishable from a real movement bug — see the note at the bottom of
@@ -659,7 +693,7 @@ class MV
     unless @move_settled
       @move_settle_frame ||= 0
       if (self.class.message_busy? || self.class.event_running?) &&
-         @move_settle_frame < MOVE_SETTLE_MAX_FRAMES
+         @move_settle_frame < self.class.move_settle_max_frames
         self.class.confirm_settle_tap(@move_settle_frame)
         @move_settle_frame += 1
         return

@@ -33087,6 +33087,61 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         (not just round-tripped through the same method), the loose-file
         search itself, and that a real loose plain file still wins over an
         encrypted one sitting right beside it.
+      - ✅ **`MZ_MOVE_SETTLE_MAX_FRAMES`: a per-invocation override for
+        `mz_boot_check.bash`'s `play` mode, so it can be driven manually past
+        a real game's whole scripted opening instead of only its short
+        `MOVE_SETTLE_MAX_FRAMES` safety cap.** Running `MZ_MODE=play
+        scripts/mz_boot_check.bash 112 data/EgoicAnswers` directly (same bed
+        as the encrypted-audio entry above) boots clean through `Scene_Title`
+        into `Scene_Map` — `[MZ-MAP] reached the map at 6,5` — but the move
+        probe then reports `[MZ-MOVE] end 6,5 moved=false blocked=true`
+        rather than `moved=true`. Not a movement bug: EgoicAnswers' opening is
+        one very long scripted event — roughly 650+ frames of blocking waits
+        alone, on top of ~49 message boxes and a forced battle, before the
+        player ever gets a turn — and `maybe_move_test`'s settle window (see
+        `mruby-mvjs/mrblib/mv.rb`/`mz.rb`) gives up waiting for
+        `MV.message_busy?`/`MV.event_running?` to clear once
+        `MOVE_SETTLE_MAX_FRAMES` (180) frames have passed, however busy the
+        game still genuinely is. Confirmed by temporarily hand-editing that
+        constant to a much larger value and re-running: the probe then walks
+        straight through the whole cutscene with no code change elsewhere,
+        landing in `Scene_Battle` (the forced battle that ends the intro).
+        180 itself is not wrong for what it is — its own comment already
+        documents it as "only a safety cap on a game that is genuinely still
+        busy", sized for an ordinary game's opening dialogue — so raising the
+        *default* was rejected: every other `mz_boot_check.bash`/
+        `mv_boot_check.bash` run (every other mode, every other bed) would
+        pay for the slowest scripted opening anyone has ever tested against,
+        and a probe against a genuinely-stuck game would take that much
+        longer to report it. Fixed as a per-run override instead, following
+        the existing `MZ_MODE`/`MZ_TROOP` convention rather than inventing a
+        new mechanism: a `--move_settle_max_frames` gflag (`src/main.cxx`,
+        alongside `mv_move_test` et al. and reset by
+        `disable_non_test_play_flags` like every other test-play-only flag),
+        surfaced to mrblib as the `MOVE_SETTLE_MAX_FRAMES_OVERRIDE` global and
+        read by a new `MV.move_settle_max_frames` class method — 0 (the
+        flag's default) keeps `MOVE_SETTLE_MAX_FRAMES` itself untouched, a
+        positive value replaces it outright — read at both of `maybe_move_test`'s
+        settle-window call sites (`mv.rb` for MV, `mz.rb` for MZ, which shares
+        MV's constant) in place of the bare constant. `mz_boot_check.bash`
+        threads a new `MZ_MOVE_SETTLE_MAX_FRAMES` env var into that flag, the
+        same way it already threads `MZ_TROOP` into `--mz_battle_test`.
+        Verified against the real download: `MZ_MOVE_SETTLE_MAX_FRAMES=2000`
+        still reports `blocked=true` (the intro is not done yet by then), and
+        `=8000` reproduces the hand-edit finding exactly — the run reaches
+        `Scene_Battle` (`[MZ-SCENE] Scene_Battle`, then `[MZ-MOVE] never
+        reached the map (scene Scene_Battle)`, since the forced battle leaves
+        `Scene_Map` before the probe gets a turn there at all, so `play`
+        mode's `moved=true` assertion still cannot pass for this specific bed
+        — reaching `Scene_Battle` is the ceiling this game's own opening
+        allows). The unset default is unchanged: `MZ_MODE=play
+        scripts/mz_boot_check.bash 111 data/mz-sample` still reports
+        `[MZ-MOVE] end 8,4 moved=true blocked=false` in a few seconds, exactly
+        as before this existed. `data/EgoicAnswers` stays out of
+        `.github/workflows/build.yml` — this is a knob for a human running
+        the check by hand against the manually-downloaded bed (see
+        `changelog.d/egoicanswers-download-script.added.md`), not a change to
+        what CI itself drives.
       - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
         under a game's `fonts/`, but **MZ projects ship `.woff`**
         (`mplus-1m-regular.woff` and friends), so it found nothing and every real
