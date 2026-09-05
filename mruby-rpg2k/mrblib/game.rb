@@ -13211,10 +13211,10 @@ module Game
     # to the sibling `strong_defence` read in `#apply_skill_hit` (a skill's
     # own HP effect), which a separate wine capture confirms DOES quarter
     # correctly -- see that method's own citation. `#deal_attack`'s own read
-    # (the ordinary-attack path) remains untested either way. These are
-    # three separate call sites in genuine RPG_RT, not a shared routine, and
-    # at least two of them behave differently from each other; self-destruct
-    # simply does not consult the flag at all here. It
+    # (the ordinary-attack path) is likewise confirmed real -- see its own
+    # citation. These are three separate call sites in genuine RPG_RT, not a
+    # shared routine, and self-destruct is the one outlier of the three;
+    # it simply does not consult the flag at all here. It
     # does not kill the caster itself, though: that reference implementation's
     # self-destruct handling applies the damage against the *target* only,
     # never the source, and reacts to the caster with nothing but a hidden
@@ -13919,9 +13919,17 @@ module Game
       # doubled) damage produces.
       dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
       # Defending halves the blow, and 強力防御 halves it again — a quarter, not a
-      # half (a reference implementation applies the second `dmg /= 2`
-      # for a battler with strong defence, ported from its source and NOT
-      # independently confirmed against genuine RPG_RT under wine). Seven of
+      # half. Confirmed against genuine RPG_RT under wine (2026-09-05): an
+      # ordinary defending target and an otherwise-identical Strong-Defence-
+      # flagged defending target, hit by the same enemy's plain Attack
+      # (identical atk/def on both sides), took roughly a 2.5x-different
+      # amount of damage (56 vs 22) -- consistent with a genuine second
+      # halving, not the "changes nothing" result the structurally
+      # identical-looking `strong_defence` read in `#enemy_autodestruct` (a
+      # self-destruct's own damage) turned out to give in this same
+      # session's own testing (see that method's own citation) -- these are
+      # separate call sites in genuine RPG_RT and do not all behave the same
+      # way. Seven of
       # Nepheshel's 50 actors have
       # it, including its hero. Neither halving carries a floor of its own --
       # `AdjustDamageForDefend` is a bare `dmg /= 2` (twice,

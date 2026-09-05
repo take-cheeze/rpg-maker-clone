@@ -19149,6 +19149,17 @@ not yet verified:
   shared routine, and they behave differently from each other despite
   looking like ports of the same rule. No code change for the skill path;
   only the citation lost its "NOT independently confirmed" caveat.
+  ✅ Follow-up (2026-09-05), same wine session: the third and last
+  `strong_defence` read (`Game::Battle#deal_attack`, a basic Attack) is
+  likewise confirmed real, completing the trio. An ordinary defending
+  target and an otherwise-identical Strong-Defence-flagged defending
+  target, hit by the same enemy's plain Attack (identical atk/def on both
+  sides), took roughly a 2.5x-different amount of damage (56 vs 22) --
+  consistent with a genuine second halving. So of the three separate
+  `strong_defence` call sites in `Game::Battle`, only `#enemy_autodestruct`
+  turned out fictional; `#deal_attack` and `#apply_skill_hit` both check
+  out. No code change for the basic-attack path; only the citation lost its
+  caveat.
 - ✅ **Simulated Attack's damage spread now uses RPG_RT's real variance
   formula, not a coarser stand-in this method's own comment misattributed to
   a reference implementation's source.** `Interpreter#do_simulated_attack`
