@@ -68,14 +68,20 @@ bool smoke_test(const char* path,
 // simulates (spawns, moves and expires real particle instances) instead of
 // the shim's old synthetic fixed-lifetime handle.
 //
-// Deliberately renderer-less: no `EffekseerRendererGL::Renderer`, no GL
-// context. Simulation needs neither, and drawing real MZ animations needs
-// Effekseer's renderer to share the exact GL context/FBO PIXI's own WebGL
-// renderer (mvwebgl.cxx) is using mid-frame -- a separate, higher-risk
-// integration staged as its own follow-up (see docs/TODO.md's Effekseer
-// entry). Until that lands, a context created here never draws anything;
-// it only makes handle.exists/animation timing reflect a real, deterministic
-// simulation instead of an arbitrary placeholder.
+// `context_create` alone is still renderer-less (mirrors the real
+// `effekseer.js` API: `createContext()` builds the JS-visible object but does
+// not touch GL -- see its own `init(webglContext, settings)` method, which is
+// what the real WASM build's `Core.Init` call happens inside). `init_render`
+// below is that second step for this native backend: it attaches a real
+// `EffekseerRendererGL::Renderer` to the manager, sharing whatever GL context
+// is current on this thread at the moment it is called -- which is exactly
+// why the JS bridge's `ctx.init(gl)` (called by
+// `Graphics._createEffekseerContext` right after PIXI's own WebGL context is
+// built, per rmmz_core.js) resolves the JS-side `WebGLRenderingContext` handle
+// to a native one first
+// (`mv_webgl_make_current`, mvhost.hxx) before calling this. Until
+// `init_render` succeeds, a context behaves exactly as before this was added:
+// simulation only, `begin_draw`/`draw_handle`/`end_draw` are no-ops.
 //
 // Every function below silently no-ops/returns a failure sentinel (0 for a
 // ContextId/EffectId, -1 for a play handle, false for exists) when called on
@@ -94,10 +100,27 @@ void context_destroy(ContextId ctx);
 // after) -- the JS bridge treats that identically to "no native effect
 // available", not as a load error: EFFEKSEER_SHIM_JS's own honest-reporting
 // magic-byte check is unrelated and unaffected either way.
+//
+// `path` is the same game-relative URL `loadEffect(url, ...)` was given
+// (e.g. "effects/Flash.efkefc"), used only to derive Effekseer's
+// `materialPath` -- the directory every texture/model/material the effect
+// references is resolved against (see `Effekseer::Effect::Create`'s
+// `char16_t*`-path overload, Effekseer.Effect.cpp, which derives this same
+// directory automatically; the byte-buffer overload used here cannot, since
+// it never sees a path at all). Without this, every such reference resolves
+// against an empty `materialPath` -- i.e. the bare relative name, never a
+// real file relative to this process' CWD -- so `ResourceManager::LoadTexture`
+// silently returns null and the effect's sprite/ring nodes have nothing to
+// draw: real, alive instances (`Manager::GetTotalInstanceCount() > 0`) but
+// `Renderer::GetDrawCallCount() == 0`, with no GL error and no diagnostic
+// from either library. May be null/empty (no materialPath is threaded
+// through then, matching this function's old, pre-rendering behavior) --
+// simulation-only callers never needed it.
 EffectId effect_load(ContextId ctx,
                      const std::uint8_t* bytes,
                      std::size_t len,
-                     float magnification);
+                     float magnification,
+                     const char* path);
 void effect_release(ContextId ctx, EffectId effect);
 
 // Effekseer::Handle is a plain int32_t; -1 means Play failed (bad context,
@@ -120,6 +143,61 @@ bool handle_exists(ContextId ctx, std::int32_t handle);
 
 void update(ContextId ctx, float delta_frame);
 void stop_all(ContextId ctx);
+
+// Attach a real `EffekseerRendererGL::Renderer` to `ctx`'s manager, sharing
+// whatever GL context/FBO is current on this thread right now -- the caller
+// (`js_efk_init`, mvefk.cxx) is responsible for making the right one current
+// first via `mv_webgl_make_current`. Idempotent: a second call on a context
+// that already has a renderer is a no-op returning true, mirroring the real
+// `effekseer.js` API (`init` can be called again if PIXI ever recreated its
+// context) and, more immediately, letting a re-evaluated EFFEKSEER_SHIM_JS
+// not build a second renderer stacked on the first.
+//
+// False on failure (invalid context, `Renderer::Create` itself failing --
+// e.g. no GL context is actually current) and true otherwise. A context
+// whose renderer failed to attach behaves exactly as a renderer-less one:
+// `begin_draw`/`draw_handle`/`end_draw` stay no-ops, never crashes.
+bool init_render(ContextId ctx);
+
+// `renderer->SetProjectionMatrix`/`SetCameraMatrix`, fed the 16 floats of an
+// `Effekseer::Matrix44` in exactly the flat layout MZ's own
+// `Sprite_Animation.setProjectionMatrix`/`setCameraMatrix` (rmmz_sprites.js)
+// build their JS arrays in -- the same bit-for-bit copy the real
+// `effekseer.js` wrapper does (`Module.HEAPF32.set(matrixArray, ...)` then a
+// raw native pointer), so no row/column-major translation happens on either
+// side of this call. A no-op where `ctx` has no renderer attached yet.
+void set_projection_matrix(ContextId ctx, const float m[16]);
+void set_camera_matrix(ContextId ctx, const float m[16]);
+
+// `renderer->BeginRendering()`/`renderer->EndRendering()`. Per
+// `EffekseerRendererGL::RendererImplemented`'s own source
+// (3rd/effekseer/.../EffekseerRendererGL.Renderer.cpp), these save and
+// restore every piece of GL state the renderer itself touches (bound
+// program/VAO/buffers/textures, blend/depth/cull state) but never the
+// framebuffer binding, viewport or scissor -- so nesting a
+// begin/draw*/end inside PIXI's own mid-frame render pass (as
+// `Sprite_Animation._render` does) cannot corrupt PIXI's own GL state, and
+// draws into whichever FBO PIXI already has bound. A no-op where `ctx` has
+// no renderer attached yet.
+void begin_draw(ContextId ctx);
+void end_draw(ContextId ctx);
+
+// `manager->DrawHandle(handle, draw_param)`, with `draw_param`'s
+// `ViewProjectionMatrix` set from `renderer->GetCameraProjectionMatrix()` --
+// which only reflects the most recent `set_projection_matrix`/
+// `set_camera_matrix` calls once `begin_draw` has actually run (see
+// `smoke_test`'s own comment on this exact pitfall). Must be called between
+// `begin_draw` and `end_draw`, matching MZ's own call order
+// (`Sprite_Animation._render`: setProjectionMatrix, setCameraMatrix,
+// beginDraw, drawHandle, endDraw). `ZNear`/`ZFar` are left at
+// `DrawParameter`'s own default (0.0f, equal), which skips `CanDraw`'s
+// CPU-side sphere-culling check entirely (`Effekseer.Manager.cpp` only runs
+// it `if (ZNear != ZFar)`) -- exactly what the real WASM wrapper's own
+// `drawHandle(handle)` does too (it takes no near/far/camera-position
+// arguments at all; effekseer.min.js's `Core.DrawHandle(ptr, handle.native)`
+// is the whole call). A no-op where `ctx` has no renderer attached yet or
+// `handle` is negative (Play failed).
+void draw_handle(ContextId ctx, std::int32_t handle);
 
 }  // namespace mvefk
 

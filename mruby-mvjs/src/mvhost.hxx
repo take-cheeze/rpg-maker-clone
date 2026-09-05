@@ -35,6 +35,21 @@ const uint8_t* mv_canvas_pixels(int handle, int* w, int* h);
 // on-screen. Defined in mvwebgl.cxx.
 const uint8_t* mv_webgl_pixels(int handle, int* w, int* h);
 
+// Make the WebGL context registered under `handle` (a WebGLRenderingContext's
+// `.__gl` id, as returned by getContext('webgl') -> __mv_glCreate) current on
+// this thread and rebind its FBO, exactly as any other `__mv_gl*` call does.
+// This is the one place a *different* translation unit (mvefk.cxx) needs to
+// resolve that same JS-side handle into the native GL context it names,
+// rather than relying on it already being current by incidental call order —
+// see mvefk.cxx's `js_efk_init` for why: `Graphics._createEffekseerContext`
+// (rmmz_core.js) calls `effekseer.createContext().init(this._app.renderer.gl)`
+// right after building PIXI's own WebGL context, and Effekseer's renderer
+// must attach to that exact context, not merely "whatever happens to be
+// current". Returns false for an unknown handle or a build without the GL
+// backend (mvefk's own real branch never runs then either). Defined in
+// mvwebgl.cxx.
+bool mv_webgl_make_current(int handle);
+
 // Install the Effekseer simulation bridge: the __mv_efk* natives
 // `MZ::EFFEKSEER_SHIM_JS` (mz.rb) calls into for real (rather than
 // synthetic) effect loading/playback where the native backend is compiled

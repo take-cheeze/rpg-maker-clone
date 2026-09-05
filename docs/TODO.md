@@ -33406,6 +33406,73 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         separate, higher-risk integration staged as its own follow-up. See
         docs/adr/0004's "M6.2 addendum 3" for the full design and why the
         fallback path had to stay exact.
+      - ✅ **Effekseer JS bridge: rendering landed — real, visible particles
+        through PIXI's own WebGL context (2026-09-05).** The gap the previous
+        bullet left open: `EFFEKSEER_SHIM_JS`'s `init`/`beginDraw`/
+        `drawHandle`/`endDraw`/`setProjectionMatrix`/`setCameraMatrix` were
+        all no-ops; now they route to a real `EffekseerRendererGL::Renderer`
+        (`mvefk.cxx`'s new `init_render`/`begin_draw`/`draw_handle`/
+        `end_draw`/`set_projection_matrix`/`set_camera_matrix`, exposed as
+        `__mv_efkInit`/`__mv_efkBeginDraw`/`__mv_efkDrawHandle`/
+        `__mv_efkEndDraw`/`__mv_efkSetProjectionMatrix`/
+        `__mv_efkSetCameraMatrix`), attached to the exact native GL context
+        backing `Graphics._app.renderer.gl` — resolved from that
+        `WebGLRenderingContext`'s own `.__gl` handle via a new
+        `mv_webgl_make_current` (`mvwebgl.cxx`), called the moment
+        `ctx.init(gl)` runs (`Graphics._createEffekseerContext`,
+        `rmmz_core.js`, right after PIXI's own WebGL context is built — real
+        MZ's own `effekseer.js` API attaches its renderer at this exact call
+        too, not at `createContext()`, confirmed by reading the vendored
+        `effekseer.min.js` wrapper directly).
+
+        Two real risks the previous addendum named turned out to be
+        non-issues, confirmed by reading `EffekseerRendererGL.Renderer.cpp`
+        directly rather than assumed: `BeginRendering`/`EndRendering` save
+        and restore every piece of GL state the renderer touches (program,
+        VAO, buffers, textures, blend/depth/cull) but never the framebuffer,
+        viewport, or scissor, so nesting a draw inside PIXI's own mid-frame
+        render pass — exactly where `Sprite_Animation._render` calls it, at
+        the sprite's own z-order — cannot corrupt PIXI's own GL state or
+        target the wrong FBO.
+
+        One real, previously-undiscovered gap *was* found and fixed along
+        the way: `effect_load` parsed effects from raw bytes only
+        (`Effekseer::Effect::Create(manager, bytes, size, magnification)`,
+        no `materialPath`), so every texture/model/material an effect
+        references failed to resolve — `ResourceManager::LoadTexture`
+        silently returned null, and a real, alive effect
+        (`GetTotalInstanceCount() > 0`) produced zero draw calls with no GL
+        error and no diagnostic from either library. Fixed by threading the
+        effect's own game-relative URL through to `effect_load` (an added
+        parameter, `__mv_efkEffectLoad`'s 4th argument) and deriving
+        Effekseer's `materialPath` from it via `mv_resolve_path` — the same
+        game-dir-rooting every other MZ asset load already goes through —
+        exactly mirroring what `Effect::Create`'s own `char16_t*`-path
+        overload does automatically for a path-based load, which the
+        byte-buffer overload this bridge always uses cannot do on its own.
+
+        Verified with real pixel evidence, not just a code path that ran: a
+        new mrbtest (`mruby-mvjs/test/mz_test.rb`) drives the *exact* call
+        sequence `Sprite_Animation._render` uses — a real
+        `getContext('webgl')` context (not `mvefk::smoke_test`'s own
+        isolated throwaway one), `EFFEKSEER_SHIM_JS`'s real `init`/
+        `loadEffect`/`play`/`update`/`beginDraw`/`drawHandle`/`endDraw`, and
+        MZ's own real `setProjectionMatrix`/`setCameraMatrix` formulas
+        (`Sprite_Animation`'s, rmmz_sprites.js) — against a real, unmodified
+        `Flash.efkefc` (`data/EgoicAnswers/effects/`, a real downloaded MZ
+        release's stock RTP effect, used in place of `data/labyria` so this
+        runs in this sandbox too) and confirms real pixels change: hundreds
+        of sampled pixels differ from a cleared baseline after the draw,
+        zero before it. All of `mvefk.cxx`'s pre-existing shim tests
+        (survives the real call sequence / loads and reports honestly /
+        retires handles / routes a real effect through native simulation)
+        pass unchanged — the fallback path for synthetic/malformed content
+        is untouched. See docs/adr/0004's "M6.2 addendum 4" for the full
+        investigation, including the exact debugging trail that found the
+        `end_draw`-flush timing (`EffekseerRendererGL`'s `StandardRenderer`
+        only issues its queued GL draw calls from `ResetAndRenderingIfRequired`,
+        called by `BeginRendering`/`EndRendering`, not by `DrawHandle` itself)
+        and the missing-depth-clear pitfall in this test's own first draft.
 
 ## Tooling
 

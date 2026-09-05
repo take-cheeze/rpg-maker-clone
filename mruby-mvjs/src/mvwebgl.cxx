@@ -1965,6 +1965,14 @@ const uint8_t* mv_webgl_pixels(int handle, int* w, int* h) {
   return mvgl::pixels(c, w, h);
 }
 
+// See mvhost.hxx's own comment on why mvefk.cxx (a different translation
+// unit) needs this rather than assuming its own EGL context is already
+// current: `bind` here is the exact same handle->context resolution and
+// make-current every other `__mv_gl*` call goes through.
+bool mv_webgl_make_current(int handle) {
+  return bind(handle) != nullptr;
+}
+
 // Install the WebGL bridge: the __mv_gl* natives and the WebGLRenderingContext
 // prototype. Called once after the Canvas2D bridge (mvjs.cxx). The canvas
 // shim's getContext("webgl") gates on __mv_glCreate existing, so on a build
@@ -2088,6 +2096,12 @@ void mv_install_webgl(JSContext*) {}
 // No GL backend: there is no WebGL frame to present.
 const uint8_t* mv_webgl_pixels(int, int*, int*) {
   return nullptr;
+}
+
+// No GL backend: no context to make current (mvefk's own real branch is
+// equally absent in this build, so this is never actually called).
+bool mv_webgl_make_current(int) {
+  return false;
 }
 
 #endif

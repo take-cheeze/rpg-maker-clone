@@ -662,6 +662,191 @@ JavaScript loads and interprets the JSON.
       `played=true`, because the cell sprite is visible and carries the host's
       1x1 placeholder bitmap. The log cannot tell a drawn burst from a drawn
       nothing. The frame check fails on it.
+    - **M6.2 addendum 4 — JS bridge: rendering landed, real visible particles
+      through PIXI's own WebGL context.** The previous addendum's own
+      "materially riskier" list (shared GL state, translating a JS-side
+      `WebGLRenderingContext` handle into a native one, MZ's own fixed
+      projection/camera matrix convention) is resolved point by point below,
+      each backed by reading the vendored source rather than assumed, plus
+      one real, previously-undiscovered gap found and fixed while proving it
+      end to end.
+
+      **Investigation, before writing any code**: `mvgl.cxx`/`mvwebgl.cxx`
+      confirm the whole engine shares exactly one live `mvgl::Context` in a
+      real game run — MZ creates one canvas, one WebGL context
+      (`Graphics._createPixiApp`), and `mvwebgl.cxx`'s own `g_gl`/`g_current`
+      idiom tracks "the last-bound handle" precisely because there is
+      normally only one. `mvwebgl.cxx`'s `bind(handle)` calls
+      `mvgl::make_current`, which unconditionally rebinds that context's own
+      FBO (`ctx->fbo`) — so any `renderer.gl.*` call PIXI or `Sprite_Animation`
+      makes leaves the *correct* FBO bound for whatever native GL call comes
+      next on the same thread, Effekseer's included. Reading
+      `EffekseerRendererGL.Renderer.cpp` directly (not assumed) confirmed
+      `BeginRendering`/`EndRendering` save and restore every piece of GL
+      state the renderer itself touches (`GL_CURRENT_PROGRAM`,
+      `GL_VERTEX_ARRAY_BINDING`, `GL_ARRAY_BUFFER_BINDING`,
+      `GL_ELEMENT_ARRAY_BUFFER_BINDING`, per-unit `GL_TEXTURE_BINDING_2D`,
+      blend/depth/cull state) but *never* the framebuffer binding, viewport,
+      or scissor — so a `beginDraw`/`drawHandle`/`endDraw` nested inside
+      PIXI's own mid-frame render pass cannot corrupt PIXI's own GL state or
+      draw into the wrong target, and needs no save/restore of its own on
+      this project's side either.
+
+      The fetched `data/mz-sample/js/rmmz_sprites.js` settled the second
+      risk and the call contract at once: `Sprite_Animation._render` calls
+      `setProjectionMatrix(renderer)`, `setCameraMatrix(renderer)`,
+      `beginDraw()`, `drawHandle(this._handle)`, `endDraw()`, in that order,
+      once per playing animation sprite, at that sprite's own z-order within
+      PIXI's normal scene-graph traversal (`Sprite.prototype.render` calling
+      the object's own `_render` override — no bespoke reordering by this
+      project's own frame pump, which only drives `SceneManager.update` then
+      `Graphics._app.render()` once per frame exactly as `rmmz_core.js`
+      itself does). `setProjectionMatrix`/`setCameraMatrix`'s own literal mat4
+      arrays (`_viewportSize` fixed at 4096, camera translated by `-10` on
+      z) are MZ's *only* camera convention for this — there is no separate
+      `ZNear`/`ZFar`/camera-position API exposed to JS at all, matching what
+      the real `effekseer.min.js` wrapper's own `drawHandle(handle)` takes no
+      arguments beyond the handle either (`Core.DrawHandle(ptr, handle.native)`,
+      confirmed by reading the vendored wrapper's un-minified call shape) —
+      so `draw_handle` below leaves `DrawParameter`'s `ZNear`/`ZFar` at their
+      default (`0.0f`, equal), which by design skips `CanDraw`'s CPU-side
+      sphere-culling check entirely (`Effekseer.Manager.cpp`, `if (ZNear !=
+      ZFar)`), exactly matching upstream's own minimal contract rather than
+      inventing camera parameters MZ never provides.
+
+      **Landed**, in `mvefk.cxx`/`.hxx`:
+      - `Context` (the persistent per-game struct M6.2 addendum 3 already
+        has) gains an `EffekseerRendererGL::RendererRef renderer`, attached
+        by a new `init_render(ContextId)` — a *second* step after
+        `context_create()`, deliberately mirroring the real `effekseer.js`
+        API's own `createContext()`/`init(gl)` split (confirmed by reading
+        the vendored `effekseer.min.js` wrapper: `init(webglContext,
+        settings)` is where `Core.Init(...)` — the actual native manager
+        construction — happens, not `createContext()`). `init_render` wires
+        the same eight `Set*Renderer`/`Set*Loader` calls `smoke_test` already
+        proved (M6.2 addendum 2), attached to whatever GL context is current
+        on this thread *at the moment it is called*.
+      - Getting the *right* context current at that moment is
+        `mv_webgl_make_current(int handle)`, a new function in `mvwebgl.cxx`
+        (declared in `mvhost.hxx` for `mvefk.cxx`, a different translation
+        unit, to call) — the literal answer to "translating a JS-side
+        `WebGLRenderingContext` handle into a native one": it is exactly
+        `mvwebgl.cxx`'s own `bind(handle)`, the same handle→context
+        resolution and make-current every other `__mv_gl*` call already
+        goes through. The JS bridge's `ctx.init(gl)` reads `gl.__gl` (the
+        numeric id `getContext('webgl')` stamped on the WebGLRenderingContext
+        it returned) and passes it to a new native `__mv_efkInit(ctx,
+        glHandle)`, which calls `mv_webgl_make_current(glHandle)` before
+        `init_render` — so the renderer attaches to the *exact* context/FBO
+        PIXI's own `Graphics._app.renderer.gl` uses, not merely whatever
+        happened to be current by incidental call order (which — for a real
+        single-canvas game boot — would in fact already be correct, but this
+        makes it correct by construction rather than by accident, and matters
+        for anything that creates more than one GL context in one process,
+        as this project's own tests do).
+      - `set_projection_matrix`/`set_camera_matrix` copy a flat 16-float mat4
+        straight into an `Effekseer::Matrix44`'s `Values[4][4]` with
+        `memcpy` — no row/column-major translation, matching the real
+        `effekseer.js` wrapper's own bit-for-bit copy
+        (`Module.HEAPF32.set(matrixArray, arrmem>>2)` then a raw native
+        pointer) and confirmed correct by hand-deriving the actual clip-space
+        result for a particle at the effect's own origin under MZ's real
+        matrices (row-vector chained through camera then projection: NDC
+        lands at screen centre with `z/w ≈ -0.03`, comfortably inside
+        `[-1, 1]` — not a degenerate or off-screen projection, as a naive
+        read of the individual matrices might suggest).
+      - `begin_draw`/`draw_handle`/`end_draw` map directly to
+        `renderer->BeginRendering()`/`manager->DrawHandle(handle,
+        draw_param)`/`renderer->EndRendering()`, `draw_param.ViewProjectionMatrix`
+        read from `renderer->GetCameraProjectionMatrix()` *after*
+        `BeginRendering` (the same read-ordering pitfall `smoke_test`'s own
+        comment already documents). Deliberately **no** extra
+        `manager->Flip()` here, unlike `smoke_test`'s one-shot
+        simulate-then-draw: this runs every real frame, and
+        `Manager::Create`'s `autoFlip` default (used by `context_create`)
+        already syncs the render-visible `DrawSet` at the *start* of each
+        `update()` call, one frame behind — the same cadence a real
+        per-frame loop (and the real WASM build, whose `DrawHandle` has no
+        such call either) relies on without ever noticing the lag.
+
+      **One real gap found and fixed while proving this end to end**:
+      `effect_load` parsed effects from raw bytes only
+      (`Effekseer::Effect::Create(manager, bytes, size, magnification)`, no
+      `materialPath`), so a real effect's referenced textures/models/materials
+      all failed to resolve — `EffectFactory::OnLoadingResource`
+      (`Effekseer.Effect.cpp`) resolves each one against
+      `PathHelper::Combine(materialPath, relativePath)`, and an empty
+      `materialPath` combines to just the bare relative name, never a real
+      file relative to this process' own CWD. The failure mode is silent on
+      both sides: `ResourceManager::LoadTexture` returns null with no error,
+      and a genuinely alive, correctly-simulating effect
+      (`Manager::GetTotalInstanceCount() > 0`) produces *zero* draw calls
+      (`Renderer::GetDrawCallCount() == 0`) with no GL error either — found
+      by temporary instrumentation directly inside `InstanceContainer::Draw`
+      and `RendererImplemented::DrawSprites` (an uncommitted, local patch to
+      the vendored tree, per this ADR's own established practice from M6.2
+      addendum 2's own diagnostic trail), which showed every node in the
+      tree correctly eligible to draw (real instance counts, `IsRendered`,
+      matching LOD) yet the concrete GL draw function never entered. Fixed
+      by threading the effect's own game-relative URL through
+      `effect_load`'s new `path` parameter (`__mv_efkEffectLoad`'s 4th
+      argument, `EFFEKSEER_SHIM_JS`'s `loadEffect` passing its own `url`)
+      and deriving `materialPath` from it via `mv_resolve_path` (the same
+      game-dir-rooting every other MZ asset load already goes through,
+      `mvhost.hxx`/`mvjs.cxx`) — exactly what `Effect::Create`'s
+      `char16_t*`-path overload already does automatically for a path-based
+      load (`PathHelper::GetDirectoryName`, `Effekseer.Effect.cpp`), which
+      the byte-buffer overload this bridge always uses has no path to derive
+      it from on its own.
+
+      A second, purely test-side pitfall surfaced while writing the
+      verification below, worth recording since it looks exactly like a
+      rendering bug and is not one: `EffekseerRendererGL`'s
+      `StandardRenderer` does not issue its queued GL draw calls
+      (`glDrawElements`, `GetDrawCallCount()`'s increment) from `DrawHandle`
+      itself — each node's own `EndRendering` only flushes
+      `if (gpuTimerCount_ > 0)` (a profiling counter, `0` here), so the
+      actual flush happens only from `ResetAndRenderingIfRequired()`, called
+      by the *top-level* `RendererImplemented::BeginRendering()`/
+      `EndRendering()`. A `begin_draw`/`draw_handle` with no matching
+      `end_draw` therefore leaves whatever was drawn that frame stuck,
+      unflushed, in the vertex buffer — confirmed directly by instrumenting
+      `GetDrawCallCount()` at each of the three calls (`0` after
+      `DrawHandle`, `3` only once `EndRendering` ran). Separately, this
+      project's own off-screen `mvgl::Context` never has its depth buffer
+      cleared until something calls `gl.clear(...)` — a real game's PIXI
+      always does this once per frame, at the very start of
+      `Graphics._app.render()`, well before any `Sprite_Animation._render`
+      runs, but this project's own new mrbtest builds a bare WebGL context by
+      hand and has to do the same clear itself, or every fragment fails the
+      depth test against undefined buffer contents (real program, real
+      texture, zero GL errors, real nonzero `GetDrawCallCount()` — yet the
+      framebuffer never visibly changes). Neither of these needed a
+      production-code fix; both are recorded here because the actual
+      integration risk this addendum set out to test — shared GL state
+      between Effekseer and PIXI's own WebGL context — turned out to be a
+      non-issue, and these two were the real (if mundane) reasons the very
+      first working version of the verification below still saw zero lit
+      pixels.
+
+      **Verified with real pixel evidence**: a new mrbtest
+      (`mruby-mvjs/test/mz_test.rb`) drives the *exact* production call
+      sequence — a real `getContext('webgl')` context (not `smoke_test`'s
+      own isolated throwaway one), `EFFEKSEER_SHIM_JS`'s real `init`/
+      `loadEffect`/`play`/`update`/`beginDraw`/`drawHandle`/`endDraw`, and
+      `Sprite_Animation`'s own real `setProjectionMatrix`/`setCameraMatrix`
+      formulas — against a real, unmodified `Flash.efkefc`
+      (`data/EgoicAnswers/effects/`, a real downloaded MZ release's stock
+      RTP effect, standing in for `data/labyria`'s own copy of the same
+      stock content so this runs in any sandbox with `data/EgoicAnswers`
+      fetched, not only one with `data/labyria`) and asserts real pixels
+      change: a sampled grid read back through `MV::JS.present_gl` shows
+      hundreds of pixels differing from a cleared baseline after the draw
+      sequence, none before it. Every pre-existing shim test (survives the
+      real call sequence / loads and reports honestly / retires handles /
+      routes a real effect through native simulation) passes unchanged —
+      confirming the fallback path for synthetic or malformed content, and
+      everything M6.2 addendum 3 already proved, is untouched by this.
     - **M6.3i — the battles were frozen the whole time (landed).** The battle
       smoke asserted `Scene_Battle` was reached, and had been green since
       M6.3d. Writing a probe that *plays* the fight — tap confirm through the
