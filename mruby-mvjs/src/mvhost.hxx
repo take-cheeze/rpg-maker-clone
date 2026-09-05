@@ -84,3 +84,26 @@ bool mv_font_smoke_test(const std::string& in,
                         int* gw,
                         int* gh,
                         int* ink);
+
+// Name the exact file under the game's `fonts/` dir that `game_font()`
+// (mvcanvas.cxx) should treat as MV's one "GameFont" -- called once, early in
+// boot, from mz.rb's MV.maybe_set_main_font with `data/System.json`'s
+// `advanced.mainFontFilename` (mirroring MV.maybe_enable_audio_decryption's
+// read of the same file for `encryptionKey`). Backs
+// MV::Font.preferred_filename= (mvjs.cxx). A project shipping exactly one font
+// (every test bed so far) is unaffected either way; one shipping more than one
+// -- a real MZ project can name a *second*, separately-subsetted
+// `advanced.numberFontFilename` for battle damage digits -- previously left
+// `font_dir_first_font` to pick "whichever `.woff` readdir() happens to return
+// first", no defined order at all. See docs/TODO.md's M6.3c EgoicAnswers font
+// entry.
+void mv_font_set_preferred_filename(const std::string& name);
+
+// Backs MV::Font.pick (mvjs.cxx): pick_font_from_dir's selection logic
+// (mvcanvas.cxx) against real files under `dir`, independent of both
+// mv_font_set_preferred_filename's global and game_font()'s process-lifetime
+// cache -- see that function's own comment for why. Returns "" the same way
+// it does (nothing usable in `dir`), never a default-font fallback path --
+// that part of font_dir_first_font is not this function's concern.
+std::string mv_font_pick_from_dir(const std::string& dir,
+                                  const std::string& preferred);

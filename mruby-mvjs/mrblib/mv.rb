@@ -372,6 +372,36 @@ class MV
       $stderr.puts "[MV] error reading audio encryption key: #{e.message}"
     end
 
+    # Reads `<game_dir>/data/System.json`'s `advanced.mainFontFilename` (MZ
+    # only -- MV's System.json has no such field, and MV projects call this
+    # too, so a missing match is silent, not an error) and tells game_font()
+    # (mvcanvas.cxx, via MV::Font.preferred_filename=) to load exactly that
+    # file rather than guessing from whichever extension `readdir()` happens
+    # to see first. Same read style as #maybe_enable_audio_decryption just
+    # above (a plain regex scan over the raw JSON, not a parse) and the same
+    # reason: one specific string field, not a reason to add a JSON dependency
+    # to this translation unit.
+    #
+    # Matters once a project ships more than one font file: real MZ projects
+    # commonly name a *second*, separately-subsetted `advanced.numberFontFilename`
+    # for battle damage digits (see mv_font_set_preferred_filename's own
+    # comment, mvhost.hxx, for the real downloaded release this was found
+    # against and exactly how wrong the result was). A project shipping one
+    # font -- every test bed so far -- has nothing to disambiguate and this is
+    # a no-op either way.
+    def maybe_set_main_font(game_dir)
+      path = "#{game_dir}/data/System.json"
+      return unless File.file?(path)
+
+      json = File.open(path, "r") { |f| f.read }
+      name = json.scan(/"mainFontFilename"\s*:\s*"([^"]*)"/).flatten.first
+      return if name.nil? || name.empty?
+
+      MV::Font.preferred_filename = name
+    rescue StandardError => e
+      $stderr.puts "[MV] error reading main font filename: #{e.message}"
+    end
+
     # Does the directory look like an RPG Maker MV project?
     def project?(dir = GAME_DIR)
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }

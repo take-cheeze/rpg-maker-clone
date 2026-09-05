@@ -67,39 +67,88 @@ std::string lower_ext(const std::string& name) {
   return ext;
 }
 
-// Find the game's font. A bare sfnt (.ttf/.otf) is preferred because it needs
-// no unpacking, but .woff is accepted too and is what actually matters in
+// Set by mv_font_set_preferred_filename (mvhost.hxx) from MZ's own
+// `advanced.mainFontFilename`, before the first text draw primes game_font()'s
+// cache. Empty (the default) reproduces the pre-existing heuristic below
+// exactly, so every bed that ships one font -- every test bed so far -- is
+// unaffected.
+std::string g_preferred_font_filename;
+
+// Scan `dir` for a usable font file, `preferred` (a bare filename, or "")
+// winning outright over the extension-based fallback below it. A bare sfnt
+// (.ttf/.otf) beats .woff among the fallback candidates because it needs no
+// unpacking, but .woff is accepted too and is what actually matters in
 // practice:
 // **RPG Maker MZ projects ship `fonts/*.woff`** (mplus-1m-regular.woff and
 // friends), so a loader that only looked for .ttf/.otf found nothing and every
 // MZ game drew blank windows.
 //
-// A project that ships no font at all (the MZ sample, and anything whose
-// deployment left the RTP font behind) falls back to the engine's default font
-// — every glyph MV draws goes through here, so without one its whole UI is
-// blank rather than merely wrong-looking. Returns "" only when that is missing
-// too.
-std::string font_dir_first_font() {
-  const std::string dir = mv_resolve_path("fonts");
+// `preferred`, when it names a file actually present, wins outright over
+// either: it is the exact file the project itself calls its main font
+// (`$dataSystem.advanced.mainFontFilename`, the same one real MZ's own
+// `FontManager.load("rmmz-mainfont", ...)` loads, threaded through from
+// `g_preferred_font_filename` by font_dir_first_font below), so it is
+// authoritative in a way "whichever extension we saw first" never was.
+// Without it, a project that ships more than one font file had only luck
+// deciding which one `readdir()` -- unordered -- happened to return first:
+// found against the real downloaded `EgoicAnswers` release, which ships both
+// its actual dialogue font (`mplus-1m-regular.woff`,
+// `advanced.mainFontFilename`) and a second, heavily subsetted one
+// (`mplus-2p-bold-sub.woff`, `advanced.numberFontFilename`, 95 glyphs meant
+// only for `Sprite_Damage`'s battle numbers) -- this picked the digits-only
+// subset for every window's ordinary text, silently: its charmap has no entry
+// for U+0020 at all, so `stbtt_FindGlyphIndex` fell through to glyph 0
+// (.notdef, a visible box in this particular font) at every single word
+// boundary, and its glyph metrics for ordinary Latin letters are also just
+// wrong for `mplus-1m`'s -- both confirmed directly against the real font bytes
+// via `MV::Font.smoke_test` (mrblib exposes it for exactly this kind of check):
+// codepoint 32 rasterises as an 8x16, 72-ink bitmap in `mplus-2p-bold-sub.woff`
+// and a correct, empty 0x0 in `mplus-1m-regular.woff`. See docs/TODO.md's M6.3c
+// EgoicAnswers font entry.
+//
+// This does not give the *number* font its own identity -- `game_font()` is
+// still one process-lifetime singleton backing every "GameFont" draw, so
+// `Sprite_Damage` numbers now render in the *main* font instead of their own
+// (a cosmetic-only gap, and strictly better than every window's dialogue
+// silently losing its spaces).
+//
+// A free function of `dir`/`preferred` (rather than folded into
+// font_dir_first_font, which resolves the game's actual fonts/ path) so
+// MV::Font.pick (mvjs.cxx) can give it deterministic CI coverage against a
+// scratch directory of real files, independent of game_font()'s
+// process-lifetime cache -- the same reason mv_font_smoke_test bypasses it.
+std::string pick_font_from_dir(const std::string& dir,
+                               const std::string& preferred) {
   DIR* d = opendir(dir.c_str());
   if (!d)
-    return rgss::default_font_path();
-  std::string sfnt, woff;
+    return "";
+  std::string sfnt, woff, picked;
   while (dirent* e = readdir(d)) {
-    const std::string ext = lower_ext(e->d_name);
+    const std::string name = e->d_name;
+    if (picked.empty() && !preferred.empty() && name == preferred)
+      picked = dir + "/" + name;
+    const std::string ext = lower_ext(name);
     if (sfnt.empty() && (ext == ".ttf" || ext == ".otf"))
-      sfnt = dir + "/" + e->d_name;
+      sfnt = dir + "/" + name;
     else if (woff.empty() && ext == ".woff")
-      woff = dir + "/" + e->d_name;
+      woff = dir + "/" + name;
   }
   closedir(d);
+  if (!picked.empty())
+    return picked;
   if (!sfnt.empty())
     return sfnt;
-  if (!woff.empty())
-    return woff;
-  // Nothing usable in the project's own fonts/ — fall back to the engine's
-  // default font (assets/fonts), so the windows still draw.
-  return rgss::default_font_path();
+  return woff;
+}
+
+// Find the game's font, falling back to the engine's default (assets/fonts)
+// when the project's own fonts/ has nothing usable -- every glyph MV draws
+// goes through here, so without one its whole UI is blank rather than merely
+// wrong-looking.
+std::string font_dir_first_font() {
+  const std::string picked =
+      pick_font_from_dir(mv_resolve_path("fonts"), g_preferred_font_filename);
+  return picked.empty() ? rgss::default_font_path() : picked;
 }
 
 // Big-endian readers over a byte buffer, bounds-checked by the caller.
@@ -1845,6 +1894,27 @@ bool mv_font_smoke_test(const std::string& in,
     stbtt_FreeBitmap(bmp, nullptr);
   }
   return true;
+}
+
+// Backs MV::Font.preferred_filename= (mvjs.cxx). Must land before
+// game_font()'s first call (mz.rb's boot_probe calls MV.maybe_set_main_font
+// right after the corescript loads, well before the first frame pump can draw
+// anything) -- game_font() is a process-lifetime cache, so a call after the
+// first draw is silently too late, same as loading a test font after another
+// test already drew text (see game_font()'s own comment).
+void mv_font_set_preferred_filename(const std::string& name) {
+  g_preferred_font_filename = name;
+}
+
+// Backs MV::Font.pick (mvjs.cxx): pick_font_from_dir's own selection logic,
+// exercised against real files under a scratch directory a test builds,
+// independent of both g_preferred_font_filename and game_font()'s
+// process-lifetime cache. See pick_font_from_dir's comment for why this
+// needed its own coverage rather than only being reachable via a real game's
+// fonts/ dir and the first text draw.
+std::string mv_font_pick_from_dir(const std::string& dir,
+                                  const std::string& preferred) {
+  return pick_font_from_dir(dir, preferred);
 }
 
 void mv_install_canvas(JSContext* ctx) {

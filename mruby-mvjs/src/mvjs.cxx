@@ -1194,6 +1194,37 @@ mrb_value font_smoke_test(mrb_state* mrb, mrb_value /*self*/) {
   return ary;
 }
 
+// MV::Font.preferred_filename=(name) -> name the exact file under the game's
+// fonts/ dir that game_font() should load, ahead of the pre-existing
+// first-.woff-seen fallback. See mv_font_set_preferred_filename's own comment
+// (mvhost.hxx) for why this exists.
+mrb_value font_set_preferred_filename(mrb_state* mrb, mrb_value /*self*/) {
+  const char* p;
+  mrb_int len;
+  mrb_get_args(mrb, "s", &p, &len);
+  mv_font_set_preferred_filename(std::string(p, static_cast<size_t>(len)));
+  return mrb_nil_value();
+}
+
+// MV::Font.pick(dir, preferred = "") -> the path picked out of `dir` by the
+// same selection logic font_dir_first_font uses (mv_font_pick_from_dir,
+// mvcanvas.cxx), or nil if `dir` has nothing usable. Independent of both
+// MV::Font.preferred_filename= and the game_font() cache, so tests can build
+// a scratch directory of real files and check exactly which one wins.
+mrb_value font_pick(mrb_state* mrb, mrb_value /*self*/) {
+  const char* dir;
+  mrb_int dir_len;
+  const char* preferred = "";
+  mrb_int preferred_len = 0;
+  mrb_get_args(mrb, "s|s", &dir, &dir_len, &preferred, &preferred_len);
+  const std::string picked = mv_font_pick_from_dir(
+      std::string(dir, static_cast<size_t>(dir_len)),
+      std::string(preferred, static_cast<size_t>(preferred_len)));
+  if (picked.empty())
+    return mrb_nil_value();
+  return mrb_str_new(mrb, picked.data(), picked.size());
+}
+
 extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
   RClass* mv = mrb_define_class(mrb, "MV", mrb->object_class);
   RClass* js = mrb_define_class_under(mrb, mv, "JS", mrb->object_class);
@@ -1230,6 +1261,10 @@ extern "C" void mrb_mruby_mvjs_gem_init(mrb_state* mrb) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(mrb, font, "smoke_test", font_smoke_test,
                           MRB_ARGS_ARG(1, 2));
+  mrb_define_class_method(mrb, font,
+                          "preferred_filename=", font_set_preferred_filename,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(mrb, font, "pick", font_pick, MRB_ARGS_ARG(1, 1));
 }
 
 extern "C" void mrb_mruby_mvjs_gem_final(mrb_state* mrb) {}
