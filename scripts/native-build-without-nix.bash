@@ -8,7 +8,7 @@ set -euo pipefail
 # pins every dependency. This script is the fallback for an environment that has
 # a C++ toolchain but no Nix -- notably an agent container, where the absence of
 # a native build was long assumed to be permanent. It is not: everything the
-# flake supplies has a plain equivalent, and the four things that actually block
+# flake supplies has a plain equivalent, and the five things that actually block
 # a from-scratch build are unremarkable.
 #
 #   1. SDL2 and SDL2_mixer headers.        CMakeLists.txt does find_package(SDL2 REQUIRED).
@@ -24,6 +24,13 @@ set -euo pipefail
 #                                          here and checked against the flake's own
 #                                          sha256 hashes, so the build consumes the same
 #                                          bytes Nix would hand it -- not a lookalike.
+#   5. `gperf` and `bison`.                This project's mruby-defined-keyword.patch
+#                                          touches mrbgems/mruby-compiler/core/keywords,
+#                                          forcing rake to regenerate lex.def/y.tab.c on
+#                                          every build (see flake.nix's own comment on
+#                                          this pair) rather than only when a patch first
+#                                          lands -- so both are needed unconditionally,
+#                                          not just when the SDL2 headers are missing.
 #
 # Why bother: the Ruby harnesses (rpg2k_logic_check.rb and friends) load the
 # runtime's pure-Ruby sources under *CRuby*, which cannot see mruby/CRuby
@@ -78,14 +85,24 @@ tables="${TABLES_DIR:-$root/.native-build-tables}"
 say() { printf '\n== %s\n' "$*"; }
 
 say "1/5 system packages"
-if pkg-config --exists sdl2 && pkg-config --exists SDL2_mixer; then
-  echo "SDL2 and SDL2_mixer already present"
+# Gate on every package this step installs, not just SDL2 -- a container that
+# already has SDL2 dev headers (this one did) but not e.g. gperf skipped the
+# whole branch and failed 700 ninja steps later with the unhelpful "sh: 1:
+# gperf: not found" deep inside mruby's own rake build, since the
+# mruby-defined-keyword.patch this project carries touches
+# mrbgems/mruby-compiler/core/keywords and forces lex.def to regenerate on
+# every build (see flake.nix's own comment on the bison/gperf pair).
+if pkg-config --exists sdl2 && pkg-config --exists SDL2_mixer \
+  && command -v cmake >/dev/null 2>&1 && command -v ninja >/dev/null 2>&1 \
+  && command -v g++ >/dev/null 2>&1 && command -v xvfb-run >/dev/null 2>&1 \
+  && command -v gperf >/dev/null 2>&1 && command -v bison >/dev/null 2>&1; then
+  echo "system packages already present"
 else
   # A stale package index 404s on the individual .deb files, which reads as a
   # network failure rather than the cache miss it is -- so always refresh first.
   apt-get update -qq
   apt-get install -y --no-install-recommends \
-    libsdl2-dev libsdl2-mixer-dev xvfb cmake ninja-build g++
+    libsdl2-dev libsdl2-mixer-dev xvfb cmake ninja-build g++ gperf bison
 fi
 
 say "2/5 submodules"
