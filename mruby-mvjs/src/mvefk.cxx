@@ -569,8 +569,8 @@ JSValue js_efk_effect_load(JSContext* ctx,
       JS_FreeCString(ctx, p);
     }
   }
-  const mvefk::EffectId eid =
-      mvefk::effect_load(cid, bytes, len, mag, path.empty() ? nullptr : path.c_str());
+  const mvefk::EffectId eid = mvefk::effect_load(
+      cid, bytes, len, mag, path.empty() ? nullptr : path.c_str());
   JS_FreeValue(ctx, hold);
   return JS_NewUint32(ctx, eid);
 }
@@ -739,26 +739,26 @@ JSValue js_efk_set_camera_matrix(JSContext* ctx,
 }
 
 JSValue js_efk_begin_draw(JSContext* ctx,
-                         JSValueConst,
-                         int argc,
-                         JSValueConst* argv) {
+                          JSValueConst,
+                          int argc,
+                          JSValueConst* argv) {
   mvefk::begin_draw(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
   return JS_UNDEFINED;
 }
 
 JSValue js_efk_draw_handle(JSContext* ctx,
-                          JSValueConst,
-                          int argc,
-                          JSValueConst* argv) {
+                           JSValueConst,
+                           int argc,
+                           JSValueConst* argv) {
   mvefk::draw_handle(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)),
                      gi(ctx, argc, argv, 1));
   return JS_UNDEFINED;
 }
 
 JSValue js_efk_end_draw(JSContext* ctx,
-                       JSValueConst,
-                       int argc,
-                       JSValueConst* argv) {
+                        JSValueConst,
+                        int argc,
+                        JSValueConst* argv) {
   mvefk::end_draw(static_cast<mvefk::ContextId>(gi(ctx, argc, argv, 0)));
   return JS_UNDEFINED;
 }

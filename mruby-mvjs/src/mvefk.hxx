@@ -75,12 +75,13 @@ bool smoke_test(const char* path,
 // below is that second step for this native backend: it attaches a real
 // `EffekseerRendererGL::Renderer` to the manager, sharing whatever GL context
 // is current on this thread at the moment it is called -- which is exactly
-// why the JS bridge's `ctx.init(gl)` (called by `Graphics._createEffekseerContext`
-// right after PIXI's own WebGL context is built, per rmmz_core.js) resolves
-// the JS-side `WebGLRenderingContext` handle to a native one first
-// (`mv_webgl_make_current`, mvhost.hxx) before calling this. Until `init_render`
-// succeeds, a context behaves exactly as before this was added: simulation
-// only, `begin_draw`/`draw_handle`/`end_draw` are no-ops.
+// why the JS bridge's `ctx.init(gl)` (called by
+// `Graphics._createEffekseerContext` right after PIXI's own WebGL context is
+// built, per rmmz_core.js) resolves the JS-side `WebGLRenderingContext` handle
+// to a native one first
+// (`mv_webgl_make_current`, mvhost.hxx) before calling this. Until
+// `init_render` succeeds, a context behaves exactly as before this was added:
+// simulation only, `begin_draw`/`draw_handle`/`end_draw` are no-ops.
 //
 // Every function below silently no-ops/returns a failure sentinel (0 for a
 // ContextId/EffectId, -1 for a play handle, false for exists) when called on
