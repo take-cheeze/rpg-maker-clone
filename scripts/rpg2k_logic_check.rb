@@ -4312,8 +4312,11 @@ FakeStateDef = Struct.new(:restriction, :hp_change_val, :hp_change_max,
                           # #state_field, the schema's own default.
                           :hp_change_type, :sp_change_type,
                           # ... and the RPG2003 "Avoid Attacks" flag (state field
-                          # 36, `avoid_attacks`): a battler carrying it dodges
-                          # every basic attack unconditionally. Appended last,
+                          # 36, `avoid_attacks`): parsed, but genuine RPG_RT does
+                          # not appear to wire it into the normal-attack to-hit
+                          # check at all (#to_hit's own citation) -- kept here
+                          # purely so a fake state row can still assert the flag
+                          # is inert rather than merely absent. Appended last,
                           # same reason again -- nil reads as falsy via
                           # #state_field, matching the schema's own false default.
                           :avoid_attacks,
@@ -19046,13 +19049,18 @@ check 'battle: a blinding state cuts its victim\'s accuracy by reduce_hit_ratio'
   eq 18, bat.send(:to_hit, blind, foe), 'the worst state wins (20%, not 50%*20%)'
 end
 
-check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unconditionally' do
-  # Parsed (mruby-lcf/mrblib/schema.rb state field 36, avoid_attacks) but never
-  # read anywhere in Game::Battle before this fix -- ported from a reference implementation
-  # Player's source, NOT independently confirmed against genuine RPG_RT
-  # under wine: it (game_battler.cpp)
-  # forces CalcNormalAttackToHit to 0 the instant the target carries one,
-  # ahead of every other term, so the state did nothing at all here.
+check 'battle: an "Avoid Attacks" (RPG2003) state does NOT dodge every basic attack' do
+  # Parsed (mruby-lcf/mrblib/schema.rb state field 36, avoid_attacks) but
+  # genuine RPG_RT does not appear to wire it into the normal-attack to-hit
+  # check at all -- this codebase used to port a reference implementation's
+  # own game_battler.cpp, which forces CalcNormalAttackToHit to 0 the
+  # instant the target carries one, ahead of every other term. A genuine
+  # wine capture (2026-09-05) falsified that: a target carrying a real,
+  # freshly-authored avoid_attacks-flagged state and no other restriction
+  # still took a steady, ordinary stream of hits from a plain enemy Attack
+  # across eight rounds, never once dodging -- so the short-circuit was
+  # removed, and #to_hit now treats avoid_attacks as inert, same as any
+  # other unrelated state flag.
   states = { 12 => fake_state(avoid_attacks: true), 13 => fake_state }
   attacker = combatant('Attacker', 20, 0, 10, 100) # a fast, hard-hitting attacker
   dodger = combatant('Dodger', 0, 0, 1, 100)        # slow, so agi alone would favour a hit
@@ -19061,26 +19069,23 @@ check 'battle: an "Avoid Attacks" (RPG2003) state dodges every basic attack unco
   plain.states = [13] # carries an ordinary, unflagged state -- not merely none at all
   bat = Game::Battle.new([attacker], [dodger, plain], Game::Rng.new(1), states,
                          false, false, true)          # accuracy on
-  eq 0, bat.send(:to_hit, attacker, dodger),
-     'the state forces a flat 0% chance, agility and hit rate notwithstanding'
-  ok bat.send(:to_hit, attacker, plain) > 0,
-     'an unrelated, unflagged state does not itself dodge everything (#state_flag, not #state_field)'
+  eq bat.send(:to_hit, attacker, plain), bat.send(:to_hit, attacker, dodger),
+     'avoid_attacks changes nothing: the flagged and unflagged states compute identically'
+  ok bat.send(:to_hit, attacker, dodger) > 0,
+     'in particular, not forced down to a flat 0% the way the reverted short-circuit did'
 
-  # A 必中 (evasion-ignoring) attacker does not bypass this: real RPG_RT checks
-  # avoid_attacks before it ever reaches the ignores_evasion branch.
-  attacker.ignores_evasion = true
-  eq 0, bat.send(:to_hit, attacker, dodger), 'even a 必中 attacker cannot bypass it'
-
-  # Carrying an unrelated, unflagged state alongside it changes nothing.
+  # Carrying an unrelated, unflagged state alongside it still changes nothing.
   dodger.states = [12, 13]
-  eq 0, bat.send(:to_hit, attacker, dodger), 'still dodges with a second, unrelated state'
+  eq bat.send(:to_hit, attacker, plain), bat.send(:to_hit, attacker, dodger),
+     'still a no-op with a second, unrelated state present too'
 end
 
 check 'battle: a "do nothing"-restricted target always gets hit' do
   # Per the same reference-implementation-ported CalcNormalAttackToHit reading above (NOT
   # independently confirmed against genuine RPG_RT under wine): `if
-  # (!target.CanAct()) return 100;` -- the next term down from
-  # avoid_attacks, ahead of every ordinary accuracy roll. An asleep/paralysed
+  # (!target.CanAct()) return 100;` -- the first term #to_hit checks now that
+  # the avoid_attacks short-circuit ahead of it has been reverted, ahead of
+  # every ordinary accuracy roll. An asleep/paralysed
   # target (state restriction 1) was previously
   # rolled through the normal hit-rate/agility math like anyone else.
   states = { 5 => fake_state(restriction: Game::Battle::RESTRICTION_DO_NOTHING) }

@@ -11655,17 +11655,26 @@ module Game
     # so a nimbler target dodges more. Clamped to 0..100. Only consulted when
     # the fight has accuracy enabled (see #initialize).
     #
-    # A target carrying an "Avoid Attacks" (RPG2003) state dodges a basic
-    # attack unconditionally, before any other term -- ported from a reference
-    # implementation's own normal-attack-to-hit formula, NOT independently
-    # confirmed against
-    # genuine RPG_RT under wine: it checks whether the target evades all
-    # physical attacks
-    # first and returns 0 immediately, ahead of even the restricted-target
-    # "always hits" rule and a 必中 attacker's own evasion-ignoring branch. A
-    # target with a "do nothing" restriction (asleep / paralysed) is the next
-    # term down and always gets hit -- that same ported formula's own can-act
-    # check returning 100 immediately, ahead of every accuracy term below it.
+    # An "Avoid Attacks" (RPG2003, state field 36 `avoid_attacks`) state does
+    # NOT make its wielder dodge a basic attack unconditionally -- reverted,
+    # confirmed wrong against a genuine RPG_RT.exe under wine (2026-09-05).
+    # A reference implementation's own normal-attack-to-hit formula checks
+    # whether the target evades all physical attacks first and returns 0
+    # immediately, ahead of even the restricted-target "always hits" rule and
+    # a 必中 attacker's own evasion-ignoring branch; this codebase used to
+    # port that check the same way. Under wine, a target carrying a custom
+    # state with `avoid_attacks` set and no other restriction still took a
+    # steady, ordinary stream of hits from a plain enemy Attack across eight
+    # rounds -- not the zero hits in eight (a few-in-a-billion coincidence at
+    # a real ~90% base rate) the ported short-circuit predicts. The field is
+    # parsed but genuine RPG_RT does not appear to wire it into the
+    # normal-attack to-hit check at all, so the short-circuit was removed
+    # rather than kept as a dead port of an apparently-fictional mechanic.
+    # A target with a "do nothing" restriction (asleep / paralysed) is the
+    # next term down and always gets hit -- that same ported formula's own
+    # can-act check returning 100 immediately, ahead of every accuracy term
+    # below it. Untouched by this fix; only the avoid_attacks short-circuit
+    # ahead of it turned out to be fictional.
     # RPG2003 row accuracy: a back-row defender is harder to hit by a physical
     # attack. Ported from that same formula, also
     # NOT independently confirmed against genuine RPG_RT under wine: it
@@ -11867,7 +11876,6 @@ module Game
     end
 
     def to_hit(attacker, target)
-      return 0 if evades_all_physical?(target)
       return 100 if do_nothing_restricted?(target)
       # Modify hit chance for each state the *source* has (`#hit_modifier`,
       # e.g. Blind) before the agility term -- a reference implementation
@@ -11914,40 +11922,31 @@ module Game
       end
     end
 
-    # Whether any state currently afflicting `b` is flagged "Avoid Attacks"
-    # (RPG2003 state field 36, `avoid_attacks` in `mruby-lcf/mrblib/schema.rb`)
-    # -- ported from a reference implementation's own
-    # evades-all-physical-attacks check,
-    # NOT independently confirmed against genuine
-    # RPG_RT under wine, scanning every inflicted state the same way
-    # `#hit_modifier` does just
-    # below. Parsed but never read anywhere in this file before this fix, so a
-    # state built for this exact purpose (RPG2000's closest thing to a
-    # guaranteed-dodge "Blink"/intangibility status) did nothing at all.
-    #
-    # Uses #state_flag, not #state_field: the latter's `d.send(name) || 0`
-    # fallback is built for a *numeric* field's "unset -> 0" default (see
-    # #apply_turn_states' own hp/sp reads further down) and hands back the
-    # integer `0` for an unset/false *boolean* field too -- and `0` is truthy
-    # in Ruby, so `.any? { state_field(...) }` answered true for a battler
-    # carrying *any* state at all, avoid_attacks-flagged or not, until this
-    # fix. #skill_sealed? already has the right idiom for a boolean field
-    # (`state_flag`, scanning `restrict_skill`/`restrict_magic` a few methods
-    # down) -- this one just used the wrong helper.
-    def evades_all_physical?(b)
-      (b.states || []).any? { |sid| state_flag(state_def(sid), :avoid_attacks) }
-    end
-
     # Whether any state currently afflicting `b` is flagged "Reflect Magic"
     # (RPG2003 state field 37, `reflect_magic` in `mruby-lcf/mrblib/schema.rb`)
     # -- ported from a reference implementation's own has-reflect-state check,
-    # NOT independently confirmed against genuine RPG_RT under wine, scanned
-    # the same way #evades_all_physical? scans `avoid_attacks` (#state_flag,
-    # not #state_field -- see that method's own comment on why: the same
-    # truthy-`0` bug applied here too, reflecting a Skill off *any* afflicted
-    # target rather than only a Reflect-Magic-flagged one). Parsed but never
+    # NOT independently confirmed against genuine RPG_RT under wine, scanning
+    # every inflicted state the same way `#hit_modifier` does (#state_flag,
+    # not #state_field: the latter's `d.send(name) || 0` fallback is built for
+    # a *numeric* field's "unset -> 0" default and hands back the integer `0`
+    # for an unset/false *boolean* field too -- and `0` is truthy in Ruby, so
+    # `.any? { state_field(...) }` would answer true for a battler carrying
+    # *any* state at all, reflect_magic-flagged or not. #skill_sealed? already
+    # has the right idiom for a boolean field, scanning `restrict_skill`/
+    # `restrict_magic` a few methods down). Parsed but never
     # read anywhere in this file before this fix -- see #reflects_skill?,
     # the one caller that turns this into an actual retarget.
+    #
+    # Its sibling check, an analogous `evades_all_physical?` reading the
+    # neighboring `avoid_attacks` field (36) to make #to_hit return 0
+    # unconditionally, was removed after a genuine wine capture (2026-09-05)
+    # showed a target carrying an avoid_attacks-flagged state still took a
+    # steady, ordinary stream of hits across eight rounds -- not the zero
+    # hits in eight a real dodge-everything effect predicts. See #to_hit's
+    # own citation for the capture. Left as a cautionary note here since
+    # `reflects_magic?` is built the identical way and remains unconfirmed;
+    # it has not yet been tested against genuine RPG_RT and may turn out
+    # equally fictional.
     def reflects_magic?(b)
       (b.states || []).any? { |sid| state_flag(state_def(sid), :reflect_magic) }
     end
