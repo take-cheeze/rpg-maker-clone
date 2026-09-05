@@ -2669,9 +2669,13 @@ module Game
     end
 
     # 必中 — an equipped weapon whose attack cannot be evaded. Ported from
-    # a reference implementation's own to-hit calculation, NOT independently confirmed against
-    # genuine RPG_RT under wine: it returns before it applies the agility /
-    # evasion term for such a weapon. 13 of Nepheshel's weapons carry it.
+    # a reference implementation's own to-hit calculation; confirmed against
+    # genuine RPG_RT under wine, 2026-09-05: a hand-authored hit-90 weapon
+    # against an agi-999 target (whose evasion alone clamps #to_hit's own
+    # agi_adjusted formula to ~0%) landed 0 of 5 attacks without this flag
+    # and 2 of 3 with it -- it returns before it applies the agility /
+    # evasion term for such a weapon, exactly as ported. 13 of Nepheshel's
+    # weapons carry it.
     def ignores_evasion?; equipment_flag?(:ignore_evasion, true); end
 
     # 全体化 — an equipped weapon that turns a basic Attack into a strike
