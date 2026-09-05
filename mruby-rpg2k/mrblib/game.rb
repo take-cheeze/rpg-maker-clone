@@ -13104,8 +13104,11 @@ module Game
         { attacker: b.name, observe: true }
       when EnemyAction::BASIC_CHARGE
         # The next attack this enemy lands does double damage (ported from
-        # a reference implementation's charge flag, spent in #deal_attack,
-        # NOT independently confirmed against genuine RPG_RT under wine) --
+        # a reference implementation's charge flag, spent in #deal_attack;
+        # confirmed against genuine RPG_RT under wine, 2026-09-05 -- a
+        # synthetic enemy whose turn-1 action was Charge only and turn-2+
+        # action a plain Attack only landed turn 2's hit for double the
+        # ordinary ~100-power probe's damage, 200 rather than ~80-120) --
         # any stale charge
         # already spent by #perform_enemy_action above starts fresh here
         # regardless.

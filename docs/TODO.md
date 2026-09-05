@@ -31701,6 +31701,36 @@ codebase yet):
           cure" apparently prints nothing at all, unlike the single-enemy
           case), so the fix's self/ally-scope half rests on the formula
           being the same one shared XOR rather than a second capture.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: a critical hit on
+  a basic Attack deals exactly 3x damage, confirming `Game::Battle#
+  deal_attack_with_current_weapon`'s existing `dmg *= 3 if crit`.** A
+  synthetic Nepheshel fixture (same technique as the Defend/Charge and
+  `reverse_state_effect` probes above) gave a single enemy `critical_hit`
+  set with `critical_hit_chance` 1 — this codebase's own `Combatant`
+  builder reads that field as a 1-in-N rate, so N=1 is a guaranteed roll,
+  not a raw percentage — and the same ~100-power probe hit the other
+  fixtures use, against the same leader (undefended this time, choosing
+  Attack rather than Defend so the read isn't also crossed with that
+  halving). Genuine RPG_RT's own battle log named the hit a "痛恨の一撃"
+  (its own critical-hit announcement) and dealt 319 damage (999 → 680 HP)
+  — squarely in the ~240-360 band 3x the ordinary ~80-120 undefended hit
+  occupies, not that ordinary band itself. No code change: this was
+  already correctly implemented, just newly confirmed rather than merely
+  ported.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: an enemy's Charge
+  basic action really does double the damage of its own next landed
+  attack, confirming `Game::Battle#enemy_basic_action`'s own
+  `BASIC_CHARGE` citation (previously "NOT independently confirmed against
+  genuine RPG_RT under wine").** A synthetic enemy's AI had exactly two
+  actions with non-overlapping turn conditions — Charge on turn 1 only,
+  a plain Attack (the same ~100-power probe the other fixtures use) on
+  turn 2 and every turn after — so which one fires each round is
+  deterministic, not a weighted pick among several simultaneously-valid
+  actions. Turn 1: Charge, no damage, no announced message (silent in the
+  battle log, unlike a landed hit). Turn 2: the same enemy's Attack landed
+  for 200 damage (999 → 799 HP) — double the ordinary ~80-120 undefended
+  band, not that band itself. No code change: already correctly
+  implemented, just newly confirmed.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
