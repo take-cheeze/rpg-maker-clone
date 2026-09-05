@@ -11940,63 +11940,21 @@ module Game
       end
     end
 
-    # Whether any state currently afflicting `b` is flagged "Reflect Magic"
-    # (RPG2003 state field 37, `reflect_magic` in `mruby-lcf/mrblib/schema.rb`)
-    # -- ported from a reference implementation's own has-reflect-state check,
-    # NOT independently confirmed against genuine RPG_RT under wine, scanning
-    # every inflicted state the same way `#hit_modifier` does (#state_flag,
-    # not #state_field: the latter's `d.send(name) || 0` fallback is built for
-    # a *numeric* field's "unset -> 0" default and hands back the integer `0`
-    # for an unset/false *boolean* field too -- and `0` is truthy in Ruby, so
-    # `.any? { state_field(...) }` would answer true for a battler carrying
-    # *any* state at all, reflect_magic-flagged or not. #skill_sealed? already
-    # has the right idiom for a boolean field, scanning `restrict_skill`/
-    # `restrict_magic` a few methods down). Parsed but never
-    # read anywhere in this file before this fix -- see #reflects_skill?,
-    # the one caller that turns this into an actual retarget.
-    #
-    # Its sibling check, an analogous `evades_all_physical?` reading the
-    # neighboring `avoid_attacks` field (36) to make #to_hit return 0
-    # unconditionally, was removed after a genuine wine capture (2026-09-05)
-    # showed a target carrying an avoid_attacks-flagged state still took a
-    # steady, ordinary stream of hits across eight rounds -- not the zero
-    # hits in eight a real dodge-everything effect predicts. See #to_hit's
-    # own citation for the capture. Left as a cautionary note here since
-    # `reflects_magic?` is built the identical way and remains unconfirmed;
-    # it has not yet been tested against genuine RPG_RT and may turn out
-    # equally fictional.
-    def reflects_magic?(b)
-      (b.states || []).any? { |sid| state_flag(state_def(sid), :reflect_magic) }
-    end
-
-    # Whether a Skill cast at `target` bounces back onto its own caster `b`
-    # instead, per `cmd` (the command hash #battle_skill_command built).
-    # Ported from a reference implementation's own skill-reflection check,
-    # NOT independently confirmed against
-    # genuine RPG_RT under wine: it returns false when cast from a special
-    # item or when the skill carries the ignore-reflect flag, and otherwise
-    # reflects whenever the target is valid, carries the reflect-magic
-    # state, and is on the opposing side. `item` there is "this skill
-    # effect was cast from a special item, not chosen from the caster's own
-    # skill list" -- this codebase's own item-cast effects carry `cmd[:item_id]`
-    # instead of `cmd[:skill_id]` (#apply_command already threads the two
-    # apart; see #skill_command_hash / #battle_item_command), so checking for a
-    # real `skill_id` is the same gate. `easyrpg_ignore_reflect` is an
-    # EasyRPG-only extension field no vanilla RPG2000/2003 database ever sets,
-    # so it needs no counterpart here. The opposite-side check is what keeps an ordinary ally/
-    # self-scoped skill from ever reaching this at all -- it never targets the
-    # opposing side to begin with. A reference implementation's own battle
-    # scene calls its own reflect-targeting step right
-    # before the action's own execute step, well before any hit-chance/
-    # elemental/variance math runs -- so a reflected skill still rolls its
-    # own accuracy and damage normally afterward, just against the new
-    # target, which is exactly what redirecting `target` here and letting
-    # #apply_skill_hit run unmodified on the result achieves (again ported,
-    # NOT independently confirmed against genuine RPG_RT under wine).
-    def reflects_skill?(b, target, cmd)
-      cmd[:skill_id] && !cmd[:item_id] && side_of(target) != side_of(b) &&
-        reflects_magic?(target)
-    end
+    # "Reflect Magic" (RPG2003 state field 37, `reflect_magic`) does NOT make
+    # a Skill cast at its wielder bounce back onto the caster -- removed,
+    # confirmed wrong against a genuine RPG_RT.exe under wine (2026-09-05):
+    # a party member carrying a freshly-authored reflect_magic-flagged state
+    # kept taking an enemy's own single-target Skill damage directly, across
+    # two separately-landed casts, never once redirecting it back onto the
+    # caster. This codebase used to port a reference implementation's own
+    # has-reflect-state check (`reflects_magic?`, scanning every inflicted
+    # state via `#state_flag`) and a `reflects_skill?` gate (valid target,
+    # opposing side, a real Skill not an Item) consumed by `#apply_command`/
+    # `#apply_command_all` to retarget the hit onto the caster -- all three
+    # removed outright rather than kept as a dead port of an apparently-
+    # fictional mechanic, the same way this session's earlier
+    # `evades_all_physical?`/`avoid_attacks` reversal was handled. See
+    # `#apply_command`'s own citation for where the redirect used to live.
 
     # How much the attacker's own statuses cut its accuracy: the **lowest**
     # `reduce_hit_ratio` among the states afflicting it, not the product of
@@ -12173,8 +12131,7 @@ module Game
     # rather than chosen from the caster's own list (see #battle_skill_command's
     # `free:`, which such a caller pairs this with) -- carried through to the
     # produced log entry exactly like #command_item's own field, for
-    # #drive_battle_animate's bag consumption and #reflects_skill?'s
-    # item-casts-are-never-reflected exclusion.
+    # #drive_battle_animate's bag consumption.
     def command_skill(ally, target, name:, cost:, hp: 0, mp: 0, inflict: nil,
                       chance: 100, variance: 0, attributes: nil, skill_id: nil,
                       absorb: false, attr_shift: nil, attr_ids: nil,
@@ -14340,23 +14297,21 @@ module Game
     # silently fizzling with the item never consumed), and a Skill command
     # whose own `cured` list includes Death may still land on one too.
     #
-    # A single-target Skill whose target carries Reflect Magic bounces back
-    # onto `b` itself (#reflects_skill?) -- checked against the originally
-    # queued target, after the already-fallen fizzle check above (a fizzled
-    # action never reflects either, matching real RPG_RT never reaching
-    # `ReflectTargets` for an action that never starts) and before SP is
-    # spent or #apply_skill_hit runs, so the skill's own cost/accuracy/damage
-    # math is otherwise completely unaffected by which battler it ends up
-    # landing on. Scoped to this single-target path only: an all-enemies-scope
-    # Skill's own reflect handling is a materially different shape in real
-    # RPG_RT -- see #apply_command_all, where it is now implemented too.
+    # A single-target Skill whose target carries a Reflect-Magic-flagged
+    # state does NOT bounce back onto `b` -- reverted, confirmed wrong
+    # against a genuine RPG_RT.exe under wine (2026-09-05): a Reflect-Magic-
+    # flagged party member kept taking an enemy's own single-target Skill
+    # damage directly, across two separately-landed casts, never once
+    # redirecting it back onto the caster. See #reflects_magic?'s own
+    # removal note for the capture; the mechanic was never real to begin
+    # with, matching this session's earlier `evades_all_physical?`/
+    # `avoid_attacks` reversal.
     def apply_command(b, combo = 1)
       cmd = b.command
       return apply_command_all(b, cmd, combo) if cmd[:all]
       target = cmd[:target]
       return nil if target.nil?
       return nil if target.dead? && !command_targets_dead_ok?(cmd)
-      target = b if reflects_skill?(b, target, cmd)
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       # A combo'd skill repeats its effect `combo` times against the same
       # target, the SP spent once -- a reference implementation's repeat loop
@@ -14373,23 +14328,6 @@ module Game
       entries.size == 1 ? entries.first : (entries.empty? ? nil : entries)
     end
 
-    # The first already-computed `{target:, hp:, mp:}` entry in `live` whose
-    # target carries Reflect Magic, or nil -- #apply_command_all's own
-    # counterpart to #reflects_skill?, scanning the *whole* volley (every
-    # target already selected for this Skill, `live`'s own definition order,
-    # ported from a reference implementation's own find-first-reflecting-
-    # target scan, NOT independently confirmed against
-    # genuine RPG_RT under wine) rather than just one. Gated the
-    # same way #reflects_skill? is: only a real Skill reflects (never an
-    # Item), and only a volley aimed at the *opposite* side from `b` can ever
-    # hit a Reflect-Magic-warded battler in the first place -- an all-ally
-    # heal's own targets share `b`'s side, so `side_of` already excludes them
-    # without a separate scope check.
-    def reflecting_target_all(b, live, cmd)
-      return nil unless cmd[:skill_id] && !cmd[:item_id]
-      live.find { |t| side_of(t[:target]) != side_of(b) && reflects_magic?(t[:target]) }
-    end
-
     # An all-target Skill (scope 1 all enemies / 4 all allies): spend the SP once,
     # then apply the per-target effect to every living target, returning one log
     # entry per hit (which #step_action surfaces one at a time). Fizzles — nil, no
@@ -14399,33 +14337,16 @@ module Game
     # Recovery-type skill genuinely does stand up every downed member of an
     # all-ally volley, not just the living ones).
     #
-    # If any originally-selected target carries Reflect Magic
-    # (#reflecting_target_all), the whole volley redirects onto `b`'s own
-    # entire living side instead -- ported from a reference implementation, not
-    # independently confirmed against genuine RPG_RT under wine: its reflect-
-    # targeting logic, for exactly this
-    # `party_target` (all-enemies/all-allies scope) shape, both adds
-    # the caster's whole party *and* repoints the still-to-execute cursor at
-    # it, so none of the originally-targeted battlers this bullet's own
-    # `live` list built end up hit at all -- replaced outright, not layered
-    # alongside them, the same way a reflected single-target Skill lands
-    # only on `b`, never on both `b` and the original target. Every
-    # redirected hit reuses the reflecting entry's own precomputed `hp`/`mp`
-    # (the #apply_command single-target fix's identical simplification --
-    # the skill's raw magnitude does not vary by which battler it was
-    # queued against), while #apply_skill_hit still recomputes each hit's
-    # own elemental multiplier/variance/absorb fresh against whichever new
-    # target it actually lands on.
+    # An all-target Skill's volley does NOT redirect onto `b`'s own side even
+    # when an originally-selected target carries a Reflect-Magic-flagged
+    # state -- reverted alongside the single-target path above; see
+    # #reflects_magic?'s own removal note for the wine capture that
+    # falsified the mechanic outright, in both shapes alike.
     def apply_command_all(b, cmd, combo = 1)
       live = (cmd[:targets] || []).select do |t|
         t[:target] && (!t[:target].dead? || command_targets_dead_ok?(cmd))
       end
       return nil if live.empty?
-      reflected = reflecting_target_all(b, live, cmd)
-      if reflected
-        own_side = (side_of(b) == :ally ? @allies : @enemies).reject(&:dead?)
-        live = own_side.map { |t| { target: t, hp: reflected[:hp], mp: reflected[:mp] } }
-      end
       b.mp = [b.mp - cmd[:cost], 0].max if cmd[:cost] && cmd[:cost] > 0
       # A combo'd all-target skill repeats the whole volley `combo` times (one
       # entry per hit, buffered by #record_action), the SP spent once -- the
@@ -14639,9 +14560,8 @@ module Game
           # `cmd[:item_id]` mirrors the recovery branch's own identical field
           # just below -- an attack-flavoured skill invoked by a battle item
           # (a thrown bomb) needs it on the log entry exactly as much as a
-          # medicine's own recovery does, for the same bag-consumption
-          # (#drive_battle_animate) and reflect-exclusion (#reflects_skill?)
-          # reasons.
+          # medicine's own recovery does, for #drive_battle_animate's own
+          # bag-consumption.
           item_id: cmd[:item_id], skill_id: cmd[:skill_id], target_index: @enemies.index(target),
           absorbed_hp: absorbed, sp_damage: sp_dmg,
           target_mp: target.mp }
