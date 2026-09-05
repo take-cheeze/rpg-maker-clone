@@ -31863,6 +31863,28 @@ codebase yet):
   two-weapon-slot vehicle instead so they stay independent of this finding
   — all three confirmed to fail against the pre-fix code. See
   `changelog.d/dual-attack-does-not-double-solo.fixed.md`.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: an enemy's own
+  二段攻撃 basic action (`BASIC_DUAL_ATTACK`) really does swing twice at the
+  same target, confirming `Game::Battle#enemy_basic_action`'s own citation
+  (previously "NOT independently confirmed against genuine RPG_RT under
+  wine").** Not to be confused with the *weapon* `dual_attack` flag fixed
+  just above -- this is the separate, enemy-only basic-action type. A
+  synthetic enemy whose only action was BASIC_DUAL_ATTACK (condition
+  ALWAYS, atk 100, critical_hit off) against a padded-HP, undefended leader
+  logged two entirely separate "Duelistの攻撃!" message screens within the
+  same round -- each its own confirm-gated box (52 damage, then a fresh
+  box with 41 damage), never a single combined line and never a lone hit.
+  Capturing this reliably needed continuous high-frequency screenshots
+  (roughly one every 9ms, via a tight loop of raw `xwd` dumps converted
+  afterward) rather than single delayed captures: these particular battle
+  messages, unlike a Show Message event's, do not wait indefinitely for a
+  keypress -- left alone they auto-advance on their own after under a
+  second, so a single screenshot taken a beat too late silently skips
+  straight past a whole message. No code change: `#enemy_basic_action`'s
+  existing two-`deal_attack` implementation for this branch was already
+  correct, just newly confirmed. The *charge* interaction (a charge
+  doubling both swings, not only the first) remains a separate, still NOT
+  independently confirmed claim, left as such in the updated comment.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the

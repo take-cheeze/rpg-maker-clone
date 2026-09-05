@@ -13089,14 +13089,18 @@ module Game
       when EnemyAction::BASIC_DUAL_ATTACK
         target = attack_target(b)
         return nil unless target
-        # Ported from a reference implementation's own dual attack, NOT
-        # independently confirmed
-        # against genuine RPG_RT under wine: one basic-attack algorithm with a
-        # repeat count of 2, not two
-        # separate algorithm instances -- its own init step (and so
-        # `charged_attack`)
-        # runs once for the whole action, so a charge doubles *both* swings,
-        # not only the one that happens to run first.
+        # 二段攻撃 (BASIC_DUAL_ATTACK) really does swing twice at the same
+        # target, each its own separately-rolled damage line -- confirmed by
+        # an actual wine capture (2026-09-05): a synthetic enemy whose only
+        # action was BASIC_DUAL_ATTACK logged two distinct "Duelistの攻撃!"
+        # message screens in a single round (52 then 41 damage, each its own
+        # confirm-gated box, not one combined line), never a single hit.
+        # Ported from a reference implementation's own dual attack; the
+        # *charge* interaction below is a separate, still NOT independently
+        # confirmed claim: one basic-attack algorithm with a repeat count of
+        # 2, not two separate algorithm instances -- its own init step (and
+        # so `charged_attack`) runs once for the whole action, so a charge
+        # doubles *both* swings, not only the one that happens to run first.
         first = deal_attack(b, target, 0, charged: charged)
         # The second swing only lands if the first did not fell the target.
         return [first] if target.dead?
