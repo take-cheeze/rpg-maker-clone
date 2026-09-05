@@ -2051,11 +2051,16 @@ module Game
     # shield slots mutually exclusive whenever either of them holds a two-handed
     # *weapon*: filling one clears the other (ported from a reference
     # implementation's equip routine, which clears the other slot after the
-    # slot is written; NOT independently confirmed against genuine RPG_RT
-    # under wine). 35 of Nepheshel's 104 weapons are two-handed and 14 of
-    # mtf-meido-action's 26 -- more than half of that game's arsenal -- and
-    # nothing read the field, so a claymore and a shield could be worn together
-    # and both bonuses counted.
+    # slot is written). Confirmed via wine (2026-09-05): Rito, with a real
+    # shield (item 176) already equipped, was handed a real two-handed
+    # weapon (item 66, 35 of Nepheshel's 104 weapons are two-handed) through
+    # the actual in-game Equip menu -- the candidate-select screen's own
+    # stat preview already showed defence dropping before confirming, and
+    # confirming left the weapon slot holding the new sword with the shield
+    # slot reading empty, not holding both. 14 of mtf-meido-action's 26
+    # weapons are two-handed too -- more than half of that game's arsenal --
+    # and before this method existed nothing read the field at all, so a
+    # claymore and a shield could be worn together and both bonuses counted.
     #
     # `slot` is the one just filled; only the weapon (0) and shield (1) pair is
     # affected, and the check reads *both* of them because equipping a shield
