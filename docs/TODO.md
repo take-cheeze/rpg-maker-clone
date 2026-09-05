@@ -31130,6 +31130,20 @@ codebase yet):
   change: `Game::Battle#finished?`/`#enemy_active?`'s existing
   implementation was already correct, just newly confirmed. See
   `Game::Battle#finished?`'s own updated citation.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: a solo
+  self-destructing enemy still ends the fight in Victory despite never
+  actually being reduced to 0 HP.** The flip side of the fully-restricted
+  case just above: `Game::Battle#enemy_autodestruct`'s own citation already
+  described the caster as merely hidden, never HP-killed, but whether that
+  hidden state alone reaches `#finished?`/`#enemy_active?`'s own
+  out-of-play check in a real fight (rather than just in isolation) had not
+  itself been checked. A synthetic enemy whose only action was
+  BASIC_AUTODESTRUCT (atk forced to 0, so its own blast dealt no damage at
+  all) showed its own self-destruct message, then "戦いに勝った!" (Won the
+  battle!) and a clean return to the map, with no player action ever
+  needed and the enemy's own HP never touched. No code change: already
+  correctly implemented, just newly confirmed. See
+  `Game::Battle#enemy_autodestruct`'s own updated citation.
   ✅ **Berserk/Confusion override target selection but still
   honour "hits twice"/"ignores evasion," while Berserk additionally
   collapses an "attack all" weapon down to a single target and disables

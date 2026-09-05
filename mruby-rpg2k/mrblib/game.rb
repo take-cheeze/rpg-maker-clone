@@ -13207,6 +13207,18 @@ module Game
     # enemy drops no EXP / gold / items, that its HP reads unchanged (not 0)
     # if a battle event variable-assigns it, and that "Enemy Appears" (Show
     # Hidden Monster) brings it right back with whatever HP it already had.
+    #
+    # A solo self-destructing enemy still ends the fight in Victory despite
+    # never actually being reduced to 0 HP -- confirmed against genuine
+    # RPG_RT under wine (2026-09-05): a synthetic enemy whose only action
+    # was BASIC_AUTODESTRUCT (atk forced to 0, so its own blast dealt no
+    # damage at all) showed its own self-destruct message, then the
+    # "戦いに勝った!" (Won the battle!) Victory line and a clean return to
+    # the map, with no player action ever needed. Consistent with
+    # `Game::Battle#finished?`/`#enemy_active?` treating a hidden battler
+    # the same as a dead one (see that method's own citation) -- this cycle
+    # just confirms self-destruct's own hidden-not-killed handling actually
+    # reaches that check in a real fight, not merely in isolation.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
       entries = targets.each_with_index.map do |t, i|
