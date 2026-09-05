@@ -2733,9 +2733,10 @@ module Game
     # 物理回避率アップ — a shield/armour/helmet/accessory that makes a normal
     # attack likelier to miss its wearer: ported from a reference
     # implementation's own physical-evasion-up check, consulted right after
-    # its AGI term in the to-hit calculation, NOT independently confirmed against genuine RPG_RT under
-    # wine — the ported behavior subtracts a flat 25 from the attacker's
-    # already agi-adjusted hit chance. The weapon slot never counts — that check there
+    # its AGI term in the to-hit calculation. Confirmed by an actual wine
+    # capture (2026-09-05, see Game::Battle#to_hit's own citation) — the
+    # ported behavior subtracts a flat 25 from the attacker's already
+    # agi-adjusted hit chance. The weapon slot never counts — that check there
     # excludes weapons by item *type*, not slot index, the same
     # way #equip_bonus already reads every equipped slot, so a 二刀流 actor's
     # second weapon (sitting in the shield slot) is correctly excluded too.
@@ -11866,7 +11867,15 @@ module Game
         # flat 25 from the already agi-adjusted chance, right where
         # a reference implementation's own formula applies it -- after the
         # AGI term, and never reached at all by a 必中 attacker (the branch
-        # above already returned).
+        # above already returned). Confirmed by an actual wine capture
+        # (2026-09-05): with attacker/target agility equal (so the AGI term
+        # above cancels to exactly `base`) and a base of 70 (an enemy's own
+        # `miss` flag), an armour-equipped leader took roughly half the total
+        # damage over an equal number of rounds once `raise_evasion` was set
+        # on that armour, versus an otherwise-identical control fixture with
+        # the flag off -- consistent with a substantial flat hit-chance
+        # reduction, not merely independently ported from a reference
+        # implementation's source.
         agi_adjusted -= 25 if target.evasion_up
         # RPG2003 row: a back-row defender is harder to hit (a flat 25, after
         # the AGI term -- a reference implementation's own formula
