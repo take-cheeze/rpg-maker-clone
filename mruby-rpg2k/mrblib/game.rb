@@ -2715,10 +2715,15 @@ module Game
     # The SP a basic Attack itself costs -- ported from a reference
     # implementation's own weapon-SP-cost routine, which
     # it spends unconditionally
-    # (NOT independently confirmed against genuine RPG_RT under wine)
     # once per action, before
     # any swing resolves -- not per swing, so a 二刀流 weapon's extra hit
-    # (`#strike_count`) never doubles the bill. The weapon there is whichever
+    # (`#strike_count`) never doubles the bill. Confirmed against genuine
+    # RPG_RT under wine (2026-09-05): a solo actor with max_mp/mp forced to
+    # exactly 20 and a custom weapon whose own sp_cost field was set to 20
+    # had mp read exactly 0 off the status panel immediately after a single
+    # basic Attack (90% weapon hit, so the swing may or may not have
+    # actually landed on its enemy target -- the deduction did not wait to
+    # find out either way). The weapon there is whichever
     # slot governs the action's very first swing: the weapon-slot item alone
     # for a `#double_hand?` two-weapon actor (this engine's only route to a
     # real per-swing weapon split, since ordinary single-weapon gear always
