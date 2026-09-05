@@ -17363,6 +17363,17 @@ Everything below is unverified against the codebase.
   and equipped count (operand type 4)" check proves it numerically: 3 of an
   item held in the bag plus 2 more equipped across two different actors
   read back as `3` and `2` separately, not `5` from either operand alone.
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: `Party
+  #equipped_item_count` really does count the same item id twice when two
+  slots on one actor hold it, confirming its own citation.** A double_hand
+  actor with the same custom weapon id equipped in both the weapon and
+  shield slots, read through a real Control Variables (item-operand, mode
+  1) command into a variable and displayed via a Conditional Branch —
+  collapsing the read into a binary "TWO" vs "NOTTWO" message rather than
+  a raw digit, since this session's own repeated attempts at reading
+  multi-digit numbers off this pixel font proved unreliable — showed
+  "TWO", not "NOTTWO". No code change: already correctly implemented,
+  just newly confirmed.
   ✅ **No inventory is per-hero, always party-shared -- trivially and
   completely true by construction**, not something that needed checking
   against a reference so much as confirming there is no competing
