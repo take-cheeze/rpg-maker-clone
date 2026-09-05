@@ -11033,9 +11033,13 @@ module Game
     end
 
     # RPG2000-style physical damage: half the attacker's attack less a quarter of
-    # the defender's defence, floored at 0 -- not 1 -- ported from a reference
-    # implementation's own normal-attack-damage formula,
-    # NOT independently confirmed against genuine RPG_RT under wine.
+    # the defender's defence, floored at 0 -- not 1. Confirmed against genuine
+    # RPG_RT under wine (2026-09-05): an atk-1 enemy's basic Attack against a
+    # def-999 (the battle stat cap) target -- deeply negative pre-floor
+    # (1/2 - 999/4 = -249) -- landed as a genuine zero-damage hit, printing
+    # RPG_RT's own "...はダメージを受けていない!" (took no damage) line, distinct
+    # from an ordinary miss's own "...は攻撃をかわした!" (dodged) line seen on
+    # other rounds of the same fight.
     # A heavily-armoured target can shrug off a weak attacker's blow entirely
     # (a genuine "no damage" hit, not a guaranteed minimum scratch); `#deal_attack`
     # already builds an ordinary attack-shaped log entry regardless of the
