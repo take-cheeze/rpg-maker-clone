@@ -18202,9 +18202,13 @@ end
 # only ever logs one target's own hit/evade line, never both, and that the
 # same weapon under Confusion against a two- and three-member party also
 # only ever logs one target line per swing, whether the forced target ends
-# up being the attacker itself or another ally.
+# up being the attacker itself or another ally. A later cycle's own wine
+# capture found attack_all does not spread an *unforced* Attack either (see
+# the check below this section), so "collapses... down to a single target"
+# here is not really Berserk/Confusion-specific behavior -- attack_all
+# simply never spreads, forced restriction or not.
 check 'battle: a berserk battler with an attack_all weapon still hits only ' \
-      'one enemy, unlike an unforced attack_all' do
+      'one enemy' do
   states = { 7 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
   hero = combatant('Hero', 20, 0, 20, 100)
   hero.states = [7]
@@ -18229,7 +18233,7 @@ check 'battle: a berserk battler still swings twice with a 二刀流 weapon' do
 end
 
 check 'battle: a confused battler with an attack_all weapon still hits only ' \
-      'one party member, unlike an unforced attack_all' do
+      'one party member' do
   states = { 6 => FakeStateDef.new(3, 0, 0, 0, 0, 0, 0) } # attack-ally (confusion)
   hero = combatant('Hero', 20, 0, 20, 100)
   hero.states = [6]
@@ -19569,7 +19573,18 @@ check 'battle: 必中 still suffers the wielder\'s own blindness' do
   eq 45, bat.send(:to_hit, bat.allies[0], swift), 'the weapon is sure, the wielder is blind'
 end
 
-check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy side' do
+check 'battle: a 全体化 weapon does NOT spread an unforced basic Attack across ' \
+      'the whole enemy side, matching a plain weapon' do
+  # A prior cycle had this asserting the opposite (全体化 hits every living
+  # enemy) per a reference implementation's own "attack all enemies
+  # regardless of original targeting" claim -- confirmed wrong against
+  # genuine RPG_RT.exe under wine (Nepheshel): the same probe weapon (item
+  # 82, ジュエルロッド) against a two-enemy troop, manually aimed at whichever
+  # troop slot a fixture put first, logged exactly one target's own damage
+  # line every round across two independently-built fixtures (one with the
+  # troop's member order swapped) -- never a second line for the other
+  # enemy, and swapping which enemy occupied the first slot moved which one
+  # got hit. See Game::Battle#strike's own citation.
   items = { 7 => fake_item(type: 1, atk: 20, attack_all: true),
             8 => fake_item(type: 1, atk: 20) }
   st = geared_party(items)
@@ -19581,7 +19596,7 @@ check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy 
   plain = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1, foe2], Game::Rng.new(1))
   plain.command_attack(plain.allies[0], foe1)
   entry = plain.send(:strike, plain.allies[0])
-  ok entry.is_a?(Hash), 'a plain weapon still hits only the one chosen target'
+  ok entry.is_a?(Hash), 'a plain weapon hits only the one chosen target'
   eq 50, foe2.hp, 'the second Foe took nothing'
 
   hero.equip([7, 0, 0, 0, 0])                      # 全体化
@@ -19589,13 +19604,13 @@ check 'battle: a 全体化 weapon spreads a basic Attack across the whole enemy 
   foe2b = combatant('Foe2', 0, 5, 5, 50)
   spread = Game::Battle.new([Game::Battle.from_actor(hero)], [foe1b, foe2b], Game::Rng.new(1))
   spread.command_attack(spread.allies[0], foe1b) # aimed at Foe1...
-  entries = spread.send(:strike, spread.allies[0])
-  eq 2, entries.size, '...but 全体化 hits every living enemy, not just the chosen one'
-  ok foe1b.hp < 50 && foe2b.hp < 50, 'both enemies took damage'
+  entry = spread.send(:strike, spread.allies[0])
+  ok entry.is_a?(Hash), '全体化 hits only the one chosen target too'
+  eq 50, foe2b.hp, 'the second Foe took nothing from a 全体化 weapon either'
 end
 
 check 'battle: 全体化 does NOT spread a forced (confused) attack across the ' \
-      'whole ally side, unlike an unforced attack' do
+      'whole ally side either' do
   # A reference-implementation-ported Normal::vStart reading once had this
   # spreading across whichever side the already-resolved single target
   # belongs to (confusion resolves that target from the attacker's own

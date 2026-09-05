@@ -2678,14 +2678,15 @@ module Game
     # weapons carry it.
     def ignores_evasion?; equipment_flag?(:ignore_evasion, true); end
 
-    # 全体化 — an equipped weapon that turns a basic Attack into a strike
-    # against every living member of the chosen target's side, rather than
-    # just the one target. Ported from a reference implementation's own
-    # attack-all handling, NOT independently confirmed against genuine RPG_RT
-    # under wine: "if this weapon attacks all, then attack all enemies
-    # regardless of original targeting" — "enemies" there means whichever
-    # side the already-resolved target belongs to, so a forced attack-ally
-    # restriction or confusion spreads across the *ally* side instead.
+    # 全体化 — an equipped weapon whose own flag genuine RPG_RT reads (see
+    # Game::Battle#strike), but does NOT actually spread a basic Attack
+    # across every living member of the target's side: confirmed by an
+    # actual wine capture (2026-09-05) that a reference implementation's own
+    # "attack all enemies regardless of original targeting" claim does not
+    # hold for genuine RPG_RT.exe, matching the already-confirmed
+    # forced-restriction case (a berserk/confused attacker with this same
+    # flag also only ever hits the one forced target). See #strike's own
+    # citation for the fixture details.
     def attack_all?; equipment_flag?(:attack_all, true); end
 
     # 先制攻撃 — an equipped weapon that jumps its wielder's basic Attack to
@@ -10680,11 +10681,14 @@ module Game
                            # Battle#to_hit). Enemy Combatants leave it nil/false;
                            # monsters equip nothing.
                            :evasion_up,
-                           # A basic Attack spread across the target's whole
-                           # side (attack_all?) or jumped to the front of the
-                           # round's turn order (preemptive?) -- see #turn_order
-                           # and #strike. Actor-only; an enemy Combatant leaves
-                           # both nil/false, so it never qualifies for either.
+                           # A basic Attack read from the weapon's own
+                           # attack_all? flag (confirmed by an actual wine
+                           # capture to have no observable effect -- see
+                           # Actor#attack_all?'s own citation) or jumped to the
+                           # front of the round's turn order (preemptive?) --
+                           # see #turn_order and #strike. Actor-only; an enemy
+                           # Combatant leaves both nil/false, so it never
+                           # qualifies for either.
                            :attack_all, :preemptive,
                            # The ranks #attr_ranks started the battle at --
                            # never itself written to, only read to cap how far
@@ -12746,9 +12750,11 @@ module Game
       if r == RESTRICTION_ATTACK_ENEMY || r == RESTRICTION_ATTACK_ALLY
         target = restricted_target(b, r)
         return nil unless target
-        # Both forced restrictions force a single target even with an
-        # attack_all weapon in hand -- confirmed against genuine RPG_RT.exe
-        # under wine (Nepheshel). Berserk (attack-enemy): a Berserk leader
+        # Both forced restrictions force a single target with an attack_all
+        # weapon in hand, same as an unforced Attack now that #strike's own
+        # unforced branch is confirmed single-target too -- confirmed against
+        # genuine RPG_RT.exe under wine (Nepheshel). Berserk (attack-enemy): a
+        # Berserk leader
         # wielding ジュエルロッド (item 82, attack_all) against two Slimes
         # logged exactly one "リトの攻撃!"/"スライムに11のダメージを与えた!"
         # pair, never a second target's own hit/evade line, across a
@@ -12801,7 +12807,15 @@ module Game
       return nil unless target
       pay_weapon_sp_cost(b)
       hits = combo_hits(b, :attack)
-      return swing_side(b, side_targets(target), hits) if b.attack_all
+      # attack_all does NOT spread an unforced Attack across the whole side
+      # either -- confirmed by an actual wine capture (2026-09-05, see
+      # Actor#attack_all?'s own citation): the same probe weapon (item 82,
+      # ジュエルロッド) against a two-enemy troop, manually aimed at whichever
+      # troop slot the fixture put first, logged exactly one target's own
+      # damage line every round across two independently-built fixtures (one
+      # with the troop's member order swapped), never a second line for the
+      # other enemy -- and swapping which enemy occupied the first slot
+      # moved which one got hit, ruling out a fixed name/identity coincidence.
       swing(b, target, hits)
     end
 
@@ -12881,27 +12895,6 @@ module Game
       else
         1
       end
-    end
-
-    # The living members of `target`'s own side -- what an `attack_all`
-    # weapon spreads a basic Attack across (a reference implementation's own
-    # basic-attack start-up:
-    # "attack all enemies regardless of original targeting", where "enemies"
-    # means whichever side the already-resolved single target belongs to, so
-    # a forced attack-ally restriction or confusion spreads across the
-    # *ally* side instead of the usual one).
-    def side_targets(target)
-      (side_of(target) == :ally ? @allies : @enemies).reject(&:out_of_play?)
-    end
-
-    # attack_all under an ordinary Attack: every target swings (dual-wield
-    # included, matching a single-target #swing), flattened into one array of
-    # log entries for #record_action to drain one hit at a time.
-    def swing_side(b, targets, hits = 1)
-      # Not Array(swing(...)) -- Array() on a Hash (an ordinary single swing's
-      # log entry) explodes it into [key, value] pairs rather than wrapping
-      # it, since Hash is Enumerable. Same guard #record_action already uses.
-      targets.flat_map { |t| r = swing(b, t, hits); r.is_a?(Array) ? r : [r] }
     end
 
     # -- enemy AI (行動パターン) ------------------------------------------------
@@ -13601,11 +13594,11 @@ module Game
     # ranking function, not independently confirmed against genuine RPG_RT
     # under wine: under `emulate_bugs: true`
     # this always takes the *max* over every living enemy's own target rank,
-    # never the sum -- even for an `attack_all` weapon, whose own separate
-    # bonus (spreading the swing across the whole side once actually thrown)
-    # this ranking pass never sees, the second half of the same "Dual Attack
-    # ignored" family of RPG_RT quirks `#auto_battle_attack_target_rank`
-    # already documents.
+    # never the sum -- the same "Dual Attack ignored" family of RPG_RT
+    # quirks `#auto_battle_attack_target_rank` already documents (an
+    # `attack_all` weapon has no separate bonus to miss here: confirmed by
+    # an actual wine capture that the flag does not spread a basic Attack at
+    # all, see Actor#attack_all?'s own citation).
     def auto_battle_attack_rank(b)
       @enemies.reduce(0.0) { |m, t| [m, auto_battle_attack_target_rank(b, t)].max }
     end
@@ -13688,19 +13681,14 @@ module Game
                         cured: meta[:cured], physical_rate: meta[:physical_rate] || 0)
     end
 
-    # `SelectAutoBattleAction`'s own closing half: an `attack_all` weapon
-    # always spreads the swing across the whole enemy side regardless of
-    # ranking (leaving `b.action` unset so `#attack_target`/`#strike`'s
-    # existing `b.attack_all` dispatch resolves it, the same path an ordinary
-    # manually-commanded attack_all Attack already takes); otherwise the
-    # single best-ranked living enemy is targeted explicitly, or the actor's
-    # turn is forfeited outright (`#command_skip`) on the same vanishingly
-    # rare all-zero chance `#queue_auto_battle_skill`'s own fallback covers.
+    # An `attack_all` weapon does not change auto-battle targeting either
+    # (see Actor#attack_all?'s own citation: confirmed by an actual wine
+    # capture that the flag does not spread a basic Attack at all) -- the
+    # single best-ranked living enemy is targeted explicitly, same as any
+    # other weapon, or the actor's turn is forfeited outright
+    # (`#command_skip`) on the same vanishingly rare all-zero chance
+    # `#queue_auto_battle_skill`'s own fallback covers.
     def queue_auto_battle_attack(b)
-      if b.attack_all
-        command_attack(b, nil)
-        return
-      end
       best = auto_battle_best_target(@enemies) { |t| auto_battle_attack_target_rank(b, t) }
       best ? command_attack(b, best) : command_skip(b)
     end
