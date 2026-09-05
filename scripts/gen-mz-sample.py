@@ -115,6 +115,20 @@ def write_wav(rel_path, freq=440, ms=120, rate=8000, vol=0.4):
     backend resolves a name to a file by trying its extensions, so a committed
     `.wav` is playable without shipping any copyrighted RTP sound.
     Deterministic (math.sin is IEEE) so re-running is a no-op in git.
+
+    `rel_path` need not end in `.wav`: the caller below deliberately asks for a
+    `.ogg` name (see that call site) to make this asset reachable by
+    scripts/gen-mz-encrypted.py's own `.ogg` handling. SDL_mixer's
+    `Mix_LoadWAV_RW` (src/sdl_audio.cxx's `load_chunk_mem`) auto-detects the
+    codec by sniffing the RIFF magic in the byte stream itself -- there is no
+    filename to go by once the bytes come from an in-memory RWops, which is
+    exactly the encrypted-loose-file and packed-archive routes use -- so a
+    plain WAV body plays back correctly regardless of what extension the file
+    on disk carries. That is what makes this a real, decodable audio asset
+    rather than a placeholder blob, without needing an Ogg Vorbis encoder
+    (none is present in flake.nix's devShell: checked buildInputs/
+    nativeBuildInputs for ffmpeg/oggenc/vorbis-tools/sox, only the SDL2_mixer
+    *library* -- which decodes, not encodes -- is listed there).
     """
     n = int(rate * ms / 1000)
     frames = bytearray()
@@ -188,7 +202,7 @@ system = {
     "defeatMe": sound(),
     "gameoverMe": sound(),
     # The 24 system SEs. The common UI sounds (0 Cursor, 1 OK, 2 Cancel,
-    # 3 Buzzer) point at the authored Beep.wav so menu interaction actually
+    # 3 Buzzer) point at the authored Beep.ogg so menu interaction actually
     # plays through the audio bridge; the rest stay silent.
     "sounds": [sound("Beep") if i < 4 else sound() for i in range(24)],
     "airship": vehicle(),
@@ -261,7 +275,23 @@ write("System.json", system)
 # A tiny authored sound effect so the bed has real, loadable audio (see
 # System.sounds above and --mz_audio_test). RGSS::Audio resolves the bridge's
 # "audio/se/Beep" to this file.
-write_wav("audio/se/Beep.wav")
+#
+# Named `.ogg`, not `.wav` -- deliberately, even though write_wav's bytes are a
+# plain WAV body (see its own docstring for why that still plays). Real MZ
+# never ships `.wav` (rmmz_managers.js's `AudioManager.audioFileExt` always
+# returns `.ogg`; checked against the fetched corescript,
+# data/mz-sample/js/rmmz_managers.js:1418-1420) and, crucially,
+# scripts/gen-mz-encrypted.py's `MZ_EXT` only encrypts `.png`/`.ogg`/`.m4a` --
+# a `.wav` fixture was never swept into the derived encrypted project at all,
+# so `mz_encrypted_check.bash` had zero encrypted *audio* bytes to decrypt and
+# its play-mode audio probe never touched `RGSS::Audio`'s MV/MZ decrypt path
+# (mruby-rgss/mrblib/lib.rb's `find_encrypted_loose`/`decrypt_mv_asset`) even
+# once. Renaming this one asset to `.ogg` makes gen-mz-encrypted.py pick it up
+# unmodified, so the existing `--mz_audio_test` probe (already run by
+# mz_encrypted_check.bash's `play` mode) now exercises decrypt-then-play for
+# real, without adding a new fixture or a new probe. See docs/TODO.md's M6.3c
+# "Encrypted MV/MZ audio" entry for the fuller history this closes the gap in.
+write_wav("audio/se/Beep.ogg")
 
 
 # --- Windowskin ------------------------------------------------------------
