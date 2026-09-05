@@ -31339,7 +31339,7 @@ codebase yet):
   opens rather than always starting at index 0, falling back to the top
   when nothing has been chosen yet or the remembered skill no longer
   appears in this list (forgotten mid-battle, or newly sealed).
-  - 🚧 **Not fixed this cycle — confirmed bugs, left for a dedicated pass:**
+  - ✅ **Not fixed at the time — confirmed bugs, left for a dedicated pass — but every one is now fixed** (cycles #233-#236, plus two independent 2026-09-04/05 wine-capture follow-ups below) or closed as a genuine, non-bug design difference (the slot-index/Combatant-object item):
     - ✅ **Follow-up (cycle #233, 2026-08-31): fixed.** An enemy's
       single-target Attack re-rolled its target live at the exact moment it
       executed (`Game::Battle#attack_target`), rather than locking one
