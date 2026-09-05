@@ -31604,6 +31604,46 @@ codebase yet):
     does NOT spread a forced attack" check) were rewritten to assert the
     single-target outcome, all three confirmed to fail against the pre-fix
     code. See `changelog.d/confusion-attack-all-single-target.fixed.md`.
+  - ✅ **Follow-up (2026-09-05), by an actual wine capture: `attack_all`
+    (全体化) does not spread an *unforced* basic Attack across the whole
+    enemy side either — the flag has no observable spreading effect at all,
+    forced restriction or not.** Only the forced-restriction half (directly
+    above) had been wine-confirmed; the unforced case (an ordinary,
+    manually-commanded Attack with an `attack_all` weapon in hand, no
+    Berserk/Confusion involved) still rested on a reference implementation's
+    own "attack all enemies regardless of original targeting" claim. A
+    custom 100%-hit weapon (`attack_all` set per a control/test fixture
+    pair) on the leader against a two-enemy troop (both passive, no action
+    of their own) showed a real difference between the two builds — the
+    control's own explicit target-select menu (choose which of the two
+    enemies to hit) was skipped entirely once `attack_all` was set, jumping
+    straight to resolution — but every round's own damage line named
+    exactly one specific enemy, never both, across five consecutive rounds.
+    Swapping which enemy occupied the troop's first slot in a second,
+    independently-built fixture moved *which* enemy took the hit (always
+    whichever sat first), ruling out a fixed name/identity coincidence and
+    confirming it is not random alternation either — genuine RPG_RT always
+    resolves the same single default target regardless of the flag.
+    `Game::Battle#strike`'s unforced branch (`mruby-rpg2k/mrblib/game.rb`)
+    no longer calls `swing_side`/`side_targets` for an `attack_all` weapon —
+    both helpers are now dead code and removed; `#queue_auto_battle_attack`
+    no longer special-cases `attack_all` either (auto-battle now ranks a
+    target for it exactly like any other weapon, since the "let `#strike`'s
+    own attack_all dispatch resolve it" shortcut that method's own comment
+    described no longer does anything). Not directly verified: whether the
+    *other* enemy's HP silently changed without its own message line (this
+    fixture's `attack_all` build skips target-select entirely, so there is
+    no UI path left to inspect a specific enemy's HP once the flag is set,
+    and RPG2000's own "does a miss/hit always get its own line" convention
+    was itself confirmed elsewhere this cycle, making a silent, message-less
+    hit implausible but not something this session could rule out by
+    directly reading the other enemy's own HP counter). Covered by rewriting
+    the existing "全体化 weapon spreads a basic Attack" `scripts/
+    rpg2k_logic_check.rb` check to assert the single-target outcome instead
+    (renamed to match), confirmed to fail against the pre-fix code; the
+    already-passing forced-restriction checks and their titles were also
+    updated to stop describing the unforced case as spreading, since it no
+    longer does. See `changelog.d/attack-all-does-not-spread.fixed.md`.
     ✅ Whether an enemy skill's battle-animation sound effects on frame 21+
     get cut is now confirmed, by an actual wine capture — no such
     frame-based SE cutoff existed in this codebase for anyone (a reference
