@@ -18995,6 +18995,20 @@ not yet verified:
      `target.HasStrongDefense()`. A self-destruct against a defending,
      strong-defence party member (7 of Nepheshel's 50 actors, including its
      hero) dealt roughly double the correct damage.
+     ❌ **Follow-up (2026-09-05), reverted by an actual wine capture: this
+     entire item 1 was wrong.** A defending, Strong-Defence-flagged target's
+     own self-destruct damage across two separately-run, otherwise-identical
+     captures under genuine RPG_RT (97 and 98 -- not the ~48-49 a second
+     halving predicts) landed in the same range as an ordinary defending
+     target with the flag left off. Genuine RPG_RT does not appear to
+     consult `strong_defence` in this formula at all. Reverted:
+     `Game::Battle#enemy_autodestruct` now only ever applies Defend's
+     ordinary single halving, regardless of `strong_defence`. This finding
+     is scoped to the self-destruct path specifically -- the sibling
+     `strong_defence` reads in `#deal_attack` (the ordinary-attack path) and
+     `#apply_skill_hit` (the skill path) are separate, independent call
+     sites, not a shared helper, and remain untested against genuine RPG_RT;
+     either may turn out equally fictional, or may not.
   2. **Neither a self-destruct nor an offensive skill ever shook a
      survivor's status loose**, only a basic attack did. This codebase's own
      `#shake_off_states` comment claimed the reference implementation calls

@@ -13198,11 +13198,21 @@ module Game
     # party member for `atk - def/2` (ported from a reference implementation's
     # self-destruct effect calculation, floored at 0 and spread by the usual
     # variance, NOT independently confirmed against genuine RPG_RT under wine).
-    # Defending halves the blow, and 強力防御 halves it again -- the same
-    # defend-adjustment `#deal_attack` already applies, shared verbatim by
-    # that reference implementation's own self-destruct handling rather than a
-    # self-destruct-specific rule (same ported/unconfirmed caveat). It does
-    # not kill the caster itself, though: that reference implementation's
+    # Defending halves the blow -- confirmed against genuine RPG_RT under wine
+    # (2026-09-05): a defending target took roughly half of an undefended
+    # target's own damage from an otherwise identical self-destruct. 強力防御
+    # (Strong Defence) does NOT halve it again here, though, contradicting a
+    # prior revision of this comment/code that claimed it shared the ordinary
+    # defend-adjustment's own double-halving verbatim: a Strong-Defence-
+    # flagged, defending target's own damage across two separately-run,
+    # otherwise-identical captures (97 and 98 -- not the ~48-49 a second
+    # halving predicts) landed in the same range as an ordinary defending
+    # target with the flag left off. Reverted; see #deal_attack's own
+    # citation and #apply_skill_hit's for the sibling strong_defence reads
+    # this specific finding does NOT extend to -- neither has been tested
+    # against genuine RPG_RT and either may turn out equally fictional, or
+    # may not; self-destruct simply does not consult the flag at all here. It
+    # does not kill the caster itself, though: that reference implementation's
     # self-destruct handling applies the damage against the *target* only,
     # never the source, and reacts to the caster with nothing but a hidden
     # flag (plus an explode-animation timer) -- no HP
@@ -13230,15 +13240,15 @@ module Game
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
-        # No floor on either halving -- see #deal_attack_with_current_weapon's
-        # own citation of `AdjustDamageForDefend` (ported from its source,
-        # NOT independently confirmed against genuine RPG_RT under wine): a
-        # bare
-        # `dmg /= 2`, twice for strong defence, with no `std::max` at all.
-        if t.defending && dmg > 0
-          dmg /= 2
-          dmg /= 2 if t.strong_defence
-        end
+        # No floor on the halving -- a bare `dmg /= 2`, with no `std::max` at
+        # all (see #deal_attack_with_current_weapon's own citation of
+        # `AdjustDamageForDefend`, ported from its source and NOT
+        # independently confirmed against genuine RPG_RT under wine for the
+        # ordinary-attack path, though confirmed for this self-destruct path
+        # specifically -- see this method's own citation above). No second
+        # halving for Strong Defence here: reverted after a genuine wine
+        # capture falsified it (this method's own citation above).
+        dmg /= 2 if t.defending && dmg > 0
         cap = damage_cap
         dmg = cap if dmg > cap
         t.hp -= dmg
