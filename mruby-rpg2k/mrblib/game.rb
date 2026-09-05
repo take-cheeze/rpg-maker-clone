@@ -11193,8 +11193,7 @@ module Game
     # True once one side has been wiped out, or the party has fled — the battle
     # is decided. The two sides use genuinely different tests, not a shared
     # symmetric one: ported from a reference implementation's own win/loss
-    # checks,
-    # NOT independently confirmed against genuine RPG_RT under wine -- they
+    # checks -- they
     # are "no enemy is active" for the
     # enemy side against `CanActOrRecoverable()` (`incapacitated?`'s own
     # source) per party member for the ally side -- the enemy-side check
@@ -11207,6 +11206,16 @@ module Game
     # no such risk (the player can always keep attacking a
     # restricted-but-alive enemy), so a fully-Stoned enemy troop must still
     # be finished off with real damage, not treated as an instant win.
+    #
+    # Confirmed against genuine RPG_RT under wine (2026-09-05): Nepheshel's
+    # real skill 87 (時の砂, inflicting real state 18, restriction 1 /
+    # do-nothing) landed on a solo, full-HP enemy in an otherwise-empty
+    # troop; the battle did not end there -- the enemy's own next turn
+    # still came up (its state's own "Mrrorは止まっている!" reminder fired,
+    # proving it was still in the fight rather than defeated), the command
+    # menu returned normally afterward, and re-opening Attack still listed
+    # the enemy at full HP as a live target. No Victory screen at any point
+    # despite the enemy never taking a single point of damage.
     def finished?; @escaped || !alive?(@allies) || !enemy_active?(@enemies); end
 
     # Whether the party successfully escaped this fight.
