@@ -29566,6 +29566,15 @@ above are repeated here)
   coverage is unaffected, since a Seed item is never equippable in the first
   place (`Actor#equip_slot_for`/`#equip_item` gate on item `type` 1-5, Seed
   is type 8).
+  ✅ **Follow-up (2026-09-05), by an actual wine capture: confirmed genuine
+  RPG_RT really does ignore an equipped item's `max_hp_points`/
+  `max_sp_points`, matching this fix's own citation.** A custom weapon
+  with `max_hp_points` forced to 500 (`atk_points1` left at 0, isolating
+  this from the separately-confirmed Attack equip-bonus path) equipped
+  through the actual in-game Equip menu left Rito's status-panel HP
+  reading a plain 50/50 — not the roughly 550 a summed bonus would show,
+  a jump far too large to miss. No code change: already correctly fixed,
+  just newly confirmed.
 - ✅ **A state's "Avoid Attacks" flag (RPG2003, field 36, `avoid_attacks`)
   is now implemented — found via the same "parsed by the schema, read
   nowhere in `mruby-rpg2k`" sweep that already caught `levitate`/

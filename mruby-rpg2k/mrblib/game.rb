@@ -1525,8 +1525,7 @@ module Game
     # item type 8) item's own one-time, permanent stat-up amount, applied only
     # when the item is *consumed* (`Actor#seed_boosts`/`Party#use_seed`, via
     # `Actor#change_param`), never while merely worn. Ported from a reference
-    # implementation's source, NOT independently confirmed against genuine RPG_RT
-    # under wine: its max-HP/max-SP getters resolve to
+    # implementation's source: its max-HP/max-SP getters resolve to
     # the base stat with no per-equipment summation at all,
     # unlike the Attack/Defence/Spirit/Agility getters, which
     # each walk every equipped item reading exactly the
@@ -1537,7 +1536,12 @@ module Game
     # above) already reads for the one-time consumable boost. So indices 0/1
     # (max_hp/max_mp) carry no field here at all -- #equip_bonus returns 0 for
     # them unconditionally, regardless of what an item's own `max_hp_points`/
-    # `max_sp_points` happen to hold.
+    # `max_sp_points` happen to hold. Confirmed via wine (2026-09-05): a
+    # custom weapon with `max_hp_points` forced to 500 (atk_points1 left at
+    # 0, isolating this from the separately-confirmed Attack equip-bonus
+    # path) equipped through the actual in-game Equip menu left Rito's
+    # status-panel HP reading a plain 50/50, not the roughly 550 a summed
+    # bonus would show -- a jump far too large to miss.
     EQUIP_BONUS_FIELD = [nil, nil, :atk_points1,
                          :def_points1, :spi_points1, :agi_points1].freeze
     # Equipment slots, in save/database order: weapon, shield, armour, helmet,
