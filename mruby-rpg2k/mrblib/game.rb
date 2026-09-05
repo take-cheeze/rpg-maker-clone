@@ -2581,6 +2581,28 @@ module Game
     # the higher of the two the way that reference implementation's
     # ordinary single-weapon max does) is left untouched pending further
     # wine work, not assumed correct.
+    #
+    # A follow-up capture (2026-09-05) muddies this further rather than
+    # settling it: two custom, non-dual_attack, 100%-hit weapons (atk_points1
+    # 100 each -- deliberately identical, like the original real-weapon
+    # capture, so a "combine both weapons' atk into one swing" reading
+    # predicts roughly double a solo swing's damage) equipped double_hand
+    # against a passive enemy whose HP was set to exactly 75 -- comfortably
+    # above a solo/unboosted swing's own top end (a 100-atk, 0-defence swing
+    # varies roughly 30-70) but below a doubled-atk swing's own bottom end
+    # (roughly 60-140) -- survived that first swing outright. That single
+    # result leans toward "no boost" (consistent with a plain solo-band
+    # roll, only weakly consistent with a doubled one, which would have
+    # killed it about four times in five), the opposite lean from the
+    # original identical-weapon capture's own higher (48) total. Neither
+    # capture is more than one data point, and re-entering a second battle
+    # in the same wine session to gather more (this same fixture, walking
+    # back onto the encounter tile after the first fight ended) hung
+    # indefinitely on the battle-transition screen and then exited with no
+    # crash trace -- a repeat of this session's own established "re-
+    # triggering an encounter mid-session is unreliable under wine" finding,
+    # not a new data point about the formula itself. Still left untouched
+    # pending further wine work: if anything, less settled now than before.
     def strike_count
       weapons = equipped_weapons
       return weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
