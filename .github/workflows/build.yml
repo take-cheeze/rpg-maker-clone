@@ -553,12 +553,24 @@ jobs:
           - name: RGSSAD packed-asset smoke test
             run: ./scripts/rgssad_asset_check.bash 120
 
+          # Every MV screenshot step below budgets noticeably more than it used
+          # to (5-8s -> 15-30s): MV#present/#maybe_screenshot (mv.rb) used to
+          # blit a plain Canvas2D buffer that PIXI's auto-detected
+          # WebGLRenderer (mvwebgl.cxx made canvas.getContext('webgl') succeed,
+          # which every MV game now picks up too, not just MZ) never actually
+          # drew into, so every MV screenshot was silently the canvas' own
+          # untouched blank white -- cheap, and wrong. Reading the real frame
+          # back from the WebGL FBO every frame (present_gl/screenshot_gl, the
+          # same path MZ already paid for) costs real wall-clock time, roughly
+          # proportional to the 816x624 canvas rather than scene complexity,
+          # which is why even the asset-light data/mv-sample needs the same
+          # kind of bump as data/Lunatic-Core.
           - name: MV boot smoke test
             continue-on-error: true
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=100 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=5000 --game_dir data/Lunatic-Core --test_play \
+                --timeout_ms=15000 --game_dir data/Lunatic-Core --test_play \
                 --mv_screenshot=ss/mv_title.png
 
           # Drive the real downloaded MV test bed (Lunatic-Core) past the title
@@ -576,7 +588,7 @@ jobs:
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=105 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=6000 --game_dir data/Lunatic-Core --test_play \
+                --timeout_ms=20000 --game_dir data/Lunatic-Core --test_play \
                 --mv_new_game --mv_move_test --mv_screenshot=ss/mv_play.png \
                 | tee ss/mv_play.log
               grep -q '\[MV-MOVE\].*moved=true' ss/mv_play.log ||
@@ -587,7 +599,7 @@ jobs:
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=101 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=5000 --game_dir data/mv-sample --test_play \
+                --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_screenshot=ss/mv_sample.png
 
           # Play RPG Maker MZ (M6.3c): the fetched rmmz corescript + PIXI v5 on
@@ -650,7 +662,7 @@ jobs:
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=102 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=8000 --game_dir data/Lunatic-Core --test_play \
+                --timeout_ms=30000 --game_dir data/Lunatic-Core --test_play \
                 --mv_battle_test=1 --mv_screenshot=ss/mv_battle.png
 
           - name: MV movement smoke test
@@ -669,7 +681,7 @@ jobs:
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=104 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=6000 --game_dir data/mv-sample --test_play \
+                --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_message_test --mv_screenshot=ss/mv_message.png
 
           # Confirm the menu path works: New Game -> map, then open the party
@@ -681,7 +693,7 @@ jobs:
             run: |
               ./scripts/quiet_alsa.bash \
                 xvfb-run --server-num=106 timeout 120 ./build/rpg_maker_clone \
-                --timeout_ms=6000 --game_dir data/mv-sample --test_play \
+                --timeout_ms=15000 --game_dir data/mv-sample --test_play \
                 --mv_new_game --mv_menu_test --mv_screenshot=ss/mv_menu.png
 
           # Confirm the save path works: New Game -> map, then a save+load
