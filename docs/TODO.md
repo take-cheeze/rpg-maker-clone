@@ -32281,13 +32281,20 @@ screen (544×416). Full rationale:
   boots with no loose files, and — like XP, through the same shared
   `RGSS.asset_archive` the VX boot shell registers — finds its **graphics and
   audio** in there as well, so a packed release needs nothing loose at all.
-- 🚧 **Run the bundled scripts** — a VX/VX Ace game's engine is its script
+- ✅ **Run the bundled scripts** — a VX/VX Ace game's engine is its script
   bundle, so this is *the* path rather than a later refinement. The host runs
   (`RPGXP::ScriptHost`, ADR 0017) with the per-frame Fiber driver shared by both
   shells (`ScriptHost.build_driver`, ADR 0023), and the RGSS2/RGSS3 class
   library is now measured, not guessed: the gap is tracked in
   [`docs/rpgvx-rgss-api-gap.md`](rpgvx-rgss-api-gap.md), counted across the
-  stock VX Ace script set (109 sections, ~19.9k lines).
+  stock VX Ace script set (109 sections, ~19.9k lines). Every sub-item below,
+  including the once-open "a real test bed" one, is now done — that gap doc's
+  own "What this means for turning the host on" section says the same: all
+  seven of its sections are complete. The doc's one remaining caveat (a
+  specific real VX Ace release's custom `Game_Temp` defeating the CLI-flag
+  battle probe) is a test-tooling limit on reaching *that* release's own
+  custom battle entry point, not a gap in the engine itself — see the doc's
+  own closing paragraph.
   - ✅ The built-ins a bundle needs before it can draw anything: **symbol input
     keys** (`Input.trigger?(:C)` — VX/VX Ace use nothing else, and the same key
     table now serves all three makers), **`Graphics.width`/`height`** (declared
