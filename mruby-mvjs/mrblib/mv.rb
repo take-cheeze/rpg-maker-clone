@@ -295,6 +295,50 @@ class MV
       end
     end
 
+    # Reads `<game_dir>/data/System.json`'s `hasEncryptedAudio`/
+    # `encryptionKey` (the same fields the corescript's own `Decrypter`/
+    # `Bitmap._startDecrypting` read for *images*) and, if set, arms
+    # RGSS::Audio's loose-encrypted-file fallback
+    # (mruby-rgss/mrblib/lib.rb's ENCRYPTED_EXTS/#find_encrypted_loose) with
+    # the raw 16-byte key. A class method, not an instance one, because MZ
+    # drives the identical audio bridge from its own class (see .apply_audio_op
+    # above) and calls this the same way, right after installing it
+    # (mrblib/mz.rb's #boot_probe).
+    #
+    # Images need no equivalent call: AUDIO_BRIDGE_JS only overrides
+    # AudioManager, so an encrypted image still takes the corescript's own
+    # decrypt-in-JS route (XHR arraybuffer -> Decrypter.decryptImg -> Blob ->
+    # Image), which this project's host globals already support end to end (see
+    # ADR 0004 M6.3r). Audio is different *because* AUDIO_BRIDGE_JS exists:
+    # AudioManager.playBgm/playSe are overridden to bypass MZ's WebAudio (whose
+    # `fetch` this host leaves inert, see docs/TODO.md's M6.3c "Audio") and
+    # queue a plain asset name for RGSS::Audio to play by filename instead --
+    # which never runs the corescript's own decrypt step. Found against a real
+    # downloaded MZ release (EgoicAnswers, hasEncryptedAudio) whose every BGM/SE
+    # logged "Audio: no BGM/SE found" even though e.g.
+    # audio/bgm/mozegaku4_04_komorebi.ogg_ is right there on disk -- RGSS::Audio
+    # was (correctly) never taught to look for a `.ogg_`/`.rpgmvo` sibling, let
+    # alone decrypt one.
+    #
+    # A project with no encrypted audio (the common case, including every
+    # RPG2000/XP/VX/Ace bed, which knows nothing of this flag at all) reads a
+    # `false`/absent flag and leaves RGSS::Audio.encryption_key at its `nil`
+    # default -- zero behaviour change.
+    def maybe_enable_audio_decryption(game_dir)
+      path = "#{game_dir}/data/System.json"
+      return unless File.file?(path)
+
+      json = File.open(path, "r") { |f| f.read }
+      return if json.scan(/"hasEncryptedAudio"\s*:\s*true/).empty?
+
+      key_hex = json.scan(/"encryptionKey"\s*:\s*"([0-9a-fA-F]{32})"/).flatten.first
+      return unless key_hex
+
+      RGSS::Audio.encryption_key = key_hex.scan(/../).map { |b| b.to_i(16) }
+    rescue StandardError => e
+      $stderr.puts "[MV] error reading audio encryption key: #{e.message}"
+    end
+
     # Does the directory look like an RPG Maker MV project?
     def project?(dir = GAME_DIR)
       REQUIRED_MARKERS.all? { |m| File.exist?("#{dir}/#{m}") }
@@ -906,6 +950,7 @@ class MV
     # Web Audio graph. Installed now that rpg_managers.js (AudioManager) is
     # loaded; the per-frame drain in main_loop plays what MV queues.
     MV::JS.eval(AUDIO_BRIDGE_JS)
+    self.class.maybe_enable_audio_decryption(@game_dir)
 
     # MV registers its entry point on window.onload (see the game's main.js);
     # in a browser the page-load event calls it. Fire it now that every script

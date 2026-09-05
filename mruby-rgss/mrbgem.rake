@@ -5,6 +5,11 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
 
   # Color, Tone and Table provide RGSS-compatible Marshal (_dump/_load) support.
   add_dependency 'mruby-marshal'
+  # RGSS::Audio.decrypt_mv_asset (mrblib/lib.rb) reverses RPG Maker MV/MZ's
+  # loose-asset encryption with String#unpack("C*")/Array#pack("C*"); a real
+  # dependency (not test-only), same as mruby-lcf/mruby-rpgxp declaring it for
+  # their own binary (de)serialization.
+  add_dependency 'mruby-pack'
   # The Bitmap loader tests write fixture images to disk and read them back with
   # File, so the standalone mrbtest build needs mruby-io. The loader itself
   # reads files through C stdio, so this is only needed for the tests.

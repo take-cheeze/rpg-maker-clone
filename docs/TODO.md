@@ -33034,7 +33034,59 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         correctly.
       - 🚧 Remaining: `UNPACK_FLIP_Y_WEBGL` (genuinely inert against a stock
         PIXI v5 build — never set `true`, only reset to `false`) and
-        uniform-introspection polish, as real content exercises them.
+        uniform-introspection polish, as real content exercises them. Checked
+        again against a real downloaded MZ release with a far richer script
+        (EgoicAnswers — a ~50-message, particle-effect-laden scripted opening;
+        see the encrypted-audio entry below for the same bed) by instrumenting
+        `js_gl_pixel_storei` (`mvwebgl.cxx`) to log every
+        `UNPACK_*`-range `pixelStorei` call: exactly one call for the whole
+        boot, `UNPACK_FLIP_Y_WEBGL` with `value=0` — still never set `true`.
+        Still open.
+      - ✅ **Encrypted MV/MZ audio.** A project with "Encrypt Audio" ticked
+        never has a plain `audio/bgm/foo.ogg` on disk — only
+        `audio/bgm/foo.ogg_` (MZ) or `foo.rpgmvo` (MV), obfuscated with a
+        fixed 16-byte header plus the file's own first 16 bytes XORed against
+        `System.json`'s `encryptionKey` (see `scripts/gen-mz-encrypted.py`'s
+        own `encrypt`, the reference `RGSS::Audio.decrypt_mv_asset` mirrors).
+        The corescript's own `AudioManager`/`WebAudio` decrypts this itself
+        over `fetch` — the same route `Bitmap`/`Decrypter` already use for
+        encrypted *images*, which this project's host globals already support
+        end to end — but `AUDIO_BRIDGE_JS` (the "Audio" entry above)
+        intercepts `playBgm`/`playSe` *before* that and redirects to
+        `RGSS::Audio` by plain filename instead, so it never runs the
+        corescript's own decrypt step. Every encrypted project's every BGM/SE
+        therefore logged "no BGM/SE found" despite the file sitting right
+        there — invisible to `mz_encrypted_check.bash`'s own derived project
+        because its one audio fixture (`Beep.wav`) is a `.wav`, an extension
+        `gen-mz-encrypted.py` never encrypts, so the play-mode audio probe
+        never actually touched an encrypted asset. Found running the real
+        downloaded MZ release `data/EgoicAnswers` (`hasEncryptedImages`/
+        `hasEncryptedAudio`, fetched by `scripts/download-egoicanswers.bash`
+        for exactly this path but, per its own changelog entry, "not yet
+        wired into CI") through `mz_boot_check.bash` directly rather than only
+        `mz_testbed_check.rb`'s static check. `RGSS::Audio` (shared with
+        every other maker) gained an `encryption_key` — set once at boot from
+        `System.json` by `MV.maybe_enable_audio_decryption`, called from both
+        MV's and MZ's own boot paths — and, when set, a loose-encrypted-file
+        fallback beside its existing packed-archive one: the same
+        GAME_DIR/RTP_DIR × MUSIC_DIRS/SOUND_DIRS the plain disk search already
+        crosses, now also crossed with `.ogg_`/`.m4a_`/`.rpgmvo`/`.rpgmvm`,
+        decrypted and hand off to the `_bgm_play_mem`/`_se_play_mem` native
+        entry points a packed RPG2000/XP/VX/Ace archive already uses. One
+        real implementation pitfall: decrypting via
+        `data.unpack("C*")` — turning the *whole* file into one mruby
+        `Array` — raised "array size too big" on a real multi-hundred-KB
+        track (mruby's `Array` is capped at `MRB_ARY_LENGTH_MAX`, 131072
+        elements by default); fixed by unpacking only the 16-byte XORed
+        prefix as an array (`"@16C16"`) and the remainder as a single string
+        (`"@32a*"`), so a real track's size no longer matters. A project with
+        no encrypted audio (the common case, and every RPG2000/XP/VX/Ace bed,
+        which knows nothing of this flag) leaves `encryption_key` at its
+        `nil` default — zero behaviour change, and `mruby-rgss/test/test.rb`
+        covers the reverse against an independently-produced reference vector
+        (not just round-tripped through the same method), the loose-file
+        search itself, and that a real loose plain file still wins over an
+        encrypted one sitting right beside it.
       - ✅ **`.woff` fonts.** The canvas text loader looked only for `.ttf`/`.otf`
         under a game's `fonts/`, but **MZ projects ship `.woff`**
         (`mplus-1m-regular.woff` and friends), so it found nothing and every real

@@ -1147,7 +1147,25 @@ module RGSS
       se: ["Audio/SE", "Sound", ""]
     }.freeze
 
+    # An RPG Maker MV/MZ project with "Encrypt Audio" ticked never has a plain
+    # `audio/bgm/foo.ogg` on disk -- only `audio/bgm/foo.ogg_` (MZ) or
+    # `audio/bgm/foo.rpgmvo` (MV), searched via MUSIC_DIRS/SOUND_DIRS exactly
+    # like the plain-extension search above (see #find_encrypted_loose). Not an
+    # archive-packed name (ARCHIVE_DIRS' Windows-editor-style folders), because
+    # MV/MZ's own bridge (mruby-mvjs/mrblib/mv.rb) already prepends
+    # "audio/bgm/"/"audio/se/" itself -- the same fully-qualified name the
+    # ordinary disk search above resolves.
+    ENCRYPTED_EXTS = [".ogg_", ".m4a_", ".rpgmvo", ".rpgmvm"].freeze
+
     class << self
+      # The project's MV/MZ audio-encryption key (16 raw bytes), or nil for a
+      # project with none -- set once at boot by MV.maybe_enable_audio_decryption
+      # from `data/System.json`'s `encryptionKey`/`hasEncryptedAudio` (mirroring
+      # the corescript's own `Utils.encryptionKey`). `nil` is the default and
+      # makes #find_encrypted_loose an unconditional no-op, so a game with no
+      # encrypted audio (every RPG2000/XP/VX/Ace bed, and most MV/MZ ones) pays
+      # nothing here.
+      attr_accessor :encryption_key
       # `pos` is RGSS3-only (VX Ace added it over XP/VX's 3-argument form) --
       # real scripts pass it to resume a BGM from where a prior track left
       # off (RPG::BGM#replay, a bare `Audio.bgm_play(f, v, p, pos)` in a
@@ -1309,6 +1327,14 @@ module RGSS
         return nil if filename.nil? || filename.empty?
         archive = RGSS.asset_archive
         name, bytes = archive ? find_packed(archive, kind, filename) : nil
+        # Not in an RPG2000/XP/VX/Ace-style packed archive either -- try an
+        # MV/MZ-style loose *encrypted* file (see ENCRYPTED_EXTS) before giving
+        # up. Both are "the bytes are not just sitting there under a plain
+        # name" fallbacks, so they share this one dispatch below; only one of
+        # the two ever applies to a given project (a real game is either a
+        # single .rgssad-style archive or a folder of individually-encrypted
+        # loose files, never both).
+        name, bytes = find_encrypted_loose(kind, filename) if bytes.nil?
         if bytes.nil?
           # Neither a real file (the caller already searched GAME_DIR/RTP_DIR
           # and every known extension) nor an archive entry. Say so once: an
@@ -1322,7 +1348,7 @@ module RGSS
         # no audio backend (or one predating the memory entry points) a packed
         # game would otherwise be mysteriously mute.
         unless _can_play_mem?
-          RGSS.warn_stub("Audio: playing from an encrypted archive")
+          RGSS.warn_stub("Audio: playing from a packed archive or encrypted asset")
           return nil
         end
         case kind
@@ -1332,6 +1358,74 @@ module RGSS
         else _se_play_mem(name, bytes, volume, pitch, pan)
         end
         nil
+      end
+
+      # An MV/MZ loose *encrypted* asset matching +filename+ for +kind+, as
+      # [path, decrypted bytes], or nil -- either #encryption_key is unset (no
+      # MV/MZ project has ever set it, or this one has "Encrypt Audio"
+      # unticked) or no candidate file exists. Searches GAME_DIR/RTP_DIR x the
+      # same MUSIC_DIRS/SOUND_DIRS the plain disk search uses (`filename`
+      # already carries its own "audio/bgm/"-style folder -- see
+      # mruby-mvjs/mrblib/mv.rb's #parse_audio_op -- so this is the *loose*
+      # search's own directory set, not ARCHIVE_DIRS' Windows-editor layout)
+      # crossed with ENCRYPTED_EXTS.
+      def find_encrypted_loose(kind, filename)
+        key = encryption_key
+        return nil unless key
+        found = try_encrypted_ext(filename, key)
+        return found if found
+        dirs = kind == :se ? SOUND_DIRS : MUSIC_DIRS
+        [GAME_DIR, RTP_DIR].each do |root|
+          next if root.nil? || root.empty?
+          dirs.each do |dir|
+            base = dir.empty? ? "#{root}/#{filename}" : "#{root}/#{dir}/#{filename}"
+            found = try_encrypted_ext(base, key)
+            return found if found
+          end
+        end
+        nil
+      rescue StandardError => e
+        $stderr.puts "[RGSS] encrypted audio read failed for #{filename}: #{e.message}"
+        nil
+      end
+
+      # Like #exist_with_ext, but for MV/MZ's encrypted loose-file extensions
+      # (ENCRYPTED_EXTS): the first +base+-plus-extension that exists is read
+      # and decrypted right away (there is nothing further to search for once
+      # a matching encrypted file turns up), returned as [path, decrypted
+      # bytes], or nil.
+      def try_encrypted_ext(base, key)
+        ENCRYPTED_EXTS.each do |ext|
+          path = "#{base}#{ext}"
+          next unless File.file?(path)
+          data = File.open(path, "rb") { |f| f.read }
+          bytes = decrypt_mv_asset(data, key)
+          return [path, bytes] if bytes
+        end
+        nil
+      end
+
+      # Reverses RPG Maker MV/MZ's own asset-encryption scheme (see
+      # scripts/gen-mz-encrypted.py's `encrypt`, the reference this mirrors,
+      # and ADR 0004 M6.3r): a fixed 16-byte "RPGMV" header the real file never
+      # had, then the file's own first 16 bytes XORed with the 16-byte key,
+      # then the rest of the file verbatim. Unauthenticated obfuscation, not
+      # encryption -- there is no integrity check, so a truncated or corrupt
+      # file simply decrypts to garbage rather than raising. `nil` for
+      # anything shorter than the 32-byte prefix (not a real encrypted asset).
+      #
+      # Unpacks only the 16-byte XORed prefix as an array ("@16C16": skip the
+      # header, read 16 bytes) and the remainder as a single string ("@32a*"),
+      # never the whole file as one big per-byte Array -- a real BGM is
+      # commonly several MB, and mruby's own Array is capped at
+      # MRB_ARY_LENGTH_MAX (131072 elements by default); `data.unpack("C*")`
+      # on a real track raised "array size too big" long before the key ever
+      # got applied.
+      def decrypt_mv_asset(data, key)
+        return nil if data.bytesize < 32
+        head = data.unpack("@16C16")
+        key.each_with_index { |k, i| head[i] ^= k }
+        head.pack("C16") + data.unpack("@32a*").first
       end
 
       # The first archive entry matching +filename+ for +kind+, as

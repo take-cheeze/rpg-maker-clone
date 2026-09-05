@@ -2697,6 +2697,7 @@ class MZ
     # even the title BGM a game starts with is queued rather than lost to the
     # silent Web Audio stub.
     MV::JS.eval(self.class.audio_bridge_js)
+    MV.maybe_enable_audio_decryption(@game_dir)
 
     # Replaces window.effekseer with the diagnostic stub (see
     # EFFEKSEER_SHIM_JS) before Graphics.initialize runs -- SceneManager.run
