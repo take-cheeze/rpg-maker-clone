@@ -31731,6 +31731,21 @@ codebase yet):
   for 200 damage (999 → 799 HP) — double the ordinary ~80-120 undefended
   band, not that band itself. No code change: already correctly
   implemented, just newly confirmed.
+- ✅ **Follow-up (2026-09-05), by an actual wine capture: a weapon's 必中
+  (ignore_evasion) flag really does bypass the target's agility-based
+  evasion, confirming `Game::Actor#ignores_evasion?`'s own citation
+  (previously "NOT independently confirmed against genuine RPG_RT under
+  wine").** A hand-authored weapon (hit 90 — a 100%-hit weapon would zero
+  out the whole agility term regardless of the flag, telling this probe
+  nothing) equipped against a single custom enemy with agility 999 (far
+  above Rito's own ~50): `Game::Battle#to_hit`'s own agi-scaled formula
+  clamps to ~0% hit chance against that big an agility gap when the flag
+  is off. Two wine runs, only the weapon's own `ignore_evasion` bit
+  differing: without it, 0 of 5 attacks landed (every one "かわした"/
+  dodged); with it, 2 of 3 landed for ordinary, undefended-looking damage
+  (60, 62) — a stark, unambiguous contrast, not merely a shifted
+  probability. No code change: already correctly implemented, just newly
+  confirmed.
 - ✅ **An uncustomized boat, ship or airship now draws the database System
   `boat_index`/`ship_index`/`airship_index` cell, instead of always drawing
   cell 0 of its CharSet sheet.** Found via `scripts/rpg2k_field_audit.rb`: the
