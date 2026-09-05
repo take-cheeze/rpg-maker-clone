@@ -4283,10 +4283,16 @@ module Game
     # once (nothing stops the same shield id filling both an off-hand and a
     # main-hand slot) counts twice. Ported from a reference implementation's
     # own equipped-item-count routines (a slot
-    # equality scan), NOT independently confirmed against genuine RPG_RT
-    # under wine, and backs both the Control Variables item-operand's
+    # equality scan), and backs both the Control Variables item-operand's
     # equipped mode (Interpreter#item_operand) and the shop status panel
-    # (Scene::Map#draw_shop_status).
+    # (Scene::Map#draw_shop_status). Confirmed via wine (2026-09-05): a
+    # double_hand actor with the same custom weapon id equipped in both the
+    # weapon and shield slots, read through a real Control Variables
+    # (item-operand, mode 1) command into a variable and displayed via a
+    # Conditional Branch -- collapsing the read into a binary "TWO" vs
+    # "NOTTWO" message rather than a raw digit, since this session's own
+    # repeated attempts at reading multi-digit numbers off this pixel font
+    # proved unreliable -- showed "TWO", not "NOTTWO".
     def equipped_item_count(id)
       @actors.reduce(0) { |n, a| n + a.equipment.count(id) }
     end
