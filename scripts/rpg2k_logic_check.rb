@@ -19695,12 +19695,12 @@ check '先制攻撃 does not jump the turn order for a Skill, Item or Defend' do
      'Defend keeps the ordinary agility slot, even with the weapon still equipped'
 end
 
-check "battle: berserk keeps a 先制攻撃 weapon's turn-order jump, same as confusion" do
-  # RPG_RT's SelectNextActor builds an identical Type::Normal attack for both
-  # a forced attack-enemy (berserk) and attack-ally (confusion) restriction,
-  # and CreateExecutionOrder's +9999 bonus keys purely on Type::Normal plus
-  # HasPreemptiveAttack -- neither depends on which restriction forced the
-  # attack, so berserk must jump the turn order exactly like confusion does.
+check "battle: a preemptive weapon's turn-order jump is dropped under berserk" do
+  # Confirmed against a genuine RPG_RT.exe under wine (2026-09-05): a
+  # berserked, agi-1 wielder of a preemptive weapon went second, not first,
+  # against a single agi-250 enemy -- the reverse of what an unconditional
+  # +9999 turn-order bonus predicts. See Game::Battle#preemptive_boost?'s
+  # own updated citation.
   items = { 7 => fake_item(type: 1, atk: 5, preemptive: true) }
   states = { 9 => FakeStateDef.new(2, 0, 0, 0, 0, 0, 0) } # attack-enemy (berserk)
   st = geared_party(items)
@@ -19709,8 +19709,8 @@ check "battle: berserk keeps a 先制攻撃 weapon's turn-order jump, same as co
   fast_foe = combatant('FastFoe', 0, 0, 999, 100)          # far faster than the hero
   bat = Game::Battle.new([Game::Battle.from_actor(hero)], [fast_foe], Game::Rng.new(1), states)
   bat.allies[0].states = [9]
-  eq [bat.allies[0], fast_foe], bat.send(:turn_order),
-     "berserk still jumps the weapon's Attack ahead of a far faster foe"
+  eq [fast_foe, bat.allies[0]], bat.send(:turn_order),
+     "berserk drops the weapon's jump, so the far faster foe still goes first"
 end
 
 check 'battle: 強力防御 halves damage a second time' do

@@ -12720,29 +12720,35 @@ module Game
     # Whether `b`'s action this round earns the `preemptive` weapon's
     # turn-order jump: only a basic Attack qualifies (a Skill, Item or Defend
     # with the same weapon equipped keeps its ordinary agility slot, matching
-    # `CreateExecutionOrder`'s own `Type::Normal` guard). ~~A forced
-    # attack-ally restriction (confusion) still counts... a forced
-    # attack-enemy restriction (berserk) does not -- per the site's own
-    # デフォ戦botまとめ trivia~~ -- corrected against a reference
-    # implementation's source
-    # (NOT independently confirmed against genuine RPG_RT under wine): its
-    # next-actor selection builds an identical basic-attack algorithm for
-    # both attack-ally (confusion) and
-    # attack-enemy (berserk) restrictions -- the same branch just picks
-    # which side the random-target draw comes from -- and
-    # its own execution-order bonus and preemptive-attack check both key
-    # purely on
-    # a basic attack plus the equipped weapon's flag, with no restriction
-    # dependency anywhere in the chain. The uncited fan-wiki claim that
-    # berserk specifically drops the bonus does not hold up against that
-    # reference implementation's
-    # source, though that source is itself only a reimplementation, not
-    # genuine RPG_RT. `preemptive` is actor-only (see Combatant), so an enemy
-    # never qualifies either way.
+    # `CreateExecutionOrder`'s own `Type::Normal` guard).
+    #
+    # A forced attack-enemy restriction (berserk) does NOT earn the boost --
+    # confirmed against genuine RPG_RT under wine (2026-09-05): a solo actor
+    # with agi forced to 1, a preemptive weapon equipped, and a custom
+    # berserk state (`RESTRICTION_ATTACK_ENEMY`, granted straight through
+    # `#add_state` so no accuracy roll gates it) went *second* against a
+    # single enemy with agi forced to 250 -- the enemy's own attack message
+    # was already complete before the leader's forced attack ever started,
+    # the reverse of what an unconditional +9999 turn-order bonus predicts
+    # against that big an agi gap. This directly reverses this method's own
+    # prior conclusion (see git history for the superseded comment and its
+    # citation): a reference implementation's source was read as building an
+    # identical basic-attack algorithm for both attack-ally (confusion) and
+    # attack-enemy (berserk) restrictions with no restriction dependency in
+    # the execution-order bonus at all, which was taken to debunk an uncited
+    # fan-wiki claim that berserk specifically drops the bonus -- that
+    # fan-wiki claim was right, at least for berserk.
+    #
+    # A forced attack-ally restriction (confusion) still counts, per that
+    # same fan-wiki claim -- NOT independently confirmed against genuine
+    # RPG_RT under wine either way, since this cycle's capture only put the
+    # leader in the attack-*enemy* restriction. `preemptive` is actor-only
+    # (see Combatant), so an enemy never qualifies either way.
     def preemptive_boost?(b)
       return false unless b.preemptive
       r = battler_restriction(b)
-      return true if r == RESTRICTION_ATTACK_ALLY || r == RESTRICTION_ATTACK_ENEMY
+      return false if r == RESTRICTION_ATTACK_ENEMY
+      return true if r == RESTRICTION_ATTACK_ALLY
       b.command.nil? && !b.defending && !b.skip
     end
 
