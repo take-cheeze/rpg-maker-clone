@@ -10490,12 +10490,19 @@ module Game
       #
       # ADR 0036 left this term unwired because which side keys it was
       # ambiguous from the test-bed data alone. A reference implementation's
-      # own source is what this was ported from to settle it
-      # (NOT independently confirmed against genuine RPG_RT under wine): it is
-      # keyed on the **target** taking the crit, the same way `actor_damaged` /
-      # `enemy_damaged` are, not on which side dealt it.
-      def self.critical(terms, target_ally)
-        term(terms, target_ally ? :actor_critical : :enemy_critical)
+      # own source was read as settling it the other way (keyed on the
+      # target, the same way `actor_damaged`/`enemy_damaged` are) but that
+      # reading was never checked against genuine RPG_RT and turned out
+      # backwards: confirmed under wine (2026-09-05) by swapping the
+      # database's own `actor_critical`/`enemy_critical` terms for distinct
+      # ASCII markers -- an ally's own critical hit against an enemy showed
+      # the `actor_critical` marker, and an enemy's critical hit against
+      # that same ally showed the `enemy_critical` marker. That is keyed on
+      # the **attacker's** side, the opposite of `actor_damaged`/
+      # `enemy_damaged` (which genuinely are target-keyed, unaffected by
+      # this fix) despite the naming symmetry suggesting otherwise.
+      def self.critical(terms, attacker_ally)
+        term(terms, attacker_ally ? :actor_critical : :enemy_critical)
       end
 
       # A miss. RPG2000 words it from the target's side ("...は身をかわした！"),

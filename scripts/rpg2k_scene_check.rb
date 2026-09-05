@@ -19062,31 +19062,38 @@ end
 
 # A critical hit inserts the game's own 会心/痛恨 line between the attack and
 # the damage (its own battle-action-critical handling runs before
-# its own battle-action-apply), keyed on the target taking the crit like the
-# damage predicates themselves, not on which side dealt it.
+# its own battle-action-apply), keyed on the *attacker's* side dealing the
+# crit -- unlike the damage predicates themselves (`actor_damaged`/
+# `enemy_damaged`), which genuinely are target-keyed. A prior revision of
+# this check assumed the opposite (target-keyed, matching those two);
+# confirmed backwards under wine (2026-09-05): swapping the database's own
+# actor_critical/enemy_critical terms for distinct ASCII markers showed an
+# ally's own critical hit against an enemy displaying the actor_critical
+# marker, and an enemy's critical hit against that same ally displaying the
+# enemy_critical marker.
 check 'a critical hit adds the game\'s own line between the attack and the damage' do
   scene, = battle_at_command
   lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 42,
-                       critical: true, target_ally: false })
-  eq ['Heroの攻撃！', '会心の一撃！！', 'Slimeに 42 のダメージを与えた！'], lines
+                       critical: true, target_ally: false, attacker_ally: true })
+  eq ['Heroの攻撃！', '痛恨の一撃！！', 'Slimeに 42 のダメージを与えた！'], lines
 end
 
-check 'and from the other side, the term keyed on the party member taking it' do
+check 'and from the other side, the term keyed on the enemy landing it' do
   scene, = battle_at_command
   lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Slime', target: 'Hero', damage: 7,
-                       critical: true, target_ally: true })
-  eq ['Slimeの攻撃！', '痛恨の一撃！！', 'Heroは 7 のダメージを受けた！'], lines
+                       critical: true, target_ally: true, attacker_ally: false })
+  eq ['Slimeの攻撃！', '会心の一撃！！', 'Heroは 7 のダメージを受けた！'], lines
 end
 
 check 'a blank critical term drops the whole entry back to the composed ' \
       'wording, "(critical!)" included' do
   scene, = battle_at_command
-  scene.db.term.enemy_critical = ''
+  scene.db.term.actor_critical = ''
   lines = scene.instance_variable_get(:@battle).send(:battle_action_lines,
                      { attacker: 'Hero', target: 'Slime', damage: 42,
-                       critical: true, target_ally: false })
+                       critical: true, target_ally: false, attacker_ally: true })
   eq ['Hero hits Slime for 42 (critical!)'], lines
 end
 

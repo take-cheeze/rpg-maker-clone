@@ -22993,15 +22993,21 @@ end
 
 # The critical-hit line is a bare term with no battler name in front — unlike
 # every predicate above, it stands alone the same way `using_message2` does —
-# and which term speaks is keyed on the *target* taking the crit, matching
-# `actor_damaged` / `enemy_damaged`'s own side rule -- ported from a reference implementation
-# Player's source, NOT independently confirmed against genuine RPG_RT under
-# wine: its GetCriticalHitMessage is `target.GetType() == Type_Ally ?
-# actor_critical : enemy_critical`, not on which side dealt the blow.
-check 'a critical-hit line is the bare term, keyed on the target taking it' do
+# and which term speaks is keyed on the *attacker's* side, unlike
+# `actor_damaged` / `enemy_damaged` (which genuinely are target-keyed). A
+# prior revision of this check assumed the opposite (target-keyed, matching
+# those two), reading a reference implementation's source as
+# `target.GetType() == Type_Ally ? actor_critical : enemy_critical`; that
+# reading was never checked against genuine RPG_RT and turned out backwards
+# -- confirmed under wine (2026-09-05) by swapping the database's own
+# actor_critical/enemy_critical terms for distinct ASCII markers: an ally's
+# own critical hit against an enemy showed the actor_critical marker, and an
+# enemy's critical hit against that same ally showed the enemy_critical
+# marker.
+check 'a critical-hit line is the bare term, keyed on the attacker dealing it' do
   t = fake_terms
-  eq '会心の一撃！！', BT.critical(t, true), 'a party member took the crit'
-  eq '痛恨の一撃！！', BT.critical(t, false), 'an enemy took the crit'
+  eq '会心の一撃！！', BT.critical(t, true), 'an ally lands the crit'
+  eq '痛恨の一撃！！', BT.critical(t, false), 'an enemy lands the crit'
 end
 
 # A database that leaves a battle term blank (an English release often does)
