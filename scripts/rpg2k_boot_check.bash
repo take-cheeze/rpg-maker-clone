@@ -40,7 +40,15 @@ TIMEOUT_MS="${RPG2K_TIMEOUT_MS:-20000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
-    GAMES=(data/Nepheshel206beta/Nepheshel206Rbeta data/kk1.12)
+    # kk1.12's own System chunk carries no default initial party (`party` is
+    # an empty array, confirmed by loading its real RPG_RT.ldb) -- its real
+    # party is assembled by the opening cutscene's own event commands, which
+    # `--rpg2k_new_game` does not simulate. A bare New Game against it left
+    # the engine itself raising ("undefined method '*' for NilClass",
+    # somewhere in the empty-party stats/UI path) before ever reaching the
+    # map, confirmed against CI. mtf-meido-action's own default party is
+    # `[1]`, which is what this headless smoke test actually needs.
+    GAMES=(data/Nepheshel206beta/Nepheshel206Rbeta data/mtf-meido-action/Debug)
 fi
 
 if [ ! -x "${ENGINE}" ] ; then
@@ -96,7 +104,15 @@ done
 # sprites, actor sprites, the gauge-card status panel, per-frame gauge advance
 # -- end to end against real data (ADR 0053 Phase 3). Overridable so a
 # different project/troop can be driven instead.
-BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/kk1.12}"
+#
+# kk1.12 cannot stand in here either, for the same empty-default-party
+# reason the GAMES list above stays on mtf-meido-action: a bare New Game
+# against it never even reaches the map (see that comment), so a battle
+# can't follow. kk1.12 remains the right choice for genuine-RPG_RT-under-
+# wine verification (it ships a real RPG_RT.EXE, unlike mtf-meido-action's
+# EasyRPG-only Player.exe) and for scripts/rpg2k3_battle_command_check.rb's
+# static database decode, neither of which drives a bare New Game.
+BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/mtf-meido-action/Debug}"
 BATTLE_TROOP="${RPG2K_BATTLE_TROOP:-14}"
 if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then
     checked=$((checked + 1))
@@ -123,7 +139,7 @@ if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then
     rm -f "${log}"
     num=$((num + 1))
 else
-    echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-killer-knights.bash first)"
+    echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-mtf-meido-action.bash first)"
 fi
 
 if [ "${checked}" -eq 0 ] ; then
