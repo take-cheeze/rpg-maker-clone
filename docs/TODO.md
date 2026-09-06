@@ -21637,6 +21637,42 @@ not yet verified:
   behavioral claim this cycle (only read, long after this cycle's own
   independent wine finding, to phrase the citation's remaining gap
   precisely), and no web search was used.
+  ✅ **Follow-up (2026-09-06): attempted the positive case now that kk1.12 +
+  the official RTP gives a genuine RPG2003 `RPG_RT.exe` — inconclusive, for
+  an environmental reason rather than a game-behavior one, and closely
+  related to the Wait-command crash this same cycle already flagged
+  elsewhere in this file.** Built two scratch copies of kk1.12, each with
+  map 1's own autostart event replaced with Shake Screen (5/5/30/1, i.e.
+  strength/speed/a 3.0s duration/wait-flag set) then Show Message "DONE" —
+  one copy's Shake Screen left at the plain 4-parameter form (`:baseline`),
+  the other with a spliced 5th parameter `param4=1` ("begin a non-blocking
+  strobe", the same splice technique used against Nepheshel above, just on
+  a genuine RPG2003 project and binary this time). The `:baseline` case
+  never reached "DONE": the map sat on screen with the process reporting
+  near-zero further CPU time (`ps` showing no meaningful CPU-time increase
+  across a patient, unhurried 10-second wait, well past the shake's own
+  3.0s duration and past the ~4s a control fixture with no Shake Screen at
+  all took to show its own message under the same load) — a genuine stall,
+  not merely a slow render needing more patience (a companion control
+  fixture, Show Message alone with no Shake Screen, *did* eventually show
+  its message once waited for generously, ruling out impatience as the
+  general explanation here). Sending a Decision keypress into that stalled
+  state ended the `RPG_RT.EXE` process outright, the same crash-on-input-
+  during-a-stall shape the Wait-command follow-up already documented for
+  an unrelated command — strong circumstantial evidence both are one
+  underlying environmental fragility (this sandboxed wine/Xvfb setup
+  mishandling input delivery during some internal blocked state) rather
+  than two independent findings. Never reached the `:begin` (param4=1)
+  fixture, since a baseline that cannot itself resolve cleanly cannot
+  supply a trustworthy comparison point. **Left open, still:** the
+  positive-case question itself (whether param4 is genuinely read from a
+  real RPG2003 project) remains exactly as unsettled as before this
+  follow-up — what's new is narrowing *why* it stayed unsettled, and
+  linking it to the Wait-command finding rather than treating each as its
+  own mystery. A future cycle could retry with a non-message final command
+  (skipping whatever Show-Message-after-a-stall interaction the two
+  crashes share) or investigate the stall itself directly before returning
+  to Shake Screen specifically. No code change.
 - ✅ **A troop battle-event page's Show Battle Animation now honours RPG2003's
   Ally/Enemy target-type flag instead of always indexing the enemy troop —
   an "Ally #1" target used to play over the troop's own *second* monster in
