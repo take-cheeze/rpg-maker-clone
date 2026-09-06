@@ -63,6 +63,108 @@ class RPG2k
         sprite
       end
 
+      # ---- scrolling-list scroll arrows -------------------------------------
+      #
+      # Every RPG_RT list longer than its own box shows a pair of blinking
+      # windowskin arrow cells, centred horizontally on the box's own top and
+      # bottom edge, each on only while a row is hidden in that direction.
+      # Four screens in this port draw them (the file-select list, the field
+      # Item and Skill grids, and the in-battle Skill / Item lists), so the
+      # cells, the blink and the sticky scroll rule live here rather than in
+      # four private copies.
+      #
+      # The cells are the same System-graphic block `RPG2k::Window` already
+      # blits its "waiting for input" pause arrow from: the down arrow *is*
+      # the pause arrow's own cell (`Window::ARROW_SRC_Y`, y=16) and the up
+      # arrow is the block one row above it (y=8).
+      #
+      # The 20-on/20-off blink is measured, not assumed. Independently
+      # confirmed on a *list* (not just the pause arrow) against genuine
+      # RPG_RT.exe under wine, cycle #249: the in-battle Skill list of a
+      # 26-skill leader, burst-captured at ~55 samples/second for 12s and
+      # thresholded on each arrow's own glyph rect, gave 18 rising edges
+      # spanning 0.4867s..11.8211s -- a mean on-to-on period of **0.6667s**,
+      # exactly the 40 frames (20 on + 20 off) at RPG_RT's confirmed 60fps
+      # (ADR 0021) this constant already coded, with ~0.323s on runs and
+      # ~0.332s off runs. The screen's two arrows share one phase: the up and
+      # down arrows' rising edges were the *same* sample indices in that
+      # burst, never offset. The field Item grid re-measured the same period
+      # (0.6755s over 4 cycles, a shorter burst).
+      LIST_ARROW_W = Window::ARROW_W
+      LIST_ARROW_H = Window::ARROW_H
+      LIST_ARROW_SRC_X = Window::ARROW_SRC_X
+      LIST_UP_ARROW_SRC_Y = 8
+      LIST_DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
+      LIST_ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
+
+      # One arrow sprite at (`x`, `y`), drawn from `skin`'s `src_y` cell (or a
+      # plain triangle when the project has no windowskin). Starts hidden --
+      # every caller sets `visible` from its own blink/hidden-row state right
+      # after building it.
+      def build_list_arrow_sprite(skin, src_y, x, y, z = 450)
+        sprite = Sprite.new
+        sprite.z = z
+        sprite.x = x
+        sprite.y = y
+        bmp = Bitmap.new(LIST_ARROW_W, LIST_ARROW_H)
+        if skin
+          bmp.blt 0, 0, skin,
+                  Rect.new(LIST_ARROW_SRC_X, src_y, LIST_ARROW_W, LIST_ARROW_H)
+        else
+          draw_list_arrow_fallback(bmp, src_y == LIST_UP_ARROW_SRC_Y)
+        end
+        sprite.bitmap = bmp
+        sprite.visible = false
+        sprite
+      end
+
+      # No windowskin to take the arrow art from -- a small solid triangle,
+      # mirroring Window#draw_arrow_fallback's own shape (narrowing toward the
+      # point) but in either direction, since a list needs both.
+      def draw_list_arrow_fallback(bmp, pointing_up)
+        color = Color.new(232, 232, 248, 255)
+        LIST_ARROW_H.times do |row|
+          r = pointing_up ? LIST_ARROW_H - 1 - row : row
+          w = LIST_ARROW_W - r * 2
+          next if w <= 0
+          bmp.fill_rect r, row, w, 1, color
+        end
+      end
+
+      # One frame of the shared blink phase, and whether that phase is "on".
+      def advance_list_arrow_anim(anim)
+        ((anim || 0) + 1) % (LIST_ARROW_BLINK_FRAMES * 2)
+      end
+
+      def list_arrow_blink_on?(anim)
+        (anim || 0) < LIST_ARROW_BLINK_FRAMES
+      end
+
+      # The top row a scrolling list shows, given the one it *already* showed
+      # (`top`) and where the cursor now is. RPG_RT's scroll offset is
+      # **sticky**: it keeps whatever offset it had and moves by the smallest
+      # amount that brings the cursor's row back into the box, rather than
+      # deriving the offset from the cursor row afresh. Confirmed against
+      # genuine RPG_RT.exe under wine (cycle #249) on the in-battle Skill and
+      # Item lists (26 skills / 27 items, four visible rows): four Downs from
+      # the top scrolled the box to top row 1, and an Up from there left the
+      # top row exactly where it was (the cursor moved up inside the box
+      # instead of the box moving back), on both lists; the same held on the
+      # way down from the bottom (top row 9 with the cursor walked back up to
+      # row 10, where a cursor-derived offset would have shown row 7 first).
+      # A cursor-derived offset would have scrolled back on every one of
+      # those steps. The field Item and Skill grids were re-confirmed to do
+      # the same thing on the same captures' recipe, which is what they
+      # already implemented.
+      def sticky_list_top(top, sel_row, row_count, visible_rows)
+        max_top = [row_count - visible_rows, 0].max
+        top = 0 if top.nil? || top.negative?
+        top = max_top if top > max_top
+        top = sel_row if sel_row < top
+        top = sel_row - visible_rows + 1 if sel_row >= top + visible_rows
+        top.negative? ? 0 : top
+      end
+
       # Draw `text` the way RPG_RT draws every piece of window text: a shadow
       # glyph one pixel down and right filled from the System image's shadow
       # block, then the glyph itself filled from colour `idx`'s 16x16 swatch, so

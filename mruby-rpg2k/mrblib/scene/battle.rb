@@ -106,6 +106,10 @@ class RPG2k
         update_enemy_flashes
         update_enemy_positions
         update_enemy_shakes
+        # The Skill / Item list's scroll arrows blink on their own 20-frame
+        # clock, so they need a tick of their own every frame regardless of
+        # phase -- this screen had no per-frame sprite hook for them before.
+        tick_battle_list_arrows
         case @ui[:phase]
         when :encounter_message then drive_battle_encounter_message
         when :battle_options then drive_battle_options
@@ -1882,10 +1886,13 @@ class RPG2k
       # to, and so does a 3-item list's own partial row -- hence the
       # `size > BATTLE_VISIBLE_ROWS * column_max` guard, which is exactly
       # "this list overflows the window". (RPG_RT no-ops the same keypress
-      # once the window is already scrolled to the bottom -- its scroll
-      # offset is sticky where `#battle_list_window` still derives one from
-      # the cursor row, so that state cannot arise here; left open in
-      # docs/TODO.md with the rest of the sticky-scroll gap.)
+      # once the window is already scrolled to the bottom. That state is
+      # reachable here now that `#battle_list_window` keeps a sticky scroll
+      # offset (cycle #249) rather than deriving one from the cursor row --
+      # and it stays a no-op, because the guard turns on where the *cursor*
+      # is, not where the window is scrolled to: the only index the last
+      # full row's second column can reach downward is the partial row's
+      # lone cell, which is the same cell either way.)
       def move_battle_list_index(index, delta, size)
         target = index + delta
         return nil if target.negative?
@@ -3504,6 +3511,13 @@ class RPG2k
       # only for #draw_battle_item/#draw_battle_skill.
       BATTLE_LIST_COLUMN_MAX = 2
 
+      # z of the Skill / Item list's scroll-arrow sprites: one above the list
+      # window they are drawn on the frame of (325, see #draw_battle_skill)
+      # and below the enemy-target cursor's own window (330), which they never
+      # overlap anyway -- that window is `BATTLE_TARGET_W` (136px) wide at
+      # x=0 and the arrows are centred at x=152.
+      BATTLE_LIST_ARROW_Z = 326
+
       # Column origins within the status panel's contents: who, what condition
       # they are in, then the gauges. The condition column is why this window
       # is laid out in columns at all — a state is drawn in its *own* palette
@@ -3978,7 +3992,13 @@ class RPG2k
       # ally-target cursor is open over the list, and it is gone the moment
       # the list is cancelled. The four `close_battle_*` methods below are
       # what dispose it.
-      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil, desc: nil)
+      # `scroll_key`, when given, is the `@ui` slot this list keeps its own
+      # **sticky** top row in (`:skill_top` / `:item_top`) and the flag that
+      # this is a list RPG_RT draws scroll arrows on. See
+      # Scene::Base#sticky_list_top for the measurement behind "sticky", and
+      # #refresh_battle_list_arrows for the arrows.
+      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil, desc: nil,
+                             scroll_key: nil)
         # All five measured off genuine RPG_RT captures this cycle (see the
         # comment above): the 16px gutter between two 144px cells on a 160px
         # pitch, the figure column's own 24px (a 6px separator cell at cell
@@ -3995,7 +4015,15 @@ class RPG2k
         col_w = column_max > 1 ? col_pitch - gutter_w : inner_w
         row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
         sel_row = sel / column_max
-        scroll = row_count > rows ? [[sel_row - rows + 1, 0].max, row_count - rows].min : 0
+        # Sticky, not derived from the cursor row: a list that has scrolled
+        # keeps its top row until the cursor would leave the box (measured
+        # under wine, see Scene::Base#sticky_list_top). Lists with no
+        # `scroll_key` (the enemy- and ally-target cursors) never scroll at
+        # all, so they start from 0 every draw and land on 0.
+        scroll = sticky_list_top(scroll_key ? @ui[scroll_key] : 0, sel_row,
+                                 row_count, rows)
+        @ui[scroll_key] = scroll if scroll_key
+        refresh_battle_list_arrows(scroll, row_count, rows) if scroll_key
         win = Window.new(x, BATTLE_PANEL_Y, w, BATTLE_PANEL_H)
         win.z = z
         win.windowskin = windowskin
@@ -4049,6 +4077,66 @@ class RPG2k
         @ui[:desc_win] = nil
       end
 
+      # The blinking scroll arrows an overflowing in-battle Skill / Item list
+      # shows, built lazily and pinned to the list window's own top and bottom
+      # frame edges. Measured on genuine RPG_RT.exe under wine (cycle #249,
+      # Nepheshel's own two-slime debug troop with the leader hand-given 26
+      # skills and a 27-item bag, 640x480 captures halved to the 320x240
+      # logical screen): the up arrow's glyph sat at logical x 155..164,
+      # y 160..165 -- the 16x8 cell blitted at (152, 160) = `((SCREEN_W -
+      # LIST_ARROW_W) / 2, BATTLE_PANEL_Y)`, i.e. *on* the list window's own
+      # top border, not on the backdrop above it -- and the down arrow's at
+      # x 155..164, y 233..238, the cell at (152, 232) = `SCREEN_H -
+      # LIST_ARROW_H`, on its bottom border. Both are drawn over the frame
+      # they sit on, which is why they are sprites rather than window
+      # contents (the contents bitmap starts 8px inside that frame).
+      #
+      # Visibility: the up arrow only once a row is hidden above (`scroll >
+      # 0`) and the down arrow only while a row is still hidden below -- on
+      # the same captures the up arrow was absent in every frame at the top
+      # of the list and the down arrow absent in every frame of a 3s burst
+      # taken with the last row on screen, while both showed together
+      # mid-list. They also stay up, unchanged, while the enemy-target cursor
+      # is open over the list.
+      def refresh_battle_list_arrows(scroll, row_count, rows)
+        return unless @ui
+        @ui[:list_up_arrow] ||=
+          build_list_arrow_sprite(windowskin, LIST_UP_ARROW_SRC_Y,
+                                  (SCREEN_W - LIST_ARROW_W) / 2, BATTLE_PANEL_Y,
+                                  BATTLE_LIST_ARROW_Z)
+        @ui[:list_down_arrow] ||=
+          build_list_arrow_sprite(windowskin, LIST_DOWN_ARROW_SRC_Y,
+                                  (SCREEN_W - LIST_ARROW_W) / 2,
+                                  SCREEN_H - LIST_ARROW_H, BATTLE_LIST_ARROW_Z)
+        @ui[:list_up_shown] = scroll > 0
+        @ui[:list_down_shown] = scroll + rows < row_count
+        on = list_arrow_blink_on?(@ui[:list_arrow_anim])
+        @ui[:list_up_arrow].visible = on && @ui[:list_up_shown]
+        @ui[:list_down_arrow].visible = on && @ui[:list_down_shown]
+      end
+
+      # Advance the arrows' shared blink phase one frame and re-apply it.
+      # `@ui[:list_arrow_anim]` lives on the fight rather than on the sprites
+      # so redrawing the list (which this screen does on every cursor step)
+      # cannot restart the blink -- RPG_RT's own arrows keep their phase
+      # across a keypress.
+      def tick_battle_list_arrows
+        @ui[:list_arrow_anim] = advance_list_arrow_anim(@ui[:list_arrow_anim])
+        up = @ui[:list_up_arrow]
+        down = @ui[:list_down_arrow]
+        return unless up && down
+        on = list_arrow_blink_on?(@ui[:list_arrow_anim])
+        up.visible = !!(on && @ui[:list_up_shown])
+        down.visible = !!(on && @ui[:list_down_shown])
+      end
+
+      def close_battle_list_arrows
+        return unless @ui
+        [@ui[:list_up_arrow], @ui[:list_down_arrow]].each { |s| s.dispose if s }
+        @ui[:list_up_arrow] = nil
+        @ui[:list_down_arrow] = nil
+      end
+
       # The current actor's battle skills as `name` + `-` + the SP cost, in a
       # two-column grid with a cursor, under a description banner. Full
       # width, same rect as the item menu -- independently confirmed against
@@ -4071,12 +4159,12 @@ class RPG2k
       # Skill and Item lists measured. Confirmed here directly this cycle,
       # no longer inherited by analogy from the field screens.
       #
-      # Deliberately still open (see docs/TODO.md): the blinking windowskin
-      # scroll arrows a longer list shows (measured at logical x 155..164,
-      # y 161..165 up / y 233..238 down) need a per-frame sprite tick this
-      # screen has no hook for, and RPG_RT's own scroll *offset* is sticky
-      # (it keeps the top row where a Down left it) where this window still
-      # derives it from the cursor row.
+      # A list longer than `BATTLE_VISIBLE_ROWS` rows scrolls, shows the two
+      # blinking windowskin scroll arrows on the window's own top and bottom
+      # frame edges (#refresh_battle_list_arrows) and keeps its scroll offset
+      # sticky (Scene::Base#sticky_list_top) -- all three re-measured under
+      # wine in cycle #249 on a 26-skill leader, and all three previously
+      # left open here.
       def draw_battle_skill
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
@@ -4089,13 +4177,24 @@ class RPG2k
         end
         @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
                                              column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                             scroll_key: :skill_top,
                                              desc: battle_list_description(
                                                @ui[:skills][@ui[:skill_i]], true
                                              ))
       end
 
+      # The list's own sticky top row (`@ui[:skill_top]`) is deliberately
+      # *not* cleared here: #confirm_battle_skill closes the list and
+      # #draw_battle_target immediately redraws it under the enemy cursor,
+      # and genuine RPG_RT keeps the scrolled-to rows across exactly that
+      # step (cycle #249: a list scrolled to top row 6 still showed rows
+      # 6..9 the frame after Decision opened the target cursor). A real
+      # close-and-reopen resets itself, since the reopened cursor starts at
+      # the first skill (also measured) and the sticky rule then pins the
+      # top row back to 0.
       def close_battle_skill
         close_battle_list_desc
+        close_battle_list_arrows
         return unless @ui[:skill_win]
         @ui[:skill_win].dispose
         @ui[:skill_win] = nil
@@ -4124,6 +4223,7 @@ class RPG2k
         idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                            scroll_key: :item_top,
                                             desc: battle_list_description(
                                               @ui[:items][@ui[:item_i]], false
                                             ))
@@ -4144,8 +4244,11 @@ class RPG2k
         rec.description.to_s
       end
 
+      # Keeps `@ui[:item_top]` for the same measured reason
+      # #close_battle_skill does.
       def close_battle_item
         close_battle_list_desc
+        close_battle_list_arrows
         return unless @ui[:item_win]
         @ui[:item_win].dispose
         @ui[:item_win] = nil
@@ -4611,6 +4714,7 @@ class RPG2k
          @ui[:item_win], @ui[:ally_win],
          @ui[:action_win], @ui[:result_win],
          @ui[:event_win]].each { |w| w.dispose if w }
+        close_battle_list_arrows
         dispose_battle_sprite(@ui[:back_sprite])
         (@ui[:enemy_sprites] || []).each { |s| dispose_battle_sprite(s) }
         (@ui[:actor_sprites] || []).each { |s| dispose_battle_sprite(s) }

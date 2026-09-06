@@ -28237,6 +28237,161 @@ check 'every 16px text row draws at a plain multiple of 16 -- the 12px glyph ' \
                  row_text_ys(title.instance_variable_get(:@window)))
 end
 
+# -- the in-battle Skill/Item lists' scroll arrows and sticky scroll offset ---
+#
+# Everything these four checks pin was measured on a genuine RPG_RT.exe under
+# wine (cycle #249, Nepheshel's own two-slime debug troop on map 2, the
+# leader デモ用 hand-given 26 skills through chunk 108's actor-15 record
+# (fields 51/52) and a 27-item bag through chunk 109 (fields 11/12/13), 640x480
+# captures halved to the 320x240 logical screen):
+#
+#   * the up arrow's glyph sat at logical x 155..164, y 160..165 -- the 16x8
+#     windowskin cell blitted at (152, 160) = (SCREEN_W - 16) / 2,
+#     BATTLE_PANEL_Y, i.e. ON the list window's own top frame border -- and the
+#     down arrow's at x 155..164, y 233..238, the cell at (152, 232) =
+#     SCREEN_H - 8, on its bottom border;
+#   * at the top of the list only the down arrow ever appeared (a 3s burst at
+#     ~55 samples/second never once showed the up arrow's glyph); scrolled to
+#     the bottom the reverse held (the down arrow's rect held its "absent"
+#     value in all 181 frames of a 3s burst) and mid-list both showed;
+#   * both blinked together, 20 frames on / 20 off: 18 rising edges spanning
+#     0.4867s..11.8211s in a 12s burst, a 0.6667s mean on-to-on period, which
+#     is exactly 40 frames at RPG_RT's 60fps, with the up and down arrow's
+#     edges landing on the same sample indices;
+#   * the scroll offset is sticky: four Downs from the top scrolled the box to
+#     top row 1 and an Up from there left the top row at 1 (the cursor stepped
+#     up inside the box), on the Skill and the Item list alike, where a
+#     cursor-derived offset would have scrolled back to 0.
+class BattleThirteenSkillParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, (1..13).to_a)
+  end
+
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, 3] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0); end
+end
+
+# 13 items -> 7 grid rows in the 4-row box, the item-list twin of the party
+# above (so the sticky-scroll finding is pinned on both lists, as measured).
+class BattleThirteenItemParty < BattleMagicParty
+  def initialize
+    super()
+    @items = (1..13).map { |id| [id, 2] }.to_h
+  end
+
+  def db_item(id); OpenStruct.new(name: "Item#{id}"); end
+end
+
+# Open a fight with `party` and step to its Skill (or Item) list.
+def battle_open_list(party, item: false)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.instance_variable_get(:@state).instance_variable_set(:@party, party)
+  ui = battle_to_command(scene)
+  # Attack -> Skill, or on to Defend -> Item.
+  (item ? 3 : 1).times { press_key(scene, RGSS::Input::DOWN) }
+  press_key(scene, RGSS::Input::C)
+  [scene, ui, scene.instance_variable_get(:@battle)]
+end
+
+check 'the in-battle Skill list draws the two windowskin scroll arrows on its ' \
+      "own top and bottom frame edges, and only the down one at the list's top" do
+  bt = RPG2k::Scene::Battle
+  scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
+  eq :skill, ui[:phase], 'the 13-skill list is open'
+  up = ui[:list_up_arrow]
+  down = ui[:list_down_arrow]
+  ok up && down, 'an overflowing list builds both arrow sprites'
+  eq (bt::SCREEN_W - RPG2k::Scene::Base::LIST_ARROW_W) / 2, up.x,
+     'the up arrow is centred horizontally (cell x 152)'
+  eq bt::BATTLE_PANEL_Y, up.y,
+     "the up arrow sits on the list window's own top border (y 160)"
+  eq (bt::SCREEN_W - RPG2k::Scene::Base::LIST_ARROW_W) / 2, down.x,
+     'the down arrow is centred the same way'
+  eq bt::SCREEN_H - RPG2k::Scene::Base::LIST_ARROW_H, down.y,
+     "the down arrow sits on the list window's bottom border (y 232)"
+  # Force the blink's "on" half so visibility reads the hidden-row rule alone.
+  ui[:list_arrow_anim] = 0
+  battle.send(:tick_battle_list_arrows)
+  ok !up.visible, 'no row is hidden above the top of the list, so the up arrow is off'
+  ok down.visible, 'rows are hidden below it, so the down arrow is on'
+end
+
+check 'the in-battle Skill list keeps a sticky scroll offset: moving back up ' \
+      'inside the box does not scroll the box back' do
+  scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
+  eq 0, ui[:skill_top], 'the list opens at the top'
+
+  4.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 8, ui[:skill_i], 'four Downs put the cursor on row 4 (index 8)'
+  eq 1, ui[:skill_top], 'which scrolls the 4-row box by exactly one row'
+
+  press_key(scene, RGSS::Input::UP)
+  eq 6, ui[:skill_i], 'Up steps the cursor back to row 3'
+  eq 1, ui[:skill_top],
+     'and the box keeps the row it was scrolled to -- a cursor-derived ' \
+     'offset would have snapped back to 0'
+  # The same finding read off the drawn window rather than the bookkeeping:
+  # row 3 drawn under a top row of 1 puts the cursor frame on the box's
+  # *third* line, where a snapped-back offset would put it on the fourth.
+  eq 2 * RPG2k::Scene::Battle::BATTLE_LINE_H, ui[:skill_win].cursor_rect.y,
+     'and the cursor frame sits on the third visible line, not the last'
+
+  ui[:list_arrow_anim] = 0
+  battle.send(:tick_battle_list_arrows)
+  ok ui[:list_up_arrow].visible, 'mid-list, the up arrow is on'
+  ok ui[:list_down_arrow].visible, 'and so is the down arrow'
+end
+
+check 'the in-battle Item list scrolls stickily and hides the down arrow once ' \
+      'the last row is on screen' do
+  scene, ui, battle = battle_open_list(BattleThirteenItemParty.new, item: true)
+  eq :item, ui[:phase], 'the 13-item list is open'
+
+  6.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 12, ui[:item_i], 'six Downs reach the last row (row 6, index 12)'
+  eq 3, ui[:item_top], 'the box is scrolled to its last page (rows 3..6)'
+
+  ui[:list_arrow_anim] = 0
+  battle.send(:tick_battle_list_arrows)
+  ok ui[:list_up_arrow].visible, 'rows are hidden above, so the up arrow is on'
+  ok !ui[:list_down_arrow].visible,
+     'the last row is on screen, so the down arrow is off'
+
+  press_key(scene, RGSS::Input::UP)
+  eq 10, ui[:item_i], 'Up steps back a row'
+  eq 3, ui[:item_top], 'and the box stays where it was scrolled to'
+end
+
+check 'the in-battle Skill list arrows blink on the same 20-on/20-off cycle ' \
+      "as the message window's pause arrow, and share one phase" do
+  scene, ui, battle = battle_open_list(BattleThirteenSkillParty.new)
+  4.times { press_key(scene, RGSS::Input::DOWN) } # mid-list: both arrows apply
+  up = ui[:list_up_arrow]
+  down = ui[:list_down_arrow]
+  blink = RPG2k::Scene::Base::LIST_ARROW_BLINK_FRAMES
+  eq 20, blink, 'the shared 20-frame half-cycle (0.6667s per full cycle at 60fps)'
+
+  ui[:list_arrow_anim] = 0
+  battle.send(:tick_battle_list_arrows)
+  ok up.visible && down.visible, 'both arrows are on at the start of the cycle'
+
+  ui[:list_arrow_anim] = blink - 2
+  battle.send(:tick_battle_list_arrows)
+  ok up.visible && down.visible, 'still on through frame 19'
+
+  ui[:list_arrow_anim] = blink - 1
+  battle.send(:tick_battle_list_arrows)
+  ok !up.visible && !down.visible, 'both go off together at frame 20'
+
+  ui[:list_arrow_anim] = blink * 2 - 1
+  battle.send(:tick_battle_list_arrows)
+  ok up.visible && down.visible, 'and both come back together at the 40-frame wrap'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

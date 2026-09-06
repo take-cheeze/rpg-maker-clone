@@ -12116,6 +12116,88 @@ The work below is roughly ordered by the critical path to a walkable game
   in cycle #248: `Bitmap#draw_text` centres the 12px glyph cell in the rect
   height now -- see the Save/Load screen's cycle-#248 follow-up).
   No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #249, 2026-09-06): the in-battle Skill/Item lists now
+  draw the blinking scroll arrows and keep RPG_RT's sticky scroll offset —
+  open items (a) and (b) above, both closed by measurement.** Recipe: a
+  private wine prefix (`cp -r ~/.wine-nepheshel32`) and a private copy of
+  `data/Nepheshel206beta/Nepheshel206Rbeta`, whose **map 2** turns out to
+  carry Nepheshel's own two-slime debug encounter as an autostart — so
+  `scripts/gen-rpg2k-save.rb <copy> --map 2 --at 6,4 --facing down
+  --clear-scene` on `Save01_clean.lsd` drops genuine RPG_RT straight into
+  that fight (`--clear-scene` matters: the untouched save resumes inside the
+  game's *timed* opening demo, and letting that run replaces the デモ用
+  party with the LV1 story hero and wipes the bag). The leader (database
+  actor **15**) was hand-given 26 skills and 600 MP through chunk 108's
+  actor-15 record (fields 51/52/72) and the party a 27-item bag through
+  chunk 109 (fields 11/12/13/14) — 13 grid rows and 14 grid rows in
+  `BATTLE_VISIBLE_ROWS = 4`, so both lists overflow by a lot. Captures at
+  640x480, halved to the 320x240 logical screen; arrow glyphs located by
+  dumping the logical pixel grid of the 24x12 rect around each candidate
+  cell, blink timed by bursting raw `xwd` root grabs (~55 frames/second,
+  each timestamped) and thresholding the mean brightness of the arrow's own
+  20x8 (2x) rect.
+  **Measured.** (1) *Geometry*: the up arrow's glyph sits at logical
+  x 155..164, y 160..165 and the down arrow's at x 155..164, y 233..238 —
+  the 16x8 windowskin cells blitted at (152, `BATTLE_PANEL_Y` = 160) and
+  (152, `SCREEN_H - 8` = 232). Both are drawn **on the list window's own
+  frame border**, not on the backdrop: the grid dump shows the arrow pixels
+  overwriting the window's white top/bottom border rows, which is why they
+  have to be sprites (the contents bitmap starts 8px inside that frame).
+  (2) *Visibility*: at the top of the list the up arrow never appeared in
+  any frame and the down arrow blinked; scrolled to the last row the down
+  arrow's rect held its "absent" value in all 181 frames of a 3s burst while
+  the up arrow blinked; mid-list both showed. (3) *Blink*: 18 rising edges
+  spanning 0.4867s..11.8211s in a 12s burst = a **0.6667s** mean on-to-on
+  period, exactly the 40-frame (20 on + 20 off) `ARROW_BLINK_FRAMES` cycle
+  at RPG_RT's 60fps, with ~0.323s on runs and ~0.332s off runs — and the up
+  and down arrow's rising edges landed on the *same* sample indices, so the
+  two share one phase. So the list arrows really do share the pause arrow's
+  own measured period; that was previously an assumption on three screens.
+  (4) *Sticky scroll*: four Downs from the top scrolled the box to top row 1
+  and an Up from there left the top row at 1, the cursor stepping up inside
+  the box — on the Skill list and the Item list alike, and again on the way
+  back up from the bottom (top row 9 held with the cursor walked back to row
+  10, where a cursor-derived offset would have shown row 7 first). The
+  offset also **survives Decision into enemy-target selection**: a list
+  scrolled to top row 6 still showed rows 6..9 the frame after the target
+  cursor opened. A list Cancelled shut and reopened comes back at index 0
+  with top row 0.
+  **Fixed.** `Scene::Base` grew the shared list-arrow pieces every scrolling
+  list here now uses (`LIST_ARROW_*`, `#build_list_arrow_sprite`,
+  `#draw_list_arrow_fallback`, `#advance_list_arrow_anim`,
+  `#list_arrow_blink_on?`) plus `#sticky_list_top`, the measured
+  smallest-move rule; `Scene::ItemMenu`/`Scene::SkillMenu` build their
+  (already correct) arrows through it instead of carrying private copies.
+  `Scene::Battle#battle_list_window` takes a `scroll_key:` naming the `@ui`
+  slot the list keeps its sticky top row in (`:skill_top` / `:item_top`) and
+  builds/refreshes the two arrow sprites through
+  `#refresh_battle_list_arrows`; `Scene::Battle#update` (and the RPG2003
+  gauge loop's copy of it, `RPG2k3::Scene::Battle#update`) gained the one
+  per-frame hook the blink needed, `#tick_battle_list_arrows`, which keeps
+  its phase on the fight (`@ui[:list_arrow_anim]`) so redrawing the list on
+  every cursor step cannot restart it. `#close_battle_skill`/
+  `#close_battle_item` dispose the sprites; the sticky top row is
+  deliberately *not* cleared there, because Decision closes the list and
+  `#draw_battle_target` redraws it the same frame and RPG_RT keeps the
+  scrolled-to rows across exactly that step (measurement 4 above). Pinned by
+  four new `scripts/rpg2k_scene_check.rb` checks (arrow geometry and
+  top-of-list visibility, sticky offset read both off `@ui[:skill_top]` and
+  off the drawn `cursor_rect`, bottom-of-list down-arrow hiding on the Item
+  list, and the 20-on/20-off shared-phase blink), each confirmed to fail
+  against the pre-fix code.
+  **Deliberately left open.** (i) Whether a list reopened *within the same
+  fight* onto a remembered `last_skill_id` whose row falls inside the stale
+  window keeps that window or starts fresh — the probe battle only ever
+  reopened at index 0, where both rules agree, and forcing the other case
+  needs a fight that survives a full cast-and-resolve round with a scrolled
+  list; the implementation keeps the stale offset (clamped and
+  smallest-moved), which agrees with a fresh window in every state reachable
+  by Down alone. (ii) The per-actor case of the same question (one `@ui`
+  slot per list, not per actor) — untestable on this save's single-actor
+  party, the same blocker item (c) above records. (iii) Nothing here was
+  re-checked natively: the pre-built binary is the pre-fix engine, so the
+  fix is verified by the CRuby scene checks only.
+  No EasyRPG source was consulted.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
