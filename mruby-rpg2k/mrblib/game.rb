@@ -5226,8 +5226,18 @@ module Game
     end
 
     # Held items equippable in equipment `slot` (0..4) on `actor`, as
-    # [id, count] pairs in ascending id order -- the candidate list for the
-    # equip menu's chosen slot. `actor` matters two ways: for the shield slot
+    # [id, count] pairs **in the bag's own stored order, not ascending id
+    # order** -- the candidate list for the equip menu's chosen slot.
+    # Confirmed against genuine RPG_RT.exe under wine (cycle #250): a save
+    # whose chunk-109 `item_ids` were written deliberately out of order
+    # ([30, 27, 29, 28, 26, 66, 177], each with a distinct count so a listed
+    # row identifies its id) opened the equip screen's weapon grid reading
+    # 30/27/29/28/66 in exactly that order, and a fourteen-weapon rerun
+    # ([44, 27, 45, 28, 46, 29, 47, 30, 48, 31, 49, 32, 50, 33]) listed all
+    # fourteen the same way -- the same "stored order, never re-sorted"
+    # rule cycle #252 measured for the field/battle Item lists. `@items` is
+    # built in the save's own order by `Game::State.from_lsd`, so simply
+    # not sorting here reproduces it. `actor` matters two ways: for the shield slot
     # (1), a 二刀流 (double_hand) actor's shield slot is a second weapon slot,
     # so it lists weapons there instead of shields -- mirroring a reference
     # implementation, not independently confirmed against genuine RPG_RT
@@ -5239,7 +5249,7 @@ module Game
     # simply skipped when no `actor` is given.
     def equip_candidates(slot, actor = nil)
       slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         item_count(id) > 0 && equip_slot_for(id) == slot &&
           (actor.nil? || item_usable_by?(db_item(id), actor.id))
       end.map { |id| [id, item_count(id)] }

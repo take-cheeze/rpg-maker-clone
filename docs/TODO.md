@@ -14343,6 +14343,109 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #250, 2026-09-06): the Equip screen's first full
+  wine-measured layout pass -- every window rect, every text column and
+  every palette swatch on it was wrong, because the screen's whole shape
+  was wrong: genuine RPG_RT tiles it with FOUR windows, all live at once,
+  and this codebase drew three stacked full-width boxes with the candidate
+  grid *replacing* the slot list. Fixed.** Recipe: `$SCRATCH/drive.sh
+  start_ref` on a private wine prefix, Nepheshel's shipped save moved to
+  town map 12 (`scripts/gen-rpg2k-save.rb --map 12 --clear-scene`; map 371,
+  where the save sits, runs the opening-demo autorun and never gives you
+  the menu), `Escape` -> `Down Down` -> `Return` -> `Return`; 640x480
+  captures halved to the native 320x240, window edges read off the skin's
+  white/purple/black frame runs and text columns off glyph-pixel runs
+  (`convert ... rgb:- | python3`). Three saves drove it, all made by
+  editing actor 15's own chunk-108 record (field 61 equipment, 31 level)
+  and the bag (chunk 109 fields 11/12/13), never chunk 109's party list,
+  each verified with `scripts/lcf_save_check.rb`: (a) the shipped level-50
+  leader in full gear with a seven-item bag, (b) a level-1 copy wearing
+  only a dagger -- two-digit figures and four empty slots -- and (c) a
+  fourteen-weapon bag. **Measured:** description banner (0,0,320,32); stat
+  panel (0,32,124,96); slot list (124,32,196,96) -- *beside* the stat
+  panel, not below it; candidate grid (0,128,320,112). They tile the screen
+  exactly, so z order is unobservable and nothing overlaps. The grid is
+  filled the moment the screen opens and is re-filled in place as the slot
+  cursor moves (one DOWN from 武器 onto 盾 swapped the weapons for the
+  bag's only shield with no Decision pressed); it simply has no cursor
+  until Decision, and then BOTH cursors show at once. Stat panel: the
+  actor's name alone on row 0, then 攻撃力/防御力/精神力/敏捷性 one 16px row
+  each, term at content x 0, the current figure RIGHT-aligned to content x
+  78 ("370" ran 60..77, "42" ran 66..77), a full-width `→` at 78..90 --
+  drawn in *both* modes, with nothing after it while the slot list has
+  focus -- and the previewed figure right-aligned to the content edge 108
+  ("204" ran 90..107, "69" ran 96..107). Swatches sampled against
+  Nepheshel's own System palette: terms, slot labels and the arrow are
+  swatch 1 (132,170,255..49,89,173); the name, current figures, worn-item
+  names, candidate names and the banner are swatch 0; a previewed figure is
+  swatch 2 when higher (255,219,181), swatch 3 when lower (99,166,247) and
+  swatch 0 when unchanged -- the three indices this scene already used, now
+  measured rather than ported. Slot list: label at content x 0, worn item
+  at x 60, and an **empty slot draws nothing at all** (the level-1 save's
+  盾/鎧/守護石/装飾品 rows had blank name columns, not the `-` this scene
+  drew); its cursor is the full 180px content row. Candidate grid: it is
+  `Scene::ItemMenu`'s widget down to the pixel -- two 144px cells at content
+  x 0 and 160 (16px gutter, not the edge-to-edge 304/2 == 152 this scene
+  used), `:` at cell+120 and the count right-aligned in the 12px cell
+  ending at cell+144, cursor one 144px cell (native x 4..155 for cell 0),
+  six visible rows, and, newly settled, **it scrolls**: the fourteen-weapon
+  bag showed twelve cells with a down arrow at native x 155..164 y
+  233..236, one DOWN past the last visible row scrolled exactly one grid
+  row (both arrows then showing, the up one at x 155..164 y 129..133 =
+  the 16x8 cell at (152,128)), and the trailing blank Remove cell sat on
+  row 7 with only the up arrow left -- previously left explicitly open on
+  cycle #129's entry above. Cycle #129's "Remove is always appended after
+  the real candidates, drawn blank" was re-confirmed outright: an armour
+  slot with no armour in the bag drew a single blank, cursored, previewing
+  cell, and the fourteen-weapon grid held that same blank cell immediately
+  after the fourteenth name. **Bag order:** the grid lists the bag in the
+  save's own stored order, never sorted by id -- a save whose chunk-109
+  `item_ids` were written out of order ([30,27,29,28,26,66,177], distinct
+  counts so a row identifies its id) listed 30/27/29/28/66, and the
+  fourteen-weapon rerun listed all fourteen the same way; the `.sort` is
+  gone from `Game::Party#equip_candidates` (the one game.rb line cycle
+  #252's own entry left pointed at this cycle), matching what #252 measured
+  for the field/battle Item lists. **Two-handed preview** confirmed for
+  real: highlighting a 両手持ち sword on a leader wearing a 25-defence
+  weapon and a 70-defence shield previewed 防御力 407 -> 312 (both gone)
+  while the one-handed candidates on the same list previewed 407 -> 382,
+  and Remove previewed 407 -> 382 too -- exactly what `#stat_field_delta`
+  already computed. Confirming an equip returns focus to the slot list with
+  every window redrawn (the shield row went blank, the displaced items
+  appeared in the grid); Escape from the grid returns to the slot list;
+  Escape from the slot list leaves the screen. The solo-party RIGHT/LEFT
+  no-op (cycle #121) re-verified: RIGHT then LEFT left the frame
+  pixel-identical to the pre-RIGHT frame (0 differing pixels at
+  `-fuzz 5%`). Fixed in `mruby-rpg2k/mrblib/scene/equip_menu.rb`: the four
+  window rects, the always-live re-filled candidate grid and its hidden-
+  until-Decision cursor, the stat-row columns/arrow/swatches, the slot
+  columns and blank empty slot, the ItemMenu-identical count column and
+  144/160 cells, and row-at-a-time scrolling with the two blinking arrow
+  sprites. Seven new checks appended to `scripts/rpg2k_scene_check.rb`, all
+  confirmed to fail against the pre-fix code (wrong stat-panel rect, nil
+  `@cand_window`, no slot-label draws, no stats blends, undefined
+  `COLUMN_GAP`, nil `@up_arrow`, id-sorted candidates); suite green
+  afterwards at 1029 scene / 1200 logic / 41 render. **Left open, and it is
+  a real measured gap:** genuine RPG_RT never listed Nepheshel's item 26
+  (a dagger whose `actor_set` excludes actor 15) among that actor's weapon
+  candidates -- an actor-restricted item is dropped outright, not greyed
+  the way `Scene::ItemMenu` draws an unusable bag row -- but
+  `Game::Party#item_usable_by?` (`mruby-rpg2k/mrblib/game.rb`) reads that
+  flag as `set[idx] ? true : false`, and the database hands it an int8
+  array whose `0` is truthy in Ruby, so *no* actor_set restriction excludes
+  anything today; the one-line fix (`set[idx].to_i != 0`) was deliberately
+  NOT made here because game.rb belongs to another agent this round. Also
+  left open: RPG_RT inserted the two items displaced by an equip into the
+  bag *before* a larger-id neighbour rather than appending them (the grid
+  redrew as 30/27/29/28/61/66 after 61 came off), which suggests
+  `#gain_item` inserts in ascending position rather than appending -- a
+  `Game::Party` question for whoever owns the bag order, not this screen;
+  and Nepheshel ships no cursed equipment and no 装備固定 actor, so those
+  two Decision refusals stay uncited. Escape from the Equip screen returns
+  the field menu to its *command* list rather than its actor picker
+  (pressing Decision after backing out reopened the picker), which is
+  `Scene::Menu`'s business, not this file's. No EasyRPG source was
+  consulted.
   ✅ **Follow-up (cycle #143, 2026-08-25): picked up cycle #139's own
   leftover lead (b) on the short-synthetic-autostart-list crash mystery --
   "is Show Message (10110)/Show Choice specifically the missing ingredient,
