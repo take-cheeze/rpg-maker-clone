@@ -15,7 +15,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   #                     roster's initial members)
   #   mruby-numeric-ext Integer#zero?  (used across game.rb / main.rb)
   #   mruby-enum-ext    Enumerable#sort_by / each_with_object
+  #   mruby-range-ext   Range#cover?   (Game::Shop#equip?, the special-item
+  #                     type checks in game.rb / scene/item_menu.rb)
   add_dependency 'mruby-array-ext'
   add_dependency 'mruby-numeric-ext'
   add_dependency 'mruby-enum-ext'
+  add_dependency 'mruby-range-ext'
 end

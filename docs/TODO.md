@@ -2977,6 +2977,22 @@ The work below is roughly ordered by the critical path to a walkable game
   correctness on the native `:command` has_menu screen, and real RPG_RT's
   behaviour once a shop's goods list exceeds the list window's fixed
   minimum capacity).
+  ✅ **Follow-up (2026-09-06, found while re-verifying the rebuilt native
+  engine against RPG_RT.exe on this same map-16 shop NPC): the equipment
+  party band above crashed the *built* engine outright -- `NoMethodError:
+  undefined method 'cover?' for Range` from `Game::Shop#equip?` the moment
+  the highlighted good was equipment.** `Range#cover?` is not in bare
+  mruby's Range; it lives in the `mruby-range-ext` core gem, which nothing
+  declared, so every one of the five call sites (`Game::Shop#equip?`, the
+  `(1..5).cover?(it.type)` special-item checks in `game.rb` and
+  `scene/item_menu.rb`) raised in the native build while every CRuby
+  harness -- where Range has `cover?` -- stayed green, the exact gap
+  AGENTS.md's "mruby stdlib methods live in core `*-ext` mrbgems" rule
+  warns about. Fixed by declaring the gem in `build_config.rb`'s shared
+  list and in `mruby-rpg2k/mrbgem.rake`'s dependencies; the rebuilt engine
+  opens the weapon-shop Buy list with the party band drawn. No wine capture
+  was needed for the fix itself; the crash reproduces from `--rpg2k_continue`
+  on the map-16 save plus one Decision press facing the shop NPC.
   ✅ **Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open
   shop gap -- real RPG_RT's own behaviour once a shop's goods list exceeds
   the list window's fixed minimum capacity. It scrolls, one row at a time,
