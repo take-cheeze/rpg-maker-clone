@@ -40,7 +40,7 @@ TIMEOUT_MS="${RPG2K_TIMEOUT_MS:-20000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
-    GAMES=(data/Nepheshel206beta/Nepheshel206Rbeta data/mtf-meido-action/Debug)
+    GAMES=(data/Nepheshel206beta/Nepheshel206Rbeta data/kk1.12)
 fi
 
 if [ ! -x "${ENGINE}" ] ; then
@@ -88,7 +88,7 @@ for game in "${GAMES[@]}" ; do
 done
 
 # --rpg2k_battle: a bare boot only ever reaches the map -- the RPG2003 test
-# beds ship no encounters, so nothing drives the game into a fight on its own.
+# bed ships no encounters, so nothing drives the game into a fight on its own.
 # The flag opens a battle against a named troop once New Game's map is up, and
 # Scene::Battle#start logs the [RPG2k-BATTLE] marker when the fight's UI is
 # really on screen. This pass asserts that marker (and that the battle scene
@@ -96,7 +96,7 @@ done
 # sprites, actor sprites, the gauge-card status panel, per-frame gauge advance
 # -- end to end against real data (ADR 0053 Phase 3). Overridable so a
 # different project/troop can be driven instead.
-BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/mtf-meido-action/Debug}"
+BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/kk1.12}"
 BATTLE_TROOP="${RPG2K_BATTLE_TROOP:-14}"
 if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then
     checked=$((checked + 1))
@@ -123,7 +123,7 @@ if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then
     rm -f "${log}"
     num=$((num + 1))
 else
-    echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-mtf-meido-action.bash first)"
+    echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-killer-knights.bash first)"
 fi
 
 if [ "${checked}" -eq 0 ] ; then
