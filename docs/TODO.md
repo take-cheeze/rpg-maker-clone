@@ -16188,6 +16188,77 @@ The work below is roughly ordered by the critical path to a walkable game
   visible troop member by name, a first-strike encounter appends
   `special_combat` after those same per-enemy lines rather than replacing
   them, and a troop member flagged invisible gets no arrival line at all.
+  ✅ **Follow-up (cycle #247, 2026-09-06): the battle message flow measured
+  frame by frame on genuine RPG_RT.exe under wine -- the encounter banner's
+  pacing, the action log's, and the victory panel's -- and the encounter
+  banner's flow fixed to match.** No EasyRPG source was consulted; every
+  number here is a wall-clock-stamped capture of genuine RPG_RT. Recipe:
+  scratch copy of the Nepheshel game dir with `Save01_battle_map2.lsd`
+  (party on map 2 at (6,4) facing the monster event at (6,3), troop 1 = two
+  スライム vs the Lv50 デモ用), RPG_RT.exe on Xvfb 640x480x16 + matchbox,
+  `BOOT_WAIT=40`, title → Down → Return → then a **burst capture**: a shell
+  loop taking bare `xwd -root` frames as fast as they come (~60-65/s, i.e.
+  finer than RPG_RT's own 60fps) with `date +%s.%N` recorded per frame, so
+  every transition is bracketed to ±1 frame after the wine buffer-flip race
+  (about half the frames come back all black) is filtered out. Frames were
+  classified with numpy over `convert xwd:f0123.xwd rgb:-`: bright glyph
+  row-runs inside the panel give the line count, their column extent gives
+  how much of a line is drawn. **Measured (native, capture halved):** the
+  battle message panel is the same `x=0, y=160, 320x80` rect ours already
+  draws, text at x=8 on a 16px pitch, first line's ink at y 171..181.
+  *Encounter banner:* the panel opens **empty** ~17 frames before its first
+  line (the battle is still fading in), the first line appears, and each
+  further line lands 0.117s / 0.114s later in two independent runs (7.0 /
+  6.8 frames -> 8, jitter 5..9), **accumulating** in the one panel rather
+  than replacing. The command windows then take the screen 1.155s / 1.168s
+  after the *last* line (69.3 / 70.1 frames = exactly the 70 this codebase
+  already guessed) -- with nothing pressed, so it is a timer, not a
+  keypress wait. A third run hammering Decision every 200ms cut that hold to
+  0.598s (35.9 frames), not to the ~6-12 an ungated skip would give, so the
+  keypress is only taken after ~30 frames of it. **Fixed:** the banner now
+  reveals one line per `BATTLE_ENCOUNTER_MSG_LINE_FRAMES` (8, new) with
+  `BATTLE_ENCOUNTER_MSG_FRAMES` (70, now confirmed) held from the last line
+  rather than the first, and Decision ends the hold early once
+  `BATTLE_ENCOUNTER_MSG_SKIP_FRAMES` (30, new) have run -- so a two-line
+  banner is up ~78 frames, not 70, and input is no longer ignored. Three
+  new `scripts/rpg2k_scene_check.rb` checks pin it, all three confirmed to
+  fail against the pre-fix code (with literal frame counts, so the failure
+  is behavioural and not just the new constants: `expected [line], got
+  [line, line]`; `expected :encounter_message, got :battle_options` 77
+  frames in; and the pre-fix banner never skipping at all). *Victory panel:*
+  measured identical to ours and left alone -- same 320x80 rect, lines at
+  y=171/187/203, the blinking keypress arrow at x=155..165 y=233..237
+  pixel-for-pixel where ours draws it, the same three lines in the same
+  order and the database's own words (「戦いに勝った！」/「6の経験値を獲得！」/
+  「お金を 10Ｇ手に入れた！」 -- ours matches including the fullwidth Ｇ from
+  `term(:gold)`), and it waits for the player: it sat through a whole 25s
+  capture untouched, and **Cancel** (Escape) closes it just as Decision
+  does, which is what `#drive_battle_result` already accepted. A fourth
+  check pins that (it passes pre-fix -- a pin of confirmed-correct
+  behaviour, not a fix). **Deliberately left open, with the numbers to do
+  it:** (a) RPG_RT reveals the *result* panel progressively and types each
+  line out at ~1 character/frame (戦/戦いに/戦いに勝っ/戦いに勝った！ over ~6
+  frames); the line-to-line gaps of the one run that measured them were
+  inconsistent (~67 frames victory→EXP, ~26 EXP→gold) so no single number
+  is worth coding yet. (b) The **action log** paces the same way: one page
+  per acting battler, lines added ~25-31 frames apart, page cleared ~48
+  frames after its last line, then the next battler's page -- ours banners
+  a whole action at once for a flat `BATTLE_ANIM_FRAMES`; the timer that
+  would have to drive a reveal lives in `#drive_battle_animate`, outside
+  this fix's scope. (c) The empty panel that precedes the first encounter
+  line (~17 frames) belongs to the battle fade-in this engine has no
+  transition for. (d) The **defeat / game-over path** was not reached at
+  all: the shipped Lv50 leader one-shots the slimes and nothing short of
+  save surgery loses to them, so RPG_RT's defeat panel and its timing
+  remain unmeasured. (e) Not a battle bug, but visible in every comparison:
+  our glyph ink for a message line sits at y 168..180 where RPG_RT's sits at
+  171..181 -- our own *map* message window is offset identically (168 vs
+  171), so it is a `draw_text` font-ascent difference to fix once, globally,
+  not per window. **Confirmed unchanged/correct:** the status and command
+  windows are hidden behind the log in both engines (same rect), the log
+  lines' wording matches (「デモ用の攻撃！」/「スライムに 500のダメージを与えた！」/
+  「スライムを倒した！」, with 「命の一撃！！」 between attack and damage on a
+  critical), and the panel rect itself.
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`

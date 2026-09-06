@@ -7614,10 +7614,12 @@ end
 # frames -- used by the options-window checks below, which need to catch the
 # battle right when a phase first appears rather than run it through to a
 # later one the way #battle_attack_to_end does. `:battle_options` (every
-# call site's actual target) only opens once the encounter banner's own
-# BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so the default budget needs
-# enough room for that hold plus the frames battle-open itself takes.
-def battle_until_phase(scene, phase, max = 90)
+# call site's actual target) only opens once the encounter banner has
+# revealed every line (BATTLE_ENCOUNTER_MSG_LINE_FRAMES apart) *and* its
+# BATTLE_ENCOUNTER_MSG_FRAMES hold on the last of them has run out, so the
+# default budget needs enough room for both plus the frames battle-open
+# itself takes.
+def battle_until_phase(scene, phase, max = 120)
   ui = nil
   max.times do
     scene.update
@@ -7775,6 +7777,10 @@ check 'Enemy Encounter scene: opening a battle narrates each visible enemy with 
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'], window_texts(ui[:action_win]),
      'both troop members are named, once each, using the database term'
 end
@@ -7797,6 +7803,10 @@ check 'Enemy Encounter scene: a first-strike encounter appends the special_comba
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！', '先制攻撃！'],
      window_texts(ui[:action_win]),
      'special_combat trails the per-enemy lines rather than replacing them, ' \
@@ -7818,6 +7828,10 @@ check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
      'only the still-visible Slime is narrated'
   ok ui[:troop].members[1].hidden, 'and the troop model agrees the second member is hidden'
@@ -12783,9 +12797,13 @@ end
 # Open a battle and step to the per-actor command menu, dismissing the
 # once-per-battle automatic Battle/Auto Battle/Escape options window along
 # the way (a C press on its default cursor row 0, "Battle").
+# The budget covers the encounter banner in full: its lines land one per
+# BATTLE_ENCOUNTER_MSG_LINE_FRAMES (so a 6-member troop spends 40 frames just
+# revealing them) and only then does the BATTLE_ENCOUNTER_MSG_FRAMES hold on
+# the last line start -- both measured under wine, see those constants.
 def battle_to_command(scene)
   ui = nil
-  90.times do
+  200.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -28036,6 +28054,134 @@ check 'battle Skill/Item grids: Down off the last full row\'s second column ' \
   eq 8, ui[:skill_i], 'the next Down reaches the ninth skill in the partial row'
   press_key(scene, RGSS::Input::DOWN)
   eq 8, ui[:skill_i], 'and blocks there -- no wrap once the list cannot scroll'
+end
+
+# -- battle message flow (cycle #247, measured against genuine RPG_RT under wine)
+
+# Fixture for the encounter-banner checks below: a two-Slime troop opened by
+# an autostart Enemy Encounter, caught the frame its banner goes up.
+def encounter_banner_scene
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.encounter = 'があらわれた！'
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  [scene, battle_until_phase(scene, :encounter_message)]
+end
+
+# Measured against genuine RPG_RT.exe (Nepheshel 2.06R beta) under wine,
+# cycle #247: a stock two-スライム encounter, burst-captured at ~60 xwd
+# frames/s with a wall clock on every frame, from the save load onwards. The
+# bottom 320x80 panel opens *empty* while the battle fades in, then
+# 「スライムが出現！」 appears, then the second 「スライムが出現！」 lands
+# 0.117s / 0.114s later in two independent runs (7.0 / 6.8 frames at 60fps),
+# **under** the first rather than replacing it. This screen used to show
+# every line the instant the banner opened.
+check 'the encounter banner reveals its lines one per ' \
+      'BATTLE_ENCOUNTER_MSG_LINE_FRAMES, accumulating in the one panel' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
+     'the banner opens with its first line alone'
+
+  (bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES - 1).times { scene.update }
+  eq ['Slimeがあらわれた！'], window_texts(battle_ui(scene)[:action_win]),
+     'still only the first line one frame before the gap runs out'
+
+  scene.update
+  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'],
+     window_texts(battle_ui(scene)[:action_win]),
+     'the second line joins it in the same panel, in troop order'
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'and the banner is still what the screen is doing'
+end
+
+# Same captures: the command windows replaced the banner 1.155s / 1.168s
+# after the **second** line appeared (69.3 / 70.1 frames), i.e. the
+# BATTLE_ENCOUNTER_MSG_FRAMES hold runs from the last line, not from the
+# first -- a two-line banner is up for ~78 frames in total, not 70.
+check 'the encounter banner holds BATTLE_ENCOUNTER_MSG_FRAMES from its LAST ' \
+      'line before the command phase takes the screen' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES.times { scene.update } # the second line lands
+  eq 2, window_texts(battle_ui(scene)[:action_win]).size, 'both lines are up'
+
+  (bt::BATTLE_ENCOUNTER_MSG_FRAMES - 1).times { scene.update }
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'one frame short of the full hold, the banner is still up'
+
+  scene.update
+  ok battle_ui(scene)[:phase] != :encounter_message,
+     'the hold ends on its own -- a timer, not a keypress wait'
+  ok battle_ui(scene)[:action_win].nil?, 'and the banner is taken down with it'
+end
+
+# Same fight, third run: hammering Decision every 200ms (12 frames) through
+# the banner cut the hold to 0.598s (35.9 frames) instead of the ~6-12 frames
+# an ungated skip would have given, so RPG_RT only accepts the keypress once
+# BATTLE_ENCOUNTER_MSG_SKIP_FRAMES of the hold have already run. This screen
+# used to ignore input during the banner entirely.
+check 'Decision skips the encounter banner, but only after ' \
+      'BATTLE_ENCOUNTER_MSG_SKIP_FRAMES of its hold have run' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES.times { scene.update } # finish the reveal
+
+  (bt::BATTLE_ENCOUNTER_MSG_SKIP_FRAMES - 1).times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'a Decision inside the gate does not cut the banner short'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok battle_ui(scene)[:phase] != :encounter_message,
+     'once the gate is past, the very next Decision ends the hold early'
+end
+
+# Pins behaviour the same wine session confirmed correct rather than fixing
+# it (cycle #247): the won fight's result panel measured x=0, y=160, 320x80
+# -- border flush to the screen's left, right and bottom edges on the
+# doubled 640x480 capture -- with the blinking keypress arrow at logical
+# x=155..165, y=233..237, and it sat there for a whole 25s capture with
+# nothing pressed. A single Cancel (Escape) closed it back to the map, the
+# same as Decision does.
+check "the battle result panel is RPG_RT's fixed 320x80 bottom rect, waits " \
+      'for the player with a keypress arrow, and closes on Cancel' do
+  ic = Game::Interpreter::Cmd
+  bt = RPG2k::Scene::Battle
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  battle_attack_to_end(scene)
+  ui = battle_ui(scene)
+  eq :result, ui[:phase], 'the fight ran through to its result panel'
+  win = ui[:result_win]
+  ok win, 'the result panel is up'
+  eq 0, win.x, "flush against the screen's left edge"
+  eq bt::SCREEN_W, win.width, 'the fixed 320px width'
+  eq bt::BATTLE_PANEL_H, win.height, 'the fixed 80px height, not content-fit'
+  eq bt::BATTLE_PANEL_Y, win.y, 'flush against the bottom edge'
+  eq true, win.pause, 'with the blinking keypress arrow RPG_RT shows'
+
+  30.times { scene.update }
+  eq :result, battle_ui(scene)[:phase], 'it waits rather than timing out'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  ok battle_ui(scene).nil?, 'Cancel dismisses it and ends the fight'
 end
 
 # -- summary ------------------------------------------------------------------

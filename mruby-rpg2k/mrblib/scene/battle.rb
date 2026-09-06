@@ -305,51 +305,101 @@ class RPG2k
       # The encounter narration lines built above -- see #start's own
       # comment for the real-RPG_RT sourcing. Returns [] when there is
       # nothing to say (every troop member hidden, no first strike).
+      #
+      # Arms the banner's own per-line reveal on the way out (see
+      # #show_battle_banner): #start hands the whole list to
+      # #show_battle_banner in the very next statement, and genuine RPG_RT
+      # adds those lines to the panel **one at a time** rather than all at
+      # once (measured, see BATTLE_ENCOUNTER_MSG_LINE_FRAMES). This is the
+      # only caller that wants that, so the flag is set here rather than
+      # keyed off a phase #start has not assigned yet.
       def battle_encounter_lines(troop, req)
         lines = troop.members.reject(&:hidden).map do |enemy|
           "#{enemy.name}#{term(:encounter)}"
         end
         lines << term(:special_combat) if req[:first_strike]
+        @ui[:banner_reveal] = true unless lines.empty?
         lines
       end
 
-      # How long the encounter banner lingers before the command phase opens.
-      # A reference implementation paces this per-line with wordwrap and
-      # per-page wait timers -- 4 frames before the first line,
-      # 8 between lines that are not the page's last, and
-      # a 30-skippable/70-full-frame wait (repeated again for the first-strike
-      # line, when there is one) on whichever line ends a page -- and
-      # holds the full wait of each of those unless the player
-      # actively skips ahead. Ported from that reference implementation, not
-      # independently confirmed against genuine RPG_RT under wine. This
-      # screen has no per-page message window (see #battle_result_lines'
-      # own comment on the same simplification), so the whole banner -- every
-      # line at once -- holds for one flat beat instead. That beat used to
-      # match only that reference's minimum 4-frame gate, not its real
-      # per-line reading pause, which read as barely a flicker; 70 frames
-      # (~1.2s) matches that reference's default no-skip hold on a single
-      # encounter line instead -- long enough to actually
-      # read the banner before the command menu takes over the same screen
-      # rect, closer to (if still short of, for a troop with several enemies
-      # or a first strike, both of which stack more such holds that
-      # this one flat beat cannot represent) that reference's own pace.
+      # How long the encounter banner's **last** line lingers before the
+      # command phase opens.
+      #
+      # Measured against genuine RPG_RT.exe (Nepheshel) under wine, cycle
+      # #247: an encounter with two スライム was captured at ~60 samples/s
+      # (640x480 xwd frames stamped with a wall clock) from the moment the
+      # save loaded. The bottom panel opens empty during the battle's
+      # fade-in, the first line lands, the second follows ~8 frames later,
+      # and the command windows replace the panel 1.155s / 1.168s after the
+      # *second* line appeared in two independent runs -- 69.3 and 70.1
+      # frames at RPG_RT's 60fps, i.e. exactly this 70. The hold is a timer,
+      # not a keypress wait: nothing was pressed in either run and the
+      # banner still gave way on its own.
+      #
+      # It is skippable, but not immediately: a third run that hammered
+      # Decision every 200ms (12 frames) through the same banner cut the
+      # hold to 0.598s (35.9 frames) rather than to the ~6-12 frames an
+      # ungated skip would have produced, so RPG_RT only takes the keypress
+      # once about half the hold has already run -- BATTLE_ENCOUNTER_MSG_
+      # SKIP_FRAMES below.
       BATTLE_ENCOUNTER_MSG_FRAMES = 70
 
-      # Drive the encounter-message phase: hold the banner for
-      # `BATTLE_ENCOUNTER_MSG_FRAMES`, then drop it and fall into the same
-      # turn-0-battle-event / command-phase flow #start used to reach
-      # directly -- same settle-before-events ordering as #start's own empty-
-      # troop branch, and for the identical reason (see that comment).
+      # The gap between two encounter lines landing in the panel. Measured
+      # under wine (same runs as above): 0.117s and 0.114s between the two
+      # スライム lines, 7.0 and 6.8 frames, with the sampling jitter putting
+      # the true value in 5..9 -- 8 frames, and the lines accumulate in the
+      # one panel (the first line stays on screen while the second appears
+      # under it) rather than replacing each other.
+      BATTLE_ENCOUNTER_MSG_LINE_FRAMES = 8
+
+      # How much of `BATTLE_ENCOUNTER_MSG_FRAMES` has to have run before a
+      # keypress may end the hold early -- see that constant's own measured
+      # note (a 12-frame-period Decision spam ended it at ~36 frames, never
+      # earlier). Only Decision was measured; whether Cancel skips the
+      # banner too was not, so only Decision skips here.
+      BATTLE_ENCOUNTER_MSG_SKIP_FRAMES = 30
+
+      # Drive the encounter-message phase: reveal the banner's lines one per
+      # `BATTLE_ENCOUNTER_MSG_LINE_FRAMES`, hold the finished banner for
+      # `BATTLE_ENCOUNTER_MSG_FRAMES` (or until the player presses Decision,
+      # once `BATTLE_ENCOUNTER_MSG_SKIP_FRAMES` of it have run), then drop it
+      # and fall into the same turn-0-battle-event / command-phase flow
+      # #start used to reach directly -- same settle-before-events ordering
+      # as #start's own empty-troop branch, and for the identical reason (see
+      # that comment). `@ui[:anim_timer]` (the hold #start primes) is only
+      # touched once every line is up, so the hold really does start at the
+      # *last* line, which is what the wine capture measured.
       def drive_battle_encounter_message
+        return if reveal_battle_banner_line
         if @ui[:anim_timer] > 0
           @ui[:anim_timer] -= 1
-          return
+          held = BATTLE_ENCOUNTER_MSG_FRAMES - @ui[:anim_timer]
+          return if @ui[:anim_timer] > 0 &&
+                    !(held >= BATTLE_ENCOUNTER_MSG_SKIP_FRAMES &&
+                      Input.trigger?(Input::C))
         end
         close_battle_action
         @ui[:phase] = :command
         return if settle_already_finished_battle
         return if run_battle_events
         enter_command_phase
+      end
+
+      # One step of the encounter banner's per-line reveal: counts the gap
+      # down and, when it runs out, redraws the panel with one more of the
+      # lines #show_battle_banner held back. Returns whether the reveal is
+      # still running, so #drive_battle_encounter_message knows not to start
+      # the final hold yet.
+      def reveal_battle_banner_line
+        pending = @ui[:banner_pending]
+        return false unless pending && @ui[:banner_shown] < pending.size
+        @ui[:banner_timer] -= 1
+        return true if @ui[:banner_timer] > 0
+        @ui[:banner_shown] += 1
+        @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+        @ui[:action_win].dispose if @ui[:action_win]
+        @ui[:action_win] = battle_panel_window(pending[0, @ui[:banner_shown]], 340)
+        true
       end
 
       # An encounter can start already decided — an empty party (every member
@@ -2908,6 +2958,11 @@ class RPG2k
         @ui[:phase] = :result
       end
 
+      # The result panel waits for the player, on **either** Decision or
+      # Cancel -- confirmed against genuine RPG_RT.exe under wine (cycle
+      # #247): a won fight's panel sat on screen for a whole 25s capture
+      # with its keypress arrow blinking and nothing pressed, and a single
+      # Cancel (Escape) closed it back to the map just as Decision does.
       def drive_battle_result
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
         finish_battle(@ui[:result])
@@ -4155,6 +4210,20 @@ class RPG2k
       # defeated!") low on the screen while the round animates, so each action
       # reads on screen as well as its HP tick. Replaced by the next action's
       # banner and dropped when the round settles.
+      #
+      # Confirmed against genuine RPG_RT.exe (Nepheshel) under wine, cycle
+      # #247: RPG_RT really does banner an action in this same bottom
+      # 320x80 panel, over the status and command windows (neither shows
+      # while the log is up), one page per acting battler -- 「デモ用の攻撃！」
+      # then 「スライムに 500のダメージを与えた！」 then 「スライムを倒した！」
+      # accumulating in the one window, cleared before the next battler's
+      # own page opens. Left deliberately open (measured, not implemented):
+      # RPG_RT adds those lines one at a time -- ~25-31 frames apart in the
+      # captures, with the page clearing ~48 frames after its last line --
+      # where this banners the whole action at once for a flat
+      # BATTLE_ANIM_FRAMES. The pacing lives in #drive_battle_animate's own
+      # timer, not here, so a per-line reveal like the encounter banner's
+      # needs that method to tick it.
       def show_battle_action(entry)
         show_battle_banner(battle_action_lines(entry))
       end
@@ -4163,7 +4232,25 @@ class RPG2k
       # and a failed Escape attempt: both are transient status text over the
       # still-running fight, replaced by whatever banners next and dropped when
       # the round settles.
+      #
+      # The encounter banner (and only that one -- #battle_encounter_lines
+      # arms it, nothing else does) instead starts with just its first line
+      # and grows a line at a time, which is what genuine RPG_RT does with
+      # this panel: measured under wine, the two スライム lines of a stock
+      # encounter land ~8 frames apart and accumulate in the one window (see
+      # BATTLE_ENCOUNTER_MSG_LINE_FRAMES). #drive_battle_encounter_message
+      # owns the reveal from here; the log/escape banners have no per-frame
+      # driver of their own and keep showing every line at once.
       def show_battle_banner(lines)
+        lines = lines.to_a
+        if @ui.delete(:banner_reveal)
+          @ui[:banner_pending] = lines
+          @ui[:banner_shown] = 1
+          @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+          lines = lines[0, 1]
+        else
+          @ui[:banner_pending] = nil
+        end
         @ui[:action_win].dispose if @ui[:action_win]
         @ui[:action_win] = battle_panel_window(lines, 340)
       end
@@ -4290,12 +4377,38 @@ class RPG2k
         Game::States.name(id, table) || "state #{id}"
       end
 
+      # Drop the banner, and with it any half-finished per-line reveal (see
+      # #show_battle_banner) -- the encounter banner is closed exactly here,
+      # and a stale pending list must not outlive the window it belonged to.
       def close_battle_action
+        @ui[:banner_pending] = nil
         return unless @ui[:action_win]
         @ui[:action_win].dispose
         @ui[:action_win] = nil
       end
 
+      # The victory / defeat / escape panel. Confirmed against genuine
+      # RPG_RT.exe (Nepheshel) under wine, cycle #247, by fighting a stock
+      # two-スライム encounter through to a win: the panel is the same
+      # bottom 320x80 rect as the action banner (window border flush to the
+      # screen's left, right and bottom edges, top edge at physical y=320 ==
+      # logical 160 on the doubled 640x480 capture), its lines sit at
+      # logical y=171/187/203 (16px pitch) starting at logical x=8, and it
+      # carries the blinking keypress arrow at logical x=155..165,
+      # y=233..237 -- pixel-for-pixel where this codebase already draws it.
+      # The lines themselves matched too, in the database's own words:
+      # 「戦いに勝った！」/「6の経験値を獲得！」/「お金を 10Ｇ手に入れた！」,
+      # the same order and composition #battle_result_lines builds.
+      #
+      # Left deliberately open (measured, not implemented): RPG_RT reveals
+      # this panel progressively -- one line at a time, each typed out at
+      # roughly a character per frame (the victory line went 戦/戦いに/
+      # 戦いに勝っ/戦いに勝った！ over ~6 frames) -- where this opens the
+      # finished panel at once. The line-to-line gaps of the one run that
+      # measured them were inconsistent (~67 frames from the victory line to
+      # the EXP line, ~26 from EXP to gold), so no single number is worth
+      # coding yet; the wait that follows is the same keypress wait either
+      # way.
       def open_battle_result(lines)
         @ui[:result_win] = battle_panel_window(lines, 320)
         # The result panel is a player-input wait the same shape as a map
@@ -4313,7 +4426,17 @@ class RPG2k
       # see #battle_text_window's own citation for the capture; that method
       # draws the identical BATTLE_PANEL_Y/BATTLE_PANEL_H/SCREEN_W rect this
       # one does, just for the battle-event message window rather than the
-      # action banner/result panel.
+      # action banner/result panel. Re-confirmed for this method's own two
+      # users in cycle #247, on a real encounter rather than a synthetic
+      # battle-event page: both the encounter banner and the victory panel
+      # measured x=0, y=160, 320x80 exactly (physical 0..639 / 320..479 on
+      # the doubled capture), with their text starting at logical x=8 on a
+      # 16px line pitch -- `BATTLE_LINE_H`. The one residual difference is
+      # not this rect: RPG_RT's glyph ink for a line sits at logical
+      # y=171..181 where ours sits at 168..180, a 3px ascent offset our own
+      # *map* message window shows identically (168 there too, against
+      # RPG_RT's 171), i.e. a font-metric difference in draw_text, not
+      # something for this panel to compensate for on its own.
       def battle_panel_window(lines, z)
         inner_w = SCREEN_W - Window::BORDER * 2
         win = Window.new(0, BATTLE_PANEL_Y, SCREEN_W, BATTLE_PANEL_H)
