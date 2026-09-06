@@ -51,6 +51,20 @@ makers — LCF's own Ruby, the RGSS stock scripts, and MV/MZ's `js_write_file`
 bridge all still just call `fopen`/`fwrite` exactly as before; the hook lives
 entirely in the browser shell.
 
+**`-sFS_DEBUG=1` is required, and easy to miss.** Every
+`FS.trackingDelegate[...]` call site in Emscripten's own `library_fs.js` is
+compiled out of `FS.open`/`close`/`write`/etc. entirely unless the `FS_DEBUG`
+setting is on (its own doc comment: "Register file system callbacks using
+trackingDelegate in library_fs.js") — assigning
+`Module.FS.trackingDelegate.onCloseFile = ...` from `src/shell.html` still
+succeeds either way, but without this flag the shipped runtime never reads it
+back, so the hook silently never fires and nothing is ever mirrored. This was
+caught only by testing the actual deployed Cloudflare preview by hand (saves
+did not survive a reload); nothing in this repo's own CI build/link step
+would have caught it, since `-sFS_DEBUG` does not affect whether the page
+compiles or links. Despite the name, this is not a debug-only flag here — the
+only other thing it gates is one unrelated lazy-file-load log line.
+
 Before a project starts (`mountAndStart`/`startBundledSample` in
 `src/shell.html`, right after the fresh assets are written and before
 `rpg_start_game()`), whatever is under `/persist/<slug>/` is copied back onto
@@ -85,6 +99,15 @@ of the title screen's Continue check.
   *Clear cached archives* control for the separate zip cache); doing so is
   additive, scoped-out follow-up work rather than something this change
   needed.
+- **No automated check exercises the actual browser runtime behavior.** CI's
+  `wasm` job proves the page builds and links (which would not have caught
+  the missing `FS_DEBUG` setting above — that is a purely runtime gap, not a
+  build error); nothing here drives a real page in a browser and confirms a
+  save round-trips through a reload the way the manual Cloudflare-preview
+  check that found the `FS_DEBUG` gap did. A headless-browser smoke test
+  (Playwright driving the deployed/preview page, or a served local build)
+  covering "write a save, reload, save is still there" is a natural
+  follow-up so a regression here is caught by CI rather than by hand again.
 - This is the local-persistence half of syncing save data to a remote
   service (e.g. Google Drive, mirroring what a Chrome extension's
   `chrome.storage`/`chrome.identity` could do): a cloud sync layer needs
