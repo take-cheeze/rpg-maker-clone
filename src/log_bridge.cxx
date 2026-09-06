@@ -13,14 +13,19 @@ namespace {
 // moment ago by RGSS::ErrorReport's Tee (mruby-rgss/mrblib/error_report.rb),
 // which is the bridge's only caller -- see include/terminal.hxx's "Stderr log
 // bridge" section. Logging it again at nglog::NGLOG_WARNING would print the
-// same text a second time on any build where ng-log's own stderr echo is
-// enabled at that severity (e.g. the Emscripten build raises
-// --stderrthreshold to WARNING in main.cxx so native, non-bridged warnings
-// still reach the page). Raising the threshold above WARNING for the
-// duration of this one message keeps it going to the log file and the
-// on-screen console sink (src/log_console.cxx) exactly as before, just
-// without the redundant stderr copy. `FLAGS_stderrthreshold` is guarded by
-// nglog's own internal log_mutex only while a message is actually being
+// same text a second time wherever ng-log would otherwise also copy it to
+// stderr itself: not just --stderrthreshold at or below WARNING (e.g. the
+// Emscripten build raises it in main.cxx so native, non-bridged warnings
+// still reach the page), but also --logtostderr/--alsologtostderr, which
+// bypass the threshold entirely and are not just command-line flags -- ng-log
+// reads them (as GLOG_logtostderr / GLOG_alsologtostderr, its old name from
+// before the ng-log rename) from the environment, and flake.nix's dev shell
+// sets exactly that for its own purpose (CTest output on stderr), enabling it
+// for every build run from that shell too. Forcing all three flags to their
+// quietest setting for the duration of this one message keeps it going to
+// the log file and the on-screen console sink (src/log_console.cxx) exactly
+// as before, just without the redundant stderr copy. The flags are guarded
+// by nglog's own internal log_mutex only while a message is actually being
 // written, not while merely being read or assigned here, so a message from
 // another thread landing in that narrow window can miss its own stderr copy
 // (still reaches the file/console); a cosmetic, rare race, not a correctness
@@ -29,10 +34,16 @@ void log_at_warning_without_stderr_echo(const char* file,
                                         int line,
                                         const char* msg,
                                         size_t len) {
+  const bool saved_logtostderr = FLAGS_logtostderr;
+  const bool saved_alsologtostderr = FLAGS_alsologtostderr;
   const nglog::int32 saved_stderr_threshold = FLAGS_stderrthreshold;
+  FLAGS_logtostderr = false;
+  FLAGS_alsologtostderr = false;
   FLAGS_stderrthreshold = nglog::NGLOG_FATAL;
   nglog::LogMessage(file, line, nglog::NGLOG_WARNING).stream()
       << std::string_view(msg, len);
+  FLAGS_logtostderr = saved_logtostderr;
+  FLAGS_alsologtostderr = saved_alsologtostderr;
   FLAGS_stderrthreshold = saved_stderr_threshold;
 }
 
