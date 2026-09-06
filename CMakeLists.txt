@@ -676,13 +676,13 @@ if(EMSCRIPTEN)
     "-lidbfs.js"
     # src/shell.html mirrors saves into IDBFS by hooking
     # FS.trackingDelegate.onCloseFile. Emscripten compiles every
-    # `FS.trackingDelegate[...]` call *out* of FS.open/close/write/etc.
-    # entirely unless FS_DEBUG is on (src/settings.js: "Register file system
-    # callbacks using trackingDelegate in library_fs.js") -- without this,
+    # `FS.trackingDelegate[...]` call *out* of FS.open/close/write/etc. entirely
+    # unless FS_DEBUG is on (src/settings.js: "Register file system callbacks
+    # using trackingDelegate in library_fs.js") -- without this,
     # `Module.FS.trackingDelegate = {...}` sets a value the shipped runtime
     # never reads, and the hook silently never fires. The name suggests a
-    # debug-only flag; it is not one here, and the only other thing it gates
-    # is one unrelated lazy-file-loading log line.
+    # debug-only flag; it is not one here, and the only other thing it gates is
+    # one unrelated lazy-file-loading log line.
     "-sFS_DEBUG=1"
     # Custom page (src/shell.html): a canvas with an on-screen keypad plus a
     # loader that fetches/opens a zip or GitHub-hosted RPG2k project and mounts
