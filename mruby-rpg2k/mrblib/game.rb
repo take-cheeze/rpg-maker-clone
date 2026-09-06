@@ -4749,6 +4749,44 @@ module Game
     # actor id the array is too short to reach defaults to allowed, the same
     # "missing entry reads as the field's default" rule this runtime's other
     # bit-array fields already follow.
+    # One entry of an `actor_set` / `class_set` permission array, as a real
+    # boolean. A genuine database stores these as **int8 flags**, where `0`
+    # means "not permitted" -- and `0` is truthy in Ruby and mruby alike, so
+    # the bare `set[i] ? true : false` this used to do read every restricted
+    # row as permitted, exactly inverting the restriction. Confirmed against
+    # genuine RPG_RT.exe under wine (cycle #250) and against the shipped data:
+    # Nepheshel's item 26 (ダガー) carries `actor_set[14] == 0` for actor 15 and
+    # never appears in RPG_RT's own equip list for that actor, while this
+    # engine offered it.
+    #
+    # Accepts a boolean too, because the host harnesses' fixtures write these
+    # arrays as `true`/`false` rather than the schema's own int8s; both readings
+    # agree on every value either source produces.
+    def self.usable_flag?(v)
+      return false if v.nil? || v == false
+      v != 0
+    end
+
+    # Whether a permission array carries a real restriction at all. An array of
+    # nothing but zeros is the editor's *untouched* state, not "no actor may use
+    # this": mtf-meido-action's item 5 (Stimulant) ships `actor_set` all-zero and
+    # is a working revive item in that game -- `rpg2k_testbed_logic_check.rb`
+    # has asserted it heals a fallen member since long before this reading was
+    # examined. Nepheshel's item 26 (ダガー), by contrast, carries a *mixed*
+    # array whose zero for actor 15 genuine RPG_RT.exe really does honour (it
+    # never offers that weapon to that actor -- measured under wine, cycle
+    # #250). So a set is consulted only when something in it is set.
+    #
+    # An alternative reading fits both observations equally well -- that the
+    # per-actor list binds equipment only and medicines ignore it entirely --
+    # and is NOT ruled out here: no capture was taken of a *medicine* with a
+    # mixed actor_set, which is the one case that would separate the two. Left
+    # deliberately as the narrower rule, which cannot wrongly refuse a shipped
+    # item either way.
+    def self.permission_set_active?(set)
+      set.respond_to?(:any?) && set.any? { |v| usable_flag?(v) }
+    end
+
     def item_usable_by?(it, actor_id)
       return item_usable_by_class?(it, actor_id) if equip_by_class?
       return true unless it.respond_to?(:actor_set) && it.actor_set
@@ -4756,7 +4794,17 @@ module Game
       set = it.actor_set
       idx = actor_id - 1
       return true if idx < 0 || set.size <= idx
-      set[idx] ? true : false
+      return true unless Party.permission_set_active?(set)
+      # The database stores this as an int8 flag per actor, and **0 means "this
+      # actor may not use it"** -- but `0` is truthy in Ruby (and in mruby), so
+      # a bare `set[idx] ? ...` read every restricted row as *allowed*, exactly
+      # inverting the restriction. Confirmed against genuine RPG_RT.exe under
+      # wine (cycle #250's Equip screen capture) and against the real database:
+      # Nepheshel's item 26 (ダガー) carries actor_set[14] == 0 for actor 15 and
+      # never appears in RPG_RT's own equip list for that actor, while this
+      # engine offered it. Compared against 0 explicitly so the flag's own value
+      # decides, not Ruby's notion of truthiness.
+      Party.usable_flag?(set[idx])
     end
 
     # Whether this database is RPG2003 and configured for its "使用可能キャラ
@@ -4795,7 +4843,13 @@ module Game
       class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
       set = it.class_set
       return true if set.size <= class_id
-      set[class_id] ? true : false
+      return true unless Party.permission_set_active?(set)
+      # Same int8-zero-is-truthy trap as #item_usable_by? above -- see its own
+      # citation. Not separately captured (no RPG2003 test bed with a genuine
+      # RPG_RT.exe reaches this by-class path), but it reads the identically
+      # shaped flag array from the identical schema type, so the same explicit
+      # comparison applies.
+      Party.usable_flag?(set[class_id])
     end
 
     # Whether using item `id` on `actor` would change anything, so the menu can

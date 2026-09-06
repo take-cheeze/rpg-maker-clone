@@ -11838,6 +11838,36 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+  ✅ **Follow-up (cycle #253, 2026-09-06): an item's per-actor "usable
+  characters" restriction was inverted by Ruby truthiness, and is fixed.**
+  Routed over from cycle #250's Equip-screen capture, which noticed genuine
+  RPG_RT.exe never offers Nepheshel's item 26 (ダガー) to actor 15 while this
+  engine did. Root cause found in the data, not by inference:
+  `Game::Party#item_usable_by?` ended in `set[idx] ? true : false`, and the
+  database stores `actor_set` as **int8 flags** where `0` means "not
+  permitted" -- but `0` is truthy in Ruby *and* in mruby, so every restricted
+  entry read as permitted, exactly inverting the field. Confirmed by loading
+  the shipped table: item 26 carries `actor_set[14] == 0` for actor 15.
+  `#item_usable_by_class?` (the RPG2003 by-class path) carried the identical
+  bug and is fixed the same way. **A fixture check could never have caught
+  this** -- the harnesses' own fixtures write these arrays as `true`/`false`,
+  where truthiness happens to be right; only the shipped int8s expose it, so
+  the new assertion lives in `scripts/rpg2k_testbed_logic_check.rb` and runs
+  against the real tables (299 genuinely-refused entries in Nepheshel, 26 in
+  the RPG2003 test bed), confirmed to fail against the pre-fix code.
+  **A second finding kept the fix honest**: mtf-meido-action's item 5
+  (Stimulant, a shipped *revive* medicine) carries an `actor_set` of
+  **all zeros**, and a literal reading would make it unusable by anybody --
+  which an existing, long-standing real-data check (it heals a fallen member)
+  immediately contradicted. So an all-zero array is the editor's *untouched*
+  state rather than a ban on every actor, and a set is consulted only when
+  something in it is actually set (`Game::Party.permission_set_active?`).
+  **Deliberately left open**: an alternative reading fits both observations
+  equally well -- that the per-actor list binds equipment only and medicines
+  ignore it entirely -- and is not ruled out, because no capture was taken of
+  a *medicine* carrying a mixed actor_set, the one case that separates them.
+  The narrower rule implemented here cannot wrongly refuse a shipped item
+  under either reading. No EasyRPG source was consulted.
   ✅ **Follow-up (cycle #252, 2026-09-06): the bag's own *order* settled by
   wine, and three fixture checks that had encoded the wrong reading
   corrected.** `#field_items`, `#battle_items` and `Game::State#to_lsd` all
