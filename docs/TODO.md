@@ -12404,6 +12404,107 @@ The work below is roughly ordered by the critical path to a walkable game
   a perfectly ordinary battle-list entry; a sibling skill curing only a
   persisting state is offered in both), confirmed to fail against the
   pre-fix code (`expected [[13, 2]], got [[12, 2], [13, 2]]`).
+  ✅ **Follow-up (cycle #243, 2026-09-06): the field Item screen re-measured
+  end to end on genuine RPG_RT.exe under wine with a populated bag -- list
+  box geometry, column cells, count format, cursor rules (all four
+  directions, including the long-open partial-row case), scrolling with its
+  arrows, the actor-target panel and the weapon/Cancel behaviour -- and the
+  four geometry gaps found fixed.** No EasyRPG source was consulted; every
+  number below is a pixel measurement of a capture. Recipe: scratch copy of
+  the Nepheshel game dir, its `Save01.lsd` (already at map 16 (14,11)) given
+  a bag through the LCF writer (`LCF::SaveData` under CRuby, chunk 109
+  `item_count`/`item_ids`/`item_counts`/`item_usage` = 8 items: 薬草×5 傷薬×3
+  癒油×2 常世の雫×1 魔法石の欠片×12 アンチドーテ×99 ダガー×1 ロングソード×1, and a
+  second copy with 27 items = ids 1..25 + 27 + 43 for the scroll probe;
+  both verified with `scripts/lcf_save_check.rb`), RPG_RT.exe on Xvfb
+  640x480x16 + matchbox, title → Down Return Return → Escape → Return, a
+  root capture after every key, measured with numpy over `convert ... rgb:-`
+  (cursor = green frame bbox, text = bright glyph runs, frames = the skin's
+  purple/white lines); capture coordinates halved to native. Two harness
+  findings worth knowing: (a) RPG_RT under wine froze twice (input dead,
+  window unmapped, process alive) after the game had sat idle in a menu for
+  ~40-60 s between key batches, and later instances would not even map a
+  window while a frozen one lingered in the shared prefix -- run every key
+  sequence back-to-back straight after Continue and one RPG_RT per prefix;
+  (b) `refs/stash` is shared between git worktrees, so `git stash` for the
+  pre-fix check swapped work with a sibling agent -- use `git diff > patch;
+  git checkout -- file; run; git apply patch` instead. **Measured
+  (native):** the description banner is `(0, 0, 320, 32)`; the list box is
+  `(0, 32, 320, 208)` -- its bottom frame edge sits at y 235..239 with only
+  four rows filled, i.e. it *fills the screen* below the banner and is not
+  content-sized (ours was `h = rows * 16 + 16`). Column 0's cursor spans
+  x 4..155 and column 1's x 164..315 (152px each = a 144px cell plus the
+  4px overhang per side `Game::WindowCursor` models), rows 16px apart (y
+  40..55, 56..71, ...); column 1's names start at content x 160 -- so the
+  grid is two **144px cells pitched 160px apart with a 16px gutter**, not
+  the edge-to-edge 152/152 split ours drew. The count is drawn as `:` in
+  the halfwidth cell at content x 120 of the 144px cell (glyph pixels at
+  123..125) followed by a blank cell and a right-aligned two-digit figure
+  whose last digit ends at x 143 for "5", "12" and "99" alike ("12" starts
+  at 132) -- ours drew `":#{count}"` flush right in a 40px cell (colon at
+  ~114, no fixed digit column). Banner text starts at content x 0, glyph
+  rows 3..12 of the line -- the same vertical placement as the list rows;
+  our font is a pixel taller, bottom-aligned within a pixel, left as is.
+  **Cursor rules (8 items, 4 full rows, a capture per key):** RIGHT from
+  row 0's last cell → row 1's first cell; LEFT from there → back to row 0's
+  last cell; DOWN 0→2→4→6 then DOWN on the last row stays; UP 6→4→2→0 then
+  UP on the top row stays (no wrap either way). **27 items (14 rows):** the
+  box shows 12 rows; DOWNs 1-11 walk the cursor to the bottom visual row
+  (y 216..231), DOWNs 12 and 13 keep it there while the list scrolls one
+  row each; from the last item (row 13, col 0) RIGHT and DOWN do nothing,
+  LEFT goes to row 12's second cell (y 200..215 = visual row 10 with two
+  rows scrolled off), and **DOWN from there -- a partial last row with no
+  cell below -- is a no-op, not a jump to row 13's only item** (the case
+  this section's grid bullet left as "not independently confirmed"). Scroll
+  arrows: the down arrow's white glyph at x 155..164, y 233..236 (the
+  windowskin's 16x8 cell at (152, 232) = `SCREEN_H - 8`, on the box's
+  bottom frame edge) in every capture with rows hidden below and never with
+  the 8-item bag; the up arrow at x 155..164, y 34..37 (cell at (152, 32),
+  on the top edge) only once scrolled; each missing from about half the
+  captures taken in the same state (blinking; the period itself is not
+  re-timed here -- the pause arrow's 20/20 is reused). **Target panel**
+  (Return on 癒油 at index 2): the right-anchored `(136, 0, 184, 240)` panel
+  cycles #132-#138 measured holds (cursor x 196..311 / y 8..55 on row 0);
+  name at content x 56, level and HP on line 2, condition and MP on line 3
+  as coded -- but the level's digits start at content x 68 and the HP
+  figure at x 126, i.e. straight after two halfwidth label cells
+  ("LV50", "HP600/600"), where ours put a blank after each label ("Lv 50",
+  "HP 600/600"). The narrowed banner shows the item name (癒油) and the
+  possessed box "所持数 … 2" with the count right-aligned at content x 120
+  -- both already as coded. **Behaviour:** Escape from the target panel
+  returns to the list with the cursor still on index 2 (row 1); Return on
+  ダガー (a weapon) opens nothing and moves nothing (buzzer only, as coded);
+  Escape from the list returns to the field menu's command list (cursor on
+  アイテム), and Escape again to the map. **Fixed** in
+  `mruby-rpg2k/mrblib/scene/item_menu.rb`: `LIST_H`/`VISIBLE_ROWS` (the box
+  is always 208px tall, 12 rows of content), `COLUMN_GAP = 16` with
+  `#item_col_w == 144` / `#item_col_x` (cursor rect and text columns both),
+  `COUNT_W/COUNT_SEP_W/COUNT_NUM_W` (the colon at cell x 120, the figure
+  right-aligned in the 12px cell ending at 144), row-at-a-time scrolling
+  (`@item_top`, `#scroll_item_list_to_cursor`, redrawing only the visible
+  rows; the cursor used to run straight off the bottom of the box past row
+  12), the two blinking arrow sprites (`#build_arrow_sprites` /
+  `#refresh_arrows`, mirroring `Scene::SaveLoad`'s, hidden while the
+  target/teleport screens replace the list), and the target panel's
+  `"Lv#{level}"` / `"HP"` / `"MP"` labels with no blank. The `COLUMN_MAX`
+  comment and the RIGHT/LEFT branch comments now state what was confirmed
+  instead of "ported, not independently confirmed". Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (box rect and cell/count geometry
+  with cursor cells; the 27-item scroll walk including the partial-row
+  no-op and both arrows' visibility rule plus the 20-frame blink; arrows
+  hidden in target mode and back on Cancel) and the per-class label strings
+  in the existing three-line target-panel check -- all four fail against
+  the pre-fix scene (`expected 208, got 32`, `undefined method 'y' for nil`
+  (no arrow sprites), `draws "Lv5"`), and the full scene (971), logic (1189)
+  and render (41) suites are green with the fix. **Left open:** the text's
+  1px vertical placement (font-dependent; ours bottom-aligns within a
+  pixel); the arrows' blink period on this screen (reused, not re-timed);
+  `Scene::SkillMenu`'s sibling target panel and teleport grid, which share
+  this code shape but were not re-measured (their labels keep the blank);
+  what the list does on Return in the target panel with a *usable* item
+  (the leader was at full HP, so only the no-effect buzzer path was
+  reachable); and the possessed-count box's exact text x beyond "right-
+  aligned at 120".
   ✅ **Checked against a reference implementation's source instead, once the
   wine
   reference runtime itself stopped rendering past Continue this session

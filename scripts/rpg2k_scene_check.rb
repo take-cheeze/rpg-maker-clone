@@ -21813,13 +21813,15 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
     name_y = row_y.call(a.name)
     # Scene::SkillMenu draws the level term and the level, and each HP/MP
     # term, figure, "/" and max, as separate runs (the "LV 5" / " 56/ 60"
-    # fixed-cell shape measured under wine, cycle #241); Scene::ItemMenu
-    # still draws "Lv 5" and the flowing "HP " / "80" / "/120" runs of
-    # Scene::Base#draw_stat_segment.
+    # fixed-cell shape measured under wine, cycle #241); Scene::ItemMenu's
+    # panel butts each figure straight against its label ("Lv5", "HP" +
+    # "80" + "/120" -- measured under wine, cycle #243: "LV50" / "HP600/600",
+    # the digits starting 12px after each label's column) through the
+    # flowing runs of Scene::Base#draw_stat_segment.
     skill = klass == RPG2k::Scene::SkillMenu
-    lv_text = skill ? 'Lv' : 'Lv 5'
-    hp_label = skill ? 'HP' : 'HP '
-    mp_label = skill ? 'MP' : 'MP '
+    lv_text = skill ? 'Lv' : 'Lv5'
+    hp_label = 'HP'
+    mp_label = 'MP'
     hp_max = skill ? '120' : '/120'
     mp_max = skill ? '30' : '/30'
     lv_y = row_y.call(lv_text)
@@ -21840,7 +21842,7 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
     # The value column (HP/MP) starts partway across the row, not flush
     # against the label column (level/condition) -- see TARGET_VALUE_X.
     eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call(hp_label),
-       "#{klass}: HP starts at the value column, not right after \"Lv 5\""
+       "#{klass}: HP starts at the value column, not right after \"#{lv_text}\""
     eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call(mp_label),
        "#{klass}: MP starts at the value column, not right after the condition"
   end
@@ -22038,6 +22040,176 @@ check 'Scene::ItemMenu: holding Right auto-repeats the item grid cursor, and ' \
   RGSS::Input.reset
   eq 1, scene.instance_variable_get(:@target_index),
      'a held (repeated, not triggered) Down still moves the target cursor one step'
+end
+
+# A 27-item bag (14 grid rows, the last one half full): enough to outgrow
+# Scene::ItemMenu::VISIBLE_ROWS (12) and scroll, and to press DOWN from the
+# second-to-last row's second cell, whose cell below does not exist. Item 5
+# carries a two-digit count for the count-column check.
+class ManyItemWrapParty < WrapMenuParty
+  def field_items(_state = nil); (1..27).map { |i| [i, i == 5 ? 12 : 1] }; end
+end
+
+def many_item_wrap_state
+  Game::State.new(ManyItemWrapParty.new, 1, 0, 0)
+end
+
+def item_list_calls(scene)
+  c = scene.instance_variable_get(:@item_window).contents
+  (c.draw_calls || []) + (c.blend_calls || [])
+end
+
+# [x, y, w, align] of the real (non-shadow) run of `text` in the item list --
+# Scene::Base#draw_system_text records the shadow pass first, one pixel down
+# and right of the glyph itself, so the leftmost run is the real one. A
+# skinless fallback records through Bitmap#draw_text (align at index 5), a
+# skinned one through #blend_text (align at index 10).
+def item_list_run(scene, text)
+  runs = item_list_calls(scene).select { |c| c[4].to_s == text }
+  return nil if runs.empty?
+  run = runs.min_by { |c| c[0] }
+  [run[0], run[1], run[2], run.size > 6 ? run[10] : run[5]]
+end
+
+def item_cursor(scene)
+  r = scene.instance_variable_get(:@item_window).cursor_rect
+  [r.x, r.y, r.width, r.height]
+end
+
+def press_item(scene, key)
+  RGSS::Input.triggered = [key]
+  scene.update
+  RGSS::Input.reset
+end
+
+check 'Scene::ItemMenu: the list box fills the screen below the banner, its two ' \
+      'columns are 144px cells pitched 160px apart, and the count is ":" plus a ' \
+      'right-aligned figure at the cell\'s right edge' do
+  # Measured on genuine RPG_RT.exe under wine (cycle #243, eight-item bag):
+  # the list box's bottom frame edge sits at native y 235..239 with only
+  # four rows filled (the box is not content-sized); the column-0 cursor
+  # spans native x 4..155 and the column-1 cursor 164..315 (152px each
+  # including Game::WindowCursor's 4px overhang per side -> 144px cells at
+  # content x 0 and 160); column 1's names start at content x 160; the
+  # count's ":" glyph sits in the halfwidth cell at content x 120 of its
+  # 144px cell and every figure's last digit ends at x 143 ("5", "12", "99"
+  # alike). See Scene::ItemMenu::COLUMN_GAP / LIST_H / COUNT_W.
+  scene = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state)
+  win = scene.instance_variable_get(:@item_window)
+  eq 0, win.x, 'list box is flush left'
+  eq RPG2k::Scene::ItemMenu::DESC_H, win.y, 'list box starts right under the banner'
+  eq RPG2k::Scene::ItemMenu::SCREEN_W, win.width, 'list box is full width'
+  eq RPG2k::Scene::ItemMenu::SCREEN_H - RPG2k::Scene::ItemMenu::DESC_H, win.height,
+     'list box runs to the bottom of the screen with only one row of items'
+  eq 12, RPG2k::Scene::ItemMenu::VISIBLE_ROWS, '12 grid rows fit in the 192px content area'
+  eq 144, scene.send(:item_col_w), 'a grid cell is 144px wide'
+  eq 160, scene.send(:item_col_x, 1), 'column 1 starts 160px in (a 16px gutter)'
+  eq [0, 2], item_list_run(scene, 'Item1')[0, 2], 'column 0 name at content x 0'
+  eq [160, 2], item_list_run(scene, 'Item2')[0, 2], 'column 1 name at content x 160'
+  sep = item_list_calls(scene).select { |c| c[4].to_s == ':' }.map { |c| c[0] }.sort
+  ok sep.include?(120) && sep.include?(280),
+     "\":\" separators sit at content x 120 and 280 (cell x + 144 - 24), got #{sep.inspect}"
+  x, _y, w, align = item_list_run(scene, '3')
+  eq 132, x, 'the count figure\'s cell starts 12px before the cell\'s right edge'
+  eq 12, w, 'the count figure\'s cell is two halfwidth digits wide'
+  eq 2, align, 'the count figure is right-aligned, so its last digit ends at x 143'
+  eq [0, 0, 144, 16], item_cursor(scene), 'the cursor covers column 0\'s 144px cell'
+  press_item(scene, RGSS::Input::RIGHT)
+  eq [160, 0, 144, 16], item_cursor(scene), 'the cursor covers column 1\'s cell at x 160'
+end
+
+check 'Scene::ItemMenu: a bag longer than 12 rows scrolls a row at a time with the ' \
+      'cursor held on the bottom row, DOWN into a missing cell of the partial ' \
+      'last row is a no-op, and the scroll arrows follow the hidden rows' do
+  # Measured on genuine RPG_RT.exe under wine (cycle #243, 27-item bag = 14
+  # grid rows, a capture after every key): eleven DOWNs walked the cursor
+  # to the box's twelfth (last visible) row at native y 216..231; the
+  # twelfth and thirteenth DOWNs left it on that same row while the list
+  # scrolled under it; from the last item (row 13, column 0) RIGHT and
+  # DOWN did nothing, LEFT went to row 12's second cell (native y 200..215,
+  # i.e. visual row 10 with two rows scrolled off), and DOWN from there --
+  # whose cell below does not exist -- left the cursor exactly where it was
+  # rather than landing on row 13's only item. The down arrow was drawn at
+  # native (152, 232) whenever rows were hidden below and the up arrow at
+  # (152, 32) once the box had scrolled; neither ever appeared with the
+  # eight-item bag. See Scene::ItemMenu::ARROW_W's own comment.
+  scene = menu_scene(RPG2k::Scene::ItemMenu, many_item_wrap_state)
+  up = scene.instance_variable_get(:@up_arrow)
+  down = scene.instance_variable_get(:@down_arrow)
+  eq RPG2k::Scene::ItemMenu::DESC_H, up.y, 'up arrow sits on the list box\'s top border'
+  eq RPG2k::Scene::ItemMenu::SCREEN_H - RPG2k::Scene::ItemMenu::ARROW_H, down.y,
+     'down arrow sits on the list box\'s bottom border'
+  eq (RPG2k::Scene::ItemMenu::SCREEN_W - RPG2k::Scene::ItemMenu::ARROW_W) / 2, up.x,
+     'arrows are centred horizontally'
+  ok !up.visible, 'nothing is hidden above the first row, so the up arrow starts hidden'
+  ok down.visible, 'rows are hidden below, so the down arrow starts on'
+  eq 0, scene.instance_variable_get(:@item_top), 'starts unscrolled'
+  11.times { press_item(scene, RGSS::Input::DOWN) }
+  eq 22, scene.instance_variable_get(:@item_index), 'eleven DOWNs reach row 11'
+  eq 0, scene.instance_variable_get(:@item_top), 'row 11 is the last visible row, no scroll yet'
+  eq [0, 11 * 16, 144, 16], item_cursor(scene), 'cursor on the twelfth visual row'
+  press_item(scene, RGSS::Input::DOWN)
+  eq 24, scene.instance_variable_get(:@item_index), 'the twelfth DOWN moves to row 12'
+  eq 1, scene.instance_variable_get(:@item_top), 'and scrolls the list by one row'
+  eq [0, 11 * 16, 144, 16], item_cursor(scene), 'the cursor stays on the bottom visual row'
+  ok item_list_run(scene, 'Item1').nil?, 'row 0 has scrolled off the top'
+  eq [0, 2], item_list_run(scene, 'Item3')[0, 2], 'row 1 is now drawn at the top'
+  press_item(scene, RGSS::Input::DOWN)
+  eq 26, scene.instance_variable_get(:@item_index), 'the thirteenth DOWN reaches the last item'
+  eq 2, scene.instance_variable_get(:@item_top), 'scrolled a second row'
+  eq [0, 11 * 16, 144, 16], item_cursor(scene), 'cursor still on the bottom visual row'
+  press_item(scene, RGSS::Input::DOWN)
+  eq 26, scene.instance_variable_get(:@item_index), 'DOWN off the last row is a no-op'
+  press_item(scene, RGSS::Input::RIGHT)
+  eq 26, scene.instance_variable_get(:@item_index), 'RIGHT off the last item is a no-op'
+  press_item(scene, RGSS::Input::LEFT)
+  eq 25, scene.instance_variable_get(:@item_index), 'LEFT flows back to row 12\'s second cell'
+  eq [160, 10 * 16, 144, 16], item_cursor(scene), 'drawn on visual row 10 of the scrolled box'
+  press_item(scene, RGSS::Input::DOWN)
+  eq 25, scene.instance_variable_get(:@item_index),
+     'DOWN into the partial last row\'s missing cell is a no-op, not a jump to its only item'
+  eq 2, scene.instance_variable_get(:@item_top), 'and does not scroll'
+  press_item(scene, RGSS::Input::UP)
+  eq 23, scene.instance_variable_get(:@item_index), 'UP moves a row up'
+  eq [160, 9 * 16, 144, 16], item_cursor(scene), 'without scrolling back yet'
+  # Visibility rule, isolated from the blink phase the presses advanced.
+  scene.instance_variable_set(:@arrow_anim, 0)
+  scene.send(:refresh_arrows)
+  ok up.visible, 'rows are hidden above the scrolled box, so the up arrow shows'
+  ok !down.visible, 'the last row is on screen, so the down arrow is hidden'
+  11.times { press_item(scene, RGSS::Input::UP) }
+  eq 1, scene.instance_variable_get(:@item_index), 'UPs walk back to the top row'
+  eq 0, scene.instance_variable_get(:@item_top), 'scrolling back up to the first row'
+  eq [160, 0, 144, 16], item_cursor(scene), 'cursor back on visual row 0'
+  press_item(scene, RGSS::Input::UP)
+  eq 1, scene.instance_variable_get(:@item_index), 'UP off the top row is a no-op (no wrap)'
+  scene.instance_variable_set(:@arrow_anim, 0)
+  scene.send(:refresh_arrows)
+  ok !up.visible, 'back at the top the up arrow is hidden again'
+  ok down.visible, 'and the down arrow is back'
+  # The blink itself: on for 20 frames, then off -- the same cadence
+  # Scene::SaveLoad's arrows share with the pause arrow.
+  19.times { RGSS::Input.triggered = []; scene.update }
+  ok down.visible, 'still on 19 frames into the 20-frame "on" half'
+  RGSS::Input.triggered = []
+  scene.update
+  ok !down.visible, 'the 20th frame flips it to the "off" half of the blink'
+end
+
+check 'Scene::ItemMenu: the scroll arrows hide while the target-confirm screen ' \
+      'replaces the list box, and return with it on Cancel' do
+  scene = menu_scene(RPG2k::Scene::ItemMenu, many_item_wrap_state)
+  down = scene.instance_variable_get(:@down_arrow)
+  ok down.visible, 'down arrow on over the long list'
+  scene.send(:prompt_item_target, 1)
+  scene.instance_variable_set(:@arrow_anim, 0)
+  scene.send(:refresh_arrows)
+  ok !down.visible, 'the held-count box that replaces the list has no arrow'
+  press_item(scene, RGSS::Input::B)
+  eq :items, scene.instance_variable_get(:@mode), 'Cancel returns to the list'
+  scene.instance_variable_set(:@arrow_anim, 0)
+  scene.send(:refresh_arrows)
+  ok down.visible, 'the down arrow is back with the list'
 end
 
 # A party whose only item is a switch (type 10) one -- Game::Party's own
