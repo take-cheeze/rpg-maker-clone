@@ -65,6 +65,23 @@ would have caught it, since `-sFS_DEBUG` does not affect whether the page
 compiles or links. Despite the name, this is not a debug-only flag here — the
 only other thing it gates is one unrelated lazy-file-load log line.
 
+**`FS.syncfs` must never be called twice concurrently, and nothing in
+Emscripten enforces that.** `IDBFS.syncfs`'s own implementation
+(`src/lib/libidbfs.js`) has no re-entrancy guard: two overlapping calls race
+the same IndexedDB reconcile, and a callback can simply never fire — which
+reads as the page hanging, not erroring. RPG Maker MV/MZ's `localStorage`
+shim calls `js_write_file` once per key it persists (`mruby-mvjs/src/
+mvjs.cxx`), so a single in-game "save" can close `save/websave.json` several
+times in quick succession; the original 500ms debounce alone was not enough
+to rule this out, since a slow flush (a large save, a loaded IndexedDB
+origin) can still be in flight when the next debounce elapses and starts a
+second one. Found the same way as the `FS_DEBUG` gap: by hand, on the
+Cloudflare preview, this time as an actual hang while saving in MV/MZ. Fixed
+by routing every `syncfs` call in `src/shell.html` — the initial populate and
+every later flush — through one `runSyncfs` queue that keeps at most one call
+in flight and coalesces anything requested while it runs into a single
+follow-up call, rather than starting a second one concurrently.
+
 Before a project starts (`mountAndStart`/`startBundledSample` in
 `src/shell.html`, right after the fresh assets are written and before
 `rpg_start_game()`), whatever is under `/persist/<slug>/` is copied back onto

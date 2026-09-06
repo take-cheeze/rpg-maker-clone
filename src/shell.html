@@ -594,13 +594,44 @@
       // Module.FS does not exist until the runtime is up, so this cannot run
       // at script-evaluation time the way the rest of this section can.
       var persistReady = null;
+
+      // Emscripten's IDBFS.syncfs has no re-entrancy guard of its own: two
+      // overlapping calls race the same IndexedDB reconcile, and a callback
+      // can simply never fire -- which reads as the page hanging. RPG Maker
+      // MV/MZ's save flow writes save/websave.json once per localStorage key
+      // it persists (several in a row for one "save"), so mirrorSave's own
+      // debounce below is not enough by itself: a slow flush can still be in
+      // flight when the next debounce elapses. Every syncfs call in
+      // this file -- the initial populate and every later flush -- goes
+      // through this one queue instead, so at most one is ever in flight;
+      // a call made while another is running is coalesced into a single
+      // follow-up run rather than started concurrently.
+      var syncInFlight = false;
+      var syncQueued = false;
+      function runSyncfs(FS, populate, callback) {
+        if (syncInFlight) {
+          syncQueued = true;
+          if (callback) callback(null);
+          return;
+        }
+        syncInFlight = true;
+        FS.syncfs(populate, function (err) {
+          syncInFlight = false;
+          if (callback) callback(err);
+          if (syncQueued) {
+            syncQueued = false;
+            runSyncfs(FS, false, null);
+          }
+        });
+      }
+
       function initPersistence() {
         persistReady = new Promise(function (resolve) {
           try {
             var FS = Module.FS;
             FS.mkdir(PERSIST_ROOT);
             FS.mount(FS.filesystems.IDBFS, {}, PERSIST_ROOT);
-            FS.syncfs(true, function (err) {
+            runSyncfs(FS, true, function (err) {
               if (err) log('(save sync: could not read saved data from IndexedDB: ' + err.message + ')');
               resolve(true);
             });
@@ -687,7 +718,7 @@
           if (syncTimer) clearTimeout(syncTimer);
           syncTimer = setTimeout(function () {
             syncTimer = null;
-            FS.syncfs(false, function (err) {
+            runSyncfs(FS, false, function (err) {
               if (err) log('(save sync failed: ' + err.message + ')');
             });
           }, 500);
@@ -702,7 +733,7 @@
         if (!syncTimer) return;
         clearTimeout(syncTimer);
         syncTimer = null;
-        try { Module.FS.syncfs(false, function () {}); } catch (e) {}
+        try { runSyncfs(Module.FS, false, function () {}); } catch (e) {}
       });
 
       // --- Emscripten module wiring -----------------------------------------
