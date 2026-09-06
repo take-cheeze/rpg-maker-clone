@@ -669,6 +669,11 @@ if(EMSCRIPTEN)
     # rgss_wasm_key (the on-screen keypad's key bridge).
     "-sEXPORTED_FUNCTIONS=['_main','_rpg_start_game','_rgss_wasm_key','_malloc','_free']"
     "-sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']"
+    # Pulls in Emscripten's IndexedDB-backed filesystem so src/shell.html can
+    # mount FS.filesystems.IDBFS and call FS.syncfs -- persisting save data
+    # across reloads (see docs/adr/0064). Not linked by default even with
+    # FORCE_FILESYSTEM, which only guarantees the in-memory MEMFS backend.
+    "-lidbfs.js"
     # Custom page (src/shell.html): a canvas with an on-screen keypad plus a
     # loader that fetches/opens a zip or GitHub-hosted RPG2k project and mounts
     # it under /game.
