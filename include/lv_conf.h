@@ -719,6 +719,12 @@
      * per-frame call instead, so it is used for the browser build; every
      * other backend keeps LVGL's own. */
 #ifdef __EMSCRIPTEN__
+    /* This file itself never otherwise needs a fixed-width type, so nothing
+     * upstream of it in the include chain (lv_conf_internal.h included it
+     * unconditionally) is guaranteed to have pulled in <stdint.h> yet -- a
+     * plain C LVGL source (e.g. lv_sysmon.c) including this file directly
+     * would see an undeclared uint32_t otherwise. */
+    #include <stdint.h>
     uint32_t rgss_wasm_frame_get_idle(void);
     #define LV_SYSMON_GET_IDLE rgss_wasm_frame_get_idle
 #else
