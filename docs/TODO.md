@@ -13388,11 +13388,55 @@ The work below is roughly ordered by the critical path to a walkable game
   claim once independently confirmed. The adjacent multi-actor
   discrete-vs-repeat question from cycle #121 was not chased further this
   cycle (out of scope once the solo-party half turned out unreachable).
+- ✅ **kk1.12 replaces mtf-meido-action as the live RPG2003 test bed for
+  genuine-`RPG_RT`-under-wine verification (2026-09-06) — and a real gap
+  surfaced getting there.** mtf-meido-action is genuine RPG2003 data
+  (`db.rpg2003?` true, confirmed by loading its real `RPG_RT.ldb`) but ships
+  no genuine executable at all, only EasyRPG's own `Player.exe`, which this
+  session's methodology has always excluded as a behavioral source — every
+  cycle that hit "no RPG2003 `RPG_RT.exe` available" (the Status-menu
+  reachability question below, the atb_mode/Wait-label question, the
+  field-item recovery-cap question) was blocked by that, not by anything
+  about the claims themselves. `data/kk1.12` ("Killer Knights") is also
+  genuine RPG2003 and bundles a real `RPG_RT.EXE` — but needed the official
+  RPG Maker 2003 RTP installed first (`scripts/rtp_2003_install.bash`;
+  without it, a fresh wine prefix shows one unlabelled "RPGツクール2003"
+  OK-only dialog — an RTP-missing notice whose own message text is itself
+  unrenderable without the RTP's bitmap font — then the process exits).
+  With the RTP installed, kk1.12 reaches a fully legible title screen and
+  became this session's default genuine-RPG2003 fixture, unblocking the
+  three citations above. `scripts/rpg2k3_battle_command_check.rb` (a pure
+  static `RPG_RT.ldb` decode, no executable involved) moved to kk1.12
+  outright and stayed there.
+  **The gap:** `scripts/rpg2k_boot_check.bash`'s headless smoke test
+  (`--rpg2k_new_game`, no scripted setup at all) also moved to kk1.12 for
+  both its map-boot and battle-troop passes — and CI caught what no
+  wine-side investigation this cycle had reason to try: kk1.12's own System
+  chunk carries **no default initial party** (`party` is a literal empty
+  array, `party_size` 0 — confirmed by loading its real `RPG_RT.ldb`;
+  mtf-meido-action's own is `[1]`). A bare New Game against it raised
+  outright, both with and without the battle-troop flag —
+  `undefined method '*' for NilClass`, somewhere in this codebase's own
+  empty-party stats/UI path — before ever reaching a scene. Reverted both
+  of `rpg2k_boot_check.bash`'s defaults back to mtf-meido-action (whose
+  real default party this exact headless mode needs), leaving kk1.12 to
+  the two roles that don't drive a bare New Game. **Left open, genuinely:**
+  whether real `RPG_RT.exe` itself tolerates a truly party-less New Game
+  (kk1.12's own real players never see one — its actual party is assembled
+  by the opening cutscene's own event commands, which a real player always
+  sits through) or would raise the same way, since no wine session this
+  cycle constructed the equivalent all-database-default case against a
+  genuine executable to compare against — this codebase's own crash was
+  caught by the harness, not benchmarked against real RPG_RT with an
+  equivalently empty party. A future cycle wanting that comparison would
+  need a genuine RPG2003 `RPG_RT.exe` driven the same header-only way
+  (no save file at all, straight to New Game) with its own database's
+  initial party emptied out first.
   ✅ **Follow-up (2026-09-06): the "permanently unverifiable" half above no
   longer holds — a genuine RPG2003 `RPG_RT.exe` test bed now exists
   (`data/kk1.12` + the official RTP via `scripts/rtp_2003_install.bash`, see
-  the `scripts/download-killer-knights.bash`/test-bed-swap entry elsewhere in
-  this file), and `Scene::StatusMenu` **is reachable and opens cleanly** —
+  the `scripts/download-killer-knights.bash`/test-bed-swap entry just
+  above), and `Scene::StatusMenu` **is reachable and opens cleanly** —
   confirmed, not merely re-attempted.** Built a one-actor save (actor 1,
   map 1, a chipset tile confirmed passable from all four directions by this
   codebase's own `ChipSet#passable?`) directly via `Game::Party`/
