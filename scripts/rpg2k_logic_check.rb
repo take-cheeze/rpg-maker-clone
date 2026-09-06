@@ -8424,8 +8424,13 @@ check 'to_lsd writes the party roster as a count-then-data pair (chunk 109 ' \
   eq [1, 2, 3], round.party.actors.map(&:id)
 end
 
-check 'field_items lists every held item in id order with counts, including ' \
-      'an unusable one -- RPG_RT lists it disabled, it does not omit it' do
+# Bag order is the order the bag was built in, never an id sort -- measured
+# against genuine RPG_RT.exe under wine (cycle #252): a save whose chunk 109
+# `item_ids` was written deliberately out of order listed on RPG_RT's own field
+# Item screen in exactly that stored order. These three checks used to assert a
+# sorted list, which was the pre-measurement assumption, not a finding.
+check 'field_items lists every held item in the bag\'s own order with counts, ' \
+      'including an unusable one -- RPG_RT lists it disabled, it does not omit it' do
   items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
             7 => fake_item(type: 1, atk: 10),   # weapon -- not field-usable
             9 => fake_item(type: 6, rsp: 10) }  # medicine
@@ -8433,8 +8438,23 @@ check 'field_items lists every held item in id order with counts, including ' \
   st.party.gain_item(9, 2)
   st.party.gain_item(5, 1)
   st.party.gain_item(7, 1)   # weapon in the bag, listed but not menu-usable
-  eq [[5, 1], [7, 1], [9, 2]], st.party.field_items
+  eq [[9, 2], [5, 1], [7, 1]], st.party.field_items,
+     'the order the three were gained in, not 5/7/9'
   ok !st.party.field_usable?(7), 'still not usable -- only listing changed'
+end
+
+check 'to_lsd writes the bag in its own order, so a save/load round trip ' \
+      'does not silently reorder the player\'s items (cycle #252)' do
+  items = { 5 => fake_item(type: 6, rhp: 50),
+            7 => fake_item(type: 1, atk: 10),
+            9 => fake_item(type: 6, rsp: 10) }
+  st = item_party(items)
+  st.party.gain_item(9, 2)
+  st.party.gain_item(5, 1)
+  st.party.gain_item(7, 1)
+  inv = st.to_lsd[109]
+  eq [9, 5, 7], inv.item_ids, 'chunk 109 field 12 keeps the gained order'
+  eq [2, 1, 1], inv.item_counts, 'and field 13 stays parallel to it'
 end
 
 check 'a field-only medicine is kept out of battle; every medicine is in the field' do
@@ -8697,7 +8717,8 @@ check 'field_items includes skill books alongside medicines, and the ' \
             3 => fake_item(type: 1, atk: 5) }       # weapon (not usable)
   st = item_party(items)
   [5, 8, 3].each { |id| st.party.gain_item(id, 1) }
-  eq [[3, 1], [5, 1], [8, 1]], st.party.field_items
+  eq [[5, 1], [8, 1], [3, 1]], st.party.field_items,
+     'gained order, not an id sort (cycle #252)'
   ok !st.party.field_usable?(3)
 end
 
@@ -8790,7 +8811,8 @@ check 'field_items includes seeds; a seed with no boost is ineffective' do
   st = item_party(items)
   st.party.gain_item(9, 1)
   st.party.gain_item(4, 1)
-  eq [[4, 1], [9, 1]], st.party.field_items     # both held seeds are listed
+  eq [[9, 1], [4, 1]], st.party.field_items,
+     'gained order, not an id sort (cycle #252)'     # both held seeds are listed
   hero = st.party.leader
   eq false, st.party.item_effective?(4, hero)   # no boost -> ineffective
   eq [], st.party.use_item(4, hero)             # nothing happens

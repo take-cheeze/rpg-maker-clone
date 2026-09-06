@@ -11838,6 +11838,36 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+  ✅ **Follow-up (cycle #252, 2026-09-06): the bag's own *order* settled by
+  wine, and three fixture checks that had encoded the wrong reading
+  corrected.** `#field_items`, `#battle_items` and `Game::State#to_lsd` all
+  sorted the party's bag by item id (`@items.keys.sort`), which nothing had
+  ever measured. Driven against genuine RPG_RT.exe under wine on Nepheshel:
+  a `Save01.lsd` whose chunk 109 was rewritten through the LCF writer to hold
+  `item_ids` **deliberately out of id order** -- [60, 12, 45, 1] with counts
+  [5, 3, 9, 7], so each row's count identifies its id unambiguously -- opened
+  RPG_RT's own field Item screen listing クレセントムーン:5, ユニコーンの角:3,
+  バスタードソード:9, 薬草:7, i.e. exactly the stored order 60/12/45/1, not the
+  1/12/45/60 an id sort produces. (The equipment row バスタードソード is listed
+  too, greyed, which the "list every held id" fix above had already settled.)
+  So the display never re-sorts; `@items` is built in the save's own order by
+  `.from_lsd`, and preserving that hash's insertion order preserves RPG_RT's.
+  Fixed at all three sites. **The `to_lsd` half is the one with teeth**: it
+  sorted on the way *out*, so this engine's own Save -> Continue silently
+  reordered the player's bag even when nothing else touched it; a save whose
+  bag was already in id order still round-trips byte-for-byte
+  (`scripts/lcf_save_roundtrip.rb` reconfirmed). Three existing
+  `scripts/rpg2k_logic_check.rb` checks asserted the sorted list -- written to
+  match the code rather than any measurement, the exact failure mode this
+  file's own methodology warns about -- and are corrected to the gained order
+  with the citation; a new check pins the writer, confirmed to fail against
+  the pre-fix code (`expected [9, 5, 7], got [5, 7, 9]`). **Deliberately left
+  open**: where RPG_RT *inserts* a newly gained id (append, or into some
+  internal order) -- the capture proves only that the screen does not re-sort
+  what the save holds, not what `gain_item` should do with a new id; and
+  `Game::Party#equip_candidates` still sorts, left alone because the Equip
+  screen was being measured in parallel this same round (cycle #250). No
+  EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
   against genuine RPG_RT.exe rather than trusting the reference-implementation-only
   citation above.** Edited a genuine Nepheshel save's inventory chunk to hold a

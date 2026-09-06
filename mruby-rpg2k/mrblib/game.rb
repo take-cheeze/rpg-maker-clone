@@ -4633,8 +4633,20 @@ module Game
     # (a shrunk-database dangling reference) is the one thing still excluded
     # here -- there is nothing to draw a name for -- with the same warning
     # #field_usable? used to print as a side effect of filtering it out.
+    # Bag order is the order the save carries, never sorted by id -- measured
+    # against genuine RPG_RT.exe under wine (cycle #252): a Save01.lsd whose
+    # chunk 109 `item_ids` was written deliberately out of order
+    # ([60, 12, 45, 1], counts [5, 3, 9, 7]) listed on RPG_RT's own field Item
+    # screen in exactly that order (クレセントムーン:5, ユニコーンの角:3,
+    # バスタードソード:9, 薬草:7), not the 1/12/45/60 an id sort gives. `@items`
+    # is built in the save's own order by `.from_lsd`, so preserving the hash's
+    # insertion order is preserving RPG_RT's.
+    #
+    # Still open: where RPG_RT *inserts* a newly gained id (append, or into some
+    # internal order) is not settled by this -- the capture only proves the
+    # screen does not re-sort what the save holds.
     def field_items(state = nil)
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         it = db_item(id)
         if it.nil?
           $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
@@ -6514,8 +6526,10 @@ module Game
     # found. #battle_usable? is now consulted only for enablement, the same
     # split as the field menu. The dangling-item exclusion (and its warning)
     # stays, the same defensible corner case #field_items keeps.
+    # Stored bag order, not an id sort -- see #field_items' own citation for
+    # the wine measurement (cycle #252); the in-battle list shares it.
     def battle_items
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         it = db_item(id)
         if it.nil?
           $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
@@ -16850,7 +16864,12 @@ module Game
       party_ids = @party.actors.map { |a| a.id }
       inv[1] = party_ids.size
       inv[2] = party_ids
-      item_ids = @party.items.keys.sort
+      # Written in the bag's own order, not sorted: RPG_RT preserves the
+      # stored order across a save/load (see Party#field_items' own wine
+      # citation, cycle #252), so sorting here would silently reorder the
+      # player's bag every time this engine saved. A save whose bag was
+      # already in id order still round-trips byte-for-byte.
+      item_ids = @party.items.keys
       inv[11] = item_ids.size
       inv[12] = item_ids
       inv[13] = item_ids.map { |i| @party.items[i] }
