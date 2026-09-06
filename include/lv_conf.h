@@ -723,9 +723,24 @@
      * upstream of it in the include chain (lv_conf_internal.h included it
      * unconditionally) is guaranteed to have pulled in <stdint.h> yet -- a
      * plain C LVGL source (e.g. lv_sysmon.c) including this file directly
-     * would see an undeclared uint32_t otherwise. */
+     * would see an undeclared uint32_t otherwise.
+     *
+     * The declaration itself must additionally stay out of assembly context:
+     * lv_conf_internal.h (and so this file) is also pulled in by LVGL's own
+     * per-arch SIMD blend routines (e.g.
+     * src/draw/sw/blend/helium/lv_blend_helium.S), which define __ASSEMBLY__
+     * before doing so precisely so config content meant only for a C
+     * compiler doesn't reach the assembler -- see that file's own guard and
+     * lv_conf_internal.h's "If you need to include anything here, do it
+     * inside the `__ASSEMBLY__` guard" comment, and the `#ifndef __ASSEMBLY__`
+     * already wrapping its own LV_EXPORT_CONST_INT declarations. A bare C
+     * function prototype handed to the assembler is not a preprocessor
+     * concern -- it survives to the assembler as plain garbage text, which
+     * is a build break rather than a warning. */
+    #ifndef __ASSEMBLY__
     #include <stdint.h>
     uint32_t rgss_wasm_frame_get_idle(void);
+    #endif
     #define LV_SYSMON_GET_IDLE rgss_wasm_frame_get_idle
 #else
     #define LV_SYSMON_GET_IDLE lv_timer_get_idle
