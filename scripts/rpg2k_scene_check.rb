@@ -27794,6 +27794,250 @@ check 'the lower-numbered troop member draws over the higher-numbered one' do
      'add-order index 0 is closest to the camera, so it carries the highest z'
   ok zs.all? { |z| z > 5 }, 'and all of them draw over the backdrop (z 5)'
 end
+# -- battle selection windows (cycle #246) -------------------------------------
+#
+# Geometry and behaviour measured on genuine RPG_RT.exe (Nepheshel) under
+# wine this cycle -- the enemy-target list, the in-battle Skill and Item
+# grids, their description banner and the ally-target cursor. Every number
+# below comes from a 640x480 root capture halved to the 320x240 logical
+# screen; see Scene::Battle#draw_battle_target / #battle_list_window /
+# #draw_battle_skill / #draw_battle_item / #draw_battle_ally_target for the
+# per-figure citations and docs/TODO.md for what was left open.
+
+# Nine skills and nine items with descriptions, so both grids overflow the
+# window's four rows and both can hold a disabled row: the actor's 10 MP
+# makes every skill past the second (cost `sid * 5`) unaffordable, and
+# item 4 is flagged not battle-usable.
+class BattleListGridParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, (1..9).to_a)
+    @items = (1..9).to_h { |id| [id, id] }
+  end
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, sid * 5] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0, description: "About skill #{id}"); end
+  def db_item(id); OpenStruct.new(name: "Item#{id}", description: "About item #{id}"); end
+  def battle_usable?(id); id != 4; end
+end
+
+def battle_list_scene(party)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.instance_variable_get(:@state).instance_variable_set(:@party, party)
+  [scene, battle_to_command(scene)]
+end
+
+# RPG2k::Window only writes its z through to its viewport (no reader).
+def window_z(win)
+  win.instance_variable_get(:@viewport).z
+end
+
+# The five drawing arguments Bitmap#draw_text records, as [x, w, text].
+def list_text_cells(win)
+  (win.contents.draw_calls || []).map { |a| [a[0], a[2], a[4]] }
+end
+
+check 'battle enemy-target list: RPG_RT\'s own 136px box, 16px rows and ' \
+      'full-width cursor, with the names in the windowskin\'s font colour' do
+  # Measured under wine: the box's frame spans logical x 0..135, y 160..239;
+  # row 0's cursor frame x 4..131 / y 168..183 and row 1's y 184..199 (a
+  # `cursor_rect` of 120 -- the box's own content width -- at contents y
+  # 0/16 once Window's 4px cursor overhang is taken off); the enemy names
+  # start at logical x 8 (contents 0) and sample (189,223,255) with the
+  # skin's (24,28,24) shadow -- the System font gradient, not the flat white
+  # `draw_text` this list used to use.
+  scene, ui = battle_list_scene(BattleMagicParty.new)
+  skin = RGSS::Bitmap.new('System/skin')
+  scene.instance_variable_set(:@windowskin, skin)
+  press_key(scene, RGSS::Input::C) # Attack -> enemy target
+  eq :target, ui[:phase]
+
+  win = ui[:target_win]
+  eq [0, 160, 136, 80], [win.x, win.y, win.width, win.height],
+     'the enemy list is RPG_RT\'s own (0, 160, 136, 80) box'
+  eq [0, 0, 120, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'row 0\'s cursor spans the whole 120px content width'
+
+  bc = win.contents.blend_calls || []
+  ok (win.contents.draw_calls || []).empty?,
+     'the names are system-coloured, never flat white draw_text'
+  ok bc.any?, 'blend_text drew the names through the windowskin'
+  glyph = bc[1] # [x, y, w, h, text, skin, sx, sy, ...]; bc[0] is its shadow
+  eq 0, glyph[0], 'the name column starts at contents x 0 (logical 8)'
+  eq skin, glyph[5]
+  eq Game::MessagePalette.cell_origin(0), [glyph[6], glyph[7]],
+     'an enemy row is drawn in the enabled swatch (index 0)'
+end
+
+check 'battle Skill grid: 160px column pitch, 144px cells and the ' \
+      '"-" + right-aligned cost column RPG_RT draws' do
+  # Measured under wine on a nine-skill list: column 0's names start at
+  # logical x 8 and column 1's at 168 (contents 0 / 160 -- a 160px pitch of
+  # 144px cells with a 16px gutter, not the 152/152 edge-to-edge split this
+  # window used to draw); the "-" separator sat at 128..130 / 288..290 (its
+  # 6px cell at cell x 120) and the costs "7"/"15"/"50" all ended flush at
+  # 151 / 311 (cell x 144); the highlighted cell's cursor frame spans
+  # x 4..155, i.e. a 144-wide cursor_rect at contents x 0.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  win = ui[:skill_win]
+  eq [0, 160, 320, 80], [win.x, win.y, win.width, win.height]
+  eq [0, 0, 144, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'the cursor is one 144px cell, not half the content width'
+
+  cells = list_text_cells(win)
+  eq [[0, 120, 'Skill1'], [120, 6, '-'], [132, 12, '5']], cells[0, 3],
+     'column 0: name clipped to 120, "-" at cell x 120, cost right-aligned to 144'
+  eq [[160, 120, 'Skill2'], [280, 6, '-'], [292, 12, '10']], cells[3, 3],
+     'column 1 is the same cell shifted by the 160px pitch'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq [160, 0, 144, 16],
+     [ui[:skill_win].cursor_rect.x, ui[:skill_win].cursor_rect.y,
+      ui[:skill_win].cursor_rect.width, ui[:skill_win].cursor_rect.height],
+     'Right puts the cursor on the second column\'s own cell'
+end
+
+check 'battle Item grid: the ":" + right-aligned count column, in the same ' \
+      '160/144 cells as the Skill grid' do
+  # Measured under wine on a nine-item bag: the ":" glyph sat at logical
+  # 131..133 / 291..293 (its 6px cell at cell x 120) with the counts "5",
+  # "12" and "99" all ending at 151 / 311 -- the identical column the field
+  # Item grid measured (Scene::ItemMenu::COUNT_W/COUNT_SEP_W/COUNT_NUM_W).
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  cells = list_text_cells(ui[:item_win])
+  eq [[0, 120, 'Item1'], [120, 6, ':'], [132, 12, '1']], cells[0, 3]
+  eq [[160, 120, 'Item2'], [280, 6, ':'], [292, 12, '2']], cells[3, 3]
+end
+
+check 'battle Skill/Item lists carry RPG_RT\'s description banner, tracking ' \
+      'the cursor and gone the moment the list is cancelled' do
+  # Measured under wine: a (0, 0, 320, 32) box over the battlers, its text
+  # at logical x 8 (contents 0), showing the highlighted row's own database
+  # description -- for a disabled row too -- and closing with the list.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+
+  banner = ui[:desc_win]
+  ok banner, 'the skill list opens a description banner'
+  eq [0, 0, 320, 32], [banner.x, banner.y, banner.width, banner.height]
+  eq [[0, 304, 'About skill 1']], list_text_cells(banner),
+     'the banner shows the highlighted skill\'s description at contents x 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq [[0, 304, 'About skill 2']], list_text_cells(ui[:desc_win]),
+     'it follows the cursor onto the next skill'
+
+  press_key(scene, RGSS::Input::B) # cancel back to the command window
+  eq :command, ui[:phase]
+  eq nil, ui[:desc_win], 'cancelling the list takes the banner down with it'
+
+  # Cancel leaves the command cursor on Skill (row 1), where it was.
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq [[0, 304, 'About item 1']], list_text_cells(ui[:desc_win]),
+     'the item list gets the same banner, from the item\'s own description'
+end
+
+check 'battle target cursor keeps the Skill list (and its banner) on screen ' \
+      'underneath, and Cancel drops back onto it' do
+  # Measured under wine: choosing a single-enemy skill leaves the skill grid
+  # drawn behind the 136px enemy list -- its first column's cost figures,
+  # which sit past that window's right edge, stay visible -- with the
+  # description banner still up. Escape returns to the grid with the cursor
+  # where it was.
+  scene, ui = battle_list_scene(BattleMagicParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  press_key(scene, RGSS::Input::C)    # cast Fire -> enemy target
+  eq :target, ui[:phase]
+  ok ui[:skill_win], 'the skill list stays on screen behind the target cursor'
+  ok ui[:desc_win], 'so does its description banner'
+  ok window_z(ui[:skill_win]) < window_z(ui[:target_win]), 'the target list draws over it'
+
+  press_key(scene, RGSS::Input::B)
+  eq :skill, ui[:phase]
+  eq nil, ui[:target_win], 'Cancel closes the target list'
+  ok ui[:skill_win], 'and leaves the skill list up'
+end
+
+check 'battle ally target is a cursor on the party status panel, not a ' \
+      'name/HP list of its own' do
+  # Measured under wine (an ally-scope item and an ally-scope skill both
+  # route here): the panel carries the status window's own four columns
+  # ("デモ用 / 正常 / HP600/600 / MP10"), its frame spans logical x 0..243
+  # -- the status panel's own rect -- and the cursor frame spans x 4..239,
+  # y 168..183: a full-content-width cursor_rect on the target's row. The
+  # Item list it was opened from stays on screen underneath.
+  scene, ui = battle_list_scene(BattleMagicParty.new(hurt: true))
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # Potion -> ally target
+  eq :ally_target, ui[:phase]
+
+  win = ui[:ally_win]
+  eq [0, 160, 244, 80], [win.x, win.y, win.width, win.height],
+     'the ally cursor sits on the status panel\'s own box'
+  eq [0, 0, 228, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'and spans the panel\'s whole content width'
+  xs = list_text_cells(win).map(&:first).uniq
+  # The panel's own four column origins all appear. Each HP/MP gauge is drawn
+  # as four separately-positioned pieces (label / current / "/" / max -- see
+  # #draw_battle_stat_segment, measured in cycle #244), so the run also carries
+  # those pieces' own x's beyond the four column starts asserted here.
+  [RPG2k::Scene::Battle::STATUS_NAME_X, RPG2k::Scene::Battle::STATUS_STATE_X,
+   RPG2k::Scene::Battle::STATUS_HP_X, RPG2k::Scene::Battle::STATUS_MP_X].each do |x|
+    ok xs.include?(x),
+       "it draws the status panel's own name/state/HP/MP columns (missing #{x} in #{xs.sort.inspect})"
+  end
+  ok ui[:item_win], 'the item list stays on screen underneath'
+  ok window_z(ui[:item_win]) < window_z(win), 'with the panel drawn over it'
+
+  press_key(scene, RGSS::Input::B)
+  eq :item, ui[:phase]
+  eq nil, ui[:ally_win], 'Cancel closes the ally cursor'
+  ok ui[:item_win], 'and lands back on the item list'
+end
+
+check 'battle Skill/Item grids: Down off the last full row\'s second column ' \
+      'scrolls onto an overflowing list\'s partial row' do
+  # Measured under wine on a nine-skill list and again on a nine-item bag:
+  # Down from index 7 -- whose own target cell (index 9) does not exist --
+  # scrolls the window a row and lands on the ninth entry, alone in the
+  # partial fifth row. Only an overflowing list does that: the 8-item grid
+  # cycle #133 measured still blocks at its last cell.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:skill_i]
+  3.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 7, ui[:skill_i], 'three Downs walk column 1 to index 7, the last full row'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:skill_i], 'the next Down reaches the ninth skill in the partial row'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:skill_i], 'and blocks there -- no wrap once the list cannot scroll'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

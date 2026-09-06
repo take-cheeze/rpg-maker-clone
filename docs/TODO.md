@@ -11980,6 +11980,110 @@ The work below is roughly ordered by the critical path to a walkable game
   earlier pass in this same section already used successfully, just not yet
   connected to the skill list specifically. This is the technique the
   fresh capture above used.
+  ✅ **Follow-up (cycle #246, 2026-09-06): the four battle *selection* windows
+  measured end to end against genuine RPG_RT.exe under wine — enemy target
+  list, in-battle Skill grid, in-battle Item grid and the ally-target
+  cursor — and four real gaps fixed.** Recipe: the shared round-2 battle
+  save (`Save01_battle_map2.lsd`, party on map 2 at (6,4) facing the monster
+  event, two スライム vs デモ用) copied into a private game copy, RPG_RT
+  booted under a private wine prefix with `BOOT_WAIT=40`, `Down Return
+  Return` from the title dropping straight into the fight, then a root
+  capture after *every* keypress (640x480, halved to the 320x240 logical
+  screen; all figures below are logical). For the Skill and Item lists the
+  save's own leader (database actor 15) got nine skills and 10 SP written
+  into **its own chunk-108 record** (fields 51/52 and 72) and the bag got
+  nine items via chunk 109 (fields 11/12/13), exactly the technique the
+  entry above establishes — chunk 109's *party list* was never touched.
+  Measured, and now pinned by seven new `scripts/rpg2k_scene_check.rb`
+  checks (all confirmed to fail against the pre-fix scene):
+  - **Enemy target list** — box `(0, 160, 136, 80)`, i.e. only the *left*
+    136px of the status panel's footprint, with that panel's remainder and
+    the actor command window still visible beside it (frame runs measured at
+    x 0..135 / 136..243 / 244..319 on the same row). Row 0's cursor frame
+    x 4..131, y 168..183 and row 1's y 184..199 → a 120-wide `cursor_rect`
+    (the box's full content width) on a 16px pitch off the panel's 8px
+    border; names at x 8. Our box, pitch and cursor were already right; the
+    **names were flat white** where RPG_RT draws them from the System font
+    gradient — sampled `(189,223,255)` with the skin's `(24,28,24)` shadow —
+    so `#battle_list_window` now draws every row through `#draw_system_text`
+    (swatch 0) instead of `Bitmap#draw_text`. Right/Left are dead input here
+    (byte-identical frames), Down/Up wrap on a two-enemy troop (cycle #131's
+    finding re-confirmed), a **defeated enemy is dropped from the list
+    outright** rather than greyed (killing one slime left a one-row list —
+    what `#living_foes` already produces), and the targeted enemy's sprite
+    is **not** highlighted at all: ten captures spanning ~3.5s differ only
+    inside the cursor's own blink, never a pixel of either battler. Escape
+    closes the list and leaves the command cursor where it was.
+  - **Skill / Item grids** — one `(0, 160, 320, 80)` box covering the status
+    *and* command windows, two columns on a **160px pitch of 144px cells**
+    (column 0's names at x 8, column 1's at 168; cursor frame x 4..155 → a
+    144-wide `cursor_rect`), where this engine drew an edge-to-edge 152/152
+    split with a 152-wide cursor and no gutter. Rows are row-major. The
+    figure column is `-`/`:` in the 6px cell at cell x 120 with the number
+    **right-aligned to cell x 144** (skill costs "7"/"15"/"50" and item
+    counts "5"/"12"/"99" all ended flush at 151 / 311) — the identical
+    column `Scene::ItemMenu` measured for the field grid — where ours drew
+    `"Name  7"` / `"Name  x5"` straight after the name. An unaffordable
+    skill and an unusable item are drawn in the disabled swatch
+    (`(99,166,247)` against the enabled `(189,223,255)`), which **confirms
+    directly, on the battle screen, what the entry above could only port by
+    analogy**; Decision on a disabled row buzzes and stays (already
+    correct).
+  - **Description banner** — a `(0, 0, 320, 32)` window above the battlers
+    carrying the highlighted row's own database description (skill/item
+    field 2, verbatim, in the enabled colour even for a disabled row),
+    tracking the cursor row by row, staying up through target selection and
+    disappearing with the list. This engine drew no such window at all;
+    `#battle_list_window` now builds it from a new `desc:` argument and the
+    four `close_battle_*` methods dispose it.
+  - **The originating list stays on screen** — choosing a single-enemy skill
+    leaves the skill grid drawn *under* the 136px enemy list (its first
+    column's cost figures, which sit past that window's right edge, stay
+    visible), and the same for an item. `#draw_battle_target` /
+    `#draw_battle_ally_target` now redraw the pending list beneath
+    themselves (their callers close it before routing), and their closers
+    take it back down; every Cancel path already redraws the window the
+    player lands back on (Escape from the target cursor returns to the grid
+    with its cursor and banner intact — confirmed).
+  - **Ally target** — RPG_RT draws **no name list here at all**: it puts a
+    cursor on the party status panel itself. The panel measured x 0..243
+    (the status window's own rect) carrying its usual four columns
+    ("デモ用 / 正常 / HP600/600 / MP10", the low-SP figure still
+    recoloured), cursor frame x 4..239, y 168..183 → a full-content-width
+    `cursor_rect` on the target's row, drawn *over* the still-open Skill /
+    Item grid. Ours drew a separate `Name  hp/maxhp` list and closed the
+    grid; `#draw_battle_ally_target` now builds the real panel through
+    `#battle_status_window`/`#battle_status_row` and raises it above the
+    list.
+  - **Cursor movement** — one case cycles #133/#134 never reached: Down from
+    the last *full* row's second column (index 7 of 9, whose target cell 9
+    does not exist) does **not** block on an overflowing list — it scrolls a
+    row and lands on the ninth entry, in both the skill and the item grid.
+    A non-overflowing list (the 8-item/4-row grid, a 3-item partial row)
+    still blocks, so `#move_battle_list_index` clamps to the last index only
+    when `size > BATTLE_VISIBLE_ROWS * column_max`.
+  Deliberately left open: (a) the blinking windowskin **scroll arrows** a
+  longer list shows — measured at x 155..164, y 161..165 (up, on the list
+  box's top border) and y 233..238 (down, at the screen's bottom edge),
+  each present in roughly half the captures taken in the same state — need a
+  per-frame sprite tick this screen has no hook for, so nothing was drawn;
+  (b) RPG_RT's scroll offset is **sticky** (after a Down scroll, Left back
+  onto the previous row keeps the view where it was, and Down from that row
+  then no-ops), where `#battle_list_window` still derives the offset from
+  the cursor row each draw — the derived offset matches every state reached
+  by Down alone, not the sticky one; (c) the ally cursor's own row-to-row
+  movement could not be re-measured (this save's party is one actor; growing
+  it needs cycle #136's live Change Party Member route, since chunk 109's
+  party list blackens RPG_RT on Continue) — cycle #136's multi-actor
+  Down/Up findings stand; (d) two differences that live **outside** these
+  windows and were left for their owners: RPG_RT lists battle items in the
+  bag's **stored order** and skills in the actor's **stored skill order**,
+  where `Game::Party#battle_items`/`#battle_skills` sort by id, and RPG_RT
+  lists a held **weapon** in the battle Item list (greyed) where
+  `#battle_items` still drops equipment entirely; (e) our glyphs sit ~3px
+  taller than RPG_RT's in every battle row (a font-metric difference shared
+  with every other screen, bottom edges aligned), not touched here.
+  No EasyRPG source was consulted.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same

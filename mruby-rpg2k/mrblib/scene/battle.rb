@@ -1820,9 +1820,31 @@ class RPG2k
       # confirmed too (cycle #134, its own comment has the full writeup) --
       # the same five boundary cases, all matching this method exactly, on a
       # hand-edited skill list rather than a hand-edited item list.
+      #
+      # One case cycles #133/#134 never reached, measured this cycle (#246)
+      # on a nine-row skill list *and* a nine-row item list under genuine
+      # RPG_RT.exe: Down from the last *full* row's second column -- index 7
+      # of 9, whose own target cell (index 9) does not exist -- does not
+      # block. It scrolls the window a row and lands on the ninth entry
+      # (index 8), the lone cell of the partial fifth row, in *both* lists.
+      # Only an overflowing list behaves that way: the 8-item/4-row grid
+      # cycle #133 measured still blocks at index 7 with nowhere to scroll
+      # to, and so does a 3-item list's own partial row -- hence the
+      # `size > BATTLE_VISIBLE_ROWS * column_max` guard, which is exactly
+      # "this list overflows the window". (RPG_RT no-ops the same keypress
+      # once the window is already scrolled to the bottom -- its scroll
+      # offset is sticky where `#battle_list_window` still derives one from
+      # the cursor row, so that state cannot arise here; left open in
+      # docs/TODO.md with the rest of the sticky-scroll gap.)
       def move_battle_list_index(index, delta, size)
         target = index + delta
-        return nil if target.negative? || target >= size
+        return nil if target.negative?
+        if target >= size
+          return nil unless delta == BATTLE_LIST_COLUMN_MAX &&
+                            size > BATTLE_VISIBLE_ROWS * BATTLE_LIST_COLUMN_MAX &&
+                            index / BATTLE_LIST_COLUMN_MAX < (size - 1) / BATTLE_LIST_COLUMN_MAX
+          return size - 1
+        end
         target
       end
 
@@ -3797,18 +3819,50 @@ class RPG2k
         refresh_battle_status
       end
 
-      # The target-selection menu — the living enemies, with a cursor. Fixed at
-      # `CreateBattleTargetWindow`'s own rect: it covers the status window's
-      # footprint (not the command window's, which stays on screen beside it).
+      # The target-selection menu — the living enemies, with a cursor.
+      # Independently confirmed against genuine RPG_RT.exe under wine
+      # (cycle #246, Nepheshel's two-slime troop on map 2): the window's
+      # frame spans logical x 0..135 / y 160..239, i.e. exactly
+      # `(0, BATTLE_PANEL_Y, BATTLE_TARGET_W, BATTLE_PANEL_H)` -- it covers
+      # only the *left* 136px of the status panel's footprint, leaving the
+      # rest of that panel and the per-actor command window on screen beside
+      # it. Row 0's cursor frame measured x 4..131, y 168..183 and row 1's
+      # y 184..199 (a 16px pitch off the panel's own 8px border), enemy
+      # names start at logical x 8, and Right/Left are dead input here
+      # (frames byte-identical across both presses). A defeated enemy is
+      # dropped from the list outright rather than greyed -- killing one
+      # slime left a single-row list -- which is what `#living_foes`
+      # (alive *and* in play) already produces. The targeted enemy's own
+      # sprite is *not* highlighted: ten captures spanning ~3.5s with the
+      # cursor on slime 1 differ only inside the cursor frame's own blink,
+      # never a pixel of either battler.
+      #
+      # When the target cursor was reached from the Skill or Item list, that
+      # list stays on screen underneath (and keeps its own cursor and
+      # description banner) -- confirmed on the same captures: the first
+      # column's cost/count figures, which sit past this window's 136px
+      # right edge, stay visible beside it. `#confirm_battle_skill` /
+      # `#drive_battle_item` close their list before routing here, so this
+      # redraws it (at a lower z) rather than relying on it still being up.
       def draw_battle_target
         foes = living_foes
         @ui[:target_win].dispose if @ui[:target_win]
+        draw_battle_skill if pending_kind == :skill
+        draw_battle_item if pending_kind == :item
         @ui[:target_win] =
           battle_list_window(0, BATTLE_TARGET_W, foes.map(&:name),
                              @ui[:target_i], 330)
       end
 
+      # Closing the target cursor also takes down the Skill / Item list
+      # #draw_battle_target redraws beneath it, and their shared description
+      # banner: every Cancel path in #drive_battle_target redraws whichever
+      # window the player lands back on, and every Confirm path is done with
+      # all three.
       def close_battle_target
+        close_battle_skill
+        close_battle_item
+        close_battle_list_desc
         return unless @ui[:target_win]
         @ui[:target_win].dispose
         @ui[:target_win] = nil
@@ -3826,17 +3880,64 @@ class RPG2k
       # `BATTLE_VISIBLE_ROWS - 1` any more (#drive_battle_target caps it), so
       # this scrolls it in principle only -- real RPG_RT does not scroll that
       # particular list at all, see that method's own comment.
-      # `idxs`, parallel to `labels`, is an optional windowskin swatch index
-      # per row (0 enabled / 3 disabled, `Scene::Base#draw_system_text`'s own
-      # convention) -- nil (every caller except #draw_battle_item/
-      # #draw_battle_skill) keeps the plain flat-white `draw_text` every
-      # other list here has always used; the item and skill lists are the
-      # two that can hold a listed-but-disabled row (see #draw_battle_item /
-      # #draw_battle_skill).
-      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil)
+      #
+      # The two-column grid is a **160px pitch of 144px cells**, not the
+      # edge-to-edge `inner_w / 2` (152) split this used to draw -- measured
+      # on genuine RPG_RT.exe under wine (cycle #246, a 9-skill and a 9-item
+      # battle list on Nepheshel's own two-slime troop, 640x480 captures
+      # halved to the 320x240 logical screen): column 0's names start at
+      # logical x 8 and column 1's at 168 (contents 0 / 160), and the
+      # highlighted cell's cursor frame spans x 4..155 in column 0 -- a
+      # 144-wide `cursor_rect` at contents x 0 once RPG2k::Window's own 4px
+      # overhang each side is taken off. The 16px gutter between the cells
+      # is what the old 152/152 split was missing. Single-column lists
+      # (target / ally-target) keep the full content width: the enemy list's
+      # own cursor measured x 4..131 in its 136px window (`inner_w` 120 + the
+      # same overhang).
+      #
+      # A row is either a plain String (the enemy-target list) or a
+      # `[name, separator, figure]` triple (Skill / Item): the name clipped
+      # to the cell minus its 24px figure column, the separator glyph in the
+      # 6px halfwidth cell at cell x 120, and the figure right-aligned so its
+      # last digit ends at cell x 144. Measured on the same captures: the
+      # skill list's `-` sat at logical 128..130 / 288..290 with costs "7"
+      # and "15" both ending at 151 / 311, and the item list's `:` at
+      # 131..133 / 291..293 with counts "5", "12" and "99" likewise flush at
+      # 151 / 311 -- the identical column Scene::ItemMenu measured for the
+      # *field* item grid (COUNT_W/COUNT_SEP_W/COUNT_NUM_W).
+      #
+      # Every row is drawn through `draw_system_text` (windowskin swatch 0
+      # unless `idxs` names another), never the flat white `draw_text` the
+      # target/ally lists used to use: a genuine capture of the enemy-target
+      # list pixel-samples its names at (189,223,255) with the skin's own
+      # (24,28,24) shadow -- the System graphic's font gradient -- while ours
+      # drew them pure white.
+      #
+      # `desc`, when given, also (re)builds the description banner
+      # `@ui[:desc_win]` this screen shows above a Skill / Item list: a
+      # (0, 0, 320, 32) window with the highlighted row's database
+      # description on its single row. Confirmed against genuine RPG_RT
+      # under wine (cycle #246): the banner's frame spans logical y 0..31
+      # across the full width, its text starts at x 8 (contents 0), it
+      # tracks the cursor row by row, it stays up while the enemy- or
+      # ally-target cursor is open over the list, and it is gone the moment
+      # the list is cancelled. The four `close_battle_*` methods below are
+      # what dispose it.
+      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil, desc: nil)
+        # All five measured off genuine RPG_RT captures this cycle (see the
+        # comment above): the 16px gutter between two 144px cells on a 160px
+        # pitch, the figure column's own 24px (a 6px separator cell at cell
+        # x 120 plus a 12px right-aligned figure ending at 144) and the
+        # description banner's 32px height.
+        gutter_w = 16
+        figure_w = 24
+        sep_w = 6
+        num_w = 12
+        desc_h = 32
         rows = BATTLE_VISIBLE_ROWS
         inner_w = w - Window::BORDER * 2
-        col_w = inner_w / column_max
+        col_pitch = column_max > 1 ? SCREEN_W / column_max : inner_w
+        col_w = column_max > 1 ? col_pitch - gutter_w : inner_w
         row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
         sel_row = sel / column_max
         scroll = row_count > rows ? [[sel_row - rows + 1, 0].max, row_count - rows].min : 0
@@ -3850,96 +3951,201 @@ class RPG2k
           next if row < scroll || row >= scroll + rows
           col = i % column_max
           y = (row - scroll) * BATTLE_LINE_H
-          if idxs
-            draw_system_text(c, col * col_w, y, col_w, BATTLE_LINE_H, label, windowskin, idxs[i])
+          idx = idxs ? idxs[i] : 0
+          cx = col * col_pitch
+          if label.is_a?(Array)
+            name, sep, figure = label
+            draw_system_text(c, cx, y, col_w - figure_w, BATTLE_LINE_H,
+                             name, windowskin, idx)
+            draw_system_text(c, cx + col_w - figure_w, y,
+                             sep_w, BATTLE_LINE_H, sep, windowskin, idx)
+            draw_system_text(c, cx + col_w - num_w, y,
+                             num_w, BATTLE_LINE_H, figure, windowskin, idx, 2)
           else
-            c.draw_text col * col_w, y, col_w, BATTLE_LINE_H, label
+            draw_system_text(c, cx, y, col_w, BATTLE_LINE_H, label, windowskin, idx)
           end
         end
         win.contents = c
         unless labels.empty?
           sel_col = sel % column_max
-          win.cursor_rect = Rect.new(sel_col * col_w, (sel_row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H)
+          win.cursor_rect = Rect.new(sel_col * col_pitch, (sel_row - scroll) * BATTLE_LINE_H,
+                                     col_w, BATTLE_LINE_H)
+        end
+        if desc
+          @ui[:desc_win].dispose if @ui[:desc_win]
+          dwin = Window.new(0, 0, SCREEN_W, desc_h)
+          dwin.z = z
+          dwin.windowskin = windowskin
+          dc = Bitmap.new(SCREEN_W - Window::BORDER * 2, desc_h - Window::BORDER * 2)
+          dc.font.color = Color.new(255, 255, 255, 255)
+          draw_system_text(dc, 0, 0, dc.width, BATTLE_LINE_H, desc.to_s, windowskin, 0)
+          dwin.contents = dc
+          @ui[:desc_win] = dwin
         end
         win
       end
 
-      # The current actor's battle skills as "Name  cost", with a cursor. Full
-      # width, same rect as the item menu — a reference implementation's own
-      # skill and item
-      # windows cover both the status and command windows while open,
-      # ported from that reference implementation's source, not
-      # independently confirmed against genuine RPG_RT under wine. A listed
-      # but not
-      # currently castable skill (see
-      # #battle_skill_unavailable?) draws in the windowskin's disabled
-      # swatch, matching the field Skill menu and #draw_battle_item just
-      # below -- confirmed for the field Skill list directly against a
-      # genuine RPG_RT.exe (see Scene::SkillMenu#build_skill_window's own
-      # comment for the measured colours); not independently re-verified for
-      # this battle-side sibling this session, ported on the strength of
-      # sharing the identical `battle_list_window`/`draw_system_text`
-      # machinery #draw_battle_item already has confirmed pixel-for-pixel.
+      # Dispose the Skill / Item description banner `#battle_list_window`
+      # builds (see its `desc:` note) -- called by every `close_battle_*`
+      # method so the banner never outlives the list it belongs to.
+      def close_battle_list_desc
+        return unless @ui && @ui[:desc_win]
+        @ui[:desc_win].dispose
+        @ui[:desc_win] = nil
+      end
+
+      # The current actor's battle skills as `name` + `-` + the SP cost, in a
+      # two-column grid with a cursor, under a description banner. Full
+      # width, same rect as the item menu -- independently confirmed against
+      # genuine RPG_RT.exe under wine (cycle #246): the leader デモ用 was
+      # given nine skills by hand (chunk 108's own actor-15 record, fields
+      # 51/52) and 10 SP (field 72), and the list drew as one
+      # `(0, 160, 320, 80)` box covering the status *and* command windows,
+      # with a `(0, 0, 320, 32)` description banner over the battlers -- the
+      # highlighted skill's own database description, tracking the cursor
+      # row by row and staying up through target selection.
+      #
+      # The cost is `-` in the 6px cell at cell x 120 with the figure
+      # right-aligned to cell x 144 ("- 7", "- 15", "- 50" all ended on the
+      # same column), matching the field Skill menu's own measured column;
+      # rows are laid out row-major across the 160px column pitch (see
+      # #battle_list_window). A skill the caster cannot currently afford is
+      # drawn in the windowskin's disabled swatch: on that capture the 7/4/0
+      # SP rows sampled (189,223,255) and the 15/12/50 SP rows (99,166,247)
+      # against 10 current SP -- the same enabled/disabled pair the field
+      # Skill and Item lists measured. Confirmed here directly this cycle,
+      # no longer inherited by analogy from the field screens.
+      #
+      # Deliberately still open (see docs/TODO.md): the blinking windowskin
+      # scroll arrows a longer list shows (measured at logical x 155..164,
+      # y 161..165 up / y 233..238 down) need a per-frame sprite tick this
+      # screen has no hook for, and RPG_RT's own scroll *offset* is sticky
+      # (it keeps the top row where a Down left it) where this window still
+      # derives it from the cursor row.
       def draw_battle_skill
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
-          "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
+          [sk ? sk.name : "Skill #{sid}", '-', cost.to_s]
         end
         idxs = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
           battle_skill_unavailable?(cost, sk) ? 3 : 0
         end
         @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
-                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
+                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                             desc: battle_list_description(
+                                               @ui[:skills][@ui[:skill_i]], true
+                                             ))
       end
 
       def close_battle_skill
+        close_battle_list_desc
         return unless @ui[:skill_win]
         @ui[:skill_win].dispose
         @ui[:skill_win] = nil
       end
 
-      # The party's battle items as "Name  xN", with a cursor. A listed but
-      # not battle-usable item (see Game::Party#battle_items) draws in the
-      # windowskin's disabled swatch, matching the field Item menu.
+      # The party's battle items as `name` + `:` + the held count, in the
+      # same two-column grid, under the same description banner -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #246) on a hand-edited
+      # nine-item bag (chunk 109 fields 11/12/13): the `:` glyph sat at
+      # logical 131..133 / 291..293 (its 6px cell at cell x 120) with the
+      # counts "5", "12" and "99" all ending flush at 151 / 311 (cell x
+      # 144). RPG_RT kept the rows in the *bag's own stored order* where
+      # `Game::Party#battle_items` (which feeds `@ui[:items]`, outside this
+      # method) sorts them by id -- recorded in docs/TODO.md, not fixed
+      # here. A listed
+      # but not battle-usable item draws in the windowskin's disabled swatch
+      # -- the capture's KO-only 気付け薬 and its ショートソード weapon row
+      # both sampled (99,166,247) against the usable rows' (189,223,255) --
+      # and Decision on one only buzzes (`#drive_battle_item`).
       def draw_battle_item
         @ui[:item_win].dispose if @ui[:item_win]
         labels = @ui[:items].map do |id, count|
           it = @state.party.db_item(id)
-          "#{it ? it.name : "Item #{id}"}  x#{count}"
+          [it ? it.name : "Item #{id}", ':', count.to_s]
         end
         idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
-                                            column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
+                                            column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                            desc: battle_list_description(
+                                              @ui[:items][@ui[:item_i]], false
+                                            ))
+      end
+
+      # The description banner's text for the highlighted `[id, _]` row of a
+      # Skill (`skill` true) / Item list: that record's own `description`
+      # (chunk 12/13 field 2), or "" when the row or the record is missing.
+      # Confirmed verbatim against genuine RPG_RT under wine (cycle #246):
+      # the banner over the skill list read サー's own "(疾風)敵全体に真空波
+      # を放つ" and over the item list 薬草's "HPを80ポイント程度回復する",
+      # including for a *disabled* row (ショートソード's own description
+      # still showed, in the enabled colour).
+      def battle_list_description(row, skill)
+        return '' unless row
+        rec = skill ? @state.party.db_skill(row[0]) : @state.party.db_item(row[0])
+        return '' unless rec && rec.respond_to?(:description)
+        rec.description.to_s
       end
 
       def close_battle_item
+        close_battle_list_desc
         return unless @ui[:item_win]
         @ui[:item_win].dispose
         @ui[:item_win] = nil
       end
 
-      # The living party members selectable as a heal target ("Name HP h/mh"),
-      # with a cursor -- narrowed by #battle_ally_targets when a pending item's
-      # actor_set excludes some of them. A reference implementation's own
-      # source reuses the
-      # status window itself for this, ported from that reference
-      # implementation's source, not independently confirmed against
-      # genuine RPG_RT under wine; this screen still draws a
-      # separate window, but at the status window's own rect and footprint so
-      # it reads the same way -- covering the party's HP display, leaving the
-      # command window in view beside it.
+      # The party member a healing skill / medicine applies to. RPG_RT does
+      # *not* draw a list of names here: it puts a cursor on the party
+      # status panel itself. Confirmed against genuine RPG_RT.exe under wine
+      # (cycle #246, an ally-scope skill and an ally-scope item both routed
+      # here): the panel that came up carried the status window's own four
+      # columns unchanged ("デモ用 / 正常 / HP600/600 / MP10", the low-SP
+      # figure still recoloured), its frame spanned logical x 0..243 -- the
+      # status panel's own `(0, BATTLE_PANEL_Y, BATTLE_STATUS_W,
+      # BATTLE_PANEL_H)` rect -- and the cursor frame spanned x 4..239,
+      # y 168..183: a full-content-width `cursor_rect` on the target's row.
+      # The Skill / Item list it was opened from stays on screen underneath
+      # (its second column's figures show past the panel's 244px right
+      # edge), so this window is drawn over that list rather than beside it.
+      #
+      # Built through `#battle_status_window` (the same rows
+      # `#refresh_battle_status` builds) so the two can never drift, then
+      # raised above the list's own z. `#battle_ally_targets` still decides
+      # *which* rows the cursor may land on -- a pending item's actor_set can
+      # exclude some -- so the cursor row is that target's index in the full
+      # party, not in the narrowed list.
+      #
+      # Deliberately left open (see docs/TODO.md): the cursor's own
+      # row-to-row movement could not be re-measured against RPG_RT this
+      # cycle -- this save's party is a single actor, and growing it means
+      # the live Change Party Member route cycle #136 used, not a save edit
+      # (chunk 109's party list blackens RPG_RT on Continue). Cycle #136's
+      # multi-actor Down/Up findings stand unchanged.
       def draw_battle_ally_target
         @ui[:ally_win].dispose if @ui[:ally_win]
-        labels = battle_ally_targets.map do |a|
-          "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.display_max_hp}"
-        end
-        @ui[:ally_win] =
-          battle_list_window(0, BATTLE_STATUS_W, labels, @ui[:ally_i], 335)
+        draw_battle_skill if pending_kind == :skill
+        draw_battle_item if pending_kind == :item
+        allies = @ui[:allies]
+        target = battle_ally_targets[@ui[:ally_i]]
+        idx = allies.index(target) || 0
+        win = (gauge_battle_layout? && battle_status_gauge_window(allies)) ||
+              battle_status_window(allies.map { |a| battle_status_row(a) }, idx)
+        win.z = 335
+        win.cursor_rect = Rect.new(0, idx * BATTLE_LINE_H,
+                                   BATTLE_STATUS_W - Window::BORDER * 2, BATTLE_LINE_H)
+        @ui[:ally_win] = win
       end
 
+      # Like #close_battle_target: the Skill / Item list this cursor was
+      # opened over, and its description banner, go with it -- every Cancel
+      # path in #drive_battle_ally_target redraws the one the player lands
+      # back on.
       def close_battle_ally_target
+        close_battle_skill
+        close_battle_item
+        close_battle_list_desc
         return unless @ui[:ally_win]
         @ui[:ally_win].dispose
         @ui[:ally_win] = nil
