@@ -9,17 +9,20 @@
 # (the "RPG Basic System" that ships with the editor and that every real game
 # customises). `Wolf::Interpreter` (interpreter.rb) runs every auto-start and
 # parallel-process Common Event each frame against a `Wolf::VarStore`
-# (vars.rb); map events (their own trigger/movement/page-selection logic) do
-# not run yet, and several commands (StringCondition, messages beyond a log
-# line, pictures, sound, teleport, ...) are explicitly unimplemented rather
-# than guessed at -- see docs/TODO.md and interpreter.rb's own header for
-# which command semantics are cross-confirmed versus best-effort. What exists
-# here besides that is the map-rendering and movement foundation every later
-# piece sits on: it loads the project's database, tile data and start
-# position, and lets the hero walk around the starting map with the real
-# per-tile passability flags, the same incremental order mruby-rpg2k's own
-# history followed (map exploration before the event interpreter, before
-# battle).
+# (vars.rb), and drives map events too (trigger/page-selection, not their own
+# movement yet). Several commands (StringCondition, messages beyond a log
+# line, file/window pictures, sound, teleport, ...) are explicitly
+# unimplemented rather than guessed at -- see docs/TODO.md and
+# interpreter.rb's own header for which command semantics are cross-confirmed
+# versus best-effort. `Wolf::Interpreter#exec_picture` calls into
+# `WolfRPG::MapScene#show_string_picture`/`#erase_picture` below for
+# Picture(150)'s text-picture case, the one real rendering hook Interpreter
+# has into this file. What exists here besides that is the map-rendering and
+# movement foundation every later piece sits on: it loads the project's
+# database, tile data and start position, and lets the hero walk around the
+# starting map with the real per-tile passability flags, the same incremental
+# order mruby-rpg2k's own history followed (map exploration before the event
+# interpreter, before battle).
 #
 # Tiles are drawn as flat colour blocks keyed by TileSetData's passability
 # flags (green passable, dark red blocked, blue counter, grey autotile),
@@ -48,6 +51,11 @@ class WolfRPG
     @var_store = Wolf::VarStore.new(@project)
     @interpreter = Wolf::Interpreter.new(@project, @var_store)
     @scene = nil
+    # A real TrueType face, so Picture(150)'s text pictures (and the sample
+    # game's own Japanese message text, once real message windows exist)
+    # have real glyphs to draw -- the same opt-in mruby-rpgxp/mruby-rpgvx
+    # already make, rather than RPG2000's fixed shinonome bitmap font.
+    RGSS::Font.default_path ||= RGSS.default_font_path
     build_start_scene
   end
 
@@ -85,6 +93,7 @@ class WolfRPG
     map = @project.map(map_id)
     @interpreter.current_map = map
     @scene = MapScene.new(@project, map, @tile, x, y, @interpreter)
+    @interpreter.current_scene = @scene
     $stderr.puts "[Wolf-MAP] map=#{map_id} x=#{x} y=#{y}"
   rescue Wolf::Error => e
     $stderr.puts "[Wolf] failed to open the start map: #{e.class}: #{e.message}"
@@ -127,8 +136,15 @@ class WolfRPG
       @facing = :down
       @interpreter = interpreter
       @event_sprites = {}
+      @pictures = {}
       @tileset = project.tilesets[map.tileset_id]
       @viewport = RGSS::Viewport.new(0, 0, RGSS::Graphics.width, RGSS::Graphics.height)
+      # Pictures are screen-space, not map-space: a message window or menu
+      # must not scroll off with the camera the way #update_camera pans
+      # @viewport for the map/hero/events, so they get their own viewport
+      # that is never panned (Wolf::Interpreter#exec_picture does not yet
+      # model the "linked to scroll" bit that would ask for the opposite).
+      @picture_viewport = RGSS::Viewport.new(0, 0, RGSS::Graphics.width, RGSS::Graphics.height)
       @map_bitmap = RGSS::Bitmap.new([map.width * tile, 1].max, [map.height * tile, 1].max)
       draw_tiles
       @map_sprite = RGSS::Sprite.new(@viewport)
@@ -156,7 +172,64 @@ class WolfRPG
       update_camera
     end
 
+    # Anchor codes Wolf::Interpreter#exec_picture passes through unchanged
+    # from Picture(150)'s own bitmask (help/04ev_picture.html); top-center/
+    # bottom-center are in the manual but not modeled (see interpreter.rb's
+    # own comment), so #picture_origin below only handles these five.
+    ANCHOR_TOP_LEFT = 0
+    ANCHOR_CENTER = 1
+    ANCHOR_BOTTOM_LEFT = 2
+    ANCHOR_TOP_RIGHT = 3
+    ANCHOR_BOTTOM_RIGHT = 4
+
+    # Shows or moves (both snap immediately -- see interpreter.rb's own
+    # comment on Picture(150)) a text picture: `text` rendered onto its own
+    # Bitmap/Sprite pair, one per picture `number`, kept until #erase_picture.
+    # `zoom`/`blend` nil means "leave the existing sprite's value alone"
+    # (Picture(150)'s own "same as current" encoding).
+    def show_string_picture(number, text, x, y, opacity, zoom, angle, anchor, blend)
+      entry = (@pictures[number] ||= build_picture)
+      measured = RGSS::Bitmap.new(1, 1).text_size(text)
+      width = [measured.width, 1].max
+      height = [measured.height, 1].max
+      bitmap = RGSS::Bitmap.new(width, height)
+      bitmap.draw_text(0, 0, width, height, text)
+      entry[:sprite].bitmap = bitmap
+      ox, oy = picture_origin(anchor, width, height)
+      entry[:sprite].x = x - ox
+      entry[:sprite].y = y - oy
+      entry[:sprite].opacity = opacity
+      unless zoom.nil?
+        entry[:sprite].zoom_x = zoom
+        entry[:sprite].zoom_y = zoom
+      end
+      entry[:sprite].angle = angle
+      entry[:sprite].blend_type = blend unless blend.nil?
+      entry[:sprite].visible = true
+    end
+
+    def erase_picture(number)
+      entry = @pictures.delete(number)
+      entry[:sprite].dispose if entry
+    end
+
     private
+
+    def picture_origin(anchor, width, height)
+      case anchor
+      when ANCHOR_CENTER then [width / 2, height / 2]
+      when ANCHOR_BOTTOM_LEFT then [0, height]
+      when ANCHOR_TOP_RIGHT then [width, 0]
+      when ANCHOR_BOTTOM_RIGHT then [width, height]
+      else [0, 0] # ANCHOR_TOP_LEFT, and any unmodeled anchor code
+      end
+    end
+
+    def build_picture
+      sprite = RGSS::Sprite.new(@picture_viewport)
+      sprite.bitmap = RGSS::Bitmap.new(1, 1)
+      { sprite: sprite }
+    end
 
     def draw_tiles
       w = @map.width

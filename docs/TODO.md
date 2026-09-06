@@ -35464,15 +35464,30 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   routes: custom/random/toward-hero) is not implemented, so every event
   stays at its parsed position; `CommonEvent`(210) targeting a specific
   map event's page is still an explicit no-op; message boxes are still
-  just a stderr line (a real one depends on the picture system below,
-  since the RPG Basic System draws its own message window via `Picture`
-  calls rather than a native engine widget). Suggested next order,
-  mirroring how RPG2000 support grew: the picture system (150, richer than
-  RPG2000's: zoom, angle, colour, string pictures with inline control
-  codes) next -- since real message/menu display depends on it -- then
-  event move routes, then everything else (input commands 123-126,
-  save/load 220-222, database read/write 250/251, sound 140, transitions
-  160-162/281/290).
+  just a stderr line, since the RPG Basic System draws its own message
+  window via `Picture` calls rather than a native engine widget.
+- ✅ **Picture(150), text pictures only (2026-09-06).** The mode bitmask
+  (operation/display-type/blend/anchor/zoom-mode/range/free-transform)
+  is fully decoded and cross-confirmed (the wolfrpg-map-parser crate's
+  own independent enums, WolfTL's narrower `Type()`, and the manual all
+  agree). Erase works for every display type. Show/Move render only the
+  `text` ("string as picture") display type -- position, opacity, zoom,
+  angle and blend, via a real `RGSS::Sprite`/`Bitmap` per picture number
+  in `WolfRPG::MapScene` (its own dedicated, camera-fixed viewport, since
+  pictures are screen-space UI). `file`/`file-by-variable`/`window-file`/
+  `window-by-variable` (what the sample game's own message window and
+  menu actually use for their frame) remain explicit no-ops -- unlike
+  every command implemented before it, Picture's *argument* layout
+  (beyond the bitmask) rests on one source only (WolfTL never decodes it,
+  only the crate does), cross-checked here empirically against the
+  sample game's own data rather than a second independent parser. See
+  `docs/adr/0067-wolf-rpg-editor-picture-command.md`. Suggested next
+  order, mirroring how RPG2000 support grew: `file`/`file-by-variable`
+  pictures next (pin down WOLF's own Picture-folder convention), then
+  `window-file`/`window-by-variable` (a natural fit for `RGSS::Window`'s
+  own 9-slice stretch), then event move routes, then everything else
+  (choices/102, input commands 123-126, save/load 220-222, database
+  read/write 250/251, sound 140, transitions 160-162/281/290).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

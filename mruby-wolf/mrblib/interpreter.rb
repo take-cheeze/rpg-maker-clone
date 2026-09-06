@@ -171,9 +171,11 @@ module Wolf
           @interp.exec_common_event_by_name(cmd)
         when Interpreter::C_MESSAGE, Interpreter::C_COMMENT, Interpreter::C_DEBUG_MESSAGE
           @interp.exec_message(cmd)
+        when Interpreter::C_PICTURE
+          @interp.exec_picture(cmd)
         when Interpreter::C_CHOICES, Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
-             Interpreter::C_SOUND, Interpreter::C_PICTURE,
+             Interpreter::C_SOUND,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
              Interpreter::C_END_GAME
           @interp.unimplemented(cmd.code)
@@ -327,6 +329,14 @@ module Wolf
     # which collide across maps that reuse small ids like 0/1/2).
     attr_accessor :current_map
 
+    # The running WolfRPG::MapScene, so #exec_picture can ask it to actually
+    # show/move/erase a picture sprite -- Interpreter itself has no
+    # rendering code of its own, the same separation #current_map's own
+    # doc comment describes for map-event lookups. nil in contexts with no
+    # real scene (scripts/wolf_interpreter_check.rb's soak check), which
+    # #exec_picture must tolerate.
+    attr_accessor :current_scene
+
     def unimplemented(what)
       var_store.warn_once("unimplemented-#{what}", "event command #{what} is not implemented yet; skipping")
     end
@@ -420,6 +430,124 @@ module Wolf
     def exec_message(cmd)
       text = cmd.strings.first || ""
       $stderr.puts "[Wolf-MSG] #{text}" unless text.empty?
+    end
+
+    # Picture(150) operation nibble (bits 0-3 of arg(0)).
+    PICTURE_OP_SHOW = 0
+    PICTURE_OP_MOVE = 1
+    PICTURE_OP_ERASE = 2
+    PICTURE_OP_DELAY_RESET = 3
+
+    # Picture(150) display-type field (bits 4-6): what the picture shows.
+    PICTURE_TYPE_FILE = 0
+    PICTURE_TYPE_FILE_VARIABLE = 1
+    PICTURE_TYPE_TEXT = 2
+    PICTURE_TYPE_WINDOW_FILE = 3
+    PICTURE_TYPE_WINDOW_VARIABLE = 4
+
+    # Picture(150): the single command the RPG Basic System uses to draw
+    # everything visible -- message windows, choice menus, the whole
+    # in-game menu -- so cross-validating this one command matters more
+    # than any other. No wine reference exists for WOLF RPG Editor; the
+    # bitmask below is cross-confirmed between the wolfrpg-map-parser
+    # crate's own independent byte-level Options/DisplayOperation/
+    # DisplayType/BlendingMethod/Anchor/Zoom decoders and WolfTL's own
+    # (narrower) Type() accessor, and both agree with the manual's own
+    # ピクチャ command page (help/04ev_picture.html), which documents the
+    # same 4 operations and 5 display kinds in the same order:
+    #
+    #   bits 0-3   operation:    0 show, 1 move, 2 erase, 3 "delay reset"
+    #   bits 4-6   display type: 0 file, 1 file-by-string-variable,
+    #                            2 text ("string as picture"), 3 window
+    #                            (from a file), 4 window (from a string
+    #                            variable)
+    #   bits 8-11  blend:        0 normal, 1 add, 2 subtract, 3 multiply,
+    #                            0xf "same as current" (leave alone)
+    #   bits 12-15 anchor:       0 top-left, 1 center, 2 bottom-left,
+    #                            3 top-right, 4 bottom-right (the manual
+    #                            documents 2 more -- top-center/bottom-
+    #                            center -- that neither independent
+    #                            source's own enum models; treated as
+    #                            unsupported rather than guessed)
+    #   bits 20-23 zoom mode:    0 one value for both axes, 3 separate
+    #                            width/height values, 4 "same as current"
+    #   bit 24     "range" (apply to a contiguous run of picture numbers)
+    #   bit 26     "free transform" (4 independent corner points)
+    #
+    # Only the crate's own byte-level parser models the *argument*
+    # layout beyond this bitmask (WolfTL never needs more than the type/
+    # number/text to extract translatable strings), so unlike the
+    # bitmask fields above, the argument positions below are single-
+    # source and cross-checked here only empirically: against this
+    # reader's own real command dump from the sample game (a
+    # "window-by-string-variable" call whose width/height/position
+    # arguments resolve, through SetVariable math earlier in the same
+    # Common Event, to values that only make sense in this exact slot
+    # order -- see docs/adr/0067). Only that plain "Base" layout (no
+    # range, no free-transform) is implemented, and only the `text`
+    # display type actually renders (file/window pictures need a
+    # separate look at WOLF's own Picture-folder convention and, for
+    # windows, 9-slice stretching -- left as a follow-up rather than a
+    # guess); everything else is an explicit, logged no-op. Move and Show
+    # both snap immediately -- WOLF's own gradual "process_time" fade/
+    # slide animation is not modeled.
+    def exec_picture(cmd)
+      options = cmd.arg(0)
+      operation = options & 0x0f
+      number = cmd.arg(1)
+
+      if operation == PICTURE_OP_ERASE
+        current_scene&.erase_picture(number)
+        return
+      end
+
+      range = (options >> 24) & 0x1
+      free_transform = (options >> 26) & 0x1
+      if range != 0 || free_transform != 0
+        unimplemented("Picture(150) range/free-transform variant")
+        return
+      end
+
+      case operation
+      when PICTURE_OP_SHOW, PICTURE_OP_MOVE
+        exec_picture_show_or_move(cmd, options, number)
+      when PICTURE_OP_DELAY_RESET
+        unimplemented("Picture(150) delay reset")
+      else
+        unimplemented("Picture(150) operation #{operation}")
+      end
+    end
+
+    def exec_picture_show_or_move(cmd, options, number)
+      display_type = (options >> 4) & 0x07
+      unless display_type == PICTURE_TYPE_TEXT
+        unimplemented("Picture(150) display type #{display_type} (only text pictures render so far)")
+        return
+      end
+
+      text = cmd.strings.first || ""
+      opacity = var_store.number(cmd.arg(6))
+      x = var_store.number(cmd.arg(7))
+      y = var_store.number(cmd.arg(8))
+
+      zoom_mode = (options >> 20) & 0xf
+      zoom = zoom_mode == 4 ? nil : var_store.number(cmd.arg(9)) / 100.0
+      unimplemented("Picture(150) separate width/height zoom") if zoom_mode == 3
+
+      angle = var_store.number(cmd.arg(10))
+
+      blend_word = (options >> 8) & 0xf
+      blend =
+        case blend_word
+        when 0xf then nil # "same as current" -- leave the sprite's blend mode alone
+        when 0, 1, 2 then blend_word
+        else
+          var_store.warn_once("picture-blend-#{blend_word}", "Picture(150) blend mode #{blend_word} not supported; using normal")
+          0
+        end
+
+      anchor = (options >> 12) & 0xf
+      current_scene&.show_string_picture(number, text, x, y, opacity, zoom, angle, anchor, blend)
     end
 
     # CommonEvent(210) / CommonEventReserve(211): args = [event_id,
