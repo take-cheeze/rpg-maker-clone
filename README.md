@@ -574,15 +574,29 @@
   autotile) rather than the tileset's actual `ChipSet` image, mirroring the
   colour-block fallback this engine's own RPG2000 renderer used before real
   chipset art landed for it
-- No events run yet (the interpreter for the command set above is the next
-  milestone — see `docs/TODO.md`), so nothing but bare map geometry appears:
-  no title screen, no messages, no menus, no battle. Both are entirely the RPG
-  Basic System's own Common Events in a real project, the way RPG Maker XP's
-  title/menu/battle are entirely its bundled `Data/Scripts.rxdata`
+- **Common Events run.** `Wolf::Interpreter` drives every auto-start and
+  parallel-process Common Event each frame, one `Fiber`-backed run per live
+  event so a `Wait` command suspends only that event. Implemented so far:
+  variable/string assignment and its common operators (`SetVariable`/
+  `SetString`), multi-case branches (`VariableCondition`), loops
+  (`StartLoop`/`BreakLoop`/`LoopEnd`/`GotoLoopStart`), labels (`SetLabel`/
+  `JumpLabel`), `Wait`, and calling other Common Events (`CommonEvent`/
+  `CommonEventReserve`/`CommonEventByName`) with their self-variable
+  arguments and return values — backed by `Wolf::VarStore`, which
+  implements the manual's documented variable/switch/string/self-var/
+  database-field addressing scheme. Map events (their own trigger/
+  movement/page-selection logic) do not run yet, and several commands
+  (real message windows, choices, pictures, sound, `StringCondition`,
+  database writes) are still explicit no-ops — see `docs/TODO.md` and
+  [`docs/adr/0065-wolf-rpg-editor-event-interpreter.md`](docs/adr/0065-wolf-rpg-editor-event-interpreter.md)
+  for exactly what is cross-confirmed versus best-effort
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
-  whole database and every map — `scripts/download-wolfrpg-sample.bash` fetches
-  the editor's own official sample game (SmokingWOLF's freely redistributable
-  GitHub release) as the test bed CI runs this against
+  whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
+  path/to/Project` soak-tests the interpreter itself against a project's real
+  Common Events (nothing raises or hangs across a bounded run of frames) —
+  `scripts/download-wolfrpg-sample.bash` fetches the editor's own official
+  sample game (SmokingWOLF's freely redistributable GitHub release) as the
+  test bed CI runs both against
 
 ### Window title
 - The window is named after the game that is running, so the desktop (and the

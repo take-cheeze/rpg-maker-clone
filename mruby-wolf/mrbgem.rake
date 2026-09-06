@@ -19,12 +19,18 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   # Viewport and reads input through RGSS::Input -- the shared engine
   # namespace every maker gem draws its rendering primitives from.
   add_dependency 'mruby-rgss'
+  # interpreter.rb runs each live Common Event as its own Fiber (mirroring
+  # mruby-rpgxp's ScriptHost driver, ADR 0023) so a Wait command can suspend
+  # just that event without blocking the frame loop or any other event.
+  add_dependency 'mruby-fiber'
 
   # Load order matters: wolf.rb defines the Wolf module, its byte-level Reader,
   # LZ4 decoder and Wolf.bin/utf8 helpers that data.rb's per-file classes (and
   # their MAGIC/TERMINATOR constants, evaluated at class-body time) depend on;
-  # runtime.rb's WolfRPG boot class depends on both plus mruby-rgss's shared
+  # vars.rb's ValueRef/VarStore need Wolf::Error; interpreter.rb runs against
+  # data.rb's Command/CommonEvent classes and vars.rb's VarStore; runtime.rb's
+  # WolfRPG boot class depends on all of the above plus mruby-rgss's shared
   # RGSS namespace. Set the order explicitly rather than relying on the
   # default alphabetical glob (see mruby-rpgvx/mrbgem.rake for the same need).
-  spec.rbfiles = %w[wolf data runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
+  spec.rbfiles = %w[wolf data vars interpreter runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
 end
