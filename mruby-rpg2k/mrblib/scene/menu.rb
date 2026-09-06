@@ -11,14 +11,20 @@ class RPG2k
     # where all four cases share this one actor-selection panel (there is no
     # separate handler for the Row toggle; it is inline in that same
     # actor-selection switch), NOT independently confirmed against genuine
-    # RPG_RT under wine.
+    # RPG_RT under wine for Status/Row (RPG2003-only rows Nepheshel has no
+    # way to show); the Skill/Equip half of it *is* confirmed on genuine
+    # RPG_RT.exe under wine (cycle #240): both hand focus to the party list
+    # first, a second Return opens the screen, and Escape from that screen
+    # lands back on the command list with the cursor still on the command,
+    # never on the actor-selection state -- see #leave_actor_selection.
     # Order -- which acts on the whole party at once, not one actor -- pushes
     # Scene::Order directly instead, the same `UpdateCommand` shape Item/Save
     # already use. Cancelling back out of actor selection returns focus to
-    # the command list. End Game opens a Yes/No confirmation (see
-    # #open_end_game_confirm); only confirming "Yes" there returns to the
-    # title. Any further command (there are none left in the built command
-    # list today) falls back to a "not implemented yet" message.
+    # the command list (confirmed the same way). End Game opens a Yes/No
+    # confirmation (see #open_end_game_confirm); only confirming "Yes" there
+    # returns to the title. Any further command (there are none left in the
+    # built command list today) falls back to a "not implemented yet"
+    # message.
     class Menu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
@@ -155,10 +161,12 @@ class RPG2k
       end
 
       # Undo #suspend once the child screen above this menu is popped and it
-      # is active again -- called by RPG2k#pop. Redraws the gold panel too,
-      # ported from a reference implementation's own menu-resume path, NOT
-      # independently confirmed against genuine RPG_RT under wine: it
-      # unconditionally calls `gold_window->Refresh()` (alongside the
+      # is active again -- called by RPG2k#pop, and by
+      # #close_end_game_confirm, which hides the same three windows behind
+      # the End Game prompt (see #open_end_game_confirm). Redraws the gold
+      # panel too, ported from a reference implementation's own menu-resume
+      # path, NOT independently confirmed against genuine RPG_RT under wine:
+      # it unconditionally calls `gold_window->Refresh()` (alongside the
       # status panel's own `menustatus_window->Refresh()`, already mirrored
       # by #refresh_status_cursor/rebuilds elsewhere) every time control
       # returns from a popped child screen.
@@ -281,6 +289,15 @@ class RPG2k
         end
       end
 
+      # Back to the command list, cursor still on the command that started
+      # the selection, and the party-status panel's own cursor gone --
+      # confirmed on genuine RPG_RT.exe under wine (cycle #240), both for a
+      # plain cancel here and for cancelling out of the Skill/Equip screen
+      # opened from here: either way the next frame is the field menu with
+      # the command cursor on 特殊技能/装備 and no actor cursor (a third
+      # Escape then closes the menu to the map, and re-opening it starts on
+      # アイテム again -- the cursor position is not remembered across a
+      # close, which a fresh Scene::Menu per open already gives).
       def leave_actor_selection
         @focus = :command
         @pending_key = nil
@@ -352,50 +369,10 @@ class RPG2k
         @status.windowskin = @skin
         sc = Bitmap.new(SCREEN_W - cw - Window::BORDER * 2, SCREEN_H - Window::BORDER * 2)
         sc.font.color = Color.new(255, 255, 255, 255)
-        # Text starts clear of the face portrait (see #draw_actor_face) --
-        # matching the message window's own face-graphic layout
-        # (Scene::Map's `text_x = FACE_SIZE + FACE_MARGIN`, FACE_SIZE/
-        # FACE_MARGIN below are the same constants).
-        text_x = FACE_SIZE + FACE_MARGIN
         @state.party.actors.each_with_index do |a, i|
           y = i * STATUS_ROW_H
           draw_actor_face sc, a, 0, y
-          # Name and EXP share the top row: EXP right-aligned into whatever
-          # room the (typically short) name leaves, rather than a fourth
-          # line of its own -- the portrait's 48px height is exactly three
-          # 16px text lines (name; Lv+condition; HP/MP), so a fourth line
-          # would either overflow the portrait or force every party
-          # member's row taller than it needs to be.
-          sc.draw_text text_x, y, sc.width - text_x, 14, a.name.to_s
-          draw_exp_row sc, a, text_x, y, sc.width - text_x
-          # The condition now rides the Lv row, right after the level --
-          # confirmed against a genuine RPG_RT.exe screenshot (Nepheshel):
-          # its own field-menu panel reads "LV 2  <condition>" together, not
-          # the name row this used to share with a hidden portrait spelled
-          # out below. Left-aligned right after "Lv N ", not right-aligned
-          # to the panel's far edge as before -- with a portrait now eating
-          # the row's left column there is no far-right space to spare, and
-          # the reference screenshot itself reads left-to-right in that
-          # order rather than split to opposite edges.
-          row_y = y + 16
-          lvl_label = "#{term(:level_short)} #{a.level}  "
-          draw_system_text sc, text_x, row_y, sc.width - text_x, 14, lvl_label, @skin
-          cond_x = text_x + sc.text_size(lvl_label).width
-          draw_actor_state sc, a, cond_x, row_y, sc.width - cond_x, 14, @skin
-          # HP/MP recolor the same way the field Status screen's identical row
-          # does (Scene::Base#draw_stat_segment, ported from a reference
-          # implementation -- see that helper's own citation): only the
-          # current-value figure, never its label or max,
-          # dims to knockout gray at 0 HP or critical red/orange at or below a
-          # quarter of max. This row used to draw as one flat-white string,
-          # the same gap the field Status screen and battle status panel each
-          # had before their own earlier fixes (see docs/TODO.md).
-          hp_mp_y = row_y + 16
-          gutter = sc.text_size('  ').width
-          x = draw_stat_segment(sc, text_x, hp_mp_y, sc.width, 14,
-                                 "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
-          draw_stat_segment(sc, x + gutter, hp_mp_y, sc.width, 14,
-                             "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
+          draw_status_row sc, a, y
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see
@@ -426,11 +403,24 @@ class RPG2k
         draw_gold_window
       end
 
+      # Amount then the `gold` term as one run right-aligned to the contents'
+      # right edge, the term in the system colour (index 1) and the amount in
+      # the default colour -- pixel-measured on genuine RPG_RT.exe under wine
+      # (Nepheshel, cycle #240): with 0 gold the window reads `0Ｇ` ending
+      # flush at the contents' right edge (Nepheshel's term is the
+      # full-width Ｇ, U+FF27, a 12px glyph: the `0` cell sits at contents
+      # x 54..60 and the Ｇ at 60..72), the Ｇ's pixels sampling the
+      # skin's index-1 blue swatch and the digit index 0's white. This used
+      # to be one flat-white `draw_text` run left-aligned at x 0.
       def draw_gold_window
         inner_w = GOLD_WINDOW_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, LINE_H, "#{@state.party.gold}#{term(:gold)}"
+        unit = term(:gold)
+        unit_w = c.text_size(unit).width
+        draw_system_text c, 0, STATUS_TEXT_Y, inner_w - unit_w, LINE_H,
+                         @state.party.gold.to_s, @skin, 0, 2
+        draw_system_text c, 0, STATUS_TEXT_Y, inner_w, LINE_H, unit, @skin, LABEL_COLOR, 2
         @gold.contents = c
       end
 
@@ -439,31 +429,120 @@ class RPG2k
           Rect.new(0, @index * LINE_H, @command.contents.width, LINE_H)
       end
 
-      # An actor's EXP row on the party-status panel: current EXP over the
-      # next level's absolute threshold (`Game::Actor#next_level_exp`), or
-      # '---' once there is no next level to show -- the same reading and
-      # fallback the field Status screen's own EXP row already uses (see
-      # StatusMenu#build_window's own citation on the absolute-vs-remaining
-      # distinction). Plain system text, not #draw_stat_segment: that
-      # helper's colouring means "getting low, watch out" (HP/MP), which
-      # does not apply to EXP progress. Right-aligned into `[x, x+w)`: it
-      # shares the name row rather than a line of its own (see
-      # #build_windows's own citation).
-      def draw_exp_row(bmp, actor, x, y, w)
-        nxt = actor.next_level_exp
-        draw_system_text bmp, x, y, w, 14,
-                          "#{term(:exp_short)} #{actor.exp}/#{nxt.nil? ? '---' : nxt}",
-                          @skin, 0, 2
+      # Party-status panel layout, in the panel's contents coordinates (the
+      # panel is the 232x240 window at x=88, so its contents are 216 wide
+      # starting at screen x=96). Every number here is pixel-measured on a
+      # genuine RPG_RT.exe under wine (Nepheshel, town map 16, cycle #240),
+      # from the leftmost glyph pixel of each run on 2x captures -- the
+      # runtime's own latin glyphs start at column 0 of their 6px cell, so a
+      # run's first pixel *is* its column -- checked on three saves: the
+      # genuine max-level leader (LV50, 600/600) and two edited copies
+      # (LV45 300000 EXP 60/480 HP 6/480 MP; LV20 16000 EXP), which is what
+      # separates a fixed column from a right-aligned field:
+      #
+      #   line 1 (y 0):  name                              at x 56
+      #   line 2 (y 16): "LV" x 56, level right after it (x 68 = 56 + the
+      #                  2-char label's 12px), condition at x 98,
+      #                  "HP" x 162, current HP right-aligned in [174,192)
+      #                  ("600" starts at 174, "60" at 180), "/" at 192,
+      #                  max HP at 198
+      #   line 3 (y 32): "EX" x 56, current EXP right-aligned in [68,104)
+      #                  ("300000" starts at 68, "16000" at 74), "/" at 104,
+      #                  next level's EXP right-aligned in [110,146)
+      #                  ("17xxx" at 116), "MP" x 162 and the MP figures in
+      #                  the exact same columns as HP
+      #
+      # Three 16px lines per member, no fourth: the name sits alone on the
+      # first line, EXP has the third line to itself beside MP. The LV/EX/
+      # HP/MP labels draw in the System palette's colour 1 (the windowskin's
+      # "system" blue -- the capture's label pixels sample the skin's index-1
+      # swatch gradient, 130/170/255 down to 25/56/141, while every value,
+      # the name and a normal condition sample index 0's white-to-blue), the
+      # current HP/MP figure alone through #value_font_color (the edited
+      # save's 60/480 HP and 6/480 MP both drew in the index-4 yellow
+      # swatch, so the quarter-of-max critical rule holds on genuine RPG_RT
+      # too). At the maximum level both EXP fields read six dashes
+      # (`------/------`) -- exactly filling their 6-cell fields -- instead
+      # of any number; below it the current EXP is the raw total and the
+      # right-hand figure is the *absolute* threshold of the next level
+      # (LV45 with 300000 EXP showed 349310, LV20 with 16000 showed a 5-digit
+      # 17xxx -- the total needed, not the remaining 49310), the same
+      # reading `Game::Actor#next_level_exp` gives. Glyph tops sit 4px below
+      # each line's top (kana and digits alike), which the `+ STATUS_TEXT_Y`
+      # / 16px-tall draw rects reproduce for this engine's own font.
+      STATUS_TEXT_X = 56
+      STATUS_LEVEL_X = 68
+      STATUS_STATE_X = 98
+      STATUS_STAT_LABEL_X = 162
+      STATUS_STAT_CUR_X = 174
+      STATUS_STAT_CUR_W = 18
+      STATUS_STAT_SLASH_X = 192
+      STATUS_STAT_MAX_X = 198
+      STATUS_EXP_CUR_X = 68
+      STATUS_EXP_FIELD_W = 36
+      STATUS_EXP_SLASH_X = 104
+      STATUS_EXP_NEXT_X = 110
+      STATUS_TEXT_Y = 2
+      STATUS_MAX_LEVEL_EXP = '------'
+      # System-palette index of the LV/EX/HP/MP labels (see above).
+      LABEL_COLOR = 1
+
+      def draw_status_row(sc, a, y)
+        w = sc.width
+        line = ->(n) { y + n * LINE_H + STATUS_TEXT_Y }
+        draw_system_text sc, STATUS_TEXT_X, line.call(0), w - STATUS_TEXT_X, LINE_H,
+                         a.name.to_s, @skin
+        y2 = line.call(1)
+        draw_system_text sc, STATUS_TEXT_X, y2, w - STATUS_TEXT_X, LINE_H,
+                         term(:level_short), @skin, LABEL_COLOR
+        draw_system_text sc, STATUS_LEVEL_X, y2, w - STATUS_LEVEL_X, LINE_H,
+                         a.level.to_s, @skin
+        draw_actor_state sc, a, STATUS_STATE_X, y2, w - STATUS_STATE_X, LINE_H, @skin
+        draw_status_stat sc, y2, term(:hp_short), a.hp, a.display_max_hp, true
+        y3 = line.call(2)
+        draw_status_exp sc, a, y3
+        draw_status_stat sc, y3, term(:mp_short), a.mp, a.display_max_mp, false
+      end
+
+      # One "HP cur/max" run in the panel's fixed columns (see the layout
+      # comment above): label in the system colour, the current figure
+      # right-aligned in its 3-cell field through #value_font_color, the
+      # slash and max in the default colour.
+      def draw_status_stat(sc, y, label, cur, max, can_knockout)
+        w = sc.width
+        draw_system_text sc, STATUS_STAT_LABEL_X, y, w - STATUS_STAT_LABEL_X, LINE_H,
+                         label, @skin, LABEL_COLOR
+        draw_system_text sc, STATUS_STAT_CUR_X, y, STATUS_STAT_CUR_W, LINE_H,
+                         cur.to_s, @skin, value_font_color(cur, max, can_knockout), 2
+        draw_system_text sc, STATUS_STAT_SLASH_X, y, w - STATUS_STAT_SLASH_X, LINE_H,
+                         '/', @skin
+        draw_system_text sc, STATUS_STAT_MAX_X, y, w - STATUS_STAT_MAX_X, LINE_H,
+                         max.to_s, @skin
+      end
+
+      # The EXP line: label, then two right-aligned 6-cell fields either
+      # side of a slash -- the raw total and the next level's absolute
+      # threshold (`Game::Actor#next_level_exp`), or six dashes each once
+      # there is no next level (see the layout comment above).
+      def draw_status_exp(sc, a, y)
+        w = sc.width
+        nxt = a.next_level_exp
+        cur_s, nxt_s = nxt.nil? ? [STATUS_MAX_LEVEL_EXP, STATUS_MAX_LEVEL_EXP] : [a.exp.to_s, nxt.to_s]
+        draw_system_text sc, STATUS_TEXT_X, y, w - STATUS_TEXT_X, LINE_H,
+                         term(:exp_short), @skin, LABEL_COLOR
+        draw_system_text sc, STATUS_EXP_CUR_X, y, STATUS_EXP_FIELD_W, LINE_H, cur_s, @skin, 0, 2
+        draw_system_text sc, STATUS_EXP_SLASH_X, y, w - STATUS_EXP_SLASH_X, LINE_H, '/', @skin
+        draw_system_text sc, STATUS_EXP_NEXT_X, y, STATUS_EXP_FIELD_W, LINE_H, nxt_s, @skin, 0, 2
       end
 
       # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells. Matches
-      # Scene::Map's own `FACE_SIZE`/`FACE_MARGIN` (message-window face
-      # graphics) exactly, but kept as this scene's own copy rather than
-      # shared -- Scene::Map's version supports the Change Face Graphic
-      # mirror flag this one has no use for, and neither is `private` in a
-      # way the other could reach cleanly.
+      # Scene::Map's own `FACE_SIZE` (message-window face graphics) exactly,
+      # but kept as this scene's own copy rather than shared -- Scene::Map's
+      # version supports the Change Face Graphic mirror flag this one has no
+      # use for, and neither is `private` in a way the other could reach
+      # cleanly. The text column beside the portrait is STATUS_TEXT_X (56,
+      # measured -- see #draw_status_row), not a FACE_SIZE + margin sum.
       FACE_SIZE = 48
-      FACE_MARGIN = 4
 
       # Load a FaceSet graphic by name, or nil for a blank name or a missing
       # file. Colour-keyed like the other character art: a FaceSet's
@@ -552,25 +631,41 @@ class RPG2k
       end
 
       # Height of one party-status row (see #build_windows's own `y = i *
-      # STATUS_ROW_H`) -- the party-status panel's cursor cell spans one
-      # whole row. Three 16px lines (name/condition, Lv/HP/MP, EXP) rather
-      # than the previous two -- widened alongside #draw_exp_row's own EXP
-      # row, which needed a third line under HP/MP and no longer fits in 40.
+      # STATUS_ROW_H`): three 16px lines (name; LV/condition/HP; EX/MP --
+      # see #draw_status_row's layout comment), and the actor-selection
+      # cursor's own height -- its green frame on genuine RPG_RT.exe under
+      # wine (cycle #240) spans screen y 8..56 for the first member, i.e.
+      # exactly the contents' first 48 rows.
       STATUS_ROW_H = 48
+      # The actor-selection cursor's contents-space rect: from the text
+      # column (STATUS_TEXT_X, 56) to the contents' right edge (216), not the
+      # full contents width -- the same genuine capture's green frame runs
+      # from screen x 148 to 316, which through Game::WindowCursor's 4px
+      # overhang on each side (screen 96 + 56 - 4 = 148, 96 + 216 + 4 = 316)
+      # is exactly that rect: the portrait column stays outside the frame.
+      # This used to start at x 0, 56px too far left, over the portrait.
+      STATUS_CURSOR_X = STATUS_TEXT_X
+      STATUS_CURSOR_W = 160
 
       def refresh_status_cursor
         @status.cursor_rect =
-          Rect.new(0, @actor_index * STATUS_ROW_H, @status.contents.width, STATUS_ROW_H)
+          Rect.new(STATUS_CURSOR_X, @actor_index * STATUS_ROW_H, STATUS_CURSOR_W, STATUS_ROW_H)
       end
 
       # Hand input focus to the party-status panel so the player picks which
       # actor `key` (:skill/:equip/:status) applies to -- see the class
-      # comment and #confirm_actor_selection.
+      # comment and #confirm_actor_selection. The command list keeps its own
+      # cursor drawn on the chosen command meanwhile -- confirmed on genuine
+      # RPG_RT.exe under wine (cycle #240): the frame captured in the
+      # actor-selection state shows both the green frame around the party
+      # member *and* the one still around 特殊技能 on the command list, so
+      # the command window stays `active` (input is routed by `@focus`, not
+      # by the window flag); it used to go inactive here, which
+      # RPG2k::Window#draw_cursor renders as no cursor at all.
       def enter_actor_selection(key)
         @focus = :actors
         @pending_key = key
         @actor_index = 0
-        @command.active = false
         @status.active = true
         refresh_status_cursor
       end
@@ -668,50 +763,77 @@ class RPG2k
       END_GAME_YES = 0
       END_GAME_NO = 1
 
+      # The prompt replaces the field menu on screen rather than floating
+      # over it -- confirmed on genuine RPG_RT.exe under wine (Nepheshel,
+      # cycle #240): the End Game frame shows only the two prompt windows on
+      # the bare skin background, with no command list, party-status panel
+      # or Gold window anywhere behind them, and all three are back (cursor
+      # still on the End Game row) the moment the prompt is cancelled.
+      # #suspend/#resume already hide and restore exactly those three
+      # windows for the pushed child screens, so they serve here too.
       def open_end_game_confirm
         @focus = :end_game_confirm
         @confirm_index = END_GAME_YES
         @command.active = false
+        suspend
         build_end_game_confirm_windows
       end
 
-      # The prompt text is the Term table's own end_game_confirm
-      # (a reference implementation's own end-game help-window text),
-      # falling back
-      # to RPG_RT's own English default when the database leaves it blank,
-      # same as every other #term lookup in this scene. Sized to its own
-      # text the way Scene::Title sizes its command window (#initialize's
-      # own `measure.text_size` -- that reference implementation does the same
-      # sizing), rather than a fixed width.
+      # Vertical gap between the prompt's help window and its Yes/No window
+      # -- see #build_end_game_confirm_windows.
+      END_GAME_GAP = LINE_H
+
+      # The prompt text is the Term table's own end_game_confirm, falling
+      # back to RPG_RT's own English default when the database leaves it
+      # blank, same as every other #term lookup in this scene. Both windows
+      # are sized to their own text and their rects pixel-measured on a
+      # genuine RPG_RT.exe under wine (Nepheshel, cycle #240, from the
+      # skin's frame lines on 2x captures): the help window is 160x32 at
+      # (80, 72) -- the 12-character 終了してよろしいですか？ plus the 8px
+      # border on each side, centred horizontally, its text drawn
+      # left-aligned from the contents' left edge (glyphs start at screen x
+      # 88), not centred -- and the はい/いいえ window is 52x48 at (134,
+      # 120): the 3-character いいえ plus borders wide, two 16px rows tall,
+      # also centred horizontally, and 16px *below* the help window's
+      # bottom edge (104), the pair as a whole (32 + 16 + 48 = 96 tall)
+      # sitting centred on the 240px screen. Its cursor is the full
+      # contents width per row: the green frame spans screen x 138..182,
+      # y 128..144 on はい and 144..160 on いいえ. Both texts carry the
+      # shadow and the skin's colour-0 gradient like every other window's;
+      # they used to be flat-white `draw_text`, and the Yes/No window used
+      # to butt straight against the help window's bottom edge, 8px too
+      # high for both windows.
       def build_end_game_confirm_windows
         measure = Bitmap.new 1, 1
         text = term(:end_game_confirm)
         text_w = measure.text_size(text).width
+        labels = [term(:yes), term(:no)]
+        label_w = labels.map { |l| measure.text_size(l).width }.max
 
         help_w = text_w + Window::BORDER * 2
         help_h = LINE_H + Window::BORDER * 2
+        cmd_w = label_w + Window::BORDER * 2
+        cmd_h = labels.size * LINE_H + Window::BORDER * 2
         help_x = (SCREEN_W - help_w) / 2
-        help_y = (SCREEN_H - help_h - (2 * LINE_H + Window::BORDER * 2)) / 2
+        help_y = (SCREEN_H - (help_h + END_GAME_GAP + cmd_h)) / 2
         @confirm_help = Window.new(help_x, help_y, help_w, help_h)
         @confirm_help.z = 500
         @confirm_help.windowskin = @skin
         hc = Bitmap.new(help_w - Window::BORDER * 2, LINE_H)
         hc.font.color = Color.new(255, 255, 255, 255)
-        hc.draw_text 0, 0, hc.width, LINE_H, text
+        draw_system_text hc, 0, STATUS_TEXT_Y, hc.width, LINE_H, text, @skin
         @confirm_help.contents = hc
 
-        labels = [term(:yes), term(:no)]
-        label_w = labels.map { |l| measure.text_size(l).width }.max
-        cmd_w = label_w + Window::BORDER * 2
-        cmd_h = labels.size * LINE_H + Window::BORDER * 2
         cmd_x = (SCREEN_W - cmd_w) / 2
-        cmd_y = help_y + help_h
+        cmd_y = help_y + help_h + END_GAME_GAP
         @confirm_command = Window.new(cmd_x, cmd_y, cmd_w, cmd_h)
         @confirm_command.z = 500
         @confirm_command.windowskin = @skin
         cc = Bitmap.new(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
         cc.font.color = Color.new(255, 255, 255, 255)
-        labels.each_with_index { |l, i| cc.draw_text 0, i * LINE_H, cc.width, LINE_H, l }
+        labels.each_with_index do |l, i|
+          draw_system_text cc, 0, i * LINE_H + STATUS_TEXT_Y, cc.width, LINE_H, l, @skin
+        end
         @confirm_command.contents = cc
         refresh_end_game_cursor
       end
@@ -754,6 +876,7 @@ class RPG2k
         @confirm_help = nil
         @confirm_command = nil
         @focus = :command
+        resume
         @command.active = true if @command
       end
 

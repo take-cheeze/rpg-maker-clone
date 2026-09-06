@@ -12602,6 +12602,115 @@ The work below is roughly ordered by the critical path to a walkable game
   list's width is exactly 88, and matches the Gold window's own width and
   left edge), confirmed to fail against the pre-fix code (`expected 88,
   got 108`).
+  ✅ **Follow-up (cycle #240, 2026-09-06): the whole field menu re-measured
+  pixel-by-pixel against genuine RPG_RT.exe under wine -- party-status
+  panel layout and colours, Gold alignment, both cursors, the End Game
+  prompt's two windows, and the Skill/Equip cancel path -- and
+  `Scene::Menu` reworked to match.** Recipe: the Nepheshel copy on town map
+  16 (`gen-rpg2k-save.rb --map 16 --at 14,11 --facing up --clear-scene`),
+  `Down Return Return`, ~7s, `Escape`, then one capture after *every* key
+  (`xwd` root, 640x480 = 2x). Three saves: the genuine max-level leader
+  (デモ用 LV50, 600/600, 614301 EXP) and two edited copies via the LCF
+  writer (chunk 108 actor 15 fields 31/32/71/72): LV45 / 300000 EXP / 60 HP
+  / 6 MP, and LV20 / 16000 EXP -- the second and third are what separate a
+  fixed column from a right-aligned field. Text runs were located as
+  glyph-pixel runs per row against the window's own per-row background
+  (the skin's gradient is constant along x), colours classified against
+  the skin's swatches decoded from `System/システム.png` (whose IDAT needs
+  the same zero-history tolerant inflate `mruby-rgss` already carries --
+  ImageMagick and PIL both reject it), window rects from the frame's
+  purple line (one px inside the white outer edge), cursors from the green
+  frame's bounding box. **Measured (contents coordinates of the 232x240
+  panel at x 88, contents 216 wide from screen x 96):** three 16px lines
+  per member, glyph tops 4px below each line's top -- line 1 the name
+  alone at x 56; line 2 `LV` at 56, the level right after it at 68,
+  condition at 98, `HP` at 162, current HP right-aligned in the 3-cell
+  field [174,192) (`600` starts at 174, `60` at 180, `6` at 186), `/` at
+  192, max at 198; line 3 `EX` at 56, current EXP right-aligned in the
+  6-cell field [68,104) (`300000` at 68, `16000` at 74), `/` at 104, the
+  next level's EXP right-aligned in [110,146), `MP` at 162 with the same
+  figure columns as HP. Labels `LV`/`EX`/`HP`/`MP` sample the skin's index-1
+  swatch (the "system" blue, 130/170/255 down to 25/56/141); the name,
+  every value, the slash and 正常 sample index 0; the 60/480 HP and 6/480 MP
+  figures drew in the index-4 yellow swatch (`value_font_color`'s
+  quarter-of-max rule holds on genuine RPG_RT). **EX rule:** at LV50 (the
+  actor's `max_level`) both fields read `------` (six dashes, exactly
+  filling each field); at LV45 `300000/349310`, at LV20 `16000/17xxx` --
+  the right-hand figure is the *absolute* threshold of the next level, not
+  the remainder (49310), i.e. `Game::Actor#next_level_exp`'s reading. **Gold
+  window:** `0Ｇ` right-aligned so the run ends flush at the contents'
+  right edge (Nepheshel's `gold` term is the full-width Ｇ U+FF27, a 12px
+  glyph: `0` cell at x 54..60, Ｇ at 60..72), the Ｇ in index 1, the digit
+  in index 0. **Cursors:** command list = the row's full contents width
+  plus the 4px overhang each side (screen 4..84 x 8..24, then 24..40; our
+  existing `Game::WindowCursor` geometry already matched); the
+  actor-selection frame spans screen x 148..316, y 8..56 -- contents rect
+  (56, 0, 160, 48), i.e. from the text column to the contents' right edge,
+  *not* the full width from x 0 -- and the frame captured in that state
+  also still shows the command cursor around 特殊技能. **End Game prompt:**
+  only the two prompt windows on the bare skin background -- no command
+  list, party panel or Gold anywhere (the orientation capture's "they
+  appear to stay visible" was our own frame, not RPG_RT's); help window
+  160x32 at (80, 72) with 終了してよろしいですか？ drawn left-aligned from
+  contents x 0 (not centred), Yes/No window 52x48 at (134, 120) -- a 16px
+  gap below the help window, the pair centred as a 96px group -- with its
+  cursor the full row width (screen 138..182 x 128..144, then 144..160);
+  cancelling brings all three windows back with the cursor still on
+  タイトルに戻る. **Behaviour:** Escape from the Skill screen and from the
+  Equip screen both land on the field menu with the command cursor on
+  特殊技能/装備 and *no* actor cursor (frame-identical to the pre-selection
+  menu but for the cursor blink phase), a second Escape closes to the map,
+  and re-opening starts on アイテム -- tried from 特殊技能 and from
+  タイトルに戻る, both reset, so the cursor position is not remembered
+  (the earlier "re-opened on 特殊技能" note is not reproducible); Escape
+  from the actor-selection state itself behaves the same way. **Fixed** in
+  `mruby-rpg2k/mrblib/scene/menu.rb`: `#build_windows`'s ad-hoc
+  `text_size`-flowed rows (name+EXP on one line, `Lv 5  正常`, `HP a/b  MP
+  c/d`, all at x 52 and vertically 3px high) replaced by
+  `#draw_status_row`/`#draw_status_stat`/`#draw_status_exp` on the measured
+  `STATUS_*` columns through `draw_system_text` (labels index 1 via
+  `LABEL_COLOR`, dashes via `STATUS_MAX_LEVEL_EXP` when `next_level_exp` is
+  nil); `#draw_gold_window` draws the amount right-aligned to `contents
+  width - text_size(unit)` and the unit right-aligned in index 1 instead
+  of one flat left-aligned `draw_text`; `#refresh_status_cursor` uses
+  `STATUS_CURSOR_X/W` (56, 160); `#enter_actor_selection` no longer
+  deactivates the command window (its cursor stays drawn);
+  `#open_end_game_confirm` calls `#suspend` and `#close_end_game_confirm`
+  calls `#resume` (the same hide/restore the pushed child screens use), and
+  `#build_end_game_confirm_windows` centres the help+gap+Yes/No group
+  vertically (`END_GAME_GAP = 16`) and draws both texts through
+  `draw_system_text` at the same `+2` line offset. The doc comments that
+  cited a reference implementation for the actor-selection panel, the
+  cancel path and the gold refresh now say what was confirmed under wine.
+  Covered by seven new `scripts/rpg2k_scene_check.rb` checks (three-line
+  column/colour layout for two members; max-level dashes; Gold alignment
+  and colours; command cursor screen rect; actor cursor rect plus the
+  command cursor staying active; Skill/Equip cancel path plus the fresh
+  cursor on re-open; End Game windows hidden/restored, rects, texts,
+  cursor) -- five of them confirmed to fail against the pre-fix `menu.rb`
+  (`git diff`/`checkout`/`apply`, not stash), the command-cursor and
+  cancel-path ones pinning behaviour that already matched. Two existing
+  checks were updated for the split runs (`/120` is now `/` + `120`;
+  `1234G` is `1234` + `G`). **Verification:** scene 975 (968 baseline + 7),
+  logic 1189, render 41, all green. **Left open:** (1) `Game::Actor
+  #calc_exp`'s RPG2000 curve is slightly high against genuine RPG_RT --
+  actor 15 (30/30/30) reads 350660 for LV46 and 615771 for LV50 where
+  RPG_RT showed 349310 and the genuine save carries 614301; no simple
+  variant of the port (per-step index, rounding, truncated base) fits
+  both, so the EX line's right-hand figure will differ by ~0.4% until the
+  curve itself is re-derived (not this screen's code); (2) the max HP/MP
+  figure's own alignment for a 1-2 digit max (only 3-digit maxima were
+  seen, drawn from x 198); (3) whether the condition column is 98 or 97 --
+  正's leftmost pixel is at 98 and 常 follows 11px later, so 正 may carry a
+  1px bearing in wine's font; ours puts the glyph at the measured pixel;
+  (4) the face portrait column (actor 15 has no FaceSet) and any RPG2003
+  Status/Row rows, unreachable in Nepheshel; (5) whether the command
+  cursor blinks during actor selection (single frames only). Environment
+  note for later cycles: two `RPG_RT.exe` in one wine prefix fight over
+  the foreground and the loser's window goes gray/black, so this cycle ran
+  the reference from a private copy of the prefix (`WINEPREFIX=...`), one
+  instance at a time. No EasyRPG source was consulted. See
+  `changelog.d/rpg2k-field-menu-layout-wine.fixed.md`.
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
   work" the disabled-Save fix above left open.** Checked against three

@@ -20009,8 +20009,12 @@ check 'the main menu party list colours a knocked-out HP figure and a ' \
   ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
      "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
      "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
-  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+  # The max figure and its slash are separate fixed-column runs since cycle
+  # #240 (see the layout check below), no longer one "/120" run.
+  ok bc.any? { |call| call[4] == '120' && call[6] == 0 && call[7] == 48 },
      'the HP max figure stays the default colour (index 0)'
+  ok bc.any? { |call| call[4] == '/' && call[6] == 0 && call[7] == 48 },
+     'the slash stays the default colour (index 0)'
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
@@ -20026,7 +20030,10 @@ check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
   st.party.instance_variable_set(:@gold, 1234)
   scene = menu_scene(RPG2k::Scene::Menu, st)
   gold_win = scene.instance_variable_get(:@gold)
-  ok window_texts(gold_win).include?('1234G'), 'Gold is drawn on the field menu screen'
+  # Amount and unit term are two runs since cycle #240 (the unit draws in
+  # the system colour -- see the gold layout check below).
+  ok window_texts(gold_win).include?('1234'), 'Gold is drawn on the field menu screen'
+  ok window_texts(gold_win).include?('G'), 'followed by the gold unit term'
 
   scene.suspend
   ok !gold_win.visible, 'the gold panel hides while a child screen (Item/Skill/...) is on top'
@@ -20034,7 +20041,7 @@ check 'Scene::Menu shows the party\'s own Gold, and keeps it current across ' \
   st.party.instance_variable_set(:@gold, 5)
   scene.resume
   ok gold_win.visible, 'the gold panel returns once the child screen is popped'
-  ok window_texts(gold_win).include?('5G'),
+  ok window_texts(gold_win).include?('5'),
      "Gold is refreshed on resume, matching Scene_Menu::Continue's own gold_window->Refresh()"
 end
 
@@ -20051,6 +20058,250 @@ check "Scene::Menu's command list is the same width as the Gold window " \
   eq 88, cmd.width, 'command list width matches the pixel-measured RPG_RT frame'
   eq cmd.width, gold.width, 'command list and Gold window are the same width'
   eq cmd.x, gold.x, 'command list and Gold window share the same left edge'
+end
+
+# Cycle #240 (2026-09-06): the field menu pixel-measured against genuine
+# RPG_RT.exe under wine (Nepheshel, town map 16, 2x captures, three saves --
+# the genuine max-level leader and two edited copies at LV45/LV20 with 60/480
+# HP, 6/480 MP -- see Scene::Menu#draw_status_row's own layout comment and
+# docs/TODO.md for the recipe and the numbers). No EasyRPG source consulted.
+# Every x/y below is in the panel's contents coordinates; the blend_calls
+# tuple is (x, y, w, h, text, skin, sx, sy, cw, ch, align) and a swatch
+# origin of (0, 48) is palette index 0, (16, 48) index 1.
+# Glyph passes only: draw_system_text blends every run twice, shadow first
+# (from the skin's shadow block at (16, 32)) then the glyph from its swatch.
+def glyph_blends(calls)
+  (calls || []).reject { |c| c[6] == 16 && c[7] == 32 }
+end
+
+def status_blend(win)
+  glyph_blends(win.contents.blend_calls)
+end
+
+def blend_at(calls, text, x, y)
+  calls.find { |c| c[4] == text && c[0] == x && c[1] == y }
+end
+
+check 'Scene::Menu: the party-status panel draws three lines per member in ' \
+      'RPG_RT\'s own columns -- name / LV+condition+HP / EX+MP -- with the ' \
+      'labels in system colour 1 and the values in colour 0 (measured under ' \
+      'wine, cycle #240)' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  db.term.level_short = 'LV'
+  db.term.exp_short = 'EX'
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  bc = status_blend(scene.instance_variable_get(:@status))
+  # line 1 (y 0 + 2): the name alone, colour 0
+  name = blend_at(bc, 'Hero', 56, 2)
+  ok name, "the name draws at x 56 on the first line, got #{bc.map { |c| [c[4], c[0], c[1]] }.inspect}"
+  eq [0, 48], name[6, 2], 'in the default colour (index 0)'
+  ok bc.none? { |c| c[4].start_with?('EX') && c[1] == 2 },
+     'EXP no longer rides the name line'
+  # line 2 (y 16 + 2): LV label, level, condition, HP label and figures
+  lv = blend_at(bc, 'LV', 56, 18)
+  ok lv, 'the LV label draws at x 56 on the second line'
+  eq [16, 48], lv[6, 2], 'the LV label is the system colour (index 1)'
+  level = blend_at(bc, '5', 68, 18)
+  ok level, 'the level figure follows the label at x 68'
+  eq [0, 48], level[6, 2], 'the level figure is colour 0'
+  ok blend_at(bc, 'Normal', 98, 18), 'the condition draws at x 98'
+  hp = blend_at(bc, 'HP', 162, 18)
+  ok hp, 'the HP label draws at x 162'
+  eq [16, 48], hp[6, 2], 'the HP label is the system colour (index 1)'
+  cur = blend_at(bc, '80', 174, 18)
+  ok cur, 'the current HP draws in the 3-cell field starting at x 174'
+  eq 18, cur[2], 'the field is 18px wide (3 digit cells)'
+  eq 2, cur[10], 'and the figure is right-aligned in it (60 lands at 180, 6 at 186)'
+  ok blend_at(bc, '/', 192, 18), 'the slash draws at x 192'
+  ok blend_at(bc, '120', 198, 18), 'the max HP draws at x 198'
+  # line 3 (y 32 + 2): EX label and two right-aligned 6-cell fields, MP
+  ex = blend_at(bc, 'EX', 56, 34)
+  ok ex, 'the EX label draws at x 56 on the third line'
+  eq [16, 48], ex[6, 2], 'the EX label is the system colour (index 1)'
+  exp = blend_at(bc, '300', 68, 34)
+  ok exp, 'the current EXP draws in the 6-cell field starting at x 68'
+  eq [36, 2], [exp[2], exp[10]], 'right-aligned in a 36px field (300000 fills it, 16000 starts at 74)'
+  ok blend_at(bc, '/', 104, 34), 'the EXP slash draws at x 104'
+  nxt = blend_at(bc, '420', 110, 34)
+  ok nxt, 'the next level\'s absolute EXP threshold draws in the field starting at x 110'
+  eq [36, 2], [nxt[2], nxt[10]], 'also right-aligned in a 36px field'
+  mp = blend_at(bc, 'MP', 162, 34)
+  ok mp, 'the MP label draws at x 162 on the third line'
+  eq [16, 48], mp[6, 2], 'the MP label is the system colour (index 1)'
+  ok blend_at(bc, '10', 174, 34), 'the current MP field starts at x 174'
+  ok blend_at(bc, '30', 198, 34), 'the max MP draws at x 198'
+  # second member: the same three lines 48px lower
+  ok blend_at(bc, 'Hero', 56, 50), 'the second member\'s name sits 48px lower'
+  ok blend_at(bc, 'EX', 56, 82), 'and so does its EX line'
+end
+
+check 'Scene::Menu: at the maximum level both EXP fields read six dashes ' \
+      '(measured under wine, cycle #240: LV50 shows EX------/------)' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  db.term.level_short = 'LV'
+  db.term.exp_short = 'EX'
+  st = menu_state
+  hero = st.party.actors.first
+  def hero.next_level_exp; nil; end # Game::Actor#next_level_exp at max level
+  bc = status_blend(menu_scene(RPG2k::Scene::Menu, st, db).instance_variable_get(:@status))
+  ok blend_at(bc, '------', 68, 34), 'the current-EXP field shows six dashes'
+  ok blend_at(bc, '------', 110, 34), 'and so does the next-level field'
+  ok bc.none? { |c| c[4] == '300' }, 'the raw EXP total is not drawn at max level'
+end
+
+check 'Scene::Menu: the Gold window right-aligns "amount + unit" to its ' \
+      'contents\' right edge, the unit in system colour 1 (measured under ' \
+      'wine, cycle #240: 0Ｇ ends flush right, the Ｇ blue)' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = menu_state
+  st.party.instance_variable_set(:@gold, 1234)
+  gold = menu_scene(RPG2k::Scene::Menu, st, db).instance_variable_get(:@gold)
+  bc = status_blend(gold)
+  amount = bc.find { |c| c[4] == '1234' }
+  unit = bc.find { |c| c[4] == 'G' }
+  ok amount && unit, "both runs are drawn through the windowskin, got #{bc.map { |c| c[4] }.inspect}"
+  eq 2, amount[10], 'the amount is right-aligned'
+  eq 2, unit[10], 'the unit is right-aligned'
+  eq 72, unit[2], 'the unit is right-aligned across the full 72px contents width'
+  eq [0, 48], amount[6, 2], 'the amount is colour 0'
+  eq [16, 48], unit[6, 2], 'the unit term is the system colour (index 1)'
+  eq [2, 2], [amount[1], unit[1]], 'both sit on the same 16px line (glyphs 4px below the contents top)'
+  ok (gold.contents.draw_calls || []).empty?, 'no flat draw_text run is left'
+end
+
+check 'Scene::Menu: the command cursor is the row\'s full contents width ' \
+      'with the skin cursor\'s 4px overhang (measured under wine, cycle ' \
+      '#240: the green frame spans screen x 4..84, y 8..24 on the first row)' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  cmd = scene.instance_variable_get(:@command)
+  r = cmd.cursor_rect
+  dest = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height, RPG2k::Window::BORDER)
+  eq [4, 8, 80, 16], [cmd.x + dest[0], cmd.y + dest[1], dest[2], dest[3]],
+     'first row: screen-space cursor rect'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  r = cmd.cursor_rect
+  dest = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height, RPG2k::Window::BORDER)
+  eq [4, 24, 80, 16], [cmd.x + dest[0], cmd.y + dest[1], dest[2], dest[3]],
+     'second row: 16px lower, same width'
+end
+
+check 'Scene::Menu: actor selection frames the member from the text column ' \
+      'to the panel\'s right edge and keeps the command cursor drawn ' \
+      '(measured under wine, cycle #240: green frames at screen x 148..316, ' \
+      'y 8..56 and still around 特殊技能)' do
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+  scene.instance_variable_set(:@index, 1) # Skill
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :actors, scene.instance_variable_get(:@focus)
+  status = scene.instance_variable_get(:@status)
+  cmd = scene.instance_variable_get(:@command)
+  r = status.cursor_rect
+  eq [56, 0, 160, 48], [r.x, r.y, r.width, r.height], 'contents-space cursor rect'
+  dest = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height, RPG2k::Window::BORDER)
+  eq [148, 8, 168, 48], [status.x + dest[0], status.y + dest[1], dest[2], dest[3]],
+     'screen-space: 148..316 x 8..56'
+  ok status.active, 'the party-status panel shows its cursor'
+  ok cmd.active, 'and the command list keeps showing its own (it used to go inactive, hiding it)'
+
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 48, status.cursor_rect.y, 'the second member\'s frame is one 48px row lower'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :command, scene.instance_variable_get(:@focus), 'cancel: back on the command list'
+  eq 1, scene.instance_variable_get(:@index), 'cursor still on Skill'
+  ok !status.active, 'the actor cursor is gone'
+  ok cmd.active, 'the command cursor stays'
+end
+
+check 'Scene::Menu: cancelling out of the Skill/Equip screen lands on the ' \
+      'command list with the cursor still on that command, never on actor ' \
+      'selection; one more cancel closes the menu (measured under wine, ' \
+      'cycle #240)' do
+  { 1 => RPG2k::Scene::SkillMenu, 2 => RPG2k::Scene::EquipMenu }.each do |index, klass|
+    scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state)
+    scene.instance_variable_set(:@index, index)
+    RGSS::Input.triggered = [RGSS::Input::C] # -> actor selection
+    scene.update
+    RGSS::Input.reset
+    RGSS::Input.triggered = [RGSS::Input::C] # -> pushes the screen
+    scene.update
+    RGSS::Input.reset
+    ok scene.parent.pushed.last.is_a?(klass), "pushed #{klass}"
+    scene.resume # what RPG2k#pop does when that screen cancels itself
+    eq :command, scene.instance_variable_get(:@focus), "#{klass}: back on the command list"
+    eq index, scene.instance_variable_get(:@index), 'cursor still on the command'
+    ok !scene.instance_variable_get(:@status).active, 'no actor cursor'
+    ok scene.instance_variable_get(:@command).active, 'the command cursor shows'
+    RGSS::Input.triggered = [RGSS::Input::B]
+    scene.update
+    RGSS::Input.reset
+    eq 1, scene.parent.pop_called, 'one more cancel closes the menu'
+  end
+  # Re-opening the menu is a fresh scene: the cursor starts back on the
+  # first command (RPG_RT does not remember it across a close -- closing
+  # from 特殊技能 or from タイトルに戻る and re-opening both landed on
+  # アイテム under wine).
+  eq 0, menu_scene(RPG2k::Scene::Menu, wrap_menu_state).instance_variable_get(:@index)
+end
+
+check 'Scene::Menu: the End Game prompt replaces the field menu -- command ' \
+      'list, party panel and Gold hidden -- with the help window at y 72 and ' \
+      'the Yes/No window 16px below it at y 120, both centred, texts through ' \
+      'the windowskin (measured under wine, cycle #240)' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  cmd = scene.instance_variable_get(:@command)
+  status = scene.instance_variable_get(:@status)
+  gold = scene.instance_variable_get(:@gold)
+  scene.instance_variable_set(:@index, 4) # End Game
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  eq :end_game_confirm, scene.instance_variable_get(:@focus)
+  ok !cmd.visible && !status.visible && !gold.visible,
+     'the three field-menu windows are hidden behind the prompt'
+  help = scene.instance_variable_get(:@confirm_help)
+  yn = scene.instance_variable_get(:@confirm_command)
+  eq [72, 32], [help.y, help.height], 'help window: y 72, one 16px line plus borders'
+  eq (320 - help.width) / 2, help.x, 'help window centred horizontally'
+  eq [120, 48], [yn.y, yn.height], 'Yes/No window: y 120, two 16px rows plus borders'
+  eq (320 - yn.width) / 2, yn.x, 'Yes/No window centred horizontally'
+  eq help.y + help.height + 16, yn.y, '16px gap between the two windows'
+  hb = glyph_blends(help.contents.blend_calls)
+  ok hb.any? { |c| c[0] == 0 && c[1] == 2 && c[10] == 0 && c[6] == 0 && c[7] == 48 },
+     "the prompt text draws left-aligned from the contents' left edge through swatch 0, got #{hb.inspect}"
+  ok (help.contents.draw_calls || []).empty?, 'no flat draw_text for the prompt'
+  yb = glyph_blends(yn.contents.blend_calls)
+  eq [[0, 2], [0, 18]], yb.map { |c| c[0, 2] }, 'Yes then No, one 16px row each'
+  ok (yn.contents.draw_calls || []).empty?, 'no flat draw_text for the labels'
+  r = yn.cursor_rect
+  eq [0, 0, yn.contents.width, 16], [r.x, r.y, r.width, r.height],
+     'cursor: full contents width of the first row (screen x 138..182, y 128..144 under wine)'
+  RGSS::Input.triggered = [RGSS::Input::DOWN]
+  scene.update
+  RGSS::Input.reset
+  eq 16, yn.cursor_rect.y, 'second row on いいえ'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.reset
+  eq :command, scene.instance_variable_get(:@focus)
+  ok cmd.visible && status.visible && gold.visible,
+     'cancelling the prompt brings the three windows back'
+  eq 4, scene.instance_variable_get(:@index), 'cursor still on End Game'
+  ok cmd.active, 'with its cursor showing'
 end
 
 check 'opening Scene::Menu auto-cancels an Erase Screen black-out (yado.tk)' do
