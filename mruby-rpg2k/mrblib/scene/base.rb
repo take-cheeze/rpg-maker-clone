@@ -25,30 +25,40 @@ class RPG2k
         nil
       end
 
+      # Pixel of the System image whose colour RPG_RT paints the whole screen
+      # with behind a field menu: the top-left of the 16x16 cell at (0, 32),
+      # the one between the cursor blocks and the text-colour swatches.
+      FIELD_BACKDROP_X = 0
+      FIELD_BACKDROP_Y = 32
+
       # Full-screen backdrop for the field menu scenes (Menu and its Item/
-      # Skill/Equip/Status sub-screens), which have no map of their own behind
-      # them. RPG_RT fills the whole screen with the windowskin's own
-      # background chip -- the same 32x32 tile every RPG2k::Window stretches
-      # over its own interior, see Window#draw_background -- stretched over
-      # the full 320x240 instead, so gaps between windows read as the same
-      # material rather than showing whatever scene happens to sit underneath.
-      # Given a nil skin (load failed) this is a plain black sprite, matching
-      # Window's own fallback panel look. z sits above the map's own tiles,
-      # characters, pictures and animations (Scene::Map tops out at 250 for
-      # its picture layer) so none of them show through, but below its
-      # screen-wide weather/flash/fade effects (430/450/500) and the menu's
-      # own windows (400) -- Scene::Map is never popped while a menu sits on
-      # top of it, so all of that keeps rendering regardless of scene.
+      # Skill/Equip/Status sub-screens, the Enter Hero Name screen), which
+      # have no map of their own behind them. RPG_RT fills the whole screen
+      # with one solid colour read from the windowskin -- NOT the 32x32
+      # background chip every RPG2k::Window stretches over its own interior,
+      # which is what this used to stretch over the full 320x240. Measured on
+      # genuine RPG_RT.exe under wine (cycle #239): both Nepheshel's main
+      # menu and its New Game name prompt sit on a flat (16,117,99) teal
+      # while every window interior shows the chip's blue gradient, and that
+      # teal is exactly the System image's (0, 32) pixel (21,116,103) after
+      # the 16-bit display's RGB565 quantisation. Given a nil skin (load
+      # failed) this is a plain black sprite, matching Window's own fallback
+      # panel look. z sits above the map's own tiles, characters, pictures
+      # and animations (Scene::Map tops out at 250 for its picture layer) so
+      # none of them show through, but below its screen-wide weather/flash/
+      # fade effects (430/450/500) and the menu's own windows (400) --
+      # Scene::Map is never popped while a menu sits on top of it, so all of
+      # that keeps rendering regardless of scene.
       def build_field_background(skin)
         sprite = Sprite.new
         sprite.z = 300
         bmp = Bitmap.new(RPG2k::WIDTH, RPG2k::HEIGHT)
-        if skin
-          bmp.stretch_blt Rect.new(0, 0, RPG2k::WIDTH, RPG2k::HEIGHT), skin,
-                          Rect.new(0, 0, 32, 32)
-        else
-          bmp.fill_rect 0, 0, RPG2k::WIDTH, RPG2k::HEIGHT, Color.new(0, 0, 0, 255)
-        end
+        colour = if skin
+                   skin.get_pixel(FIELD_BACKDROP_X, FIELD_BACKDROP_Y)
+                 else
+                   Color.new(0, 0, 0, 255)
+                 end
+        bmp.fill_rect 0, 0, RPG2k::WIDTH, RPG2k::HEIGHT, colour
         sprite.bitmap = bmp
         sprite
       end
@@ -98,6 +108,41 @@ class RPG2k
           candidate = out + ch
           break if c.text_size(candidate).width > w
           out = candidate
+        end
+        out
+      end
+
+      # Whether String#length / #[] / #chars count codepoints here. CRuby
+      # (the check harnesses) always does; this project's mruby is built
+      # without MRB_UTF8_STRING (see build/mruby/host/include/mrbconf.h), so
+      # in the game itself they all count *bytes*, and a two-kana name is six
+      # "characters" of one unrenderable byte each.
+      UTF8_AWARE_STRINGS = ('あ'.length == 1)
+
+      # `str` split into one string per UTF-8 codepoint, on either kind of
+      # string. Written for the Enter Hero Name field, whose per-slot drawing
+      # and six-kana limit both went wrong natively (the seeded リト drew as
+      # an empty field with its cursor past the last slot) while the CRuby
+      # harness, whose strings are UTF-8 aware, saw every glyph -- exactly
+      # the mruby/CRuby divergence docs/AGENTS.md warns the harnesses cannot
+      # see. Any per-character walk over game text belongs here, not on
+      # String#length/#[] directly.
+      def utf8_chars(str)
+        UTF8_AWARE_STRINGS ? str.chars : utf8_chars_bytewise(str)
+      end
+
+      # The byte-walking half of #utf8_chars: the lead byte of each UTF-8
+      # sequence says how many bytes follow it. `str[i, n]` is a byte range
+      # on a byte-counted string (mruby here, or a CRuby binary string, which
+      # is how the harness exercises this branch).
+      def utf8_chars_bytewise(str)
+        out = []
+        i = 0
+        while i < str.length
+          b = str.getbyte(i)
+          n = b < 0x80 ? 1 : b < 0xE0 ? 2 : b < 0xF0 ? 3 : 4
+          out << str[i, n]
+          i += n
         end
         out
       end

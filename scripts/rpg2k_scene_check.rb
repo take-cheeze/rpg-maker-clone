@@ -9151,7 +9151,7 @@ check 'Enter Hero Name: hiragana/katakana grid opens on the requested page, seed
   eq RPG2k::WIDTH, ui[:background].bitmap.width, 'the backdrop covers the full screen width'
   eq RPG2k::HEIGHT, ui[:background].bitmap.height, 'the backdrop covers the full screen height'
 
-  field_text = ui[:name_win].contents.draw_calls.map { |c| c[4] }
+  field_text = window_texts(ui[:name_win])
   eq %w[H e r o _ _], field_text,
      'the name-so-far field shows the seeded characters, underscored past them'
 end
@@ -9221,8 +9221,8 @@ check 'Enter Hero Name: typing a kana and confirming renames the actor' do
   # Jump the cursor to the confirm cell (last row, last logical column) and
   # confirm to commit.
   last_row = rows.length - 1
-  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
-  eq :confirm, rows[last_row][rows[last_row].length - 1], 'landed on the confirm cell'
+  ui[:sel] = last_row * cols + rows[last_row].index(:confirm)
+  eq :confirm, rows[last_row][ui[:sel] % cols], 'landed on the confirm cell'
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9256,7 +9256,7 @@ check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
   rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   last_row = rows.length - 1
-  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+  ui[:sel] = last_row * cols + rows[last_row].index(:confirm)
 
   # Confirm the :confirm cell straight away, with nothing typed.
   RGSS::Input.triggered = [RGSS::Input::C]
@@ -9267,7 +9267,7 @@ check 'Enter Hero Name: confirming a blank kana name refills it and stays ' \
   eq 'Hero', st.party.actor_by_id(1).name, 'the actor itself is untouched so far'
 
   # Confirming again now commits the refilled (non-blank) name.
-  ui[:sel] = last_row * cols + (rows[last_row].length - 1)
+  ui[:sel] = last_row * cols + rows[last_row].index(:confirm)
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
@@ -9377,7 +9377,15 @@ check 'Enter Hero Name: the kana field stops at NAME_KANA_MAX characters' do
   eq max, ui[:name].length, 'typing past the limit stops adding characters'
 end
 
-check 'Enter Hero Name: the kana grid cursor wraps around' do
+# Measured on genuine RPG_RT.exe under wine (cycle #239), on Nepheshel's own
+# New Game name prompt: the last row is the same ten columns as every other,
+# with <かな>/<決定> each two columns wide. Moving along the row skips a
+# label's second column (Left from <決定> lands on <かな>, then on ヴ; Right
+# from <決定> wraps to the row's first kana) and a vertical move that lands
+# on one snaps to the label's first column (Down from column 9 onto <決定>,
+# then Down again onto column 8 of the top row).
+check 'Enter Hero Name: the kana grid cursor wraps around and steps over ' \
+      'the two-column label cells the way RPG_RT does' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0)]
@@ -9393,39 +9401,270 @@ check 'Enter Hero Name: the kana grid cursor wraps around' do
   cols = RPG2k::Scene::Map::NAME_KANA_COLS
   rows = RPG2k::Scene::Map::NAME_HIRAGANA_ROWS
   eq 10, cols
-  eq 9, rows.length, '8 full rows plus a ragged last row'
-  eq 8, rows.last.length, '6 kana plus the double-width toggle/confirm cells'
+  eq 9, rows.length, '8 kana rows plus the ら row'
+  eq 10, rows.last.length, 'the last row spans the same ten columns'
+  last_row = rows.length - 1
+  eq [:toggle, nil, :confirm, nil], rows.last[6..9],
+     'the toggle and confirm cells each own two columns, the second one empty'
+  toggle = last_row * cols + 6
+  confirm = last_row * cols + 8
+
+  move = lambda do |key|
+    RGSS::Input.triggered = [key]
+    scene.update
+    RGSS::Input.triggered = []
+    ui[:sel]
+  end
 
   # Row-local wrap: Right past the end of a full (10-cell) row wraps to that
   # same row's start.
   ui[:sel] = 9 # row 0, col 9 (last cell of row 0)
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
-  scene.update
-  RGSS::Input.triggered = []
-  eq 0, ui[:sel], 'Right from the last cell of row 0 wraps to its first cell'
+  eq 0, move.call(RGSS::Input::RIGHT), 'Right from the last cell of row 0 wraps to its first cell'
 
-  # ...and respects the ragged last row's narrower width (8 cells).
-  last_row = rows.length - 1
-  ui[:sel] = last_row * cols + (rows[last_row].length - 1) # the confirm cell
-  RGSS::Input.triggered = [RGSS::Input::RIGHT]
-  scene.update
-  RGSS::Input.triggered = []
-  eq last_row * cols, ui[:sel], 'Right from the last cell of the ragged row wraps to its own first cell'
+  # Right from <決定> skips its own empty second column and wraps to ら.
+  ui[:sel] = confirm
+  eq last_row * cols, move.call(RGSS::Input::RIGHT), 'Right from <決定> wraps to ら'
+
+  # Left from <決定> lands on <かな>, not on the empty column between them,
+  # and Left again on ヴ.
+  ui[:sel] = confirm
+  eq toggle, move.call(RGSS::Input::LEFT), 'Left from <決定> lands on <かな>'
+  eq last_row * cols + 5, move.call(RGSS::Input::LEFT), 'Left from <かな> lands on ヴ'
+  eq last_row * cols + 4, move.call(RGSS::Input::LEFT), 'and Left again on ろ'
+
+  # Left from ら wraps to <決定>, skipping its empty second column.
+  ui[:sel] = last_row * cols
+  eq confirm, move.call(RGSS::Input::LEFT), 'Left from ら wraps to <決定>'
 
   # Column wrap: Down from the last row wraps to row 0, keeping the column.
   ui[:sel] = last_row * cols + 1
-  RGSS::Input.triggered = [RGSS::Input::DOWN]
-  scene.update
-  RGSS::Input.triggered = []
-  eq 1, ui[:sel], 'Down from the last row wraps to row 0, same column (1)'
+  eq 1, move.call(RGSS::Input::DOWN), 'Down from the last row wraps to row 0, same column (1)'
 
-  # Up from row 0 wraps to the last row, column clamped modulo its narrower
-  # width (col 9 in a 10-wide row becomes col 1 of the 8-wide last row).
+  # A vertical move onto a label's second column snaps to the label.
+  ui[:sel] = (last_row - 1) * cols + 9
+  eq confirm, move.call(RGSS::Input::DOWN), 'Down from column 9 lands on <決定>'
+  eq 8, move.call(RGSS::Input::DOWN), 'Down from <決定> wraps to row 0, column 8 -- its first column'
+  ui[:sel] = 7
+  eq toggle, move.call(RGSS::Input::UP), 'Up from column 7 of row 0 wraps onto <かな>'
   ui[:sel] = 9
-  RGSS::Input.triggered = [RGSS::Input::UP]
+  eq confirm, move.call(RGSS::Input::UP), 'Up from column 9 of row 0 wraps onto <決定>'
+end
+
+# Layout measured on genuine RPG_RT.exe under wine (cycle #239) from
+# Nepheshel's own New Game prompt (map 526's opening event): a 64x64 face
+# window at (32, 8), a 192x32 name field at (96, 40) and the 256x160 grid at
+# (32, 72); grid columns 24px apart with the right-hand five pushed 6px
+# further, 16px rows, and a cursor that hugs the cell's text -- 12px on a
+# kana, 36px on the bracketed labels. The name field centres twelve 8px
+# slots (a kana takes two) in its 176px interior, so its run starts at 40,
+# and its cursor is a 12x16 box on the slot after the last character.
+check 'Enter Hero Name: the kana widget is laid out exactly as RPG_RT draws it' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 1, 1], indent: 0)] # katakana, seeded
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+
+  geometry = ->(w) { [w.x, w.y, w.width, w.height] }
+  eq [32, 8, 64, 64], geometry.call(ui[:face_win]), 'face window'
+  eq [96, 40, 192, 32], geometry.call(ui[:name_win]), 'name field window'
+  eq [32, 72, 256, 160], geometry.call(ui[:grid_win]), 'grid window'
+  eq [48, 48], [ui[:face_win].contents.width, ui[:face_win].contents.height],
+     'the face window holds exactly one 48x48 portrait'
+
+  rows = RPG2k::Scene::Map::NAME_KATAKANA_ROWS
+  rect = ->(r, c) { scene.send(:kana_cell_rect, rows, r, c) }
+  eq [0, 0, 12, 16], rect.call(0, 0), 'ア'
+  eq [96, 0, 12, 16], rect.call(0, 4), 'オ: four 24px columns in'
+  eq [126, 0, 12, 16], rect.call(0, 5), 'ガ: the right half sits 6px further'
+  eq [222, 0, 12, 16], rect.call(0, 9), 'ゴ'
+  eq [126, 128, 12, 16], rect.call(8, 5), 'ヴ on the 16px-per-row last row'
+  eq [150, 128, 36, 16], rect.call(8, 6), '<かな> is 36px wide'
+  eq [198, 128, 36, 16], rect.call(8, 8), '<決定>'
+  grid_cursor = ui[:grid_win].cursor_rect
+  eq [0, 0, 12, 16], [grid_cursor.x, grid_cursor.y, grid_cursor.width, grid_cursor.height],
+     'the grid cursor starts hugging ア'
+
+  labels = window_texts(ui[:grid_win])
+  eq 'ア', labels.first
+  ok labels.include?('<かな>'), 'the katakana page offers <かな> in half-width brackets'
+  ok labels.include?('<決定>'), 'and <決定>'
+  ok !labels.include?('かな') && !labels.include?('決定'), 'no bare, unbracketed labels'
+  eq 88, labels.size, '88 cells drawn: 8 rows of 10, then 6 kana and 2 labels'
+
+  eq 40, RPG2k::Scene::Map::NAME_FIELD_ORIGIN, 'the 96px name run is centred in the 176px field'
+  field_cursor = ui[:name_win].cursor_rect
+  eq [40 + 4 * 16, 0, 12, 16],
+     [field_cursor.x, field_cursor.y, field_cursor.width, field_cursor.height],
+     'the field cursor sits on the slot after the seeded "Hero"'
+  eq %w[H e r o _ _], window_texts(ui[:name_win]),
+     'one character per slot, underscores past the name'
+
+  # On the hiragana page the toggle names katakana instead.
+  ui[:sel] = 8 * 10 + 6
+  RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
-  eq last_row * cols + 1, ui[:sel], 'Up from row 0 wraps to the last row, column 9 % 8 == 1'
+  eq :hiragana, ui[:page]
+  ok window_texts(ui[:grid_win]).include?('<カナ>'), 'the hiragana page offers <カナ>'
+  eq [150, 128, 36, 16],
+     [ui[:grid_win].cursor_rect.x, ui[:grid_win].cursor_rect.y,
+      ui[:grid_win].cursor_rect.width, ui[:grid_win].cursor_rect.height],
+     'the cursor stays on the toggle cell after switching pages'
+end
+
+# Measured on genuine RPG_RT.exe under wine (cycle #239): typing the kana
+# that fills the sixth slot moved the grid cursor onto <決定> by itself, and
+# the very next Decision closed the widget and resumed the event with the
+# name; re-opening the prompt on an already-full seeded name started the
+# cursor on the first cell as usual.
+check 'Enter Hero Name: the keystroke that fills the name parks the cursor on <決定>' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::NAME_INPUT, [1, 0, 0], indent: 0),
+    ECmd.new(ic::CONTROL_SWITCHES, [0, 5, 5, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  max = RPG2k::Scene::Map::NAME_KANA_MAX
+  (max - 1).times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  eq max - 1, ui[:name].length
+  eq 0, ui[:sel], 'the cursor stays put while there is room left'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq max, ui[:name].length, 'the sixth kana fills the field'
+  eq 8 * 10 + 8, ui[:sel], 'and the cursor jumped onto <決定>'
+  eq [40 + 6 * 16, 0, 12, 16],
+     [ui[:name_win].cursor_rect.x, ui[:name_win].cursor_rect.y,
+      ui[:name_win].cursor_rect.width, ui[:name_win].cursor_rect.height],
+     'the field cursor sits past the sixth slot'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  eq nil, scene.instance_variable_get(:@name_ui), 'the next Decision confirmed the name'
+  eq 'あ' * max, st.party.actor_by_id(1).name
+  3.times { scene.update }
+  ok st.switches[5], 'the event resumed after entry'
+end
+
+# The genuine screen draws every string of the widget in the windowskin's
+# own colour gradient with the one-pixel shadow, like the rest of RPG_RT's
+# window text -- not in flat white (cycle #239).
+check 'Enter Hero Name: the kana widget draws its text through the windowskin gradient' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 0, 1], indent: 0)]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  skin = RGSS::Bitmap.new('System/skin')
+  scene.instance_variable_set(:@windowskin, skin)
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, NameStubParty.new)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  [ui[:name_win], ui[:grid_win]].each do |win|
+    c = win.contents
+    ok (c.draw_calls || []).empty?, 'no flat draw_text used'
+    ok c.blend_calls && !c.blend_calls.empty?, 'blend_text used'
+    ok c.blend_calls.all? { |b| b[5] == skin }, 'every glyph blended against the windowskin'
+  end
+  # The field's glyphs sit at their slot origins: shadow one pixel down and
+  # right of each, then the glyph itself.
+  bc = ui[:name_win].contents.blend_calls
+  eq [41, 1, 'H'], [bc[0][0], bc[0][1], bc[0][4]], 'shadow of the first slot'
+  eq [40, 0, 'H'], [bc[1][0], bc[1][1], bc[1][4]], 'glyph of the first slot'
+  eq [40 + 16, 0, 'e'], [bc[3][0], bc[3][1], bc[3][4]], 'the second slot 16px on'
+end
+
+# The game's own mruby is built without MRB_UTF8_STRING, so String#length,
+# #[] and #chop count bytes there and a two-kana seed is six lone bytes --
+# which drew the native name field empty with its cursor past the last slot
+# while this CRuby harness saw every glyph. The widget now goes through
+# Scene::Base#utf8_chars; its byte-walking branch is exercised here on a
+# CRuby *binary* string, which is byte-counted the same way.
+check 'Scene::Base#utf8_chars splits UTF-8 into codepoints on byte-counted strings too' do
+  scene = new_scene({})
+  eq %w[リ ト], scene.send(:utf8_chars, 'リト'), 'the UTF-8-aware path'
+  bytewise = scene.send(:utf8_chars_bytewise, 'リト'.b)
+  eq 2, bytewise.length, 'two kana out of six bytes'
+  eq ['リ'.bytes, 'ト'.bytes], bytewise.map(&:bytes), 'each kana intact'
+  eq [[0x41], 'あ'.bytes, [0x5f]], scene.send(:utf8_chars_bytewise, 'Aあ_'.b).map(&:bytes),
+     'ASCII, a three-byte kana and an underscore side by side'
+  eq [], scene.send(:utf8_chars_bytewise, ''.b)
+end
+
+check 'Enter Hero Name: a kana seed fills one slot per kana and backspaces one kana' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::NAME_INPUT, [1, 1, 1], indent: 0)] # katakana, seeded
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  party = NameStubParty.new
+  party.actor_by_id(1).name = 'リト'
+  st.instance_variable_set(:@party, party)
+  6.times do
+    scene.update
+    break if scene.instance_variable_get(:@name_ui)
+  end
+  ui = scene.instance_variable_get(:@name_ui)
+  ok ui, 'the name-entry widget opened'
+  eq 'リト', ui[:name]
+  eq %w[リ ト _ _ _ _], window_texts(ui[:name_win]), 'one kana per slot, underscores past them'
+  eq 40 + 2 * 16, ui[:name_win].cursor_rect.x, 'the cursor sits on the third slot'
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  eq 'リ', ui[:name], 'Cancel erased one whole kana'
+  eq 40 + 16, ui[:name_win].cursor_rect.x
+end
+
+# Measured on genuine RPG_RT.exe under wine (cycle #239): both Nepheshel's
+# main menu and its New Game name prompt sit on one flat colour that is
+# exactly the System image's (0, 32) pixel (after the 16-bit display's
+# RGB565 rounding), while every window interior shows the skin's 32x32 chip
+# as a gradient -- so the backdrop is a solid fill from that pixel, not the
+# chip stretched over the screen, which is what this used to draw.
+check 'field menu backdrop is a solid fill of the windowskin (0, 32) pixel, not the stretched chip' do
+  scene = new_scene({})
+  skin = RGSS::Bitmap.new('System/skin')
+  sprite = scene.send(:build_field_background, skin)
+  bmp = sprite.bitmap
+  eq [RPG2k::WIDTH, RPG2k::HEIGHT], [bmp.width, bmp.height]
+  ok (bmp.stretch_calls || []).empty?, 'the chip is not stretched over the screen'
+  eq 1, (bmp.fill_calls || []).size, 'one solid fill'
+  x, y, w, h, colour = bmp.fill_calls.first
+  eq [0, 0, RPG2k::WIDTH, RPG2k::HEIGHT], [x, y, w, h], 'covering the whole screen'
+  # The stub's get_pixel encodes the coordinates it was asked for.
+  eq [0, 32], [colour.red, colour.green], 'filled with the pixel read at (0, 32)'
+  eq 255, colour.alpha
+
+  black = scene.send(:build_field_background, nil)
+  _x, _y, _w, _h, fallback = black.bitmap.fill_calls.first
+  eq [0, 0, 0, 255], [fallback.red, fallback.green, fallback.blue, fallback.alpha],
+     'no skin: plain black'
 end
 
 check 'Enter Hero Name: holding a direction auto-repeats the kana grid ' \
