@@ -688,17 +688,35 @@ extern "C" void rgss_audio_init(void) {
   // Resolve the MIDI patch set before opening the device: SDL_mixer starts the
   // TiMidity codec from Mix_OpenAudio and reads its config only then.
   init_midi_config();
-  // The buffer is one full round-trip of latency (2048 samples @ 44.1kHz is
-  // ~46ms, doubled by SDL_mixer's own buffering to ~93ms worst case). Desktop
-  // mixes on a real OS audio thread (docs/profiling.md) so that headroom costs
-  // nothing but latency; under Emscripten there is no such thread -- SDL2's
-  // port drives the mixer from a browser audio callback on the same single JS
-  // thread as the game loop -- and that thread is now far less likely to be
-  // blocked for long stretches (see the frame-pacing changes in
-  // mruby-rgss/src/lib.cxx and src/main.cxx), so a smaller buffer is safe and
-  // measurably cuts the delay between a BGM/SE trigger and it being heard.
+  // The buffer trades latency for resilience to the caller stalling: desktop
+  // mixes on a real OS audio thread (docs/profiling.md), so a stalled game
+  // loop never affects it and the buffer only has to be big enough to cover
+  // normal scheduling jitter. Emscripten has no such thread -- SDL2's port
+  // drives the mixer from a ScriptProcessorNode callback that the browser can
+  // only invoke between turns of the same single JS thread the game loop runs
+  // on (there is no AUDIO_WORKLET/pthreads build here; SDL2's own Emscripten
+  // port does not currently support one anyway --
+  // github.com/emscripten-core/emscripten/issues/19667). This is a known,
+  // fundamental ScriptProcessorNode limitation, not something this engine can
+  // route around while it uses that API: if the main thread does not hand
+  // over the next buffer in time, the callback fires late, and *every*
+  // browser tested keeps that lateness rather than dropping the missed
+  // buffer and resyncing to the clock -- so output audio can fall behind by
+  // exactly as much as the main thread was blocked, and it stays behind,
+  // compounding on every further stall, until the page reloads. Holding a
+  // movement key is the worst case for this: it is sustained, not a single
+  // spike, so a run of ordinary per-frame costs (camera scroll, tile
+  // animation, and occasionally the tile-crossing cache rebuild --
+  // docs/profiling.md) each get a chance to eat into the buffer's slack, and
+  // over several seconds of held input the audible delay this produces is
+  // far more noticeable than a few extra milliseconds of fixed latency. A
+  // larger buffer is the mitigation available without a real audio thread:
+  // it cannot make a stall shorter, but it makes a given stall far less
+  // likely to actually miss the deadline in the first place. The desktop
+  // build keeps its own default size, since none of this applies there and a
+  // real OS-scheduled callback has no comparable failure mode.
 #ifdef __EMSCRIPTEN__
-  constexpr int kAudioBufferSamples = 1024;
+  constexpr int kAudioBufferSamples = 4096;
 #else
   constexpr int kAudioBufferSamples = 2048;
 #endif

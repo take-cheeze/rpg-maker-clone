@@ -304,17 +304,59 @@ instead of raw vsync, which yields back to the browser's event loop between
 frames instead of occupying it — and `gfx_update`'s own `lv_delay_ms` call is
 `#ifndef __EMSCRIPTEN__`, so the deadline/carry-forward bookkeeping that keeps
 frame timing accurate still runs, but nothing blocks the JS thread on top of
-Emscripten's own (already non-blocking) pacing. `Mix_OpenAudio`'s buffer is
-also halved for `__EMSCRIPTEN__` (2048 → 1024 samples, `src/sdl_audio.cxx`),
-cutting baseline output latency now that the thread backing the callback is
-far less likely to be blocked for a long stretch.
+Emscripten's own (already non-blocking) pacing.
 
-This is reasoning from how the browser's audio and event-loop model works,
-not a browser-measured profile — the caveat below about this whole page's
-numbers being native/Xvfb-only applies doubly here, since none of it was ever
-measured against real Web Audio callback timing. If audio in the browser is
-still audibly delayed after this, that measurement is the next thing to get,
-not another guess from the native numbers above.
+#### The buffer: sized for resilience, not baseline latency
+
+The first pass here shrank `Mix_OpenAudio`'s buffer for `__EMSCRIPTEN__`
+(2048 → 1024 samples) on the theory that, with the blocking sleep gone, a
+smaller buffer would just mean less baseline round-trip latency. That is
+backwards for this backend, and the buffer is now larger instead (2048 →
+4096): ScriptProcessorNode's callback has a well-documented failure mode
+where, if the main thread does not hand it the next buffer in time, it does
+not drop the missed buffer and resync to the clock -- it fires late and
+*stays* that late, and the lateness compounds on every further stall until
+the page reloads (this is one of the reasons the API is deprecated in favour
+of AudioWorklet; see the Chromium/Firefox/spec discussion linked from
+[MDN's AudioWorklet guide](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Using_AudioWorklet)
+and [WebAudio/web-audio-api#253](https://github.com/WebAudio/web-audio-api/issues/253)).
+A smaller buffer gives the main thread *less* slack before a given stall
+crosses that line, not more.
+
+**Holding a movement key is close to the worst case for this**, reported
+directly as "significant audio delay on key press hold" after the pacing fix
+above shipped: it is *sustained* main-thread cost rather than one spike --
+every one of those frames pays the ordinary camera/animation/collision work,
+and periodically also the tile-crossing cache rebuild (the multi-millisecond
+spike documented earlier on this page) -- so it is repeated, compounding
+chances to miss the deadline, and several seconds of held input can build up
+a delay far more noticeable than a few extra milliseconds of fixed latency
+would be. A bigger buffer cannot make any one stall shorter, but it makes a
+given stall much less likely to actually cross the deadline in the first
+place, which is the only lever available without a real audio thread to
+mix on.
+
+**A real fix would still be AUDIO_WORKLET**, which runs the audio callback on
+its own thread outside the main JS thread entirely and would remove this
+failure mode rather than just making it less likely. That was not attempted
+here: it needs Wasm Workers, and SDL2's own Emscripten port does not
+currently build with `-sWASM_WORKERS`/`-pthread` at all --
+[emscripten-core/emscripten#19667](https://github.com/emscripten-core/emscripten/issues/19667)
+tracks `SDL_atomic.c.o` failing to link because the vendored SDL2 build
+lacks the `atomics`/`bulk-memory` target features either path requires. Worth
+revisiting if the buffer bump above turns out not to be enough in practice,
+but it is a real architectural change (a different SDL2 build, and this
+engine's own single-threaded assumptions reaching across a worker boundary)
+that deserves its own investigation and ADR rather than a speculative
+attempt with no way to test it against a real browser from this repo's CI.
+
+This whole section is reasoning from how the browser's audio and event-loop
+model works, not a browser-measured profile — the caveat below about this
+page's numbers being native/Xvfb-only applies doubly here, since none of it
+was ever measured against real Web Audio callback timing. If audio in the
+browser is still audibly delayed after this, that measurement -- ideally
+captured while holding a direction key, the case that surfaced this -- is
+the next thing to get, not another guess from the native numbers above.
 
 ## Per-frame object allocation
 

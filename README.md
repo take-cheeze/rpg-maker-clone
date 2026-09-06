@@ -1009,8 +1009,8 @@ part that explains it). Nothing else is collected.
   Pages' 25 MiB per-file limit so PR previews can deploy
   (`scripts/pack-timidity-data.py`, ADR 0031). Serving the page means serving
   `timidity.js` and those packages alongside `index.*`
-- **Lower audio latency in the browser.** Unlike the desktop build, where
-  SDL_mixer mixes on a real OS audio thread (see "Profiling" above and
+- **More resilient audio timing in the browser.** Unlike the desktop build,
+  where SDL_mixer mixes on a real OS audio thread (see "Profiling" above and
   `docs/profiling.md`), the Emscripten build has no such thread — there is no
   `-pthread`/`-sUSE_PTHREADS` or `-sAUDIO_WORKLET` here, so the browser's
   ScriptProcessorNode-based audio callback runs on the same single JS thread
@@ -1018,9 +1018,15 @@ part that explains it). Nothing else is collected.
   hold 60fps used to be a blocking OS sleep, which starved that thread and
   showed up as delayed/glitchy audio; it is now left to
   `emscripten_set_main_loop`'s own non-blocking scheduling instead
-  (`src/main.cxx`, `mruby-rgss/src/lib.cxx`), and the mixer's output buffer is
-  halved (`src/sdl_audio.cxx`) now that the thread is far less likely to be
-  blocked for long stretches.
+  (`src/main.cxx`, `mruby-rgss/src/lib.cxx`). Separately, the mixer's output
+  buffer is now *larger* in the browser build (`src/sdl_audio.cxx`): a
+  ScriptProcessorNode callback that fires late does not resync to the clock,
+  it just stays that late and compounds on every further stall — sustained
+  input like holding a direction key is exactly the case likeliest to
+  trigger it — so more buffer headroom trades a little fixed latency for
+  much better resistance to that failure mode. See `docs/profiling.md` for
+  why this needs a bigger buffer rather than a smaller one, and what a more
+  complete fix (AUDIO_WORKLET) would take.
 - **RPG2000/2003's message window can read itself aloud**, in Zundamon's
   (ずんだもん) voice, opt-in via `--zundamon_tts`: each Show Text/Show Choices
   page's plain text (control codes already expanded — actor names, variables)
