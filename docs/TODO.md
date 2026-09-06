@@ -3374,6 +3374,57 @@ The work below is roughly ordered by the critical path to a walkable game
   remains completely untouched this cycle (four prior attempts: cycles
   #135/#137-138/#139/#143), still this file's single longest-running open
   investigation.
+  ✅ **Follow-up (cycle #239, 2026-09-06): the Enter Hero Name screen itself
+  compared against genuine RPG_RT.exe under wine on Nepheshel's own New Game
+  path, and re-laid out to match.** Unlike cycles #125/#149, which spliced a
+  synthetic autostart onto map 12, this drove both runtimes through the real
+  opening (title, New Game, ~150 confirmations through the narrated intro to
+  map 526's `……俺の名は？` and its Enter Hero Name, actor 1, katakana, seeded)
+  with the `compare-nepheshel-wine.bash` machinery split into a held,
+  step-on-demand driver per runtime, and read the genuine screen back from
+  2x captures with a pixel scan (glyph column runs and the green cursor
+  frame's bounding box), not by eye. Findings, all now coded and pinned by
+  `scripts/rpg2k_scene_check.rb` checks: three windows -- a 64x64 face at
+  (32, 8), a 192x32 name field at (96, 40) and the 256x160 grid at (32, 72)
+  -- where this build had a 296px-wide grid at y=80 and a name box the width
+  of the screen; grid columns 24px apart with the right-hand five pushed 6px
+  further (ア at contents x 0, オ 96, ガ 126, ゴ 222), 16px rows from the
+  interior's top, and a cursor exactly the cell's text width (12px on a kana,
+  36px on `<かな>`/`<決定>` -- which carry half-width angle brackets this
+  build had dropped, and read `<カナ>` on the hiragana page); the name field
+  centres twelve 8px slots (a kana takes two) so its run starts 40px in, draws
+  a half-width underscore in each empty slot and a 12x16 cursor on the slot
+  after the last character -- still shown, past the sixth slot, once the name
+  is full; every string in the skin's colour gradient with the shadow, not
+  flat white. Behaviour: typing the sixth kana moved the genuine grid cursor
+  onto `<決定>` by itself and the next Decision closed the widget (the event
+  then read the name back in a message), while re-opening the prompt through
+  the game's own `違う気がする` branch on the now-full seeded name started the
+  cursor on ア as usual -- so only the filling keystroke jumps; Left from
+  `<決定>` landed on `<かな>` then ヴ (the labels' second columns are skipped),
+  Right from `<決定>` wrapped to ラ, Down from column 9 landed on `<決定>` and
+  Down again on column 8 of the top row (a vertical move onto a label's
+  second column snaps to its first). The last row is now modelled as the
+  same ten columns as the rest with `nil` in each label's second column,
+  which the old ragged 8-cell row could not express (its Up-from-column-9
+  wrapped onto リ). Side finding, also fixed, in the shared
+  `Scene::Base#build_field_background`: the genuine backdrop behind both the
+  name screen and the main menu is one flat colour, (16,117,99) on the 16-bit
+  display, which is exactly the System image's (0, 32) pixel (21,116,103)
+  after RGB565 rounding -- not the 32x32 window chip stretched over the
+  screen, which this build drew as a full-screen gradient under every field
+  menu (the chip itself is a blue gradient, so the two are visibly
+  different). Nepheshel's `System/システム.png` also turned out to be a
+  deflate stream both zlib and stb_image reject (`bad dist`, a back-reference
+  into zero pre-history that the engine's own tolerant PNG fallback already
+  handles); the pixel was read by inflating it with an all-zero preset
+  dictionary. Separately, the native build had been drawing the name field
+  *empty* (no seeded リト, no underscores, no cursor) while the CRuby harness
+  saw the draw calls fine -- confirmed by committing the invisible seed
+  through `決定` and watching the game read back `「リト」`; the rebuilt
+  field renders. Scope note: the charset-2 Latin grid (this build's own
+  extension, no genuine screen to match) keeps its own layout; only the
+  shared commit/cancel/backdrop paths changed under it.
   ✅ **Follow-up (cycle #150, 2026-08-25): a fifth, fresh attempt at the
   short-synthetic-autostart-page crash mystery (open since cycle #135,
   cycles #137-139/#143 all previously inconclusive on mechanism). Result:

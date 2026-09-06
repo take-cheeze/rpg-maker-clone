@@ -7159,20 +7159,22 @@ class RPG2k
       # RPG2000's fixed gojuuon layout: eight full rows of the plain kana
       # beside their voiced (゛) / semi-voiced (゜) column, small kana and the
       # long-vowel mark, then a symbol row, and a final row of six kana plus
-      # the page-toggle and confirm cells (each drawn two columns wide, so the
-      # last row fills the same 10 columns as the rows above it).
-      # Ported from a reference implementation, not independently confirmed
-      # against genuine RPG_RT under wine: that ported keyboard
-      # table -- the ま/マ row's small kana column order is っゃゅょゎ, not
-      # ゃゅょっー (small-tsu had drifted three columns right, and the last
-      # column was a stray duplicate of the ー already on the row below,
-      # rather than small-wa ゎ/ヮ); the last row's "vu" cell is katakana
-      # ヴ on *both* the hiragana and katakana pages in the reference table
-      # (hiragana has no glyph of its own there), not hiragana ゔ on the
-      # hiragana page; and the や/ヤ row's final cell is the white star ☆
-      # (U+2606), not the black star ★ (U+2605).
-      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ヴ] + %i[toggle confirm]).freeze
-      NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + %i[toggle confirm]).freeze
+      # the page-toggle and confirm cells. Those two are each drawn two
+      # columns wide, so the row is modelled as the same ten columns as every
+      # other: the column after each label is `nil`, the cell's own second
+      # half. #kana_step_col skips those halves when the cursor moves along
+      # the row and #kana_snap_col pulls a vertical move that lands on one
+      # back to the cell's first column -- both measured on genuine RPG_RT.exe
+      # under wine (cycle #239, Nepheshel's own New Game name prompt): Left
+      # from <決定> lands straight on <かな>, then on ヴ; Down from column 9
+      # lands on <決定>, and Down again from there on column 8 of the top row.
+      # The kana table itself was ported from a reference implementation,
+      # then checked cell-for-cell against the same genuine screen (cycle
+      # #172): the ま/マ row's small kana column order is っゃゅょゎ, the last
+      # row's "vu" cell is katakana ヴ on both pages, and the や/ヤ row ends in
+      # the white star ☆ (U+2606).
+      NAME_KANA_LAST_HIRAGANA = (%w[ら り る れ ろ ヴ] + [:toggle, nil, :confirm, nil]).freeze
+      NAME_KANA_LAST_KATAKANA = (%w[ラ リ ル レ ロ ヴ] + [:toggle, nil, :confirm, nil]).freeze
       NAME_HIRAGANA_ROWS = [
         %w[あ い う え お が ぎ ぐ げ ご],
         %w[か き く け こ ざ じ ず ぜ ぞ],
@@ -7196,21 +7198,51 @@ class RPG2k
         NAME_KANA_LAST_KATAKANA
       ].freeze
       NAME_KANA_COLS = 10
-      NAME_KANA_CELL_W = 28
-      NAME_KANA_CELL_H = 16
       NAME_KANA_MAX = 6 # RPG2000's default name length, one kana per slot
 
-      # Layout, measured in screen pixels: a face box and a name-so-far box
-      # share a top row, a gojuuon grid fills the rest of the screen below
-      # them, and the whole group is centred with the same left/right edges
-      # top and bottom (296px wide: 10 * NAME_KANA_CELL_W + Window::BORDER*2).
-      NAME_TOP_X = 12
-      NAME_TOP_Y = 8
-      NAME_TOP_GAP = 8
+      # Screen layout, measured on genuine RPG_RT.exe under wine (cycle #239)
+      # from Nepheshel's own New Game name prompt (map 526's opening event,
+      # Enter Hero Name for actor 1 in katakana, seeded), captured at 2x and
+      # read back in screen pixels: three windows on the solid menu backdrop
+      # (see Scene::Base#build_field_background) -- the actor's face top-left,
+      # the name-so-far field beside it and the gojuuon grid under both.
+      NAME_FACE_X = 32
+      NAME_FACE_Y = 8
       NAME_FACE_WIN = 64 # FACE_SIZE (48) + Window::BORDER (8) * 2
-      NAME_GRID_W = 296  # NAME_KANA_COLS * NAME_KANA_CELL_W (280) + 16
-      NAME_GRID_H = 160  # 9 rows * NAME_KANA_CELL_H (144) + 16
-      NAME_GRID_Y = 80   # NAME_TOP_Y + NAME_FACE_WIN + NAME_TOP_GAP
+      NAME_FIELD_X = 96
+      NAME_FIELD_Y = 40
+      NAME_FIELD_W = 192
+      NAME_FIELD_H = 32
+      NAME_GRID_X = 32
+      NAME_GRID_Y = 72
+      NAME_GRID_W = 256 # 10 columns of NAME_KANA_COL_PITCH + the half gap, + 2 * BORDER
+      NAME_GRID_H = 160 # 9 rows * NAME_KANA_CELL_H (144) + 2 * BORDER
+
+      # Grid cells, in the grid window's contents (240x144). Columns sit
+      # 24px apart, with the right-hand five (the voiced / small-kana half)
+      # pushed a further 6px right, so ア is at 0, オ at 96, ガ at 126 and ゴ
+      # at 222; rows are 16px tall from the very top. The cursor hugs the
+      # cell's own text: 12px (one full-width glyph) on a kana, 36px on the
+      # "<かな>"/"<決定>" labels (two glyphs between half-width brackets),
+      # both 16px tall -- every one of those measured from the genuine
+      # cursor frame, corners included, in the wine captures.
+      NAME_KANA_COL_PITCH = 24
+      NAME_KANA_HALF_GAP = 6
+      NAME_KANA_CELL_H = 16
+      NAME_KANA_GLYPH_W = 12
+      NAME_KANA_LABEL_W = 36
+
+      # The name field, in its window's contents (176x16): RPG2000 names hold
+      # twelve half-width characters, drawn as twelve 8px slots centred in
+      # the field, so the 96px run starts 40px in and a kana takes 16px of
+      # it. Empty slots show a half-width underscore, and the cursor -- a
+      # 12px-wide box the full 16px tall -- sits on the slot after the last
+      # character, even once the name is full (then it sits past the sixth
+      # slot, at 136). Both measured on the genuine screen (cycle #239).
+      NAME_FIELD_SLOT_W = 16
+      NAME_FIELD_CURSOR_W = 12
+      NAME_FIELD_ORIGIN = (NAME_FIELD_W - Window::BORDER * 2 -
+                           NAME_KANA_MAX * NAME_FIELD_SLOT_W) / 2
 
       # Drive the name-entry screen shown during a :name_input wait. Charset 2
       # opens this build's own flat letters grid (see the doc comment above --
@@ -7349,8 +7381,10 @@ class RPG2k
         end
       end
 
+      # Drops the last codepoint -- String#chop would drop one byte of a kana
+      # in the game's own mruby (see Scene::Base#utf8_chars).
       def backspace_name_input
-        @name_ui[:name] = @name_ui[:name].chop
+        @name_ui[:name] = utf8_chars(@name_ui[:name])[0...-1].join
         @name_ui[:kana] ? draw_kana_name_input : draw_name_input
       end
 
@@ -7423,31 +7457,62 @@ class RPG2k
         page == :katakana ? NAME_KATAKANA_ROWS : NAME_HIRAGANA_ROWS
       end
 
+      # The column a horizontal step of `dir` (+1 right, -1 left) from `col`
+      # on `row` lands on: the next column round, wrapping within the row's
+      # ten, and skipping the second half of a two-column cell so <決定> and
+      # <かな> each count once -- Right from <決定> wraps straight to the
+      # row's first kana, as the genuine grid does (cycle #239).
+      def kana_step_col(rows, row, col, dir)
+        cells = rows[row]
+        loop do
+          col = (col + dir) % NAME_KANA_COLS
+          return col unless cells[col].nil?
+        end
+      end
+
+      # The column a vertical move onto `row` at `col` settles on: `col`
+      # itself, or the start of the two-column cell whose second half it is.
+      # Genuine RPG_RT.exe moves Down from column 9 onto <決定> and then Down
+      # again onto column 8 -- the cell's first column, not the one the
+      # cursor arrived in (cycle #239).
+      def kana_snap_col(rows, row, col)
+        col -= 1 while rows[row][col].nil?
+        col
+      end
+
+      # `sel` of the confirm cell on the (shared) last row.
+      def kana_confirm_sel(rows)
+        last = rows.length - 1
+        last * NAME_KANA_COLS + rows[last].index(:confirm)
+      end
+
       # Auto-repeats while held, exactly like #handle_name_input above --
       # ported from the same reference implementation, not independently
       # confirmed against genuine RPG_RT under wine: one grid widget backs
-      # both the ASCII and kana pages there.
+      # both the ASCII and kana pages there. The wrap-around and the
+      # two-column cell handling are measured (see #kana_step_col and
+      # #kana_snap_col).
       def handle_kana_name_input
         ui = @name_ui
         rows = name_kana_rows(ui[:page])
         row = ui[:sel] / NAME_KANA_COLS
         col = ui[:sel] % NAME_KANA_COLS
         if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          ui[:sel] = row * NAME_KANA_COLS + (col + 1) % rows[row].length
+          ui[:sel] = row * NAME_KANA_COLS + kana_step_col(rows, row, col, 1)
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          ui[:sel] = row * NAME_KANA_COLS + (col - 1) % rows[row].length
+          ui[:sel] = row * NAME_KANA_COLS + kana_step_col(rows, row, col, -1)
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
           new_row = (row + 1) % rows.length
-          ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
+          ui[:sel] = new_row * NAME_KANA_COLS + kana_snap_col(rows, new_row, col)
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           new_row = (row - 1) % rows.length
-          ui[:sel] = new_row * NAME_KANA_COLS + col % rows[new_row].length
+          ui[:sel] = new_row * NAME_KANA_COLS + kana_snap_col(rows, new_row, col)
           draw_kana_name_input
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
@@ -7464,18 +7529,30 @@ class RPG2k
       # #name_input_confirm's identical doc comment, which this mirrors (the
       # kana grid has no on-screen backspace cell of its own, only the
       # physical Cancel key, #name_input_cancel).
+      #
+      # The keystroke that fills the last slot also moves the cursor onto
+      # <決定>, so the next Decision confirms the name: measured on genuine
+      # RPG_RT.exe under wine (cycle #239) -- typing the sixth kana of
+      # Nepheshel's own New Game prompt left the grid cursor on <決定> and a
+      # further Decision closed the widget and resumed the event, whereas
+      # re-opening the prompt on an already-full seeded name starts the
+      # cursor on the first cell as usual, so only the typing does it.
       def kana_name_input_confirm
         ui = @name_ui
         rows = name_kana_rows(ui[:page])
-        cell = rows[ui[:sel] / NAME_KANA_COLS][ui[:sel] % NAME_KANA_COLS]
+        row = ui[:sel] / NAME_KANA_COLS
+        cell = rows[row][kana_snap_col(rows, row, ui[:sel] % NAME_KANA_COLS)]
         case cell
         when :confirm then commit_name_input
         when :toggle
           ui[:page] = ui[:page] == :hiragana ? :katakana : :hiragana
           draw_kana_name_input
         else
-          if ui[:name].length < NAME_KANA_MAX
+          # Codepoints, not String#length: that counts bytes in the game's own
+          # mruby (see Scene::Base#utf8_chars).
+          if utf8_chars(ui[:name]).length < NAME_KANA_MAX
             ui[:name] += cell
+            ui[:sel] = kana_confirm_sel(rows) if utf8_chars(ui[:name]).length >= NAME_KANA_MAX
           else
             play_system_se(SFX_BUZZER)
           end
@@ -7484,31 +7561,34 @@ class RPG2k
       end
 
       # The label drawn for `cell`: a kana glyph as-is, or the toggle/confirm
-      # cell's own text. The toggle names the page it switches *to* — "カナ"
-      # (katakana) on the hiragana page, "かな" (hiragana) on the katakana one
-      # — matching RPG_RT's own screen.
+      # cell's own bracketed text. The toggle names the page it switches *to*
+      # -- "<カナ>" (katakana) on the hiragana page, "<かな>" (hiragana) on
+      # the katakana one -- and confirm reads "<決定>", both with half-width
+      # angle brackets, as the genuine screen draws them (cycle #239).
       def kana_cell_label(cell, page)
         case cell
-        when :toggle then page == :hiragana ? 'カナ' : 'かな'
-        when :confirm then '決定'
+        when :toggle then page == :hiragana ? '<カナ>' : '<かな>'
+        when :confirm then '<決定>'
         else cell
         end
       end
 
-      # Pixel geometry of `rows[row][col]` within the grid's content bitmap.
-      # Every cell is one column wide except :toggle/:confirm, which are two —
-      # the reason this walks the row summing widths rather than a flat
-      # `col * NAME_KANA_CELL_W`.
+      # Pixel geometry [x, y, w, h] of `rows[row][col]` within the grid's
+      # contents bitmap -- the text's own origin and the cursor's box, see
+      # the NAME_KANA_* constants for the measurements.
       def kana_cell_rect(rows, row, col)
-        x = 0
-        rows[row][0...col].each { |c| x += (c.is_a?(Symbol) ? 2 : 1) * NAME_KANA_CELL_W }
-        w = (rows[row][col].is_a?(Symbol) ? 2 : 1) * NAME_KANA_CELL_W
+        x = col * NAME_KANA_COL_PITCH
+        x += NAME_KANA_HALF_GAP if col >= NAME_KANA_COLS / 2
+        w = rows[row][col].is_a?(Symbol) ? NAME_KANA_LABEL_W : NAME_KANA_GLYPH_W
         [x, row * NAME_KANA_CELL_H, w, NAME_KANA_CELL_H]
       end
 
       # (Re)draw all three windows of the kana widget: the actor's face, the
-      # name-so-far field (seeded characters, a blinking cursor box on the
-      # next empty slot, underscores past that) and the gojuuon grid itself.
+      # name-so-far field (seeded characters, a cursor box on the next slot,
+      # underscores past that) and the gojuuon grid itself. Every string goes
+      # through #draw_system_text, so the glyphs carry the windowskin's own
+      # colour gradient and shadow like the rest of RPG_RT's window text --
+      # the genuine screen draws them that way, not in flat white.
       def draw_kana_name_input
         ui = @name_ui
         if ui[:face_win]
@@ -7527,7 +7607,7 @@ class RPG2k
       end
 
       def draw_kana_face(ui, face_name, face_index)
-        win = Window.new(NAME_TOP_X, NAME_TOP_Y, NAME_FACE_WIN, NAME_FACE_WIN)
+        win = Window.new(NAME_FACE_X, NAME_FACE_Y, NAME_FACE_WIN, NAME_FACE_WIN)
         win.z = 400
         win.windowskin = @windowskin
         c = Bitmap.new(FACE_SIZE, FACE_SIZE)
@@ -7541,43 +7621,43 @@ class RPG2k
         ui[:face_win] = win
       end
 
+      # One character per 16px slot; a name longer than the widget's own
+      # limit (a seed the database allowed) shows its first NAME_KANA_MAX
+      # characters and parks the cursor past the last slot.
       def draw_kana_name_field(ui)
-        win_x = NAME_TOP_X + NAME_FACE_WIN + NAME_TOP_GAP
-        win_w = NAME_TOP_X + NAME_GRID_W - win_x
-        win = Window.new(win_x, NAME_TOP_Y, win_w, NAME_FACE_WIN)
+        win = Window.new(NAME_FIELD_X, NAME_FIELD_Y, NAME_FIELD_W, NAME_FIELD_H)
         win.z = 400
         win.windowskin = @windowskin
-        inner_w = win_w - Window::BORDER * 2
-        inner_h = NAME_FACE_WIN - Window::BORDER * 2
-        slot_y = (inner_h - NAME_KANA_CELL_H) / 2
+        inner_w = NAME_FIELD_W - Window::BORDER * 2
+        inner_h = NAME_FIELD_H - Window::BORDER * 2
         c = Bitmap.new(inner_w, inner_h)
-        c.font.color = Color.new(255, 255, 255, 255)
-        name = ui[:name]
+        # One codepoint per slot -- `name[i]` would be a lone byte in the
+        # game's own mruby (see Scene::Base#utf8_chars).
+        chars = utf8_chars(ui[:name])
         NAME_KANA_MAX.times do |i|
-          c.draw_text i * NAME_KANA_CELL_W, slot_y, NAME_KANA_CELL_W, NAME_KANA_CELL_H,
-                     name[i] || '_', 1
+          draw_system_text c, NAME_FIELD_ORIGIN + i * NAME_FIELD_SLOT_W, 0,
+                           NAME_FIELD_SLOT_W, inner_h, chars[i] || '_', @windowskin
         end
         win.contents = c
-        if name.length < NAME_KANA_MAX
-          win.cursor_rect = Rect.new(name.length * NAME_KANA_CELL_W, slot_y,
-                                     NAME_KANA_CELL_W, NAME_KANA_CELL_H)
-        end
+        slot = [chars.length, NAME_KANA_MAX].min
+        win.cursor_rect = Rect.new(NAME_FIELD_ORIGIN + slot * NAME_FIELD_SLOT_W, 0,
+                                   NAME_FIELD_CURSOR_W, inner_h)
         ui[:name_win] = win
       end
 
       def draw_kana_grid(ui)
-        win = Window.new(NAME_TOP_X, NAME_GRID_Y, NAME_GRID_W, NAME_GRID_H)
+        win = Window.new(NAME_GRID_X, NAME_GRID_Y, NAME_GRID_W, NAME_GRID_H)
         win.z = 400
         win.windowskin = @windowskin
         inner_w = NAME_GRID_W - Window::BORDER * 2
         inner_h = NAME_GRID_H - Window::BORDER * 2
         c = Bitmap.new(inner_w, inner_h)
-        c.font.color = Color.new(255, 255, 255, 255)
         rows = name_kana_rows(ui[:page])
         rows.each_with_index do |row_cells, r|
           row_cells.each_with_index do |cell, ci|
+            next if cell.nil?
             x, y, w, h = kana_cell_rect(rows, r, ci)
-            c.draw_text x, y, w, h, kana_cell_label(cell, ui[:page]), 1
+            draw_system_text c, x, y, w, h, kana_cell_label(cell, ui[:page]), @windowskin
           end
         end
         win.contents = c
@@ -7586,7 +7666,6 @@ class RPG2k
         win.cursor_rect = Rect.new(*kana_cell_rect(rows, sel_row, sel_col))
         ui[:grid_win] = win
       end
-
       def close_name_input
         return unless @name_ui
         @name_ui[:background].dispose if @name_ui[:background]
