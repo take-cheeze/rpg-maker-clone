@@ -138,7 +138,8 @@ module RGSS
   Tone = Struct.new(:red, :green, :blue, :gray)
 
   class Sprite
-    attr_accessor :bitmap, :x, :y, :z, :visible, :opacity, :src_rect, :tone
+    attr_accessor :bitmap, :z, :opacity, :src_rect, :tone
+    attr_reader :x, :y, :visible
     # Which viewport the sprite was built in, so the tone checks can assert that
     # the map layers share one and the overlays do not.
     attr_reader :viewport
@@ -148,6 +149,17 @@ module RGSS
     # disposed, and that a rejoin never hands back an already-disposed one.
     def dispose; @disposed = true; end
     def disposed?; !!@disposed; end
+    # Mirrors the real native contract (mruby-rgss/src/lib.cxx's obj_set_x/
+    # obj_set_y/obj_set_visible): each asserts its underlying LVGL object is
+    # non-null, which #dispose (obj_dispose) sets to null. A caller that goes
+    # on touching a disposed sprite -- e.g. Scene::Map#render reaching
+    # @player_sprite after a same-frame Game Over/Return to Title already
+    # disposed the whole scene -- aborts for real; this stub raises the same
+    # way so a check exercising that path fails loudly instead of quietly
+    # passing.
+    def x=(v); raise "Sprite#x= on a disposed sprite" if @disposed; @x = v; end
+    def y=(v); raise "Sprite#y= on a disposed sprite" if @disposed; @y = v; end
+    def visible=(v); raise "Sprite#visible= on a disposed sprite" if @disposed; @visible = v; end
     # #flash/#update, as the target-scope Battle Animation flash
     # (Scene::Map#fire_target_flash/#update_enemy_flashes) uses them: mirrors
     # the real native contract (mruby-rgss/src/lib.cxx's spr_flash/spr_update)
@@ -8475,6 +8487,49 @@ check 'Enemy Encounter scene: a game-over defeat returns to the title' do
   # that opened the fight is abandoned and never resumed.
   eq 1, st.battle_count, 'a game-over-ending fight still counts as a battle entered'
   eq 1, st.defeat_count, 'and still counts as a defeat, even though the event never resumes'
+end
+
+# Reported crash: "mruby-rgss/src/lib.cxx:3972: ... obj_set_visible(mrb_state*,
+# mrb_value): Assertion `obj' failed." right after "[RPG2k] game over" on a
+# real battle-loss run. RPG2k#show_game_over (mruby-rpg2k/mrblib/main.rb)
+# disposes every scene in @scenes -- this Scene::Map included -- the instant
+# Game Over is reached, which is synchronous with (not after) the very
+# Scene::Map#update call that reached it: #perform_game_over calls it directly
+# from inside #drive_event's own dispatch, mid-frame. Scene::Map#update used to
+# plough on into that same frame's own #record_map_event_positions/
+# #animate_events/#render regardless, which touches this scene's own sprites
+# (#render's #apply_player_visibility -> @player_sprite.visible=, among
+# others) -- now pointing at LVGL objects #dispose already nulled out, an
+# unconditional `mrb_assert(obj)` in the real native setters that aborts the
+# whole process outright, not a catchable Ruby exception. FakeParent's own
+# #show_game_over (used by every other check above) only records the call --
+# "rather than modelling a real scene stack" -- so it never exercises this;
+# overridden here, on this one parent, to actually dispose the scene the
+# instant Game Over fires, exactly where and when the real one does.
+check 'a game-over defeat does not touch this scene\'s own sprites after ' \
+      'Game Over has already disposed them, mid-frame' do
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::ENEMY_ENCOUNTER, [0, 1, 0, 0, 0, 0], indent: 0)
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party,
+                           BattleStubParty.new(BattleStubActor.new(atk: 6, dfn: 0, agi: 3, hp: 10)))
+  parent = scene.instance_variable_get(:@parent)
+  parent.define_singleton_method(:show_game_over) do |state = nil|
+    @game_over_shown = true
+    @game_over_state = state
+    scene.dispose
+  end
+  scene.update
+  battle_attack_to_end(scene) # the hero is worn down -> the defeat result shows
+  ok !parent.game_over_shown, 'still on the defeat result, not yet game over'
+  RGSS::Input.triggered = [RGSS::Input::C] # dismiss the defeat result -- this
+  scene.update                             # same call is where the crash was
+  RGSS::Input.triggered = []
+  ok parent.game_over_shown, 'reached Game Over (and, on the way, disposed this scene)'
 end
 
 check 'Game Over event command returns to the title, abandoning the event' do

@@ -566,6 +566,7 @@ class RPG2k
       attr_accessor :map_animation
 
       def dispose
+        @disposed = true
         close_message(animate: false)
         (@closing_windows || []).each(&:dispose)
         @closing_windows = nil
@@ -670,6 +671,17 @@ class RPG2k
         paused = parallels_paused?
         step_parallels unless paused
         step_battle_owner_parallel if paused
+        # A Parallel Process just stepped above may have raised :game_over or
+        # :return_title (#drive_parallel_wait) -- either tears down the whole
+        # scene stack, including this very scene (Scene::Map#dispose,
+        # RPG2k#show_game_over/#return_to_title), disposing its sprites and
+        # viewports. Continuing on into this same frame's own event
+        # stepping/animation/render below would then touch those already-
+        # disposed LVGL objects -- an `mrb_assert(obj)` abort in the native
+        # sprite setters (reported: a battle loss crashing the moment the
+        # Game Over screen comes up). Bail out immediately once that has
+        # happened -- there is nothing left here to update or draw.
+        return if @disposed
         # Auto-start events re-trigger every frame, not once per visit: reset the
         # per-frame eligibility gate so an eligible auto-start (map or common)
         # that already ran this frame can be picked again next frame. Within a
@@ -721,6 +733,13 @@ class RPG2k
             try_open_debug_menu
           end
         end
+        # Same guard as above, for the foreground/autostart path: #drive_event
+        # and #drive_autostart_cascade can themselves reach a :game_over /
+        # :return_title wait (Game Over (12420), a battle defeat routed to the
+        # Game Over screen, Return to Title Screen (12510), ...) and tear down
+        # this scene the same way. See the citation above -- this scene's own
+        # sprites are gone by the time either can return here.
+        return if @disposed
         record_map_event_positions
         record_foreground_event_exec
         record_tile_substitutions
