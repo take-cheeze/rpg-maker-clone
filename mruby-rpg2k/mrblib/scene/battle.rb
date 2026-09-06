@@ -383,7 +383,12 @@ class RPG2k
       # **lower**-numbered member closer to the camera (yado.tk); the native
       # renderer draws the *highest*-z sprite on top (see `gfx_update`'s own
       # "leaving the greatest z on top"), so index 0 needs the highest z here
-      # -- the reverse of the add-order index itself.
+      # -- the reverse of the add-order index itself. Confirmed against
+      # genuine RPG_RT.exe under wine (cycle #245) on Nepheshel's troop 160,
+      # whose four members overlap on purpose: members 2 and 3 (the 160x160
+      # wing battlers at x=80 and x=240) draw over member 4 (the full-screen
+      # 320x160 body at x=160) in the reference frame, exactly as this
+      # ordering predicts.
       def battler_z(i)
         100 + (@ui[:troop].members.size - 1 - i)
       end
@@ -420,6 +425,15 @@ class RPG2k
       # nudged by #flying_offset -- shared by every site that (re)builds an
       # enemy sprite so the three stay in lockstep with the per-frame update
       # (#update_enemy_positions) that keeps a levitating one bobbing after.
+      #
+      # That the stored position is the battler bitmap's *centre* on both
+      # axes (not its top-left, and not its feet) is confirmed against
+      # genuine RPG_RT.exe under wine (cycle #245): Nepheshel's troop 1 puts
+      # its two スライム at (114,130) and (206,130) with an 84x36
+      # `Monster/m001a` sheet whose opaque content spans (4,3)-(80,34), so
+      # centring predicts on-screen content boxes of (76,115)-(152,146) and
+      # (168,115)-(244,146) -- and those are exactly the boxes measured in
+      # the reference frame (and in ours), to the pixel, on both enemies.
       def battler_y(member, bmp)
         member.y - bmp.height / 2 + flying_offset(member)
       end
@@ -861,17 +875,45 @@ class RPG2k
       # explicit terrain id reads straight off that terrain's own row --
       # bypassing the
       # map-tree walk entirely, unlike the ordinary default below. Only when
-      # neither key is present (param2==0, the ordinary case) does this fall
-      # back to whatever `Game::Backdrop` resolves for the current map, given
-      # the terrain the party is standing on. '' when nothing names one, which
-      # draws the flat field.
+      # neither key is present (param2==0, the ordinary case) does this use
+      # the background the runtime is already carrying
+      # (`Game::State#battle_background`, SAVE_SYSTEM field 125), and only
+      # when *that* is unknown -- a new game, or a portable save that never
+      # held one -- does it fall back to whatever `Game::Backdrop` resolves
+      # for the current map, given the terrain the party is standing on. ''
+      # either way when nothing names one, which draws the flat black field.
+      #
+      # That the carried value comes first, rather than a fresh map-tree walk
+      # every fight, is confirmed against genuine RPG_RT.exe under wine
+      # (cycle #245): on Nepheshel's map 2 -- whose tree entry inherits map
+      # 9's `backdrop_type == 2` / "black" -- a save whose field 125 was
+      # hand-set to "light" drew Backdrop/light.png in the slime fight, and
+      # the same save with the field absent drew flat black, neither of them
+      # the "black" the map tree resolves. See `Game::State
+      # #battle_background` for the full capture recipe and for why the
+      # value is dropped on a map change.
       def encounter_backdrop
         return @req[:background].to_s if @req.key?(:background)
         return @map.backdrop_for_terrain_id(@req[:terrain_id]) if @req.key?(:terrain_id)
+        carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
+        return carried unless carried.nil?
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
                                 @map.terrain_backdrop(@state.x, @state.y))
       end
 
+      # One static sprite at the screen origin, under everything else.
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #245): the
+      # backdrop is blitted once, 1:1, at (0,0) -- downsampling the reference
+      # capture's top 320x160 and comparing it to the `Backdrop/*.png` file
+      # itself (both are 320x160) left *only* the two enemy sprites differing
+      # (ImageMagick `compare -fuzz 10%`: 2776 pixels for Backdrop/light.png,
+      # 2889 for Backdrop/bossls02r.png, all of them inside the slimes'
+      # bounding boxes), so it is neither scaled, tiled nor offset. Two
+      # captures of the same fight 25s apart were pixel-identical (AE 0), so
+      # it does not scroll either -- the per-terrain scroll fields
+      # (`Terrain` chunks 21-25/31-35) are RPG2003's, and this is an RPG2000
+      # database. z 5 puts it under the troop sprites (#battler_z, 100+) and
+      # under every window, matching the reference frames.
       def build_battle_back(name = nil)
         bmp = battle_back_bitmap(name)
         spr = Sprite.new
@@ -907,6 +949,18 @@ class RPG2k
       # uses for a missing chipset. Cached by name (see #cached_bitmap) so
       # re-entering the same encounter, or a battle event that swaps back to a
       # backdrop already shown this visit, does not re-decode it.
+      #
+      # The two fallbacks are not the same case in genuine RPG_RT.exe, and
+      # only the first of them is a fallback there at all (measured under
+      # wine, cycle #245): *no name* draws the flat black field and the fight
+      # runs normally, while a name whose `Backdrop/<name>` file is genuinely
+      # missing is fatal -- RPG_RT put up a modal error dialog and the battle
+      # never started (a save with field 125 = "zzznone" on Nepheshel's map
+      # 2). This codebase deliberately keeps the softer behaviour for the
+      # missing-file case: it has no error-dialog UI, and reporting to
+      # $stderr and carrying on is the same diagnostic-not-crash posture
+      # `Scene::Map` already takes for a missing chipset and a missing
+      # teleport destination.
       def battle_back_bitmap(name)
         key = (name && !name.empty?) ? name : nil
         cached_bitmap(@backdrop_cache, key) do
@@ -923,9 +977,20 @@ class RPG2k
         end
       end
 
+      # The field drawn when no backdrop is named: flat black, measured
+      # against genuine RPG_RT.exe under wine (cycle #245). A save carrying no
+      # SAVE_SYSTEM field 125 at all dropped into Nepheshel's map-2 slime
+      # fight over a backdrop that read exactly RGB(0,0,0) at every sampled
+      # point of the 320x160 backdrop band (x=160, y=0/8/30/50/75/100/125/
+      # 145/149/155 of the logical screen), not the dark blue-grey this used
+      # to fill. Full 320x240 rather than a real backdrop's 320x160: the
+      # bottom 80px is always under the battle windows, so nothing can be
+      # measured there, and covering it is what keeps stale pixels out.
+      BATTLE_BACK_FLAT_COLOR = [0, 0, 0].freeze
       def flat_battle_back
         bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+        r, g, b = BATTLE_BACK_FLAT_COLOR
+        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
         bmp
       end
 

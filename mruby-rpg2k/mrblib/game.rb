@@ -15365,7 +15365,40 @@ module Game
     BATTLE_COMMANDS_DEFAULT = [-1, -1, -1, -1, -1, -1, -1].freeze
 
     attr_reader :party, :switches, :variables, :message_config, :screen, :weather
-    attr_accessor :map, :map_id, :x, :y, :direction
+    attr_accessor :map, :x, :y, :direction
+    attr_reader :map_id
+    # The battle background the runtime is *currently* carrying (SAVE_SYSTEM
+    # field 125, liblcf's own "background"), or nil for "nothing loaded one --
+    # resolve it from the map tree instead" (`Game::Backdrop.name_for`, which
+    # is what `Scene::Battle#encounter_backdrop` falls back to).
+    #
+    # Confirmed against genuine RPG_RT.exe under wine (cycle #245): the
+    # backdrop a fight draws is this stored value, NOT a fresh map-tree walk
+    # at battle start. Nepheshel's map 2 inherits its parent map 9's
+    # `backdrop_type == 2` / `backdrop_file == "black"`, yet a save whose
+    # field 125 was hand-set to "light" (an unrelated Backdrop/light.png)
+    # dropped straight into the map-2 slime fight drawing *light*, and one
+    # with the field absent drew a flat black screen -- so loading a save
+    # neither recomputes nor validates the field. Absent therefore has to
+    # read as the empty string here (RPG_RT's own field default -> the flat
+    # black field), not as "unknown", or a genuine save's own choice would be
+    # silently overridden.
+    #
+    # Cleared by #map_id= so a Transfer Player leaves the stale value behind
+    # and the next fight resolves the new map's own backdrop: RPG_RT's field
+    # is written by its map setup (every genuine save carries the value its
+    # own map resolves to), and where exactly that write happens -- arrival
+    # only, or every step over a terrain whose own `background_name` differs
+    # -- could not be settled here, because Nepheshel has no `backdrop_type
+    # == 1` (per-terrain) map at all. See docs/TODO.md.
+    attr_accessor :battle_background
+
+    # Changing map drops the carried battle background (see above): the value
+    # only ever described the map it was resolved on.
+    def map_id=(id)
+      @battle_background = nil if id != @map_id
+      @map_id = id
+    end
     # Whether the player may open the main menu / save, toggled by the Change
     # Main Menu Access (11960) and Change Save Access (11930) event commands;
     # both default on and are persisted in the save.
@@ -17442,6 +17475,12 @@ module Game
       # How many times the menu's Save command has been used (RPG_RT increments
       # this on every save; see #to_lsd's sys[131] write above).
       state.save_count = sys.save_count unless sys.save_count.nil?
+      # The carried battle background (field 125). Read unconditionally, an
+      # absent chunk included: an absent field is RPG_RT's own empty default,
+      # which draws the flat black field rather than falling back to a
+      # map-tree walk -- see #battle_background's own citation for the wine
+      # captures this was measured from.
+      state.battle_background = sys.battle_background.to_s
       # Screen-transition slots (chunks 111..116). A slot the save left
       # un-overridden comes back out of range rather than as a setting, and
       # #seed_screen_transitions refills those from the database below.

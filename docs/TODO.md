@@ -9321,6 +9321,104 @@ The work below is roughly ordered by the critical path to a walkable game
   passes if the override genuinely bypasses positional lookup), both
   confirmed to fail against the pre-fix code (both returned the empty/flat
   default) before the fix.
+  ✅ **Follow-up (cycle #245, 2026-09-06): the fight's backdrop is the
+  background the runtime is *carrying*, not a fresh map-tree walk at battle
+  start — and the "no backdrop" field is flat black, not a dark blue-grey.**
+  Measured against genuine RPG_RT.exe under wine on the RPG2000 test bed
+  (Nepheshel 2.06R beta); **no EasyRPG source was consulted**, every number
+  below comes from a pixel measurement of a genuine capture. **Recipe:** the
+  round-2 battle save (party on map 2 at (6,4), facing the monster event at
+  (6,3), scene cleared) drops both runtimes straight into a two-スライム
+  fight on Continue; `SAVE_SYSTEM` field 125 was rewritten between runs with
+  the LCF writer (`save[101][125] = name; save[101] = sys; save.save_to`) to
+  drive the backdrop, and captures were taken at 640x480 = the 320x240
+  logical screen doubled.
+  **What the orientation captures actually showed.** RPG_RT drew flat black
+  where this codebase drew a blue vertical gradient — but the gradient was
+  *not* the bug: Nepheshel's `Backdrop/black.png` genuinely **is** a blue
+  vertical gradient (320x160, RGB(0,0,160) at the top fading to (0,0,100)),
+  and map 2's own tree walk resolves it correctly (map 2 `backdrop_type == 0`
+  → parent map 9 `backdrop_type == 2`, `backdrop_file == "black"`). The
+  difference is *where the name comes from*. Three captures settle it: (a)
+  the harness save carries **no field 125 at all** and RPG_RT fought over a
+  screen reading exactly RGB(0,0,0) at logical x=160, y=0/8/30/50/75/100/
+  125/145/149/155 — not map 2's own "black" graphic; (b) the same save with
+  field 125 hand-set to `"light"` fought over `Backdrop/light.png` (bright
+  white/pink), again ignoring the map tree; (c) the same save with field 125
+  set to `"zzznone"` (no such file) put up a **modal error dialog and never
+  started the battle**. So RPG_RT neither recomputes nor validates the field
+  on load: the backdrop is whatever its own map setup last stored there, and
+  an absent field is the empty default that draws black.
+  **Fixed** by giving `Game::State` a `battle_background` (field 125,
+  `.from_lsd` reads it unconditionally so an absent chunk reads `''`, not
+  "unknown"), cleared by a new `Game::State#map_id=` so a Transfer Player
+  leaves the stale value behind, and giving it first refusal in
+  `Scene::Battle#encounter_backdrop` ahead of `Game::Backdrop.name_for`
+  (Enemy Encounter's own param2 overrides still win over both). And
+  `Scene::Battle#flat_battle_back` now fills RGB(0,0,0) instead of
+  RGB(16,16,32). Net effect: the harness save now draws the same flat black
+  in both runtimes, while a genuine save keeps drawing the backdrop RPG_RT
+  stored for it.
+  **Also confirmed, and left as-is because they already matched.** The
+  backdrop is **one static sprite blitted 1:1 at the screen origin**:
+  downsampling the reference capture's top 640x320 to 320x160 and comparing
+  it against the `Backdrop/*.png` file itself left *only* the two enemy
+  sprites differing (`compare -metric AE -fuzz 10%`: 2776 differing pixels
+  for `light.png`, 2889 for `bossls02r.png`, all inside the slimes' boxes),
+  so it is neither scaled, tiled nor offset, and two captures of the same
+  fight 25s apart were pixel-identical (AE 0), so it does not scroll either
+  (the per-terrain scroll fields, `Terrain` chunks 21-25/31-35, are
+  RPG2003's). Its z 5 is under the troop sprites and under every window, as
+  drawn. A **troop member is centred on its database x/y on both axes** —
+  troop 1 places its two スライム at (114,130) and (206,130) with an 84x36
+  `Monster/m001a` sheet whose opaque content spans (4,3)-(80,34), so centring
+  predicts on-screen content boxes of (76,115)-(152,146) and
+  (168,115)-(244,146), and those are **exactly** the boxes measured in both
+  the reference frame and ours, to the pixel, on both enemies (not the
+  top-left anchor, and not a feet anchor). **The lower-numbered member draws
+  on top**, confirmed on a second, deliberately different encounter — the
+  four-member troop 160 boss on map 543 (`backdrop_type == 2`,
+  `backdrop_file == "bossls02r"`, reached with `gen-rpg2k-save.rb --map 543
+  --at 20,12 --facing up --clear-scene`), whose 160x160 wing battlers at
+  x=80/x=240 (members 2 and 3) overlap the full-screen 320x160 body at x=160
+  (member 4) and draw over it in the reference frame, exactly as
+  `#battler_z` predicts; that fight also renders the same in both runtimes,
+  so the map-tree walk is right for a non-black map too.
+  **Deliberately left open.** (1) *Where* RPG_RT writes field 125 — arrival
+  on a map only, or every step onto a terrain whose own `background_name`
+  differs — could not be settled: Nepheshel has **no `backdrop_type == 1`
+  (per-terrain) map at all** (271 of the 275 maps carrying an Enemy
+  Encounter resolve to "black", the rest to a pinned file), so no walk on
+  this test bed can change the answer, and an attempt to walk the party into
+  a fight on map 2 ran into that map rendering pitch black with input
+  swallowed. Clearing the value on a map change is the conservative
+  behaviour that matches every case measured here. (2) A **missing** backdrop
+  file stays a soft fallback here (a `$stderr` line plus the flat field)
+  rather than RPG_RT's fatal dialog: this codebase has no error-dialog UI and
+  already takes the same diagnostic-not-crash posture for a missing chipset
+  and a missing teleport destination. (3) Whether Change Battle Background
+  (13210) should also *store* into field 125 (so the next fight and the next
+  save keep it) is untested — it still only swaps the live sprite. (4)
+  `scripts/gen-rpg2k-save.rb` still does not maintain field 125 when it
+  moves the party, so a synthetic save keeps whatever the donor save had;
+  both runtimes now agree on that stale/empty value, but a capture that wants
+  a map's *real* backdrop has to set the field by hand as above. (5)
+  `#flying_offset` / `#automatic_battle_position` remain unconfirmed under
+  wine — RPG2000 draws no party battlers at all and neither troop used here
+  has a levitating member. Covered by eight new
+  `scripts/rpg2k_scene_check.rb` checks (carried background wins over the
+  tree walk; a carried empty string draws the flat field; the flat field is
+  RGB(0,0,0); a map change drops the carried value; the backdrop sprite's
+  origin/z vs. the troop sprites; the centred anchor, both as arithmetic on
+  the measured Nepheshel numbers and through the real build path; the
+  add-order z ordering), five of which were confirmed to fail against the
+  pre-fix code before the fix — the remaining three pin behaviour the
+  captures showed was already correct.
+  **Also noticed, not this task's:** with `--test_play` our engine leaves
+  `Scene::Map`'s missing-CharSet debug marker (a 16x32 RGB(240,240,80) block
+  at the hero's map position) drawn *over* the battle backdrop — visible at
+  logical (152,96)-(167,127) in the map-543 boss capture. RPG_RT shows
+  nothing there.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are

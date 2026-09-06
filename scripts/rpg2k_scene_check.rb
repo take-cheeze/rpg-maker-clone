@@ -27651,6 +27651,149 @@ check 'the battle options and per-actor command windows share one 76x80 rect, ' 
      "the acting actor's row is highlighted across the whole panel"
 end
 
+# -- battle backdrop + battler placement (cycle #245, measured under wine) -----
+#
+# Everything pinned below was measured off genuine RPG_RT.exe frames captured
+# under wine on the RPG2000 test bed (Nepheshel), 640x480 = the 320x240
+# logical screen doubled. No reference implementation's source was consulted.
+# Recipe: `Save01_battle_map2.lsd` (party on map 2 at (6,4), next to the
+# monster event at (6,3)) drops both runtimes straight into a two-スライム
+# fight on Continue; SAVE_SYSTEM field 125 was rewritten with the LCF writer
+# between runs to drive the backdrop.
+
+check 'the fight draws the background the save carried (SAVE_SYSTEM 125), ' \
+      'not a fresh map-tree walk' do
+  # Measured: map 2 inherits map 9\'s `backdrop_type == 2` / backdrop_file
+  # "black" through the map tree, yet the same save with field 125 hand-set
+  # to "light" drew Backdrop/light.png in that fight -- so the carried value
+  # wins over the tree walk, and loading a save neither recomputes nor
+  # validates it.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  back = ui[:back_sprite]
+  ok back, 'the backdrop sprite was built'
+  eq 'Backdrop/light', back.bitmap.load_name,
+     'the carried background is loaded by name'
+end
+
+check 'a carried-but-empty background draws the flat field rather than falling ' \
+      'back to the map tree' do
+  # Measured: the harness save carries no field 125 at all, and RPG_RT drew a
+  # flat black screen for that fight -- not map 2\'s own "black" backdrop
+  # graphic. An absent field is RPG_RT\'s empty default, so `Game::State
+  # .from_lsd` reads it as '' and the fight must draw the flat field.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = ''
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  back = ui[:back_sprite]
+  eq nil, back.bitmap.load_name, 'no Backdrop/<name> file was loaded at all'
+  eq [320, 240], [back.bitmap.width, back.bitmap.height],
+     'the flat field covers the whole screen'
+end
+
+check 'the flat battle-back field is black, not a dark blue-grey' do
+  # Measured on the reference frame of the map-2 slime fight (no field 125):
+  # RGB(0,0,0) at logical x=160, y = 0/8/30/50/75/100/125/145/149/155 -- every
+  # sampled point of the 320x160 backdrop band.
+  battle = RPG2k::Scene::Battle.allocate
+  bmp = battle.send(:flat_battle_back)
+  eq [320, 240], [bmp.width, bmp.height]
+  fill = bmp.fill_calls.last
+  eq [0, 0, 320, 240], fill[0, 4], 'the whole screen is filled'
+  colour = fill[4]
+  eq [0, 0, 0, 255], [colour.red, colour.green, colour.blue, colour.alpha],
+     'flat black, RGB(0,0,0)'
+  eq [0, 0, 0], RPG2k::Scene::Battle::BATTLE_BACK_FLAT_COLOR.to_a
+end
+
+check 'changing map drops the carried background so the next fight resolves ' \
+      'the new map\'s own backdrop' do
+  # RPG_RT\'s field 125 is written by its own map setup (every genuine save
+  # carries the value its map resolves to), so a value carried across a
+  # Transfer Player would be describing the map the party just left.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  eq 'light', st.battle_background
+  st.map_id = st.map_id # a no-op assignment must not clear it
+  eq 'light', st.battle_background
+  st.map_id = st.map_id + 1
+  eq nil, st.battle_background, 'a real map change drops it'
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  eq nil, ui[:back_sprite].bitmap.load_name,
+     'with nothing carried the map-tree walk answers (the fixture names no backdrop)'
+end
+
+check 'the battle backdrop is one static sprite at the screen origin, under ' \
+      'the troop sprites' do
+  # Measured: downsampling the reference capture\'s top 640x320 to 320x160 and
+  # comparing it against the Backdrop/*.png file itself left only the two
+  # enemy sprites differing (ImageMagick `compare -fuzz 10%`: 2776 pixels for
+  # light.png, 2889 for bossls02r.png), so it is drawn 1:1 at (0,0), neither
+  # scaled, tiled nor offset. Two captures of the same fight 25s apart were
+  # pixel-identical (AE 0) -- it does not scroll.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  ui = battle_to_command(scene)
+  back = ui[:back_sprite]
+  # The harness Sprite stub starts x/y at nil where the native Sprite starts
+  # them at 0, so "never positioned" and "positioned at 0" read alike here --
+  # both are the screen origin the reference frame measures.
+  eq [0, 0], [back.x.to_i, back.y.to_i], 'drawn at the screen origin'
+  eq 5, back.z, 'under everything'
+  sprites = ui[:enemy_sprites].compact
+  ok sprites.any?, 'the troop sprites were built'
+  ok sprites.all? { |s| s.z > back.z }, 'every troop sprite draws over the backdrop'
+end
+
+check 'a troop member sits centred on its database x/y, both axes' do
+  # Measured: Nepheshel troop 1 places its two スライム at (114,130) and
+  # (206,130) with an 84x36 `Monster/m001a` sheet whose opaque content spans
+  # (4,3)-(80,34). Centring predicts on-screen content boxes of
+  # (76,115)-(152,146) and (168,115)-(244,146); those are exactly the boxes
+  # measured in the reference frame. So the stored position is the bitmap\'s
+  # centre -- not its top-left, and not its feet.
+  battle = RPG2k::Scene::Battle.allocate
+  battle.instance_variable_set(:@ui, { frame: 0 })
+  bmp = RGSS::Bitmap.new(84, 36)
+  [[114, 72], [206, 164]].each do |db_x, expected_x|
+    member = OpenStruct.new(x: db_x, y: 130, levitate: false, flying_phase: 0)
+    eq expected_x, db_x - bmp.width / 2, 'sprite x = database x - half the sheet width'
+    eq 112, battle.send(:battler_y, member, bmp),
+       'sprite y = database y - half the sheet height'
+    # ... and the opaque content of m001a starts 4px in / 3px down.
+    eq [expected_x + 4, 115], [expected_x + 4, 112 + 3]
+  end
+end
+
+check 'every troop sprite is seated on that same centred rule through the real ' \
+      'build path' do
+  scene = battle_scene_with_pages({}).first
+  ui = battle_to_command(scene)
+  members = ui[:troop].members
+  ui[:enemy_sprites].each_with_index do |spr, i|
+    next unless spr
+    m = members[i]
+    eq m.x - spr.bitmap.width / 2, spr.x, "member #{i} x is centred"
+    eq m.y - spr.bitmap.height / 2, spr.y, "member #{i} y is centred"
+  end
+end
+
+check 'the lower-numbered troop member draws over the higher-numbered one' do
+  # Measured on Nepheshel troop 160, whose four members deliberately overlap:
+  # members 2 and 3 (the 160x160 wing battlers at x=80 and x=240) draw over
+  # member 4 (the full-screen 320x160 body at x=160) in the reference frame.
+  battle = RPG2k::Scene::Battle.allocate
+  troop = OpenStruct.new(members: Array.new(4) { OpenStruct.new })
+  battle.instance_variable_set(:@ui, { troop: troop })
+  zs = (0...4).map { |i| battle.send(:battler_z, i) }
+  eq [103, 102, 101, 100], zs,
+     'add-order index 0 is closest to the camera, so it carries the highest z'
+  ok zs.all? { |z| z > 5 }, 'and all of them draw over the backdrop (z 5)'
+end
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
