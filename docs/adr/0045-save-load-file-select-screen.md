@@ -134,3 +134,22 @@ purpose. The database also already carries the vocabulary such a screen needs
   support) are not drawn on the new screen yet -- it is text-only. Follow-up
   work, tracked in docs/TODO.md alongside routing the RPG2003 Open Save/Load
   Menu event commands through the same picker instead of slot 1 directly.
+
+## Addendum (cycle #242, 2026-09-06): geometry measured on genuine RPG_RT
+
+The screen's layout constants were re-measured against a genuine RPG_RT.exe
+under wine (see the matching docs/TODO.md follow-up for the capture recipe
+and every number). The header window stays 32px tall (`HEADER_H`), but the
+slot boxes start at y=40, not 32: a new `SLOT_TOP = HEADER_H + ARROW_H`
+leaves an 8px strip of bare backdrop under the header for the up arrow,
+mirroring the 8px strip under the third box that holds the down arrow, and
+`VISIBLE_SLOTS` is now `(SCREEN_H - SLOT_TOP - ARROW_H) / SLOT_BOX_H` (still
+3). The scene also paints the shared flat field backdrop
+(`Scene::Base#build_field_background`) behind itself, since RPG_RT covers
+the title picture when Continue opens it. The label is a fixed
+`LABEL_W = 63` contents rect -- the term at x=0 and the slot number
+right-aligned to that edge, cursor the same 63px wide for one or two digits
+-- and the level/HP line uses the measured columns `LEVEL_LABEL_X`/`LEVEL_X`/
+`HP_LABEL_X`/`HP_X` = 0/12/42/54 with the `LV`/`HP` labels in system swatch 1
+and every other run (header included) in swatch 0, an empty slot's label in
+swatch 3.

@@ -20812,7 +20812,10 @@ check 'Scene::SaveLoad: an empty slot shows only the file label, no placeholder 
   # single-list-window layout.
   scene, = save_load_scene(:load)
   texts = window_texts(scene.instance_variable_get(:@slot_windows)[0])
-  ok texts.include?('File 1'), 'slot 1 is labelled with a plain, non-zero-padded number'
+  # The term and the number are two separate runs (see the cycle #242 label
+  # geometry check below), never one "File 1" string.
+  ok texts.include?('File') && texts.include?('1'),
+     'slot 1 is labelled with the file term and a plain, non-zero-padded number'
   ok !texts.any? { |t| t.include?('No Data') }, 'no placeholder text for an empty slot'
 end
 
@@ -20835,13 +20838,13 @@ check 'Scene::SaveLoad: an occupied slot shows the leader, level and HP -- no go
                                               'reference capture, unlike this screen\'s old layout'
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it
-# draws the level and HP fields as four separate
-# `TextDraw` calls at fixed pixel columns (x=4, x=46), each number
-# `std::setw`-padded to a fixed width -- so the "HP" label never shifts
-# sideways depending on how many digits the level has, unlike a single
-# interpolated string with a literal gap between the two halves.
+# Measured on genuine RPG_RT under wine (cycle #242): the level and HP fields
+# are four separate runs at fixed contents columns (LV x=0, level x=12, HP
+# x=42, HP value x=54 -- see the cycle #242 check below for the swatches and
+# right-alignment), each number space-padded to a fixed width -- so the "HP"
+# label never shifts sideways depending on how many digits the level has,
+# unlike a single interpolated string with a literal gap between the two
+# halves.
 check 'Scene::SaveLoad: the HP label sits at a fixed column regardless of ' \
       'how many digits the level has' do
   st = menu_state
@@ -20854,7 +20857,7 @@ check 'Scene::SaveLoad: the HP label sits at a fixed column regardless of ' \
   calls = (c.draw_calls || []) + (c.blend_calls || [])
   hp_label_call = calls.find { |a| a[4] == 'HP' }
   ok hp_label_call, 'the HP label was drawn'
-  eq 46, hp_label_call[0], 'the HP label sits at RPG_RT\'s own fixed x=46, ' \
+  eq 42, hp_label_call[0], 'the HP label sits at RPG_RT\'s own measured x=42, ' \
                             'unmoved by the level\'s own two digits'
 end
 
@@ -20872,13 +20875,127 @@ check 'Scene::SaveLoad: HP is space-padded to width 4 on RPG2003, not 3' do
   ok texts.include?('  80'), 'RPG2003 widens the HP field to 4 characters, not 3'
 end
 
-# Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its Window_SaveFile::Refresh draws every
-# text element through TextDraw(x, y, fc, text) -- never a flat colour --
-# with `fc` itself `has_save ? Font::ColorDefault : Font::ColorDisabled`
-# (system-colour swatch index 0 or 3) for the file label. The
-# same disabled-swatch convention Scene::Title's own Continue entry already
-# reads (see the title checks above).
+# -- cycle #242 (2026-09-06): geometry, backdrop and text style measured on a
+# genuine RPG_RT.exe under wine (Nepheshel, the title's Continue -> load
+# screen, 640x480 capture halved to the 320x240 logical screen). The
+# per-number measurements live on the constants in scene/save_load.rb
+# (SLOT_TOP, LABEL_W, LEVEL_X.., TEXT_COLOR..); these pin them.
+check 'Scene::SaveLoad: the header is 32px tall, the slot boxes start 8px below it ' \
+      'at y=40 on a 64px pitch, and the arrows sit in the two 8px strips' do
+  scene, = save_load_scene(:load)
+  eq 32, scene.instance_variable_get(:@header_window).height, 'header window height'
+  wins = scene.instance_variable_get(:@slot_windows)
+  eq 3, wins.length, 'three slot boxes visible'
+  eq [40, 104, 168], wins.map(&:y), 'box tops measured at 40/104/168, not 32/96/160'
+  eq [64, 64, 64], wins.map(&:height), 'each box 64px tall'
+  up = scene.instance_variable_get(:@up_arrow)
+  down = scene.instance_variable_get(:@down_arrow)
+  eq [152, 32], [up.x, up.y], 'up arrow cell at (152, 32), the strip under the header'
+  eq [152, 232], [down.x, down.y], 'down arrow cell at (152, 232), the strip under box 3'
+end
+
+check 'Scene::SaveLoad: paints the flat field backdrop behind the boxes, so the title ' \
+      'picture never shows through the arrow strips' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  scene, = save_load_scene(:load, nil, db)
+  bg = scene.instance_variable_get(:@background)
+  ok bg, 'a backdrop sprite is built'
+  eq 300, bg.z, 'the backdrop sits at the field-background z, below the windows (400)'
+  ok (bg.bitmap.stretch_calls || []).empty?, 'the chip is not stretched over the screen'
+  fills = bg.bitmap.fill_calls || []
+  eq 1, fills.length, 'one solid fill (the System image backdrop colour)'
+  eq [0, 0, 320, 240], fills.first[0, 4], 'full-screen backdrop'
+  scene.dispose
+  ok bg.disposed?, 'disposed with the scene'
+end
+
+check 'Scene::SaveLoad: the header prompt draws through the windowskin swatch-0 blend ' \
+      'with a shadow, not flat white draw_text' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  db.term.load_file_select = 'Load which file?'
+  db.term.save_file_select = 'Save which file?'
+  scene, = save_load_scene(:load, nil, db)
+  c = scene.instance_variable_get(:@header_window).contents
+  ok (c.draw_calls || []).empty?, 'no flat draw_text call for the header'
+  bc = c.blend_calls || []
+  ok bc.any? { |a| a[4] == 'Load which file?' && a[0] == 0 && a[6] == 0 && a[7] == 48 },
+     'the prompt blends from swatch 0 (0, 48)'
+  ok bc.any? { |a| a[4] == 'Load which file?' && a[0] == 1 && a[1] == 1 },
+     'with the one-pixel shadow pass'
+  save_scene, = save_load_scene(:save, wrap_menu_state, db)
+  ok window_texts(save_scene.instance_variable_get(:@header_window)).include?('Save which file?'),
+     'the :save mode header is the save prompt term'
+end
+
+check 'Scene::SaveLoad: the file term draws from x=0 and the slot number right-aligned ' \
+      'to x=63, under a fixed 63px cursor -- one or two digits alike' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = menu_state
+  st.party.leader = st.party.actors.first
+  parent = fake_parent(db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, db, parent: parent)
+  wins = scene.instance_variable_get(:@slot_windows)
+  bc = wins[0].contents.blend_calls || []
+  term_call = bc.find { |a| a[4] == 'File' && a[0] == 0 }
+  ok term_call, 'the file term is drawn on its own from x=0'
+  eq [63, 0, 0, 48], [term_call[2], term_call[10], term_call[6], term_call[7]],
+     'within the 63px label width, left-aligned, in swatch 0 for an occupied slot'
+  num_call = bc.find { |a| a[4] == '1' && a[0] == 0 }
+  ok num_call, 'the slot number is drawn as its own run'
+  eq [63, 2], [num_call[2], num_call[10]], 'right-aligned (align 2) to the 63px label width'
+  ok !bc.any? { |a| a[4].to_s.include?('File 1') }, 'no combined "File 1" string'
+  r = wins[0].cursor_rect
+  eq [0, 0, 63, 16], [r.x, r.y, r.width, r.height],
+     'the cursor is a fixed 63x16 over the label line, not sized to the text'
+  empty_bc = wins[1].contents.blend_calls || []
+  ok empty_bc.any? { |a| a[4] == '2' && a[6] == 48 && a[7] == 48 && a[10] == 2 },
+     "an empty slot's number takes the disabled swatch 3 too, still right-aligned"
+  # Scrolled to the last slot: a two-digit number is laid out identically.
+  14.times { scene.send(:move_selection, 1) }
+  last = wins[2]
+  lbc = last.contents.blend_calls || []
+  ok lbc.any? { |a| a[4] == '15' && a[0] == 0 && a[2] == 63 && a[10] == 2 },
+     'File 15 right-aligns its two digits to the same x=63 edge'
+  eq 63, last.cursor_rect.width, 'and its cursor is the same 63px wide'
+end
+
+check 'Scene::SaveLoad: LV/HP labels sit at x=0/42 in swatch 1, the right-aligned ' \
+      'values at x=12/54 in swatch 0' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = menu_state
+  st.party.leader = st.party.actors.first
+  st.preview_level = 7
+  st.preview_hp = 21
+  parent = fake_parent(db)
+  parent.save_states[1] = st
+  scene, = save_load_scene(:load, nil, db, parent: parent)
+  bc = scene.instance_variable_get(:@slot_windows)[0].contents.blend_calls || []
+  # The third 16px line's glyph pass only (the shadow pass sits at y=33).
+  row = ->(text) { bc.find { |a| a[4] == text && a[1] == 32 } }
+  lv = row.call('Lv')
+  level = row.call(' 7')
+  hp = row.call('HP')
+  val = row.call(' 21')
+  ok lv && level && hp && val, 'all four runs drawn as separate calls'
+  eq [0, 16, 48], [lv[0], lv[6], lv[7]], 'LV label at x=0 from swatch 1 (16, 48)'
+  eq [12, 0, 48], [level[0], level[6], level[7]],
+     'level " 7" right-aligned in a 2-char field at x=12, swatch 0'
+  eq [42, 16, 48], [hp[0], hp[6], hp[7]], 'HP label at x=42 from swatch 1'
+  eq [54, 0, 48], [val[0], val[6], val[7]],
+     'HP " 21" right-aligned in a 3-char field at x=54, swatch 0'
+end
+
+# Measured on genuine RPG_RT under wine (cycle #242, see TEXT_COLOR /
+# DISABLED_COLOR in scene/save_load.rb): every text element in a slot box
+# is windowskin-blended -- never a flat colour -- with the file label in
+# system-colour swatch 0 for an occupied slot and swatch 3 for an empty one,
+# the same disabled-swatch convention Scene::Title's own Continue entry
+# already reads (see the title checks above).
 check 'Scene::SaveLoad: an empty slot\'s file label blends from the windowskin\'s ' \
       'own disabled-colour swatch (index 3); an occupied slot\'s uses the default ' \
       '(index 0)' do

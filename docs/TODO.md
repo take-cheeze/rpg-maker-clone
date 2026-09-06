@@ -15323,6 +15323,77 @@ The work below is roughly ordered by the critical path to a walkable game
   frame by frame confirms the down arrow starts on, flips off at exactly
   the 20th frame, and swaps places with the up arrow once scrolled to the
   last slot.
+  ✅ **Follow-up (cycle #242, 2026-09-06): the file-select screen's geometry,
+  backdrop and text style re-measured pixel-by-pixel on a genuine RPG_RT.exe
+  under wine, and five gaps fixed.** Recipe: a copy of Nepheshel with the
+  pristine `Save01_clean.lsd` repositioned to map 16, booted on
+  `RPG_RT.exe` under wine (Xvfb 640x480x16), title → Down → Return to open
+  Continue's load screen, then Down to File 2 / Return on it, Down×8 to File
+  10 and Down×5 to File 15, Escape back out; every frame root-captured and
+  measured with numpy (halving the 2x capture to the 320x240 logical
+  screen; frame lines by row/column colour profiles, text by per-row
+  difference from the box's own gradient, the cursor by its green frame).
+  A second boot used the same save with its title chunk (100) edited
+  through the LCF writer to `hero_level`=7, `hero_hp`=21 and all four
+  FaceSet slots (fields 21-28) pointing at `face` indices 0-3. Measured: the
+  header window spans y=0..31; rows 32..39 are bare flat backdrop
+  ((16,117,99), the System graphic's field-backdrop colour, identical to the
+  field menu's gaps -- the title picture is *not* visible behind the load
+  screen); the three slot boxes' frames span 40..103 / 104..167 / 168..231
+  (64px each, no gap between them); rows 232..239 are backdrop again. The
+  up arrow's glyph sits at x=155..165, y=32..38 (the 16x8 skin cell at
+  (152,32)) and the down arrow's at x=155..165, y=233..239 (cell at
+  (152,232)); on File 1 only the down arrow shows, on File 10 both, on File
+  15 only the up one. The cursor frame over the label spans x=4..74 (71px,
+  i.e. a 63px contents rect plus the 4px overhang each side) on File 1, 10
+  and 15 alike -- fixed width, not text-sized. `ファイル` draws from
+  contents x=0 on the 12px full-width grid (cells at screen 8/20/32/44) and
+  the slot number is right-aligned to contents x=63: `1`/`8` sit in the
+  6px cell at screen 65..70, `13`/`15` in 59..70 -- 3px after the term,
+  where no "term + space + number" string lands. The leader name draws at
+  x=0 on the second line. The third line: `LV` cells at screen 8/14
+  (contents 0), the level right-aligned in a 2-cell field at contents
+  12..23 (`50` in cells 20/26; the edited `7` alone in cell 26), `HP` at
+  screen 50/56 (contents 42), the HP right-aligned in a 3-cell field at
+  contents 54..71 (`600` in 62/68/74; the edited `21` in 68/74). Colours
+  (against the System graphic's palette cells, decoded from the PNG with a
+  zero-window-tolerant inflater since ImageMagick rejects the file):
+  header prompt, occupied label+number, name and both stat values carry
+  swatch 0's white→blue gradient; `LV`/`HP` carry swatch 1's mid-blue
+  (#739AEF/#638ADE/#5279CE); an empty slot's label+number carry swatch 3
+  (#63A6F7); every run has the one-pixel dark shadow. Faces: four 48x48
+  cells at x=96/152/208/264, y=48..95 (contents y=0), confirming the
+  positions `FACE_SPACING` documents. Behaviour: Return on the empty File 2
+  left the frame unchanged (no-op); Escape from the load screen returned to
+  the title with the cursor still on 続きから; the field menu's blank
+  fourth (Save) row on the Save-forbidden town map ignored Return. Fixed in
+  `Scene::SaveLoad` (`mruby-rpg2k/mrblib/scene/save_load.rb`): new
+  `SLOT_TOP = HEADER_H + ARROW_H` (40) with `VISIBLE_SLOTS` derived from it
+  (still 3) -- the boxes used to start at y=32; a `build_field_background`
+  backdrop sprite (z=300) so the title never shows through; the header
+  drawn through `draw_system_text` swatch 0 instead of flat `draw_text`;
+  the label as two runs (term at x=0, number right-aligned to `LABEL_W`=63,
+  both swatch 0/3) under a fixed `Rect.new(0, 0, 63, 16)` cursor instead
+  of one `text_size`-sized "File N" string; `draw_level_hp` at
+  `LEVEL_LABEL_X`/`LEVEL_X`/`HP_LABEL_X`/`HP_X` = 0/12/42/54 with the
+  labels in swatch 1 (`STAT_LABEL_COLOR`) -- was x=4/46 all in swatch 0.
+  Five new `scripts/rpg2k_scene_check.rb` checks pin the box/arrow
+  geometry, the backdrop, the blended header, the label runs + cursor width
+  (one- and two-digit) and the LV/HP columns + swatches, each confirmed to
+  fail against the pre-fix code; two existing checks updated (`File 1` is
+  now two runs; HP label x=42). Deliberately left open: (1) the field-menu
+  Save screen could not be captured this cycle -- with `save_allowed`
+  (chunk 101 field 123) forced on in the copy's save, opening the field
+  menu after Continue produced a persistently black wine frame on two
+  boots (Escape did not restore it), so its header/cursor start rest on
+  cycle #126's earlier confirmation and the shared `:save`/`:load` code
+  path; (2) our text renderer draws every glyph ~3px higher within its
+  16px line than RPG_RT's (header glyphs at rows 8..18 vs 12..21 on the
+  reference, same on every screen) -- a shared font-metrics gap, not this
+  scene's; (3) the RPG2003 4-character HP field and the 2-character term
+  clamp remain unmeasured (RPG2000 test-bed only); (4) the arrow blink
+  timing was not re-timed here (the pause-arrow measurement below still
+  stands in for it). No EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the pause-arrow `ARROW_BLINK_FRAMES = 20` this
   screen's own scroll arrows reused is now independently re-verified against
   a genuine RPG_RT.exe, not just a reference implementation's source --

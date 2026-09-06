@@ -62,35 +62,87 @@ class RPG2k
       FACE_SPACING = 56
       MAX_SLOT_FACES = 4
 
-      # (SCREEN_H - HEADER_H) / SLOT_BOX_H, i.e. how many slot boxes fit
-      # below the header -- 3 on RPG2000's 320x240 screen (32 + 3*64 = 224,
-      # leaving 16px for the scroll indicator #build_arrow_sprites draws).
-      # Matches the reference capture exactly: three boxes on screen, the
-      # rest reached by scrolling.
-      VISIBLE_SLOTS = (SCREEN_H - HEADER_H) / SLOT_BOX_H
-
       # The list-scroll indicator: two independent blinking arrow sprites
       # (not a scrollbar/track -- there is no such thing anywhere in
-      # RPG_RT), pinned at the very top and bottom of the whole slot
-      # viewport and shown only while a slot is hidden in that direction.
-      # Ported from a reference implementation's own file-select scene, NOT
-      # independently confirmed against genuine RPG_RT under wine: this is
-      # entirely that scene's own doing, outside the per-slot window (which
-      # has no scroll logic of its own -- it just draws one slot's contents)
-      # and outside the generic scroll-arrow mechanism other list
-      # windows use. It reuses the identical windowskin cells and 20-frame
-      # on/off blink this build's own `Window` already tracks for its
-      # "waiting for input" pause arrow (`Window::ARROW_*` -- RPG_RT draws
-      # both from the same System graphic block, the pause arrow and this
-      # screen's down arrow sharing one cell). The up arrow is the same
+      # RPG_RT), pinned in the two 8px strips of bare backdrop above and
+      # below the slot boxes and shown only while a slot is hidden in that
+      # direction. Confirmed against genuine RPG_RT under wine (cycle #242):
+      # scrolled to File 10, the up arrow's glyph sat at logical x=155..165,
+      # y=32..38 -- the 16x8 cell at (152, 32), i.e. `HEADER_H`, directly
+      # under the header window -- and the down arrow's at x=155..165,
+      # y=233..239 -- the cell at (152, 232) = `SCREEN_H - ARROW_H`, in the
+      # strip under the third box; at File 15 only the up arrow showed, at
+      # File 1 only the down one. It reuses the identical windowskin cells
+      # and 20-frame on/off blink this build's own `Window` already tracks
+      # for its "waiting for input" pause arrow (`Window::ARROW_*` -- RPG_RT
+      # draws both from the same System graphic block, the pause arrow and
+      # this screen's down arrow sharing one cell). The up arrow is the same
       # block one row up (y=8 vs. y=16), which nothing in this codebase
-      # needed a constant for until now.
+      # needed a constant for until now. The on/off blink itself is the one
+      # part still taken from the shared pause-arrow timing rather than
+      # re-measured on this screen.
       ARROW_W = Window::ARROW_W
       ARROW_H = Window::ARROW_H
       ARROW_SRC_X = Window::ARROW_SRC_X
       UP_ARROW_SRC_Y = 8
       DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
       ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
+
+      # Top of the first slot box: the header window (y=0..31) is followed
+      # by an 8px strip of bare backdrop (the up arrow's home) before the
+      # boxes start at y=40 -- measured on genuine RPG_RT under wine (cycle
+      # #242, 640x480 capture halved): the header's frame spans rows 0..31,
+      # rows 32..39 are the flat backdrop colour, and the three slot boxes'
+      # frames span 40..103 / 104..167 / 168..231 (64px each, no gap between
+      # them), leaving rows 232..239 for the down arrow. This screen used to
+      # butt the first box straight against the header (y=32), landing every
+      # box 8px too high and leaving a 16px strip at the bottom instead of 8.
+      SLOT_TOP = HEADER_H + ARROW_H
+
+      # How many slot boxes fit between the two 8px arrow strips -- 3 on
+      # RPG2000's 320x240 screen (40 + 3*64 = 232 = SCREEN_H - ARROW_H).
+      # Matches the genuine capture exactly: three boxes on screen, the
+      # rest reached by scrolling.
+      VISIBLE_SLOTS = (SCREEN_H - SLOT_TOP - ARROW_H) / SLOT_BOX_H
+
+      # Width of the selection cursor over a slot's "File N" label, in
+      # contents pixels -- and the right edge the slot number is aligned
+      # to. Measured on genuine RPG_RT under wine (cycle #242): the cursor
+      # frame spans logical x=4..74 (71px) on File 1, File 10 and File 15
+      # alike, i.e. a fixed contents rect 63px wide once the skin cursor's
+      # 4px overhang on each side is taken off (`Game::WindowCursor`) --
+      # NOT sized to the label text, as this screen used to do via
+      # `text_size`. The label term ("ファイル", 4 full-width cells) draws
+      # from contents x=0, and the slot number is right-aligned to x=63: a
+      # one-digit number's cell sat at x=57..62 (screen 65..70) and a
+      # two-digit one's at 51..62 (screen 59..70), for a 3px gap after the
+      # term that no plain "term + space + number" string would produce.
+      LABEL_W = 63
+
+      # The level/HP line's fixed contents columns, measured on genuine
+      # RPG_RT under wine (cycle #242) from the 6px half-width cell grid:
+      # `LV` at x=0 (cells 8/14 on screen), the level right-aligned in a
+      # 2-cell field at x=12..23 (Lv50 filled cells 20/26; a title chunk
+      # edited to Lv7 put the lone `7` in cell 26 with cell 20 blank), `HP`
+      # at x=42 (cells 50/56) and the HP right-aligned in a 3-cell field at
+      # x=54..71 (600 filled cells 62/68/74; HP 21 put `21` in cells 68/74
+      # with 62 blank). This screen used to draw `LV` at x=4 and `HP` at
+      # x=46, 4px right of the real columns.
+      LEVEL_LABEL_X = 0
+      LEVEL_X = 12
+      HP_LABEL_X = 42
+      HP_X = 54
+
+      # System-palette colour indices the screen's text draws in, measured
+      # on genuine RPG_RT under wine (cycle #242) against Nepheshel's own
+      # System graphic swatches: the header prompt, an occupied slot's
+      # label + number, the leader's name and the level/HP *values* all
+      # carry swatch 0's white-to-blue gradient; the `LV`/`HP` labels carry
+      # swatch 1's mid-blue; an empty slot's label + number carry swatch 3
+      # (the same disabled swatch `Scene::Title`'s grayed Continue uses).
+      TEXT_COLOR = 0
+      STAT_LABEL_COLOR = 1
+      DISABLED_COLOR = 3
 
       def initialize parent, state, mode
         super parent
@@ -104,12 +156,24 @@ class RPG2k
         @top = [@index - VISIBLE_SLOTS + 1, 0].max
         @arrow_anim = 0
         @slot_windows = []
+        # The flat field backdrop behind everything, whichever scene pushed
+        # this one -- confirmed against genuine RPG_RT under wine (cycle
+        # #242): reached from the title's Continue, the 8px strips between
+        # the header and the first box and under the third box are the
+        # same flat System-graphic colour the field menu's gaps show
+        # ((16,117,99) on the 16-bit reference display, the colour
+        # `#build_field_background`'s stretched chip already produces for
+        # Scene::Menu), not the title picture. This screen used to draw no
+        # backdrop of its own, so the title picture showed through both
+        # strips when opened from the title.
+        @background = build_field_background(@skin)
         build_header_window
         build_slot_windows
         build_arrow_sprites
       end
 
       def dispose
+        @background.dispose if @background
         @header_window.dispose if @header_window
         @slot_windows.each(&:dispose)
         @up_arrow.dispose if @up_arrow
@@ -274,9 +338,10 @@ class RPG2k
       # in that direction -- `@top > 0` for up, and for down: whether the
       # viewport's last visible row (`@top + VISIBLE_SLOTS - 1`) is still
       # short of the last real slot (`SLOT_COUNT - 1`), i.e. `@top <
-      # SLOT_COUNT - VISIBLE_SLOTS` -- matching a reference implementation's
-      # own boundary check for its fixed 3-visible layout, NOT
-      # independently confirmed against genuine RPG_RT under wine.
+      # SLOT_COUNT - VISIBLE_SLOTS`. Confirmed against genuine RPG_RT under
+      # wine (cycle #242): with the cursor on File 1 only the down arrow was
+      # on screen, on File 10 (Files 8-10 showing) both were, and on File 15
+      # only the up arrow was.
       def refresh_arrows
         return unless @up_arrow
         blink_on = @arrow_anim < ARROW_BLINK_FRAMES
@@ -323,22 +388,27 @@ class RPG2k
         end
       end
 
+      # The header prompt (`term.load_file_select` / `save_file_select`)
+      # draws through the same windowskin-blended system text as every
+      # slot line, in swatch 0 -- confirmed against genuine RPG_RT under
+      # wine (cycle #242): its glyph pixels carry the identical
+      # white-to-blue gradient and one-pixel shadow the leader-name line
+      # does. This screen used to draw it flat white via `draw_text`.
       def build_header_window
         @header_window = Window.new(0, 0, SCREEN_W, HEADER_H)
         @header_window.z = 400
         @header_window.windowskin = @skin
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, LINE_H)
-        c.font.color = Color.new(255, 255, 255, 255)
         header = @mode == :save ? term(:save_file_select) :
                                    term(:load_file_select)
-        c.draw_text 0, 0, inner_w, LINE_H, header
+        draw_system_text c, 0, 0, inner_w, LINE_H, header, @skin, TEXT_COLOR
         @header_window.contents = c
       end
 
       def build_slot_windows
         VISIBLE_SLOTS.times do |i|
-          w = Window.new(0, HEADER_H + i * SLOT_BOX_H, SCREEN_W, SLOT_BOX_H)
+          w = Window.new(0, SLOT_TOP + i * SLOT_BOX_H, SCREEN_W, SLOT_BOX_H)
           w.z = 400
           w.windowskin = @skin
           @slot_windows << w
@@ -357,8 +427,14 @@ class RPG2k
         end
       end
 
-      def slot_label(slot_index)
-        "#{term(:file)} #{slot_index + 1}"
+      # A slot's label line: the `term.file` word from contents x=0 and the
+      # 1-based slot number right-aligned to `LABEL_W`, both in `color` --
+      # two separate draws, not one "File N" string, since the measured
+      # number column (see LABEL_W) is not where any space-separated string
+      # would put it.
+      def draw_slot_label(c, slot_index, color)
+        draw_system_text c, 0, 0, LABEL_W, LINE_H, term(:file), @skin, color
+        draw_system_text c, 0, 0, LABEL_W, LINE_H, (slot_index + 1).to_s, @skin, color, 2
       end
 
       # `slot_index`'s box: the file label always, and -- when the slot holds
@@ -372,25 +448,24 @@ class RPG2k
       # previous single-list-window layout.
       #
       # Every line renders through `#draw_system_text` (the windowskin
-      # system-colour swatch blend, with RPG_RT's own one-pixel shadow) now,
-      # not a flat `draw_text` -- ported from a reference implementation's
-      # own slot-drawing path, NOT independently confirmed
-      # against genuine RPG_RT under wine: it draws every text element in
-      # the box through the windowskin-blended text path, never a raw colour,
-      # selecting the default or disabled system-colour swatch (index 0 or 3)
-      # for the file label specifically --
-      # the same disabled-swatch convention `Scene::Title`'s own Continue
-      # entry already reads (see docs/TODO.md). This screen used to draw
-      # every line flat white regardless of a windowskin's own palette *or*
-      # whether the slot was empty, so an empty slot's "File N" label never
-      # read as dimmed/disabled the way a genuine RPG_RT save screen's does,
-      # and an occupied slot's name/level/HP never took the windowskin's
-      # shading at all.
+      # system-colour swatch blend, with RPG_RT's own one-pixel shadow),
+      # not a flat `draw_text` -- confirmed against genuine RPG_RT under
+      # wine (cycle #242, see TEXT_COLOR/STAT_LABEL_COLOR/DISABLED_COLOR
+      # for the per-element swatches measured): every text element in the
+      # box carries a windowskin swatch's gradient and the one-pixel
+      # shadow, never a raw colour, with an empty slot's label (number
+      # included) taking the disabled swatch 3 -- the same disabled-swatch
+      # convention `Scene::Title`'s own Continue entry already reads (see
+      # docs/TODO.md). This screen used to draw every line flat white
+      # regardless of a windowskin's own palette *or* whether the slot was
+      # empty, so an empty slot's "File N" label never read as dimmed/
+      # disabled the way a genuine RPG_RT save screen's does, and an
+      # occupied slot's name/level/HP never took the windowskin's shading
+      # at all.
       def draw_slot_box(win, inner_w, slot_index)
-        label = slot_label(slot_index)
         c = Bitmap.new(inner_w, LINE_H * SLOT_LINES)
         state = @slots[slot_index]
-        draw_system_text c, 0, 0, inner_w, LINE_H, label, @skin, state ? 0 : 3
+        draw_slot_label c, slot_index, state ? TEXT_COLOR : DISABLED_COLOR
         if state
           leader = state.party.leader
           name = leader ? leader.name.to_s : ''
@@ -403,38 +478,44 @@ class RPG2k
           has_preview = state.respond_to?(:preview_level) && !state.preview_level.nil?
           level = has_preview ? state.preview_level : (leader ? leader.level : 0)
           hp = has_preview ? state.preview_hp : (leader ? leader.hp : 0)
-          draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin
+          draw_system_text c, 0, LINE_H, inner_w, LINE_H, name, @skin, TEXT_COLOR
           rpg2003 = state.party.respond_to?(:rpg2003?) && state.party.rpg2003?
           draw_level_hp(c, LINE_H * 2, level, hp, rpg2003)
           draw_slot_faces(c, inner_w, state)
         end
         win.contents = c
+        # A fixed-width cursor over the label line (see LABEL_W), the same
+        # 63px whether the slot number has one digit or two.
         win.cursor_rect = if slot_index == @index
-                             Rect.new(0, 0, c.text_size(label).width, LINE_H)
+                             Rect.new(0, 0, LABEL_W, LINE_H)
                            else
                              Rect.new(0, 0, 0, 0)
                            end
       end
 
-      # The level/HP line at RPG_RT's own fixed pixel columns (x=4 for the
-      # level label, x=46 for HP), not proportioned to the label text --
-      # ported from a reference implementation's own slot-drawing path, NOT
-      # independently confirmed against
-      # genuine RPG_RT under wine: it draws four separate text calls at
-      # those exact x-coordinates, each number space-padded to a fixed
-      # width (2 characters for level, 4 for RPG2003's HP
-      # or 3 otherwise) -- so a level 9 vs. 99 leader never shifts where "HP"
-      # sits on screen, unlike a single interpolated string with a literal
-      # gap between the two halves.
+      # The level/HP line at RPG_RT's own fixed contents columns (see
+      # LEVEL_LABEL_X/LEVEL_X/HP_LABEL_X/HP_X for the measurement), not
+      # proportioned to the label text: four separate draws, the `LV`/`HP`
+      # labels in swatch 1 and each number space-padded to a fixed width
+      # (2 characters for the level, 3 for the HP) in swatch 0 -- so a
+      # level 9 vs. 99 leader never shifts where "HP" sits on screen, unlike
+      # a single interpolated string with a literal gap between the two
+      # halves. The columns, the right-alignment of both numbers and the
+      # two swatches are confirmed against genuine RPG_RT under wine (cycle
+      # #242, RPG2000 only); the 4-character HP field for RPG2003 is the one
+      # part still taken from a reference implementation's own slot-drawing
+      # path, NOT independently confirmed -- no RPG2003 test-bed was driven.
       def draw_level_hp(c, y, level, hp, rpg2003)
         lvl_label = fixed_width_term(:level_short)
         hp_label = fixed_width_term(:hp_short)
-        draw_system_text c, 4, y, c.width, LINE_H, lvl_label, @skin
-        lx = c.text_size(lvl_label).width
-        draw_system_text c, 4 + lx, y, c.width, LINE_H, level.to_s.rjust(2), @skin
-        draw_system_text c, 46, y, c.width, LINE_H, hp_label, @skin
-        hx = c.text_size(hp_label).width
-        draw_system_text c, 46 + hx, y, c.width, LINE_H, hp.to_s.rjust(rpg2003 ? 4 : 3), @skin
+        draw_system_text c, LEVEL_LABEL_X, y, c.width - LEVEL_LABEL_X, LINE_H, lvl_label,
+                         @skin, STAT_LABEL_COLOR
+        draw_system_text c, LEVEL_X, y, c.width - LEVEL_X, LINE_H, level.to_s.rjust(2),
+                         @skin, TEXT_COLOR
+        draw_system_text c, HP_LABEL_X, y, c.width - HP_LABEL_X, LINE_H, hp_label,
+                         @skin, STAT_LABEL_COLOR
+        draw_system_text c, HP_X, y, c.width - HP_X, LINE_H, hp.to_s.rjust(rpg2003 ? 4 : 3),
+                         @skin, TEXT_COLOR
       end
 
       # Clamp a database term string to exactly 2 characters, space-padded
