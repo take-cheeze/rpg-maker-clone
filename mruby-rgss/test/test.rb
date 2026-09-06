@@ -1112,6 +1112,15 @@ end
 # of the 12-row cell in the built-in font, so its top ink row is
 # (h - 12) / 2 + 1 for every rect height.
 assert "RGSS::Bitmap#draw_text centres the glyph cell in the rect height" do
+  # This file also runs under the CRuby compat harness
+  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
+  # renderer: it paints glyphs its own way and does not model this centring at
+  # all (and has no #blend_text whatever). The rule under test lives in
+  # mruby-rgss/src/lib.cxx, so assert it only where that code is actually
+  # running. #blend_text's presence is the probe -- it exists only natively.
+  next true unless RGSS::Bitmap.new(1, 1).respond_to?(:blend_text)
+
   top_ink = lambda do |h|
     b = RGSS::Bitmap.new(64, 48)
     b.draw_text(0, 0, 64, h, "Hi")
@@ -1138,6 +1147,15 @@ end
 # that layout, so a run drawn through a swatch lands on exactly the same rows as
 # the flat #draw_text run above.
 assert "RGSS::Bitmap#blend_text centres the glyph cell the same way" do
+  # This file also runs under the CRuby compat harness
+  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
+  # renderer: it paints glyphs its own way and does not model this centring at
+  # all (and has no #blend_text whatever). The rule under test lives in
+  # mruby-rgss/src/lib.cxx, so assert it only where that code is actually
+  # running. #blend_text's presence is the probe -- it exists only natively.
+  next true unless RGSS::Bitmap.new(1, 1).respond_to?(:blend_text)
+
   swatch = RGSS::Bitmap.new(4, 4)
   swatch.fill_rect(0, 0, 4, 4, RGSS::Color.new(255, 0, 0, 255))
   top_ink = lambda do |h|
