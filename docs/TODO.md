@@ -2981,7 +2981,9 @@ The work below is roughly ordered by the critical path to a walkable game
   engine against RPG_RT.exe on this same map-16 shop NPC): the equipment
   party band above crashed the *built* engine outright -- `NoMethodError:
   undefined method 'cover?' for Range` from `Game::Shop#equip?` the moment
-  the highlighted good was equipment.** `Range#cover?` is not in bare
+  any good was highlighted, since `#draw_shop_party` asks `equip?` of every
+  highlighted good to decide whether to show the band, so every stocked
+  shop's Buy list was affected, not just weapon shops.** `Range#cover?` is not in bare
   mruby's Range; it lives in the `mruby-range-ext` core gem, which nothing
   declared, so every one of the five call sites (`Game::Shop#equip?`, the
   `(1..5).cover?(it.type)` special-item checks in `game.rb` and
@@ -2990,7 +2992,8 @@ The work below is roughly ordered by the critical path to a walkable game
   AGENTS.md's "mruby stdlib methods live in core `*-ext` mrbgems" rule
   warns about. Fixed by declaring the gem in `build_config.rb`'s shared
   list and in `mruby-rpg2k/mrbgem.rake`'s dependencies; the rebuilt engine
-  opens the weapon-shop Buy list with the party band drawn. No wine capture
+  opens the map-16 item shop's Buy list (and the map-15 weapon shop's, party
+  band included). No wine capture
   was needed for the fix itself; the crash reproduces from `--rpg2k_continue`
   on the map-16 save plus one Decision press facing the shop NPC.
   ✅ **Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open
