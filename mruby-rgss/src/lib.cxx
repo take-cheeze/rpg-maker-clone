@@ -3358,7 +3358,20 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
       // the whole main_loop iteration (see RGSS::Profiler.frame), and we want
       // its "work" figure to measure CPU cost, not the time spent sleeping.
       profiler_note_idle(sleep);
+#ifndef __EMSCRIPTEN__
+      // Everywhere else this is a real OS sleep, so it costs nothing but wall
+      // clock. Under Emscripten it would instead block the browser's single
+      // JS thread synchronously -- the same thread that pumps the Web Audio
+      // ScriptProcessorNode callback (there is no AUDIO_WORKLET/pthreads build
+      // here, see docs/profiling.md), so a blocking wait here starves audio
+      // and produces exactly the audible glitches/delay this was meant to
+      // avoid. `emscripten_set_main_loop`'s own fps-throttled scheduling
+      // (src/main.cxx) already paces calls non-blockingly, cooperating with
+      // the browser's event loop instead of freezing it, so this deadline
+      // math still runs (g_next_frame keeps carrying the remainder forward)
+      // but the actual wait is left to the browser.
       lv_delay_ms(sleep);
+#endif
     }
   }
 

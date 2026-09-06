@@ -688,7 +688,21 @@ extern "C" void rgss_audio_init(void) {
   // Resolve the MIDI patch set before opening the device: SDL_mixer starts the
   // TiMidity codec from Mix_OpenAudio and reads its config only then.
   init_midi_config();
-  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) {
+  // The buffer is one full round-trip of latency (2048 samples @ 44.1kHz is
+  // ~46ms, doubled by SDL_mixer's own buffering to ~93ms worst case). Desktop
+  // mixes on a real OS audio thread (docs/profiling.md) so that headroom costs
+  // nothing but latency; under Emscripten there is no such thread -- SDL2's
+  // port drives the mixer from a browser audio callback on the same single JS
+  // thread as the game loop -- and that thread is now far less likely to be
+  // blocked for long stretches (see the frame-pacing changes in
+  // mruby-rgss/src/lib.cxx and src/main.cxx), so a smaller buffer is safe and
+  // measurably cuts the delay between a BGM/SE trigger and it being heard.
+#ifdef __EMSCRIPTEN__
+  constexpr int kAudioBufferSamples = 1024;
+#else
+  constexpr int kAudioBufferSamples = 2048;
+#endif
+  if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, kAudioBufferSamples) < 0) {
     LOG(WARNING) << "Audio: Mix_OpenAudio failed: " << Mix_GetError()
                  << "; audio disabled";
     Mix_Quit();

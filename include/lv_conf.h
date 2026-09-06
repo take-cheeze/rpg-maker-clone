@@ -699,9 +699,9 @@
 #define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
-/* Android needs it for the on-screen FPS counter (LV_USE_PERF_MONITOR below);
- * every other backend keeps the monitors off. */
-#ifdef __ANDROID__
+/* Android and the browser build need it for the on-screen FPS counter
+ * (LV_USE_PERF_MONITOR below); every other backend keeps the monitors off. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_SYSMON   1
 #else
 #define LV_USE_SYSMON   0
@@ -712,11 +712,16 @@
 
     /*1: Show CPU usage and FPS count
      * Requires `LV_USE_SYSMON = 1`*/
-    /* On by default for Android only: the phone has no other way to see the
-     * frame rate, and the label sits in the top-right corner clear of the
-     * virtual gamepad's B/C buttons (src/android_vpad_ui.cxx). Desktop has
-     * profilers and a title bar, and keeps it off. */
-#ifdef __ANDROID__
+    /* On by default for Android and the browser build: a phone has no other
+     * way to see the frame rate, and neither does a browser tab -- the
+     * engine's own --profile output goes to stderr, which a page has no
+     * console visible to an end user for (README.md#profiling), unlike a
+     * native build's terminal. Android's label sits in the top-right corner
+     * clear of the virtual gamepad's B/C buttons (src/android_vpad_ui.cxx);
+     * the wasm page's on-screen keypad (src/wasm_keypad.cxx) is separate HTML
+     * outside the canvas, so there is nothing there to clash with either.
+     * Desktop has profilers and a title bar, and keeps it off. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_PERF_MONITOR 1
 #else
 #define LV_USE_PERF_MONITOR 0
@@ -778,9 +783,9 @@
 
 /*1: Enable an observer pattern implementation*/
 /* The RGSS runtime never registers observers; off to match the PSP/Wio
- * configs -- except Android, whose FPS counter (LV_USE_SYSMON /
- * LV_USE_PERF_MONITOR above) is built on the observer API. */
-#ifdef __ANDROID__
+ * configs -- except Android and the browser build, whose FPS counter
+ * (LV_USE_SYSMON / LV_USE_PERF_MONITOR above) is built on the observer API. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_OBSERVER 1
 #else
 #define LV_USE_OBSERVER 0

@@ -1069,7 +1069,18 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
       emscripten_cancel_main_loop();
     }
   };
-  emscripten_set_main_loop(main_loop, 0, 0);
+  // fps=60 (rather than 0/vsync) makes Emscripten pace calls itself via a
+  // non-blocking setTimeout-style schedule instead of requestAnimationFrame.
+  // On a >60Hz display, rAF would call main_loop more often than the game
+  // logic wants to run, and mruby-rgss/src/lib.cxx's frame-pacing block would
+  // then have to eat the difference -- which it does by *not* blocking under
+  // Emscripten (see there), so those extra calls would otherwise do nothing
+  // but burn CPU well past the point of feeling wasteful. Throttling the
+  // calls themselves keeps the loop at the intended 60fps either way, and
+  // setTimeout yields back to the browser between calls, which is what keeps
+  // the single JS thread free to service the Web Audio callback and avoid
+  // audio glitches/delay.
+  emscripten_set_main_loop(main_loop, 60, 0);
   return 0;
 }
 #endif

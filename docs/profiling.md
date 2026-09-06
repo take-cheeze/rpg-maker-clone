@@ -275,6 +275,47 @@ audio calls are the ones that touch the decoder, not the ones that mix.
   can move; `Mix_PlayMusic`/`Mix_PlayChannel` and the `g_chunks` cache should
   stay owned by one thread.
 
+### WASM: the frame-pacing sleep was blocking audio, not the decoder
+
+Everything measured above used `SDL_AUDIODRIVER=dummy` on the native build,
+where "the audio thread" is a real OS thread SDL_mixer owns outright. That
+does not hold in the browser: with no `-pthread`/`-sUSE_PTHREADS` and no
+`-sAUDIO_WORKLET` (`CMakeLists.txt`'s `if(EMSCRIPTEN)` block never sets
+either), Emscripten's SDL2 port falls back to a ScriptProcessorNode, whose
+callback the Web Audio spec requires to run on the **main thread** — the same
+one `emscripten_set_main_loop` drives the whole game loop on.
+
+`Graphics.update`'s frame-pacing block (`mruby-rgss/src/lib.cxx`, `gfx_update`)
+used to enforce 60fps with a real blocking wait — `lv_delay_ms`, backed by a
+plain OS sleep/spin — every single frame, sized to whatever was left of the
+16-17ms budget. On desktop that costs nothing but wall clock; in the browser
+it synchronously froze the one thread the audio callback also needed, which
+is a textbook cause of audible delay/glitching that has nothing to do with
+decode cost. It was also worse than it needed to be on a >60Hz display:
+`emscripten_set_main_loop(main_loop, 0, 0)` used `requestAnimationFrame`,
+which calls back at the display's own refresh rate, so a 120Hz/144Hz screen
+ran the whole block — including this sleep — more often than the 60fps game
+logic wanted.
+
+The fix keeps the 60fps cap but stops enforcing it with a blocking call under
+Emscripten: `emscripten_set_main_loop(main_loop, 60, 0)` (`src/main.cxx`) asks
+Emscripten to pace the calls itself via its `setTimeout`-based scheduling
+instead of raw vsync, which yields back to the browser's event loop between
+frames instead of occupying it — and `gfx_update`'s own `lv_delay_ms` call is
+`#ifndef __EMSCRIPTEN__`, so the deadline/carry-forward bookkeeping that keeps
+frame timing accurate still runs, but nothing blocks the JS thread on top of
+Emscripten's own (already non-blocking) pacing. `Mix_OpenAudio`'s buffer is
+also halved for `__EMSCRIPTEN__` (2048 → 1024 samples, `src/sdl_audio.cxx`),
+cutting baseline output latency now that the thread backing the callback is
+far less likely to be blocked for a long stretch.
+
+This is reasoning from how the browser's audio and event-loop model works,
+not a browser-measured profile — the caveat below about this whole page's
+numbers being native/Xvfb-only applies doubly here, since none of it was ever
+measured against real Web Audio callback timing. If audio in the browser is
+still audibly delayed after this, that measurement is the next thing to get,
+not another guess from the native numbers above.
+
 ## Per-frame object allocation
 
 Separate from frame *time*: how many mruby objects the map scene allocates
