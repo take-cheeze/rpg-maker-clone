@@ -275,6 +275,226 @@ audio calls are the ones that touch the decoder, not the ones that mix.
   can move; `Mix_PlayMusic`/`Mix_PlayChannel` and the `g_chunks` cache should
   stay owned by one thread.
 
+### WASM: the frame-pacing sleep was blocking audio, not the decoder
+
+Everything measured above used `SDL_AUDIODRIVER=dummy` on the native build,
+where "the audio thread" is a real OS thread SDL_mixer owns outright. That
+does not hold in the browser: with no `-pthread`/`-sUSE_PTHREADS` and no
+`-sAUDIO_WORKLET` (`CMakeLists.txt`'s `if(EMSCRIPTEN)` block never sets
+either), Emscripten's SDL2 port falls back to a ScriptProcessorNode, whose
+callback the Web Audio spec requires to run on the **main thread** — the same
+one `emscripten_set_main_loop` drives the whole game loop on.
+
+`Graphics.update`'s frame-pacing block (`mruby-rgss/src/lib.cxx`, `gfx_update`)
+used to enforce 60fps with a real blocking wait — `lv_delay_ms`, backed by a
+plain OS sleep/spin — every single frame, sized to whatever was left of the
+16-17ms budget. On desktop that costs nothing but wall clock; in the browser
+it synchronously froze the one thread the audio callback also needed, which
+is a textbook cause of audible delay/glitching that has nothing to do with
+decode cost. It was also worse than it needed to be on a >60Hz display:
+`emscripten_set_main_loop(main_loop, 0, 0)` used `requestAnimationFrame`,
+which calls back at the display's own refresh rate, so a 120Hz/144Hz screen
+ran the whole block — including this sleep — more often than the 60fps game
+logic wanted.
+
+The fix keeps the 60fps cap but stops enforcing it with a blocking call under
+Emscripten: `emscripten_set_main_loop(main_loop, 60, 0)` (`src/main.cxx`) asks
+Emscripten to pace the calls itself via its `setTimeout`-based scheduling
+instead of raw vsync, which yields back to the browser's event loop between
+frames instead of occupying it — and `gfx_update`'s own `lv_delay_ms` call is
+`#ifndef __EMSCRIPTEN__`, so the deadline/carry-forward bookkeeping that keeps
+frame timing accurate still runs, but nothing blocks the JS thread on top of
+Emscripten's own (already non-blocking) pacing.
+
+#### The buffer: sized for resilience, not baseline latency
+
+The first pass here shrank `Mix_OpenAudio`'s buffer for `__EMSCRIPTEN__`
+(2048 → 1024 samples) on the theory that, with the blocking sleep gone, a
+smaller buffer would just mean less baseline round-trip latency. That is
+backwards for this backend, and the buffer is now larger instead (2048 →
+4096): ScriptProcessorNode's callback has a well-documented failure mode
+where, if the main thread does not hand it the next buffer in time, it does
+not drop the missed buffer and resync to the clock -- it fires late and
+*stays* that late, and the lateness compounds on every further stall until
+the page reloads (this is one of the reasons the API is deprecated in favour
+of AudioWorklet; see the Chromium/Firefox/spec discussion linked from
+[MDN's AudioWorklet guide](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Using_AudioWorklet)
+and [WebAudio/web-audio-api#253](https://github.com/WebAudio/web-audio-api/issues/253)).
+A smaller buffer gives the main thread *less* slack before a given stall
+crosses that line, not more.
+
+**Holding a movement key is close to the worst case for this**, reported
+directly as "significant audio delay on key press hold" after the pacing fix
+above shipped: it is *sustained* main-thread cost rather than one spike --
+every one of those frames pays the ordinary camera/animation/collision work,
+and periodically also the tile-crossing cache rebuild (the multi-millisecond
+spike documented earlier on this page) -- so it is repeated, compounding
+chances to miss the deadline, and several seconds of held input can build up
+a delay far more noticeable than a few extra milliseconds of fixed latency
+would be. A bigger buffer cannot make any one stall shorter, but it makes a
+given stall much less likely to actually cross the deadline in the first
+place, which is the only lever available without a real audio thread to
+mix on.
+
+**A real fix would still be AUDIO_WORKLET**, which runs the audio callback on
+its own thread outside the main JS thread entirely and would remove this
+failure mode rather than just making it less likely. That was not attempted
+here: it needs Wasm Workers, and SDL2's own Emscripten port does not
+currently build with `-sWASM_WORKERS`/`-pthread` at all --
+[emscripten-core/emscripten#19667](https://github.com/emscripten-core/emscripten/issues/19667)
+tracks `SDL_atomic.c.o` failing to link because the vendored SDL2 build
+lacks the `atomics`/`bulk-memory` target features either path requires. Worth
+revisiting if the buffer bump above turns out not to be enough in practice,
+but it is a real architectural change (a different SDL2 build, and this
+engine's own single-threaded assumptions reaching across a worker boundary)
+that deserves its own investigation and ADR rather than a speculative
+attempt with no way to test it against a real browser from this repo's CI.
+
+This whole section is reasoning from how the browser's audio and event-loop
+model works, not a browser-measured profile — the caveat below about this
+page's numbers being native/Xvfb-only applies doubly here, since none of it
+was ever measured against real Web Audio callback timing. If audio in the
+browser is still audibly delayed after this, that measurement -- ideally
+captured while holding a direction key, the case that surfaced this -- is
+the next thing to get, not another guess from the native numbers above.
+
+#### Scene transitions: a much bigger stall than anything the buffer bump covers
+
+Reported next, after the pacing and buffer fixes above: audio still glitches
+on a scene transition (walking onto a map-exit tile). This is not the same
+bug wearing a different hat -- it is the same underlying constraint (a stall
+on the single JS thread starves whatever ScriptProcessorNode callback is
+due, and per the buffer discussion above that lateness does not resync on
+its own) hitting a stall an order of magnitude larger than anything a buffer
+sized for per-frame jitter can absorb.
+
+A map-to-map transition (`Scene::Map#perform_teleport`,
+`mruby-rpg2k/mrblib/scene/map.rb`) runs as **one synchronous block inside a
+single `scene.update` frame** -- nothing about it is spread across frames.
+In order: the destination `.lmu` is parsed fresh (`RPG2k#load_map`), the map's
+BGM is resolved and started if it changed (`play_map_bgm` -- a `.mid` change
+alone costs the 20-30ms `Mix_LoadMUS` figure from earlier on this page), the
+destination's chipset graphic is decoded (`load_chipset_graphic`, skipped
+only when the tileset id happens to be unchanged), and every one of the
+destination map's events and Common/map Parallel Processes is rebuilt
+(`build_events`, `build_parallels`). None of this had its own profiler
+section before now -- it was invisible inside the umbrella `scene.update`
+bar. It does now: `map.transition.load`, `map.transition.bgm`,
+`map.transition.chipset`, `map.transition.build_events` and
+`map.transition.build_parallels`, at both call sites (`Scene::Map#initialize`
+for a fresh map entry/Continue, and `#perform_teleport` for an in-session
+Transfer Player/Teleport/Recall to Location).
+
+The baseline table at the top of this page already has the relevant number,
+uncommented on until now: `scene.update`'s **536.65ms max**, 114x its own
+4.69ms average, on a 1405-frame run that is a single continuous
+`--rpg2k_new_game` session -- i.e. one frame paid for something the rest did
+not. Nepheshel's own opening is a long camera pan that ends in exactly one
+Teleport into the first room (`perform_teleport`'s comments describe this
+same sequence twice), which is consistent with this outlier being that
+transition. 536ms is **~5.75x** the ~93ms of slack the 4096-sample wasm audio
+buffer provides, on hardware faster than a browser's wasm execution -- nowhere
+close to survivable by sizing a buffer, which is the only lever the fix above
+had available.
+
+**Not fixed here.** Unlike the frame-pacing and buffer work above, closing
+this gap means either making the transition itself faster (the four new
+sections above finally make it possible to find out which of load/chipset
+decode/event-build actually dominates, rather than guessing) or spreading it
+across several frames behind the fade so no single one blocks the thread for
+that long -- both real engine changes, not a config tweak, and neither
+should be attempted blind the way the frame-pacing fix's first pass already
+had to be corrected twice. Reordering `play_map_bgm` to run after the heavy
+work instead of before was considered and deliberately not done: the stall
+itself is what starves the audio callback regardless of which track is
+nominally playing, so moving the BGM call only changes which track's
+in-flight audio gets cut and does not shorten the stall -- indeed it risks
+being worse, briefly resuming the *old* track for a few audio callbacks right
+before cutting to the new one, versus the current clean silence-then-new-track
+result. The right next step is measuring with the new sections against a
+save positioned right before a map exit, then deciding what to shorten or
+defer from real numbers, the same way `map.layers` was fixed earlier on this
+page.
+
+#### The New Game/Continue transition: a StringIO emulation gap, not a Ruby-level bug
+
+Measuring per the plan above (Nepheshel, `--rpg2k_new_game`, the new sections)
+found the New Game/Continue transition dominated by two sections that
+`#perform_teleport` never even runs: `map.transition.party` (`Game::Party.new`
+building the starting roster) at ~230ms, and `map.transition.common_events`
+(`Game::CommonEvent.load`) at ~140ms -- together over 90% of a ~400ms
+`scene.update` outlier. Bisecting with temporary profiler sections narrowed
+`map.transition.party`'s cost almost entirely to `Game::Actor#recompute_stats`
+-> `#equip_bonus` -> the *first* `db.item[id]` lookup, which one-time-decodes
+Nepheshel's whole 1200-row, 48KB item table -- and that first decode alone,
+under plain CRuby (a `mruby-lcf/mrblib/lcf.rb` + `schema.rb` load, the same
+"exact sources under CRuby" trick `scripts/lcf_testbed_check.rb` already uses)
+took 37ms against mruby's ~220ms for the identical bytes. A 6x gap that size
+on a byte-scanning loop is not "mruby is slower," it's a missing native
+method.
+
+`LCF::Array2D#read_row_bytes` (`mruby-lcf/mrblib/lcf.rb`) walks a table's
+`(id, len, payload)` chunk stream forward-only, one BER-encoded integer at a
+time (`LCF.read_ber`), for *every* row of *every* table on its first touch
+-- capturing raw byte spans without decoding them, per the lazy-Array2D
+design above, but still touching every byte to find the boundaries. Two
+independent inefficiencies stacked on that walk:
+
+- `StringIO` has no native `getbyte`. `lcf.rb` used to supply one itself,
+  `getc.getbyte(0)`, riding on `StringIO#getc` (`3rd/mruby-stringio/src/stringio.c`)
+  -- which allocates and returns a fresh one-character `String` on *every
+  single byte read*. `IO`/`File` already has a proper native `getbyte`
+  (`io_getbyte`, `3rd/mruby/mrbgems/mruby-io/src/io.c`) returning a bare
+  Integer with no allocation; `StringIO` -- what every *nested* chunk
+  (`Array1D.new`/`Array2D.new` wraps its bytes in one, `s = StringIO.new s
+  if s.is_a? String`) is actually read through -- never got the equivalent.
+  Only the outermost `LCF::Database < File` read skipped this tax; everything
+  else paid it, on every field, of every row it ever had to scan a boundary
+  through.
+- `read_row_bytes` rebuilt its captured span with `out = out + write_ber(idx)`
+  / `out = out + write_ber(len) + s.read(len)` -- each `+` allocates an
+  entirely new String and copies everything accumulated so far, rather than
+  extending the existing buffer in place.
+
+Fixed both, narrowly:
+
+- Added a real `StringIO#getbyte` (`stringio_getbyte`,
+  `3rd/mruby-stringio/src/stringio.c`), mirroring `stringio_getc` but
+  returning the byte as an Integer with no String allocation. `lcf.rb`'s own
+  `getbyte` shim is gone; `ungetbyte` is untouched (it still needs to build a
+  one-character String for `ungetc`, called at most once, never in this hot
+  loop). Declared as a proper `add_dependency 'mruby-string-ext'` in
+  `mruby-lcf/mrbgem.rake` for the `<<` below (AGENTS.md's own rule on this:
+  a stdlib method a gem's *own* per-gem test build won't otherwise have),
+  not left implicit on the strength of the full game build pulling it in
+  transitively through `mruby-onig-regexp`/`mruby-marshal`.
+- Switched `read_row_bytes`'s three `out = out + ...` accumulations to `<<`
+  (in-place, amortized-`O(1)` append). `read_row_bytes` is explicitly
+  forward-only/no-`#seek` already (see its own comment above -- a `#seek`
+  desyncs mruby-io's read-ahead buffer against a real `File`'s fd position),
+  so this is the one safe lever left on that loop without reopening that
+  finding.
+
+Both changes are `StringIO`/`LCF`-level, not RPG2000-specific -- every table
+this project ever lazily decodes (items, actors, common events, maps, ...)
+walks through the same `getbyte`/`read_row_bytes` path, so the fix is not
+scoped to New Game. Measured effect on the same Nepheshel
+`--rpg2k_new_game` repro: `map.transition.party` **232ms -> ~83ms**,
+`map.transition.common_events` **138ms -> ~50ms**, and the worst single
+frame over the run **~410ms -> ~145-150ms** (three separate runs, all in that
+range) -- roughly a **64% cut**, without touching any RPG2000 game logic.
+
+**Still not fully closed.** ~145ms remains above the 4096-sample buffer's
+~93ms of slack, so a New Game/Continue transition can still audibly glitch,
+just far more briefly than before. The remaining cost (~83ms actor
+construction, ~50ms common-event metadata) is now genuinely proportional,
+one-time work -- decoding Nepheshel's real item/common-event tables at
+mruby's real interpreted speed, not a rebuildable inefficiency -- so the
+only lever left is the one already named above and not yet attempted: make
+`Scene::Map#initialize` resumable and spread this across several frames
+behind a fade, which is a materially larger, riskier engine change than
+this fix and is left as its own follow-up rather than folded in here.
+
 ## Per-frame object allocation
 
 Separate from frame *time*: how many mruby objects the map scene allocates

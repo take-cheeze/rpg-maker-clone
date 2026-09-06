@@ -4,7 +4,15 @@ repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v6.0.0
   hooks:
+    # A unified diff's context lines are the original file's bytes verbatim,
+    # trailing whitespace included -- a *.patch context line for an
+    # originally-blank line is a single space (` `), which this hook would
+    # otherwise "fix" by stripping, corrupting the patch (it would no longer
+    # match the blank line it's meant to apply against). See
+    # patches/mruby-stringio-native-getbyte.patch, whose own context line 8 is
+    # exactly this.
     - id: trailing-whitespace
+      exclude: "patches/.*\\.patch$"
     - id: end-of-file-fixer
     - id: check-yaml
     - id: check-added-large-files

@@ -936,6 +936,16 @@
 - The page draws an **on-screen keypad** (D-pad plus OK/Cancel/Dash, the L/R
   shoulders and the A/X/Y/Z buttons) beneath the canvas, so the game is playable
   by touch or mouse without a physical keyboard; the keyboard keeps working too.
+- The canvas shows a live **FPS/CPU overlay** in the top-right corner (LVGL's
+  built-in performance monitor), the same one the Android build already draws —
+  a browser tab has no title bar or terminal to show `--profile`'s output
+  (see "Profiling" above), so this is the only on-screen way to see frame rate
+  here. Its CPU% is fed from a custom idle measurement (`src/main.cxx`)
+  covering the whole frame — Ruby game logic and input included, not just
+  LVGL's own render step, which is all LVGL's stock reading sees and badly
+  understates real usage (see `include/lv_conf.h`). Press **F3** to hide or
+  show it, so it does not have to sit over the picture during normal play;
+  the key is not bound to anything else in the browser build.
 - **Scaling is the page's job, not the engine's.** The canvas holds one pixel
   per game pixel (320x240 for RPG2000/MV, 640x480 for XP) and the page sizes the
   element in CSS — the whole-number zoom the screen has room for (2x for a
@@ -1087,6 +1097,24 @@ part that explains it). Nothing else is collected.
   Pages' 25 MiB per-file limit so PR previews can deploy
   (`scripts/pack-timidity-data.py`, ADR 0031). Serving the page means serving
   `timidity.js` and those packages alongside `index.*`
+- **More resilient audio timing in the browser.** Unlike the desktop build,
+  where SDL_mixer mixes on a real OS audio thread (see "Profiling" above and
+  `docs/profiling.md`), the Emscripten build has no such thread — there is no
+  `-pthread`/`-sUSE_PTHREADS` or `-sAUDIO_WORKLET` here, so the browser's
+  ScriptProcessorNode-based audio callback runs on the same single JS thread
+  as the game loop. The frame-pacing wait `Graphics.update` does every frame to
+  hold 60fps used to be a blocking OS sleep, which starved that thread and
+  showed up as delayed/glitchy audio; it is now left to
+  `emscripten_set_main_loop`'s own non-blocking scheduling instead
+  (`src/main.cxx`, `mruby-rgss/src/lib.cxx`). Separately, the mixer's output
+  buffer is now *larger* in the browser build (`src/sdl_audio.cxx`): a
+  ScriptProcessorNode callback that fires late does not resync to the clock,
+  it just stays that late and compounds on every further stall — sustained
+  input like holding a direction key is exactly the case likeliest to
+  trigger it — so more buffer headroom trades a little fixed latency for
+  much better resistance to that failure mode. See `docs/profiling.md` for
+  why this needs a bigger buffer rather than a smaller one, and what a more
+  complete fix (AUDIO_WORKLET) would take.
 - **RPG2000/2003's message window can read itself aloud**, in Zundamon's
   (ずんだもん) voice, opt-in via `--zundamon_tts`: each Show Text/Show Choices
   page's plain text (control codes already expanded — actor names, variables)

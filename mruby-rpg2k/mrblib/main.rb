@@ -807,16 +807,20 @@ class RPG2k
   def start_new_game
     init = map_tree.initial
     map_id = preview_map_id || init.initial_map_id
-    map = load_map map_id
+    map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
                            : [init.initial_x, init.initial_y]
-    state = Game::State.new Game::Party.new(@db), map_id, x, y
-    # The database's System tab configures the six screen transitions a
-    # "use the configured transition" (-1) Erase / Show Screen resolves against.
-    state.seed_screen_transitions @db
-    # The map tree's own boat/ship/airship starting positions, the editor's
-    # counterpart to the hero's initial_map_id/x/y just above.
-    state.seed_vehicle_positions map_tree
+    state = RGSS::Profiler.section("map.transition.party") do
+      Game::State.new Game::Party.new(@db), map_id, x, y
+    end
+    RGSS::Profiler.section("map.transition.seed") do
+      # The database's System tab configures the six screen transitions a
+      # "use the configured transition" (-1) Erase / Show Screen resolves against.
+      state.seed_screen_transitions @db
+      # The map tree's own boat/ship/airship starting positions, the editor's
+      # counterpart to the hero's initial_map_id/x/y just above.
+      state.seed_vehicle_positions map_tree
+    end
     state.map = map
     # Build the play scene first; only tear down the title once it succeeds so a
     # data problem leaves the title intact instead of a blank screen.
@@ -1029,7 +1033,7 @@ class RPG2k
       RGSS.warn_stub "Continue (no save data found)"
       return
     end
-    state.map = load_map state.map_id
+    state.map = RGSS::Profiler.section("map.transition.load") { load_map state.map_id }
     # Reapply the Tile Substitution table the save carried for this map --
     # #load_map always builds a fresh, unsubstituted Game::Map (correct for
     # an ordinary map re-visit), but a genuine Continue on the same map

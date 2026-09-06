@@ -699,24 +699,65 @@
 #define LV_USE_SNAPSHOT 1
 
 /*1: Enable system monitor component*/
-/* Android needs it for the on-screen FPS counter (LV_USE_PERF_MONITOR below);
- * every other backend keeps the monitors off. */
-#ifdef __ANDROID__
+/* Android and the browser build need it for the on-screen FPS counter
+ * (LV_USE_PERF_MONITOR below); every other backend keeps the monitors off. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_SYSMON   1
 #else
 #define LV_USE_SYSMON   0
 #endif
 #if LV_USE_SYSMON
     /*Get the idle percentage. E.g. uint32_t my_get_idle(void);*/
+    /* LVGL's own lv_timer_get_idle() only measures time spent inside
+     * lv_timer_handler() itself -- a fraction of a real frame here, since
+     * Graphics.update calls it just for the render/flush step while a whole
+     * frame's Ruby game logic and input poll run outside of it
+     * (docs/profiling.md's baseline has gfx.lvgl under half of scene.update's
+     * own cost). Reported as the on-screen CPU% reading ~50% while the
+     * browser tab itself sits at 100%. rgss_wasm_frame_get_idle
+     * (src/main.cxx) measures the same busy/idle ratio around the whole
+     * per-frame call instead, so it is used for the browser build; every
+     * other backend keeps LVGL's own. */
+#ifdef __EMSCRIPTEN__
+    /* This file itself never otherwise needs a fixed-width type, so nothing
+     * upstream of it in the include chain (lv_conf_internal.h included it
+     * unconditionally) is guaranteed to have pulled in <stdint.h> yet -- a
+     * plain C LVGL source (e.g. lv_sysmon.c) including this file directly
+     * would see an undeclared uint32_t otherwise.
+     *
+     * The declaration itself must additionally stay out of assembly context:
+     * lv_conf_internal.h (and so this file) is also pulled in by LVGL's own
+     * per-arch SIMD blend routines (e.g.
+     * src/draw/sw/blend/helium/lv_blend_helium.S), which define __ASSEMBLY__
+     * before doing so precisely so config content meant only for a C
+     * compiler doesn't reach the assembler -- see that file's own guard and
+     * lv_conf_internal.h's "If you need to include anything here, do it
+     * inside the `__ASSEMBLY__` guard" comment, and the `#ifndef __ASSEMBLY__`
+     * already wrapping its own LV_EXPORT_CONST_INT declarations. A bare C
+     * function prototype handed to the assembler is not a preprocessor
+     * concern -- it survives to the assembler as plain garbage text, which
+     * is a build break rather than a warning. */
+    #ifndef __ASSEMBLY__
+    #include <stdint.h>
+    uint32_t rgss_wasm_frame_get_idle(void);
+    #endif
+    #define LV_SYSMON_GET_IDLE rgss_wasm_frame_get_idle
+#else
     #define LV_SYSMON_GET_IDLE lv_timer_get_idle
+#endif
 
     /*1: Show CPU usage and FPS count
      * Requires `LV_USE_SYSMON = 1`*/
-    /* On by default for Android only: the phone has no other way to see the
-     * frame rate, and the label sits in the top-right corner clear of the
-     * virtual gamepad's B/C buttons (src/android_vpad_ui.cxx). Desktop has
-     * profilers and a title bar, and keeps it off. */
-#ifdef __ANDROID__
+    /* On by default for Android and the browser build: a phone has no other
+     * way to see the frame rate, and neither does a browser tab -- the
+     * engine's own --profile output goes to stderr, which a page has no
+     * console visible to an end user for (README.md#profiling), unlike a
+     * native build's terminal. Android's label sits in the top-right corner
+     * clear of the virtual gamepad's B/C buttons (src/android_vpad_ui.cxx);
+     * the wasm page's on-screen keypad (src/wasm_keypad.cxx) is separate HTML
+     * outside the canvas, so there is nothing there to clash with either.
+     * Desktop has profilers and a title bar, and keeps it off. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_PERF_MONITOR 1
 #else
 #define LV_USE_PERF_MONITOR 0
@@ -778,9 +819,9 @@
 
 /*1: Enable an observer pattern implementation*/
 /* The RGSS runtime never registers observers; off to match the PSP/Wio
- * configs -- except Android, whose FPS counter (LV_USE_SYSMON /
- * LV_USE_PERF_MONITOR above) is built on the observer API. */
-#ifdef __ANDROID__
+ * configs -- except Android and the browser build, whose FPS counter
+ * (LV_USE_SYSMON / LV_USE_PERF_MONITOR above) is built on the observer API. */
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 #define LV_USE_OBSERVER 1
 #else
 #define LV_USE_OBSERVER 0

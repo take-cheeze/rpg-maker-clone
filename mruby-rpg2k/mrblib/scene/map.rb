@@ -327,46 +327,54 @@ class RPG2k
         # now only the most-recently-used ones survive past each cache's own
         # byte budget, and anything evicted is simply reloaded (and re-cached)
         # the next time its name comes up.
-        @charset_cache = LRUBitmapCache.new(constrained_scale(CHARSET_CACHE_BYTES))
-                               # CharSet/<name> -- event graphics and the
-                               # party leader's own graphic share this, since
-                               # both load the same files.
-        @picture_cache = LRUBitmapCache.new(constrained_scale(PICTURE_CACHE_BYTES))
-                               # Picture/<name>, keyed by [name, transparent]
-        @backdrop_cache = LRUBitmapCache.new(constrained_scale(BACKDROP_CACHE_BYTES))
-                               # Backdrop/<name> (battle background)
-        @monster_cache = LRUBitmapCache.new(constrained_scale(MONSTER_CACHE_BYTES))
-                               # Monster/<name> (battler graphics)
-        @animation_cache = LRUBitmapCache.new(constrained_scale(ANIMATION_CACHE_BYTES))
-                               # Battle/<name> (battle animation sheets)
-        # Toned copies of individual animation cells, keyed by sheet identity
-        # + cell id + tone (see #toned_animation_cell_src) -- the same
-        # per-content-key cache shape @picture_tone_cache uses below, sized
-        # per cell (96x96) rather than per whole picture since only one
-        # 96x96 square of a shared sheet is ever toned at a time.
-        @animation_tone_cache = {}
-        @battlecharset_cache =
-          LRUBitmapCache.new(constrained_scale(BATTLECHARSET_CACHE_BYTES))
-                               # BattleCharSet/<name> (RPG2003 actor battler sprites)
-        @system2_cache = LRUBitmapCache.new(constrained_scale(SYSTEM2_CACHE_BYTES))
-                               # System2/<name> (RPG2003 gauge card sprite sheet)
-        apply_map_access if apply_access
+        RGSS::Profiler.section("map.transition.lru_caches") do
+          @charset_cache = LRUBitmapCache.new(constrained_scale(CHARSET_CACHE_BYTES))
+                                 # CharSet/<name> -- event graphics and the
+                                 # party leader's own graphic share this, since
+                                 # both load the same files.
+          @picture_cache = LRUBitmapCache.new(constrained_scale(PICTURE_CACHE_BYTES))
+                                 # Picture/<name>, keyed by [name, transparent]
+          @backdrop_cache = LRUBitmapCache.new(constrained_scale(BACKDROP_CACHE_BYTES))
+                                 # Backdrop/<name> (battle background)
+          @monster_cache = LRUBitmapCache.new(constrained_scale(MONSTER_CACHE_BYTES))
+                                 # Monster/<name> (battler graphics)
+          @animation_cache = LRUBitmapCache.new(constrained_scale(ANIMATION_CACHE_BYTES))
+                                 # Battle/<name> (battle animation sheets)
+          # Toned copies of individual animation cells, keyed by sheet identity
+          # + cell id + tone (see #toned_animation_cell_src) -- the same
+          # per-content-key cache shape @picture_tone_cache uses below, sized
+          # per cell (96x96) rather than per whole picture since only one
+          # 96x96 square of a shared sheet is ever toned at a time.
+          @animation_tone_cache = {}
+          @battlecharset_cache =
+            LRUBitmapCache.new(constrained_scale(BATTLECHARSET_CACHE_BYTES))
+                                 # BattleCharSet/<name> (RPG2003 actor battler sprites)
+          @system2_cache = LRUBitmapCache.new(constrained_scale(SYSTEM2_CACHE_BYTES))
+                                 # System2/<name> (RPG2003 gauge card sprite sheet)
+        end
+        RGSS::Profiler.section("map.transition.access") { apply_map_access if apply_access }
         # Same Continue-only split as #apply_map_access just above: a fresh
         # map entry (New Game, or any Transfer Player/Teleport, which
         # #perform_teleport already calls #play_map_bgm for separately)
         # recomputes BGM from the map tree, but a Continue resumes a state
         # that already carries its own #current_bgm (restored by
         # Game::State.load/.from_lsd from the save) -- see #resume_saved_bgm.
-        if apply_access
-          play_map_bgm
-        else
-          resume_saved_bgm
+        RGSS::Profiler.section("map.transition.bgm") do
+          if apply_access
+            play_map_bgm
+          else
+            resume_saved_bgm
+          end
         end
         @map = state.map
-        @chipset = build_chipset
-        @chipset_bmp = load_chipset_graphic
-        @charset = load_charset
-        @windowskin = load_windowskin
+        RGSS::Profiler.section("map.transition.chipset") do
+          @chipset = build_chipset
+          @chipset_bmp = load_chipset_graphic
+        end
+        RGSS::Profiler.section("map.transition.charset_windowskin") do
+          @charset = load_charset
+          @windowskin = load_windowskin
+        end
         @interpreter = Game::Interpreter.new(@state)
         # Whether the last message window shown on this map visit resolved to
         # the top position -- what #draw_timer's own bottom-edge-avoidance
@@ -386,16 +394,18 @@ class RPG2k
         # @started_auto clear.
         @auto_once = {}
         @auto_once_common = {}
-        @common = Game::CommonEvent.load(@db)
+        RGSS::Profiler.section("map.transition.common_events") { @common = Game::CommonEvent.load(@db) }
         # Deterministic RNG (Kernel#rand exists but is unseeded, and these runs
         # are diffed against the genuine runtime) and the adapter that lets move
         # routes / autonomous movement query the map.
         @rng = Game::Rng.new(0x2000)
-        @world = MapWorld.new(self, @rng)
-        # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
-        # hero's own on-foot #char_passable? -- see #force_vehicle_route.
-        @vehicle_worlds = Game::Vehicle::TYPES.each_with_object({}) do |type, h|
-          h[type] = VehicleWorld.new(self, @rng, type)
+        RGSS::Profiler.section("map.transition.world") do
+          @world = MapWorld.new(self, @rng)
+          # One VehicleWorld per type, wrapping #vehicle_passable? instead of the
+          # hero's own on-foot #char_passable? -- see #force_vehicle_route.
+          @vehicle_worlds = Game::Vehicle::TYPES.each_with_object({}) do |type, h|
+            h[type] = VehicleWorld.new(self, @rng, type)
+          end
         end
         # Erased events, and the state revision the active pages were chosen at.
         @erased_events = {}
@@ -419,10 +429,10 @@ class RPG2k
         # and a memo left from the previous visit would answer for the wrong
         # pages (see #page_condition_ids).
         @page_condition_ids = {}
-        build_events
+        RGSS::Profiler.section("map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        build_parallels
+        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
         @message = nil
         @inn_window = nil
         @inn_bgm_started = false
@@ -8743,7 +8753,7 @@ class RPG2k
       def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
         begin
-          @map = @parent.load_map(map_id)
+          @map = RGSS::Profiler.section("map.transition.load") { @parent.load_map(map_id) }
         rescue StandardError => e
           # Transfer Player / Recall to Location naming a map id whose .lmu no
           # longer exists (a deleted map, or a stale id left behind by one) --
@@ -8760,7 +8770,7 @@ class RPG2k
         @state.map = @map
         @state.map_id = map_id
         apply_map_access
-        play_map_bgm
+        RGSS::Profiler.section("map.transition.bgm") { play_map_bgm }
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
@@ -8800,12 +8810,14 @@ class RPG2k
         # falls back to the map's own rate whenever this is nil.
         @state.encounter_rate = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
-        @chipset = build_chipset
-        # The new map may use a different chipset graphic, so reload it too;
-        # otherwise the destination is drawn with the previous map's tiles.
-        old_bmp = @chipset_bmp
-        @chipset_bmp = load_chipset_graphic
-        old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
+        RGSS::Profiler.section("map.transition.chipset") do
+          @chipset = build_chipset
+          # The new map may use a different chipset graphic, so reload it too;
+          # otherwise the destination is drawn with the previous map's tiles.
+          old_bmp = @chipset_bmp
+          @chipset_bmp = load_chipset_graphic
+          old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
+        end
         # ... nor does the timer's sticky "message was at top" flag: ported
         # from a reference implementation, not independently confirmed
         # against genuine RPG_RT under wine: it rebuilds its own message
@@ -8870,10 +8882,10 @@ class RPG2k
         # left says nothing about the destination.
         @warned_stale_terrain = {}
         @page_condition_ids = {}
-        build_events
+        RGSS::Profiler.section("map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        build_parallels
+        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
         # Any step in flight is dropped: the party arrives standing on the
         # destination tile rather than sliding toward one on the map it left.
         # A forced route can have a step in flight here -- it advances between
