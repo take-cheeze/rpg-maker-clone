@@ -909,9 +909,9 @@ class RPG2k
           x = item_col_x(i % COLUMN_MAX)
           y = (i / COLUMN_MAX - @item_top) * LINE_H
           idx = @state.party.field_usable?(id, @state) ? 0 : 3
-          draw_system_text(c, x, y + 2, col_w - COUNT_W, LINE_H, name, @skin, idx)
-          draw_system_text(c, x + col_w - COUNT_W, y + 2, COUNT_SEP_W, LINE_H, ':', @skin, idx)
-          draw_system_text(c, x + col_w - COUNT_NUM_W, y + 2, COUNT_NUM_W, LINE_H,
+          draw_system_text(c, x, y, col_w - COUNT_W, LINE_H, name, @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_W, y, COUNT_SEP_W, LINE_H, ':', @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_NUM_W, y, COUNT_NUM_W, LINE_H,
                            count.to_s, @skin, idx, 2)
         end
         @item_window.contents = c

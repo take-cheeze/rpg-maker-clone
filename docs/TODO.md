@@ -12112,7 +12112,9 @@ The work below is roughly ordered by the critical path to a walkable game
   lists a held **weapon** in the battle Item list (greyed) where
   `#battle_items` still drops equipment entirely; (e) our glyphs sit ~3px
   taller than RPG_RT's in every battle row (a font-metric difference shared
-  with every other screen, bottom edges aligned), not touched here.
+  with every other screen, bottom edges aligned), not touched here (✅ fixed
+  in cycle #248: `Bitmap#draw_text` centres the 12px glyph cell in the rect
+  height now -- see the Save/Load screen's cycle-#248 follow-up).
   No EasyRPG source was consulted.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
@@ -15991,6 +15993,58 @@ The work below is roughly ordered by the critical path to a walkable game
   `#update` directly and asserting the arrow sprite's `visible` flag through
   one full 40-frame cycle (on at frame 0, off at frame 20, on again at the
   frame-40 wrap).
+  ✅ **Follow-up (cycle #248, 2026-09-06): the "~3px high" glyphs this entry
+  (item 2), the battle-row entry and the encounter-banner entry each flagged
+  were one shared metric after all -- `Bitmap#draw_text` top-aligned the 12px
+  shinonome cell in the rect it was given, so only the screens that happened
+  to add the 2px pad by hand matched RPG_RT. Fixed once in the renderer;
+  every screen now lands on RPG_RT's own rows.** Recipe: private wine prefix
+  + own copy of Nepheshel; `Save01_clean.lsd` repositioned with
+  `scripts/gen-rpg2k-save.rb <game> --map 16 --at 14,11 --facing up
+  --clear-scene` for the field menu / title / load screen, and
+  `Save01_battle_map2.lsd` for the two-slime battle; `drive.sh start_ref` vs
+  `drive.sh start_ours` with a binary built from this worktree; 640x480 xwd
+  captures halved to the 320x240 logical screen and the ink rows of the same
+  string read out per row (background modelled as the windowskin gradient's
+  per-row median, so only glyph/shadow pixels count). Measured **before**
+  (ours / RPG_RT, screen rows): field-menu command row `装備` **42..53 /
+  43..52** and party-panel `デモ用` **11..22 / 12..21** -- already right,
+  because `Scene::Menu` added `+ 2` itself; load-screen header
+  `どのファイルをロードしますか？` **9..19 / 12..21**, load-screen `デモ用`
+  **65..76 / 68..77**, load-screen `LV50 HP600` **81..90 / 84..92**, battle
+  command row `オート` **184..194 / 188..197** and battle status row
+  **168..180 / 171..181** -- all 3 ink rows high, because `Scene::SaveLoad`,
+  `Scene::Battle` and the map message window did not add it. The 12px cell is
+  the whole story: our own cell is exactly 42..53 on the row where RPG_RT
+  inks 43..52 (its face insets one row top and bottom), and `装`/`備`/`用`
+  ink all 12 rows of the shinonome cell while kana ink rows 1..10 -- which is
+  what makes an ink-row comparison read as 3px on the unpadded screens and
+  1px on the padded ones. Fix: `shinonome_text_top` in
+  `mruby-rgss/src/lib.cxx` centres the fixed 12px cell in the rect height for
+  both the `#draw_text` and `#blend_text` bitmap paths (the TrueType paths
+  already centred the face's ascent/descent block, so the bitmap fallback was
+  the odd one out and an RGSS-semantics bug in its own right), and the
+  hand-written pads are gone from `Scene::Title` (`TEXT_PAD_Y`),
+  `Scene::Menu` (`STATUS_TEXT_Y`, the command rows' `+ 2`) and
+  `Scene::ItemMenu` (`y + 2`). **After** (same captures, rebuilt binary):
+  load-screen header **11..21**, load-screen `デモ用` **67..78**, battle
+  command `オート` **186..196**, battle status **170..182** -- each now in
+  exactly the relation to RPG_RT's rows that the already-correct field menu
+  had. Covered by two new pixel tests in `mruby-rgss/test/test.rb` (the only
+  place that can see this: the CRuby scene harness stubs `Bitmap` and records
+  call arguments) asserting the top ink row of "Hi" is `(h - 12) / 2 + 1` for
+  h = 12/14/16/32 through both `#draw_text` and `#blend_text`, plus one new
+  `scripts/rpg2k_scene_check.rb` check that every 16px text row across
+  Title/Menu/ItemMenu/SaveLoad draws at a plain multiple of 16 (confirmed to
+  fail against the pre-fix scenes); six existing checks that pinned the
+  hand-padded y values were re-pinned to the unpadded ones. Deliberately
+  left open: the h=14 rects (`SHOP_LINE_H`/`INN_LINE_H`, and
+  `Scene::Menu#show_message`) now centre to +1 instead of +0 -- consistent
+  with the rule but not itself captured, since no shop or inn was reached
+  this cycle; and the *horizontal* metric was confirmed unchanged and
+  already correct (ink columns 4..45 for the command rows and 3..152/150 for
+  the load header matched RPG_RT to within the 2px the two faces' own
+  side-bearings differ). No EasyRPG source was consulted.
   ✅ **This screen always opened with the cursor on slot 1, when real RPG_RT
   opens on whichever slot was saved most recently (2026-08-20).** Independently
   confirmed against a genuine RPG_RT.exe under wine (cycle #123, 2026-08-22,
@@ -16284,7 +16338,9 @@ The work below is roughly ordered by the critical path to a walkable game
   our glyph ink for a message line sits at y 168..180 where RPG_RT's sits at
   171..181 -- our own *map* message window is offset identically (168 vs
   171), so it is a `draw_text` font-ascent difference to fix once, globally,
-  not per window. **Confirmed unchanged/correct:** the status and command
+  not per window (✅ fixed in cycle #248 -- `Bitmap#draw_text` now centres the
+  12px glyph cell in the rect height instead of top-aligning it; see the
+  Save/Load screen's own cycle-#248 follow-up for the measurements). **Confirmed unchanged/correct:** the status and command
   windows are hidden behind the log in both engines (same rect), the log
   lines' wording matches (「デモ用の攻撃！」/「スライムに 500のダメージを与えた！」/
   「スライムを倒した！」, with 「命の一撃！！」 between attack and damage on a

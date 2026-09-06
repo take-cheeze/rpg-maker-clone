@@ -20113,48 +20113,48 @@ check 'Scene::Menu: the party-status panel draws three lines per member in ' \
   db.term.exp_short = 'EX'
   scene = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
   bc = status_blend(scene.instance_variable_get(:@status))
-  # line 1 (y 0 + 2): the name alone, colour 0
-  name = blend_at(bc, 'Hero', 56, 2)
+  # line 1 (y 0): the name alone, colour 0
+  name = blend_at(bc, 'Hero', 56, 0)
   ok name, "the name draws at x 56 on the first line, got #{bc.map { |c| [c[4], c[0], c[1]] }.inspect}"
   eq [0, 48], name[6, 2], 'in the default colour (index 0)'
-  ok bc.none? { |c| c[4].start_with?('EX') && c[1] == 2 },
+  ok bc.none? { |c| c[4].start_with?('EX') && c[1] == 0 },
      'EXP no longer rides the name line'
-  # line 2 (y 16 + 2): LV label, level, condition, HP label and figures
-  lv = blend_at(bc, 'LV', 56, 18)
+  # line 2 (y 16): LV label, level, condition, HP label and figures
+  lv = blend_at(bc, 'LV', 56, 16)
   ok lv, 'the LV label draws at x 56 on the second line'
   eq [16, 48], lv[6, 2], 'the LV label is the system colour (index 1)'
-  level = blend_at(bc, '5', 68, 18)
+  level = blend_at(bc, '5', 68, 16)
   ok level, 'the level figure follows the label at x 68'
   eq [0, 48], level[6, 2], 'the level figure is colour 0'
-  ok blend_at(bc, 'Normal', 98, 18), 'the condition draws at x 98'
-  hp = blend_at(bc, 'HP', 162, 18)
+  ok blend_at(bc, 'Normal', 98, 16), 'the condition draws at x 98'
+  hp = blend_at(bc, 'HP', 162, 16)
   ok hp, 'the HP label draws at x 162'
   eq [16, 48], hp[6, 2], 'the HP label is the system colour (index 1)'
-  cur = blend_at(bc, '80', 174, 18)
+  cur = blend_at(bc, '80', 174, 16)
   ok cur, 'the current HP draws in the 3-cell field starting at x 174'
   eq 18, cur[2], 'the field is 18px wide (3 digit cells)'
   eq 2, cur[10], 'and the figure is right-aligned in it (60 lands at 180, 6 at 186)'
-  ok blend_at(bc, '/', 192, 18), 'the slash draws at x 192'
-  ok blend_at(bc, '120', 198, 18), 'the max HP draws at x 198'
-  # line 3 (y 32 + 2): EX label and two right-aligned 6-cell fields, MP
-  ex = blend_at(bc, 'EX', 56, 34)
+  ok blend_at(bc, '/', 192, 16), 'the slash draws at x 192'
+  ok blend_at(bc, '120', 198, 16), 'the max HP draws at x 198'
+  # line 3 (y 32): EX label and two right-aligned 6-cell fields, MP
+  ex = blend_at(bc, 'EX', 56, 32)
   ok ex, 'the EX label draws at x 56 on the third line'
   eq [16, 48], ex[6, 2], 'the EX label is the system colour (index 1)'
-  exp = blend_at(bc, '300', 68, 34)
+  exp = blend_at(bc, '300', 68, 32)
   ok exp, 'the current EXP draws in the 6-cell field starting at x 68'
   eq [36, 2], [exp[2], exp[10]], 'right-aligned in a 36px field (300000 fills it, 16000 starts at 74)'
-  ok blend_at(bc, '/', 104, 34), 'the EXP slash draws at x 104'
-  nxt = blend_at(bc, '420', 110, 34)
+  ok blend_at(bc, '/', 104, 32), 'the EXP slash draws at x 104'
+  nxt = blend_at(bc, '420', 110, 32)
   ok nxt, 'the next level\'s absolute EXP threshold draws in the field starting at x 110'
   eq [36, 2], [nxt[2], nxt[10]], 'also right-aligned in a 36px field'
-  mp = blend_at(bc, 'MP', 162, 34)
+  mp = blend_at(bc, 'MP', 162, 32)
   ok mp, 'the MP label draws at x 162 on the third line'
   eq [16, 48], mp[6, 2], 'the MP label is the system colour (index 1)'
-  ok blend_at(bc, '10', 174, 34), 'the current MP field starts at x 174'
-  ok blend_at(bc, '30', 198, 34), 'the max MP draws at x 198'
+  ok blend_at(bc, '10', 174, 32), 'the current MP field starts at x 174'
+  ok blend_at(bc, '30', 198, 32), 'the max MP draws at x 198'
   # second member: the same three lines 48px lower
-  ok blend_at(bc, 'Hero', 56, 50), 'the second member\'s name sits 48px lower'
-  ok blend_at(bc, 'EX', 56, 82), 'and so does its EX line'
+  ok blend_at(bc, 'Hero', 56, 48), 'the second member\'s name sits 48px lower'
+  ok blend_at(bc, 'EX', 56, 80), 'and so does its EX line'
 end
 
 check 'Scene::Menu: at the maximum level both EXP fields read six dashes ' \
@@ -20167,8 +20167,8 @@ check 'Scene::Menu: at the maximum level both EXP fields read six dashes ' \
   hero = st.party.actors.first
   def hero.next_level_exp; nil; end # Game::Actor#next_level_exp at max level
   bc = status_blend(menu_scene(RPG2k::Scene::Menu, st, db).instance_variable_get(:@status))
-  ok blend_at(bc, '------', 68, 34), 'the current-EXP field shows six dashes'
-  ok blend_at(bc, '------', 110, 34), 'and so does the next-level field'
+  ok blend_at(bc, '------', 68, 32), 'the current-EXP field shows six dashes'
+  ok blend_at(bc, '------', 110, 32), 'and so does the next-level field'
   ok bc.none? { |c| c[4] == '300' }, 'the raw EXP total is not drawn at max level'
 end
 
@@ -20189,7 +20189,8 @@ check 'Scene::Menu: the Gold window right-aligns "amount + unit" to its ' \
   eq 72, unit[2], 'the unit is right-aligned across the full 72px contents width'
   eq [0, 48], amount[6, 2], 'the amount is colour 0'
   eq [16, 48], unit[6, 2], 'the unit term is the system colour (index 1)'
-  eq [2, 2], [amount[1], unit[1]], 'both sit on the same 16px line (glyphs 4px below the contents top)'
+  eq [0, 0], [amount[1], unit[1]],
+     'both sit on the same 16px line (Bitmap#draw_text centres the 12px cell in it)'
   ok (gold.contents.draw_calls || []).empty?, 'no flat draw_text run is left'
 end
 
@@ -20301,11 +20302,11 @@ check 'Scene::Menu: the End Game prompt replaces the field menu -- command ' \
   eq (320 - yn.width) / 2, yn.x, 'Yes/No window centred horizontally'
   eq help.y + help.height + 16, yn.y, '16px gap between the two windows'
   hb = glyph_blends(help.contents.blend_calls)
-  ok hb.any? { |c| c[0] == 0 && c[1] == 2 && c[10] == 0 && c[6] == 0 && c[7] == 48 },
+  ok hb.any? { |c| c[0] == 0 && c[1] == 0 && c[10] == 0 && c[6] == 0 && c[7] == 48 },
      "the prompt text draws left-aligned from the contents' left edge through swatch 0, got #{hb.inspect}"
   ok (help.contents.draw_calls || []).empty?, 'no flat draw_text for the prompt'
   yb = glyph_blends(yn.contents.blend_calls)
-  eq [[0, 2], [0, 18]], yb.map { |c| c[0, 2] }, 'Yes then No, one 16px row each'
+  eq [[0, 0], [0, 16]], yb.map { |c| c[0, 2] }, 'Yes then No, one 16px row each'
   ok (yn.contents.draw_calls || []).empty?, 'no flat draw_text for the labels'
   r = yn.cursor_rect
   eq [0, 0, yn.contents.width, 16], [r.x, r.y, r.width, r.height],
@@ -22125,8 +22126,8 @@ check 'Scene::ItemMenu: the list box fills the screen below the banner, its two 
   eq 12, RPG2k::Scene::ItemMenu::VISIBLE_ROWS, '12 grid rows fit in the 192px content area'
   eq 144, scene.send(:item_col_w), 'a grid cell is 144px wide'
   eq 160, scene.send(:item_col_x, 1), 'column 1 starts 160px in (a 16px gutter)'
-  eq [0, 2], item_list_run(scene, 'Item1')[0, 2], 'column 0 name at content x 0'
-  eq [160, 2], item_list_run(scene, 'Item2')[0, 2], 'column 1 name at content x 160'
+  eq [0, 0], item_list_run(scene, 'Item1')[0, 2], 'column 0 name at content x 0'
+  eq [160, 0], item_list_run(scene, 'Item2')[0, 2], 'column 1 name at content x 160'
   sep = item_list_calls(scene).select { |c| c[4].to_s == ':' }.map { |c| c[0] }.sort
   ok sep.include?(120) && sep.include?(280),
      "\":\" separators sit at content x 120 and 280 (cell x + 144 - 24), got #{sep.inspect}"
@@ -22174,7 +22175,7 @@ check 'Scene::ItemMenu: a bag longer than 12 rows scrolls a row at a time with t
   eq 1, scene.instance_variable_get(:@item_top), 'and scrolls the list by one row'
   eq [0, 11 * 16, 144, 16], item_cursor(scene), 'the cursor stays on the bottom visual row'
   ok item_list_run(scene, 'Item1').nil?, 'row 0 has scrolled off the top'
-  eq [0, 2], item_list_run(scene, 'Item3')[0, 2], 'row 1 is now drawn at the top'
+  eq [0, 0], item_list_run(scene, 'Item3')[0, 2], 'row 1 is now drawn at the top'
   press_item(scene, RGSS::Input::DOWN)
   eq 26, scene.instance_variable_get(:@item_index), 'the thirteenth DOWN reaches the last item'
   eq 2, scene.instance_variable_get(:@item_top), 'scrolled a second row'
@@ -28182,6 +28183,58 @@ check "the battle result panel is RPG_RT's fixed 320x80 bottom rect, waits " \
   scene.update
   RGSS::Input.triggered = []
   ok battle_ui(scene).nil?, 'Cancel dismisses it and ends the fight'
+end
+
+# -- cycle #248 (2026-09-06): one shared vertical text metric ------------------
+#
+# `Bitmap#draw_text` / `#blend_text` centre the 12px shinonome cell in the rect
+# height they are given (mruby-rgss/src/lib.cxx `shinonome_text_top`, pinned by
+# this gem's own pixel tests), so a 16px RPG2000 line drops the glyph cell 2px
+# below the line's top all by itself. Scene::Title, Scene::Menu and
+# Scene::ItemMenu used to add that 2px by hand while Scene::SaveLoad,
+# Scene::Battle and the map message window did not, which is why the padded
+# screens matched genuine RPG_RT under wine and the unpadded ones drew their
+# glyphs 3 ink rows high (load screen `デモ用` 65..76 against RPG_RT's 68..77,
+# battle status 168..180 against 171..181). The pad is gone from the scenes now,
+# so every 16px row must draw at a plain multiple of 16 -- with the one-pixel
+# drop-shadow pass `Scene::Base#draw_system_text` records at y + 1. No EasyRPG
+# source was consulted.
+def row_text_ys(win)
+  return [] unless win && win.contents
+  c = win.contents
+  ((c.draw_calls || []) + (c.blend_calls || [])).map { |a| a[1] }
+end
+
+check 'every 16px text row draws at a plain multiple of 16 -- the 12px glyph ' \
+      'cell is centred by Bitmap#draw_text, not by a per-scene pad ' \
+      '(measured under wine, cycle #248)' do
+  offenders = lambda do |label, ys|
+    bad = ys.reject { |y| (y % 16).zero? || (y % 16) == 1 }
+    eq [], bad, "#{label}: every run sits on a 16px row (or its +1 shadow)"
+  end
+
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+
+  menu = menu_scene(RPG2k::Scene::Menu, wrap_menu_state, db)
+  offenders.call('Scene::Menu command list', row_text_ys(menu.instance_variable_get(:@command)))
+  offenders.call('Scene::Menu party panel', row_text_ys(menu.instance_variable_get(:@status)))
+  offenders.call('Scene::Menu gold window', row_text_ys(menu.instance_variable_get(:@gold)))
+
+  item = menu_scene(RPG2k::Scene::ItemMenu, wrap_menu_state, db)
+  offenders.call('Scene::ItemMenu list', row_text_ys(item.instance_variable_get(:@item_window)))
+
+  parent = fake_parent(db)
+  parent.save_states[1] = menu_state
+  save, = save_load_scene(:load, nil, db, parent: parent)
+  offenders.call('Scene::SaveLoad header',
+                 row_text_ys(save.instance_variable_get(:@header_window)))
+  offenders.call('Scene::SaveLoad slot 1',
+                 row_text_ys(save.instance_variable_get(:@slot_windows)[0]))
+
+  title = RPG2k::Scene::Title.new(TitleParent.new(db, nil, false))
+  offenders.call('Scene::Title command list',
+                 row_text_ys(title.instance_variable_get(:@window)))
 end
 
 # -- summary ------------------------------------------------------------------
