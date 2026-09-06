@@ -40,6 +40,14 @@ TIMEOUT_MS="${RPG2K_TIMEOUT_MS:-20000}"
 
 GAMES=("$@")
 if [ "${#GAMES[@]}" -eq 0 ] ; then
+    # kk1.12's own System chunk carries no default initial party (`party` is
+    # an empty array, confirmed by loading its real RPG_RT.ldb) -- its real
+    # party is assembled by the opening cutscene's own event commands, which
+    # `--rpg2k_new_game` does not simulate. A bare New Game against it left
+    # the engine itself raising ("undefined method '*' for NilClass",
+    # somewhere in the empty-party stats/UI path) before ever reaching the
+    # map, confirmed against CI. mtf-meido-action's own default party is
+    # `[1]`, which is what this headless smoke test actually needs.
     GAMES=(data/Nepheshel206beta/Nepheshel206Rbeta data/mtf-meido-action/Debug)
 fi
 
@@ -88,7 +96,7 @@ for game in "${GAMES[@]}" ; do
 done
 
 # --rpg2k_battle: a bare boot only ever reaches the map -- the RPG2003 test
-# beds ship no encounters, so nothing drives the game into a fight on its own.
+# bed ships no encounters, so nothing drives the game into a fight on its own.
 # The flag opens a battle against a named troop once New Game's map is up, and
 # Scene::Battle#start logs the [RPG2k-BATTLE] marker when the fight's UI is
 # really on screen. This pass asserts that marker (and that the battle scene
@@ -96,6 +104,14 @@ done
 # sprites, actor sprites, the gauge-card status panel, per-frame gauge advance
 # -- end to end against real data (ADR 0053 Phase 3). Overridable so a
 # different project/troop can be driven instead.
+#
+# kk1.12 cannot stand in here either, for the same empty-default-party
+# reason the GAMES list above stays on mtf-meido-action: a bare New Game
+# against it never even reaches the map (see that comment), so a battle
+# can't follow. kk1.12 remains the right choice for genuine-RPG_RT-under-
+# wine verification (it ships a real RPG_RT.EXE, unlike mtf-meido-action's
+# EasyRPG-only Player.exe) and for scripts/rpg2k3_battle_command_check.rb's
+# static database decode, neither of which drives a bare New Game.
 BATTLE_GAME="${RPG2K_BATTLE_GAME:-data/mtf-meido-action/Debug}"
 BATTLE_TROOP="${RPG2K_BATTLE_TROOP:-14}"
 if [ -f "${BATTLE_GAME}/RPG_RT.ldb" ] ; then

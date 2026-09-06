@@ -5240,7 +5240,21 @@ The work below is roughly ordered by the critical path to a walkable game
   actually contains. **Recommendation:** drop field 140 from the rotating
   candidate list until a genuine RPG2003 `RPG_RT.exe` is added to the repo's
   fixtures; re-flagging it without new fixture access just re-derives this
-  same dead end. **New lead surfaced while checking this (not chased to a
+  same dead end.
+  ✅ **Follow-up (2026-09-06): the recommended-away blocker is lifted — a
+  genuine RPG2003 `RPG_RT.exe` is now in the repo's fixtures (`data/kk1.12`,
+  with the official RTP installed via `scripts/rtp_2003_install.bash`; see
+  the killer-knights test-bed-swap entry elsewhere in this file), and field
+  140 (`atb_mode`) is now independently confirmed, both raw values.** A
+  fresh save (never setting `atb_mode`, so 0) and a second save with it
+  forced to 1 (both built directly via `Game::State#atb_mode=` +
+  `#to_lsd`) each opened the field menu's Wait row under genuine
+  `RPG_RT.exe`: the `atb_mode`-0 save showed kk1.12's own `wait_off` term
+  text, the `atb_mode`-1 save its `wait_on` text, matching
+  `Scene::Menu#wait_label`'s `atb_mode == 1 ? wait_on : wait_off` exactly in
+  both directions (`mruby-rpg2k/mrblib/scene/menu.rb`). No behavior change
+  — the citation was already correct; its "NOT independently confirmed"
+  flag is replaced with this capture. **New lead surfaced while checking this (not chased to a
   fix this cycle, see below): `SAVE_SYSTEM` field 125 (`battle_background`,
   `mruby-lcf/mrblib/schema.rb`) is declared but completely unplumbed --
   `Game::State#to_lsd`/`.from_lsd` never read or write it, despite this
@@ -13323,6 +13337,27 @@ The work below is roughly ordered by the critical path to a walkable game
   claim once independently confirmed. The adjacent multi-actor
   discrete-vs-repeat question from cycle #121 was not chased further this
   cycle (out of scope once the solo-party half turned out unreachable).
+  ✅ **Follow-up (2026-09-06): the "permanently unverifiable" half above no
+  longer holds — a genuine RPG2003 `RPG_RT.exe` test bed now exists
+  (`data/kk1.12` + the official RTP via `scripts/rtp_2003_install.bash`, see
+  the `scripts/download-killer-knights.bash`/test-bed-swap entry elsewhere in
+  this file), and `Scene::StatusMenu` **is reachable and opens cleanly** —
+  confirmed, not merely re-attempted.** Built a one-actor save (actor 1,
+  map 1, a chipset tile confirmed passable from all four directions by this
+  codebase's own `ChipSet#passable?`) directly via `Game::Party`/
+  `Game::State#to_lsd`, with the scratch copy's own map-1 autostart
+  common-event page (an unconditional intro cutscene, trigger 3, no switch
+  gate) disabled so Continue lands straight on the map. kk1.12's own System
+  chunk 22 field 27 (`menu_commands`) is `[1, 2, 5, 3, 6, 8, 4]`; the real
+  field menu, opened with Escape, read top to bottom exactly Item / Skill /
+  Status / Equip / Row / Wait / Save (End Game appended below) —
+  `RPG2K3_COMMAND_IDS`'s id-to-command table (`menu.rb`) matches id for id.
+  Pressing Decision on Status opened the real Status screen with no error:
+  HP/MP/EX, ATK/DEF/AGI/INT, class, weapon/armor/accessory, all populated
+  and legible. The adjacent Wait-row question was closed the same run (see
+  the `wait_label`/atb_mode follow-up below). No code change — both
+  citations were already correct, only "NOT independently confirmed"
+  became a wine confirmation.
   ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
   cursor opens on whichever slot was saved most recently" claim is now
   independently confirmed against a genuine RPG_RT.exe, not just a
@@ -18650,14 +18685,22 @@ not yet verified:
   real RPG_RT too, not a coincidence of this codebase's own rendering — the
   premise the existing RPG2003 fixture above already relied on to
   disambiguate "clamped only by max_hp" from "a separate 999 popup cap" is
-  solid. **Still open, and still ported from a reference implementation
-  only, not independently confirmed against genuine RPG_RT under wine**:
-  whether the
-  field-item-use path genuinely has *no* fixed-digit cap at all on an
-  RPG2003 database (where max_hp can itself reach 9999) — this environment's
-  only RPG2003 test-bed (`data/mtf-meido-action`) does not bundle a genuine
-  `RPG_RT.exe`, only EasyRPG's own build, so that half could not be
-  empirically re-checked this session.
+  solid.
+  ✅ **Follow-up (2026-09-06): the RPG2003 half is now independently
+  confirmed too — the field-item-use path genuinely has no fixed-digit cap
+  at all, matching this codebase's own unconfirmed implementation exactly.**
+  Now that a genuine RPG2003 `RPG_RT.exe` exists in the repo's fixtures
+  (`data/kk1.12` + the official RTP — see the killer-knights test-bed-swap
+  entry elsewhere in this file), built a save (party actor 1, kk1.12's own
+  item 4, a real medicine with `recover_hp=9999`) with chunk 108's `hp_mod`
+  patched to an extreme 20000 and `hp` forced to 1: the field-menu status
+  panel read `HP 1/9999` (confirming `max_hp_cap` clamps the modifier to
+  RPG2003's 9999 ceiling, not the raw 20000), and using the medicine on
+  that same actor through the real field Item screen landed HP at exactly
+  `9999/9999` — the full, uncapped heal this codebase's own `#use_medicine`
+  predicts (`min(1 + 9999, 9999)`), not `1 + 999 = 1000` the way the
+  already-fixed battle-cast path would have clamped it. No code change —
+  the citation was already correct.
 - ✅ **The battle damage/recovery popup cap itself now widens to RPG2003's
   real 9999 too, instead of staying a flat 999 on every database — the same
   edition-blind gap the max-HP and total-EXP fixes above already closed for
@@ -21594,6 +21637,42 @@ not yet verified:
   behavioral claim this cycle (only read, long after this cycle's own
   independent wine finding, to phrase the citation's remaining gap
   precisely), and no web search was used.
+  ✅ **Follow-up (2026-09-06): attempted the positive case now that kk1.12 +
+  the official RTP gives a genuine RPG2003 `RPG_RT.exe` — inconclusive, for
+  an environmental reason rather than a game-behavior one, and closely
+  related to the Wait-command crash this same cycle already flagged
+  elsewhere in this file.** Built two scratch copies of kk1.12, each with
+  map 1's own autostart event replaced with Shake Screen (5/5/30/1, i.e.
+  strength/speed/a 3.0s duration/wait-flag set) then Show Message "DONE" —
+  one copy's Shake Screen left at the plain 4-parameter form (`:baseline`),
+  the other with a spliced 5th parameter `param4=1` ("begin a non-blocking
+  strobe", the same splice technique used against Nepheshel above, just on
+  a genuine RPG2003 project and binary this time). The `:baseline` case
+  never reached "DONE": the map sat on screen with the process reporting
+  near-zero further CPU time (`ps` showing no meaningful CPU-time increase
+  across a patient, unhurried 10-second wait, well past the shake's own
+  3.0s duration and past the ~4s a control fixture with no Shake Screen at
+  all took to show its own message under the same load) — a genuine stall,
+  not merely a slow render needing more patience (a companion control
+  fixture, Show Message alone with no Shake Screen, *did* eventually show
+  its message once waited for generously, ruling out impatience as the
+  general explanation here). Sending a Decision keypress into that stalled
+  state ended the `RPG_RT.EXE` process outright, the same crash-on-input-
+  during-a-stall shape the Wait-command follow-up already documented for
+  an unrelated command — strong circumstantial evidence both are one
+  underlying environmental fragility (this sandboxed wine/Xvfb setup
+  mishandling input delivery during some internal blocked state) rather
+  than two independent findings. Never reached the `:begin` (param4=1)
+  fixture, since a baseline that cannot itself resolve cleanly cannot
+  supply a trustworthy comparison point. **Left open, still:** the
+  positive-case question itself (whether param4 is genuinely read from a
+  real RPG2003 project) remains exactly as unsettled as before this
+  follow-up — what's new is narrowing *why* it stayed unsettled, and
+  linking it to the Wait-command finding rather than treating each as its
+  own mystery. A future cycle could retry with a non-message final command
+  (skipping whatever Show-Message-after-a-stall interaction the two
+  crashes share) or investigate the stall itself directly before returning
+  to Shake Screen specifically. No code change.
 - ✅ **A troop battle-event page's Show Battle Animation now honours RPG2003's
   Ally/Enemy target-type flag instead of always indexing the enemy troop —
   an "Ally #1" target used to play over the troop's own *second* monster in
@@ -22400,6 +22479,35 @@ not yet verified:
   well past the ignored duration, then resumes the instant the Decision key
   is pressed) — all three confirmed to fail against the pre-fix code before
   the fix.
+  ✅ **Follow-up (2026-09-06): the core "blocks rather than resolves
+  instantly" claim is now independently confirmed against genuine RPG_RT
+  under wine, twice, reproducibly — plus one new, unresolved finding: the
+  same fixture crashes genuine RPG_RT.exe right at the point Wait should
+  release, both times, with no diagnostic this sandbox can surface.** Now
+  that kk1.12 + the official RTP gives a genuine RPG2003 `RPG_RT.exe` (see
+  the killer-knights test-bed-swap entry elsewhere in this file), replaced
+  map 1's own autostart event (id 2, trigger 3) with three commands: Show
+  Message "MSG1", `Wait [0, 1]`, Show Message "MSG2". Dismissing MSG1 (one
+  Decision press, since every Show Message blocks for one regardless)
+  reached the Wait command; the map then sat plainly blank — no MSG2, no
+  crash — for 4+ full seconds with no further input, ruling out "resolves
+  in a frame or two" as a coincidence. **This half is settled: genuine
+  RPG_RT really does block, not resolve a `Wait [0, 1]` as a duration-0
+  timed wait.** A further Decision press, meant to release the wait and
+  show MSG2, instead reproducibly ended the `RPG_RT.EXE` process — same
+  script, same two-command tail, twice in two independent wine launches —
+  with nothing in `WINEDEBUG=warn+all`'s own log at the point of exit (the
+  same "silent exit, no crash trace" shape this session's own Nepheshel
+  repeat-encounter finding already described elsewhere in this file, not
+  yet root-caused there either). Not chased further this cycle — could be
+  this fixture's own construction (two bare Show Message commands with
+  nothing else on an autostart page is untested shape) rather than
+  anything about the Wait command itself, but that is not established
+  either way. **Left open for a future cycle:** whether `do_wait`'s
+  `:wait_key_enter` release path (the "falls straight through to the next
+  queued command" continuation this citation's fix added) is what
+  genuine RPG_RT does after the key press, or whether this crash is
+  telling us something real about that path.
 - ✅ **Three RPG2003-only battle-page commands — Force Flee (1006), Enable
   Combo (1007), and Call Common Event (1005) — are now correctly gated to
   that edition; on RPG2000 they used to run exactly as authored, which the

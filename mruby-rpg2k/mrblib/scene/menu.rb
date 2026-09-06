@@ -67,8 +67,7 @@ class RPG2k
       # enum (Item=1, Skill=2, Equipment=3, Save=4, Status=5, Row=6, Order=7,
       # Wait=8; Quit=9 is never itself in the list -- that implementation
       # appends it unconditionally after the loop, which #build_commands
-      # mirrors below), NOT independently confirmed against genuine RPG_RT
-      # under wine. Row (id 6, the
+      # mirrors below). Row (id 6, the
       # battle front/back toggle) is modelled the same actor-selection-panel
       # way Skill/Equipment/Status are (see the class comment) -- picking an
       # actor there flips `Game::Actor#battle_row` via `Game::Party
@@ -80,8 +79,7 @@ class RPG2k
       # Wait-off (active) mode follow-up ADR 0054 named -- and its label
       # shows the *current* mode via the `wait_on` / `wait_off` terms, ported
       # from a reference implementation's own Wait row (a mode-check
-      # expression selecting wait_on : wait_off, NOT independently confirmed
-      # against genuine RPG_RT under wine), and #select_command's :wait
+      # expression selecting wait_on : wait_off), and #select_command's :wait
       # branch relabels it after
       # flipping. Order (party reordering, id 7) is also modelled -- unlike
       # Row it has no battle-system dependency at all, just Game::Party#
@@ -91,7 +89,16 @@ class RPG2k
       # host harness, where `db.system` itself collides with Kernel#system)
       # can both omit a command (hiding it, e.g. a game with no Save on
       # principle) and reorder the survivors, both of which #build_commands
-      # honours.
+      # honours. **Confirmed against a genuine RPG2003 RPG_RT.exe under wine
+      # (2026-09-06, kk1.12 + the official RTP -- see rtp_2003_install.bash):**
+      # kk1.12's own `menu_commands` is `[1, 2, 5, 3, 6, 8, 4]`, and its real
+      # field menu read, top to bottom, exactly Item/Skill/Status/Equip/Row/
+      # Wait/Save (End Game appended below), matching this table id-for-id.
+      # Status itself opened cleanly from that row with no error -- the
+      # Scene::StatusMenu reachability question a much earlier cycle (#122)
+      # closed as "structurally unreachable with any fixture this session
+      # has" (no genuine RPG2003 `RPG_RT.exe` existed yet) is resolved: it is
+      # reachable, and works.
       RPG2K3_COMMAND_IDS = {
         1 => [:item, :battle_item],
         2 => [:skill, :battle_skill],
@@ -292,10 +299,17 @@ class RPG2k
       #
       # The Wait command's label is live: it shows the *current* active-time
       # mode (`wait_on` when wait, `wait_off` when active), the same reading
-      # a reference implementation's own menu uses (not independently
-      # confirmed against genuine RPG_RT under wine), so the row the player
+      # a reference implementation's own menu uses, so the row the player
       # just picked reads
-      # "Wait On" while they are about to turn wait mode *off*.
+      # "Wait On" while they are about to turn wait mode *off*. Confirmed
+      # against a genuine RPG2003 RPG_RT.exe under wine (2026-09-06, kk1.12 +
+      # the official RTP): a fresh save (`atb_mode` unset, so 0/active) and a
+      # second save with `atb_mode` forced to 1 rendered the Wait row as
+      # kk1.12's own `wait_off`/`wait_on` term text respectively -- the two
+      # terms differ only in a trailing "/Active" vs. "/Wait", which is this
+      # project's own term content, not something RPG_RT synthesizes, but the
+      # *selection* (which whole term string shows for which raw atb_mode
+      # value) matches this method exactly in both directions.
       def build_commands
         keys = if db.rpg2003?
                  ids = db.system.menu_commands || []
@@ -316,9 +330,9 @@ class RPG2k
       # The Wait command row's label: `wait_on` while the fight is set to
       # pause on its command menu (wait mode, raw `atb_mode` 1), `wait_off`
       # once it is active (raw 0, the default) -- ported from a reference
-      # implementation's own Wait row, NOT independently confirmed against
-      # genuine RPG_RT under wine: a mode-check expression selecting
-      # wait_on : wait_off.
+      # implementation's own Wait row: a mode-check expression selecting
+      # wait_on : wait_off. Confirmed against genuine RPG_RT.exe under wine
+      # (2026-09-06, kk1.12 + the official RTP) -- see #build_commands.
       def wait_label
         @state.atb_mode == 1 ? term(:wait_on) : term(:wait_off)
       end

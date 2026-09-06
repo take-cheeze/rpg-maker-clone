@@ -3,17 +3,25 @@
 #
 # Regression guard for the RPG2003 battle-command data model — the one 2003
 # battle piece that is already implemented (ADR 0048) and the foundation the
-# RPG2003 battle scene mechanics (ADR 0053) build on. It loads the only 2003
-# test bed (mtf-meido-action) and proves the database-wide Battle Commands
-# table (chunk 0x1D) and its records decode: the table is present, its `commands`
-# list (field 10) carries named + typed records, and the top-level
-# presentation fields (placement 2, battle_type 7, and the newly-added 9 / 24)
-# read back. Failures here mean a schema or parser change broke the 2003 battle
-# command path before any battle scene work can use it.
+# RPG2003 battle scene mechanics (ADR 0053) build on. It loads a genuine 2003
+# test bed (kk1.12, "Killer Knights") and proves the database-wide Battle
+# Commands table (chunk 0x1D) and its records decode: the table is present,
+# its `commands` list (field 10) carries named + typed records, and the
+# top-level presentation fields (placement 2, battle_type 7, and the
+# newly-added 9 / 24) read back. Failures here mean a schema or parser change
+# broke the 2003 battle command path before any battle scene work can use it.
 #
-# Usage: ruby scripts/rpg2k3_battle_command_check.rb [MTF_DB_DIR]
+# kk1.12 replaced mtf-meido-action as this script's test bed (both are
+# genuine RPG2003 databases -- mtf-meido-action's own edition was previously
+# undocumented here and is, in fact, RPG2003 too) because kk1.12 ships a real
+# RPG_RT.EXE and is also used for genuine-RPG_RT wine verification elsewhere
+# in this repo, while mtf-meido-action ships no executable at all and is
+# usable only for this kind of static database check.
+#
+# Usage: ruby scripts/rpg2k3_battle_command_check.rb [DB_DIR]
 # With no argument it scans ./data for a directory whose RPG_RT.ldb reports
-# maker 2003 (mtf-meido-action). Exits non-zero on any assertion failure.
+# maker 2003, preferring one named kk1.12 if present. Exits non-zero on any
+# assertion failure.
 
 require 'stringio'
 
@@ -39,18 +47,21 @@ def fail(msg)
 end
 
 dir = ARGV.first
-dir ||= Dir.glob(File.join(File.expand_path('../data', __dir__), '**', 'RPG_RT.ldb'))
-         .map { |f| File.dirname(f) }
-         .find do |d|
-           begin
-             db = LCF::Database.new(File.open(File.join(d, 'RPG_RT.ldb'), 'rb'))
-             db.maker == 2003
-           rescue
-             false
-           end
-         end
+dir ||= begin
+  candidates = Dir.glob(File.join(File.expand_path('../data', __dir__), '**', 'RPG_RT.ldb'))
+                .map { |f| File.dirname(f) }
+                .select do |d|
+                  begin
+                    db = LCF::Database.new(File.open(File.join(d, 'RPG_RT.ldb'), 'rb'))
+                    db.maker == 2003
+                  rescue
+                    false
+                  end
+                end
+  candidates.find { |d| File.basename(d) == 'kk1.12' } || candidates.first
+end
 
-abort 'no RPG2003 test bed found (expected mtf-meido-action)' unless dir
+abort 'no RPG2003 test bed found (expected kk1.12; run scripts/download-killer-knights.bash)' unless dir
 puts "== #{dir}"
 
 db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
