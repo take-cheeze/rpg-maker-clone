@@ -22443,6 +22443,35 @@ not yet verified:
   well past the ignored duration, then resumes the instant the Decision key
   is pressed) — all three confirmed to fail against the pre-fix code before
   the fix.
+  ✅ **Follow-up (2026-09-06): the core "blocks rather than resolves
+  instantly" claim is now independently confirmed against genuine RPG_RT
+  under wine, twice, reproducibly — plus one new, unresolved finding: the
+  same fixture crashes genuine RPG_RT.exe right at the point Wait should
+  release, both times, with no diagnostic this sandbox can surface.** Now
+  that kk1.12 + the official RTP gives a genuine RPG2003 `RPG_RT.exe` (see
+  the killer-knights test-bed-swap entry elsewhere in this file), replaced
+  map 1's own autostart event (id 2, trigger 3) with three commands: Show
+  Message "MSG1", `Wait [0, 1]`, Show Message "MSG2". Dismissing MSG1 (one
+  Decision press, since every Show Message blocks for one regardless)
+  reached the Wait command; the map then sat plainly blank — no MSG2, no
+  crash — for 4+ full seconds with no further input, ruling out "resolves
+  in a frame or two" as a coincidence. **This half is settled: genuine
+  RPG_RT really does block, not resolve a `Wait [0, 1]` as a duration-0
+  timed wait.** A further Decision press, meant to release the wait and
+  show MSG2, instead reproducibly ended the `RPG_RT.EXE` process — same
+  script, same two-command tail, twice in two independent wine launches —
+  with nothing in `WINEDEBUG=warn+all`'s own log at the point of exit (the
+  same "silent exit, no crash trace" shape this session's own Nepheshel
+  repeat-encounter finding already described elsewhere in this file, not
+  yet root-caused there either). Not chased further this cycle — could be
+  this fixture's own construction (two bare Show Message commands with
+  nothing else on an autostart page is untested shape) rather than
+  anything about the Wait command itself, but that is not established
+  either way. **Left open for a future cycle:** whether `do_wait`'s
+  `:wait_key_enter` release path (the "falls straight through to the next
+  queued command" continuation this citation's fix added) is what
+  genuine RPG_RT does after the key press, or whether this crash is
+  telling us something real about that path.
 - ✅ **Three RPG2003-only battle-page commands — Force Flee (1006), Enable
   Combo (1007), and Call Common Event (1005) — are now correctly gated to
   that edition; on RPG2000 they used to run exactly as authored, which the
