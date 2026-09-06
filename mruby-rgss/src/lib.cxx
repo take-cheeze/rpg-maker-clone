@@ -2858,6 +2858,25 @@ void measure_text(std::string_view s, int& width, unsigned& height) {
   }
 }
 
+// Top row of the shinonome glyph cell for a text run laid out in a rect of
+// height `h`: RGSS centres a line of text in the rect it is given, which the
+// TrueType path above already does with the face's own ascent/descent. The
+// shinonome cells are a fixed `shinonome::HEIGHT` (12) tall, so the bitmap
+// path centres that cell the same way instead of pinning it to the rect's
+// top -- a 16px line, RPG2000's own, puts the glyph cell 2px below the line's
+// top.
+//
+// Measured on genuine RPG_RT.exe under wine (Nepheshel, 640x480 captures
+// halved to the 320x240 logical screen, cycle #248): in the field menu the
+// command row `装備` inks screen rows 43..52 and the party panel's `デモ用`
+// 12..21, both symmetric inside the 12px cell this puts at 42..53 and 10..21;
+// the same strings in the load screen (`デモ用` at 68..77) and the battle
+// status panel (171..181) sit on the same relation only once the cell is
+// centred -- top-aligning it drew them 2px high (our 65..76 and 168..180).
+mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
+  return y + (h - static_cast<mrb_int>(shinonome::HEIGHT)) / 2;
+}
+
 // RGSS Bitmap#draw_text, in both the forms RGSS documents:
 //
 //   draw_text(x, y, width, height, str[, align])
@@ -2921,6 +2940,7 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
     x += (w - tw) / 2;
   else if (align == 2)
     x += w - tw;
+  y = shinonome_text_top(y, h);
 
   const unsigned col_len = lv_color_format_get_size(bmp.format);
   auto draw = [&x, y, &bmp, &col, col_len](const auto& c) {
@@ -2995,6 +3015,7 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
     x += (w - tw) / 2;
   else if (align == 2)
     x += w - tw;
+  y = shinonome_text_top(y, h);
 
   const int scol = static_cast<int>(sx + sw / 2);
   auto draw = [&x, y, &bmp, &src_bmp, scol, sy, sh](const auto& c) {

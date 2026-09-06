@@ -101,9 +101,11 @@ class RPG2k
 
       # Scroll arrows (see #build_arrow_sprites): the same windowskin cells
       # Window's own pause arrow and Scene::SaveLoad's slot list use, blinking
-      # (seen on/off across captures ~1s apart; the 20-on/20-off period is the
-      # pause arrow's own wine-verified figure, reused rather than re-timed
-      # here). Measured on the cycle-#241 scroll captures: the down arrow's
+      # 20 frames on / 20 off -- a period no longer merely inherited from the
+      # pause arrow, but timed on a list of this exact shape under wine in
+      # cycle #249 (0.6667s mean on-to-on over 17 cycles at 60fps; see
+      # Scene::Base's own LIST_ARROW_* comment). Measured on the cycle-#241
+      # scroll captures, and re-confirmed in #249: the down arrow's
       # triangle spans logical (155..164, 233..238) -- centred, at the
       # screen's bottom edge, exactly where a `SCREEN_H - ARROW_H` blit of
       # the 16x8 cell (whose triangle fills rows 1..6) lands it; the up
@@ -845,7 +847,13 @@ class RPG2k
       # and moving UP off the top visible row scrolls it back one row the
       # same way (top row 3 -> 2 -> 1 across two UPs, cursor pinned at y 72).
       # The blinking down/up arrows show while rows are hidden below/above
-      # (see #refresh_arrows).
+      # (see #refresh_arrows). Re-confirmed in cycle #249 on a 26-skill
+      # leader: the offset is **sticky**, i.e. `@top_row` is moved by the
+      # smallest amount that keeps the cursor's row visible and is otherwise
+      # left alone -- ten Downs scrolled the box to top row 1 and an Up from
+      # there kept it at 1 (the cursor stepped up inside the box, landing on
+      # its ninth visible row), where deriving the offset from the cursor row
+      # would have snapped it back to 0.
       def refresh_skill_cursor
         return unless @skill_window
         row = @skill_index / COLUMN_MAX
@@ -874,38 +882,16 @@ class RPG2k
       # measurement; the same shape Scene::SaveLoad#build_arrow_sprites
       # already draws for its slot list.
       def build_arrow_sprites
-        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y)
-        @up_arrow.y = UP_ARROW_Y
-        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y)
-        @down_arrow.y = DOWN_ARROW_Y
+        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y, UP_ARROW_Y)
+        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y, DOWN_ARROW_Y)
         refresh_arrows
       end
 
-      def build_arrow_sprite(src_y)
-        sprite = Sprite.new
-        sprite.z = 450
-        sprite.x = (SCREEN_W - ARROW_W) / 2
-        bmp = Bitmap.new(ARROW_W, ARROW_H)
-        if @skin
-          bmp.blt 0, 0, @skin, Rect.new(ARROW_SRC_X, src_y, ARROW_W, ARROW_H)
-        else
-          draw_arrow_fallback(bmp, src_y == UP_ARROW_SRC_Y)
-        end
-        sprite.bitmap = bmp
-        sprite.visible = false
-        sprite
-      end
-
-      # No windowskin to take the arrow art from -- a small solid triangle,
-      # mirroring Scene::SaveLoad#draw_arrow_fallback's own.
-      def draw_arrow_fallback(bmp, pointing_up)
-        color = Color.new(232, 232, 248, 255)
-        ARROW_H.times do |row|
-          r = pointing_up ? ARROW_H - 1 - row : row
-          w = ARROW_W - r * 2
-          next if w <= 0
-          bmp.fill_rect r, row, w, 1, color
-        end
+      # Scene::Base's shared list-arrow sprite (the same cells and fallback
+      # triangle every other scrolling list here draws), at this screen's own
+      # measured column and row.
+      def build_arrow_sprite(src_y, y)
+        build_list_arrow_sprite(@skin, src_y, (SCREEN_W - ARROW_W) / 2, y)
       end
 
       # Advance the blink phase every frame and refresh visibility from it

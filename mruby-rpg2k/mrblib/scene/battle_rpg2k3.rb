@@ -68,6 +68,11 @@ module RPG2k3
           update_enemy_flashes
           update_enemy_positions
           update_enemy_shakes
+          # The Skill / Item list's scroll arrows blink on their own clock, the
+          # same as in the turn-based machine this branch replaces (see
+          # Scene::Battle#update) -- without this tick they would freeze on
+          # whichever half of the blink the last redraw left them in.
+          tick_battle_list_arrows
           case @ui[:phase]
           when :encounter_message then drive_battle_encounter_message
           # The active-time idle loop -- the phase the gauge battle lives in

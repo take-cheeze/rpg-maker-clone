@@ -11838,6 +11838,83 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+  ✅ **Follow-up (cycle #254, 2026-09-06): a blank database item name draws
+  blank, not an invented placeholder.** Found while re-verifying cycle #249's
+  scroll arrows on the rebuilt binary: a 30-item bag driven side by side showed
+  the two runtimes agreeing on order, grid, counts, cursor and the down arrow,
+  and disagreeing on exactly one thing -- Nepheshel's own unnamed item slots
+  (ids 37/38/40/41, real database rows whose `name` is the empty string) drew
+  with an empty name column on genuine RPG_RT.exe while this engine printed
+  `Item 37`. Fixed in `Scene::ItemMenu`, `Scene::EquipMenu#item_name` and
+  `Scene::StatusMenu` (the battle item list already did the right thing).
+  The `Item <id>` placeholder is kept for an id with **no** database row at
+  all, which is a broken-data diagnostic RPG_RT was never measured on -- the
+  list builders already exclude such ids anyway. **Scope note, stated plainly**:
+  the divergence was only reachable with a synthetic bag, since no real
+  playthrough hands the player an unnamed item, so the practical impact on a
+  shipped game is nil; it is fixed because the measurement is unambiguous and
+  the placeholder had no basis, not because it was hurting anyone. No EasyRPG
+  source was consulted.
+  ✅ **Follow-up (cycle #253, 2026-09-06): an item's per-actor "usable
+  characters" restriction was inverted by Ruby truthiness, and is fixed.**
+  Routed over from cycle #250's Equip-screen capture, which noticed genuine
+  RPG_RT.exe never offers Nepheshel's item 26 (ダガー) to actor 15 while this
+  engine did. Root cause found in the data, not by inference:
+  `Game::Party#item_usable_by?` ended in `set[idx] ? true : false`, and the
+  database stores `actor_set` as **int8 flags** where `0` means "not
+  permitted" -- but `0` is truthy in Ruby *and* in mruby, so every restricted
+  entry read as permitted, exactly inverting the field. Confirmed by loading
+  the shipped table: item 26 carries `actor_set[14] == 0` for actor 15.
+  `#item_usable_by_class?` (the RPG2003 by-class path) carried the identical
+  bug and is fixed the same way. **A fixture check could never have caught
+  this** -- the harnesses' own fixtures write these arrays as `true`/`false`,
+  where truthiness happens to be right; only the shipped int8s expose it, so
+  the new assertion lives in `scripts/rpg2k_testbed_logic_check.rb` and runs
+  against the real tables (299 genuinely-refused entries in Nepheshel, 26 in
+  the RPG2003 test bed), confirmed to fail against the pre-fix code.
+  **A second finding kept the fix honest**: mtf-meido-action's item 5
+  (Stimulant, a shipped *revive* medicine) carries an `actor_set` of
+  **all zeros**, and a literal reading would make it unusable by anybody --
+  which an existing, long-standing real-data check (it heals a fallen member)
+  immediately contradicted. So an all-zero array is the editor's *untouched*
+  state rather than a ban on every actor, and a set is consulted only when
+  something in it is actually set (`Game::Party.permission_set_active?`).
+  **Deliberately left open**: an alternative reading fits both observations
+  equally well -- that the per-actor list binds equipment only and medicines
+  ignore it entirely -- and is not ruled out, because no capture was taken of
+  a *medicine* carrying a mixed actor_set, the one case that separates them.
+  The narrower rule implemented here cannot wrongly refuse a shipped item
+  under either reading. No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #252, 2026-09-06): the bag's own *order* settled by
+  wine, and three fixture checks that had encoded the wrong reading
+  corrected.** `#field_items`, `#battle_items` and `Game::State#to_lsd` all
+  sorted the party's bag by item id (`@items.keys.sort`), which nothing had
+  ever measured. Driven against genuine RPG_RT.exe under wine on Nepheshel:
+  a `Save01.lsd` whose chunk 109 was rewritten through the LCF writer to hold
+  `item_ids` **deliberately out of id order** -- [60, 12, 45, 1] with counts
+  [5, 3, 9, 7], so each row's count identifies its id unambiguously -- opened
+  RPG_RT's own field Item screen listing クレセントムーン:5, ユニコーンの角:3,
+  バスタードソード:9, 薬草:7, i.e. exactly the stored order 60/12/45/1, not the
+  1/12/45/60 an id sort produces. (The equipment row バスタードソード is listed
+  too, greyed, which the "list every held id" fix above had already settled.)
+  So the display never re-sorts; `@items` is built in the save's own order by
+  `.from_lsd`, and preserving that hash's insertion order preserves RPG_RT's.
+  Fixed at all three sites. **The `to_lsd` half is the one with teeth**: it
+  sorted on the way *out*, so this engine's own Save -> Continue silently
+  reordered the player's bag even when nothing else touched it; a save whose
+  bag was already in id order still round-trips byte-for-byte
+  (`scripts/lcf_save_roundtrip.rb` reconfirmed). Three existing
+  `scripts/rpg2k_logic_check.rb` checks asserted the sorted list -- written to
+  match the code rather than any measurement, the exact failure mode this
+  file's own methodology warns about -- and are corrected to the gained order
+  with the citation; a new check pins the writer, confirmed to fail against
+  the pre-fix code (`expected [9, 5, 7], got [5, 7, 9]`). **Deliberately left
+  open**: where RPG_RT *inserts* a newly gained id (append, or into some
+  internal order) -- the capture proves only that the screen does not re-sort
+  what the save holds, not what `gain_item` should do with a new id; and
+  `Game::Party#equip_candidates` still sorts, left alone because the Equip
+  screen was being measured in parallel this same round (cycle #250). No
+  EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
   against genuine RPG_RT.exe rather than trusting the reference-implementation-only
   citation above.** Edited a genuine Nepheshel save's inventory chunk to hold a
@@ -12082,7 +12159,91 @@ The work below is roughly ordered by the critical path to a walkable game
   lists a held **weapon** in the battle Item list (greyed) where
   `#battle_items` still drops equipment entirely; (e) our glyphs sit ~3px
   taller than RPG_RT's in every battle row (a font-metric difference shared
-  with every other screen, bottom edges aligned), not touched here.
+  with every other screen, bottom edges aligned), not touched here (✅ fixed
+  in cycle #248: `Bitmap#draw_text` centres the 12px glyph cell in the rect
+  height now -- see the Save/Load screen's cycle-#248 follow-up).
+  No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #249, 2026-09-06): the in-battle Skill/Item lists now
+  draw the blinking scroll arrows and keep RPG_RT's sticky scroll offset —
+  open items (a) and (b) above, both closed by measurement.** Recipe: a
+  private wine prefix (`cp -r ~/.wine-nepheshel32`) and a private copy of
+  `data/Nepheshel206beta/Nepheshel206Rbeta`, whose **map 2** turns out to
+  carry Nepheshel's own two-slime debug encounter as an autostart — so
+  `scripts/gen-rpg2k-save.rb <copy> --map 2 --at 6,4 --facing down
+  --clear-scene` on `Save01_clean.lsd` drops genuine RPG_RT straight into
+  that fight (`--clear-scene` matters: the untouched save resumes inside the
+  game's *timed* opening demo, and letting that run replaces the デモ用
+  party with the LV1 story hero and wipes the bag). The leader (database
+  actor **15**) was hand-given 26 skills and 600 MP through chunk 108's
+  actor-15 record (fields 51/52/72) and the party a 27-item bag through
+  chunk 109 (fields 11/12/13/14) — 13 grid rows and 14 grid rows in
+  `BATTLE_VISIBLE_ROWS = 4`, so both lists overflow by a lot. Captures at
+  640x480, halved to the 320x240 logical screen; arrow glyphs located by
+  dumping the logical pixel grid of the 24x12 rect around each candidate
+  cell, blink timed by bursting raw `xwd` root grabs (~55 frames/second,
+  each timestamped) and thresholding the mean brightness of the arrow's own
+  20x8 (2x) rect.
+  **Measured.** (1) *Geometry*: the up arrow's glyph sits at logical
+  x 155..164, y 160..165 and the down arrow's at x 155..164, y 233..238 —
+  the 16x8 windowskin cells blitted at (152, `BATTLE_PANEL_Y` = 160) and
+  (152, `SCREEN_H - 8` = 232). Both are drawn **on the list window's own
+  frame border**, not on the backdrop: the grid dump shows the arrow pixels
+  overwriting the window's white top/bottom border rows, which is why they
+  have to be sprites (the contents bitmap starts 8px inside that frame).
+  (2) *Visibility*: at the top of the list the up arrow never appeared in
+  any frame and the down arrow blinked; scrolled to the last row the down
+  arrow's rect held its "absent" value in all 181 frames of a 3s burst while
+  the up arrow blinked; mid-list both showed. (3) *Blink*: 18 rising edges
+  spanning 0.4867s..11.8211s in a 12s burst = a **0.6667s** mean on-to-on
+  period, exactly the 40-frame (20 on + 20 off) `ARROW_BLINK_FRAMES` cycle
+  at RPG_RT's 60fps, with ~0.323s on runs and ~0.332s off runs — and the up
+  and down arrow's rising edges landed on the *same* sample indices, so the
+  two share one phase. So the list arrows really do share the pause arrow's
+  own measured period; that was previously an assumption on three screens.
+  (4) *Sticky scroll*: four Downs from the top scrolled the box to top row 1
+  and an Up from there left the top row at 1, the cursor stepping up inside
+  the box — on the Skill list and the Item list alike, and again on the way
+  back up from the bottom (top row 9 held with the cursor walked back to row
+  10, where a cursor-derived offset would have shown row 7 first). The
+  offset also **survives Decision into enemy-target selection**: a list
+  scrolled to top row 6 still showed rows 6..9 the frame after the target
+  cursor opened. A list Cancelled shut and reopened comes back at index 0
+  with top row 0.
+  **Fixed.** `Scene::Base` grew the shared list-arrow pieces every scrolling
+  list here now uses (`LIST_ARROW_*`, `#build_list_arrow_sprite`,
+  `#draw_list_arrow_fallback`, `#advance_list_arrow_anim`,
+  `#list_arrow_blink_on?`) plus `#sticky_list_top`, the measured
+  smallest-move rule; `Scene::ItemMenu`/`Scene::SkillMenu` build their
+  (already correct) arrows through it instead of carrying private copies.
+  `Scene::Battle#battle_list_window` takes a `scroll_key:` naming the `@ui`
+  slot the list keeps its sticky top row in (`:skill_top` / `:item_top`) and
+  builds/refreshes the two arrow sprites through
+  `#refresh_battle_list_arrows`; `Scene::Battle#update` (and the RPG2003
+  gauge loop's copy of it, `RPG2k3::Scene::Battle#update`) gained the one
+  per-frame hook the blink needed, `#tick_battle_list_arrows`, which keeps
+  its phase on the fight (`@ui[:list_arrow_anim]`) so redrawing the list on
+  every cursor step cannot restart it. `#close_battle_skill`/
+  `#close_battle_item` dispose the sprites; the sticky top row is
+  deliberately *not* cleared there, because Decision closes the list and
+  `#draw_battle_target` redraws it the same frame and RPG_RT keeps the
+  scrolled-to rows across exactly that step (measurement 4 above). Pinned by
+  four new `scripts/rpg2k_scene_check.rb` checks (arrow geometry and
+  top-of-list visibility, sticky offset read both off `@ui[:skill_top]` and
+  off the drawn `cursor_rect`, bottom-of-list down-arrow hiding on the Item
+  list, and the 20-on/20-off shared-phase blink), each confirmed to fail
+  against the pre-fix code.
+  **Deliberately left open.** (i) Whether a list reopened *within the same
+  fight* onto a remembered `last_skill_id` whose row falls inside the stale
+  window keeps that window or starts fresh — the probe battle only ever
+  reopened at index 0, where both rules agree, and forcing the other case
+  needs a fight that survives a full cast-and-resolve round with a scrolled
+  list; the implementation keeps the stale offset (clamped and
+  smallest-moved), which agrees with a fresh window in every state reachable
+  by Down alone. (ii) The per-actor case of the same question (one `@ui`
+  slot per list, not per actor) — untestable on this save's single-actor
+  party, the same blocker item (c) above records. (iii) Nothing here was
+  re-checked natively: the pre-built binary is the pre-fix engine, so the
+  fix is verified by the CRuby scene checks only.
   No EasyRPG source was consulted.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
@@ -14229,6 +14390,109 @@ The work below is roughly ordered by the critical path to a walkable game
   against the pre-fix code (a stashed diff of just `equip_menu.rb`) before
   the fix -- wrong candidates-list contents, wrong candidate count, and an
   undefined `COLUMN_MAX` constant respectively.
+  ✅ **Follow-up (cycle #250, 2026-09-06): the Equip screen's first full
+  wine-measured layout pass -- every window rect, every text column and
+  every palette swatch on it was wrong, because the screen's whole shape
+  was wrong: genuine RPG_RT tiles it with FOUR windows, all live at once,
+  and this codebase drew three stacked full-width boxes with the candidate
+  grid *replacing* the slot list. Fixed.** Recipe: `$SCRATCH/drive.sh
+  start_ref` on a private wine prefix, Nepheshel's shipped save moved to
+  town map 12 (`scripts/gen-rpg2k-save.rb --map 12 --clear-scene`; map 371,
+  where the save sits, runs the opening-demo autorun and never gives you
+  the menu), `Escape` -> `Down Down` -> `Return` -> `Return`; 640x480
+  captures halved to the native 320x240, window edges read off the skin's
+  white/purple/black frame runs and text columns off glyph-pixel runs
+  (`convert ... rgb:- | python3`). Three saves drove it, all made by
+  editing actor 15's own chunk-108 record (field 61 equipment, 31 level)
+  and the bag (chunk 109 fields 11/12/13), never chunk 109's party list,
+  each verified with `scripts/lcf_save_check.rb`: (a) the shipped level-50
+  leader in full gear with a seven-item bag, (b) a level-1 copy wearing
+  only a dagger -- two-digit figures and four empty slots -- and (c) a
+  fourteen-weapon bag. **Measured:** description banner (0,0,320,32); stat
+  panel (0,32,124,96); slot list (124,32,196,96) -- *beside* the stat
+  panel, not below it; candidate grid (0,128,320,112). They tile the screen
+  exactly, so z order is unobservable and nothing overlaps. The grid is
+  filled the moment the screen opens and is re-filled in place as the slot
+  cursor moves (one DOWN from 武器 onto 盾 swapped the weapons for the
+  bag's only shield with no Decision pressed); it simply has no cursor
+  until Decision, and then BOTH cursors show at once. Stat panel: the
+  actor's name alone on row 0, then 攻撃力/防御力/精神力/敏捷性 one 16px row
+  each, term at content x 0, the current figure RIGHT-aligned to content x
+  78 ("370" ran 60..77, "42" ran 66..77), a full-width `→` at 78..90 --
+  drawn in *both* modes, with nothing after it while the slot list has
+  focus -- and the previewed figure right-aligned to the content edge 108
+  ("204" ran 90..107, "69" ran 96..107). Swatches sampled against
+  Nepheshel's own System palette: terms, slot labels and the arrow are
+  swatch 1 (132,170,255..49,89,173); the name, current figures, worn-item
+  names, candidate names and the banner are swatch 0; a previewed figure is
+  swatch 2 when higher (255,219,181), swatch 3 when lower (99,166,247) and
+  swatch 0 when unchanged -- the three indices this scene already used, now
+  measured rather than ported. Slot list: label at content x 0, worn item
+  at x 60, and an **empty slot draws nothing at all** (the level-1 save's
+  盾/鎧/守護石/装飾品 rows had blank name columns, not the `-` this scene
+  drew); its cursor is the full 180px content row. Candidate grid: it is
+  `Scene::ItemMenu`'s widget down to the pixel -- two 144px cells at content
+  x 0 and 160 (16px gutter, not the edge-to-edge 304/2 == 152 this scene
+  used), `:` at cell+120 and the count right-aligned in the 12px cell
+  ending at cell+144, cursor one 144px cell (native x 4..155 for cell 0),
+  six visible rows, and, newly settled, **it scrolls**: the fourteen-weapon
+  bag showed twelve cells with a down arrow at native x 155..164 y
+  233..236, one DOWN past the last visible row scrolled exactly one grid
+  row (both arrows then showing, the up one at x 155..164 y 129..133 =
+  the 16x8 cell at (152,128)), and the trailing blank Remove cell sat on
+  row 7 with only the up arrow left -- previously left explicitly open on
+  cycle #129's entry above. Cycle #129's "Remove is always appended after
+  the real candidates, drawn blank" was re-confirmed outright: an armour
+  slot with no armour in the bag drew a single blank, cursored, previewing
+  cell, and the fourteen-weapon grid held that same blank cell immediately
+  after the fourteenth name. **Bag order:** the grid lists the bag in the
+  save's own stored order, never sorted by id -- a save whose chunk-109
+  `item_ids` were written out of order ([30,27,29,28,26,66,177], distinct
+  counts so a row identifies its id) listed 30/27/29/28/66, and the
+  fourteen-weapon rerun listed all fourteen the same way; the `.sort` is
+  gone from `Game::Party#equip_candidates` (the one game.rb line cycle
+  #252's own entry left pointed at this cycle), matching what #252 measured
+  for the field/battle Item lists. **Two-handed preview** confirmed for
+  real: highlighting a 両手持ち sword on a leader wearing a 25-defence
+  weapon and a 70-defence shield previewed 防御力 407 -> 312 (both gone)
+  while the one-handed candidates on the same list previewed 407 -> 382,
+  and Remove previewed 407 -> 382 too -- exactly what `#stat_field_delta`
+  already computed. Confirming an equip returns focus to the slot list with
+  every window redrawn (the shield row went blank, the displaced items
+  appeared in the grid); Escape from the grid returns to the slot list;
+  Escape from the slot list leaves the screen. The solo-party RIGHT/LEFT
+  no-op (cycle #121) re-verified: RIGHT then LEFT left the frame
+  pixel-identical to the pre-RIGHT frame (0 differing pixels at
+  `-fuzz 5%`). Fixed in `mruby-rpg2k/mrblib/scene/equip_menu.rb`: the four
+  window rects, the always-live re-filled candidate grid and its hidden-
+  until-Decision cursor, the stat-row columns/arrow/swatches, the slot
+  columns and blank empty slot, the ItemMenu-identical count column and
+  144/160 cells, and row-at-a-time scrolling with the two blinking arrow
+  sprites. Seven new checks appended to `scripts/rpg2k_scene_check.rb`, all
+  confirmed to fail against the pre-fix code (wrong stat-panel rect, nil
+  `@cand_window`, no slot-label draws, no stats blends, undefined
+  `COLUMN_GAP`, nil `@up_arrow`, id-sorted candidates); suite green
+  afterwards at 1029 scene / 1200 logic / 41 render. **Left open, and it is
+  a real measured gap:** genuine RPG_RT never listed Nepheshel's item 26
+  (a dagger whose `actor_set` excludes actor 15) among that actor's weapon
+  candidates -- an actor-restricted item is dropped outright, not greyed
+  the way `Scene::ItemMenu` draws an unusable bag row -- but
+  `Game::Party#item_usable_by?` (`mruby-rpg2k/mrblib/game.rb`) reads that
+  flag as `set[idx] ? true : false`, and the database hands it an int8
+  array whose `0` is truthy in Ruby, so *no* actor_set restriction excludes
+  anything today; the one-line fix (`set[idx].to_i != 0`) was deliberately
+  NOT made here because game.rb belongs to another agent this round. Also
+  left open: RPG_RT inserted the two items displaced by an equip into the
+  bag *before* a larger-id neighbour rather than appending them (the grid
+  redrew as 30/27/29/28/61/66 after 61 came off), which suggests
+  `#gain_item` inserts in ascending position rather than appending -- a
+  `Game::Party` question for whoever owns the bag order, not this screen;
+  and Nepheshel ships no cursed equipment and no 装備固定 actor, so those
+  two Decision refusals stay uncited. Escape from the Equip screen returns
+  the field menu to its *command* list rather than its actor picker
+  (pressing Decision after backing out reopened the picker), which is
+  `Scene::Menu`'s business, not this file's. No EasyRPG source was
+  consulted.
   ✅ **Follow-up (cycle #143, 2026-08-25): picked up cycle #139's own
   leftover lead (b) on the short-synthetic-autostart-list crash mystery --
   "is Show Message (10110)/Show Choice specifically the missing ingredient,
@@ -15422,6 +15686,126 @@ The work below is roughly ordered by the critical path to a walkable game
   the Game Over screen, same as Decision", asserting both keys return to
   title from a fresh screen; confirmed to fail against the pre-fix code
   (`Cancel dismisses this screen too` raised).
+  ✅ **Follow-up (cycle #251, 2026-09-06): the Game Over screen measured end
+  to end against genuine RPG_RT.exe on the route a player actually takes to
+  it — a real party wipe — and found already correct in every respect that
+  could be captured; `order.rb` attempted the same way and found genuinely
+  blocked, with the reason nailed down rather than guessed around.**
+  *Recipe (Game Over)*: cycle #124 reached this screen by injecting an
+  autostart Game Over (12420) event; this time it was reached by losing.
+  `Save01_battle_map2.lsd` (which restores straight into map 2's two-slime
+  battle — that map's Enemy Encounter carries `params=[0,1,0,2,0,0]`, i.e.
+  troop 1 with **defeat mode 0 = game over**, confirmed by decoding
+  `Map0002.lmu`) had the leader's own chunk-108 record rewritten to level 1
+  (field 31), 1 HP (field 71) and **no equipment** (field 61 = five zeros)
+  through `mruby-lcf`'s own writer, verified with
+  `ruby scripts/lcf_save_check.rb`, and loaded by RPG_RT unchanged. Stripping
+  the equipment was the part that mattered: at level 1 but still wearing the
+  Lv50 demo gear the slimes could not scratch the leader (and the leader
+  one-shot them), so the fight ended in victory instead of a wipe. Eight
+  Decisions later: 戦いに敗れた・・・, then the Game Over screen.
+  *What the real screen does.* (1) **The picture is blitted at the screen
+  origin at its native size.** Nepheshel's own 320x240 `GameOver/gameover.png`
+  came back pixel-for-pixel identical to the file doubled to the 640x480
+  capture (`compare -metric RMSE` 1.1%, i.e. the reference X server's RGB565
+  quantisation and nothing else) — but a 320x240 picture cannot tell "drawn
+  1:1" from "stretched to fill", so a deliberately undersized 100x60 probe
+  picture was substituted for it: it landed in the top-left corner at exactly
+  1:1 (quadrant boundaries measured at logical x=50, y=30; the drawn region's
+  bounding box was capture px 2,2..197,117 = the probe's own 1px border
+  inset). RPG_RT neither scales nor centres it. (2) **Palette index 0 is drawn
+  opaque, not colour-keyed**: the only two pixels of Nepheshel's picture that
+  use its palette entry 0 (50,49,50) came back as (49,48,49), not as
+  transparent black. (3) **The database `gameover_music` starts as the screen
+  comes up, and no SE plays** — a `WINEDEBUG=+file` trace of the wipe opens
+  `Music/die.mid` (the System tab's game-over BGM) between the killing blow's
+  damage SE and the first `GameOver/gameover.*` probe, and opens no `Sound/`
+  file at all either then or when the screen is dismissed. (This game re-opens
+  an SE file on every single play — 決定1/打撃1/ダメージ1 each reappear in the
+  battle segment — so an SE here could not have been missed; the four SEs that
+  *are* opened after the dismissal are the title scene preloading its own
+  cursor/decision/cancel/buzzer set, followed by `Title/Nepheshel_logo.png`
+  and `Music/title.mid`.) (4) **It waits forever**: 15 s of idling compared
+  pixel-identical (`compare -metric AE` = 0), and so did Down, Up, Left, Right
+  and Shift, one at a time. (5) **Decision and Cancel both dismiss it**, to
+  the title with its cursor on New Game — re-confirming cycle #124's
+  correction of the ported "only Decision" claim, now on the battle-defeat
+  route as well as the injected-event one. Every one of these already matched
+  `Scene::GameOver`, so **nothing behavioural changed**; the file's doc
+  comments were rewritten to say what was confirmed instead of "NOT
+  independently confirmed against genuine RPG_RT under wine", and three new
+  `scripts/rpg2k_scene_check.rb` checks pin the measurements (picture name +
+  opaque decode + never repositioned/cropped; 900 idle frames do not dismiss
+  it; none of Down/Up/Left/Right/Shift does either). Like the battle result
+  panel's own check from cycle #247, these pin behaviour a wine session found
+  correct rather than a fix — they pass against the pre-commit code, and that
+  is the result being recorded. They were still shown to bite rather than to
+  be vacuous: flipping the picture load to the colour-keyed decode and adding
+  Down to the dismiss keys made exactly those two checks fail
+  (`expected false, got true (palette index 0 is opaque, not colour-keyed)`
+  and `button 4 does not dismiss this screen`), and both went green again once
+  the mutation was reverted.
+  *Deliberately left open (measured, not modelled).* Real RPG_RT **fades this
+  screen in and out**, and unusually slowly: tracking one known-white pixel of
+  the picture through a 100 fps `xwd` burst, its value climbs in ~8/255 steps
+  (the capture's own RGB565 quantum) every ~51.5 ms, and the game-over screen
+  fades back out at the same ~153 grey-levels/s — against ~424-460
+  levels/s for the battle's own fade-out and for the file-list→game fade-in
+  measured in the same session (that faster figure works out at ~0.58 s, which
+  is an independent confirmation of the 35-frame `Game::Transition.
+  default_frames(FADE_IN/FADE_OUT)` this engine already carries). So this
+  screen's own fade is ~1.6-1.7 s each way, about **three times** an ordinary
+  transition, which is ~96-105 frames — the sampling cannot separate those
+  candidates, and this engine models no scene-entry transition anywhere, so
+  no number was invented. Also unmodelled: with an undersized picture the area
+  around it took the picture's *palette entry 0* (magenta in the probe), which
+  is what RPG_RT's 8-bit palettised screen mode does with a cleared
+  framebuffer, not something an ARGB8888 engine should imitate.
+  *Found in passing, not this file's to fix.* Genuine RPG_RT probes
+  **`<name>.bmp` before `<name>.png`** — seen for `GameOver/gameover` and
+  `Title/Nepheshel_logo` alike in the `+file` trace — while this engine's
+  `RGSS::Bitmap::EXTENSIONS` (mruby-rgss/mrblib/lib.rb) is
+  `[png, jpg, jpeg, xyz, bmp]`. Only a game shipping both spellings of one
+  asset can tell the difference, and the list cannot simply be reversed (the
+  XP RTP's `.jpg` title screens are why the non-png entries exist), so it is
+  left to whoever owns the loader.
+  *`order.rb`: blocked, and here is exactly why.* The Order screen is an
+  RPG2003 field-menu command (`RPG2K3_COMMAND_IDS` id 7), so Nepheshel can
+  never show it. The 2003 material does have it: both `data/mtf-meido-action`
+  and Song-of-the-Sea Ch.1 carry `menu_commands` = `[1,2,3,4,5,6,7,8]`,
+  id 7 included (decoded from their own `RPG_RT.ldb` System chunk 22 field
+  27), and Song-of-the-Sea ships a genuine 32-bit `RPG_RT.exe` — mtf ships
+  only EasyRPG's `Player.exe`, which this series does not treat as ground
+  truth. Cloned it per `scripts/run-rpg2k-rpgrt-wine.bash`, built the
+  documented zh_CN.UTF-8 win32 prefix, and hit "RPG Maker 2003 RTP is not
+  found"; installed the official 2003 RTP with the installer
+  `scripts/rtp_2003_install.bash` fetches, which was not enough on its own
+  because **this RPG_RT build queries
+  `Software\KADOKAWA\RPG2003\RuntimePackagePath`** (found in the exe's own
+  strings) while the installer writes the older `Software\Enterbrain\RPG2003`
+  key — adding the KADOKAWA value cleared the check. With the RTP found the
+  binary boots and then presents nothing at all: the root window stays a
+  uniform grey (mean 0.742, standard deviation **0**) indefinitely and the
+  game's own window contents read pure black, under every combination tried
+  (Xvfb 640x480x16 and 1280x960x24; the fresh zh_CN prefix and the ja_JP one
+  that runs Nepheshel; Windows version win10 and winxp; wine's GDI
+  Direct3D/DirectDraw renderer; fullscreen and the F4-windowed mode, which
+  does produce a real window frame but a black client area; and
+  `FullPackageFlag=1` to skip the RTP check entirely). `WINEDEBUG=+loaddll`
+  shows `ddraw.dll`/`wined3d.dll` loading, so it gets as far as DirectDraw and
+  no further. The same genuine `RPG_RT.exe` driving mtf-meido-action's data
+  behaves identically, and as a control Nepheshel's RPG2000 `RPG_RT.exe`
+  rendered its title normally on a fresh display in the same container minutes
+  later — so this is that 2003 binary under this wine, not the harness. **No
+  frame of a real Order screen was ever captured, so nothing in `order.rb` was
+  changed or re-labelled**: its geometry, its pick-and-place model, its
+  duplicate-pick SE and its cursor repeat all still stand exactly as ported,
+  and the class comment now records this attempt so the next cycle does not
+  repeat it. What would unblock it: a genuine RPG2003 `RPG_RT.exe` that
+  renders under wine here (a different build/version, or a wine configuration
+  that makes this one present), after which the screen is reachable from any
+  save whose party has two members.
+  No EasyRPG source was consulted.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Checked
   against a reference implementation's actual source (ported from a
@@ -15961,6 +16345,58 @@ The work below is roughly ordered by the critical path to a walkable game
   `#update` directly and asserting the arrow sprite's `visible` flag through
   one full 40-frame cycle (on at frame 0, off at frame 20, on again at the
   frame-40 wrap).
+  ✅ **Follow-up (cycle #248, 2026-09-06): the "~3px high" glyphs this entry
+  (item 2), the battle-row entry and the encounter-banner entry each flagged
+  were one shared metric after all -- `Bitmap#draw_text` top-aligned the 12px
+  shinonome cell in the rect it was given, so only the screens that happened
+  to add the 2px pad by hand matched RPG_RT. Fixed once in the renderer;
+  every screen now lands on RPG_RT's own rows.** Recipe: private wine prefix
+  + own copy of Nepheshel; `Save01_clean.lsd` repositioned with
+  `scripts/gen-rpg2k-save.rb <game> --map 16 --at 14,11 --facing up
+  --clear-scene` for the field menu / title / load screen, and
+  `Save01_battle_map2.lsd` for the two-slime battle; `drive.sh start_ref` vs
+  `drive.sh start_ours` with a binary built from this worktree; 640x480 xwd
+  captures halved to the 320x240 logical screen and the ink rows of the same
+  string read out per row (background modelled as the windowskin gradient's
+  per-row median, so only glyph/shadow pixels count). Measured **before**
+  (ours / RPG_RT, screen rows): field-menu command row `装備` **42..53 /
+  43..52** and party-panel `デモ用` **11..22 / 12..21** -- already right,
+  because `Scene::Menu` added `+ 2` itself; load-screen header
+  `どのファイルをロードしますか？` **9..19 / 12..21**, load-screen `デモ用`
+  **65..76 / 68..77**, load-screen `LV50 HP600` **81..90 / 84..92**, battle
+  command row `オート` **184..194 / 188..197** and battle status row
+  **168..180 / 171..181** -- all 3 ink rows high, because `Scene::SaveLoad`,
+  `Scene::Battle` and the map message window did not add it. The 12px cell is
+  the whole story: our own cell is exactly 42..53 on the row where RPG_RT
+  inks 43..52 (its face insets one row top and bottom), and `装`/`備`/`用`
+  ink all 12 rows of the shinonome cell while kana ink rows 1..10 -- which is
+  what makes an ink-row comparison read as 3px on the unpadded screens and
+  1px on the padded ones. Fix: `shinonome_text_top` in
+  `mruby-rgss/src/lib.cxx` centres the fixed 12px cell in the rect height for
+  both the `#draw_text` and `#blend_text` bitmap paths (the TrueType paths
+  already centred the face's ascent/descent block, so the bitmap fallback was
+  the odd one out and an RGSS-semantics bug in its own right), and the
+  hand-written pads are gone from `Scene::Title` (`TEXT_PAD_Y`),
+  `Scene::Menu` (`STATUS_TEXT_Y`, the command rows' `+ 2`) and
+  `Scene::ItemMenu` (`y + 2`). **After** (same captures, rebuilt binary):
+  load-screen header **11..21**, load-screen `デモ用` **67..78**, battle
+  command `オート` **186..196**, battle status **170..182** -- each now in
+  exactly the relation to RPG_RT's rows that the already-correct field menu
+  had. Covered by two new pixel tests in `mruby-rgss/test/test.rb` (the only
+  place that can see this: the CRuby scene harness stubs `Bitmap` and records
+  call arguments) asserting the top ink row of "Hi" is `(h - 12) / 2 + 1` for
+  h = 12/14/16/32 through both `#draw_text` and `#blend_text`, plus one new
+  `scripts/rpg2k_scene_check.rb` check that every 16px text row across
+  Title/Menu/ItemMenu/SaveLoad draws at a plain multiple of 16 (confirmed to
+  fail against the pre-fix scenes); six existing checks that pinned the
+  hand-padded y values were re-pinned to the unpadded ones. Deliberately
+  left open: the h=14 rects (`SHOP_LINE_H`/`INN_LINE_H`, and
+  `Scene::Menu#show_message`) now centre to +1 instead of +0 -- consistent
+  with the rule but not itself captured, since no shop or inn was reached
+  this cycle; and the *horizontal* metric was confirmed unchanged and
+  already correct (ink columns 4..45 for the command rows and 3..152/150 for
+  the load header matched RPG_RT to within the 2px the two faces' own
+  side-bearings differ). No EasyRPG source was consulted.
   ✅ **This screen always opened with the cursor on slot 1, when real RPG_RT
   opens on whichever slot was saved most recently (2026-08-20).** Independently
   confirmed against a genuine RPG_RT.exe under wine (cycle #123, 2026-08-22,
@@ -16254,7 +16690,9 @@ The work below is roughly ordered by the critical path to a walkable game
   our glyph ink for a message line sits at y 168..180 where RPG_RT's sits at
   171..181 -- our own *map* message window is offset identically (168 vs
   171), so it is a `draw_text` font-ascent difference to fix once, globally,
-  not per window. **Confirmed unchanged/correct:** the status and command
+  not per window (✅ fixed in cycle #248 -- `Bitmap#draw_text` now centres the
+  12px glyph cell in the rect height instead of top-aligning it; see the
+  Save/Load screen's own cycle-#248 follow-up for the measurements). **Confirmed unchanged/correct:** the status and command
   windows are hidden behind the log in both engines (same rect), the log
   lines' wording matches (「デモ用の攻撃！」/「スライムに 500のダメージを与えた！」/
   「スライムを倒した！」, with 「命の一撃！！」 between attack and damage on a

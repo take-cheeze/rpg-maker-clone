@@ -93,8 +93,13 @@ class RPG2k
       # row 0, rows 12-13 hidden), never with the 8-item bag; the up arrow
       # only once the box had scrolled (`@item_top > 0`); and each was
       # missing from roughly half the captures taken in the same state, the
-      # blink. The blink *period* itself is the pause arrow's 20-on/20-off
-      # this codebase already measured elsewhere, not re-timed here.
+      # blink. Re-measured on this screen in cycle #249 (the same 27-item
+      # bag, burst-captured at ~45 samples/second): both cells sat exactly
+      # where this code puts them -- the up arrow's glyph at x 155..164,
+      # y 32..37 and the down arrow's at x 155..164, y 233..238 -- and the
+      # blink's own on-to-on period came out at 0.675s over 4 cycles, the
+      # 40-frame (20 on + 20 off) `ARROW_BLINK_FRAMES` cycle at 60fps, so
+      # the period is no longer merely inherited from the pause arrow.
       ARROW_W = Window::ARROW_W
       ARROW_H = Window::ARROW_H
       ARROW_SRC_X = Window::ARROW_SRC_X
@@ -177,38 +182,16 @@ class RPG2k
       # The two arrow sprites, pinned to the list box's top and bottom frame
       # edges and centred horizontally -- see the ARROW_* constants above.
       def build_arrow_sprites
-        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y)
-        @up_arrow.y = DESC_H
-        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y)
-        @down_arrow.y = SCREEN_H - ARROW_H
+        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y, DESC_H)
+        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y, SCREEN_H - ARROW_H)
         refresh_arrows
       end
 
-      def build_arrow_sprite(src_y)
-        sprite = Sprite.new
-        sprite.z = 450
-        sprite.x = (SCREEN_W - ARROW_W) / 2
-        bmp = Bitmap.new(ARROW_W, ARROW_H)
-        if @skin
-          bmp.blt 0, 0, @skin, Rect.new(ARROW_SRC_X, src_y, ARROW_W, ARROW_H)
-        else
-          draw_arrow_fallback(bmp, src_y == UP_ARROW_SRC_Y)
-        end
-        sprite.bitmap = bmp
-        sprite.visible = false
-        sprite
-      end
-
-      # No windowskin to take the arrow art from -- a small solid triangle
-      # in either direction, the same stand-in Scene::SaveLoad draws.
-      def draw_arrow_fallback(bmp, pointing_up)
-        color = Color.new(232, 232, 248, 255)
-        ARROW_H.times do |row|
-          r = pointing_up ? ARROW_H - 1 - row : row
-          w = ARROW_W - r * 2
-          next if w <= 0
-          bmp.fill_rect r, row, w, 1, color
-        end
+      # Scene::Base's shared list-arrow sprite (the same cells and fallback
+      # triangle every other scrolling list here draws), at this screen's own
+      # measured column and row.
+      def build_arrow_sprite(src_y, y)
+        build_list_arrow_sprite(@skin, src_y, (SCREEN_W - ARROW_W) / 2, y)
       end
 
       private
@@ -275,12 +258,16 @@ class RPG2k
 
       # Keep the cursor's row inside the VISIBLE_ROWS-tall list box, moving
       # `@item_top` by the smallest amount that does so; true when it moved
-      # (the box then needs redrawing for the new top row). The scrolled
-      # box's own look (whether RPG_RT draws scroll arrows on it, and
-      # whether it scrolls a row at a time or a page) is NOT yet confirmed
-      # against genuine RPG_RT under wine -- cycle #243's 27-item probe of
-      # exactly that never rendered (see docs/TODO.md); this only stops the
-      # cursor running off the bottom of the box, which it did before.
+      # (the box then needs redrawing for the new top row). "Smallest
+      # amount" is the measured rule, not a convenience: RPG_RT's scroll
+      # offset is **sticky**, confirmed on this screen against genuine
+      # RPG_RT.exe under wine (cycle #249, a 27-item bag = 14 rows in the
+      # 12-row box) -- twelve Downs scrolled the box to top row 1, and an Up
+      # from there left the top row at 1 with the cursor stepping up inside
+      # the box, where an offset derived afresh from the cursor row would
+      # have scrolled back to 0. It scrolls a row at a time, never a page.
+      # The arrows the scrolled box shows were measured in cycle #243 and
+      # re-measured in #249 (see the ARROW_* constants above).
       def scroll_item_list_to_cursor
         row = @item_index / COLUMN_MAX
         top = @item_top
@@ -904,14 +891,19 @@ class RPG2k
         rows.each_with_index do |(id, count), i|
           next if i < first || i > last
           it = @state.party.db_item(id)
-          name = (it && it.name.to_s)
-          name = "Item #{id}" if name.nil? || name.empty?
+        # A database row whose `name` is blank draws blank: measured against
+        # genuine RPG_RT.exe under wine (cycle #254) with a bag holding
+        # Nepheshel's own unnamed item slots -- RPG_RT left those rows' name
+        # column empty while this engine printed an invented "Item <id>". The
+        # placeholder is kept only for an id with no row at all, which is a
+        # broken-data diagnostic rather than something RPG_RT was measured on.
+          name = it ? it.name.to_s : "Item #{id}"
           x = item_col_x(i % COLUMN_MAX)
           y = (i / COLUMN_MAX - @item_top) * LINE_H
           idx = @state.party.field_usable?(id, @state) ? 0 : 3
-          draw_system_text(c, x, y + 2, col_w - COUNT_W, LINE_H, name, @skin, idx)
-          draw_system_text(c, x + col_w - COUNT_W, y + 2, COUNT_SEP_W, LINE_H, ':', @skin, idx)
-          draw_system_text(c, x + col_w - COUNT_NUM_W, y + 2, COUNT_NUM_W, LINE_H,
+          draw_system_text(c, x, y, col_w - COUNT_W, LINE_H, name, @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_W, y, COUNT_SEP_W, LINE_H, ':', @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_NUM_W, y, COUNT_NUM_W, LINE_H,
                            count.to_s, @skin, idx, 2)
         end
         @item_window.contents = c

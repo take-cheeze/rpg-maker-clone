@@ -4633,8 +4633,20 @@ module Game
     # (a shrunk-database dangling reference) is the one thing still excluded
     # here -- there is nothing to draw a name for -- with the same warning
     # #field_usable? used to print as a side effect of filtering it out.
+    # Bag order is the order the save carries, never sorted by id -- measured
+    # against genuine RPG_RT.exe under wine (cycle #252): a Save01.lsd whose
+    # chunk 109 `item_ids` was written deliberately out of order
+    # ([60, 12, 45, 1], counts [5, 3, 9, 7]) listed on RPG_RT's own field Item
+    # screen in exactly that order (クレセントムーン:5, ユニコーンの角:3,
+    # バスタードソード:9, 薬草:7), not the 1/12/45/60 an id sort gives. `@items`
+    # is built in the save's own order by `.from_lsd`, so preserving the hash's
+    # insertion order is preserving RPG_RT's.
+    #
+    # Still open: where RPG_RT *inserts* a newly gained id (append, or into some
+    # internal order) is not settled by this -- the capture only proves the
+    # screen does not re-sort what the save holds.
     def field_items(state = nil)
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         it = db_item(id)
         if it.nil?
           $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
@@ -4737,6 +4749,44 @@ module Game
     # actor id the array is too short to reach defaults to allowed, the same
     # "missing entry reads as the field's default" rule this runtime's other
     # bit-array fields already follow.
+    # One entry of an `actor_set` / `class_set` permission array, as a real
+    # boolean. A genuine database stores these as **int8 flags**, where `0`
+    # means "not permitted" -- and `0` is truthy in Ruby and mruby alike, so
+    # the bare `set[i] ? true : false` this used to do read every restricted
+    # row as permitted, exactly inverting the restriction. Confirmed against
+    # genuine RPG_RT.exe under wine (cycle #250) and against the shipped data:
+    # Nepheshel's item 26 (ダガー) carries `actor_set[14] == 0` for actor 15 and
+    # never appears in RPG_RT's own equip list for that actor, while this
+    # engine offered it.
+    #
+    # Accepts a boolean too, because the host harnesses' fixtures write these
+    # arrays as `true`/`false` rather than the schema's own int8s; both readings
+    # agree on every value either source produces.
+    def self.usable_flag?(v)
+      return false if v.nil? || v == false
+      v != 0
+    end
+
+    # Whether a permission array carries a real restriction at all. An array of
+    # nothing but zeros is the editor's *untouched* state, not "no actor may use
+    # this": mtf-meido-action's item 5 (Stimulant) ships `actor_set` all-zero and
+    # is a working revive item in that game -- `rpg2k_testbed_logic_check.rb`
+    # has asserted it heals a fallen member since long before this reading was
+    # examined. Nepheshel's item 26 (ダガー), by contrast, carries a *mixed*
+    # array whose zero for actor 15 genuine RPG_RT.exe really does honour (it
+    # never offers that weapon to that actor -- measured under wine, cycle
+    # #250). So a set is consulted only when something in it is set.
+    #
+    # An alternative reading fits both observations equally well -- that the
+    # per-actor list binds equipment only and medicines ignore it entirely --
+    # and is NOT ruled out here: no capture was taken of a *medicine* with a
+    # mixed actor_set, which is the one case that would separate the two. Left
+    # deliberately as the narrower rule, which cannot wrongly refuse a shipped
+    # item either way.
+    def self.permission_set_active?(set)
+      set.respond_to?(:any?) && set.any? { |v| usable_flag?(v) }
+    end
+
     def item_usable_by?(it, actor_id)
       return item_usable_by_class?(it, actor_id) if equip_by_class?
       return true unless it.respond_to?(:actor_set) && it.actor_set
@@ -4744,7 +4794,17 @@ module Game
       set = it.actor_set
       idx = actor_id - 1
       return true if idx < 0 || set.size <= idx
-      set[idx] ? true : false
+      return true unless Party.permission_set_active?(set)
+      # The database stores this as an int8 flag per actor, and **0 means "this
+      # actor may not use it"** -- but `0` is truthy in Ruby (and in mruby), so
+      # a bare `set[idx] ? ...` read every restricted row as *allowed*, exactly
+      # inverting the restriction. Confirmed against genuine RPG_RT.exe under
+      # wine (cycle #250's Equip screen capture) and against the real database:
+      # Nepheshel's item 26 (ダガー) carries actor_set[14] == 0 for actor 15 and
+      # never appears in RPG_RT's own equip list for that actor, while this
+      # engine offered it. Compared against 0 explicitly so the flag's own value
+      # decides, not Ruby's notion of truthiness.
+      Party.usable_flag?(set[idx])
     end
 
     # Whether this database is RPG2003 and configured for its "使用可能キャラ
@@ -4783,7 +4843,13 @@ module Game
       class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
       set = it.class_set
       return true if set.size <= class_id
-      set[class_id] ? true : false
+      return true unless Party.permission_set_active?(set)
+      # Same int8-zero-is-truthy trap as #item_usable_by? above -- see its own
+      # citation. Not separately captured (no RPG2003 test bed with a genuine
+      # RPG_RT.exe reaches this by-class path), but it reads the identically
+      # shaped flag array from the identical schema type, so the same explicit
+      # comparison applies.
+      Party.usable_flag?(set[class_id])
     end
 
     # Whether using item `id` on `actor` would change anything, so the menu can
@@ -5214,8 +5280,18 @@ module Game
     end
 
     # Held items equippable in equipment `slot` (0..4) on `actor`, as
-    # [id, count] pairs in ascending id order -- the candidate list for the
-    # equip menu's chosen slot. `actor` matters two ways: for the shield slot
+    # [id, count] pairs **in the bag's own stored order, not ascending id
+    # order** -- the candidate list for the equip menu's chosen slot.
+    # Confirmed against genuine RPG_RT.exe under wine (cycle #250): a save
+    # whose chunk-109 `item_ids` were written deliberately out of order
+    # ([30, 27, 29, 28, 26, 66, 177], each with a distinct count so a listed
+    # row identifies its id) opened the equip screen's weapon grid reading
+    # 30/27/29/28/66 in exactly that order, and a fourteen-weapon rerun
+    # ([44, 27, 45, 28, 46, 29, 47, 30, 48, 31, 49, 32, 50, 33]) listed all
+    # fourteen the same way -- the same "stored order, never re-sorted"
+    # rule cycle #252 measured for the field/battle Item lists. `@items` is
+    # built in the save's own order by `Game::State.from_lsd`, so simply
+    # not sorting here reproduces it. `actor` matters two ways: for the shield slot
     # (1), a 二刀流 (double_hand) actor's shield slot is a second weapon slot,
     # so it lists weapons there instead of shields -- mirroring a reference
     # implementation, not independently confirmed against genuine RPG_RT
@@ -5227,7 +5303,7 @@ module Game
     # simply skipped when no `actor` is given.
     def equip_candidates(slot, actor = nil)
       slot = Actor::WEAPON_SLOT if slot == Actor::SHIELD_SLOT && actor && actor.double_hand?
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         item_count(id) > 0 && equip_slot_for(id) == slot &&
           (actor.nil? || item_usable_by?(db_item(id), actor.id))
       end.map { |id| [id, item_count(id)] }
@@ -6514,8 +6590,10 @@ module Game
     # found. #battle_usable? is now consulted only for enablement, the same
     # split as the field menu. The dangling-item exclusion (and its warning)
     # stays, the same defensible corner case #field_items keeps.
+    # Stored bag order, not an id sort -- see #field_items' own citation for
+    # the wine measurement (cycle #252); the in-battle list shares it.
     def battle_items
-      @items.keys.sort.select do |id|
+      @items.keys.select do |id|
         it = db_item(id)
         if it.nil?
           $stderr.puts "[RPG2k] Item menu: party-held item ##{id} has no " \
@@ -16850,7 +16928,12 @@ module Game
       party_ids = @party.actors.map { |a| a.id }
       inv[1] = party_ids.size
       inv[2] = party_ids
-      item_ids = @party.items.keys.sort
+      # Written in the bag's own order, not sorted: RPG_RT preserves the
+      # stored order across a save/load (see Party#field_items' own wine
+      # citation, cycle #252), so sorting here would silently reorder the
+      # player's bag every time this engine saved. A save whose bag was
+      # already in id order still round-trips byte-for-byte.
+      item_ids = @party.items.keys
       inv[11] = item_ids.size
       inv[12] = item_ids
       inv[13] = item_ids.map { |i| @party.items[i] }

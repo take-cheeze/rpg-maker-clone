@@ -65,3 +65,9 @@
 # build inputs fetched on demand and checked against flake.nix's hashes, not
 # sources.
 /.native-build-tables
+
+# Git worktrees the Claude Code agent harness creates for parallel sub-agents
+# (.claude/worktrees/<agent-id>). Each is a full checkout of this repository,
+# removed once the agent's work is integrated -- tooling scratch, not sources,
+# the same rationale as /.native-build-tables above.
+/.claude/

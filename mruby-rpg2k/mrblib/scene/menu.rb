@@ -418,9 +418,9 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         unit = term(:gold)
         unit_w = c.text_size(unit).width
-        draw_system_text c, 0, STATUS_TEXT_Y, inner_w - unit_w, LINE_H,
+        draw_system_text c, 0, 0, inner_w - unit_w, LINE_H,
                          @state.party.gold.to_s, @skin, 0, 2
-        draw_system_text c, 0, STATUS_TEXT_Y, inner_w, LINE_H, unit, @skin, LABEL_COLOR, 2
+        draw_system_text c, 0, 0, inner_w, LINE_H, unit, @skin, LABEL_COLOR, 2
         @gold.contents = c
       end
 
@@ -468,8 +468,11 @@ class RPG2k
       # (LV45 with 300000 EXP showed 349310, LV20 with 16000 showed a 5-digit
       # 17xxx -- the total needed, not the remaining 49310), the same
       # reading `Game::Actor#next_level_exp` gives. Glyph tops sit 4px below
-      # each line's top (kana and digits alike), which the `+ STATUS_TEXT_Y`
-      # / 16px-tall draw rects reproduce for this engine's own font.
+      # each line's top (kana and digits alike), which the 16px-tall draw
+      # rects reproduce for this engine's own font: `Bitmap#draw_text`
+      # centres the 12px shinonome cell in the rect it is given, so a 16px
+      # line puts the cell 2px below the line's top all by itself (cycle
+      # #248 -- these rows used to add that 2px by hand).
       STATUS_TEXT_X = 56
       STATUS_LEVEL_X = 68
       STATUS_STATE_X = 98
@@ -482,14 +485,13 @@ class RPG2k
       STATUS_EXP_FIELD_W = 36
       STATUS_EXP_SLASH_X = 104
       STATUS_EXP_NEXT_X = 110
-      STATUS_TEXT_Y = 2
       STATUS_MAX_LEVEL_EXP = '------'
       # System-palette index of the LV/EX/HP/MP labels (see above).
       LABEL_COLOR = 1
 
       def draw_status_row(sc, a, y)
         w = sc.width
-        line = ->(n) { y + n * LINE_H + STATUS_TEXT_Y }
+        line = ->(n) { y + n * LINE_H }
         draw_system_text sc, STATUS_TEXT_X, line.call(0), w - STATUS_TEXT_X, LINE_H,
                          a.name.to_s, @skin
         y2 = line.call(1)
@@ -619,7 +621,7 @@ class RPG2k
       # supplies the flat gray when there is no skin to sample.
       def draw_command_labels(cc)
         @commands.each_with_index do |(key, label), i|
-          y = i * LINE_H + 2
+          y = i * LINE_H
           if command_disabled?(key)
             cc.font.color = Color.new(128, 128, 128, 255)
             draw_system_text cc, 0, y, cc.width, LINE_H, label, @skin, 3
@@ -821,7 +823,7 @@ class RPG2k
         @confirm_help.windowskin = @skin
         hc = Bitmap.new(help_w - Window::BORDER * 2, LINE_H)
         hc.font.color = Color.new(255, 255, 255, 255)
-        draw_system_text hc, 0, STATUS_TEXT_Y, hc.width, LINE_H, text, @skin
+        draw_system_text hc, 0, 0, hc.width, LINE_H, text, @skin
         @confirm_help.contents = hc
 
         cmd_x = (SCREEN_W - cmd_w) / 2
@@ -832,7 +834,7 @@ class RPG2k
         cc = Bitmap.new(cmd_w - Window::BORDER * 2, cmd_h - Window::BORDER * 2)
         cc.font.color = Color.new(255, 255, 255, 255)
         labels.each_with_index do |l, i|
-          draw_system_text cc, 0, i * LINE_H + STATUS_TEXT_Y, cc.width, LINE_H, l, @skin
+          draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
         end
         @confirm_command.contents = cc
         refresh_end_game_cursor

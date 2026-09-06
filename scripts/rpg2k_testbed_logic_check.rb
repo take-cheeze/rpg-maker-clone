@@ -1116,6 +1116,33 @@ def check_items(dir)
   items = db[DB_ITEM]
   return unless items
 
+  # actor_set is an int8 permission flag per actor, and 0 means "this actor may
+  # not use it". 0 is truthy in Ruby and mruby alike, so a bare truthiness read
+  # turned every restriction into "permitted" -- invisible to a fixture check,
+  # whose own arrays are written true/false; only the shipped data carries the
+  # int8s. Confirmed against genuine RPG_RT.exe under wine (cycle #250):
+  # Nepheshel's item 26 carries actor_set[14] == 0 for actor 15 and never shows
+  # in RPG_RT's own equip list for that actor, while this engine offered it.
+  check "#{name}: every explicitly-zeroed actor_set entry really refuses that actor" do
+    party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
+    zeroed = 0
+    items.each do |id, it|
+      set = it.actor_set
+      next unless set.respond_to?(:each_index)
+      # Only a set that restricts somebody counts -- an all-zero array is the
+      # editor's untouched state (see Game::Party.permission_set_active?).
+      next unless Game::Party.permission_set_active?(set)
+      set.each_index do |i|
+        next unless set[i] == 0
+        zeroed += 1
+        eq false, party.item_usable_by?(it, i + 1),
+           "item ##{id} (#{it.name}) has actor_set[#{i}] == 0, actor #{i + 1} refused"
+      end
+    end
+    puts format('   items: %d explicitly-refused actor_set entries, all refused', zeroed)
+  end
+
+
   curative = []
   reversed = []
   items.each do |id, it|

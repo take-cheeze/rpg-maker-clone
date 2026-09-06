@@ -1102,6 +1102,83 @@ assert "RGSS::Bitmap#draw_text takes a Rect as well as x/y/width/height" do
   assert_true pixels.call(plain).size > 0, "the 2-argument Rect form drew nothing"
 end
 
+# RGSS lays a line of text out *centred* in the rect it is given, not pinned to
+# its top: the TrueType path centres the face's ascent/descent block, and the
+# shinonome bitmap fallback centres its fixed 12px cell the same way. RPG2000's
+# own 16px line therefore puts the glyph cell 2px below the line's top, which is
+# where genuine RPG_RT.exe draws it (measured under wine, cycle #248: the field
+# menu's `装備` row and the load screen's `デモ用` line, which used to sit 2px
+# high because each scene had to add that pad by hand). "Hi" inks cell rows 1..9
+# of the 12-row cell in the built-in font, so its top ink row is
+# (h - 12) / 2 + 1 for every rect height.
+assert "RGSS::Bitmap#draw_text centres the glyph cell in the rect height" do
+  # This file also runs under the CRuby compat harness
+  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
+  # renderer: it paints glyphs its own way and does not model this centring at
+  # all (and has no #blend_text whatever). The rule under test lives in
+  # mruby-rgss/src/lib.cxx, so assert it only where that code is actually
+  # running. #blend_text's presence is the probe -- it exists only natively.
+  next true unless RGSS::Bitmap.new(1, 1).respond_to?(:blend_text)
+
+  top_ink = lambda do |h|
+    b = RGSS::Bitmap.new(64, 48)
+    b.draw_text(0, 0, 64, h, "Hi")
+    row = nil
+    0.upto(47) do |y|
+      0.upto(63) do |x|
+        if b.get_pixel(x, y).alpha > 0
+          row = y
+          break
+        end
+      end
+      break if row
+    end
+    row
+  end
+
+  assert_equal 1, top_ink.call(12), "a 12px rect leaves the cell where it is"
+  assert_equal 2, top_ink.call(14), "a 14px rect drops the cell one row"
+  assert_equal 3, top_ink.call(16), "a 16px line drops the cell two rows"
+  assert_equal 11, top_ink.call(32), "a 32px rect centres the cell in it"
+end
+
+# #blend_text (the windowskin-swatch fill RPG2000's menus draw through) shares
+# that layout, so a run drawn through a swatch lands on exactly the same rows as
+# the flat #draw_text run above.
+assert "RGSS::Bitmap#blend_text centres the glyph cell the same way" do
+  # This file also runs under the CRuby compat harness
+  # (scripts/rgss_cruby_compat.rb, via scripts/rgss_cruby_test_check.rb), whose
+  # Bitmap is a pure-Ruby stand-in for measuring text rather than the native
+  # renderer: it paints glyphs its own way and does not model this centring at
+  # all (and has no #blend_text whatever). The rule under test lives in
+  # mruby-rgss/src/lib.cxx, so assert it only where that code is actually
+  # running. #blend_text's presence is the probe -- it exists only natively.
+  next true unless RGSS::Bitmap.new(1, 1).respond_to?(:blend_text)
+
+  swatch = RGSS::Bitmap.new(4, 4)
+  swatch.fill_rect(0, 0, 4, 4, RGSS::Color.new(255, 0, 0, 255))
+  top_ink = lambda do |h|
+    b = RGSS::Bitmap.new(64, 48)
+    b.blend_text(0, 0, 64, h, "Hi", swatch, 0, 0, 4, 4)
+    row = nil
+    0.upto(47) do |y|
+      0.upto(63) do |x|
+        if b.get_pixel(x, y).alpha > 0
+          row = y
+          break
+        end
+      end
+      break if row
+    end
+    row
+  end
+
+  assert_equal 1, top_ink.call(12), "a 12px rect leaves the cell where it is"
+  assert_equal 3, top_ink.call(16), "a 16px line drops the cell two rows"
+  assert_equal 11, top_ink.call(32), "a 32px rect centres the cell in it"
+end
+
 # Real RGSS3 accepts any object as the text argument, not just a String --
 # games routinely draw_text an Integer directly (HP/MP/gold, the way this
 # real VX Ace release's own stock Window_Gold#refresh ->

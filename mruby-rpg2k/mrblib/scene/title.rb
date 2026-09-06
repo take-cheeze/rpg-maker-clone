@@ -1,12 +1,10 @@
 class RPG2k
   module Scene
     class Title < Base
-      # Height of one selectable line. The shinonome font is 12px tall; the
-      # extra space gives a little breathing room between entries.
+      # Height of one selectable line. The shinonome font is 12px tall and
+      # `Bitmap#draw_text` centres that cell in the rect it is given, so the
+      # glyphs sit 2px below each line's top with no pad of this scene's own.
       LINE_HEIGHT = 16
-      # draw_text is top-aligned, so nudge the 12px glyphs down to sit centred
-      # within the line (and the selection cursor).
-      TEXT_PAD_Y = (LINE_HEIGHT - 12) / 2
       # Where RPG_RT parks the title command window: horizontally centred, with
       # its *bottom* edge at 53/60 of the screen height. Measured off a genuine
       # RPG_RT frame (see scripts/compare-nepheshel-wine.bash): for Nepheshel's
@@ -95,7 +93,7 @@ class RPG2k
         # below is unchanged, just no longer the only path.
         contents = Bitmap.new content_w, content_h
         @menu_items.each_with_index do |item, index|
-          y = index * LINE_HEIGHT + TEXT_PAD_Y
+          y = index * LINE_HEIGHT
           if index == 1 && !@continue_available
             contents.font.color = Color.new(128, 128, 128, 255)
             draw_system_text contents, 0, y, content_w, LINE_HEIGHT, item, skin, 3
