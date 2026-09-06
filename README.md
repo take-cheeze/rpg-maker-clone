@@ -542,6 +542,48 @@
   animation's sheet away, which the log reports as `played=true` because the
   cell sprite is there, holding a placeholder bitmap
 
+### WOLF RPG Editor
+
+- A **WOLF RPG Editor** (ウディタ/Woditor) project — a `Data/BasicData/Game.dat`
+  folder — is recognised and its whole database loads: `Game.dat` (screen size,
+  tile size, fonts), `MapTree.dat`, `TileSetData.dat` (every tileset's base and
+  autotile sheets plus per-chip passability/priority/counter flags),
+  `CommonEvent.dat` and the three databases (user/changeable/system), across
+  both the Shift_JIS 2.2x format and the UTF-8, LZ4-block-compressed 3.5+ one
+  current releases write (`mruby-wolf`). Unlike every other maker here, WOLF RPG
+  Editor has no scripting language to host — a game's whole logic is the
+  editor's own fixed, numbered event-command set, run by its **Common
+  Events** (the "RPG Basic System" that ships with the editor and that every
+  real game customises) — so a reimplemented data layer is the only route in,
+  the same one `mruby-rpg2k` took against LCF. See
+  [`docs/adr/0064-wolf-rpg-editor-data-layer.md`](docs/adr/0064-wolf-rpg-editor-data-layer.md)
+- The event-command decoder already understands the shared command set map
+  events and common events both use — including the trailing move-route block
+  a "動作指定" (movement) command carries — validated against the editor's own
+  bundled sample game: all four of its maps, 36 events and the full 27,000+
+  commands of its Common Events (the entire RPG Basic System) parse with no
+  bytes left unaccounted for
+- **Map exploration** works the way `mruby-rpg2k`'s own history did: New Game
+  opens the start map (read from the system database's position list) at its
+  real size — WOLF RPG Editor's screen size is a per-project setting, not one
+  fixed resolution per maker, so the window is sized from the project's own
+  `Game.dat` — with the hero walking the arrow keys, blocked by each tile's
+  **real per-tile passability** from its tileset (not a placeholder grid).
+  Tiles draw as colour blocks keyed by those same passability flags (green
+  passable, dark red blocked, yellow "always above characters", blue
+  autotile) rather than the tileset's actual `ChipSet` image, mirroring the
+  colour-block fallback this engine's own RPG2000 renderer used before real
+  chipset art landed for it
+- No events run yet (the interpreter for the command set above is the next
+  milestone — see `docs/TODO.md`), so nothing but bare map geometry appears:
+  no title screen, no messages, no menus, no battle. Both are entirely the RPG
+  Basic System's own Common Events in a real project, the way RPG Maker XP's
+  title/menu/battle are entirely its bundled `Data/Scripts.rxdata`
+- `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
+  whole database and every map — `scripts/download-wolfrpg-sample.bash` fetches
+  the editor's own official sample game (SmokingWOLF's freely redistributable
+  GitHub release) as the test bed CI runs this against
+
 ### Window title
 - The window is named after the game that is running, so the desktop (and the
   browser tab, in the WebAssembly build) says which project is loaded. Each

@@ -34614,6 +34614,66 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
         correctly here (a black frame really is what got drawn) is not a
         reason to loosen it project-wide.
 
+## WOLF RPG Editor
+
+- ✅ **Data layer landed (2026-09-06).** `mruby-wolf` reads a project's whole
+  database -- `Game.dat`, `MapTree.dat`, `TileSetData.dat`, the three
+  databases (user/changeable/system), `CommonEvent.dat` and every `.mps` map
+  -- across the Shift_JIS 2.2x format and the UTF-8/LZ4-packed 3.5+ one.
+  `scripts/wolf_testbed_check.rb` validates it against the editor's own
+  bundled sample game (fetched by `scripts/download-wolfrpg-sample.bash`):
+  all 4 maps, 36 events, 27,356 event commands (the whole RPG Basic System)
+  parse with nothing left over. See
+  `docs/adr/0064-wolf-rpg-editor-data-layer.md`.
+- ✅ **Map exploration (2026-09-06).** `WolfRPG` (mruby-wolf/mrblib/runtime.rb)
+  opens the New Game start map from the system database's position list,
+  sizes the window from the project's own `Game.dat` (WOLF RPG Editor's
+  screen size is a per-project setting, unlike XP/VX's fixed constants), and
+  lets the hero walk it with real per-tile passability from the tileset. Tiles
+  render as passability-coloured blocks, not the tileset's own `ChipSet`
+  image yet.
+- 🚧 **Event-command interpreter.** The next milestone, and the one that
+  actually makes anything play: `Wolf::Command`'s decoder already carries
+  every command id a real project's Common Events use, so this is "write the
+  execution semantics", not "extend the parser". WOLF RPG Editor has no
+  title/menu/message/battle system of its own the way RPG Maker 2000 does --
+  the bundled "RPG Basic System" *is* Common Events, so none of the above
+  shows on screen until common events with `run_condition::auto_start` /
+  `parallel_process` actually run each frame, the way `mruby-rpg2k`'s
+  `Interpreter` runs LCF's move/message/switch/variable commands. Suggested
+  order, mirroring how RPG2000 support grew: message display (command 101 +
+  the window system) and variable/switch commands (111/121/122) first --
+  enough to show *something* other than bare geometry -- then map events
+  (auto-run / player-touch / event-touch triggers, self variables), then
+  common-event call/reserve (210/211/300), then the picture system (150,
+  richer than RPG2000's: zoom, angle, colour, string pictures with inline
+  control codes), then everything else (input commands 123-126, save/load
+  220-222, database read/write 250/251, sound 140, transitions
+  160-162/281/290).
+- 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
+  tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
+  and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
+  `.autotile_shape` already split a layer value into slot + per-corner shape;
+  only the actual quarter-tile compositing from each autotile's 5x1-cell
+  sheet is missing), replacing `WolfRPG::MapScene`'s colour-block fallback --
+  the same order RPG2000 support followed (see "Map exploration" in the
+  README's own history).
+- 🚧 **Packed releases (`Data.wolf`).** Release games ship a single DxLib
+  DXA archive, XOR-encrypted with per-editor-version keys that
+  [WolfDec](https://github.com/Sinflower/WolfDec) and
+  [UberWolf](https://github.com/Sinflower/UberWolf) already document. Adding
+  a reader is the same shape as `RPGXP::RGSSAD` (ADR 0010), not a new
+  problem -- it has simply not been done yet, so only a loose `Data/` project
+  tree is playable today.
+- 🚧 **Pro-protected data.** `Wolf::Crypt.protected?`/`.refuse_protected!`
+  detect and refuse it (byte 1 == `0x50`) rather than mis-parsing it; actually
+  decrypting it needs the AES/ChaCha scheme `WolfTL`'s `WolfDataDecrypt.hpp`
+  implements, and from editor 3.5 on the protection key is not even stored in
+  the game (only a hash), so a 3.5+ Pro-protected release may be permanently
+  out of reach the way a from-3.5-Pro-protected `.wolf` already is for
+  `WolfDec`.
+
+
 ## Tooling
 
 - ✅ **`LCF::File#to_lcf` dropped `.lmu`'s required trailing root terminator

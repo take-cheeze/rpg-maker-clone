@@ -864,6 +864,7 @@ jobs:
           ./scripts/download-killer-knights.bash
           ./scripts/download-histoire.bash
           ./scripts/download-monodori.bash
+          ./scripts/download-wolfrpg-sample.bash
 
       - parallel:
           - name: LCF test-bed smoke check
@@ -909,6 +910,12 @@ jobs:
           # downloaded test bed.
           - name: RPG VX / VX Ace data check
             run: ruby scripts/rpgvx_testbed_check.rb
+
+          # WOLF RPG Editor data layer, driven over the editor's own official
+          # sample game (download-wolfrpg-sample.bash) -- every BasicData file
+          # plus every map in Data/MapData.
+          - name: WOLF RPG Editor test-bed check
+            run: ruby scripts/wolf_testbed_check.rb
 
           # Validate the committed MV test-bed database (data/mv-sample). Pure
           # CRuby, no JS engine — a guard against a sample-data regression

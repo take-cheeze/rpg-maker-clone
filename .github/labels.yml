@@ -44,6 +44,9 @@
 - name: "engine:mz"
   color: "6f42c1"
   description: "RPG Maker MZ games (MZ corescript, effekseer)"
+- name: "engine:wolf"
+  color: "6f42c1"
+  description: "WOLF RPG Editor games (Woditor data layer, event commands)"
 
 # --- platform --------------------------------------------------------------
 # The build target the problem is specific to. Leave all of these off when the
