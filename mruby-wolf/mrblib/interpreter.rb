@@ -302,11 +302,30 @@ module Wolf
       @project = project
       @var_store = var_store
       @common_runs = []
+      @map_runs = []
       @reserved = []
       @warned = {}
     end
 
     attr_reader :var_store, :project
+
+    # Every Run this interpreter starts is built through here rather than a
+    # bare `Run.new` at each call site, so a caller that needs a safety net
+    # against a not-yet-discovered infinite loop (scripts/wolf_interpreter_check.rb's
+    # step-bounded subclass, the same soak check that already caught two real
+    # hangs in Common Events) can install one for map events and confirm/
+    # touch triggers too, by overriding just this one method instead of
+    # duplicating #run_common_event/#start_map_event_run's own logic.
+    def run_class; Run; end
+    # The currently-loaded Wolf::Map, so #update can drive its events'
+    # auto/parallel pages the way it already drives Common Events, and
+    # #event_at/#trigger_confirm/#trigger_touch (called from WolfRPG::MapScene)
+    # know which map's events to look at. Set once at map load; nothing here
+    # resets @map_runs on a change, since no map transition (Teleport) is
+    # implemented yet -- a future one must clear it (and reconsider
+    # VarStore's per-event self-variable banks, keyed by event id alone,
+    # which collide across maps that reuse small ids like 0/1/2).
+    attr_accessor :current_map
 
     def unimplemented(what)
       var_store.warn_once("unimplemented-#{what}", "event command #{what} is not implemented yet; skipping")
@@ -480,7 +499,7 @@ module Wolf
       bank = var_store.common_event_self_bank(common_id)
       numeric_self_slots(param_numbers.size).each_with_index { |slot, k| bank[slot] = param_numbers[k] }
       with_common_event_context(common_id) do
-        run = Run.new(self, ce.commands)
+        run = run_class.new(self, ce.commands)
         run.step while !run.done
       end
       return unless return_target
@@ -512,9 +531,136 @@ module Wolf
         end
       end
       @common_runs.reject! { |r| r[:run].done }
+      update_map_events
+    end
+
+    # The active page of `event`: the *last* page (in editor order) whose
+    # every enabled condition holds, or nil if none do -- the same
+    # last-match-wins convention mruby-rpg2k's own Game::EventPage.select
+    # already uses for RPG2000/2003 map event pages (help/04eventwindowB.html
+    # only documents that a page needs *all* its own conditions to hold, not
+    # the cross-page precedence, so this mirrors the established sibling
+    # convention rather than inventing a new one). Evaluated with "this map
+    # event" set to `event.id`, since a page's own condition fields can be
+    # "this event"-relative self-variable references.
+    def active_page(event)
+      with_map_event_context(event.id) do
+        chosen = nil
+        event.pages.each_with_index do |page, idx|
+          chosen = [idx, page] if page_conditions_met?(page)
+        end
+        chosen
+      end
+    end
+
+    # The [event, page] pair at map tile (x, y) with a currently-active page,
+    # or nil. Used both for movement passability (an event without
+    # Wolf::Page::OPT_SLIP_THROUGH blocks the tile) and to find what a touch
+    # or confirm trigger should run.
+    def event_at(x, y)
+      return nil unless current_map
+      current_map.events.each do |event|
+        next unless event.x == x && event.y == y
+        idx, page = active_page(event)
+        return [event, page] if page
+      end
+      nil
+    end
+
+    # True while any *blocking* run -- an auto-run Common Event, or any map
+    # event page other than a Parallel Process one -- is still executing:
+    # help/04eventwindowB.html documents Auto Start as excluding other
+    # (non-Parallel) events while it runs, which in practice also means the
+    # hero should not be free to wander off mid-event, the same way a
+    # message box would freeze movement once one exists (docs/TODO.md).
+    def blocking?
+      @common_runs.any? { |r| r[:blocking] && !r[:run].done } ||
+        @map_runs.any? { |r| r[:blocking] && !r[:run].done }
+    end
+
+    # WolfRPG::MapScene calls this when the player presses the confirm key
+    # while facing (or standing on, if Wolf::Page::OPT_SLIP_THROUGH) `event`.
+    # Starts its active page's commands if it is a Confirm-trigger page and
+    # not already running; returns whether `event` answers to a confirm
+    # press at all (so the caller knows not to look further), regardless of
+    # whether this call is what started it.
+    def trigger_confirm(event)
+      idx, page = active_page(event)
+      return false unless page && page.trigger == Wolf::Page::TRIGGER_CONFIRM
+      start_map_event_run(event, page) unless map_event_running?(event.id)
+      true
+    end
+
+    # WolfRPG::MapScene calls this when the hero attempts to move onto
+    # `event`'s tile. Starts its active page's commands if it is a
+    # Player-Touch or Event-Touch page and not already running; returns
+    # whether `event` answers to a touch attempt (the caller blocks the
+    # move either way, "like a closed door" -- the same convention
+    # mruby-rpg2k's own #touch_trigger?/#event_at/#start_event already
+    # establish for RPG2000/2003's identical trigger pair).
+    def trigger_touch(event)
+      idx, page = active_page(event)
+      return false unless page &&
+        (page.trigger == Wolf::Page::TRIGGER_PLAYER_TOUCH || page.trigger == Wolf::Page::TRIGGER_EVENT_TOUCH)
+      start_map_event_run(event, page) unless map_event_running?(event.id)
+      true
     end
 
     private
+
+    def page_conditions_met?(page)
+      page.conditions.all? do |c|
+        !c.enabled? || evaluate_condition([c.variable, c.value, c.compare_operator])
+      end
+    end
+
+    # Advances every live auto/parallel map event page for #current_map the
+    # same way #update already drives Common Events -- see that method's own
+    # comment for the shared simplification (an Auto page restarts once it
+    # finishes as long as its condition still holds, rather than waiting for
+    # a fresh true edge). Player-Touch/Event-Touch/Confirm pages are never
+    # started here; only #trigger_touch/#trigger_confirm do that.
+    def update_map_events
+      return unless current_map
+      current_map.events.each do |event|
+        idx, page = active_page(event)
+        next unless page && (page.auto? || page.parallel?)
+        existing = @map_runs.find { |r| r[:event_id] == event.id }
+        if existing
+          advance_map_event(existing)
+        else
+          start_map_event_run(event, page)
+        end
+      end
+      @map_runs.reject! { |r| r[:run].done }
+    end
+
+    def map_event_running?(event_id)
+      @map_runs.any? { |r| r[:event_id] == event_id && !r[:run].done }
+    end
+
+    def start_map_event_run(event, page)
+      run = with_map_event_context(event.id) { run_class.new(self, page.commands) }
+      entry = { event_id: event.id, run: run, blocking: page.trigger != Wolf::Page::TRIGGER_PARALLEL }
+      @map_runs << entry
+      advance_map_event(entry)
+      entry
+    end
+
+    def advance_map_event(entry)
+      with_map_event_context(entry[:event_id]) { entry[:run].step }
+    end
+
+    # Mirrors #with_common_event_context: needed both while a map event's
+    # own commands execute and while checking its page conditions/trigger
+    # (both can be "this map event self"-relative).
+    def with_map_event_context(event_id)
+      prev = var_store.current_map_event_id
+      var_store.current_map_event_id = event_id
+      yield
+    ensure
+      var_store.current_map_event_id = prev
+    end
 
     def drain_reserved
       pending = @reserved
@@ -536,8 +682,8 @@ module Wolf
     end
 
     def start_common_run(ce)
-      run = with_common_event_context(ce.id) { Run.new(self, ce.commands) }
-      @common_runs << { id: ce.id, run: run }
+      run = with_common_event_context(ce.id) { run_class.new(self, ce.commands) }
+      @common_runs << { id: ce.id, run: run, blocking: ce.auto? }
       advance(@common_runs.last)
     end
 

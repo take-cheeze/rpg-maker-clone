@@ -917,6 +917,16 @@ jobs:
           - name: WOLF RPG Editor test-bed check
             run: ruby scripts/wolf_testbed_check.rb
 
+          # WOLF RPG Editor event-command interpreter: drives every auto/
+          # parallel Common Event and, for every real map, every event's
+          # active page (auto/parallel stepped per frame, Confirm/Touch
+          # pages exercised once) over the same sample game, asserting
+          # nothing raises or hangs -- this is what caught three real
+          # infinite-loop bugs (docs/adr/0065) that the hand-built unit
+          # fixtures in mruby-wolf/test/wolf_test.rb never exercised.
+          - name: WOLF RPG Editor interpreter soak check
+            run: ruby scripts/wolf_interpreter_check.rb
+
           # Validate the committed MV test-bed database (data/mv-sample). Pure
           # CRuby, no JS engine — a guard against a sample-data regression
           # that would silently break the native MV smokes in the `build` job.

@@ -636,9 +636,22 @@ module Wolf
     OPT_HALF_STEP_LEFT = 0x80
 
     Condition = Struct.new(:operator, :variable, :value) do
-      # Condition byte: high nibble is the comparison operator, low bit 0 of
-      # the low nibble whether the condition is enabled.
-      def enabled?; (operator & 0x0f) != 0 || variable != 0 || value != 0; end
+      # Condition byte: high nibble is the comparison operator (cross-checked
+      # against the wolfrpg-map-parser crate's own independent `Condition`
+      # struct -- `operator >> 4`, fed into a `CompareOperator` enum whose
+      # 0-6 values match `Interpreter::OP_GT`.."OP_AND" byte-for-byte), low
+      # bit 0 of the low nibble whether the condition is enabled.
+      #
+      # A disabled condition row still carries a real-looking `variable`
+      # (the "変数呼び出し値" widget always stores *some* reference, even
+      # unset -- empirically 1,000,000, decoding to map-event self-variable
+      # 0 of event 0), so `variable`/`value` being non-zero must NOT be
+      # treated as "enabled" too: confirmed against the sample game's own
+      # events, where every untouched condition slot carries
+      # `operator=0x20, variable=1_000_000, value=0` (bit 0 clear) and every
+      # authored one carries bit 0 set (`operator=0x21`/`0x31`/...).
+      def enabled?; (operator & 0x01) != 0; end
+      def compare_operator; operator >> 4; end
     end
 
     attr_reader :index, :graphic, :direction, :frame, :opacity, :blend,

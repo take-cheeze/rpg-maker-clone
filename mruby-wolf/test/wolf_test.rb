@@ -152,12 +152,24 @@ assert "Wolf::TileFlags decodes passability and priority bits" do
   assert_true conceal.passable?
 end
 
-assert "Wolf::Page::Condition#enabled? follows the operator/variable/value bits" do
-  off = Wolf::Page::Condition.new(0, 0, 0)
+assert "Wolf::Page::Condition#enabled? is bit 0 of the operator byte alone" do
+  # A disabled row still carries a real-looking variable reference (the
+  # "変数呼び出し値" widget always stores *some* value): 1,000,000 --
+  # map-event self-variable 0 of event 0 -- is what the sample game's own
+  # untouched condition slots carry, confirmed by dumping real Page bytes
+  # (scripts/wolf_interpreter_check.rb's own soak target). Trusting
+  # variable/value non-zero-ness as "enabled" (an earlier, unvalidated
+  # version of this method did) would treat every one of those as a real
+  # condition instead of a blank row.
+  off = Wolf::Page::Condition.new(0x20, 1_000_000, 0)
   assert_false off.enabled?
 
-  on = Wolf::Page::Condition.new(0x20, 1000000, 1)
+  # The sample game's own treasure-chest page 2 condition: bit 0 set, same
+  # otherwise-blank-looking variable, but a non-default value -- real and
+  # enabled.
+  on = Wolf::Page::Condition.new(0x21, 1_000_000, 1)
   assert_true on.enabled?
+  assert_equal 2, on.compare_operator # high nibble: OP_EQ
 end
 
 # ---- Map autotile value decoding --------------------------------------------
@@ -206,6 +218,10 @@ end
 
 class WolfTestFakeProject
   def databases; {}; end
+  # Wolf::Interpreter#update always scans project.common_events.events, even
+  # when a test only cares about map events -- an empty stand-in keeps that
+  # scan a no-op instead of a NoMethodError.
+  def common_events; @common_events ||= Struct.new(:events).new([]); end
 end
 
 assert "Wolf::VarStore reads and writes plain variables/strings" do
@@ -385,4 +401,114 @@ assert "Wolf::Interpreter's GotoLoopStart(176) restarts the loop without running
   wolf_test_run(store, commands)
   assert_equal 3, store.number(2_000_000)
   assert_equal 0, store.number(2_000_001)
+end
+
+# ---- Wolf::Interpreter map events ----------------------------------------
+
+# Minimal doubles for Wolf::Page/Wolf::Event: Interpreter only ever reads
+# id/x/y/pages off an event and trigger/conditions/commands/auto?/parallel?/
+# slip_through?/above_hero? off a page, so these mirror just that surface
+# rather than round-tripping real Reader-parsed objects through this test.
+WolfTestPage = Struct.new(:trigger, :conditions, :commands, :opts) do
+  def auto?; trigger == Wolf::Page::TRIGGER_AUTO; end
+  def parallel?; trigger == Wolf::Page::TRIGGER_PARALLEL; end
+  def slip_through?; (opts || 0) & Wolf::Page::OPT_SLIP_THROUGH != 0; end
+  def above_hero?; (opts || 0) & Wolf::Page::OPT_ABOVE_HERO != 0; end
+end
+WolfTestEvent = Struct.new(:id, :x, :y, :pages)
+WolfTestMap = Struct.new(:events)
+
+def wolf_test_page(trigger, conditions: [], commands: [], opts: 0)
+  WolfTestPage.new(trigger, conditions, commands, opts)
+end
+
+def wolf_test_cond(operator, variable, value)
+  Wolf::Page::Condition.new(operator, variable, value)
+end
+
+assert "Wolf::Interpreter#active_page picks the last page whose conditions all hold" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  page0 = wolf_test_page(Wolf::Page::TRIGGER_CONFIRM)
+  page1 = wolf_test_page(Wolf::Page::TRIGGER_CONFIRM,
+                          conditions: [wolf_test_cond(0x21, 2_000_000, 1)]) # enabled: V[0] == 1
+  event = WolfTestEvent.new(0, 3, 4, [page0, page1])
+
+  idx, page = interp.active_page(event)
+  assert_equal 0, idx
+  assert_equal page0, page
+
+  store.set_number(2_000_000, 1)
+  idx, page = interp.active_page(event)
+  assert_equal 1, idx
+  assert_equal page1, page
+end
+
+assert "Wolf::Interpreter#active_page returns nil when no page's conditions hold" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  page0 = wolf_test_page(Wolf::Page::TRIGGER_CONFIRM,
+                          conditions: [wolf_test_cond(0x21, 2_000_000, 1)])
+  event = WolfTestEvent.new(0, 0, 0, [page0])
+  assert_nil interp.active_page(event)
+end
+
+assert "Wolf::Interpreter#update restarts a Parallel map event page every time it finishes" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL,
+                         commands: [wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100])]) # V[0] += 1
+  event = WolfTestEvent.new(0, 1, 1, [page])
+  interp.current_map = WolfTestMap.new([event])
+
+  interp.update
+  assert_equal 1, store.number(2_000_000)
+  interp.update
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#blocking? is true only while a non-Parallel map event page is running" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  waiting_page = wolf_test_page(Wolf::Page::TRIGGER_AUTO, commands: [wolf_test_cmd(180, [5])])
+  event = WolfTestEvent.new(0, 1, 1, [waiting_page])
+  interp.current_map = WolfTestMap.new([event])
+
+  assert_false interp.blocking?
+  interp.update # starts the Auto page; it Waits immediately, so it is still live
+  assert_true interp.blocking?
+
+  parallel_page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL, commands: [wolf_test_cmd(180, [5])])
+  event2 = WolfTestEvent.new(1, 2, 2, [parallel_page])
+  interp2 = Wolf::Interpreter.new(WolfTestFakeProject.new, Wolf::VarStore.new(WolfTestFakeProject.new))
+  interp2.current_map = WolfTestMap.new([event2])
+  interp2.update
+  assert_false interp2.blocking?
+end
+
+assert "Wolf::Interpreter#trigger_confirm/#trigger_touch start their page only on demand, not via #update" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  confirm_page = wolf_test_page(Wolf::Page::TRIGGER_CONFIRM,
+                                 commands: [wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000])])
+  touch_page = wolf_test_page(Wolf::Page::TRIGGER_PLAYER_TOUCH,
+                               commands: [wolf_test_cmd(121, [2_000_001, 0, 1, 0xf000])])
+  confirm_event = WolfTestEvent.new(0, 1, 1, [confirm_page])
+  touch_event = WolfTestEvent.new(1, 2, 2, [touch_page])
+  interp.current_map = WolfTestMap.new([confirm_event, touch_event])
+
+  interp.update # a Confirm/Player-Touch page must never run just from #update
+  assert_equal 0, store.number(2_000_000)
+  assert_equal 0, store.number(2_000_001)
+
+  assert_true interp.trigger_confirm(confirm_event)
+  assert_equal 1, store.number(2_000_000)
+
+  found_event, found_page = interp.event_at(2, 2)
+  assert_equal touch_event, found_event
+  assert_equal touch_page, found_page
+  assert_true interp.trigger_touch(touch_event)
+  assert_equal 1, store.number(2_000_001)
+
+  assert_nil interp.event_at(9, 9)
 end
