@@ -595,7 +595,7 @@ class RPG2k
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         a = caster
-        mp_term = term(:mp_short, 'MP')
+        mp_term = term(:mp_short)
         c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.display_max_mp}"
         # An empty skill list draws no placeholder text -- matching the fix
         # for the analogous Item screen (see item_menu.rb), confirmed there
@@ -646,7 +646,7 @@ class RPG2k
       # (エレクマーシャ, 30 MP): the box sits at the skill window's own
       # former top-left corner (`(0, DESC_H)`), is exactly `DESC_H` tall (one
       # row) and as wide as the narrowed banner above it, regardless of scope
-      # or lock. Its one line is `term(:mp_cost, 'MP Cost')` flush left and
+      # or lock. Its one line is `term(:mp_cost)` flush left and
       # the pending skill's own cost (`Game::Party#skill_cost`, the same value
       # the ordinary grid row already shows) flush right (`align` 2) -- the
       # identical "term left, value right" row shape as
@@ -667,7 +667,7 @@ class RPG2k
         @skill_window.windowskin = @skin
         c = Bitmap.new(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost, 'MP Cost')
+        c.draw_text 0, 0, inner_w, LINE_H, term(:mp_cost)
         sk = @pending_skill ? @state.party.db_skill(@pending_skill) : nil
         cost = sk ? @state.party.skill_cost(sk, caster) : 0
         c.draw_text 0, 0, inner_w, LINE_H, cost.to_s, 2
@@ -716,7 +716,7 @@ class RPG2k
           draw_target_face c, a, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
-                      "#{term(:level_short, 'Lv')} #{a.level}"
+                      "#{term(:level_short)} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
           # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
@@ -725,14 +725,14 @@ class RPG2k
           # text, the same gap the Status screen and battle status panel each
           # had before their own earlier fixes (see docs/TODO.md).
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H, inner_w, LINE_H,
-                            "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
+                            "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H * 2, inner_w, LINE_H,
-                            "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
+                            "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
         end
         @target_window.contents = c
         refresh_target_cursor

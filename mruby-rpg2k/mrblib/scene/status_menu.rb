@@ -40,8 +40,8 @@ class RPG2k
         @skin = make_windowskin
         @actor_index = actor_index
         @slots = [
-          term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
-          term(:helmet, "Helmet"), term(:accessory, "Accessory")
+          term(:weapon), term(:shield), term(:armor),
+          term(:helmet), term(:accessory)
         ]
         @warned_missing_item_ids = {}
         build_window
@@ -154,8 +154,8 @@ class RPG2k
           # hardcodes the English label, matching this codebase's own
           # `order.rb` precedent for "Confirm"/"Redo".
           "Class: #{a.respond_to?(:class_name) ? a.class_name : ''}",
-          "#{term(:level_short, 'Lv')} #{a.level}    " \
-          "#{term(:exp_short, 'EXP')} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
+          "#{term(:level_short)} #{a.level}    " \
+          "#{term(:exp_short)} #{a.exp}    Next #{nxt.nil? ? '---' : nxt}",
           # Drawn separately, after this flat pass -- see #draw_hp_mp_row.
           '',
           # ATK/DEF/Int(Spirit)/AGI, state-adjusted -- ported from a
@@ -169,10 +169,10 @@ class RPG2k
           # #effective_atk`/`#effective_def`/`#effective_int`/`#effective_agi`
           # already port this (built for skill formulas, see their own
           # citation) but were never wired into this screen.
-          "#{term(:attack, 'Atk')} #{@state.party.effective_atk(a)}   " \
-          "#{term(:defense, 'Def')} #{@state.party.effective_def(a)}   " \
-          "#{term(:mind, 'Int')} #{@state.party.effective_int(a)}   " \
-          "#{term(:agility, 'Agi')} #{@state.party.effective_agi(a)}",
+          "#{term(:attack)} #{@state.party.effective_atk(a)}   " \
+          "#{term(:defense)} #{@state.party.effective_def(a)}   " \
+          "#{term(:mind)} #{@state.party.effective_int(a)}   " \
+          "#{term(:agility)} #{@state.party.effective_agi(a)}",
           # The condition gets a labelled row of its own, as on RPG_RT's status
           # screen (its Window_ActorInfo draws the label then the state). Only
           # the label goes through the flat pass below; the state itself is drawn
@@ -190,7 +190,7 @@ class RPG2k
         # it here entirely before this line was added, not merely
         # mispositioning it. That drawing path
         # draws just the amount and the term, no extra label of its own.
-        lines.push("#{@state.party.gold}#{term(:gold, 'G')}")
+        lines.push("#{@state.party.gold}#{term(:gold)}")
         lines.each_with_index do |line, i|
           c.draw_text 0, i * LINE_H, inner_w, LINE_H, line
         end
@@ -228,9 +228,9 @@ class RPG2k
       # HP/MP figures, never their label or max.
       def draw_hp_mp_row(c, a, y, inner_w)
         gutter = c.text_size('    ').width
-        x = draw_stat_segment(c, 0, y, inner_w, LINE_H, term(:hp_short, 'HP') + ' ',
+        x = draw_stat_segment(c, 0, y, inner_w, LINE_H, term(:hp_short) + ' ',
                                a.hp, a.display_max_hp, true, @skin)
-        draw_stat_segment(c, x + gutter, y, inner_w, LINE_H, term(:mp_short, 'MP') + ' ',
+        draw_stat_segment(c, x + gutter, y, inner_w, LINE_H, term(:mp_short) + ' ',
                            a.mp, a.display_max_mp, false, @skin)
       end
 

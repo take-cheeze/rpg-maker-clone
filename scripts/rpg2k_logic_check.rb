@@ -7011,6 +7011,14 @@ check 'Actor learns skills from the growth table up to its level' do
   eq [1, 2], a.skills.sort
 end
 
+# A minimal `db.term` double for the level-up/skill-learned message checks
+# below: `level_up_message`/`skill_learned_message` now read these fields raw
+# (no English fallback -- genuine RPG_RT draws a blank database term blank),
+# so a fixture that wants a legible composed line needs to set them itself.
+def level_terms
+  Struct.new(:level_up, :level, :skill_learned).new('になった！', 'Lv', 'を覚えた！')
+end
+
 # -- RPG2003 class (Change Class 1008 / Change Battle Commands 1009) ----------
 
 # A party of one whose actor row and class rows are all set up for the class
@@ -7042,7 +7050,8 @@ def class_db(class_id = 0, actor_learns = [[10, 1]])
   # own IsRPG2k3Commands() gate), and every check built on this fixture
   # exercises one or the other.
   FakeActorDB.new(players, [1], {}, {}, jobs, nil, nil, rpg2003: true,
-                  battlecommands: FakeBattleCommandsTable.new(commands, 0))
+                  battlecommands: FakeBattleCommandsTable.new(commands, 0),
+                  term: level_terms)
 end
 
 def class_state(class_id = 0, actor_learns = [[10, 1]])
@@ -7254,7 +7263,7 @@ check 'Change Class shows one level-up line when it taught skills' do
                          Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
   it.update
   eq :message, it.wait_kind
-  eq ['Hero is now level 3!'], it.message_lines
+  eq ['HeroはLv 3 になった！'], it.message_lines
   it.resume
   it.update
   ok !it.waiting?, 'a class change announces one line, not one per level'
@@ -7274,13 +7283,17 @@ check "level_up_message/skill_learned_message compose from the database's own te
   eq 'Fireballを覚えた！', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
 end
 
-check 'level_up_message/skill_learned_message fall back to English when the database leaves the terms blank' do
+check 'level_up_message/skill_learned_message draw blank, not English, when the database leaves the terms unset' do
+  # Genuine RPG_RT draws a blank database term blank rather than substituting
+  # English (confirmed cycle #122: Nepheshel's own blank `battle_save` term
+  # still draws an unlabelled row) -- these two lines follow the same rule,
+  # with no separate all-English sentence for a bare/term-less database.
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   it = Game::Interpreter.new(st)
   hero = st.party.actors.first
-  eq 'Hero is now level 5!', it.send(:level_up_message, hero, 5)
-  eq 'Hero learned Fireball!', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
+  eq "Heroは 5 ", it.send(:level_up_message, hero, 5)
+  eq 'Fireball', it.send(:skill_learned_message, hero, fake_skill(name: 'Fireball'))
 end
 
 check 'Change Class stays quiet when the level held and no skills moved' do
@@ -7317,7 +7330,7 @@ def class_db_named_skills(actor_learns = [[10, 1]])
   # rpg2003: true -- Change Class is RPG2003-only (see class_db's own note).
   FakeActorDB.new(players, [1], {},
                   { 21 => fake_skill(name: 'Slash'), 22 => fake_skill(name: 'Cleave') },
-                  jobs, nil, nil, rpg2003: true)
+                  jobs, nil, nil, rpg2003: true, term: level_terms)
 end
 
 check 'Change Class announces each newly-learned skill by name, not just the level' do
@@ -7329,7 +7342,7 @@ check 'Change Class announces each newly-learned skill by name, not just the lev
                          Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
   it.update
   eq :message, it.wait_kind
-  eq ['Hero is now level 3!', 'Hero learned Slash!', 'Hero learned Cleave!'],
+  eq ['HeroはLv 3 になった！', 'Slashを覚えた！', 'Cleaveを覚えた！'],
      it.message_lines,
      'both class-table skills newly learnt (levels 1 and 3) are named on the same page'
   it.resume
@@ -7352,7 +7365,7 @@ check 'Change Class stays quiet about a skill the actor already knew going in' d
                          Game::Actor::CLASS_PARAM_RESET_LEVEL, 1])])
   it.update
   eq :message, it.wait_kind
-  eq ['Hero is now level 3!', 'Hero learned Cleave!'], it.message_lines,
+  eq ['HeroはLv 3 になった！', 'Cleaveを覚えた！'], it.message_lines,
      'skill 21 was already known, so only the newly-learned skill 22 is named'
 end
 
@@ -7386,7 +7399,7 @@ check 'Change Class still announces the level even when its Reset/Add skill ' \
                          Game::Actor::CLASS_PARAM_NO_CHANGE, 1])])
   it.update
   eq :message, it.wait_kind, 'RPG_RT still announces the level, taught nothing new or not'
-  eq ['Hero is now level 3!'], it.message_lines, 'no newly-learned skill to name'
+  eq ['HeroはLv 3 になった！'], it.message_lines, 'no newly-learned skill to name'
   it.resume
   it.update
   ok !it.waiting?
@@ -7941,7 +7954,7 @@ def three_level_db
   FakeActorDB.new(
     { 1 => CurveRow.new('Hero', '', 0, 1,
                         [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12]) },
-    [1])
+    [1], {}, {}, {}, nil, nil, term: level_terms)
 end
 
 check 'Change Level with the show-message flag queues a message per level gained' do
@@ -7955,11 +7968,11 @@ check 'Change Level with the show-message flag queues a message per level gained
   eq 3, a.level, 'gained two levels'
   ok it.waiting?, 'the first level-up message pauses the event'
   eq :message, it.wait_kind
-  eq ['Hero is now level 2!'], it.message_lines
+  eq ['HeroはLv 2 になった！'], it.message_lines
   eq false, st.switches[1], 'the following command has not run yet'
   it.resume
   eq :message, it.wait_kind, 'the second level queues a second message'
-  eq ['Hero is now level 3!'], it.message_lines
+  eq ['HeroはLv 3 になった！'], it.message_lines
   it.resume
   it.update
   eq true, st.switches[1], 'the event resumes once the messages drain'
@@ -7983,7 +7996,7 @@ check 'Change EXP with the show-message flag announces a level-up' do
   it.update
   eq 2, a.level, 'crossed one level threshold'
   ok it.waiting?
-  eq ['Hero is now level 2!'], it.message_lines
+  eq ['HeroはLv 2 になった！'], it.message_lines
   it.resume
   ok !it.waiting?, 'a single level gained -> a single message'
 end
@@ -7997,7 +8010,8 @@ def skill_level_db(learns = [[201, 2], [202, 3]])
                         [10, 20, 30, 5, 10, 15, 3, 6, 9, 2, 4, 6, 1, 2, 3, 4, 8, 12],
                         learns) },
     [1], {},
-    { 201 => fake_skill(name: 'Fireball'), 202 => fake_skill(name: 'Iceball') })
+    { 201 => fake_skill(name: 'Fireball'), 202 => fake_skill(name: 'Iceball') },
+    {}, nil, nil, term: level_terms)
 end
 
 # Ported from a reference implementation, NOT independently confirmed against
@@ -8018,11 +8032,11 @@ check 'Change Level queues a skill-learned line alongside the level that teaches
   eq 3, a.level, 'gained two levels'
   eq [201, 202], a.skills.sort, 'both level-gated skills are learnt'
   eq :message, it.wait_kind
-  eq ['Hero is now level 2!', 'Hero learned Fireball!'], it.message_lines,
+  eq ['HeroはLv 2 になった！', 'Fireballを覚えた！'], it.message_lines,
      "the level-2 page carries its own newly-taught skill's line"
   it.resume
   eq :message, it.wait_kind, 'the second level queues a second page'
-  eq ['Hero is now level 3!', 'Hero learned Iceball!'], it.message_lines,
+  eq ['HeroはLv 3 になった！', 'Iceballを覚えた！'], it.message_lines,
      "the level-3 page carries its own newly-taught skill's line"
   it.resume
   it.update
@@ -8044,7 +8058,7 @@ check 'Change EXP stays quiet about a skill the actor already knew going in' do
   it.update
   eq 2, a.level, 'crossed the level-2 threshold'
   eq :message, it.wait_kind
-  eq ['Hero is now level 2!'], it.message_lines,
+  eq ['HeroはLv 2 になった！'], it.message_lines,
      'skill 201 was already known, so no skill-learned line repeats it'
   it.resume
   ok !it.waiting?

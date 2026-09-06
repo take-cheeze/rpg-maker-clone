@@ -796,7 +796,7 @@ class RPG2k
         @item_window.windowskin = @skin
         c = Bitmap.new(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items, 'Possessed')
+        c.draw_text 0, 0, inner_w, LINE_H, term(:possessed_items)
         count = @pending_item ? @state.party.item_count(@pending_item) : 0
         c.draw_text 0, 0, inner_w, LINE_H, count.to_s, 2
         @item_window.contents = c
@@ -936,7 +936,7 @@ class RPG2k
           draw_target_face c, a, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
-                      "#{term(:level_short, 'Lv')} #{a.level}"
+                      "#{term(:level_short)} #{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
           # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
@@ -945,14 +945,14 @@ class RPG2k
           # text, the same gap the Status screen and battle status panel each
           # had before their own earlier fixes (see docs/TODO.md).
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H, inner_w, LINE_H,
-                            "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
+                            "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H * 2, inner_w, LINE_H,
-                            "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
+                            "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
         end
         @target_window.contents = c
         refresh_target_cursor

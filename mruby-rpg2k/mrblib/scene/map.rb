@@ -5928,24 +5928,24 @@ class RPG2k
         it.resume_inn(stayed)
       end
 
-      # RPG2000 inn term set (A or B) selected by the command's type parameter.
-      # Blank database terms (e.g. a bare test project) fall back to plain
-      # English so the window is never empty.
+      # RPG2000 inn term set (A or B) selected by the command's type parameter,
+      # raw -- a bare test project's blank terms draw blank, matching genuine
+      # RPG_RT.
       def inn_terms(type)
         t = db.term
         a = type.zero?
         {
-          greet1: nonblank(a ? t.inn_a_greeting_1 : t.inn_b_greeting_1, 'Stay the night for'),
-          greet2: nonblank(a ? t.inn_a_greeting_2 : t.inn_b_greeting_2, '?'),
-          greet3: nonblank(a ? t.inn_a_greeting_3 : t.inn_b_greeting_3, 'Will you stay?'),
-          accept: nonblank(a ? t.inn_a_accept : t.inn_b_accept, 'Yes'),
-          cancel: nonblank(a ? t.inn_a_cancel : t.inn_b_cancel, 'No')
+          greet1: (a ? t.inn_a_greeting_1 : t.inn_b_greeting_1).to_s,
+          greet2: (a ? t.inn_a_greeting_2 : t.inn_b_greeting_2).to_s,
+          greet3: (a ? t.inn_a_greeting_3 : t.inn_b_greeting_3).to_s,
+          accept: (a ? t.inn_a_accept : t.inn_b_accept).to_s,
+          cancel: (a ? t.inn_a_cancel : t.inn_b_cancel).to_s
         }
       end
 
       def open_inn_window(req)
         terms = inn_terms(req[:type])
-        gold_term = nonblank(db.term.gold, 'G')
+        gold_term = db.term.gold.to_s
         lines = ["#{terms[:greet1]} #{req[:price]}#{gold_term} #{terms[:greet2]}".strip,
                  terms[:greet3], terms[:accept], terms[:cancel]]
         # Fixed 320x80 panel flush to the screen's bottom-left corner, the
@@ -6064,32 +6064,26 @@ class RPG2k
         draw_shop
       end
 
-      def shop_gold_term; nonblank(db.term.gold, 'G'); end
+      def shop_gold_term; db.term.gold.to_s; end
 
       # RPG2000 shop term set (1/2/3, one of three shopkeeper "voices") selected
-      # by Open Shop's own type parameter, mirroring #inn_terms. Blank database
-      # terms fall back to plain English so the window is never empty.
+      # by Open Shop's own type parameter, mirroring #inn_terms, raw -- a bare
+      # database's blank terms draw blank, matching genuine RPG_RT.
       def shop_terms(type)
         t = db.term
         i = Game.clamp(type || 0, 0, 2)
         {
-          greeting: nonblank([t.shop_greeting1, t.shop_greeting2, t.shop_greeting3][i], 'Welcome!'),
-          regreeting: nonblank([t.shop_regreeting1, t.shop_regreeting2, t.shop_regreeting3][i],
-                               'Is there anything else you need?'),
-          buy: nonblank([t.shop_buy1, t.shop_buy2, t.shop_buy3][i], 'Buy'),
-          sell: nonblank([t.shop_sell1, t.shop_sell2, t.shop_sell3][i], 'Sell'),
-          leave: nonblank([t.shop_leave1, t.shop_leave2, t.shop_leave3][i], 'Leave'),
-          buy_select: nonblank([t.shop_buy_select1, t.shop_buy_select2, t.shop_buy_select3][i],
-                               'What would you like to buy?'),
-          sell_select: nonblank([t.shop_sell_select1, t.shop_sell_select2, t.shop_sell_select3][i],
-                                'What would you like to sell?'),
-          buy_number: nonblank([t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i],
-                               'How many will you buy?'),
-          sell_number: nonblank([t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i],
-                                'How many will you sell?'),
-          purchased: nonblank([t.shop_purchased1, t.shop_purchased2, t.shop_purchased3][i],
-                              'Thank you!'),
-          sold: nonblank([t.shop_sold1, t.shop_sold2, t.shop_sold3][i], 'Thank you!')
+          greeting: [t.shop_greeting1, t.shop_greeting2, t.shop_greeting3][i].to_s,
+          regreeting: [t.shop_regreeting1, t.shop_regreeting2, t.shop_regreeting3][i].to_s,
+          buy: [t.shop_buy1, t.shop_buy2, t.shop_buy3][i].to_s,
+          sell: [t.shop_sell1, t.shop_sell2, t.shop_sell3][i].to_s,
+          leave: [t.shop_leave1, t.shop_leave2, t.shop_leave3][i].to_s,
+          buy_select: [t.shop_buy_select1, t.shop_buy_select2, t.shop_buy_select3][i].to_s,
+          sell_select: [t.shop_sell_select1, t.shop_sell_select2, t.shop_sell_select3][i].to_s,
+          buy_number: [t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i].to_s,
+          sell_number: [t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i].to_s,
+          purchased: [t.shop_purchased1, t.shop_purchased2, t.shop_purchased3][i].to_s,
+          sold: [t.shop_sold1, t.shop_sold2, t.shop_sold3][i].to_s
         }
       end
 
@@ -6515,8 +6509,8 @@ class RPG2k
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, nonblank(db.term.possessed_items, 'Possessed')
-        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, nonblank(db.term.equipped_items, 'Equipped')
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, db.term.possessed_items.to_s
+        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, db.term.equipped_items.to_s
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, @state.party.item_count(id).to_s, 2
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H,
                     @state.party.equipped_item_count(id).to_s, 2
@@ -9004,7 +8998,7 @@ class RPG2k
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = nil
         if show_gold
-          gold_window = build_inn_gold_window(nonblank(db.term.gold, 'G'))
+          gold_window = build_inn_gold_window(db.term.gold.to_s)
           gold_window.open_animation(open_frames)
         end
         @message = { window: win, choice: choice, count: plain.length,

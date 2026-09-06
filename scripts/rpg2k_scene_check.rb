@@ -435,6 +435,22 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
     # battler's name goes in front of. `observing` is deliberately left blank so
     # the scene's fallback wording is exercised.
     term: OpenStruct.new(gold: 'G', normal_status: 'Normal',
+                         # Field/battle menu vocabulary -- set to plain English
+                         # so the many command-label checks read legibly;
+                         # `#term` itself no longer substitutes English for a
+                         # blank/missing field (genuine RPG_RT draws a blank
+                         # database term blank), so any check that wants to
+                         # exercise *that* leaves the relevant field unset and
+                         # asserts blank instead.
+                         battle_attack: 'Attack', battle_skill: 'Skill',
+                         battle_defend: 'Defend', battle_item: 'Item',
+                         battle_fight: 'Fight', battle_auto: 'Auto Battle',
+                         battle_escape: 'Escape', row: 'Row',
+                         wait_on: 'Wait On', wait_off: 'Wait Off',
+                         level_short: 'Lv', hp_short: 'HP', mp_short: 'MP',
+                         exp_short: 'EXP', possessed_items: 'Possessed',
+                         equipped_items: 'Equipped', mp_cost: 'MP Cost',
+                         file: 'File',
                          attacking: 'の攻撃！', defending: 'は身を守っている',
                          observing: '', focus: 'は力をためている・・・',
                          autodestruction: 'は自爆した！',
@@ -17485,8 +17501,11 @@ check 'Enemy Encounter scene: the result window composes the database EXP/gold/i
      'both dead Slimes roll their certain drop, each named by the database item term'
 end
 
-check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall back to ' \
-      'composed English' do
+check 'Enemy Encounter scene: blank database EXP/gold/item received terms draw ' \
+      'blank, not composed English' do
+  # Genuine RPG_RT draws a blank database term blank (confirmed cycle #122:
+  # Nepheshel's own blank `battle_save` term still draws an unlabelled row) --
+  # these lines compose the same way with no English substituted.
   ic = Game::Interpreter::Cmd
   db = fake_db # leaves exp_received/gold_received_a/_b/item_received blank
   db.enemy[2].drop_id = 3
@@ -17500,9 +17519,10 @@ check 'Enemy Encounter scene: blank database EXP/gold/item received terms fall b
   scene.update
   battle_attack_to_end(scene)
   texts = window_texts(battle_ui(scene)[:result_win])
-  ok texts.any? { |t| t.include?('10 EXP gained.') }, 'a blank exp_received term falls back'
-  ok texts.any? { |t| t.include?('Found 20G.') }, 'blank gold_received_a/gold/gold_received_b fall back'
-  ok texts.count { |t| t.include?('Potion obtained.') } == 2, 'a blank item_received term falls back'
+  ok texts.any? { |t| t.include?('10') && !t.include?('EXP') }, 'a blank exp_received term draws blank'
+  ok texts.any? { |t| t.include?(' 20G') && !t.include?('Found') },
+     'blank gold_received_a/gold_received_b draw blank around the amount and the gold term'
+  ok texts.count { |t| t == 'Potion' } == 2, 'a blank item_received term draws blank'
 end
 
 check 'Enemy Encounter scene: the result window announces a level-up and the skill it ' \
@@ -17535,8 +17555,8 @@ check 'Enemy Encounter scene: the result window announces a level-up and the ski
      'the newly-learned skill names itself (GetLearningMessage), right after the level-up line'
 end
 
-check 'Enemy Encounter scene: blank database level_up/skill_learned terms fall back to ' \
-      'composed English' do
+check 'Enemy Encounter scene: blank database level_up/skill_learned terms draw ' \
+      'blank, not composed English' do
   ic = Game::Interpreter::Cmd
   db = fake_db # leaves level_up/skill_learned blank
   db.skill[42] = OpenStruct.new(name: 'Meteor')
@@ -17550,11 +17570,11 @@ check 'Enemy Encounter scene: blank database level_up/skill_learned terms fall b
   scene.update
   battle_attack_to_end(scene)
   texts = window_texts(battle_ui(scene)[:result_win])
-  ok texts.any? { |t| t.include?('Hero is now level 2!') }, 'a blank level_up term falls back'
-  ok texts.any? { |t| t.include?('Hero learned Meteor!') }, 'a blank skill_learned term falls back'
+  ok texts.any? { |t| t == 'Heroは 2 ' }, 'a blank level/level_up term draws blank'
+  ok texts.any? { |t| t == 'Meteor' }, 'a blank skill_learned term draws blank'
 end
 
-check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to English' do
+check 'Enemy Encounter scene: a blank database Victory/Defeat term draws blank, not English' do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic, second_switch_code: ic::DEFEAT_HANDLER)
@@ -17565,8 +17585,9 @@ check 'Enemy Encounter scene: a blank database Victory/Defeat term falls back to
   scene.update
   battle_attack_to_end(scene)
   texts = window_texts(battle_ui(scene)[:result_win])
-  ok texts.any? { |t| t.include?('The party was defeated...') },
-     'a blank database term still falls back to the composed English'
+  ok texts.include?(''), 'a blank database term draws blank, matching genuine RPG_RT ' \
+                         '(cycle #122), not the old composed-English fallback'
+  ok !texts.any? { |t| t.include?('defeated') }, 'no composed English substituted'
 end
 
 check 'Enemy Encounter scene: a successful Flee shows the database escape_success term ' \
@@ -17575,6 +17596,7 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic, escape_mode: 2)
   scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.escape_success = '逃げ出した！' # fake_db leaves this blank by default
   st = scene.instance_variable_get(:@state)
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :battle_options)
@@ -17586,8 +17608,7 @@ check 'Enemy Encounter scene: a successful Flee shows the database escape_succes
   RGSS::Input.triggered = []
   eq :result, ui[:phase]
   texts = window_texts(ui[:result_win])
-  ok texts.any? { |t| t.include?('Escaped!') },
-     'fake_db leaves escape_success blank, so this is the composed English fallback'
+  ok texts.any? { |t| t.include?('逃げ出した！') }, 'the database escape_success term is shown'
   # Decision plays first (choosing Escape from the options window is a
   # confirm action), then the dedicated Escape SE right before the battle
   # actually ends -- see #try_battle_escape's comment.

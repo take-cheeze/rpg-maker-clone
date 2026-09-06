@@ -54,11 +54,11 @@ class RPG2k
       # customizable one -- see RPG2K3_COMMAND_IDS below -- so this constant
       # is the RPG2000 (and RPG2003-without-a-menu_commands-chunk) default.
       RPG2K_COMMAND_KEYS = [
-        [:item, :battle_item, "Item"],
-        [:skill, :battle_skill, "Skill"],
-        [:equip, :battle_equipment, "Equip"],
-        [:save, :battle_save, "Save"],
-        [:end_game, :battle_end_game, "End Game"]
+        [:item, :battle_item],
+        [:skill, :battle_skill],
+        [:equip, :battle_equipment],
+        [:save, :battle_save],
+        [:end_game, :battle_end_game]
       ].freeze
 
       # RPG2003's System chunk 22 field 27 (`menu_commands`, schema.rb) lists
@@ -93,14 +93,14 @@ class RPG2k
       # principle) and reorder the survivors, both of which #build_commands
       # honours.
       RPG2K3_COMMAND_IDS = {
-        1 => [:item, :battle_item, "Item"],
-        2 => [:skill, :battle_skill, "Skill"],
-        3 => [:equip, :battle_equipment, "Equip"],
-        4 => [:save, :battle_save, "Save"],
-        5 => [:status, :status, "Status"],
-        6 => [:row, :row, "Row"],
-        7 => [:order, :order, "Order"],
-        8 => [:wait, :wait, "Wait"]
+        1 => [:item, :battle_item],
+        2 => [:skill, :battle_skill],
+        3 => [:equip, :battle_equipment],
+        4 => [:save, :battle_save],
+        5 => [:status, :status],
+        6 => [:row, :row],
+        7 => [:order, :order],
+        8 => [:wait, :wait]
       }.freeze
 
       def initialize parent, state
@@ -303,14 +303,14 @@ class RPG2k
                else
                  RPG2K_COMMAND_KEYS
                end
-        keys.map { |key, term_name, fallback| [key, wait_term_for(key, term_name, fallback)] }
+        keys.map { |key, term_name| [key, wait_term_for(key, term_name)] }
       end
 
       # The label for a command row: the Wait row is dynamic (the current
       # mode's term), every other row is a plain Term lookup.
-      def wait_term_for(key, term_name, fallback)
+      def wait_term_for(key, term_name)
         return wait_label if key == :wait
-        term(term_name, fallback)
+        term(term_name)
       end
 
       # The Wait command row's label: `wait_on` while the fight is set to
@@ -320,7 +320,7 @@ class RPG2k
       # genuine RPG_RT under wine: a mode-check expression selecting
       # wait_on : wait_off.
       def wait_label
-        @state.atb_mode == 1 ? term(:wait_on, 'Wait On') : term(:wait_off, 'Wait Off')
+        @state.atb_mode == 1 ? term(:wait_on) : term(:wait_off)
       end
 
       def build_windows
@@ -364,7 +364,7 @@ class RPG2k
           # the reference screenshot itself reads left-to-right in that
           # order rather than split to opposite edges.
           row_y = y + 16
-          lvl_label = "#{term(:level_short, 'Lv')} #{a.level}  "
+          lvl_label = "#{term(:level_short)} #{a.level}  "
           draw_system_text sc, text_x, row_y, sc.width - text_x, 14, lvl_label, @skin
           cond_x = text_x + sc.text_size(lvl_label).width
           draw_actor_state sc, a, cond_x, row_y, sc.width - cond_x, 14, @skin
@@ -379,9 +379,9 @@ class RPG2k
           hp_mp_y = row_y + 16
           gutter = sc.text_size('  ').width
           x = draw_stat_segment(sc, text_x, hp_mp_y, sc.width, 14,
-                                 "#{term(:hp_short, 'HP')} ", a.hp, a.display_max_hp, true, @skin)
+                                 "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
           draw_stat_segment(sc, x + gutter, hp_mp_y, sc.width, 14,
-                             "#{term(:mp_short, 'MP')} ", a.mp, a.display_max_mp, false, @skin)
+                             "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
         end
         @status.contents = sc
         # No cursor of its own until Skill/Equip/Status hands it focus (see
@@ -416,7 +416,7 @@ class RPG2k
         inner_w = GOLD_WINDOW_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, LINE_H, "#{@state.party.gold}#{term(:gold, 'G')}"
+        c.draw_text 0, 0, inner_w, LINE_H, "#{@state.party.gold}#{term(:gold)}"
         @gold.contents = c
       end
 
@@ -438,7 +438,7 @@ class RPG2k
       def draw_exp_row(bmp, actor, x, y, w)
         nxt = actor.next_level_exp
         draw_system_text bmp, x, y, w, 14,
-                          "#{term(:exp_short, 'EXP')} #{actor.exp}/#{nxt.nil? ? '---' : nxt}",
+                          "#{term(:exp_short)} #{actor.exp}/#{nxt.nil? ? '---' : nxt}",
                           @skin, 0, 2
       end
 
@@ -671,7 +671,7 @@ class RPG2k
       # sizing), rather than a fixed width.
       def build_end_game_confirm_windows
         measure = Bitmap.new 1, 1
-        text = term(:end_game_confirm, 'Do you really want to quit?')
+        text = term(:end_game_confirm)
         text_w = measure.text_size(text).width
 
         help_w = text_w + Window::BORDER * 2
@@ -686,7 +686,7 @@ class RPG2k
         hc.draw_text 0, 0, hc.width, LINE_H, text
         @confirm_help.contents = hc
 
-        labels = [term(:yes, 'Yes'), term(:no, 'No')]
+        labels = [term(:yes), term(:no)]
         label_w = labels.map { |l| measure.text_size(l).width }.max
         cmd_w = label_w + Window::BORDER * 2
         cmd_h = labels.size * LINE_H + Window::BORDER * 2

@@ -330,8 +330,8 @@ class RPG2k
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        header = @mode == :save ? term(:save_file_select, 'Save which file?') :
-                                   term(:load_file_select, 'Load which file?')
+        header = @mode == :save ? term(:save_file_select) :
+                                   term(:load_file_select)
         c.draw_text 0, 0, inner_w, LINE_H, header
         @header_window.contents = c
       end
@@ -358,7 +358,7 @@ class RPG2k
       end
 
       def slot_label(slot_index)
-        "#{term(:file, 'File')} #{slot_index + 1}"
+        "#{term(:file)} #{slot_index + 1}"
       end
 
       # `slot_index`'s box: the file label always, and -- when the slot holds
@@ -427,8 +427,8 @@ class RPG2k
       # sits on screen, unlike a single interpolated string with a literal
       # gap between the two halves.
       def draw_level_hp(c, y, level, hp, rpg2003)
-        lvl_label = fixed_width_term(:level_short, 'Lv')
-        hp_label = fixed_width_term(:hp_short, 'HP')
+        lvl_label = fixed_width_term(:level_short)
+        hp_label = fixed_width_term(:hp_short)
         draw_system_text c, 4, y, c.width, LINE_H, lvl_label, @skin
         lx = c.text_size(lvl_label).width
         draw_system_text c, 4 + lx, y, c.width, LINE_H, level.to_s.rjust(2), @skin
@@ -441,8 +441,8 @@ class RPG2k
       # if shorter -- ported from a reference implementation's own
       # fixed-width term handling, NOT independently confirmed against
       # genuine RPG_RT under wine.
-      def fixed_width_term(name, fallback)
-        s = term(name, fallback)
+      def fixed_width_term(name)
+        s = term(name)
         s.length > 2 ? s[0, 2] : s.ljust(2)
       end
 

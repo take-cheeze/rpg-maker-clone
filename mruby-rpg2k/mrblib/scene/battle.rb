@@ -307,9 +307,9 @@ class RPG2k
       # nothing to say (every troop member hidden, no first strike).
       def battle_encounter_lines(troop, req)
         lines = troop.members.reject(&:hidden).map do |enemy|
-          "#{enemy.name}#{term(:encounter, ' appeared!')}"
+          "#{enemy.name}#{term(:encounter)}"
         end
-        lines << term(:special_combat, 'You get the first strike!') if req[:first_strike]
+        lines << term(:special_combat) if req[:first_strike]
         lines
       end
 
@@ -1167,8 +1167,8 @@ class RPG2k
       # menu; otherwise this falls back to the fixed **Attack, Skill, Defend,
       # Item** four — a reference implementation builds that exact array,
       # not the Item-before-Defend order
-      # this used to assume, read from the database's battle-command terms with
-      # the standard RPG2k labels as fallback. The Skill slot is not memoized:
+      # this used to assume, read from the database's own battle-command
+      # terms (raw, possibly blank). The Skill slot is not memoized:
       # it substitutes the acting actor's own RPG2000 rename
       # (`#skill_command_label` below) when the database sets one, so it can
       # change from one actor's turn to the next.
@@ -1191,12 +1191,12 @@ class RPG2k
         actor = current_actor_row
         custom = actor && custom_battle_commands(actor)
         rows = custom || [
-          { label: term(:battle_attack, 'Attack'), action: :attack, command_id: 1 },
+          { label: term(:battle_attack), action: :attack, command_id: 1 },
           { label: skill_command_label, action: :skill, command_id: 2 },
-          { label: term(:battle_defend, 'Defend'), action: :defend, command_id: 3 },
-          { label: term(:battle_item, 'Item'), action: :item, command_id: 4 }
+          { label: term(:battle_defend), action: :defend, command_id: 3 },
+          { label: term(:battle_item), action: :item, command_id: 4 }
         ]
-        rows += [{ label: term(:row, 'Row'), action: :row, command_id: nil }] if row_command_available?
+        rows += [{ label: term(:row), action: :row, command_id: nil }] if row_command_available?
         rows
       end
 
@@ -1247,20 +1247,15 @@ class RPG2k
 
           case row.type
           when Game::Actor::BATTLE_COMMAND_ATTACK
-            out << { label: nonblank(row.name, term(:battle_attack, 'Attack')), action: :attack,
-                     command_id: cmd_id }
+            out << { label: row.name.to_s, action: :attack, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_SKILL, Game::Actor::BATTLE_COMMAND_SUBSKILL
-            out << { label: nonblank(row.name, skill_command_label), action: :skill,
-                     command_id: cmd_id }
+            out << { label: row.name.to_s, action: :skill, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_DEFENSE
-            out << { label: nonblank(row.name, term(:battle_defend, 'Defend')), action: :defend,
-                     command_id: cmd_id }
+            out << { label: row.name.to_s, action: :defend, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_ITEM
-            out << { label: nonblank(row.name, term(:battle_item, 'Item')), action: :item,
-                     command_id: cmd_id }
+            out << { label: row.name.to_s, action: :item, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_SPECIAL
-            out << { label: nonblank(row.name, 'Special'), action: :special,
-                     command_id: cmd_id }
+            out << { label: row.name.to_s, action: :special, command_id: cmd_id }
           end
           # Escape: no menu row (see the method comment above) -- Special has
           # one now, since #select_battle_command drives it.
@@ -1275,16 +1270,16 @@ class RPG2k
       # The Skill command's own label. RPG2000's Actor sheet has a "custom
       # battle command" checkbox + name field (database fields 66/67,
       # `Game::Actor#rename_skill?` / `#skill_command_name`) that renames just
-      # this one slot — falling back to the stock Skill term when the actor's
-      # own rename is unset. Parsed by the schema and
+      # this one slot, raw -- used regardless of the stock Skill term when the
+      # actor's own rename is on. Parsed by the schema and
       # never read anywhere in this gem before now, so a game that set it (e.g.
       # renaming Skill to "Magic") showed the generic term regardless.
       def skill_command_label
         actor = current_actor_row
         if actor && actor.respond_to?(:rename_skill?) && actor.rename_skill?
-          nonblank(actor.skill_command_name, term(:battle_skill, 'Skill'))
+          actor.skill_command_name.to_s
         else
-          term(:battle_skill, 'Skill')
+          term(:battle_skill)
         end
       end
 
@@ -1357,9 +1352,9 @@ class RPG2k
       # 101/102/103 -- decoded by the schema but never read before this.
       def battle_option_rows
         [
-          { label: term(:battle_fight, 'Fight'), action: :battle },
-          { label: term(:battle_auto, 'Auto Battle'), action: :auto_battle },
-          { label: term(:battle_escape, 'Escape'), action: :escape }
+          { label: term(:battle_fight), action: :battle },
+          { label: term(:battle_auto), action: :auto_battle },
+          { label: term(:battle_escape), action: :escape }
         ]
       end
 
@@ -1507,7 +1502,7 @@ class RPG2k
           enter_battle_result(:escape)
         else
           $stderr.puts '[RPG2k battle] escape failed'
-          show_battle_banner([term(:escape_failure, "Couldn't escape!")])
+          show_battle_banner([term(:escape_failure)])
           living_allies.each { |a| battle.command_skip(a) }
           start_round_animation
         end
@@ -3211,9 +3206,8 @@ class RPG2k
 
       # The result window's text: the outcome, and on a win the EXP / gold gained
       # (granted here). RPG2000 shows this after the fight before returning to the
-      # map. The headline is the database's own wording -- the 用語 table's
-      # `victory` / `defeat` fields, the same table (and the same "falls back to
-      # composed English when the database leaves it blank" rule)
+      # map. The headline is the database's own wording, raw -- the 用語 table's
+      # `victory` / `defeat` fields, the same table
       # Game::States::BattleText already reads every per-action line from.
       # The EXP / gold / item lines are composed from their own terms too now
       # (`exp_received`, the `gold_received_a` / `_b` pair, `item_received`),
@@ -3236,9 +3230,8 @@ class RPG2k
       # after it, which is exactly `Game::Interpreter#do_change_exp`'s own
       # gain_exp-then-announce shape (`queue_level_up_messages`,
       # `mrblib/interpreter.rb`) -- so each actor's level/skill snapshot is
-      # taken here the same way, right before its own `#gain_exp`. Unlike
-      # that interpreter path (still the documented "plain English line for
-      # now" simplification), this screen already reads real database terms
+      # taken here the same way, right before its own `#gain_exp`. This
+      # screen already reads real database terms
       # for every other line, so `#battle_level_up_message` /
       # `#battle_skill_learned_message` below do too, built from that
       # reference implementation's
@@ -3251,16 +3244,16 @@ class RPG2k
       # for the whole result, so they are appended to that list instead, in
       # the same after-the-tally order the real sequence uses.
       def battle_result_lines(result, troop)
-        return [term(:escape_success, 'Escaped!')] if result == :escape
-        return [term(:defeat, 'The party was defeated...')] unless result == :victory
+        return [term(:escape_success)] if result == :escape
+        return [term(:defeat)] unless result == :victory
         exp = troop.total_exp
         gold = troop.total_gold
         @state.party.gain_gold(gold)
-        lines = [term(:victory, 'Victory!')]
-        lines << "#{exp}#{term(:exp_received, ' EXP gained.')}" if exp > 0
+        lines = [term(:victory)]
+        lines << "#{exp}#{term(:exp_received)}" if exp > 0
         if gold > 0
-          lines << "#{term(:gold_received_a, 'Found')} #{gold}#{term(:gold, 'G')}" \
-                   "#{term(:gold_received_b, '.')}"
+          lines << "#{term(:gold_received_a)} #{gold}#{term(:gold)}" \
+                   "#{term(:gold_received_b)}"
         end
         # Each defeated enemy may drop its treasure item (rolled on the battle's
         # own RNG); grant it to the bag and name it in the result window.
@@ -3268,7 +3261,7 @@ class RPG2k
           @state.party.gain_item(iid, 1)
           it = @state.party.db_item(iid)
           name = it ? it.name : "item #{iid}"
-          lines << "#{name}#{term(:item_received, ' obtained.')}"
+          lines << "#{name}#{term(:item_received)}"
         end
         @state.party.actors.each do |a|
           # A KO'd party member earns nothing from the victory -- a reference
@@ -3307,29 +3300,20 @@ class RPG2k
       end
 
       # The one line a level-up announces, built from the database's own
-      # `level`/`level_up` terms the way a reference implementation's
-      # stock/CP932 branch does (see `#battle_result_lines`'s own
-      # comment) -- falls back to composed English, matching every other
-      # line on this screen, only when the database leaves `level_up` blank
-      # (a raw `level_up` term with no `level` term set still gets the
-      # 'Lv' stand-in rather than losing the whole line to English).
+      # `level`/`level_up` terms (raw, possibly blank) the way a reference
+      # implementation's stock/CP932 branch does (see `#battle_result_lines`'s
+      # own comment).
       def battle_level_up_message(actor, level)
-        up = term(:level_up, nil)
-        return "#{actor.name} is now level #{level}!" unless up
-        "#{actor.name}は#{term(:level, 'Lv')} #{level} #{up}"
+        "#{actor.name}は#{term(:level)} #{level} #{term(:level_up)}"
       end
 
       # The one line a newly-learned skill announces, immediately following
       # its level's own line above -- a reference implementation's
       # stock/CP932 branch names only the skill, never the actor,
       # since it always trails that actor's own level-up line the way it
-      # does here too. Falls back to composed English (which does name the
-      # actor, since a database leaving `skill_learned` blank gets no
-      # level-up line's context to lean on either) when the term is blank.
+      # does here too.
       def battle_skill_learned_message(actor, sk)
-        learned = term(:skill_learned, nil)
-        return "#{actor.name} learned #{sk.name}!" unless learned
-        "#{sk.name}#{learned}"
+        "#{sk.name}#{term(:skill_learned)}"
       end
 
       # RPG_RT's battle windows share one fixed panel: a 320x80 strip along
