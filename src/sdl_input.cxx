@@ -17,6 +17,14 @@
 extern "C" void rgss_sdl_input_push(int key, bool press);
 extern "C" void rgss_sdl_mouse_push(int x, int y, bool pressed);
 
+#ifdef __EMSCRIPTEN__
+// src/main.cxx: shows/hides the LV_USE_PERF_MONITOR overlay
+// (include/lv_conf.h). F3 is not bound to any RgssKey (see the enum below),
+// so this is handled entirely here rather than through RGSS::Input -- a game
+// script never sees the key either way.
+extern "C" void rgss_wasm_toggle_perf_monitor(void);
+#endif
+
 namespace {
 
 #ifdef __ANDROID__
@@ -312,6 +320,12 @@ int SDLCALL event_watch(void* /*user*/, SDL_Event* event) {
       // held state, so only the initial press should re-trigger.
       if (event->key.repeat)
         return 0;
+#ifdef __EMSCRIPTEN__
+      if (event->key.keysym.sym == SDLK_F3) {
+        rgss_wasm_toggle_perf_monitor();
+        return 0;
+      }
+#endif
       key = map_key(event->key.keysym.sym);
       press = true;
       break;

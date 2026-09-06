@@ -857,7 +857,12 @@
   built-in performance monitor), the same one the Android build already draws —
   a browser tab has no title bar or terminal to show `--profile`'s output
   (see "Profiling" above), so this is the only on-screen way to see frame rate
-  here.
+  here. Its CPU% is fed from a custom idle measurement (`src/main.cxx`)
+  covering the whole frame — Ruby game logic and input included, not just
+  LVGL's own render step, which is all LVGL's stock reading sees and badly
+  understates real usage (see `include/lv_conf.h`). Press **F3** to hide or
+  show it, so it does not have to sit over the picture during normal play;
+  the key is not bound to anything else in the browser build.
 - **Scaling is the page's job, not the engine's.** The canvas holds one pixel
   per game pixel (320x240 for RPG2000/MV, 640x480 for XP) and the page sizes the
   element in CSS — the whole-number zoom the screen has room for (2x for a

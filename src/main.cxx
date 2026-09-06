@@ -716,8 +716,41 @@ bool full_package_flag(const fs::path& game_dir) {
 // Trampoline for emscripten_set_main_loop, which takes a plain function
 // pointer.
 std::function<void()> main_loop_;
+
+// Feeds LV_USE_PERF_MONITOR's on-screen CPU% (include/lv_conf.h) a reading
+// that reflects the whole frame, not just the render step -- see the comment
+// there. Same busy/idle-ratio algorithm LVGL's own sysmon uses
+// (3rd/lvgl/src/misc/lv_timer.c), just bracketing this whole trampoline
+// instead of one internal call: everything mrb_funcall drives below (Ruby
+// game logic, input poll, Graphics.update, LVGL's render) counts as busy, and
+// the gap between one call finishing and the next starting -- genuine
+// browser idle time, since emscripten_set_main_loop paces calls
+// non-blockingly below -- counts as idle.
+uint32_t g_frame_busy_ms = 0;
+uint32_t g_frame_idle_ms = 0;
+uint32_t g_frame_prev_end = 0;
+uint32_t g_frame_idle_pct = 100;
+
 void main_loop() {
+  const uint32_t call_start = lv_tick_get();
+  if (g_frame_prev_end != 0)
+    g_frame_idle_ms += call_start - g_frame_prev_end;
+
   main_loop_();
+
+  const uint32_t call_end = lv_tick_get();
+  g_frame_busy_ms += call_end - call_start;
+  g_frame_prev_end = call_end;
+
+  // Same reporting window LVGL's sysmon defaults to
+  // (LV_SYSMON_REFR_PERIOD_DEF, 300ms), so the two numbers age at a
+  // comparable rate.
+  const uint32_t total = g_frame_busy_ms + g_frame_idle_ms;
+  if (total >= 300) {
+    g_frame_idle_pct = static_cast<uint32_t>(100ULL * g_frame_idle_ms / total);
+    g_frame_busy_ms = 0;
+    g_frame_idle_ms = 0;
+  }
 }
 
 // The interpreter, display and constructor args must outlive main() so a game
@@ -730,6 +763,30 @@ mrb_value em_args;
 #endif
 
 }  // namespace
+
+#ifdef __EMSCRIPTEN__
+// Declared (unqualified) as LV_SYSMON_GET_IDLE in include/lv_conf.h; extern
+// "C" so that plain C declaration binds to this definition regardless of
+// which translation unit lv_conf.h is included from.
+extern "C" uint32_t rgss_wasm_frame_get_idle(void) {
+  return g_frame_idle_pct;
+}
+
+// Toggled by the F3 key (src/sdl_input.cxx) so the overlay this PR added can
+// be turned off during normal play rather than always covering a corner of
+// the canvas -- LV_USE_PERF_MONITOR itself has no runtime on/off switch, only
+// the compile-time flag, so this wraps LVGL's own show/hide API
+// (3rd/lvgl/src/debugging/sysmon/lv_sysmon.c) instead. Starts shown, matching
+// this build's previous (unconditional) behaviour.
+static bool g_perf_monitor_shown = true;
+extern "C" void rgss_wasm_toggle_perf_monitor(void) {
+  g_perf_monitor_shown = !g_perf_monitor_shown;
+  if (g_perf_monitor_shown)
+    lv_sysmon_show_performance(nullptr);
+  else
+    lv_sysmon_hide_performance(nullptr);
+}
+#endif
 
 #ifndef __EMSCRIPTEN__
 // mruby 4.0 has no per-state allocator hook; a program overrides the global

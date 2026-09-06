@@ -708,7 +708,22 @@
 #endif
 #if LV_USE_SYSMON
     /*Get the idle percentage. E.g. uint32_t my_get_idle(void);*/
+    /* LVGL's own lv_timer_get_idle() only measures time spent inside
+     * lv_timer_handler() itself -- a fraction of a real frame here, since
+     * Graphics.update calls it just for the render/flush step while a whole
+     * frame's Ruby game logic and input poll run outside of it
+     * (docs/profiling.md's baseline has gfx.lvgl under half of scene.update's
+     * own cost). Reported as the on-screen CPU% reading ~50% while the
+     * browser tab itself sits at 100%. rgss_wasm_frame_get_idle
+     * (src/main.cxx) measures the same busy/idle ratio around the whole
+     * per-frame call instead, so it is used for the browser build; every
+     * other backend keeps LVGL's own. */
+#ifdef __EMSCRIPTEN__
+    uint32_t rgss_wasm_frame_get_idle(void);
+    #define LV_SYSMON_GET_IDLE rgss_wasm_frame_get_idle
+#else
     #define LV_SYSMON_GET_IDLE lv_timer_get_idle
+#endif
 
     /*1: Show CPU usage and FPS count
      * Requires `LV_USE_SYSMON = 1`*/
