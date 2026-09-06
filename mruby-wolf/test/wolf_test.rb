@@ -512,3 +512,100 @@ assert "Wolf::Interpreter#trigger_confirm/#trigger_touch start their page only o
 
   assert_nil interp.event_at(9, 9)
 end
+
+# ---- Wolf::Interpreter#exec_picture -----------------------------------------
+
+# Records calls instead of touching RGSS (unavailable under this CRuby test
+# harness) -- exactly the seam Wolf::Interpreter#current_scene exists for.
+class WolfTestFakeScene
+  attr_reader :shown, :erased
+
+  def initialize
+    @shown = []
+    @erased = []
+  end
+
+  def show_string_picture(*args); @shown << args; end
+  def erase_picture(number); @erased << number; end
+end
+
+def wolf_test_picture_options(operation:, display_type: 0, blend: 0, anchor: 0, zoom_mode: 0, range: 0, free_transform: 0)
+  operation | (display_type << 4) | (blend << 8) | (anchor << 12) |
+    (zoom_mode << 20) | (range << 24) | (free_transform << 26)
+end
+
+assert "Wolf::Interpreter#exec_picture shows a text picture through #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  # show, text, blend=Add(1), anchor=Center(1); picture#5 at (50,60), 80%
+  # opacity, 150% zoom, 30 degrees, text "Hello".
+  options = wolf_test_picture_options(operation: 0, display_type: 2, blend: 1, anchor: 1)
+  cmd = wolf_test_cmd(150, [options, 5, 0, 0, 0, 0, 200, 50, 60, 150, 30], ["Hello"])
+  interp.exec_picture(cmd)
+
+  assert_equal 1, scene.shown.size
+  number, text, x, y, opacity, zoom, angle, anchor, blend = scene.shown.first
+  assert_equal 5, number
+  assert_equal "Hello", text
+  assert_equal 50, x
+  assert_equal 60, y
+  assert_equal 200, opacity
+  assert_equal 1.5, zoom
+  assert_equal 30, angle
+  assert_equal 1, anchor
+  assert_equal 1, blend
+end
+
+assert "Wolf::Interpreter#exec_picture erases a picture regardless of display type" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 2)
+  interp.exec_picture(wolf_test_cmd(150, [options, 7]))
+
+  assert_equal [7], scene.erased
+  assert_equal 0, scene.shown.size
+end
+
+assert "Wolf::Interpreter#exec_picture leaves zoom/blend alone on their \"same as current\" codes" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 1, display_type: 2, blend: 0xf, zoom_mode: 4)
+  interp.exec_picture(wolf_test_cmd(150, [options, 1, 0, 0, 0, 0, 255, 0, 0, 999, 0], ["hi"]))
+
+  _number, _text, _x, _y, _opacity, zoom, _angle, _anchor, blend = scene.shown.first
+  assert_nil zoom
+  assert_nil blend
+end
+
+assert "Wolf::Interpreter#exec_picture no-ops for the range/free-transform variants and non-text display types" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  range_options = wolf_test_picture_options(operation: 0, display_type: 2, range: 1)
+  interp.exec_picture(wolf_test_cmd(150, [range_options, 1], ["hi"]))
+
+  file_options = wolf_test_picture_options(operation: 0, display_type: 0)
+  interp.exec_picture(wolf_test_cmd(150, [file_options, 2, 0, 0, 0, 0, 255, 0, 0, 100, 0], ["file.png"]))
+
+  assert_equal 0, scene.shown.size
+end
+
+assert "Wolf::Interpreter#exec_picture tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  options = wolf_test_picture_options(operation: 0, display_type: 2)
+  interp.exec_picture(wolf_test_cmd(150, [options, 1, 0, 0, 0, 0, 255, 0, 0, 100, 0], ["hi"]))
+  options = wolf_test_picture_options(operation: 2)
+  interp.exec_picture(wolf_test_cmd(150, [options, 1]))
+end

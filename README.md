@@ -603,6 +603,19 @@
   (a condition-enabled-bit heuristic, a trigger that froze after its
   first `Wait`, and a soak-check safety net that missed a loop stuck
   inside one frame)
+- **Pictures show and erase** — `Picture`(150), the single command the
+  RPG Basic System uses to draw everything visible (message windows,
+  choices, its whole menu), since WOLF RPG Editor has no native widget
+  for any of that. The mode bitmask (show/move/erase, five display
+  kinds, blend, anchor, zoom mode) is fully decoded; rendering itself
+  works for "string as picture" text pictures — real position, opacity,
+  zoom, angle and blend via one `RGSS::Sprite` per picture number — with
+  file- and window-based pictures (what the sample game's own message
+  window actually uses) still explicit no-ops pending its own
+  Picture-folder convention and 9-slice window stretching. See
+  [`docs/adr/0067-wolf-rpg-editor-picture-command.md`](docs/adr/0067-wolf-rpg-editor-picture-command.md)
+  for why this command's own argument layout — unlike everything
+  implemented before it — rests on a single independent source
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
