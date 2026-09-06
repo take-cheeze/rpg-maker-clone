@@ -2977,6 +2977,25 @@ The work below is roughly ordered by the critical path to a walkable game
   correctness on the native `:command` has_menu screen, and real RPG_RT's
   behaviour once a shop's goods list exceeds the list window's fixed
   minimum capacity).
+  ✅ **Follow-up (2026-09-06, found while re-verifying the rebuilt native
+  engine against RPG_RT.exe on this same map-16 shop NPC): the equipment
+  party band above crashed the *built* engine outright -- `NoMethodError:
+  undefined method 'cover?' for Range` from `Game::Shop#equip?` the moment
+  any good was highlighted, since `#draw_shop_party` asks `equip?` of every
+  highlighted good to decide whether to show the band, so every stocked
+  shop's Buy list was affected, not just weapon shops.** `Range#cover?` is not in bare
+  mruby's Range; it lives in the `mruby-range-ext` core gem, which nothing
+  declared, so every one of the five call sites (`Game::Shop#equip?`, the
+  `(1..5).cover?(it.type)` special-item checks in `game.rb` and
+  `scene/item_menu.rb`) raised in the native build while every CRuby
+  harness -- where Range has `cover?` -- stayed green, the exact gap
+  AGENTS.md's "mruby stdlib methods live in core `*-ext` mrbgems" rule
+  warns about. Fixed by declaring the gem in `build_config.rb`'s shared
+  list and in `mruby-rpg2k/mrbgem.rake`'s dependencies; the rebuilt engine
+  opens the map-16 item shop's Buy list (and the map-15 weapon shop's, party
+  band included). No wine capture
+  was needed for the fix itself; the crash reproduces from `--rpg2k_continue`
+  on the map-16 save plus one Decision press facing the shop NPC.
   ✅ **Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open
   shop gap -- real RPG_RT's own behaviour once a shop's goods list exceeds
   the list window's fixed minimum capacity. It scrolls, one row at a time,
@@ -12388,6 +12407,107 @@ The work below is roughly ordered by the critical path to a walkable game
   a perfectly ordinary battle-list entry; a sibling skill curing only a
   persisting state is offered in both), confirmed to fail against the
   pre-fix code (`expected [[13, 2]], got [[12, 2], [13, 2]]`).
+  ✅ **Follow-up (cycle #243, 2026-09-06): the field Item screen re-measured
+  end to end on genuine RPG_RT.exe under wine with a populated bag -- list
+  box geometry, column cells, count format, cursor rules (all four
+  directions, including the long-open partial-row case), scrolling with its
+  arrows, the actor-target panel and the weapon/Cancel behaviour -- and the
+  four geometry gaps found fixed.** No EasyRPG source was consulted; every
+  number below is a pixel measurement of a capture. Recipe: scratch copy of
+  the Nepheshel game dir, its `Save01.lsd` (already at map 16 (14,11)) given
+  a bag through the LCF writer (`LCF::SaveData` under CRuby, chunk 109
+  `item_count`/`item_ids`/`item_counts`/`item_usage` = 8 items: 薬草×5 傷薬×3
+  癒油×2 常世の雫×1 魔法石の欠片×12 アンチドーテ×99 ダガー×1 ロングソード×1, and a
+  second copy with 27 items = ids 1..25 + 27 + 43 for the scroll probe;
+  both verified with `scripts/lcf_save_check.rb`), RPG_RT.exe on Xvfb
+  640x480x16 + matchbox, title → Down Return Return → Escape → Return, a
+  root capture after every key, measured with numpy over `convert ... rgb:-`
+  (cursor = green frame bbox, text = bright glyph runs, frames = the skin's
+  purple/white lines); capture coordinates halved to native. Two harness
+  findings worth knowing: (a) RPG_RT under wine froze twice (input dead,
+  window unmapped, process alive) after the game had sat idle in a menu for
+  ~40-60 s between key batches, and later instances would not even map a
+  window while a frozen one lingered in the shared prefix -- run every key
+  sequence back-to-back straight after Continue and one RPG_RT per prefix;
+  (b) `refs/stash` is shared between git worktrees, so `git stash` for the
+  pre-fix check swapped work with a sibling agent -- use `git diff > patch;
+  git checkout -- file; run; git apply patch` instead. **Measured
+  (native):** the description banner is `(0, 0, 320, 32)`; the list box is
+  `(0, 32, 320, 208)` -- its bottom frame edge sits at y 235..239 with only
+  four rows filled, i.e. it *fills the screen* below the banner and is not
+  content-sized (ours was `h = rows * 16 + 16`). Column 0's cursor spans
+  x 4..155 and column 1's x 164..315 (152px each = a 144px cell plus the
+  4px overhang per side `Game::WindowCursor` models), rows 16px apart (y
+  40..55, 56..71, ...); column 1's names start at content x 160 -- so the
+  grid is two **144px cells pitched 160px apart with a 16px gutter**, not
+  the edge-to-edge 152/152 split ours drew. The count is drawn as `:` in
+  the halfwidth cell at content x 120 of the 144px cell (glyph pixels at
+  123..125) followed by a blank cell and a right-aligned two-digit figure
+  whose last digit ends at x 143 for "5", "12" and "99" alike ("12" starts
+  at 132) -- ours drew `":#{count}"` flush right in a 40px cell (colon at
+  ~114, no fixed digit column). Banner text starts at content x 0, glyph
+  rows 3..12 of the line -- the same vertical placement as the list rows;
+  our font is a pixel taller, bottom-aligned within a pixel, left as is.
+  **Cursor rules (8 items, 4 full rows, a capture per key):** RIGHT from
+  row 0's last cell → row 1's first cell; LEFT from there → back to row 0's
+  last cell; DOWN 0→2→4→6 then DOWN on the last row stays; UP 6→4→2→0 then
+  UP on the top row stays (no wrap either way). **27 items (14 rows):** the
+  box shows 12 rows; DOWNs 1-11 walk the cursor to the bottom visual row
+  (y 216..231), DOWNs 12 and 13 keep it there while the list scrolls one
+  row each; from the last item (row 13, col 0) RIGHT and DOWN do nothing,
+  LEFT goes to row 12's second cell (y 200..215 = visual row 10 with two
+  rows scrolled off), and **DOWN from there -- a partial last row with no
+  cell below -- is a no-op, not a jump to row 13's only item** (the case
+  this section's grid bullet left as "not independently confirmed"). Scroll
+  arrows: the down arrow's white glyph at x 155..164, y 233..236 (the
+  windowskin's 16x8 cell at (152, 232) = `SCREEN_H - 8`, on the box's
+  bottom frame edge) in every capture with rows hidden below and never with
+  the 8-item bag; the up arrow at x 155..164, y 34..37 (cell at (152, 32),
+  on the top edge) only once scrolled; each missing from about half the
+  captures taken in the same state (blinking; the period itself is not
+  re-timed here -- the pause arrow's 20/20 is reused). **Target panel**
+  (Return on 癒油 at index 2): the right-anchored `(136, 0, 184, 240)` panel
+  cycles #132-#138 measured holds (cursor x 196..311 / y 8..55 on row 0);
+  name at content x 56, level and HP on line 2, condition and MP on line 3
+  as coded -- but the level's digits start at content x 68 and the HP
+  figure at x 126, i.e. straight after two halfwidth label cells
+  ("LV50", "HP600/600"), where ours put a blank after each label ("Lv 50",
+  "HP 600/600"). The narrowed banner shows the item name (癒油) and the
+  possessed box "所持数 … 2" with the count right-aligned at content x 120
+  -- both already as coded. **Behaviour:** Escape from the target panel
+  returns to the list with the cursor still on index 2 (row 1); Return on
+  ダガー (a weapon) opens nothing and moves nothing (buzzer only, as coded);
+  Escape from the list returns to the field menu's command list (cursor on
+  アイテム), and Escape again to the map. **Fixed** in
+  `mruby-rpg2k/mrblib/scene/item_menu.rb`: `LIST_H`/`VISIBLE_ROWS` (the box
+  is always 208px tall, 12 rows of content), `COLUMN_GAP = 16` with
+  `#item_col_w == 144` / `#item_col_x` (cursor rect and text columns both),
+  `COUNT_W/COUNT_SEP_W/COUNT_NUM_W` (the colon at cell x 120, the figure
+  right-aligned in the 12px cell ending at 144), row-at-a-time scrolling
+  (`@item_top`, `#scroll_item_list_to_cursor`, redrawing only the visible
+  rows; the cursor used to run straight off the bottom of the box past row
+  12), the two blinking arrow sprites (`#build_arrow_sprites` /
+  `#refresh_arrows`, mirroring `Scene::SaveLoad`'s, hidden while the
+  target/teleport screens replace the list), and the target panel's
+  `"Lv#{level}"` / `"HP"` / `"MP"` labels with no blank. The `COLUMN_MAX`
+  comment and the RIGHT/LEFT branch comments now state what was confirmed
+  instead of "ported, not independently confirmed". Covered by three new
+  `scripts/rpg2k_scene_check.rb` checks (box rect and cell/count geometry
+  with cursor cells; the 27-item scroll walk including the partial-row
+  no-op and both arrows' visibility rule plus the 20-frame blink; arrows
+  hidden in target mode and back on Cancel) and the per-class label strings
+  in the existing three-line target-panel check -- all four fail against
+  the pre-fix scene (`expected 208, got 32`, `undefined method 'y' for nil`
+  (no arrow sprites), `draws "Lv5"`), and the full scene (971), logic (1189)
+  and render (41) suites are green with the fix. **Left open:** the text's
+  1px vertical placement (font-dependent; ours bottom-aligns within a
+  pixel); the arrows' blink period on this screen (reused, not re-timed);
+  `Scene::SkillMenu`'s sibling target panel and teleport grid, which share
+  this code shape but were not re-measured (their labels keep the blank);
+  what the list does on Return in the target panel with a *usable* item
+  (the leader was at full HP, so only the no-effect buzzer path was
+  reachable); and the possessed-count box's exact text x beyond "right-
+  aligned at 120".
   ✅ **Checked against a reference implementation's source instead, once the
   wine
   reference runtime itself stopped rendering past Continue this session
@@ -12420,6 +12540,104 @@ The work below is roughly ordered by the critical path to a walkable game
   Skill screen already only ever showed the leader in practice, since it
   has no menu-side actor picker either, so nothing that previously worked
   stopped working), freeing LEFT/RIGHT for the confirmed grid navigation.
+  ✅ **Follow-up (cycle #241, 2026-09-06): the whole Skill screen re-laid out
+  from genuine RPG_RT.exe frames under wine -- three windows, a real status
+  line, a 160px-pitch grid with `-%3d` costs at a fixed right edge,
+  scrolling with arrows, every known skill listed (greyed, not hidden), and
+  the target row's number formats/cursor corrected.** No EasyRPG source was
+  consulted; every number below is a pixel measurement of a 640x480 wine
+  capture halved. Recipe: a copy of the Nepheshel test-bed with the
+  town-map (16, 14,11) save; the leader's own chunk-108 record (database
+  actor 15, fields 51/52 -- chunk 109 untouched, per the finding above)
+  given 26 skills in a deliberately non-ascending order
+  (`32,1,33,34,35,36,37,38,4,7,14,21,30,31,40,41,47,13,45,46,90,2,3,5,6,8`),
+  a second copy at level 5 / 56 HP / 5 MP (fields 31/71/72), and a third
+  with `32,15,82,187,126,120,30,36` (a defence buff, an effect-less skill,
+  フォス, the battle-only switch skill [ブースト], a field switch skill,
+  ルーツ, ベルナ); title → Down Return Return, Escape, Down Return (actor
+  panel), Return; captures after every key. Environment note: two
+  `RPG_RT.exe` in the shared wine prefix fight over the foreground and the
+  loser's X window is *unmapped* (xdotool `--onlyvisible` lists nothing,
+  xwd reads black, keys land nowhere) -- `xdotool windowmap` on every
+  window id before each key/capture recovers it. **Measured:** (1) three
+  stacked full-width windows, skin white-border rows at logical y 0/29,
+  32/61, 64/237: banner (0,0,320,32), status (0,32,320,32), grid box
+  (0,64,320,176) to the screen's bottom edge, empty list included (the old
+  code sized the box to the row count and left the lower screen bare).
+  (2) Status line, contents x: name 0; `LV` term at 80 in system colour 1
+  (glyphs (66,105,189) at that gradient row vs (132,195,255) for values),
+  level right-aligned in [92,104) ("LV50" / "LV 5"); condition 124; `HP`
+  184 (colour 1), `%3d/%3d` from 196 ("600/600", " 56/ 60"); `MP` 250,
+  `%3d/%3d` from 262 ending flush at the 304px inner edge ("  5/ 60", its
+  "5" in the critical yellow (247,211,74), nothing else recoloured). Glyph
+  runs at 2x: name 20..82, LV 176..196, level 200..222 / 212..222, 正常
+  264..304, HP 384..400, 408..491 / 420..490, MP 516..532, 540..623 /
+  564..622. (These are *not* the field-menu panel's own columns, which are
+  a 216px-wide three-line layout; this is a 304px one-liner.) (3) Grid:
+  names at contents 0 / 160 (column pitch 160 = `SCREEN_W / 2`, not the
+  152 = inner/2 the ported Item grid uses -- left as a lead for the Item
+  screen, unmeasured there); rows 16px; cursor frame at logical x 4..155
+  and 164..315, y 72..87 → a `cursor_rect` (0|160, row*16, 144, 16) given
+  `RPG2k::Window`'s 4px overhang; cost `-%3d` ("-  4", "- 30", "-120": a
+  hyphen then a 3-cell right-aligned figure, no unit) with the hyphen at
+  logical 128..130 / 288..290 and the last digit ending at 151 / 311, i.e.
+  right edge contents 144 of the cell. (4) Every known skill is listed, in
+  the actor's chunk-52 order (the save's `32,1,33,...` showed as マーフェ,
+  サー, カル・マーフェ, ...): enemy-scope サー/バマー/ハガザーム/チャレク,
+  the buffs ルーツ/シェレト/[防御上昇], the battle-only-state cures
+  ハサウ/ルフィク/ベルナ/加護 (all their states type 0 in Nepheshel's
+  database), effect-less 結界護符/フォス and the battle-only switch skill
+  [ブースト] all present in the disabled colour (99,166,247) beside enabled
+  rows at (165,211,255) -- exactly the set `Game::Party#field_skill?`
+  already rejected, so the usability rule stands and only list membership
+  changed (`#field_skills` no longer filters or sorts;
+  `Scene::SkillMenu#skill_unavailable?` greys on `#field_skill?` too).
+  Decision on a greyed row stays on the list. (5) Scrolling (13 rows in the
+  10-row box): DOWN through rows 0..9 never moves the list; the 10th/11th/
+  12th DOWN each scroll it one row with the cursor frame staying at logical
+  y 216 (rows 3..12 shown at the end); UP off the top visible row scrolls
+  back one row per press (top row 3→2→1) with the cursor at y 72. Down
+  arrow triangle at logical (155..164, 233..238), up arrow at (155..164,
+  64..69), both blinking (on in 2 of 4 captures ~1s apart; the 20-on/20-off
+  period is the pause arrow's own wine-verified figure, reused, not
+  re-timed). The skin's up-arrow cell fills rows 0..5 and the down cell
+  rows 1..6 (checked by capturing this engine's own SaveLoad up arrow from
+  the same skin at sprite y 32 → triangle 32..37), so the sprites go at
+  y = 64 (`LIST_Y`) and 232 (`SCREEN_H - 8`). (6) Target window (single-
+  ally マーフェ from 5 MP): geometry as already ported (panel x 136, name at
+  contents 56, values at 114), but the row reads `LV` (colour 1) + level in
+  a 2-cell field ("LV 5"), `HP`/`MP` (colour 1) + `%3d/%3d` from 126
+  ending flush at 168 ("HP 56/ 60", "MP  5/ 60" with the 5 critical), and
+  the row cursor frame spans logical x 196..315 / y 8..55 → `cursor_rect`
+  (56, 0, 112, 48), i.e. starting at `TARGET_LABEL_X` itself, not the
+  ported `TARGET_LABEL_X - 2` (Item screen left as a lead). A successful
+  cast stayed on the target screen (HP 56→60, MP 5→1 redrawn in place);
+  Cancel returned to the list with the status line refreshed ("MP   1/ 60")
+  and every now-unaffordable row greyed, cursor unchanged. The banner
+  showed the highlighted skill's description ("(癒し)味方一人のＨＰを回復
+  させる") at contents 0. **Fixed** (`mruby-rpg2k/mrblib/scene/
+  skill_menu.rb`, `Game::Party#field_skills`): all of the above --
+  `STATUS_H`/`LIST_Y`/`LIST_H`/`VISIBLE_ROWS`, `COL_PITCH`/`CELL_CURSOR_W`/
+  `COST_RIGHT`, the `STATUS_*` columns and `draw_stat_pair`, `@top_row`
+  scrolling with `draw_skill_rows`, arrow sprites (`build_arrow_sprites`/
+  `tick_arrows`/`refresh_arrows`), the status window disposed/rebuilt around
+  :target and :teleport_target modes, the target-row formats and cursor.
+  Covered by six new `scripts/rpg2k_scene_check.rb` checks (window rects
+  and cell cursor; status-line columns/swatches/critical colour; cost
+  format and greyed-but-listed rows; scrolling, cursor pinning and arrow
+  blink; status line vs MP-cost box across target mode; target-row formats
+  and cursor) -- all six confirmed to fail against the pre-fix code -- plus
+  updated `scripts/rpg2k_logic_check.rb` expectations (four checks: every
+  known skill listed, `field_skill?` as the greying check, actor order
+  kept) and the two shared Item/Skill target-list checks made Skill-aware.
+  **Deliberately left open:** whether a save genuine RPG_RT writes *itself*
+  ever holds a non-ascending skill list (i.e. whether RPG_RT sorts on learn
+  -- `Game::Actor#learn_skill` still sorts on its own grounds); the
+  sound on Decision over a greyed row (buzzer assumed, not audible here);
+  the Item screen's own 152px column pitch, `-2` target cursor offset and
+  flowing "HP 80/120" target-row format, which this cycle's Skill-screen
+  measurements suggest are wrong there too but were not measured on that
+  screen; the field-menu panel's own HP/MP format (another cycle's screen).
   ✅ **Real RPG_RT's actual way to check a *different* actor's skills is now
   implemented too (ported from a reference implementation, not
   independently confirmed against genuine RPG_RT under wine).** The
@@ -12602,6 +12820,115 @@ The work below is roughly ordered by the critical path to a walkable game
   list's width is exactly 88, and matches the Gold window's own width and
   left edge), confirmed to fail against the pre-fix code (`expected 88,
   got 108`).
+  ✅ **Follow-up (cycle #240, 2026-09-06): the whole field menu re-measured
+  pixel-by-pixel against genuine RPG_RT.exe under wine -- party-status
+  panel layout and colours, Gold alignment, both cursors, the End Game
+  prompt's two windows, and the Skill/Equip cancel path -- and
+  `Scene::Menu` reworked to match.** Recipe: the Nepheshel copy on town map
+  16 (`gen-rpg2k-save.rb --map 16 --at 14,11 --facing up --clear-scene`),
+  `Down Return Return`, ~7s, `Escape`, then one capture after *every* key
+  (`xwd` root, 640x480 = 2x). Three saves: the genuine max-level leader
+  (デモ用 LV50, 600/600, 614301 EXP) and two edited copies via the LCF
+  writer (chunk 108 actor 15 fields 31/32/71/72): LV45 / 300000 EXP / 60 HP
+  / 6 MP, and LV20 / 16000 EXP -- the second and third are what separate a
+  fixed column from a right-aligned field. Text runs were located as
+  glyph-pixel runs per row against the window's own per-row background
+  (the skin's gradient is constant along x), colours classified against
+  the skin's swatches decoded from `System/システム.png` (whose IDAT needs
+  the same zero-history tolerant inflate `mruby-rgss` already carries --
+  ImageMagick and PIL both reject it), window rects from the frame's
+  purple line (one px inside the white outer edge), cursors from the green
+  frame's bounding box. **Measured (contents coordinates of the 232x240
+  panel at x 88, contents 216 wide from screen x 96):** three 16px lines
+  per member, glyph tops 4px below each line's top -- line 1 the name
+  alone at x 56; line 2 `LV` at 56, the level right after it at 68,
+  condition at 98, `HP` at 162, current HP right-aligned in the 3-cell
+  field [174,192) (`600` starts at 174, `60` at 180, `6` at 186), `/` at
+  192, max at 198; line 3 `EX` at 56, current EXP right-aligned in the
+  6-cell field [68,104) (`300000` at 68, `16000` at 74), `/` at 104, the
+  next level's EXP right-aligned in [110,146), `MP` at 162 with the same
+  figure columns as HP. Labels `LV`/`EX`/`HP`/`MP` sample the skin's index-1
+  swatch (the "system" blue, 130/170/255 down to 25/56/141); the name,
+  every value, the slash and 正常 sample index 0; the 60/480 HP and 6/480 MP
+  figures drew in the index-4 yellow swatch (`value_font_color`'s
+  quarter-of-max rule holds on genuine RPG_RT). **EX rule:** at LV50 (the
+  actor's `max_level`) both fields read `------` (six dashes, exactly
+  filling each field); at LV45 `300000/349310`, at LV20 `16000/17xxx` --
+  the right-hand figure is the *absolute* threshold of the next level, not
+  the remainder (49310), i.e. `Game::Actor#next_level_exp`'s reading. **Gold
+  window:** `0Ｇ` right-aligned so the run ends flush at the contents'
+  right edge (Nepheshel's `gold` term is the full-width Ｇ U+FF27, a 12px
+  glyph: `0` cell at x 54..60, Ｇ at 60..72), the Ｇ in index 1, the digit
+  in index 0. **Cursors:** command list = the row's full contents width
+  plus the 4px overhang each side (screen 4..84 x 8..24, then 24..40; our
+  existing `Game::WindowCursor` geometry already matched); the
+  actor-selection frame spans screen x 148..316, y 8..56 -- contents rect
+  (56, 0, 160, 48), i.e. from the text column to the contents' right edge,
+  *not* the full width from x 0 -- and the frame captured in that state
+  also still shows the command cursor around 特殊技能. **End Game prompt:**
+  only the two prompt windows on the bare skin background -- no command
+  list, party panel or Gold anywhere (the orientation capture's "they
+  appear to stay visible" was our own frame, not RPG_RT's); help window
+  160x32 at (80, 72) with 終了してよろしいですか？ drawn left-aligned from
+  contents x 0 (not centred), Yes/No window 52x48 at (134, 120) -- a 16px
+  gap below the help window, the pair centred as a 96px group -- with its
+  cursor the full row width (screen 138..182 x 128..144, then 144..160);
+  cancelling brings all three windows back with the cursor still on
+  タイトルに戻る. **Behaviour:** Escape from the Skill screen and from the
+  Equip screen both land on the field menu with the command cursor on
+  特殊技能/装備 and *no* actor cursor (frame-identical to the pre-selection
+  menu but for the cursor blink phase), a second Escape closes to the map,
+  and re-opening starts on アイテム -- tried from 特殊技能 and from
+  タイトルに戻る, both reset, so the cursor position is not remembered
+  (the earlier "re-opened on 特殊技能" note is not reproducible); Escape
+  from the actor-selection state itself behaves the same way. **Fixed** in
+  `mruby-rpg2k/mrblib/scene/menu.rb`: `#build_windows`'s ad-hoc
+  `text_size`-flowed rows (name+EXP on one line, `Lv 5  正常`, `HP a/b  MP
+  c/d`, all at x 52 and vertically 3px high) replaced by
+  `#draw_status_row`/`#draw_status_stat`/`#draw_status_exp` on the measured
+  `STATUS_*` columns through `draw_system_text` (labels index 1 via
+  `LABEL_COLOR`, dashes via `STATUS_MAX_LEVEL_EXP` when `next_level_exp` is
+  nil); `#draw_gold_window` draws the amount right-aligned to `contents
+  width - text_size(unit)` and the unit right-aligned in index 1 instead
+  of one flat left-aligned `draw_text`; `#refresh_status_cursor` uses
+  `STATUS_CURSOR_X/W` (56, 160); `#enter_actor_selection` no longer
+  deactivates the command window (its cursor stays drawn);
+  `#open_end_game_confirm` calls `#suspend` and `#close_end_game_confirm`
+  calls `#resume` (the same hide/restore the pushed child screens use), and
+  `#build_end_game_confirm_windows` centres the help+gap+Yes/No group
+  vertically (`END_GAME_GAP = 16`) and draws both texts through
+  `draw_system_text` at the same `+2` line offset. The doc comments that
+  cited a reference implementation for the actor-selection panel, the
+  cancel path and the gold refresh now say what was confirmed under wine.
+  Covered by seven new `scripts/rpg2k_scene_check.rb` checks (three-line
+  column/colour layout for two members; max-level dashes; Gold alignment
+  and colours; command cursor screen rect; actor cursor rect plus the
+  command cursor staying active; Skill/Equip cancel path plus the fresh
+  cursor on re-open; End Game windows hidden/restored, rects, texts,
+  cursor) -- five of them confirmed to fail against the pre-fix `menu.rb`
+  (`git diff`/`checkout`/`apply`, not stash), the command-cursor and
+  cancel-path ones pinning behaviour that already matched. Two existing
+  checks were updated for the split runs (`/120` is now `/` + `120`;
+  `1234G` is `1234` + `G`). **Verification:** scene 975 (968 baseline + 7),
+  logic 1189, render 41, all green. **Left open:** (1) `Game::Actor
+  #calc_exp`'s RPG2000 curve is slightly high against genuine RPG_RT --
+  actor 15 (30/30/30) reads 350660 for LV46 and 615771 for LV50 where
+  RPG_RT showed 349310 and the genuine save carries 614301; no simple
+  variant of the port (per-step index, rounding, truncated base) fits
+  both, so the EX line's right-hand figure will differ by ~0.4% until the
+  curve itself is re-derived (not this screen's code); (2) the max HP/MP
+  figure's own alignment for a 1-2 digit max (only 3-digit maxima were
+  seen, drawn from x 198); (3) whether the condition column is 98 or 97 --
+  正's leftmost pixel is at 98 and 常 follows 11px later, so 正 may carry a
+  1px bearing in wine's font; ours puts the glyph at the measured pixel;
+  (4) the face portrait column (actor 15 has no FaceSet) and any RPG2003
+  Status/Row rows, unreachable in Nepheshel; (5) whether the command
+  cursor blinks during actor selection (single frames only). Environment
+  note for later cycles: two `RPG_RT.exe` in one wine prefix fight over
+  the foreground and the loser's window goes gray/black, so this cycle ran
+  the reference from a private copy of the prefix (`WINEPREFIX=...`), one
+  instance at a time. No EasyRPG source was consulted. See
+  `changelog.d/rpg2k-field-menu-layout-wine.fixed.md`.
   ✅ **The field menu screens now play RPG2000's four system sound effects
   (cursor-move, decision, cancel, buzzer), the "bigger, separate piece of
   work" the disabled-Save fix above left open.** Checked against three
@@ -15323,6 +15650,77 @@ The work below is roughly ordered by the critical path to a walkable game
   frame by frame confirms the down arrow starts on, flips off at exactly
   the 20th frame, and swaps places with the up arrow once scrolled to the
   last slot.
+  ✅ **Follow-up (cycle #242, 2026-09-06): the file-select screen's geometry,
+  backdrop and text style re-measured pixel-by-pixel on a genuine RPG_RT.exe
+  under wine, and five gaps fixed.** Recipe: a copy of Nepheshel with the
+  pristine `Save01_clean.lsd` repositioned to map 16, booted on
+  `RPG_RT.exe` under wine (Xvfb 640x480x16), title → Down → Return to open
+  Continue's load screen, then Down to File 2 / Return on it, Down×8 to File
+  10 and Down×5 to File 15, Escape back out; every frame root-captured and
+  measured with numpy (halving the 2x capture to the 320x240 logical
+  screen; frame lines by row/column colour profiles, text by per-row
+  difference from the box's own gradient, the cursor by its green frame).
+  A second boot used the same save with its title chunk (100) edited
+  through the LCF writer to `hero_level`=7, `hero_hp`=21 and all four
+  FaceSet slots (fields 21-28) pointing at `face` indices 0-3. Measured: the
+  header window spans y=0..31; rows 32..39 are bare flat backdrop
+  ((16,117,99), the System graphic's field-backdrop colour, identical to the
+  field menu's gaps -- the title picture is *not* visible behind the load
+  screen); the three slot boxes' frames span 40..103 / 104..167 / 168..231
+  (64px each, no gap between them); rows 232..239 are backdrop again. The
+  up arrow's glyph sits at x=155..165, y=32..38 (the 16x8 skin cell at
+  (152,32)) and the down arrow's at x=155..165, y=233..239 (cell at
+  (152,232)); on File 1 only the down arrow shows, on File 10 both, on File
+  15 only the up one. The cursor frame over the label spans x=4..74 (71px,
+  i.e. a 63px contents rect plus the 4px overhang each side) on File 1, 10
+  and 15 alike -- fixed width, not text-sized. `ファイル` draws from
+  contents x=0 on the 12px full-width grid (cells at screen 8/20/32/44) and
+  the slot number is right-aligned to contents x=63: `1`/`8` sit in the
+  6px cell at screen 65..70, `13`/`15` in 59..70 -- 3px after the term,
+  where no "term + space + number" string lands. The leader name draws at
+  x=0 on the second line. The third line: `LV` cells at screen 8/14
+  (contents 0), the level right-aligned in a 2-cell field at contents
+  12..23 (`50` in cells 20/26; the edited `7` alone in cell 26), `HP` at
+  screen 50/56 (contents 42), the HP right-aligned in a 3-cell field at
+  contents 54..71 (`600` in 62/68/74; the edited `21` in 68/74). Colours
+  (against the System graphic's palette cells, decoded from the PNG with a
+  zero-window-tolerant inflater since ImageMagick rejects the file):
+  header prompt, occupied label+number, name and both stat values carry
+  swatch 0's white→blue gradient; `LV`/`HP` carry swatch 1's mid-blue
+  (#739AEF/#638ADE/#5279CE); an empty slot's label+number carry swatch 3
+  (#63A6F7); every run has the one-pixel dark shadow. Faces: four 48x48
+  cells at x=96/152/208/264, y=48..95 (contents y=0), confirming the
+  positions `FACE_SPACING` documents. Behaviour: Return on the empty File 2
+  left the frame unchanged (no-op); Escape from the load screen returned to
+  the title with the cursor still on 続きから; the field menu's blank
+  fourth (Save) row on the Save-forbidden town map ignored Return. Fixed in
+  `Scene::SaveLoad` (`mruby-rpg2k/mrblib/scene/save_load.rb`): new
+  `SLOT_TOP = HEADER_H + ARROW_H` (40) with `VISIBLE_SLOTS` derived from it
+  (still 3) -- the boxes used to start at y=32; a `build_field_background`
+  backdrop sprite (z=300) so the title never shows through; the header
+  drawn through `draw_system_text` swatch 0 instead of flat `draw_text`;
+  the label as two runs (term at x=0, number right-aligned to `LABEL_W`=63,
+  both swatch 0/3) under a fixed `Rect.new(0, 0, 63, 16)` cursor instead
+  of one `text_size`-sized "File N" string; `draw_level_hp` at
+  `LEVEL_LABEL_X`/`LEVEL_X`/`HP_LABEL_X`/`HP_X` = 0/12/42/54 with the
+  labels in swatch 1 (`STAT_LABEL_COLOR`) -- was x=4/46 all in swatch 0.
+  Five new `scripts/rpg2k_scene_check.rb` checks pin the box/arrow
+  geometry, the backdrop, the blended header, the label runs + cursor width
+  (one- and two-digit) and the LV/HP columns + swatches, each confirmed to
+  fail against the pre-fix code; two existing checks updated (`File 1` is
+  now two runs; HP label x=42). Deliberately left open: (1) the field-menu
+  Save screen could not be captured this cycle -- with `save_allowed`
+  (chunk 101 field 123) forced on in the copy's save, opening the field
+  menu after Continue produced a persistently black wine frame on two
+  boots (Escape did not restore it), so its header/cursor start rest on
+  cycle #126's earlier confirmation and the shared `:save`/`:load` code
+  path; (2) our text renderer draws every glyph ~3px higher within its
+  16px line than RPG_RT's (header glyphs at rows 8..18 vs 12..21 on the
+  reference, same on every screen) -- a shared font-metrics gap, not this
+  scene's; (3) the RPG2003 4-character HP field and the 2-character term
+  clamp remain unmeasured (RPG2000 test-bed only); (4) the arrow blink
+  timing was not re-timed here (the pause-arrow measurement below still
+  stands in for it). No EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the pause-arrow `ARROW_BLINK_FRAMES = 20` this
   screen's own scroll arrows reused is now independently re-verified against
   a genuine RPG_RT.exe, not just a reference implementation's source --

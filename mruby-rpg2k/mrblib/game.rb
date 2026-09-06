@@ -5439,19 +5439,31 @@ module Game
       end
     end
 
-    # `caster`'s known skills usable from the field menu, as `[skill_id, cost]`
-    # pairs in ascending id order: anything flagged `occasion_field` that either
-    # behaves as an ordinary skill and targets the caster or an ally (scope >= 2,
-    # since the field menu has no enemy to aim at) or is a **switch** skill, which
-    # has no target at all — it just turns its switch on. Nepheshel's companions
-    # are summoned and dismissed exactly this way (skills 120–125, "ファルを召還"
-    # and friends, each flipping the switch its common event watches).
+    # The rows the field Skill screen lists for `caster`, as `[skill_id, cost]`
+    # pairs: **every** skill the actor knows, in the actor's own `#skills`
+    # order -- confirmed against genuine RPG_RT.exe under wine (cycle #241,
+    # 2026-09-06): a save whose leader's chunk-108 skill list was written as
+    # `[32, 1, 33, 34, ...]` (a field heal, then an enemy-only wind attack,
+    # then two more heals) showed exactly that order on the real screen,
+    # マーフェ / サー / カル・マーフェ / ミラ・マーフェ ..., not the
+    # ascending-id order this method used to `.sort` into; and the
+    # enemy-scope サー / バマー / ハガザーム / チャレク rows, the
+    # defence-buff ルーツ, the battle-only-state cures ハサウ / ルフィク /
+    # ベルナ / 加護, an effect-less 結界護符 and a switch skill flagged
+    # battle-only ([ブースト], `occasion_field` off) were all *listed* --
+    # drawn in the windowskin's disabled colour, Decision doing nothing on
+    # them -- rather than hidden. So this no longer filters on
+    # `#field_skill?` at all; that (plus `#can_cast?`) is purely the
+    # greyed-out / cannot-activate check `Scene::SkillMenu#skill_unavailable?`
+    # applies per row. `state` is accepted for callers that have one to pass
+    # (the scene threads it through for that usability check), but nothing
+    # here reads it.
     #
-    # `state` is accepted for callers that have one to pass, but `#field_skill?`
-    # itself no longer reads it -- a known Escape/Teleport skill is always
-    # listed regardless of whether it is currently usable (see
-    # `#field_skill?`'s own comment); a caller checking *usability* wants
-    # `#escape_skill_available?`/`#teleport_skill_available?` directly.
+    # Whether the actor's own `#skills` order is ever *not* ascending in a
+    # save genuine RPG_RT itself wrote is a separate, still-open question --
+    # `#learn_skill` keeps sorting on learn on its own (separately reasoned)
+    # grounds; this method simply stops re-sorting what it is given, so a
+    # hand-ordered save reads the same in both runtimes.
     #
     # A database shrink can leave a learned skill id with no matching row
     # (docs/TODO.md's runtime error catalog) -- `db_skill` degrades that to a
@@ -5459,20 +5471,25 @@ module Game
     # the skill from the menu with no trace. Logged here, at the one place
     # that knows the gap came from a *caster's own* skill list rather than
     # from some other `db_skill` call with no menu behind it.
-    def field_skills(caster, state = nil)
+    def field_skills(caster, _state = nil)
       return [] unless caster
-      caster.skills.sort.select do |sid|
+      caster.skills.select do |sid|
         sk = db_skill(sid)
         if sk.nil?
           $stderr.puts "[RPG2k] Skill menu: caster's learned skill ##{sid} " \
                        'has no matching database row, excluding from field menu'
           next false
         end
-        field_skill?(sk, state)
+        true
       end.map { |sid| [sid, skill_cost(db_skill(sid), caster)] }
     end
 
-    # Whether skill row `sk` belongs in the field menu.
+    # Whether skill row `sk` is *usable* from the field menu -- the greyed-
+    # out / Decision-does-nothing check for a listed row, not list
+    # membership (every known skill is listed; see #field_skills' own
+    # cycle-#241 write-up, whose genuine-RPG_RT captures greyed exactly the
+    # rows this returns false for: enemy scope, stat/attribute buffs,
+    # battle-only-state cures, battle-only switch skills).
     #
     # The `occasion_field` / `occasion_battle` flags gate **switch skills only**.
     # That is not a simplification: the RPG2000 editor only offers the

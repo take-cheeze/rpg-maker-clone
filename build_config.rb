@@ -59,6 +59,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # which patches Dir.glob over it -- loaded. Declare it for real.
   conf.gem core: 'mruby-dir'
   conf.gem core: 'mruby-numeric-ext'
+  # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
+  # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
+  # used it while nothing declared the gem, so a shop whose highlighted good
+  # was equipment -- and the Item screen with a special item -- raised
+  # NoMethodError in the built engine while the CRuby host checks passed.
+  conf.gem core: 'mruby-range-ext'
   # Fiber: the RGSS script host drives the game's bundled blocking main loop
   # (`$scene.main while $scene`) one frame at a time through a Fiber so the web
   # build's per-frame emscripten callback keeps control each frame. Not in the
@@ -167,7 +173,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:)
   # conf.gem call too, so it is not this dispatch's call to demote.
   explicit_shared_names = %w[
     mruby-array-ext mruby-hash-ext mruby-enum-ext mruby-io mruby-dir
-    mruby-numeric-ext mruby-fiber mruby-exit mruby-sprintf mruby-kernel-ext
+    mruby-numeric-ext mruby-range-ext mruby-fiber mruby-exit mruby-sprintf mruby-kernel-ext
     mruby-random mruby-math mruby-time mruby-bigint mruby-stringio
     mruby-marshal mruby-onig-regexp mruby-lcf mruby-rgss
   ]

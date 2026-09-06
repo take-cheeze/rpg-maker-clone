@@ -30,16 +30,77 @@ class RPG2k
       # which filled row-major (item 0 top-left, item 1 top-right, item 2
       # second row left, ...) and left an incomplete last row's second cell
       # blank rather than reflowing. Cursor movement is grid-aware but not
-      # symmetric between axes -- ported from a reference implementation,
-      # NOT independently confirmed against genuine RPG_RT under wine:
+      # symmetric between axes -- every rule below was confirmed key by key
+      # against genuine RPG_RT.exe under wine (cycle #243, 2026-09-06, an
+      # eight-item bag filling four full rows, a capture after every press):
       # DOWN/UP move by COLUMN_MAX and are genuinely column-locked, a no-op
-      # with no
-      # cell below/above (tried pressing DOWN off the last, partial row --
-      # the cursor simply stayed); RIGHT/LEFT move by one, bounded only by
-      # the list's own absolute start/end, with no row-boundary check at
-      # all -- RIGHT off a row's last cell flows into the next row's first
-      # cell (and LEFT the mirror), rather than stopping at the row's edge.
+      # with no cell below/above (DOWN on the last row and UP on the top
+      # row both left the cursor exactly where it was -- no wrap either
+      # way); RIGHT/LEFT move by one, bounded only by the list's own
+      # absolute start/end, with no row-boundary check at all -- RIGHT off
+      # row 0's last cell landed on row 1's first cell, and LEFT from there
+      # went back up to row 0's last cell, rather than stopping at the
+      # row's edge. What a DOWN whose target cell is missing from a
+      # *partial* last row does (stay, or land on that row's only item)
+      # could not be captured this cycle and is left open in docs/TODO.md.
       COLUMN_MAX = 2
+
+      # Grid geometry, measured on genuine RPG_RT.exe under wine (cycle
+      # #243, 640x480 capture halved to native 320x240): the selection
+      # cursor on column 0 spans native x 4..155 -- 152px including the
+      # 4px overhang each side `Game::WindowCursor` already models, i.e. a
+      # 144px cell starting at content x 0 -- and on column 1 spans
+      # 164..315, i.e. the same 144px cell starting at content x 160.
+      # Column 1's item names likewise start at content x 160 (capture
+      # x 336, halved, minus the 8px border). Two 144px cells in the 304px
+      # content area therefore leave a 16px gutter between them, not the
+      # edge-to-edge `304 / 2 == 152` split this class used to draw.
+      COLUMN_GAP = 16
+
+      # The list box fills the screen below the description banner no
+      # matter how many items the bag holds -- its bottom frame edge sits at
+      # native y 235..239 (capture rows 470..479) with a mere four rows of
+      # items, not content-sized as this class used to build it. Content
+      # height 192px == 12 rows of LINE_H; a longer bag scrolls (see
+      # `@item_top`).
+      LIST_H = SCREEN_H - DESC_H
+      VISIBLE_ROWS = (LIST_H - Window::BORDER * 2) / LINE_H
+
+      # The held count sits at the cell's right edge as `:` + a right-
+      # aligned two-digit figure: the colon glyph's pixels land at content
+      # x 123..125 of a 144px cell (its 6px halfwidth cell starting at
+      # 120 == 144 - 24) and every count's last digit ends at x 143 ("5",
+      # "12" and "99" all ended on the same column; "12" began at 132) --
+      # so the run is four halfwidth cells (`:`, blank, two digits) flush
+      # against the cell's right edge. Drawn as two pieces here (the colon
+      # at a fixed x, the figure right-aligned in its own 12px cell) so
+      # the layout does not depend on this engine's font sharing RPG_RT's
+      # exact space/digit advances.
+      COUNT_W = 24
+      COUNT_SEP_W = 6
+      COUNT_NUM_W = 12
+
+      # Scroll indicators for a bag longer than VISIBLE_ROWS: the same two
+      # blinking windowskin arrow cells `Scene::SaveLoad` draws for its slot
+      # list, here laid over the list box's own top and bottom frame edges.
+      # Measured on genuine RPG_RT.exe under wine (cycle #243, a 27-item
+      # bag = 14 grid rows): the up arrow's white glyph pixels sat at native
+      # x 155..164, y 34..37 -- the 16x8 cell at (152, 32) = `(SCREEN_W -
+      # ARROW_W) / 2, DESC_H`, i.e. on the list box's top border -- and the
+      # down arrow's at x 155..164, y 233..236, the cell at (152, 232) =
+      # `SCREEN_H - ARROW_H`, on its bottom border. The down arrow showed
+      # in every capture taken while rows were hidden below the box (top
+      # row 0, rows 12-13 hidden), never with the 8-item bag; the up arrow
+      # only once the box had scrolled (`@item_top > 0`); and each was
+      # missing from roughly half the captures taken in the same state, the
+      # blink. The blink *period* itself is the pause arrow's 20-on/20-off
+      # this codebase already measured elsewhere, not re-timed here.
+      ARROW_W = Window::ARROW_W
+      ARROW_H = Window::ARROW_H
+      ARROW_SRC_X = Window::ARROW_SRC_X
+      UP_ARROW_SRC_Y = 8
+      DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
+      ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
 
       def initialize parent, state
         super parent
@@ -47,12 +108,17 @@ class RPG2k
         @skin = make_windowskin
         @mode = :items          # :items list, :target selection, or :teleport_target
         @item_index = 0
+        # First grid row drawn in the list box -- the list scrolls once the
+        # bag outgrows VISIBLE_ROWS (see #scroll_item_list_to_cursor).
+        @item_top = 0
         @target_index = 0
         @target_lock = nil
         @teleport_index = 0
         @pending_item = nil
+        @arrow_anim = 0
         build_desc_window
         build_item_window
+        build_arrow_sprites
       end
 
       def dispose
@@ -60,6 +126,8 @@ class RPG2k
         @item_window.dispose if @item_window
         @target_window.dispose if @target_window
         @teleport_window.dispose if @teleport_window
+        @up_arrow.dispose if @up_arrow
+        @down_arrow.dispose if @down_arrow
       end
 
       def update
@@ -71,10 +139,75 @@ class RPG2k
         @item_window.update if @item_window
         @target_window.update if @target_window
         @teleport_window.update if @teleport_window
+        tick_arrows
         case @mode
         when :target then update_target
         when :teleport_target then update_teleport_target
         else update_items
+        end
+      end
+
+      # Advance the scroll arrows' blink phase and refresh their visibility
+      # -- mirrors Scene::SaveLoad#tick_arrows.
+      def tick_arrows
+        return unless @up_arrow
+        @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
+        refresh_arrows
+      end
+
+      # An arrow shows only in :items mode (the list box is gone or replaced
+      # in the other two modes), while blinking "on", and only while a grid
+      # row is hidden in that direction -- `@item_top > 0` for up, and for
+      # down whether rows remain past the box's last visible row. See the
+      # ARROW_* constants above for the measurement.
+      def refresh_arrows
+        return unless @up_arrow
+        blink_on = @arrow_anim < ARROW_BLINK_FRAMES
+        listing = @mode == :items
+        @up_arrow.visible = listing && blink_on && @item_top > 0
+        @down_arrow.visible = listing && blink_on && @item_top < item_row_count - VISIBLE_ROWS
+      end
+
+      # Number of grid rows the bag fills (an empty bag still shows one
+      # blank row, see #build_item_window).
+      def item_row_count
+        [(items.size + COLUMN_MAX - 1) / COLUMN_MAX, 1].max
+      end
+
+      # The two arrow sprites, pinned to the list box's top and bottom frame
+      # edges and centred horizontally -- see the ARROW_* constants above.
+      def build_arrow_sprites
+        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y)
+        @up_arrow.y = DESC_H
+        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y)
+        @down_arrow.y = SCREEN_H - ARROW_H
+        refresh_arrows
+      end
+
+      def build_arrow_sprite(src_y)
+        sprite = Sprite.new
+        sprite.z = 450
+        sprite.x = (SCREEN_W - ARROW_W) / 2
+        bmp = Bitmap.new(ARROW_W, ARROW_H)
+        if @skin
+          bmp.blt 0, 0, @skin, Rect.new(ARROW_SRC_X, src_y, ARROW_W, ARROW_H)
+        else
+          draw_arrow_fallback(bmp, src_y == UP_ARROW_SRC_Y)
+        end
+        sprite.bitmap = bmp
+        sprite.visible = false
+        sprite
+      end
+
+      # No windowskin to take the arrow art from -- a small solid triangle
+      # in either direction, the same stand-in Scene::SaveLoad draws.
+      def draw_arrow_fallback(bmp, pointing_up)
+        color = Color.new(232, 232, 248, 255)
+        ARROW_H.times do |row|
+          r = pointing_up ? ARROW_H - 1 - row : row
+          w = ARROW_W - r * 2
+          next if w <= 0
+          bmp.fill_rect r, row, w, 1, color
         end
       end
 
@@ -109,16 +242,11 @@ class RPG2k
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
           move_item_cursor(-COLUMN_MAX)
         # Right/Left cross a row boundary rather than stopping at the row's
-        # own edge -- ported from a reference implementation, not
-        # independently confirmed against genuine RPG_RT under wine:
-        # its Right/
-        # Left handling is a flat `index +- 1`, bounded only by the list's
-        # own absolute start/end (`index < item_max - 1` / `index > 0`),
-        # structurally unlike Down/Up (genuinely column-locked there,
-        # `index < item_max - column_max`). #move_item_cursor's own bound
-        # (`target < 0 || target >= items.size`) already matches this
-        # exactly -- the row-edge guard removed here was the only thing
-        # stopping Right/Left short of it.
+        # own edge -- confirmed against genuine RPG_RT.exe under wine (cycle
+        # #243; see the COLUMN_MAX comment above): a flat `index +- 1`,
+        # bounded only by the list's own absolute start/end, structurally
+        # unlike Down/Up's column lock. #move_item_cursor's own bound
+        # (`target < 0 || target >= items.size`) is exactly that.
         elsif Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
           move_item_cursor(1)
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
@@ -137,8 +265,30 @@ class RPG2k
         target = @item_index + delta
         return if target < 0 || target >= items.size
         @item_index = target
-        refresh_item_cursor
+        if scroll_item_list_to_cursor
+          build_item_window
+        else
+          refresh_item_cursor
+        end
         play_system_se(SFX_CURSOR)
+      end
+
+      # Keep the cursor's row inside the VISIBLE_ROWS-tall list box, moving
+      # `@item_top` by the smallest amount that does so; true when it moved
+      # (the box then needs redrawing for the new top row). The scrolled
+      # box's own look (whether RPG_RT draws scroll arrows on it, and
+      # whether it scrolls a row at a time or a page) is NOT yet confirmed
+      # against genuine RPG_RT under wine -- cycle #243's 27-item probe of
+      # exactly that never rendered (see docs/TODO.md); this only stops the
+      # cursor running off the bottom of the box, which it did before.
+      def scroll_item_list_to_cursor
+        row = @item_index / COLUMN_MAX
+        top = @item_top
+        top = row if row < top
+        top = row - VISIBLE_ROWS + 1 if row >= top + VISIBLE_ROWS
+        return false if top == @item_top
+        @item_top = top
+        true
       end
 
       def choose_item
@@ -636,6 +786,7 @@ class RPG2k
         invalidate_items
         @item_index = items.size - 1 if @item_index >= items.size
         @item_index = 0 if @item_index < 0
+        scroll_item_list_to_cursor
         build_item_window
         # Back to full width now that :target mode's own narrowed banner is
         # gone -- see #left_panel_w. Rebuilds rather than a plain
@@ -702,13 +853,22 @@ class RPG2k
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
       end
 
-      # Column width for the item grid (see the COLUMN_MAX comment above).
+      # Cell width for the item grid: 144px, two of them pitched
+      # `#item_col_x` apart with COLUMN_GAP between (measured, see
+      # COLUMN_GAP's own comment above).
       def item_col_w
-        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+        (SCREEN_W - Window::BORDER * 2 - COLUMN_GAP * (COLUMN_MAX - 1)) / COLUMN_MAX
+      end
+
+      # Content x of column `col`'s cell -- 0 and 160 (measured).
+      def item_col_x(col)
+        col * (item_col_w + COLUMN_GAP)
       end
 
       # The item grid itself in :items mode; a single-row "held count" box in
       # its place once :target mode is entered -- see #build_possessed_window.
+      # The box is always LIST_H tall (screen-filling, see LIST_H's own
+      # measurement) and shows the VISIBLE_ROWS rows from `@item_top` on.
       def build_item_window
         @item_window.dispose if @item_window
         if @mode == :target
@@ -717,14 +877,15 @@ class RPG2k
         end
         rows = items
         inner_w = SCREEN_W - Window::BORDER * 2
-        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
-        h = grid_rows * LINE_H
-        @item_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
+        h = VISIBLE_ROWS * LINE_H
+        @item_window = Window.new(0, DESC_H, SCREEN_W, LIST_H)
         @item_window.z = 400
         @item_window.windowskin = @skin
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         col_w = item_col_w
+        first = @item_top * COLUMN_MAX
+        last = first + VISIBLE_ROWS * COLUMN_MAX - 1
         # An empty bag draws no placeholder text -- confirmed against genuine
         # RPG_RT under wine, which shows a blank list row (still with a
         # visible, empty cursor box; see #refresh_item_cursor) rather than
@@ -737,15 +898,21 @@ class RPG2k
         # confirmed here directly: pixel-sampling a genuine RPG_RT frame
         # (a held, unusable Dagger next to a usable Herb) found the two
         # rows in visibly different, distinct colors.
+        #
+        # The count column is `:` at a fixed x plus a right-aligned figure --
+        # see COUNT_W's own measurement above.
         rows.each_with_index do |(id, count), i|
+          next if i < first || i > last
           it = @state.party.db_item(id)
           name = (it && it.name.to_s)
           name = "Item #{id}" if name.nil? || name.empty?
-          x = (i % COLUMN_MAX) * col_w
-          y = (i / COLUMN_MAX) * LINE_H
+          x = item_col_x(i % COLUMN_MAX)
+          y = (i / COLUMN_MAX - @item_top) * LINE_H
           idx = @state.party.field_usable?(id, @state) ? 0 : 3
-          draw_system_text(c, x, y + 2, col_w - 40, LINE_H, name, @skin, idx)
-          draw_system_text(c, x + col_w - 40, y + 2, 40, LINE_H, ":#{count}", @skin, idx)
+          draw_system_text(c, x, y + 2, col_w - COUNT_W, LINE_H, name, @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_W, y + 2, COUNT_SEP_W, LINE_H, ':', @skin, idx)
+          draw_system_text(c, x + col_w - COUNT_NUM_W, y + 2, COUNT_NUM_W, LINE_H,
+                           count.to_s, @skin, idx, 2)
         end
         @item_window.contents = c
         refresh_item_cursor
@@ -758,8 +925,10 @@ class RPG2k
         # blank slot rather than hiding the cursor. It highlights just the
         # one grid cell, not the full row -- confirmed by the same captures
         # that found the grid layout itself (see the COLUMN_MAX comment).
-        x = (@item_index % COLUMN_MAX) * item_col_w
-        y = (@item_index / COLUMN_MAX) * LINE_H
+        # The cell is the measured 144px COLUMN_GAP-separated one, not the
+        # full half-width -- see COLUMN_GAP's own comment.
+        x = item_col_x(@item_index % COLUMN_MAX)
+        y = (@item_index / COLUMN_MAX - @item_top) * LINE_H
         @item_window.cursor_rect = Rect.new(x, y, item_col_w, LINE_H)
         refresh_desc
       end
@@ -935,8 +1104,15 @@ class RPG2k
           y = i * TARGET_ROW_PITCH
           draw_target_face c, a, y
           c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
+          # No blank between a label and its figure: measured on genuine
+          # RPG_RT.exe under wine (cycle #243, leader デモ用 Lv50 600/600) the
+          # level's digits start 12px after the label column (content x 68
+          # for a two-halfwidth-glyph "LV") and the HP figure 12px after the
+          # value column (x 126), i.e. straight after the label's own cells
+          # -- "LV50" / "HP600/600", not the "Lv 50" / "HP 600/600" this
+          # panel used to draw.
           c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
-                      "#{term(:level_short)} #{a.level}"
+                      "#{term(:level_short)}#{a.level}"
           # HP/MP recolor the same way the field Status screen's row does
           # (Scene::Base#draw_stat_segment -- see that helper's own
           # citation): only the current-value figure, never its label or max,
@@ -945,14 +1121,14 @@ class RPG2k
           # text, the same gap the Status screen and battle status panel each
           # had before their own earlier fixes (see docs/TODO.md).
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H, inner_w, LINE_H,
-                            "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
+                            term(:hp_short), a.hp, a.display_max_hp, true, @skin)
           # RPG_RT's target list shows each member's condition (its
           # Window_ActorTarget draws one) -- which is most of the point of the
           # list, since it is where you pick who to use an antidote on.
           draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
           draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H * 2, inner_w, LINE_H,
-                            "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
+                            term(:mp_short), a.mp, a.display_max_mp, false, @skin)
         end
         @target_window.contents = c
         refresh_target_cursor
