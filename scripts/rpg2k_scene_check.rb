@@ -18687,37 +18687,40 @@ check 'the battle status panel clips each column to the gap before its own neigh
   ensure
     RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
   end
-  # #draw_battle_stat_segment now draws each of HP/SP as three consecutive
-  # calls (label, current-value figure, "/max"), not one -- reconstruct the
-  # segment's full text from its three parts to check the same clipping
-  # this test always has, undisturbed by the recolor split.
+  # #draw_battle_stat_segment draws each of HP/SP as up to four consecutive
+  # calls (label, current figure, "/", maximum) at the fixed sub-column
+  # offsets measured on genuine RPG_RT under wine (cycle #244) -- the whole
+  # run is 54px, so HP fits its 60px column whole and SP, starting 30px
+  # before the panel's own inner edge, loses the "/" and the maximum.
   calls = ui[:status_win].contents.draw_calls
-  hp_idx = calls.index { |a| a[4].start_with?('HP') }
-  mp_idx = calls.index { |a| a[4].start_with?('MP') }
+  hp_idx = calls.index { |a| a[4] == 'HP' }
+  mp_idx = calls.index { |a| a[4] == 'MP' }
   ok hp_idx, 'the HP segment was drawn'
   ok mp_idx, 'the SP segment was drawn'
-  hp_call = calls[hp_idx]
-  mp_call = calls[mp_idx]
-  hp_text = calls[hp_idx, 3].map { |a| a[4] }.join
-  mp_text = calls[mp_idx, 3].map { |a| a[4] }.join
+  hp_run = calls[hp_idx...mp_idx]
+  mp_run = calls[mp_idx..-1]
+  hp_text = hp_run.map { |a| a[4] }.join
+  mp_text = mp_run.map { |a| a[4] }.join
 
-  eq hp_gap, hp_call[2],
-     "HP's own width is the #{hp_gap}px gap up to the SP column, not the panel's own edge"
-  eq mp_gap, mp_call[2],
-     "SP's own width is the #{mp_gap}px gap up to the panel's own inner edge"
+  eq 'HP999/999', hp_text,
+     'the HP run is label + figure + "/" + maximum with no space after the label'
+  eq [battle_mod::STATUS_HP_X, battle_mod::STATUS_HP_X + 12,
+      battle_mod::STATUS_HP_X + 30, battle_mod::STATUS_HP_X + 36],
+     hp_run.map { |a| a[0] },
+     'HP: 12px label, then the figure, the "/" 30px in and the maximum 36px in'
+  eq [12, 18, 6, 18], hp_run.map { |a| a[2] },
+     'each piece keeps its own measured width, not the whole column\'s'
+  eq [0, 2, 0, 2], hp_run.map { |a| a[5] },
+     'both figures are right-aligned in their three-digit fields; the label and "/" are not'
+  ok battle_mod::STATUS_HP_X + 54 <= battle_mod::STATUS_MP_X,
+     "HP's 54px run fits the #{hp_gap}px gap up to the SP column instead of overrunning it"
 
-  ok hp_text.length * 6 <= hp_gap,
-     "HP's drawn text (#{hp_text.inspect}) was sliced to fit its own #{hp_gap}px column " \
-     "instead of overrunning into SP's"
-  ok mp_text.length * 6 <= mp_gap,
-     "SP's drawn text (#{mp_text.inspect}) was sliced to fit its own tiny #{mp_gap}px " \
-     'column instead of running off the panel'
-  eq 'HP 999/999', hp_text,
-     "HP's own 60px column is exactly enough for RPG2000's own 999 ceiling -- " \
-     "the comment on STATUS_NAME_X's own block -- so this drew whole, untruncated"
-  ok mp_text.length < 'MP 999/999'.length,
-     "SP 999/999 does not fit #{mp_gap}px at 6px/character, so it was genuinely truncated " \
-     'rather than bleeding off the panel'
+  eq 'MP999', mp_text,
+     "SP's own run truncates at the panel's inner edge -- exactly what RPG_RT draws"
+  eq 2, mp_run.size,
+     "the \"/\" and the maximum start at or past contents x=#{inner_w}, so neither is drawn"
+  ok mp_run.map { |a| a[0] + a[2] }.max <= inner_w,
+     "nothing SP drew reaches past the panel's own #{mp_gap}px remainder"
 end
 
 # Minimal stand-in for a battle Combatant, exposing exactly what
@@ -27494,6 +27497,158 @@ check 'a switch-gated event page draws its own sprite once its switch is set, ' 
   hits = event_blt_calls(scene, 'wisp1')
   ok hits.any?, 'expected the now-selected page to draw once its switch is on'
   eq 255, hits.first[4]
+end
+
+
+# -- the battle status panel and the two command windows (cycle #244) ---------
+#
+# Pixel-measured against genuine RPG_RT.exe under wine (Nepheshel, the
+# `Save01_battle_map2.lsd` two-slime fight on map 2, 640x480 captures halved to
+# the 320x240 logical screen; four saves -- the genuine 600/600 leader and
+# three copies edited through save chunk 108 to 88/44, to level 1 with 5/5,
+# to 0/0 and to 151/150). No EasyRPG source was consulted. See Scene::Battle's
+# own STATUS_NAME_X / #draw_battle_stat_segment / #draw_battle_command /
+# #draw_battle_options comments and docs/TODO.md for the recipe and numbers.
+
+# The battle scene reaches its windowskin through `@map.windowskin`, which the
+# map scene loads in its own #initialize -- the battle fixtures build that
+# scene themselves, so the skin is installed afterwards rather than through the
+# database's system_graphic name.
+def battle_with_skin(party = BattleStubParty.new)
+  scene, = battle_at_command(nil, party: party)
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new(160, 80))
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  [scene, battle_ui(scene)]
+end
+
+# One status panel drawn straight from a row fixture, so a check can pin the
+# HP/SP colours at HP/SP values a live fixture battle cannot easily be walked
+# to (the wine captures got there by editing the save's chunk 108 instead).
+def battle_status_blends(scene, fixture)
+  battle = scene.instance_variable_get(:@battle)
+  win = battle.send(:battle_status_window, [battle.send(:battle_status_row, fixture)], 0)
+  status_blend(win)
+end
+
+check 'the battle status panel draws name / condition / HP / SP at the ' \
+      'contents columns measured under wine (0 / 82 / 138 / 198)' do
+  battle_mod = RPG2k::Scene::Battle
+  eq [0, 82, 138, 198],
+     [battle_mod::STATUS_NAME_X, battle_mod::STATUS_STATE_X,
+      battle_mod::STATUS_HP_X, battle_mod::STATUS_MP_X],
+     'the four column origins are the measured ones, not the old 4/86/142/202'
+
+  _, ui = battle_with_skin
+  bc = status_blend(ui[:status_win])
+  name = blend_at(bc, 'Hero', 0, 0)
+  ok name, "the name draws at contents x=0 on row 0, got #{bc.map { |c| [c[4], c[0], c[1]] }.inspect}"
+  eq [0, 48], name[6, 2], 'the name is the default swatch (index 0)'
+  state = blend_at(bc, 'Normal', 82, 0)
+  ok state, 'the condition draws at contents x=82'
+  eq [0, 48], state[6, 2], "a clear actor's condition is swatch 0 too"
+  hp = blend_at(bc, 'HP', 138, 0)
+  mp = blend_at(bc, 'MP', 198, 0)
+  ok hp, 'the HP label draws at contents x=138'
+  ok mp, 'the SP label draws at contents x=198'
+  eq [16, 48], hp[6, 2], "the HP label draws from swatch 1, not the values' swatch 0"
+  eq [16, 48], mp[6, 2], 'and so does the SP label'
+end
+
+check 'one battle HP/SP run is label + right-aligned figure + "/" + ' \
+      'right-aligned maximum, 54px in all' do
+  battle_mod = RPG2k::Scene::Battle
+  eq [12, 18, 6], [battle_mod::STAT_LABEL_W, battle_mod::STAT_FIELD_W,
+                   battle_mod::STAT_SLASH_W],
+     'the measured sub-column widths'
+  eq 1, battle_mod::STAT_LABEL_COLOR, 'the labels carry the system swatch'
+
+  _, ui = battle_with_skin
+  bc = status_blend(ui[:status_win])
+  hp_x = battle_mod::STATUS_HP_X
+  # BattleStubActor's default is 200/200 HP.
+  cur = blend_at(bc, '200', hp_x + 12, 0)
+  slash = blend_at(bc, '/', hp_x + 30, 0)
+  max = blend_at(bc, '200', hp_x + 36, 0)
+  ok cur, "the current figure sits 12px past the label, got #{bc.map { |c| [c[4], c[0]] }.inspect}"
+  ok slash, 'the "/" sits 30px past the label'
+  ok max, 'the maximum sits 36px past the label'
+  eq [18, 2], [cur[2], cur[10]], 'the figure is right-aligned in an 18px three-digit field'
+  eq [6, 0], [slash[2], slash[10]], 'the "/" is its own 6px cell, unaligned'
+  eq [18, 2], [max[2], max[10]], 'the maximum is right-aligned in a field of its own'
+  ok bc.none? { |c| c[4].to_s.start_with?('HP ') },
+     'no space is drawn between the label and the figure -- RPG_RT draws "HP600/600"'
+end
+
+check 'only the battle HP/SP current figure recolours: swatch 4 at or below ' \
+      'a quarter of max, swatch 5 at zero HP, never for SP' do
+  battle_mod = RPG2k::Scene::Battle
+  hp_x = battle_mod::STATUS_HP_X
+  mp_x = battle_mod::STATUS_MP_X
+  scene, = battle_with_skin
+
+  # 150 of 600 is exactly max/4 (critical); 151 is the first ordinary value.
+  # Both sides of that boundary were captured in one genuine frame.
+  bc = battle_status_blends(scene, BattleStatusRowFixture.new('Hero', 151, 600, 150, 600, []))
+  eq [0, 48], blend_at(bc, '151', hp_x + 12, 0)[6, 2],
+     'HP one point over a quarter of max stays swatch 0'
+  eq [64, 48], blend_at(bc, '150', mp_x + 12, 0)[6, 2],
+     'SP at exactly a quarter of max is already swatch 4'
+  eq [0, 48], blend_at(bc, '600', hp_x + 36, 0)[6, 2],
+     'the maximum never recolours with the figure beside it'
+
+  bc = battle_status_blends(scene, BattleStatusRowFixture.new('Down', 0, 600, 0, 600, []))
+  eq [80, 48], blend_at(bc, '0', hp_x + 12, 0)[6, 2],
+     'HP at 0 draws the knockout swatch 5'
+  eq [64, 48], blend_at(bc, '0', mp_x + 12, 0)[6, 2],
+     'SP at 0 stays on swatch 4 -- SP never knocks out'
+end
+
+check 'the battle options and per-actor command windows share one 76x80 rect, ' \
+      'text at contents x=0 on 16px rows and a full-width cursor' do
+  battle_mod = RPG2k::Scene::Battle
+  cmd_inner = battle_mod::BATTLE_CMD_W - RPG2k::Window::BORDER * 2
+  status_inner = battle_mod::BATTLE_STATUS_W - RPG2k::Window::BORDER * 2
+
+  scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the battle opened on the party-command phase'
+  opt = ui[:cmd_win]
+  eq [0, battle_mod::BATTLE_PANEL_Y, battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [opt.x, opt.y, opt.width, opt.height],
+     'the options window is the measured x=0..75, y=160..239 rect'
+  eq [0, 0, cmd_inner, battle_mod::BATTLE_LINE_H],
+     [opt.cursor_rect.x, opt.cursor_rect.y, opt.cursor_rect.width, opt.cursor_rect.height],
+     'its cursor is the full 60px contents width, one 16px row tall'
+  opt_rows = opt.contents.draw_calls || []
+  eq [0], opt_rows.map { |a| a[0] }.uniq, 'every option row draws from contents x=0'
+  eq (0...opt_rows.size).map { |i| i * battle_mod::BATTLE_LINE_H },
+     opt_rows.map { |a| a[1] }, 'the rows step 16px apart'
+  eq 0, ui[:status_win].cursor_rect.width,
+     'no status row is highlighted while the party command window has focus'
+
+  _, ui2 = battle_at_command(nil, party: BattleStubParty.new)
+  cmd = ui2[:cmd_win]
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y,
+      battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [cmd.x, cmd.y, cmd.width, cmd.height],
+     'the per-actor command window is the same shape at x=244'
+  eq [0, 0, cmd_inner, battle_mod::BATTLE_LINE_H],
+     [cmd.cursor_rect.x, cmd.cursor_rect.y, cmd.cursor_rect.width, cmd.cursor_rect.height],
+     'with the identical cursor'
+  cmd_rows = cmd.contents.draw_calls || []
+  eq [0], cmd_rows.map { |a| a[0] }.uniq,
+     'and its four command terms draw from contents x=0 too'
+  eq (0...cmd_rows.size).map { |i| i * battle_mod::BATTLE_LINE_H },
+     cmd_rows.map { |a| a[1] }, 'on the same 16px pitch'
+
+  # The acting actor's row carries the panel-wide cursor once an actor is
+  # choosing -- screen x=4..239 on the reference frame, i.e. the whole 228px
+  # contents width plus Game::WindowCursor::OVERHANG on each side.
+  status = ui2[:status_win]
+  eq [0, 0, status_inner, battle_mod::BATTLE_LINE_H],
+     [status.cursor_rect.x, status.cursor_rect.y,
+      status.cursor_rect.width, status.cursor_rect.height],
+     "the acting actor's row is highlighted across the whole panel"
 end
 
 # -- summary ------------------------------------------------------------------

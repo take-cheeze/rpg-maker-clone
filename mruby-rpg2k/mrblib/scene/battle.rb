@@ -3329,10 +3329,11 @@ class RPG2k
       BATTLE_PANEL_Y = SCREEN_H - 80
       BATTLE_PANEL_H = 80
       # The actor-command window (and the Battle/Auto Battle/Escape options
-      # window, which shares its rect) is a fixed 76px, ported from a
-      # reference implementation, not independently confirmed against
-      # genuine RPG_RT under wine; the status window takes the rest of the
-      # row.
+      # window, which shares its rect) is a fixed 76px; the status window
+      # takes the rest of the row (244px). Confirmed against genuine
+      # RPG_RT.exe under wine (cycle #244): the windowskin frames on the
+      # party-command frame span x=0..75 and x=76..319, and on the per-actor
+      # frame x=0..243 and x=244..319 -- both windows 80px tall from y=160.
       BATTLE_CMD_W = 76
       BATTLE_STATUS_W = SCREEN_W - BATTLE_CMD_W
       # The enemy target list (`CreateBattleTargetWindow`) is a fixed 136px, and
@@ -3361,46 +3362,73 @@ class RPG2k
       # only for #draw_battle_item/#draw_battle_skill.
       BATTLE_LIST_COLUMN_MAX = 2
 
-      # Column origins within the status panel's contents, in the order
-      # a reference implementation's battle status window uses them: who,
-      # what condition they
-      # are in, then the gauges. The condition column is why this window is
-      # laid out in columns at all — a state is drawn in its *own* palette
+      # Column origins within the status panel's contents: who, what condition
+      # they are in, then the gauges. The condition column is why this window
+      # is laid out in columns at all — a state is drawn in its *own* palette
       # colour, which a single `draw_text` of a whole line cannot do.
-      # Ported from that reference implementation's source, not
-      # independently confirmed against
-      # genuine RPG_RT under wine: RPG2k
-      # branch: name at 4, state at 86, HP at 142, SP at 202 for a party
-      # with no maxima over 999.
       #
-      # "For a party with no maxima over 999" is a real ceiling, not a rounding
-      # note: the panel itself is a fixed 244px (`BATTLE_STATUS_W`, RPG_RT's own
-      # screen width minus its fixed 76px command box), so the SP column only
-      # ever has `inner content width (228) - 202 = 26px` before the panel's own
-      # right border -- nowhere near "SP 999/999"'s ~66px, and not even quite
-      # enough for a plain "SP 50/50". `#battle_status_window` clips every
-      # column's text to the gap before the *next* column (or the panel's own
-      # edge, for SP) rather than trusting it to fit, so an actor with generous
-      # HP/SP -- or simply a widescreen font -- truncates cleanly instead of
-      # spilling into its neighbour's cell.
-      STATUS_NAME_X  = 4
-      STATUS_STATE_X = 86
-      STATUS_HP_X    = 142
-      STATUS_MP_X    = 202
+      # Measured directly off genuine RPG_RT.exe under wine (cycle #244,
+      # Nepheshel, the `Save01_battle_map2.lsd` two-slime fight, 640x480
+      # captures halved to the 320x240 logical screen). The panel's contents
+      # start at its own `x + 8` in both phases, and every run below is quoted
+      # in contents coordinates: `デモ用` draws from x=0 on the 12px
+      # full-width grid (screen cells 84/96/108 beside the options window,
+      # 8/20/32 beside the per-actor command window), `正常` from x=82, the
+      # `HP` label from x=138 and the `MP` label from x=198 -- so the columns
+      # are 0/82/138/198, not the 4/86/142/202 this used to carry. This panel
+      # is a *different* window from the field menu's own party panel, which
+      # cycle #240 measured at name 56 / LV 56 / level 68 / condition 98 /
+      # HP 162.
+      #
+      # "For a party with no maxima over 999" is still a real ceiling: the
+      # panel is a fixed 244px (`BATTLE_STATUS_W`), so its contents are 228px
+      # wide and the SP run (`#draw_battle_stat_segment`: 54px from x=198)
+      # would need to reach 252. Genuine RPG_RT truncates it at the contents
+      # edge exactly as this engine does -- the reference frame for a
+      # 600/600 party member reads `HP600/600 MP600`, its SP `/600` simply
+      # cut off at x=228 -- so the clipping here is RPG_RT's own behaviour,
+      # not a private guard.
+      STATUS_NAME_X  = 0
+      STATUS_STATE_X = 82
+      STATUS_HP_X    = 138
+      STATUS_MP_X    = 198
 
-      # The status panel's own x, mirroring a reference implementation's own
-      # window-positioning logic, not independently confirmed against
-      # genuine RPG_RT under wine:
-      # three windows -- the options window, the status window, then the
-      # per-actor command window -- sit left-to-right, but only one of the
-      # two 76px command-shaped windows is ever showing at once, so the
-      # status window slides to whichever side is free. During the top-level
-      # Battle/Auto Battle/Escape choice (`@ui[:phase] == :battle_options`)
-      # the options window takes the left slot (x=0) and the status window
-      # is pushed to `BATTLE_CMD_W`; once an actor is choosing Attack/Skill/
-      # Defend/Item the per-actor command window takes the *right* slot
-      # instead (`#draw_battle_command`'s own `BATTLE_STATUS_W`) and the
-      # status window returns to x=0.
+      # Geometry of one "LABEL cur/max" run inside those HP/SP columns,
+      # measured on the same genuine frames (see #draw_battle_stat_segment):
+      # a 12px two-cell label, then the current figure right-aligned in an
+      # 18px three-digit field, then a 6px "/" cell, then the maximum
+      # right-aligned in its own 18px field -- 54px in all.
+      STAT_LABEL_W = 12
+      STAT_FIELD_W = 18
+      STAT_SLASH_W = 6
+
+      # The `HP`/`MP` labels draw from the windowskin's swatch 1 (Nepheshel's
+      # mid-blue gradient, #82AAFF at the top of the cell through #6489DE to
+      # #19388D, sampled #638ADE across the glyph rows), not swatch 0 like
+      # the figures beside them -- measured off the same captures against the
+      # System graphic's own palette cells, and the same swatch the field
+      # save/load screen's LV/HP labels carry
+      # (`Scene::SaveLoad::STAT_LABEL_COLOR`, cycle #242).
+      STAT_LABEL_COLOR = 1
+
+      # The status panel's own x: three windows -- the options window, the
+      # status window, then the per-actor command window -- sit left-to-right,
+      # but only one of the two 76px command-shaped windows is ever showing at
+      # once, so the status window slides to whichever side is free. During
+      # the top-level Battle/Auto Battle/Escape choice (`@ui[:phase] ==
+      # :battle_options`) the options window takes the left slot (x=0) and the
+      # status window is pushed to `BATTLE_CMD_W`; once an actor is choosing
+      # Attack/Skill/Defend/Item the per-actor command window takes the
+      # *right* slot instead (`#draw_battle_command`'s own
+      # `BATTLE_STATUS_W`) and the status window returns to x=0.
+      #
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #244): on the
+      # party-command frame the two windows' frames run x=0..75 and
+      # x=76..319, and pressing Decision on 戦う swaps them to x=0..243 and
+      # x=244..319 -- the same 76/244 split, mirrored. Escape from the
+      # per-actor list puts them back the way they were, and while the enemy
+      # target list is up (which only ever opens from the per-actor phase)
+      # the status panel stays at x=0 under it.
       def battle_status_x
         @ui[:phase] == :battle_options ? BATTLE_CMD_W : 0
       end
@@ -3437,10 +3465,12 @@ class RPG2k
         win = battle_status_gauge_window(@ui[:allies]) if gauge_battle_layout?
         @ui[:status_win] = win || begin
           rows = @ui[:allies].map { |a| battle_status_row(a) }
-          # No row highlighted while the options window is open -- matching
-          # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
-          # own `eMoveWindow` substate; nobody is "the acting actor" until
-          # Battle or Auto Battle is chosen.
+          # No row highlighted while the options window is open -- nobody is
+          # "the acting actor" until Battle or Auto Battle is chosen.
+          # Confirmed against genuine RPG_RT.exe under wine (cycle #244): on
+          # every party-command frame the only green cursor on screen is the
+          # options window's own, and the acting actor's row cursor appears
+          # in the status panel the moment 戦う is accepted.
           idx = @ui[:phase] == :battle_options ? nil : @ui[:allies].index(current_actor)
           battle_status_window(rows, idx)
         end
@@ -3634,12 +3664,14 @@ class RPG2k
       end
 
       # The current actor's command menu — Attack / Skill / Defend / Item, with
-      # a cursor. A reference implementation's own source does not put the
-      # actor's name in this
-      # window at all (it builds it once from the
-      # four command terms in that order; ported from that reference
-      # implementation's source, not
-      # independently confirmed against genuine RPG_RT under wine): the
+      # a cursor. Confirmed against genuine RPG_RT.exe under wine (cycle
+      # #244): the window's frame spans x=244..319, y=160..239, the four
+      # command terms draw from contents x=0 (screen cells 252/264/276/…) on
+      # 16px rows at screen y=168/184/200/216, and its cursor is the skin's
+      # green frame over screen x=248..315 — a `Rect.new(0, row * 16, 60,
+      # 16)`, i.e. the full 60px contents width, moving one row per Down and
+      # wrapping from the fourth row back to the first. The actor's name is
+      # not in this window at all: the
       # acting actor is shown by the cursor
       # `#refresh_battle_status` puts on their row in the status window instead
       # (a reference implementation's own actor-index cursor). The Skill
@@ -3672,13 +3704,15 @@ class RPG2k
       # the per-actor command window uses (only one of the two is ever on
       # screen at a time), with `#battle_option_rows`' three entries instead
       # of the usual four, but docked to the *left* edge (x=0) rather than
-      # the command window's right one -- a reference implementation's own
-      # window-positioning logic lays
-      # the options window before the status window, then the status window
-      # past it, while the per-actor
-      # command window comes after the status window instead. See
-      # `#battle_status_x`, which pushes the status panel to `BATTLE_CMD_W`
-      # to make room for this window here.
+      # the command window's right one. See `#battle_status_x`, which pushes
+      # the status panel to `BATTLE_CMD_W` to make room for this window here.
+      #
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #244): the
+      # window's frame spans x=0..75, y=160..239, 戦う/オート/逃げる draw from
+      # contents x=0 (screen cells 8/20/32) on 16px rows at screen
+      # y=168/184/200, and the cursor is the skin's green frame over screen
+      # x=4..71 -- a `Rect.new(0, row * 16, 60, 16)`, the full contents
+      # width, wrapping from 逃げる back to 戦う on a fourth Down.
       def draw_battle_options
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_option_rows.map { |r| r[:label] }
@@ -4079,35 +4113,73 @@ class RPG2k
       # returns these four segments in ascending-x order, so "the next
       # segment's x" is always the next column's own origin; the last segment
       # (SP) clips to the panel's own inner edge instead, same as before.
-      # Draws "LABEL cur/max" the way #battle_status_window's HP/MP columns
-      # need it: only the current-value figure recolors via
-      # #value_font_color (Scene::Base) -- critical (index 4, ≤ 1/4 max) or
-      # knocked-out (index 5, HP only) -- the label and "/max" suffix stay
-      # the ordinary swatch. Mirrors Scene::StatusMenu#draw_stat_segment,
-      # which the field Status screen already uses for the identical rule;
-      # confirmed against genuine RPG_RT.exe under wine that the battle
-      # status panel follows it too (a save edited to a below-1/4-max HP
-      # showed only the HP figure recoloring, "/max" and "MP" unchanged).
-      # Clips the whole "LABEL cur/max" run to `w` first (matching every
-      # other column's own overflow guard, `#clip_text_to_width`) and only
-      # then splits the surviving text back into its three colored pieces,
-      # so a column too narrow for the full string still can't bleed into
-      # its neighbour.
+      #
+      # The cursor is confirmed against genuine RPG_RT.exe under wine (cycle
+      # #244): on the per-actor command frame the acting actor's row carries
+      # the skin's green frame from screen x=4 to x=239 over y=168..183 --
+      # the full 228px contents width plus `Game::WindowCursor::OVERHANG` on
+      # each side, exactly one 16px row tall, which is the `Rect.new(0,
+      # row * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)` below. It stays on
+      # while the enemy target list is up (the target window merely covers
+      # its left 136px) and is absent for the whole party-command phase, the
+      # `nil` `#refresh_battle_status` passes there.
+      # Draws one HP/SP gauge run the way #battle_status_window's columns need
+      # it, in the four fixed sub-columns genuine RPG_RT.exe draws under wine
+      # (cycle #244, measured on the Nepheshel two-slime battle at three
+      # edited HP/SP pairs). From the column's own `x`:
+      #
+      #   x +  0 .. 12   the `HP`/`MP` label, two 6px cells, swatch 1
+      #                  (`STAT_LABEL_COLOR`) -- not the ordinary swatch 0
+      #   x + 12 .. 30   the current figure, RIGHT-aligned in a three-digit
+      #                  field, in #value_font_color's own swatch
+      #   x + 30 .. 36   the "/" separator, swatch 0
+      #   x + 36 .. 54   the maximum, RIGHT-aligned in its own three-digit
+      #                  field, swatch 0
+      #
+      # There is no space between the label and the figure: at 600/600 the
+      # reference frame's HP run reads `HP600/600` with the `6` starting the
+      # pixel after the label's last cell, which is what the old
+      # `"#{label} #{cur}/#{max}"` string (a space, everything left-aligned)
+      # could not produce -- it pushed the SP column so far right that
+      # `MP 6` was all that survived the panel's own edge. Right-alignment
+      # is what an actor whose figures are not three digits shows: a save
+      # edited to 88 HP drew ` 88/600` with the 88 in the last two cells of
+      # the field, and one edited to level 1 (max HP 40) drew `  5/ 40` --
+      # both fields keep their three cells whatever the digit count.
+      #
+      # Only the current figure recolors, via #value_font_color (Scene::Base):
+      # critical (swatch 4) at or below a quarter of max, knocked-out (swatch
+      # 5) at exactly 0 and HP only. All three branches are confirmed on
+      # genuine frames: HP 88/600 and SP 44/600 both drew swatch 4's gold
+      # (#F7E76B) while the label, "/" and maximum stayed put; HP 0/600 drew
+      # swatch 5's grey-pink (#D69E9C) while SP 0/600 stayed gold, so SP
+      # really never knocks out; and an HP 151 / SP 150 pair straddling
+      # 600/4 = 150 drew the HP in the ordinary swatch 0 and the SP in
+      # swatch 4, pinning the threshold at `cur <= max / 4` exactly.
+      #
+      # Each piece is placed at its own fixed offset and skipped once the
+      # column's own `w` is used up (`#clip_text_to_width` for the piece that
+      # only partly fits), so the SP run -- 54px wide from x=198 inside a
+      # 228px contents bitmap -- truncates at the panel edge the way RPG_RT's
+      # own does instead of bleeding past it.
       def draw_battle_stat_segment(c, x, y, w, label, cur, max, can_knockout)
-        full = "#{label} #{cur}/#{max}"
-        clipped = clip_text_to_width(c, full, w)
-        label_part = clipped[0, label.length + 1] || ''
-        rest = clipped[(label.length + 1)..-1] || ''
-        cur_s = cur.to_s
-        cur_part = rest[0, cur_s.length] || ''
-        max_part = rest[cur_s.length..-1] || ''
-        color = value_font_color(cur, max, can_knockout)
+        pieces = [[label, STAT_LABEL_W, 0, STAT_LABEL_COLOR],
+                  [cur.to_s, STAT_FIELD_W, 2, value_font_color(cur, max, can_knockout)],
+                  ['/', STAT_SLASH_W, 0, 0],
+                  [max.to_s, STAT_FIELD_W, 2, 0]]
+        limit = x + w
         cx = x
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, label_part, windowskin
-        cx += c.text_size(label_part).width
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, cur_part, windowskin, color
-        cx += c.text_size(cur_part).width
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, max_part, windowskin
+        pieces.each do |text, pw, align, color|
+          break if cx >= limit
+          avail = limit - cx
+          if pw <= avail
+            draw_system_text c, cx, y, pw, BATTLE_LINE_H, text, windowskin, color, align
+          else
+            draw_system_text c, cx, y, avail, BATTLE_LINE_H,
+                             clip_text_to_width(c, text, avail), windowskin, color
+          end
+          cx += pw
+        end
       end
 
       def battle_status_window(rows, cursor_idx = nil)

@@ -22274,6 +22274,78 @@ not yet verified:
   holds tautologically regardless of what `height` actually is, so it could
   not have caught this on its own — confirmed to fail against the pre-fix
   code before the fix.
+  ✅ **Follow-up (cycle #244, 2026-09-06): the other three windows on that
+  same 320x80 strip — the party status panel and the two 76px command
+  windows — pixel-measured against genuine RPG_RT.exe under wine, and the
+  status panel's columns and HP/SP runs rebuilt on the numbers.** Recipe:
+  the shared round-2 battle save (`Save01_battle_map2.lsd`, md5
+  f684a3fe1226f9dcbc9cbdc7544d6488) stands the lone デモ用 (Lv50, 600/600
+  HP/MP) next to a monster event on map 2, so `Down Return Return` from the
+  title drops straight into the two-slime fight; `BOOT_WAIT=40`, capture
+  after every key, 640x480 frames halved to the 320x240 logical screen and
+  read with numpy. Three extra copies of the save were edited through chunk
+  108's actor 15 record (fields 31/71/72, `LCF::Array1D#[]=` + `to_lcf`) to
+  88/44, to level 1 (max HP 40) with 5/5, to 0/0 and to 151/150, giving
+  digit counts and colour states the genuine fight will not produce on its
+  own. **Window rects:** on the party-command frame the two windowskin
+  frames span x=0..75 and x=76..319; pressing Decision on 戦う mirrors them
+  to x=0..243 and x=244..319, and Escape puts them back — so `BATTLE_CMD_W`
+  76 / `BATTLE_STATUS_W` 244 / `#battle_status_x`'s side-swap were all
+  already right, as were `BATTLE_PANEL_Y` 160, `BATTLE_PANEL_H` 80 and the
+  16px row pitch (rows at screen y=168/184/200/216 in both command windows,
+  wrapping past the last). Both command windows draw their terms from
+  contents x=0 and carry a `Rect.new(0, row*16, 60, 16)` cursor (green frame
+  at screen x=4..71 and x=248..315). **Status panel contents:** `デモ用`
+  from contents x=0 on the 12px full-width grid, `正常` from x=82, the `HP`
+  label from x=138 and `MP` from x=198 — *not* the 4/86/142/202 this file
+  carried (a different window from the field menu's own party panel, which
+  cycle #240 measured at name 56 / LV 56 / level 68 / condition 98 / HP
+  162). Each gauge run is 54px in four fixed pieces: a 12px label, the
+  current figure **right-aligned** in an 18px three-digit field, a 6px "/",
+  then the maximum right-aligned in its own 18px field — no space anywhere
+  (`HP600/600`), proved by the edited saves (` 88/600`, `  5/ 40`, so both
+  fields keep three cells whatever the digit count). Colours, against the
+  System graphic's own palette cells (decoded with a zero-window-tolerant
+  inflater, since ImageMagick rejects Nepheshel's PNG): name, condition,
+  "/" and both maxima in swatch 0; the `HP`/`MP` labels in swatch 1
+  (#638ADE at the glyph rows); the current figure in swatch 4 (#F7E76B) at
+  or below max/4 and swatch 5 (#D69E9C) at 0 HP only — SP at 0 stays gold,
+  and the HP 151 / SP 150 frame pins the threshold at `cur <= max / 4`
+  exactly (600/4 = 150). **Cursor:** the acting actor's row carries the
+  skin's frame across the whole 228px contents width (screen x=4..239) in
+  the per-actor phase and stays up under the enemy target window; there is
+  no status cursor at all during the party-command phase. Fixed in
+  `Scene::Battle` (`mruby-rpg2k/mrblib/scene/battle.rb`): `STATUS_NAME_X`/
+  `STATUS_STATE_X`/`STATUS_HP_X`/`STATUS_MP_X` → 0/82/138/198, new
+  `STAT_LABEL_W`/`STAT_FIELD_W`/`STAT_SLASH_W`/`STAT_LABEL_COLOR`
+  (12/18/6/1), and `#draw_battle_stat_segment` rewritten from one
+  `"#{label} #{cur}/#{max}"` string sliced by `#clip_text_to_width` into
+  four positioned, per-piece-coloured, right-aligned draws that stop at the
+  column's own edge. That string plus the +4 columns is what clipped our SP
+  column to `MP 6`; genuine RPG_RT truncates there too, but only the `/600`
+  (`HP600/600 MP600`), because its run starts 4px earlier and wastes no
+  space. Covered by four new `scripts/rpg2k_scene_check.rb` checks (the four
+  column origins and their swatches; the four-piece run geometry and
+  alignment; the swatch-4/5 recolouring at both sides of the max/4
+  boundary; the two command windows' rects, text column, row pitch and
+  cursors) plus a rewrite of the existing "clips each column" check, the
+  first three confirmed to fail against the pre-fix code — the fourth passes
+  either way, since it pins geometry the measurements found already correct.
+  Doc comments on `BATTLE_CMD_W`, `#battle_status_x`, `#draw_battle_command`,
+  `#draw_battle_options`, `#refresh_battle_status` and
+  `#battle_status_window` lost their "ported from a reference implementation,
+  not independently confirmed" hedges for what these captures actually show.
+  **Deliberately left open:** (1) the row pitch *between* status rows and
+  whether a second row is drawn any differently — this save's party is one
+  member and its chunk 109 roster must not be edited (it blackens RPG_RT on
+  Continue), so only the 16px pitch shared with the two command windows on
+  the same panel is measured; (2) what a four-digit (>999) HP/SP figure or
+  maximum does to the three-cell fields — actor 15 tops out at 600 and the
+  growth curve gives no >999 value to capture; (3) whether a *named*
+  condition (a real state, not 正常) uses the state's own palette colour
+  here as it does in the field windows — no state could be inflicted on a
+  Lv50 actor by two slimes within the capture budget. No EasyRPG source was
+  consulted.
 - ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
   RPG2000, and clamps strength to at most 2 on every edition — both used to
   be stored verbatim off the raw command bytes with no bound at all.**
