@@ -167,23 +167,23 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
   # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
-  # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no
-  # allocation), but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded
-  # through a StringIO, not a File, and used to emulate the method in Ruby via
-  # `getc.getbyte(0)` -- riding on #getc, which allocates and returns a fresh
-  # one-character String on every single byte scanned while walking a table's
-  # chunk boundaries. Measurably slow: a New Game/Continue transition decoding
-  # Nepheshel's item and common-event tables this way cost ~370ms of a ~400ms
-  # scene.update outlier (docs/profiling.md's "New Game/Continue transition"
-  # section has the full trail and Before/after numbers). This submodule is
-  # project-controlled (github.com/take-cheeze/mruby-stringio) rather than a
-  # true upstream this project has no fork of, but this session's repo access
-  # is scoped to rpg-maker-clone only, with no push access to push a commit to
+  # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no allocation),
+  # but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded through a StringIO,
+  # not a File, and used to emulate the method in Ruby via `getc.getbyte(0)` --
+  # riding on #getc, which allocates and returns a fresh one-character String on
+  # every single byte scanned while walking a table's chunk boundaries.
+  # Measurably slow: a New Game/Continue transition decoding Nepheshel's item
+  # and common-event tables this way cost ~370ms of a ~400ms scene.update
+  # outlier (docs/profiling.md's "New Game/Continue transition" section has the
+  # full trail and Before/after numbers). This submodule is project-controlled
+  # (github.com/take-cheeze/mruby-stringio) rather than a true upstream this
+  # project has no fork of, but this session's repo access is scoped to
+  # rpg-maker-clone only, with no push access to push a commit to
   # mruby-stringio's own remote -- so it is patched in place here the same way
-  # the mruby-proper patches above are, for the same practical reason (no
-  # commit landed on that other repo's history for a pinned submodule bump to
-  # point at). A future contributor with access to that repo could instead
-  # land this upstream and drop this patch on the next submodule bump.
+  # the mruby-proper patches above are, for the same practical reason (no commit
+  # landed on that other repo's history for a pinned submodule bump to point
+  # at). A future contributor with access to that repo could instead land this
+  # upstream and drop this patch on the next submodule bump.
   set(mruby_stringio_getbyte_patch
       "${ARG_REPO_ROOT}/patches/mruby-stringio-native-getbyte.patch")
   set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
