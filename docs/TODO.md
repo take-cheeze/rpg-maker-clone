@@ -15669,6 +15669,126 @@ The work below is roughly ordered by the critical path to a walkable game
   the Game Over screen, same as Decision", asserting both keys return to
   title from a fresh screen; confirmed to fail against the pre-fix code
   (`Cancel dismisses this screen too` raised).
+  ✅ **Follow-up (cycle #251, 2026-09-06): the Game Over screen measured end
+  to end against genuine RPG_RT.exe on the route a player actually takes to
+  it — a real party wipe — and found already correct in every respect that
+  could be captured; `order.rb` attempted the same way and found genuinely
+  blocked, with the reason nailed down rather than guessed around.**
+  *Recipe (Game Over)*: cycle #124 reached this screen by injecting an
+  autostart Game Over (12420) event; this time it was reached by losing.
+  `Save01_battle_map2.lsd` (which restores straight into map 2's two-slime
+  battle — that map's Enemy Encounter carries `params=[0,1,0,2,0,0]`, i.e.
+  troop 1 with **defeat mode 0 = game over**, confirmed by decoding
+  `Map0002.lmu`) had the leader's own chunk-108 record rewritten to level 1
+  (field 31), 1 HP (field 71) and **no equipment** (field 61 = five zeros)
+  through `mruby-lcf`'s own writer, verified with
+  `ruby scripts/lcf_save_check.rb`, and loaded by RPG_RT unchanged. Stripping
+  the equipment was the part that mattered: at level 1 but still wearing the
+  Lv50 demo gear the slimes could not scratch the leader (and the leader
+  one-shot them), so the fight ended in victory instead of a wipe. Eight
+  Decisions later: 戦いに敗れた・・・, then the Game Over screen.
+  *What the real screen does.* (1) **The picture is blitted at the screen
+  origin at its native size.** Nepheshel's own 320x240 `GameOver/gameover.png`
+  came back pixel-for-pixel identical to the file doubled to the 640x480
+  capture (`compare -metric RMSE` 1.1%, i.e. the reference X server's RGB565
+  quantisation and nothing else) — but a 320x240 picture cannot tell "drawn
+  1:1" from "stretched to fill", so a deliberately undersized 100x60 probe
+  picture was substituted for it: it landed in the top-left corner at exactly
+  1:1 (quadrant boundaries measured at logical x=50, y=30; the drawn region's
+  bounding box was capture px 2,2..197,117 = the probe's own 1px border
+  inset). RPG_RT neither scales nor centres it. (2) **Palette index 0 is drawn
+  opaque, not colour-keyed**: the only two pixels of Nepheshel's picture that
+  use its palette entry 0 (50,49,50) came back as (49,48,49), not as
+  transparent black. (3) **The database `gameover_music` starts as the screen
+  comes up, and no SE plays** — a `WINEDEBUG=+file` trace of the wipe opens
+  `Music/die.mid` (the System tab's game-over BGM) between the killing blow's
+  damage SE and the first `GameOver/gameover.*` probe, and opens no `Sound/`
+  file at all either then or when the screen is dismissed. (This game re-opens
+  an SE file on every single play — 決定1/打撃1/ダメージ1 each reappear in the
+  battle segment — so an SE here could not have been missed; the four SEs that
+  *are* opened after the dismissal are the title scene preloading its own
+  cursor/decision/cancel/buzzer set, followed by `Title/Nepheshel_logo.png`
+  and `Music/title.mid`.) (4) **It waits forever**: 15 s of idling compared
+  pixel-identical (`compare -metric AE` = 0), and so did Down, Up, Left, Right
+  and Shift, one at a time. (5) **Decision and Cancel both dismiss it**, to
+  the title with its cursor on New Game — re-confirming cycle #124's
+  correction of the ported "only Decision" claim, now on the battle-defeat
+  route as well as the injected-event one. Every one of these already matched
+  `Scene::GameOver`, so **nothing behavioural changed**; the file's doc
+  comments were rewritten to say what was confirmed instead of "NOT
+  independently confirmed against genuine RPG_RT under wine", and three new
+  `scripts/rpg2k_scene_check.rb` checks pin the measurements (picture name +
+  opaque decode + never repositioned/cropped; 900 idle frames do not dismiss
+  it; none of Down/Up/Left/Right/Shift does either). Like the battle result
+  panel's own check from cycle #247, these pin behaviour a wine session found
+  correct rather than a fix — they pass against the pre-commit code, and that
+  is the result being recorded. They were still shown to bite rather than to
+  be vacuous: flipping the picture load to the colour-keyed decode and adding
+  Down to the dismiss keys made exactly those two checks fail
+  (`expected false, got true (palette index 0 is opaque, not colour-keyed)`
+  and `button 4 does not dismiss this screen`), and both went green again once
+  the mutation was reverted.
+  *Deliberately left open (measured, not modelled).* Real RPG_RT **fades this
+  screen in and out**, and unusually slowly: tracking one known-white pixel of
+  the picture through a 100 fps `xwd` burst, its value climbs in ~8/255 steps
+  (the capture's own RGB565 quantum) every ~51.5 ms, and the game-over screen
+  fades back out at the same ~153 grey-levels/s — against ~424-460
+  levels/s for the battle's own fade-out and for the file-list→game fade-in
+  measured in the same session (that faster figure works out at ~0.58 s, which
+  is an independent confirmation of the 35-frame `Game::Transition.
+  default_frames(FADE_IN/FADE_OUT)` this engine already carries). So this
+  screen's own fade is ~1.6-1.7 s each way, about **three times** an ordinary
+  transition, which is ~96-105 frames — the sampling cannot separate those
+  candidates, and this engine models no scene-entry transition anywhere, so
+  no number was invented. Also unmodelled: with an undersized picture the area
+  around it took the picture's *palette entry 0* (magenta in the probe), which
+  is what RPG_RT's 8-bit palettised screen mode does with a cleared
+  framebuffer, not something an ARGB8888 engine should imitate.
+  *Found in passing, not this file's to fix.* Genuine RPG_RT probes
+  **`<name>.bmp` before `<name>.png`** — seen for `GameOver/gameover` and
+  `Title/Nepheshel_logo` alike in the `+file` trace — while this engine's
+  `RGSS::Bitmap::EXTENSIONS` (mruby-rgss/mrblib/lib.rb) is
+  `[png, jpg, jpeg, xyz, bmp]`. Only a game shipping both spellings of one
+  asset can tell the difference, and the list cannot simply be reversed (the
+  XP RTP's `.jpg` title screens are why the non-png entries exist), so it is
+  left to whoever owns the loader.
+  *`order.rb`: blocked, and here is exactly why.* The Order screen is an
+  RPG2003 field-menu command (`RPG2K3_COMMAND_IDS` id 7), so Nepheshel can
+  never show it. The 2003 material does have it: both `data/mtf-meido-action`
+  and Song-of-the-Sea Ch.1 carry `menu_commands` = `[1,2,3,4,5,6,7,8]`,
+  id 7 included (decoded from their own `RPG_RT.ldb` System chunk 22 field
+  27), and Song-of-the-Sea ships a genuine 32-bit `RPG_RT.exe` — mtf ships
+  only EasyRPG's `Player.exe`, which this series does not treat as ground
+  truth. Cloned it per `scripts/run-rpg2k-rpgrt-wine.bash`, built the
+  documented zh_CN.UTF-8 win32 prefix, and hit "RPG Maker 2003 RTP is not
+  found"; installed the official 2003 RTP with the installer
+  `scripts/rtp_2003_install.bash` fetches, which was not enough on its own
+  because **this RPG_RT build queries
+  `Software\KADOKAWA\RPG2003\RuntimePackagePath`** (found in the exe's own
+  strings) while the installer writes the older `Software\Enterbrain\RPG2003`
+  key — adding the KADOKAWA value cleared the check. With the RTP found the
+  binary boots and then presents nothing at all: the root window stays a
+  uniform grey (mean 0.742, standard deviation **0**) indefinitely and the
+  game's own window contents read pure black, under every combination tried
+  (Xvfb 640x480x16 and 1280x960x24; the fresh zh_CN prefix and the ja_JP one
+  that runs Nepheshel; Windows version win10 and winxp; wine's GDI
+  Direct3D/DirectDraw renderer; fullscreen and the F4-windowed mode, which
+  does produce a real window frame but a black client area; and
+  `FullPackageFlag=1` to skip the RTP check entirely). `WINEDEBUG=+loaddll`
+  shows `ddraw.dll`/`wined3d.dll` loading, so it gets as far as DirectDraw and
+  no further. The same genuine `RPG_RT.exe` driving mtf-meido-action's data
+  behaves identically, and as a control Nepheshel's RPG2000 `RPG_RT.exe`
+  rendered its title normally on a fresh display in the same container minutes
+  later — so this is that 2003 binary under this wine, not the harness. **No
+  frame of a real Order screen was ever captured, so nothing in `order.rb` was
+  changed or re-labelled**: its geometry, its pick-and-place model, its
+  duplicate-pick SE and its cursor repeat all still stand exactly as ported,
+  and the class comment now records this attempt so the next cycle does not
+  repeat it. What would unblock it: a genuine RPG2003 `RPG_RT.exe` that
+  renders under wine here (a different build/version, or a wine configuration
+  that makes this one present), after which the screen is reachable from any
+  save whose party has two members.
+  No EasyRPG source was consulted.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Checked
   against a reference implementation's actual source (ported from a

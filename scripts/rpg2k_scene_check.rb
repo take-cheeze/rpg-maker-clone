@@ -28702,6 +28702,79 @@ check 'Game::Party#equip_candidates lists the bag in its stored order, not by ' 
   eq [[177, 6]], party.equip_candidates(1, wearer), 'the shield slot'
 end
 
+# -- Game Over screen, measured against genuine RPG_RT.exe under wine ---------
+#
+# Cycle #251 drove a real party wipe on Nepheshel under wine -- the leader's
+# chunk-108 save record edited to level 1 / 1 HP / no equipment so the map-2
+# two-slime troop (Enemy Encounter defeat mode 0, "game over") actually kills
+# it -- and measured the screen RPG_RT then puts up. Like the battle result
+# panel's own check above, these three pin behaviour that wine session found
+# this build *already* gets right, rather than a fix: none of them failed
+# before this commit, and that is the finding.
+check "the Game Over picture is the database's GameOver/<name>, decoded " \
+      'opaque and drawn at the screen origin unscaled' do
+  parent = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  scene = RPG2k::Scene::GameOver.new(parent)
+  spr = scene.instance_variable_get(:@picture)
+  bmp = spr.bitmap
+  ok bmp, 'the picture loaded'
+  eq 'GameOver/GameOver1', bmp.load_name, "the database's own gameover_name"
+  # Genuine RPG_RT draws this picture opaque: the two pixels of Nepheshel's
+  # gameover.png that use its palette entry 0 came back from the real screen
+  # as that colour (49,48,49, i.e. 50,49,50 through the reference X server's
+  # RGB565), not as transparent black. So the colour-keyed decode -- the
+  # Bitmap second argument sprite sheets need -- must stay off here.
+  eq false, bmp.load_transparent, 'palette index 0 is opaque, not colour-keyed'
+  # A deliberately undersized (100x60) probe picture substituted for the real
+  # one landed in the screen's top-left corner at exactly 1:1 -- its inner
+  # quadrant boundaries measured at logical x=50, y=30 on the doubled capture
+  # -- so RPG_RT neither stretches the picture to the screen nor centres it.
+  # The scene therefore leaves the sprite at the origin and never scales it;
+  # the stub leaves x/y nil until something assigns them, so nil here is
+  # exactly "never repositioned".
+  eq nil, spr.x, 'never moved off the origin horizontally'
+  eq nil, spr.y, 'never moved off the origin vertically'
+  eq nil, spr.src_rect, 'and never cropped or scaled'
+  Input.reset
+end
+
+check 'the Game Over screen waits indefinitely -- 900 idle frames (15s at ' \
+      '60fps) never dismiss it on their own' do
+  # Real RPG_RT sat on this screen for a 15s idle capture whose two ends
+  # compared pixel-identical (ImageMagick `compare -metric AE` = 0), so there
+  # is no timeout back to the title.
+  parent = fake_parent(fake_db)
+  Audio.reset_bgm
+  Input.reset
+  scene = RPG2k::Scene::GameOver.new(parent)
+  900.times { scene.update }
+  ok !parent.returned_to_title, 'still waiting after 15 seconds of nothing'
+  Input.triggered = [Input::C]
+  scene.update
+  ok parent.returned_to_title, 'and a Decision still dismisses it afterwards'
+  Input.reset
+end
+
+check 'only Decision and Cancel dismiss the Game Over screen -- the arrow ' \
+      'keys and Shift do not' do
+  # Each of Down/Up/Left/Right and Shift, pressed on the settled real screen,
+  # left the capture pixel-identical to the frame before it (AE = 0); a
+  # single Escape right afterwards faded to the title. So this screen reads
+  # exactly two buttons.
+  [Input::DOWN, Input::UP, Input::LEFT, Input::RIGHT, Input::SHIFT].each do |key|
+    parent = fake_parent(fake_db)
+    Audio.reset_bgm
+    Input.reset
+    scene = RPG2k::Scene::GameOver.new(parent)
+    Input.triggered = [key]
+    10.times { scene.update }
+    ok !parent.returned_to_title, "button #{key} does not dismiss this screen"
+    Input.reset
+  end
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

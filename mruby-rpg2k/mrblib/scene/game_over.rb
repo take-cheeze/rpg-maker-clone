@@ -8,12 +8,35 @@ class RPG2k
     # command (12420) and a battle defeat whose encounter says "game over" rather
     # than running a [Defeat] handler — so both go through Scene::GameOver rather
     # than dropping straight back to the title as they used to.
+    #
+    # Measured end to end against a genuine RPG_RT.exe under wine (cycle #251,
+    # Nepheshel, reached through the *battle-defeat* route rather than the
+    # synthetic 12420 event cycle #124 used: the leader's save record edited
+    # to level 1 / 1 HP / no equipment so the map-2 two-slime troop — whose
+    # Enemy Encounter carries defeat mode 0, "game over" — actually wipes the
+    # party). What the real screen does, all of it confirmed by capture:
+    # the `GameOver/<name>` picture is blitted at the screen origin at its
+    # native size (never scaled or centred), the database's own
+    # `gameover_music` starts the moment the screen comes up, nothing at all
+    # happens until a key is pressed (no timeout), and Decision or Cancel
+    # fades back to the title. See `#gameover_bitmap` / `#play_gameover_bgm` /
+    # `#update` for the individual measurements.
+    #
+    # The one measured gap this build does NOT model: real RPG_RT *fades* this
+    # screen in and out (deliberately left open, see docs/TODO.md) — it is a
+    # scene-transition this engine has no counterpart for anywhere, and the
+    # game-over screen's own fade is not even the standard one (~1.6-1.7 s in
+    # and out, roughly three times the ~0.58 s fade every other scene
+    # transition measured at).
     class GameOver < Base
       # System BGM slot for Change System BGM (10660), matching a reference
       # implementation's own system-BGM enum, NOT independently confirmed
       # against genuine RPG_RT under wine — that implementation's own
       # game-over scene start plays this slot rather than the database's
-      # gameover_music directly.
+      # gameover_music directly. (That the *database* `gameover_music` is what
+      # an un-overridden game-over screen plays is no longer in doubt — see
+      # `#play_gameover_bgm` — but nothing has yet exercised a Change System
+      # BGM override in front of a real game over to pin the slot number.)
       SYSTEM_BGM_GAMEOVER = 6
 
       # `state` is the running Game::State (nil when this screen is reached
@@ -49,6 +72,16 @@ class RPG2k
       # to back out, not the one exception that reference implementation's
       # source claimed -- a claim this wine capture directly contradicts.
       #
+      # Re-confirmed in cycle #251 on the *other* route into this screen — a
+      # real party wipe in the map-2 two-slime battle rather than an injected
+      # 12420 event — and widened: with the screen settled, four arrow presses
+      # (Down/Up/Left/Right) and a Shift press each left it **pixel-identical**
+      # (ImageMagick `compare -metric AE` = 0 against the frame before the
+      # press), and so did 15 s of doing nothing at all, so there is no
+      # timeout and no third dismiss key; a single Escape then faded to the
+      # title, whose cursor sat on New Game. Hence exactly these two buttons,
+      # and no `Input.press?`/auto-advance of any kind.
+      #
       # No arming/pending state of any kind (matching this screen's
       # pre-existing reasoning for Decision, which still holds): `RPG2k#
       # show_game_over` swaps `@scenes` without calling `.update` on the new
@@ -70,6 +103,30 @@ class RPG2k
       # The database's game-over picture, or nil when the game names none (or the
       # file is missing) — the screen then shows plain black, which is better
       # than refusing to reach it at all.
+      #
+      # Geometry and decode confirmed against a genuine RPG_RT.exe under wine
+      # (cycle #251): Nepheshel's own 320x240 `GameOver/gameover.png` came back
+      # from the real screen pixel-for-pixel identical to the file doubled to
+      # the 640x480 capture (RMSE 1.1%, i.e. the reference X server's RGB565
+      # quantisation and nothing else). Substituting a deliberately undersized
+      # 100x60 probe picture for it — the only way to tell "drawn 1:1" from
+      # "stretched to fill", since a 320x240 picture looks the same either way
+      # — put the probe's 100x60 in the screen's top-left corner at exactly
+      # 1:1 (its inner quadrant boundaries landed on logical x=50, y=30): RPG_RT
+      # neither scales the picture to the screen nor centres it. So a plain
+      # `Sprite` at the origin with no zoom, which is what this is, is right.
+      # The same probe showed palette index 0 is drawn **opaque**: the two
+      # pixels of Nepheshel's own picture that use its palette entry 0 came
+      # back as that colour (49,48,49 quantised from 50,49,50), not as
+      # transparent black — so the colour-keyed decode (`Bitmap.new`'s second
+      # argument) must stay off here, as it is.
+      #
+      # Also measured, but *not* this file's to fix: real RPG_RT probes
+      # `<name>.bmp` before `<name>.png` (seen for `GameOver/gameover` and
+      # `Title/Nepheshel_logo` alike in a `WINEDEBUG=+file` trace), while this
+      # engine's own candidate list is png-first (`RGSS::Bitmap::EXTENSIONS`,
+      # mruby-rgss/mrblib/lib.rb). Only a game shipping both spellings of the
+      # same asset can tell the difference. See docs/TODO.md.
       def gameover_bitmap
         name = db.system.gameover_name.to_s
         return nil if name.empty?
@@ -84,6 +141,20 @@ class RPG2k
       # gameover_music. Mirrors a reference implementation's own audio
       # lookup, NOT independently confirmed against genuine RPG_RT under
       # wine: the override wins only when its own filename is non-empty.
+      #
+      # The *fallback* half of that — an un-overridden game over plays the
+      # database's `gameover_music`, and plays it as the screen comes up — is
+      # confirmed against a genuine RPG_RT.exe under wine (cycle #251): a
+      # `WINEDEBUG=+file` trace of a real battle-defeat game over opens
+      # `Music/die.mid` (Nepheshel's own System > game-over BGM) between the
+      # killing blow's damage SE and the first `GameOver/gameover.*` probe —
+      # i.e. the BGM is started before the picture is even looked for, and no
+      # other music file is touched. The same trace shows **no `Sound/` file is
+      # opened when the screen comes up, nor when a keypress dismisses it**
+      # (this game re-opens an SE file on every play — the battle segment opens
+      # 決定1.wav/打撃1.wav/ダメージ1.wav each time they sound — so an SE
+      # playing here could not have been missed), which is why neither this
+      # method nor `#update` plays one.
       #
       # `fadein` (cycle #203): both sources genuinely carry one, the same as
       # Scene::Map's battle/inn/vehicle BGM helpers -- the override from

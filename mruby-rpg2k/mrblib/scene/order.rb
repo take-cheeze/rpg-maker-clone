@@ -18,6 +18,25 @@ class RPG2k
     # the screen, Redo (or Cancel here) clears every pick and starts over.
     # Reordering can change the party leader outright -- `Game::Party#leader`
     # is simply `@actors.first` -- exactly like genuine RPG_RT.
+    #
+    # **Still unmeasured, and cycle #251 established exactly why.** Nepheshel
+    # (this project's RPG2000 wine test-bed) has no Order command at all, so a
+    # genuine *2003* runtime is needed. Both RPG2003 games available here do
+    # offer it -- Song-of-the-Sea Ch.1 and mtf-meido-action both carry
+    # `menu_commands` = [1,2,3,4,5,6,7,8], id 7 included -- and Song-of-the-Sea
+    # ships a genuine `RPG_RT.exe`, so the material is right. What blocks it is
+    # that binary under this container's wine: with the 2003 RTP installed and
+    # found (it queries `Software\KADOKAWA\RPG2003\RuntimePackagePath`, not the
+    # `Enterbrain` key the RTP installer writes) it boots and then presents
+    # nothing -- a uniform grey screen, standard deviation 0, its own window's
+    # contents pure black -- under every combination tried (640x480x16 and
+    # 1280x960x24 Xvfb, the zh_CN and the ja_JP prefix, winxp and win10,
+    # wine's GDI Direct3D/DirectDraw renderer, fullscreen and F4-windowed),
+    # while Nepheshel's RPG2000 `RPG_RT.exe` rendered normally on a fresh
+    # display in the same environment minutes later. So none of the geometry,
+    # SE or cursor claims below could be checked, and none of them were
+    # guessed at: they stand exactly as ported. See docs/TODO.md for the full
+    # account.
     class Order < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
