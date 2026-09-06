@@ -205,8 +205,10 @@ class RPG2k
           warn_missing_item(id)
           return "Item #{id}"
         end
-        n = it.name.to_s
-        n.empty? ? "Item #{id}" : n
+        # A blank database name draws blank -- see Scene::ItemMenu's own
+        # citation (cycle #254, measured under wine). The placeholder above is
+        # only for an id with no row at all.
+        it.name.to_s
       end
 
       # #item_name's diagnostic for an equipped slot whose item id has no

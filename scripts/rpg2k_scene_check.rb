@@ -28775,6 +28775,30 @@ check 'only Decision and Cancel dismiss the Game Over screen -- the arrow ' \
   end
 end
 
+# -- a blank database item name draws blank (cycle #254) ----------------------
+#
+# Measured against genuine RPG_RT.exe under wine: a bag holding Nepheshel's own
+# unnamed item slots (ids 37/38/40/41, real rows whose `name` is the empty
+# string) listed on RPG_RT's field Item screen with the name column simply
+# empty, the count still drawn. This engine printed an invented "Item 37".
+# The placeholder survives only for an id with no database row at all, which is
+# a broken-data diagnostic RPG_RT was never measured on.
+check 'a held item whose database row has a blank name draws a blank name, ' \
+      'not an invented "Item <id>" placeholder' do
+  db = fake_db
+  db.system.system_graphic = 'Skin1'
+  st = menu_state
+  named = OpenStruct.new(name: 'Potion', type: 6, description: 'heals')
+  blank = OpenStruct.new(name: '', type: 6, description: '')
+  st.party.define_singleton_method(:db_item) { |id| id == 2 ? blank : named }
+  st.party.define_singleton_method(:field_items) { |*| [[1, 3], [2, 4]] }
+  scene = menu_scene(RPG2k::Scene::ItemMenu, st, db)
+  texts = window_texts(scene.instance_variable_get(:@item_window))
+  ok texts.include?('Potion'), 'the named row still draws its name'
+  ok texts.none? { |t| t.to_s.include?('Item 2') },
+     "no invented placeholder for the blank-named row, got #{texts.inspect}"
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

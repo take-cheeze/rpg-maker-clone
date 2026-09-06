@@ -891,8 +891,13 @@ class RPG2k
         rows.each_with_index do |(id, count), i|
           next if i < first || i > last
           it = @state.party.db_item(id)
-          name = (it && it.name.to_s)
-          name = "Item #{id}" if name.nil? || name.empty?
+        # A database row whose `name` is blank draws blank: measured against
+        # genuine RPG_RT.exe under wine (cycle #254) with a bag holding
+        # Nepheshel's own unnamed item slots -- RPG_RT left those rows' name
+        # column empty while this engine printed an invented "Item <id>". The
+        # placeholder is kept only for an id with no row at all, which is a
+        # broken-data diagnostic rather than something RPG_RT was measured on.
+          name = it ? it.name.to_s : "Item #{id}"
           x = item_col_x(i % COLUMN_MAX)
           y = (i / COLUMN_MAX - @item_top) * LINE_H
           idx = @state.party.field_usable?(id, @state) ? 0 : 3

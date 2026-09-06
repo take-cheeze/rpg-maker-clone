@@ -11838,6 +11838,23 @@ The work below is roughly ordered by the critical path to a walkable game
   file), `Scene::ItemMenu`'s choose-item dispatch
   (`mruby-rpg2k/mrblib/scene/item_menu.rb`), and the battle scene's own item
   selection flow (`mruby-rpg2k/mrblib/scene/battle.rb`).
+  ✅ **Follow-up (cycle #254, 2026-09-06): a blank database item name draws
+  blank, not an invented placeholder.** Found while re-verifying cycle #249's
+  scroll arrows on the rebuilt binary: a 30-item bag driven side by side showed
+  the two runtimes agreeing on order, grid, counts, cursor and the down arrow,
+  and disagreeing on exactly one thing -- Nepheshel's own unnamed item slots
+  (ids 37/38/40/41, real database rows whose `name` is the empty string) drew
+  with an empty name column on genuine RPG_RT.exe while this engine printed
+  `Item 37`. Fixed in `Scene::ItemMenu`, `Scene::EquipMenu#item_name` and
+  `Scene::StatusMenu` (the battle item list already did the right thing).
+  The `Item <id>` placeholder is kept for an id with **no** database row at
+  all, which is a broken-data diagnostic RPG_RT was never measured on -- the
+  list builders already exclude such ids anyway. **Scope note, stated plainly**:
+  the divergence was only reachable with a synthetic bag, since no real
+  playthrough hands the player an unnamed item, so the practical impact on a
+  shipped game is nil; it is fixed because the measurement is unambiguous and
+  the placeholder had no basis, not because it was hurting anyone. No EasyRPG
+  source was consulted.
   ✅ **Follow-up (cycle #253, 2026-09-06): an item's per-actor "usable
   characters" restriction was inverted by Ruby truthiness, and is fixed.**
   Routed over from cycle #250's Equip-screen capture, which noticed genuine

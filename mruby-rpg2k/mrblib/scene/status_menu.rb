@@ -93,7 +93,9 @@ class RPG2k
           return "Item #{id}"
         end
         n = it.name.to_s
-        n.empty? ? "Item #{id}" : n
+        # A blank database name draws blank -- see Scene::ItemMenu's own
+        # citation (cycle #254, measured under wine).
+        n
       end
 
       # #item_name's diagnostic for an equipped slot whose item id has no
