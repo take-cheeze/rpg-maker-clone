@@ -358,6 +358,64 @@ browser is still audibly delayed after this, that measurement -- ideally
 captured while holding a direction key, the case that surfaced this -- is
 the next thing to get, not another guess from the native numbers above.
 
+#### Scene transitions: a much bigger stall than anything the buffer bump covers
+
+Reported next, after the pacing and buffer fixes above: audio still glitches
+on a scene transition (walking onto a map-exit tile). This is not the same
+bug wearing a different hat -- it is the same underlying constraint (a stall
+on the single JS thread starves whatever ScriptProcessorNode callback is
+due, and per the buffer discussion above that lateness does not resync on
+its own) hitting a stall an order of magnitude larger than anything a buffer
+sized for per-frame jitter can absorb.
+
+A map-to-map transition (`Scene::Map#perform_teleport`,
+`mruby-rpg2k/mrblib/scene/map.rb`) runs as **one synchronous block inside a
+single `scene.update` frame** -- nothing about it is spread across frames.
+In order: the destination `.lmu` is parsed fresh (`RPG2k#load_map`), the map's
+BGM is resolved and started if it changed (`play_map_bgm` -- a `.mid` change
+alone costs the 20-30ms `Mix_LoadMUS` figure from earlier on this page), the
+destination's chipset graphic is decoded (`load_chipset_graphic`, skipped
+only when the tileset id happens to be unchanged), and every one of the
+destination map's events and Common/map Parallel Processes is rebuilt
+(`build_events`, `build_parallels`). None of this had its own profiler
+section before now -- it was invisible inside the umbrella `scene.update`
+bar. It does now: `map.transition.load`, `map.transition.bgm`,
+`map.transition.chipset`, `map.transition.build_events` and
+`map.transition.build_parallels`, at both call sites (`Scene::Map#initialize`
+for a fresh map entry/Continue, and `#perform_teleport` for an in-session
+Transfer Player/Teleport/Recall to Location).
+
+The baseline table at the top of this page already has the relevant number,
+uncommented on until now: `scene.update`'s **536.65ms max**, 114x its own
+4.69ms average, on a 1405-frame run that is a single continuous
+`--rpg2k_new_game` session -- i.e. one frame paid for something the rest did
+not. Nepheshel's own opening is a long camera pan that ends in exactly one
+Teleport into the first room (`perform_teleport`'s comments describe this
+same sequence twice), which is consistent with this outlier being that
+transition. 536ms is **~5.75x** the ~93ms of slack the 4096-sample wasm audio
+buffer provides, on hardware faster than a browser's wasm execution -- nowhere
+close to survivable by sizing a buffer, which is the only lever the fix above
+had available.
+
+**Not fixed here.** Unlike the frame-pacing and buffer work above, closing
+this gap means either making the transition itself faster (the four new
+sections above finally make it possible to find out which of load/chipset
+decode/event-build actually dominates, rather than guessing) or spreading it
+across several frames behind the fade so no single one blocks the thread for
+that long -- both real engine changes, not a config tweak, and neither
+should be attempted blind the way the frame-pacing fix's first pass already
+had to be corrected twice. Reordering `play_map_bgm` to run after the heavy
+work instead of before was considered and deliberately not done: the stall
+itself is what starves the audio callback regardless of which track is
+nominally playing, so moving the BGM call only changes which track's
+in-flight audio gets cut and does not shorten the stall -- indeed it risks
+being worse, briefly resuming the *old* track for a few audio callbacks right
+before cutting to the new one, versus the current clean silence-then-new-track
+result. The right next step is measuring with the new sections against a
+save positioned right before a map exit, then deciding what to shorten or
+defer from real numbers, the same way `map.layers` was fixed earlier on this
+page.
+
 ## Per-frame object allocation
 
 Separate from frame *time*: how many mruby objects the map scene allocates

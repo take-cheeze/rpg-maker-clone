@@ -357,14 +357,18 @@ class RPG2k
         # recomputes BGM from the map tree, but a Continue resumes a state
         # that already carries its own #current_bgm (restored by
         # Game::State.load/.from_lsd from the save) -- see #resume_saved_bgm.
-        if apply_access
-          play_map_bgm
-        else
-          resume_saved_bgm
+        RGSS::Profiler.section("map.transition.bgm") do
+          if apply_access
+            play_map_bgm
+          else
+            resume_saved_bgm
+          end
         end
         @map = state.map
-        @chipset = build_chipset
-        @chipset_bmp = load_chipset_graphic
+        RGSS::Profiler.section("map.transition.chipset") do
+          @chipset = build_chipset
+          @chipset_bmp = load_chipset_graphic
+        end
         @charset = load_charset
         @windowskin = load_windowskin
         @interpreter = Game::Interpreter.new(@state)
@@ -419,10 +423,10 @@ class RPG2k
         # and a memo left from the previous visit would answer for the wrong
         # pages (see #page_condition_ids).
         @page_condition_ids = {}
-        build_events
+        RGSS::Profiler.section("map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        build_parallels
+        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
         @message = nil
         @inn_window = nil
         @inn_bgm_started = false
@@ -8743,7 +8747,7 @@ class RPG2k
       def perform_teleport(t, keep_pictures: false)
         map_id, x, y, dir = t
         begin
-          @map = @parent.load_map(map_id)
+          @map = RGSS::Profiler.section("map.transition.load") { @parent.load_map(map_id) }
         rescue StandardError => e
           # Transfer Player / Recall to Location naming a map id whose .lmu no
           # longer exists (a deleted map, or a stale id left behind by one) --
@@ -8760,7 +8764,7 @@ class RPG2k
         @state.map = @map
         @state.map_id = map_id
         apply_map_access
-        play_map_bgm
+        RGSS::Profiler.section("map.transition.bgm") { play_map_bgm }
         @state.x = x
         @state.y = y
         @state.direction = dir if dir && dir > 0
@@ -8800,12 +8804,14 @@ class RPG2k
         # falls back to the map's own rate whenever this is nil.
         @state.encounter_rate = nil
         @tileset_id = nil # a Change Map Tileset override does not survive a teleport
-        @chipset = build_chipset
-        # The new map may use a different chipset graphic, so reload it too;
-        # otherwise the destination is drawn with the previous map's tiles.
-        old_bmp = @chipset_bmp
-        @chipset_bmp = load_chipset_graphic
-        old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
+        RGSS::Profiler.section("map.transition.chipset") do
+          @chipset = build_chipset
+          # The new map may use a different chipset graphic, so reload it too;
+          # otherwise the destination is drawn with the previous map's tiles.
+          old_bmp = @chipset_bmp
+          @chipset_bmp = load_chipset_graphic
+          old_bmp.dispose if old_bmp && !old_bmp.equal?(@chipset_bmp)
+        end
         # ... nor does the timer's sticky "message was at top" flag: ported
         # from a reference implementation, not independently confirmed
         # against genuine RPG_RT under wine: it rebuilds its own message
@@ -8870,10 +8876,10 @@ class RPG2k
         # left says nothing about the destination.
         @warned_stale_terrain = {}
         @page_condition_ids = {}
-        build_events
+        RGSS::Profiler.section("map.transition.build_events") { build_events }
         @interpreter.resolver = build_resolver
         @interpreter.map_info = self
-        build_parallels
+        RGSS::Profiler.section("map.transition.build_parallels") { build_parallels }
         # Any step in flight is dropped: the party arrives standing on the
         # destination tile rather than sliding toward one on the map it left.
         # A forced route can have a step in flight here -- it advances between
