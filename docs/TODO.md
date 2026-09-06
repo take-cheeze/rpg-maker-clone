@@ -9321,6 +9321,104 @@ The work below is roughly ordered by the critical path to a walkable game
   passes if the override genuinely bypasses positional lookup), both
   confirmed to fail against the pre-fix code (both returned the empty/flat
   default) before the fix.
+  ✅ **Follow-up (cycle #245, 2026-09-06): the fight's backdrop is the
+  background the runtime is *carrying*, not a fresh map-tree walk at battle
+  start — and the "no backdrop" field is flat black, not a dark blue-grey.**
+  Measured against genuine RPG_RT.exe under wine on the RPG2000 test bed
+  (Nepheshel 2.06R beta); **no EasyRPG source was consulted**, every number
+  below comes from a pixel measurement of a genuine capture. **Recipe:** the
+  round-2 battle save (party on map 2 at (6,4), facing the monster event at
+  (6,3), scene cleared) drops both runtimes straight into a two-スライム
+  fight on Continue; `SAVE_SYSTEM` field 125 was rewritten between runs with
+  the LCF writer (`save[101][125] = name; save[101] = sys; save.save_to`) to
+  drive the backdrop, and captures were taken at 640x480 = the 320x240
+  logical screen doubled.
+  **What the orientation captures actually showed.** RPG_RT drew flat black
+  where this codebase drew a blue vertical gradient — but the gradient was
+  *not* the bug: Nepheshel's `Backdrop/black.png` genuinely **is** a blue
+  vertical gradient (320x160, RGB(0,0,160) at the top fading to (0,0,100)),
+  and map 2's own tree walk resolves it correctly (map 2 `backdrop_type == 0`
+  → parent map 9 `backdrop_type == 2`, `backdrop_file == "black"`). The
+  difference is *where the name comes from*. Three captures settle it: (a)
+  the harness save carries **no field 125 at all** and RPG_RT fought over a
+  screen reading exactly RGB(0,0,0) at logical x=160, y=0/8/30/50/75/100/
+  125/145/149/155 — not map 2's own "black" graphic; (b) the same save with
+  field 125 hand-set to `"light"` fought over `Backdrop/light.png` (bright
+  white/pink), again ignoring the map tree; (c) the same save with field 125
+  set to `"zzznone"` (no such file) put up a **modal error dialog and never
+  started the battle**. So RPG_RT neither recomputes nor validates the field
+  on load: the backdrop is whatever its own map setup last stored there, and
+  an absent field is the empty default that draws black.
+  **Fixed** by giving `Game::State` a `battle_background` (field 125,
+  `.from_lsd` reads it unconditionally so an absent chunk reads `''`, not
+  "unknown"), cleared by a new `Game::State#map_id=` so a Transfer Player
+  leaves the stale value behind, and giving it first refusal in
+  `Scene::Battle#encounter_backdrop` ahead of `Game::Backdrop.name_for`
+  (Enemy Encounter's own param2 overrides still win over both). And
+  `Scene::Battle#flat_battle_back` now fills RGB(0,0,0) instead of
+  RGB(16,16,32). Net effect: the harness save now draws the same flat black
+  in both runtimes, while a genuine save keeps drawing the backdrop RPG_RT
+  stored for it.
+  **Also confirmed, and left as-is because they already matched.** The
+  backdrop is **one static sprite blitted 1:1 at the screen origin**:
+  downsampling the reference capture's top 640x320 to 320x160 and comparing
+  it against the `Backdrop/*.png` file itself left *only* the two enemy
+  sprites differing (`compare -metric AE -fuzz 10%`: 2776 differing pixels
+  for `light.png`, 2889 for `bossls02r.png`, all inside the slimes' boxes),
+  so it is neither scaled, tiled nor offset, and two captures of the same
+  fight 25s apart were pixel-identical (AE 0), so it does not scroll either
+  (the per-terrain scroll fields, `Terrain` chunks 21-25/31-35, are
+  RPG2003's). Its z 5 is under the troop sprites and under every window, as
+  drawn. A **troop member is centred on its database x/y on both axes** —
+  troop 1 places its two スライム at (114,130) and (206,130) with an 84x36
+  `Monster/m001a` sheet whose opaque content spans (4,3)-(80,34), so centring
+  predicts on-screen content boxes of (76,115)-(152,146) and
+  (168,115)-(244,146), and those are **exactly** the boxes measured in both
+  the reference frame and ours, to the pixel, on both enemies (not the
+  top-left anchor, and not a feet anchor). **The lower-numbered member draws
+  on top**, confirmed on a second, deliberately different encounter — the
+  four-member troop 160 boss on map 543 (`backdrop_type == 2`,
+  `backdrop_file == "bossls02r"`, reached with `gen-rpg2k-save.rb --map 543
+  --at 20,12 --facing up --clear-scene`), whose 160x160 wing battlers at
+  x=80/x=240 (members 2 and 3) overlap the full-screen 320x160 body at x=160
+  (member 4) and draw over it in the reference frame, exactly as
+  `#battler_z` predicts; that fight also renders the same in both runtimes,
+  so the map-tree walk is right for a non-black map too.
+  **Deliberately left open.** (1) *Where* RPG_RT writes field 125 — arrival
+  on a map only, or every step onto a terrain whose own `background_name`
+  differs — could not be settled: Nepheshel has **no `backdrop_type == 1`
+  (per-terrain) map at all** (271 of the 275 maps carrying an Enemy
+  Encounter resolve to "black", the rest to a pinned file), so no walk on
+  this test bed can change the answer, and an attempt to walk the party into
+  a fight on map 2 ran into that map rendering pitch black with input
+  swallowed. Clearing the value on a map change is the conservative
+  behaviour that matches every case measured here. (2) A **missing** backdrop
+  file stays a soft fallback here (a `$stderr` line plus the flat field)
+  rather than RPG_RT's fatal dialog: this codebase has no error-dialog UI and
+  already takes the same diagnostic-not-crash posture for a missing chipset
+  and a missing teleport destination. (3) Whether Change Battle Background
+  (13210) should also *store* into field 125 (so the next fight and the next
+  save keep it) is untested — it still only swaps the live sprite. (4)
+  `scripts/gen-rpg2k-save.rb` still does not maintain field 125 when it
+  moves the party, so a synthetic save keeps whatever the donor save had;
+  both runtimes now agree on that stale/empty value, but a capture that wants
+  a map's *real* backdrop has to set the field by hand as above. (5)
+  `#flying_offset` / `#automatic_battle_position` remain unconfirmed under
+  wine — RPG2000 draws no party battlers at all and neither troop used here
+  has a levitating member. Covered by eight new
+  `scripts/rpg2k_scene_check.rb` checks (carried background wins over the
+  tree walk; a carried empty string draws the flat field; the flat field is
+  RGB(0,0,0); a map change drops the carried value; the backdrop sprite's
+  origin/z vs. the troop sprites; the centred anchor, both as arithmetic on
+  the measured Nepheshel numbers and through the real build path; the
+  add-order z ordering), five of which were confirmed to fail against the
+  pre-fix code before the fix — the remaining three pin behaviour the
+  captures showed was already correct.
+  **Also noticed, not this task's:** with `--test_play` our engine leaves
+  `Scene::Map`'s missing-CharSet debug marker (a 16x32 RGB(240,240,80) block
+  at the hero's map position) drawn *over* the battle backdrop — visible at
+  logical (152,96)-(167,127) in the map-543 boss capture. RPG_RT shows
+  nothing there.
   **Enemies now run their 行動パターン** (action pattern, enemy chunk 42) rather
   than only ever attacking — the single biggest silent gap left in the battle
   system, since **510 of the 959 enemy actions across the two test beds are
@@ -11882,6 +11980,110 @@ The work below is roughly ordered by the critical path to a walkable game
   earlier pass in this same section already used successfully, just not yet
   connected to the skill list specifically. This is the technique the
   fresh capture above used.
+  ✅ **Follow-up (cycle #246, 2026-09-06): the four battle *selection* windows
+  measured end to end against genuine RPG_RT.exe under wine — enemy target
+  list, in-battle Skill grid, in-battle Item grid and the ally-target
+  cursor — and four real gaps fixed.** Recipe: the shared round-2 battle
+  save (`Save01_battle_map2.lsd`, party on map 2 at (6,4) facing the monster
+  event, two スライム vs デモ用) copied into a private game copy, RPG_RT
+  booted under a private wine prefix with `BOOT_WAIT=40`, `Down Return
+  Return` from the title dropping straight into the fight, then a root
+  capture after *every* keypress (640x480, halved to the 320x240 logical
+  screen; all figures below are logical). For the Skill and Item lists the
+  save's own leader (database actor 15) got nine skills and 10 SP written
+  into **its own chunk-108 record** (fields 51/52 and 72) and the bag got
+  nine items via chunk 109 (fields 11/12/13), exactly the technique the
+  entry above establishes — chunk 109's *party list* was never touched.
+  Measured, and now pinned by seven new `scripts/rpg2k_scene_check.rb`
+  checks (all confirmed to fail against the pre-fix scene):
+  - **Enemy target list** — box `(0, 160, 136, 80)`, i.e. only the *left*
+    136px of the status panel's footprint, with that panel's remainder and
+    the actor command window still visible beside it (frame runs measured at
+    x 0..135 / 136..243 / 244..319 on the same row). Row 0's cursor frame
+    x 4..131, y 168..183 and row 1's y 184..199 → a 120-wide `cursor_rect`
+    (the box's full content width) on a 16px pitch off the panel's 8px
+    border; names at x 8. Our box, pitch and cursor were already right; the
+    **names were flat white** where RPG_RT draws them from the System font
+    gradient — sampled `(189,223,255)` with the skin's `(24,28,24)` shadow —
+    so `#battle_list_window` now draws every row through `#draw_system_text`
+    (swatch 0) instead of `Bitmap#draw_text`. Right/Left are dead input here
+    (byte-identical frames), Down/Up wrap on a two-enemy troop (cycle #131's
+    finding re-confirmed), a **defeated enemy is dropped from the list
+    outright** rather than greyed (killing one slime left a one-row list —
+    what `#living_foes` already produces), and the targeted enemy's sprite
+    is **not** highlighted at all: ten captures spanning ~3.5s differ only
+    inside the cursor's own blink, never a pixel of either battler. Escape
+    closes the list and leaves the command cursor where it was.
+  - **Skill / Item grids** — one `(0, 160, 320, 80)` box covering the status
+    *and* command windows, two columns on a **160px pitch of 144px cells**
+    (column 0's names at x 8, column 1's at 168; cursor frame x 4..155 → a
+    144-wide `cursor_rect`), where this engine drew an edge-to-edge 152/152
+    split with a 152-wide cursor and no gutter. Rows are row-major. The
+    figure column is `-`/`:` in the 6px cell at cell x 120 with the number
+    **right-aligned to cell x 144** (skill costs "7"/"15"/"50" and item
+    counts "5"/"12"/"99" all ended flush at 151 / 311) — the identical
+    column `Scene::ItemMenu` measured for the field grid — where ours drew
+    `"Name  7"` / `"Name  x5"` straight after the name. An unaffordable
+    skill and an unusable item are drawn in the disabled swatch
+    (`(99,166,247)` against the enabled `(189,223,255)`), which **confirms
+    directly, on the battle screen, what the entry above could only port by
+    analogy**; Decision on a disabled row buzzes and stays (already
+    correct).
+  - **Description banner** — a `(0, 0, 320, 32)` window above the battlers
+    carrying the highlighted row's own database description (skill/item
+    field 2, verbatim, in the enabled colour even for a disabled row),
+    tracking the cursor row by row, staying up through target selection and
+    disappearing with the list. This engine drew no such window at all;
+    `#battle_list_window` now builds it from a new `desc:` argument and the
+    four `close_battle_*` methods dispose it.
+  - **The originating list stays on screen** — choosing a single-enemy skill
+    leaves the skill grid drawn *under* the 136px enemy list (its first
+    column's cost figures, which sit past that window's right edge, stay
+    visible), and the same for an item. `#draw_battle_target` /
+    `#draw_battle_ally_target` now redraw the pending list beneath
+    themselves (their callers close it before routing), and their closers
+    take it back down; every Cancel path already redraws the window the
+    player lands back on (Escape from the target cursor returns to the grid
+    with its cursor and banner intact — confirmed).
+  - **Ally target** — RPG_RT draws **no name list here at all**: it puts a
+    cursor on the party status panel itself. The panel measured x 0..243
+    (the status window's own rect) carrying its usual four columns
+    ("デモ用 / 正常 / HP600/600 / MP10", the low-SP figure still
+    recoloured), cursor frame x 4..239, y 168..183 → a full-content-width
+    `cursor_rect` on the target's row, drawn *over* the still-open Skill /
+    Item grid. Ours drew a separate `Name  hp/maxhp` list and closed the
+    grid; `#draw_battle_ally_target` now builds the real panel through
+    `#battle_status_window`/`#battle_status_row` and raises it above the
+    list.
+  - **Cursor movement** — one case cycles #133/#134 never reached: Down from
+    the last *full* row's second column (index 7 of 9, whose target cell 9
+    does not exist) does **not** block on an overflowing list — it scrolls a
+    row and lands on the ninth entry, in both the skill and the item grid.
+    A non-overflowing list (the 8-item/4-row grid, a 3-item partial row)
+    still blocks, so `#move_battle_list_index` clamps to the last index only
+    when `size > BATTLE_VISIBLE_ROWS * column_max`.
+  Deliberately left open: (a) the blinking windowskin **scroll arrows** a
+  longer list shows — measured at x 155..164, y 161..165 (up, on the list
+  box's top border) and y 233..238 (down, at the screen's bottom edge),
+  each present in roughly half the captures taken in the same state — need a
+  per-frame sprite tick this screen has no hook for, so nothing was drawn;
+  (b) RPG_RT's scroll offset is **sticky** (after a Down scroll, Left back
+  onto the previous row keeps the view where it was, and Down from that row
+  then no-ops), where `#battle_list_window` still derives the offset from
+  the cursor row each draw — the derived offset matches every state reached
+  by Down alone, not the sticky one; (c) the ally cursor's own row-to-row
+  movement could not be re-measured (this save's party is one actor; growing
+  it needs cycle #136's live Change Party Member route, since chunk 109's
+  party list blackens RPG_RT on Continue) — cycle #136's multi-actor
+  Down/Up findings stand; (d) two differences that live **outside** these
+  windows and were left for their owners: RPG_RT lists battle items in the
+  bag's **stored order** and skills in the actor's **stored skill order**,
+  where `Game::Party#battle_items`/`#battle_skills` sort by id, and RPG_RT
+  lists a held **weapon** in the battle Item list (greyed) where
+  `#battle_items` still drops equipment entirely; (e) our glyphs sit ~3px
+  taller than RPG_RT's in every battle row (a font-metric difference shared
+  with every other screen, bottom edges aligned), not touched here.
+  No EasyRPG source was consulted.
 - ✅ **An Escape/Teleport skill was hidden from the field Skill list outright
   whenever it was not castable right now — access off, no registered
   target, or flying — instead of staying listed and disabled, and the same
@@ -15986,6 +16188,77 @@ The work below is roughly ordered by the critical path to a walkable game
   visible troop member by name, a first-strike encounter appends
   `special_combat` after those same per-enemy lines rather than replacing
   them, and a troop member flagged invisible gets no arrival line at all.
+  ✅ **Follow-up (cycle #247, 2026-09-06): the battle message flow measured
+  frame by frame on genuine RPG_RT.exe under wine -- the encounter banner's
+  pacing, the action log's, and the victory panel's -- and the encounter
+  banner's flow fixed to match.** No EasyRPG source was consulted; every
+  number here is a wall-clock-stamped capture of genuine RPG_RT. Recipe:
+  scratch copy of the Nepheshel game dir with `Save01_battle_map2.lsd`
+  (party on map 2 at (6,4) facing the monster event at (6,3), troop 1 = two
+  スライム vs the Lv50 デモ用), RPG_RT.exe on Xvfb 640x480x16 + matchbox,
+  `BOOT_WAIT=40`, title → Down → Return → then a **burst capture**: a shell
+  loop taking bare `xwd -root` frames as fast as they come (~60-65/s, i.e.
+  finer than RPG_RT's own 60fps) with `date +%s.%N` recorded per frame, so
+  every transition is bracketed to ±1 frame after the wine buffer-flip race
+  (about half the frames come back all black) is filtered out. Frames were
+  classified with numpy over `convert xwd:f0123.xwd rgb:-`: bright glyph
+  row-runs inside the panel give the line count, their column extent gives
+  how much of a line is drawn. **Measured (native, capture halved):** the
+  battle message panel is the same `x=0, y=160, 320x80` rect ours already
+  draws, text at x=8 on a 16px pitch, first line's ink at y 171..181.
+  *Encounter banner:* the panel opens **empty** ~17 frames before its first
+  line (the battle is still fading in), the first line appears, and each
+  further line lands 0.117s / 0.114s later in two independent runs (7.0 /
+  6.8 frames -> 8, jitter 5..9), **accumulating** in the one panel rather
+  than replacing. The command windows then take the screen 1.155s / 1.168s
+  after the *last* line (69.3 / 70.1 frames = exactly the 70 this codebase
+  already guessed) -- with nothing pressed, so it is a timer, not a
+  keypress wait. A third run hammering Decision every 200ms cut that hold to
+  0.598s (35.9 frames), not to the ~6-12 an ungated skip would give, so the
+  keypress is only taken after ~30 frames of it. **Fixed:** the banner now
+  reveals one line per `BATTLE_ENCOUNTER_MSG_LINE_FRAMES` (8, new) with
+  `BATTLE_ENCOUNTER_MSG_FRAMES` (70, now confirmed) held from the last line
+  rather than the first, and Decision ends the hold early once
+  `BATTLE_ENCOUNTER_MSG_SKIP_FRAMES` (30, new) have run -- so a two-line
+  banner is up ~78 frames, not 70, and input is no longer ignored. Three
+  new `scripts/rpg2k_scene_check.rb` checks pin it, all three confirmed to
+  fail against the pre-fix code (with literal frame counts, so the failure
+  is behavioural and not just the new constants: `expected [line], got
+  [line, line]`; `expected :encounter_message, got :battle_options` 77
+  frames in; and the pre-fix banner never skipping at all). *Victory panel:*
+  measured identical to ours and left alone -- same 320x80 rect, lines at
+  y=171/187/203, the blinking keypress arrow at x=155..165 y=233..237
+  pixel-for-pixel where ours draws it, the same three lines in the same
+  order and the database's own words (「戦いに勝った！」/「6の経験値を獲得！」/
+  「お金を 10Ｇ手に入れた！」 -- ours matches including the fullwidth Ｇ from
+  `term(:gold)`), and it waits for the player: it sat through a whole 25s
+  capture untouched, and **Cancel** (Escape) closes it just as Decision
+  does, which is what `#drive_battle_result` already accepted. A fourth
+  check pins that (it passes pre-fix -- a pin of confirmed-correct
+  behaviour, not a fix). **Deliberately left open, with the numbers to do
+  it:** (a) RPG_RT reveals the *result* panel progressively and types each
+  line out at ~1 character/frame (戦/戦いに/戦いに勝っ/戦いに勝った！ over ~6
+  frames); the line-to-line gaps of the one run that measured them were
+  inconsistent (~67 frames victory→EXP, ~26 EXP→gold) so no single number
+  is worth coding yet. (b) The **action log** paces the same way: one page
+  per acting battler, lines added ~25-31 frames apart, page cleared ~48
+  frames after its last line, then the next battler's page -- ours banners
+  a whole action at once for a flat `BATTLE_ANIM_FRAMES`; the timer that
+  would have to drive a reveal lives in `#drive_battle_animate`, outside
+  this fix's scope. (c) The empty panel that precedes the first encounter
+  line (~17 frames) belongs to the battle fade-in this engine has no
+  transition for. (d) The **defeat / game-over path** was not reached at
+  all: the shipped Lv50 leader one-shots the slimes and nothing short of
+  save surgery loses to them, so RPG_RT's defeat panel and its timing
+  remain unmeasured. (e) Not a battle bug, but visible in every comparison:
+  our glyph ink for a message line sits at y 168..180 where RPG_RT's sits at
+  171..181 -- our own *map* message window is offset identically (168 vs
+  171), so it is a `draw_text` font-ascent difference to fix once, globally,
+  not per window. **Confirmed unchanged/correct:** the status and command
+  windows are hidden behind the log in both engines (same rect), the log
+  lines' wording matches (「デモ用の攻撃！」/「スライムに 500のダメージを与えた！」/
+  「スライムを倒した！」, with 「命の一撃！！」 between attack and damage on a
+  critical), and the panel rect itself.
 - ✅ Audio playback — `RGSS::Audio` now plays real BGM/BGS/ME/SE through an
   SDL_mixer backend (`src/sdl_audio.cxx`), resolving names under
   `Music/`/`Sound/`/`Audio/*`
@@ -22274,6 +22547,78 @@ not yet verified:
   holds tautologically regardless of what `height` actually is, so it could
   not have caught this on its own — confirmed to fail against the pre-fix
   code before the fix.
+  ✅ **Follow-up (cycle #244, 2026-09-06): the other three windows on that
+  same 320x80 strip — the party status panel and the two 76px command
+  windows — pixel-measured against genuine RPG_RT.exe under wine, and the
+  status panel's columns and HP/SP runs rebuilt on the numbers.** Recipe:
+  the shared round-2 battle save (`Save01_battle_map2.lsd`, md5
+  f684a3fe1226f9dcbc9cbdc7544d6488) stands the lone デモ用 (Lv50, 600/600
+  HP/MP) next to a monster event on map 2, so `Down Return Return` from the
+  title drops straight into the two-slime fight; `BOOT_WAIT=40`, capture
+  after every key, 640x480 frames halved to the 320x240 logical screen and
+  read with numpy. Three extra copies of the save were edited through chunk
+  108's actor 15 record (fields 31/71/72, `LCF::Array1D#[]=` + `to_lcf`) to
+  88/44, to level 1 (max HP 40) with 5/5, to 0/0 and to 151/150, giving
+  digit counts and colour states the genuine fight will not produce on its
+  own. **Window rects:** on the party-command frame the two windowskin
+  frames span x=0..75 and x=76..319; pressing Decision on 戦う mirrors them
+  to x=0..243 and x=244..319, and Escape puts them back — so `BATTLE_CMD_W`
+  76 / `BATTLE_STATUS_W` 244 / `#battle_status_x`'s side-swap were all
+  already right, as were `BATTLE_PANEL_Y` 160, `BATTLE_PANEL_H` 80 and the
+  16px row pitch (rows at screen y=168/184/200/216 in both command windows,
+  wrapping past the last). Both command windows draw their terms from
+  contents x=0 and carry a `Rect.new(0, row*16, 60, 16)` cursor (green frame
+  at screen x=4..71 and x=248..315). **Status panel contents:** `デモ用`
+  from contents x=0 on the 12px full-width grid, `正常` from x=82, the `HP`
+  label from x=138 and `MP` from x=198 — *not* the 4/86/142/202 this file
+  carried (a different window from the field menu's own party panel, which
+  cycle #240 measured at name 56 / LV 56 / level 68 / condition 98 / HP
+  162). Each gauge run is 54px in four fixed pieces: a 12px label, the
+  current figure **right-aligned** in an 18px three-digit field, a 6px "/",
+  then the maximum right-aligned in its own 18px field — no space anywhere
+  (`HP600/600`), proved by the edited saves (` 88/600`, `  5/ 40`, so both
+  fields keep three cells whatever the digit count). Colours, against the
+  System graphic's own palette cells (decoded with a zero-window-tolerant
+  inflater, since ImageMagick rejects Nepheshel's PNG): name, condition,
+  "/" and both maxima in swatch 0; the `HP`/`MP` labels in swatch 1
+  (#638ADE at the glyph rows); the current figure in swatch 4 (#F7E76B) at
+  or below max/4 and swatch 5 (#D69E9C) at 0 HP only — SP at 0 stays gold,
+  and the HP 151 / SP 150 frame pins the threshold at `cur <= max / 4`
+  exactly (600/4 = 150). **Cursor:** the acting actor's row carries the
+  skin's frame across the whole 228px contents width (screen x=4..239) in
+  the per-actor phase and stays up under the enemy target window; there is
+  no status cursor at all during the party-command phase. Fixed in
+  `Scene::Battle` (`mruby-rpg2k/mrblib/scene/battle.rb`): `STATUS_NAME_X`/
+  `STATUS_STATE_X`/`STATUS_HP_X`/`STATUS_MP_X` → 0/82/138/198, new
+  `STAT_LABEL_W`/`STAT_FIELD_W`/`STAT_SLASH_W`/`STAT_LABEL_COLOR`
+  (12/18/6/1), and `#draw_battle_stat_segment` rewritten from one
+  `"#{label} #{cur}/#{max}"` string sliced by `#clip_text_to_width` into
+  four positioned, per-piece-coloured, right-aligned draws that stop at the
+  column's own edge. That string plus the +4 columns is what clipped our SP
+  column to `MP 6`; genuine RPG_RT truncates there too, but only the `/600`
+  (`HP600/600 MP600`), because its run starts 4px earlier and wastes no
+  space. Covered by four new `scripts/rpg2k_scene_check.rb` checks (the four
+  column origins and their swatches; the four-piece run geometry and
+  alignment; the swatch-4/5 recolouring at both sides of the max/4
+  boundary; the two command windows' rects, text column, row pitch and
+  cursors) plus a rewrite of the existing "clips each column" check, the
+  first three confirmed to fail against the pre-fix code — the fourth passes
+  either way, since it pins geometry the measurements found already correct.
+  Doc comments on `BATTLE_CMD_W`, `#battle_status_x`, `#draw_battle_command`,
+  `#draw_battle_options`, `#refresh_battle_status` and
+  `#battle_status_window` lost their "ported from a reference implementation,
+  not independently confirmed" hedges for what these captures actually show.
+  **Deliberately left open:** (1) the row pitch *between* status rows and
+  whether a second row is drawn any differently — this save's party is one
+  member and its chunk 109 roster must not be edited (it blackens RPG_RT on
+  Continue), so only the 16px pitch shared with the two command windows on
+  the same panel is measured; (2) what a four-digit (>999) HP/SP figure or
+  maximum does to the three-cell fields — actor 15 tops out at 600 and the
+  growth curve gives no >999 value to capture; (3) whether a *named*
+  condition (a real state, not 正常) uses the state's own palette colour
+  here as it does in the field windows — no state could be inflicted on a
+  Lv50 actor by two slimes within the capture budget. No EasyRPG source was
+  consulted.
 - ✅ **Weather Effects now clamps an RPG2003-only weather type back to none on
   RPG2000, and clamps strength to at most 2 on every edition — both used to
   be stored verbatim off the raw command bytes with no bound at all.**

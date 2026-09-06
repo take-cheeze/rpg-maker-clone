@@ -7614,10 +7614,12 @@ end
 # frames -- used by the options-window checks below, which need to catch the
 # battle right when a phase first appears rather than run it through to a
 # later one the way #battle_attack_to_end does. `:battle_options` (every
-# call site's actual target) only opens once the encounter banner's own
-# BATTLE_ENCOUNTER_MSG_FRAMES hold has run out, so the default budget needs
-# enough room for that hold plus the frames battle-open itself takes.
-def battle_until_phase(scene, phase, max = 90)
+# call site's actual target) only opens once the encounter banner has
+# revealed every line (BATTLE_ENCOUNTER_MSG_LINE_FRAMES apart) *and* its
+# BATTLE_ENCOUNTER_MSG_FRAMES hold on the last of them has run out, so the
+# default budget needs enough room for both plus the frames battle-open
+# itself takes.
+def battle_until_phase(scene, phase, max = 120)
   ui = nil
   max.times do
     scene.update
@@ -7775,6 +7777,10 @@ check 'Enemy Encounter scene: opening a battle narrates each visible enemy with 
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'], window_texts(ui[:action_win]),
      'both troop members are named, once each, using the database term'
 end
@@ -7797,6 +7803,10 @@ check 'Enemy Encounter scene: a first-strike encounter appends the special_comba
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！', 'Slimeがあらわれた！', '先制攻撃！'],
      window_texts(ui[:action_win]),
      'special_combat trails the per-enemy lines rather than replacing them, ' \
@@ -7818,6 +7828,10 @@ check 'Enemy Encounter scene: a hidden troop member gets no encounter line' do
   st.instance_variable_set(:@party, BattleStubParty.new)
   ui = battle_until_phase(scene, :encounter_message)
   ok ui, 'the encounter-message phase was reached'
+  # The banner reveals its lines one per BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+  # (measured under wine, see that constant), so give it the frames to
+  # finish before reading the finished narration off the panel.
+  20.times { scene.update }
   eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
      'only the still-visible Slime is narrated'
   ok ui[:troop].members[1].hidden, 'and the troop model agrees the second member is hidden'
@@ -12783,9 +12797,13 @@ end
 # Open a battle and step to the per-actor command menu, dismissing the
 # once-per-battle automatic Battle/Auto Battle/Escape options window along
 # the way (a C press on its default cursor row 0, "Battle").
+# The budget covers the encounter banner in full: its lines land one per
+# BATTLE_ENCOUNTER_MSG_LINE_FRAMES (so a 6-member troop spends 40 frames just
+# revealing them) and only then does the BATTLE_ENCOUNTER_MSG_FRAMES hold on
+# the last line start -- both measured under wine, see those constants.
 def battle_to_command(scene)
   ui = nil
-  90.times do
+  200.times do
     ui = battle_ui(scene)
     RGSS::Input.triggered = [RGSS::Input::C] if ui && ui[:phase] == :battle_options
     scene.update
@@ -18687,37 +18705,40 @@ check 'the battle status panel clips each column to the gap before its own neigh
   ensure
     RGSS::Bitmap.send(:define_method, :text_size, original_text_size)
   end
-  # #draw_battle_stat_segment now draws each of HP/SP as three consecutive
-  # calls (label, current-value figure, "/max"), not one -- reconstruct the
-  # segment's full text from its three parts to check the same clipping
-  # this test always has, undisturbed by the recolor split.
+  # #draw_battle_stat_segment draws each of HP/SP as up to four consecutive
+  # calls (label, current figure, "/", maximum) at the fixed sub-column
+  # offsets measured on genuine RPG_RT under wine (cycle #244) -- the whole
+  # run is 54px, so HP fits its 60px column whole and SP, starting 30px
+  # before the panel's own inner edge, loses the "/" and the maximum.
   calls = ui[:status_win].contents.draw_calls
-  hp_idx = calls.index { |a| a[4].start_with?('HP') }
-  mp_idx = calls.index { |a| a[4].start_with?('MP') }
+  hp_idx = calls.index { |a| a[4] == 'HP' }
+  mp_idx = calls.index { |a| a[4] == 'MP' }
   ok hp_idx, 'the HP segment was drawn'
   ok mp_idx, 'the SP segment was drawn'
-  hp_call = calls[hp_idx]
-  mp_call = calls[mp_idx]
-  hp_text = calls[hp_idx, 3].map { |a| a[4] }.join
-  mp_text = calls[mp_idx, 3].map { |a| a[4] }.join
+  hp_run = calls[hp_idx...mp_idx]
+  mp_run = calls[mp_idx..-1]
+  hp_text = hp_run.map { |a| a[4] }.join
+  mp_text = mp_run.map { |a| a[4] }.join
 
-  eq hp_gap, hp_call[2],
-     "HP's own width is the #{hp_gap}px gap up to the SP column, not the panel's own edge"
-  eq mp_gap, mp_call[2],
-     "SP's own width is the #{mp_gap}px gap up to the panel's own inner edge"
+  eq 'HP999/999', hp_text,
+     'the HP run is label + figure + "/" + maximum with no space after the label'
+  eq [battle_mod::STATUS_HP_X, battle_mod::STATUS_HP_X + 12,
+      battle_mod::STATUS_HP_X + 30, battle_mod::STATUS_HP_X + 36],
+     hp_run.map { |a| a[0] },
+     'HP: 12px label, then the figure, the "/" 30px in and the maximum 36px in'
+  eq [12, 18, 6, 18], hp_run.map { |a| a[2] },
+     'each piece keeps its own measured width, not the whole column\'s'
+  eq [0, 2, 0, 2], hp_run.map { |a| a[5] },
+     'both figures are right-aligned in their three-digit fields; the label and "/" are not'
+  ok battle_mod::STATUS_HP_X + 54 <= battle_mod::STATUS_MP_X,
+     "HP's 54px run fits the #{hp_gap}px gap up to the SP column instead of overrunning it"
 
-  ok hp_text.length * 6 <= hp_gap,
-     "HP's drawn text (#{hp_text.inspect}) was sliced to fit its own #{hp_gap}px column " \
-     "instead of overrunning into SP's"
-  ok mp_text.length * 6 <= mp_gap,
-     "SP's drawn text (#{mp_text.inspect}) was sliced to fit its own tiny #{mp_gap}px " \
-     'column instead of running off the panel'
-  eq 'HP 999/999', hp_text,
-     "HP's own 60px column is exactly enough for RPG2000's own 999 ceiling -- " \
-     "the comment on STATUS_NAME_X's own block -- so this drew whole, untruncated"
-  ok mp_text.length < 'MP 999/999'.length,
-     "SP 999/999 does not fit #{mp_gap}px at 6px/character, so it was genuinely truncated " \
-     'rather than bleeding off the panel'
+  eq 'MP999', mp_text,
+     "SP's own run truncates at the panel's inner edge -- exactly what RPG_RT draws"
+  eq 2, mp_run.size,
+     "the \"/\" and the maximum start at or past contents x=#{inner_w}, so neither is drawn"
+  ok mp_run.map { |a| a[0] + a[2] }.max <= inner_w,
+     "nothing SP drew reaches past the panel's own #{mp_gap}px remainder"
 end
 
 # Minimal stand-in for a battle Combatant, exposing exactly what
@@ -27494,6 +27515,673 @@ check 'a switch-gated event page draws its own sprite once its switch is set, ' 
   hits = event_blt_calls(scene, 'wisp1')
   ok hits.any?, 'expected the now-selected page to draw once its switch is on'
   eq 255, hits.first[4]
+end
+
+
+# -- the battle status panel and the two command windows (cycle #244) ---------
+#
+# Pixel-measured against genuine RPG_RT.exe under wine (Nepheshel, the
+# `Save01_battle_map2.lsd` two-slime fight on map 2, 640x480 captures halved to
+# the 320x240 logical screen; four saves -- the genuine 600/600 leader and
+# three copies edited through save chunk 108 to 88/44, to level 1 with 5/5,
+# to 0/0 and to 151/150). No EasyRPG source was consulted. See Scene::Battle's
+# own STATUS_NAME_X / #draw_battle_stat_segment / #draw_battle_command /
+# #draw_battle_options comments and docs/TODO.md for the recipe and numbers.
+
+# The battle scene reaches its windowskin through `@map.windowskin`, which the
+# map scene loads in its own #initialize -- the battle fixtures build that
+# scene themselves, so the skin is installed afterwards rather than through the
+# database's system_graphic name.
+def battle_with_skin(party = BattleStubParty.new)
+  scene, = battle_at_command(nil, party: party)
+  scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new(160, 80))
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  [scene, battle_ui(scene)]
+end
+
+# One status panel drawn straight from a row fixture, so a check can pin the
+# HP/SP colours at HP/SP values a live fixture battle cannot easily be walked
+# to (the wine captures got there by editing the save's chunk 108 instead).
+def battle_status_blends(scene, fixture)
+  battle = scene.instance_variable_get(:@battle)
+  win = battle.send(:battle_status_window, [battle.send(:battle_status_row, fixture)], 0)
+  status_blend(win)
+end
+
+check 'the battle status panel draws name / condition / HP / SP at the ' \
+      'contents columns measured under wine (0 / 82 / 138 / 198)' do
+  battle_mod = RPG2k::Scene::Battle
+  eq [0, 82, 138, 198],
+     [battle_mod::STATUS_NAME_X, battle_mod::STATUS_STATE_X,
+      battle_mod::STATUS_HP_X, battle_mod::STATUS_MP_X],
+     'the four column origins are the measured ones, not the old 4/86/142/202'
+
+  _, ui = battle_with_skin
+  bc = status_blend(ui[:status_win])
+  name = blend_at(bc, 'Hero', 0, 0)
+  ok name, "the name draws at contents x=0 on row 0, got #{bc.map { |c| [c[4], c[0], c[1]] }.inspect}"
+  eq [0, 48], name[6, 2], 'the name is the default swatch (index 0)'
+  state = blend_at(bc, 'Normal', 82, 0)
+  ok state, 'the condition draws at contents x=82'
+  eq [0, 48], state[6, 2], "a clear actor's condition is swatch 0 too"
+  hp = blend_at(bc, 'HP', 138, 0)
+  mp = blend_at(bc, 'MP', 198, 0)
+  ok hp, 'the HP label draws at contents x=138'
+  ok mp, 'the SP label draws at contents x=198'
+  eq [16, 48], hp[6, 2], "the HP label draws from swatch 1, not the values' swatch 0"
+  eq [16, 48], mp[6, 2], 'and so does the SP label'
+end
+
+check 'one battle HP/SP run is label + right-aligned figure + "/" + ' \
+      'right-aligned maximum, 54px in all' do
+  battle_mod = RPG2k::Scene::Battle
+  eq [12, 18, 6], [battle_mod::STAT_LABEL_W, battle_mod::STAT_FIELD_W,
+                   battle_mod::STAT_SLASH_W],
+     'the measured sub-column widths'
+  eq 1, battle_mod::STAT_LABEL_COLOR, 'the labels carry the system swatch'
+
+  _, ui = battle_with_skin
+  bc = status_blend(ui[:status_win])
+  hp_x = battle_mod::STATUS_HP_X
+  # BattleStubActor's default is 200/200 HP.
+  cur = blend_at(bc, '200', hp_x + 12, 0)
+  slash = blend_at(bc, '/', hp_x + 30, 0)
+  max = blend_at(bc, '200', hp_x + 36, 0)
+  ok cur, "the current figure sits 12px past the label, got #{bc.map { |c| [c[4], c[0]] }.inspect}"
+  ok slash, 'the "/" sits 30px past the label'
+  ok max, 'the maximum sits 36px past the label'
+  eq [18, 2], [cur[2], cur[10]], 'the figure is right-aligned in an 18px three-digit field'
+  eq [6, 0], [slash[2], slash[10]], 'the "/" is its own 6px cell, unaligned'
+  eq [18, 2], [max[2], max[10]], 'the maximum is right-aligned in a field of its own'
+  ok bc.none? { |c| c[4].to_s.start_with?('HP ') },
+     'no space is drawn between the label and the figure -- RPG_RT draws "HP600/600"'
+end
+
+check 'only the battle HP/SP current figure recolours: swatch 4 at or below ' \
+      'a quarter of max, swatch 5 at zero HP, never for SP' do
+  battle_mod = RPG2k::Scene::Battle
+  hp_x = battle_mod::STATUS_HP_X
+  mp_x = battle_mod::STATUS_MP_X
+  scene, = battle_with_skin
+
+  # 150 of 600 is exactly max/4 (critical); 151 is the first ordinary value.
+  # Both sides of that boundary were captured in one genuine frame.
+  bc = battle_status_blends(scene, BattleStatusRowFixture.new('Hero', 151, 600, 150, 600, []))
+  eq [0, 48], blend_at(bc, '151', hp_x + 12, 0)[6, 2],
+     'HP one point over a quarter of max stays swatch 0'
+  eq [64, 48], blend_at(bc, '150', mp_x + 12, 0)[6, 2],
+     'SP at exactly a quarter of max is already swatch 4'
+  eq [0, 48], blend_at(bc, '600', hp_x + 36, 0)[6, 2],
+     'the maximum never recolours with the figure beside it'
+
+  bc = battle_status_blends(scene, BattleStatusRowFixture.new('Down', 0, 600, 0, 600, []))
+  eq [80, 48], blend_at(bc, '0', hp_x + 12, 0)[6, 2],
+     'HP at 0 draws the knockout swatch 5'
+  eq [64, 48], blend_at(bc, '0', mp_x + 12, 0)[6, 2],
+     'SP at 0 stays on swatch 4 -- SP never knocks out'
+end
+
+check 'the battle options and per-actor command windows share one 76x80 rect, ' \
+      'text at contents x=0 on 16px rows and a full-width cursor' do
+  battle_mod = RPG2k::Scene::Battle
+  cmd_inner = battle_mod::BATTLE_CMD_W - RPG2k::Window::BORDER * 2
+  status_inner = battle_mod::BATTLE_STATUS_W - RPG2k::Window::BORDER * 2
+
+  scene, = battle_scene_with_pages(nil, party: BattleStubParty.new)
+  ui = battle_until_phase(scene, :battle_options)
+  ok ui, 'the battle opened on the party-command phase'
+  opt = ui[:cmd_win]
+  eq [0, battle_mod::BATTLE_PANEL_Y, battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [opt.x, opt.y, opt.width, opt.height],
+     'the options window is the measured x=0..75, y=160..239 rect'
+  eq [0, 0, cmd_inner, battle_mod::BATTLE_LINE_H],
+     [opt.cursor_rect.x, opt.cursor_rect.y, opt.cursor_rect.width, opt.cursor_rect.height],
+     'its cursor is the full 60px contents width, one 16px row tall'
+  opt_rows = opt.contents.draw_calls || []
+  eq [0], opt_rows.map { |a| a[0] }.uniq, 'every option row draws from contents x=0'
+  eq (0...opt_rows.size).map { |i| i * battle_mod::BATTLE_LINE_H },
+     opt_rows.map { |a| a[1] }, 'the rows step 16px apart'
+  eq 0, ui[:status_win].cursor_rect.width,
+     'no status row is highlighted while the party command window has focus'
+
+  _, ui2 = battle_at_command(nil, party: BattleStubParty.new)
+  cmd = ui2[:cmd_win]
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y,
+      battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [cmd.x, cmd.y, cmd.width, cmd.height],
+     'the per-actor command window is the same shape at x=244'
+  eq [0, 0, cmd_inner, battle_mod::BATTLE_LINE_H],
+     [cmd.cursor_rect.x, cmd.cursor_rect.y, cmd.cursor_rect.width, cmd.cursor_rect.height],
+     'with the identical cursor'
+  cmd_rows = cmd.contents.draw_calls || []
+  eq [0], cmd_rows.map { |a| a[0] }.uniq,
+     'and its four command terms draw from contents x=0 too'
+  eq (0...cmd_rows.size).map { |i| i * battle_mod::BATTLE_LINE_H },
+     cmd_rows.map { |a| a[1] }, 'on the same 16px pitch'
+
+  # The acting actor's row carries the panel-wide cursor once an actor is
+  # choosing -- screen x=4..239 on the reference frame, i.e. the whole 228px
+  # contents width plus Game::WindowCursor::OVERHANG on each side.
+  status = ui2[:status_win]
+  eq [0, 0, status_inner, battle_mod::BATTLE_LINE_H],
+     [status.cursor_rect.x, status.cursor_rect.y,
+      status.cursor_rect.width, status.cursor_rect.height],
+     "the acting actor's row is highlighted across the whole panel"
+end
+
+# -- battle backdrop + battler placement (cycle #245, measured under wine) -----
+#
+# Everything pinned below was measured off genuine RPG_RT.exe frames captured
+# under wine on the RPG2000 test bed (Nepheshel), 640x480 = the 320x240
+# logical screen doubled. No reference implementation's source was consulted.
+# Recipe: `Save01_battle_map2.lsd` (party on map 2 at (6,4), next to the
+# monster event at (6,3)) drops both runtimes straight into a two-スライム
+# fight on Continue; SAVE_SYSTEM field 125 was rewritten with the LCF writer
+# between runs to drive the backdrop.
+
+check 'the fight draws the background the save carried (SAVE_SYSTEM 125), ' \
+      'not a fresh map-tree walk' do
+  # Measured: map 2 inherits map 9\'s `backdrop_type == 2` / backdrop_file
+  # "black" through the map tree, yet the same save with field 125 hand-set
+  # to "light" drew Backdrop/light.png in that fight -- so the carried value
+  # wins over the tree walk, and loading a save neither recomputes nor
+  # validates it.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  back = ui[:back_sprite]
+  ok back, 'the backdrop sprite was built'
+  eq 'Backdrop/light', back.bitmap.load_name,
+     'the carried background is loaded by name'
+end
+
+check 'a carried-but-empty background draws the flat field rather than falling ' \
+      'back to the map tree' do
+  # Measured: the harness save carries no field 125 at all, and RPG_RT drew a
+  # flat black screen for that fight -- not map 2\'s own "black" backdrop
+  # graphic. An absent field is RPG_RT\'s empty default, so `Game::State
+  # .from_lsd` reads it as '' and the fight must draw the flat field.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = ''
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  back = ui[:back_sprite]
+  eq nil, back.bitmap.load_name, 'no Backdrop/<name> file was loaded at all'
+  eq [320, 240], [back.bitmap.width, back.bitmap.height],
+     'the flat field covers the whole screen'
+end
+
+check 'the flat battle-back field is black, not a dark blue-grey' do
+  # Measured on the reference frame of the map-2 slime fight (no field 125):
+  # RGB(0,0,0) at logical x=160, y = 0/8/30/50/75/100/125/145/149/155 -- every
+  # sampled point of the 320x160 backdrop band.
+  battle = RPG2k::Scene::Battle.allocate
+  bmp = battle.send(:flat_battle_back)
+  eq [320, 240], [bmp.width, bmp.height]
+  fill = bmp.fill_calls.last
+  eq [0, 0, 320, 240], fill[0, 4], 'the whole screen is filled'
+  colour = fill[4]
+  eq [0, 0, 0, 255], [colour.red, colour.green, colour.blue, colour.alpha],
+     'flat black, RGB(0,0,0)'
+  eq [0, 0, 0], RPG2k::Scene::Battle::BATTLE_BACK_FLAT_COLOR.to_a
+end
+
+check 'changing map drops the carried background so the next fight resolves ' \
+      'the new map\'s own backdrop' do
+  # RPG_RT\'s field 125 is written by its own map setup (every genuine save
+  # carries the value its map resolves to), so a value carried across a
+  # Transfer Player would be describing the map the party just left.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  eq 'light', st.battle_background
+  st.map_id = st.map_id # a no-op assignment must not clear it
+  eq 'light', st.battle_background
+  st.map_id = st.map_id + 1
+  eq nil, st.battle_background, 'a real map change drops it'
+  ui = battle_to_command(scene)
+  ok ui, 'the fight opened'
+  eq nil, ui[:back_sprite].bitmap.load_name,
+     'with nothing carried the map-tree walk answers (the fixture names no backdrop)'
+end
+
+check 'the battle backdrop is one static sprite at the screen origin, under ' \
+      'the troop sprites' do
+  # Measured: downsampling the reference capture\'s top 640x320 to 320x160 and
+  # comparing it against the Backdrop/*.png file itself left only the two
+  # enemy sprites differing (ImageMagick `compare -fuzz 10%`: 2776 pixels for
+  # light.png, 2889 for bossls02r.png), so it is drawn 1:1 at (0,0), neither
+  # scaled, tiled nor offset. Two captures of the same fight 25s apart were
+  # pixel-identical (AE 0) -- it does not scroll.
+  scene, st = battle_scene_with_pages({})
+  st.battle_background = 'light'
+  ui = battle_to_command(scene)
+  back = ui[:back_sprite]
+  # The harness Sprite stub starts x/y at nil where the native Sprite starts
+  # them at 0, so "never positioned" and "positioned at 0" read alike here --
+  # both are the screen origin the reference frame measures.
+  eq [0, 0], [back.x.to_i, back.y.to_i], 'drawn at the screen origin'
+  eq 5, back.z, 'under everything'
+  sprites = ui[:enemy_sprites].compact
+  ok sprites.any?, 'the troop sprites were built'
+  ok sprites.all? { |s| s.z > back.z }, 'every troop sprite draws over the backdrop'
+end
+
+check 'a troop member sits centred on its database x/y, both axes' do
+  # Measured: Nepheshel troop 1 places its two スライム at (114,130) and
+  # (206,130) with an 84x36 `Monster/m001a` sheet whose opaque content spans
+  # (4,3)-(80,34). Centring predicts on-screen content boxes of
+  # (76,115)-(152,146) and (168,115)-(244,146); those are exactly the boxes
+  # measured in the reference frame. So the stored position is the bitmap\'s
+  # centre -- not its top-left, and not its feet.
+  battle = RPG2k::Scene::Battle.allocate
+  battle.instance_variable_set(:@ui, { frame: 0 })
+  bmp = RGSS::Bitmap.new(84, 36)
+  [[114, 72], [206, 164]].each do |db_x, expected_x|
+    member = OpenStruct.new(x: db_x, y: 130, levitate: false, flying_phase: 0)
+    eq expected_x, db_x - bmp.width / 2, 'sprite x = database x - half the sheet width'
+    eq 112, battle.send(:battler_y, member, bmp),
+       'sprite y = database y - half the sheet height'
+    # ... and the opaque content of m001a starts 4px in / 3px down.
+    eq [expected_x + 4, 115], [expected_x + 4, 112 + 3]
+  end
+end
+
+check 'every troop sprite is seated on that same centred rule through the real ' \
+      'build path' do
+  scene = battle_scene_with_pages({}).first
+  ui = battle_to_command(scene)
+  members = ui[:troop].members
+  ui[:enemy_sprites].each_with_index do |spr, i|
+    next unless spr
+    m = members[i]
+    eq m.x - spr.bitmap.width / 2, spr.x, "member #{i} x is centred"
+    eq m.y - spr.bitmap.height / 2, spr.y, "member #{i} y is centred"
+  end
+end
+
+check 'the lower-numbered troop member draws over the higher-numbered one' do
+  # Measured on Nepheshel troop 160, whose four members deliberately overlap:
+  # members 2 and 3 (the 160x160 wing battlers at x=80 and x=240) draw over
+  # member 4 (the full-screen 320x160 body at x=160) in the reference frame.
+  battle = RPG2k::Scene::Battle.allocate
+  troop = OpenStruct.new(members: Array.new(4) { OpenStruct.new })
+  battle.instance_variable_set(:@ui, { troop: troop })
+  zs = (0...4).map { |i| battle.send(:battler_z, i) }
+  eq [103, 102, 101, 100], zs,
+     'add-order index 0 is closest to the camera, so it carries the highest z'
+  ok zs.all? { |z| z > 5 }, 'and all of them draw over the backdrop (z 5)'
+end
+# -- battle selection windows (cycle #246) -------------------------------------
+#
+# Geometry and behaviour measured on genuine RPG_RT.exe (Nepheshel) under
+# wine this cycle -- the enemy-target list, the in-battle Skill and Item
+# grids, their description banner and the ally-target cursor. Every number
+# below comes from a 640x480 root capture halved to the 320x240 logical
+# screen; see Scene::Battle#draw_battle_target / #battle_list_window /
+# #draw_battle_skill / #draw_battle_item / #draw_battle_ally_target for the
+# per-figure citations and docs/TODO.md for what was left open.
+
+# Nine skills and nine items with descriptions, so both grids overflow the
+# window's four rows and both can hold a disabled row: the actor's 10 MP
+# makes every skill past the second (cost `sid * 5`) unaffordable, and
+# item 4 is flagged not battle-usable.
+class BattleListGridParty < BattleMagicParty
+  def initialize
+    super()
+    @hero.instance_variable_set(:@skills, (1..9).to_a)
+    @items = (1..9).to_h { |id| [id, id] }
+  end
+  def battle_skills(actor, _caster); actor.skills.map { |sid| [sid, sid * 5] }; end
+  def db_skill(id); OpenStruct.new(name: "Skill#{id}", scope: 0, description: "About skill #{id}"); end
+  def db_item(id); OpenStruct.new(name: "Item#{id}", description: "About item #{id}"); end
+  def battle_usable?(id); id != 4; end
+end
+
+def battle_list_scene(party)
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.instance_variable_get(:@state).instance_variable_set(:@party, party)
+  [scene, battle_to_command(scene)]
+end
+
+# RPG2k::Window only writes its z through to its viewport (no reader).
+def window_z(win)
+  win.instance_variable_get(:@viewport).z
+end
+
+# The five drawing arguments Bitmap#draw_text records, as [x, w, text].
+def list_text_cells(win)
+  (win.contents.draw_calls || []).map { |a| [a[0], a[2], a[4]] }
+end
+
+check 'battle enemy-target list: RPG_RT\'s own 136px box, 16px rows and ' \
+      'full-width cursor, with the names in the windowskin\'s font colour' do
+  # Measured under wine: the box's frame spans logical x 0..135, y 160..239;
+  # row 0's cursor frame x 4..131 / y 168..183 and row 1's y 184..199 (a
+  # `cursor_rect` of 120 -- the box's own content width -- at contents y
+  # 0/16 once Window's 4px cursor overhang is taken off); the enemy names
+  # start at logical x 8 (contents 0) and sample (189,223,255) with the
+  # skin's (24,28,24) shadow -- the System font gradient, not the flat white
+  # `draw_text` this list used to use.
+  scene, ui = battle_list_scene(BattleMagicParty.new)
+  skin = RGSS::Bitmap.new('System/skin')
+  scene.instance_variable_set(:@windowskin, skin)
+  press_key(scene, RGSS::Input::C) # Attack -> enemy target
+  eq :target, ui[:phase]
+
+  win = ui[:target_win]
+  eq [0, 160, 136, 80], [win.x, win.y, win.width, win.height],
+     'the enemy list is RPG_RT\'s own (0, 160, 136, 80) box'
+  eq [0, 0, 120, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'row 0\'s cursor spans the whole 120px content width'
+
+  bc = win.contents.blend_calls || []
+  ok (win.contents.draw_calls || []).empty?,
+     'the names are system-coloured, never flat white draw_text'
+  ok bc.any?, 'blend_text drew the names through the windowskin'
+  glyph = bc[1] # [x, y, w, h, text, skin, sx, sy, ...]; bc[0] is its shadow
+  eq 0, glyph[0], 'the name column starts at contents x 0 (logical 8)'
+  eq skin, glyph[5]
+  eq Game::MessagePalette.cell_origin(0), [glyph[6], glyph[7]],
+     'an enemy row is drawn in the enabled swatch (index 0)'
+end
+
+check 'battle Skill grid: 160px column pitch, 144px cells and the ' \
+      '"-" + right-aligned cost column RPG_RT draws' do
+  # Measured under wine on a nine-skill list: column 0's names start at
+  # logical x 8 and column 1's at 168 (contents 0 / 160 -- a 160px pitch of
+  # 144px cells with a 16px gutter, not the 152/152 edge-to-edge split this
+  # window used to draw); the "-" separator sat at 128..130 / 288..290 (its
+  # 6px cell at cell x 120) and the costs "7"/"15"/"50" all ended flush at
+  # 151 / 311 (cell x 144); the highlighted cell's cursor frame spans
+  # x 4..155, i.e. a 144-wide cursor_rect at contents x 0.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  eq :skill, ui[:phase]
+
+  win = ui[:skill_win]
+  eq [0, 160, 320, 80], [win.x, win.y, win.width, win.height]
+  eq [0, 0, 144, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'the cursor is one 144px cell, not half the content width'
+
+  cells = list_text_cells(win)
+  eq [[0, 120, 'Skill1'], [120, 6, '-'], [132, 12, '5']], cells[0, 3],
+     'column 0: name clipped to 120, "-" at cell x 120, cost right-aligned to 144'
+  eq [[160, 120, 'Skill2'], [280, 6, '-'], [292, 12, '10']], cells[3, 3],
+     'column 1 is the same cell shifted by the 160px pitch'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq [160, 0, 144, 16],
+     [ui[:skill_win].cursor_rect.x, ui[:skill_win].cursor_rect.y,
+      ui[:skill_win].cursor_rect.width, ui[:skill_win].cursor_rect.height],
+     'Right puts the cursor on the second column\'s own cell'
+end
+
+check 'battle Item grid: the ":" + right-aligned count column, in the same ' \
+      '160/144 cells as the Skill grid' do
+  # Measured under wine on a nine-item bag: the ":" glyph sat at logical
+  # 131..133 / 291..293 (its 6px cell at cell x 120) with the counts "5",
+  # "12" and "99" all ending at 151 / 311 -- the identical column the field
+  # Item grid measured (Scene::ItemMenu::COUNT_W/COUNT_SEP_W/COUNT_NUM_W).
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq :item, ui[:phase]
+
+  cells = list_text_cells(ui[:item_win])
+  eq [[0, 120, 'Item1'], [120, 6, ':'], [132, 12, '1']], cells[0, 3]
+  eq [[160, 120, 'Item2'], [280, 6, ':'], [292, 12, '2']], cells[3, 3]
+end
+
+check 'battle Skill/Item lists carry RPG_RT\'s description banner, tracking ' \
+      'the cursor and gone the moment the list is cancelled' do
+  # Measured under wine: a (0, 0, 320, 32) box over the battlers, its text
+  # at logical x 8 (contents 0), showing the highlighted row's own database
+  # description -- for a disabled row too -- and closing with the list.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+
+  banner = ui[:desc_win]
+  ok banner, 'the skill list opens a description banner'
+  eq [0, 0, 320, 32], [banner.x, banner.y, banner.width, banner.height]
+  eq [[0, 304, 'About skill 1']], list_text_cells(banner),
+     'the banner shows the highlighted skill\'s description at contents x 0'
+
+  press_key(scene, RGSS::Input::RIGHT)
+  eq [[0, 304, 'About skill 2']], list_text_cells(ui[:desc_win]),
+     'it follows the cursor onto the next skill'
+
+  press_key(scene, RGSS::Input::B) # cancel back to the command window
+  eq :command, ui[:phase]
+  eq nil, ui[:desc_win], 'cancelling the list takes the banner down with it'
+
+  # Cancel leaves the command cursor on Skill (row 1), where it was.
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  eq [[0, 304, 'About item 1']], list_text_cells(ui[:desc_win]),
+     'the item list gets the same banner, from the item\'s own description'
+end
+
+check 'battle target cursor keeps the Skill list (and its banner) on screen ' \
+      'underneath, and Cancel drops back onto it' do
+  # Measured under wine: choosing a single-enemy skill leaves the skill grid
+  # drawn behind the 136px enemy list -- its first column's cost figures,
+  # which sit past that window's right edge, stay visible -- with the
+  # description banner still up. Escape returns to the grid with the cursor
+  # where it was.
+  scene, ui = battle_list_scene(BattleMagicParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  press_key(scene, RGSS::Input::C)    # cast Fire -> enemy target
+  eq :target, ui[:phase]
+  ok ui[:skill_win], 'the skill list stays on screen behind the target cursor'
+  ok ui[:desc_win], 'so does its description banner'
+  ok window_z(ui[:skill_win]) < window_z(ui[:target_win]), 'the target list draws over it'
+
+  press_key(scene, RGSS::Input::B)
+  eq :skill, ui[:phase]
+  eq nil, ui[:target_win], 'Cancel closes the target list'
+  ok ui[:skill_win], 'and leaves the skill list up'
+end
+
+check 'battle ally target is a cursor on the party status panel, not a ' \
+      'name/HP list of its own' do
+  # Measured under wine (an ally-scope item and an ally-scope skill both
+  # route here): the panel carries the status window's own four columns
+  # ("デモ用 / 正常 / HP600/600 / MP10"), its frame spans logical x 0..243
+  # -- the status panel's own rect -- and the cursor frame spans x 4..239,
+  # y 168..183: a full-content-width cursor_rect on the target's row. The
+  # Item list it was opened from stays on screen underneath.
+  scene, ui = battle_list_scene(BattleMagicParty.new(hurt: true))
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::DOWN) # Skill  -> Defend
+  press_key(scene, RGSS::Input::DOWN) # Defend -> Item
+  press_key(scene, RGSS::Input::C)    # open the item list
+  press_key(scene, RGSS::Input::C)    # Potion -> ally target
+  eq :ally_target, ui[:phase]
+
+  win = ui[:ally_win]
+  eq [0, 160, 244, 80], [win.x, win.y, win.width, win.height],
+     'the ally cursor sits on the status panel\'s own box'
+  eq [0, 0, 228, 16],
+     [win.cursor_rect.x, win.cursor_rect.y, win.cursor_rect.width, win.cursor_rect.height],
+     'and spans the panel\'s whole content width'
+  xs = list_text_cells(win).map(&:first).uniq
+  # The panel's own four column origins all appear. Each HP/MP gauge is drawn
+  # as four separately-positioned pieces (label / current / "/" / max -- see
+  # #draw_battle_stat_segment, measured in cycle #244), so the run also carries
+  # those pieces' own x's beyond the four column starts asserted here.
+  [RPG2k::Scene::Battle::STATUS_NAME_X, RPG2k::Scene::Battle::STATUS_STATE_X,
+   RPG2k::Scene::Battle::STATUS_HP_X, RPG2k::Scene::Battle::STATUS_MP_X].each do |x|
+    ok xs.include?(x),
+       "it draws the status panel's own name/state/HP/MP columns (missing #{x} in #{xs.sort.inspect})"
+  end
+  ok ui[:item_win], 'the item list stays on screen underneath'
+  ok window_z(ui[:item_win]) < window_z(win), 'with the panel drawn over it'
+
+  press_key(scene, RGSS::Input::B)
+  eq :item, ui[:phase]
+  eq nil, ui[:ally_win], 'Cancel closes the ally cursor'
+  ok ui[:item_win], 'and lands back on the item list'
+end
+
+check 'battle Skill/Item grids: Down off the last full row\'s second column ' \
+      'scrolls onto an overflowing list\'s partial row' do
+  # Measured under wine on a nine-skill list and again on a nine-item bag:
+  # Down from index 7 -- whose own target cell (index 9) does not exist --
+  # scrolls the window a row and lands on the ninth entry, alone in the
+  # partial fifth row. Only an overflowing list does that: the 8-item grid
+  # cycle #133 measured still blocks at its last cell.
+  scene, ui = battle_list_scene(BattleListGridParty.new)
+  press_key(scene, RGSS::Input::DOWN) # Attack -> Skill
+  press_key(scene, RGSS::Input::C)    # open the skill list
+  press_key(scene, RGSS::Input::RIGHT)
+  eq 1, ui[:skill_i]
+  3.times { press_key(scene, RGSS::Input::DOWN) }
+  eq 7, ui[:skill_i], 'three Downs walk column 1 to index 7, the last full row'
+
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:skill_i], 'the next Down reaches the ninth skill in the partial row'
+  press_key(scene, RGSS::Input::DOWN)
+  eq 8, ui[:skill_i], 'and blocks there -- no wrap once the list cannot scroll'
+end
+
+# -- battle message flow (cycle #247, measured against genuine RPG_RT under wine)
+
+# Fixture for the encounter-banner checks below: a two-Slime troop opened by
+# an autostart Enemy Encounter, caught the frame its banner goes up.
+def encounter_banner_scene
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  scene.db.term.encounter = 'があらわれた！'
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  [scene, battle_until_phase(scene, :encounter_message)]
+end
+
+# Measured against genuine RPG_RT.exe (Nepheshel 2.06R beta) under wine,
+# cycle #247: a stock two-スライム encounter, burst-captured at ~60 xwd
+# frames/s with a wall clock on every frame, from the save load onwards. The
+# bottom 320x80 panel opens *empty* while the battle fades in, then
+# 「スライムが出現！」 appears, then the second 「スライムが出現！」 lands
+# 0.117s / 0.114s later in two independent runs (7.0 / 6.8 frames at 60fps),
+# **under** the first rather than replacing it. This screen used to show
+# every line the instant the banner opened.
+check 'the encounter banner reveals its lines one per ' \
+      'BATTLE_ENCOUNTER_MSG_LINE_FRAMES, accumulating in the one panel' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  eq ['Slimeがあらわれた！'], window_texts(ui[:action_win]),
+     'the banner opens with its first line alone'
+
+  (bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES - 1).times { scene.update }
+  eq ['Slimeがあらわれた！'], window_texts(battle_ui(scene)[:action_win]),
+     'still only the first line one frame before the gap runs out'
+
+  scene.update
+  eq ['Slimeがあらわれた！', 'Slimeがあらわれた！'],
+     window_texts(battle_ui(scene)[:action_win]),
+     'the second line joins it in the same panel, in troop order'
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'and the banner is still what the screen is doing'
+end
+
+# Same captures: the command windows replaced the banner 1.155s / 1.168s
+# after the **second** line appeared (69.3 / 70.1 frames), i.e. the
+# BATTLE_ENCOUNTER_MSG_FRAMES hold runs from the last line, not from the
+# first -- a two-line banner is up for ~78 frames in total, not 70.
+check 'the encounter banner holds BATTLE_ENCOUNTER_MSG_FRAMES from its LAST ' \
+      'line before the command phase takes the screen' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES.times { scene.update } # the second line lands
+  eq 2, window_texts(battle_ui(scene)[:action_win]).size, 'both lines are up'
+
+  (bt::BATTLE_ENCOUNTER_MSG_FRAMES - 1).times { scene.update }
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'one frame short of the full hold, the banner is still up'
+
+  scene.update
+  ok battle_ui(scene)[:phase] != :encounter_message,
+     'the hold ends on its own -- a timer, not a keypress wait'
+  ok battle_ui(scene)[:action_win].nil?, 'and the banner is taken down with it'
+end
+
+# Same fight, third run: hammering Decision every 200ms (12 frames) through
+# the banner cut the hold to 0.598s (35.9 frames) instead of the ~6-12 frames
+# an ungated skip would have given, so RPG_RT only accepts the keypress once
+# BATTLE_ENCOUNTER_MSG_SKIP_FRAMES of the hold have already run. This screen
+# used to ignore input during the banner entirely.
+check 'Decision skips the encounter banner, but only after ' \
+      'BATTLE_ENCOUNTER_MSG_SKIP_FRAMES of its hold have run' do
+  bt = RPG2k::Scene::Battle
+  scene, ui = encounter_banner_scene
+  ok ui, 'the encounter-message phase was reached'
+  bt::BATTLE_ENCOUNTER_MSG_LINE_FRAMES.times { scene.update } # finish the reveal
+
+  (bt::BATTLE_ENCOUNTER_MSG_SKIP_FRAMES - 1).times do
+    RGSS::Input.triggered = [RGSS::Input::C]
+    scene.update
+    RGSS::Input.triggered = []
+  end
+  eq :encounter_message, battle_ui(scene)[:phase],
+     'a Decision inside the gate does not cut the banner short'
+
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.triggered = []
+  ok battle_ui(scene)[:phase] != :encounter_message,
+     'once the gate is past, the very next Decision ends the hold early'
+end
+
+# Pins behaviour the same wine session confirmed correct rather than fixing
+# it (cycle #247): the won fight's result panel measured x=0, y=160, 320x80
+# -- border flush to the screen's left, right and bottom edges on the
+# doubled 640x480 capture -- with the blinking keypress arrow at logical
+# x=155..165, y=233..237, and it sat there for a whole 25s capture with
+# nothing pressed. A single Cancel (Escape) closed it back to the map, the
+# same as Decision does.
+check "the battle result panel is RPG_RT's fixed 320x80 bottom rect, waits " \
+      'for the player with a keypress arrow, and closes on Cancel' do
+  ic = Game::Interpreter::Cmd
+  bt = RPG2k::Scene::Battle
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  scene = new_scene({ 1 => event(2, 2, auto) })
+  st = scene.instance_variable_get(:@state)
+  st.instance_variable_set(:@party, BattleStubParty.new)
+  battle_attack_to_end(scene)
+  ui = battle_ui(scene)
+  eq :result, ui[:phase], 'the fight ran through to its result panel'
+  win = ui[:result_win]
+  ok win, 'the result panel is up'
+  eq 0, win.x, "flush against the screen's left edge"
+  eq bt::SCREEN_W, win.width, 'the fixed 320px width'
+  eq bt::BATTLE_PANEL_H, win.height, 'the fixed 80px height, not content-fit'
+  eq bt::BATTLE_PANEL_Y, win.y, 'flush against the bottom edge'
+  eq true, win.pause, 'with the blinking keypress arrow RPG_RT shows'
+
+  30.times { scene.update }
+  eq :result, battle_ui(scene)[:phase], 'it waits rather than timing out'
+
+  RGSS::Input.triggered = [RGSS::Input::B]
+  scene.update
+  RGSS::Input.triggered = []
+  ok battle_ui(scene).nil?, 'Cancel dismisses it and ends the fight'
 end
 
 # -- summary ------------------------------------------------------------------

@@ -305,51 +305,101 @@ class RPG2k
       # The encounter narration lines built above -- see #start's own
       # comment for the real-RPG_RT sourcing. Returns [] when there is
       # nothing to say (every troop member hidden, no first strike).
+      #
+      # Arms the banner's own per-line reveal on the way out (see
+      # #show_battle_banner): #start hands the whole list to
+      # #show_battle_banner in the very next statement, and genuine RPG_RT
+      # adds those lines to the panel **one at a time** rather than all at
+      # once (measured, see BATTLE_ENCOUNTER_MSG_LINE_FRAMES). This is the
+      # only caller that wants that, so the flag is set here rather than
+      # keyed off a phase #start has not assigned yet.
       def battle_encounter_lines(troop, req)
         lines = troop.members.reject(&:hidden).map do |enemy|
           "#{enemy.name}#{term(:encounter)}"
         end
         lines << term(:special_combat) if req[:first_strike]
+        @ui[:banner_reveal] = true unless lines.empty?
         lines
       end
 
-      # How long the encounter banner lingers before the command phase opens.
-      # A reference implementation paces this per-line with wordwrap and
-      # per-page wait timers -- 4 frames before the first line,
-      # 8 between lines that are not the page's last, and
-      # a 30-skippable/70-full-frame wait (repeated again for the first-strike
-      # line, when there is one) on whichever line ends a page -- and
-      # holds the full wait of each of those unless the player
-      # actively skips ahead. Ported from that reference implementation, not
-      # independently confirmed against genuine RPG_RT under wine. This
-      # screen has no per-page message window (see #battle_result_lines'
-      # own comment on the same simplification), so the whole banner -- every
-      # line at once -- holds for one flat beat instead. That beat used to
-      # match only that reference's minimum 4-frame gate, not its real
-      # per-line reading pause, which read as barely a flicker; 70 frames
-      # (~1.2s) matches that reference's default no-skip hold on a single
-      # encounter line instead -- long enough to actually
-      # read the banner before the command menu takes over the same screen
-      # rect, closer to (if still short of, for a troop with several enemies
-      # or a first strike, both of which stack more such holds that
-      # this one flat beat cannot represent) that reference's own pace.
+      # How long the encounter banner's **last** line lingers before the
+      # command phase opens.
+      #
+      # Measured against genuine RPG_RT.exe (Nepheshel) under wine, cycle
+      # #247: an encounter with two スライム was captured at ~60 samples/s
+      # (640x480 xwd frames stamped with a wall clock) from the moment the
+      # save loaded. The bottom panel opens empty during the battle's
+      # fade-in, the first line lands, the second follows ~8 frames later,
+      # and the command windows replace the panel 1.155s / 1.168s after the
+      # *second* line appeared in two independent runs -- 69.3 and 70.1
+      # frames at RPG_RT's 60fps, i.e. exactly this 70. The hold is a timer,
+      # not a keypress wait: nothing was pressed in either run and the
+      # banner still gave way on its own.
+      #
+      # It is skippable, but not immediately: a third run that hammered
+      # Decision every 200ms (12 frames) through the same banner cut the
+      # hold to 0.598s (35.9 frames) rather than to the ~6-12 frames an
+      # ungated skip would have produced, so RPG_RT only takes the keypress
+      # once about half the hold has already run -- BATTLE_ENCOUNTER_MSG_
+      # SKIP_FRAMES below.
       BATTLE_ENCOUNTER_MSG_FRAMES = 70
 
-      # Drive the encounter-message phase: hold the banner for
-      # `BATTLE_ENCOUNTER_MSG_FRAMES`, then drop it and fall into the same
-      # turn-0-battle-event / command-phase flow #start used to reach
-      # directly -- same settle-before-events ordering as #start's own empty-
-      # troop branch, and for the identical reason (see that comment).
+      # The gap between two encounter lines landing in the panel. Measured
+      # under wine (same runs as above): 0.117s and 0.114s between the two
+      # スライム lines, 7.0 and 6.8 frames, with the sampling jitter putting
+      # the true value in 5..9 -- 8 frames, and the lines accumulate in the
+      # one panel (the first line stays on screen while the second appears
+      # under it) rather than replacing each other.
+      BATTLE_ENCOUNTER_MSG_LINE_FRAMES = 8
+
+      # How much of `BATTLE_ENCOUNTER_MSG_FRAMES` has to have run before a
+      # keypress may end the hold early -- see that constant's own measured
+      # note (a 12-frame-period Decision spam ended it at ~36 frames, never
+      # earlier). Only Decision was measured; whether Cancel skips the
+      # banner too was not, so only Decision skips here.
+      BATTLE_ENCOUNTER_MSG_SKIP_FRAMES = 30
+
+      # Drive the encounter-message phase: reveal the banner's lines one per
+      # `BATTLE_ENCOUNTER_MSG_LINE_FRAMES`, hold the finished banner for
+      # `BATTLE_ENCOUNTER_MSG_FRAMES` (or until the player presses Decision,
+      # once `BATTLE_ENCOUNTER_MSG_SKIP_FRAMES` of it have run), then drop it
+      # and fall into the same turn-0-battle-event / command-phase flow
+      # #start used to reach directly -- same settle-before-events ordering
+      # as #start's own empty-troop branch, and for the identical reason (see
+      # that comment). `@ui[:anim_timer]` (the hold #start primes) is only
+      # touched once every line is up, so the hold really does start at the
+      # *last* line, which is what the wine capture measured.
       def drive_battle_encounter_message
+        return if reveal_battle_banner_line
         if @ui[:anim_timer] > 0
           @ui[:anim_timer] -= 1
-          return
+          held = BATTLE_ENCOUNTER_MSG_FRAMES - @ui[:anim_timer]
+          return if @ui[:anim_timer] > 0 &&
+                    !(held >= BATTLE_ENCOUNTER_MSG_SKIP_FRAMES &&
+                      Input.trigger?(Input::C))
         end
         close_battle_action
         @ui[:phase] = :command
         return if settle_already_finished_battle
         return if run_battle_events
         enter_command_phase
+      end
+
+      # One step of the encounter banner's per-line reveal: counts the gap
+      # down and, when it runs out, redraws the panel with one more of the
+      # lines #show_battle_banner held back. Returns whether the reveal is
+      # still running, so #drive_battle_encounter_message knows not to start
+      # the final hold yet.
+      def reveal_battle_banner_line
+        pending = @ui[:banner_pending]
+        return false unless pending && @ui[:banner_shown] < pending.size
+        @ui[:banner_timer] -= 1
+        return true if @ui[:banner_timer] > 0
+        @ui[:banner_shown] += 1
+        @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+        @ui[:action_win].dispose if @ui[:action_win]
+        @ui[:action_win] = battle_panel_window(pending[0, @ui[:banner_shown]], 340)
+        true
       end
 
       # An encounter can start already decided — an empty party (every member
@@ -383,7 +433,12 @@ class RPG2k
       # **lower**-numbered member closer to the camera (yado.tk); the native
       # renderer draws the *highest*-z sprite on top (see `gfx_update`'s own
       # "leaving the greatest z on top"), so index 0 needs the highest z here
-      # -- the reverse of the add-order index itself.
+      # -- the reverse of the add-order index itself. Confirmed against
+      # genuine RPG_RT.exe under wine (cycle #245) on Nepheshel's troop 160,
+      # whose four members overlap on purpose: members 2 and 3 (the 160x160
+      # wing battlers at x=80 and x=240) draw over member 4 (the full-screen
+      # 320x160 body at x=160) in the reference frame, exactly as this
+      # ordering predicts.
       def battler_z(i)
         100 + (@ui[:troop].members.size - 1 - i)
       end
@@ -420,6 +475,15 @@ class RPG2k
       # nudged by #flying_offset -- shared by every site that (re)builds an
       # enemy sprite so the three stay in lockstep with the per-frame update
       # (#update_enemy_positions) that keeps a levitating one bobbing after.
+      #
+      # That the stored position is the battler bitmap's *centre* on both
+      # axes (not its top-left, and not its feet) is confirmed against
+      # genuine RPG_RT.exe under wine (cycle #245): Nepheshel's troop 1 puts
+      # its two スライム at (114,130) and (206,130) with an 84x36
+      # `Monster/m001a` sheet whose opaque content spans (4,3)-(80,34), so
+      # centring predicts on-screen content boxes of (76,115)-(152,146) and
+      # (168,115)-(244,146) -- and those are exactly the boxes measured in
+      # the reference frame (and in ours), to the pixel, on both enemies.
       def battler_y(member, bmp)
         member.y - bmp.height / 2 + flying_offset(member)
       end
@@ -861,17 +925,45 @@ class RPG2k
       # explicit terrain id reads straight off that terrain's own row --
       # bypassing the
       # map-tree walk entirely, unlike the ordinary default below. Only when
-      # neither key is present (param2==0, the ordinary case) does this fall
-      # back to whatever `Game::Backdrop` resolves for the current map, given
-      # the terrain the party is standing on. '' when nothing names one, which
-      # draws the flat field.
+      # neither key is present (param2==0, the ordinary case) does this use
+      # the background the runtime is already carrying
+      # (`Game::State#battle_background`, SAVE_SYSTEM field 125), and only
+      # when *that* is unknown -- a new game, or a portable save that never
+      # held one -- does it fall back to whatever `Game::Backdrop` resolves
+      # for the current map, given the terrain the party is standing on. ''
+      # either way when nothing names one, which draws the flat black field.
+      #
+      # That the carried value comes first, rather than a fresh map-tree walk
+      # every fight, is confirmed against genuine RPG_RT.exe under wine
+      # (cycle #245): on Nepheshel's map 2 -- whose tree entry inherits map
+      # 9's `backdrop_type == 2` / "black" -- a save whose field 125 was
+      # hand-set to "light" drew Backdrop/light.png in the slime fight, and
+      # the same save with the field absent drew flat black, neither of them
+      # the "black" the map tree resolves. See `Game::State
+      # #battle_background` for the full capture recipe and for why the
+      # value is dropped on a map change.
       def encounter_backdrop
         return @req[:background].to_s if @req.key?(:background)
         return @map.backdrop_for_terrain_id(@req[:terrain_id]) if @req.key?(:terrain_id)
+        carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
+        return carried unless carried.nil?
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
                                 @map.terrain_backdrop(@state.x, @state.y))
       end
 
+      # One static sprite at the screen origin, under everything else.
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #245): the
+      # backdrop is blitted once, 1:1, at (0,0) -- downsampling the reference
+      # capture's top 320x160 and comparing it to the `Backdrop/*.png` file
+      # itself (both are 320x160) left *only* the two enemy sprites differing
+      # (ImageMagick `compare -fuzz 10%`: 2776 pixels for Backdrop/light.png,
+      # 2889 for Backdrop/bossls02r.png, all of them inside the slimes'
+      # bounding boxes), so it is neither scaled, tiled nor offset. Two
+      # captures of the same fight 25s apart were pixel-identical (AE 0), so
+      # it does not scroll either -- the per-terrain scroll fields
+      # (`Terrain` chunks 21-25/31-35) are RPG2003's, and this is an RPG2000
+      # database. z 5 puts it under the troop sprites (#battler_z, 100+) and
+      # under every window, matching the reference frames.
       def build_battle_back(name = nil)
         bmp = battle_back_bitmap(name)
         spr = Sprite.new
@@ -907,6 +999,18 @@ class RPG2k
       # uses for a missing chipset. Cached by name (see #cached_bitmap) so
       # re-entering the same encounter, or a battle event that swaps back to a
       # backdrop already shown this visit, does not re-decode it.
+      #
+      # The two fallbacks are not the same case in genuine RPG_RT.exe, and
+      # only the first of them is a fallback there at all (measured under
+      # wine, cycle #245): *no name* draws the flat black field and the fight
+      # runs normally, while a name whose `Backdrop/<name>` file is genuinely
+      # missing is fatal -- RPG_RT put up a modal error dialog and the battle
+      # never started (a save with field 125 = "zzznone" on Nepheshel's map
+      # 2). This codebase deliberately keeps the softer behaviour for the
+      # missing-file case: it has no error-dialog UI, and reporting to
+      # $stderr and carrying on is the same diagnostic-not-crash posture
+      # `Scene::Map` already takes for a missing chipset and a missing
+      # teleport destination.
       def battle_back_bitmap(name)
         key = (name && !name.empty?) ? name : nil
         cached_bitmap(@backdrop_cache, key) do
@@ -923,9 +1027,20 @@ class RPG2k
         end
       end
 
+      # The field drawn when no backdrop is named: flat black, measured
+      # against genuine RPG_RT.exe under wine (cycle #245). A save carrying no
+      # SAVE_SYSTEM field 125 at all dropped into Nepheshel's map-2 slime
+      # fight over a backdrop that read exactly RGB(0,0,0) at every sampled
+      # point of the 320x160 backdrop band (x=160, y=0/8/30/50/75/100/125/
+      # 145/149/155 of the logical screen), not the dark blue-grey this used
+      # to fill. Full 320x240 rather than a real backdrop's 320x160: the
+      # bottom 80px is always under the battle windows, so nothing can be
+      # measured there, and covering it is what keeps stale pixels out.
+      BATTLE_BACK_FLAT_COLOR = [0, 0, 0].freeze
       def flat_battle_back
         bmp = Bitmap.new(SCREEN_W, SCREEN_H)
-        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(16, 16, 32, 255)
+        r, g, b = BATTLE_BACK_FLAT_COLOR
+        bmp.fill_rect 0, 0, SCREEN_W, SCREEN_H, Color.new(r, g, b, 255)
         bmp
       end
 
@@ -1755,9 +1870,31 @@ class RPG2k
       # confirmed too (cycle #134, its own comment has the full writeup) --
       # the same five boundary cases, all matching this method exactly, on a
       # hand-edited skill list rather than a hand-edited item list.
+      #
+      # One case cycles #133/#134 never reached, measured this cycle (#246)
+      # on a nine-row skill list *and* a nine-row item list under genuine
+      # RPG_RT.exe: Down from the last *full* row's second column -- index 7
+      # of 9, whose own target cell (index 9) does not exist -- does not
+      # block. It scrolls the window a row and lands on the ninth entry
+      # (index 8), the lone cell of the partial fifth row, in *both* lists.
+      # Only an overflowing list behaves that way: the 8-item/4-row grid
+      # cycle #133 measured still blocks at index 7 with nowhere to scroll
+      # to, and so does a 3-item list's own partial row -- hence the
+      # `size > BATTLE_VISIBLE_ROWS * column_max` guard, which is exactly
+      # "this list overflows the window". (RPG_RT no-ops the same keypress
+      # once the window is already scrolled to the bottom -- its scroll
+      # offset is sticky where `#battle_list_window` still derives one from
+      # the cursor row, so that state cannot arise here; left open in
+      # docs/TODO.md with the rest of the sticky-scroll gap.)
       def move_battle_list_index(index, delta, size)
         target = index + delta
-        return nil if target.negative? || target >= size
+        return nil if target.negative?
+        if target >= size
+          return nil unless delta == BATTLE_LIST_COLUMN_MAX &&
+                            size > BATTLE_VISIBLE_ROWS * BATTLE_LIST_COLUMN_MAX &&
+                            index / BATTLE_LIST_COLUMN_MAX < (size - 1) / BATTLE_LIST_COLUMN_MAX
+          return size - 1
+        end
         target
       end
 
@@ -2821,6 +2958,11 @@ class RPG2k
         @ui[:phase] = :result
       end
 
+      # The result panel waits for the player, on **either** Decision or
+      # Cancel -- confirmed against genuine RPG_RT.exe under wine (cycle
+      # #247): a won fight's panel sat on screen for a whole 25s capture
+      # with its keypress arrow blinking and nothing pressed, and a single
+      # Cancel (Escape) closed it back to the map just as Decision does.
       def drive_battle_result
         return unless Input.trigger?(Input::C) || Input.trigger?(Input::B)
         finish_battle(@ui[:result])
@@ -3329,10 +3471,11 @@ class RPG2k
       BATTLE_PANEL_Y = SCREEN_H - 80
       BATTLE_PANEL_H = 80
       # The actor-command window (and the Battle/Auto Battle/Escape options
-      # window, which shares its rect) is a fixed 76px, ported from a
-      # reference implementation, not independently confirmed against
-      # genuine RPG_RT under wine; the status window takes the rest of the
-      # row.
+      # window, which shares its rect) is a fixed 76px; the status window
+      # takes the rest of the row (244px). Confirmed against genuine
+      # RPG_RT.exe under wine (cycle #244): the windowskin frames on the
+      # party-command frame span x=0..75 and x=76..319, and on the per-actor
+      # frame x=0..243 and x=244..319 -- both windows 80px tall from y=160.
       BATTLE_CMD_W = 76
       BATTLE_STATUS_W = SCREEN_W - BATTLE_CMD_W
       # The enemy target list (`CreateBattleTargetWindow`) is a fixed 136px, and
@@ -3361,46 +3504,73 @@ class RPG2k
       # only for #draw_battle_item/#draw_battle_skill.
       BATTLE_LIST_COLUMN_MAX = 2
 
-      # Column origins within the status panel's contents, in the order
-      # a reference implementation's battle status window uses them: who,
-      # what condition they
-      # are in, then the gauges. The condition column is why this window is
-      # laid out in columns at all — a state is drawn in its *own* palette
+      # Column origins within the status panel's contents: who, what condition
+      # they are in, then the gauges. The condition column is why this window
+      # is laid out in columns at all — a state is drawn in its *own* palette
       # colour, which a single `draw_text` of a whole line cannot do.
-      # Ported from that reference implementation's source, not
-      # independently confirmed against
-      # genuine RPG_RT under wine: RPG2k
-      # branch: name at 4, state at 86, HP at 142, SP at 202 for a party
-      # with no maxima over 999.
       #
-      # "For a party with no maxima over 999" is a real ceiling, not a rounding
-      # note: the panel itself is a fixed 244px (`BATTLE_STATUS_W`, RPG_RT's own
-      # screen width minus its fixed 76px command box), so the SP column only
-      # ever has `inner content width (228) - 202 = 26px` before the panel's own
-      # right border -- nowhere near "SP 999/999"'s ~66px, and not even quite
-      # enough for a plain "SP 50/50". `#battle_status_window` clips every
-      # column's text to the gap before the *next* column (or the panel's own
-      # edge, for SP) rather than trusting it to fit, so an actor with generous
-      # HP/SP -- or simply a widescreen font -- truncates cleanly instead of
-      # spilling into its neighbour's cell.
-      STATUS_NAME_X  = 4
-      STATUS_STATE_X = 86
-      STATUS_HP_X    = 142
-      STATUS_MP_X    = 202
+      # Measured directly off genuine RPG_RT.exe under wine (cycle #244,
+      # Nepheshel, the `Save01_battle_map2.lsd` two-slime fight, 640x480
+      # captures halved to the 320x240 logical screen). The panel's contents
+      # start at its own `x + 8` in both phases, and every run below is quoted
+      # in contents coordinates: `デモ用` draws from x=0 on the 12px
+      # full-width grid (screen cells 84/96/108 beside the options window,
+      # 8/20/32 beside the per-actor command window), `正常` from x=82, the
+      # `HP` label from x=138 and the `MP` label from x=198 -- so the columns
+      # are 0/82/138/198, not the 4/86/142/202 this used to carry. This panel
+      # is a *different* window from the field menu's own party panel, which
+      # cycle #240 measured at name 56 / LV 56 / level 68 / condition 98 /
+      # HP 162.
+      #
+      # "For a party with no maxima over 999" is still a real ceiling: the
+      # panel is a fixed 244px (`BATTLE_STATUS_W`), so its contents are 228px
+      # wide and the SP run (`#draw_battle_stat_segment`: 54px from x=198)
+      # would need to reach 252. Genuine RPG_RT truncates it at the contents
+      # edge exactly as this engine does -- the reference frame for a
+      # 600/600 party member reads `HP600/600 MP600`, its SP `/600` simply
+      # cut off at x=228 -- so the clipping here is RPG_RT's own behaviour,
+      # not a private guard.
+      STATUS_NAME_X  = 0
+      STATUS_STATE_X = 82
+      STATUS_HP_X    = 138
+      STATUS_MP_X    = 198
 
-      # The status panel's own x, mirroring a reference implementation's own
-      # window-positioning logic, not independently confirmed against
-      # genuine RPG_RT under wine:
-      # three windows -- the options window, the status window, then the
-      # per-actor command window -- sit left-to-right, but only one of the
-      # two 76px command-shaped windows is ever showing at once, so the
-      # status window slides to whichever side is free. During the top-level
-      # Battle/Auto Battle/Escape choice (`@ui[:phase] == :battle_options`)
-      # the options window takes the left slot (x=0) and the status window
-      # is pushed to `BATTLE_CMD_W`; once an actor is choosing Attack/Skill/
-      # Defend/Item the per-actor command window takes the *right* slot
-      # instead (`#draw_battle_command`'s own `BATTLE_STATUS_W`) and the
-      # status window returns to x=0.
+      # Geometry of one "LABEL cur/max" run inside those HP/SP columns,
+      # measured on the same genuine frames (see #draw_battle_stat_segment):
+      # a 12px two-cell label, then the current figure right-aligned in an
+      # 18px three-digit field, then a 6px "/" cell, then the maximum
+      # right-aligned in its own 18px field -- 54px in all.
+      STAT_LABEL_W = 12
+      STAT_FIELD_W = 18
+      STAT_SLASH_W = 6
+
+      # The `HP`/`MP` labels draw from the windowskin's swatch 1 (Nepheshel's
+      # mid-blue gradient, #82AAFF at the top of the cell through #6489DE to
+      # #19388D, sampled #638ADE across the glyph rows), not swatch 0 like
+      # the figures beside them -- measured off the same captures against the
+      # System graphic's own palette cells, and the same swatch the field
+      # save/load screen's LV/HP labels carry
+      # (`Scene::SaveLoad::STAT_LABEL_COLOR`, cycle #242).
+      STAT_LABEL_COLOR = 1
+
+      # The status panel's own x: three windows -- the options window, the
+      # status window, then the per-actor command window -- sit left-to-right,
+      # but only one of the two 76px command-shaped windows is ever showing at
+      # once, so the status window slides to whichever side is free. During
+      # the top-level Battle/Auto Battle/Escape choice (`@ui[:phase] ==
+      # :battle_options`) the options window takes the left slot (x=0) and the
+      # status window is pushed to `BATTLE_CMD_W`; once an actor is choosing
+      # Attack/Skill/Defend/Item the per-actor command window takes the
+      # *right* slot instead (`#draw_battle_command`'s own
+      # `BATTLE_STATUS_W`) and the status window returns to x=0.
+      #
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #244): on the
+      # party-command frame the two windows' frames run x=0..75 and
+      # x=76..319, and pressing Decision on 戦う swaps them to x=0..243 and
+      # x=244..319 -- the same 76/244 split, mirrored. Escape from the
+      # per-actor list puts them back the way they were, and while the enemy
+      # target list is up (which only ever opens from the per-actor phase)
+      # the status panel stays at x=0 under it.
       def battle_status_x
         @ui[:phase] == :battle_options ? BATTLE_CMD_W : 0
       end
@@ -3437,10 +3607,12 @@ class RPG2k
         win = battle_status_gauge_window(@ui[:allies]) if gauge_battle_layout?
         @ui[:status_win] = win || begin
           rows = @ui[:allies].map { |a| battle_status_row(a) }
-          # No row highlighted while the options window is open -- matching
-          # `status_window->SetIndex(-1)` in `ProcessSceneActionFightAutoEscape`'s
-          # own `eMoveWindow` substate; nobody is "the acting actor" until
-          # Battle or Auto Battle is chosen.
+          # No row highlighted while the options window is open -- nobody is
+          # "the acting actor" until Battle or Auto Battle is chosen.
+          # Confirmed against genuine RPG_RT.exe under wine (cycle #244): on
+          # every party-command frame the only green cursor on screen is the
+          # options window's own, and the acting actor's row cursor appears
+          # in the status panel the moment 戦う is accepted.
           idx = @ui[:phase] == :battle_options ? nil : @ui[:allies].index(current_actor)
           battle_status_window(rows, idx)
         end
@@ -3634,12 +3806,14 @@ class RPG2k
       end
 
       # The current actor's command menu — Attack / Skill / Defend / Item, with
-      # a cursor. A reference implementation's own source does not put the
-      # actor's name in this
-      # window at all (it builds it once from the
-      # four command terms in that order; ported from that reference
-      # implementation's source, not
-      # independently confirmed against genuine RPG_RT under wine): the
+      # a cursor. Confirmed against genuine RPG_RT.exe under wine (cycle
+      # #244): the window's frame spans x=244..319, y=160..239, the four
+      # command terms draw from contents x=0 (screen cells 252/264/276/…) on
+      # 16px rows at screen y=168/184/200/216, and its cursor is the skin's
+      # green frame over screen x=248..315 — a `Rect.new(0, row * 16, 60,
+      # 16)`, i.e. the full 60px contents width, moving one row per Down and
+      # wrapping from the fourth row back to the first. The actor's name is
+      # not in this window at all: the
       # acting actor is shown by the cursor
       # `#refresh_battle_status` puts on their row in the status window instead
       # (a reference implementation's own actor-index cursor). The Skill
@@ -3672,13 +3846,15 @@ class RPG2k
       # the per-actor command window uses (only one of the two is ever on
       # screen at a time), with `#battle_option_rows`' three entries instead
       # of the usual four, but docked to the *left* edge (x=0) rather than
-      # the command window's right one -- a reference implementation's own
-      # window-positioning logic lays
-      # the options window before the status window, then the status window
-      # past it, while the per-actor
-      # command window comes after the status window instead. See
-      # `#battle_status_x`, which pushes the status panel to `BATTLE_CMD_W`
-      # to make room for this window here.
+      # the command window's right one. See `#battle_status_x`, which pushes
+      # the status panel to `BATTLE_CMD_W` to make room for this window here.
+      #
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #244): the
+      # window's frame spans x=0..75, y=160..239, 戦う/オート/逃げる draw from
+      # contents x=0 (screen cells 8/20/32) on 16px rows at screen
+      # y=168/184/200, and the cursor is the skin's green frame over screen
+      # x=4..71 -- a `Rect.new(0, row * 16, 60, 16)`, the full contents
+      # width, wrapping from 逃げる back to 戦う on a fourth Down.
       def draw_battle_options
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_option_rows.map { |r| r[:label] }
@@ -3698,18 +3874,50 @@ class RPG2k
         refresh_battle_status
       end
 
-      # The target-selection menu — the living enemies, with a cursor. Fixed at
-      # `CreateBattleTargetWindow`'s own rect: it covers the status window's
-      # footprint (not the command window's, which stays on screen beside it).
+      # The target-selection menu — the living enemies, with a cursor.
+      # Independently confirmed against genuine RPG_RT.exe under wine
+      # (cycle #246, Nepheshel's two-slime troop on map 2): the window's
+      # frame spans logical x 0..135 / y 160..239, i.e. exactly
+      # `(0, BATTLE_PANEL_Y, BATTLE_TARGET_W, BATTLE_PANEL_H)` -- it covers
+      # only the *left* 136px of the status panel's footprint, leaving the
+      # rest of that panel and the per-actor command window on screen beside
+      # it. Row 0's cursor frame measured x 4..131, y 168..183 and row 1's
+      # y 184..199 (a 16px pitch off the panel's own 8px border), enemy
+      # names start at logical x 8, and Right/Left are dead input here
+      # (frames byte-identical across both presses). A defeated enemy is
+      # dropped from the list outright rather than greyed -- killing one
+      # slime left a single-row list -- which is what `#living_foes`
+      # (alive *and* in play) already produces. The targeted enemy's own
+      # sprite is *not* highlighted: ten captures spanning ~3.5s with the
+      # cursor on slime 1 differ only inside the cursor frame's own blink,
+      # never a pixel of either battler.
+      #
+      # When the target cursor was reached from the Skill or Item list, that
+      # list stays on screen underneath (and keeps its own cursor and
+      # description banner) -- confirmed on the same captures: the first
+      # column's cost/count figures, which sit past this window's 136px
+      # right edge, stay visible beside it. `#confirm_battle_skill` /
+      # `#drive_battle_item` close their list before routing here, so this
+      # redraws it (at a lower z) rather than relying on it still being up.
       def draw_battle_target
         foes = living_foes
         @ui[:target_win].dispose if @ui[:target_win]
+        draw_battle_skill if pending_kind == :skill
+        draw_battle_item if pending_kind == :item
         @ui[:target_win] =
           battle_list_window(0, BATTLE_TARGET_W, foes.map(&:name),
                              @ui[:target_i], 330)
       end
 
+      # Closing the target cursor also takes down the Skill / Item list
+      # #draw_battle_target redraws beneath it, and their shared description
+      # banner: every Cancel path in #drive_battle_target redraws whichever
+      # window the player lands back on, and every Confirm path is done with
+      # all three.
       def close_battle_target
+        close_battle_skill
+        close_battle_item
+        close_battle_list_desc
         return unless @ui[:target_win]
         @ui[:target_win].dispose
         @ui[:target_win] = nil
@@ -3727,17 +3935,64 @@ class RPG2k
       # `BATTLE_VISIBLE_ROWS - 1` any more (#drive_battle_target caps it), so
       # this scrolls it in principle only -- real RPG_RT does not scroll that
       # particular list at all, see that method's own comment.
-      # `idxs`, parallel to `labels`, is an optional windowskin swatch index
-      # per row (0 enabled / 3 disabled, `Scene::Base#draw_system_text`'s own
-      # convention) -- nil (every caller except #draw_battle_item/
-      # #draw_battle_skill) keeps the plain flat-white `draw_text` every
-      # other list here has always used; the item and skill lists are the
-      # two that can hold a listed-but-disabled row (see #draw_battle_item /
-      # #draw_battle_skill).
-      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil)
+      #
+      # The two-column grid is a **160px pitch of 144px cells**, not the
+      # edge-to-edge `inner_w / 2` (152) split this used to draw -- measured
+      # on genuine RPG_RT.exe under wine (cycle #246, a 9-skill and a 9-item
+      # battle list on Nepheshel's own two-slime troop, 640x480 captures
+      # halved to the 320x240 logical screen): column 0's names start at
+      # logical x 8 and column 1's at 168 (contents 0 / 160), and the
+      # highlighted cell's cursor frame spans x 4..155 in column 0 -- a
+      # 144-wide `cursor_rect` at contents x 0 once RPG2k::Window's own 4px
+      # overhang each side is taken off. The 16px gutter between the cells
+      # is what the old 152/152 split was missing. Single-column lists
+      # (target / ally-target) keep the full content width: the enemy list's
+      # own cursor measured x 4..131 in its 136px window (`inner_w` 120 + the
+      # same overhang).
+      #
+      # A row is either a plain String (the enemy-target list) or a
+      # `[name, separator, figure]` triple (Skill / Item): the name clipped
+      # to the cell minus its 24px figure column, the separator glyph in the
+      # 6px halfwidth cell at cell x 120, and the figure right-aligned so its
+      # last digit ends at cell x 144. Measured on the same captures: the
+      # skill list's `-` sat at logical 128..130 / 288..290 with costs "7"
+      # and "15" both ending at 151 / 311, and the item list's `:` at
+      # 131..133 / 291..293 with counts "5", "12" and "99" likewise flush at
+      # 151 / 311 -- the identical column Scene::ItemMenu measured for the
+      # *field* item grid (COUNT_W/COUNT_SEP_W/COUNT_NUM_W).
+      #
+      # Every row is drawn through `draw_system_text` (windowskin swatch 0
+      # unless `idxs` names another), never the flat white `draw_text` the
+      # target/ally lists used to use: a genuine capture of the enemy-target
+      # list pixel-samples its names at (189,223,255) with the skin's own
+      # (24,28,24) shadow -- the System graphic's font gradient -- while ours
+      # drew them pure white.
+      #
+      # `desc`, when given, also (re)builds the description banner
+      # `@ui[:desc_win]` this screen shows above a Skill / Item list: a
+      # (0, 0, 320, 32) window with the highlighted row's database
+      # description on its single row. Confirmed against genuine RPG_RT
+      # under wine (cycle #246): the banner's frame spans logical y 0..31
+      # across the full width, its text starts at x 8 (contents 0), it
+      # tracks the cursor row by row, it stays up while the enemy- or
+      # ally-target cursor is open over the list, and it is gone the moment
+      # the list is cancelled. The four `close_battle_*` methods below are
+      # what dispose it.
+      def battle_list_window(x, w, labels, sel, z, column_max: 1, idxs: nil, desc: nil)
+        # All five measured off genuine RPG_RT captures this cycle (see the
+        # comment above): the 16px gutter between two 144px cells on a 160px
+        # pitch, the figure column's own 24px (a 6px separator cell at cell
+        # x 120 plus a 12px right-aligned figure ending at 144) and the
+        # description banner's 32px height.
+        gutter_w = 16
+        figure_w = 24
+        sep_w = 6
+        num_w = 12
+        desc_h = 32
         rows = BATTLE_VISIBLE_ROWS
         inner_w = w - Window::BORDER * 2
-        col_w = inner_w / column_max
+        col_pitch = column_max > 1 ? SCREEN_W / column_max : inner_w
+        col_w = column_max > 1 ? col_pitch - gutter_w : inner_w
         row_count = column_max > 1 ? [(labels.length / column_max.to_f).ceil, 1].max : labels.length
         sel_row = sel / column_max
         scroll = row_count > rows ? [[sel_row - rows + 1, 0].max, row_count - rows].min : 0
@@ -3751,96 +4006,201 @@ class RPG2k
           next if row < scroll || row >= scroll + rows
           col = i % column_max
           y = (row - scroll) * BATTLE_LINE_H
-          if idxs
-            draw_system_text(c, col * col_w, y, col_w, BATTLE_LINE_H, label, windowskin, idxs[i])
+          idx = idxs ? idxs[i] : 0
+          cx = col * col_pitch
+          if label.is_a?(Array)
+            name, sep, figure = label
+            draw_system_text(c, cx, y, col_w - figure_w, BATTLE_LINE_H,
+                             name, windowskin, idx)
+            draw_system_text(c, cx + col_w - figure_w, y,
+                             sep_w, BATTLE_LINE_H, sep, windowskin, idx)
+            draw_system_text(c, cx + col_w - num_w, y,
+                             num_w, BATTLE_LINE_H, figure, windowskin, idx, 2)
           else
-            c.draw_text col * col_w, y, col_w, BATTLE_LINE_H, label
+            draw_system_text(c, cx, y, col_w, BATTLE_LINE_H, label, windowskin, idx)
           end
         end
         win.contents = c
         unless labels.empty?
           sel_col = sel % column_max
-          win.cursor_rect = Rect.new(sel_col * col_w, (sel_row - scroll) * BATTLE_LINE_H, col_w, BATTLE_LINE_H)
+          win.cursor_rect = Rect.new(sel_col * col_pitch, (sel_row - scroll) * BATTLE_LINE_H,
+                                     col_w, BATTLE_LINE_H)
+        end
+        if desc
+          @ui[:desc_win].dispose if @ui[:desc_win]
+          dwin = Window.new(0, 0, SCREEN_W, desc_h)
+          dwin.z = z
+          dwin.windowskin = windowskin
+          dc = Bitmap.new(SCREEN_W - Window::BORDER * 2, desc_h - Window::BORDER * 2)
+          dc.font.color = Color.new(255, 255, 255, 255)
+          draw_system_text(dc, 0, 0, dc.width, BATTLE_LINE_H, desc.to_s, windowskin, 0)
+          dwin.contents = dc
+          @ui[:desc_win] = dwin
         end
         win
       end
 
-      # The current actor's battle skills as "Name  cost", with a cursor. Full
-      # width, same rect as the item menu — a reference implementation's own
-      # skill and item
-      # windows cover both the status and command windows while open,
-      # ported from that reference implementation's source, not
-      # independently confirmed against genuine RPG_RT under wine. A listed
-      # but not
-      # currently castable skill (see
-      # #battle_skill_unavailable?) draws in the windowskin's disabled
-      # swatch, matching the field Skill menu and #draw_battle_item just
-      # below -- confirmed for the field Skill list directly against a
-      # genuine RPG_RT.exe (see Scene::SkillMenu#build_skill_window's own
-      # comment for the measured colours); not independently re-verified for
-      # this battle-side sibling this session, ported on the strength of
-      # sharing the identical `battle_list_window`/`draw_system_text`
-      # machinery #draw_battle_item already has confirmed pixel-for-pixel.
+      # Dispose the Skill / Item description banner `#battle_list_window`
+      # builds (see its `desc:` note) -- called by every `close_battle_*`
+      # method so the banner never outlives the list it belongs to.
+      def close_battle_list_desc
+        return unless @ui && @ui[:desc_win]
+        @ui[:desc_win].dispose
+        @ui[:desc_win] = nil
+      end
+
+      # The current actor's battle skills as `name` + `-` + the SP cost, in a
+      # two-column grid with a cursor, under a description banner. Full
+      # width, same rect as the item menu -- independently confirmed against
+      # genuine RPG_RT.exe under wine (cycle #246): the leader デモ用 was
+      # given nine skills by hand (chunk 108's own actor-15 record, fields
+      # 51/52) and 10 SP (field 72), and the list drew as one
+      # `(0, 160, 320, 80)` box covering the status *and* command windows,
+      # with a `(0, 0, 320, 32)` description banner over the battlers -- the
+      # highlighted skill's own database description, tracking the cursor
+      # row by row and staying up through target selection.
+      #
+      # The cost is `-` in the 6px cell at cell x 120 with the figure
+      # right-aligned to cell x 144 ("- 7", "- 15", "- 50" all ended on the
+      # same column), matching the field Skill menu's own measured column;
+      # rows are laid out row-major across the 160px column pitch (see
+      # #battle_list_window). A skill the caster cannot currently afford is
+      # drawn in the windowskin's disabled swatch: on that capture the 7/4/0
+      # SP rows sampled (189,223,255) and the 15/12/50 SP rows (99,166,247)
+      # against 10 current SP -- the same enabled/disabled pair the field
+      # Skill and Item lists measured. Confirmed here directly this cycle,
+      # no longer inherited by analogy from the field screens.
+      #
+      # Deliberately still open (see docs/TODO.md): the blinking windowskin
+      # scroll arrows a longer list shows (measured at logical x 155..164,
+      # y 161..165 up / y 233..238 down) need a per-frame sprite tick this
+      # screen has no hook for, and RPG_RT's own scroll *offset* is sticky
+      # (it keeps the top row where a Down left it) where this window still
+      # derives it from the cursor row.
       def draw_battle_skill
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
-          "#{sk ? sk.name : "Skill #{sid}"}  #{cost}"
+          [sk ? sk.name : "Skill #{sid}", '-', cost.to_s]
         end
         idxs = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
           battle_skill_unavailable?(cost, sk) ? 3 : 0
         end
         @ui[:skill_win] = battle_list_window(0, SCREEN_W, labels, @ui[:skill_i], 325,
-                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
+                                             column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                             desc: battle_list_description(
+                                               @ui[:skills][@ui[:skill_i]], true
+                                             ))
       end
 
       def close_battle_skill
+        close_battle_list_desc
         return unless @ui[:skill_win]
         @ui[:skill_win].dispose
         @ui[:skill_win] = nil
       end
 
-      # The party's battle items as "Name  xN", with a cursor. A listed but
-      # not battle-usable item (see Game::Party#battle_items) draws in the
-      # windowskin's disabled swatch, matching the field Item menu.
+      # The party's battle items as `name` + `:` + the held count, in the
+      # same two-column grid, under the same description banner -- confirmed
+      # against genuine RPG_RT.exe under wine (cycle #246) on a hand-edited
+      # nine-item bag (chunk 109 fields 11/12/13): the `:` glyph sat at
+      # logical 131..133 / 291..293 (its 6px cell at cell x 120) with the
+      # counts "5", "12" and "99" all ending flush at 151 / 311 (cell x
+      # 144). RPG_RT kept the rows in the *bag's own stored order* where
+      # `Game::Party#battle_items` (which feeds `@ui[:items]`, outside this
+      # method) sorts them by id -- recorded in docs/TODO.md, not fixed
+      # here. A listed
+      # but not battle-usable item draws in the windowskin's disabled swatch
+      # -- the capture's KO-only 気付け薬 and its ショートソード weapon row
+      # both sampled (99,166,247) against the usable rows' (189,223,255) --
+      # and Decision on one only buzzes (`#drive_battle_item`).
       def draw_battle_item
         @ui[:item_win].dispose if @ui[:item_win]
         labels = @ui[:items].map do |id, count|
           it = @state.party.db_item(id)
-          "#{it ? it.name : "Item #{id}"}  x#{count}"
+          [it ? it.name : "Item #{id}", ':', count.to_s]
         end
         idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
-                                            column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs)
+                                            column_max: BATTLE_LIST_COLUMN_MAX, idxs: idxs,
+                                            desc: battle_list_description(
+                                              @ui[:items][@ui[:item_i]], false
+                                            ))
+      end
+
+      # The description banner's text for the highlighted `[id, _]` row of a
+      # Skill (`skill` true) / Item list: that record's own `description`
+      # (chunk 12/13 field 2), or "" when the row or the record is missing.
+      # Confirmed verbatim against genuine RPG_RT under wine (cycle #246):
+      # the banner over the skill list read サー's own "(疾風)敵全体に真空波
+      # を放つ" and over the item list 薬草's "HPを80ポイント程度回復する",
+      # including for a *disabled* row (ショートソード's own description
+      # still showed, in the enabled colour).
+      def battle_list_description(row, skill)
+        return '' unless row
+        rec = skill ? @state.party.db_skill(row[0]) : @state.party.db_item(row[0])
+        return '' unless rec && rec.respond_to?(:description)
+        rec.description.to_s
       end
 
       def close_battle_item
+        close_battle_list_desc
         return unless @ui[:item_win]
         @ui[:item_win].dispose
         @ui[:item_win] = nil
       end
 
-      # The living party members selectable as a heal target ("Name HP h/mh"),
-      # with a cursor -- narrowed by #battle_ally_targets when a pending item's
-      # actor_set excludes some of them. A reference implementation's own
-      # source reuses the
-      # status window itself for this, ported from that reference
-      # implementation's source, not independently confirmed against
-      # genuine RPG_RT under wine; this screen still draws a
-      # separate window, but at the status window's own rect and footprint so
-      # it reads the same way -- covering the party's HP display, leaving the
-      # command window in view beside it.
+      # The party member a healing skill / medicine applies to. RPG_RT does
+      # *not* draw a list of names here: it puts a cursor on the party
+      # status panel itself. Confirmed against genuine RPG_RT.exe under wine
+      # (cycle #246, an ally-scope skill and an ally-scope item both routed
+      # here): the panel that came up carried the status window's own four
+      # columns unchanged ("デモ用 / 正常 / HP600/600 / MP10", the low-SP
+      # figure still recoloured), its frame spanned logical x 0..243 -- the
+      # status panel's own `(0, BATTLE_PANEL_Y, BATTLE_STATUS_W,
+      # BATTLE_PANEL_H)` rect -- and the cursor frame spanned x 4..239,
+      # y 168..183: a full-content-width `cursor_rect` on the target's row.
+      # The Skill / Item list it was opened from stays on screen underneath
+      # (its second column's figures show past the panel's 244px right
+      # edge), so this window is drawn over that list rather than beside it.
+      #
+      # Built through `#battle_status_window` (the same rows
+      # `#refresh_battle_status` builds) so the two can never drift, then
+      # raised above the list's own z. `#battle_ally_targets` still decides
+      # *which* rows the cursor may land on -- a pending item's actor_set can
+      # exclude some -- so the cursor row is that target's index in the full
+      # party, not in the narrowed list.
+      #
+      # Deliberately left open (see docs/TODO.md): the cursor's own
+      # row-to-row movement could not be re-measured against RPG_RT this
+      # cycle -- this save's party is a single actor, and growing it means
+      # the live Change Party Member route cycle #136 used, not a save edit
+      # (chunk 109's party list blackens RPG_RT on Continue). Cycle #136's
+      # multi-actor Down/Up findings stand unchanged.
       def draw_battle_ally_target
         @ui[:ally_win].dispose if @ui[:ally_win]
-        labels = battle_ally_targets.map do |a|
-          "#{a.name}  #{a.hp < 0 ? 0 : a.hp}/#{a.display_max_hp}"
-        end
-        @ui[:ally_win] =
-          battle_list_window(0, BATTLE_STATUS_W, labels, @ui[:ally_i], 335)
+        draw_battle_skill if pending_kind == :skill
+        draw_battle_item if pending_kind == :item
+        allies = @ui[:allies]
+        target = battle_ally_targets[@ui[:ally_i]]
+        idx = allies.index(target) || 0
+        win = (gauge_battle_layout? && battle_status_gauge_window(allies)) ||
+              battle_status_window(allies.map { |a| battle_status_row(a) }, idx)
+        win.z = 335
+        win.cursor_rect = Rect.new(0, idx * BATTLE_LINE_H,
+                                   BATTLE_STATUS_W - Window::BORDER * 2, BATTLE_LINE_H)
+        @ui[:ally_win] = win
       end
 
+      # Like #close_battle_target: the Skill / Item list this cursor was
+      # opened over, and its description banner, go with it -- every Cancel
+      # path in #drive_battle_ally_target redraws the one the player lands
+      # back on.
       def close_battle_ally_target
+        close_battle_skill
+        close_battle_item
+        close_battle_list_desc
         return unless @ui[:ally_win]
         @ui[:ally_win].dispose
         @ui[:ally_win] = nil
@@ -3850,6 +4210,20 @@ class RPG2k
       # defeated!") low on the screen while the round animates, so each action
       # reads on screen as well as its HP tick. Replaced by the next action's
       # banner and dropped when the round settles.
+      #
+      # Confirmed against genuine RPG_RT.exe (Nepheshel) under wine, cycle
+      # #247: RPG_RT really does banner an action in this same bottom
+      # 320x80 panel, over the status and command windows (neither shows
+      # while the log is up), one page per acting battler -- 「デモ用の攻撃！」
+      # then 「スライムに 500のダメージを与えた！」 then 「スライムを倒した！」
+      # accumulating in the one window, cleared before the next battler's
+      # own page opens. Left deliberately open (measured, not implemented):
+      # RPG_RT adds those lines one at a time -- ~25-31 frames apart in the
+      # captures, with the page clearing ~48 frames after its last line --
+      # where this banners the whole action at once for a flat
+      # BATTLE_ANIM_FRAMES. The pacing lives in #drive_battle_animate's own
+      # timer, not here, so a per-line reveal like the encounter banner's
+      # needs that method to tick it.
       def show_battle_action(entry)
         show_battle_banner(battle_action_lines(entry))
       end
@@ -3858,7 +4232,25 @@ class RPG2k
       # and a failed Escape attempt: both are transient status text over the
       # still-running fight, replaced by whatever banners next and dropped when
       # the round settles.
+      #
+      # The encounter banner (and only that one -- #battle_encounter_lines
+      # arms it, nothing else does) instead starts with just its first line
+      # and grows a line at a time, which is what genuine RPG_RT does with
+      # this panel: measured under wine, the two スライム lines of a stock
+      # encounter land ~8 frames apart and accumulate in the one window (see
+      # BATTLE_ENCOUNTER_MSG_LINE_FRAMES). #drive_battle_encounter_message
+      # owns the reveal from here; the log/escape banners have no per-frame
+      # driver of their own and keep showing every line at once.
       def show_battle_banner(lines)
+        lines = lines.to_a
+        if @ui.delete(:banner_reveal)
+          @ui[:banner_pending] = lines
+          @ui[:banner_shown] = 1
+          @ui[:banner_timer] = BATTLE_ENCOUNTER_MSG_LINE_FRAMES
+          lines = lines[0, 1]
+        else
+          @ui[:banner_pending] = nil
+        end
         @ui[:action_win].dispose if @ui[:action_win]
         @ui[:action_win] = battle_panel_window(lines, 340)
       end
@@ -3985,12 +4377,38 @@ class RPG2k
         Game::States.name(id, table) || "state #{id}"
       end
 
+      # Drop the banner, and with it any half-finished per-line reveal (see
+      # #show_battle_banner) -- the encounter banner is closed exactly here,
+      # and a stale pending list must not outlive the window it belonged to.
       def close_battle_action
+        @ui[:banner_pending] = nil
         return unless @ui[:action_win]
         @ui[:action_win].dispose
         @ui[:action_win] = nil
       end
 
+      # The victory / defeat / escape panel. Confirmed against genuine
+      # RPG_RT.exe (Nepheshel) under wine, cycle #247, by fighting a stock
+      # two-スライム encounter through to a win: the panel is the same
+      # bottom 320x80 rect as the action banner (window border flush to the
+      # screen's left, right and bottom edges, top edge at physical y=320 ==
+      # logical 160 on the doubled 640x480 capture), its lines sit at
+      # logical y=171/187/203 (16px pitch) starting at logical x=8, and it
+      # carries the blinking keypress arrow at logical x=155..165,
+      # y=233..237 -- pixel-for-pixel where this codebase already draws it.
+      # The lines themselves matched too, in the database's own words:
+      # 「戦いに勝った！」/「6の経験値を獲得！」/「お金を 10Ｇ手に入れた！」,
+      # the same order and composition #battle_result_lines builds.
+      #
+      # Left deliberately open (measured, not implemented): RPG_RT reveals
+      # this panel progressively -- one line at a time, each typed out at
+      # roughly a character per frame (the victory line went 戦/戦いに/
+      # 戦いに勝っ/戦いに勝った！ over ~6 frames) -- where this opens the
+      # finished panel at once. The line-to-line gaps of the one run that
+      # measured them were inconsistent (~67 frames from the victory line to
+      # the EXP line, ~26 from EXP to gold), so no single number is worth
+      # coding yet; the wait that follows is the same keypress wait either
+      # way.
       def open_battle_result(lines)
         @ui[:result_win] = battle_panel_window(lines, 320)
         # The result panel is a player-input wait the same shape as a map
@@ -4008,7 +4426,17 @@ class RPG2k
       # see #battle_text_window's own citation for the capture; that method
       # draws the identical BATTLE_PANEL_Y/BATTLE_PANEL_H/SCREEN_W rect this
       # one does, just for the battle-event message window rather than the
-      # action banner/result panel.
+      # action banner/result panel. Re-confirmed for this method's own two
+      # users in cycle #247, on a real encounter rather than a synthetic
+      # battle-event page: both the encounter banner and the victory panel
+      # measured x=0, y=160, 320x80 exactly (physical 0..639 / 320..479 on
+      # the doubled capture), with their text starting at logical x=8 on a
+      # 16px line pitch -- `BATTLE_LINE_H`. The one residual difference is
+      # not this rect: RPG_RT's glyph ink for a line sits at logical
+      # y=171..181 where ours sits at 168..180, a 3px ascent offset our own
+      # *map* message window shows identically (168 there too, against
+      # RPG_RT's 171), i.e. a font-metric difference in draw_text, not
+      # something for this panel to compensate for on its own.
       def battle_panel_window(lines, z)
         inner_w = SCREEN_W - Window::BORDER * 2
         win = Window.new(0, BATTLE_PANEL_Y, SCREEN_W, BATTLE_PANEL_H)
@@ -4079,35 +4507,73 @@ class RPG2k
       # returns these four segments in ascending-x order, so "the next
       # segment's x" is always the next column's own origin; the last segment
       # (SP) clips to the panel's own inner edge instead, same as before.
-      # Draws "LABEL cur/max" the way #battle_status_window's HP/MP columns
-      # need it: only the current-value figure recolors via
-      # #value_font_color (Scene::Base) -- critical (index 4, ≤ 1/4 max) or
-      # knocked-out (index 5, HP only) -- the label and "/max" suffix stay
-      # the ordinary swatch. Mirrors Scene::StatusMenu#draw_stat_segment,
-      # which the field Status screen already uses for the identical rule;
-      # confirmed against genuine RPG_RT.exe under wine that the battle
-      # status panel follows it too (a save edited to a below-1/4-max HP
-      # showed only the HP figure recoloring, "/max" and "MP" unchanged).
-      # Clips the whole "LABEL cur/max" run to `w` first (matching every
-      # other column's own overflow guard, `#clip_text_to_width`) and only
-      # then splits the surviving text back into its three colored pieces,
-      # so a column too narrow for the full string still can't bleed into
-      # its neighbour.
+      #
+      # The cursor is confirmed against genuine RPG_RT.exe under wine (cycle
+      # #244): on the per-actor command frame the acting actor's row carries
+      # the skin's green frame from screen x=4 to x=239 over y=168..183 --
+      # the full 228px contents width plus `Game::WindowCursor::OVERHANG` on
+      # each side, exactly one 16px row tall, which is the `Rect.new(0,
+      # row * BATTLE_LINE_H, inner_w, BATTLE_LINE_H)` below. It stays on
+      # while the enemy target list is up (the target window merely covers
+      # its left 136px) and is absent for the whole party-command phase, the
+      # `nil` `#refresh_battle_status` passes there.
+      # Draws one HP/SP gauge run the way #battle_status_window's columns need
+      # it, in the four fixed sub-columns genuine RPG_RT.exe draws under wine
+      # (cycle #244, measured on the Nepheshel two-slime battle at three
+      # edited HP/SP pairs). From the column's own `x`:
+      #
+      #   x +  0 .. 12   the `HP`/`MP` label, two 6px cells, swatch 1
+      #                  (`STAT_LABEL_COLOR`) -- not the ordinary swatch 0
+      #   x + 12 .. 30   the current figure, RIGHT-aligned in a three-digit
+      #                  field, in #value_font_color's own swatch
+      #   x + 30 .. 36   the "/" separator, swatch 0
+      #   x + 36 .. 54   the maximum, RIGHT-aligned in its own three-digit
+      #                  field, swatch 0
+      #
+      # There is no space between the label and the figure: at 600/600 the
+      # reference frame's HP run reads `HP600/600` with the `6` starting the
+      # pixel after the label's last cell, which is what the old
+      # `"#{label} #{cur}/#{max}"` string (a space, everything left-aligned)
+      # could not produce -- it pushed the SP column so far right that
+      # `MP 6` was all that survived the panel's own edge. Right-alignment
+      # is what an actor whose figures are not three digits shows: a save
+      # edited to 88 HP drew ` 88/600` with the 88 in the last two cells of
+      # the field, and one edited to level 1 (max HP 40) drew `  5/ 40` --
+      # both fields keep their three cells whatever the digit count.
+      #
+      # Only the current figure recolors, via #value_font_color (Scene::Base):
+      # critical (swatch 4) at or below a quarter of max, knocked-out (swatch
+      # 5) at exactly 0 and HP only. All three branches are confirmed on
+      # genuine frames: HP 88/600 and SP 44/600 both drew swatch 4's gold
+      # (#F7E76B) while the label, "/" and maximum stayed put; HP 0/600 drew
+      # swatch 5's grey-pink (#D69E9C) while SP 0/600 stayed gold, so SP
+      # really never knocks out; and an HP 151 / SP 150 pair straddling
+      # 600/4 = 150 drew the HP in the ordinary swatch 0 and the SP in
+      # swatch 4, pinning the threshold at `cur <= max / 4` exactly.
+      #
+      # Each piece is placed at its own fixed offset and skipped once the
+      # column's own `w` is used up (`#clip_text_to_width` for the piece that
+      # only partly fits), so the SP run -- 54px wide from x=198 inside a
+      # 228px contents bitmap -- truncates at the panel edge the way RPG_RT's
+      # own does instead of bleeding past it.
       def draw_battle_stat_segment(c, x, y, w, label, cur, max, can_knockout)
-        full = "#{label} #{cur}/#{max}"
-        clipped = clip_text_to_width(c, full, w)
-        label_part = clipped[0, label.length + 1] || ''
-        rest = clipped[(label.length + 1)..-1] || ''
-        cur_s = cur.to_s
-        cur_part = rest[0, cur_s.length] || ''
-        max_part = rest[cur_s.length..-1] || ''
-        color = value_font_color(cur, max, can_knockout)
+        pieces = [[label, STAT_LABEL_W, 0, STAT_LABEL_COLOR],
+                  [cur.to_s, STAT_FIELD_W, 2, value_font_color(cur, max, can_knockout)],
+                  ['/', STAT_SLASH_W, 0, 0],
+                  [max.to_s, STAT_FIELD_W, 2, 0]]
+        limit = x + w
         cx = x
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, label_part, windowskin
-        cx += c.text_size(label_part).width
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, cur_part, windowskin, color
-        cx += c.text_size(cur_part).width
-        draw_system_text c, cx, y, w, BATTLE_LINE_H, max_part, windowskin
+        pieces.each do |text, pw, align, color|
+          break if cx >= limit
+          avail = limit - cx
+          if pw <= avail
+            draw_system_text c, cx, y, pw, BATTLE_LINE_H, text, windowskin, color, align
+          else
+            draw_system_text c, cx, y, avail, BATTLE_LINE_H,
+                             clip_text_to_width(c, text, avail), windowskin, color
+          end
+          cx += pw
+        end
       end
 
       def battle_status_window(rows, cursor_idx = nil)
