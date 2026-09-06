@@ -3,12 +3,6 @@ class StringIO
     substr = substr.chr if substr.is_a? Integer
     ungetc substr
   end
-
-  def getbyte
-    ret = getc
-    return ret.getbyte 0 if ret
-    ret
-  end
 end
 
 module LCF
@@ -718,10 +712,10 @@ module LCF
       loop do
         break if s.eof?
         idx = LCF.read_ber s
-        out = out + LCF.write_ber(idx)
+        out << LCF.write_ber(idx)
         break if idx == 0
         len = LCF.read_ber s
-        out = out + LCF.write_ber(len) + s.read(len)
+        out << LCF.write_ber(len) << s.read(len)
       end
       out
     end

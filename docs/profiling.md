@@ -416,6 +416,85 @@ save positioned right before a map exit, then deciding what to shorten or
 defer from real numbers, the same way `map.layers` was fixed earlier on this
 page.
 
+#### The New Game/Continue transition: a StringIO emulation gap, not a Ruby-level bug
+
+Measuring per the plan above (Nepheshel, `--rpg2k_new_game`, the new sections)
+found the New Game/Continue transition dominated by two sections that
+`#perform_teleport` never even runs: `map.transition.party` (`Game::Party.new`
+building the starting roster) at ~230ms, and `map.transition.common_events`
+(`Game::CommonEvent.load`) at ~140ms -- together over 90% of a ~400ms
+`scene.update` outlier. Bisecting with temporary profiler sections narrowed
+`map.transition.party`'s cost almost entirely to `Game::Actor#recompute_stats`
+-> `#equip_bonus` -> the *first* `db.item[id]` lookup, which one-time-decodes
+Nepheshel's whole 1200-row, 48KB item table -- and that first decode alone,
+under plain CRuby (a `mruby-lcf/mrblib/lcf.rb` + `schema.rb` load, the same
+"exact sources under CRuby" trick `scripts/lcf_testbed_check.rb` already uses)
+took 37ms against mruby's ~220ms for the identical bytes. A 6x gap that size
+on a byte-scanning loop is not "mruby is slower," it's a missing native
+method.
+
+`LCF::Array2D#read_row_bytes` (`mruby-lcf/mrblib/lcf.rb`) walks a table's
+`(id, len, payload)` chunk stream forward-only, one BER-encoded integer at a
+time (`LCF.read_ber`), for *every* row of *every* table on its first touch
+-- capturing raw byte spans without decoding them, per the lazy-Array2D
+design above, but still touching every byte to find the boundaries. Two
+independent inefficiencies stacked on that walk:
+
+- `StringIO` has no native `getbyte`. `lcf.rb` used to supply one itself,
+  `getc.getbyte(0)`, riding on `StringIO#getc` (`3rd/mruby-stringio/src/stringio.c`)
+  -- which allocates and returns a fresh one-character `String` on *every
+  single byte read*. `IO`/`File` already has a proper native `getbyte`
+  (`io_getbyte`, `3rd/mruby/mrbgems/mruby-io/src/io.c`) returning a bare
+  Integer with no allocation; `StringIO` -- what every *nested* chunk
+  (`Array1D.new`/`Array2D.new` wraps its bytes in one, `s = StringIO.new s
+  if s.is_a? String`) is actually read through -- never got the equivalent.
+  Only the outermost `LCF::Database < File` read skipped this tax; everything
+  else paid it, on every field, of every row it ever had to scan a boundary
+  through.
+- `read_row_bytes` rebuilt its captured span with `out = out + write_ber(idx)`
+  / `out = out + write_ber(len) + s.read(len)` -- each `+` allocates an
+  entirely new String and copies everything accumulated so far, rather than
+  extending the existing buffer in place.
+
+Fixed both, narrowly:
+
+- Added a real `StringIO#getbyte` (`stringio_getbyte`,
+  `3rd/mruby-stringio/src/stringio.c`), mirroring `stringio_getc` but
+  returning the byte as an Integer with no String allocation. `lcf.rb`'s own
+  `getbyte` shim is gone; `ungetbyte` is untouched (it still needs to build a
+  one-character String for `ungetc`, called at most once, never in this hot
+  loop). Declared as a proper `add_dependency 'mruby-string-ext'` in
+  `mruby-lcf/mrbgem.rake` for the `<<` below (AGENTS.md's own rule on this:
+  a stdlib method a gem's *own* per-gem test build won't otherwise have),
+  not left implicit on the strength of the full game build pulling it in
+  transitively through `mruby-onig-regexp`/`mruby-marshal`.
+- Switched `read_row_bytes`'s three `out = out + ...` accumulations to `<<`
+  (in-place, amortized-`O(1)` append). `read_row_bytes` is explicitly
+  forward-only/no-`#seek` already (see its own comment above -- a `#seek`
+  desyncs mruby-io's read-ahead buffer against a real `File`'s fd position),
+  so this is the one safe lever left on that loop without reopening that
+  finding.
+
+Both changes are `StringIO`/`LCF`-level, not RPG2000-specific -- every table
+this project ever lazily decodes (items, actors, common events, maps, ...)
+walks through the same `getbyte`/`read_row_bytes` path, so the fix is not
+scoped to New Game. Measured effect on the same Nepheshel
+`--rpg2k_new_game` repro: `map.transition.party` **232ms -> ~83ms**,
+`map.transition.common_events` **138ms -> ~50ms**, and the worst single
+frame over the run **~410ms -> ~145-150ms** (three separate runs, all in that
+range) -- roughly a **64% cut**, without touching any RPG2000 game logic.
+
+**Still not fully closed.** ~145ms remains above the 4096-sample buffer's
+~93ms of slack, so a New Game/Continue transition can still audibly glitch,
+just far more briefly than before. The remaining cost (~83ms actor
+construction, ~50ms common-event metadata) is now genuinely proportional,
+one-time work -- decoding Nepheshel's real item/common-event tables at
+mruby's real interpreted speed, not a rebuildable inefficiency -- so the
+only lever left is the one already named above and not yet attempted: make
+`Scene::Map#initialize` resumable and spread this across several frames
+behind a fade, which is a materially larger, riskier engine change than
+this fix and is left as its own follow-up rather than folded in here.
+
 ## Per-frame object allocation
 
 Separate from frame *time*: how many mruby objects the map scene allocates

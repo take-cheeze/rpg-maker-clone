@@ -5,6 +5,7 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
 
   add_dependency 'mruby-io'
   add_dependency 'mruby-pack'
+  add_dependency 'mruby-string-ext'
 
   add_test_dependency 'mruby-stringio'
 

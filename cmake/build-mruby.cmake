@@ -166,6 +166,28 @@ function(rpg2k_add_mruby)
   set(mruby_gc_type_counts_patch
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
+  # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
+  # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no
+  # allocation), but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded
+  # through a StringIO, not a File, and used to emulate the method in Ruby via
+  # `getc.getbyte(0)` -- riding on #getc, which allocates and returns a fresh
+  # one-character String on every single byte scanned while walking a table's
+  # chunk boundaries. Measurably slow: a New Game/Continue transition decoding
+  # Nepheshel's item and common-event tables this way cost ~370ms of a ~400ms
+  # scene.update outlier (docs/profiling.md's "New Game/Continue transition"
+  # section has the full trail and Before/after numbers). This submodule is
+  # project-controlled (github.com/take-cheeze/mruby-stringio) rather than a
+  # true upstream this project has no fork of, but this session's repo access
+  # is scoped to rpg-maker-clone only, with no push access to push a commit to
+  # mruby-stringio's own remote -- so it is patched in place here the same way
+  # the mruby-proper patches above are, for the same practical reason (no
+  # commit landed on that other repo's history for a pinned submodule bump to
+  # point at). A future contributor with access to that repo could instead
+  # land this upstream and drop this patch on the next submodule bump.
+  set(mruby_stringio_getbyte_patch
+      "${ARG_REPO_ROOT}/patches/mruby-stringio-native-getbyte.patch")
+  set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -188,6 +210,8 @@ function(rpg2k_add_mruby)
             "${mruby_nomem_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_gc_type_counts_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
+            "${mruby_stringio_prefix}" "${mruby_stringio_getbyte_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -202,6 +226,7 @@ function(rpg2k_add_mruby)
             "${mruby_defined_keyword_patch}"
             "${mruby_nomem_patch}"
             "${mruby_gc_type_counts_patch}"
+            "${mruby_stringio_getbyte_patch}"
             ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)

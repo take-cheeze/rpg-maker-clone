@@ -1,0 +1,45 @@
+diff --git a/src/stringio.c b/src/stringio.c
+index 954f5a3..e561e64 100644
+--- a/src/stringio.c
++++ b/src/stringio.c
+@@ -489,6 +489,32 @@ stringio_getc(mrb_state *mrb, mrb_value self)
+   return ret;
+ }
+ 
++/* Same as #getc, but returns the byte as an Integer (0-255) instead of a
++   one-character String, so a binary-format reader that just needs the byte
++   value (e.g. a BER varint decoder) is not forced to allocate and immediately
++   discard a String object per byte. mruby's IO#getbyte already does this
++   natively (mruby-io's io_getbyte); StringIO had no equivalent, so callers
++   emulated it in Ruby via `getc.getbyte(0)`, paying for the String allocation
++   #getc makes anyway. */
++static mrb_value
++stringio_getbyte(mrb_state *mrb, mrb_value self)
++{
++  struct StringIO *ptr = StringIO(self);
++  mrb_value string = stringio_iv_get(string);
++  mrb_int flags = mrb_fixnum(stringio_iv_get(flags));
++
++  if ((flags & FMODE_READABLE) == 0)
++    mrb_raise(mrb, E_IOERROR, "not opened for reading");
++
++  if (ptr->pos >= RSTRING_LEN(string)) {
++    return mrb_nil_value();
++  }
++
++  unsigned char byte = (unsigned char)RSTRING_PTR(string)[ptr->pos];
++  ptr->pos += 1;
++  return mrb_int_value(mrb, (mrb_int)byte);
++}
++
+ static mrb_value
+ stringio_gets(mrb_state *mrb, mrb_value self)
+ {
+@@ -673,6 +699,7 @@ mrb_mruby_stringio_gem_init(mrb_state* mrb)
+   mrb_define_method(mrb, stringio, "write", stringio_write, MRB_ARGS_REQ(1));
+   mrb_define_alias(mrb, stringio, "syswrite", "write");
+   mrb_define_method(mrb, stringio, "getc", stringio_getc, MRB_ARGS_ANY());
++  mrb_define_method(mrb, stringio, "getbyte", stringio_getbyte, MRB_ARGS_NONE());
+   mrb_define_method(mrb, stringio, "gets", stringio_gets, MRB_ARGS_ANY());
+   mrb_define_method(mrb, stringio, "seek", stringio_seek, MRB_ARGS_ANY());
+   mrb_define_method(mrb, stringio, "size", stringio_size, MRB_ARGS_NONE());
