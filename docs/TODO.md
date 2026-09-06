@@ -34632,24 +34632,44 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   lets the hero walk it with real per-tile passability from the tileset. Tiles
   render as passability-coloured blocks, not the tileset's own `ChipSet`
   image yet.
-- 🚧 **Event-command interpreter.** The next milestone, and the one that
-  actually makes anything play: `Wolf::Command`'s decoder already carries
-  every command id a real project's Common Events use, so this is "write the
-  execution semantics", not "extend the parser". WOLF RPG Editor has no
-  title/menu/message/battle system of its own the way RPG Maker 2000 does --
-  the bundled "RPG Basic System" *is* Common Events, so none of the above
-  shows on screen until common events with `run_condition::auto_start` /
-  `parallel_process` actually run each frame, the way `mruby-rpg2k`'s
-  `Interpreter` runs LCF's move/message/switch/variable commands. Suggested
-  order, mirroring how RPG2000 support grew: message display (command 101 +
-  the window system) and variable/switch commands (111/121/122) first --
-  enough to show *something* other than bare geometry -- then map events
+- ✅ **Event-command interpreter, initial slice (2026-09-06).**
+  `Wolf::Interpreter` (mruby-wolf/mrblib/interpreter.rb) runs every
+  auto-start and parallel-process Common Event each frame, one Fiber-backed
+  `Run` per live event so `Wait` suspends only that event. Implemented:
+  `SetVariable`/`SetString` (121/122, the operators every source agrees on:
+  assignment `=`/`+=`/`-=`/`*=`/`/=`/`%=`/min/max/abs against a calculation
+  of `+`/`-`/`*`/`/`/"nothing"), `VariableCondition` (111)'s multi-case
+  branch structure,
+  `StartLoop`/`BreakLoop`/`LoopEnd`/`GotoLoopStart` (170/171/498/176),
+  `SetLabel`/`JumpLabel` (212/213), `Wait` (180), and
+  `CommonEvent`/`CommonEventReserve`/`CommonEventByName` (210/211/300)
+  including self-variable argument passing and return values. Backed by
+  `Wolf::VarStore` (mruby-wolf/mrblib/vars.rb), which implements the
+  manual's "変数呼び出し値" addressing scheme (typing ≥1,000,000 into a
+  numeric field addresses a variable/switch/string/random/self-var/DB-field
+  instead of a literal). Validated both by hand-built fixtures
+  (`mruby-wolf/test/wolf_test.rb`) and by
+  `scripts/wolf_interpreter_check.rb`, a soak check (mirroring
+  `scripts/rpg2k_command_soak.rb`) that runs the sample game's entire RPG
+  Basic System (225 Common Events) for 120 frames asserting nothing raises
+  or hangs -- the soak check is what caught two real bugs (a
+  `VariableCondition` fallback that skipped a `Wait` when no case matched,
+  and `GotoLoopStart` being unimplemented) that produced a genuine infinite
+  loop against real game data but that no hand-built fixture exercised. See
+  `docs/adr/0065-wolf-rpg-editor-event-interpreter.md`.
+  Still explicit no-ops, logged rather than guessed: message boxes beyond a
+  stderr line, choices, pictures, sound, teleport, `StringCondition` (112),
+  `SetVariable`'s trig/random/bitwise operators, event/hero position
+  get-or-set variables, database field writes, and map events entirely
+  (their own trigger/movement/page-selection logic does not run yet --
+  only Common Events do). Suggested next order, mirroring how RPG2000
+  support grew: real message display (command 101 + a window system) next
+  -- enough to show *something* other than log lines -- then map events
   (auto-run / player-touch / event-touch triggers, self variables), then
-  common-event call/reserve (210/211/300), then the picture system (150,
-  richer than RPG2000's: zoom, angle, colour, string pictures with inline
-  control codes), then everything else (input commands 123-126, save/load
-  220-222, database read/write 250/251, sound 140, transitions
-  160-162/281/290).
+  the picture system (150, richer than RPG2000's: zoom, angle, colour,
+  string pictures with inline control codes), then everything else (input
+  commands 123-126, save/load 220-222, database read/write 250/251, sound
+  140, transitions 160-162/281/290).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

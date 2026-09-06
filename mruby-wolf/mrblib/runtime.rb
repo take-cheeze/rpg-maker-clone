@@ -7,13 +7,19 @@
 # MV/MZ): a game's logic is entirely the fixed, numbered event-command set
 # mruby-wolf's `Wolf::Command` decodes, run by the game's own Common Events
 # (the "RPG Basic System" that ships with the editor and that every real game
-# customises). Interpreting those commands is the bulk of a full runtime and
-# is not built yet (see the TODO below); what exists here is the map-
-# rendering and movement foundation every later piece sits on: it loads the
-# project's database, tile data and start position, and lets the hero walk
-# around the starting map with the real per-tile passability flags, the same
-# incremental order mruby-rpg2k's own history followed (map exploration
-# before the event interpreter, before battle).
+# customises). `Wolf::Interpreter` (interpreter.rb) runs every auto-start and
+# parallel-process Common Event each frame against a `Wolf::VarStore`
+# (vars.rb); map events (their own trigger/movement/page-selection logic) do
+# not run yet, and several commands (StringCondition, messages beyond a log
+# line, pictures, sound, teleport, ...) are explicitly unimplemented rather
+# than guessed at -- see docs/TODO.md and interpreter.rb's own header for
+# which command semantics are cross-confirmed versus best-effort. What exists
+# here besides that is the map-rendering and movement foundation every later
+# piece sits on: it loads the project's database, tile data and start
+# position, and lets the hero walk around the starting map with the real
+# per-tile passability flags, the same incremental order mruby-rpg2k's own
+# history followed (map exploration before the event interpreter, before
+# battle).
 #
 # Tiles are drawn as flat colour blocks keyed by TileSetData's passability
 # flags (green passable, dark red blocked, blue counter, grey autotile),
@@ -39,6 +45,8 @@ class WolfRPG
     RGSS.window_title = @title
     @tile = @project.game.tile_size
     @tile = DEFAULT_TILE unless [16, 32, 40, 48].include?(@tile)
+    @var_store = Wolf::VarStore.new(@project)
+    @interpreter = Wolf::Interpreter.new(@project, @var_store)
     @scene = nil
     build_start_scene
   end
@@ -51,11 +59,14 @@ class WolfRPG
   rescue RGSS::Timeout
   end
 
-  # One frame: RPG2k/RPGXP's own shape (Input.update after the scene acts on
-  # the previous frame's state, then Graphics.update flips the screen), so the
-  # web build's per-frame callback (src/main.cxx) can drive this the same way
-  # it drives every other maker.
+  # One frame: the interpreter advances every live Common Event first (so a
+  # command that changes state this frame is visible to the scene right
+  # after), then RPG2k/RPGXP's own shape (Input.update after the scene acts
+  # on the previous frame's state, then Graphics.update flips the screen), so
+  # the web build's per-frame callback (src/main.cxx) can drive this the same
+  # way it drives every other maker.
   def main_loop
+    @interpreter.update
     @scene.update if @scene
     RGSS::Input.update
     RGSS::Graphics.update

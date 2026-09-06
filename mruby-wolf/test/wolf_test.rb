@@ -169,3 +169,220 @@ assert "Wolf::Map.autotile? / .autotile_slot / .autotile_shape split a layer val
   assert_equal 1, Wolf::Map.autotile_slot(200000)
   assert_equal 1234, Wolf::Map.autotile_shape(101234)
 end
+
+# ---- Wolf::ValueRef ----------------------------------------------------------
+
+assert "Wolf::ValueRef.decode resolves the documented value-reference bands" do
+  assert_equal [:literal, 5], Wolf::ValueRef.decode(5)
+  assert_equal [:literal, -5], Wolf::ValueRef.decode(-5)
+  assert_equal [:literal, 999_999], Wolf::ValueRef.decode(999_999)
+  assert_equal [:map_event_self, 3, 4], Wolf::ValueRef.decode(1_000_000 + 10 * 3 + 4)
+  assert_equal [:this_map_event_self, 2], Wolf::ValueRef.decode(1_100_002)
+  assert_equal [:this_common_event_self, 7], Wolf::ValueRef.decode(1_600_007)
+  assert_equal [:variable, 0], Wolf::ValueRef.decode(2_000_000)
+  assert_equal [:variable, 100_003], Wolf::ValueRef.decode(2_100_003) # reserve bank 1, slot 3
+  assert_equal [:string, 12], Wolf::ValueRef.decode(3_000_012)
+  assert_equal [:random, 6], Wolf::ValueRef.decode(8_000_006)
+  assert_equal [:system_variable, 9], Wolf::ValueRef.decode(9_000_009)
+  assert_equal [:system_string, 1], Wolf::ValueRef.decode(9_900_001)
+  assert_equal [:common_event_self, 5, 42], Wolf::ValueRef.decode(15_000_000 + 100 * 5 + 42)
+  assert_equal [:unsupported, 9_100_005], Wolf::ValueRef.decode(9_100_005)
+end
+
+assert "Wolf::ValueRef.decode splits the DB triple as 10-AA-BBBB-CC" do
+  # User DB type 3 / data 7 / field 2.
+  assert_equal [:db, :user, 3, 7, 2], Wolf::ValueRef.decode(1_000_000_000 + 3_000_000 + 700 + 2)
+  assert_equal [:db, :changeable, 0, 0, 0], Wolf::ValueRef.decode(1_100_000_000)
+  assert_equal [:db, :system, 1, 2, 3], Wolf::ValueRef.decode(1_300_000_000 + 1_000_000 + 200 + 3)
+end
+
+assert "Wolf::ValueRef.common_event_self_string? matches the documented 5-9 quintet" do
+  assert_false Wolf::ValueRef.common_event_self_string?(4)
+  (5..9).each { |i| assert_true Wolf::ValueRef.common_event_self_string?(i) }
+  assert_false Wolf::ValueRef.common_event_self_string?(10)
+end
+
+# ---- Wolf::VarStore -----------------------------------------------------------
+
+class WolfTestFakeProject
+  def databases; {}; end
+end
+
+assert "Wolf::VarStore reads and writes plain variables/strings" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  assert_equal 0, store.number(2_000_000)
+  store.set_number(2_000_000, 42)
+  assert_equal 42, store.number(2_000_000)
+
+  assert_equal "", store.string(3_000_005)
+  store.set_string(3_000_005, "hello")
+  assert_equal "hello", store.string(3_000_005)
+
+  store.set_number(9_000_001, 7)
+  assert_equal 7, store.number(9_000_001)
+end
+
+assert "Wolf::VarStore keeps each map event's self-variables independent" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(1_000_000 + 10 * 0 + 1, 5) # map event 0, self-var 1
+  store.set_number(1_000_000 + 10 * 1 + 1, 9) # map event 1, self-var 1
+  assert_equal 5, store.number(1_000_000 + 10 * 0 + 1)
+  assert_equal 9, store.number(1_000_000 + 10 * 1 + 1)
+end
+
+assert "Wolf::VarStore resolves \"this common event\" self-variables against the running one" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.current_common_event_id = 3
+  store.set_number(1_600_002, 11) # this common event's self-var 2
+  assert_equal 11, store.common_event_self_bank(3)[2]
+  assert_equal 11, store.number(1_600_002)
+end
+
+# ---- Wolf::Interpreter --------------------------------------------------------
+
+def wolf_test_cmd(code, args = [], strings = [], indent = 0)
+  Wolf::Command.new(code, args, strings, indent)
+end
+
+def wolf_test_run(store, commands)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  run = Wolf::Interpreter::Run.new(interp, commands)
+  count = 0
+  while !run.done && count < 10_000
+    run.step
+    count += 1
+  end
+  run
+end
+
+assert "Wolf::Interpreter runs SetVariable assignment and addition" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    # V[0] = 5 (calc "nothing" 0xf uses the right side directly, assign "=" 0x0)
+    wolf_test_cmd(121, [2_000_000, 0, 5, 0xf000]),
+    # V[0] += 3 (calc "nothing" 0xf -- computed is just the right side --
+    # assign "+=" 0x1, which adds that to the target's *current* value)
+    wolf_test_cmd(121, [2_000_000, 0, 3, 0xf100]),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 8, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter takes the true branch of a VariableCondition and skips the else" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 1)
+  commands = [
+    # if V[0] == 1 (case_count=1, no else)
+    wolf_test_cmd(111, [0x01, 2_000_000, 1, 2], [], 0),
+    wolf_test_cmd(401, [0], [], 0),                  # ChoiceCase 0
+    wolf_test_cmd(121, [2_000_001, 0, 111, 0xf000], [], 1), # V[1] = 111 (true branch)
+    wolf_test_cmd(420, [0], [], 0),                  # ElseCase
+    wolf_test_cmd(121, [2_000_001, 0, 222, 0xf000], [], 1), # V[1] = 222 (false branch)
+    wolf_test_cmd(499, [], [], 0),                   # BranchEnd
+    wolf_test_cmd(121, [2_000_002, 0, 999, 0xf000], [], 0), # V[2] = 999 (after the branch)
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 111, store.number(2_000_001)
+  assert_equal 999, store.number(2_000_002)
+end
+
+assert "Wolf::Interpreter takes the else branch when a VariableCondition is false" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 0)
+  commands = [
+    wolf_test_cmd(111, [0x11, 2_000_000, 1, 2], [], 0), # case_count=1, else_case bit set
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_001, 0, 111, 0xf000], [], 1),
+    wolf_test_cmd(420, [0], [], 0),
+    wolf_test_cmd(121, [2_000_001, 0, 222, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 222, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter's StartLoop/BreakLoop/LoopEnd repeats until broken" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(170, [], [], 0),                             # StartLoop
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1), # V[0] += 1
+    # if V[0] >= 3, break
+    wolf_test_cmd(111, [0x01, 2_000_000, 3, 1], [], 1),
+    wolf_test_cmd(401, [0], [], 1),
+    wolf_test_cmd(171, [], [], 2), # BreakLoop
+    wolf_test_cmd(499, [], [], 1),
+    wolf_test_cmd(498, [], [], 0), # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 3, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's SetLabel/JumpLabel jumps by name" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(213, [], ["skip"], 0),                        # JumpLabel "skip"
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),       # never runs
+    wolf_test_cmd(212, [], ["skip"], 0),                        # SetLabel "skip"
+    wolf_test_cmd(121, [2_000_000, 0, 2, 0xf000], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's Wait suspends the Run across #step calls" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(180, [3], [], 0), # Wait 3 frames
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+  ]
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  run = Wolf::Interpreter::Run.new(interp, commands)
+  3.times do
+    run.step
+    assert_equal 0, store.number(2_000_000)
+  end
+  run.step
+  assert_equal 1, store.number(2_000_000)
+  assert_true run.done
+end
+
+assert "Wolf::Interpreter's VariableCondition falls through to a sibling command when no case matches and there is no else" do
+  # Regression test for a real hang found against the sample game's own
+  # "メッセージウィンドウ" Common Event: a VariableCondition with a single
+  # case, no ElseCase, whose condition is false must resume execution right
+  # after its own BranchEnd -- not keep scanning for some other branch
+  # marker further down and skip whatever sibling commands (here, the
+  # increment) sit between BranchEnd and the next real marker.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(111, [0x01, 2_000_000, 1, 2], [], 0), # if V[0] == 1 (false; V[0] starts at 0)
+    wolf_test_cmd(401, [0], [], 0),                      # ChoiceCase 0
+    wolf_test_cmd(121, [2_000_001, 0, 111, 0xf000], [], 1), # never runs
+    wolf_test_cmd(499, [], [], 0),                       # BranchEnd
+    wolf_test_cmd(121, [2_000_002, 0, 999, 0xf000], [], 0), # sibling command after BranchEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 0, store.number(2_000_001)
+  assert_equal 999, store.number(2_000_002)
+end
+
+assert "Wolf::Interpreter's GotoLoopStart(176) restarts the loop without running the rest of the iteration" do
+  # Cross-confirmed as "return to loop start" (04ev_control.html) against
+  # WolfTL's Command.hpp (StartLoop2 = 176) and the wolfrpg-map-parser
+  # crate's own signature table (GotoLoopStart = 0x01b0_0000 = code 176).
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(170, [], [], 0),                              # StartLoop
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1),  # V[0] += 1
+    wolf_test_cmd(111, [0x01, 2_000_000, 3, 1], [], 1),          # if V[0] >= 3
+    wolf_test_cmd(401, [0], [], 1),
+    wolf_test_cmd(171, [], [], 2),                               # BreakLoop
+    wolf_test_cmd(499, [], [], 1),
+    wolf_test_cmd(176, [], [], 1),                               # GotoLoopStart: skip the line below every iteration
+    wolf_test_cmd(121, [2_000_001, 0, 1, 0xf100], [], 1),  # V[1] += 1; should never run
+    wolf_test_cmd(498, [], [], 0),                               # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 3, store.number(2_000_000)
+  assert_equal 0, store.number(2_000_001)
+end
