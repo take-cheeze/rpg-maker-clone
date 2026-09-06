@@ -17,6 +17,17 @@
 # and their learned-skill list.
 #
 # See download-nepheshel.bash for why wget/unar are quietened.
+#
+# Needs the official RPG Maker 2003 RTP to actually boot under wine (else a
+# genuine RPG_RT.exe shows one "RPGツクール2003" OK-only dialog -- an
+# unlabelled RTP-missing notice, its message text itself unrenderable
+# without the RTP's own bitmap font resources -- then exits): run
+# scripts/rtp_2003_install.bash first (WINEPREFIX must match the one used to
+# boot this game). A wine prefix restored from CI's own cached-prefix step
+# already has it and needs nothing further; a fresh prefix does not.
+# Confirmed 2026-09-06: identical `wine RPG_RT.EXE` invocation hung on that
+# dialog before the RTP install, reached the real title screen (legible
+# Japanese menu text, no dialog) immediately after.
 set -eux -o pipefail
 
 # Routes through the optional CI CORS proxy cache when CORS_PROXY_URL is set.

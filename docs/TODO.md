@@ -5240,7 +5240,21 @@ The work below is roughly ordered by the critical path to a walkable game
   actually contains. **Recommendation:** drop field 140 from the rotating
   candidate list until a genuine RPG2003 `RPG_RT.exe` is added to the repo's
   fixtures; re-flagging it without new fixture access just re-derives this
-  same dead end. **New lead surfaced while checking this (not chased to a
+  same dead end.
+  ✅ **Follow-up (2026-09-06): the recommended-away blocker is lifted — a
+  genuine RPG2003 `RPG_RT.exe` is now in the repo's fixtures (`data/kk1.12`,
+  with the official RTP installed via `scripts/rtp_2003_install.bash`; see
+  the killer-knights test-bed-swap entry elsewhere in this file), and field
+  140 (`atb_mode`) is now independently confirmed, both raw values.** A
+  fresh save (never setting `atb_mode`, so 0) and a second save with it
+  forced to 1 (both built directly via `Game::State#atb_mode=` +
+  `#to_lsd`) each opened the field menu's Wait row under genuine
+  `RPG_RT.exe`: the `atb_mode`-0 save showed kk1.12's own `wait_off` term
+  text, the `atb_mode`-1 save its `wait_on` text, matching
+  `Scene::Menu#wait_label`'s `atb_mode == 1 ? wait_on : wait_off` exactly in
+  both directions (`mruby-rpg2k/mrblib/scene/menu.rb`). No behavior change
+  — the citation was already correct; its "NOT independently confirmed"
+  flag is replaced with this capture. **New lead surfaced while checking this (not chased to a
   fix this cycle, see below): `SAVE_SYSTEM` field 125 (`battle_background`,
   `mruby-lcf/mrblib/schema.rb`) is declared but completely unplumbed --
   `Game::State#to_lsd`/`.from_lsd` never read or write it, despite this
@@ -13323,6 +13337,27 @@ The work below is roughly ordered by the critical path to a walkable game
   claim once independently confirmed. The adjacent multi-actor
   discrete-vs-repeat question from cycle #121 was not chased further this
   cycle (out of scope once the solo-party half turned out unreachable).
+  ✅ **Follow-up (2026-09-06): the "permanently unverifiable" half above no
+  longer holds — a genuine RPG2003 `RPG_RT.exe` test bed now exists
+  (`data/kk1.12` + the official RTP via `scripts/rtp_2003_install.bash`, see
+  the `scripts/download-killer-knights.bash`/test-bed-swap entry elsewhere in
+  this file), and `Scene::StatusMenu` **is reachable and opens cleanly** —
+  confirmed, not merely re-attempted.** Built a one-actor save (actor 1,
+  map 1, a chipset tile confirmed passable from all four directions by this
+  codebase's own `ChipSet#passable?`) directly via `Game::Party`/
+  `Game::State#to_lsd`, with the scratch copy's own map-1 autostart
+  common-event page (an unconditional intro cutscene, trigger 3, no switch
+  gate) disabled so Continue lands straight on the map. kk1.12's own System
+  chunk 22 field 27 (`menu_commands`) is `[1, 2, 5, 3, 6, 8, 4]`; the real
+  field menu, opened with Escape, read top to bottom exactly Item / Skill /
+  Status / Equip / Row / Wait / Save (End Game appended below) —
+  `RPG2K3_COMMAND_IDS`'s id-to-command table (`menu.rb`) matches id for id.
+  Pressing Decision on Status opened the real Status screen with no error:
+  HP/MP/EX, ATK/DEF/AGI/INT, class, weapon/armor/accessory, all populated
+  and legible. The adjacent Wait-row question was closed the same run (see
+  the `wait_label`/atb_mode follow-up below). No code change — both
+  citations were already correct, only "NOT independently confirmed"
+  became a wine confirmation.
   ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
   cursor opens on whichever slot was saved most recently" claim is now
   independently confirmed against a genuine RPG_RT.exe, not just a
