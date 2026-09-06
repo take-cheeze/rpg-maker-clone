@@ -18685,14 +18685,22 @@ not yet verified:
   real RPG_RT too, not a coincidence of this codebase's own rendering — the
   premise the existing RPG2003 fixture above already relied on to
   disambiguate "clamped only by max_hp" from "a separate 999 popup cap" is
-  solid. **Still open, and still ported from a reference implementation
-  only, not independently confirmed against genuine RPG_RT under wine**:
-  whether the
-  field-item-use path genuinely has *no* fixed-digit cap at all on an
-  RPG2003 database (where max_hp can itself reach 9999) — this environment's
-  only RPG2003 test-bed (`data/mtf-meido-action`) does not bundle a genuine
-  `RPG_RT.exe`, only EasyRPG's own build, so that half could not be
-  empirically re-checked this session.
+  solid.
+  ✅ **Follow-up (2026-09-06): the RPG2003 half is now independently
+  confirmed too — the field-item-use path genuinely has no fixed-digit cap
+  at all, matching this codebase's own unconfirmed implementation exactly.**
+  Now that a genuine RPG2003 `RPG_RT.exe` exists in the repo's fixtures
+  (`data/kk1.12` + the official RTP — see the killer-knights test-bed-swap
+  entry elsewhere in this file), built a save (party actor 1, kk1.12's own
+  item 4, a real medicine with `recover_hp=9999`) with chunk 108's `hp_mod`
+  patched to an extreme 20000 and `hp` forced to 1: the field-menu status
+  panel read `HP 1/9999` (confirming `max_hp_cap` clamps the modifier to
+  RPG2003's 9999 ceiling, not the raw 20000), and using the medicine on
+  that same actor through the real field Item screen landed HP at exactly
+  `9999/9999` — the full, uncapped heal this codebase's own `#use_medicine`
+  predicts (`min(1 + 9999, 9999)`), not `1 + 999 = 1000` the way the
+  already-fixed battle-cast path would have clamped it. No code change —
+  the citation was already correct.
 - ✅ **The battle damage/recovery popup cap itself now widens to RPG2003's
   real 9999 too, instead of staying a flat 999 on every database — the same
   edition-blind gap the max-HP and total-EXP fixes above already closed for
