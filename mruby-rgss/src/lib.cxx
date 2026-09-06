@@ -3450,6 +3450,25 @@ void wrap_lv_obj(mrb_state* M, mrb_value self, lv_obj_t* obj) {
   lv_obj_add_event_cb(obj, on_lv_delete, LV_EVENT_DELETE, nullptr);
 }
 
+// obj_dispose (see bmp_require's own citation, its Bitmap counterpart above)
+// nulls the data pointer but leaves the mruby wrapper object alive and
+// non-nil, so a setter that read DATA_PTR(self) directly on an
+// already-disposed Sprite/Viewport/Window/Tilemap used to hit a bare
+// mrb_assert(obj): a real abort() under this build's -DMRB_DEBUG (the crash
+// this fixes -- a battle-loss Game Over disposing the whole scene mid-frame,
+// see Scene::Map's own #dispose/#update), and, since mrb_assert compiles away
+// to nothing without MRB_DEBUG, an unguarded null-pointer LVGL call otherwise.
+// Raises a catchable RGSSError instead, matching real RGSS and bmp_require.
+lv_obj_t* obj_require(mrb_state* M, mrb_value self) {
+  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  if (!obj) {
+    RClass* mod = mrb_module_get(M, "RGSS");
+    mrb_raisef(M, mrb_class_get_under(M, mod, "RGSSError"), "disposed %s",
+               mrb_obj_classname(M, self));
+  }
+  return obj;
+}
+
 // A Viewport wraps an outer clipping frame whose sole child is an inner content
 // layer that actually holds the sprites; new sprites parent to that layer so
 // they are clipped to the viewport and scrolled by its ox/oy.
@@ -3702,8 +3721,7 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   mrb_value bmp;
   mrb_get_args(M, "o", &bmp);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return bmp;
 }
@@ -3721,8 +3739,7 @@ mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
     opa = 0;
   else if (opa > 255)
     opa = 255;
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   // Per-frame render code pokes opacity unconditionally (the screen fade and
   // flash sprites, every idle frame, same value). LVGL's local-style setter
   // refreshes -- and so invalidates -- the object without comparing values,
@@ -3750,8 +3767,7 @@ mrb_value spr_set_zoom_x(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "f", &z);
   if (z < 0.0)
     z = 0.0;
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_x(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_x"), mrb_float_value(M, z));
   return self;
@@ -3762,8 +3778,7 @@ mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
   mrb_get_args(M, "f", &z);
   if (z < 0.0)
     z = 0.0;
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   lv_image_set_scale_y(obj, static_cast<uint32_t>(z * LV_SCALE_NONE + 0.5));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@zoom_y"), mrb_float_value(M, z));
   return self;
@@ -3779,8 +3794,7 @@ mrb_value spr_set_zoom_y(mrb_state* M, mrb_value self) {
 mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
   mrb_float deg;
   mrb_get_args(M, "f", &deg);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   long tenths = std::lround(-deg * 10.0) % 3600;
   if (tenths < 0)
     tenths += 3600;
@@ -3801,8 +3815,7 @@ mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
   mrb_bool m;
   mrb_get_args(M, "b", &m);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@mirror"), mrb_bool_value(m));
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return self;
 }
@@ -3813,8 +3826,7 @@ mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
 }
@@ -3823,8 +3835,7 @@ mrb_value spr_set_color(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@color"), v);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
 }
@@ -3834,8 +3845,7 @@ mrb_value spr_set_src_rect(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@src_rect"), v);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return v;
 }
@@ -3887,8 +3897,7 @@ mrb_value spr_set_blend_type(mrb_state* M, mrb_value self) {
     mode = LV_BLEND_MODE_ADDITIVE;
   else if (t == 2)
     mode = LV_BLEND_MODE_SUBTRACTIVE;
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   lv_obj_set_style_blend_mode(obj, mode, 0);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@blend_type"), mrb_fixnum_value(t));
   return self;
@@ -3900,8 +3909,7 @@ mrb_value spr_set_bush_depth(mrb_state* M, mrb_value self) {
   mrb_int d;
   mrb_get_args(M, "i", &d);
   mrb_iv_set(M, self, mrb_intern_lit(M, "@bush_depth"), mrb_fixnum_value(d));
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return self;
 }
@@ -3918,8 +3926,7 @@ mrb_value spr_flash(mrb_state* M, mrb_value self) {
              mrb_fixnum_value(duration));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@flash_count"),
              mrb_fixnum_value(duration));
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
   return mrb_nil_value();
 }
@@ -3927,8 +3934,7 @@ mrb_value spr_flash(mrb_state* M, mrb_value self) {
 mrb_value obj_set_x(mrb_state* M, mrb_value self) {
   mrb_int x;
   mrb_get_args(M, "i", &x);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   // Same-value skip: render code repositions sprites every frame (the player
   // tracks the camera whether or not it moved) and LVGL's setter invalidates
   // without comparing. The mirrored ivar is authoritative -- every write
@@ -3944,8 +3950,7 @@ mrb_value obj_set_x(mrb_state* M, mrb_value self) {
 mrb_value obj_set_y(mrb_state* M, mrb_value self) {
   mrb_int y;
   mrb_get_args(M, "i", &y);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   // Same-value skip, see obj_set_x.
   mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@y"));
   if (!mrb_fixnum_p(cur) || mrb_fixnum(cur) != y) {
@@ -3968,8 +3973,7 @@ mrb_value obj_set_z(mrb_state* M, mrb_value self) {
 mrb_value obj_set_visible(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   // Same-value skip, see obj_set_x: visibility is re-asserted every frame by
   // several draw paths (pictures, vehicles, the battle gate). An unset ivar
   // (fresh sprite) must apply: LVGL objects start visible, and nil here means
@@ -5350,8 +5354,7 @@ mrb_value tilemap_vx_table_leg_quads(mrb_state* M, mrb_value self) {
 mrb_value tilemap_set_visible(mrb_state* M, mrb_value self) {
   mrb_bool v;
   mrb_get_args(M, "b", &v);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   const mrb_value above =
       mrb_iv_get(M, self, mrb_intern_lit(M, "@_tm_above_obj"));
   lv_obj_t* al = (mrb_test(above) && DATA_PTR(above))
@@ -5444,7 +5447,12 @@ Bitmap& window_ensure_canvas(mrb_state* M,
     w = 1;
   if (h < 1)
     h = 1;
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
+  // Unlike window_refresh/window_update's own "already gone, nothing to
+  // paint" early return, a size change is driven by explicit width=/height=
+  // assignments -- so a disposed window here raises the same way the other
+  // explicit Sprite/Viewport/Window setters do (obj_require), rather than
+  // silently doing nothing.
+  lv_obj_t* obj = obj_require(M, self);
   const mrb_value cur = mrb_iv_get(M, self, mrb_intern_lit(M, "@_win_canvas"));
   if (!mrb_nil_p(cur)) {
     Bitmap& c = DataType<Bitmap>::get(M, cur);
@@ -6006,8 +6014,7 @@ mrb_value window_set_stretch(mrb_state* M, mrb_value self) {
 mrb_value window_set_viewport(mrb_state* M, mrb_value self) {
   mrb_value vp;
   mrb_get_args(M, "o", &vp);
-  lv_obj_t* obj = reinterpret_cast<lv_obj_t*>(DATA_PTR(self));
-  mrb_assert(obj);
+  lv_obj_t* obj = obj_require(M, self);
   lv_obj_set_parent(obj, parent_object(M, vp));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
   update_z(M);
