@@ -100,16 +100,29 @@ load File.join(mrblib, 'interpreter.rb')
 
 FRAMES = (idx = ARGV.index('--frames')) ? ARGV.delete_at(idx + 1).tap { ARGV.delete_at(idx) }.to_i : 120
 
-# A single Run given a fixed step budget, so one command list that genuinely
-# never yields (an interpreter bug, not real game behaviour) fails the check
-# instead of hanging the process forever.
-MAX_STEPS_PER_RUN = 200_000
+# A single Run given a fixed *dispatch* budget -- total commands executed
+# across its whole lifetime, not just the number of #step (Fiber.resume)
+# calls -- so a command list that genuinely never yields fails the check
+# instead of hanging the process forever. Bounding only #step (an earlier
+# version of this check did) cannot catch a loop that never reaches its own
+# Wait/GotoLoopStart within a single Fiber.resume: found the hard way when
+# a real Common Event chain a Confirm-trigger map event calls into (a
+# shop UI's own cursor-input-wait loop, which this soak check has no real
+# input to satisfy) hung this way -- #step never got called again because
+# the loop itself was stuck inside its very first call.
+MAX_DISPATCHES_PER_RUN = 200_000
+
+class SuspectedInfiniteLoop < RuntimeError; end
 
 class BoundedRun < Wolf::Interpreter::Run
-  def step
-    @soak_steps ||= 0
-    @soak_steps += 1
-    raise "Run exceeded #{MAX_STEPS_PER_RUN} steps without finishing or yielding -- suspected infinite loop" if @soak_steps > MAX_STEPS_PER_RUN
+  def dispatch(cmd)
+    @soak_dispatches ||= 0
+    @soak_dispatches += 1
+    if @soak_dispatches > MAX_DISPATCHES_PER_RUN
+      raise SuspectedInfiniteLoop,
+            "Run exceeded #{MAX_DISPATCHES_PER_RUN} dispatched commands without finishing -- " \
+            "suspected infinite loop (or a real input-wait loop this soak check cannot satisfy)"
+    end
     super
   end
 end
@@ -132,28 +145,12 @@ class Checker
     store = Wolf::VarStore.new(project)
     interp = Wolf::Interpreter.new(project, store)
 
-    # Swap in the bounded Run so a real hang is reported as a failure rather
-    # than left to the caller's own patience.
-    interp.define_singleton_method(:call_common) do |common_id, params, target, reserve:|
-      if reserve
-        instance_variable_get(:@reserved) << [common_id, params, target]
-        next
-      end
-      ce = project.common_events[common_id]
-      unless ce
-        store.warn_once("no-common-event-#{common_id}", "call to common event #{common_id}, which does not exist")
-        next
-      end
-      bank = store.common_event_self_bank(common_id)
-      send(:numeric_self_slots, params.size).each_with_index { |slot, k| bank[slot] = params[k] }
-      prev = store.current_common_event_id
-      store.current_common_event_id = common_id
-      run = BoundedRun.new(interp, ce.commands)
-      run.step while !run.done
-      store.current_common_event_id = prev
-      next unless target
-      store.set_number(target, bank[ce.return_variable] || 0)
-    end
+    # Every Run this interpreter starts (Common Event calls, map event
+    # auto/parallel pages, confirm/touch triggers) goes through #run_class,
+    # so overriding just that one method bounds all of them the same way,
+    # rather than re-implementing #run_common_event/#start_map_event_run's
+    # own logic here to swap Run for BoundedRun by hand.
+    interp.define_singleton_method(:run_class) { BoundedRun }
 
     auto_or_parallel = project.common_events.events.select { |ce| ce.auto? || ce.parallel? }
     puts "  #{project.common_events.size} common events, #{auto_or_parallel.size} auto/parallel"
@@ -166,8 +163,59 @@ class Checker
     end
 
     puts "  ok: ran #{FRAMES} frames with no exception"
+
+    check_map_events(project, interp)
   rescue Wolf::Error, StandardError => e
     fail "#{dir}: #{e.class}: #{e.message}"
+  end
+
+  # Drives every real map's own events: #active_page against each map
+  # event's real (possibly self-variable-relative) conditions, auto/parallel
+  # pages stepped every frame via #update, and a one-shot #trigger_confirm/
+  # #trigger_touch against whichever pages answer to those (exercising the
+  # same page-selection and self-variable-context code Common Events don't
+  # touch), for every map the project's own MapTree lists.
+  def check_map_events(project, interp)
+    project.map_tree.map_ids.each do |map_id|
+      map =
+        begin
+          project.map(map_id)
+        rescue Wolf::Error => e
+          fail "map #{map_id}: failed to load: #{e.class}: #{e.message}"
+          next
+        end
+      interp.current_map = map
+      puts "  map #{map_id}: #{map.events.size} events"
+
+      map.events.each do |event|
+        idx, page = interp.active_page(event)
+        next unless page
+        case page.trigger
+        when Wolf::Page::TRIGGER_CONFIRM then interp.trigger_confirm(event)
+        when Wolf::Page::TRIGGER_PLAYER_TOUCH, Wolf::Page::TRIGGER_EVENT_TOUCH then interp.trigger_touch(event)
+        end
+      rescue SuspectedInfiniteLoop => e
+        # A one-shot Confirm/Touch trigger, unlike an auto/parallel page, is
+        # allowed to call into a real, legitimately-unbounded input-wait
+        # loop (a shop or menu system's own cursor loop, found this way
+        # against the sample game's own "お店" event) -- there is no real
+        # input for this soak check to satisfy, so hitting the dispatch cap
+        # here is expected, not a decoding bug. Bounding it is still
+        # essential (this exact loop hung indefinitely before the cap was
+        # counted in dispatched commands instead of just #step calls).
+        puts "  note: map #{map_id} event #{event.id} (#{event.name}): #{e.message}"
+      rescue StandardError => e
+        fail "map #{map_id} event #{event.id}: #{e.class}: #{e.message}"
+      end
+
+      FRAMES.times do |frame|
+        interp.update
+      rescue StandardError => e
+        fail "map #{map_id} frame #{frame}: #{e.class}: #{e.message}"
+        break
+      end
+    end
+    puts "  ok: ran map events for #{project.map_tree.map_ids.size} maps with no exception"
   end
 end
 

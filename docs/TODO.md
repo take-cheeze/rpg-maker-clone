@@ -35005,16 +35005,36 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   Still explicit no-ops, logged rather than guessed: message boxes beyond a
   stderr line, choices, pictures, sound, teleport, `StringCondition` (112),
   `SetVariable`'s trig/random/bitwise operators, event/hero position
-  get-or-set variables, database field writes, and map events entirely
-  (their own trigger/movement/page-selection logic does not run yet --
-  only Common Events do). Suggested next order, mirroring how RPG2000
-  support grew: real message display (command 101 + a window system) next
-  -- enough to show *something* other than log lines -- then map events
-  (auto-run / player-touch / event-touch triggers, self variables), then
-  the picture system (150, richer than RPG2000's: zoom, angle, colour,
-  string pictures with inline control codes), then everything else (input
-  commands 123-126, save/load 220-222, database read/write 250/251, sound
-  140, transitions 160-162/281/290).
+  get-or-set variables, and database field writes.
+- ✅ **Map events (2026-09-06).** Stationary map events now run: page
+  selection (`Interpreter#active_page`, last page whose every enabled
+  condition holds -- the same convention `mruby-rpg2k`'s own
+  `Game::EventPage.select` uses), Auto/Parallel pages stepped every frame,
+  Confirm and Player-Touch/Event-Touch pages started by
+  `WolfRPG::MapScene` on a decision-key press or a movement bump
+  (mirroring `mruby-rpg2k`'s own touch-trigger precedent: a touch event
+  fires on the bump attempt itself, whether or not the step succeeds), and
+  `Interpreter#blocking?` freezing hero movement while a non-Parallel page
+  (or an auto-run Common Event) is still executing. Found and fixed three
+  real bugs against the sample game along the way -- a `Condition#enabled?`
+  heuristic that misread every disabled condition slot as enabled, a map
+  event `Run` that froze forever once it hit a `Wait` because only
+  Auto/Parallel pages were ever re-advanced, and a soak-check safety net
+  that could not catch a loop stuck inside one `Fiber.resume` (fixed by
+  bounding total dispatched commands instead of `#step` calls) -- see
+  `docs/adr/0066-wolf-rpg-editor-map-events.md`. Event *movement* (move
+  routes: custom/random/toward-hero) is not implemented, so every event
+  stays at its parsed position; `CommonEvent`(210) targeting a specific
+  map event's page is still an explicit no-op; message boxes are still
+  just a stderr line (a real one depends on the picture system below,
+  since the RPG Basic System draws its own message window via `Picture`
+  calls rather than a native engine widget). Suggested next order,
+  mirroring how RPG2000 support grew: the picture system (150, richer than
+  RPG2000's: zoom, angle, colour, string pictures with inline control
+  codes) next -- since real message/menu display depends on it -- then
+  event move routes, then everything else (input commands 123-126,
+  save/load 220-222, database read/write 250/251, sound 140, transitions
+  160-162/281/290).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

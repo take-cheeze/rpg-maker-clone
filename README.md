@@ -584,16 +584,30 @@
   `CommonEventReserve`/`CommonEventByName`) with their self-variable
   arguments and return values — backed by `Wolf::VarStore`, which
   implements the manual's documented variable/switch/string/self-var/
-  database-field addressing scheme. Map events (their own trigger/
-  movement/page-selection logic) do not run yet, and several commands
-  (real message windows, choices, pictures, sound, `StringCondition`,
-  database writes) are still explicit no-ops — see `docs/TODO.md` and
+  database-field addressing scheme. Several commands (real message
+  windows, choices, pictures, sound, `StringCondition`, database writes)
+  are still explicit no-ops — see `docs/TODO.md` and
   [`docs/adr/0065-wolf-rpg-editor-event-interpreter.md`](docs/adr/0065-wolf-rpg-editor-event-interpreter.md)
   for exactly what is cross-confirmed versus best-effort
+- **Map events run too**, stationary ones at least: page selection (the
+  last page whose every enabled condition holds, mirroring
+  `mruby-rpg2k`'s own convention), Auto/Parallel pages stepped every
+  frame, and Confirm/Player-Touch/Event-Touch pages started on a
+  decision-key press or a movement bump — the hero freezes while any of
+  these (or an auto-run Common Event) is still executing, so bumping into
+  an NPC or opening a chest actually blocks the way and runs its
+  commands. Event *movement* (move routes) is not implemented yet, so
+  every event stays put; see
+  [`docs/adr/0066-wolf-rpg-editor-map-events.md`](docs/adr/0066-wolf-rpg-editor-map-events.md)
+  for three real bugs this uncovered against the sample game's own data
+  (a condition-enabled-bit heuristic, a trigger that froze after its
+  first `Wait`, and a soak-check safety net that missed a loop stuck
+  inside one frame)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
-  path/to/Project` soak-tests the interpreter itself against a project's real
-  Common Events (nothing raises or hangs across a bounded run of frames) —
+  path/to/Project` soak-tests the interpreter itself — every Common Event
+  and, for every real map, every event's active page — against a project's
+  real data (nothing raises or hangs across a bounded run of frames) —
   `scripts/download-wolfrpg-sample.bash` fetches the editor's own official
   sample game (SmokingWOLF's freely redistributable GitHub release) as the
   test bed CI runs both against

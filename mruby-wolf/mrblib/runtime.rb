@@ -83,7 +83,8 @@ class WolfRPG
     end
     map_id, x, y = pos
     map = @project.map(map_id)
-    @scene = MapScene.new(@project, map, @tile, x, y)
+    @interpreter.current_map = map
+    @scene = MapScene.new(@project, map, @tile, x, y, @interpreter)
     $stderr.puts "[Wolf-MAP] map=#{map_id} x=#{x} y=#{y}"
   rescue Wolf::Error => e
     $stderr.puts "[Wolf] failed to open the start map: #{e.class}: #{e.message}"
@@ -91,9 +92,16 @@ class WolfRPG
 
   # A minimal walkable view of one map: tile layers as colour blocks (see the
   # file header), a hero rectangle, arrow-key movement blocked by the
-  # tileset's own passability flags. No events, no scrolling camera, no
-  # message/menu system yet -- see docs/TODO.md's WOLF RPG Editor section for
-  # what is still to build on top of this.
+  # tileset's own passability flags, and now map events -- rendered as
+  # colour-block markers (real ChipSet-image rendering is still docs/TODO.md's
+  # own follow-up, tracked separately from events), running their active
+  # page's commands on a Confirm-key press or a walk-into bump the same way
+  # Wolf::Interpreter already drives Common Events, and blocking hero
+  # movement while a non-Parallel page (or an auto-run Common Event) is
+  # still executing (Wolf::Interpreter#blocking?). No scrolling camera zoom,
+  # no message/menu system, no event movement (move routes) yet -- see
+  # docs/TODO.md's WOLF RPG Editor section for what is still to build on top
+  # of this.
   class MapScene
     # Colours are chosen for legibility, not fidelity: they mark passability,
     # not the counter/star/tag distinctions TileFlags also carries.
@@ -103,13 +111,22 @@ class WolfRPG
     AUTOTILE = RGSS::Color.new(80, 96, 144, 255)
     GRID = RGSS::Color.new(0, 0, 0, 40)
     HERO = RGSS::Color.new(240, 220, 120, 255)
+    EVENT_MARKER = RGSS::Color.new(160, 96, 200, 255)
 
-    def initialize(project, map, tile, x, y)
+    # (dx, dy) for each facing direction, used both to compute the tile a
+    # Confirm-key press should check and (were it ever drawn) which way the
+    # hero rectangle would point.
+    FACING_DELTA = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }.freeze
+
+    def initialize(project, map, tile, x, y, interpreter)
       @project = project
       @map = map
       @tile = tile
       @x = x
       @y = y
+      @facing = :down
+      @interpreter = interpreter
+      @event_sprites = {}
       @tileset = project.tilesets[map.tileset_id]
       @viewport = RGSS::Viewport.new(0, 0, RGSS::Graphics.width, RGSS::Graphics.height)
       @map_bitmap = RGSS::Bitmap.new([map.width * tile, 1].max, [map.height * tile, 1].max)
@@ -124,8 +141,18 @@ class WolfRPG
       update_camera
     end
 
+    # Event pages run through the interpreter every frame regardless of
+    # #blocking? (so a Parallel page never stalls just because an unrelated
+    # Auto page is mid-run elsewhere), but the hero's own input is frozen
+    # while any blocking page is active -- standing still is what "an event
+    # is happening" should look like even before a real message window
+    # exists to make that obvious.
     def update
-      move_hero
+      update_events
+      unless @interpreter.blocking?
+        move_hero
+        check_confirm
+      end
       update_camera
     end
 
@@ -175,24 +202,82 @@ class WolfRPG
       true
     end
 
+    # Pressing a direction always turns the hero to face it, whether or not
+    # the step itself succeeds -- the same convention #check_confirm's own
+    # "facing tile" relies on, and standard across every RPG Maker-shaped
+    # engine this repo already supports.
     def move_hero
       dx = 0
       dy = 0
       if RGSS::Input.press?(RGSS::Input::DOWN)
+        @facing = :down
         dy = 1
       elsif RGSS::Input.press?(RGSS::Input::UP)
+        @facing = :up
         dy = -1
       elsif RGSS::Input.press?(RGSS::Input::LEFT)
+        @facing = :left
         dx = -1
       elsif RGSS::Input.press?(RGSS::Input::RIGHT)
+        @facing = :right
         dx = 1
       end
       return if dx == 0 && dy == 0
       nx = @x + dx
       ny = @y + dy
       return unless passable?(nx, ny)
+      event, page = @interpreter.event_at(nx, ny)
+      if event
+        # A Player-Touch/Event-Touch page fires on the bump attempt itself,
+        # matching mruby-rpg2k's own #touch_trigger?/#event_at/#start_event
+        # precedent for RPG2000/2003's identical trigger pair -- whether or
+        # not the step below actually happens depends only on
+        # Wolf::Page#slip_through?, same as any other event tile.
+        @interpreter.trigger_touch(event)
+        return unless page.slip_through?
+      end
       @x = nx
       @y = ny
+    end
+
+    # Confirm-trigger pages: fire on standing on a walk-through event (per
+    # help/04eventwindowB.html, "決定キーで実行" answers both to a
+    # slip-through event under the hero and to one directly ahead), checked
+    # in that order so a signpost you can walk over does not additionally
+    # require facing it.
+    def check_confirm
+      return unless RGSS::Input.trigger?(RGSS::Input::C)
+      event, page = @interpreter.event_at(@x, @y)
+      if event && page.slip_through?
+        return if @interpreter.trigger_confirm(event)
+      end
+      dx, dy = FACING_DELTA[@facing]
+      event, = @interpreter.event_at(@x + dx, @y + dy)
+      @interpreter.trigger_confirm(event) if event
+    end
+
+    # Colour-block markers (see the file header) for every map event with a
+    # currently-active page; a page's own conditions can change every frame
+    # (they read ordinary variables/switches), so this recomputes visibility
+    # and position from scratch each time rather than caching it.
+    def update_events
+      @map.events.each do |event|
+        _idx, page = @interpreter.active_page(event)
+        sprite = (@event_sprites[event.id] ||= build_event_sprite)
+        next sprite.visible = false unless page
+        sprite.x = event.x * @tile
+        sprite.y = event.y * @tile
+        sprite.z = page.above_hero? ? 2 : 1
+        sprite.visible = true
+      end
+    end
+
+    def build_event_sprite
+      bitmap = RGSS::Bitmap.new(@tile, @tile)
+      bitmap.fill_rect(2, 2, [@tile - 4, 1].max, [@tile - 4, 1].max, EVENT_MARKER)
+      sprite = RGSS::Sprite.new(@viewport)
+      sprite.bitmap = bitmap
+      sprite
     end
 
     def update_camera
