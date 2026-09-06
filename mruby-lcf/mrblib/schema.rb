@@ -185,7 +185,18 @@ module LCF
             14 => { name: :agi_points1, type: :int, default: 0 },
             15 => { name: :two_handed, type: :int, default: 0 },
             16 => { name: :sp_cost, type: :int, default: 0 },
-            17 => { name: :hit, type: :int, default: 0 },
+            # The analysis notes list 0 as the omitted-value default (matching
+            # their blanket assumption for most `ber` fields), but real
+            # Nepheshel data contradicts it: 76 of its 104 weapons -- the
+            # ordinary, never-hand-tuned ones, short sword included -- omit
+            # this field entirely, while every weapon that *does* write it
+            # spells out 70/80/85/98/100 and never 90. A weapon whose hit
+            # rate silently defaulted to 0 would never land a single Attack,
+            # which is not how the shipped game plays. 90 -- RPG2000's own
+            # baseline hit rate, already used as the unarmed/no-weapon
+            # fallback (Actor#attack_hit_rate) and the default enemy rate --
+            # is what an unedited weapon actually carries.
+            17 => { name: :hit, type: :int, default: 90 },
             18 => { name: :critical_hit, type: :int, default: 0 },
             20 => { name: :animation_id, type: :int, default: 1 },
             21 => { name: :preemptive, type: :bool, default: false },
