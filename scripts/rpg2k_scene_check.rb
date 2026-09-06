@@ -21740,7 +21740,11 @@ check 'the item / skill target list colours a knocked-out HP figure and a ' \
     ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
        "#{klass}: the critical MP figure must blend from swatch index 4 (64, 48), got: " \
        "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
-    ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+    # Scene::SkillMenu draws the max as its own right-aligned "120" run after
+    # a separate "/" (the `%3d/%3d` shape measured under wine, cycle #241);
+    # Scene::ItemMenu still draws the flowing "/120" run.
+    max_run = klass == RPG2k::Scene::SkillMenu ? '120' : '/120'
+    ok bc.any? { |call| call[4] == max_run && call[6] == 0 && call[7] == 48 },
        "#{klass}: the HP max figure stays the default colour (index 0)"
   end
 end
@@ -21807,30 +21811,37 @@ check 'the item / skill target-confirm screen draws each actor on three ' \
     row_y = ->(text) { calls.find { |c| c[4].to_s == text }&.at(1) }
     row_x = ->(text) { calls.find { |c| c[4].to_s == text }&.at(0) }
     name_y = row_y.call(a.name)
-    lv_y = row_y.call('Lv 5')
-    # HP/MP now draw as three separately-coloured runs ("HP ", "80", "/120")
-    # through Scene::Base#draw_stat_segment rather than one flat string --
-    # see the windowskin-swatch check below for the recolouring itself; this
-    # layout check only needs the label run's own position.
-    hp_y = row_y.call('HP ')
-    mp_y = row_y.call('MP ')
+    # Scene::SkillMenu draws the level term and the level, and each HP/MP
+    # term, figure, "/" and max, as separate runs (the "LV 5" / " 56/ 60"
+    # fixed-cell shape measured under wine, cycle #241); Scene::ItemMenu
+    # still draws "Lv 5" and the flowing "HP " / "80" / "/120" runs of
+    # Scene::Base#draw_stat_segment.
+    skill = klass == RPG2k::Scene::SkillMenu
+    lv_text = skill ? 'Lv' : 'Lv 5'
+    hp_label = skill ? 'HP' : 'HP '
+    mp_label = skill ? 'MP' : 'MP '
+    hp_max = skill ? '120' : '/120'
+    mp_max = skill ? '30' : '/30'
+    lv_y = row_y.call(lv_text)
+    hp_y = row_y.call(hp_label)
+    mp_y = row_y.call(mp_label)
     ok name_y, "#{klass} target window draws the actor's name"
-    ok lv_y, "#{klass} target window draws \"Lv 5\""
-    ok hp_y, "#{klass} target window draws the \"HP \" label"
-    ok mp_y, "#{klass} target window draws the \"MP \" label"
+    ok lv_y, "#{klass} target window draws \"#{lv_text}\""
+    ok hp_y, "#{klass} target window draws the \"#{hp_label}\" label"
+    ok mp_y, "#{klass} target window draws the \"#{mp_label}\" label"
     ok row_y.call('80'), "#{klass} target window draws the HP figure"
-    ok row_y.call('/120'), "#{klass} target window draws the HP max"
+    ok row_y.call(hp_max), "#{klass} target window draws the HP max"
     ok row_y.call('10'), "#{klass} target window draws the MP figure"
-    ok row_y.call('/30'), "#{klass} target window draws the MP max"
+    ok row_y.call(mp_max), "#{klass} target window draws the MP max"
     eq 0, name_y, "#{klass}: the name is alone on the first line"
     eq RPG2k::Scene::ItemMenu::LINE_H, lv_y, "#{klass}: level is on the second line"
     eq RPG2k::Scene::ItemMenu::LINE_H, hp_y, "#{klass}: HP shares the second line with level"
     eq RPG2k::Scene::ItemMenu::LINE_H * 2, mp_y, "#{klass}: MP is on the third line"
     # The value column (HP/MP) starts partway across the row, not flush
     # against the label column (level/condition) -- see TARGET_VALUE_X.
-    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('HP '),
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call(hp_label),
        "#{klass}: HP starts at the value column, not right after \"Lv 5\""
-    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call('MP '),
+    eq RPG2k::Scene::ItemMenu::TARGET_VALUE_X, row_x.call(mp_label),
        "#{klass}: MP starts at the value column, not right after the condition"
   end
 end
@@ -23014,6 +23025,8 @@ check 'Scene::SkillMenu: the description banner and skill grid are removed ' \
   ok scene.instance_variable_get(:@skill_window).nil?,
      'the skill grid is disposed outright, not narrowed or covered'
   ok scene.instance_variable_get(:@teleport_window), 'only the destination list itself remains'
+  ok scene.instance_variable_get(:@status_window).nil?,
+     'the caster status line (cycle #241) goes with them -- the same bare band'
 
   RGSS::Input.triggered = [RGSS::Input::B]           # Cancel back to the skill list
   scene.update
@@ -23458,6 +23471,277 @@ check 'Scene::SkillMenu: a listed-but-unusable skill row reads the windowskin\'s
      'the unaffordable (SEALED_SID) row blends from swatch index 3 (48, 48)'
   ok bc.any? { |call| call[6] == 0 && call[7] == 48 },
      'the affordable (READY_SID) row blends from swatch index 0 (0, 48)'
+end
+
+# A 26-skill leader (13 grid rows in the 10-row box) for the skill screen's
+# own layout/scrolling checks below, with one row greyed purely by
+# `#field_skill?` (an enemy-scope attack, say) rather than by cost.
+class LongSkillListStubParty < MenuStubParty
+  FIRST_SID = 30
+  COUNT = 26
+  GREY_SID = 31
+
+  def field_skills(_actor, _state = nil)
+    (FIRST_SID...(FIRST_SID + COUNT)).map { |sid| [sid, sid - 28] }
+  end
+
+  def db_skill(id)
+    OpenStruct.new(id: id, name: "Skill#{id}", description: "Desc #{id}",
+                   type: Game::Party::SKILL_NORMAL, scope: 3)
+  end
+
+  def field_skill?(sk, _state = nil)
+    sk.name != "Skill#{GREY_SID}"
+  end
+end
+
+def long_skill_list_state
+  Game::State.new(LongSkillListStubParty.new, 1, 0, 0)
+end
+
+def press(scene, key)
+  RGSS::Input.triggered = [key]
+  scene.update
+  RGSS::Input.reset
+end
+
+def skin_db
+  db = fake_db
+  db.system.system_graphic = 'Skin1' # non-empty -> a real windowskin loads
+  db
+end
+
+# Every blend_text/draw_text call on `win`'s contents whose text is `text`,
+# as [x, y, w, h, text, ..., align] argument arrays (the shadow copy of a
+# system-coloured run lands at x+1/y+1, so callers match on the exact x).
+def text_calls(win, text)
+  c = win.contents
+  ((c.draw_calls || []) + (c.blend_calls || [])).select { |a| a[4].to_s == text }
+end
+
+check 'Scene::SkillMenu: three stacked full-width windows (banner 0/32, status ' \
+      '32/32, grid 64/176 down to the screen bottom) and a 144x16 cell cursor at ' \
+      'a 160px column pitch, measured under wine (cycle #241)' do
+  # Genuine RPG_RT.exe frames (640x480 halved): the skin's white outer border
+  # rows sat at logical y 0/29, 32/61, 64/237 for the three boxes, all
+  # spanning x 0..319; the first cell's cursor frame spanned x 4..155 / y
+  # 72..87 (empty list and populated alike) and the second column's x
+  # 164..315 -- a 144x16 `cursor_rect` at contents (0,0) / (160,0) once
+  # RPG2k::Window's own 4px overhang each side is accounted for.
+  scene = menu_scene(RPG2k::Scene::SkillMenu, menu_state) # empty skill list
+  desc = scene.instance_variable_get(:@desc_window)
+  status = scene.instance_variable_get(:@status_window)
+  grid = scene.instance_variable_get(:@skill_window)
+  eq [0, 0, 320, 32], [desc.x, desc.y, desc.width, desc.height], 'description banner'
+  eq [0, 32, 320, 32], [status.x, status.y, status.width, status.height], 'caster status line'
+  eq [0, 64, 320, 176], [grid.x, grid.y, grid.width, grid.height],
+     'skill grid box runs to the screen bottom even with no skills'
+  r = grid.cursor_rect
+  eq [0, 0, 144, 16], [r.x, r.y, r.width, r.height], 'empty list: cursor on the first cell'
+
+  scene = menu_scene(RPG2k::Scene::SkillMenu, long_skill_list_state)
+  grid = scene.instance_variable_get(:@skill_window)
+  eq [0, 64, 320, 176], [grid.x, grid.y, grid.width, grid.height],
+     'the grid box is the same fixed rect with 26 skills'
+  r = grid.cursor_rect
+  eq [0, 0, 144, 16], [r.x, r.y, r.width, r.height], 'first cell'
+  press(scene, RGSS::Input::RIGHT)
+  r = grid.cursor_rect
+  eq [160, 0, 144, 16], [r.x, r.y, r.width, r.height], 'second column: 160px pitch, same 144 width'
+  press(scene, RGSS::Input::DOWN)
+  r = grid.cursor_rect
+  eq [160, 16, 144, 16], [r.x, r.y, r.width, r.height], 'second row: 16px row pitch'
+end
+
+check 'Scene::SkillMenu: the status line reads name / LV level / condition / ' \
+      'HP cur/max / MP cur/max at the measured columns, terms in swatch 1 and ' \
+      'the figures right-aligned in fixed cells (cycle #241)' do
+  # Measured on genuine RPG_RT.exe under wine at both Lv 50 600/600 and Lv 5
+  # 56/60 HP, 5/60 MP: "LV50" / "LV 5", "HP600/600" / "HP 56/ 60",
+  # "MP600/600" / "MP  5/ 60" -- glyph runs at 2x x 176..196 (LV), 200..222
+  # / 212..222 (level), 264..304 (正常), 384..400 (HP), 408..491 / 420..490
+  # (HP figures), 516..532 (MP), 540..623 / 564..622 (MP figures), so the
+  # terms sit at contents 80/184/250, the level right-aligned in [92,104),
+  # the condition at 124, and each `%3d/%3d` pair from 196 / 262 (cur in
+  # [x,x+18), "/" at x+18, max in [x+24,x+42)). Only the current MP figure
+  # (5 of 60) recoloured, in the critical swatch; the terms drew in swatch 1.
+  st = menu_state # MenuStubActor: Hero, level 5, hp 80/120, mp 10/30
+  scene = menu_scene(RPG2k::Scene::SkillMenu, st, skin_db)
+  status = scene.instance_variable_get(:@status_window)
+  name = text_calls(status, 'Hero').find { |c| c[0] == 0 }
+  ok name, 'the caster name starts at contents x 0'
+  lv = text_calls(status, 'Lv').find { |c| c[0] == 80 }
+  ok lv, 'the LV term starts at contents x 80'
+  eq [16, 48], [lv[6], lv[7]], 'the LV term blends from swatch index 1'
+  level = text_calls(status, '5').find { |c| c[0] == 92 }
+  ok level, 'the level is drawn in a field starting at 92'
+  eq [12, 2], [level[2], level[10]], 'right-aligned in a 12px (2-cell) field ending at 104'
+  ok text_calls(status, 'Normal').find { |c| c[0] == 124 }, 'the condition starts at 124'
+  hp = text_calls(status, 'HP').find { |c| c[0] == 184 }
+  ok hp, 'the HP term starts at 184'
+  eq [16, 48], [hp[6], hp[7]], 'the HP term blends from swatch index 1'
+  cur = text_calls(status, '80').find { |c| c[0] == 196 }
+  ok cur, 'the current HP figure field starts at 196'
+  eq [18, 2], [cur[2], cur[10]], 'right-aligned in an 18px (3-cell) field'
+  ok text_calls(status, '/').find { |c| c[0] == 214 }, 'the HP "/" cell sits at 214'
+  max = text_calls(status, '120').find { |c| c[0] == 220 }
+  ok max, 'the max HP field starts at 220'
+  eq [18, 2], [max[2], max[10]], 'right-aligned in its own 3-cell field ending at 238'
+  mp = text_calls(status, 'MP').find { |c| c[0] == 250 }
+  ok mp, 'the MP term starts at 250'
+  eq [16, 48], [mp[6], mp[7]], 'the MP term blends from swatch index 1'
+  ok text_calls(status, '10').find { |c| c[0] == 262 && c[2] == 18 && c[10] == 2 },
+     'the current MP figure field starts at 262'
+  ok text_calls(status, '/').find { |c| c[0] == 280 }, 'the MP "/" cell sits at 280'
+  ok text_calls(status, '30').find { |c| c[0] == 286 && c[2] == 18 && c[10] == 2 },
+     'the max MP field starts at 286, ending flush at the 304px inner edge'
+  # The critical-MP recolouring the real frame showed on its "5" of 5/60.
+  st.party.actors.first.instance_variable_set(:@mp, 5)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, st, skin_db)
+  status = scene.instance_variable_get(:@status_window)
+  crit = text_calls(status, '5').find { |c| c[0] == 262 }
+  ok crit, 'the current MP figure is drawn'
+  eq [64, 48], [crit[6], crit[7]], 'at 5/30 it blends from the critical swatch (index 4)'
+end
+
+check 'Scene::SkillMenu: a row is "name" then "-%3d" right-aligned to contents ' \
+      'x 144 of its 160px cell; a known-but-field-unusable skill is listed greyed ' \
+      '(cycle #241)' do
+  # Measured: "-  4" / "- 30" / "-120" with the hyphen at logical x 128..130
+  # (288..290 in the second column) and the last digit ending at 151 / 311,
+  # i.e. a 4-character run whose right edge is contents 144 / 304; the
+  # enemy-scope サー / バマー / チャレク rows, ルーツ (a buff), ハサウ (a
+  # battle-only-state cure) and a battle-only switch skill were all present,
+  # in the disabled colour (99,166,247), next to enabled rows at (165,211,255).
+  scene = menu_scene(RPG2k::Scene::SkillMenu, long_skill_list_state, skin_db)
+  grid = scene.instance_variable_get(:@skill_window)
+  first = text_calls(grid, '-  2').find { |c| c[0] == 0 && c[1] == 0 }
+  ok first, 'the first cell\'s cost run starts at the cell\'s own x'
+  eq [144, 2], [first[2], first[10]], 'right-aligned in a 144px field'
+  eq [0, 48], [first[6], first[7]], 'an affordable, usable row blends from swatch 0'
+  ok text_calls(grid, 'Skill30').find { |c| c[0] == 0 && c[1] == 0 }, 'its name at x 0'
+  second = text_calls(grid, '-  3').find { |c| c[0] == 160 && c[1] == 0 }
+  ok second, 'the second column\'s cost run starts at 160'
+  eq [144, 2], [second[2], second[10]], 'the same 144px right-aligned field'
+  eq [48, 48], [second[6], second[7]],
+     'the field-unusable (field_skill? false) row is still listed, in swatch 3'
+  ok text_calls(grid, 'Skill31').find { |c| c[0] == 160 && c[6] == 48 && c[7] == 48 },
+     'its name greys too'
+  ok text_calls(grid, 'Skill32').find { |c| c[0] == 0 && c[1] == 16 }, 'row 2 starts at y 16'
+  # Decision on the greyed row buzzes and stays, like an unaffordable one.
+  press(scene, RGSS::Input::RIGHT)
+  RGSS::Audio.reset_se
+  press(scene, RGSS::Input::C)
+  eq :skills, scene.instance_variable_get(:@mode), 'no target screen opens for a greyed row'
+  eq [['Buzzer1', 100, 100, 50]], RGSS::Audio.se_calls
+end
+
+check 'Scene::SkillMenu: a 13-row list scrolls one row at a time, the cursor ' \
+      'pinned to the bottom/top visible row, with blinking down/up arrows ' \
+      'while rows are hidden (cycle #241)' do
+  # Genuine RPG_RT.exe under wine, a 26-skill leader: DOWN through rows 0..9
+  # never moved the list (a down arrow blinking at logical (155..164,
+  # 233..238)); the 10th/11th/12th DOWN each scrolled it up exactly one row
+  # with the cursor frame staying at logical y 216 (the bottom visible row),
+  # the last of them showing rows 3..12 with an up arrow blinking at
+  # (155..164, 64..69) and no down arrow; UP off the top visible row scrolled
+  # back one row per press, the cursor pinned at y 72 (top row 3 -> 2 -> 1).
+  scene = menu_scene(RPG2k::Scene::SkillMenu, long_skill_list_state, skin_db)
+  grid = scene.instance_variable_get(:@skill_window)
+  up = scene.instance_variable_get(:@up_arrow)
+  down = scene.instance_variable_get(:@down_arrow)
+  eq [152, 64], [up.x, up.y], 'the up arrow cell sits centred at the grid box\'s top edge'
+  eq [152, 232], [down.x, down.y], 'the down arrow cell sits centred at the screen bottom'
+  eq true, down.visible, 'rows are hidden below: the down arrow shows'
+  eq false, up.visible, 'nothing hidden above yet'
+  9.times { press(scene, RGSS::Input::DOWN) }
+  eq 18, scene.instance_variable_get(:@skill_index)
+  eq 0, scene.instance_variable_get(:@top_row), 'row 9 is the bottom visible row: no scroll yet'
+  eq 144, grid.cursor_rect.y
+  press(scene, RGSS::Input::DOWN)
+  eq 20, scene.instance_variable_get(:@skill_index)
+  eq 1, scene.instance_variable_get(:@top_row), 'row 10 scrolls the list up by one row'
+  eq 144, grid.cursor_rect.y, 'the cursor stays on the bottom visible row'
+  ok text_calls(grid, 'Skill32').find { |c| c[0] == 0 && c[1] == 0 },
+     'row 1 is now drawn at the top of the box'
+  ok text_calls(grid, 'Skill50').find { |c| c[0] == 0 && c[1] == 144 },
+     'row 10 (the cursor row) is drawn at the bottom of the box'
+  eq true, up.visible, 'a row is hidden above: the up arrow shows'
+  2.times { press(scene, RGSS::Input::DOWN) }
+  eq [24, 3], [scene.instance_variable_get(:@skill_index), scene.instance_variable_get(:@top_row)],
+     'two more rows scroll one each; rows 3..12 shown'
+  eq false, down.visible, 'the last row is visible: no down arrow'
+  press(scene, RGSS::Input::DOWN)
+  eq 24, scene.instance_variable_get(:@skill_index), 'DOWN past the last row is a no-op'
+  # Blink: 13 updates so far (arrow phase 13); off from the 20th frame.
+  7.times { scene.update }
+  eq false, up.visible, 'the up arrow blinks off at the 20th frame'
+  20.times { scene.update }
+  eq true, up.visible, 'and back on at the 40th'
+  9.times { press(scene, RGSS::Input::UP) }
+  eq [6, 3], [scene.instance_variable_get(:@skill_index), scene.instance_variable_get(:@top_row)],
+     'UP through the visible rows never scrolls'
+  eq 0, grid.cursor_rect.y, 'row 3 is the top visible row'
+  press(scene, RGSS::Input::UP)
+  eq [4, 2], [scene.instance_variable_get(:@skill_index), scene.instance_variable_get(:@top_row)],
+     'UP off the top visible row scrolls back one row'
+  eq 0, grid.cursor_rect.y, 'the cursor stays on the top visible row'
+end
+
+check 'Scene::SkillMenu: the status line is replaced by the MP-cost box in ' \
+      'target mode and rebuilt (refreshed) on Cancel (cycle #241)' do
+  state = Game::State.new(NormalTargetSkillStubParty.new, 1, 0, 0)
+  scene = menu_scene(RPG2k::Scene::SkillMenu, state)
+  ok scene.instance_variable_get(:@status_window), ':skills mode: the status line exists'
+  press(scene, RGSS::Input::C)
+  eq :target, scene.instance_variable_get(:@mode)
+  ok scene.instance_variable_get(:@status_window).nil?,
+     ':target mode: the status line is gone (the MP-cost box sits at its rect)'
+  eq 32, scene.instance_variable_get(:@skill_window).y, 'the MP-cost box sits at y 32'
+  eq false, scene.instance_variable_get(:@down_arrow).visible, 'no scroll arrow in target mode'
+  press(scene, RGSS::Input::B)
+  eq :skills, scene.instance_variable_get(:@mode)
+  status = scene.instance_variable_get(:@status_window)
+  ok status, 'Cancel rebuilds the status line'
+  eq [0, 32, 320, 32], [status.x, status.y, status.width, status.height]
+end
+
+check 'Scene::SkillMenu: the target row draws LV%2d and HP/MP %3d/%3d in fixed ' \
+      'cells, terms in swatch 1, and the row cursor starts at the label column ' \
+      '(cycle #241)' do
+  # Measured on this screen's own genuine frame (Lv 5, 56/60 HP, 5/60 MP):
+  # "LV 5" with LV at contents 56 (2x 400..422) and the level in the cell
+  # after, "HP 56/ 60" with HP at 114 (2x 516..532) and the figures from
+  # 126 ending flush at 168, the "5" of "MP  5/ 60" in the critical colour;
+  # the cursor frame spanned logical x 196..315 / y 8..55, i.e. a rect at
+  # contents x 56 (the label column itself), 112 wide, 48 tall -- not the
+  # `TARGET_LABEL_X - 2` the ported Item-screen constant put it at.
+  st = menu_state
+  scene = menu_scene(RPG2k::Scene::SkillMenu, st, skin_db)
+  scene.instance_variable_set(:@mode, :target)
+  scene.instance_variable_set(:@target_index, 0)
+  scene.send(:build_target_window)
+  win = scene.instance_variable_get(:@target_window)
+  r = win.cursor_rect
+  eq [56, 0, 112, 48], [r.x, r.y, r.width, r.height]
+  lv = text_calls(win, 'Lv').find { |c| c[0] == 56 && c[1] == 16 }
+  ok lv, 'the LV term at the label column, second line'
+  eq [16, 48], [lv[6], lv[7]], 'in swatch 1'
+  level = text_calls(win, '5').find { |c| c[0] == 68 && c[1] == 16 }
+  ok level, 'the level field right after it'
+  eq [12, 2], [level[2], level[10]], 'right-aligned in a 2-cell field'
+  hp = text_calls(win, 'HP').find { |c| c[0] == 114 && c[1] == 16 }
+  ok hp, 'the HP term at the value column'
+  eq [16, 48], [hp[6], hp[7]], 'in swatch 1'
+  ok text_calls(win, '80').find { |c| c[0] == 126 && c[2] == 18 && c[10] == 2 },
+     'the current HP right-aligned in [126,144)'
+  ok text_calls(win, '/').find { |c| c[0] == 144 && c[1] == 16 }, 'the "/" cell at 144'
+  ok text_calls(win, '120').find { |c| c[0] == 150 && c[2] == 18 && c[10] == 2 },
+     'the max HP right-aligned in [150,168), flush with the inner edge'
+  ok text_calls(win, 'MP').find { |c| c[0] == 114 && c[1] == 32 && c[6] == 16 },
+     'the MP term at the value column, third line, swatch 1'
+  ok text_calls(win, '10').find { |c| c[0] == 126 && c[1] == 32 && c[10] == 2 },
+     'the current MP right-aligned in [126,144)'
 end
 
 # A party whose four field skills exercise #apply_switch_skill /

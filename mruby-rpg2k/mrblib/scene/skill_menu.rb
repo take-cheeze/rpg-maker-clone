@@ -1,50 +1,125 @@
 class RPG2k
   module Scene
-    # The field skill screen (main menu -> Skill). Lists one party member's known
-    # field-usable skills with their SP cost. Casting a single-ally skill
-    # (scope 3) asks who to use it on, while a self (2) or all-ally (4) skill
-    # applies at once, spending SP and restoring HP/SP. An Escape skill warps
-    # straight to the registered escape target with no prompt; a Teleport
-    # skill opens a third list of every registered destination (by map name)
-    # to choose from. Either warp closes the whole menu stack and queues the
-    # jump for Scene::Map to perform (see Game::State#pending_teleport)
-    # rather than applying anything here. All the decision logic is on
-    # Game::Party (field_skills / skill_cost / can_cast? / skill_effect /
-    # cast_skill / cast_escape_skill / cast_teleport_skill), host-tested;
-    # this is the RGSS UI over it.
+    # The field skill screen (main menu -> Skill). Lists every skill one party
+    # member knows, in a two-column grid with each row's SP cost, under a
+    # description banner and a one-line caster status window -- the three
+    # windows, the grid geometry, the cost/status text formats, the scrolling
+    # and the "every known skill listed, the field-unusable ones greyed"
+    # rule were all measured against genuine RPG_RT.exe under wine (cycle
+    # #241, 2026-09-06; see each constant's own comment and docs/TODO.md).
+    # Casting a single-ally skill (scope 3) asks who to use it on, while a
+    # self (2) or all-ally (4) skill applies at once, spending SP and
+    # restoring HP/SP. An Escape skill warps straight to the registered
+    # escape target with no prompt; a Teleport skill opens a third list of
+    # every registered destination (by map name) to choose from. Either warp
+    # closes the whole menu stack and queues the jump for Scene::Map to
+    # perform (see Game::State#pending_teleport) rather than applying
+    # anything here. All the decision logic is on Game::Party (field_skills /
+    # field_skill? / skill_cost / can_cast? / skill_effect / cast_skill /
+    # cast_escape_skill / cast_teleport_skill), host-tested; this is the RGSS
+    # UI over it.
     #
-    # There is no way to switch caster once this screen is open -- ported
-    # from a reference implementation's own source, NOT independently
-    # confirmed against genuine RPG_RT under wine: its caster index is
-    # fixed for the whole screen, unlike its own Equip screen's LEFT/RIGHT
-    # actor-switch. Real RPG_RT
-    # instead hands input focus to the *menu's own party list* when Skill
-    # is selected there, letting the player pick which actor first
-    # (a reference implementation's own command-selection dispatch for the
-    # Skill/Equipment/Status/Row branch) -- `Scene::Menu#enter_actor_selection` now ports that, and
-    # passes the chosen actor's index in here as the third constructor
-    # argument (default 0, the leader, for callers that never had a picker
-    # to begin with, e.g. the host test harnesses).
+    # There is no way to switch caster once this screen is open: real RPG_RT
+    # hands input focus to the *menu's own party list* when Skill is selected
+    # there, letting the player pick which actor first (confirmed live under
+    # wine: 特殊技能 on the field menu moves the cursor onto the party panel,
+    # and only Return there opens this screen), and this screen then shows
+    # that one actor with LEFT/RIGHT free for grid navigation --
+    # `Scene::Menu#enter_actor_selection` implements the picker and passes
+    # the chosen actor's index in here as the third constructor argument
+    # (default 0, the leader, for callers that never had a picker to begin
+    # with, e.g. the host test harnesses).
     class SkillMenu < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
 
-      # Height of the skill-description banner at the very top of the screen
-      # (see #build_desc_window) -- the same gap Scene::ItemMenu/EquipMenu
-      # both already closed for their own description text; Scene::SkillMenu
-      # never grew the equivalent Window_Help.
+      # The :skills-mode screen is THREE stacked full-width windows, every
+      # rect measured off genuine RPG_RT.exe frames under wine (cycle #241,
+      # 2026-09-06; 640x480 captures halved -- the skin's white outer border
+      # rows sat at 2x y 0/58, 64/122, 128/474, its columns at 2x x 0/634):
+      #   description banner  (0,  0, 320, 32)
+      #   caster status line  (0, 32, 320, 32)  -- see #build_status_window
+      #   skill grid          (0, 64, 320, 176) -- down to the screen's very
+      #                                           bottom edge, whatever the
+      #                                           skill count (empty included)
+      # This scene used to fold the caster's name/MP into a header row of a
+      # content-sized grid box and leave the lower screen bare.
       DESC_H = LINE_H + Window::BORDER * 2
+      STATUS_H = LINE_H + Window::BORDER * 2
+      LIST_Y = DESC_H + STATUS_H
+      LIST_H = SCREEN_H - LIST_Y
+      # Rows the grid box can show at once (10); a longer list scrolls -- see
+      # #refresh_skill_cursor.
+      VISIBLE_ROWS = (LIST_H - Window::BORDER * 2) / LINE_H
 
-      # The skill list is a two-column grid, the same shape and cursor math
-      # as Scene::ItemMenu's own -- confirmed against genuine RPG_RT under
-      # wine for that sibling list (see its own COLUMN_MAX comment: a
-      # five-item bag filled row-major and left an incomplete last row's
-      # second cell blank rather than reflowing), ported here on the
-      # strength of the shared shape rather than re-measured independently.
-      # LEFT/RIGHT move within a row now that they are not needed for
-      # caster-switching (see the class comment above).
+      # The skill list is a two-column grid filled row-major. Measured on the
+      # same cycle-#241 captures (a 26-skill leader): the second column's
+      # names start at logical x 168 = contents 160, the first's at contents
+      # 0, so the column pitch is `SCREEN_W / 2` = 160 -- NOT the
+      # `(inner width) / 2` = 152 Scene::ItemMenu's sibling grid still uses
+      # (left as a lead there, unmeasured on that screen). Each row is 16px.
       COLUMN_MAX = 2
+      COL_PITCH = SCREEN_W / COLUMN_MAX
+      # The highlighted cell's own cursor frame spans logical x 4..155 (152
+      # wide) in the first column and 164..315 in the second -- i.e. a
+      # `cursor_rect` 144 wide at contents x 0 / 160 once RPG2k::Window's
+      # own 4px overhang each side (Game::WindowCursor::OVERHANG) is
+      # accounted for. Same 152px frame on an empty list's first cell.
+      CELL_CURSOR_W = COL_PITCH - Game::WindowCursor::OVERHANG * 4
+      # A row's SP cost is `-%3d` (a hyphen separator, then the cost right-
+      # aligned in a three-character field; "-  4", "- 30", "-120" -- no
+      # unit) with its right edge at contents x 144 of the cell: the "-"
+      # glyph sat at logical 128..130 / 288..290 and the last digit ended at
+      # 151 / 311 (exclusive 152 / 312) in the two columns.
+      COST_RIGHT = 144
+
+      # Status-line columns (contents x): the caster's name at 0, the
+      # database's LV term at 80 in system colour 1 with the level right-
+      # aligned in a 2-character field ending at 104 ("LV50" / "LV 5"), the
+      # condition at 124, the HP term at 184 (colour 1) with `%3d/%3d` from
+      # 196 ("600/600", " 56/ 60"), the MP term at 250 with `%3d/%3d` from
+      # 262 ending flush at the 304px inner right edge ("  5/ 60"). Glyph
+      # runs at 2x: name 20..82, LV 176..196, level 200..222 (50) / 212..222
+      # (5), 正常 264..304, HP 384..400, 408..491 (600/600) / 420..490
+      # (" 56/ 60"), MP 516..532, 540..623 / 564..622 ("  5/ 60"). Only the
+      # current MP figure recoloured (critical yellow at 5/60), never a label.
+      STATUS_LEVEL_X = 80
+      STATUS_LEVEL_VALUE_X = 92
+      STATUS_STATE_X = 124
+      STATUS_HP_X = 184
+      STATUS_HP_VALUE_X = 196
+      STATUS_MP_X = 250
+      STATUS_MP_VALUE_X = 262
+      # One `%3d/%3d` pair: a 3-cell (18px) right-aligned current value, a
+      # 6px "/" cell, then a 3-cell right-aligned maximum -- 42px in all.
+      STAT_FIELD_W = 18
+      STAT_SLASH_W = 6
+      STAT_PAIR_W = STAT_FIELD_W * 2 + STAT_SLASH_W
+      # The level's own 2-cell field.
+      LEVEL_FIELD_W = 12
+
+      # Scroll arrows (see #build_arrow_sprites): the same windowskin cells
+      # Window's own pause arrow and Scene::SaveLoad's slot list use, blinking
+      # (seen on/off across captures ~1s apart; the 20-on/20-off period is the
+      # pause arrow's own wine-verified figure, reused rather than re-timed
+      # here). Measured on the cycle-#241 scroll captures: the down arrow's
+      # triangle spans logical (155..164, 233..238) -- centred, at the
+      # screen's bottom edge, exactly where a `SCREEN_H - ARROW_H` blit of
+      # the 16x8 cell (whose triangle fills rows 1..6) lands it; the up
+      # arrow's spans (155..164, 64..69), flush with the grid box's own top
+      # edge, which is where a blit at `LIST_Y` of the up cell lands it --
+      # that cell's triangle fills rows 0..5, checked by capturing this
+      # engine's own Scene::SaveLoad up arrow (sprite y 32, triangle rows 32..37)
+      # drawn from the same Nepheshel skin.
+      ARROW_W = Window::ARROW_W
+      ARROW_H = Window::ARROW_H
+      ARROW_SRC_X = Window::ARROW_SRC_X
+      UP_ARROW_SRC_Y = 8
+      DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
+      ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
+      UP_ARROW_Y = LIST_Y
+      DOWN_ARROW_Y = SCREEN_H - ARROW_H
 
       def initialize parent, state, actor_index = 0
         super parent
@@ -52,20 +127,27 @@ class RPG2k
         @skin = make_windowskin
         @caster_index = actor_index
         @skill_index = 0
+        @top_row = 0
+        @arrow_anim = 0
         @target_index = 0
         @target_lock = nil
         @teleport_index = 0
         @pending_skill = nil
         @mode = :skills          # :skills list, :target selection, or :teleport_target
         build_desc_window
+        build_status_window
         build_skill_window
+        build_arrow_sprites
       end
 
       def dispose
         @desc_window.dispose if @desc_window
+        @status_window.dispose if @status_window
         @skill_window.dispose if @skill_window
         @target_window.dispose if @target_window
         @teleport_window.dispose if @teleport_window
+        @up_arrow.dispose if @up_arrow
+        @down_arrow.dispose if @down_arrow
       end
 
       def update
@@ -74,9 +156,11 @@ class RPG2k
         # scene never called it at all, the same gap Scene::Menu's own
         # #update had (see its own citation).
         @desc_window.update if @desc_window
+        @status_window.update if @status_window
         @skill_window.update if @skill_window
         @target_window.update if @target_window
         @teleport_window.update if @teleport_window
+        tick_arrows
         case @mode
         when :target then update_target
         when :teleport_target then update_teleport_target
@@ -143,13 +227,18 @@ class RPG2k
 
       # Whether `sid` (row `sk`, already looked up) cannot currently be cast --
       # shared by #choose_skill's buzz-and-stay gate and #build_skill_window's
-      # row colour (see its own comment): affordability/seal/weapon-Attribute
-      # (`Game::Party#can_cast?`) for an ordinary skill, or a missing
-      # registered target for Escape/Teleport. Extracted so both call sites
-      # agree by construction rather than by two separately-maintained copies
-      # of the same three-way check.
+      # row colour (see its own comment): field usability itself
+      # (`Game::Party#field_skill?` -- an enemy-scope attack, a stat/attribute
+      # buff, a cure for battle-only states, a switch skill flagged battle-
+      # only; every one of those is *listed* but greyed on genuine RPG_RT,
+      # see `#field_skills`' own cycle-#241 write-up), affordability/seal/
+      # weapon-Attribute (`Game::Party#can_cast?`) for an ordinary skill, or
+      # a missing registered target for Escape/Teleport. Extracted so both
+      # call sites agree by construction rather than by two separately-
+      # maintained copies of the same check.
       def skill_unavailable?(sid, sk)
-        (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
+        (sk && @state.party.respond_to?(:field_skill?) && !@state.party.field_skill?(sk, @state)) ||
+          (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
           (sk && sk.type == Game::Party::SKILL_ESCAPE &&
            @state.party.respond_to?(:escape_skill_available?) &&
            !@state.party.escape_skill_available?(@state)) ||
@@ -235,9 +324,13 @@ class RPG2k
         # The description banner and skill-list box both narrow/change content
         # for :target mode -- see #left_panel_w and #build_mp_cost_window.
         # Both rebuild their own content (including a #refresh_desc call), so
-        # this needs no separate refresh_desc of its own.
+        # this needs no separate refresh_desc of its own. The status line goes
+        # away outright (#build_status_window disposes it in this mode) and
+        # the scroll arrows hide with the grid (#refresh_arrows).
         build_desc_window
+        build_status_window
         build_skill_window
+        refresh_arrows
       end
 
       def update_target
@@ -357,11 +450,19 @@ class RPG2k
         @skills = nil
         @skill_index = skills.size - 1 if @skill_index >= skills.size
         @skill_index = 0 if @skill_index < 0
+        # The status line comes back too, refreshed -- confirmed against
+        # genuine RPG_RT.exe under wine (cycle #241): after casting マーフェ
+        # (4 MP) from 5 MP on the target screen and cancelling out, the
+        # list's status line read "MP   1/ 60" and every now-unaffordable
+        # row (マーフェ itself included) had turned to the disabled colour,
+        # cursor still on the same cell.
+        build_status_window
         build_skill_window
         # Back to full width now that :target mode's own narrowed banner is
         # gone -- see #left_panel_w. Rebuilds rather than a plain
         # #refresh_desc so the width actually changes back, not just the text.
         build_desc_window
+        refresh_arrows
       end
 
       # The destination list is a two-column grid too, not a single stacked
@@ -481,10 +582,15 @@ class RPG2k
           @desc_window.dispose
           @desc_window = nil
         end
+        if @status_window
+          @status_window.dispose
+          @status_window = nil
+        end
         if @skill_window
           @skill_window.dispose
           @skill_window = nil
         end
+        refresh_arrows
         build_teleport_window
       end
 
@@ -496,15 +602,9 @@ class RPG2k
           @teleport_window = nil
         end
         build_desc_window
+        build_status_window
         build_skill_window
-      end
-
-      # After a successful cast, drop back to the skill list and rebuild it (SP
-      # fell; a now-unaffordable skill drops out).
-      # Column width for the skill grid (see Scene::ItemMenu#item_col_w,
-      # which this mirrors).
-      def skill_col_w
-        (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
+        refresh_arrows
       end
 
       # The description banner and the skill-list box below it both run the
@@ -575,63 +675,125 @@ class RPG2k
         @desc_contents.draw_text 0, 0, @desc_contents.width, LINE_H, text
       end
 
-      # The skill grid (plus its caster-name/MP header line) in :skills mode;
-      # a single-row "MP cost" box in its place once :target mode is entered
-      # -- see #build_mp_cost_window.
+      # The caster's one-line status window between the banner and the grid
+      # (:skills mode only -- :target mode puts the "MP cost" box in its
+      # place, see #build_mp_cost_window, and :teleport_target removes it
+      # along with everything else, see #enter_teleport_target). Measured
+      # against genuine RPG_RT.exe under wine (cycle #241): "デモ用   LV50
+      # 正常   HP600/600   MP600/600" on one line, name/values in system
+      # colour 0 and the LV/HP/MP terms in colour 1, at the STATUS_* columns
+      # documented up top. This screen used to fold a "name   MP cur/max"
+      # header into the grid box instead, with no level, condition or HP.
+      def build_status_window
+        @status_window.dispose if @status_window
+        @status_window = nil
+        return unless @mode == :skills
+        inner_w = SCREEN_W - Window::BORDER * 2
+        @status_window = Window.new(0, DESC_H, SCREEN_W, STATUS_H)
+        @status_window.z = 400
+        @status_window.windowskin = @skin
+        c = Bitmap.new(inner_w, LINE_H)
+        c.font.color = Color.new(255, 255, 255, 255)
+        a = caster
+        draw_system_text c, 0, 0, STATUS_LEVEL_X, LINE_H, a.name.to_s, @skin
+        draw_system_text c, STATUS_LEVEL_X, 0, STATUS_LEVEL_VALUE_X - STATUS_LEVEL_X, LINE_H,
+                         term(:level_short), @skin, 1
+        draw_system_text c, STATUS_LEVEL_VALUE_X, 0, LEVEL_FIELD_W, LINE_H, a.level.to_s, @skin, 0, 2
+        draw_actor_state c, a, STATUS_STATE_X, 0, STATUS_HP_X - STATUS_STATE_X, LINE_H, @skin
+        draw_system_text c, STATUS_HP_X, 0, STATUS_HP_VALUE_X - STATUS_HP_X, LINE_H,
+                         term(:hp_short), @skin, 1
+        draw_stat_pair c, STATUS_HP_VALUE_X, 0, a.hp, a.display_max_hp, true
+        draw_system_text c, STATUS_MP_X, 0, STATUS_MP_VALUE_X - STATUS_MP_X, LINE_H,
+                         term(:mp_short), @skin, 1
+        draw_stat_pair c, STATUS_MP_VALUE_X, 0, a.mp, a.display_max_mp, false
+        @status_window.contents = c
+      end
+
+      # One `%3d/%3d` current/maximum pair starting at contents `x` (see
+      # STAT_FIELD_W): the current value right-aligned in its own 3-cell
+      # field, recoloured through Scene::Base#value_font_color exactly as the
+      # genuine frame showed (MP 5/60 drew its "5" in the critical colour
+      # while "/ 60", the label and every HP figure stayed colour 0), then
+      # the "/" and the maximum right-aligned in the last 3 cells. Drawn as
+      # three right-/left-aligned pieces at fixed x rather than one padded
+      # string, so the layout does not depend on this engine's own space-
+      # glyph advance matching RPG_RT's fixed 6px cell.
+      def draw_stat_pair(c, x, y, cur, max, can_knockout)
+        draw_system_text c, x, y, STAT_FIELD_W, LINE_H, cur.to_s, @skin,
+                         value_font_color(cur, max, can_knockout), 2
+        draw_system_text c, x + STAT_FIELD_W, y, STAT_SLASH_W, LINE_H, '/', @skin
+        draw_system_text c, x + STAT_FIELD_W + STAT_SLASH_W, y, STAT_FIELD_W, LINE_H,
+                         max.to_s, @skin, 0, 2
+      end
+
+      # The skill grid box in :skills mode; a single-row "MP cost" box in its
+      # place once :target mode is entered -- see #build_mp_cost_window.
       def build_skill_window
         @skill_window.dispose if @skill_window
         if @mode == :target
           build_mp_cost_window
           return
         end
-        rows = skills
         inner_w = SCREEN_W - Window::BORDER * 2
-        head_h = LINE_H
-        grid_rows = [(rows.size / COLUMN_MAX.to_f).ceil, 1].max
-        h = head_h + grid_rows * LINE_H
-        @skill_window = Window.new(0, DESC_H, SCREEN_W, h + Window::BORDER * 2)
+        @skill_window = Window.new(0, LIST_Y, SCREEN_W, LIST_H)
         @skill_window.z = 400
         @skill_window.windowskin = @skin
-        c = Bitmap.new(inner_w, h)
-        c.font.color = Color.new(255, 255, 255, 255)
-        a = caster
-        mp_term = term(:mp_short)
-        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}   #{mp_term} #{a.mp}/#{a.display_max_mp}"
-        # An empty skill list draws no placeholder text -- matching the fix
-        # for the analogous Item screen (see item_menu.rb), confirmed there
-        # against genuine RPG_RT under wine: a blank list row with a visible,
-        # empty cursor box (see #refresh_skill_cursor) rather than a message.
-        #
-        # A row whose skill is not currently castable (unaffordable SP, a
-        # sealed/missing weapon Attribute, an unregistered Escape/Teleport
-        # target -- see #skill_unavailable?) is still drawn, in the
-        # windowskin's disabled swatch (index 3) rather than the enabled one
-        # (0) -- the same convention Scene::ItemMenu#build_item_window
-        # already applies, and confirmed here directly, not just by analogy:
-        # a genuine RPG_RT.exe frame (party leader with one affordable and
-        # two unaffordable self-scope skills at 2/8/20 SP against 5 current)
-        # pixel-sampled the affordable row's glyph at (165,211,255) and an
-        # unaffordable row's at (99,166,247) -- the exact same two colours
-        # the item-list capture measured for its own usable/unusable rows.
-        col_w = skill_col_w
-        rows.each_with_index do |(sid, cost), i|
-          x = (i % COLUMN_MAX) * col_w
-          y = head_h + (i / COLUMN_MAX) * LINE_H
-          sk = @state.party.db_skill(sid)
-          idx = skill_unavailable?(sid, sk) ? 3 : 0
-          draw_system_text(c, x, y, col_w - 40, LINE_H, skill_name(sid), @skin, idx)
-          # "-  5"-style: a separator (a plain hyphen by default) then the
-          # cost right-aligned in a 3-character field, no MP/SP unit suffix
-          # -- ported from a reference implementation, NOT independently
-          # confirmed against genuine RPG_RT under wine.
-          draw_system_text(c, x + col_w - 40, y, 40, LINE_H, "-%3d" % cost, @skin, idx)
-        end
-        @skill_window.contents = c
+        @skill_contents = Bitmap.new(inner_w, VISIBLE_ROWS * LINE_H)
+        @skill_contents.font.color = Color.new(255, 255, 255, 255)
+        @skill_window.contents = @skill_contents
+        # #refresh_skill_cursor clamps @top_row for the current cursor row
+        # and (re)draws the visible rows through #draw_skill_rows.
+        @rows_drawn_from = nil
         refresh_skill_cursor
       end
 
-      # The "MP cost" box that replaces the skill grid (and its caster-name/
-      # MP header line) once :target mode is entered -- confirmed against
+      # Draw the VISIBLE_ROWS rows from `@top_row` down into the grid box's
+      # contents (the whole list never exists as one tall bitmap; the box
+      # shows a 10-row window onto it, redrawn whenever @top_row moves).
+      #
+      # An empty skill list draws no placeholder text -- confirmed against
+      # genuine RPG_RT under wine (cycle #241, the leader's chunk-108 skill
+      # list empty): a blank grid box with the cursor frame on its first
+      # cell (see #refresh_skill_cursor) rather than a message.
+      #
+      # A row whose skill is not currently castable (not field-usable at all,
+      # unaffordable SP, a sealed/missing weapon Attribute, an unregistered
+      # Escape/Teleport target -- see #skill_unavailable?) is still drawn, in
+      # the windowskin's disabled swatch (index 3) rather than the enabled
+      # one (0) -- the same convention Scene::ItemMenu#build_item_window
+      # already applies, and confirmed here directly, not just by analogy:
+      # a genuine RPG_RT.exe frame (party leader with one affordable and
+      # two unaffordable self-scope skills at 2/8/20 SP against 5 current)
+      # pixel-sampled the affordable row's glyph at (165,211,255) and an
+      # unaffordable row's at (99,166,247) -- the exact same two colours
+      # the item-list capture measured for its own usable/unusable rows;
+      # cycle #241 re-sampled the same pair on a 26-skill list (enemy-scope,
+      # buff, battle-only-cure and unaffordable rows all at (99,166,247)).
+      def draw_skill_rows
+        c = @skill_contents
+        return unless c
+        c.clear
+        rows = skills
+        first = @top_row * COLUMN_MAX
+        last = [first + VISIBLE_ROWS * COLUMN_MAX, rows.size].min
+        (first...last).each do |i|
+          sid, cost = rows[i]
+          x = (i % COLUMN_MAX) * COL_PITCH
+          y = (i / COLUMN_MAX - @top_row) * LINE_H
+          sk = @state.party.db_skill(sid)
+          idx = skill_unavailable?(sid, sk) ? 3 : 0
+          draw_system_text(c, x, y, COST_RIGHT - 24, LINE_H, skill_name(sid), @skin, idx)
+          # `-%3d` right-aligned so its last digit ends at COST_RIGHT (see
+          # its own measurement up top) whatever this engine's glyph
+          # advances are.
+          draw_system_text(c, x, y, COST_RIGHT, LINE_H, "-%3d" % cost, @skin, idx, 2)
+        end
+        @rows_drawn_from = @top_row
+      end
+
+      # The "MP cost" box that replaces the skill grid (and, sitting at the
+      # status line's own rect, the status line) once :target mode is
+      # entered -- confirmed against
       # genuine RPG_RT.exe under wine (cycle #141): the skill list is not
       # merely covered by the target panel, it is replaced outright by a
       # second, short box directly under the (also-narrowed, see
@@ -674,15 +836,94 @@ class RPG2k
         @skill_window.contents = c
       end
 
+      # Scrolling -- confirmed against genuine RPG_RT.exe under wine (cycle
+      # #241, a 26-skill / 13-row leader in the 10-row box): the list never
+      # moves while the cursor stays within the visible rows; moving DOWN off
+      # the bottom visible row scrolls the list up by exactly one row, the
+      # cursor staying on the bottom visible row (rows 2..11 shown with the
+      # cursor on row 11 after two such steps, at the same logical y 216),
+      # and moving UP off the top visible row scrolls it back one row the
+      # same way (top row 3 -> 2 -> 1 across two UPs, cursor pinned at y 72).
+      # The blinking down/up arrows show while rows are hidden below/above
+      # (see #refresh_arrows).
       def refresh_skill_cursor
         return unless @skill_window
-        # The cursor box stays visible on the empty row even with no skills
-        # -- see item_menu.rb's analogous fix. Highlights just the one grid
-        # cell, not the full row -- see Scene::ItemMenu#refresh_item_cursor.
-        x = (@skill_index % COLUMN_MAX) * skill_col_w
-        y = LINE_H + (@skill_index / COLUMN_MAX) * LINE_H
-        @skill_window.cursor_rect = Rect.new(x, y, skill_col_w, LINE_H)
+        row = @skill_index / COLUMN_MAX
+        @top_row = row if row < @top_row
+        @top_row = row - VISIBLE_ROWS + 1 if row >= @top_row + VISIBLE_ROWS
+        @top_row = 0 if @top_row < 0
+        draw_skill_rows if @rows_drawn_from != @top_row
+        # The cursor frame stays on the first cell even with no skills (see
+        # #draw_skill_rows). Highlights just the one grid cell, not the full
+        # row -- CELL_CURSOR_W wide at the cell's own COL_PITCH column.
+        x = (@skill_index % COLUMN_MAX) * COL_PITCH
+        y = (row - @top_row) * LINE_H
+        @skill_window.cursor_rect = Rect.new(x, y, CELL_CURSOR_W, LINE_H)
         refresh_desc
+        refresh_arrows
+      end
+
+      # Rows the grid holds in all (an empty list still occupies one row for
+      # its cursor).
+      def total_rows
+        [(skills.size + COLUMN_MAX - 1) / COLUMN_MAX, 1].max
+      end
+
+      # Two independent sprites pinned to the grid box's top edge and the
+      # screen's bottom edge, centred -- see the ARROW_* constants for the
+      # measurement; the same shape Scene::SaveLoad#build_arrow_sprites
+      # already draws for its slot list.
+      def build_arrow_sprites
+        @up_arrow = build_arrow_sprite(UP_ARROW_SRC_Y)
+        @up_arrow.y = UP_ARROW_Y
+        @down_arrow = build_arrow_sprite(DOWN_ARROW_SRC_Y)
+        @down_arrow.y = DOWN_ARROW_Y
+        refresh_arrows
+      end
+
+      def build_arrow_sprite(src_y)
+        sprite = Sprite.new
+        sprite.z = 450
+        sprite.x = (SCREEN_W - ARROW_W) / 2
+        bmp = Bitmap.new(ARROW_W, ARROW_H)
+        if @skin
+          bmp.blt 0, 0, @skin, Rect.new(ARROW_SRC_X, src_y, ARROW_W, ARROW_H)
+        else
+          draw_arrow_fallback(bmp, src_y == UP_ARROW_SRC_Y)
+        end
+        sprite.bitmap = bmp
+        sprite.visible = false
+        sprite
+      end
+
+      # No windowskin to take the arrow art from -- a small solid triangle,
+      # mirroring Scene::SaveLoad#draw_arrow_fallback's own.
+      def draw_arrow_fallback(bmp, pointing_up)
+        color = Color.new(232, 232, 248, 255)
+        ARROW_H.times do |row|
+          r = pointing_up ? ARROW_H - 1 - row : row
+          w = ARROW_W - r * 2
+          next if w <= 0
+          bmp.fill_rect r, row, w, 1, color
+        end
+      end
+
+      # Advance the blink phase every frame and refresh visibility from it
+      # (the 20-on/20-off cycle Window's pause arrow uses; see ARROW_*).
+      def tick_arrows
+        return unless @up_arrow
+        @arrow_anim = (@arrow_anim + 1) % (ARROW_BLINK_FRAMES * 2)
+        refresh_arrows
+      end
+
+      # An arrow shows only in :skills mode (the grid box is gone in the
+      # other two), while blinking "on", and while rows are hidden in its
+      # direction.
+      def refresh_arrows
+        return unless @up_arrow
+        showing = @mode == :skills && @skill_window && @arrow_anim < ARROW_BLINK_FRAMES
+        @up_arrow.visible = !!(showing && @top_row > 0)
+        @down_arrow.visible = !!(showing && @top_row + VISIBLE_ROWS < total_rows)
       end
 
       # See Scene::ItemMenu's identical `TARGET_W`/`TARGET_ROW_H`/
@@ -711,28 +952,35 @@ class RPG2k
         @target_window.windowskin = @skin
         c = Bitmap.new(inner_w, SCREEN_H - Window::BORDER * 2)
         c.font.color = Color.new(255, 255, 255, 255)
+        # Row text formats measured on this screen's own genuine RPG_RT.exe
+        # frame under wine (cycle #241, the leader at Lv 5 with 56/60 HP and
+        # 5/60 MP): the name at contents 56 in colour 0; the LV term at 56 in
+        # colour 1 followed by the level right-aligned in a 2-cell field
+        # ("LV 5", and "LV50" on the field menu's own panel); the HP/MP terms
+        # at 114 in colour 1 followed by `%3d/%3d` from 126 (" 56/ 60",
+        # "  5/ 60", the "5" in the critical colour) ending flush at the
+        # 168px inner right edge -- the identical shape as the skill screen's
+        # own status line (#build_status_window). This used to draw
+        # "Lv 5"/"HP 56/60" flat white and unpadded.
         party.each_with_index do |a, i|
           y = i * TARGET_ROW_PITCH
           draw_target_face c, a, y
-          c.draw_text TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s
-          c.draw_text TARGET_LABEL_X, y + LINE_H, TARGET_VALUE_X - TARGET_LABEL_X, LINE_H,
-                      "#{term(:level_short)} #{a.level}"
-          # HP/MP recolor the same way the field Status screen's row does
-          # (Scene::Base#draw_stat_segment -- see that helper's own
-          # citation): only the current-value figure, never its label or max,
-          # dims to knockout gray at 0 HP or critical red/orange at or below a
-          # quarter of max. This target list used to draw both as flat-white
-          # text, the same gap the Status screen and battle status panel each
-          # had before their own earlier fixes (see docs/TODO.md).
-          draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H, inner_w, LINE_H,
-                            "#{term(:hp_short)} ", a.hp, a.display_max_hp, true, @skin)
-          # RPG_RT's target list shows each member's condition (its
-          # Window_ActorTarget draws one) -- which is most of the point of the
-          # list, since it is where you pick who to use an antidote on.
+          draw_system_text c, TARGET_LABEL_X, y, inner_w - TARGET_LABEL_X, LINE_H, a.name.to_s, @skin
+          draw_system_text c, TARGET_LABEL_X, y + LINE_H, LEVEL_FIELD_W, LINE_H,
+                           term(:level_short), @skin, 1
+          draw_system_text c, TARGET_LABEL_X + LEVEL_FIELD_W, y + LINE_H, LEVEL_FIELD_W, LINE_H,
+                           a.level.to_s, @skin, 0, 2
+          draw_system_text c, TARGET_VALUE_X, y + LINE_H, LEVEL_FIELD_W, LINE_H,
+                           term(:hp_short), @skin, 1
+          draw_stat_pair c, TARGET_VALUE_X + LEVEL_FIELD_W, y + LINE_H, a.hp, a.display_max_hp, true
+          # RPG_RT's target list shows each member's condition -- which is
+          # most of the point of the list, since it is where you pick who to
+          # use an antidote on ("正常" at 56 on the third line of the frame).
           draw_actor_state c, a, TARGET_LABEL_X, y + LINE_H * 2,
                            TARGET_VALUE_X - TARGET_LABEL_X, LINE_H, @skin
-          draw_stat_segment(c, TARGET_VALUE_X, y + LINE_H * 2, inner_w, LINE_H,
-                            "#{term(:mp_short)} ", a.mp, a.display_max_mp, false, @skin)
+          draw_system_text c, TARGET_VALUE_X, y + LINE_H * 2, LEVEL_FIELD_W, LINE_H,
+                           term(:mp_short), @skin, 1
+          draw_stat_pair c, TARGET_VALUE_X + LEVEL_FIELD_W, y + LINE_H * 2, a.mp, a.display_max_mp, false
         end
         @target_window.contents = c
         refresh_target_cursor
@@ -766,9 +1014,15 @@ class RPG2k
           @target_window.cursor_rect =
             Rect.new(0, 0, @target_window.contents.width, @target_window.contents.height)
         else
+          # The single-row frame spans logical x 196..315 (120 wide) and y
+          # 8..55 (48 tall) on this screen's own genuine frame (cycle #241)
+          # -- i.e. a `cursor_rect` starting exactly at TARGET_LABEL_X once
+          # RPG2k::Window's 4px overhang each side is accounted for, not the
+          # `TARGET_LABEL_X - 2` Scene::ItemMenu's port still uses (left as a
+          # lead there; unmeasured on that screen this cycle).
           @target_window.cursor_rect =
-            Rect.new(TARGET_LABEL_X - 2, @target_index * TARGET_ROW_PITCH,
-                     @target_window.contents.width - (TARGET_LABEL_X - 2), TARGET_ROW_H)
+            Rect.new(TARGET_LABEL_X, @target_index * TARGET_ROW_PITCH,
+                     @target_window.contents.width - TARGET_LABEL_X, TARGET_ROW_H)
         end
       end
 
@@ -793,7 +1047,9 @@ class RPG2k
       end
 
       # Column width for the teleport-destination grid (see #update_teleport_target's
-      # grid comment above; identical formula to #skill_col_w).
+      # grid comment above; the `(inner width) / 2` Scene::ItemMenu's grids
+      # use -- not re-measured on this picker, unlike the skill grid's own
+      # COL_PITCH).
       def teleport_col_w
         (SCREEN_W - Window::BORDER * 2) / COLUMN_MAX
       end

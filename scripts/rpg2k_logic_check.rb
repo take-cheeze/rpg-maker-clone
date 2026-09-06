@@ -8825,7 +8825,13 @@ check 'an RPG2003 subskill category behaves as an ordinary skill' do
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)
   [1, 2, 3].each { |s| hero.learn_skill(s) }
-  eq [[1, 1], [2, 1]], st.party.field_skills(hero), 'the subskill heal is offered'
+  # Every known skill is listed on the field screen, the enemy-scope one
+  # greyed rather than hidden -- confirmed against genuine RPG_RT.exe under
+  # wine (cycle #241, see Game::Party#field_skills); `#field_skill?` is the
+  # per-row usability (greying) check.
+  eq [[1, 1], [2, 1], [3, 1]], st.party.field_skills(hero), 'every known skill is listed'
+  eq true, st.party.field_skill?(st.party.db_skill(2)), 'the subskill heal is usable'
+  eq false, st.party.field_skill?(st.party.db_skill(3)), 'the enemy-scope subskill greys out'
   caster = Game::Battle.from_actor(hero)
   eq [[1, 1], [2, 1], [3, 1]], st.party.battle_skills(hero, caster)
 end
@@ -8841,7 +8847,13 @@ check 'a switch skill is cast for its switch, and only where its flags allow' do
   [4, 5].each { |s| hero.learn_skill(s) }
   caster = Game::Battle.from_actor(hero)
   # Skill 4 is field+battle by default; 5 is flagged battle-only.
-  eq [[4, 6]], st.party.field_skills(hero), 'the battle-only switch skill is hidden'
+  # The battle-only switch skill is listed too, greyed -- confirmed against
+  # genuine RPG_RT.exe under wine (cycle #241): Nepheshel's own [ブースト]
+  # (skill 126, `occasion_field` off) showed on the leader's field list in
+  # the disabled colour next to an enabled ファルを召還 (120, field+battle).
+  eq [[4, 6], [5, 2]], st.party.field_skills(hero), 'the battle-only switch skill is listed'
+  eq true, st.party.field_skill?(st.party.db_skill(4)), 'the field switch skill is usable'
+  eq false, st.party.field_skill?(st.party.db_skill(5)), 'the battle-only one greys out'
   eq [[4, 6], [5, 2]], st.party.battle_skills(hero, caster)
   ok st.party.switch_skill?(4)
   before = hero.mp
@@ -9346,10 +9358,16 @@ check 'Actor#display_max_hp / #display_max_mp lift the shown ceiling to the live
   eq hero.max_mp, hero.display_max_mp, 'MP is unaffected when only HP was changed'
 end
 
-check 'field_skills lists only known field-usable ally skills; can_cast? checks SP' do
-  # What keeps an ordinary skill out of the field menu is its *scope* and whether
-  # it does anything at all — not `occasion_field`, which RPG2000 only reads for
-  # a switch skill (skill 9 here carries it off and is listed all the same).
+check 'field_skills lists every known skill in the actor\'s own order; field_skill? ' \
+      'greys the ones the field cannot use; can_cast? checks SP' do
+  # What makes an ordinary skill *unusable* on the field menu is its *scope*
+  # and whether it does anything at all — not `occasion_field`, which RPG2000
+  # only reads for a switch skill (skill 9 here carries it off and is usable
+  # all the same). None of that hides a row: genuine RPG_RT.exe under wine
+  # (cycle #241) listed enemy-scope and effect-less known skills alike,
+  # greyed, in the order the actor's own skill list holds them (a save
+  # written as [32, 1, 33, ...] displayed in exactly that order, not
+  # ascending) -- see Game::Party#field_skills.
   skills = {
     7  => fake_skill(scope: 3, sp_cost: 5, power: 10, hp: true),        # usable
     8  => fake_skill(scope: 0, sp_cost: 1, power: 10, hp: true),        # enemy scope
@@ -9360,7 +9378,13 @@ check 'field_skills lists only known field-usable ally skills; can_cast? checks 
   st = skill_party(skills)
   hero = st.party.actor_by_id(1)               # max SP 30
   [7, 8, 9, 10, 11].each { |s| hero.learn_skill(s) }
-  eq [[7, 5], [9, 1], [10, 99]], st.party.field_skills(hero)
+  eq [[7, 5], [8, 1], [9, 1], [10, 99], [11, 1]], st.party.field_skills(hero)
+  eq [true, false, true, true, false],
+     [7, 8, 9, 10, 11].map { |s| st.party.field_skill?(st.party.db_skill(s)) },
+     'usable: the ally heals (affordable or not); greyed: enemy scope, affects nothing'
+  # The actor's own order is what the list shows -- no re-sort.
+  hero.skills = [11, 7, 9]
+  eq [[11, 1], [7, 5], [9, 1]], st.party.field_skills(hero), 'listed in the actor\'s own order'
   eq true, st.party.can_cast?(hero, 7)
   eq false, st.party.can_cast?(hero, 10)       # 99 SP > 30
   eq false, st.party.can_cast?(hero, 99)       # unknown skill
@@ -9391,8 +9415,12 @@ check "field_skill? excludes a state-only skill whose state is battle-only, " \
   caster = Game::Battle.from_actor(hero)
   eq [[12, 2], [13, 2]], st.party.battle_skills(hero, caster),
      'both are perfectly ordinary skills in battle'
-  eq [[13, 2]], st.party.field_skills(hero),
-     'the battle-only state cure is hidden from the field menu; the persisting one is offered'
+  eq [[12, 2], [13, 2]], st.party.field_skills(hero),
+     'both are listed on the field menu (genuine RPG_RT lists every known skill, cycle #241)'
+  eq false, st.party.field_skill?(st.party.db_skill(12)),
+     'the battle-only state cure greys out (Nepheshel\'s own ハサウ/ルフィク/ベルナ did, all of ' \
+     'their states type 0 in its database)'
+  eq true, st.party.field_skill?(st.party.db_skill(13)), 'the persisting one is usable'
 end
 
 # A database shrink can leave a caster's learned skill id dangling -- shown

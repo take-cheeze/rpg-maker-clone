@@ -12436,6 +12436,104 @@ The work below is roughly ordered by the critical path to a walkable game
   Skill screen already only ever showed the leader in practice, since it
   has no menu-side actor picker either, so nothing that previously worked
   stopped working), freeing LEFT/RIGHT for the confirmed grid navigation.
+  ✅ **Follow-up (cycle #241, 2026-09-06): the whole Skill screen re-laid out
+  from genuine RPG_RT.exe frames under wine -- three windows, a real status
+  line, a 160px-pitch grid with `-%3d` costs at a fixed right edge,
+  scrolling with arrows, every known skill listed (greyed, not hidden), and
+  the target row's number formats/cursor corrected.** No EasyRPG source was
+  consulted; every number below is a pixel measurement of a 640x480 wine
+  capture halved. Recipe: a copy of the Nepheshel test-bed with the
+  town-map (16, 14,11) save; the leader's own chunk-108 record (database
+  actor 15, fields 51/52 -- chunk 109 untouched, per the finding above)
+  given 26 skills in a deliberately non-ascending order
+  (`32,1,33,34,35,36,37,38,4,7,14,21,30,31,40,41,47,13,45,46,90,2,3,5,6,8`),
+  a second copy at level 5 / 56 HP / 5 MP (fields 31/71/72), and a third
+  with `32,15,82,187,126,120,30,36` (a defence buff, an effect-less skill,
+  フォス, the battle-only switch skill [ブースト], a field switch skill,
+  ルーツ, ベルナ); title → Down Return Return, Escape, Down Return (actor
+  panel), Return; captures after every key. Environment note: two
+  `RPG_RT.exe` in the shared wine prefix fight over the foreground and the
+  loser's X window is *unmapped* (xdotool `--onlyvisible` lists nothing,
+  xwd reads black, keys land nowhere) -- `xdotool windowmap` on every
+  window id before each key/capture recovers it. **Measured:** (1) three
+  stacked full-width windows, skin white-border rows at logical y 0/29,
+  32/61, 64/237: banner (0,0,320,32), status (0,32,320,32), grid box
+  (0,64,320,176) to the screen's bottom edge, empty list included (the old
+  code sized the box to the row count and left the lower screen bare).
+  (2) Status line, contents x: name 0; `LV` term at 80 in system colour 1
+  (glyphs (66,105,189) at that gradient row vs (132,195,255) for values),
+  level right-aligned in [92,104) ("LV50" / "LV 5"); condition 124; `HP`
+  184 (colour 1), `%3d/%3d` from 196 ("600/600", " 56/ 60"); `MP` 250,
+  `%3d/%3d` from 262 ending flush at the 304px inner edge ("  5/ 60", its
+  "5" in the critical yellow (247,211,74), nothing else recoloured). Glyph
+  runs at 2x: name 20..82, LV 176..196, level 200..222 / 212..222, 正常
+  264..304, HP 384..400, 408..491 / 420..490, MP 516..532, 540..623 /
+  564..622. (These are *not* the field-menu panel's own columns, which are
+  a 216px-wide three-line layout; this is a 304px one-liner.) (3) Grid:
+  names at contents 0 / 160 (column pitch 160 = `SCREEN_W / 2`, not the
+  152 = inner/2 the ported Item grid uses -- left as a lead for the Item
+  screen, unmeasured there); rows 16px; cursor frame at logical x 4..155
+  and 164..315, y 72..87 → a `cursor_rect` (0|160, row*16, 144, 16) given
+  `RPG2k::Window`'s 4px overhang; cost `-%3d` ("-  4", "- 30", "-120": a
+  hyphen then a 3-cell right-aligned figure, no unit) with the hyphen at
+  logical 128..130 / 288..290 and the last digit ending at 151 / 311, i.e.
+  right edge contents 144 of the cell. (4) Every known skill is listed, in
+  the actor's chunk-52 order (the save's `32,1,33,...` showed as マーフェ,
+  サー, カル・マーフェ, ...): enemy-scope サー/バマー/ハガザーム/チャレク,
+  the buffs ルーツ/シェレト/[防御上昇], the battle-only-state cures
+  ハサウ/ルフィク/ベルナ/加護 (all their states type 0 in Nepheshel's
+  database), effect-less 結界護符/フォス and the battle-only switch skill
+  [ブースト] all present in the disabled colour (99,166,247) beside enabled
+  rows at (165,211,255) -- exactly the set `Game::Party#field_skill?`
+  already rejected, so the usability rule stands and only list membership
+  changed (`#field_skills` no longer filters or sorts;
+  `Scene::SkillMenu#skill_unavailable?` greys on `#field_skill?` too).
+  Decision on a greyed row stays on the list. (5) Scrolling (13 rows in the
+  10-row box): DOWN through rows 0..9 never moves the list; the 10th/11th/
+  12th DOWN each scroll it one row with the cursor frame staying at logical
+  y 216 (rows 3..12 shown at the end); UP off the top visible row scrolls
+  back one row per press (top row 3→2→1) with the cursor at y 72. Down
+  arrow triangle at logical (155..164, 233..238), up arrow at (155..164,
+  64..69), both blinking (on in 2 of 4 captures ~1s apart; the 20-on/20-off
+  period is the pause arrow's own wine-verified figure, reused, not
+  re-timed). The skin's up-arrow cell fills rows 0..5 and the down cell
+  rows 1..6 (checked by capturing this engine's own SaveLoad up arrow from
+  the same skin at sprite y 32 → triangle 32..37), so the sprites go at
+  y = 64 (`LIST_Y`) and 232 (`SCREEN_H - 8`). (6) Target window (single-
+  ally マーフェ from 5 MP): geometry as already ported (panel x 136, name at
+  contents 56, values at 114), but the row reads `LV` (colour 1) + level in
+  a 2-cell field ("LV 5"), `HP`/`MP` (colour 1) + `%3d/%3d` from 126
+  ending flush at 168 ("HP 56/ 60", "MP  5/ 60" with the 5 critical), and
+  the row cursor frame spans logical x 196..315 / y 8..55 → `cursor_rect`
+  (56, 0, 112, 48), i.e. starting at `TARGET_LABEL_X` itself, not the
+  ported `TARGET_LABEL_X - 2` (Item screen left as a lead). A successful
+  cast stayed on the target screen (HP 56→60, MP 5→1 redrawn in place);
+  Cancel returned to the list with the status line refreshed ("MP   1/ 60")
+  and every now-unaffordable row greyed, cursor unchanged. The banner
+  showed the highlighted skill's description ("(癒し)味方一人のＨＰを回復
+  させる") at contents 0. **Fixed** (`mruby-rpg2k/mrblib/scene/
+  skill_menu.rb`, `Game::Party#field_skills`): all of the above --
+  `STATUS_H`/`LIST_Y`/`LIST_H`/`VISIBLE_ROWS`, `COL_PITCH`/`CELL_CURSOR_W`/
+  `COST_RIGHT`, the `STATUS_*` columns and `draw_stat_pair`, `@top_row`
+  scrolling with `draw_skill_rows`, arrow sprites (`build_arrow_sprites`/
+  `tick_arrows`/`refresh_arrows`), the status window disposed/rebuilt around
+  :target and :teleport_target modes, the target-row formats and cursor.
+  Covered by six new `scripts/rpg2k_scene_check.rb` checks (window rects
+  and cell cursor; status-line columns/swatches/critical colour; cost
+  format and greyed-but-listed rows; scrolling, cursor pinning and arrow
+  blink; status line vs MP-cost box across target mode; target-row formats
+  and cursor) -- all six confirmed to fail against the pre-fix code -- plus
+  updated `scripts/rpg2k_logic_check.rb` expectations (four checks: every
+  known skill listed, `field_skill?` as the greying check, actor order
+  kept) and the two shared Item/Skill target-list checks made Skill-aware.
+  **Deliberately left open:** whether a save genuine RPG_RT writes *itself*
+  ever holds a non-ascending skill list (i.e. whether RPG_RT sorts on learn
+  -- `Game::Actor#learn_skill` still sorts on its own grounds); the
+  sound on Decision over a greyed row (buzzer assumed, not audible here);
+  the Item screen's own 152px column pitch, `-2` target cursor offset and
+  flowing "HP 80/120" target-row format, which this cycle's Skill-screen
+  measurements suggest are wrong there too but were not measured on that
+  screen; the field-menu panel's own HP/MP format (another cycle's screen).
   ✅ **Real RPG_RT's actual way to check a *different* actor's skills is now
   implemented too (ported from a reference implementation, not
   independently confirmed against genuine RPG_RT under wine).** The
