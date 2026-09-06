@@ -31,9 +31,9 @@ class RPG2k
         @title.bitmap = load_title_picture unless hide_title?
 
         @menu_items = [
-          term(:new_game, 'New Game'),
-          term(:continue, 'Continue'),
-          term(:shutdown, 'Shutdown')
+          term(:new_game),
+          term(:continue),
+          term(:shutdown)
         ]
 
         # RPG_RT grays out and skips over Continue when there is no save to

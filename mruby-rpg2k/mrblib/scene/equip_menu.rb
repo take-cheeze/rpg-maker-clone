@@ -54,8 +54,8 @@ class RPG2k
         @mode = :slots          # :slots list, or :items candidate pick
         @warned_missing_item_ids = {}
         @slots = [
-          term(:weapon, "Weapon"), term(:shield, "Shield"), term(:armor, "Armor"),
-          term(:helmet, "Helmet"), term(:accessory, "Accessory")
+          term(:weapon), term(:shield), term(:armor),
+          term(:helmet), term(:accessory)
         ]
         build_desc_window
         build_stats_window
@@ -329,7 +329,7 @@ class RPG2k
         c = Bitmap.new(inner_w, h)
         c.font.color = Color.new(255, 255, 255, 255)
         a = actor
-        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short, 'Lv')} #{a.level}"
+        c.draw_text 0, 0, inner_w, LINE_H, "#{a.name}  #{term(:level_short)} #{a.level}"
         draw_stat_row(c, a)
         @stats_window.contents = c
       end
@@ -339,14 +339,14 @@ class RPG2k
       # order a reference implementation's own stat-drawing path draws them
       # (Atk/Def/Spirit/Agility -- ported from that implementation's
       # source, NOT independently confirmed against
-      # genuine RPG_RT under wine); this codebase's own `term(:mind, ...)`/
+      # genuine RPG_RT under wine); this codebase's own `term(:mind)`/
       # `#int` name RPG2000's "Spirit" stat "Int" instead, matching
       # status_menu.rb.
       STAT_DEFS = [
-        [:attack, 'Atk', :atk_points1, :atk, :effective_atk, :affect_attack],
-        [:defense, 'Def', :def_points1, :def, :effective_def, :affect_defense],
-        [:mind, 'Int', :spi_points1, :int, :effective_int, :affect_spirit],
-        [:agility, 'Agi', :agi_points1, :agi, :effective_agi, :affect_agility]
+        [:attack, :atk_points1, :atk, :effective_atk, :affect_attack],
+        [:defense, :def_points1, :def, :effective_def, :affect_defense],
+        [:mind, :spi_points1, :int, :effective_int, :affect_spirit],
+        [:agility, :agi_points1, :agi, :effective_agi, :affect_agility]
       ].freeze
 
       # Four independent stat rows -- one "label value" per row while
@@ -363,7 +363,7 @@ class RPG2k
       def draw_stat_row(c, a)
         previewing = @mode == :items
         cand_id = previewing ? candidates[@cand_index].first : nil
-        STAT_DEFS.each_with_index do |(term_key, label, field, accessor,
+        STAT_DEFS.each_with_index do |(term_key, field, accessor,
                                         effective_method, stat_flag), i|
           y = LINE_H * (1 + i)
           x = 0
@@ -377,7 +377,7 @@ class RPG2k
           # already port this (built for skill formulas); this screen never
           # called them.
           value = @state.party.send(effective_method, a)
-          text = "#{term(term_key, label)} #{value}"
+          text = "#{term(term_key)} #{value}"
           c.font.color = Color.new(255, 255, 255, 255)
           w = c.text_size(text).width
           c.draw_text x, y, w, LINE_H, text

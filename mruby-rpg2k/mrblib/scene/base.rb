@@ -240,27 +240,22 @@ class RPG2k
       end
 
       # The database's word for "no condition" (RPG_RT shows it rather than
-      # leaving the column blank), or a plain English stand-in for a database
-      # that leaves the term unset.
+      # leaving the column blank). Empty when the database leaves it unset --
+      # genuine RPG_RT draws that blank too, it never substitutes English.
       def normal_status_term
-        term(:normal_status, 'Normal')
+        term(:normal_status)
       end
 
-      # `db.term.<name>`, or `fallback` when the field is blank or the scene is
-      # built on a fixture database that carries no term table at all. Shared by
-      # every scene that draws vocabulary the database lets a project rename
-      # (menu commands, stat abbreviations, equipment slots, ...), so a bare or
-      # partially-filled database still reads as English rather than blank.
-      def term(name, fallback)
+      # `db.term.<name>` as-is, or '' when the field doesn't exist or the
+      # scene is built on a fixture database that carries no term table at
+      # all -- genuine RPG_RT draws a blank database term blank, it never
+      # substitutes English. Shared by every scene that draws vocabulary the
+      # database lets a project rename (menu commands, stat abbreviations,
+      # equipment slots, ...).
+      def term(name)
         t = db.respond_to?(:term) ? db.term : nil
         s = t && t.respond_to?(name) ? t.send(name) : nil
-        nonblank(s, fallback)
-      end
-
-      # `s`, or `fallback` when `s` is nil/empty once stringified.
-      def nonblank(s, fallback)
-        s = s.to_s
-        s.empty? ? fallback : s
+        s.to_s
       end
 
       # RPG2000 system-sound slots (Change System SFX / 10670 stores overrides by
