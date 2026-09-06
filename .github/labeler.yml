@@ -81,6 +81,13 @@
           - "data/mz-sample/**"
           - "scripts/*mz*"
 
+"engine:wolf":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "mruby-wolf/**"
+          - "scripts/*wolf*"
+          - "docs/adr/0064-wolf-rpg-editor-data-layer.md"
+
 # --- platform --------------------------------------------------------------
 # platform:linux has no rules: the SDL sources it would match are the shared
 # desktop path, so it is added by hand when a problem is Linux specific.

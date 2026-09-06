@@ -472,6 +472,7 @@ rpg2k_add_mruby(
   mruby-rpg2k
   mruby-rpgxp
   mruby-rpgvx
+  mruby-wolf
   mruby-mvjs
   MRB_OPTS
   BUILD_DIR=${MRUBY_BUILD_DIR}

@@ -200,6 +200,7 @@ rpg2k_add_mruby(
   mruby-rpg2k
   mruby-rpgxp
   mruby-rpgvx
+  mruby-wolf
   MRB_OPTS
   MRUBY_TARGET=psp)
 

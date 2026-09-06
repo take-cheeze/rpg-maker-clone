@@ -688,6 +688,17 @@ fs::path vx_rtp_path(const fs::path& gd) {
                        ace ? "RPGVXAce" : "RPGVX");
 }
 
+// A WOLF RPG Editor (ウディタ / Woditor) project: a loose Data/BasicData/
+// Game.dat, the one file every unpacked project has regardless of editor
+// version (2.x through 3.5+ all write it, under the same name). Mirrors
+// Wolf::Project.project? (mruby-wolf/mrblib/data.rb), which the Ruby side
+// re-checks once it has a directory to build a Wolf::Project from. A packed
+// release (Data.wolf, DxLib-encrypted) is not recognised yet — see
+// docs/adr/0054-wolf-rpg-editor-data-layer.md's follow-ups.
+bool is_wolf_game(const fs::path& game_dir) {
+  return fs::exists(game_dir / "Data" / "BasicData" / "Game.dat");
+}
+
 // An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or
 // XP's own encrypted archive (a packed release ships no loose Data/ folder),
 // and not a VX / VX Ace project, whose archives are its own. Mirrors the
@@ -833,6 +844,7 @@ extern "C" void rpg_maker_init_shared_gems(mrb_state* M);
 extern "C" void rpg_maker_init_rpg2k_gem(mrb_state* M);
 extern "C" void rpg_maker_init_rpgxp_gem(mrb_state* M);
 extern "C" void rpg_maker_init_rpgvx_gem(mrb_state* M);
+extern "C" void rpg_maker_init_wolf_gem(mrb_state* M);
 extern "C" void rpg_maker_init_mvjs_gem(mrb_state* M);
 
 // Which RPG Maker generation a game directory holds, decided by the same
@@ -841,7 +853,7 @@ extern "C" void rpg_maker_init_mvjs_gem(mrb_state* M);
 // one detection pass: main() now needs the answer *before* it opens mruby,
 // to init only the matching maker gem (see "Deferred per-maker gem init"
 // above), where it previously only needed it at dispatch time.
-enum class GameKind { kUnknown, kRpg2k, kMz, kMv, kRpgVx, kRpgXp };
+enum class GameKind { kUnknown, kRpg2k, kMz, kMv, kRpgVx, kRpgXp, kWolf };
 
 GameKind detect_game_kind(const fs::path& game_dir) {
   if (fs::exists(game_dir / "RPG_RT.ldb"))
@@ -856,6 +868,8 @@ GameKind detect_game_kind(const fs::path& game_dir) {
     return GameKind::kRpgVx;
   if (fs::exists(game_dir / "Game.ini"))
     return GameKind::kRpgXp;
+  if (is_wolf_game(game_dir))
+    return GameKind::kWolf;
   return GameKind::kUnknown;
 }
 
@@ -875,6 +889,10 @@ mrb_value protect_body_rpgxp(mrb_state* M, void*) {
 }
 mrb_value protect_body_rpgvx(mrb_state* M, void*) {
   rpg_maker_init_rpgvx_gem(M);
+  return mrb_nil_value();
+}
+mrb_value protect_body_wolf(mrb_state* M, void*) {
+  rpg_maker_init_wolf_gem(M);
   return mrb_nil_value();
 }
 mrb_value protect_body_mvjs(mrb_state* M, void*) {
@@ -909,6 +927,9 @@ void init_maker_gem(mrb_state* M, GameKind kind) {
       break;
     case GameKind::kRpgVx:
       protect_gem_init(M, protect_body_rpgvx);
+      break;
+    case GameKind::kWolf:
+      protect_gem_init(M, protect_body_wolf);
       break;
     case GameKind::kMv:
     case GameKind::kMz:
@@ -1035,13 +1056,35 @@ extern "C" EMSCRIPTEN_KEEPALIVE int rpg_start_game(void) {
       error_dump_set_context("project", "RPG Maker MV (js/rpg_core.js)");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "MV"), 1, &em_args);
       break;
+    case GameKind::kWolf:
+      // WOLF RPG Editor: unlike XP/VX above, its screen size is a per-project
+      // Game.dat setting rather than a fixed constant, so it cannot be sized
+      // before construction the way those are; resize the canvas after
+      // WolfRPG#initialize has read it, once construction has not raised.
+      error_dump_set_context("project",
+                             "WOLF RPG Editor (Data/BasicData/Game.dat)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "WolfRPG"), 1, &em_args);
+      if (!M->exc && em_display) {
+        RClass* graphics =
+            mrb_module_get_under(M, mrb_module_get(M, "RGSS"), "Graphics");
+        const mrb_int w =
+            mrb_fixnum(mrb_funcall(M, mrb_obj_value(graphics), "width", 0));
+        const mrb_int h =
+            mrb_fixnum(mrb_funcall(M, mrb_obj_value(graphics), "height", 0));
+        if (w > 0 && h > 0) {
+          lv_display_set_resolution(em_display.get(), static_cast<int32_t>(w),
+                                    static_cast<int32_t>(h));
+          LOG(INFO) << "WolfRPG: display sized to " << w << "x" << h;
+        }
+      }
+      break;
     case GameKind::kUnknown:
       LOG(ERROR)
           << "No RPG2k (RPG_RT.ldb), RPG XP (Game.ini), RPG Maker VX / VX "
              "Ace (Data/System.rvdata[2]), RPG Maker MV "
-             "(js/rpg_core.js + data/System.json) or RPG Maker MZ "
-             "(js/rmmz_core.js + data/System.json) project found under "
-             "/game";
+             "(js/rpg_core.js + data/System.json), RPG Maker MZ "
+             "(js/rmmz_core.js + data/System.json) or WOLF RPG Editor "
+             "(Data/BasicData/Game.dat) project found under /game";
       return 1;
   }
   if (M->exc) {
@@ -1314,11 +1357,19 @@ int main(int argc, char** argv) {
   // since a packed release ships no loose Data/ folder.
   const bool xp_game = is_xp_game(FLAGS_game_dir);
   const bool vx_game = is_rpgvx_game(FLAGS_game_dir);
+  // Left true only when neither --width nor --height was given: a WOLF RPG
+  // Editor project's screen size is a per-project Game.dat setting, not one
+  // of the fixed constants XP/VX use above, so it cannot be known this early
+  // (before mruby has parsed anything) -- the game_obj construction below
+  // resizes the display for real once WolfRPG#initialize has read Game.dat,
+  // gated on this same flag so an explicit --width/--height still wins.
+  bool size_flags_default = false;
   {
     gflags::CommandLineFlagInfo w_info, h_info;
     gflags::GetCommandLineFlagInfo("width", &w_info);
     gflags::GetCommandLineFlagInfo("height", &h_info);
-    if (w_info.is_default && h_info.is_default) {
+    size_flags_default = w_info.is_default && h_info.is_default;
+    if (size_flags_default) {
       if (xp_game) {
         FLAGS_width = RPGXP_WIDTH;
         FLAGS_height = RPGXP_HEIGHT;
@@ -1837,6 +1888,7 @@ int main(int argc, char** argv) {
     protect_gem_init(M, protect_body_rpg2k);
     protect_gem_init(M, protect_body_rpgxp);
     protect_gem_init(M, protect_body_rpgvx);
+    protect_gem_init(M, protect_body_wolf);
     protect_gem_init(M, protect_body_mvjs);
     CHECK_NO_EXC(M);
     std::ifstream ifs(FLAGS_script);
@@ -1889,10 +1941,34 @@ int main(int argc, char** argv) {
       error_dump_set_context("project", "RPG Maker XP (Game.ini)");
       game_obj = mrb_obj_new(M, mrb_class_get(M, "RPGXP"), 1, &args);
       break;
+    case GameKind::kWolf:
+      error_dump_set_context("project",
+                             "WOLF RPG Editor (Data/BasicData/Game.dat)");
+      game_obj = mrb_obj_new(M, mrb_class_get(M, "WolfRPG"), 1, &args);
+      break;
     case GameKind::kUnknown:
       CHECK(false) << "Unknown game directory: " << game_dir_path;
   }
   CHECK_NO_EXC(M);
+
+  // WolfRPG#initialize (unlike XP/VX, above) reads its screen size from the
+  // project's own Game.dat rather than a fixed per-maker constant, so it
+  // could not be known before mruby parsed anything; resize the real display
+  // now that RGSS::Graphics carries the true value, unless --width/--height
+  // were given explicitly on the command line.
+  if (kind == GameKind::kWolf && size_flags_default && display) {
+    RClass* graphics =
+        mrb_module_get_under(M, mrb_module_get(M, "RGSS"), "Graphics");
+    const mrb_int w =
+        mrb_fixnum(mrb_funcall(M, mrb_obj_value(graphics), "width", 0));
+    const mrb_int h =
+        mrb_fixnum(mrb_funcall(M, mrb_obj_value(graphics), "height", 0));
+    if (w > 0 && h > 0 && (w != FLAGS_width || h != FLAGS_height)) {
+      lv_display_set_resolution(display.get(), static_cast<int32_t>(w),
+                                static_cast<int32_t>(h));
+      LOG(INFO) << "WolfRPG: display sized to " << w << "x" << h;
+    }
+  }
 
   mrb_funcall(M, game_obj, "start", 0);
   // The game ran to its end or died in it; either way this is the last chance

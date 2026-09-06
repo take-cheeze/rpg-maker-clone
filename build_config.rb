@@ -123,6 +123,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
+  conf.gem "#{MRUBY_ROOT}/../../mruby-wolf"
   conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
 
   rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs)
@@ -154,7 +155,7 @@ end
 # which function calls which of them. See src/main.cxx's "Deferred per-maker
 # gem init" section for the call side.
 def rpg_maker_gem_dispatch(conf, include_mvjs:)
-  maker_gem_names = %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx] +
+  maker_gem_names = %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf] +
                      (include_mvjs ? %w[mruby-mvjs] : [])
   src = "#{conf.build_dir}/mrbgems/rpg_maker_gem_dispatch.c"
 
@@ -243,7 +244,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:)
       shared.each(&emit_call)
       f.puts '}'
 
-      rpg2k, rpgxp, rpgvx, mvjs = makers
+      rpg2k, rpgxp, rpgvx, wolf, mvjs = makers
       f.puts
       f.puts 'void rpg_maker_init_rpg2k_gem(mrb_state *mrb) {'
       maker_private['mruby-rpg2k'].each(&emit_call)
@@ -259,6 +260,11 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:)
       f.puts '  rpg_maker_init_rpgxp_gem(mrb); /* RGSS2/3 extends RGSS */'
       maker_private['mruby-rpgvx'].each(&emit_call)
       emit_call.call(rpgvx)
+      f.puts '}'
+      f.puts
+      f.puts 'void rpg_maker_init_wolf_gem(mrb_state *mrb) {'
+      maker_private['mruby-wolf'].each(&emit_call)
+      emit_call.call(wolf)
       f.puts '}'
       if mvjs
         f.puts
