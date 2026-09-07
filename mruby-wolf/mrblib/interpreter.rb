@@ -52,6 +52,13 @@ module Wolf
     C_STRING_CONDITION = 112
     C_SET_VARIABLE = 121
     C_SET_STRING = 122
+    # "その他2" tab's "■変数操作+" button (help/04ev_valuenext.html;
+    # WolfTL's own Command.hpp names it SetVariableEx, the wolfrpg-map-
+    # parser crate's own SetVariablePlusCommand). A much larger command
+    # than SetVariable(121) -- dozens of "character state"/"position"/
+    # "picture"/"other" queries -- see #exec_set_variable_ex's own comment
+    # for what is cross-confirmed and implemented versus not.
+    C_SET_VARIABLE_EX = 124
     C_INPUT_KEY = 123
     C_TELEPORT = 130
     C_SOUND = 140
@@ -146,6 +153,7 @@ module Wolf
       def dispatch(cmd)
         case cmd.code
         when Interpreter::C_SET_VARIABLE then @interp.exec_set_variable(cmd)
+        when Interpreter::C_SET_VARIABLE_EX then @interp.exec_set_variable_ex(cmd)
         when Interpreter::C_SET_STRING then @interp.exec_set_string(cmd)
         when Interpreter::C_VARIABLE_CONDITION then exec_variable_condition(cmd)
         when Interpreter::C_STRING_CONDITION
@@ -576,7 +584,7 @@ module Wolf
         when 0x0 then left + right
         when 0x1 then left - right
         when 0x2 then left * right
-        when 0x3 then right.zero? ? 0 : (left / right)
+        when 0x3 then right == 0 ? 0 : (left / right)
         when 0xf then right # "Nothing": use the right-hand side as-is
         else
           var_store.warn_once("calc-op-#{calc_op}", "SetVariable calculation op #{calc_op} not implemented; using the right-hand side")
@@ -584,23 +592,30 @@ module Wolf
         end
 
       current = var_store.number(target)
-      result =
-        case assign_op
-        when 0x0 then computed
-        when 0x1 then current + computed
-        when 0x2 then current - computed
-        when 0x3 then current * computed
-        when 0x4 then computed.zero? ? 0 : (current / computed)
-        when 0x5 then computed.zero? ? 0 : (current % computed)
-        when 0x6 then [current, computed].min
-        when 0x7 then [current, computed].max
-        when 0x8 then computed.abs
-        else
-          var_store.warn_once("assign-op-#{assign_op}", "SetVariable assignment op #{assign_op} not implemented; assigning directly")
-          computed
-        end
+      var_store.set_number(target, fold32(apply_assign_op(current, computed, assign_op)))
+    end
 
-      var_store.set_number(target, fold32(result))
+    # SetVariable(121)'s own assignment-operator word (help/06valuenext
+    # .html's own "計算式の説明": =/+=/-=/*=//=/%=/min/max/abs), shared with
+    # SetVariableEx(124) below -- the wolfrpg-map-parser crate's own
+    # `AssignmentOperator` enum for *that* command uses the identical 0-8
+    # numbering (it adds nothing SetVariable's own reader did not already
+    # cross-confirm independently).
+    def apply_assign_op(current, computed, assign_op)
+      case assign_op
+      when 0x0 then computed
+      when 0x1 then current + computed
+      when 0x2 then current - computed
+      when 0x3 then current * computed
+      when 0x4 then computed == 0 ? 0 : (current / computed)
+      when 0x5 then computed == 0 ? 0 : (current % computed)
+      when 0x6 then [current, computed].min
+      when 0x7 then [current, computed].max
+      when 0x8 then computed.abs
+      else
+        var_store.warn_once("assign-op-#{assign_op}", "assignment operator #{assign_op} not implemented; assigning directly")
+        computed
+      end
     end
 
     # Reduce to WOLF RPG's own 32-bit signed range (help/01specifi.html's
@@ -1116,25 +1131,116 @@ module Wolf
     end
 
     def resolve_route_target(target)
+      pos, event = resolve_character_pos(target)
+      return [nil, nil] unless pos
+      # #exec_set_move_route's own generic "target N" message covers a
+      # dangling event id, a "this event" outside any map event's own
+      # context, or a party member (-3..-7, no party system exists yet) --
+      # #resolve_character_pos returns nil pos for all three.
+      writeback = target == ROUTE_TARGET_HERO ? ->(p) { current_scene.hero_pos = p } : nil
+      [pos, writeback]
+    end
+
+    # Shared by SetMoveRoute(201) and SetVariableEx(124)'s own Character
+    # mode: help/04ev_movesettingB.html's documented target convention
+    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member --
+    # no party system exists yet) resolved to a `{x:, y:, direction:}` pos
+    # hash and, when it names a real map event (not the hero), that event
+    # itself (for SetVariableEx's own EventId field). `[nil, nil]` when
+    # nothing resolves.
+    def resolve_character_pos(target)
       if target >= 0
         event = current_map && current_map.events.find { |e| e.id == target }
         return [nil, nil] unless event
-        [event_position(event), nil]
+        [event_position(event), event]
       elsif target == ROUTE_TARGET_SELF
         event_id = var_store.current_map_event_id
         event = event_id && current_map && current_map.events.find { |e| e.id == event_id }
         return [nil, nil] unless event
-        [event_position(event), nil]
+        [event_position(event), event]
       elsif target == ROUTE_TARGET_HERO
         return [nil, nil] unless current_scene
-        [current_scene.hero_pos, ->(p) { current_scene.hero_pos = p }]
+        [current_scene.hero_pos, nil]
       else
-        # -3..-7 (a party member): no party system exists yet.
-        # #exec_set_move_route's own generic "target N" message covers this,
-        # same as a dangling event id or a "this event" outside any map
-        # event's own context.
         [nil, nil]
       end
+    end
+
+    # SetVariableEx(124): arg(0) the target variable, arg(1) packs (byte 0
+    # unmodeled "options" -- the crate's own `bind_result`/`use_variable_as_
+    # reference`/`precise_position` flags, never set by any real command in
+    # the sample game -- byte 1 low nibble the assignment operator, shared
+    # with SetVariable(121) via #apply_assign_op and cross-confirmed
+    # identical by the crate's own `AssignmentOperator` enum, byte 1 high
+    # nibble a "variable type" selecting one of four wildly different query
+    # kinds: 1 Character, 2 Position [a map tile's own properties, not a
+    # character's], 3 Other [current map id, BGM/BGS playback state,
+    # mouse], 4 PictureNumber [a specific Picture(150) number's own state]).
+    # Real command dumps from the sample game exercise Character (29 of 32
+    # real calls) and Other (3, target values this reader has not wired to
+    # any tracked state -- current map id, whether a BGM is playing); this
+    # reader implements only Character, whose own target argument (arg(2))
+    # reuses SetMoveRoute(201)'s exact target convention (see
+    # #resolve_character_pos) and whose own field selector (arg(3), a
+    # `CharacterField` cross-confirmed against the crate's own enum) covers
+    # only what this reader's existing position tracking can answer:
+    # standard and precise X/Y (help/04ev_valuenext.html's own documented
+    # precise-coordinate formula -- half-tile units, X the left edge,
+    # Y "the foot position minus one" -- applied exactly, not approximated,
+    # since this reader has no sub-tile movement state to make it
+    # imprecise), numpad-convention direction (matching every other maker
+    # in this codebase's own numpad direction convention), and event id
+    # (-1 when the target does not name a real map event, matching the
+    # manual's own documented not-found sentinel). Every other field
+    # (height, screen coordinates, shadow graphic, tile tag, on-screen,
+    # active page, run condition, range extension, animation pattern,
+    # moving) and every other variable type are logged and skipped.
+    SET_VAR_EX_TYPE_CHARACTER = 1
+    CHAR_FIELD_STANDARD_X = 0
+    CHAR_FIELD_STANDARD_Y = 1
+    CHAR_FIELD_PRECISE_X = 2
+    CHAR_FIELD_PRECISE_Y = 3
+    CHAR_FIELD_DIRECTION = 5
+    CHAR_FIELD_EVENT_ID = 10
+    CHAR_DIRECTION_NUMPAD = { down: 2, left: 4, right: 6, up: 8 }.freeze
+
+    def exec_set_variable_ex(cmd)
+      unless cmd.args.size == 4
+        unimplemented("SetVariableEx(124) with #{cmd.args.size} arguments (only the confirmed 4-argument Character layout is understood)")
+        return
+      end
+      header = cmd.arg(1)
+      assign_op = (header >> 8) & 0x0f
+      var_type = (header >> 12) & 0x0f
+
+      unless var_type == SET_VAR_EX_TYPE_CHARACTER
+        unimplemented("SetVariableEx(124) variable type #{var_type}")
+        return
+      end
+
+      pos, event = resolve_character_pos(cmd.arg(2))
+      unless pos
+        unimplemented("SetVariableEx(124) character target #{cmd.arg(2)}")
+        return
+      end
+
+      field = cmd.arg(3)
+      computed =
+        case field
+        when CHAR_FIELD_STANDARD_X then pos[:x]
+        when CHAR_FIELD_STANDARD_Y then pos[:y]
+        when CHAR_FIELD_PRECISE_X then pos[:x] * 2
+        when CHAR_FIELD_PRECISE_Y then pos[:y] * 2 - 1
+        when CHAR_FIELD_DIRECTION then CHAR_DIRECTION_NUMPAD[pos[:direction]] || 0
+        when CHAR_FIELD_EVENT_ID then event ? event.id : -1
+        else
+          unimplemented("SetVariableEx(124) character field #{field}")
+          return
+        end
+
+      target = cmd.arg(0)
+      current = var_store.number(target)
+      var_store.set_number(target, fold32(apply_assign_op(current, computed, assign_op)))
     end
 
     # Runs one RouteCommand list against `pos` (either a map event's own

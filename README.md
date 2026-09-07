@@ -660,6 +660,12 @@
   than reverse-engineered. Keyboard/mouse/gamepad key kinds and a few
   unconfirmed direction modes are logged and skipped. See
   [`docs/adr/0073-wolf-rpg-editor-input-key.md`](docs/adr/0073-wolf-rpg-editor-input-key.md)
+- **Character-state queries.** `SetVariableEx`(124) reads a character's own
+  standard/precise position, numpad direction, and event id — any map
+  event, "this event", or the hero, the same target convention
+  `SetMoveRoute`(201) already uses. Its map-tile, Picture-number and
+  "other" (map id/BGM-BGS/mouse) query kinds remain unimplemented. See
+  [`docs/adr/0074-wolf-rpg-editor-set-variable-ex.md`](docs/adr/0074-wolf-rpg-editor-set-variable-ex.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

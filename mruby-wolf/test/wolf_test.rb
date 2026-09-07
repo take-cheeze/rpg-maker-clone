@@ -730,6 +730,95 @@ assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explici
   assert_equal 0, scene.x
 end
 
+# ---- Wolf::Interpreter#exec_set_variable_ex (SetVariableEx(124)) ------------
+
+def wolf_test_var_ex_header(assign_op: 0, var_type: Wolf::Interpreter::SET_VAR_EX_TYPE_CHARACTER)
+  ((assign_op & 0x0f) << 8) | ((var_type & 0x0f) << 12)
+end
+
+assert "Wolf::Interpreter#exec_set_variable_ex reads standard/precise X/Y and direction off an explicit event id" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  event = WolfTestEvent.new(7, 5, 6, [])
+  interp.current_map = WolfTestMap.new([event])
+  pos = interp.event_position(event)
+  pos[:direction] = :left
+
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_000, wolf_test_var_ex_header, 7, 0])) # StandardX
+  assert_equal 5, store.number(2_000_000)
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_001, wolf_test_var_ex_header, 7, 1])) # StandardY
+  assert_equal 6, store.number(2_000_001)
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_002, wolf_test_var_ex_header, 7, 2])) # PreciseX
+  assert_equal 10, store.number(2_000_002)
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_003, wolf_test_var_ex_header, 7, 3])) # PreciseY
+  assert_equal 11, store.number(2_000_003)
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_004, wolf_test_var_ex_header, 7, 5])) # Direction
+  assert_equal 4, store.number(2_000_004) # numpad 4 = left
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_005, wolf_test_var_ex_header, 7, 10])) # EventId
+  assert_equal 7, store.number(2_000_005)
+end
+
+assert "Wolf::Interpreter#exec_set_variable_ex resolves \"this event\" and the hero the same way SetMoveRoute(201) does" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 3
+  scene.y = 4
+  interp.current_scene = scene
+  self_event = WolfTestEvent.new(9, 1, 1, [])
+  interp.current_map = WolfTestMap.new([self_event])
+  store.current_map_event_id = 9
+
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_000, wolf_test_var_ex_header, -1, 0])) # self, StandardX
+  assert_equal 1, store.number(2_000_000)
+
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_001, wolf_test_var_ex_header, -2, 0])) # hero, StandardX
+  assert_equal 3, store.number(2_000_001)
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_002, wolf_test_var_ex_header, -2, 10])) # hero has no event id
+  assert_equal(-1, store.number(2_000_002))
+end
+
+assert "Wolf::Interpreter#exec_set_variable_ex applies the shared assignment-operator word, matching a real DivideEquals call" do
+  # map1 ev#23's own "メッセージウィンドウ" Common Event carries exactly this
+  # combination for real: PictureNumber type with assign_op DivideEquals --
+  # unimplemented here (only Character type is), but the operator itself
+  # (shared with SetVariable(121) via #apply_assign_op) is exercised here
+  # against a Character-type field instead, so the real 4/=-style call this
+  # reader *can* answer is still covered end to end.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 20)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  event = WolfTestEvent.new(1, 4, 0, [])
+  interp.current_map = WolfTestMap.new([event])
+
+  header = wolf_test_var_ex_header(assign_op: 4) # /=
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_000, header, 1, 0])) # StandardX = 4
+  assert_equal 5, store.number(2_000_000) # 20 / 4
+end
+
+assert "Wolf::Interpreter#exec_set_variable_ex skips a variable type/field/argument-count/target it does not understand" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  event = WolfTestEvent.new(1, 0, 0, [])
+  interp.current_map = WolfTestMap.new([event])
+
+  other_type = wolf_test_var_ex_header(var_type: 3) # Other, not implemented
+  interp.exec_set_variable_ex(wolf_test_cmd(124, [2_000_000, other_type, 1, 0]))
+  assert_equal 0, store.number(2_000_000)
+
+  unknown_field = wolf_test_cmd(124, [2_000_001, wolf_test_var_ex_header, 1, 4]) # HeightOffGround, not implemented
+  interp.exec_set_variable_ex(unknown_field)
+  assert_equal 0, store.number(2_000_001)
+
+  odd_argc = wolf_test_cmd(124, [2_000_002, wolf_test_var_ex_header, 1])
+  interp.exec_set_variable_ex(odd_argc)
+  assert_equal 0, store.number(2_000_002)
+
+  no_such_event = wolf_test_cmd(124, [2_000_003, wolf_test_var_ex_header, 99, 0])
+  interp.exec_set_variable_ex(no_such_event)
+  assert_equal 0, store.number(2_000_003)
+end
+
 # ---- Wolf::Interpreter#exec_choices (Choices(102)) --------------------------
 
 def wolf_test_choice_options(selected:, cancel: Wolf::Interpreter::CHOICE_CANCEL_SEPARATE, extra: 0)
