@@ -686,7 +686,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
-              :shifted, :tinted, :changed_colors, :flickered
+              :shifted, :tinted, :changed_colors, :flickered, :flashed
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -708,6 +708,7 @@ class WolfTestFakeScene
     @tinted = []
     @changed_colors = []
     @flickered = []
+    @flashed = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -719,6 +720,7 @@ class WolfTestFakeScene
   def shift_picture(number, dx, dy); @shifted << [number, dx, dy]; end
   def tint_picture(number, r, g, b); @tinted << [number, r, g, b]; end
   def set_picture_flicker(number, interval, r, g, b); @flickered << [number, interval, r, g, b]; end
+  def flash_picture(number, r, g, b, duration); @flashed << [number, r, g, b, duration]; end
   # Wolf::Interpreter#exec_change_color's own seam.
   def change_color(r, g, b, flash, duration); @changed_colors << [r, g, b, flash, duration]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
@@ -1797,8 +1799,8 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
   character_target = wolf_test_effect_options(target: 1, effect_type: 0)
   interp.exec_effect(wolf_test_cmd(290, [character_target, 0, -2, -2, 0, 0, 0]))
 
-  unknown_type = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE, effect_type: 0)
-  interp.exec_effect(wolf_test_cmd(290, [unknown_type, 0, 1, 1, 0, 0, 0])) # Flash, not implemented
+  unknown_type = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE, effect_type: 4)
+  interp.exec_effect(wolf_test_cmd(290, [unknown_type, 0, 1, 1, 0, 0, 0])) # Zoom, not implemented
 
   delayed = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
                                       effect_type: Wolf::Interpreter::EFFECT_PICTURE_DRAW_POSITION_SHIFT)
@@ -1810,6 +1812,34 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
 
   assert_equal [], scene.shifted
   assert_equal [], scene.tinted
+end
+
+assert "Wolf::Interpreter#exec_effect's Flash reads the 'duration' field as the flash's own decay length, matching a real call" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_FLASH)
+  # A real call: 25-frame flash, picture 21 only, RGB +200/-100/-100.
+  interp.exec_effect(wolf_test_cmd(290, [options, 25, 21, 21, 200, -100, -100]))
+  assert_equal [[21, 200, -100, -100, 25]], scene.flashed
+end
+
+assert "Wolf::Interpreter#exec_effect's Flash applies across a real contiguous picture-number range and tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_FLASH)
+  interp.exec_effect(wolf_test_cmd(290, [options, 10, 5, 7, 100, 100, 100]))
+  assert_equal [[5, 100, 100, 100, 10], [6, 100, 100, 100, 10], [7, 100, 100, 100, 10]], scene.flashed
+
+  interp.current_scene = nil
+  interp.exec_effect(wolf_test_cmd(290, [options, 10, 1, 1, 100, 100, 100]))
 end
 
 assert "Wolf::Interpreter#exec_effect's SwitchFlicker reads the 'duration' field as a toggle interval, matching a real active call" do

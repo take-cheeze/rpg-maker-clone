@@ -207,6 +207,15 @@ class WolfRPG
       end
       update_camera
       update_tone
+      # ChangeColor(151)'s own "flash" case (#change_color) sets
+      # @viewport's native flash state once; decaying it every frame after
+      # -- and re-syncing whatever #update_tone just wrote to @viewport.tone
+      # -- is native RGSS::Viewport#update's own job, found missing here
+      # while wiring up the same "a sprite's own flash needs a periodic
+      # native #update call to decay" fact for #flash_picture below: without
+      # it, a real flash call would freeze at full intensity forever rather
+      # than fading, since nothing else ever re-ran its own decay tick.
+      @viewport.update
       update_picture_effects
     end
 
@@ -460,6 +469,27 @@ class WolfRPG
       entry[:sprite].color = fresh
     end
 
+    # Effect(290)'s own Picture-target "フラッシュ" (Flash): a one-shot
+    # additive colour pulse ("指定した...値をピクチャの「カラー」に加算し
+    # て1回だけフラッシュします"), reusing native RGSS `Sprite#flash`
+    # directly rather than tracking any state here -- unlike #tint_picture
+    # (a *persistent* addition to the sprite's own base colour) this is
+    # ephemeral, composited as its own overlay that fades over `duration`
+    # frames and clears itself, exactly the semantics `Sprite#flash`
+    # already implements for every other sprite in this codebase. Needs no
+    # `old` colour to add onto (unlike #tint_picture): the native flash
+    # overlay is independent of the sprite's own persistent colour, so a
+    # picture with an active ColorCorrect tint is untouched by this.
+    def flash_picture(number, r, g, b, duration)
+      entry = @pictures[number]
+      return unless entry
+      color = RGSS::Color.new(0, 0, 0, 255)
+      color.red = r
+      color.green = g
+      color.blue = b
+      entry[:sprite].flash(color, duration)
+    end
+
     # Effect(290)'s own Picture-target "点滅A[明滅]" (SwitchFlicker):
     # starts, redirects, or stops a persistent per-picture toggle between
     # the picture's own base color and base+(r,g,b), alternating every
@@ -557,6 +587,14 @@ class WolfRPG
 
     def update_picture_effects
       @pictures.each do |number, entry|
+        # #flash_picture's own native Sprite#flash decays only when
+        # Sprite#update is actually called -- unlike Viewport's own
+        # flash/tone (ticked automatically wherever the map's single
+        # @viewport already gets drawn), nothing else in this reader calls
+        # it per picture sprite, so it happens here alongside Flicker's own
+        # tick rather than needing a separate pass.
+        entry[:sprite].update
+
         flicker = entry[:flicker]
         next unless flicker
         flicker[:counter] -= 1

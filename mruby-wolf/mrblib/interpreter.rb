@@ -1623,23 +1623,30 @@ module Wolf
     # rather than silently treated as instant, since that would be a
     # visibly wrong delay rather than an honestly-missing one.
     #
-    # Not implemented: every other Picture effect kind (Flash, Shake,
-    # Zoom, the auto-pattern-switch family), the Character and Map targets
-    # entirely, and `duration`/delay > 0 for the two instant effect kinds.
+    # Not implemented: every other Picture effect kind (Shake, Zoom,
+    # SwitchAutoFlash, the auto-pattern-switch family), the Character and
+    # Map targets entirely, and `duration`/delay > 0 for the two instant
+    # effect kinds.
     #
-    # `SwitchFlicker`("点滅A[明滅]", effect_type 5, 31 of the remaining real
-    # calls) is the one exception to "`duration` means an unsupported
-    # delay": help/04ev_effect.html's own wording for this specific effect
-    # kind repurposes the very same field as the *toggle interval in
-    # frames* instead ("指定したRGB分の差だけ、指定フレームでカラー変更に
-    # よる明滅...を繰り返します"), matching every real call -- some with a
-    # real non-zero interval, never seen for the other two kinds. Stops
-    # ("点滅は停止します") on either a zero interval or an all-zero RGB
-    # delta, both real (14 of the 31 calls); see runtime.rb's own
-    # `#set_picture_flicker`/`#update_picture_effects` for the persistent,
-    # per-frame-ticked state this needs, the same shape ChangeColor(151)'s
-    # `#update_tone` already established.
+    # `Flash`(effect_type 0, 10 real calls) and `SwitchFlicker`("点滅A
+    # [明滅]", effect_type 5, 31 real calls) are the two exceptions to
+    # "`duration` means an unsupported delay": help/04ev_effect.html's own
+    # wording repurposes that same field for both as a genuine *frames*
+    # value instead of a delay -- Flash's own decay length ("指定した...値
+    # をピクチャの「カラー」に加算して1回だけフラッシュします"), Flicker's
+    # own toggle interval ("指定したRGB分の差だけ、指定フレームでカラー変
+    # 更による明滅...を繰り返します") -- matching every real call for both,
+    # some with a real non-zero value, never seen for the other two
+    # (instant) kinds. Flash reuses native RGSS `Sprite#flash` directly (no
+    # Ruby-side state at all: its own decay is entirely native, ticked by
+    # `#update_picture_effects`'s new unconditional `Sprite#update` call);
+    # Flicker stops ("点滅は停止します") on either a zero interval or an
+    # all-zero RGB delta, both real (14 of its 31 calls) -- see runtime.rb's
+    # own `#set_picture_flicker`/`#update_picture_effects` for the
+    # persistent, per-frame-ticked state this one still needs, the same
+    # shape ChangeColor(151)'s `#update_tone` already established.
     EFFECT_TARGET_PICTURE = 0
+    EFFECT_PICTURE_FLASH = 0
     EFFECT_PICTURE_COLOR_CORRECT = 1
     EFFECT_PICTURE_DRAW_POSITION_SHIFT = 2
     EFFECT_PICTURE_SWITCH_FLICKER = 5
@@ -1662,7 +1669,15 @@ module Wolf
       first = var_store.number(cmd.arg(2))
       last = var_store.number(cmd.arg(3))
 
-      if effect_type == EFFECT_PICTURE_SWITCH_FLICKER
+      case effect_type
+      when EFFECT_PICTURE_FLASH
+        duration = var_store.number(cmd.arg(1))
+        r = var_store.number(cmd.arg(4))
+        g = var_store.number(cmd.arg(5))
+        b = var_store.number(cmd.arg(6))
+        (first..last).each { |n| current_scene&.flash_picture(n, r, g, b, duration) }
+        return
+      when EFFECT_PICTURE_SWITCH_FLICKER
         interval = var_store.number(cmd.arg(1))
         r = var_store.number(cmd.arg(4))
         g = var_store.number(cmd.arg(5))

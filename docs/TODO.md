@@ -36249,6 +36249,22 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   so a picture's own persistent `ColorCorrect` tint is only ever nudged,
   never clobbered. See `docs/adr/0083-wolf-rpg-editor-effect-switch-
   flicker.md`.
+- ✅ **Effect(290), Picture Flash; a native Viewport#update gap fixed
+  alongside (2026-09-07).** `Flash`(effect_type 0, "フラッシュ") is next
+  by real frequency in the Picture target (10 calls, all a real non-zero
+  `duration`), fully confirmed by the crate's own `PictureEffectType`, and
+  the same "duration is a genuine frames value here, not the unsupported
+  delay" exception `SwitchFlicker` already established. Needs no Ruby-side
+  state at all -- native RGSS `Sprite#flash` already implements exactly
+  this one-shot decaying colour overlay -- but wiring it up surfaced that
+  `Sprite#flash`'s own decay only advances when something calls
+  `Sprite#update` once per frame, which nothing did yet for Wolf pictures
+  (now `#update_picture_effects`'s job); chasing that exact question found
+  the *same* gap one level up, for `ChangeColor`(151)'s own pre-existing
+  "flash" case (ADR 0079) -- nothing ever called `Viewport#update` either,
+  so a real flash call would freeze at full intensity forever instead of
+  fading. Both fixed together (`WolfRPG::MapScene#update` now calls
+  `@viewport.update`). See `docs/adr/0084-wolf-rpg-editor-effect-flash.md`.
 - Suggested next order (by real frequency, from the same census):
   `220` itself (2 occurrences, needs the real save-file format above --
   a much larger undertaking than its own occurrence count suggests),
@@ -36256,9 +36272,9 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   the crate's own `party_graphics_command` covers party member *graphics*,
   which implies multiple visible party sprites following the hero,
   unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
-  remaining Picture effect kinds (Flash/Shake/Zoom/SwitchAutoFlash/
-  AutoEnlarge/the auto-pattern-switch family) and the Map target (Zoom/
-  Shake, both fully confirmed by the crate's own `MapEffectType`),
+  remaining Picture effect kinds (Shake/Zoom/SwitchAutoFlash/AutoEnlarge/
+  the auto-pattern-switch family) and the Map target (Zoom/Shake, both
+  fully confirmed by the crate's own `MapEffectType`),
   `Teleport`(130)'s own remaining surface (persistent per-map event state,
   needed for both its own `-1`/`-3..-7` targets and for switches/
   variables/moved events to survive a revisited map at all), and
