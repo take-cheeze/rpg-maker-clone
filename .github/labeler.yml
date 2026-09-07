@@ -144,6 +144,10 @@
           - "include/wio.hxx"
           - "include/lv_conf.h"
           - "platformio.ini"
+          # The minimal walk engine the wio_walk firmware runs is shared with
+          # the iPod nano 7G app (docs/adr/0091), so a change to it is a
+          # change to this platform too.
+          - "app/shared/rpg2k_walk/**"
 
 # --- component -------------------------------------------------------------
 
