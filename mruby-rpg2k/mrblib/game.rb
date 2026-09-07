@@ -1687,11 +1687,11 @@ module Game
     # matching its own explicit mod-zeroing before it reapplies
     # the class's own curve.
     def set_level(level, preserve_mod: true)
-      mod = preserve_mod && @base_raw ? @base_raw.each_index.map { |i| @base_raw[i] - base_stats(@level)[i] } : nil
+      mod = preserve_mod && @base_raw ? Array.new(@base_raw.size) { |i| @base_raw[i] - base_stats(@level)[i] } : nil
       @level = level && level >= 1 ? level : 1
       curve = base_stats(@level)
-      @base_raw = mod ? curve.each_index.map { |i| curve[i] + mod[i] } : curve.dup
-      @base = @base_raw.each_index.map { |i| Game.clamp(@base_raw[i], 1, base_param_limit(i)) }
+      @base_raw = mod ? Array.new(curve.size) { |i| curve[i] + mod[i] } : curve.dup
+      @base = Array.new(@base_raw.size) { |i| Game.clamp(@base_raw[i], 1, base_param_limit(i)) }
       learn_level_skills
       recompute_stats
     end
@@ -2135,7 +2135,7 @@ module Game
       if curve && curve.size >= STAT_NAMES.size
         levels = curve.size / STAT_NAMES.size
         lv = level > levels ? levels : level
-        return STAT_NAMES.each_index.map { |i| curve[(i * levels) + (lv - 1)] || 0 }
+        return Array.new(STAT_NAMES.size) { |i| curve[(i * levels) + (lv - 1)] || 0 }
       end
       st = (a.respond_to?(:status) ? a.status : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }
@@ -2947,7 +2947,7 @@ module Game
         elsif spec.is_a?(Array) then spec.dup
         else []
         end
-      EQUIP_ORDER.each_index.map { |i| ids[i] || 0 }
+      Array.new(EQUIP_ORDER.size) { |i| ids[i] || 0 }
     end
 
     # Total EXP ceiling: 999_999 on an RPG2000 database, 9_999_999 on RPG2003
@@ -3271,7 +3271,7 @@ module Game
     def restore_base(base_raw)
       return unless base_raw
       @base_raw = base_raw.dup
-      @base = @base_raw.each_with_index.map { |v, i| Game.clamp(v, 1, base_param_limit(i)) }
+      @base = Array.new(@base_raw.size) { |i| Game.clamp(@base_raw[i], 1, base_param_limit(i)) }
       recompute_stats
     end
 
@@ -13418,7 +13418,8 @@ module Game
     # reaches that check in a real fight, not merely in isolation.
     def enemy_autodestruct(b)
       targets = @allies.reject(&:out_of_play?)
-      entries = targets.each_with_index.map do |t, i|
+      entries = Array.new(targets.size) do |i|
+        t = targets[i]
         dmg = effective_atk(b) - effective_def(t) / 2
         dmg = 0 if dmg < 0
         dmg = varied(dmg, NORMAL_ATTACK_VARIANCE) if @variance && dmg > 0
@@ -17432,7 +17433,7 @@ module Game
                   sa.spirit_mod || 0, sa.agility_mod || 0]
           if mods.any? { |m| m != 0 }
             curve = actor.base_stats(actor.level)
-            actor.restore_base(curve.each_index.map { |i| curve[i] + mods[i] })
+            actor.restore_base(Array.new(curve.size) { |i| curve[i] + mods[i] })
           end
           actor.equip(sa.equipment) if sa.equipment
           actor.skills = sa.skills if sa.skills
