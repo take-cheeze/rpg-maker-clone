@@ -766,6 +766,12 @@
   ignoring every command after it — 303 real calls in the sample game, the
   largest remaining gap a fresh command-frequency census turned up. See
   [`docs/adr/0092-wolf-rpg-editor-break-event.md`](docs/adr/0092-wolf-rpg-editor-break-event.md)
+- **Packed releases (`Data.wolf`) load too**, not just a loose editor project
+  tree — `Wolf::DataWolf` reads the DxLib DXA archive a released game packs
+  its whole `Data/` tree into, XOR-encrypted with a key that differs per
+  editor version (auto-detected the same way WolfDec's own tool does),
+  transparently through the same `Wolf::Project` a loose tree uses. See
+  [`docs/adr/0093-wolf-rpg-editor-data-wolf.md`](docs/adr/0093-wolf-rpg-editor-data-wolf.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

@@ -36441,13 +36441,26 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   sheet is missing), replacing `WolfRPG::MapScene`'s colour-block fallback --
   the same order RPG2000 support followed (see "Map exploration" in the
   README's own history).
-- 🚧 **Packed releases (`Data.wolf`).** Release games ship a single DxLib
-  DXA archive, XOR-encrypted with per-editor-version keys that
-  [WolfDec](https://github.com/Sinflower/WolfDec) and
-  [UberWolf](https://github.com/Sinflower/UberWolf) already document. Adding
-  a reader is the same shape as `RPGXP::RGSSAD` (ADR 0010), not a new
-  problem -- it has simply not been done yet, so only a loose `Data/` project
-  tree is playable today.
+- ✅ **Packed releases (`Data.wolf`) (2026-09-07).** Added `Wolf::DataWolf`
+  (`mruby-wolf/mrblib/data_wolf.rb`), the same shape as `RPGXP::RGSSAD`
+  (ADR 0010): a streaming reader for the DxLib DXA archive a released game
+  packs its whole `Data/` tree into, XOR-encrypted with a key that differs
+  per editor version, cross-validated line-by-line against the archiver
+  source [WolfDec](https://github.com/Sinflower/WolfDec) itself vendors
+  (`3rdParty/DXArchive.cpp`/`.h`; no UberWolf checkout was available this
+  session, but WolfDec's own vendored DxLib source turned out to be a
+  complete specification on its own). Auto-detects which of WolfDec's own
+  per-editor-version keys an archive needs by trying each in turn, the same
+  way WolfDec's own `main.cpp` does. `Wolf::Project` picks a loose tree or a
+  packed `Data.wolf` transparently through one seam (`#read`), so every
+  existing `data.rb` parser needed no change. No real `Data.wolf` fixture
+  exists to test against, so `Wolf::DataWolf.pack` (the inverse writer, unit-
+  tested directly) also serves as `scripts/wolf_data_wolf_check.rb`'s fixture
+  builder, which packs the *entire* downloaded sample game's real `Data/`
+  tree (660 files) and confirms every field `wolf_testbed_check.rb` checks
+  comes back identical through the packed copy. Compressed DXA entries and
+  the older pre-2.281 v5/v6 container are refused with a clear error rather
+  than mis-parsed. See `docs/adr/0093-wolf-rpg-editor-data-wolf.md`.
 - 🚧 **Pro-protected data.** `Wolf::Crypt.protected?`/`.refuse_protected!`
   detect and refuse it (byte 1 == `0x50`) rather than mis-parsing it; actually
   decrypting it needs the AES/ChaCha scheme `WolfTL`'s `WolfDataDecrypt.hpp`

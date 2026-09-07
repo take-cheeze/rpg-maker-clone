@@ -9,6 +9,11 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   # mrbgems compile every src/*.cxx with no rbfiles-style listing needed),
   # which needs nothing beyond mruby's own headers.
   add_dependency 'mruby-io'
+  # data_wolf.rb's Wolf::DataWolf wraps a plain byte String in a StringIO
+  # (mirroring RPGXP::RGSSAD's own .new, mruby-rpgxp/mrblib/rgssad.rb) so a
+  # test or a caller with the archive already in memory does not need a real
+  # file -- only .open does, via mruby-io above.
+  add_dependency 'mruby-stringio'
   # Kernel#sprintf: every error message that formats a byte value uses it
   # (`sprintf("... 0x%02x ...", ...)`). Not in the default gem set -- declared
   # here (not just relied on via build_config.rb's shared gem list) so the
@@ -34,8 +39,11 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   add_dependency 'mruby-enum-ext'
 
   # Load order matters: wolf.rb defines the Wolf module, its byte-level Reader,
-  # LZ4 decoder and Wolf.bin/utf8 helpers that data.rb's per-file classes (and
-  # their MAGIC/TERMINATOR constants, evaluated at class-body time) depend on;
+  # LZ4 decoder and Wolf.bin/utf8 helpers that data_wolf.rb and data.rb's
+  # per-file classes (and their MAGIC/TERMINATOR constants, evaluated at
+  # class-body time) depend on; data_wolf.rb's Wolf::DataWolf (the Data.wolf
+  # packed-release reader) only needs wolf.rb's Wolf::Error, but must load
+  # before data.rb since Wolf::Project#initialize calls DataWolf.find/.open;
   # vars.rb's ValueRef/VarStore need Wolf::Error; save_data.rb's Wolf::SaveData
   # runs against vars.rb's VarStore#string_ref?; interpreter.rb runs against
   # data.rb's Command/CommonEvent classes and vars.rb's VarStore (and, for
@@ -43,5 +51,5 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   # WolfRPG boot class depends on all of the above plus mruby-rgss's shared
   # RGSS namespace. Set the order explicitly rather than relying on the
   # default alphabetical glob (see mruby-rpgvx/mrbgem.rake for the same need).
-  spec.rbfiles = %w[wolf data vars save_data interpreter runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
+  spec.rbfiles = %w[wolf data_wolf data vars save_data interpreter runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
 end

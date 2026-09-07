@@ -131,6 +131,135 @@ assert "Wolf::Crypt.protected? detects the Pro-protection marker" do
   assert_false Wolf::Crypt.protected?("\x00\x57\x00\x00\x4f\x4c")
 end
 
+# ---- Wolf::DataWolf (Data.wolf packed-release reader) ------------------------
+#
+# Only unit-level here (a hand-built archive, via .pack -- data_wolf.rb's own
+# fixture builder, since no real Data.wolf sample is available; see its file
+# header). The much stronger cross-check -- .pack applied to a real, 660-file
+# project and read back through the *whole* Wolf::Project pipeline -- is
+# scripts/wolf_data_wolf_check.rb, run separately against the downloaded
+# sample game the way scripts/wolf_testbed_check.rb already is.
+
+assert "Wolf::DataWolf.crc32 matches the standard CRC-32/ISO-HDLC check value" do
+  # The textbook check value for this exact variant (poly 0xEDB88320,
+  # reflected, init/final 0xFFFFFFFF) -- independent of anything WOLF- or
+  # DXA-specific, so this alone catches a wrong polynomial or a reflection
+  # mistake before it ever touches a real key derivation.
+  assert_equal 0xCBF4_3926, Wolf::DataWolf.crc32("123456789")
+end
+
+assert "Wolf::DataWolf round-trips nested directories, an empty file and a file spanning CHUNK" do
+  big = (0..255).to_a.pack("C*") * 900 # 230400 bytes, over CHUNK (65536)
+  files = [
+    ["BasicData/Game.dat", "hello world " * 100],
+    ["MapData/Deep/Nested/Map001.mps", big],
+    ["MapData/Deep/other.mps", "sibling"],
+    ["SystemFile/Empty.bin", ""]
+  ]
+  archive = Wolf::DataWolf.pack(files)
+  a = Wolf::DataWolf.new(archive)
+
+  assert_equal files.map(&:first).sort, a.names.sort
+  files.each do |name, bytes|
+    assert_equal bytes.bytesize, a.entry_size(name)
+    # Compare via #bytesize/== rather than #bytes for `big` (230400 bytes):
+    # #bytes would materialise an Array past mruby's MRB_ARY_LENGTH_MAX
+    # (131072) -- the same reason rgssad_test's own over-cap check does the
+    # same (mruby-rpgxp/test/rpgxp_test.rb).
+    got = a.read(name)
+    assert_equal bytes.bytesize, got.bytesize
+    assert_true bytes == got
+  end
+  assert_true a.include?("MapData/Deep/Nested/Map001.mps")
+  assert_false a.include?("MapData/Missing.mps")
+  assert_true a.read("MapData/Missing.mps").nil?
+end
+
+assert "Wolf::DataWolf.open (auto-detect) finds whichever known key .pack used" do
+  files = [["BasicData/Game.dat", "abc"]]
+  # Index 4 ("One Way Heroics Plus"), deliberately not .pack's own default
+  # (index 2), so this only passes if key detection genuinely tries more
+  # than one candidate rather than happening to match the default.
+  archive = Wolf::DataWolf.pack(files, key_string: Wolf::DataWolf::KNOWN_KEYS[4])
+  a = Wolf::DataWolf.new(archive)
+  assert_equal Wolf::DataWolf::KNOWN_KEYS[4], a.key_string
+  assert_equal "abc".bytes, a.read("BasicData/Game.dat").bytes
+end
+
+assert "Wolf::DataWolf reads a no_key archive with no key at all" do
+  files = [["BasicData/Game.dat", "no key here"]]
+  archive = Wolf::DataWolf.pack(files, no_key: true)
+  a = Wolf::DataWolf.new(archive)
+  assert_true a.key_string.nil?
+  assert_equal "no key here".bytes, a.read("BasicData/Game.dat").bytes
+end
+
+assert "Wolf::DataWolf.new(key_string:) forces one exact key rather than auto-detecting" do
+  files = [["f.bin", "x"]]
+  archive = Wolf::DataWolf.pack(files, key_string: Wolf::DataWolf::KNOWN_KEYS[1])
+  a = Wolf::DataWolf.new(archive, key_string: Wolf::DataWolf::KNOWN_KEYS[1])
+  assert_equal "x".bytes, a.read("f.bin").bytes
+end
+
+assert "Wolf::DataWolf rejects a bad header, an unsupported version, and an unknown key" do
+  assert_raise(Wolf::Error) { Wolf::DataWolf.new("NOTDXA\x00\x00\x00\x00\x00\x00\x00\x00") }
+
+  archive = Wolf::DataWolf.pack([["f.bin", "x"]]).dup
+  archive.setbyte(2, 7) # Version byte, LSB: 8 -> 7
+  assert_raise(Wolf::Error) { Wolf::DataWolf.new(archive) }
+
+  unknown = Wolf::DataWolf.pack([["f.bin", "x"]], key_string: "not one of the known keys at all")
+  assert_raise(Wolf::Error) { Wolf::DataWolf.new(unknown) }
+end
+
+assert "Wolf::DataWolf rejects a compressed header table" do
+  archive = Wolf::DataWolf.pack([["f.bin", "x"]]).dup
+  # .pack never sets FLAG_NO_KEY, so the plain (unencrypted -- see the file
+  # header's "Format") Flags field is exactly FLAG_NO_HEAD_PRESS (2) at byte
+  # 44; zeroing it clears that flag, the same shape a compressed-header
+  # archive's own Flags would have.
+  archive.setbyte(44, 0)
+  assert_raise(Wolf::Error) { Wolf::DataWolf.new(archive) }
+end
+
+assert "Wolf::DataWolf#read rejects a compressed entry rather than mis-decoding it" do
+  # Hand-assembled from the same private building blocks .pack itself uses
+  # (bare `private` in data_wolf.rb only covers the instance methods, not
+  # these -- see the file's own comment above them), with PressDataSize set
+  # to a real (non-sentinel) value on purpose.
+  key_string = Wolf::DataWolf::KNOWN_KEYS[2]
+  key = Wolf::DataWolf.key_create(key_string)
+  name_table = Wolf::DataWolf.encode_name_entry("f.bin")
+  data = "hello"
+  fkey = Wolf::DataWolf.key_create(key_string + Wolf::DataWolf.upper_name_bytes("f.bin"))
+  enc = Wolf::DataWolf.xor_cycle(data, fkey, data.bytesize)
+  file_table = Wolf::DataWolf.filehead_bytes(0, 0, 0, data.bytesize, 3, Wolf::DataWolf::SENTINEL64)
+  dir_table = Wolf::DataWolf.dir_record_bytes(0, Wolf::DataWolf::SENTINEL64, 1, 0)
+  head_size = name_table.bytesize + file_table.bytesize + dir_table.bytesize
+  head = Wolf::DataWolf.darc_head_bytes(head_size, 64 + head_size, 64,
+                                         name_table.bytesize, name_table.bytesize + file_table.bytesize,
+                                         Wolf::DataWolf::FLAG_NO_HEAD_PRESS)
+  table_blob = Wolf::DataWolf.xor_cycle(name_table + file_table + dir_table, key, 0)
+
+  a = Wolf::DataWolf.new(head + table_blob + enc, key_string: key_string)
+  assert_true a.include?("f.bin")
+  assert_raise(Wolf::Error) { a.read("f.bin") }
+end
+
+assert "Wolf::Project.project? also recognizes a packed Data.wolf" do
+  dir = "tmp_wolf_test_data_wolf_detect"
+  Dir.mkdir(dir) unless FileTest.directory?(dir)
+  begin
+    assert_false Wolf::Project.project?(dir)
+    File.open("#{dir}/Data.wolf", "wb") { |f| f.write(Wolf::DataWolf.pack([["f.bin", "x"]])) }
+    assert_true Wolf::Project.project?(dir)
+    assert_equal "#{dir}/Data.wolf", Wolf::DataWolf.find(dir)
+  ensure
+    File.delete("#{dir}/Data.wolf") if File.exist?("#{dir}/Data.wolf")
+    Dir.delete(dir) if FileTest.directory?(dir)
+  end
+end
+
 # ---- Bit-field decoders ------------------------------------------------------
 
 assert "Wolf::TileFlags decodes passability and priority bits" do
