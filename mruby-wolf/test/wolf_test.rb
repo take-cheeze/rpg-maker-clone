@@ -409,7 +409,7 @@ end
 # id/x/y/pages off an event and trigger/conditions/commands/auto?/parallel?/
 # slip_through?/above_hero? off a page, so these mirror just that surface
 # rather than round-tripping real Reader-parsed objects through this test.
-WolfTestPage = Struct.new(:trigger, :conditions, :commands, :opts) do
+WolfTestPage = Struct.new(:trigger, :conditions, :commands, :opts, :move_type, :move_frequency, :route, :route_options) do
   def auto?; trigger == Wolf::Page::TRIGGER_AUTO; end
   def parallel?; trigger == Wolf::Page::TRIGGER_PARALLEL; end
   def slip_through?; (opts || 0) & Wolf::Page::OPT_SLIP_THROUGH != 0; end
@@ -417,9 +417,12 @@ WolfTestPage = Struct.new(:trigger, :conditions, :commands, :opts) do
 end
 WolfTestEvent = Struct.new(:id, :x, :y, :pages)
 WolfTestMap = Struct.new(:events)
+# Mirrors Wolf::RouteCommand's own attr_reader :id, :args surface.
+WolfTestRouteCommand = Struct.new(:id, :args)
 
-def wolf_test_page(trigger, conditions: [], commands: [], opts: 0)
-  WolfTestPage.new(trigger, conditions, commands, opts)
+def wolf_test_page(trigger, conditions: [], commands: [], opts: 0,
+                    move_type: Wolf::Page::MOVE_NONE, move_frequency: 3, route: [], route_options: 0)
+  WolfTestPage.new(trigger, conditions, commands, opts, move_type, move_frequency, route, route_options)
 end
 
 def wolf_test_cond(operator, variable, value)
@@ -513,12 +516,16 @@ assert "Wolf::Interpreter#trigger_confirm/#trigger_touch start their page only o
   assert_nil interp.event_at(9, 9)
 end
 
-# ---- Wolf::Interpreter#exec_picture -----------------------------------------
+# ---- Wolf::Interpreter event movement ---------------------------------------
 
 # Records calls instead of touching RGSS (unavailable under this CRuby test
 # harness) -- exactly the seam Wolf::Interpreter#current_scene exists for.
+# Also stands in for WolfRPG::MapScene's own hero-position/passability
+# surface (#x/#y/#passable?/#hero_at?/#hero_pos/#hero_pos=), which
+# Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased
+  attr_accessor :x, :y, :blocked
 
   def initialize
     @shown = []
@@ -526,6 +533,10 @@ class WolfTestFakeScene
     @shown_shapes = []
     @moved = []
     @erased = []
+    @x = 0
+    @y = 0
+    @facing = :down
+    @blocked = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -533,7 +544,162 @@ class WolfTestFakeScene
   def show_shape_picture(*args); @shown_shapes << args; end
   def move_picture(*args); @moved << args; end
   def erase_picture(number); @erased << number; end
+
+  def passable?(x, y); !@blocked.include?([x, y]); end
+  def hero_at?(x, y); x == @x && y == @y; end
+  def hero_pos; { x: @x, y: @y, direction: @facing }; end
+  def hero_pos=(pos); @x = pos[:x]; @y = pos[:y]; @facing = pos[:direction]; end
 end
+
+assert "Wolf::Interpreter#run_route_commands moves/faces/turns per the confirmed RouteCommand ids" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  pos = { x: 5, y: 5, direction: :down }
+  interp.run_route_commands(pos, [
+    WolfTestRouteCommand.new(2, []),  # MoveRight
+    WolfTestRouteCommand.new(9, []),  # FaceLeft
+    WolfTestRouteCommand.new(22, []), # TurnRight: left -> up (help/Ev_routeset.png's own cycle)
+    WolfTestRouteCommand.new(19, []), # StepForward, in the now-"up" facing
+  ])
+  assert_equal 6, pos[:x]
+  assert_equal 4, pos[:y]
+  assert_equal :up, pos[:direction]
+end
+
+assert "Wolf::Interpreter#run_route_commands skips a RouteCommand id this reader could not cross-confirm" do
+  # Real command dumps from the sample game carry ids (e.g. 47) this reader
+  # could not place in the wolfrpg-map-parser crate's own MoveType table --
+  # logged and skipped rather than guessed (interpreter.rb's own comment).
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  pos = { x: 1, y: 1, direction: :down }
+  interp.run_route_commands(pos, [WolfTestRouteCommand.new(47, [2])])
+  assert_equal 1, pos[:x]
+  assert_equal 1, pos[:y]
+  assert_equal :down, pos[:direction]
+end
+
+assert "Wolf::Interpreter#update_event_movement applies a Custom page's own route once, on activation" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL,
+                         move_type: Wolf::Page::MOVE_CUSTOM,
+                         route: [WolfTestRouteCommand.new(0, [])]) # MoveDown
+  event = WolfTestEvent.new(0, 3, 3, [page])
+
+  idx, active = interp.active_page(event)
+  interp.update_event_movement(event, idx, active)
+  pos = interp.event_position(event)
+  assert_equal 4, pos[:y]
+
+  # The page is still the active one on the next frame; its route must not
+  # re-apply just because #update_event_movement is called again.
+  interp.update_event_movement(event, idx, active)
+  assert_equal 4, pos[:y]
+end
+
+assert "Wolf::Interpreter#update_event_movement skips a repeating Custom route rather than applying it forever" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.current_scene = WolfTestFakeScene.new
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL,
+                         move_type: Wolf::Page::MOVE_CUSTOM,
+                         route: [WolfTestRouteCommand.new(0, [])],
+                         route_options: 0x01) # "動作を繰り返す" (repeat)
+  event = WolfTestEvent.new(0, 3, 3, [page])
+
+  idx, active = interp.active_page(event)
+  interp.update_event_movement(event, idx, active)
+  assert_equal 3, interp.event_position(event)[:y]
+end
+
+assert "Wolf::Interpreter#update_event_movement steps a TowardHero page toward the hero on a move_frequency cadence" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 10
+  scene.y = 0
+  interp.current_scene = scene
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL, move_type: Wolf::Page::MOVE_TOWARD_HERO, move_frequency: 3)
+  event = WolfTestEvent.new(0, 0, 0, [page])
+  idx, active = interp.active_page(event)
+  pos = interp.event_position(event)
+
+  # A newly-active page's own move_timer starts at 0, so the very first call
+  # steps immediately; #move_pause_frames(3) = 8 then holds it for 8 frames
+  # (interpreter.rb's own comment: not a decoded constant, a reasonable
+  # decreasing-interval stand-in).
+  interp.update_event_movement(event, idx, active)
+  assert_equal 1, pos[:x]
+  assert_equal :right, pos[:direction]
+
+  8.times { interp.update_event_movement(event, idx, active) }
+  assert_equal 1, pos[:x] # still paused
+
+  interp.update_event_movement(event, idx, active)
+  assert_equal 2, pos[:x] # the pause elapsed; one more step
+end
+
+assert "Wolf::Interpreter#update_event_movement's Random movement respects the map's own passable tiles" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.blocked = [[1, 0], [-1, 0], [0, 1], [0, -1]] # every neighbour of (0, 0) is blocked
+  interp.current_scene = scene
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL, move_type: Wolf::Page::MOVE_RANDOM, move_frequency: 7)
+  event = WolfTestEvent.new(0, 0, 0, [page])
+  idx, active = interp.active_page(event)
+  pos = interp.event_position(event)
+
+  # Whichever direction #random_step_delta happens to sample, every
+  # neighbour is blocked -- the event must stay put no matter how many
+  # attempts it gets.
+  20.times { interp.update_event_movement(event, idx, active) }
+  assert_equal 0, pos[:x]
+  assert_equal 0, pos[:y]
+end
+
+assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explicit event id/the hero as SetMoveRoute(201)'s target" do
+  # help/04ev_movesettingB.html's own documented target convention: >=0 an
+  # event id, -1 this event, -2 the hero, -3..-7 a party member (no party
+  # system exists yet, so that last band is logged and skipped).
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  self_event = WolfTestEvent.new(3, 1, 1, [])
+  other_event = WolfTestEvent.new(7, 5, 5, [])
+  interp.current_map = WolfTestMap.new([self_event, other_event])
+  store.current_map_event_id = 3
+
+  self_cmd = wolf_test_cmd(201, [-1])
+  self_cmd.route = [WolfTestRouteCommand.new(0, [])] # MoveDown
+  interp.exec_set_move_route(self_cmd)
+  assert_equal 2, interp.event_position(self_event)[:y]
+
+  other_cmd = wolf_test_cmd(201, [7])
+  other_cmd.route = [WolfTestRouteCommand.new(2, [])] # MoveRight
+  interp.exec_set_move_route(other_cmd)
+  assert_equal 6, interp.event_position(other_event)[:x]
+
+  hero_cmd = wolf_test_cmd(201, [-2])
+  hero_cmd.route = [WolfTestRouteCommand.new(3, [])] # MoveUp
+  interp.exec_set_move_route(hero_cmd)
+  assert_equal(-1, scene.y)
+
+  party_cmd = wolf_test_cmd(201, [-3])
+  party_cmd.route = [WolfTestRouteCommand.new(0, [])]
+  interp.exec_set_move_route(party_cmd) # must not raise
+  assert_equal 0, scene.x
+end
+
+# ---- Wolf::Interpreter#exec_picture -----------------------------------------
 
 def wolf_test_picture_options(operation:, display_type: 0, blend: 0, anchor: 0, zoom_mode: 0, range: 0, free_transform: 0)
   operation | (display_type << 4) | (blend << 8) | (anchor << 12) |

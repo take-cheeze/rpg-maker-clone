@@ -177,6 +177,43 @@ class WolfRPG
       update_camera
     end
 
+    # The hero's own runtime position/facing, so Wolf::Interpreter can move
+    # events toward/away from it (Page#move_type's own TowardHero, and the
+    # RouteCommand ids of the same name) and let SetMoveRoute(201) target the
+    # hero (help/04ev_movesettingB.html's own "-2 = 主人公" target
+    # convention) through the same #step_event_pos/#run_route_commands code
+    # path a map event's own runtime position already uses.
+    attr_reader :x, :y
+
+    def hero_pos
+      { x: @x, y: @y, direction: @facing }
+    end
+
+    def hero_pos=(pos)
+      @x = pos[:x]
+      @y = pos[:y]
+      @facing = pos[:direction]
+    end
+
+    def hero_at?(x, y)
+      x == @x && y == @y
+    end
+
+    # Public (not just #move_hero's own concern any more): Wolf::Interpreter's
+    # own event-movement code (#step_event_pos) checks the same tile
+    # passability before letting a moving event step onto it.
+    def passable?(x, y)
+      return false if x < 0 || y < 0 || x >= @map.width || y >= @map.height
+      (0...@map.layer_count).each do |li|
+        v = @map.tile(li, x, y)
+        next if v == 0 && li > 0
+        next if Wolf::Map.autotile?(v)
+        flags = @tileset && @tileset.flags_for(v)
+        return false if flags && flags.impassable?
+      end
+      true
+    end
+
     # Anchor codes Wolf::Interpreter#exec_picture passes through unchanged
     # from Picture(150)'s own bitmask (help/04ev_picture.html); top-center/
     # bottom-center are in the manual but not modeled (see interpreter.rb's
@@ -379,18 +416,6 @@ class WolfRPG
       flags.impassable? ? BLOCKED : PASSABLE
     end
 
-    def passable?(x, y)
-      return false if x < 0 || y < 0 || x >= @map.width || y >= @map.height
-      (0...@map.layer_count).each do |li|
-        v = @map.tile(li, x, y)
-        next if v == 0 && li > 0
-        next if Wolf::Map.autotile?(v)
-        flags = @tileset && @tileset.flags_for(v)
-        return false if flags && flags.impassable?
-      end
-      true
-    end
-
     # Pressing a direction always turns the hero to face it, whether or not
     # the step itself succeeds -- the same convention #check_confirm's own
     # "facing tile" relies on, and standard across every RPG Maker-shaped
@@ -454,8 +479,12 @@ class WolfRPG
         _idx, page = @interpreter.active_page(event)
         sprite = (@event_sprites[event.id] ||= build_event_sprite)
         next sprite.visible = false unless page
-        sprite.x = event.x * @tile
-        sprite.y = event.y * @tile
+        # Its own runtime position (Wolf::Interpreter#event_position), not
+        # the event's parsed *start* position -- Interpreter#update_map_events
+        # may have moved it this frame (Page#move_type/SetMoveRoute(201)).
+        pos = @interpreter.event_position(event)
+        sprite.x = pos[:x] * @tile
+        sprite.y = pos[:y] * @tile
         sprite.z = page.above_hero? ? 2 : 1
         sprite.visible = true
       end

@@ -47,6 +47,13 @@ module Wolf
     C_TELEPORT = 130
     C_SOUND = 140
     C_PICTURE = 150
+    # "その他1" tab's "■動作指定" button (help/04ev_movesettingB.html: "イベン
+    # トコマンド「その他1」にて、「■動作指定」ボタンを押したとき" is one of the
+    # two places a move route is authored, the other being a page's own
+    # "カスタム" route). Confirmed empirically: every real command whose
+    # generic framing parsed a trailing move-route block (`Command#route?`)
+    # carries this code, in both Common Events and map event pages.
+    C_SET_MOVE_ROUTE = 201
     C_START_LOOP = 170
     C_BREAK_LOOP = 171
     C_BREAK_EVENT = 172
@@ -173,6 +180,8 @@ module Wolf
           @interp.exec_message(cmd)
         when Interpreter::C_PICTURE
           @interp.exec_picture(cmd)
+        when Interpreter::C_SET_MOVE_ROUTE
+          @interp.exec_set_move_route(cmd)
         when Interpreter::C_CHOICES, Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_SOUND,
@@ -307,6 +316,13 @@ module Wolf
       @map_runs = []
       @reserved = []
       @warned = {}
+      # Runtime position/facing, one entry per map event id, created lazily
+      # (seeded from the event's own parsed start position) the first time
+      # anything asks -- the *parsed* Wolf::Event/Page objects stay
+      # immutable data, the same separation mruby-rpg2k's own Game::Character
+      # keeps from its own read-only LcfMapEvent.
+      @event_positions = {}
+      @rng = Rng.new
     end
 
     attr_reader :var_store, :project
@@ -646,6 +662,303 @@ module Wolf
       [r, g, b].map { |d| (d.to_i * 255 / 9.0).round }
     end
 
+    # Event movement: a map event page's own ambient "動作" (Page#move_type
+    # -- None/Custom/Random/TowardHero, cross-confirmed against the
+    # wolfrpg-map-parser crate's own independent `MoveRoute` enum, byte for
+    # byte) and SetMoveRoute(201)'s explicit "動作指定" command, which can
+    # redirect any event -- or the hero -- mid-script. Both play back the
+    # same RouteCommand list (help/04ev_movesettingB.html's own "動作指定
+    # ウィンドウ"), whose per-step `id`/argument-count framing is proven (the
+    # whole sample game's Common Events and map events parse with nothing
+    # left over -- WolfTL's own RouteCommand.hpp reads the identical 1-byte
+    # id + 1-byte arg count + N ints + 2-byte terminator shape), but whose
+    # *meaning* is single-source: the crate's own `MoveType` enum, whose
+    # English names this reader cross-checked one by one against
+    # help/Ev_routeset.png's own Japanese button labels (every id
+    # implemented below lines up: id 0-3 the plain movement arrows, 8-11 the
+    # "方向転換" facing arrows, 16-20/22-27 named buttons like "ランダム移動"/
+    # "主人公に接近"/"右に回転"). Real command dumps from the sample game
+    # carry ids (21, 29, 47, 60) this reader could not place in the crate's
+    # own table at all -- diagonal movement/facing (ids 4-7/12-15, which
+    # would need a diagonal passability model this reader does not have) and
+    # every setter/toggle id (speed/frequency/graphic/opacity/height/sound/
+    # variable/jump/approach-position, ids 32 and up) are left unimplemented
+    # too, rather than guessed -- see docs/adr/0069 for the full breakdown.
+    DIRECTION_DELTA = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }.freeze
+    # The reverse of DIRECTION_DELTA -- a plain literal rather than
+    # `DIRECTION_DELTA.key(...)`, since `Hash#key` (the reverse-lookup
+    # method) does not exist anywhere in this project's vendored mruby fork
+    # (confirmed empirically: `ctest -R mruby_test` raises "undefined method
+    # 'key' for Hash" for it, and no other gem in this codebase calls it
+    # either -- AGENTS.md's own "mruby stdlib methods live in core *-ext
+    # mrbgems" note is about methods that exist but need a declared
+    # dependency; this one is not that case).
+    DELTA_DIRECTION = { [0, 1] => :down, [0, -1] => :up, [-1, 0] => :left, [1, 0] => :right }.freeze
+    DIRECTION_ORDER = [:down, :left, :up, :right].freeze
+
+    # A tiny deterministic pseudo-random generator for MoveRandom/
+    # TurnLeftRightRandom/FaceRandomDirection's own "pick one" need, mirroring
+    # mruby-rpg2k's own Game::Rng (game.rb's own comment there: `Array#sample`
+    # lives in mruby-random, a dependency this gem does not declare and, per
+    # the same build's own comment, this engine's code deliberately avoids in
+    # favour of a seeded LCG even where the gem *is* available, so a future
+    # frame-by-frame diff against a genuine reference stays possible). WOLF RPG
+    # Editor has no such reference yet (docs/adr/0064), so reproducibility is
+    # not load-bearing here the way it is for RPG2000's own move routes --
+    # kept anyway for consistency, and because it sidesteps the missing-gem
+    # trap entirely.
+    class Rng
+      PERIOD = 65_537
+      def initialize(seed = 1)
+        @state = (seed & 0xffff) + 1
+      end
+      def next_int
+        @state = (@state * 75 + 74) % PERIOD
+      end
+      # An integer in 0...n (0 when n <= 0).
+      def random(n)
+        return 0 if n <= 0
+        next_int % n
+      end
+    end
+
+    ROUTE_MOVE_DOWN = 0
+    ROUTE_MOVE_LEFT = 1
+    ROUTE_MOVE_RIGHT = 2
+    ROUTE_MOVE_UP = 3
+    ROUTE_FACE_DOWN = 8
+    ROUTE_FACE_LEFT = 9
+    ROUTE_FACE_RIGHT = 10
+    ROUTE_FACE_UP = 11
+    ROUTE_MOVE_RANDOM = 16
+    ROUTE_MOVE_TOWARD_HERO = 17
+    ROUTE_MOVE_AWAY_FROM_HERO = 18
+    ROUTE_STEP_FORWARD = 19
+    ROUTE_STEP_BACKWARD = 20
+    ROUTE_TURN_RIGHT = 22
+    ROUTE_TURN_LEFT = 23
+    ROUTE_TURN_RANDOM = 24
+    ROUTE_FACE_RANDOM = 25
+    ROUTE_FACE_TOWARD_HERO = 26
+    ROUTE_FACE_AWAY_FROM_HERO = 27
+
+    ROUTE_MOVE_DELTA = {
+      ROUTE_MOVE_DOWN => DIRECTION_DELTA[:down], ROUTE_MOVE_LEFT => DIRECTION_DELTA[:left],
+      ROUTE_MOVE_RIGHT => DIRECTION_DELTA[:right], ROUTE_MOVE_UP => DIRECTION_DELTA[:up],
+    }.freeze
+    ROUTE_FACE_DIRECTION = {
+      ROUTE_FACE_DOWN => :down, ROUTE_FACE_LEFT => :left,
+      ROUTE_FACE_RIGHT => :right, ROUTE_FACE_UP => :up,
+    }.freeze
+
+    # SetMoveRoute(201)'s own "動作指定する対象" target encoding
+    # (help/04ev_movesettingB.html: ">=0 the event with that id, -1 this
+    # event, -2 the hero (party leader), -3..-7 party member 1-5"). No party
+    # system exists yet, so a party-member target is logged and skipped the
+    # same as any other not-yet-modeled command.
+    ROUTE_TARGET_SELF = -1
+    ROUTE_TARGET_HERO = -2
+
+    # How far (Manhattan distance) MoveTowardHero/Page#move_type's own
+    # "TowardHero" will path before falling back to a random step, per
+    # help/04eventwindowB.html's own qualitative note ("ただし、ある程度距離が
+    # 離れるとランダム移動になります" -- "once far enough away it becomes
+    # random movement") -- no source gives the exact distance, so this is a
+    # reasonable round number, not a decoded constant.
+    TOWARD_HERO_RANGE = 10
+
+    # The runtime {x:, y:, direction:, page_index:, move_timer:} for one map
+    # event, created on first use from its own parsed start position.
+    def event_position(event)
+      @event_positions[event.id] ||= { x: event.x, y: event.y, direction: :down, page_index: nil, move_timer: 0 }
+    end
+
+    # SetMoveRoute(201): args = [target]; `cmd.route`/`cmd.route_flags` are
+    # already parsed by the shared Command framing (interpreter.rb's own
+    # header). The "動作を繰り返す" [loop] option is not modeled -- applying a
+    # route instantly (like every other command here) would spin forever if
+    # it looped and moved at all, so a looping route is logged and skipped
+    # entirely rather than run once and silently dropping the loop.
+    def exec_set_move_route(cmd)
+      pos, writeback = resolve_route_target(cmd.arg(0))
+      unless pos
+        unimplemented("SetMoveRoute(201) target #{cmd.arg(0)}")
+        return
+      end
+      if ((cmd.route_flags || 0) & 0x01) != 0
+        unimplemented("SetMoveRoute(201) repeating route")
+        return
+      end
+      run_route_commands(pos, cmd.route || [])
+      writeback&.call(pos)
+    end
+
+    def resolve_route_target(target)
+      if target >= 0
+        event = current_map && current_map.events.find { |e| e.id == target }
+        return [nil, nil] unless event
+        [event_position(event), nil]
+      elsif target == ROUTE_TARGET_SELF
+        event_id = var_store.current_map_event_id
+        event = event_id && current_map && current_map.events.find { |e| e.id == event_id }
+        return [nil, nil] unless event
+        [event_position(event), nil]
+      elsif target == ROUTE_TARGET_HERO
+        return [nil, nil] unless current_scene
+        [current_scene.hero_pos, ->(p) { current_scene.hero_pos = p }]
+      else
+        # -3..-7 (a party member): no party system exists yet.
+        # #exec_set_move_route's own generic "target N" message covers this,
+        # same as a dangling event id or a "this event" outside any map
+        # event's own context.
+        [nil, nil]
+      end
+    end
+
+    # Runs one RouteCommand list against `pos` (either a map event's own
+    # runtime position, or the hero's, via #resolve_route_target) -- shared
+    # by SetMoveRoute(201) and a page's own initial "カスタム" route
+    # (#apply_initial_move_route). Every step applies instantly, the same
+    # "snap, no gradual animation" simplification Picture(150)'s own Show/
+    # Move already make (interpreter.rb's own comment on that command).
+    def run_route_commands(pos, commands)
+      commands.each do |rc|
+        if ROUTE_MOVE_DELTA.key?(rc.id)
+          dx, dy = ROUTE_MOVE_DELTA[rc.id]
+          step_event_pos(pos, dx, dy)
+        elsif ROUTE_FACE_DIRECTION.key?(rc.id)
+          pos[:direction] = ROUTE_FACE_DIRECTION[rc.id]
+        else
+          case rc.id
+          when ROUTE_MOVE_RANDOM then step_event_pos(pos, *random_step_delta)
+          when ROUTE_MOVE_TOWARD_HERO then step_event_pos(pos, *toward_hero_delta(pos))
+          when ROUTE_MOVE_AWAY_FROM_HERO then step_event_pos(pos, *away_from_hero_delta(pos))
+          when ROUTE_STEP_FORWARD then step_event_pos(pos, *DIRECTION_DELTA[pos[:direction]])
+          when ROUTE_STEP_BACKWARD
+            dx, dy = DIRECTION_DELTA[pos[:direction]]
+            step_event_pos(pos, -dx, -dy)
+          when ROUTE_TURN_RIGHT then pos[:direction] = turn(pos[:direction], 1)
+          when ROUTE_TURN_LEFT then pos[:direction] = turn(pos[:direction], -1)
+          when ROUTE_TURN_RANDOM then pos[:direction] = turn(pos[:direction], @rng.random(2) == 0 ? -1 : 1)
+          when ROUTE_FACE_RANDOM then pos[:direction] = DIRECTION_ORDER[@rng.random(DIRECTION_ORDER.size)]
+          when ROUTE_FACE_TOWARD_HERO
+            d = direction_toward_hero(pos)
+            pos[:direction] = d if d
+          when ROUTE_FACE_AWAY_FROM_HERO
+            d = direction_away_from_hero(pos)
+            pos[:direction] = d if d
+          else
+            unimplemented("move route command #{rc.id}")
+          end
+        end
+      end
+    end
+
+    def turn(direction, steps)
+      i = DIRECTION_ORDER.index(direction) || 0
+      DIRECTION_ORDER[(i + steps) % DIRECTION_ORDER.size]
+    end
+
+    def random_step_delta
+      DIRECTION_DELTA[DIRECTION_ORDER[@rng.random(DIRECTION_ORDER.size)]]
+    end
+
+    def hero_delta(pos)
+      return [0, 0] unless current_scene
+      [current_scene.x - pos[:x], current_scene.y - pos[:y]]
+    end
+
+    def dominant_delta(dx, dy)
+      return [0, 0] if dx == 0 && dy == 0
+      dx.abs >= dy.abs ? [dx <=> 0, 0] : [0, dy <=> 0]
+    end
+
+    def toward_hero_delta(pos)
+      return random_step_delta unless current_scene
+      dx, dy = hero_delta(pos)
+      return random_step_delta if (dx.abs + dy.abs) > TOWARD_HERO_RANGE
+      dominant_delta(dx, dy)
+    end
+
+    def away_from_hero_delta(pos)
+      return random_step_delta unless current_scene
+      dx, dy = hero_delta(pos)
+      dominant_delta(-dx, -dy)
+    end
+
+    def direction_toward_hero(pos)
+      DELTA_DIRECTION[dominant_delta(*hero_delta(pos))]
+    end
+
+    def direction_away_from_hero(pos)
+      dx, dy = hero_delta(pos)
+      DELTA_DIRECTION[dominant_delta(-dx, -dy)]
+    end
+
+    # Moves `pos` one tile, blocked by the map's own tile passability and
+    # the hero's own tile (no other-event collision yet -- unlike the
+    # hero's own #move_hero/#event_at, nothing here stops two moving events
+    # from overlapping); always updates `pos[:direction]` to face the
+    # attempted direction even when the step itself is blocked, matching
+    # the manual's own "動作内容" list treating movement and facing as the
+    # same action.
+    def step_event_pos(pos, dx, dy)
+      facing = DELTA_DIRECTION[[dx, dy]]
+      pos[:direction] = facing if facing
+      return if dx == 0 && dy == 0
+      nx = pos[:x] + dx
+      ny = pos[:y] + dy
+      return unless current_scene && current_scene.passable?(nx, ny) && !current_scene.hero_at?(nx, ny)
+      pos[:x] = nx
+      pos[:y] = ny
+    end
+
+    # Not sourced from the manual's own numeric table for "移動頻度" (no
+    # dropdown value list found in help/*.html, only the qualitative "raising
+    # it shortens the pause after each step, 'every frame' removes the pause
+    # entirely" description) -- a reasonable decreasing interval, clamped so
+    # it never reaches zero (this reader has no "every frame" sentinel to
+    # detect), stands in until a real source turns up.
+    def move_pause_frames(frequency)
+      [20 - frequency * 4, 2].max
+    end
+
+    # Advances one map event's ambient movement by one frame: applies a
+    # newly-active page's own initial "カスタム" route once (Custom), or
+    # ticks a Random/TowardHero step on a #move_pause_frames cadence. A page
+    # with no move type (None) or a Confirm/Touch-triggered one currently
+    # inactive leaves the event exactly where it already is.
+    def update_event_movement(event, page_index, page)
+      pos = event_position(event)
+      return unless page
+      if pos[:page_index] != page_index
+        pos[:page_index] = page_index
+        apply_initial_move_route(pos, page) if page.move_type == Wolf::Page::MOVE_CUSTOM
+        pos[:move_timer] = 0
+      end
+      case page.move_type
+      when Wolf::Page::MOVE_RANDOM then tick_ambient_move(pos, page) { random_step_delta }
+      when Wolf::Page::MOVE_TOWARD_HERO then tick_ambient_move(pos, page) { toward_hero_delta(pos) }
+      end
+    end
+
+    def apply_initial_move_route(pos, page)
+      if ((page.route_options || 0) & 0x01) != 0
+        unimplemented("map event page's own repeating custom move route")
+        return
+      end
+      run_route_commands(pos, page.route)
+    end
+
+    def tick_ambient_move(pos, page)
+      if pos[:move_timer] > 0
+        pos[:move_timer] -= 1
+        return
+      end
+      step_event_pos(pos, *yield)
+      pos[:move_timer] = move_pause_frames(page.move_frequency)
+    end
+
     # CommonEvent(210) / CommonEventReserve(211): args = [event_id,
     # param_status, *param_numbers, (return_variable if enabled)]. Per
     # Command.hpp's call_event structure, an event_id of 500000..599999
@@ -784,7 +1097,8 @@ module Wolf
     def event_at(x, y)
       return nil unless current_map
       current_map.events.each do |event|
-        next unless event.x == x && event.y == y
+        pos = event_position(event)
+        next unless pos[:x] == x && pos[:y] == y
         idx, page = active_page(event)
         return [event, page] if page
       end
@@ -848,6 +1162,7 @@ module Wolf
       return unless current_map
       current_map.events.each do |event|
         idx, page = active_page(event)
+        update_event_movement(event, idx, page)
         next unless page && (page.auto? || page.parallel?)
         existing = @map_runs.find { |r| r[:event_id] == event.id }
         if existing

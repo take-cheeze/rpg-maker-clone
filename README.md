@@ -596,8 +596,7 @@
   decision-key press or a movement bump — the hero freezes while any of
   these (or an auto-run Common Event) is still executing, so bumping into
   an NPC or opening a chest actually blocks the way and runs its
-  commands. Event *movement* (move routes) is not implemented yet, so
-  every event stays put; see
+  commands. See
   [`docs/adr/0066-wolf-rpg-editor-map-events.md`](docs/adr/0066-wolf-rpg-editor-map-events.md)
   for three real bugs this uncovered against the sample game's own data
   (a condition-enabled-bit heuristic, a trigger that froze after its
@@ -625,6 +624,18 @@
   real Move call this reader found whose different mode bits meant a
   different, unconfirmed argument count (now an explicit no-op rather
   than a guess, the same as every other unconfirmed shape)
+- **Events move.** `Page#move_type` (None/Custom/Random/TowardHero) and the
+  explicit `SetMoveRoute`(201) "■動作指定" command both run, against a
+  runtime position kept separate from the parsed map data (mirroring
+  `mruby-rpg2k`'s own `Game::Character` wrapper). A Custom page plays its
+  own route once, on activation; Random/TowardHero tick a step on a
+  best-effort cadence; `SetMoveRoute` can retarget any event or the hero.
+  Only the RouteCommand ids this reader could cross-check one by one
+  against the editor's own "動作指定" window (help/Ev_routeset.png) are
+  implemented — real command dumps from the sample game itself carry ids
+  no independent source could place, logged and skipped rather than
+  guessed, the same discipline as everywhere else in this maker. See
+  [`docs/adr/0069-wolf-rpg-editor-event-movement.md`](docs/adr/0069-wolf-rpg-editor-event-movement.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
