@@ -463,6 +463,19 @@ assert "Wolf::Interpreter's Blank(0) is a no-op that does not disturb its siblin
   assert_equal 2, store.number(2_000_001)
 end
 
+assert "Wolf::Interpreter's Checkpoint(99) is a no-op regardless of its own \"特モード\" argument" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+    wolf_test_cmd(99, [0], [], 0), # Checkpoint
+    wolf_test_cmd(99, [1], [], 0), # Checkpoint, "特モード"
+    wolf_test_cmd(121, [2_000_001, 0, 2, 0xf000], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+  assert_equal 2, store.number(2_000_001)
+end
+
 # ---- Wolf::Interpreter LoopTimes(179) ----------------------------------------
 
 assert "Wolf::Interpreter's LoopTimes(179) repeats exactly the configured (possibly variable-held) count" do

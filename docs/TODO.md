@@ -36129,18 +36129,29 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `range` (a contiguous run of picture numbers, confirmed by real data to
   sometimes span more than one) are applied across every number in
   between that has an active picture. See
-  `docs/adr/0077-wolf-rpg-editor-effect-command.md`. Suggested next order
-  (by real frequency, from the same census): save/load (220-222, 13
-  occurrences, though 220's own `Base`/Save operation needs a real
-  save-file *format* serializing the whole game state, not just command
-  wiring -- a much larger undertaking than its own occurrence count
-  suggests), `Party`(270), `BanInput`(126), transitions (160-162, almost
-  unused), `ChangeColor`(151), `Checkpoint`(99), `WaitForMove`(202),
-  `Teleport`(130), `Effect`(290)'s own remaining surface (every other
-  Picture effect kind, the Character and Map targets), and `Database`
-  (250)'s own remaining surface (XY配列, the eight name<->index lookups,
-  data reset/insert/extract/copy/sort, CSV import/export via
-  `ImportDatabase`(251)).
+  `docs/adr/0077-wolf-rpg-editor-effect-command.md`. (This bullet's own
+  previous "suggested next order" had `Checkpoint`(99) listed *after*
+  save/load despite its real 49 occurrences outnumbering save/load's
+  combined 13 -- corrected below.)
+- ✅ **Checkpoint(99) (2026-09-07).** The second most common unimplemented
+  command by real frequency after `Effect`(290) (49 occurrences).
+  help/04eventwindowB.html documents it as a pure event-editor bookmark/
+  navigation aid ("チェックＰ追加"/"次チェックＰへジャンプ") with no
+  runtime effect at all, matching the wolfrpg-map-parser crate's own
+  unit-variant model (no fields); its own lone real argument (0 or 1) is
+  the manual's documented "特モード" second bookmark category, itself
+  still editor-side only. Treated as a no-op alongside `Blank`(0). See
+  `docs/adr/0078-wolf-rpg-editor-checkpoint.md`. Suggested next order (by
+  real frequency, from the same census): save/load (220-222, 13
+  occurrences combined, though 220's own `Base`/Save operation needs a
+  real save-file *format* serializing the whole game state, not just
+  command wiring -- a much larger undertaking than its own occurrence
+  count suggests), `ChangeColor`(151), `BanInput`(126), `Teleport`(130),
+  `Party`(270), transitions (160-162, almost unused), `WaitForMove`(202),
+  `Effect`(290)'s own remaining surface (every other Picture effect kind,
+  the Character and Map targets), and `Database`(250)'s own remaining
+  surface (XY配列, the eight name<->index lookups, data reset/insert/
+  extract/copy/sort, CSV import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

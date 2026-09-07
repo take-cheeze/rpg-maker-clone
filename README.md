@@ -689,6 +689,9 @@
   Picture effect kind (Flash, Shake, Zoom, the blink/auto-pattern-switch
   family) remain unimplemented. See
   [`docs/adr/0077-wolf-rpg-editor-effect-command.md`](docs/adr/0077-wolf-rpg-editor-effect-command.md)
+- **Checkpoint.** `Checkpoint`(99) — a pure event-editor bookmark with no
+  runtime effect — is a no-op alongside `Blank`(0). See
+  [`docs/adr/0078-wolf-rpg-editor-checkpoint.md`](docs/adr/0078-wolf-rpg-editor-checkpoint.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
