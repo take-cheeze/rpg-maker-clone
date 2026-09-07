@@ -720,6 +720,12 @@
   shape `ChangeColor`'s own screen tone transition already established,
   just keyed per picture. See
   [`docs/adr/0083-wolf-rpg-editor-effect-switch-flicker.md`](docs/adr/0083-wolf-rpg-editor-effect-switch-flicker.md)
+- **Picture flash.** `Effect`(290)'s Picture-target `Flash` reuses native
+  RGSS `Sprite#flash` for a one-shot decaying colour overlay. Wiring it up
+  found a pre-existing gap: `ChangeColor`(151)'s own "flash" case never
+  called `Viewport#update`, so it would freeze at full intensity forever
+  instead of fading — fixed alongside. See
+  [`docs/adr/0084-wolf-rpg-editor-effect-flash.md`](docs/adr/0084-wolf-rpg-editor-effect-flash.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
