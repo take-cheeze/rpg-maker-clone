@@ -36376,43 +36376,63 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   (`Includes`/`StartsWith`/`value_is_variable` are implemented from the
   same enum but not exercised by real data). See `docs/adr/0091-wolf-rpg-
   editor-string-condition.md`.
-- Suggested next order (by real frequency, from the same census):
-  transitions (160-162, almost unused -- `SetTransition`(160)'s own lone
-  real call could arguably be a no-op too, since `ExecuteTransition`(162)
-  never appears in this sample game to ever consume the configured value,
-  but unlike `Party`(270)'s own confirmed-by-architecture no-ops this
-  would only be "never exercised together" rather than a real structural
-  no-op, so deprioritized rather than implemented on that weaker basis),
-  `Effect`(290)'s own remaining Picture effect kinds (Zoom/SwitchAutoFlash/
-  AutoEnlarge/the auto-pattern-switch family) -- `Zoom` needing native
-  `Viewport` zoom support this reader does not have (checked directly
-  against `mruby-rgss/src/lib.cxx`'s own method table) -- and the Map
-  target's own `Shake` (`MapEffectType`-confirmed, though whether its own
-  real field layout routes through Effect(290) at all or belongs to the
-  separate `MapEffect`(280) command the crate's own dedicated `MapShake`
-  struct seems to model needs checking before implementing either, and 0
-  real calls exist for either code in this sample game regardless),
-  `Teleport`(130)'s own remaining surface (re-checked this pass: all 5
-  real `-1` calls relocate the *calling* event to a *different* map than
-  its own home map, which -- since a map event only ever exists in its own
-  home map's own file, re-parsed from scratch on every visit with no
-  cross-map instance sharing -- would need a foundational rewrite well
-  beyond Teleport itself, not just the per-map keying already fixed;
-  `-3..-7`, party members, needs the same unbuilt party system as Party's
-  own `Insert`), `BanInput`(126) (6 real calls, but unlike StringCondition
-  the crate does not model this command at all -- no independent
-  structural cross-validation for its packed bit layout beyond the
-  manual's own semantic description and 2 distinct raw values, and
-  honestly implementing "ban" needs real input-restriction plumbing this
-  reader has never built, not just a data commit -- stays in the "no
-  foundation yet" camp), `SaveLoad`(220)'s own remaining surface
-  (self-variables, the database, and everything else this pass's own
-  deliberately partial snapshot left out), `Party`(270)'s own remaining
-  surface (a real party system: roster, member sprites,
+- ✅ **BreakEvent(172) (2026-09-07).** Had been folded into a shared
+  "log and skip" fallback with four other low-frequency control commands
+  and never individually counted -- a fresh full per-command-code census
+  (this session's own re-check discipline, applied again once
+  StringCondition's own well ran dry) found it alone has 303 real calls,
+  by far the largest remaining unimplemented command in the whole census
+  and an order of magnitude more frequent than the rest of that same
+  fallback group combined. "以降のイベントコマンドを無視して、イベントを
+  終了します" [ignores every subsequent event command and ends the event]
+  (`04ev_control.html`) -- every real call is a bare 0-argument marker, so
+  `Run#dispatch` just sets `@index = @commands.size`, ending only the
+  current Run (a called Common Event's own BreakEvent returns control to
+  its caller normally, matching the manual's own "ends the event," not
+  "ends every event," wording). See `docs/adr/0092-wolf-rpg-editor-break-
+  event.md`.
+- Suggested next order: transitions (160-162, almost unused --
+  `SetTransition`(160)'s own lone real call could arguably be a no-op too,
+  since `ExecuteTransition`(162) never appears in this sample game to ever
+  consume the configured value, but unlike `Party`(270)'s own confirmed-
+  by-architecture no-ops this would only be "never exercised together"
+  rather than a real structural no-op, so deprioritized rather than
+  implemented on that weaker basis), `Effect`(290)'s own remaining Picture
+  effect kinds (Zoom/SwitchAutoFlash/AutoEnlarge/the auto-pattern-switch
+  family) -- `Zoom` needing native `Viewport` zoom support this reader
+  does not have (checked directly against `mruby-rgss/src/lib.cxx`'s own
+  method table) -- and the Map target's own `Shake` (`MapEffectType`-
+  confirmed, though whether its own real field layout routes through
+  Effect(290) at all or belongs to the separate `MapEffect`(280) command
+  the crate's own dedicated `MapShake` struct seems to model needs
+  checking before implementing either, and 0 real calls exist for either
+  code in this sample game regardless), `Teleport`(130)'s own remaining
+  surface (re-checked: all 5 real `-1` calls relocate the *calling* event
+  to a *different* map than its own home map, which -- since a map event
+  only ever exists in its own home map's own file, re-parsed from scratch
+  on every visit with no cross-map instance sharing -- would need a
+  foundational rewrite well beyond Teleport itself, not just the per-map
+  keying already fixed; `-3..-7`, party members, needs the same unbuilt
+  party system as Party's own `Insert`), `BanInput`(126) (6 real calls,
+  but unlike StringCondition/BreakEvent the crate does not model this
+  command at all -- no independent structural cross-validation for its
+  packed bit layout beyond the manual's own semantic description and 2
+  distinct raw values, and honestly implementing "ban" needs real input-
+  restriction plumbing this reader has never built, not just a data
+  commit -- stays in the "no foundation yet" camp), `ForceStopMessage`
+  (105)/`ClearDebugText`(107)/`ReturnToTitle`(174)/`EndGame`(175) (the
+  rest of BreakEvent's own former fallback group -- 0-1 real calls each,
+  an entirely different frequency tier), `SaveLoad`(220)'s own remaining
+  surface (self-variables, the database, and everything else this pass's
+  own deliberately partial snapshot left out), `Party`(270)'s own
+  remaining surface (a real party system: roster, member sprites,
   formation-following movement), and `Database`(250)'s own remaining
   surface (XY配列, the eight name<->index lookups, data
   reset/insert/extract/copy/sort, CSV import/export via
   `ImportDatabase`(251) -- 0 real calls of its own in this sample game).
+  Worth re-scanning any other shared "log and skip" fallback bucket's own
+  individual members too, the same way BreakEvent's own real frequency
+  was hiding in one, before concluding nothing well-scoped remains.
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

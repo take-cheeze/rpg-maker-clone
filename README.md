@@ -762,6 +762,10 @@
   counterpart — `Equals`/`NotEquals`/`Includes`/`StartsWith` against a
   literal or another string variable. See
   [`docs/adr/0091-wolf-rpg-editor-string-condition.md`](docs/adr/0091-wolf-rpg-editor-string-condition.md)
+- **BreakEvent(172).** Ends the currently running event immediately,
+  ignoring every command after it — 303 real calls in the sample game, the
+  largest remaining gap a fresh command-frequency census turned up. See
+  [`docs/adr/0092-wolf-rpg-editor-break-event.md`](docs/adr/0092-wolf-rpg-editor-break-event.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

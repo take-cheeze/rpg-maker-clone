@@ -333,9 +333,25 @@ module Wolf
           @interp.exec_load_variable(cmd)
         when Interpreter::C_SAVE_VARIABLE
           @interp.exec_save_variable(cmd)
+        when Interpreter::C_BREAK_EVENT
+          # "イベント処理中断" (04ev_control.html): "以降のイベントコマンド
+          # を無視して、イベントを終了します" [ignores every subsequent
+          # event command and ends the event] -- a bare 0-argument marker
+          # (303 real calls, every one shaped `args=[], strings=[]`, no
+          # packed-bit layout to cross-validate at all) that abandons the
+          # rest of *this* Run's own flat command list right where it sits,
+          # regardless of indent/loop/branch nesting -- the same "just jump
+          # `@index` to the end" shape `#exec_variable_condition`'s own
+          # sibling constructs already rely on this command list being flat
+          # rather than really nested. Ends only the current Run, the same
+          # as the manual's own plain "ends the event" wording (not "ends
+          # every event"): a called Common Event's own BreakEvent returns
+          # control to its caller normally, it does not abort the whole
+          # call chain.
+          @index = @commands.size
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT,
-             Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
+             Interpreter::C_RETURN_TO_TITLE,
              Interpreter::C_END_GAME
           @interp.unimplemented(cmd.code)
         else
