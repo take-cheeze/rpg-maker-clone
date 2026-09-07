@@ -11915,6 +11915,63 @@ The work below is roughly ordered by the critical path to a walkable game
   `Game::Party#equip_candidates` still sorts, left alone because the Equip
   screen was being measured in parallel this same round (cycle #250). No
   EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #258, 2026-09-06): where a newly gained id lands in
+  the bag, measured on genuine RPG_RT.exe — it is *inserted*, before the first
+  stored entry with a larger id, not appended.** The entry above deliberately
+  left this open; three real purchases settle it. *Recipe*: `Save01_clean.lsd`
+  moved with `gen-rpg2k-save.rb --map 15 --at 5,9 --facing up --clear-scene`
+  (Nepheshel's own weapon shop, `Map0015.lmu` event 2 `武器屋の親父`, the same
+  zero-synthetic-editing NPC cycles #145/#152 used — its Open Shop is buy-only
+  and, unlike the item shop on Map0016, its event does **nothing** to the bag
+  afterwards, which is why it was chosen), then chunk 109 rewritten through the
+  LCF writer to hold `item_ids` deliberately out of id order —
+  `[42, 92, 67, 28, 103]` with counts `[1, 2, 3, 4, 5]`
+  (ショートソード/メイス/ファルシオン/グラディウス/ロングスピア, so each row's
+  count identifies its id) and `gold` 900000 — reassigned to the parent chunk
+  (`save[109] = inv`) before writing, without which the edit is silently
+  dropped; verified with `ruby scripts/lcf_save_check.rb`. Resumed under wine
+  (Xvfb 640x480x16, matchbox, LANG=ja_JP.UTF-8, `BOOT_WAIT=40`), the field Item
+  screen first re-confirmed the stored order 42/92/67/28/103 (re-confirming
+  cycle #252 on a second, independent bag), then one weapon was bought from the
+  shop's own Buy list and the Item screen photographed again. Note for future
+  runs: the party resumes **facing down** even from a `--facing up` save, so a
+  bare `z` in front of the NPC does nothing — press `Up` first (the hero is also
+  invisible here, drawn behind the counter's upper-layer tile, so "nothing
+  happened" looks identical to "wrong tile"); `x` is Cancel/menu, `z` Decision.
+  *Measured*: buying **44** (ブロードソード) listed 42, **44**, 92, 67, 28, 103
+  — index 1, immediately before 92, the first stored id larger than 44; buying
+  **27** (ダガー) listed **27**, 42, 92, 67, 28, 103 — index 0, before 42;
+  buying **127** (麻の服) listed 42, 92, 67, 28, 103, **127** — appended,
+  because no stored id is larger. So the rule is one forward scan: insert
+  before the first larger stored id, append when there is none. It is **not**
+  an append (44 and 27 both landed ahead of entries already held), **not** a
+  sort of the whole bag (92/67/28 never moved), and **not** "after the last
+  smaller id" (that would have put 44 at index 4). The obvious reading is that
+  RPG_RT keeps its inventory sorted and does a linear search for the insertion
+  point; a hand-built unsorted bag is out of spec for that search, and this is
+  where the scan lands — which also means a bag built purely by play is always
+  ascending, and only a save (or an editor) can carry another order.
+  **Fixed**: `Game::Party#gain_item` (`mruby-rpg2k/mrblib/game.rb`) now routes a
+  *new* id through a new `#insert_item_in_bag` implementing exactly that scan
+  (`@items` is a Hash whose insertion order is the bag order, so inserting in
+  the middle re-appends the tail behind the new key); an id already held still
+  only has its count bumped, and still keeps its slot. Three new checks at the
+  end of `scripts/rpg2k_scene_check.rb` pin the three measured purchases, a
+  restock, and a lose-then-re-gain; the first and third fail against the pre-fix
+  code (`expected [42, 44, 92, 67, 28, 103], got [42, 92, 67, 28, 103, 44]`).
+  **Fallout, corrected rather than papered over**: four `scripts/
+  rpg2k_logic_check.rb` fixtures built their deliberately unsorted bag by
+  *gaining* ids in descending order, which the measurement says can no longer
+  produce one — they now seed the stored order directly (a new `stored_bag`
+  helper) which is exactly the case cycle #252 photographed, and still pin the
+  same thing: neither the Item screen nor `to_lsd` re-sorts what the bag holds.
+  **Deliberately left open**: cycle #250's passing observation of a
+  30/27/29/28/61/66 grid after an *equip* is not explained by this rule (no
+  gain sequence produces it), and the equip path was not driven under wine this
+  cycle; `Game::Party#equip_candidates` still sorts, still untouched. Suites:
+  scene 1041, logic 1201, render 41, test-bed 174, rpg2k3 gauge 15 / row 19 /
+  command OK, `rgss_cruby_test_check` OK, `rpg2k_save_load_check` OK. No
+  EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
   against genuine RPG_RT.exe rather than trusting the reference-implementation-only
   citation above.** Edited a genuine Nepheshel save's inventory chunk to hold a

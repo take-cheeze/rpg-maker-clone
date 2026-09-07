@@ -28799,6 +28799,69 @@ check 'a held item whose database row has a blank name draws a blank name, ' \
      "no invented placeholder for the blank-named row, got #{texts.inspect}"
 end
 
+
+# -- where a newly gained item lands in the bag (cycle #258) -------------------
+#
+# Cycle #252 proved the Item screen lists the bag in the order the save stores,
+# never sorted by id, and left open where RPG_RT *inserts* a newly gained id.
+# Measured against genuine RPG_RT.exe under wine (cycle #258): a Save01.lsd
+# whose chunk 109 `item_ids` was written out of order ([42, 92, 67, 28, 103]),
+# resumed on Nepheshel's own weapon-shop map (Map0015 event 2, `--map 15 --at
+# 5,9`), with one weapon bought from that shop's own Buy list:
+#   * buying 44  listed 42, 44, 92, 67, 28, 103  (index 1, before 92)
+#   * buying 27  listed 27, 42, 92, 67, 28, 103  (index 0, before 42)
+#   * buying 127 listed 42, 92, 67, 28, 103, 127 (appended, nothing is larger)
+# i.e. the new id goes immediately before the first stored entry with a greater
+# id, and on the end when there is none.
+def bag_party_with(ids)
+  party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: []),
+                                         enemy_group: Hash.new(true),
+                                         rpg2003?: false))
+  items = party.instance_variable_get(:@items)
+  ids.each_with_index { |id, i| items[id] = i + 1 }
+  party
+end
+
+check 'a newly gained item is inserted before the first larger stored id, ' \
+      'not appended (the three purchases measured under wine)' do
+  # 44 lands at index 1, ahead of 92 -- the exact frame cycle #258 captured.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(44, 1)
+  eq [42, 44, 92, 67, 28, 103], party.items.keys,
+     'gaining 44 into a [42,92,67,28,103] bag'
+
+  # 27 is smaller than everything, so it goes to the very front.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(27, 1)
+  eq [27, 42, 92, 67, 28, 103], party.items.keys,
+     'gaining 27 into a [42,92,67,28,103] bag'
+
+  # 127 is larger than everything, so there is nothing to insert before.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(127, 1)
+  eq [42, 92, 67, 28, 103, 127], party.items.keys,
+     'gaining 127 into a [42,92,67,28,103] bag'
+end
+
+check 'gaining more of an id already held leaves the bag order alone' do
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(67, 4)
+  eq [42, 92, 67, 28, 103], party.items.keys, 'a restock does not reposition'
+  eq 7, party.item_count(67), 'the count still went up'
+end
+
+check 'the bag order survives losing and re-gaining an id' do
+  # Losing the last copy drops the entry outright, so the re-gain is a fresh
+  # insertion and must land by the same rule rather than back where it was.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.lose_item(92, 2)
+  eq [42, 67, 28, 103], party.items.keys, 'the depleted id left the bag'
+  party.gain_item(92, 1)
+  eq [42, 67, 28, 92, 103], party.items.keys,
+     're-gaining 92 puts it before 103 -- the first larger id *now* stored, ' \
+     'not back in the slot it used to occupy'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?
