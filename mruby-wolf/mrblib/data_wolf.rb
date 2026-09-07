@@ -97,8 +97,9 @@
 #
 # Two things this reader deliberately does not attempt, refusing with a clear
 # error rather than mis-parsing, the same "detect and refuse" discipline
-# `Wolf::Crypt.protected?`/`.refuse_protected!` already applies to Pro-
-# protected *file* data:
+# `Wolf::Crypt.protected?`/`.decrypt_protected` already applies to whichever
+# Pro-protected *file* sub-schemes are not implemented (see
+# wolf_crypt_pro.rb's file header):
 #
 #   * A **compressed** table or entry (`NO_HEAD_PRESS` unset, or a file whose
 #     `PressDataSize`/`HuffPressDataSize` is not the "uncompressed" sentinel)
@@ -113,18 +114,19 @@
 #     silently mis-decoding a compressed archive as garbage.
 #   * Pro-protected **data.wolf containers** are not a thing distinct from
 #     Pro-protected *files*: Pro protection (byte 1 == 0x50) is a separate
-#     AES/ChaCha scheme applied to individual `Data/` files' own bytes, wholly
+#     AES scheme applied to individual `Data/` files' own bytes, wholly
 #     independent of the DXA container they may or may not be packed into --
 #     `WolfTL`'s own `WolfDxArcKey.hpp` derives a *DXA* key from a Pro-
 #     protected `Game.dat`'s bytes, i.e. the container is still plain DXA even
 #     for a Pro-protected release. So this reader does not special-case
 #     protection at all: it decodes the DXA container exactly the same either
 #     way, and `Wolf::Project#read`'s callers already run every file through
-#     the *same* `Wolf.open_envelope`/`Crypt.refuse_protected!` gate the loose-
-#     tree path always has (`data.rb`'s `GameDat`/`Database`/`CommonEvents`/
-#     `Map` parsers, `Wolf.open_envelope`) -- a Pro-protected packed release is
-#     refused at exactly the same place, with exactly the same message, a
-#     loose-tree one already is, with no separate detection needed here.
+#     the *same* `Wolf.open_envelope`/`Crypt.decrypt_protected` gate the
+#     loose-tree path always has (`data.rb`'s `GameDat`/`Database`/
+#     `CommonEvents`/`Map` parsers, `Wolf.open_envelope`) -- a Pro-protected
+#     packed release is decrypted (v3.5) or refused (v3.1/v3.3) at exactly
+#     the same place a loose-tree one already is, with no separate detection
+#     needed here.
 #
 # Also out of scope: the older DXA v5/v6 container the 2.0x editor releases
 # used (`DXArchiveVer5`/`Ver6` in WolfDec, structurally different from v8

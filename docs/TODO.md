@@ -36518,13 +36518,33 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   comes back identical through the packed copy. Compressed DXA entries and
   the older pre-2.281 v5/v6 container are refused with a clear error rather
   than mis-parsed. See `docs/adr/0093-wolf-rpg-editor-data-wolf.md`.
-- 🚧 **Pro-protected data.** `Wolf::Crypt.protected?`/`.refuse_protected!`
-  detect and refuse it (byte 1 == `0x50`) rather than mis-parsing it; actually
-  decrypting it needs the AES/ChaCha scheme `WolfTL`'s `WolfDataDecrypt.hpp`
-  implements, and from editor 3.5 on the protection key is not even stored in
-  the game (only a hash), so a 3.5+ Pro-protected release may be permanently
-  out of reach the way a from-3.5-Pro-protected `.wolf` already is for
-  `WolfDec`.
+- ✅ **Pro-protected data (v3.5) decrypted for real (2026-09-07).** The
+  earlier claim here -- "from editor 3.5 on the protection key is not even
+  stored in the game (only a hash), so a 3.5+ Pro-protected release may be
+  permanently out of reach" -- was wrong: v3.5's AES-128 key/IV are
+  `SHA-512(saltPassword("", dynamicSaltFromTheFile'sOwnBytes,
+  hardcodedPerFileTypeStaticSalt))`, derived entirely from bytes the
+  protected file's own header already carries plus a small hardcoded
+  per-file-type string, with no external secret ever needed (`WolfTL`'s
+  `WolfDataDecrypt.hpp`'s `v3_5::decryptData`; `WolfProtKey.hpp`'s
+  `calcProtKey` independently confirms the whole family needs no external
+  key, by recovering the human-chosen protection password itself straight
+  out of `Game.dat`). `Wolf::Crypt.decrypt_protected`
+  (`mruby-wolf/mrblib/wolf_crypt_pro.rb`) decrypts `Game.dat`/
+  `TileSetData.dat`/`CommonEvent.dat`/all three `*DataBase.dat` files for
+  real (a from-scratch SHA-512 + AES-128 port, cross-validated against a
+  compiled C++ WolfTL reference harness, then against a full Pro-protected
+  round trip of the real 660-file sample game through `Wolf::Project` and
+  the compiled engine itself) -- `Wolf::Crypt.protected?` still detects the
+  marker (byte 1 == `0x50`) the same way it always did. **Deliberately left
+  refused, by name, not guessed at**: the older v3.1 sub-scheme (`WolfTL`
+  itself has no decrypt function to port -- `WolfDataDecrypt.hpp`'s own
+  `namespace v3_1 { }` is empty), the v3.3 sub-scheme (a real, self-
+  contained reference exists, but its key derivation is a large custom PRNG
+  state machine this session could not cross-validate with confidence in
+  the time available), and Pro-protected `Map` files (no `PRO_MAGIC` entry
+  exists for `Map` even in WolfTL's own reference). See
+  `docs/adr/0095-wolf-rpg-editor-pro-protected.md`.
 
 
 ## Tooling
