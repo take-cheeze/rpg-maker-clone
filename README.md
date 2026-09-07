@@ -754,6 +754,10 @@
   where they were left, instead of colliding with a different map's
   identically-numbered event. See
   [`docs/adr/0089-wolf-rpg-editor-event-position-per-map.md`](docs/adr/0089-wolf-rpg-editor-event-position-per-map.md)
+- **Per-map map-event self-variable keying.** A map event's own
+  self-variables are now also keyed per map, closing the one gap the
+  event-position fix above left open. See
+  [`docs/adr/0090-wolf-rpg-editor-map-event-self-var-per-map.md`](docs/adr/0090-wolf-rpg-editor-map-event-self-var-per-map.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

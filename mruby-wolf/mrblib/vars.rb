@@ -175,10 +175,18 @@ module Wolf
       # Interpreter#run sets these for the duration of one event's commands.
       @current_map_event_id = nil
       @current_common_event_id = nil
+      # The map `#map_event_self_bank` keys its own banks by, alongside
+      # each bank's own event id -- kept in sync by `Wolf::Interpreter#
+      # current_map_id=`'s own setter, not written here directly. `nil`
+      # until the first real map load, or in a context with no real map
+      # load at all (this class's own test suite): every map event on that
+      # one implicit map still keys uniquely off its own id there, same as
+      # before this existed.
+      @current_map_id = nil
       @warned = {}
     end
 
-    attr_accessor :current_map_event_id, :current_common_event_id
+    attr_accessor :current_map_event_id, :current_common_event_id, :current_map_id
 
     def warn_once(key, message)
       return if @warned[key]
@@ -208,8 +216,14 @@ module Wolf
       @system_strings = snapshot[:system_strings] || Hash.new("")
     end
 
+    # Keyed by `[current_map_id, event_id]`, not `event_id` alone -- two
+    # different maps' own event id spaces both start from small numbers
+    # like 0/1/2 and would otherwise collide, the exact same reasoning
+    # `Wolf::Interpreter#event_position`'s own identical fix (ADR 0089)
+    # already applies to a map event's runtime *position*; this is its
+    # counterpart for a map event's own self-variable *bank*.
     def map_event_self_bank(event_id)
-      @map_event_self[event_id] ||= Hash.new(0)
+      @map_event_self[[current_map_id, event_id]] ||= Hash.new(0)
     end
 
     def common_event_self_bank(common_id)

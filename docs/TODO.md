@@ -36349,6 +36349,15 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   the identical collision but have no equivalent map-id concept to key by
   yet -- left open, not newly introduced here. See `docs/adr/0089-wolf-
   rpg-editor-event-position-per-map.md`.
+- ✅ **Per-map map-event self-variable keying (2026-09-07).** Closed the
+  one gap ADR 0089 itself left open: `VarStore#map_event_self_bank` had
+  the identical `event_id`-alone collision `#event_position` did, just
+  needing its own `current_map_id` to key by -- `Wolf::Interpreter#
+  current_map_id=` is now a real setter that keeps `var_store.current_map_
+  id` in sync automatically, so every existing caller needed no changes
+  of its own. `@common_event_self` (Common Events are global, not
+  per-map) never had this problem. See `docs/adr/0090-wolf-rpg-editor-
+  map-event-self-var-per-map.md`.
 - Suggested next order (by real frequency, from the same census):
   transitions (160-162, almost unused -- `SetTransition`(160)'s own lone
   real call could arguably be a no-op too, since `ExecuteTransition`(162)
@@ -36365,7 +36374,6 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   separate `MapEffect`(280) command the crate's own dedicated `MapShake`
   struct seems to model needs checking before implementing either, and 0
   real calls exist for either code in this sample game regardless),
-  `VarStore`'s own per-map-event self-variable collision noted above,
   `Teleport`(130)'s own remaining surface (whether the per-map event
   position fix above unblocks any more of its own real `-1`/`-3..-7`
   targets was not investigated -- their own semantics, an event

@@ -323,6 +323,23 @@ assert "Wolf::VarStore keeps each map event's self-variables independent" do
   assert_equal 9, store.number(1_000_000 + 10 * 1 + 1)
 end
 
+assert "Wolf::VarStore keys map event self-variables by current_map_id too, not event id alone" do
+  # Two different maps' own event id spaces both start from small numbers
+  # (0/1/2) and would otherwise collide -- the same reasoning
+  # Wolf::Interpreter#event_position's own identical fix (ADR 0089)
+  # already applies to a map event's runtime position.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.current_map_id = 100
+  store.set_number(1_000_000 + 10 * 0 + 1, 5) # map 100's own event 0, self-var 1
+
+  store.current_map_id = 200
+  assert_equal 0, store.number(1_000_000 + 10 * 0 + 1) # map 200's own event 0, untouched
+  store.set_number(1_000_000 + 10 * 0 + 1, 7) # map 200's own event 0, self-var 1
+
+  store.current_map_id = 100
+  assert_equal 5, store.number(1_000_000 + 10 * 0 + 1) # map 100's own value survived the round trip
+end
+
 assert "Wolf::VarStore resolves \"this common event\" self-variables against the running one" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   store.current_common_event_id = 3
@@ -946,6 +963,7 @@ assert "Wolf::Interpreter#event_position keys by [current_map_id, event.id], not
   interp.current_map = WolfTestMap.new([event_a])
   interp.current_map_id = 100
   assert_equal 9, interp.event_position(event_a)[:x] # map 100's own move survived the round trip
+  assert_equal 100, store.current_map_id # Interpreter#current_map_id= also keeps VarStore in sync
 end
 
 # ---- Wolf::Interpreter#exec_set_variable_ex (SetVariableEx(124)) ------------

@@ -722,7 +722,20 @@ module Wolf
     # id (`Wolf::Project#map(id)` looks it up by id but the returned object
     # never remembers it) -- set by `WolfRPG#load_scene` right alongside
     # `current_map=` itself.
-    attr_accessor :current_map_id
+    #
+    # A real setter (not a bare attr_accessor) rather than a second call
+    # site every caller of `current_map_id=` would otherwise need to
+    # remember: `VarStore#map_event_self_bank`'s own per-map-event self-
+    # variable banks need the exact same `[map id, event id]` keying
+    # `#event_position` already uses (ADR 0089), and `var_store` is the
+    # one place that convention is decided, so it stays in sync with this
+    # one assignment alone.
+    attr_reader :current_map_id
+
+    def current_map_id=(id)
+      @current_map_id = id
+      var_store.current_map_id = id
+    end
 
     # The running WolfRPG::MapScene, so #exec_picture can ask it to actually
     # show/move/erase a picture sprite -- Interpreter itself has no
