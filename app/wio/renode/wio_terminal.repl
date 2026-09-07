@@ -104,65 +104,49 @@ gclk_pchctrl: Python.PythonPeripheral @ sysbus 0x40001C80
     initable: true
     filename: "scripts/pydev/flipflop.py"
 
-// --- P2: the two SERCOM instances this board wires to SPI mode -----------
+// --- P2/P3: the two SERCOM instances this board wires to SPI mode --------
 // Per the Wio Terminal Arduino variant (variants/wio_terminal/variant.h):
 // SDCARD_SPI is SPI2 -> SERCOM6 (0x43000800), LCD_SPI is SPI3 -> SERCOM7
 // (0x43000C00) -- two separate buses, not one shared bus (this repo's own
 // walk_main.cxx SDCARD_SPI fallback to plain `SPI` never actually triggers
-// on this board; the variant already defines it). Genuinely modelling
-// SERCOM's SPI mode (a real ISPIPeripheral so an attached ILI9341/SD model
-// could receive real bytes, ADR 94 P3/P4) is new work -- nothing upstream
-// implements SERCOM at all (checked: SAM_SPI is the unrelated classic SAM4
-// "SPI" peripheral, PDC and all, not SERCOM).
+// on this board; the variant already defines it).
 //
-// For P2 the polling loops just need to terminate, no real card/panel is
-// listening yet -- but *one wide stub per instance does not work*: it was
-// tried first and live-locked in SERCOM::resetSPI(), which writes CTRLA
-// (+0x00) then polls CTRLA's own SWRST self-clear bit, and *then* polls the
-// separate SYNCBUSY register (+0x1C) for the same bit position. A single
-// shared flipflop toggle answers both polls from the same alternating
-// state, so the two reads are always complementary and the pair never
-// reads "ready" together -- the exact same trap as OSCCTRL_DPLLSTATUS
-// above, just at register rather than bit granularity. Each real register
-// this firmware's SERCOM driver actually touches (CTRLA, SYNCBUSY, INTFLAG,
-// DATA) gets its own independent stub instead, so their toggles don't
-// correlate.
-sercom6_ctrla: Python.PythonPeripheral @ sysbus 0x43000800
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
+// P2 first stubbed these as four independent flipflop registers per
+// instance (CTRLA/INTFLAG/SYNCBUSY/DATA -- one wide stub per instance
+// live-locked in SERCOM::resetSPI's cross-register poll, the same trap as
+// OSCCTRL_DPLLSTATUS above). P3 replaces both with a real controller,
+// SPI.SAMD51_SERCOM_SPI (this repo's own peripheral -- nothing upstream
+// implements SERCOM in any mode; SAM_SPI is the unrelated classic
+// SAM4/SAME70 peripheral, checked against source rather than assumed): it
+// answers the same polls correctly by construction instead of by
+// coincidence, and actually delivers bytes to whatever ISPIPeripheral is
+// registered on it via `@`.
+sercom6_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000800
 
-sercom6_intflag: Python.PythonPeripheral @ sysbus 0x43000818
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
+sercom7_spi: SPI.SAMD51_SERCOM_SPI @ sysbus 0x43000C00
 
-sercom6_syncbusy: Python.PythonPeripheral @ sysbus 0x4300081C
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
+// The LCD's D/C (data/command select) line: variants/wio_terminal/
+// variant.cpp puts LCD_DC on PORTC pin 6, driven by plain digitalWrite
+// (TFT_Interface.h's DC_C/DC_D macros) -- not part of the SPI byte stream,
+// so the display peripheral needs this wired as a GPIO input alongside its
+// SPI registration. GPIOPort.SAMD21_GPIO already exists upstream and its
+// PORT register layout is shared with SAMD51 (not re-verified beyond this
+// pin working correctly here); PORTC's own base address is this repo's
+// read of the SAMD51 CMSIS headers (.../instance/port.h), spaced +0x80
+// per group after PORTA/PORTB the same way SAMD21_GPIO sizes itself.
+portc: GPIOPort.SAMD21_GPIO @ sysbus 0x41008100
+    6 -> lcd@0
 
-sercom6_data: Python.PythonPeripheral @ sysbus 0x43000828
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
+// The 320x240 ILI9341 panel itself (docs/adr/0094 P3): a from-scratch
+// SPI-command-stream -> framebuffer model (nothing upstream models any
+// SPI TFT), scoped to exactly what this firmware's TFT_eSPI fork sends --
+// see app/wio/renode/README.md and the class's own comments for what it
+// does and does not interpret. `lcd SaveFramebufferPng "/path.png"` from
+// the Monitor dumps the current frame.
+lcd: Video.ILI9341_SPI @ sercom7_spi
 
-sercom7_ctrla: Python.PythonPeripheral @ sysbus 0x43000C00
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
-
-sercom7_intflag: Python.PythonPeripheral @ sysbus 0x43000C18
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
-
-sercom7_syncbusy: Python.PythonPeripheral @ sysbus 0x43000C1C
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
-
-sercom7_data: Python.PythonPeripheral @ sysbus 0x43000C28
-    size: 0x4
-    initable: true
-    filename: "scripts/pydev/flipflop.py"
+// The SD card (docs/adr/0094 P4): not modelled yet. Nothing is registered
+// on sercom6_spi, so SD.begin() behaves exactly as it does on real
+// hardware with an empty slot -- SPI writes complete (SAMD51_SERCOM_SPI
+// logs a warning and returns 0 with no device attached) but every command
+// reads back as failure.
