@@ -88,6 +88,11 @@ class WolfRPG
       @interpreter.pending_teleport = nil
       teleport_to(*req)
     end
+    # SaveLoad(220)'s own successful "Load" case (Wolf::Interpreter#pending_
+    # run_reset's own comment): true only for the frame it fired in, so it
+    # stops being effective for #exec_save_load's own dispatching Run once
+    # this frame's #update has fully returned.
+    @interpreter.pending_run_reset = false
     @scene.update if @scene
     RGSS::Input.update
     RGSS::Graphics.update
@@ -122,6 +127,7 @@ class WolfRPG
   def load_scene(map_id, x, y)
     map = @project.map(map_id)
     @interpreter.current_map = map
+    @interpreter.current_map_id = map_id
     @scene = MapScene.new(@project, map, @tile, x, y, @interpreter)
     @interpreter.current_scene = @scene
     true

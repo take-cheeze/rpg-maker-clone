@@ -186,6 +186,28 @@ module Wolf
       $stderr.puts "[Wolf] #{message}"
     end
 
+    # SaveLoad(220)'s own "Save"/"Load" seam: the four flat banks a real
+    # save round-trips through this reader (regular/system variables and
+    # strings) -- explicitly *not* the self-variable banks, the database,
+    # or anything else `Wolf::SaveData`'s own module comment already
+    # documents as out of scope for this reader's own deliberately partial
+    # save format (see docs/adr for the full save/load command). Each
+    # Hash's own default value (0/`""`) round-trips through `Marshal`
+    # unchanged (mruby-marshal's own `ifnone` tag), so `#restore` only
+    # needs to fall back to a fresh default-having Hash for a snapshot
+    # from before a key existed at all, not for an untouched slot within
+    # one that does.
+    def snapshot
+      { variables: @variables, strings: @strings, system_variables: @system_variables, system_strings: @system_strings }
+    end
+
+    def restore(snapshot)
+      @variables = snapshot[:variables] || Hash.new(0)
+      @strings = snapshot[:strings] || Hash.new("")
+      @system_variables = snapshot[:system_variables] || Hash.new(0)
+      @system_strings = snapshot[:system_strings] || Hash.new("")
+    end
+
     def map_event_self_bank(event_id)
       @map_event_self[event_id] ||= Hash.new(0)
     end

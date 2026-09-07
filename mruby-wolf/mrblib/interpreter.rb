@@ -155,15 +155,16 @@ module Wolf
     C_COMMON_EVENT_RESERVE = 211
     C_SET_LABEL = 212
     C_JUMP_LABEL = 213
-    # WolfTL's own "LoadGame"/"SaveGame" (220's own sibling codes, help/
-    # 04ev_file.html's own "セーブデータからの読み込み (変数・文字列)"/
-    # "セーブデータへの書き込み"): despite the WolfTL names, neither reads
-    # or writes a *whole* save -- see #exec_load_variable/#exec_save_
-    # variable's own comment. 220 itself ("保存・読込", the crate's own
-    # `Base` struct: `operation` Save/Load plus a `save_number`) *does*
-    # need the whole game state and is left unimplemented (falls through
-    # to the default case below), the same "no foundation yet" reasoning
-    # `Party`(270) is already documented under.
+    # 220 ("保存・読込", the crate's own `Base` struct: `operation` Save/
+    # Load plus a `save_number`) and WolfTL's own "LoadGame"/"SaveGame"
+    # (220's sibling codes 221/222, help/04ev_file.html's own "セーブデー
+    # タからの読み込み (変数・文字列)"/"セーブデータへの書き込み"):
+    # despite the WolfTL names, 221/222 never read or write a *whole*
+    # save -- see #exec_load_variable/#exec_save_variable's own comment.
+    # 220 itself does read/write this reader's own running state, but
+    # deliberately only a partial slice of it -- see #exec_save_load's own
+    # comment for exactly what.
+    C_SAVE_LOAD = 220
     C_LOAD_VARIABLE = 221
     C_SAVE_VARIABLE = 222
     C_COMMON_EVENT_BY_NAME = 300
@@ -224,7 +225,18 @@ module Wolf
       private
 
       def execute
-        while @index < @commands.size
+        # SaveLoad(220)'s own successful "Load" case sets
+        # Interpreter#pending_run_reset for the rest of the current frame
+        # (WolfRPG#main_loop clears it again once that frame's own #update
+        # returns) -- the manual's own documented "ロード後はイベントが実
+        # 行されてない状態から再開されます" (resumes with no event
+        # executing) guarantee, checked here so *this* Run (the one whose
+        # own command just issued the Load, still on the call stack) stops
+        # immediately rather than running any further commands of its own.
+        # Every other live Run is simply dropped from
+        # Interpreter#common_runs/#map_runs by #exec_save_load itself, so
+        # this same check is never reached for them at all.
+        while @index < @commands.size && !@interp.pending_run_reset
           cmd = @commands[@index]
           @index += 1
           dispatch(cmd)
@@ -307,6 +319,8 @@ module Wolf
           @interp.exec_change_color(cmd)
         when Interpreter::C_TELEPORT
           @interp.exec_teleport(cmd)
+        when Interpreter::C_SAVE_LOAD
+          @interp.exec_save_load(cmd)
         when Interpreter::C_LOAD_VARIABLE
           @interp.exec_load_variable(cmd)
         when Interpreter::C_SAVE_VARIABLE
@@ -682,12 +696,23 @@ module Wolf
     # The currently-loaded Wolf::Map, so #update can drive its events'
     # auto/parallel pages the way it already drives Common Events, and
     # #event_at/#trigger_confirm/#trigger_touch (called from WolfRPG::MapScene)
-    # know which map's events to look at. Set once at map load; nothing here
-    # resets @map_runs on a change, since no map transition (Teleport) is
-    # implemented yet -- a future one must clear it (and reconsider
-    # VarStore's per-event self-variable banks, keyed by event id alone,
-    # which collide across maps that reuse small ids like 0/1/2).
+    # know which map's events to look at. Set on every map load (including
+    # Teleport(130)'s own hero-target case, ADR 0080), but nothing clears
+    # @map_runs on its own when it changes -- @event_positions (keyed by
+    # event id alone, which collide across maps reusing small ids like
+    # 0/1/2) has the exact same gap, tracked together under Teleport's own
+    # "persistent per-map event state" TODO entry. #exec_save_load's own
+    # Load case (220) clears both @common_runs and @map_runs outright, but
+    # only because it also needs every event stopped, not as a fix for
+    # this.
     attr_accessor :current_map
+
+    # SaveLoad(220)'s own Save case (#exec_save_load): the id `#current_map`
+    # was loaded with, since `Wolf::Map` itself has no notion of its own
+    # id (`Wolf::Project#map(id)` looks it up by id but the returned object
+    # never remembers it) -- set by `WolfRPG#load_scene` right alongside
+    # `current_map=` itself.
+    attr_accessor :current_map_id
 
     # The running WolfRPG::MapScene, so #exec_picture can ask it to actually
     # show/move/erase a picture sprite -- Interpreter itself has no
@@ -706,6 +731,15 @@ module Wolf
     # safely do, and not while other Common Events may still be mid-run
     # this same frame.
     attr_accessor :pending_teleport
+
+    # SaveLoad(220)'s own successful "Load" case: true for the rest of the
+    # current frame only, reset by `WolfRPG#main_loop` right after this
+    # frame's own #update returns (the same "consumed once per frame"
+    # timing #pending_teleport already uses, though this one is a plain
+    # reset rather than a read-then-clear, since its only job is "stay
+    # true just long enough to stop the Run whose own command set it" --
+    # see `Run#execute`'s own comment).
+    attr_accessor :pending_run_reset
 
     def unimplemented(what)
       var_store.warn_once("unimplemented-#{what}", "event command #{what} is not implemented yet; skipping")
@@ -1882,6 +1916,77 @@ module Wolf
       y = var_store.number(cmd.arg(2))
       map_id = var_store.number(cmd.arg(3))
       self.pending_teleport = [map_id, x, y]
+    end
+
+    # SaveLoad(220) ("保存・読込", help/04ev_file.html's own "[保存・読込
+    # （セーブ/ロード）]"): `arg(0)` Save(0)/Load(1), `arg(1)` the save
+    # number/name (`Wolf::SaveData.path_for`, shared with LoadVariable
+    # (221)/SaveVariable(222) -- the same file, a different reserved key).
+    #
+    # A *deliberately partial* whole-reader snapshot, not this reader's
+    # entire running state the manual's own wording describes ("データの
+    # 一部だけ操作することも可能です" already concedes a save can
+    # legitimately be partial, the same allowance help/04ev_file.html's own
+    # "特殊機能" section documents for 221/222's own missing 可変DB data):
+    # `VarStore#snapshot`'s four flat banks (regular/system variables and
+    # strings) plus the current map id and hero position. Not captured:
+    # every self-variable bank (map/common event), the database, and
+    # anything Party(270)-related -- all already-documented "no foundation
+    # yet" gaps this reader has elsewhere, not new ones introduced here.
+    #
+    # A successful Load also has to make "ロード後はイベントが実行されて
+    # ない状態から再開されます" (resumes with no event executing) true:
+    # `@common_runs`/`@map_runs` are dropped outright (nothing else holds
+    # a reference to step their own Runs again, so they simply never
+    # execute another command) and `#pending_run_reset` stops the *one*
+    # Run still on the call stack -- the one whose own command this is --
+    # from running any more of its own (`Run#execute`'s own comment).
+    # `#pending_teleport` (Teleport(130)'s own request mechanism, reused
+    # as-is) rebuilds the scene at the saved map/position once this
+    # frame's own Interpreter#update returns, the same timing a real
+    # Teleport call already uses.
+    #
+    # A missing save, or one that was only ever written to by
+    # LoadVariable/SaveVariable and never actually Saved through here,
+    # means the reserved key is simply absent -- help/04ev_file.html's own
+    # documented "そのまま次のイベントコマンドを実行します" (just runs the
+    # next command) for that case falls out naturally by doing nothing.
+    SAVE_LOAD_OP_SAVE = 0
+    SAVE_LOAD_OP_LOAD = 1
+    SAVE_LOAD_FULL_SAVE_KEY = :full_save
+
+    def exec_save_load(cmd)
+      unless cmd.args.size == 2
+        unimplemented("SaveLoad(220) with #{cmd.args.size} arguments")
+        return
+      end
+      operation = var_store.number(cmd.arg(0))
+      path = Wolf::SaveData.path_for(project.dir, cmd.arg(1), var_store)
+      return unless path
+
+      case operation
+      when SAVE_LOAD_OP_SAVE
+        data = Wolf::SaveData.read(path)
+        hero = current_scene&.hero_pos
+        data[SAVE_LOAD_FULL_SAVE_KEY] = {
+          vars: var_store.snapshot,
+          map_id: current_map_id,
+          x: hero && hero[:x],
+          y: hero && hero[:y]
+        }
+        Wolf::SaveData.write(path, data)
+      when SAVE_LOAD_OP_LOAD
+        saved = Wolf::SaveData.read(path)[SAVE_LOAD_FULL_SAVE_KEY]
+        return unless saved
+
+        var_store.restore(saved[:vars])
+        self.pending_teleport = [saved[:map_id], saved[:x], saved[:y]]
+        @common_runs.clear
+        @map_runs.clear
+        self.pending_run_reset = true
+      else
+        unimplemented("SaveLoad(220) operation #{operation}")
+      end
     end
 
     # LoadVariable(221) ("セーブデータからの読み込み", help/04ev_file.html):

@@ -236,6 +236,30 @@ class WolfTestFakeProject
   def dir; "tmp_wolf_test_save_project"; end
 end
 
+# Mirrors Wolf::CommonEvent's own surface Wolf::Interpreter#update needs
+# (#id/#run_condition/#auto?/#parallel?/#commands) -- for
+# #exec_save_load's own "Load stops every active Run" test, which needs a
+# real always-on Common Event driven through #update, not just a bare
+# #exec_save_load call.
+class WolfTestFakeCommonEvent
+  def initialize(id, commands, auto: false)
+    @id = id
+    @commands = commands
+    @auto = auto
+  end
+
+  attr_reader :id, :commands
+
+  # Always-met (#condition_met?'s own RUN_PARALLEL_ALWAYS short-circuit,
+  # regardless of `auto`) so this never needs a fake condition_variable/
+  # value/operator of its own; `auto`/`parallel?` (queried separately, by
+  # #start_common_run's own `blocking: ce.auto?`) still pick which of the
+  # two real trigger kinds a given instance stands in for.
+  def run_condition; Wolf::CommonEvent::RUN_PARALLEL_ALWAYS; end
+  def auto?; @auto; end
+  def parallel?; !@auto; end
+end
+
 # Mirrors Wolf::DBType#value(datum_index, field_index)'s own surface, for
 # Wolf::Interpreter#exec_sound_track_db_entry's own BGM/BGS-by-database-
 # entry tests.
@@ -2051,6 +2075,105 @@ assert "Wolf::Interpreter#exec_teleport skips a target/precise-coordinates/argum
 
   interp.exec_teleport(wolf_test_cmd(130, [-2, 7, 27, 3]))
   assert_nil interp.pending_teleport
+end
+
+# ---- Wolf::Interpreter#exec_save_load (SaveLoad(220)) -----------------------
+
+assert "Wolf::Interpreter#exec_save_load round-trips variables/strings/map/hero-position through a real save file" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store.set_number(2_000_040, 111)
+    store.set_string(3_000_040, "hello full save")
+    store.set_number(9_000_040, 222) # a system variable
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+    interp.current_map_id = 4
+    scene = WolfTestFakeScene.new
+    scene.x = 7
+    scene.y = 8
+    interp.current_scene = scene
+    interp.exec_save_load(wolf_test_cmd(220, [0, 20])) # Save to slot 20
+
+    store2 = Wolf::VarStore.new(WolfTestFakeProject.new)
+    interp2 = Wolf::Interpreter.new(WolfTestFakeProject.new, store2)
+    interp2.exec_save_load(wolf_test_cmd(220, [1, 20])) # Load slot 20
+    assert_equal 111, store2.number(2_000_040)
+    assert_equal "hello full save", store2.string(3_000_040)
+    assert_equal 222, store2.number(9_000_040)
+    assert_equal [4, 7, 8], interp2.pending_teleport
+  ensure
+    File.delete("#{root}/Save/SaveData20.sav") if File.exist?("#{root}/Save/SaveData20.sav")
+    Dir.delete("#{root}/Save") if FileTest.directory?("#{root}/Save")
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_save_load's Load is a no-op (help/04ev_file.html's own documented default) when no save exists" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store.set_number(2_000_041, 999)
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+    # save_number 21 is never written by any test in this file.
+    interp.exec_save_load(wolf_test_cmd(220, [1, 21]))
+    assert_equal 999, store.number(2_000_041) # untouched
+    assert_nil interp.pending_teleport
+  ensure
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_save_load gates on argument count and an unknown operation" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_save_load(wolf_test_cmd(220, [0]))
+  assert_nil interp.pending_teleport
+  interp.exec_save_load(wolf_test_cmd(220, [2, 22])) # neither Save(0) nor Load(1)
+  assert_nil interp.pending_teleport
+end
+
+assert "Wolf::Interpreter#exec_save_load's Load stops the Run that issued it early and drops every other active Run" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store.set_number(2_000_040, 111)
+    project = WolfTestFakeProject.new
+    interp = Wolf::Interpreter.new(project, store)
+    interp.exec_save_load(wolf_test_cmd(220, [0, 23])) # Save to slot 23
+
+    store.set_number(2_000_040, 999) # drift after the save
+
+    # An Auto Common Event that Waits far longer than this test ever steps
+    # it -- still "active" (not #done) for the whole test, so #blocking?
+    # can prove it, then prove it gone, without needing it to ever finish.
+    blocker = WolfTestFakeCommonEvent.new(1, [wolf_test_cmd(180, [999_999])], auto: true)
+    loader = WolfTestFakeCommonEvent.new(2, [
+      wolf_test_cmd(121, [2_000_041, 0, 55, 0xf000]), # SetVariable literal 55 -- set, then
+      # wiped by the Load's own #restore below (a real Load discards *any*
+      # change since the save, even one this exact run just made a moment
+      # before triggering it), unlike #exec_save_load's own return-early
+      # "missing save" case, which leaves already-live state untouched.
+      wolf_test_cmd(220, [1, 23]), # Load slot 23
+      wolf_test_cmd(121, [2_000_042, 0, 66, 0xf000]) # must never run
+    ])
+    project.common_events.events = [blocker]
+    interp.update
+    assert_true interp.blocking?
+
+    project.common_events.events = [blocker, loader]
+    interp.update # loader starts and runs this same frame; its own Load fires mid-step
+    assert_equal 0, store.number(2_000_041) # wiped by the restore, see above
+    assert_equal 0, store.number(2_000_042) # the Run stopped before this command ever ran
+    assert_equal 111, store.number(2_000_040) # restored from the Save above
+    assert_false interp.blocking? # every Run, including the still-active blocker, was dropped
+  ensure
+    File.delete("#{root}/Save/SaveData23.sav") if File.exist?("#{root}/Save/SaveData23.sav")
+    Dir.delete("#{root}/Save") if FileTest.directory?("#{root}/Save")
+    Dir.delete(root) if FileTest.directory?(root)
+  end
 end
 
 # ---- Wolf::Interpreter#exec_load_variable / #exec_save_variable (LoadVariable(221)/SaveVariable(222)) ----
