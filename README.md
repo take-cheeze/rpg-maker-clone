@@ -568,12 +568,19 @@
   real size — WOLF RPG Editor's screen size is a per-project setting, not one
   fixed resolution per maker, so the window is sized from the project's own
   `Game.dat` — with the hero walking the arrow keys, blocked by each tile's
-  **real per-tile passability** from its tileset (not a placeholder grid).
-  Tiles draw as colour blocks keyed by those same passability flags (green
-  passable, dark red blocked, yellow "always above characters", blue
-  autotile) rather than the tileset's actual `ChipSet` image, mirroring the
-  colour-block fallback this engine's own RPG2000 renderer used before real
-  chipset art landed for it
+  **real per-tile passability** from its tileset (not a placeholder grid)
+- **Real ChipSet-image tile rendering.** Map tiles draw from the tileset's
+  own real PNG — plain base chips read straight off its 8-column sheet,
+  autotiles quarter-tile-assembled from each autotile's own 5-row sheet per
+  its packed layer value's per-corner shape code (`Wolf::Map.autotile_slot`/
+  `.autotile_shape`, `Wolf::ChipLayout`), the same corner-quarter-tile
+  convention this engine's own RPG2000 renderer already uses for its
+  terrain/water autotiles. Falls back to the same colour blocks keyed by
+  `TileSetData`'s passability flags (green passable, dark red blocked,
+  yellow "always above characters", blue autotile) wherever a tileset, or
+  one particular chip/autotile slot, has no real image to draw from —
+  mirroring the colour-block fallback this engine's own RPG2000 renderer
+  falls back to when its own `ChipSet` image is unavailable
 - **Common Events run.** `Wolf::Interpreter` drives every auto-start and
   parallel-process Common Event each frame, one `Fiber`-backed run per live
   event so a `Wait` command suspends only that event. Implemented so far:

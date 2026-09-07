@@ -33,14 +33,16 @@
 # own history followed (map exploration before the event interpreter, before
 # battle).
 #
-# Tiles are drawn as flat colour blocks keyed by TileSetData's passability
-# flags (green passable, dark red blocked, blue counter, grey autotile),
-# mirroring the colour-block fallback mruby-rpg2k's chipset renderer already
-# uses when a real ChipSet image is unavailable (see README's "Map
-# exploration"); real ChipSet-image rendering (base chips read from the
-# tileset's PNG, autotile quarter-tile assembly per Map.autotile_slot/shape)
-# is the natural next step and is left as a follow-up, tracked in
-# docs/TODO.md.
+# Tiles are drawn from the tileset's own real ChipSet image (base chips read
+# straight off its 8-column sheet, autotiles quarter-tile-assembled per
+# Wolf::ChipLayout -- data.rb's own pure geometry counterpart to
+# mruby-rpg2k's `Game::ChipsetLayout`) -- see
+# docs/adr/0093-wolf-rpg-editor-chipset-tiles.md. A tileset/chip/autotile
+# slot with no image of its own (never assigned in TileSetData.dat, or the
+# file failed to load) falls back to the same flat colour blocks keyed by
+# TileSetData's passability flags (green passable, dark red blocked, blue
+# counter, grey autotile) mruby-rpg2k's own chipset renderer falls back to
+# when its ChipSet image is unavailable (see README's "Map exploration").
 class WolfRPG
   # Every current release (2.2x through 3.3x+) uses 8-directional character
   # sheets in the RPG Basic System even when the project settings say 4; the
@@ -136,11 +138,11 @@ class WolfRPG
     false
   end
 
-  # A minimal walkable view of one map: tile layers as colour blocks (see the
-  # file header), a hero rectangle, arrow-key movement blocked by the
-  # tileset's own passability flags, and now map events -- rendered as
-  # colour-block markers (real ChipSet-image rendering is still docs/TODO.md's
-  # own follow-up, tracked separately from events), running their active
+  # A minimal walkable view of one map: tile layers drawn from the tileset's
+  # own real ChipSet image (see the file header), a hero rectangle,
+  # arrow-key movement blocked by the tileset's own passability flags, and
+  # now map events -- rendered as colour-block markers (event graphics are
+  # not modeled yet, unlike the tiles beneath them), running their active
   # page's commands on a Confirm-key press or a walk-into bump the same way
   # Wolf::Interpreter already drives Common Events, and blocking hero
   # movement while a non-Parallel page (or an auto-run Common Event) is
@@ -149,8 +151,9 @@ class WolfRPG
   # docs/TODO.md's WOLF RPG Editor section for what is still to build on top
   # of this.
   class MapScene
-    # Colours are chosen for legibility, not fidelity: they mark passability,
-    # not the counter/star/tag distinctions TileFlags also carries.
+    # The colour-block fallback (see the file header): legibility, not
+    # fidelity, since they only mark passability, not the counter/star/tag
+    # distinctions TileFlags also carries.
     PASSABLE = RGSS::Color.new(96, 160, 96, 255)
     BLOCKED = RGSS::Color.new(128, 48, 48, 255)
     ABOVE = RGSS::Color.new(160, 160, 96, 255)
@@ -177,6 +180,14 @@ class WolfRPG
       @event_sprites = {}
       @pictures = {}
       @tileset = project.tilesets[map.tileset_id]
+      # Loaded once up front (like @tileset itself), not per tile: #draw_tiles
+      # below blits from these same two caches for every cell of every layer.
+      # A missing/empty slot (Tileset#base_file on an unused tileset row, or
+      # one of TileSetData.dat's own padding autotile entries) or a load
+      # failure both come back nil, which #draw_chip/#draw_autotile treat as
+      # "fall back to a colour block for this tile" rather than a hard error.
+      @base_bitmap = load_tileset_bitmap(@tileset && @tileset.base_file)
+      @autotile_bitmaps = @tileset ? @tileset.autotile_files.map { |f| load_tileset_bitmap(f) } : []
       @viewport = RGSS::Viewport.new(0, 0, RGSS::Graphics.width, RGSS::Graphics.height)
       # Pictures are screen-space, not map-space: a message window or menu
       # must not scroll off with the camera the way #update_camera pans
@@ -787,6 +798,22 @@ class WolfRPG
       nil
     end
 
+    # Loads one tileset image (the base sheet, or a single autotile's own
+    # sheet) -- `path` is already Data/-relative the same way Tileset#
+    # base_file/#autotile_files store it (confirmed against the sample
+    # game's own TileSetData.dat, e.g. "MapChip/Base_BaseChip_pipo.png"), so
+    # the same #load_picture_bitmap convention applies, just logging its own
+    # tag rather than a picture number. `path` is nil/empty for an unused
+    # tileset slot -- silently skipped (nil), not logged, since there is
+    # nothing wrong to report.
+    def load_tileset_bitmap(path)
+      return nil if path.nil? || path.empty?
+      RGSS::Bitmap.new(File.join(@project.dir, "Data", path))
+    rescue RGSS::Bitmap::LoadError => e
+      $stderr.puts "[Wolf] tileset image failed to load #{path.inspect}: #{e.message}"
+      nil
+    end
+
     def draw_shape(bitmap, shape, width, height)
       case shape[:kind]
       when :square
@@ -823,32 +850,99 @@ class WolfRPG
       { sprite: sprite, anchor: ANCHOR_TOP_LEFT, width: 1, height: 1 }
     end
 
+    # Every layer composited in order into the one static @map_bitmap, base
+    # chips and autotile quarters alike blitted straight from the tileset's
+    # own real images (#draw_chip) -- real ChipSet art wherever it loaded,
+    # the same colour-block markers as before wherever it did not (no
+    # @tileset at all, or that particular slot's own image failed to load).
+    # Layer 0 draws every cell including id 0 (a real base chip, not "empty"
+    # -- the same convention #passable? already keys off); layers above it
+    # skip a 0 cell outright so the layer beneath still shows through, since
+    # WOLF's own per-cell "no tile here" encoding is 0 on every layer but the
+    # first.
     def draw_tiles
       w = @map.width
       h = @map.height
-      base_layers = @map.layer_count
+      # A map whose own tileset id has no entry at all (@tileset nil --
+      # `Wolf::TileSetData#[]`'s own out-of-range case) has no per-chip
+      # passability to key colour blocks off either, so it gets the old
+      # whole-map fallback verbatim, grid included: every cell would draw the
+      # exact same PASSABLE block, and without the grid a whole map of
+      # identically-coloured cells would show no tile boundaries at all.
+      if @tileset.nil?
+        draw_fallback_grid(w, h)
+        return
+      end
       (0...h).each do |ty|
         (0...w).each do |tx|
-          color = tile_color(0, tx, ty)
-          (1...base_layers).each do |li|
+          (0...@map.layer_count).each do |li|
             v = @map.tile(li, tx, ty)
-            color = tile_color(li, tx, ty) if v != 0
+            next if v == 0 && li > 0
+            draw_chip(tx, ty, v)
           end
-          @map_bitmap.fill_rect(tx * @tile, ty * @tile, @tile, @tile, color)
         end
       end
-      # A light grid over the fill, so tile boundaries stay legible without a
-      # real chipset image.
+    end
+
+    def draw_fallback_grid(w, h)
+      (0...h).each { |ty| (0...w).each { |tx| @map_bitmap.fill_rect(tx * @tile, ty * @tile, @tile, @tile, PASSABLE) } }
       (0..w).each { |gx| @map_bitmap.fill_rect(gx * @tile, 0, 1, h * @tile, GRID) }
       (0..h).each { |gy| @map_bitmap.fill_rect(0, gy * @tile, w * @tile, 1, GRID) }
     end
 
-    def tile_color(layer, x, y)
-      value = @map.tile(layer, x, y)
-      return PASSABLE if @tileset.nil?
+    # One cell's worth of tile at map coordinate (tx, ty): a plain base chip
+    # or an autotile's own quarter-tile assembly, whichever `value` encodes
+    # (Wolf::Map.autotile?).
+    def draw_chip(tx, ty, value)
       if Wolf::Map.autotile?(value)
-        return AUTOTILE
+        draw_autotile(tx, ty, value)
+      else
+        draw_base_chip(tx, ty, value)
       end
+    end
+
+    # A plain base-sheet chip: one tile_size square copied straight from
+    # @base_bitmap at Wolf::ChipLayout.base_rect's own source position. Falls
+    # back to a flat colour block when there is no base image to draw from,
+    # or `value` names a cell past its real bounds (bad map data, or a
+    # tileset image an artist has not filled in as tall as the data expects).
+    def draw_base_chip(tx, ty, value)
+      bitmap = @base_bitmap
+      if bitmap
+        sx, sy = Wolf::ChipLayout.base_rect(@tile, value)
+        if sx + @tile <= bitmap.width && sy + @tile <= bitmap.height
+          @map_bitmap.blt(tx * @tile, ty * @tile, bitmap, RGSS::Rect.new(sx, sy, @tile, @tile))
+          return
+        end
+      end
+      @map_bitmap.fill_rect(tx * @tile, ty * @tile, @tile, @tile, fallback_color(value))
+    end
+
+    # An autotile cell: up to four 8x8-at-tile_size-32 quarter-tiles, one per
+    # corner, composited via Wolf::ChipLayout.autotile_quads and one
+    # #blt_quads dispatch (see mruby-rgss/src/lib.cxx's own comment on why
+    # that batches rather than four separate #blt calls). Frame 0 always --
+    # per-tile animation stepping is left as a follow-up, see the ADR. Falls
+    # back to the flat AUTOTILE colour block when this slot has no image of
+    # its own to assemble from.
+    def draw_autotile(tx, ty, value)
+      slot = Wolf::Map.autotile_slot(value)
+      bitmap = @autotile_bitmaps[slot]
+      unless bitmap
+        @map_bitmap.fill_rect(tx * @tile, ty * @tile, @tile, @tile, AUTOTILE)
+        return
+      end
+      shape = Wolf::Map.autotile_shape(value)
+      quads = Wolf::ChipLayout.autotile_quads(@tile, shape)
+      return if quads.empty?
+      @map_bitmap.blt_quads(tx * @tile, ty * @tile, bitmap, quads)
+    end
+
+    # The colour-block fallback for one base-sheet `value`, keyed by the same
+    # tileset passability flags the old whole-map fallback used. Only called
+    # with @tileset present -- #draw_tiles routes a nil @tileset through
+    # #draw_fallback_grid instead, before any per-chip drawing starts.
+    def fallback_color(value)
       flags = @tileset.flags_for(value)
       return PASSABLE if flags.nil?
       return ABOVE if flags.above_characters?
