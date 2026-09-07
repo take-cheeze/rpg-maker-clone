@@ -229,6 +229,11 @@ class WolfTestFakeProject
   def system_db; @system_db ||= {}; end
   def user_db; @user_db ||= {}; end
   def changeable_db; @changeable_db ||= {}; end
+  # Wolf::SaveData#path_for's own project-root anchor, for SaveVariable
+  # (222)/LoadVariable(221)'s own tests -- a relative scratch directory
+  # each of those tests creates and removes itself (mirroring mruby-
+  # rpgxp's own "Dir.glob covers..." test), not a fixture.
+  def dir; "tmp_wolf_test_save_project"; end
 end
 
 # Mirrors Wolf::DBType#value(datum_index, field_index)'s own surface, for
@@ -1877,4 +1882,122 @@ assert "Wolf::Interpreter#exec_teleport skips a target/precise-coordinates/argum
 
   interp.exec_teleport(wolf_test_cmd(130, [-2, 7, 27, 3]))
   assert_nil interp.pending_teleport
+end
+
+# ---- Wolf::Interpreter#exec_load_variable / #exec_save_variable (LoadVariable(221)/SaveVariable(222)) ----
+
+assert "Wolf::Interpreter#exec_save_variable/#exec_load_variable round-trip a number and a string through a real save file" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store.set_number(2_000_010, 99)
+    store.set_string(3_000_010, "hello save")
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+    # save_number 7 (a literal), keys 9_000_050/9_000_051 (arbitrary raw
+    # ids -- only the live variable's own kind, not the key's, decides
+    # number vs. string; see #exec_save_variable's own comment).
+    interp.exec_save_variable(wolf_test_cmd(222, [2_000_010, 7, 9_000_050, 0]))
+    interp.exec_save_variable(wolf_test_cmd(222, [3_000_010, 7, 9_000_051, 0]))
+
+    # A fresh VarStore/Interpreter -- this must come from the file, not
+    # from any in-process state the first two calls left behind.
+    store2 = Wolf::VarStore.new(WolfTestFakeProject.new)
+    interp2 = Wolf::Interpreter.new(WolfTestFakeProject.new, store2)
+    interp2.exec_load_variable(wolf_test_cmd(221, [2_000_020, 7, 9_000_050, 0]))
+    interp2.exec_load_variable(wolf_test_cmd(221, [3_000_020, 7, 9_000_051, 0]))
+    assert_equal 99, store2.number(2_000_020)
+    assert_equal "hello save", store2.string(3_000_020)
+  ensure
+    File.delete("#{root}/Save/SaveData07.sav") if File.exist?("#{root}/Save/SaveData07.sav")
+    Dir.delete("#{root}/Save") if FileTest.directory?("#{root}/Save")
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_load_variable defaults to 0/\"\" for a save file or key that does not exist" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+    # save_number 8 is never written by any test in this file.
+    interp.exec_load_variable(wolf_test_cmd(221, [2_000_021, 8, 9_000_060, 0]))
+    interp.exec_load_variable(wolf_test_cmd(221, [3_000_021, 8, 9_000_061, 0]))
+    assert_equal 0, store.number(2_000_021)
+    assert_equal "", store.string(3_000_021)
+  ensure
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_load_variable special-cases system variable 24 to the save file's own existence" do
+  # help/06systemvalue.html's own Sys24: "[読]ｾｰﾌﾞﾃﾞｰﾀ読込判定(1=成功
+  # 0=失敗)" -- confirmed by real data (CE#94's own save/load screen
+  # renderer reads it first, before any other slot preview info).
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+    # save_number 9 does not exist yet.
+    interp.exec_load_variable(wolf_test_cmd(221, [2_000_022, 9, 9_000_024, 0]))
+    assert_equal 0, store.number(2_000_022)
+
+    # Any write at all brings the file (and so Sys24) into existence.
+    interp.exec_save_variable(wolf_test_cmd(222, [2_000_023, 9, 9_000_070, 0]))
+    interp.exec_load_variable(wolf_test_cmd(221, [2_000_022, 9, 9_000_024, 0]))
+    assert_equal 1, store.number(2_000_022)
+  ensure
+    File.delete("#{root}/Save/SaveData09.sav") if File.exist?("#{root}/Save/SaveData09.sav")
+    Dir.delete("#{root}/Save") if FileTest.directory?("#{root}/Save")
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_save_variable/#exec_load_variable can name the save file directly via a string variable" do
+  root = "tmp_wolf_test_save_project"
+  Dir.mkdir(root) unless FileTest.directory?(root)
+  begin
+    store = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store.set_string(3_000_030, "custom_save.sav")
+    store.set_number(2_000_030, 42)
+    interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+    interp.exec_save_variable(wolf_test_cmd(222, [2_000_030, 3_000_030, 9_000_080, 0]))
+    assert_true File.exist?("#{root}/custom_save.sav")
+
+    store2 = Wolf::VarStore.new(WolfTestFakeProject.new)
+    store2.set_string(3_000_030, "custom_save.sav")
+    interp2 = Wolf::Interpreter.new(WolfTestFakeProject.new, store2)
+    interp2.exec_load_variable(wolf_test_cmd(221, [2_000_031, 3_000_030, 9_000_080, 0]))
+    assert_equal 42, store2.number(2_000_031)
+
+    # help/04ev_file.html's own documented Ver3.00+ path-traversal
+    # rejection: an unsafe name never reaches the filesystem at all.
+    store2.set_string(3_000_031, "../escape.sav")
+    interp2.exec_save_variable(wolf_test_cmd(222, [2_000_030, 3_000_031, 9_000_080, 0]))
+    assert_false File.exist?("../escape.sav")
+  ensure
+    File.delete("#{root}/custom_save.sav") if File.exist?("#{root}/custom_save.sav")
+    Dir.delete(root) if FileTest.directory?(root)
+  end
+end
+
+assert "Wolf::Interpreter#exec_load_variable/#exec_save_variable skip an indirect (is_pointer) ref or the wrong argument count" do
+  # Neither call ever touches the filesystem for these -- both gates are
+  # checked before #exec_save_variable/#exec_load_variable resolve a
+  # save file path at all.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+  interp.exec_load_variable(wolf_test_cmd(221, [2_000_040, 1, 9_000_090, 1])) # is_pointer
+  assert_equal 0, store.number(2_000_040)
+
+  interp.exec_save_variable(wolf_test_cmd(222, [2_000_041, 1, 9_000_091, 1])) # is_pointer
+
+  interp.exec_load_variable(wolf_test_cmd(221, [2_000_042, 1, 9_000_092])) # 3 arguments
+  assert_equal 0, store.number(2_000_042)
+
+  interp.exec_save_variable(wolf_test_cmd(222, [2_000_043, 1, 9_000_093])) # 3 arguments
 end

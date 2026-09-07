@@ -36203,23 +36203,42 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   fully finished -- a genuine no-op in this reader's specific
   architecture, the same reasoning `Blank`(0)/`Checkpoint`(99) already
   established. See `docs/adr/0081-wolf-rpg-editor-wait-for-move.md`.
+- ✅ **LoadVariable(221)/SaveVariable(222) (2026-09-07).** Next by real
+  frequency (9 + 2), and -- despite WolfTL's own misleading "LoadGame"/
+  "SaveGame" names -- much smaller than `220` itself turned out to be: each
+  reads/writes exactly one variable or string into a small per-save-slot
+  blob (a new `Wolf::SaveData`, `Marshal`-backed, not WOLF's own real
+  `.sav` format), not the whole game state. help/04ev_file.html's own
+  documented defaults (0/empty string for a missing save or key), system
+  variable 24's own special-cased existence check (help/06systemvalue.html,
+  confirmed by CE#94's own real save/load screen renderer), and the manual's
+  own string-named-save-file mode (confirmed by real data using this common
+  event's own self-variable "string quintet," not just the literal
+  3000000+ range the manual's own example happens to use) are all
+  implemented; `is_pointer` (roughly half of real `LoadVariable` calls) has
+  no independent source at all beyond the crate's own field name and is
+  left unimplemented, the same reasoning `BanInput`(126) already
+  established. `220` itself (the actual whole-game save/load) still needs
+  a real save-file *format* serializing the whole engine state, not just
+  command wiring -- left unimplemented, the same "no foundation yet"
+  reasoning `Party`(270) is already documented under. See `docs/adr/
+  0082-wolf-rpg-editor-save-variable.md`.
 - Suggested next order (by real frequency, from the same census):
-  save/load (220-222, 13 occurrences combined, though 220's own `Base`/
-  Save operation needs a real save-file *format* serializing the whole
-  game state, not just command wiring -- a much larger undertaking than
-  its own occurrence count suggests), `Party`(270) (needs a party system
-  this reader does not have at all -- the crate's own
-  `party_graphics_command` covers party member *graphics*, which implies
-  multiple visible party sprites following the hero, unbuilt), transitions
-  (160-162, almost unused), `Effect`(290)'s own remaining surface (every
-  other Picture effect kind, the Character and Map targets, its own
-  Flash/Shake/blink effects being a natural fit for `ChangeColor`'s own
-  new `#update_tone` per-frame-tick pattern), `Teleport`(130)'s own
-  remaining surface (persistent per-map event state, needed for both its
-  own `-1`/`-3..-7` targets and for switches/variables/moved events to
-  survive a revisited map at all), and `Database`(250)'s own remaining
-  surface (XY配列, the eight name<->index lookups, data reset/insert/
-  extract/copy/sort, CSV import/export via `ImportDatabase`(251)).
+  `220` itself (2 occurrences, needs the real save-file format above --
+  a much larger undertaking than its own occurrence count suggests),
+  `Party`(270) (needs a party system this reader does not have at all --
+  the crate's own `party_graphics_command` covers party member *graphics*,
+  which implies multiple visible party sprites following the hero,
+  unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
+  remaining surface (every other Picture effect kind, the Character and Map
+  targets, its own Flash/Shake/blink effects being a natural fit for
+  `ChangeColor`'s own new `#update_tone` per-frame-tick pattern),
+  `Teleport`(130)'s own remaining surface (persistent per-map event state,
+  needed for both its own `-1`/`-3..-7` targets and for switches/
+  variables/moved events to survive a revisited map at all), and
+  `Database`(250)'s own remaining surface (XY配列, the eight
+  name<->index lookups, data reset/insert/extract/copy/sort, CSV
+  import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
