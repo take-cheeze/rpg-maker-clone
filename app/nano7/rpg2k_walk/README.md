@@ -45,9 +45,10 @@ ruby scripts/export_nano7_map.rb \
 ```
 
 writes `map.bin` + `tiles.bin` to `OUT_DIR` (the format is described at the
-top of the exporter; `tiles.bin` is an ARGB1555 tile atlas, 512 bytes per
-tile). `--target nano7` is the default; `--target wio` sizes the same export
-for the Wio Terminal's smaller buffers instead. `scripts/export_nano7_map_check.rb`
+top of the exporter; `tiles.bin` is a palette-indexed tile atlas, 256 bytes
+per tile, whose colours live in `map.bin`'s own palette — see
+`docs/adr/0092`). `--target nano7` is the default; `--target wio` sizes the
+same export for the Wio Terminal's smaller buffers instead. `scripts/export_nano7_map_check.rb`
 round-trips the exporter's output against its own invariants (no mruby or
 device needed) — run it after touching the exporter or this app's binary
 format.

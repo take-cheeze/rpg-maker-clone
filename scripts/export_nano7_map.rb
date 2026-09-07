@@ -33,7 +33,8 @@
 #     autotiles render their first frame, never animate on-device.
 #   * per-pixel transparency is one bit, not an alpha channel: RPG Maker's
 #     colour key is binary, so a pixel is either opaque or absent and the
-#     device composites upper over lower with a test, not a blend.
+#     device composites upper over lower with a test, not a blend. It is
+#     palette index 0, so transparency costs nothing per pixel.
 #   * a map's parallax background becomes a single backdrop colour. A chipset
 #     may leave a lower-layer tile wholly transparent -- Nepheshel's map 1 is
 #     an island whose entire sea is an empty water autotile over the "BG"
@@ -59,16 +60,23 @@
 # map tree's own start position (RPG_RT.lmt initial_x/initial_y) when MAP_ID
 # is the project's configured start map, or the map's center otherwise.
 #
-# Output format (v2, both files little-endian):
+# Output format (v3, both files little-endian):
 #
-#   map.bin   'N7WM' | u8 version=2 | u8 pad | u16 w | u16 h | u16 start_x
+#   map.bin   'N7WM' | u8 version=3 | u8 pad | u16 w | u16 h | u16 start_x
 #             | u16 start_y | u16 tile_count | u16 backdrop
+#             | u16 palette_count | u16 palette[palette_count]
 #             | u16 lower[w*h] | u16 upper[w*h] | u8 passable[w*h]
-#   tiles.bin tile_count * 256 u16 pixels, row-major within each 16x16 tile,
-#             ARGB1555: bit 15 is "opaque", bits 14..0 are r5g5b5. A
-#             transparent pixel is written as 0. Sixteen bits rather than 32
-#             halves both the file and the device-side .bss the atlas lives
-#             in, and one alpha bit is all RPG Maker's colour key needs.
+#   tiles.bin tile_count * 256 bytes, row-major within each 16x16 tile: one
+#             palette index per pixel.
+#
+# Colours are ARGB1555 (bit 15 "opaque", then r5g5b5) and live only in the
+# palette; index 0 is the transparent slot, so a pixel is one byte. That is
+# not a quantisation: an RPG Maker chipset is a 256-colour image to begin
+# with, and one map draws a subset of it (15 to 133 distinct colours across
+# Nepheshel's 543 maps), so the palette is the source data's own, and the
+# export is refused rather than dithered if a chipset somehow exceeds 255
+# opaque colours. Per-pixel bytes rather than 16-bit colour halves the atlas
+# again -- it is the largest thing either device keeps in RAM.
 #
 # Exits non-zero (with a clear message) if the map's dimensions or distinct
 # composited tile count exceed the target's caps (TARGETS below, mirrored in
@@ -102,18 +110,22 @@ load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 # app/wio/src/walk_main.cxx (192 KB of SRAM for everything, so smaller).
 TARGETS = {
   'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
-  'wio' => { max_w: 64, max_h: 64, max_tiles: 160 }
+  'wio' => { max_w: 96, max_h: 96, max_tiles: 192 }
 }.freeze
 DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
-VERSION = 2
+VERSION = 3
 UPPER_NONE = 0xFFFF
 
 # ARGB1555 (see the format note at the top): bit 15 opaque, then r5g5b5.
 OPAQUE_BIT = 0x8000
 TRANSPARENT = 0x0000
+
+# Palette index 0 is the transparent slot, so opaque colours run 1..255.
+TRANSPARENT_INDEX = 0
+MAX_PALETTE = 256
 
 DIR_DOWN = 2
 DIR_LEFT = 4
@@ -242,7 +254,26 @@ end
 
 atlas_index = {} # tile id -> atlas slot
 atlas_by_pixels = {} # packed pixel string -> atlas slot
-atlas_pixels = [] # atlas slot -> 256 ARGB1555 pixels (top-left origin, row-major)
+atlas_pixels = [] # atlas slot -> 256 palette indices (top-left origin, row-major)
+
+# The map's palette, built as the tiles are composited: ARGB1555 colour ->
+# index, with 0 reserved for "transparent" (see the format note at the top).
+palette = [TRANSPARENT]
+palette_index = {}
+
+def palette_index_for(colour, palette, palette_index)
+  index = palette_index[colour]
+  return index if index
+
+  if palette.size >= MAX_PALETTE
+    usage_abort("map needs more than #{MAX_PALETTE - 1} opaque colours; " \
+                'this chipset is not a 256-colour image (see the format note)')
+  end
+  index = palette.size
+  palette_index[colour] = index
+  palette << colour
+  index
+end
 
 # 8-bit channel -> 5 bits, rounded rather than truncated (>> 3 darkens every
 # channel by up to 7/255, which is visible across a whole tile of flat colour).
@@ -250,8 +281,8 @@ def to5(v)
   (v * 31 + 127) / 255
 end
 
-def composite_tile(bmp, tile_id)
-  pixels = Array.new(TS * TS, TRANSPARENT)
+def composite_tile(bmp, tile_id, palette, palette_index)
+  pixels = Array.new(TS * TS, TRANSPARENT_INDEX)
   Game::ChipsetLayout.quads(tile_id, 0, 0).each do |dx, dy, sx, sy, w, h|
     h.times do |yy|
       w.times do |xx|
@@ -261,24 +292,25 @@ def composite_tile(bmp, tile_id)
         # partial value, and the device composites with a test rather than a
         # blend, so anything half-transparent or more counts as absent.
         next if a < 128
+        colour = OPAQUE_BIT | (to5(r) << 10) | (to5(g) << 5) | to5(b)
         pixels[(dy + yy) * TS + (dx + xx)] =
-          OPAQUE_BIT | (to5(r) << 10) | (to5(g) << 5) | to5(b)
+          palette_index_for(colour, palette, palette_index)
       end
     end
   end
   pixels
 end
 
-def atlas_slot_for(tile_id, bmp, atlas_index, atlas_by_pixels, atlas_pixels)
+def atlas_slot_for(tile_id, bmp, atlas_index, atlas_by_pixels, atlas_pixels, palette, palette_index)
   slot = atlas_index[tile_id]
   return slot if slot
 
-  pixels = composite_tile(bmp, tile_id)
+  pixels = composite_tile(bmp, tile_id, palette, palette_index)
   # Distinct tile ids routinely composite to identical pixels -- an autotile
   # whose neighbours differ only where the chipset draws nothing, the blank
   # chip reached through several ids -- and the on-device cap is on atlas
   # entries, not on ids, so fold them together before spending a slot.
-  key = pixels.pack('v*')
+  key = pixels.pack('C*')
   slot = atlas_by_pixels[key]
   if slot.nil?
     usage_abort("map uses #{atlas_pixels.size + 1} distinct tiles, exceeding the on-device cap #{MAX_TILES}") if atlas_pixels.size >= MAX_TILES
@@ -297,11 +329,13 @@ passable_out = Array.new(width * height)
 (0...(width * height)).each do |i|
   lo = lower_layer[i]
   up = upper_layer[i]
-  lower_out[i] = atlas_slot_for(lo, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels)
+  lower_out[i] = atlas_slot_for(lo, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels,
+                                palette, palette_index)
   upper_out[i] = if Game::ChipsetLayout.upper_blank?(up)
                    UPPER_NONE
                  else
-                   atlas_slot_for(up, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels)
+                   atlas_slot_for(up, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels,
+                                  palette, palette_index)
                  end
 
   flags = 0
@@ -321,13 +355,15 @@ File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
   f.write(MAGIC)
   f.write([VERSION, 0].pack('CC'))
   f.write([width, height, start_x, start_y, atlas_pixels.size, backdrop].pack('v6'))
+  f.write([palette.size].pack('v'))
+  f.write(palette.pack('v*'))
   f.write(lower_out.pack('v*'))
   f.write(upper_out.pack('v*'))
   f.write(passable_out.pack('C*'))
 end
 
 File.open(File.join(out_dir, 'tiles.bin'), 'wb') do |f|
-  atlas_pixels.each { |px| f.write(px.pack('v*')) }
+  atlas_pixels.each { |px| f.write(px.pack('C*')) }
 end
 
 # The chipset path is part of the output line so scripts/export_nano7_map_check.rb
@@ -336,4 +372,4 @@ end
 puts "wrote #{out_dir}/map.bin (target #{target_name}, #{width}x#{height}, " \
      "start #{start_x},#{start_y}) " \
      "and #{out_dir}/tiles.bin (#{atlas_pixels.size} tiles, #{atlas_index.size} ids, " \
-     "backdrop 0x%04x) from #{chipset_path}" % backdrop
+     "#{palette.size} palette entries, backdrop 0x%04x) from #{chipset_path}" % backdrop

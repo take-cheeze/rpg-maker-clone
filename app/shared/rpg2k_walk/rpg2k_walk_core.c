@@ -16,7 +16,7 @@ static uint16_t cell_index(const uint8_t* base, const rw_map* m, int x, int y) {
 rw_status rw_open(rw_map* m,
                   const uint8_t* map_bytes,
                   uint32_t map_len,
-                  const uint16_t* tiles,
+                  const uint8_t* tiles,
                   uint32_t tiles_len) {
   if (map_len < RW_MAP_HEADER_BYTES)
     return RW_ERR_SHORT_HEADER;
@@ -32,12 +32,22 @@ rw_status rw_open(rw_map* m,
   int sy = rd_u16(map_bytes + 12);
   int tile_count = rd_u16(map_bytes + 14);
   uint16_t backdrop = rd_u16(map_bytes + 16);
+  int palette_count = rd_u16(map_bytes + 18);
 
   if (w <= 0 || h <= 0 || sx >= w || sy >= h)
     return RW_ERR_HEADER;
+  /* Index 0 is the transparent slot, so even an all-transparent map has one
+   * entry; more than RW_MAX_PALETTE cannot be addressed by a one-byte
+   * index. */
+  if (palette_count < 1 || palette_count > RW_MAX_PALETTE)
+    return RW_ERR_PALETTE;
 
   uint32_t cells = (uint32_t)w * (uint32_t)h;
-  if (map_len < RW_MAP_HEADER_BYTES + cells * RW_MAP_BYTES_PER_CELL)
+  uint32_t palette_bytes = (uint32_t)palette_count * 2;
+  if (map_len < RW_MAP_HEADER_BYTES + palette_bytes)
+    return RW_ERR_MAP_TRUNCATED;
+  if (map_len - RW_MAP_HEADER_BYTES - palette_bytes <
+      cells * RW_MAP_BYTES_PER_CELL)
     return RW_ERR_MAP_TRUNCATED;
   if (tiles_len < (uint32_t)tile_count * RW_TILE_BYTES)
     return RW_ERR_TILES_TRUNCATED;
@@ -48,7 +58,9 @@ rw_status rw_open(rw_map* m,
   m->backdrop = backdrop;
   m->player_x = sx;
   m->player_y = sy;
-  m->lower = map_bytes + RW_MAP_HEADER_BYTES;
+  m->palette = map_bytes + RW_MAP_HEADER_BYTES;
+  m->palette_count = palette_count;
+  m->lower = m->palette + palette_bytes;
   m->upper = m->lower + cells * 2;
   m->passable = m->upper + cells * 2;
   m->tiles = tiles;
@@ -67,12 +79,20 @@ const char* rw_status_str(rw_status status) {
       return "map.bin is another format version";
     case RW_ERR_HEADER:
       return "map.bin header is out of range";
+    case RW_ERR_PALETTE:
+      return "map.bin has no usable palette";
     case RW_ERR_MAP_TRUNCATED:
       return "map.bin is bigger than this device";
     case RW_ERR_TILES_TRUNCATED:
       return "tiles.bin is bigger than this device";
   }
   return "unknown error";
+}
+
+uint16_t rw_palette_colour(const rw_map* m, uint8_t index) {
+  if (index == RW_TRANSPARENT_INDEX || (int)index >= m->palette_count)
+    return 0;
+  return rd_u16(m->palette + (uint32_t)index * 2);
 }
 
 uint8_t rw_passable_at(const rw_map* m, int x, int y) {
@@ -135,8 +155,8 @@ void rw_camera(const rw_map* m,
 }
 
 void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out) {
-  const uint16_t* lower = 0;
-  const uint16_t* upper = 0;
+  const uint8_t* lower = 0;
+  const uint8_t* upper = 0;
   int i;
 
   if (in_bounds(m, mx, my)) {
@@ -149,11 +169,13 @@ void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out) {
   }
 
   for (i = 0; i < RW_TILE_PIXELS; i++) {
-    uint16_t c = 0;
-    if (lower && (lower[i] & RW_OPAQUE))
-      c = lower[i];
-    if (upper && (upper[i] & RW_OPAQUE))
-      c = upper[i];
+    /* Index 0 is the transparent slot, so "no pixel here" and "the palette
+     * says nothing here" are the same test, once per layer. */
+    uint8_t index = lower ? lower[i] : RW_TRANSPARENT_INDEX;
+    uint16_t c;
+    if (upper && upper[i] != RW_TRANSPARENT_INDEX)
+      index = upper[i];
+    c = rw_palette_colour(m, index);
     /* A hole is not black: the exporter reduced the map's parallax
      * background to this one colour, and it is what the genuine runtime
      * shows through an empty chip (an island map's whole sea, say). */

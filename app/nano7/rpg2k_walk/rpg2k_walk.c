@@ -43,22 +43,27 @@
  * is safe to exceed either, so this stays well under it rather than finding
  * out on real hardware. Raise with caution.
  *
- * At these caps the static buffers below are the whole of .bss: 81,938 B of
- * map.bin + 131,072 B of atlas + 1,536 B of composited cell = ~209 KB. (The
- * atlas was twice that before tile pixels became 16-bit.) */
+ * At these caps the static buffers below are the whole of .bss: 82,450 B of
+ * map.bin (its palette included) + 65,536 B of atlas + 1,536 B of composited
+ * cell = ~146 KB. The atlas has halved twice: 32-bit pixels became 16-bit
+ * with the transparency fix, then one palette index per pixel in format v3
+ * (docs/adr/0092), which is why these caps now leave room to spare rather
+ * than needing to grow. */
 #define MAP_MAX_W 128
 #define MAP_MAX_H 128
 #define MAX_TILES 256
 
-#define MAP_BIN_MAX_BYTES \
-    (RW_MAP_HEADER_BYTES + MAP_MAX_W * MAP_MAX_H * RW_MAP_BYTES_PER_CELL)
+#define MAP_BIN_MAX_BYTES                                   \
+    (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +             \
+     MAP_MAX_W * MAP_MAX_H * RW_MAP_BYTES_PER_CELL)
 
 #define MAP_DATA_DIR "/Apps/Data/RPG2kWalk"
 
 #define STEP_INTERVAL_MS 160u
 
 static uint8_t s_map_raw[MAP_BIN_MAX_BYTES];
-static uint16_t s_tiles[MAX_TILES * RW_TILE_PIXELS];
+/* One palette index per pixel; the colours live in map.bin's palette. */
+static uint8_t s_tiles[MAX_TILES * RW_TILE_PIXELS];
 /* One composited cell in the surface's own pixel format: hb_raw_blit takes a
  * finished tile, so each cell is merged (see rw_compose_cell) and converted
  * once, then blitted once. */

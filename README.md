@@ -1152,11 +1152,17 @@
 - Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
   ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
   exported map with working collision. Chipset transparency is honoured: the
-  export keys on palette index 0 exactly as the real renderer does, tile
-  pixels are ARGB1555 (one alpha bit, half the atlas of the 32-bit first
-  cut), the app composites a cell's two layers before blitting, and a map's
-  parallax background is reduced to a single backdrop colour behind it — an
-  island map's sea comes out as sea rather than as holes. See the ADR.
+  export keys on palette index 0 exactly as the real renderer does, the app
+  composites a cell's two layers before blitting, and a map's parallax
+  background is reduced to a single backdrop colour behind it — an island
+  map's sea comes out as sea rather than as holes. See the ADR.
+- **A tile pixel is one byte**, an index into the map's own palette
+  ([`docs/adr/0092`](docs/adr/0092-walk-map-indexed-atlas.md)) — which is
+  what an RPG Maker chipset is to begin with, so it costs no colour and is
+  byte-for-byte the same picture. The atlas is the largest thing either
+  device holds, so this is what the port's RAM budget turns on: the nano
+  app's `.bss` is 150 KB where the first slice needed 336 KB, and the Wio
+  Terminal takes a 96x96 map in less RAM than a 64x64 one used to cost.
 - **The same engine also runs on the Wio Terminal.** The device-independent
   half — the file format, the movement rule, the camera, the layer
   compositing — is
