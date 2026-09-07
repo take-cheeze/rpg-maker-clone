@@ -197,6 +197,20 @@ screen changes every step) is the worst case and will set the practical frame
 rate. DMA-driven flush with a double buffer, and possibly a coarser scroll step,
 are the tuning levers.
 
+## A second, much smaller engine also runs on this board
+
+Everything above is about getting *this* engine — mruby, the gems, the RGSS
+scene tree — onto the board, and its P2/P3 work is unchanged. Since ADR 91
+there is also a `wio_walk` PlatformIO environment that runs the minimal,
+non-mruby map-walking engine of ADR 61 (written for the iPod nano 7G, whose
+~500 KB app-image ceiling rules the interpreter out entirely): the host
+exports one map, and the board reads two flat files off its SD card with no
+interpreter, no LVGL and no streaming rework. It walks a real map and does
+nothing else — no events, no battle, no menus — so it does not answer any of
+the questions this ADR asks. It is worth knowing about here only because it
+is the same board, and because it shows what the budget above does leave room
+for.
+
 ## Consequences
 
 - **Advances the "run anywhere" goal** onto genuine embedded hardware, and does

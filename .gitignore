@@ -4,6 +4,11 @@
 /wasm-build
 /emsdk
 
+# PlatformIO's build tree and downloaded packages for the Wio Terminal
+# firmwares (platformio.ini's `wio` / `wio_walk` environments). Machine-local
+# build output and toolchains, the same rationale as /build above.
+/.pio
+
 # Android (app/android): Gradle/AGP build output, the CMake/ninja tree AGP's
 # externalNativeBuild drives underneath it, Gradle's own local cache, and the
 # machine-local SDK path Gradle writes on first configure -- none of it is

@@ -882,6 +882,21 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
            COMMAND ruby
                    ${CMAKE_CURRENT_SOURCE_DIR}/scripts/error_report_check.rb)
 
+  # The shared map-walk core (app/shared/rpg2k_walk), the engine the iPod nano
+  # 7G homebrew app and the Wio Terminal walk firmware both run. Neither device
+  # is reachable from CI -- no toolchain, no emulator, no board (ADR 61, ADR 7)
+  # -- but the core is plain C with no I/O, so the half that can be wrong in an
+  # interesting way (format parsing, the movement rule, camera clamping, layer
+  # compositing) runs here. It links nothing else, so it builds even where the
+  # engine's own dependencies are unavailable.
+  add_executable(
+    walk_core_test
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/test/walk_core_test.c)
+  target_include_directories(
+    walk_core_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk)
+  add_test(NAME walk_core COMMAND walk_core_test)
+
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
   # The SDL window backend needs a real display. Linux CI runners are headless,
