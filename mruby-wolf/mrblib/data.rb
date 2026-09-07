@@ -846,6 +846,79 @@ module Wolf
   end
 
   # ---------------------------------------------------------------------------
+  # Pure tileset-image geometry: turns a base-sheet chip id or an already-split
+  # autotile shape (Map.autotile_slot/.autotile_shape) into pixel source
+  # rects, with no Bitmap/Sprite of its own -- mirroring mruby-rpg2k's own
+  # `Game::ChipsetLayout` (game.rb), just for WOLF's own tileset image
+  # conventions instead of RPG2000's chipset. `WolfRPG::MapScene` (runtime.rb)
+  # is the only caller that actually blits these; kept here, pure and
+  # Bitmap-free, so the geometry itself is exercised directly by
+  # mruby-wolf/test's own CRuby-run suite the same way `ChipsetLayout` is
+  # exercised by scripts/rpg2k_render_check.rb.
+  #
+  # Both layouts are help/06material.html's own documented "マップチップ"
+  # formats (WOLF RPG Editor's manual):
+  #   * A base tileset sheet is a fixed 8 columns wide, tile_size-square
+  #     cells, chip N at column N%8, row N/8 ("横にチップ8列分...の画像").
+  #   * An autotile sheet is 1+ columns wide (one per animation frame) and
+  #     exactly 5 tile_size-square cells tall ("縦は5チップ長"), each row a
+  #     complete alternate rendering of the whole tile for one connectivity
+  #     state, top to bottom: 0 center-only ("中央への接続", an isolated
+  #     tile touching none of its neighbours), 1 vertical ("縦方向の接続"),
+  #     2 horizontal ("横方向の接続"), 3 outward/concave ("外向きの接続"),
+  #     4 fully surrounded ("周囲が塗りつぶされた状態"). A real quarter-tile
+  #     is then cut from whichever row its own corner's shape digit names --
+  #     independently confirmed by wolf-rpg-formats' mps.ksy `mappixel` type,
+  #     whose `autotile_mode_top_left/_top_right/_bottom_left/_bottom_right`
+  #     fields decode a layer value with the exact same digit positions
+  #     Map.autotile_shape's own comment already documents, and cross-checked
+  #     against the sample game's own real map data (an isolated autotile
+  #     placement stores shape 0000, one fully boxed in by like tiles stores
+  #     4444 -- exactly the two rows their own descriptions name).
+  module ChipLayout
+    BASE_COLUMNS = 8
+    AUTOTILE_ROWS = 5
+
+    # [sx, sy] of base-sheet chip `value`'s own tile_size square cell. Callers
+    # own the bounds check against the loaded bitmap's real size (a bad/out-
+    # of-range chip id is a map-data or missing-asset problem, not a layout
+    # one).
+    def self.base_rect(tile_size, value)
+      col = value % BASE_COLUMNS
+      row = value / BASE_COLUMNS
+      [col * tile_size, row * tile_size]
+    end
+
+    # The (up to) four quarter-tile source quads for one autotile cell's
+    # already-split `shape` (Map.autotile_shape), as [dx, dy, sx, sy, w, h]
+    # entries ready for Bitmap#blt_quads -- dx/dy the pixel offset within the
+    # destination tile_size square, sx/sy/w/h the source rect in the
+    # autotile's own sheet. `frame` selects the (0-based) animation column;
+    # every real caller currently passes 0 -- see the ADR on why per-tile
+    # animation stepping is left as a follow-up rather than guessed at here.
+    # A corner digit outside 0..4 (malformed map data, or wolfrpg-map-parser
+    # decoding a file this reader has not seen) is skipped rather than
+    # sampling whatever pixels happen to sit past the sheet's own 5 rows.
+    def self.autotile_quads(tile_size, shape, frame = 0)
+      half = tile_size / 2
+      corners = [
+        [0, 0, shape / 1000 % 10], # top-left
+        [1, 0, shape / 100 % 10],  # top-right
+        [0, 1, shape / 10 % 10],   # bottom-left
+        [1, 1, shape % 10]         # bottom-right
+      ]
+      out = []
+      corners.each do |ci, cj, row|
+        next if row < 0 || row >= AUTOTILE_ROWS
+        sx = frame * tile_size + ci * half
+        sy = row * tile_size + cj * half
+        out << [ci * half, cj * half, sx, sy, half, half]
+      end
+      out
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # A whole project: the BasicData files plus maps on demand, addressed the way
   # the runtime needs them (map id -> file through the system database).
   class Project

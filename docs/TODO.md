@@ -36478,14 +36478,26 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   reader gains a capability (a real `Viewport` zoom, a party system, real
   input-restriction plumbing) that unblocks one of the foundational gaps
   above.
-- 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
-  tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
-  and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
-  `.autotile_shape` already split a layer value into slot + per-corner shape;
-  only the actual quarter-tile compositing from each autotile's 5x1-cell
-  sheet is missing), replacing `WolfRPG::MapScene`'s colour-block fallback --
-  the same order RPG2000 support followed (see "Map exploration" in the
-  README's own history).
+- ✅ **Real ChipSet-image tile rendering (2026-09-07).** `WolfRPG::MapScene`
+  now draws every map tile from the tileset's own real ChipSet PNG instead
+  of the colour-block fallback: plain base chips read straight off the
+  8-column sheet, autotiles quarter-tile-assembled by a new
+  `Wolf::ChipLayout` (data.rb's own pure-geometry counterpart to
+  `mruby-rpg2k`'s `Game::ChipsetLayout`) from `Wolf::Map.autotile_slot`/
+  `.autotile_shape`'s already-split per-corner shape code. The shape digit
+  -> pixel-row mapping was cross-validated three ways before committing to
+  it: the editor's own manual (help/06material.html's "マップチップ"
+  section) documents each autotile sheet as 5 full-tile rows, one per
+  connectivity state, in the same order the shape digits use; wolf-rpg-
+  formats' independently-authored `mps.ksy` decodes the same 4-digit code
+  at the same digit positions `Map.autotile_shape`'s own comment already
+  claimed; and the sample game's own real map data stores exactly the two
+  boundary shapes (`0000`/`4444`) the manual's own "isolated"/"fully
+  surrounded" row descriptions predict. The colour-block fallback stays,
+  now scoped to whatever a tileset/chip/autotile slot has no real image for
+  (missing file, failed load, or an id past the loaded image's own bounds)
+  rather than the whole map. See `docs/adr/0093-wolf-rpg-editor-chipset-
+  tiles.md`.
 - ✅ **Packed releases (`Data.wolf`) (2026-09-07).** Added `Wolf::DataWolf`
   (`mruby-wolf/mrblib/data_wolf.rb`), the same shape as `RPGXP::RGSSAD`
   (ADR 0010): a streaming reader for the DxLib DXA archive a released game
