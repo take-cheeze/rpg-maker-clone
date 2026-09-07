@@ -1623,32 +1623,47 @@ module Wolf
     # rather than silently treated as instant, since that would be a
     # visibly wrong delay rather than an honestly-missing one.
     #
-    # Not implemented: every other Picture effect kind (Shake, Zoom,
+    # Not implemented: every other Picture effect kind (Zoom,
     # SwitchAutoFlash, the auto-pattern-switch family), the Character and
     # Map targets entirely, and `duration`/delay > 0 for the two instant
     # effect kinds.
     #
-    # `Flash`(effect_type 0, 10 real calls) and `SwitchFlicker`("点滅A
-    # [明滅]", effect_type 5, 31 real calls) are the two exceptions to
-    # "`duration` means an unsupported delay": help/04ev_effect.html's own
-    # wording repurposes that same field for both as a genuine *frames*
-    # value instead of a delay -- Flash's own decay length ("指定した...値
-    # をピクチャの「カラー」に加算して1回だけフラッシュします"), Flicker's
-    # own toggle interval ("指定したRGB分の差だけ、指定フレームでカラー変
-    # 更による明滅...を繰り返します") -- matching every real call for both,
-    # some with a real non-zero value, never seen for the other two
-    # (instant) kinds. Flash reuses native RGSS `Sprite#flash` directly (no
-    # Ruby-side state at all: its own decay is entirely native, ticked by
+    # `Flash`(effect_type 0, 10 real calls), `Shake`(effect_type 3, 4 real
+    # calls) and `SwitchFlicker`("点滅A[明滅]", effect_type 5, 31 real
+    # calls) are the three exceptions to "`duration` means an unsupported
+    # delay": help/04ev_effect.html's own wording repurposes that same
+    # field for all three as a genuine *frames* value instead of a delay --
+    # Flash's own decay length ("指定した...値をピクチャの「カラー」に加算
+    # して1回だけフラッシュします"), Shake's own "処理時間" ("「処理時間」
+    # フレームが短いほど、高速に振動します"), Flicker's own toggle interval
+    # ("指定したRGB分の差だけ、指定フレームでカラー変更による明滅...を繰
+    # り返します") -- matching every real call for all three, some with a
+    # real non-zero value, never seen for the other two (instant) kinds.
+    #
+    # Flash reuses native RGSS `Sprite#flash` directly (no Ruby-side state
+    # at all: its own decay is entirely native, ticked by
     # `#update_picture_effects`'s new unconditional `Sprite#update` call);
     # Flicker stops ("点滅は停止します") on either a zero interval or an
-    # all-zero RGB delta, both real (14 of its 31 calls) -- see runtime.rb's
-    # own `#set_picture_flicker`/`#update_picture_effects` for the
-    # persistent, per-frame-ticked state this one still needs, the same
-    # shape ChangeColor(151)'s `#update_tone` already established.
+    # all-zero RGB delta, both real (14 of its 31 calls). Shake's own
+    # `value1`/`value2`/`value3` (the manual's own "指定したX、Yの移動分で、
+    # 指定回数だけピクチャを揺らします") match the one real call's own
+    # `[0, 1, 999999]` exactly against the manual's own explicit "10万回
+    # 以上にすると無限になる" note -- but the manual does not say whether one
+    # "shake" (a count decrement) is a single displacement or a full round
+    # trip back to center, and the one real call's own near-infinite count
+    # cannot distinguish either reading; runtime.rb's own
+    # `#set_picture_shake` counts a displacement away from center as one
+    # shake, the more literal reading of "指定回数だけ...揺らします",
+    # flagged as an assumption rather than a confirmed reading in the ADR.
+    # See runtime.rb's own `#set_picture_flicker`/`#set_picture_shake`/
+    # `#update_picture_effects` for the persistent, per-frame-ticked state
+    # these two still need, the same shape ChangeColor(151)'s
+    # `#update_tone` already established.
     EFFECT_TARGET_PICTURE = 0
     EFFECT_PICTURE_FLASH = 0
     EFFECT_PICTURE_COLOR_CORRECT = 1
     EFFECT_PICTURE_DRAW_POSITION_SHIFT = 2
+    EFFECT_PICTURE_SHAKE = 3
     EFFECT_PICTURE_SWITCH_FLICKER = 5
 
     def exec_effect(cmd)
@@ -1676,6 +1691,13 @@ module Wolf
         g = var_store.number(cmd.arg(5))
         b = var_store.number(cmd.arg(6))
         (first..last).each { |n| current_scene&.flash_picture(n, r, g, b, duration) }
+        return
+      when EFFECT_PICTURE_SHAKE
+        interval = var_store.number(cmd.arg(1))
+        dx = var_store.number(cmd.arg(4))
+        dy = var_store.number(cmd.arg(5))
+        count = var_store.number(cmd.arg(6))
+        (first..last).each { |n| current_scene&.set_picture_shake(n, interval, dx, dy, count) }
         return
       when EFFECT_PICTURE_SWITCH_FLICKER
         interval = var_store.number(cmd.arg(1))

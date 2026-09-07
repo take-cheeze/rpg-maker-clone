@@ -686,7 +686,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
-              :shifted, :tinted, :changed_colors, :flickered, :flashed
+              :shifted, :tinted, :changed_colors, :flickered, :flashed, :shaken
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -709,6 +709,7 @@ class WolfTestFakeScene
     @changed_colors = []
     @flickered = []
     @flashed = []
+    @shaken = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -721,6 +722,7 @@ class WolfTestFakeScene
   def tint_picture(number, r, g, b); @tinted << [number, r, g, b]; end
   def set_picture_flicker(number, interval, r, g, b); @flickered << [number, interval, r, g, b]; end
   def flash_picture(number, r, g, b, duration); @flashed << [number, r, g, b, duration]; end
+  def set_picture_shake(number, interval, dx, dy, count); @shaken << [number, interval, dx, dy, count]; end
   # Wolf::Interpreter#exec_change_color's own seam.
   def change_color(r, g, b, flash, duration); @changed_colors << [r, g, b, flash, duration]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
@@ -1840,6 +1842,40 @@ assert "Wolf::Interpreter#exec_effect's Flash applies across a real contiguous p
 
   interp.current_scene = nil
   interp.exec_effect(wolf_test_cmd(290, [options, 10, 1, 1, 100, 100, 100]))
+end
+
+assert "Wolf::Interpreter#exec_effect's Shake reads value1/value2/value3 as dx/dy/count, matching the one real call" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_SHAKE)
+  # The one real call's own field shape: 30-frame interval, a single
+  # picture, dx=0 dy=1, an effectively-infinite count (999999, matching the
+  # manual's own "10万回以上で無限" note). The real call's own picture-
+  # number and save-slot fields are common-event self-variable references
+  # (VarStore-decoded, needing a running common event); this uses plain
+  # literals instead, the same simplification every other Effect(290) test
+  # here already makes.
+  interp.exec_effect(wolf_test_cmd(290, [options, 30, 21, 21, 0, 1, 999999]))
+  assert_equal [[21, 30, 0, 1, 999999]], scene.shaken
+end
+
+assert "Wolf::Interpreter#exec_effect's Shake applies across a real contiguous picture-number range and tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_SHAKE)
+  interp.exec_effect(wolf_test_cmd(290, [options, 5, 10, 11, 3, -2, 4]))
+  assert_equal [[10, 5, 3, -2, 4], [11, 5, 3, -2, 4]], scene.shaken
+
+  interp.current_scene = nil
+  interp.exec_effect(wolf_test_cmd(290, [options, 5, 1, 1, 3, -2, 4]))
 end
 
 assert "Wolf::Interpreter#exec_effect's SwitchFlicker reads the 'duration' field as a toggle interval, matching a real active call" do
