@@ -14,7 +14,8 @@
 //
 // So this is a second, much smaller engine, not the `wio` env's firmware with
 // pieces disabled: no LVGL, no interpreter, no RGSS, and nothing this repo
-// builds for the desktop. It walks a map; it does not play the game.
+// builds for the desktop. It walks a map -- with its water animating on
+// RPG2000's own clock (docs/adr/0094) -- but it does not play the game.
 //
 // Board half only, and all of it is here: the SD card, the LCD, the 5-way
 // switch, and the frame timing.
@@ -47,8 +48,8 @@ namespace {
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
 // to (docs/adr/0007's own headline constraint). These caps spend 90 KB of it:
 //
-//   map.bin   20 + 256*2 + 128*128*2.5 =  41,492 B
-//   tiles.bin        192 * 16*16       =  49,152 B
+//   map.bin   26 + 256*2 + 192*5 + 128*128*2.5 =  42,458 B
+//   tiles.bin              192 * 16*16          =  49,152 B
 //
 // leaving ~100 KB for the Arduino core, the SD and LCD drivers, the stack and
 // this file's own statics. The map bound has doubled twice as the format
@@ -64,6 +65,7 @@ constexpr int kMapMaxH = 128;
 constexpr int kMaxTiles = 192;
 
 constexpr uint32_t kMapBytes = RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +
+                               kMaxTiles * RW_ENTRY_BYTES +
                                RW_MAP_CELL_BYTES(kMapMaxW * kMapMaxH);
 
 // Where the exported pair lives on the microSD card.
@@ -142,13 +144,18 @@ void message(const char* line1, const char* line2) {
     g_tft.drawString(line2, 8, 32);
 }
 
-void draw_map(void) {
+// `moving_only` redraws just the cells the animation clocks moved -- the
+// water, typically -- which matters more here than on the nano: a full
+// repaint is a whole 320x240 frame over SPI, and an animation tick lands
+// several times a second.
+void draw_map(bool moving_only = false) {
   const int view_w = g_tft.width() / RW_TS;
   const int view_h = g_tft.height() / RW_TS;
   int cam_x, cam_y;
   rw_camera(&g_map, view_w, view_h, &cam_x, &cam_y);
 
-  g_tft.fillScreen(to565(g_map.backdrop));
+  if (!moving_only)
+    g_tft.fillScreen(to565(g_map.backdrop));
 
   for (int ty = 0; ty < view_h; ++ty) {
     const int my = cam_y + ty;
@@ -158,6 +165,8 @@ void draw_map(void) {
       const int mx = cam_x + tx;
       if (mx >= g_map.width)
         break;
+      if (moving_only && !rw_cell_animated(&g_map, mx, my))
+        continue;
 
       rw_compose_cell(&g_map, mx, my, g_cell1555);
       for (int i = 0; i < RW_TILE_PIXELS; ++i)
@@ -183,6 +192,12 @@ void input_init(void) {
   pinMode(WIO_5S_DOWN, INPUT_PULLUP);
   pinMode(WIO_5S_LEFT, INPUT_PULLUP);
   pinMode(WIO_5S_RIGHT, INPUT_PULLUP);
+}
+
+// RPG2000 counts animation in 60ths of a second, which is what the export's
+// clock periods are in; 3/50 is that ratio exactly.
+uint32_t rpg_frame(void) {
+  return (millis() * 3u) / 50u;
 }
 
 void input_direction(int* dx, int* dy) {
@@ -219,6 +234,7 @@ void setup(void) {
   }
 
   g_last_step_ms = millis();
+  rw_set_frame(&g_map, rpg_frame());
   draw_map();
 }
 
@@ -234,11 +250,18 @@ void loop(void) {
     if (now - g_last_step_ms >= kStepIntervalMs) {
       rw_try_move(&g_map, dx, dy);
       g_last_step_ms = now;
+      rw_set_frame(&g_map, rpg_frame());
       draw_map();
+      return;
     }
   } else {
     // Released: the next press steps at once instead of waiting out whatever
     // was left of the interval.
     g_last_step_ms = millis() - kStepIntervalMs;
   }
+
+  // A still map never reaches the redraw: rw_set_frame reports a step only
+  // when a clock this map actually uses has moved.
+  if (g_map.animated && rw_set_frame(&g_map, rpg_frame()))
+    draw_map(true);
 }

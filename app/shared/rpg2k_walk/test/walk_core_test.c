@@ -6,8 +6,9 @@
  * Wio Terminal under Arduino -- are outside CI: no emulator, no board, and
  * for the nano no toolchain either (ADR 61, ADR 7). The core is plain C with
  * no I/O, so the half of those firmwares that can actually be wrong in an
- * interesting way (format parsing, the palette, the movement rule, camera
- * clamping, layer compositing) is exactly the half a host compiler can run.
+ * interesting way (format parsing, the palette, the animation clocks, the
+ * movement rule, camera clamping, layer compositing) is exactly the half a
+ * host compiler can run.
  * Fixtures here are synthetic, built byte by byte in the format the exporter
  * writes; scripts/export_nano7_map_check.rb covers the other side of that
  * contract against real game data.
@@ -41,9 +42,24 @@ static void check(int cond, const char* what) {
 #define GREEN (RW_OPAQUE | (31u << 5))
 #define BLUE (RW_OPAQUE | 31u)
 
+/* Entries: 0 static (atlas 0), 1 static (atlas 1), 2 water cycling 0,1,2,1
+ * over the four atlas slots, 3 block-C cycling 0..3. */
+#define ENTRIES 4
+#define E_RED 0
+#define E_GREEN 1
+#define E_WATER 2
+#define E_BLOCK_C 3
+#define AB_LEN 4
+#define AB_PERIOD 24 /* what anim_ab does at animation_speed 0 */
+#define C_LEN 4
+#define C_PERIOD 6
+
 #define PAL_BYTES (PAL_COUNT * 2)
-#define MAP_BYTES (RW_MAP_HEADER_BYTES + PAL_BYTES + RW_MAP_CELL_BYTES(W * H))
-#define CELLS_AT (RW_MAP_HEADER_BYTES + PAL_BYTES)
+#define ENTRY_BYTES (ENTRIES * RW_ENTRY_BYTES)
+#define MAP_BYTES \
+  (RW_MAP_HEADER_BYTES + PAL_BYTES + ENTRY_BYTES + RW_MAP_CELL_BYTES(W * H))
+#define ENTRIES_AT (RW_MAP_HEADER_BYTES + PAL_BYTES)
+#define CELLS_AT (ENTRIES_AT + ENTRY_BYTES)
 #define UPPER_AT (CELLS_AT + W * H)
 #define PASS_AT (UPPER_AT + W * H)
 
@@ -51,6 +67,12 @@ static uint8_t g_map[MAP_BYTES];
 static uint8_t g_tiles[TILES * RW_TILE_PIXELS];
 
 static void set_passable(int x, int y, unsigned bits);
+static void set_entry(int entry,
+                      unsigned klass,
+                      unsigned f0,
+                      unsigned f1,
+                      unsigned f2,
+                      unsigned f3);
 
 static void put_u16(uint8_t* p, unsigned v) {
   p[0] = (uint8_t)(v & 0xff);
@@ -80,12 +102,23 @@ static void build_map(void) {
   put_u16(g_map + 8, H);
   put_u16(g_map + 10, 1); /* start x */
   put_u16(g_map + 12, 1); /* start y */
-  put_u16(g_map + 14, TILES);
+  put_u16(g_map + 14, ENTRIES);
   put_u16(g_map + 16, BLUE); /* backdrop */
   put_u16(g_map + 18, PAL_COUNT);
+  put_u16(g_map + 20, TILES);
+  g_map[22] = AB_LEN;
+  g_map[23] = AB_PERIOD;
+  g_map[24] = C_LEN;
+  g_map[25] = C_PERIOD;
   put_u16(g_map + RW_MAP_HEADER_BYTES, 0); /* the transparent slot */
   put_u16(g_map + RW_MAP_HEADER_BYTES + 2, RED);
   put_u16(g_map + RW_MAP_HEADER_BYTES + 4, GREEN);
+  set_entry(E_RED, RW_ANIM_STATIC, 0, 0, 0, 0);
+  set_entry(E_GREEN, RW_ANIM_STATIC, 1, 1, 1, 1);
+  /* The ping-pong Game::ChipsetLayout.anim_ab walks for animation_type 0:
+   * slots 0,1,2,1, so phases 1 and 3 show the same picture. */
+  set_entry(E_WATER, RW_ANIM_WATER, 0, 1, 2, 1);
+  set_entry(E_BLOCK_C, RW_ANIM_BLOCK_C, 0, 1, 2, 0);
   for (i = 0; i < W * H; i++) {
     g_map[CELLS_AT + i] = 0;
     g_map[UPPER_AT + i] = RW_UPPER_NONE;
@@ -100,6 +133,20 @@ static void set_lower(int x, int y, unsigned slot) {
 
 static void set_upper(int x, int y, unsigned slot) {
   g_map[UPPER_AT + y * W + x] = (uint8_t)slot;
+}
+
+static void set_entry(int entry,
+                      unsigned klass,
+                      unsigned f0,
+                      unsigned f1,
+                      unsigned f2,
+                      unsigned f3) {
+  uint8_t* e = &g_map[ENTRIES_AT + entry * RW_ENTRY_BYTES];
+  e[0] = (uint8_t)f0;
+  e[1] = (uint8_t)f1;
+  e[2] = (uint8_t)f2;
+  e[3] = (uint8_t)f3;
+  e[4] = (uint8_t)klass;
 }
 
 /* Two cells per byte, the even cell in the low nibble -- the packing the
@@ -123,7 +170,12 @@ static void test_open(void) {
 
   check(open_default(&m) == RW_OK, "a well-formed map opens");
   check(m.width == W && m.height == H, "dimensions are read");
-  check(m.tile_count == TILES, "tile count is read");
+  check(m.entry_count == ENTRIES, "entry count is read");
+  check(m.atlas_count == TILES, "atlas count is read");
+  check(m.ab_len == AB_LEN && m.ab_period == AB_PERIOD && m.c_len == C_LEN &&
+            m.c_period == C_PERIOD,
+        "both animation clocks are read");
+  check(m.animated == 1, "a map with a moving entry says so");
   check(m.player_x == 1 && m.player_y == 1, "start position is the player's");
   check(m.backdrop == BLUE, "backdrop is read");
   check(m.palette_count == PAL_COUNT, "palette count is read");
@@ -158,7 +210,26 @@ static void test_open(void) {
   put_u16(bad + 14, RW_MAX_TILES + 1);
   check(
       rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
+      "more entries than a byte can name is refused");
+
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 20, RW_MAX_TILES + 1);
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
       "an atlas too big to index in a byte is refused");
+
+  /* A clock that never steps would divide by zero; one whose cycle is longer
+   * than an entry has frames would read past the entry. */
+  memcpy(bad, g_map, sizeof(bad));
+  bad[23] = 0;
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
+      "a zero-length animation period is refused");
+  memcpy(bad, g_map, sizeof(bad));
+  bad[24] = RW_ANIM_MAX_FRAMES + 1;
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
+      "a cycle longer than an entry's frames is refused");
 
   /* The palette always holds at least its transparent slot, and can never
    * hold more entries than a one-byte index can reach. */
@@ -267,7 +338,10 @@ static void test_compose(void) {
   int opaque = 1;
 
   build_map();
-  set_upper(0, 0, 2); /* the half-transparent tile over lower slot 0 (red) */
+  /* Entry 3's phase-0 slot is atlas 0 (red); make an entry that is the
+   * half-transparent picture instead, laid over the red lower tile. */
+  set_entry(E_BLOCK_C, RW_ANIM_STATIC, 2, 2, 2, 2);
+  set_upper(0, 0, E_BLOCK_C);
   open_default(&m);
 
   rw_compose_cell(&m, 0, 0, out);
@@ -282,7 +356,8 @@ static void test_compose(void) {
   /* A hole in the lower layer is the backdrop, not black -- this is what
    * makes an island map's sea look like sea. */
   build_map();
-  set_lower(0, 0, 2); /* half-transparent */
+  set_entry(E_GREEN, RW_ANIM_STATIC, 2, 2, 2, 2); /* half-transparent */
+  set_lower(0, 0, E_GREEN);
   open_default(&m);
   rw_compose_cell(&m, 0, 0, out);
   check(out[RW_TS - 1] == BLUE, "a hole in the lower layer shows the backdrop");
@@ -290,12 +365,73 @@ static void test_compose(void) {
   /* Nothing reads past the buffers for a cell (or a tile index) that is not
    * there: both composite as plain backdrop. */
   build_map();
-  set_lower(0, 0, TILES + 7);
+  set_lower(0, 0, ENTRIES + 7);
   open_default(&m);
   rw_compose_cell(&m, 0, 0, out);
-  check(out[0] == BLUE, "an out-of-range tile index is backdrop");
+  check(out[0] == BLUE, "an out-of-range entry index is backdrop");
   rw_compose_cell(&m, -1, 0, out);
   check(out[0] == BLUE, "a cell outside the map is backdrop");
+}
+
+/* The clocks: what a device gets for advancing a frame counter. */
+static void test_animation(void) {
+  rw_map m;
+  uint16_t out[RW_TILE_PIXELS];
+
+  build_map();
+  set_lower(0, 0, E_WATER);
+  set_lower(1, 0, E_RED);
+  open_default(&m);
+
+  check(rw_entry_atlas(&m, E_WATER) == 0, "phase 0 shows the first frame");
+  check(rw_cell_animated(&m, 0, 0) == 1, "a water cell reports as moving");
+  check(rw_cell_animated(&m, 1, 0) == 0, "a still cell does not");
+  check(rw_cell_animated(&m, -1, 0) == 0, "a cell outside the map does not");
+
+  /* Nothing moves inside a step -- and "inside" means inside the *faster*
+   * clock's step, since the block-C one has stepped three times by the time
+   * the water's first one is due. */
+  check(rw_set_frame(&m, 0) == 0, "frame 0 is where the clocks already are");
+  check(rw_set_frame(&m, C_PERIOD - 1) == 0,
+        "part way through the shorter step is not a step");
+  /* ...and the block-C clock, being faster, steps first. */
+  check(rw_set_frame(&m, C_PERIOD) == 1, "the faster clock steps on its own");
+  check(rw_entry_atlas(&m, E_WATER) == 0,
+        "the water is unmoved by the block-C clock");
+  check(rw_entry_atlas(&m, E_BLOCK_C) == 1, "the block-C tile moved");
+
+  check(rw_set_frame(&m, AB_PERIOD) == 1,
+        "the water clock steps at its period");
+  check(rw_entry_atlas(&m, E_WATER) == 1, "the water is on its second frame");
+  check(rw_entry_atlas(&m, E_RED) == 0, "a static entry never moves");
+
+  /* The ping-pong: phases 1 and 3 are the same picture, phase 4 is back to
+   * the start. */
+  rw_set_frame(&m, AB_PERIOD * 2);
+  check(rw_entry_atlas(&m, E_WATER) == 2, "third phase");
+  rw_set_frame(&m, AB_PERIOD * 3);
+  check(rw_entry_atlas(&m, E_WATER) == 1,
+        "the fourth phase repeats the second");
+  rw_set_frame(&m, AB_PERIOD * 4);
+  check(rw_entry_atlas(&m, E_WATER) == 0, "the cycle wraps");
+
+  /* A composited cell follows the clock, and a huge frame number (a device
+   * that has been on for a day) still lands inside the cycle. */
+  rw_set_frame(&m, AB_PERIOD);
+  rw_compose_cell(&m, 0, 0, out);
+  check(out[0] == GREEN, "the composited cell shows the moved frame");
+  rw_set_frame(&m, 0xfffffff0u);
+  check(rw_entry_atlas(&m, E_WATER) < TILES,
+        "a far-future frame stays in range");
+
+  /* A map with nothing animated says so, and then no clock ever reports a
+   * step worth redrawing for. */
+  build_map();
+  set_entry(E_WATER, RW_ANIM_STATIC, 0, 0, 0, 0);
+  set_entry(E_BLOCK_C, RW_ANIM_STATIC, 0, 0, 0, 0);
+  open_default(&m);
+  check(m.animated == 0, "a map with no moving entry says so");
+  check(rw_cell_animated(&m, 0, 0) == 0, "and no cell claims to move");
 }
 
 int main(void) {
@@ -306,6 +442,7 @@ int main(void) {
   test_move();
   test_camera();
   test_compose();
+  test_animation();
 
   printf("walk_core: %d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

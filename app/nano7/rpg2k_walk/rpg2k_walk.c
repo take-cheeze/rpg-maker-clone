@@ -18,8 +18,11 @@
  * firmware (app/wio/src/walk_main.cxx) runs too. See docs/adr/0091.
  *
  * Scope (see docs/adr/0061 for the full rationale): one static map, no
- * events/interpreter/battle/menus, tiles frozen at their first animation
- * frame. This walks a real map; it does not play the game.
+ * events/interpreter/battle/menus. Water and the block-C animated tiles do
+ * animate, on RPG2000's own two clocks (docs/adr/0094) -- the export asks
+ * mruby-rpg2k what those are, so this file only advances a counter and
+ * redraws the cells the core says moved. This walks a real map; it does not
+ * play the game.
  *
  * Input: hold anywhere on screen. The direction is whichever of up/down/
  * left/right is furthest from screen center (a whole-screen virtual
@@ -31,7 +34,7 @@
 #include "hb_sdk.h"
 #include "rpg2k_walk_core.h"
 
-/* This device's own caps: the sizes of the two buffers below, and so the
+/* This device's own caps: the sizes of the buffers below, and so the
  * largest export it can load (the core refuses anything that does not fit
  * rather than reading past them). Mirrored in scripts/export_nano7_map.rb's
  * nano7 target, which refuses an oversized map at export time instead of
@@ -43,9 +46,9 @@
  * is safe to exceed either, so this stays well under it rather than finding
  * out on real hardware. Raise with caution.
  *
- * At these caps the static buffers below are the whole of .bss: 41,492 B of
- * map.bin (its palette included) + 65,280 B of atlas + 1,536 B of composited
- * cell = ~106 KB. Both halves have shrunk in turn: the atlas twice (32-bit
+ * At these caps the static buffers below are the whole of .bss: 42,782 B of
+ * map.bin (its palette and entry table included) + 65,280 B of atlas +
+ * 1,536 B of composited cell = ~107 KB. Both halves have shrunk in turn: the atlas twice (32-bit
  * pixels to 16-bit with the transparency fix, then one palette index per
  * pixel, docs/adr/0092) and the cell arrays once (2.5 bytes per cell,
  * docs/adr/0093), which is why these caps leave room to spare rather than
@@ -54,9 +57,9 @@
 #define MAP_MAX_H 128
 #define MAX_TILES RW_MAX_TILES
 
-#define MAP_BIN_MAX_BYTES                       \
-    (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 + \
-     RW_MAP_CELL_BYTES(MAP_MAX_W * MAP_MAX_H))
+#define MAP_BIN_MAX_BYTES                                              \
+    (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +                        \
+     RW_MAX_TILES * RW_ENTRY_BYTES + RW_MAP_CELL_BYTES(MAP_MAX_W * MAP_MAX_H))
 
 #define MAP_DATA_DIR "/Apps/Data/RPG2kWalk"
 
@@ -114,14 +117,27 @@ static void touch_direction(const hb_spoint_t *t, int *dx, int *dy)
     else *dy = ddy > 0 ? 1 : -1;
 }
 
-static void draw_map(void)
+static void blit_cell(int tx, int ty, int mx, int my)
+{
+    rw_compose_cell(&s_map, mx, my, s_cell_1555);
+    for (int i = 0; i < RW_TILE_PIXELS; i++)
+        s_cell[i] = rgb1555_to_native(s_cell_1555[i]);
+
+    hb_raw_blit(tx * RW_TS, ty * RW_TS, RW_TS, RW_TS, s_cell);
+}
+
+/* `moving_only` redraws just the cells whose tiles the clocks moved, for an
+ * animation tick: on a typical map that is the water and nothing else, so a
+ * tick costs a fraction of a full redraw. A step or a first paint passes 0
+ * and draws everything. */
+static void draw_map(int moving_only)
 {
     int view_w = hb_raw_w() / RW_TS;
     int view_h = hb_raw_h() / RW_TS;
     int cam_x, cam_y;
     rw_camera(&s_map, view_w, view_h, &cam_x, &cam_y);
 
-    hb_raw_fill(rgb1555_to_native(s_map.backdrop));
+    if (!moving_only) hb_raw_fill(rgb1555_to_native(s_map.backdrop));
 
     for (int ty = 0; ty < view_h; ty++) {
         int my = cam_y + ty;
@@ -129,17 +145,21 @@ static void draw_map(void)
         for (int tx = 0; tx < view_w; tx++) {
             int mx = cam_x + tx;
             if (mx >= s_map.width) break;
+            if (moving_only && !rw_cell_animated(&s_map, mx, my)) continue;
 
-            rw_compose_cell(&s_map, mx, my, s_cell_1555);
-            for (int i = 0; i < RW_TILE_PIXELS; i++)
-                s_cell[i] = rgb1555_to_native(s_cell_1555[i]);
-
-            hb_raw_blit(tx * RW_TS, ty * RW_TS, RW_TS, RW_TS, s_cell);
+            blit_cell(tx, ty, mx, my);
         }
     }
 
     int ppx = (s_map.player_x - cam_x) * RW_TS, ppy = (s_map.player_y - cam_y) * RW_TS;
     hb_raw_disc(ppx + RW_TS / 2, ppy + RW_TS / 2, RW_TS / 2 - 1, HB_RGB(0xff, 0x40, 0x40));
+}
+
+/* RPG2000 counts animation in 60ths of a second, which is what the export's
+ * clock periods are in; 3/50 is that ratio exactly. */
+static uint32_t rpg_frame(void)
+{
+    return (hb_time_uptime_ms() * 3u) / 50u;
 }
 
 void hb_raw_init(int w, int h)
@@ -149,7 +169,8 @@ void hb_raw_init(int w, int h)
     s_status = load_map();
     s_last_step_ms = hb_time_uptime_ms();
     if (s_status == RW_OK) {
-        draw_map();
+        rw_set_frame(&s_map, rpg_frame());
+        draw_map(0);
     } else {
         hb_raw_fill(HB_BLACK);
         hb_draw_str(8, 8, "no map to walk:", 2, HB_WHITE, HB_BLACK);
@@ -171,11 +192,18 @@ void hb_raw_frame(const hb_spoint_t *touch)
         if (now - s_last_step_ms >= STEP_INTERVAL_MS) {
             rw_try_move(&s_map, dx, dy);
             s_last_step_ms = now;
-            draw_map();
+            rw_set_frame(&s_map, rpg_frame());
+            draw_map(0);
+            return;
         }
     } else {
         /* Released: next hold steps immediately rather than waiting out
          * whatever fraction of the interval elapsed before release. */
         s_last_step_ms = hb_time_uptime_ms() - STEP_INTERVAL_MS;
     }
+
+    /* A still map never reaches the redraw: rw_set_frame reports a step only
+     * when a clock this map actually uses has moved. */
+    if (s_map.animated && rw_set_frame(&s_map, rpg_frame()))
+        draw_map(1);
 }

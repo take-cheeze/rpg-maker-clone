@@ -7,10 +7,10 @@ homebrew SDK. See `docs/adr/0061-ipod-nano-7-homebrew-map-walk.md` for why
 this is a separate minimal engine rather than the mruby/RGSS engine the rest
 of this repo runs everywhere else, and for the full scope/limitations.
 
-**Scope**: tile rendering (including autotiles, frozen at their first
-animation frame) + grid movement + collision, for one static map. No events,
-no interpreter, no battle, no menus — this walks a map, it does not play the
-game.
+**Scope**: tile rendering (including autotiles, and the water/block-C tiles
+animating on RPG2000's own clocks) + grid movement + collision, for one
+static map. No events, no interpreter, no battle, no menus — this walks a
+map, it does not play the game.
 
 ## What you need
 
@@ -115,8 +115,11 @@ at a time while held, blocked by the map's real passability data.
   transparent. Nepheshel's world map draws its whole sea that way, so the
   approximation is what makes it look like sea; a detailed panorama will
   read as a flat colour.
-- Autotiles (water, terrain edges) render correctly but frozen at their
-  first animation frame — no water/ground animation on-device.
+- Animation is the water autotiles and the block-C animated tiles, on
+  RPG2000's own two clocks (`docs/adr/0094`). Everything else an RPG2000 map
+  animates — events, pictures, weather, the hero — needs the interpreter and
+  is out of scope. `--no-animate` freezes every tile if an export needs the
+  atlas slots back.
 - No events, message boxes, battle, or menus.
 - Map size capped at 128×128 tiles / 255 distinct composited tiles (see
   `rpg2k_walk.c`); a larger map is refused by the exporter rather than

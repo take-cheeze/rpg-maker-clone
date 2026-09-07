@@ -43,9 +43,10 @@ extern "C" {
 #define RW_TS 16 /* chipset tile size, matches the exporter */
 #define RW_TILE_PIXELS (RW_TS * RW_TS)
 
-#define RW_FORMAT_VERSION 4
-/* Up to and including palette_count; the palette itself follows. */
-#define RW_MAP_HEADER_BYTES 20
+#define RW_FORMAT_VERSION 5
+/* Up to and including the animation clocks; the palette follows, then the
+ * entry table, then the cells. */
+#define RW_MAP_HEADER_BYTES 26
 #define RW_TILE_BYTES RW_TILE_PIXELS /* one palette index per pixel */
 
 /* Bytes the cell arrays take for `cells` cells: one byte of lower-layer
@@ -54,9 +55,22 @@ extern "C" {
 #define RW_MAP_CELL_BYTES(cells) \
   ((uint32_t)(cells) * 2u + (((uint32_t)(cells) + 1u) / 2u))
 
-/* An atlas index is a byte and 0xFF is the "no upper tile" sentinel, so an
- * export may hold at most 255 entries, addressed 0..254. */
+/* An entry index is a byte and 0xFF is the "no upper tile" sentinel, so an
+ * export may hold at most 255 entries, addressed 0..254; an atlas slot is a
+ * byte inside an entry, so the atlas caps there too. */
 #define RW_MAX_TILES 255
+
+/* One entry: four atlas slots and the clock that moves through them. */
+#define RW_ENTRY_BYTES 5
+#define RW_ANIM_MAX_FRAMES 4
+
+/* Which of RPG2000's animation clocks an entry follows. The exporter reads
+ * both off mruby-rpg2k itself (Game::ChipsetLayout.anim_ab for the water
+ * autotiles, .anim_c for the block-C animated tiles), so what a device does
+ * here is index a table, not know the rules. */
+#define RW_ANIM_STATIC 0
+#define RW_ANIM_WATER 1
+#define RW_ANIM_BLOCK_C 2
 
 /* Palette index 0 is the transparent slot, so a palette holds at most 255
  * opaque colours. */
@@ -88,16 +102,26 @@ typedef enum {
 
 typedef struct {
   int width, height;
-  int tile_count;
+  int entry_count;   /* cells name these */
+  int atlas_count;   /* pictures in tiles.bin, named by an entry's frames */
   uint16_t backdrop; /* ARGB1555; what shows through a transparent pixel */
   int player_x, player_y;
 
+  /* The two animation clocks, as the export measured them off the engine:
+   * how many frames a step lasts and how many steps the cycle has. The
+   * current step of each is what rw_set_frame moves. */
+  int ab_len, ab_period;
+  int c_len, c_period;
+  int phase_ab, phase_c;
+  int animated; /* 1 when any entry moves at all */
+
   const uint8_t* palette; /* palette_count ARGB1555 entries, little-endian */
   int palette_count;
-  const uint8_t* lower;    /* width*height atlas indices, one byte each */
+  const uint8_t* entries;  /* entry_count * RW_ENTRY_BYTES */
+  const uint8_t* lower;    /* width*height entry indices, one byte each */
   const uint8_t* upper;    /* same, with RW_UPPER_NONE for "no upper tile" */
   const uint8_t* passable; /* RW_DIR_* bits, two cells per byte */
-  const uint8_t* tiles;    /* tile_count * RW_TILE_PIXELS palette indices */
+  const uint8_t* tiles;    /* atlas_count * RW_TILE_PIXELS palette indices */
 } rw_map;
 
 /*
@@ -120,6 +144,20 @@ const char* rw_status_str(rw_status status);
 /* One palette entry as ARGB1555. Index 0, and any index past the palette,
  * read as transparent. */
 uint16_t rw_palette_colour(const rw_map* m, uint8_t index);
+
+/*
+ * Move the animation clocks to `frame`, RPG2000's own 60-a-second frame
+ * counter. Returns 1 when a clock actually stepped, which is the platform's
+ * cue to redraw -- and only the cells rw_cell_animated reports, since on a
+ * typical map that is the water and nothing else.
+ */
+int rw_set_frame(rw_map* m, uint32_t frame);
+
+/* The atlas slot an entry shows at the current phase. */
+uint8_t rw_entry_atlas(const rw_map* m, uint8_t entry);
+
+/* Whether either of a cell's layers moves with a clock. 0 outside the map. */
+int rw_cell_animated(const rw_map* m, int mx, int my);
 
 /* The passability bits of one cell (its nibble, unpacked); 0 for a cell
  * outside the map. */

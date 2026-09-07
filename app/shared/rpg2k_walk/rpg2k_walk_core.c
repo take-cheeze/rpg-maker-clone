@@ -30,13 +30,24 @@ rw_status rw_open(rw_map* m,
   int h = rd_u16(map_bytes + 8);
   int sx = rd_u16(map_bytes + 10);
   int sy = rd_u16(map_bytes + 12);
-  int tile_count = rd_u16(map_bytes + 14);
+  int entry_count = rd_u16(map_bytes + 14);
   uint16_t backdrop = rd_u16(map_bytes + 16);
   int palette_count = rd_u16(map_bytes + 18);
+  int atlas_count = rd_u16(map_bytes + 20);
+  int ab_len = map_bytes[22];
+  int ab_period = map_bytes[23];
+  int c_len = map_bytes[24];
+  int c_period = map_bytes[25];
 
   if (w <= 0 || h <= 0 || sx >= w || sy >= h)
     return RW_ERR_HEADER;
-  if (tile_count > RW_MAX_TILES)
+  if (entry_count > RW_MAX_TILES || atlas_count > RW_MAX_TILES)
+    return RW_ERR_HEADER;
+  /* A clock with no steps, or one whose cycle is longer than an entry has
+   * frames, would index past the entry. */
+  if (ab_len < 1 || ab_len > RW_ANIM_MAX_FRAMES || ab_period < 1)
+    return RW_ERR_HEADER;
+  if (c_len < 1 || c_len > RW_ANIM_MAX_FRAMES || c_period < 1)
     return RW_ERR_HEADER;
   /* Index 0 is the transparent slot, so even an all-transparent map has one
    * entry; more than RW_MAX_PALETTE cannot be addressed by a one-byte
@@ -46,27 +57,90 @@ rw_status rw_open(rw_map* m,
 
   uint32_t cells = (uint32_t)w * (uint32_t)h;
   uint32_t palette_bytes = (uint32_t)palette_count * 2;
-  if (map_len < RW_MAP_HEADER_BYTES + palette_bytes)
+  uint32_t entry_bytes = (uint32_t)entry_count * RW_ENTRY_BYTES;
+  uint32_t fixed = RW_MAP_HEADER_BYTES + palette_bytes + entry_bytes;
+  if (map_len < fixed)
     return RW_ERR_MAP_TRUNCATED;
-  if ((uint32_t)(map_len - RW_MAP_HEADER_BYTES - palette_bytes) <
-      RW_MAP_CELL_BYTES(cells))
+  if ((uint32_t)(map_len - fixed) < RW_MAP_CELL_BYTES(cells))
     return RW_ERR_MAP_TRUNCATED;
-  if (tiles_len < (uint32_t)tile_count * RW_TILE_BYTES)
+  if (tiles_len < (uint32_t)atlas_count * RW_TILE_BYTES)
     return RW_ERR_TILES_TRUNCATED;
 
   m->width = w;
   m->height = h;
-  m->tile_count = tile_count;
+  m->entry_count = entry_count;
+  m->atlas_count = atlas_count;
   m->backdrop = backdrop;
   m->player_x = sx;
   m->player_y = sy;
+  m->ab_len = ab_len;
+  m->ab_period = ab_period;
+  m->c_len = c_len;
+  m->c_period = c_period;
+  m->phase_ab = 0;
+  m->phase_c = 0;
   m->palette = map_bytes + RW_MAP_HEADER_BYTES;
   m->palette_count = palette_count;
-  m->lower = m->palette + palette_bytes;
+  m->entries = m->palette + palette_bytes;
+  m->lower = m->entries + entry_bytes;
   m->upper = m->lower + cells;
   m->passable = m->upper + cells;
   m->tiles = tiles;
+
+  /* Whether anything moves at all, answered once here so a still map -- 477
+   * of Nepheshel's 543 -- costs the frame loop nothing. */
+  m->animated = 0;
+  {
+    int i;
+    for (i = 0; i < entry_count; i++) {
+      if (m->entries[(uint32_t)i * RW_ENTRY_BYTES + 4] != RW_ANIM_STATIC) {
+        m->animated = 1;
+        break;
+      }
+    }
+  }
   return RW_OK;
+}
+
+int rw_set_frame(rw_map* m, uint32_t frame) {
+  int ab = (int)((frame / (uint32_t)m->ab_period) % (uint32_t)m->ab_len);
+  int c = (int)((frame / (uint32_t)m->c_period) % (uint32_t)m->c_len);
+  if (ab == m->phase_ab && c == m->phase_c)
+    return 0;
+  m->phase_ab = ab;
+  m->phase_c = c;
+  return 1;
+}
+
+uint8_t rw_entry_atlas(const rw_map* m, uint8_t entry) {
+  const uint8_t* e;
+  if ((int)entry >= m->entry_count)
+    return 0;
+  e = m->entries + (uint32_t)entry * RW_ENTRY_BYTES;
+  switch (e[4]) {
+    case RW_ANIM_WATER:
+      return e[m->phase_ab];
+    case RW_ANIM_BLOCK_C:
+      return e[m->phase_c];
+    default:
+      return e[0];
+  }
+}
+
+static int entry_moves(const rw_map* m, uint8_t entry) {
+  if ((int)entry >= m->entry_count)
+    return 0;
+  return m->entries[(uint32_t)entry * RW_ENTRY_BYTES + 4] != RW_ANIM_STATIC;
+}
+
+int rw_cell_animated(const rw_map* m, int mx, int my) {
+  uint8_t up;
+  if (!m->animated || !in_bounds(m, mx, my))
+    return 0;
+  if (entry_moves(m, cell_index(m->lower, m, mx, my)))
+    return 1;
+  up = cell_index(m->upper, m, mx, my);
+  return up != RW_UPPER_NONE && entry_moves(m, up);
 }
 
 const char* rw_status_str(rw_status status) {
@@ -170,10 +244,11 @@ void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out) {
   if (in_bounds(m, mx, my)) {
     uint8_t lo = cell_index(m->lower, m, mx, my);
     uint8_t up = cell_index(m->upper, m, mx, my);
-    if ((int)lo < m->tile_count)
-      lower = m->tiles + (uint32_t)lo * RW_TILE_PIXELS;
-    if (up != RW_UPPER_NONE && (int)up < m->tile_count)
-      upper = m->tiles + (uint32_t)up * RW_TILE_PIXELS;
+    /* A cell names an entry; the entry names the picture it shows *now*. */
+    if ((int)lo < m->entry_count)
+      lower = m->tiles + (uint32_t)rw_entry_atlas(m, lo) * RW_TILE_PIXELS;
+    if (up != RW_UPPER_NONE && (int)up < m->entry_count)
+      upper = m->tiles + (uint32_t)rw_entry_atlas(m, up) * RW_TILE_PIXELS;
   }
 
   for (i = 0; i < RW_TILE_PIXELS; i++) {
