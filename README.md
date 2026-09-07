@@ -643,6 +643,14 @@
   the compiled binary. No native choice window is drawn yet, the same scope
   `Message`(101) already keeps. See
   [`docs/adr/0070-wolf-rpg-editor-choices.md`](docs/adr/0070-wolf-rpg-editor-choices.md)
+- **Sound effects play.** `Sound`(140)'s own "play an SE by filename"
+  combination — cross-confirmed byte by byte against the wolfrpg-map-parser
+  crate's own structs and every real `Sound` command in the sample game's
+  own data — actually plays through `RGSS::Audio.se_play`, with volume and
+  frequency read from their own confirmed argument slots. BGM/BGS, a
+  system-database or variable sound source, and a string-interpolated
+  filename are logged and skipped rather than guessed. See
+  [`docs/adr/0071-wolf-rpg-editor-sound.md`](docs/adr/0071-wolf-rpg-editor-sound.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
