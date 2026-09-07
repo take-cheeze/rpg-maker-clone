@@ -2634,3 +2634,65 @@ end
 # properties cannot be exercised here — they are load-verified with the rest of
 # mruby-rgss/mrblib and share the exact accessor pattern the Plane test above
 # covers (RGSS defaults, nil?-vs-|| for 0/false-meaningful values, read/write).
+
+# ---- Per-maker asset extension order (cycle #258) --------------------------
+#
+# `RGSS::Bitmap.extensions` is the candidate list both search paths walk. It
+# defaults to the RGSS order (png first, jpg/jpeg included, because the RPG
+# Maker XP RTP's own title screens really are .jpg); a maker whose runtime
+# probes differently installs its own once at boot.
+#
+# The RPG2000/2003 list was measured against a genuine RPG_RT.exe under wine
+# (Nepheshel, cycle #258): with the asset deleted a `WINEDEBUG=+file` trace
+# opens exactly `<name>.bmp`, `<name>.png`, `<name>.xyz` and no JPEG candidate
+# at all, and with both spellings present the `.bmp` is the one drawn.
+
+assert "RGSS::Bitmap.extensions defaults to the RGSS order" do
+  assert_equal [:png, :jpg, :jpeg, :xyz, :bmp], RGSS::Bitmap.extensions
+  # The XP RTP's .jpg title screens are why the non-png entries exist, so the
+  # RPG2000 order must not be allowed to cost them.
+  assert_true RGSS::Bitmap.extensions.include?(:jpg)
+end
+
+assert "RGSS::Bitmap probes .bmp before .png for an RPG2000/2003 game" do
+  # The archive path records every candidate it is asked for, so the order can
+  # be asserted exactly rather than inferred from which file won.
+  archive = FakeArchive.new({ "Title/Logo.xyz" => XYZ_3X2 })
+  RGSS.asset_archive = archive
+  begin
+    RGSS::Bitmap.extensions = RGSS::Bitmap::RPG2K_EXTENSIONS
+    b = RGSS::Bitmap.new("Title/Logo")
+    assert_equal 3, b.width
+    assert_equal ["Title/Logo", "Title/Logo.bmp", "Title/Logo.png",
+                  "Title/Logo.xyz"], archive.asked
+  ensure
+    RGSS::Bitmap.extensions = nil
+    RGSS.asset_archive = nil
+  end
+  # Clearing it puts the RGSS default back for every other maker.
+  assert_equal [:png, :jpg, :jpeg, :xyz, :bmp], RGSS::Bitmap.extensions
+end
+
+# The same picture in both spellings, differing only in palette entry 0
+# ((10,20,30) in the .bmp, (200,20,30) in the .png) -- the decoders sniff the
+# bytes rather than the name, so the extension alone decides which file the
+# search reaches first and the pixel that comes back names the winner.
+XYZ_3X2_RED0 = "\x58\x59\x5a\x31\x03\x00\x02\x00\x78\x9c\x3b\x21\x22\xf7" \
+               "\x9f\x81\x81\x01\x84\x47\xc1\x28\x18\x79\x80\x91\x89\x89" \
+               "\x91\x01\x00\xf3\x1d\x02\xff"
+
+assert "an RPG2000 game's .bmp shadows a .png of the same base name" do
+  entries = { "Title/Logo.bmp" => XYZ_3X2, "Title/Logo.png" => XYZ_3X2_RED0 }
+  RGSS.asset_archive = FakeArchive.new(entries)
+  begin
+    RGSS::Bitmap.extensions = RGSS::Bitmap::RPG2K_EXTENSIONS
+    assert_equal 10.0, RGSS::Bitmap.new("Title/Logo").get_pixel(0, 0).red
+    # ...while the RGSS order still reaches the .png first, which is the XP
+    # case the png-first default exists for.
+    RGSS::Bitmap.extensions = nil
+    assert_equal 200.0, RGSS::Bitmap.new("Title/Logo").get_pixel(0, 0).red
+  ensure
+    RGSS::Bitmap.extensions = nil
+    RGSS.asset_archive = nil
+  end
+end

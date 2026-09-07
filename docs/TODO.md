@@ -15806,6 +15806,59 @@ The work below is roughly ordered by the critical path to a walkable game
   that makes this one present), after which the screen is reachable from any
   save whose party has two members.
   No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #258, 2026-09-06): the asset extension order the entry
+  above found in passing is settled — genuine RPG_RT probes `.bmp`, `.png`,
+  `.xyz` and *nothing else*, and when both spellings are on disk the `.bmp` is
+  the one drawn — and this engine now uses that order for RPG2000/2003 without
+  costing the XP RTP its `.jpg` title screens.** *Recipe*: a private copy of
+  Nepheshel, a flat 320x240 (or 160x80) 8-bit-palettised uncompressed BMP
+  written beside the game's own shipped PNG under the same base name
+  (`convert -size WxH gradient:... -colors 256 -type Palette -depth 8
+  -compress None BMP3:<name>.bmp`; an RLE-compressed or 1-bit BMP is not a
+  fair probe), booted under wine with `WINEDEBUG=+file`. *Measured, three
+  directories*: `Title/Nepheshel_logo` — the title screen drew the flat
+  magenta→green gradient, and the trace opened `Nepheshel_logo.bmp` only, never
+  the `.png`; `System/システム` — with the title `.bmp` removed again, the
+  title screen's own command window was framed in the red→blue gradient
+  windowskin BMP instead of the game's `システム.png`; `GameOver/gameover` —
+  reached by a real party wipe (cycle #251's recipe: `Save01_battle_map2.lsd`
+  with every chunk-108 actor record rewritten to level 1 / 1 HP / no equipment,
+  then Decision through the fight), the Game Over screen drew the yellow→blue
+  gradient BMP and the trace again never opened `gameover.png`. *Probe order,
+  exactly*: with `Title/Nepheshel_logo.png` moved away entirely and no `.bmp`
+  present, the `+file` trace opens `Nepheshel_logo.bmp`, `Nepheshel_logo.png`,
+  `Nepheshel_logo.xyz` in that order, twice, and **no `.jpg`/`.jpeg` candidate
+  exists on this runtime at all**. *And what a missing asset does*: not a
+  silent skip and not a placeholder — RPG_RT puts up a modal Win32 message box
+  reading `ファイル Nepheshel_logo は開けません` with an OK button and goes no
+  further (captured with `xwd -id` on the 263x84 child window; the root capture
+  shows it unpainted). **Fixed**: `RGSS::Bitmap::EXTENSIONS` stays the RGSS
+  order and is now the *default* behind a new `RGSS::Bitmap.extensions`
+  accessor that both search paths (loose files and the encrypted archive) and
+  the `failure_reason` diagnostic read; a new `RGSS::Bitmap::RPG2K_EXTENSIONS`
+  (`[bmp, png, xyz]`) is installed once by `RPG2k#initialize`, so the order is
+  per-runtime rather than global — the XP RTP's `.jpg` title screens (the
+  reason the non-png entries exist at all, see
+  `scripts/compare-rpgxp-wine.bash`) keep the png-first list they need.
+  `RGSS::Bitmap::EXTENSIONS` had exactly three readers, all in
+  `mruby-rgss/mrblib/lib.rb`, so nothing else needed touching;
+  `Scene::GameOver#gameover_bitmap`'s doc comment, which carried the open
+  question, now records the answer. Three new asserts in `mruby-rgss/test/
+  test.rb` (run by `ctest -R mruby_test` and by
+  `scripts/rgss_cruby_test_check.rb`) pin the default list, the exact RPG2000
+  candidate order through the order-recording `FakeArchive`, and that the
+  `.bmp` wins for RPG2000 while the `.png` still wins under the RGSS default;
+  all three fail against the pre-fix code, and re-spelling `RPG2K_EXTENSIONS`
+  png-first makes two of them fail on the value rather than the missing API
+  (`expected 10.0, got 200.0`). **Deliberately left open**: whether RPG2000
+  RPG_RT prefers `.bmp` over `.png` for *audio*-adjacent or Movie assets was
+  not probed (only Bitmap loads were); a process that ran an RPG2000 game and
+  then an XP one would keep the RPG2000 order, which cannot happen today
+  (one game per process) but is worth knowing if that ever changes; and the
+  message box's exact modality/exit code was not measured beyond "the game
+  does not proceed". Suites: `rgss_cruby_test_check` OK (112 asserts), scene
+  1041, logic 1201, render 41, test-bed 174, rpg2k3 gauge 15 / row 19 /
+  command OK. No EasyRPG source was consulted.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Checked
   against a reference implementation's actual source (ported from a

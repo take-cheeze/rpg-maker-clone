@@ -121,12 +121,14 @@ class RPG2k
       # transparent black — so the colour-keyed decode (`Bitmap.new`'s second
       # argument) must stay off here, as it is.
       #
-      # Also measured, but *not* this file's to fix: real RPG_RT probes
-      # `<name>.bmp` before `<name>.png` (seen for `GameOver/gameover` and
-      # `Title/Nepheshel_logo` alike in a `WINEDEBUG=+file` trace), while this
-      # engine's own candidate list is png-first (`RGSS::Bitmap::EXTENSIONS`,
-      # mruby-rgss/mrblib/lib.rb). Only a game shipping both spellings of the
-      # same asset can tell the difference. See docs/TODO.md.
+      # Real RPG_RT probes `<name>.bmp` before `<name>.png`, and cycle #258
+      # settled that this is a preference and not just a probe order: a flat
+      # gradient `GameOver/gameover.bmp` dropped beside Nepheshel's own shipped
+      # `gameover.png` is what the real party-wipe Game Over screen drew, with
+      # the `.png` never opened at all. The RPG2000/2003 candidate list is now
+      # `RGSS::Bitmap::RPG2K_EXTENSIONS` (`[bmp, png, xyz]`, installed by
+      # `RPG2k#initialize`), so this `Bitmap.new` resolves the same way
+      # RPG_RT does.
       def gameover_bitmap
         name = db.system.gameover_name.to_s
         return nil if name.empty?

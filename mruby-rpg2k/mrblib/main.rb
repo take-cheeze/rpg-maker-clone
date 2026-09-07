@@ -598,6 +598,14 @@ class RPG2k
     @test_play = args.include?('TestPlay') || native_test_play?
     @hide_title = args.include?('HideTitle')
 
+    # An RPG2000/2003 project's graphics are resolved in RPG_RT.exe's own
+    # order, which is not RGSS's: .bmp first, then .png, then .xyz, with no
+    # JPEG candidate at all (measured under wine, see
+    # RGSS::Bitmap::RPG2K_EXTENSIONS). The default list is png-first because
+    # the RPG Maker XP RTP's title screens really are .jpg, so this is
+    # installed per runtime rather than changed globally.
+    RGSS::Bitmap.extensions = RGSS::Bitmap::RPG2K_EXTENSIONS
+
     @db = LCF::Database.new File.open db_path
     @map_tree = LCF::MapTree.new File.open "#{GAME_DIR}/RPG_RT.lmt"
     # Put the game's own name on the window (and on the browser tab in the web
