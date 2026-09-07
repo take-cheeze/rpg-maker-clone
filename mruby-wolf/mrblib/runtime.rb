@@ -11,18 +11,21 @@
 # parallel-process Common Event each frame against a `Wolf::VarStore`
 # (vars.rb), and drives map events too (trigger/page-selection, not their own
 # movement yet). Several commands (StringCondition, messages beyond a log
-# line, file/window pictures, sound, teleport, ...) are explicitly
-# unimplemented rather than guessed at -- see docs/TODO.md and
+# line, real 9-slice window-skin pictures, sound, teleport, ...) are
+# explicitly unimplemented rather than guessed at -- see docs/TODO.md and
 # interpreter.rb's own header for which command semantics are cross-confirmed
 # versus best-effort. `Wolf::Interpreter#exec_picture` calls into
-# `WolfRPG::MapScene#show_string_picture`/`#erase_picture` below for
-# Picture(150)'s text-picture case, the one real rendering hook Interpreter
-# has into this file. What exists here besides that is the map-rendering and
-# movement foundation every later piece sits on: it loads the project's
-# database, tile data and start position, and lets the hero walk around the
-# starting map with the real per-tile passability flags, the same incremental
-# order mruby-rpg2k's own history followed (map exploration before the event
-# interpreter, before battle).
+# `WolfRPG::MapScene#show_string_picture`/`#show_file_picture`/
+# `#show_shape_picture`/`#move_picture`/`#erase_picture` below for
+# Picture(150) -- text pictures, real image files, and the manual's
+# documented procedural shapes (`<SQUARE>`/`<GRADX-...>`/`<GRADY-...>`/
+# `<LINE>`) -- the one real rendering hook Interpreter has into this file.
+# What exists here besides that is the map-rendering and movement foundation
+# every later piece sits on: it loads the project's database, tile data and
+# start position, and lets the hero walk around the starting map with the
+# real per-tile passability flags, the same incremental order mruby-rpg2k's
+# own history followed (map exploration before the event interpreter, before
+# battle).
 #
 # Tiles are drawn as flat colour blocks keyed by TileSetData's passability
 # flags (green passable, dark red blocked, blue counter, grey autotile),
@@ -121,6 +124,8 @@ class WolfRPG
     GRID = RGSS::Color.new(0, 0, 0, 40)
     HERO = RGSS::Color.new(240, 220, 120, 255)
     EVENT_MARKER = RGSS::Color.new(160, 96, 200, 255)
+    SHAPE_COLOR = RGSS::Color.new(255, 255, 255, 255)
+    SHAPE_SQUARE_FRAME_THICKNESS = 2
 
     # (dx, dy) for each facing direction, used both to compute the tile a
     # Confirm-key press should check and (were it ever drawn) which way the
@@ -195,17 +200,66 @@ class WolfRPG
       bitmap = RGSS::Bitmap.new(width, height)
       bitmap.draw_text(0, 0, width, height, text)
       entry[:sprite].bitmap = bitmap
-      ox, oy = picture_origin(anchor, width, height)
-      entry[:sprite].x = x - ox
-      entry[:sprite].y = y - oy
-      entry[:sprite].opacity = opacity
-      unless zoom.nil?
-        entry[:sprite].zoom_x = zoom
-        entry[:sprite].zoom_y = zoom
+      entry[:sprite].src_rect = RGSS::Rect.new(0, 0, width, height)
+      place_picture(entry, anchor, x, y, width, height)
+      apply_picture_transform(entry[:sprite], opacity, zoom, angle, blend)
+    end
+
+    # Loads `path` (relative to the project's own `Data/` folder -- real
+    # command dumps confirm the stored filename already carries its own
+    # subfolder, e.g. "SystemFile/TitleGraphic.png"/"CharaChip/Foo.png", so
+    # no separate "Picture folder" prefix is needed) and shows it, cropping
+    # to one `pattern`-th cell of a `div_w`x`div_h` sprite-sheet grid when
+    # either is more than 1 (a character/animation sheet), the whole image
+    # otherwise. Silently does nothing if the file can't be loaded (logged
+    # once) -- a missing asset should not crash event execution.
+    def show_file_picture(number, path, div_w, div_h, pattern, x, y, opacity, zoom, angle, anchor, blend)
+      entry = (@pictures[number] ||= build_picture)
+      bitmap = load_picture_bitmap(path)
+      return unless bitmap
+      entry[:sprite].bitmap = bitmap
+      cell_w = div_w > 1 ? [bitmap.width / div_w, 1].max : bitmap.width
+      cell_h = div_h > 1 ? [bitmap.height / div_h, 1].max : bitmap.height
+      col = div_w > 1 ? pattern % div_w : 0
+      row = div_w > 1 ? pattern / div_w : 0
+      entry[:sprite].src_rect = RGSS::Rect.new(col * cell_w, row * cell_h, cell_w, cell_h)
+      place_picture(entry, anchor, x, y, cell_w, cell_h)
+      apply_picture_transform(entry[:sprite], opacity, zoom, angle, blend)
+    end
+
+    # Draws one of Picture(150)'s documented procedural shapes (see
+    # interpreter.rb's own SHAPE_* comment) into a `width`x`height` box at
+    # `x, y` -- always top-left anchored and never rotated, per the manual
+    # ("角度" has no effect on these). `width`/`height` may be negative
+    # (`<LINE>`'s own documented direction convention); the box is built
+    # from their magnitude and shifted back so it still spans from the
+    # original (x, y) to (x + width, y + height) either way.
+    def show_shape_picture(number, shape, width, height, x, y, opacity, zoom, blend)
+      entry = (@pictures[number] ||= build_picture)
+      box_w = [width.abs, 1].max
+      box_h = [height.abs, 1].max
+      bitmap = RGSS::Bitmap.new(box_w, box_h)
+      draw_shape(bitmap, shape, box_w, box_h)
+      entry[:sprite].bitmap = bitmap
+      entry[:sprite].src_rect = RGSS::Rect.new(0, 0, box_w, box_h)
+      entry[:sprite].x = width < 0 ? x - box_w : x
+      entry[:sprite].y = height < 0 ? y - box_h : y
+      apply_picture_transform(entry[:sprite], opacity, zoom, 0, blend)
+    end
+
+    # A Move never respecifies the picture's content (interpreter.rb's own
+    # comment); it only updates transform on whatever #show_string_picture/
+    # #show_file_picture/#show_shape_picture last drew, reusing that call's
+    # own anchor and size (#place_picture's own doc) so the picture does
+    # not jump if it was anchored anywhere but the top-left.
+    def move_picture(number, x, y, opacity, zoom, angle, blend)
+      entry = @pictures[number]
+      unless entry
+        $stderr.puts "[Wolf] Picture(150): Move on picture ##{number}, which has never been shown; ignoring"
+        return
       end
-      entry[:sprite].angle = angle
-      entry[:sprite].blend_type = blend unless blend.nil?
-      entry[:sprite].visible = true
+      place_picture(entry, entry[:anchor], x, y, entry[:width], entry[:height])
+      apply_picture_transform(entry[:sprite], opacity, zoom, angle, blend)
     end
 
     def erase_picture(number)
@@ -214,6 +268,31 @@ class WolfRPG
     end
 
     private
+
+    # Positions `entry`'s sprite so that (x, y) is the point `anchor` names
+    # on a `width`x`height` box (help/04ev_picture.html's own five
+    # positions this reader models -- interpreter.rb's own comment on the
+    # two it does not), and records the anchor/size so a later #move_picture
+    # call can reuse them without knowing either.
+    def place_picture(entry, anchor, x, y, width, height)
+      entry[:anchor] = anchor
+      entry[:width] = width
+      entry[:height] = height
+      ox, oy = picture_origin(anchor, width, height)
+      entry[:sprite].x = x - ox
+      entry[:sprite].y = y - oy
+    end
+
+    def apply_picture_transform(sprite, opacity, zoom, angle, blend)
+      sprite.opacity = opacity
+      unless zoom.nil?
+        sprite.zoom_x = zoom
+        sprite.zoom_y = zoom
+      end
+      sprite.angle = angle unless angle.nil?
+      sprite.blend_type = blend unless blend.nil?
+      sprite.visible = true
+    end
 
     def picture_origin(anchor, width, height)
       case anchor
@@ -225,10 +304,47 @@ class WolfRPG
       end
     end
 
+    def load_picture_bitmap(path)
+      RGSS::Bitmap.new(File.join(@project.dir, "Data", path))
+    rescue RGSS::Bitmap::LoadError => e
+      $stderr.puts "[Wolf] Picture(150): failed to load #{path.inspect}: #{e.message}"
+      nil
+    end
+
+    def draw_shape(bitmap, shape, width, height)
+      case shape[:kind]
+      when :square
+        if shape[:frame]
+          t = [SHAPE_SQUARE_FRAME_THICKNESS, width, height].min
+          bitmap.fill_rect(0, 0, width, t, SHAPE_COLOR)
+          bitmap.fill_rect(0, [height - t, 0].max, width, t, SHAPE_COLOR)
+          bitmap.fill_rect(0, 0, t, height, SHAPE_COLOR)
+          bitmap.fill_rect([width - t, 0].max, 0, t, height, SHAPE_COLOR)
+        else
+          bitmap.fill_rect(0, 0, width, height, SHAPE_COLOR)
+        end
+      when :gradient
+        c1 = RGSS::Color.new(*shape[:color1], 255)
+        c2 = RGSS::Color.new(*shape[:color2], 255)
+        bitmap.gradient_fill_rect(0, 0, width, height, c1, c2, shape[:axis] == :y)
+      when :line
+        t = [shape[:thickness], width, height].min
+        if height <= t
+          bitmap.fill_rect(0, 0, width, t, SHAPE_COLOR)
+        elsif width <= t
+          bitmap.fill_rect(0, 0, t, height, SHAPE_COLOR)
+        else
+          # A genuinely diagonal <LINE> (neither dimension collapses to the
+          # thickness) is not modeled -- not seen in the sample game's own
+          # usage, which is always a plain horizontal/vertical divider.
+        end
+      end
+    end
+
     def build_picture
       sprite = RGSS::Sprite.new(@picture_viewport)
       sprite.bitmap = RGSS::Bitmap.new(1, 1)
-      { sprite: sprite }
+      { sprite: sprite, anchor: ANCHOR_TOP_LEFT, width: 1, height: 1 }
     end
 
     def draw_tiles

@@ -445,6 +445,38 @@ module Wolf
     PICTURE_TYPE_WINDOW_FILE = 3
     PICTURE_TYPE_WINDOW_VARIABLE = 4
 
+    # The "Base" argument layout's fixed size: 11 slots when the picture's
+    # content (filename or text) is the command's own string argument
+    # (file/text/window-file), one more when it is a string-variable
+    # reference instead (file-by-variable/window-by-variable), which needs
+    # an extra trailing arg to name that variable. Real command dumps from
+    # the sample game confirm this for every *Show* call whose other mode
+    # bits (zoom mode, colours, ...) are all left at their "Normal"/default
+    # value; anything else -- a Move whose zoom mode is "same as current",
+    # a "Colors" or multi-corner variant -- carries a different argument
+    # count this reader has not reverse-engineered, so #exec_picture_show_or_move
+    # checks `cmd.args.size` against these before trusting the slot layout
+    # below at all, rather than risk silently misreading a differently-shaped
+    # command as this one.
+    PICTURE_ARGC_LITERAL = 11
+    PICTURE_ARGC_VARIABLE = 12
+    PICTURE_VARIABLE_CONTENT_TYPES = [PICTURE_TYPE_FILE_VARIABLE, PICTURE_TYPE_WINDOW_VARIABLE].freeze
+
+    # Picture(150)'s window display type (3/4) can carry a special string
+    # instead of a real filename, drawing a procedural shape rather than
+    # loading an image -- help/04ev_picture.html's "隠し機能 図形表示",
+    # fully documented rather than reverse-engineered, and confirmed to be
+    # exactly what the sample game's own custom-drawn menus use for their
+    # boxes, gradients and divider lines (their own Picture calls carry
+    # these literal strings). Only the shapes below are implemented, since
+    # they cover every one of the sample game's own uses; <CIRCLE>/
+    # <TRI-*>/<CUT/...>/<SCREENSHOT> and anything else fall through to an
+    # explicit no-op instead. "角度" (angle) is documented to have no
+    # effect on any of these (always 0), so callers never need to apply it.
+    SHAPE_SQUARE = /\A<SQUARE>(FRAME)?\z/
+    SHAPE_GRADIENT = /\A<GRAD([XY])-(\d)(\d)(\d)-(\d)(\d)(\d)>\z/
+    SHAPE_LINE = /\A<LINE(?:-(\d+))?>\z/
+
     # Picture(150): the single command the RPG Basic System uses to draw
     # everything visible -- message windows, choice menus, the whole
     # in-game menu -- so cross-validating this one command matters more
@@ -478,19 +510,23 @@ module Wolf
     # layout beyond this bitmask (WolfTL never needs more than the type/
     # number/text to extract translatable strings), so unlike the
     # bitmask fields above, the argument positions below are single-
-    # source and cross-checked here only empirically: against this
-    # reader's own real command dump from the sample game (a
-    # "window-by-string-variable" call whose width/height/position
-    # arguments resolve, through SetVariable math earlier in the same
-    # Common Event, to values that only make sense in this exact slot
-    # order -- see docs/adr/0067). Only that plain "Base" layout (no
-    # range, no free-transform) is implemented, and only the `text`
-    # display type actually renders (file/window pictures need a
-    # separate look at WOLF's own Picture-folder convention and, for
-    # windows, 9-slice stretching -- left as a follow-up rather than a
-    # guess); everything else is an explicit, logged no-op. Move and Show
-    # both snap immediately -- WOLF's own gradual "process_time" fade/
-    # slide animation is not modeled.
+    # source and cross-checked here only empirically: against many real
+    # command dumps from the sample game -- filenames like
+    # "SystemFile/TitleGraphic.png"/"CharaChip/Special_Tiga.png" (already
+    # relative to the project's own `Data/` folder, so no separate
+    # "Picture folder" guess is needed), a "window-by-string-variable"
+    # call whose width/height/position arguments resolve, through
+    # SetVariable math earlier in the same Common Event, to values that
+    # only make sense in this exact slot order, and the sample game's own
+    # custom-drawn menus using the manual's documented shape-picture
+    # strings for their boxes/gradients/lines (see docs/adr/0067/0068).
+    # Only the plain "Base" layout (no range, no free-transform, and a
+    # "Normal" zoom mode -- #exec_picture_show_or_move checks
+    # `cmd.args.size` before trusting this at all, since a Move whose zoom
+    # mode is "same as current" or a "Colors"/multi-corner variant carries
+    # a different, unconfirmed argument count) is implemented. Move and
+    # Show both snap immediately -- WOLF's own gradual "process_time"
+    # fade/slide animation is not modeled.
     def exec_picture(cmd)
       options = cmd.arg(0)
       operation = options & 0x0f
@@ -510,7 +546,7 @@ module Wolf
 
       case operation
       when PICTURE_OP_SHOW, PICTURE_OP_MOVE
-        exec_picture_show_or_move(cmd, options, number)
+        exec_picture_show_or_move(cmd, options, operation, number)
       when PICTURE_OP_DELAY_RESET
         unimplemented("Picture(150) delay reset")
       else
@@ -518,14 +554,17 @@ module Wolf
       end
     end
 
-    def exec_picture_show_or_move(cmd, options, number)
+    def exec_picture_show_or_move(cmd, options, operation, number)
       display_type = (options >> 4) & 0x07
-      unless display_type == PICTURE_TYPE_TEXT
-        unimplemented("Picture(150) display type #{display_type} (only text pictures render so far)")
+      expected_argc = PICTURE_VARIABLE_CONTENT_TYPES.include?(display_type) ? PICTURE_ARGC_VARIABLE : PICTURE_ARGC_LITERAL
+      if cmd.args.size != expected_argc
+        unimplemented("Picture(150) display type #{display_type} with #{cmd.args.size} arguments (only the plain layout is understood)")
         return
       end
 
-      text = cmd.strings.first || ""
+      div_w = cmd.arg(3)
+      div_h = cmd.arg(4)
+      pattern = cmd.arg(5)
       opacity = var_store.number(cmd.arg(6))
       x = var_store.number(cmd.arg(7))
       y = var_store.number(cmd.arg(8))
@@ -545,9 +584,66 @@ module Wolf
           var_store.warn_once("picture-blend-#{blend_word}", "Picture(150) blend mode #{blend_word} not supported; using normal")
           0
         end
-
       anchor = (options >> 12) & 0xf
-      current_scene&.show_string_picture(number, text, x, y, opacity, zoom, angle, anchor, blend)
+
+      # A Move never respecifies the picture's content -- it only updates
+      # the transform of whatever is already showing under this number.
+      if operation == PICTURE_OP_MOVE
+        current_scene&.move_picture(number, x, y, opacity, zoom, angle, blend)
+        return
+      end
+
+      content =
+        if PICTURE_VARIABLE_CONTENT_TYPES.include?(display_type)
+          var_store.string(cmd.arg(11))
+        else
+          cmd.strings.first || ""
+        end
+
+      case display_type
+      when PICTURE_TYPE_TEXT
+        current_scene&.show_string_picture(number, content, x, y, opacity, zoom, angle, anchor, blend)
+      when PICTURE_TYPE_FILE, PICTURE_TYPE_FILE_VARIABLE
+        if content.start_with?("<")
+          unimplemented("Picture(150) special file directive #{content.inspect}")
+          return
+        end
+        current_scene&.show_file_picture(number, content, div_w, div_h, pattern, x, y, opacity, zoom, angle, anchor, blend)
+      when PICTURE_TYPE_WINDOW_FILE, PICTURE_TYPE_WINDOW_VARIABLE
+        shape = parse_shape_tag(content)
+        unless shape
+          unimplemented("Picture(150) window picture #{content.inspect} (only <SQUARE>/<GRADX-.../<GRADY-.../<LINE> shapes render so far)")
+          return
+        end
+        current_scene&.show_shape_picture(number, shape, div_w, div_h, x, y, opacity, zoom, blend)
+      else
+        unimplemented("Picture(150) display type #{display_type}")
+      end
+    end
+
+    def parse_shape_tag(str)
+      if (m = SHAPE_SQUARE.match(str))
+        return { kind: :square, frame: !m[1].nil? }
+      end
+      if (m = SHAPE_GRADIENT.match(str))
+        return {
+          kind: :gradient,
+          axis: m[1] == "X" ? :x : :y,
+          color1: shape_color(m[2], m[3], m[4]),
+          color2: shape_color(m[5], m[6], m[7]),
+        }
+      end
+      if (m = SHAPE_LINE.match(str))
+        return { kind: :line, thickness: m[1] ? m[1].to_i : 1 }
+      end
+      nil
+    end
+
+    # Each digit is a 0-9 intensity level for one RGB channel (the
+    # manual's own examples: "000" black, "999" white, "090" green),
+    # scaled to the usual 0-255 range.
+    def shape_color(r, g, b)
+      [r, g, b].map { |d| (d.to_i * 255 / 9.0).round }
     end
 
     # CommonEvent(210) / CommonEventReserve(211): args = [event_id,

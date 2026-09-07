@@ -518,14 +518,20 @@ end
 # Records calls instead of touching RGSS (unavailable under this CRuby test
 # harness) -- exactly the seam Wolf::Interpreter#current_scene exists for.
 class WolfTestFakeScene
-  attr_reader :shown, :erased
+  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased
 
   def initialize
     @shown = []
+    @shown_files = []
+    @shown_shapes = []
+    @moved = []
     @erased = []
   end
 
   def show_string_picture(*args); @shown << args; end
+  def show_file_picture(*args); @shown_files << args; end
+  def show_shape_picture(*args); @shown_shapes << args; end
+  def move_picture(*args); @moved << args; end
   def erase_picture(number); @erased << number; end
 end
 
@@ -586,7 +592,7 @@ assert "Wolf::Interpreter#exec_picture leaves zoom/blend alone on their \"same a
   assert_nil blend
 end
 
-assert "Wolf::Interpreter#exec_picture no-ops for the range/free-transform variants and non-text display types" do
+assert "Wolf::Interpreter#exec_picture no-ops for the range/free-transform variants and an unrecognised argument count" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
   scene = WolfTestFakeScene.new
@@ -595,10 +601,136 @@ assert "Wolf::Interpreter#exec_picture no-ops for the range/free-transform varia
   range_options = wolf_test_picture_options(operation: 0, display_type: 2, range: 1)
   interp.exec_picture(wolf_test_cmd(150, [range_options, 1], ["hi"]))
 
-  file_options = wolf_test_picture_options(operation: 0, display_type: 0)
-  interp.exec_picture(wolf_test_cmd(150, [file_options, 2, 0, 0, 0, 0, 255, 0, 0, 100, 0], ["file.png"]))
+  # A real 13-argument Move (this reader has not reverse-engineered what
+  # the extra argument means for a non-"Normal" zoom mode) must not be
+  # guessed at, even though its argument count is close to the confirmed
+  # 11/12-argument "Base" shapes.
+  odd_argc_options = wolf_test_picture_options(operation: 1, display_type: 0, zoom_mode: 4)
+  interp.exec_picture(wolf_test_cmd(150, [odd_argc_options, 1, 4, 0, 0, -1_000_000, 255, 1, 1, -1_000_000, -1_000_000, 0, 16_777_216]))
 
   assert_equal 0, scene.shown.size
+  assert_equal 0, scene.shown_files.size
+  assert_equal 0, scene.moved.size
+end
+
+assert "Wolf::Interpreter#exec_picture shows a real file picture, cropping to one sprite-sheet cell" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 0, display_type: 0, anchor: 2)
+  # div_w=6, div_h=4 (a character sheet), pattern=10, at (20, 20), 300% zoom.
+  cmd = wolf_test_cmd(150, [options, 1, 0, 6, 4, 10, 255, 20, 20, 300, 0], ["CharaChip/Special_Tiga.png"])
+  interp.exec_picture(cmd)
+
+  assert_equal 1, scene.shown_files.size
+  number, path, div_w, div_h, pattern, x, y, opacity, zoom, angle, anchor, blend = scene.shown_files.first
+  assert_equal 1, number
+  assert_equal "CharaChip/Special_Tiga.png", path
+  assert_equal 6, div_w
+  assert_equal 4, div_h
+  assert_equal 10, pattern
+  assert_equal 20, x
+  assert_equal 20, y
+  assert_equal 255, opacity
+  assert_equal 3.0, zoom
+  assert_equal 0, angle
+  assert_equal 2, anchor
+  assert_equal 0, blend
+end
+
+assert "Wolf::Interpreter#exec_picture skips a file picture whose content is a special directive" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 0, display_type: 0)
+  cmd = wolf_test_cmd(150, [options, 1, 0, 1, 1, 1, 255, 0, 0, 100, 0], ["<SCREENSHOT>"])
+  interp.exec_picture(cmd)
+
+  assert_equal 0, scene.shown_files.size
+end
+
+assert "Wolf::Interpreter#parse_shape_tag decodes <SQUARE>, <GRADX/Y-...> and <LINE> per the manual" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+  assert_equal({ kind: :square, frame: false }, interp.parse_shape_tag("<SQUARE>"))
+  assert_equal({ kind: :square, frame: true }, interp.parse_shape_tag("<SQUARE>FRAME"))
+  assert_equal({ kind: :line, thickness: 1 }, interp.parse_shape_tag("<LINE>"))
+  assert_equal({ kind: :line, thickness: 11 }, interp.parse_shape_tag("<LINE-11>"))
+
+  grad = interp.parse_shape_tag("<GRADX-000-999>")
+  assert_equal :gradient, grad[:kind]
+  assert_equal :x, grad[:axis]
+  assert_equal [0, 0, 0], grad[:color1]
+  assert_equal [255, 255, 255], grad[:color2]
+
+  # The manual's own "090" example: green at full (digit 9) intensity.
+  green = interp.parse_shape_tag("<GRADY-090-000>")
+  assert_equal :y, green[:axis]
+  assert_equal [0, 255, 0], green[:color1]
+
+  assert_nil interp.parse_shape_tag("<CIRCLE>")
+  assert_nil interp.parse_shape_tag("SystemFile/WindowBase.png")
+end
+
+assert "Wolf::Interpreter#exec_picture draws a <SQUARE> window picture as a shape, not a file" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 0, display_type: 3)
+  cmd = wolf_test_cmd(150, [options, 3, 10, 30, 7, 1, 255, 5, 6, 100, 0], ["<GRADY-779-111>"])
+  interp.exec_picture(cmd)
+
+  assert_equal 0, scene.shown_files.size
+  assert_equal 1, scene.shown_shapes.size
+  number, shape, width, height, x, y, opacity, zoom, blend = scene.shown_shapes.first
+  assert_equal 3, number
+  assert_equal :gradient, shape[:kind]
+  assert_equal 30, width
+  assert_equal 7, height
+  assert_equal 5, x
+  assert_equal 6, y
+  assert_equal 255, opacity
+end
+
+assert "Wolf::Interpreter#exec_picture skips a window picture whose content is not a recognised shape" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_picture_options(operation: 0, display_type: 3)
+  cmd = wolf_test_cmd(150, [options, 3, 10, 1, 1, 1, 255, 0, 0, 100, 0], ["SystemFile/WindowBase.png"])
+  interp.exec_picture(cmd)
+
+  assert_equal 0, scene.shown_shapes.size
+end
+
+assert "Wolf::Interpreter#exec_picture Move only updates transform, never re-showing content" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  move_options = wolf_test_picture_options(operation: 1, display_type: 0)
+  cmd = wolf_test_cmd(150, [move_options, 9, 10, 0, 0, 1, 255, 50, 60, 150, 45])
+  interp.exec_picture(cmd)
+
+  assert_equal 0, scene.shown_files.size
+  assert_equal 1, scene.moved.size
+  number, x, y, opacity, zoom, angle, blend = scene.moved.first
+  assert_equal 9, number
+  assert_equal 50, x
+  assert_equal 60, y
+  assert_equal 255, opacity
+  assert_equal 1.5, zoom
+  assert_equal 45, angle
 end
 
 assert "Wolf::Interpreter#exec_picture tolerates a nil #current_scene" do
