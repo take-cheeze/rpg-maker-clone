@@ -36159,18 +36159,58 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `#update_tone` (mirroring the existing per-frame character-movement
   tick pattern), with WOLF's own [0,200]/100-neutral scale mapped onto
   RGSS `Tone`'s own signed -255..255 delta-from-neutral channel. See
-  `docs/adr/0079-wolf-rpg-editor-change-color.md`. Suggested next order
-  (by real frequency, from the same census): save/load (220-222, 13
-  occurrences combined, though 220's own `Base`/Save operation needs a
-  real save-file *format* serializing the whole game state, not just
-  command wiring -- a much larger undertaking than its own occurrence
-  count suggests), `BanInput`(126), `Teleport`(130), `Party`(270),
-  transitions (160-162, almost unused), `WaitForMove`(202), `Effect`
-  (290)'s own remaining surface (every other Picture effect kind, the
-  Character and Map targets, its own Flash/Shake/blink effects being a
-  natural fit for `#update_tone`'s own new per-frame-tick pattern), and
-  `Database`(250)'s own remaining surface (XY配列, the eight
-  name<->index lookups, data reset/insert/extract/copy/sort, CSV
+  `docs/adr/0079-wolf-rpg-editor-change-color.md`.
+- ⏭️ **BanInput(126) -- skipped, no independent cross-validation source.**
+  Next by real frequency (6 occurrences) at the time this was checked, but
+  the wolfrpg-map-parser crate does not model this command at all (no
+  `BanInput`/`ban_input` anywhere in its source), and only 2 distinct real
+  values appear across all 6 real calls (240, 496 -- both on the Basic
+  System's own still-unimplemented "pixel movement" toggle, `CE#39`/
+  `CE#126`), leaving nothing to cross-check a hypothesized bit layout
+  against beyond guessing from those 2 integers alone -- a much shakier
+  foundation than every other command implemented so far, all of which had
+  at least one independent source's own struct to confirm against. Left
+  unimplemented; revisit if a future source (a newer crate version, a
+  from-scratch WolfTL reading) turns up.
+- ✅ **Teleport(130), the hero-target case (2026-09-07).** help/
+  04ev_movepos.html's own "場所移動": moves the hero (or another
+  event/party member) to a new map/position. Its own `target` field
+  reuses `SetMoveRoute`/`SetVariableEx`'s already cross-confirmed
+  convention (`-1` this event, `-2` hero, `-3..-7` party, `>=0` an event
+  id) -- the crate's own `Target` enum mislabels the `-1` sentinel "Hero,"
+  contradicted by the manual and this reader's own prior confirmation of
+  the same convention elsewhere, so the manual was trusted. All 5 real
+  calls use `-1` (an event relocating *itself*, not the hero) -- this
+  reader has no persistent per-map event state across a map change at
+  all, so only `target == -2` (the hero) is implemented, covering none of
+  this sample game's own real calls but the semantic most real WOLF games
+  use this command for. Required new architecture: `Wolf::Interpreter`
+  gained `#pending_teleport`, consumed once per frame by a new
+  `WolfRPG#main_loop`/`#teleport_to`/`#load_scene` (shared with
+  `#build_start_scene`) that rebuilds the entire running `MapScene`,
+  disposing the old one's native sprites/bitmaps/viewports (a new
+  `MapScene#dispose`) only once the new one has actually loaded. See
+  `docs/adr/0080-wolf-rpg-editor-teleport.md` -- including why the actual
+  native scene-rebuild path itself could not be exercised by real data
+  this pass (reviewed by hand instead).
+- Suggested next order (by real frequency, from the same census):
+  save/load (220-222, 13 occurrences combined, though 220's own `Base`/
+  Save operation needs a real save-file *format* serializing the whole
+  game state, not just command wiring -- a much larger undertaking than
+  its own occurrence count suggests), `Party`(270) (needs a party system
+  this reader does not have at all -- the crate's own
+  `party_graphics_command` covers party member *graphics*, which implies
+  multiple visible party sprites following the hero, unbuilt), transitions
+  (160-162, almost unused), `WaitForMove`(202, 1 occurrence -- pairs with
+  `SetMoveRoute`(201)'s own "→完了までウェイト" wait-for-move-to-finish
+  bit), `Effect`(290)'s own remaining surface (every other Picture effect
+  kind, the Character and Map targets, its own Flash/Shake/blink effects
+  being a natural fit for `ChangeColor`'s own new `#update_tone`
+  per-frame-tick pattern), `Teleport`(130)'s own remaining surface
+  (persistent per-map event state, needed for both its own `-1`/`-3..-7`
+  targets and for switches/variables/moved events to survive a revisited
+  map at all), and `Database`(250)'s own remaining surface (XY配列, the
+  eight name<->index lookups, data reset/insert/extract/copy/sort, CSV
   import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)

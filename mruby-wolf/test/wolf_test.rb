@@ -1829,3 +1829,40 @@ assert "Wolf::Interpreter#exec_change_color tolerates a nil #current_scene and s
   interp.exec_change_color(wolf_test_cmd(151, [packed, 10]))
   interp.exec_change_color(wolf_test_cmd(151, [packed]))
 end
+
+# ---- Wolf::Interpreter#exec_teleport (Teleport(130)) -------------------------
+
+assert "Wolf::Interpreter#exec_teleport records a pending teleport for the hero target" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_teleport(wolf_test_cmd(130, [-2, 15, 21, 1, 32]))
+  assert_equal [1, 15, 21], interp.pending_teleport
+end
+
+assert "Wolf::Interpreter#exec_teleport reads a real variable-held map/x/y" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 7)
+  store.set_number(2_000_001, 27)
+  store.set_number(2_000_002, 3)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_teleport(wolf_test_cmd(130, [-2, 2_000_000, 2_000_001, 2_000_002, 16]))
+  assert_equal [3, 7, 27], interp.pending_teleport
+end
+
+assert "Wolf::Interpreter#exec_teleport skips a target/precise-coordinates/argument-count it does not understand" do
+  # Real sample-game data uses target -1 ("this event") exclusively --
+  # relocating a non-hero event across maps, which this reader cannot
+  # support (see #exec_teleport's own comment) -- so this is the actual
+  # real-data shape, not a synthetic edge case.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+  interp.exec_teleport(wolf_test_cmd(130, [-1, 7, 27, 3, 32]))
+  assert_nil interp.pending_teleport
+
+  interp.exec_teleport(wolf_test_cmd(130, [-2, 7, 27, 3, 33])) # precise coordinates bit set
+  assert_nil interp.pending_teleport
+
+  interp.exec_teleport(wolf_test_cmd(130, [-2, 7, 27, 3]))
+  assert_nil interp.pending_teleport
+end

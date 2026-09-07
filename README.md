@@ -697,6 +697,11 @@
   frames via native RGSS `Viewport#tone`, or a one-shot overlay via
   `Viewport#flash` when its own "flash" flag is set. See
   [`docs/adr/0079-wolf-rpg-editor-change-color.md`](docs/adr/0079-wolf-rpg-editor-change-color.md)
+- **Teleport.** `Teleport`(130) moves the hero to a new map/position,
+  rebuilding the entire running map scene. Moving another event (or a
+  party member) instead of the hero remains unimplemented — it needs
+  persistent per-map event state this reader does not have at all. See
+  [`docs/adr/0080-wolf-rpg-editor-teleport.md`](docs/adr/0080-wolf-rpg-editor-teleport.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

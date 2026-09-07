@@ -84,6 +84,10 @@ class WolfRPG
   # way it drives every other maker.
   def main_loop
     @interpreter.update
+    if (req = @interpreter.pending_teleport)
+      @interpreter.pending_teleport = nil
+      teleport_to(*req)
+    end
     @scene.update if @scene
     RGSS::Input.update
     RGSS::Graphics.update
@@ -99,13 +103,31 @@ class WolfRPG
       return
     end
     map_id, x, y = pos
+    $stderr.puts "[Wolf-MAP] map=#{map_id} x=#{x} y=#{y}" if load_scene(map_id, x, y)
+  end
+
+  # Teleport(130)'s own hero-target case (Wolf::Interpreter#pending_teleport's
+  # own comment): replaces the running scene with a freshly-built one for
+  # `map_id`, disposing the *old* scene's own native sprites/bitmaps/
+  # viewports only once the new one has actually loaded (mirrors mruby-
+  # rpgxp's own established #dispose-before-replace pattern for its
+  # weather/animation sprites) -- never disposing @scene itself, since a
+  # failed #load_scene leaves it as the still-active running scene.
+  def teleport_to(map_id, x, y)
+    old_scene = @scene
+    return unless load_scene(map_id, x, y)
+    old_scene&.dispose
+  end
+
+  def load_scene(map_id, x, y)
     map = @project.map(map_id)
     @interpreter.current_map = map
     @scene = MapScene.new(@project, map, @tile, x, y, @interpreter)
     @interpreter.current_scene = @scene
-    $stderr.puts "[Wolf-MAP] map=#{map_id} x=#{x} y=#{y}"
+    true
   rescue Wolf::Error => e
-    $stderr.puts "[Wolf] failed to open the start map: #{e.class}: #{e.message}"
+    $stderr.puts "[Wolf] failed to open map #{map_id}: #{e.class}: #{e.message}"
+    false
   end
 
   # A minimal walkable view of one map: tile layers as colour blocks (see the
@@ -383,6 +405,22 @@ class WolfRPG
     def erase_picture(number)
       entry = @pictures.delete(number)
       entry[:sprite].dispose if entry
+    end
+
+    # Releases every native sprite/bitmap/viewport this scene owns --
+    # called by `WolfRPG#teleport_to` (Teleport(130)'s own hero-target
+    # case) before dropping this scene for a freshly-built one on the
+    # destination map, so a teleport does not leak native graphics
+    # resources.
+    def dispose
+      @event_sprites.each_value(&:dispose)
+      @pictures.each_value { |entry| entry[:sprite].dispose }
+      @hero_sprite.dispose
+      @hero_bitmap.dispose
+      @map_sprite.dispose
+      @map_bitmap.dispose
+      @viewport.dispose
+      @picture_viewport.dispose
     end
 
     # Effect(290)'s own Picture-target "描画座標シフト[最終値]"
