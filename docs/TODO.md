@@ -35950,9 +35950,34 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   boots and runs the sample game's title-screen Custom-move events and its
   one real `SetMoveRoute` call (targeting the hero, carrying exactly one
   of the unconfirmed ids) with no crash. See
-  `docs/adr/0069-wolf-rpg-editor-event-movement.md`. Suggested next order:
-  choices/102, input commands 123-126, save/load 220-222, database
-  read/write 250/251, sound 140, transitions 160-162/281/290.
+  `docs/adr/0069-wolf-rpg-editor-event-movement.md`.
+- ✅ **Choices(102) (2026-09-07).** A real, blocking input primitive now --
+  waits (yielding once a frame, exactly like `Wait`) on real player input
+  via a new `WolfRPG::MapScene#choice_input` (up/down move the cursor,
+  confirm picks, cancel per the documented "cancel behaviour": a dedicated
+  branch, disabled, or "act as choice N") -- then dispatches to the
+  matching `ChoiceCase`/`CancelCase` marker, reusing `VariableCondition`
+  (111)'s own branch-walking logic (pulled out into a shared
+  `#select_branch`, matching cases by *encounter order* rather than their
+  own numeric argument, which real command dumps show does not track
+  selection index at all). Cross-confirmed against the wolfrpg-map-parser
+  crate's own `Options`/`CancelCase` structs and, since the crate's own
+  overall command shape does not match this reader's flat, marker-based
+  framing, against real `Choices` commands from the sample game's own map
+  events (all 15 of them; none in a Common Event) by hand-walking what
+  actually follows each one. A left/right-key or forced-interrupt variant
+  (no real example to check the crate's own bitmask against -- every real
+  `Choices` command carries it unset) is logged and the whole command
+  skipped rather than guessed; still no native choice window is drawn,
+  matching `Message`(101)'s own existing "stderr line" scope. Fixed a real
+  soak-check symptom as a side effect: the shop event's own "suspected
+  infinite loop" note (a retry loop that, before this, had nothing to ever
+  yield on) is gone. Confirmed against the real binary: boots the sample
+  game to its own title screen and correctly blocks on its real
+  Start/Continue/Exit choice. See
+  `docs/adr/0070-wolf-rpg-editor-choices.md`. Suggested next order: input
+  commands 123-126, save/load 220-222, database read/write 250/251, sound
+  140, transitions 160-162/281/290.
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
