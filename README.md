@@ -603,19 +603,28 @@
   (a condition-enabled-bit heuristic, a trigger that froze after its
   first `Wait`, and a soak-check safety net that missed a loop stuck
   inside one frame)
-- **Pictures show and erase** — `Picture`(150), the single command the
-  RPG Basic System uses to draw everything visible (message windows,
+- **Pictures show, move and erase** — `Picture`(150), the single command
+  the RPG Basic System uses to draw everything visible (message windows,
   choices, its whole menu), since WOLF RPG Editor has no native widget
   for any of that. The mode bitmask (show/move/erase, five display
-  kinds, blend, anchor, zoom mode) is fully decoded; rendering itself
-  works for "string as picture" text pictures — real position, opacity,
-  zoom, angle and blend via one `RGSS::Sprite` per picture number — with
-  file- and window-based pictures (what the sample game's own message
-  window actually uses) still explicit no-ops pending its own
-  Picture-folder convention and 9-slice window stretching. See
-  [`docs/adr/0067-wolf-rpg-editor-picture-command.md`](docs/adr/0067-wolf-rpg-editor-picture-command.md)
+  kinds, blend, anchor, zoom mode) is fully decoded. Rendering works for
+  "string as picture" text pictures, real **file** pictures (every real
+  filename already carries its own `Data/`-relative subfolder, e.g.
+  `"SystemFile/TitleGraphic.png"`, so no separate convention was needed
+  — with sprite-sheet division/pattern cropping for animated character
+  graphics), and the manual's own documented "hidden feature" procedural
+  shapes (`<SQUARE>`, `<GRADX-.../<GRADY-...>` gradients, `<LINE>`) a
+  window-type picture's string can name instead of a real file —
+  confirmed to be exactly what the sample game's own entirely
+  custom-drawn menus use for their boxes/gradients/dividers. A real
+  window-skin file is still an explicit no-op pending 9-slice stretching.
+  See
+  [`docs/adr/0067-wolf-rpg-editor-picture-command.md`](docs/adr/0067-wolf-rpg-editor-picture-command.md)/[`0068`](docs/adr/0068-wolf-rpg-editor-picture-files-and-shapes.md)
   for why this command's own argument layout — unlike everything
-  implemented before it — rests on a single independent source
+  implemented before it — rests on a single independent source, and the
+  real Move call this reader found whose different mode bits meant a
+  different, unconfirmed argument count (now an explicit no-op rather
+  than a guess, the same as every other unconfirmed shape)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
