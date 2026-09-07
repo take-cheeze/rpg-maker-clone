@@ -37,6 +37,38 @@ pio run -e wio            # compile the bring-up firmware
 pio run -e wio -t upload  # flash a connected Wio Terminal
 ```
 
+## The other environment: `wio_walk`, a map you can walk today
+
+`pio run -e wio_walk` builds something different in kind: the **minimal,
+non-mruby map-walking engine** written for the iPod nano 7th generation
+(`docs/adr/0061`), on this board's LCD, SD card and 5-way switch. The engine
+itself is shared source — `app/shared/rpg2k_walk/rpg2k_walk_core.c`, the same
+C the nano app runs (`docs/adr/0091`) — and `app/wio/src/walk_main.cxx` is
+only the board wiring. It links **neither LVGL nor mruby**.
+
+It can run now, with none of the P2/P3 work above, because the interpreter's
+work already happened on the host: `scripts/export_nano7_map.rb` does the LCF
+parsing, autotile assembly, chipset compositing and passability resolution
+under plain CRuby and writes two flat files.
+
+```sh
+ruby scripts/export_nano7_map.rb --target wio \
+  data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/rpg2k_walk_out
+# copy map.bin and tiles.bin into /RPG2kWalk/ on the microSD card
+pio run -e wio_walk -t upload
+```
+
+`--target wio` sizes the export for this board's buffers (64x64 tiles, 160
+atlas entries — about 100 KB of its 192 KB SRAM) and refuses a map that would
+not fit rather than writing one the firmware cannot load. Hold a direction on
+the 5-way switch to walk; collision is the map's real passability data.
+
+**Scope, and status.** It walks one static map: no events, no battle, no
+menus, no interpreter — see the ADRs before expecting a game. CI compiles it
+(the `wio` job builds both environments) and the shared core has its own host
+test (the `walk_core` ctest), but nobody has run it on a board yet — treat it
+as untried on real hardware, exactly like the `wio` firmware above.
+
 ## Not yet wired (later slices)
 
 The pieces below are scaffolded/checked in but **not** part of the bring-up

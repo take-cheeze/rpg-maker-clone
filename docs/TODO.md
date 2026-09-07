@@ -36430,9 +36430,54 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   surface (XY配列, the eight name<->index lookups, data
   reset/insert/extract/copy/sort, CSV import/export via
   `ImportDatabase`(251) -- 0 real calls of its own in this sample game).
-  Worth re-scanning any other shared "log and skip" fallback bucket's own
-  individual members too, the same way BreakEvent's own real frequency
-  was hiding in one, before concluding nothing well-scoped remains.
+- Re-checked once more after BreakEvent(172), following through on this
+  session's own "re-scan every shared fallback bucket" note above (a
+  fresh `Wolf::Interpreter#dispatch` top-level case-arm audit against the
+  full census, plus a fresh `wolf_interpreter_check.rb` real-gap scan) --
+  this time nothing comparably well-scoped turned up, so it is written
+  down explicitly rather than forcing a marginal or under-validated
+  change:
+  - Every real command code in the census (`0`/`99`/`101-103`/`106-107`/
+    `111-112`/`121-124`/`126`/`130`/`140`/`150-151`/`160`/`170-172`/
+    `174-176`/`179-180`/`201-202`/`210-213`/`220-222`/`250`/`270`/`280`/
+    `290`/`300`/`401`/`420-421`/`498-499`) already has a `dispatch` case
+    arm; the only entirely-undispatched real code is `MapEffect`(280),
+    already logged above at 0-1 real occurrences.
+  - The remaining `move route command`(N) gaps (`21`/`29`/`47`, 2/1/8 real
+    calls) are the same "no independent structural source" shape
+    `BanInput`(126) is in -- neither the crate nor WolfTL's own
+    `Command.hpp` models individual move-route sub-command ids at all
+    (only a name, no numeric id, in the manual's own `04ev_movesettingB
+    .html` prose), so guessing their ids from list *position* alone
+    (the way this reader's own already-implemented 16-27 run consecutively)
+    would rest on the same weaker "never independently confirmed" basis
+    `SetTransition`(160) was already deprioritized under.
+  - A map-event page's own repeating "カスタム" move route (`page.route_
+    options & 0x01`, `#apply_initial_move_route`'s own unimplemented gate)
+    is real (3 of 3 real custom-route pages in this sample game set it)
+    but is not a marker-command-shaped fix like BreakEvent was: today's
+    `#run_route_commands` applies a route once, to completion, so
+    "repeat forever" needs the page's own ambient-move tick
+    (`#tick_ambient_move`'s own sibling in `#advance_map_event`) to
+    re-trigger the whole route from its start indefinitely -- a real
+    runtime-shape change, not a one-line fix, for 3 real occurrences.
+  - `SetVariableEx(124) character target -2`/`SetMoveRoute(201) target
+    -2` (the hero) are *not* real reader gaps at all: `#resolve_character_
+    pos`'s own `ROUTE_TARGET_HERO` branch already requires a real
+    `current_scene`, which `scripts/wolf_interpreter_check.rb`'s own soak
+    harness does not construct -- confirmed by reading
+    `#resolve_character_pos` directly, not by re-guessing from the log
+    line alone.
+  - `Database`(250)'s own "not found" gaps (`user db type 18`/
+    `changeable db type 20`) are confirmed genuine out-of-range game data,
+    not a reader bug: this sample game's own user/changeable DB really
+    have exactly 18/20 types (indices 0-17/0-19), checked directly against
+    `project.user_db`/`project.changeable_db`'s own sizes.
+  Worth re-scanning again once the sample game's own data changes, a new
+  independent source (an updated crate/WolfTL release) appears, or this
+  reader gains a capability (a real `Viewport` zoom, a party system, real
+  input-restriction plumbing) that unblocks one of the foundational gaps
+  above.
 - ✅ **Real ChipSet-image tile rendering (2026-09-07).** `WolfRPG::MapScene`
   now draws every map tile from the tileset's own real ChipSet PNG instead
   of the colour-block fallback: plain base chips read straight off the
