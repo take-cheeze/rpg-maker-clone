@@ -36141,17 +36141,37 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   unit-variant model (no fields); its own lone real argument (0 or 1) is
   the manual's documented "特モード" second bookmark category, itself
   still editor-side only. Treated as a no-op alongside `Blank`(0). See
-  `docs/adr/0078-wolf-rpg-editor-checkpoint.md`. Suggested next order (by
-  real frequency, from the same census): save/load (220-222, 13
+  `docs/adr/0078-wolf-rpg-editor-checkpoint.md`.
+- ✅ **ChangeColor(151) (2026-09-07).** Next by real frequency after
+  `Checkpoint`(99) (10 occurrences, all on map-event pages, none in
+  Common Events). help/04ev_effect.html's own "色調変更" section (part
+  of the same manual page as `Effect`(290), its own separate WOLF command
+  code): screen-wide RGB, *absolute* this time (0 darkest, 100 neutral,
+  200 brightest, unlike `Effect`(290)'s own additive Picture deltas), a
+  `flash` checkbox switching between a persistent tone change and a
+  one-shot timed overlay. Real duration is never 0, confirming this is a
+  genuine animated transition, not an instant set -- the first "N-frame
+  screen animation" this reader implements, with no prior precedent in
+  this codebase for any engine to mirror. `flash` maps straight to native
+  RGSS `Viewport#flash` (its own timed decay needs no extra state);
+  the persistent case linearly interpolates `Viewport#tone` toward the
+  target over `duration` frames, ticked once per frame by a new
+  `#update_tone` (mirroring the existing per-frame character-movement
+  tick pattern), with WOLF's own [0,200]/100-neutral scale mapped onto
+  RGSS `Tone`'s own signed -255..255 delta-from-neutral channel. See
+  `docs/adr/0079-wolf-rpg-editor-change-color.md`. Suggested next order
+  (by real frequency, from the same census): save/load (220-222, 13
   occurrences combined, though 220's own `Base`/Save operation needs a
   real save-file *format* serializing the whole game state, not just
   command wiring -- a much larger undertaking than its own occurrence
-  count suggests), `ChangeColor`(151), `BanInput`(126), `Teleport`(130),
-  `Party`(270), transitions (160-162, almost unused), `WaitForMove`(202),
-  `Effect`(290)'s own remaining surface (every other Picture effect kind,
-  the Character and Map targets), and `Database`(250)'s own remaining
-  surface (XY配列, the eight name<->index lookups, data reset/insert/
-  extract/copy/sort, CSV import/export via `ImportDatabase`(251)).
+  count suggests), `BanInput`(126), `Teleport`(130), `Party`(270),
+  transitions (160-162, almost unused), `WaitForMove`(202), `Effect`
+  (290)'s own remaining surface (every other Picture effect kind, the
+  Character and Map targets, its own Flash/Shake/blink effects being a
+  natural fit for `#update_tone`'s own new per-frame-tick pattern), and
+  `Database`(250)'s own remaining surface (XY配列, the eight
+  name<->index lookups, data reset/insert/extract/copy/sort, CSV
+  import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

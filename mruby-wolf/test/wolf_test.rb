@@ -669,7 +669,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
-              :shifted, :tinted
+              :shifted, :tinted, :changed_colors
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -689,6 +689,7 @@ class WolfTestFakeScene
     @keys_down = []
     @shifted = []
     @tinted = []
+    @changed_colors = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -699,6 +700,8 @@ class WolfTestFakeScene
   # Wolf::Interpreter#exec_effect's own Picture-target seam.
   def shift_picture(number, dx, dy); @shifted << [number, dx, dy]; end
   def tint_picture(number, r, g, b); @tinted << [number, r, g, b]; end
+  # Wolf::Interpreter#exec_change_color's own seam.
+  def change_color(r, g, b, flash, duration); @changed_colors << [r, g, b, flash, duration]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
   # the sequence of key presses to hand back, one per call, `nil` (nothing
   # queued) standing in for a frame nothing was pressed.
@@ -1788,4 +1791,41 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
 
   assert_equal [], scene.shifted
   assert_equal [], scene.tinted
+end
+
+# ---- Wolf::Interpreter#exec_change_color (ChangeColor(151)) -----------------
+
+def wolf_test_change_color_packed(red:, green:, blue:, flash: false)
+  (red & 0xff) | ((green & 0xff) << 8) | ((blue & 0xff) << 16) | ((flash ? 1 : 0) << 24)
+end
+
+assert "Wolf::Interpreter#exec_change_color decodes red/green/blue/flash/duration, matching a real flash call" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  packed = wolf_test_change_color_packed(red: 150, green: 200, blue: 150, flash: true)
+  interp.exec_change_color(wolf_test_cmd(151, [packed, 20]))
+  assert_equal [[150, 200, 150, true, 20]], scene.changed_colors
+end
+
+assert "Wolf::Interpreter#exec_change_color reads a real variable-held duration" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 15)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  packed = wolf_test_change_color_packed(red: 30, green: 30, blue: 40)
+  interp.exec_change_color(wolf_test_cmd(151, [packed, 2_000_000]))
+  assert_equal [[30, 30, 40, false, 15]], scene.changed_colors
+end
+
+assert "Wolf::Interpreter#exec_change_color tolerates a nil #current_scene and skips a bad argument count" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  packed = wolf_test_change_color_packed(red: 100, green: 100, blue: 100)
+  interp.exec_change_color(wolf_test_cmd(151, [packed, 10]))
+  interp.exec_change_color(wolf_test_cmd(151, [packed]))
 end

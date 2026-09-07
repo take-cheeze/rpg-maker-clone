@@ -165,6 +165,9 @@ class WolfRPG
       @hero_sprite = RGSS::Sprite.new(@viewport)
       @hero_sprite.bitmap = @hero_bitmap
       @hero_sprite.z = 1
+      # ChangeColor(151)'s own in-flight animated tone transition (nil when
+      # none is active) -- see #change_color/#update_tone.
+      @tone_transition = nil
       update_camera
     end
 
@@ -181,6 +184,7 @@ class WolfRPG
         check_confirm
       end
       update_camera
+      update_tone
     end
 
     # The hero's own runtime position/facing, so Wolf::Interpreter can move
@@ -417,7 +421,68 @@ class WolfRPG
       entry[:sprite].color = fresh
     end
 
+    # ChangeColor(151) ("色調変更", help/04ev_effect.html): `flash` is a
+    # one-shot overlay using native RGSS `Viewport#flash` (its own timed
+    # decay needs no state kept here), scaling WOLF's own [0, 200] range
+    # onto `Color`'s own 0-255 channels (0 contributes nothing, 200 full
+    # intensity). Otherwise this starts (or redirects an already in-flight
+    # one, always from @viewport's own *current* tone -- the manual's own
+    # wording always describes the visible, current screen state, never a
+    # queue of pending changes) an animated transition of @viewport's own
+    # tone toward the new RGB, linear over `duration` frames, ticked once
+    # per frame by #update_tone; 0 (or fewer) frames snaps instantly.
+    def change_color(r, g, b, flash, duration)
+      if flash
+        scale = ->(v) { [[v * 255 / 200, 0].max, 255].min }
+        @viewport.flash(RGSS::Color.new(scale.call(r), scale.call(g), scale.call(b), 255), duration)
+        @tone_transition = nil
+        return
+      end
+
+      target = RGSS::Tone.new(wolf_tone_component(r), wolf_tone_component(g), wolf_tone_component(b), 0)
+      if duration <= 0
+        @viewport.tone = target
+        @tone_transition = nil
+        return
+      end
+
+      current = @viewport.tone
+      @tone_transition = {
+        start_red: current.red, start_green: current.green, start_blue: current.blue,
+        target: target, total: duration, remaining: duration
+      }
+    end
+
     private
+
+    # WOLF's own ChangeColor scale (0 darkest, 100 normal, 200 brightest)
+    # onto RGSS Tone's own signed -255..255 delta-from-neutral channel,
+    # exact at both endpoints and the neutral midpoint.
+    def wolf_tone_component(v)
+      (v - 100) * 255 / 100
+    end
+
+    def update_tone
+      t = @tone_transition
+      return unless t
+      t[:remaining] -= 1
+      if t[:remaining] <= 0
+        @viewport.tone = t[:target]
+        @tone_transition = nil
+        return
+      end
+      progress = (t[:total] - t[:remaining]).to_f / t[:total]
+      @viewport.tone = RGSS::Tone.new(
+        wolf_lerp(t[:start_red], t[:target].red, progress),
+        wolf_lerp(t[:start_green], t[:target].green, progress),
+        wolf_lerp(t[:start_blue], t[:target].blue, progress),
+        0
+      )
+    end
+
+    def wolf_lerp(from, to, progress)
+      (from + (to - from) * progress).to_i
+    end
 
     # Positions `entry`'s sprite so that (x, y) is the point `anchor` names
     # on a `width`x`height` box (help/04ev_picture.html's own five

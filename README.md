@@ -692,6 +692,11 @@
 - **Checkpoint.** `Checkpoint`(99) — a pure event-editor bookmark with no
   runtime effect — is a no-op alongside `Blank`(0). See
   [`docs/adr/0078-wolf-rpg-editor-checkpoint.md`](docs/adr/0078-wolf-rpg-editor-checkpoint.md)
+- **Screen tone/flash.** `ChangeColor`(151) tints the whole screen (an
+  absolute 0-200 RGB scale, 100 neutral) — animated over a real number of
+  frames via native RGSS `Viewport#tone`, or a one-shot overlay via
+  `Viewport#flash` when its own "flash" flag is set. See
+  [`docs/adr/0079-wolf-rpg-editor-change-color.md`](docs/adr/0079-wolf-rpg-editor-change-color.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
