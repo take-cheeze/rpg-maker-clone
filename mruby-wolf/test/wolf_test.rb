@@ -686,7 +686,8 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
-              :shifted, :tinted, :changed_colors, :flickered, :flashed, :shaken
+              :shifted, :tinted, :changed_colors, :flickered, :flashed, :shaken, :character_flashed,
+              :character_shaken
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -710,6 +711,8 @@ class WolfTestFakeScene
     @flickered = []
     @flashed = []
     @shaken = []
+    @character_flashed = []
+    @character_shaken = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -723,6 +726,10 @@ class WolfTestFakeScene
   def set_picture_flicker(number, interval, r, g, b); @flickered << [number, interval, r, g, b]; end
   def flash_picture(number, r, g, b, duration); @flashed << [number, r, g, b, duration]; end
   def set_picture_shake(number, interval, dx, dy, count); @shaken << [number, interval, dx, dy, count]; end
+  def flash_character(sprite_key, r, g, b, duration); @character_flashed << [sprite_key, r, g, b, duration]; end
+  def shake_character(sprite_key, interval, dx, dy, count)
+    @character_shaken << [sprite_key, interval, dx, dy, count]
+  end
   # Wolf::Interpreter#exec_change_color's own seam.
   def change_color(r, g, b, flash, duration); @changed_colors << [r, g, b, flash, duration]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
@@ -1798,8 +1805,16 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
   scene = WolfTestFakeScene.new
   interp.current_scene = scene
 
-  character_target = wolf_test_effect_options(target: 1, effect_type: 0)
-  interp.exec_effect(wolf_test_cmd(290, [character_target, 0, -2, -2, 0, 0, 0]))
+  map_target = wolf_test_effect_options(target: 2, effect_type: 0)
+  interp.exec_effect(wolf_test_cmd(290, [map_target, 0, 0, 0, 100, 0, 0])) # Map Zoom, not implemented
+
+  unconfirmed_character_type = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_CHARACTER,
+                                                          effect_type: 8) # pixel movement, no independent source
+  interp.exec_effect(wolf_test_cmd(290, [unconfirmed_character_type, 0, -2, 0, 0, 0, 0]))
+
+  unresolvable_character = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_CHARACTER,
+                                                      effect_type: Wolf::Interpreter::EFFECT_CHARACTER_FLASH)
+  interp.exec_effect(wolf_test_cmd(290, [unresolvable_character, 0, -3, 0, 100, 100, 100])) # party, no party system
 
   unknown_type = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE, effect_type: 4)
   interp.exec_effect(wolf_test_cmd(290, [unknown_type, 0, 1, 1, 0, 0, 0])) # Zoom, not implemented
@@ -1814,6 +1829,8 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
 
   assert_equal [], scene.shifted
   assert_equal [], scene.tinted
+  assert_equal [], scene.character_flashed
+  assert_equal [], scene.character_shaken
 end
 
 assert "Wolf::Interpreter#exec_effect's Flash reads the 'duration' field as the flash's own decay length, matching a real call" do
@@ -1876,6 +1893,45 @@ assert "Wolf::Interpreter#exec_effect's Shake applies across a real contiguous p
 
   interp.current_scene = nil
   interp.exec_effect(wolf_test_cmd(290, [options, 5, 1, 1, 3, -2, 4]))
+end
+
+assert "Wolf::Interpreter#exec_effect's Character Flash resolves \"this event\" the same way SetMoveRoute(201) does, matching the one real call's own shape" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  self_event = WolfTestEvent.new(9, 1, 1, [])
+  interp.current_map = WolfTestMap.new([self_event])
+  store.current_map_event_id = 9
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_CHARACTER,
+                                      effect_type: Wolf::Interpreter::EFFECT_CHARACTER_FLASH)
+  # The one real call's own shape: 40-frame flash, RGB +100/+100/+100, "this event".
+  interp.exec_effect(wolf_test_cmd(290, [options, 40, -1, 0, 100, 100, 100]))
+  assert_equal [[9, 100, 100, 100, 40]], scene.character_flashed
+end
+
+assert "Wolf::Interpreter#exec_effect's Character Shake resolves an explicit event id and the hero, and tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  other_event = WolfTestEvent.new(7, 5, 5, [])
+  interp.current_map = WolfTestMap.new([other_event])
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_CHARACTER,
+                                      effect_type: Wolf::Interpreter::EFFECT_CHARACTER_SHAKE)
+  # The one real call's own shape (1-frame interval, dx=2 dy=0, count=100,
+  # "this event") exercised on an explicit event id and the hero instead,
+  # the same target convention SetMoveRoute(201) shares.
+  interp.exec_effect(wolf_test_cmd(290, [options, 1, 7, 0, 2, 0, 100]))
+  assert_equal [[7, 1, 2, 0, 100]], scene.character_shaken
+
+  interp.exec_effect(wolf_test_cmd(290, [options, 1, -2, 0, 2, 0, 100]))
+  assert_equal [[7, 1, 2, 0, 100], [:hero, 1, 2, 0, 100]], scene.character_shaken
+
+  interp.current_scene = nil
+  interp.exec_effect(wolf_test_cmd(290, [options, 1, -2, 0, 2, 0, 100])) # must not raise
 end
 
 assert "Wolf::Interpreter#exec_effect's SwitchFlicker reads the 'duration' field as a toggle interval, matching a real active call" do
