@@ -78,6 +78,11 @@ module Wolf
     # for what is cross-confirmed and implemented versus not.
     C_SET_VARIABLE_EX = 124
     C_INPUT_KEY = 123
+    # "場所移動" (help/04ev_movepos.html; WolfTL's own "Teleport", the
+    # wolfrpg-map-parser crate's own `TransferCommand`/`transfer_command.rs`
+    # -- named differently but its own `target`/`destination_x`/
+    # `destination_y`/`destination_map`/`options` fields map directly onto
+    # this reader's `arg(N)` framing). See #exec_teleport's own comment.
     C_TELEPORT = 130
     C_SOUND = 140
     C_PICTURE = 150
@@ -276,8 +281,10 @@ module Wolf
           @interp.exec_effect(cmd)
         when Interpreter::C_CHANGE_COLOR
           @interp.exec_change_color(cmd)
+        when Interpreter::C_TELEPORT
+          @interp.exec_teleport(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
-             Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
+             Interpreter::C_CLEAR_DEBUG_TEXT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
              Interpreter::C_END_GAME
           @interp.unimplemented(cmd.code)
@@ -661,6 +668,16 @@ module Wolf
     # real scene (scripts/wolf_interpreter_check.rb's soak check), which
     # #exec_picture must tolerate.
     attr_accessor :current_scene
+
+    # Teleport(130)'s own request, consumed by `WolfRPG#main_loop` (not
+    # `WolfRPG::MapScene`, unlike every other rendering hook here) once
+    # this frame's own #update finishes: `[map_id, x, y]`, or nil. Set
+    # here rather than acted on immediately, since a teleport replaces the
+    # *entire* running scene (tileset, event sprites, viewport) -- something
+    # only the top-level game object that owns @scene's own lifetime can
+    # safely do, and not while other Common Events may still be mid-run
+    # this same frame.
+    attr_accessor :pending_teleport
 
     def unimplemented(what)
       var_store.warn_once("unimplemented-#{what}", "event command #{what} is not implemented yet; skipping")
@@ -1651,6 +1668,64 @@ module Wolf
       flash = ((packed >> 24) & 0xff) != 0
       duration = var_store.number(cmd.arg(1))
       current_scene&.change_color(red, green, blue, flash, duration)
+    end
+
+    # Teleport(130) ("場所移動", help/04ev_movepos.html): `target` (arg(0))
+    # reuses SetMoveRoute(201)/SetVariableEx(124)'s own convention (>=0 an
+    # event id, -1 this event/the calling event, -2 the hero, -3..-7 a
+    # party member) -- the wolfrpg-map-parser crate's own `Target` enum
+    # calls the -1 sentinel (0xffffffff as an unsigned u32) "Hero" instead
+    # of "this event," which contradicts the manual's own unambiguous
+    # documentation and this reader's own already-cross-confirmed reading
+    # of the identical convention elsewhere; the manual is trusted here.
+    # Real sample-game data (5 calls, all on map-event pages) uses -1
+    # exclusively -- an NPC/object event relocating *itself* to a new map,
+    # not the hero -- which this reader cannot support: an event's runtime
+    # position (`#event_position`) only exists for the *currently loaded*
+    # map's own event list, and this reader has no persistent per-map
+    # event state across a map change at all (every #project.map(id) call
+    # re-parses that map's file from scratch, with no memory of a prior
+    # visit) -- a foundational gap well beyond Teleport itself. Only
+    # target -2 (the hero) is implemented, covering none of the real
+    # calls in this specific sample game but the semantic most real WOLF
+    # games use this command for (a door/staircase moving the player).
+    #
+    # `x`/`y`/`destination_map` (the crate's own field names, matching
+    # arg(1)/arg(2)/arg(3) exactly) are plain tile coordinates; `options`
+    # (arg(4))'s low bit, the crate's own `precise_coordinates`, is 0 in
+    # every real call and left unimplemented (no confirmed half-tile
+    # conversion, unlike SetVariableEx's own documented PreciseX/Y
+    # formula). Its own transition kind (bits 4-7, the crate's own
+    # `Transition` -- none/no-fade/fade) is not modeled: like every other
+    # instant scene change this reader already makes (Picture(150)'s own
+    # Show/Move), a teleport snaps immediately regardless of which
+    # transition was configured.
+    #
+    # The actual map/scene swap cannot happen here -- see
+    # `#pending_teleport`'s own comment -- so this only resolves and
+    # records the request for `WolfRPG#main_loop` to act on once this
+    # frame's Common Events finish running.
+    TELEPORT_TARGET_HERO = -2
+
+    def exec_teleport(cmd)
+      unless cmd.args.size == 5
+        unimplemented("Teleport(130) with #{cmd.args.size} arguments")
+        return
+      end
+      target = var_store.number(cmd.arg(0))
+      unless target == TELEPORT_TARGET_HERO
+        unimplemented("Teleport(130) target #{target}")
+        return
+      end
+      options = cmd.arg(4)
+      if (options & 1) != 0
+        unimplemented("Teleport(130) precise coordinates")
+        return
+      end
+      x = var_store.number(cmd.arg(1))
+      y = var_store.number(cmd.arg(2))
+      map_id = var_store.number(cmd.arg(3))
+      self.pending_teleport = [map_id, x, y]
     end
 
     # Runs one RouteCommand list against `pos` (either a map event's own
