@@ -44,7 +44,13 @@
 #     of scope entirely; this is a walkable map, not a playable game.
 #
 # Usage:
-#   ruby scripts/export_nano7_map.rb GAME_DIR MAP_ID OUT_DIR [START_X START_Y]
+#   ruby scripts/export_nano7_map.rb [--target nano7|wio] \
+#        GAME_DIR MAP_ID OUT_DIR [START_X START_Y]
+#
+# --target picks the device the export has to fit (default nano7). Each
+# target's caps are the sizes of the static buffers that device's firmware
+# declares, so an export that does not fit is refused here rather than
+# failing to load on the device.
 #
 # GAME_DIR is an RPG2000/2003 project directory (containing RPG_RT.ldb/.lmt
 # and Map####.lmu files). MAP_ID is the numeric map id (e.g. 1 for
@@ -65,9 +71,9 @@
 #             in, and one alpha bit is all RPG Maker's colour key needs.
 #
 # Exits non-zero (with a clear message) if the map's dimensions or distinct
-# on-screen tile count exceed the on-device caps (MAP_MAX_W/H, MAX_TILES
-# below, mirrored in app/nano7/rpg2k_walk/rpg2k_walk.c) -- no silent
-# truncation.
+# composited tile count exceed the target's caps (TARGETS below, mirrored in
+# app/nano7/rpg2k_walk/rpg2k_walk.c and app/wio/src/walk_main.cxx) -- no
+# silent truncation.
 
 require 'stringio'
 
@@ -89,12 +95,16 @@ load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 
-# Mirrored in app/nano7/rpg2k_walk/rpg2k_walk.c's static array bounds. Sized
-# to keep the on-device .bss well under the ~512 KB BSS_VA..LINK_VA gap in
-# NanoApps' sdk/hb_app.mk -- see the size-budget comment in rpg2k_walk.c.
-MAP_MAX_W = 128
-MAP_MAX_H = 128
-MAX_TILES = 256
+# The devices that run this export, and the buffers each one can afford.
+# Mirrored in that target's firmware, where the same numbers size the static
+# arrays: app/nano7/rpg2k_walk/rpg2k_walk.c (kept well under the ~512 KB
+# BSS_VA..LINK_VA gap in NanoApps' sdk/hb_app.mk) and
+# app/wio/src/walk_main.cxx (192 KB of SRAM for everything, so smaller).
+TARGETS = {
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
+  'wio' => { max_w: 64, max_h: 64, max_tiles: 160 }
+}.freeze
+DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
@@ -113,11 +123,27 @@ DIR_BITS = { DIR_DOWN => 0x01, DIR_LEFT => 0x02, DIR_RIGHT => 0x04, DIR_UP => 0x
 
 def usage_abort(msg)
   warn msg
-  warn 'Usage: ruby scripts/export_nano7_map.rb GAME_DIR MAP_ID OUT_DIR [START_X START_Y]'
+  warn 'Usage: ruby scripts/export_nano7_map.rb [--target nano7|wio] ' \
+       'GAME_DIR MAP_ID OUT_DIR [START_X START_Y]'
   exit 1
 end
 
-game_dir, map_id_arg, out_dir, start_x_arg, start_y_arg = ARGV
+argv = ARGV.dup
+target_name = DEFAULT_TARGET
+until argv.empty?
+  case argv.first
+  when '--target' then argv.shift; target_name = argv.shift.to_s
+  when /\A--target=(.+)\z/ then target_name = Regexp.last_match(1); argv.shift
+  else break
+  end
+end
+target = TARGETS[target_name]
+usage_abort("unknown target #{target_name.inspect}; one of #{TARGETS.keys.join(', ')}") if target.nil?
+MAP_MAX_W = target[:max_w]
+MAP_MAX_H = target[:max_h]
+MAX_TILES = target[:max_tiles]
+
+game_dir, map_id_arg, out_dir, start_x_arg, start_y_arg = argv
 usage_abort('missing arguments') if game_dir.nil? || map_id_arg.nil? || out_dir.nil?
 usage_abort("no such game dir: #{game_dir}") unless Dir.exist?(game_dir)
 
@@ -131,7 +157,8 @@ lmu = LCF::MapUnit.new(File.open(map_path, 'rb'))
 width = lmu.width.to_i
 height = lmu.height.to_i
 if width <= 0 || height <= 0 || width > MAP_MAX_W || height > MAP_MAX_H
-  usage_abort("map #{width}x#{height} exceeds on-device bounds #{MAP_MAX_W}x#{MAP_MAX_H}")
+  usage_abort("map #{width}x#{height} exceeds on-device bounds #{MAP_MAX_W}x#{MAP_MAX_H} " \
+              "for target #{target_name}")
 end
 
 lower_layer = lmu.lower_layer.to_a
@@ -254,7 +281,7 @@ def atlas_slot_for(tile_id, bmp, atlas_index, atlas_by_pixels, atlas_pixels)
   key = pixels.pack('v*')
   slot = atlas_by_pixels[key]
   if slot.nil?
-    usage_abort("map uses #{atlas_pixels.size + 1} distinct tiles, exceeding on-device cap #{MAX_TILES}") if atlas_pixels.size >= MAX_TILES
+    usage_abort("map uses #{atlas_pixels.size + 1} distinct tiles, exceeding the on-device cap #{MAX_TILES}") if atlas_pixels.size >= MAX_TILES
     slot = atlas_pixels.size
     atlas_by_pixels[key] = slot
     atlas_pixels << pixels
@@ -306,6 +333,7 @@ end
 # The chipset path is part of the output line so scripts/export_nano7_map_check.rb
 # can read the very palette this export keyed on, and check no opaque atlas
 # pixel carries the colour key.
-puts "wrote #{out_dir}/map.bin (#{width}x#{height}, start #{start_x},#{start_y}) " \
+puts "wrote #{out_dir}/map.bin (target #{target_name}, #{width}x#{height}, " \
+     "start #{start_x},#{start_y}) " \
      "and #{out_dir}/tiles.bin (#{atlas_pixels.size} tiles, #{atlas_index.size} ids, " \
      "backdrop 0x%04x) from #{chipset_path}" % backdrop

@@ -1149,6 +1149,19 @@
   cut), the app composites a cell's two layers before blitting, and a map's
   parallax background is reduced to a single backdrop colour behind it — an
   island map's sea comes out as sea rather than as holes. See the ADR.
+- **The same engine also runs on the Wio Terminal.** The device-independent
+  half — the file format, the movement rule, the camera, the layer
+  compositing — is
+  [`app/shared/rpg2k_walk`](app/shared/rpg2k_walk), plain C with no I/O; each
+  device supplies only its own buffers, screen and buttons. `pio run -e
+  wio_walk` builds it for the Wio Terminal (LCD, microSD, 5-way switch, no
+  LVGL and no mruby), which is what lets that board run real RPG Maker map
+  data now rather than after the interpreter fits in its 192 KB of SRAM
+  ([`docs/adr/0007`](docs/adr/0007-wio-terminal-port.md) is still the plan for
+  that). Export with `--target wio` to size a map for it. The shared core is
+  covered by the `walk_core` ctest — neither device is reachable from CI, but
+  the engine half of both firmwares is plain host-testable C. See
+  [`docs/adr/0091-shared-minimal-walk-engine.md`](docs/adr/0091-shared-minimal-walk-engine.md).
 
 ### Reporting an error
 

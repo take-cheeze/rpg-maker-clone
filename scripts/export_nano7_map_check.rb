@@ -10,6 +10,10 @@
 #
 # Usage:
 #   ruby scripts/export_nano7_map_check.rb [GAME_DIR [MAP_ID ...]]
+#
+# Every sampled map is exported twice: once for the iPod nano 7G and once for
+# the Wio Terminal, whose smaller buffers (app/wio/src/walk_main.cxx) it must
+# either fit or be refused by, never silently exceed.
 # With no GAME_DIR, uses data/Nepheshel206beta/Nepheshel206Nbeta (see
 # scripts/download-nepheshel.bash). With no MAP_ID, checks a small sample of
 # maps spread across the project. Exits non-zero on any failure.
@@ -20,9 +24,14 @@ require 'open3'
 ROOT = File.expand_path('..', __dir__)
 EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 
-MAP_MAX_W = 128
-MAP_MAX_H = 128
-MAX_TILES = 256
+# Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
+TARGETS = {
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
+  'wio' => { max_w: 64, max_h: 64, max_tiles: 160 }
+}.freeze
+MAP_MAX_W = TARGETS['nano7'][:max_w]
+MAP_MAX_H = TARGETS['nano7'][:max_h]
+MAX_TILES = TARGETS['nano7'][:max_tiles]
 MAP_VERSION = 2
 UPPER_NONE = 0xFFFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
@@ -160,6 +169,36 @@ def check_export(game_dir, map_id)
   end
 end
 
+# The same export for the smaller device: a map that fits its buffers must
+# come out inside them, and one that does not must be refused with a message
+# naming the cap -- never truncated into something the firmware would load and
+# draw wrong.
+def check_wio_target(game_dir, map_id)
+  caps = TARGETS['wio']
+  Dir.mktmpdir('n7export') do |out_dir|
+    stdout, stderr, status =
+      Open3.capture3('ruby', EXPORTER, '--target', 'wio', game_dir, map_id.to_s, out_dir)
+    stdout = stdout.dup.force_encoding('UTF-8')
+    stderr = stderr.dup.force_encoding('UTF-8')
+
+    if status.success?
+      map = read_map_bin(File.join(out_dir, 'map.bin'))
+      check("map #{map_id} (wio): export fits the smaller device") do
+        ok map[:width] <= caps[:max_w] && map[:height] <= caps[:max_h],
+           "#{map[:width]}x#{map[:height]} past #{caps[:max_w]}x#{caps[:max_h]}"
+        ok map[:tile_count] <= caps[:max_tiles], "#{map[:tile_count]} tiles"
+      end
+      check("map #{map_id} (wio): output names the target") do
+        ok stdout.include?('target wio'), stdout
+      end
+    else
+      check("map #{map_id} (wio): refusal names the cap it hit") do
+        ok stderr =~ /exceeds on-device bounds|exceeding the on-device cap/, stderr
+      end
+    end
+  end
+end
+
 def discover_default_maps(game_dir, sample = 5)
   ids = Dir[File.join(game_dir, 'Map*.lmu')].map { |f| File.basename(f)[/\d+/].to_i }.sort
   return ids if ids.size <= sample
@@ -176,7 +215,10 @@ end
 map_ids = ARGV.drop(1).map(&:to_i)
 map_ids = discover_default_maps(game_dir) if map_ids.empty?
 
-map_ids.each { |id| check_export(game_dir, id) }
+map_ids.each do |id|
+  check_export(game_dir, id)
+  check_wio_target(game_dir, id)
+end
 
 # An oversized map (bigger than MAP_MAX_W/H) must be refused cleanly with a
 # non-zero exit and a clear message, not crash or silently truncate. Only

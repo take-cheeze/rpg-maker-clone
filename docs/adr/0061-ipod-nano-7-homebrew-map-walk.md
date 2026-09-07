@@ -86,7 +86,9 @@ The pieces:
   atlas in `.bss`. The device merges a cell's two layers into one composited
   tile before blitting, which is what lets an upper tile's transparent
   pixels show the lower tile through them.
-- **On-device app** (`app/nano7/rpg2k_walk/`): a `RAW_SURFACE` NanoApps app
+- **On-device app** (`app/nano7/rpg2k_walk/`, since ADR 91 the NanoApps half
+  of it, over the shared core in `app/shared/rpg2k_walk`): a `RAW_SURFACE`
+  NanoApps app
   (`hb_raw_init`/`hb_raw_frame`) that loads both files via `hb_fs_read` into
   static `.bss` buffers, blits the visible viewport (one composited tile per
   cell, camera clamped to map bounds), and steps the player one tile at a time on
@@ -102,12 +104,12 @@ The pieces:
   **4.5 KB** — under 1% of the 500 KB ceiling, and `.bss` sits comfortably
   below the ~512 KB gap between `BSS_VA` and `LINK_VA` in `sdk/hb_app.mk`
   (that gap is not a documented hard cap, so the caps above deliberately
-  leave headroom rather than target it exactly). Format v2's 16-bit tiles
-  cut `.bss` to **~209 KB**: the three static buffers are the whole of it
-  (81,938 B of `map.bin` + 131,072 B of atlas + 1,024 B of composited cell),
-  so that figure is exact from their declarations rather than measured; the
-  code side grew by one compositing loop and has not been re-linked on a
-  toolchain since.
+  leave headroom rather than target it exactly). Format v2's 16-bit tiles cut
+  `.bss` to **214,628 B**, measured by rebuilding both versions against a
+  NanoApps checkout with the same `arm-none-eabi-gcc`: `.text` 4,291 -> 4,712
+  B and the packed `.hbapp` 4,551 -> 4,940 B, so 421 bytes of compositing
+  code buys 127 KB of working set (see ADR 91, which also moved the engine
+  half of this app into a core the Wio Terminal shares).
 - **No CI job.** CI has no NanoApps toolchain and no iPod; unlike the PSP
   port's best-effort `psp-smoke` job there is not even an emulator to boot
   this under. `scripts/export_nano7_map_check.rb` (round-trips the exporter

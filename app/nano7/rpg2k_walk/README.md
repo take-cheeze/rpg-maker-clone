@@ -46,7 +46,8 @@ ruby scripts/export_nano7_map.rb \
 
 writes `map.bin` + `tiles.bin` to `OUT_DIR` (the format is described at the
 top of the exporter; `tiles.bin` is an ARGB1555 tile atlas, 512 bytes per
-tile). `scripts/export_nano7_map_check.rb`
+tile). `--target nano7` is the default; `--target wio` sizes the same export
+for the Wio Terminal's smaller buffers instead. `scripts/export_nano7_map_check.rb`
 round-trips the exporter's output against its own invariants (no mruby or
 device needed) — run it after touching the exporter or this app's binary
 format.
@@ -57,18 +58,24 @@ in `rpg2k_walk.c`. Pick a smaller map if your project's start map is larger.
 
 ## 2. Build the app
 
-NanoApps builds apps from inside its own checkout. Copy (not symlink — a
-symlinked app directory resolves `../../sdk/hb_app.mk` against the physical
-path, which lands outside NanoApps and fails) this directory into
-`NanoApps/apps/`:
+NanoApps builds apps from inside its own checkout, and this app is two
+directories: the NanoApps half here, and the engine it runs
+(`app/shared/rpg2k_walk`, shared with the Wio Terminal walk firmware — see
+`docs/adr/0091`). One script stages both:
 
 ```sh
-cp -r app/nano7/rpg2k_walk /path/to/NanoApps/apps/rpg2k_walk
+scripts/stage_nano7_walk_app.bash /path/to/NanoApps
 cd /path/to/NanoApps
 ./start build rpg2k_walk
 ```
 
-or, from inside `NanoApps/apps/rpg2k_walk` directly, plain `make` (needs
+It copies rather than symlinks, deliberately: a symlinked app directory
+resolves `../../sdk/hb_app.mk` against the physical path, which lands outside
+NanoApps and fails. Copying this directory alone is no longer enough — the
+build stops at a missing `rpg2k_walk_core.c`.
+
+or, from inside the staged `NanoApps/apps/rpg2k_walk` directly, plain `make`
+(needs
 `arm-none-eabi-gcc` and Python 3 with `pyelftools`, which `./start` installs
 for you the first time). The build's `.hbapp` should come out a few KB —
 `.bss` (the map/tile static buffers) is not part of that packed image, only
