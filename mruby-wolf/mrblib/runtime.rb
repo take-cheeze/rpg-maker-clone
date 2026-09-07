@@ -221,6 +221,28 @@ class WolfRPG
       nil
     end
 
+    # Wolf::Interpreter::Run#exec_input_key's own seam for InputKey(123)'s
+    # "Basic" mode -- current press state (not edge-triggered, unlike
+    # #choice_input's own `trigger?`: help/04ev_keyinput.html's own
+    # "通常の押し状態を取得"/"押されるまで待つ" descriptions both read as a
+    # plain "is it down right now" check, run once or every frame). Default
+    # key bindings match the manual's own documented defaults for
+    # confirm/cancel/sub (Enter or Space / Esc, Backspace or Delete /
+    # Shift) -- the "システム変数52～57" customisation the manual also
+    # documents is not modeled.
+    def input_key_pressed?(kind)
+      case kind
+      when :up then RGSS::Input.press?(RGSS::Input::UP)
+      when :down then RGSS::Input.press?(RGSS::Input::DOWN)
+      when :left then RGSS::Input.press?(RGSS::Input::LEFT)
+      when :right then RGSS::Input.press?(RGSS::Input::RIGHT)
+      when :confirm then RGSS::Input.press?(RGSS::Input::C)
+      when :cancel then RGSS::Input.press?(RGSS::Input::B)
+      when :subkey then RGSS::Input.press?(RGSS::Input::SHIFT)
+      else false
+      end
+    end
+
     # Wolf::Interpreter#exec_sound's own rendering-adjacent seam for
     # Sound(140)'s "play an SE by filename" case. `path` is already
     # `Data/`-relative the same way a Picture(150) file argument is (real

@@ -540,7 +540,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks
-  attr_accessor :x, :y, :blocked, :choice_inputs
+  attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
     @shown = []
@@ -556,6 +556,7 @@ class WolfTestFakeScene
     @played_se = []
     @played_tracks = []
     @stopped_tracks = []
+    @keys_down = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -570,6 +571,10 @@ class WolfTestFakeScene
   def play_se(*args); @played_se << args; end
   def play_track(*args); @played_tracks << args; end
   def stop_track(operation); @stopped_tracks << operation; end
+  # Wolf::Interpreter::Run#exec_input_key's own input seam -- a caller sets
+  # `keys_down` to whichever symbols (:up/:down/:left/:right/:confirm/
+  # :cancel/:subkey) should currently read as pressed.
+  def input_key_pressed?(kind); @keys_down.include?(kind); end
 
   def passable?(x, y); !@blocked.include?([x, y]); end
   def hero_at?(x, y); x == @x && y == @y; end
@@ -1063,6 +1068,120 @@ assert "Wolf::Interpreter#exec_sound skips a BGM/BGS database entry with an unre
   interp.exec_sound(wolf_test_cmd(140, [header, 10, 0])) # only 3 arguments
 
   assert_equal 0, scene.played_tracks.size
+end
+
+# ---- Wolf::Interpreter::Run#exec_input_key (InputKey(123)) ------------------
+
+def wolf_test_input_key_options(direction: 0, confirm: false, cancel: false, subkey: false, wait: false)
+  (direction & 0x0f) | (confirm ? 0x10 : 0) | (cancel ? 0x20 : 0) | (subkey ? 0x40 : 0) | (wait ? 0x80 : 0)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key reports 0 immediately when nothing configured is down" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(confirm: true, cancel: true)
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+  run.step
+  assert_true run.done
+  assert_equal 0, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key reports the confirm code immediately when it's held" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:confirm]
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(confirm: true, cancel: true)
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+  run.step
+  assert_true run.done
+  assert_equal 10, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key reports the cancel code when confirm isn't down but cancel is" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:cancel]
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(confirm: true, cancel: true)
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+  run.step
+  assert_equal 11, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key waits (yielding every frame) until a configured key is pressed" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(confirm: true, cancel: true, wait: true)
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+
+  5.times do
+    run.step
+    assert_false run.done
+    assert_equal 0, store.number(2_000_000)
+  end
+  scene.keys_down = [:confirm]
+  run.step
+  assert_true run.done
+  assert_equal 10, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key checks the direction keys, returning the numpad-style code for whichever is down" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:left]
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(direction: 1) # Dir4: all four cardinal
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+  run.step
+  assert_equal 4, store.number(2_000_000) # left's own numpad code
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key's UpDown/LeftRight direction pairs ignore the other axis" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:left] # LeftRight mode should catch this; UpDown mode should not
+  interp.current_scene = scene
+
+  updown = wolf_test_cmd(123, [2_000_000, wolf_test_input_key_options(direction: 7)])
+  Wolf::Interpreter::Run.new(interp, [updown]).step
+  assert_equal 0, store.number(2_000_000)
+
+  leftright = wolf_test_cmd(123, [2_000_001, wolf_test_input_key_options(direction: 8)])
+  Wolf::Interpreter::Run.new(interp, [leftright]).step
+  assert_equal 4, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key skips an unconfirmed direction mode rather than guessing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:up]
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(direction: 2) # Dir8: not cross-checked against any real example
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options])])
+  run.step
+  assert_equal 0, store.number(2_000_000) # untouched (VarStore's own zero default)
+end
+
+assert "Wolf::Interpreter::Run#exec_input_key skips a call whose argument count doesn't match the confirmed Basic-mode layout" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.keys_down = [:confirm]
+  interp.current_scene = scene
+  options = wolf_test_input_key_options(confirm: true)
+  run = Wolf::Interpreter::Run.new(interp, [wolf_test_cmd(123, [2_000_000, options, 100])]) # 3 args
+  run.step
+  assert_equal 0, store.number(2_000_000)
 end
 
 # ---- Wolf::Interpreter#exec_picture -----------------------------------------
