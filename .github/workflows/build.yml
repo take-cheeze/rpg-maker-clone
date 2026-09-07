@@ -1499,9 +1499,15 @@ jobs:
           rm -f /tmp/wio_lcd_smoke_test.png
           "$RENODE_BIN" --disable-gui --console --plain \
             -e "include @app/wio/renode/lcd_smoke_test.resc" -e "quit" < /dev/null
+          # apt's "imagemagick" package on ubuntu-24.04 is IM6, which has no
+          # `magick` binary at all (that unified CLI is IM7-only, a separate
+          # package); IM7 installs, in turn, without the `convert` name.
+          # Support either.
+          im_convert=convert
+          command -v magick >/dev/null 2>&1 && im_convert=magick
           check() {
             local got
-            got="$(magick /tmp/wio_lcd_smoke_test.png -format '%[pixel:p{'"$1"'}]' info:)"
+            got="$("$im_convert" /tmp/wio_lcd_smoke_test.png -format '%[pixel:p{'"$1"'}]' info:)"
             [ "$got" = "$2" ] || { echo "::error::pixel {$1} was $got, expected $2"; exit 1; }
           }
           check "8,0" "srgb(255,0,0)"   # inside the CASET/PASET window, red row
