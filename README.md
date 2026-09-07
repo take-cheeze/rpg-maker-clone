@@ -682,6 +682,13 @@
   edge cases (0-or-fewer iterations; a label jump landing inside the loop
   from outside it) are handled exactly. See
   [`docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md`](docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md)
+- **Picture effects.** `Effect`(290) shifts a picture's draw position
+  (`DrawPositionShift`, 123 of 279 real occurrences) or adds to its color
+  (`ColorCorrect`, 14) — both instant, applied across a real contiguous
+  range of picture numbers. The Character/Map targets and every other
+  Picture effect kind (Flash, Shake, Zoom, the blink/auto-pattern-switch
+  family) remain unimplemented. See
+  [`docs/adr/0077-wolf-rpg-editor-effect-command.md`](docs/adr/0077-wolf-rpg-editor-effect-command.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

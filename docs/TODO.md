@@ -36103,17 +36103,43 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   both verified against synthetic scenarios matching the manual's own
   stated behavior, plus the soak check and the compiled binary against the
   real sample game. See
-  `docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md`. Suggested next
-  order (by real frequency, from the same census): `Effect`(290, 279
-  occurrences -- a large polymorphic screen-effect command in the same
-  shape family as `Sound`/`Picture`), save/load (220-222, 13 occurrences,
-  though 220's own `Base`/Save operation needs a real save-file *format*
-  serializing the whole game state, not just command wiring -- a much
-  larger undertaking than its own occurrence count suggests), `Party`(270),
-  `BanInput`(126), transitions (160-162, almost unused), `ChangeColor`
-  (151), `Checkpoint`(99), `WaitForMove`(202), `Teleport`(130), and
-  `Database`(250)'s own remaining surface (XY配列, the eight name<->index
-  lookups, data reset/insert/extract/copy/sort, CSV import/export via
+  `docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md`.
+- ✅ **Effect(290), Picture DrawPositionShift/ColorCorrect (2026-09-07).**
+  The next-highest real-frequency command from the same census (279
+  occurrences), and one of the largest by documented surface: three
+  wildly different targets (Picture/Character/Map), each with its own
+  effect-kind list -- Character's alone runs to roughly two dozen
+  entries, mostly "Ver3.30+" additions the wolfrpg-map-parser crate's own
+  4-value `CharacterEffectType` enum predates (it cannot even name real
+  data's own dominant Character-target call). The crate's own
+  `EffectCommand` Rust enum also bundles three *other* WOLF command
+  codes purely for its own organization (`MapShake`=280/`MapEffect`,
+  `ScrollScreen`=281, `ChangeColor`=151) -- none is `Effect`(290) at the
+  file-format level, and their own real counts (1/0/10) make them their
+  own separate, lower-priority items, not attempted here. The crate's own
+  `Base` variant -- `Effect`(290) itself -- maps cleanly onto this
+  reader's `arg(N)` framing and models Picture's own 11 effect kinds
+  completely; only the two real data actually favors are implemented:
+  `DrawPositionShift`("描画座標シフト[最終値]", 123 of 279 real calls, by
+  far the largest single combination) and `ColorCorrect`("カラー補正", 14
+  calls), both confirmed always instant (`duration` 0) in real data,
+  applied via two new `WolfRPG::MapScene` methods
+  (`#shift_picture`/`#tint_picture`) hooking directly into the already-
+  tracked Picture(150) sprite's own `x`/`y`/native `color`. `target`/
+  `range` (a contiguous run of picture numbers, confirmed by real data to
+  sometimes span more than one) are applied across every number in
+  between that has an active picture. See
+  `docs/adr/0077-wolf-rpg-editor-effect-command.md`. Suggested next order
+  (by real frequency, from the same census): save/load (220-222, 13
+  occurrences, though 220's own `Base`/Save operation needs a real
+  save-file *format* serializing the whole game state, not just command
+  wiring -- a much larger undertaking than its own occurrence count
+  suggests), `Party`(270), `BanInput`(126), transitions (160-162, almost
+  unused), `ChangeColor`(151), `Checkpoint`(99), `WaitForMove`(202),
+  `Teleport`(130), `Effect`(290)'s own remaining surface (every other
+  Picture effect kind, the Character and Map targets), and `Database`
+  (250)'s own remaining surface (XY配列, the eight name<->index lookups,
+  data reset/insert/extract/copy/sort, CSV import/export via
   `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
