@@ -476,6 +476,138 @@ assert "Wolf::Interpreter's VariableCondition falls through to a sibling command
   assert_equal 999, store.number(2_000_002)
 end
 
+assert "Wolf::Interpreter takes the true branch of a StringCondition (literal Equals)" do
+  # Real data (33 calls) confirms `arg(0)`'s low nibble is the case count,
+  # a lone condition's own literal comparison text sits at string slot 0,
+  # and every real call leaves `value_is_variable` (the packed word's own
+  # low bit) unset -- see #exec_string_condition's own comment.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "hello")
+  commands = [
+    # if S[0] == "hello" (case_count=1, no else, Equals)
+    wolf_test_cmd(112, [0x01, 3_000_000], ["hello"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 111, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 111, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter takes the else branch when a StringCondition is false" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "hello")
+  commands = [
+    # if S[0] == "goodbye" (false; case_count=1, else_case bit set)
+    wolf_test_cmd(112, [0x11, 3_000_000], ["goodbye"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 111, 0xf000], [], 1),
+    wolf_test_cmd(420, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 222, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 222, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's StringCondition falls through when no case matches and there is no else" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "hello")
+  commands = [
+    wolf_test_cmd(112, [0x01, 3_000_000], ["goodbye"], 0), # S[0] == "goodbye" -- false
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 111, 0xf000], [], 1), # never runs
+    wolf_test_cmd(499, [], [], 0),
+    wolf_test_cmd(121, [2_000_001, 0, 999, 0xf000], [], 0), # sibling command after BranchEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 0, store.number(2_000_000)
+  assert_equal 999, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter's StringCondition picks the second of two real cases" do
+  # Mirrors CE#94's own real 2-condition shape (case_count=2): each
+  # condition's own literal comparison text reads from the condition's own
+  # string slot (0 and 1), not a string-only running counter shared with
+  # any `value_is_variable` condition -- confirmed here by making only the
+  # *second* condition's own literal match.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "hello")
+  commands = [
+    wolf_test_cmd(112, [0x02, 3_000_000, 3_000_000], ["wrong", "hello"], 0),
+    wolf_test_cmd(401, [0], [], 0), # ChoiceCase 0: S[0] == "wrong" -- false
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1), # never runs
+    wolf_test_cmd(401, [1], [], 0), # ChoiceCase 1: S[0] == "hello" -- true
+    wolf_test_cmd(121, [2_000_000, 0, 2, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's StringCondition Includes/StartsWith operators" do
+  # Not exercised by any real call in the sample game (every real call is
+  # Equals/NotEquals) but implemented from the same `CompareOperator` enum
+  # the crate's own struct documents; tested directly rather than left
+  # unconfirmed.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "hello world")
+  includes_var = (2 << 28) | 3_000_000 # CompareOperator::Includes
+  commands = [
+    wolf_test_cmd(112, [0x01, includes_var], ["lo wor"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+
+  store2 = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store2.set_string(3_000_000, "hello world")
+  starts_with_var = (3 << 28) | 3_000_000 # CompareOperator::StartsWith
+  commands2 = [
+    wolf_test_cmd(112, [0x01, starts_with_var], ["hello"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store2, commands2)
+  assert_equal 1, store2.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's StringCondition resolves \"this common event\" self-var strings" do
+  # Real data's own dominant shape (32 of 33 calls): a lone condition
+  # comparing `1_600_00X` (this common event's own self-var string band,
+  # 5-9) against a literal.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.current_common_event_id = 7
+  store.set_string(1_600_007, "picked") # self-var 7 (string band), this common event
+  commands = [
+    wolf_test_cmd(112, [0x01, 1_600_007], ["picked"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's StringCondition value_is_variable compares two string variables" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_string(3_000_000, "match")
+  store.set_string(3_000_001, "match")
+  # top byte: value_is_variable bit (0x01) set, CompareOperator::Equals (0x00 nibble)
+  packed = (0x01 << 24) | 3_000_000
+  commands = [
+    wolf_test_cmd(112, [0x01, packed, 3_000_001], [], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+end
+
 assert "Wolf::Interpreter's GotoLoopStart(176) restarts the loop without running the rest of the iteration" do
   # Cross-confirmed as "return to loop start" (04ev_control.html) against
   # WolfTL's Command.hpp (StartLoop2 = 176) and the wolfrpg-map-parser
