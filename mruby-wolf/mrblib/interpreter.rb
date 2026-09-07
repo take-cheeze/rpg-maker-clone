@@ -70,6 +70,12 @@ module Wolf
     C_TELEPORT = 130
     C_SOUND = 140
     C_PICTURE = 150
+    # "その他2" tab's "■エフェクト" button (help/04ev_effect.html:
+    # "キャラクターやピクチャ・マップに対してエフェクトをかけたり..."). One of
+    # this reader's largest remaining commands by real frequency (279
+    # occurrences) -- see #exec_effect's own comment for what is
+    # cross-confirmed and implemented versus not.
+    C_EFFECT = 290
     # "その他1" tab's "■動作指定" button (help/04ev_movesettingB.html: "イベン
     # トコマンド「その他1」にて、「■動作指定」ボタンを押したとき" is one of the
     # two places a move route is authored, the other being a page's own
@@ -250,6 +256,8 @@ module Wolf
           exec_input_key(cmd)
         when Interpreter::C_DATABASE
           @interp.exec_database(cmd)
+        when Interpreter::C_EFFECT
+          @interp.exec_effect(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -1504,6 +1512,97 @@ module Wolf
       when :changeable then project.changeable_db
       when :system then project.system_db
       when :user then project.user_db
+      end
+    end
+
+    # Effect(290) ("エフェクト", help/04ev_effect.html): a single command
+    # covering wildly different effects across three targets --
+    # picture/character/map -- each with its own list of effect kinds far
+    # larger than the wolfrpg-map-parser crate's own `EffectType` enums
+    # model (the manual's own Character-target list alone runs to two dozen
+    # entries, "Ver3.30/3.50" additions the crate predates; its own 4-value
+    # `CharacterEffectType` cannot even name real data's own dominant
+    # Character-target call, effect_type 8). The crate's own `Base` struct
+    # (7 fields: options, duration, target, range, value1, value2, value3)
+    # does map cleanly onto this reader's `arg(N)` framing, and IS the real
+    # shape of every one of the sample game's 279 real calls (its
+    # MapShake/ScrollScreen/ChangeColor variants belong to other WOLF
+    # command codes entirely -- 280/281/151 -- despite sharing one Rust
+    # enum crate-side; not attempted here, tracked as their own low-real-
+    # frequency TODO items). `options`'s low nibble selects the target
+    # (0 Picture, 1 Character, 2 Map -- byte-for-byte the crate's own
+    # `EffectTarget`), high nibble the effect kind within it.
+    #
+    # Only the Picture target is implemented, and only its two effect
+    # kinds real data actually favors and this reader already has a native
+    # rendering hook for: `DrawPositionShift`("描画座標シフト[最終値]",
+    # effect_type 2, 123 of 279 real calls, by far the largest single
+    # combination) is an instant, one-time (X, Y) nudge added directly to
+    # whatever `Wolf::Interpreter#exec_picture` last drew -- the manual's
+    # own wording ("単純に最終値をシフトさせるもの", "simply shifts the
+    # final value") rules out needing to track it as state Picture(150)'s
+    # own later Show/Move would have to reapply; `ColorCorrect`("カラー補
+    # 正", effect_type 1, 14 calls) adds (R, G, B) to the picture's own
+    # RGSS `Sprite#color` (native, already additive over the sprite's
+    # contents -- exactly "ピクチャの「カラー」に加算します" per the
+    # manual), clamped by the native setter the same 0-255 range the
+    # manual's own documented "±200" input range can legitimately
+    # overshoot. `target`/`range` (both, like every numeric slot,
+    # `ValueRef`-decodable) name a *contiguous run* of picture numbers
+    # real data confirms is sometimes more than one (a store-display
+    # Common Event applies one `ColorCorrect` call across six numbers at
+    # once) -- applied to every number in `target..range` that has an
+    # active picture, silently skipping any that do not (this reader's own
+    # existing "Move on an unshown picture" tolerance, reused rather than
+    # re-derived). `duration` (Picture-target's own documented delay,
+    # reusing Picture(150)'s own still-unimplemented delay mechanism) is 0
+    # in every real call; a real non-zero value is logged and skipped
+    # rather than silently treated as instant, since that would be a
+    # visibly wrong delay rather than an honestly-missing one.
+    #
+    # Not implemented: every other Picture effect kind (Flash, Shake,
+    # Zoom, the point-blink/auto-pattern-switch family), the Character and
+    # Map targets entirely, and `duration` > 0.
+    EFFECT_TARGET_PICTURE = 0
+    EFFECT_PICTURE_COLOR_CORRECT = 1
+    EFFECT_PICTURE_DRAW_POSITION_SHIFT = 2
+
+    def exec_effect(cmd)
+      unless cmd.args.size == 7
+        unimplemented("Effect(290) with #{cmd.args.size} arguments")
+        return
+      end
+
+      options = cmd.arg(0)
+      target_sel = options & 0x0f
+      effect_type = (options >> 4) & 0x0f
+
+      unless target_sel == EFFECT_TARGET_PICTURE
+        unimplemented("Effect(290) target #{target_sel}")
+        return
+      end
+
+      duration = var_store.number(cmd.arg(1))
+      unless duration == 0
+        unimplemented("Effect(290) picture effect delay (duration #{duration})")
+        return
+      end
+
+      first = var_store.number(cmd.arg(2))
+      last = var_store.number(cmd.arg(3))
+
+      case effect_type
+      when EFFECT_PICTURE_DRAW_POSITION_SHIFT
+        dx = var_store.number(cmd.arg(4))
+        dy = var_store.number(cmd.arg(5))
+        (first..last).each { |n| current_scene&.shift_picture(n, dx, dy) }
+      when EFFECT_PICTURE_COLOR_CORRECT
+        r = var_store.number(cmd.arg(4))
+        g = var_store.number(cmd.arg(5))
+        b = var_store.number(cmd.arg(6))
+        (first..last).each { |n| current_scene&.tint_picture(n, r, g, b) }
+      else
+        unimplemented("Effect(290) picture effect type #{effect_type}")
       end
     end
 

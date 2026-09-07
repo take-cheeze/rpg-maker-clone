@@ -655,7 +655,8 @@ end
 # surface (#x/#y/#passable?/#hero_at?/#hero_pos/#hero_pos=), which
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
-  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks
+  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
+              :shifted, :tinted
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -673,6 +674,8 @@ class WolfTestFakeScene
     @played_tracks = []
     @stopped_tracks = []
     @keys_down = []
+    @shifted = []
+    @tinted = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -680,6 +683,9 @@ class WolfTestFakeScene
   def show_shape_picture(*args); @shown_shapes << args; end
   def move_picture(*args); @moved << args; end
   def erase_picture(number); @erased << number; end
+  # Wolf::Interpreter#exec_effect's own Picture-target seam.
+  def shift_picture(number, dx, dy); @shifted << [number, dx, dy]; end
+  def tint_picture(number, r, g, b); @tinted << [number, r, g, b]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
   # the sequence of key presses to hand back, one per call, `nil` (nothing
   # queued) standing in for a frame nothing was pressed.
@@ -1701,4 +1707,72 @@ assert "Wolf::Interpreter#exec_database skips what it does not understand: db ty
   four_arg_read = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user)
   interp.exec_database(wolf_test_cmd(250, [2, 0, 0, four_arg_read], ["nope"]))
   assert_equal 5, project.user_db[2].value(0, 0) # untouched
+end
+
+# ---- Wolf::Interpreter#exec_effect (Effect(290)) -----------------------------
+
+def wolf_test_effect_options(target:, effect_type:)
+  (target & 0x0f) | ((effect_type & 0x0f) << 4)
+end
+
+assert "Wolf::Interpreter#exec_effect shifts a picture's own draw position by a real, possibly variable-held delta" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_DRAW_POSITION_SHIFT)
+  cmd = wolf_test_cmd(290, [options, 0, 3, 3, 10, -5, 0])
+  interp.exec_effect(cmd)
+  assert_equal [[3, 10, -5]], scene.shifted
+end
+
+assert "Wolf::Interpreter#exec_effect applies a shift/tint across a real contiguous picture-number range" do
+  # Mirrors a real store-display Common Event's own ColorCorrect call,
+  # which applies one command across six picture numbers at once.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_COLOR_CORRECT)
+  cmd = wolf_test_cmd(290, [options, 0, 21, 26, -100, -100, -100])
+  interp.exec_effect(cmd)
+  assert_equal [[21, -100, -100, -100], [22, -100, -100, -100], [23, -100, -100, -100],
+                [24, -100, -100, -100], [25, -100, -100, -100], [26, -100, -100, -100]],
+               scene.tinted
+end
+
+assert "Wolf::Interpreter#exec_effect tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_DRAW_POSITION_SHIFT)
+  interp.exec_effect(wolf_test_cmd(290, [options, 0, 1, 1, 0, 0, 0]))
+end
+
+assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argument-count it does not understand" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  character_target = wolf_test_effect_options(target: 1, effect_type: 0)
+  interp.exec_effect(wolf_test_cmd(290, [character_target, 0, -2, -2, 0, 0, 0]))
+
+  unknown_type = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE, effect_type: 0)
+  interp.exec_effect(wolf_test_cmd(290, [unknown_type, 0, 1, 1, 0, 0, 0])) # Flash, not implemented
+
+  delayed = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_DRAW_POSITION_SHIFT)
+  interp.exec_effect(wolf_test_cmd(290, [delayed, 20, 1, 1, 10, 10, 0]))
+
+  odd_argc = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                       effect_type: Wolf::Interpreter::EFFECT_PICTURE_DRAW_POSITION_SHIFT)
+  interp.exec_effect(wolf_test_cmd(290, [odd_argc, 0, 1]))
+
+  assert_equal [], scene.shifted
+  assert_equal [], scene.tinted
 end

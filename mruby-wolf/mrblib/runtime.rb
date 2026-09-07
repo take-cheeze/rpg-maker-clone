@@ -381,6 +381,42 @@ class WolfRPG
       entry[:sprite].dispose if entry
     end
 
+    # Effect(290)'s own Picture-target "描画座標シフト[最終値]"
+    # (DrawPositionShift): an instant, one-time nudge added directly to
+    # whatever #show_string_picture/#show_file_picture/#show_shape_picture/
+    # #move_picture last set -- see interpreter.rb's own #exec_effect
+    # comment for why this is not tracked as state a later #move_picture
+    # would need to reapply. A silent no-op for a picture number with no
+    # active sprite, the same tolerance #move_picture logs about instead
+    # (Effect(290)'s own real calls apply across a range of numbers, some
+    # of which may never have been shown).
+    def shift_picture(number, dx, dy)
+      entry = @pictures[number]
+      return unless entry
+      entry[:sprite].x += dx
+      entry[:sprite].y += dy
+    end
+
+    # Effect(290)'s own Picture-target "カラー補正" (ColorCorrect): adds
+    # (r, g, b) to the picture's own RGSS Sprite#color (native, already an
+    # additive overlay over the sprite's own contents -- "ピクチャの「カラ
+    # ー」に加算します" per help/04ev_effect.html). A fresh Color rather
+    # than mutating the one #color returns, since native and Ruby-side
+    # accessors are not guaranteed to share the same backing object; its
+    # own `red=`/`green=`/`blue=` setters clamp to 0-255 natively, covering
+    # the manual's own documented "±200" input range legitimately
+    # overshooting a channel already near a limit.
+    def tint_picture(number, r, g, b)
+      entry = @pictures[number]
+      return unless entry
+      old = entry[:sprite].color
+      fresh = RGSS::Color.new(0, 0, 0, 255)
+      fresh.red = old.red + r
+      fresh.green = old.green + g
+      fresh.blue = old.blue + b
+      entry[:sprite].color = fresh
+    end
+
     private
 
     # Positions `entry`'s sprite so that (x, y) is the point `anchor` names
