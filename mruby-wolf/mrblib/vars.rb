@@ -230,6 +230,22 @@ module Wolf
       end
     end
 
+    # True if `raw` addresses a string-typed slot -- a literal string
+    # variable, a system string, or a common-event self-variable in the
+    # "string quintet" (the same kinds #string reads/#set_string writes).
+    # Used by SaveVariable(222)/LoadVariable(221) to pick number vs.
+    # string for a variable-ref field without #string's own defensive
+    # "reading a literal as a string" warning on a plain numeric ref.
+    def string_ref?(raw)
+      kind, *rest = ValueRef.decode(raw)
+      case kind
+      when :string, :system_string then true
+      when :common_event_self then ValueRef.common_event_self_string?(rest[1])
+      when :this_common_event_self then ValueRef.common_event_self_string?(rest[0])
+      else false
+      end
+    end
+
     # Reads `raw` as a string. See #number's own comment on why the untyped
     # self-variable banks are coerced defensively rather than trusted.
     def string(raw)

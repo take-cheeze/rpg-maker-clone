@@ -155,6 +155,17 @@ module Wolf
     C_COMMON_EVENT_RESERVE = 211
     C_SET_LABEL = 212
     C_JUMP_LABEL = 213
+    # WolfTL's own "LoadGame"/"SaveGame" (220's own sibling codes, help/
+    # 04ev_file.html's own "セーブデータからの読み込み (変数・文字列)"/
+    # "セーブデータへの書き込み"): despite the WolfTL names, neither reads
+    # or writes a *whole* save -- see #exec_load_variable/#exec_save_
+    # variable's own comment. 220 itself ("保存・読込", the crate's own
+    # `Base` struct: `operation` Save/Load plus a `save_number`) *does*
+    # need the whole game state and is left unimplemented (falls through
+    # to the default case below), the same "no foundation yet" reasoning
+    # `Party`(270) is already documented under.
+    C_LOAD_VARIABLE = 221
+    C_SAVE_VARIABLE = 222
     C_COMMON_EVENT_BY_NAME = 300
     C_CHOICE_CASE = 401
     C_SPECIAL_CHOICE_CASE = 402
@@ -296,6 +307,10 @@ module Wolf
           @interp.exec_change_color(cmd)
         when Interpreter::C_TELEPORT
           @interp.exec_teleport(cmd)
+        when Interpreter::C_LOAD_VARIABLE
+          @interp.exec_load_variable(cmd)
+        when Interpreter::C_SAVE_VARIABLE
+          @interp.exec_save_variable(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -1739,6 +1754,89 @@ module Wolf
       y = var_store.number(cmd.arg(2))
       map_id = var_store.number(cmd.arg(3))
       self.pending_teleport = [map_id, x, y]
+    end
+
+    # LoadVariable(221) ("セーブデータからの読み込み", help/04ev_file.html):
+    # reads one variable or string from a specific save slot's own small
+    # persisted blob (Wolf::SaveData -- not a full save; see this method's
+    # own sibling #exec_save_variable) into a variable in the *current*
+    # game. A missing save file, or a key never written into an existing
+    # one, reads back as 0/"" -- the manual's own documented default.
+    #
+    # `arg(0)`/`arg(2)` (the live-game target / the save file's own source
+    # key) and `arg(1)`/`arg(3)` (save number / is_pointer) share the
+    # crate's own generic `parse_variable_fields` shape with
+    # #exec_save_variable's own arg(0)/arg(2) (source/target instead) --
+    # every real call's own 4-argument shape confirms it. `arg(2)`'s own
+    # system variable 24 ("[読]ｾｰﾌﾞﾃﾞｰﾀ読込判定", help/06systemvalue.html,
+    # "1=成功 0=失敗") is special-cased to the save file's own existence,
+    # per that page's documented meaning, overriding whatever (if
+    # anything) is actually stored under that key -- confirmed by real
+    # data: CE#94's own save/load screen renderer reads it immediately
+    # before system variable 29 (play time), a plausible per-slot
+    # existence-then-preview-info pair.
+    #
+    # `is_pointer` (arg(3)): true in roughly half of this sample game's
+    # own real calls, but the wolfrpg-map-parser crate is the *only*
+    # source for this field at all -- no manual page documents it, and no
+    # independent source confirms a guessed meaning (a further
+    # indirection through arg(2)'s own current value, the only reading
+    # that fits the name) against real data. Left unimplemented rather
+    # than guessed, the same "no independent source" reasoning
+    # `BanInput`(126) is already documented under.
+    SYS_VAR_SAVE_EXISTS = 24
+
+    def exec_load_variable(cmd)
+      unless cmd.args.size == 4
+        unimplemented("LoadVariable(221) with #{cmd.args.size} arguments")
+        return
+      end
+      if cmd.arg(3) != 0
+        unimplemented("LoadVariable(221) indirect (is_pointer) source")
+        return
+      end
+      target = cmd.arg(0)
+      source_key = cmd.arg(2)
+      path = Wolf::SaveData.path_for(project.dir, cmd.arg(1), var_store)
+      kind, index = ValueRef.decode(source_key)
+      if kind == :system_variable && index == SYS_VAR_SAVE_EXISTS
+        var_store.set_number(target, path && File.exist?(path) ? 1 : 0)
+        return
+      end
+      data = Wolf::SaveData.read(path)
+      if var_store.string_ref?(target)
+        var_store.set_string(target, data[source_key].is_a?(String) ? data[source_key] : "")
+      else
+        var_store.set_number(target, data[source_key].is_a?(Integer) ? data[source_key] : 0)
+      end
+    end
+
+    # SaveVariable(222) ("セーブデータへの書き込み", help/04ev_file.html):
+    # the inverse of LoadVariable(221) -- writes one variable/string from
+    # the current game into a specific save slot's own persisted blob,
+    # creating the file if it does not exist yet (per the manual, a file
+    # created this way carries none of a real save's own 可変DB type
+    # metadata, since nothing else in this reader ever reads a real WOLF
+    # save file back either). Shares LoadVariable(221)'s own `is_pointer`
+    # unimplemented gate and its own arg layout (just source/target
+    # swapped -- #exec_load_variable's own comment covers both).
+    def exec_save_variable(cmd)
+      unless cmd.args.size == 4
+        unimplemented("SaveVariable(222) with #{cmd.args.size} arguments")
+        return
+      end
+      if cmd.arg(3) != 0
+        unimplemented("SaveVariable(222) indirect (is_pointer) target")
+        return
+      end
+      source = cmd.arg(0)
+      target_key = cmd.arg(2)
+      path = Wolf::SaveData.path_for(project.dir, cmd.arg(1), var_store)
+      return unless path
+
+      data = Wolf::SaveData.read(path)
+      data[target_key] = var_store.string_ref?(source) ? var_store.string(source) : var_store.number(source)
+      Wolf::SaveData.write(path, data)
     end
 
     # Runs one RouteCommand list against `pos` (either a map event's own

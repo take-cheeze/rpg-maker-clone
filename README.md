@@ -706,6 +706,13 @@
   (201) already applies every step instantly — there is nothing left to
   wait for. See
   [`docs/adr/0081-wolf-rpg-editor-wait-for-move.md`](docs/adr/0081-wolf-rpg-editor-wait-for-move.md)
+- **Per-variable save/load.** `LoadVariable`(221)/`SaveVariable`(222) read
+  and write a single variable or string into a small per-save-slot blob at
+  `Save/SaveDataNN.sav` (or a name given directly by a string variable) —
+  independent of the full whole-game save/load (`220`, still
+  unimplemented, since it needs a real save-file format serializing the
+  entire engine state). See
+  [`docs/adr/0082-wolf-rpg-editor-save-variable.md`](docs/adr/0082-wolf-rpg-editor-save-variable.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

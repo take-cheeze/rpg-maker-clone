@@ -96,6 +96,7 @@ mrblib = File.expand_path('../mruby-wolf/mrblib', __dir__)
 load File.join(mrblib, 'wolf.rb')
 load File.join(mrblib, 'data.rb')
 load File.join(mrblib, 'vars.rb')
+load File.join(mrblib, 'save_data.rb')
 load File.join(mrblib, 'interpreter.rb')
 
 FRAMES = (idx = ARGV.index('--frames')) ? ARGV.delete_at(idx + 1).tap { ARGV.delete_at(idx) }.to_i : 120
