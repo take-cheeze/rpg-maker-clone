@@ -36333,26 +36333,50 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `SpecialOperation` stay unimplemented -- genuinely needing the party
   system (roster, member sprites, formation-following) this reader still
   has no other part of. See `docs/adr/0088-wolf-rpg-editor-party.md`.
+- ✅ **Per-map event position keying (2026-09-07).** `Teleport`(130)/
+  `SaveLoad`(220)'s own shared "persistent per-map event state" gap
+  turned out smaller than framed: `Wolf::Interpreter#event_position` (the
+  runtime x/y/direction/page_index/move_timer every map event's own
+  position lives in) had exactly one call site keying `@event_positions`
+  by `event.id` alone -- two different maps' own event id spaces both
+  start from small numbers like 0/1/2 and would collide -- and
+  `current_map_id` (added for `SaveLoad`(220)'s own Save case) already
+  gave every caller what it needed to key by `[current_map_id, event.id]`
+  instead, with no other changes required. A revisited map now correctly
+  finds its own events exactly where they were left, instead of either
+  colliding with a different map's same-id event or appearing to lose
+  its own state. `VarStore`'s own per-map-event self-variable banks share
+  the identical collision but have no equivalent map-id concept to key by
+  yet -- left open, not newly introduced here. See `docs/adr/0089-wolf-
+  rpg-editor-event-position-per-map.md`.
 - Suggested next order (by real frequency, from the same census):
-  transitions (160-162, almost unused), `Effect`(290)'s own remaining
-  Picture effect kinds (Zoom/SwitchAutoFlash/AutoEnlarge/the auto-pattern-
-  switch family) -- `Zoom` needing native `Viewport` zoom support this
-  reader does not have (checked directly against `mruby-rgss/src/lib.cxx`'s
-  own method table) -- and the Map target's own `Shake` (`MapEffectType`-
-  confirmed, though whether its own real field layout routes through
-  Effect(290) at all or belongs to the separate `MapEffect`(280) command
-  the crate's own dedicated `MapShake` struct seems to model needs
-  checking before implementing either),
-  `Teleport`(130)'s own remaining surface (persistent per-map event state,
-  needed for both its own `-1`/`-3..-7` targets and for switches/
-  variables/moved events to survive a revisited map at all -- `SaveLoad`
-  (220) inherits this same gap for `@event_positions` rather than fixing
-  it), `SaveLoad`(220)'s own remaining surface (self-variables, the
-  database, and everything else this pass's own deliberately partial
-  snapshot left out), `Party`(270)'s own remaining surface (a real party
-  system: roster, member sprites, formation-following movement), and
-  `Database`(250)'s own remaining surface (XY配列, the eight name<->index
-  lookups, data reset/insert/extract/copy/sort, CSV import/export via
+  transitions (160-162, almost unused -- `SetTransition`(160)'s own lone
+  real call could arguably be a no-op too, since `ExecuteTransition`(162)
+  never appears in this sample game to ever consume the configured value,
+  but unlike `Party`(270)'s own confirmed-by-architecture no-ops this
+  would only be "never exercised together" rather than a real structural
+  no-op, so deprioritized rather than implemented on that weaker basis),
+  `Effect`(290)'s own remaining Picture effect kinds (Zoom/SwitchAutoFlash/
+  AutoEnlarge/the auto-pattern-switch family) -- `Zoom` needing native
+  `Viewport` zoom support this reader does not have (checked directly
+  against `mruby-rgss/src/lib.cxx`'s own method table) -- and the Map
+  target's own `Shake` (`MapEffectType`-confirmed, though whether its own
+  real field layout routes through Effect(290) at all or belongs to the
+  separate `MapEffect`(280) command the crate's own dedicated `MapShake`
+  struct seems to model needs checking before implementing either, and 0
+  real calls exist for either code in this sample game regardless),
+  `VarStore`'s own per-map-event self-variable collision noted above,
+  `Teleport`(130)'s own remaining surface (whether the per-map event
+  position fix above unblocks any more of its own real `-1`/`-3..-7`
+  targets was not investigated -- their own semantics, an event
+  "relocating itself" across maps with separate fixed event lists, raise
+  a different question that fix does not answer either way),
+  `SaveLoad`(220)'s own remaining surface (self-variables, the database,
+  and everything else this pass's own deliberately partial snapshot left
+  out), `Party`(270)'s own remaining surface (a real party system: roster,
+  member sprites, formation-following movement), and `Database`(250)'s
+  own remaining surface (XY配列, the eight name<->index lookups, data
+  reset/insert/extract/copy/sort, CSV import/export via
   `ImportDatabase`(251) -- 0 real calls of its own in this sample game).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)

@@ -707,13 +707,14 @@ module Wolf
     # #event_at/#trigger_confirm/#trigger_touch (called from WolfRPG::MapScene)
     # know which map's events to look at. Set on every map load (including
     # Teleport(130)'s own hero-target case, ADR 0080), but nothing clears
-    # @map_runs on its own when it changes -- @event_positions (keyed by
-    # event id alone, which collide across maps reusing small ids like
-    # 0/1/2) has the exact same gap, tracked together under Teleport's own
-    # "persistent per-map event state" TODO entry. #exec_save_load's own
-    # Load case (220) clears both @common_runs and @map_runs outright, but
-    # only because it also needs every event stopped, not as a fix for
-    # this.
+    # @map_runs on its own when it changes -- a revisited map's own events
+    # simply restart fresh next time #update's own condition check finds
+    # them (matching every other "an auto/parallel run restarts once its
+    # own condition holds again" simplification already documented on
+    # #update itself), not preserved mid-run the way #event_position's own
+    # per-map keying now preserves *position*. #exec_save_load's own Load
+    # case (220) clears both @common_runs and @map_runs outright, but only
+    # because it also needs every event stopped, not as a fix for this.
     attr_accessor :current_map
 
     # SaveLoad(220)'s own Save case (#exec_save_load): the id `#current_map`
@@ -1314,9 +1315,22 @@ module Wolf
     TOWARD_HERO_RANGE = 10
 
     # The runtime {x:, y:, direction:, page_index:, move_timer:} for one map
-    # event, created on first use from its own parsed start position.
+    # event, created on first use from its own parsed start position and
+    # keyed by `[current_map_id, event.id]` (not `event.id` alone -- two
+    # different maps' own event id spaces both start from small numbers
+    # like 0/1/2 and would otherwise collide) so that revisiting the same
+    # map -- Teleport(130) or SaveLoad(220)'s own Load, both of which
+    # replace `current_map`/`current_map_id` without clearing this Hash --
+    # finds its own events exactly where they were left, the "persistent
+    # per-map event state" both of those ADRs (0080/0087) already flagged
+    # as still missing. `current_map_id` is nil in a context with no real
+    # map load at all (this method's own test suite, `scripts/wolf_
+    # interpreter_check.rb`'s own map-event soak pass before any Teleport/
+    # Load ever runs) -- every event on that one implicit map still keys
+    # uniquely off its own id there, the same as before this changed.
     def event_position(event)
-      @event_positions[event.id] ||= { x: event.x, y: event.y, direction: :down, page_index: nil, move_timer: 0 }
+      key = [current_map_id, event.id]
+      @event_positions[key] ||= { x: event.x, y: event.y, direction: :down, page_index: nil, move_timer: 0 }
     end
 
     # SetMoveRoute(201): args = [target]; `cmd.route`/`cmd.route_flags` are
