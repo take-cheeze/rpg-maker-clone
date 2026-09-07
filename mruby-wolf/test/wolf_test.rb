@@ -451,6 +451,89 @@ assert "Wolf::Interpreter's GotoLoopStart(176) restarts the loop without running
   assert_equal 0, store.number(2_000_001)
 end
 
+assert "Wolf::Interpreter's Blank(0) is a no-op that does not disturb its siblings" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+    wolf_test_cmd(0, [], [], 0), # Blank
+    wolf_test_cmd(121, [2_000_001, 0, 2, 0xf000], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+  assert_equal 2, store.number(2_000_001)
+end
+
+# ---- Wolf::Interpreter LoopTimes(179) ----------------------------------------
+
+assert "Wolf::Interpreter's LoopTimes(179) repeats exactly the configured (possibly variable-held) count" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_002, 3)
+  commands = [
+    wolf_test_cmd(179, [2_000_002], [], 0),                     # LoopTimes V[2] (3)
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1), # V[0] += 1
+    wolf_test_cmd(498, [], [], 0),                               # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 3, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's LoopTimes(179) never runs its body for 0 (or fewer) iterations" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(179, [0], [], 0),                              # LoopTimes 0
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1),
+    wolf_test_cmd(498, [], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 0, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's BreakLoop exits a LoopTimes loop early, clearing its remaining count" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(179, [5], [], 0),                              # LoopTimes 5
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1),  # V[0] += 1
+    wolf_test_cmd(111, [0x01, 2_000_000, 2, 1], [], 1),          # if V[0] >= 2
+    wolf_test_cmd(401, [0], [], 1),
+    wolf_test_cmd(171, [], [], 2),                               # BreakLoop
+    wolf_test_cmd(499, [], [], 1),
+    wolf_test_cmd(498, [], [], 0),                               # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's GotoLoopStart consumes one LoopTimes iteration, matching reaching LoopEnd" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(179, [3], [], 0),                              # LoopTimes 3
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 1),  # V[0] += 1
+    wolf_test_cmd(176, [], [], 1),                               # GotoLoopStart
+    wolf_test_cmd(121, [2_000_001, 0, 1, 0xf100], [], 1),  # V[1] += 1; should never run
+    wolf_test_cmd(498, [], [], 0),                               # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 3, store.number(2_000_000)
+  assert_equal 0, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter's JumpLabel landing inside a LoopTimes body from outside it runs exactly once" do
+  # 04ev_control.html's own documented gotcha: a label jump into a
+  # count-loop from outside never initializes its own remaining-count
+  # tracking, so the loop ends after one iteration regardless of the
+  # configured count.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(213, [], ["go"], 0),                           # JumpLabel "go"
+    wolf_test_cmd(179, [5], [], 1),                              # LoopTimes 5
+    wolf_test_cmd(212, [], ["go"], 2),                           # SetLabel "go"
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf100], [], 2),  # V[0] += 1
+    wolf_test_cmd(498, [], [], 1),                               # LoopEnd
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+end
+
 # ---- Wolf::Interpreter map events ----------------------------------------
 
 # Minimal doubles for Wolf::Page/Wolf::Event: Interpreter only ever reads

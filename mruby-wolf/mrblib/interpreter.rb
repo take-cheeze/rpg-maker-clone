@@ -34,6 +34,13 @@ module Wolf
   class Interpreter
     # Mirrors WolfTL's Command.hpp CommandType enum (cross-checked against
     # wolftrans' CID_TO_CLASS and the crate's Signature enum).
+    # WolfTL's own "Blank": a deliberately empty command row (the editor
+    # leaves one behind for a deleted command, or a user adds one purely
+    # for indentation/spacing) -- always zero args/strings in every one of
+    # its 3468 real occurrences, the single most common command code in
+    # the sample game. A genuine no-op, not missing functionality, so it
+    # skips #unimplemented's own "not implemented yet" log entirely.
+    C_BLANK = 0
     C_MESSAGE = 101
     C_CHOICES = 102
     # Choices(102)'s own "キャンセル時の分岐先" (cancel-key destination) field,
@@ -92,6 +99,17 @@ module Wolf
     # once-per-frame Wait has already run, rather than falling through into
     # work meant for the next display cycle).
     C_GOTO_LOOP_START = 176
+    # "回数付きループ" (04ev_control.html): the same LoopEnd(498) terminator
+    # StartLoop(170) uses, but bounded to a real (possibly variable-held)
+    # iteration count rather than running until BreakLoop -- WolfTL's own
+    # Command.hpp confirms it shares LoopEnd with StartLoop (there is only
+    # one LoopEnd code). The manual documents 0 (or fewer) iterations as
+    # never running the body at all, and a JumpLabel(213) landing inside a
+    # LoopTimes body *from outside it* as running exactly once regardless
+    # of the configured count (its own remaining-count tracking, keyed by
+    # this loop's own StartLoop-equivalent position, was never initialized
+    # by that jump) -- both handled by #exec_loop_times/#continue_loop.
+    C_LOOP_TIMES = 179
     C_WAIT = 180
     C_COMMON_EVENT = 210
     C_COMMON_EVENT_RESERVE = 211
@@ -131,6 +149,13 @@ module Wolf
         @index = 0
         @label = label
         @done = false
+        # LoopTimes(179)'s own remaining-iteration count, keyed by that
+        # command's own @commands index -- see #exec_loop_times/
+        # #continue_loop. A plain Hash rather than per-command state on
+        # Command itself, since the same physical LoopTimes line can be
+        # "active" with a different remaining count each time an outer loop
+        # wraps around and re-enters it.
+        @loop_counters = {}
         @fiber = Fiber.new { execute }
       end
 
@@ -159,6 +184,8 @@ module Wolf
 
       def dispatch(cmd)
         case cmd.code
+        when Interpreter::C_BLANK
+          nil
         when Interpreter::C_SET_VARIABLE then @interp.exec_set_variable(cmd)
         when Interpreter::C_SET_VARIABLE_EX then @interp.exec_set_variable_ex(cmd)
         when Interpreter::C_SET_STRING then @interp.exec_set_string(cmd)
@@ -173,23 +200,32 @@ module Wolf
           nil
         when Interpreter::C_START_LOOP
           nil
+        when Interpreter::C_LOOP_TIMES
+          exec_loop_times(cmd)
         when Interpreter::C_LOOP_END
-          jump_to_loop_start(cmd.indent)
+          i = find_loop_start(cmd.indent)
+          continue_loop(i, from_loop_end: true) if i
         when Interpreter::C_BREAK_LOOP
           # BreakLoop is nested inside the loop body (typically behind an
           # if), so it does not share the enclosing StartLoop/LoopEnd's own
           # indent the way LoopEnd itself does -- find that indent first by
-          # scanning backward for the nearest StartLoop not already closed
-          # by an intervening LoopEnd (bracket matching, indent-independent),
-          # then skip forward to its LoopEnd exactly as BreakLoop's own
-          # indent could not.
+          # scanning backward for the nearest StartLoop/LoopTimes not
+          # already closed by an intervening LoopEnd (bracket matching,
+          # indent-independent), then skip forward to its LoopEnd exactly
+          # as BreakLoop's own indent could not.
           i = enclosing_loop_start_index
-          skip_to(@commands[i].indent) { |c| c.code == Interpreter::C_LOOP_END } if i
+          if i
+            @loop_counters.delete(i)
+            skip_to(@commands[i].indent) { |c| c.code == Interpreter::C_LOOP_END }
+          end
         when Interpreter::C_GOTO_LOOP_START
           # Same nested-indent situation as BreakLoop, but restart the loop
-          # (jump to just past its StartLoop) instead of exiting it.
+          # (or, for a LoopTimes loop, consume one iteration exactly like
+          # reaching LoopEnd would -- 04ev_control.html's own wording
+          # treats "return to the loop's start" as ending the current
+          # iteration early, not skipping the count) instead of exiting it.
           i = enclosing_loop_start_index
-          @index = i + 1 if i
+          continue_loop(i, from_loop_end: false) if i
         when Interpreter::C_SET_LABEL
           nil
         when Interpreter::C_JUMP_LABEL
@@ -454,11 +490,12 @@ module Wolf
         end
       end
 
-      # The index of the StartLoop enclosing the BreakLoop/GotoLoopStart
-      # command @index has just moved past, found by bracket-matching
-      # backward: a LoopEnd met along the way belongs to an already-closed
-      # nested loop, so the StartLoop that closes *it* is skipped too
-      # (depth-tracked) rather than mistaken for the enclosing loop.
+      # The index of the StartLoop/LoopTimes enclosing the BreakLoop/
+      # GotoLoopStart command @index has just moved past, found by
+      # bracket-matching backward: a LoopEnd met along the way belongs to
+      # an already-closed nested loop, so the opener that closes *it* is
+      # skipped too (depth-tracked) rather than mistaken for the enclosing
+      # loop.
       def enclosing_loop_start_index
         i = @index - 2
         depth = 0
@@ -466,7 +503,7 @@ module Wolf
           c = @commands[i]
           if c.code == Interpreter::C_LOOP_END
             depth += 1
-          elsif c.code == Interpreter::C_START_LOOP
+          elsif c.code == Interpreter::C_START_LOOP || c.code == Interpreter::C_LOOP_TIMES
             if depth == 0
               return i
             else
@@ -478,16 +515,65 @@ module Wolf
         nil
       end
 
-      def jump_to_loop_start(indent)
+      # The index of the StartLoop/LoopTimes that opens the loop the
+      # LoopEnd @index has just moved past closes -- found at the same
+      # indent as that LoopEnd itself (loop bodies are always one indent
+      # deeper than their own opener/closer), so unlike
+      # #enclosing_loop_start_index this needs no bracket-depth tracking.
+      def find_loop_start(indent)
         i = @index - 2 # the LoopEnd we just consumed
         while i >= 0
           c = @commands[i]
-          if c.indent == indent && c.code == Interpreter::C_START_LOOP
-            @index = i + 1
-            return
+          if c.indent == indent && (c.code == Interpreter::C_START_LOOP || c.code == Interpreter::C_LOOP_TIMES)
+            return i
           end
           i -= 1
         end
+        nil
+      end
+
+      # `i` is a StartLoop/LoopTimes's own index, closed (naturally via
+      # LoopEnd, or early via GotoLoopStart -- 04ev_control.html treats
+      # both as "one iteration ends") by the command @index has just moved
+      # past. StartLoop always jumps back; LoopTimes decrements its own
+      # remaining count and either jumps back (count left) or ends the loop
+      # (exhausted) -- `@loop_counters[i] || 1` covers a LoopTimes loop
+      # entered by a JumpLabel from *outside* it, whose own count was never
+      # initialized: 04ev_control.html documents this as running exactly
+      # once, matching a fresh count of 1.
+      #
+      # `from_loop_end` distinguishes the two ways a loop can be "closed"
+      # here: true when @index has *already* stepped past this loop's own
+      # LoopEnd (dispatched naturally, nothing more to do once exhausted --
+      # #skip_to-ing to find it again would run right past the next one
+      # instead), false when GotoLoopStart calls this from mid-body and an
+      # exhausted count must still #skip_to the LoopEnd itself, exactly
+      # like BreakLoop.
+      def continue_loop(i, from_loop_end:)
+        if @commands[i].code == Interpreter::C_LOOP_TIMES
+          remaining = (@loop_counters[i] || 1) - 1
+          if remaining <= 0
+            @loop_counters.delete(i)
+            skip_to(@commands[i].indent) { |c| c.code == Interpreter::C_LOOP_END } unless from_loop_end
+            return
+          end
+          @loop_counters[i] = remaining
+        end
+        @index = i + 1
+      end
+
+      # LoopTimes(179)'s own entry point: 0 (or fewer) iterations means the
+      # body never runs at all (04ev_control.html's own documented
+      # behavior), matching #skip_to's own use for a false branch condition
+      # rather than a dedicated code path.
+      def exec_loop_times(cmd)
+        i = @index - 1
+        total = @interp.var_store.number(cmd.arg(0))
+        if total <= 0
+          skip_to(cmd.indent) { |c| c.code == Interpreter::C_LOOP_END }
+          return
+        end
+        @loop_counters[i] = total
       end
 
       def jump_to_label(cmd)

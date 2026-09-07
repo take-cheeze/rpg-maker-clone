@@ -36076,12 +36076,45 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   different type across separate common-event invocations -- self-var
   banks persist between them) -- both would have crashed `ctest`/the soak
   check the moment real data exercised them. See
-  `docs/adr/0075-wolf-rpg-editor-database-command.md`. Suggested next
-  order: save/load 220-222, transitions 160-162/281/290 (161/162 have zero
-  real examples in the sample game; 160 has exactly one), Database(250)'s
-  own remaining surface (XY配列, the eight name<->index lookups, data
-  reset/insert/extract/copy/sort, CSV import/export via `ImportDatabase`
-  (251)) as a well-scoped follow-up once something else needs it.
+  `docs/adr/0075-wolf-rpg-editor-database-command.md`.
+- ✅ **Blank(0) and LoopTimes(179) (2026-09-07).** A full real-data census
+  of every command code in the sample game (not just the ones already
+  implemented) found `Blank`(0) is the single most common command code of
+  all (3468 occurrences, always empty -- a deliberate no-op the editor
+  leaves behind for a deleted command or pure spacing, not missing
+  functionality) and `LoopTimes`(179) the fourth most common (438
+  occurrences) -- both far ahead of save/load (220-222, 13 occurrences) or
+  transitions (160-162, almost unused), the previously-suggested next
+  targets. `LoopTimes` ("回数付きループ") shares `StartLoop`(170)'s own
+  `LoopEnd`(498) terminator (WolfTL's Command.hpp confirms only one
+  `LoopEnd` code exists) but is bounded to a real, possibly variable-held
+  count rather than needing `BreakLoop` to exit; a new per-`Run`
+  `@loop_counters` Hash (keyed by the `LoopTimes` command's own index, not
+  stored on `Command` itself, since the same physical line can be active
+  with a different count each time an outer loop wraps around and
+  re-enters it) tracks the remaining count, shared by `LoopEnd`'s natural
+  close and `GotoLoopStart`'s early one (the manual treats "return to loop
+  start" as ending the current iteration exactly like reaching `LoopEnd`
+  would). Two manual-documented edge cases are handled exactly rather than
+  approximated: 0-or-fewer configured iterations never run the body at
+  all, and a `JumpLabel`(213) landing inside a `LoopTimes` body *from
+  outside it* runs the loop exactly once regardless of the configured
+  count (its own remaining-count entry was never created by that jump) --
+  both verified against synthetic scenarios matching the manual's own
+  stated behavior, plus the soak check and the compiled binary against the
+  real sample game. See
+  `docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md`. Suggested next
+  order (by real frequency, from the same census): `Effect`(290, 279
+  occurrences -- a large polymorphic screen-effect command in the same
+  shape family as `Sound`/`Picture`), save/load (220-222, 13 occurrences,
+  though 220's own `Base`/Save operation needs a real save-file *format*
+  serializing the whole game state, not just command wiring -- a much
+  larger undertaking than its own occurrence count suggests), `Party`(270),
+  `BanInput`(126), transitions (160-162, almost unused), `ChangeColor`
+  (151), `Checkpoint`(99), `WaitForMove`(202), `Teleport`(130), and
+  `Database`(250)'s own remaining surface (XY配列, the eight name<->index
+  lookups, data reset/insert/extract/copy/sort, CSV import/export via
+  `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
