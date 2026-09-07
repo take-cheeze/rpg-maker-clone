@@ -58,8 +58,8 @@ ruby scripts/export_nano7_map.rb --target wio \
 pio run -e wio_walk -t upload
 ```
 
-`--target wio` sizes the export for this board's buffers (64x64 tiles, 160
-atlas entries — about 100 KB of its 192 KB SRAM) and refuses a map that would
+`--target wio` sizes the export for this board's buffers (96x96 tiles, 192
+atlas entries — about 95 KB of its 192 KB SRAM) and refuses a map that would
 not fit rather than writing one the firmware cannot load. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 

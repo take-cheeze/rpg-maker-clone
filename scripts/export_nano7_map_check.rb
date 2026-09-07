@@ -27,16 +27,18 @@ EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
 TARGETS = {
   'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
-  'wio' => { max_w: 64, max_h: 64, max_tiles: 160 }
+  'wio' => { max_w: 96, max_h: 96, max_tiles: 192 }
 }.freeze
 MAP_MAX_W = TARGETS['nano7'][:max_w]
 MAP_MAX_H = TARGETS['nano7'][:max_h]
 MAX_TILES = TARGETS['nano7'][:max_tiles]
-MAP_VERSION = 2
+MAP_VERSION = 3
 UPPER_NONE = 0xFFFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
-TILE_WORDS = 16 * 16       # ARGB1555 pixels per tile
+TILE_BYTES = 16 * 16       # one palette index per pixel
 OPAQUE_BIT = 0x8000
+TRANSPARENT_INDEX = 0
+MAX_PALETTE = 256
 
 $failures = 0
 $checks = 0
@@ -87,7 +89,9 @@ def read_map_bin(path)
   magic = bytes[0, 4]
   version, _pad = bytes[4, 2].unpack('CC')
   width, height, start_x, start_y, tile_count, backdrop = bytes[6, 12].unpack('v6')
-  off = 18
+  palette_count = bytes[18, 2].unpack1('v')
+  palette = bytes[20, palette_count * 2].unpack('v*')
+  off = 20 + palette_count * 2
   cells = width * height
   lower = bytes[off, cells * 2].unpack('v*'); off += cells * 2
   upper = bytes[off, cells * 2].unpack('v*'); off += cells * 2
@@ -96,7 +100,8 @@ def read_map_bin(path)
   {
     magic: magic, version: version, width: width, height: height,
     start_x: start_x, start_y: start_y, tile_count: tile_count,
-    backdrop: backdrop, lower: lower, upper: upper, passable: passable
+    backdrop: backdrop, palette: palette, lower: lower, upper: upper,
+    passable: passable
   }
 end
 
@@ -112,7 +117,7 @@ def check_export(game_dir, map_id)
 
     map = read_map_bin(File.join(out_dir, 'map.bin'))
     tiles_bytes = File.binread(File.join(out_dir, 'tiles.bin'))
-    tiles = tiles_bytes.unpack('v*')
+    tiles = tiles_bytes.unpack('C*')
     chipset_path = stdout[/ from (.+)$/, 1]
 
     check("map #{map_id}: magic") { ok map[:magic] == 'N7WM', map[:magic].inspect }
@@ -127,27 +132,40 @@ def check_export(game_dir, map_id)
       ok map[:start_y] >= 0 && map[:start_y] < map[:height], "start_y #{map[:start_y]}"
     end
     check("map #{map_id}: tiles.bin size matches tile_count") do
-      expected = map[:tile_count] * TILE_WORDS * 2
+      expected = map[:tile_count] * TILE_BYTES
       ok tiles_bytes.bytesize == expected, "#{tiles_bytes.bytesize} != #{expected}"
     end
-    check("map #{map_id}: a transparent pixel is written as 0") do
-      bad = tiles.reject { |w| (w & OPAQUE_BIT) != 0 || w.zero? }
-      ok bad.empty?, "#{bad.size} transparent pixels carry colour bits, e.g. 0x%04x" % (bad.first || 0)
+    check("map #{map_id}: the palette fits a one-byte index") do
+      ok map[:palette].size.between?(1, MAX_PALETTE), "#{map[:palette].size} entries"
+      ok map[:palette][TRANSPARENT_INDEX].zero?,
+         "entry 0 is 0x%04x, not the transparent slot" % map[:palette][TRANSPARENT_INDEX]
+    end
+    check("map #{map_id}: every palette colour past 0 is opaque and distinct") do
+      colours = map[:palette].drop(1)
+      bad = colours.reject { |c| (c & OPAQUE_BIT) != 0 }
+      ok bad.empty?, "#{bad.size} non-opaque entries, e.g. 0x%04x" % (bad.first || 0)
+      ok colours.uniq.size == colours.size, "#{colours.size - colours.uniq.size} duplicate colours"
+    end
+    check("map #{map_id}: every pixel indexes into the palette") do
+      bad = tiles.reject { |i| i < map[:palette].size }
+      ok bad.empty?, "#{bad.size} out-of-range indices, e.g. #{bad.first}"
     end
     # The bug this guards: with the chipset loaded without RPG Maker's
     # "palette index 0 is transparent" flag, every keyed pixel exported as an
     # opaque block of that palette colour (magenta on Nepheshel's chipsets).
-    check("map #{map_id}: no opaque pixel is the chipset's colour key") do
+    # The colour key cannot be a palette entry now, so one check covers every
+    # pixel that could carry it.
+    check("map #{map_id}: the chipset's colour key is not a palette colour") do
       ok chipset_path, 'exporter did not report a chipset path'
       ok File.file?(chipset_path), "reported chipset missing: #{chipset_path}"
       pal0 = png_palette0(chipset_path)
       ok pal0, "no PLTE in #{chipset_path}"
       key = pack1555(*pal0)
-      hits = tiles.count(key)
-      ok hits.zero?, "#{hits} pixels are the colour key 0x%04x (#{pal0.inspect})" % key
+      ok !map[:palette].include?(key),
+         "the colour key 0x%04x (#{pal0.inspect}) is in the palette" % key
     end
     check("map #{map_id}: atlas entries are deduplicated") do
-      slots = (0...map[:tile_count]).map { |i| tiles[i * TILE_WORDS, TILE_WORDS] }
+      slots = (0...map[:tile_count]).map { |i| tiles[i * TILE_BYTES, TILE_BYTES] }
       ok slots.uniq.size == slots.size, "#{slots.size - slots.uniq.size} duplicate atlas entries"
     end
     check("map #{map_id}: backdrop is opaque or absent") do

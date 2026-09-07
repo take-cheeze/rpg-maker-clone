@@ -3,14 +3,14 @@
  * CTest as `walk_core`.
  *
  * The two devices this core runs on -- an iPod nano 7G under NanoApps and a
- * Wio Terminal under Arduino -- are both outside CI: no toolchain, no
- * emulator, no board (ADR 61, ADR 7). The core is plain C with no I/O, so
- * the half of those firmwares that can actually be wrong in an interesting
- * way (format parsing, the movement rule, camera clamping, layer
- * compositing) is exactly the half a host compiler can run. Fixtures here
- * are synthetic, built byte by byte in the format the exporter writes;
- * scripts/export_nano7_map_check.rb covers the other side of that contract
- * against real game data.
+ * Wio Terminal under Arduino -- are outside CI: no emulator, no board, and
+ * for the nano no toolchain either (ADR 61, ADR 7). The core is plain C with
+ * no I/O, so the half of those firmwares that can actually be wrong in an
+ * interesting way (format parsing, the palette, the movement rule, camera
+ * clamping, layer compositing) is exactly the half a host compiler can run.
+ * Fixtures here are synthetic, built byte by byte in the format the exporter
+ * writes; scripts/export_nano7_map_check.rb covers the other side of that
+ * contract against real game data.
  */
 #include <stdio.h>
 #include <string.h>
@@ -31,25 +31,38 @@ static void check(int cond, const char* what) {
 #define W 4
 #define H 3
 #define TILES 3
-#define MAP_BYTES (RW_MAP_HEADER_BYTES + W * H * RW_MAP_BYTES_PER_CELL)
+
+/* Palette: 0 is the transparent slot, then red and green. The backdrop is a
+ * direct colour rather than an index, so blue is not in the palette. */
+#define PAL_COUNT 3
+#define IDX_RED 1
+#define IDX_GREEN 2
+#define RED (RW_OPAQUE | (31u << 10))
+#define GREEN (RW_OPAQUE | (31u << 5))
+#define BLUE (RW_OPAQUE | 31u)
+
+#define PAL_BYTES (PAL_COUNT * 2)
+#define MAP_BYTES \
+  (RW_MAP_HEADER_BYTES + PAL_BYTES + W * H * RW_MAP_BYTES_PER_CELL)
+#define CELLS_AT (RW_MAP_HEADER_BYTES + PAL_BYTES)
 
 static uint8_t g_map[MAP_BYTES];
-static uint16_t g_tiles[TILES * RW_TILE_PIXELS];
+static uint8_t g_tiles[TILES * RW_TILE_PIXELS];
 
 static void put_u16(uint8_t* p, unsigned v) {
   p[0] = (uint8_t)(v & 0xff);
   p[1] = (uint8_t)(v >> 8);
 }
 
-/* Slot 0 is opaque red, slot 1 opaque green, slot 2 half transparent (its
- * left half green, its right half a hole). */
+/* Slot 0 is solid red, slot 1 solid green, slot 2 half transparent (its left
+ * half green, its right half index 0). */
 static void build_tiles(void) {
   int i;
   for (i = 0; i < RW_TILE_PIXELS; i++) {
-    g_tiles[i] = RW_OPAQUE | (31u << 10);
-    g_tiles[RW_TILE_PIXELS + i] = RW_OPAQUE | (31u << 5);
+    g_tiles[i] = IDX_RED;
+    g_tiles[RW_TILE_PIXELS + i] = IDX_GREEN;
     g_tiles[2 * RW_TILE_PIXELS + i] =
-        (i % RW_TS) < RW_TS / 2 ? (uint16_t)(RW_OPAQUE | (31u << 5)) : 0;
+        (i % RW_TS) < RW_TS / 2 ? IDX_GREEN : RW_TRANSPARENT_INDEX;
   }
 }
 
@@ -65,21 +78,29 @@ static void build_map(void) {
   put_u16(g_map + 10, 1); /* start x */
   put_u16(g_map + 12, 1); /* start y */
   put_u16(g_map + 14, TILES);
-  put_u16(g_map + 16, RW_OPAQUE | 31u); /* backdrop: blue */
+  put_u16(g_map + 16, BLUE); /* backdrop */
+  put_u16(g_map + 18, PAL_COUNT);
+  put_u16(g_map + RW_MAP_HEADER_BYTES, 0); /* the transparent slot */
+  put_u16(g_map + RW_MAP_HEADER_BYTES + 2, RED);
+  put_u16(g_map + RW_MAP_HEADER_BYTES + 4, GREEN);
   for (i = 0; i < W * H; i++) {
-    put_u16(g_map + RW_MAP_HEADER_BYTES + i * 2, 0);
-    put_u16(g_map + RW_MAP_HEADER_BYTES + W * H * 2 + i * 2, RW_UPPER_NONE);
-    g_map[RW_MAP_HEADER_BYTES + W * H * 4 + i] =
+    put_u16(g_map + CELLS_AT + i * 2, 0);
+    put_u16(g_map + CELLS_AT + W * H * 2 + i * 2, RW_UPPER_NONE);
+    g_map[CELLS_AT + W * H * 4 + i] =
         RW_DIR_UP | RW_DIR_DOWN | RW_DIR_LEFT | RW_DIR_RIGHT;
   }
 }
 
+static void set_lower(int x, int y, unsigned slot) {
+  put_u16(g_map + CELLS_AT + (y * W + x) * 2, slot);
+}
+
 static void set_upper(int x, int y, unsigned slot) {
-  put_u16(g_map + RW_MAP_HEADER_BYTES + W * H * 2 + (y * W + x) * 2, slot);
+  put_u16(g_map + CELLS_AT + W * H * 2 + (y * W + x) * 2, slot);
 }
 
 static void set_passable(int x, int y, unsigned bits) {
-  g_map[RW_MAP_HEADER_BYTES + W * H * 4 + y * W + x] = (uint8_t)bits;
+  g_map[CELLS_AT + W * H * 4 + y * W + x] = (uint8_t)bits;
 }
 
 static rw_status open_default(rw_map* m) {
@@ -94,7 +115,13 @@ static void test_open(void) {
   check(m.width == W && m.height == H, "dimensions are read");
   check(m.tile_count == TILES, "tile count is read");
   check(m.player_x == 1 && m.player_y == 1, "start position is the player's");
-  check(m.backdrop == (RW_OPAQUE | 31u), "backdrop is read");
+  check(m.backdrop == BLUE, "backdrop is read");
+  check(m.palette_count == PAL_COUNT, "palette count is read");
+  check(rw_palette_colour(&m, IDX_RED) == RED, "a palette entry resolves");
+  check(rw_palette_colour(&m, RW_TRANSPARENT_INDEX) == 0,
+        "index 0 is transparent");
+  check(rw_palette_colour(&m, PAL_COUNT) == 0,
+        "an index past the palette is transparent, not a read past it");
 
   check(rw_open(&m, g_map, RW_MAP_HEADER_BYTES - 1, g_tiles, sizeof(g_tiles)) ==
             RW_ERR_SHORT_HEADER,
@@ -117,12 +144,33 @@ static void test_open(void) {
       rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
       "a start position outside the map is refused");
 
+  /* The palette always holds at least its transparent slot, and can never
+   * hold more entries than a one-byte index can reach. */
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 18, 0);
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_PALETTE,
+      "an empty palette is refused");
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 18, RW_MAX_PALETTE + 1);
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_PALETTE,
+      "a palette too big to index in a byte is refused");
+
+  /* A palette the file does not actually carry must not push the cell
+   * pointers past the end of the buffer. */
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 18, RW_MAX_PALETTE);
+  check(rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) ==
+            RW_ERR_MAP_TRUNCATED,
+        "a palette bigger than the file is refused");
+
   /* The device's size cap: a map read into a buffer too small for it arrives
    * short, and must be refused rather than indexed past. */
   check(rw_open(&m, g_map, sizeof(g_map) - 1, g_tiles, sizeof(g_tiles)) ==
             RW_ERR_MAP_TRUNCATED,
         "a map bigger than the buffer is refused");
-  check(rw_open(&m, g_map, sizeof(g_map), g_tiles, sizeof(g_tiles) - 2) ==
+  check(rw_open(&m, g_map, sizeof(g_map), g_tiles, sizeof(g_tiles) - 1) ==
             RW_ERR_TILES_TRUNCATED,
         "an atlas bigger than the buffer is refused");
   check(rw_status_str(RW_ERR_MAGIC)[0] != '\0', "a failure has a reason");
@@ -194,9 +242,8 @@ static void test_compose(void) {
   open_default(&m);
 
   rw_compose_cell(&m, 0, 0, out);
-  check(out[0] == (RW_OPAQUE | (31u << 5)),
-        "an upper tile's opaque pixels win over the lower tile");
-  check(out[RW_TS - 1] == (RW_OPAQUE | (31u << 10)),
+  check(out[0] == GREEN, "an upper tile's opaque pixels win over the lower");
+  check(out[RW_TS - 1] == RED,
         "an upper tile's transparent pixels show the lower tile");
   for (i = 0; i < RW_TILE_PIXELS; i++)
     if ((out[i] & RW_OPAQUE) == 0)
@@ -206,21 +253,20 @@ static void test_compose(void) {
   /* A hole in the lower layer is the backdrop, not black -- this is what
    * makes an island map's sea look like sea. */
   build_map();
-  put_u16(g_map + RW_MAP_HEADER_BYTES + 0, 2); /* lower = half-transparent */
+  set_lower(0, 0, 2); /* half-transparent */
   open_default(&m);
   rw_compose_cell(&m, 0, 0, out);
-  check(out[RW_TS - 1] == (RW_OPAQUE | 31u),
-        "a hole in the lower layer shows the backdrop");
+  check(out[RW_TS - 1] == BLUE, "a hole in the lower layer shows the backdrop");
 
   /* Nothing reads past the buffers for a cell (or a tile index) that is not
    * there: both composite as plain backdrop. */
   build_map();
-  put_u16(g_map + RW_MAP_HEADER_BYTES + 0, TILES + 7);
+  set_lower(0, 0, TILES + 7);
   open_default(&m);
   rw_compose_cell(&m, 0, 0, out);
-  check(out[0] == (RW_OPAQUE | 31u), "an out-of-range tile index is backdrop");
+  check(out[0] == BLUE, "an out-of-range tile index is backdrop");
   rw_compose_cell(&m, -1, 0, out);
-  check(out[0] == (RW_OPAQUE | 31u), "a cell outside the map is backdrop");
+  check(out[0] == BLUE, "a cell outside the map is backdrop");
 }
 
 int main(void) {

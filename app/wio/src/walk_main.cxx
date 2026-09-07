@@ -45,22 +45,24 @@ namespace {
 // reading past them, and the exporter's `--target wio` refuses to write one).
 //
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
-// to (docs/adr/0007's own headline constraint). These caps spend 100 KB of it:
+// to (docs/adr/0007's own headline constraint). These caps spend 95 KB of it:
 //
-//   map.bin   18 + 64*64*5     =  20,498 B
-//   tiles.bin  160 * 16*16*2   =  81,920 B
+//   map.bin   20 + 256*2 + 96*96*5  =  46,612 B
+//   tiles.bin       192 * 16*16     =  49,152 B
 //
-// leaving ~90 KB for the Arduino core, the SD and LCD drivers, the stack and
-// this file's own statics. Deliberately conservative rather than fitted to
-// the last kilobyte, and picked so real maps load: 160 atlas entries covers
-// Nepheshel's world map (137) with room over. Raising them is a two-line
-// change once a real build reports what the drivers actually take.
-constexpr int kMapMaxW = 64;
-constexpr int kMapMaxH = 64;
-constexpr int kMaxTiles = 160;
+// leaving ~95 KB for the Arduino core, the SD and LCD drivers, the stack and
+// this file's own statics. Both caps grew when format v3 made a tile pixel
+// one palette index instead of a 16-bit colour (docs/adr/0092): a 96x96 map
+// with 192 atlas entries now costs less RAM than 64x64 with 160 did, so the
+// board takes maps it used to refuse. Still deliberately conservative rather
+// than fitted to the last kilobyte; raising them is a two-line change once a
+// real build reports what the drivers actually take.
+constexpr int kMapMaxW = 96;
+constexpr int kMapMaxH = 96;
+constexpr int kMaxTiles = 192;
 
-constexpr uint32_t kMapBytes =
-    RW_MAP_HEADER_BYTES + kMapMaxW * kMapMaxH * RW_MAP_BYTES_PER_CELL;
+constexpr uint32_t kMapBytes = RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +
+                               kMapMaxW * kMapMaxH * RW_MAP_BYTES_PER_CELL;
 
 // Where the exported pair lives on the microSD card.
 constexpr char kMapPath[] = "/RPG2kWalk/map.bin";
@@ -70,7 +72,8 @@ constexpr char kTilesPath[] = "/RPG2kWalk/tiles.bin";
 constexpr uint32_t kStepIntervalMs = 160;
 
 uint8_t g_map_raw[kMapBytes];
-uint16_t g_tiles[kMaxTiles * RW_TILE_PIXELS];
+// One palette index per pixel; the colours live in map.bin's palette.
+uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS];
 // One composited cell, converted to the panel's RGB565 (512 B, so a static
 // rather than a stack buffer on a board with this little SRAM).
 uint16_t g_cell565[RW_TILE_PIXELS];
