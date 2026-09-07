@@ -758,6 +758,10 @@
   self-variables are now also keyed per map, closing the one gap the
   event-position fix above left open. See
   [`docs/adr/0090-wolf-rpg-editor-map-event-self-var-per-map.md`](docs/adr/0090-wolf-rpg-editor-map-event-self-var-per-map.md)
+- **StringCondition(112).** `VariableCondition`(111)'s string-comparison
+  counterpart — `Equals`/`NotEquals`/`Includes`/`StartsWith` against a
+  literal or another string variable. See
+  [`docs/adr/0091-wolf-rpg-editor-string-condition.md`](docs/adr/0091-wolf-rpg-editor-string-condition.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

@@ -36358,6 +36358,24 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   of its own. `@common_event_self` (Common Events are global, not
   per-map) never had this problem. See `docs/adr/0090-wolf-rpg-editor-
   map-event-self-var-per-map.md`.
+- ✅ **StringCondition(112) (2026-09-07).** The string-comparison
+  counterpart to `VariableCondition`(111) had been left entirely
+  unimplemented (every real call always skipped its own true branch) --
+  re-checked after the per-map keying fixes' own real-frequency well ran
+  dry, and found to have both a real 33-call well of its own *and* full
+  independent structural cross-validation the last several re-checked
+  items (`Teleport`'s `-1` target, `BanInput`(126)) lacked: the crate
+  carries its own dedicated `StringConditionCommand`/`Operator`/
+  `CompareOperator` structs. `arg(0)`'s low nibble is the case count
+  (mirroring `VariableCondition` exactly); each condition's own packed
+  "variable" word carries the crate's own `Operator` in its high byte
+  (`Equals`/`NotEquals`/`Includes`/`StartsWith`, plus a `value_is_variable`
+  bit) and an address in its low 3 bytes; a literal condition's own
+  comparison text is this command's own string at the condition's own
+  index. All 33 real calls are `Equals`/`NotEquals` against a literal
+  (`Includes`/`StartsWith`/`value_is_variable` are implemented from the
+  same enum but not exercised by real data). See `docs/adr/0091-wolf-rpg-
+  editor-string-condition.md`.
 - Suggested next order (by real frequency, from the same census):
   transitions (160-162, almost unused -- `SetTransition`(160)'s own lone
   real call could arguably be a no-op too, since `ExecuteTransition`(162)
@@ -36374,16 +36392,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   separate `MapEffect`(280) command the crate's own dedicated `MapShake`
   struct seems to model needs checking before implementing either, and 0
   real calls exist for either code in this sample game regardless),
-  `Teleport`(130)'s own remaining surface (whether the per-map event
-  position fix above unblocks any more of its own real `-1`/`-3..-7`
-  targets was not investigated -- their own semantics, an event
-  "relocating itself" across maps with separate fixed event lists, raise
-  a different question that fix does not answer either way),
-  `SaveLoad`(220)'s own remaining surface (self-variables, the database,
-  and everything else this pass's own deliberately partial snapshot left
-  out), `Party`(270)'s own remaining surface (a real party system: roster,
-  member sprites, formation-following movement), and `Database`(250)'s
-  own remaining surface (XY配列, the eight name<->index lookups, data
+  `Teleport`(130)'s own remaining surface (re-checked this pass: all 5
+  real `-1` calls relocate the *calling* event to a *different* map than
+  its own home map, which -- since a map event only ever exists in its own
+  home map's own file, re-parsed from scratch on every visit with no
+  cross-map instance sharing -- would need a foundational rewrite well
+  beyond Teleport itself, not just the per-map keying already fixed;
+  `-3..-7`, party members, needs the same unbuilt party system as Party's
+  own `Insert`), `BanInput`(126) (6 real calls, but unlike StringCondition
+  the crate does not model this command at all -- no independent
+  structural cross-validation for its packed bit layout beyond the
+  manual's own semantic description and 2 distinct raw values, and
+  honestly implementing "ban" needs real input-restriction plumbing this
+  reader has never built, not just a data commit -- stays in the "no
+  foundation yet" camp), `SaveLoad`(220)'s own remaining surface
+  (self-variables, the database, and everything else this pass's own
+  deliberately partial snapshot left out), `Party`(270)'s own remaining
+  surface (a real party system: roster, member sprites,
+  formation-following movement), and `Database`(250)'s own remaining
+  surface (XY配列, the eight name<->index lookups, data
   reset/insert/extract/copy/sort, CSV import/export via
   `ImportDatabase`(251) -- 0 real calls of its own in this sample game).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the

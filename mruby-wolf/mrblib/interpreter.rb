@@ -261,8 +261,7 @@ module Wolf
         when Interpreter::C_SET_STRING then @interp.exec_set_string(cmd)
         when Interpreter::C_VARIABLE_CONDITION then exec_variable_condition(cmd)
         when Interpreter::C_STRING_CONDITION
-          @interp.unimplemented("StringCondition(112)")
-          skip_to(cmd.indent) { |c| c.code == Interpreter::C_BRANCH_END }
+          exec_string_condition(cmd)
         when Interpreter::C_CHOICE_CASE, Interpreter::C_SPECIAL_CHOICE_CASE,
              Interpreter::C_ELSE_CASE, Interpreter::C_CANCEL_CASE
           skip_to(cmd.indent) { |c| c.code == Interpreter::C_BRANCH_END }
@@ -389,6 +388,55 @@ module Wolf
           [cmd.arg(base), cmd.arg(base + 1), cmd.arg(base + 2) & 0xff]
         end
         select_branch(cmd.indent) { |idx| conditions[idx] && @interp.evaluate_condition(conditions[idx]) }
+      end
+
+      # StringCondition(112): the string-comparison counterpart to
+      # VariableCondition(111), confirmed by the crate's own dedicated
+      # `StringConditionCommand`/`Operator`/`CompareOperator` structs
+      # (unlike Teleport's target/Party's Special, this command has full
+      # independent structural cross-validation). `arg(0)`'s low nibble is
+      # the case count (its own 0x10 else-case bit is not needed here --
+      # `select_branch` already discovers a trailing ElseCase/CancelCase
+      # marker in the command stream directly, exactly as
+      # `#exec_variable_condition` already does above). Each of the next
+      # `case_count` args is one packed "variable" word: the high byte is
+      # the crate's own `Operator` (bit 0 `value_is_variable`, the top
+      # nibble `CompareOperator`), the low 3 bytes the self-var/variable
+      # address to read as a string. Any args left over after those
+      # (`args.size - 1 - case_count`, matching the crate's own
+      # `value_count` formula once its unrelated header-word offset is
+      # dropped) are one 32-bit "value" word per `value_is_variable`
+      # condition, in order -- consumed here by its own running counter
+      # rather than the crate's own `make_conditions` sharing one index
+      # across both the value and string arrays (safe only when every
+      # condition in a command happens to agree on `value_is_variable`,
+      # which real data never contradicts but this reader does not assume).
+      # A literal condition's own comparison text is this command's own
+      # string at the condition's own index (`cmd.string(i)`) -- real data
+      # (33 calls, all `value_is_variable` 0, comparing a "this common
+      # event" self-var string (5-9, the string quintet) or a string
+      # variable against a literal, `Equals`/`NotEquals` only) confirms
+      # this positional convention directly: a lone condition's own literal
+      # sits at string slot 0, and the one real 2-condition call's own two
+      # (both empty-string) literals would sit at slots 0 and 1 exactly the
+      # same way.
+      def exec_string_condition(cmd)
+        case_count = cmd.arg(0) & 0x0f
+        next_value_index = 1 + case_count
+        conditions = Array.new(case_count) do |i|
+          packed = cmd.arg(1 + i)
+          top = (packed >> 24) & 0xff
+          variable = packed & 0xffffff
+          op = top >> 4
+          if (top & 1) != 0
+            raw = cmd.arg(next_value_index)
+            next_value_index += 1
+            [variable, op, true, raw]
+          else
+            [variable, op, false, cmd.string(i)]
+          end
+        end
+        select_branch(cmd.indent) { |idx| conditions[idx] && @interp.evaluate_string_condition(conditions[idx]) }
       end
 
       # Shared by VariableCondition(111) and Choices(102): both compile down
@@ -782,6 +830,35 @@ module Wolf
       when OP_AND then (lhs & rhs) != 0
       else
         var_store.warn_once("cond-op-#{op}", "unknown comparison operator #{op}; treating as false")
+        false
+      end
+    end
+
+    # StringCondition(112)'s own comparison operators -- the crate's own
+    # `CompareOperator` enum, byte-for-byte (`Equals`/`NotEquals` are the
+    # only two real data exercises; `Includes`/`StartsWith` are implemented
+    # from the same enum but not cross-validated against a real call).
+    STRING_COND_EQ = 0
+    STRING_COND_NE = 1
+    STRING_COND_INCLUDES = 2
+    STRING_COND_STARTS_WITH = 3
+
+    # `cond` is `Run#exec_string_condition`'s own `[variable, op,
+    # value_is_variable, raw]` tuple -- resolving `variable`/`raw` (when
+    # `value_is_variable`) through `var_store.string` lives here rather
+    # than in `Run` itself, the same split `#evaluate_condition` above
+    # already draws for VariableCondition(111).
+    def evaluate_string_condition(cond)
+      variable, op, value_is_variable, raw = cond
+      lhs = var_store.string(variable)
+      rhs = value_is_variable ? var_store.string(raw) : raw
+      case op
+      when STRING_COND_EQ then lhs == rhs
+      when STRING_COND_NE then lhs != rhs
+      when STRING_COND_INCLUDES then lhs.include?(rhs)
+      when STRING_COND_STARTS_WITH then lhs.start_with?(rhs)
+      else
+        var_store.warn_once("string-cond-op-#{op}", "unknown string comparison operator #{op}; treating as false")
         false
       end
     end
