@@ -29,11 +29,15 @@
 #
 # Limitations (see docs/adr/0061 for the full rationale):
 #   * one static map per export -- no map tree, no teleport/transitions.
-#   * animation is the water autotiles and the block-C animated tiles, at
-#     RPG2000's own two rates -- the export asks Game::ChipsetLayout.anim_ab
-#     and .anim_c what those are rather than restating them. Everything else
-#     an RPG2000 map animates (events, pictures, weather, the hero) needs the
-#     interpreter and is out of scope.
+#   * animation is the water autotiles, the block-C animated tiles and the
+#     party leader's own walk cycle, at RPG2000's own rates -- the export
+#     asks Game::ChipsetLayout.anim_ab/.anim_c and Game::CharSet::WALK_
+#     PATTERNS what those are rather than restating them. Everything else an
+#     RPG2000 map animates (events, pictures, weather) needs the interpreter
+#     and is out of scope. The hero sprite is the project's *initial* party
+#     leader (RPG_RT.ldb's own System.party / player rows) -- there is no
+#     live game state to ask instead, so a Change Hero Graphic event command
+#     or a mid-game party swap is not reflected.
 #   * per-pixel transparency is one bit, not an alpha channel: RPG Maker's
 #     colour key is binary, so a pixel is either opaque or absent and the
 #     device composites upper over lower with a test, not a blend. It is
@@ -66,17 +70,21 @@
 # map tree's own start position (RPG_RT.lmt initial_x/initial_y) when MAP_ID
 # is the project's configured start map, or the map's center otherwise.
 #
-# Output format (v5, both files little-endian):
+# Output format (v6, both files little-endian):
 #
-#   map.bin   'N7WM' | u8 version=5 | u8 pad | u16 w | u16 h | u16 start_x
-#             | u16 start_y | u16 entry_count | u16 backdrop
+#   map.bin   'N7WM' | u8 version=6 | u8 hero_present | u16 w | u16 h
+#             | u16 start_x | u16 start_y | u16 entry_count | u16 backdrop
 #             | u16 palette_count | u16 atlas_count
 #             | u8 ab_len | u8 ab_period | u8 c_len | u8 c_period
 #             | u16 palette[palette_count]
 #             | entry[entry_count]: u8 frame[4] | u8 anim_class
 #             | u8 lower[w*h] | u8 upper[w*h] | u4 passable[w*h]
 #   tiles.bin atlas_count * 256 bytes, row-major within each 16x16 tile: one
-#             palette index per pixel.
+#             palette index per pixel; then, only when hero_present is 1, 12
+#             more frames of 24x32 (768) bytes each, same encoding -- the
+#             party leader's own CharSet, in [direction][pattern] order
+#             (up/right/down/left rows -- Game::CharSet::DIR_ROW's own order
+#             -- of 3 walk-cycle patterns each).
 #
 # A cell names an *entry*, not a picture: an entry is up to four atlas slots
 # and the class that says which of RPG2000's two animation clocks advances
@@ -138,7 +146,7 @@ DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
-VERSION = 5
+VERSION = 6
 UPPER_NONE = 0xFF
 
 # ARGB1555 (see the format note at the top): bit 15 opaque, then r5g5b5.
@@ -148,6 +156,17 @@ TRANSPARENT = 0x0000
 # Palette index 0 is the transparent slot, so opaque colours run 1..255.
 TRANSPARENT_INDEX = 0
 MAX_PALETTE = 256
+
+# The hero sprite's own geometry (Game::CharSet::WIDTH/HEIGHT, DIR_ROW,
+# WALK_PATTERNS): four directions, three walk-cycle patterns each, in the
+# same [direction][pattern] order rpg2k_walk_core.c's rw_compose_hero reads.
+# A fixed 12-frame block, not sized by anything the map itself contains, so
+# it costs every export the same tiles.bin bytes whether or not a hero was
+# actually found (RW_HERO_FRAMES_BYTES in the core).
+HERO_FRAME_W = Game::CharSet::WIDTH
+HERO_FRAME_H = Game::CharSet::HEIGHT
+HERO_ROW_DIR = Game::CharSet::DIR_ROW.invert.freeze # row (0..3) -> numpad dir
+HERO_PATTERNS = [0, 1, 2].freeze
 
 # An atlas slot is named by a byte inside an entry, and an entry by a byte in
 # a cell (with 0xFF reserved for "no upper tile"), so neither can pass 255
@@ -230,6 +249,52 @@ chipset_bmp = RGSS::Bitmap.allocate
 usage_abort("failed to decode chipset PNG: #{chipset_path}") unless chipset_bmp.send(:_init_file, chipset_path, true)
 
 cset = Game::ChipSet.new(db, lmu.chipset_id)
+
+# ---- hero sprite ------------------------------------------------------------
+
+# The project's *initial* party leader (RPG_RT.ldb's own System.party --
+# Game::Party#restore's own `db.system.party || []`, first entry -- and that
+# actor's own player row), the same source Scene::Map#load_charset draws
+# from at New Game. There is no live game state a host-side export can ask
+# instead, so this is a best-effort default, not a snapshot of any
+# particular save (see the limitations above): a party a title-screen event
+# reassembles before the player ever sees a map, or a mid-game Change Hero
+# Graphic, is not reflected.
+#
+# Missing or blank is not an error -- unlike the chipset, a hero sprite is
+# an enhancement over the walk port's original marker, and treating a small,
+# custom, or title-screen-only project's empty initial party as fatal would
+# regress every map that exported fine before this format version.
+hero_bmp = nil
+hero_charset_index = 0
+# db[22], not db.system: under CRuby `system` resolves to Kernel#system
+# before method_missing ever sees it (AGENTS.md documents the identical trap
+# for `save[101]`/`save.system`; mruby has no such collision, which is why
+# mruby-rpg2k's own game.rb can spell this `db.system.party`).
+party_ids = db[22].party || []
+leader = party_ids.first && db.player[party_ids.first]
+hero_charset_name = leader && leader.charset_name.to_s
+if hero_charset_name && !hero_charset_name.empty?
+  hero_charset_index = leader.charset_index || 0
+  if hero_charset_index < 0 || hero_charset_index > 7
+    warn "[nano7] party leader's CharSet index #{hero_charset_index} is out of the " \
+         '0..7 a CharSet PNG holds; exporting without a hero sprite'
+  else
+    hero_path = File.join(game_dir, 'CharSet', "#{hero_charset_name}.png")
+    if File.file?(hero_path)
+      candidate = RGSS::Bitmap.allocate
+      # Colour-keyed, same as the chipset -- Scene::Map#load_charset passes
+      # the same `true` flag Scene::Map#load_chipset_graphic does.
+      if candidate.send(:_init_file, hero_path, true)
+        hero_bmp = candidate
+      else
+        warn "[nano7] failed to decode hero CharSet PNG #{hero_path}; exporting without a hero sprite"
+      end
+    else
+      warn "[nano7] hero CharSet image not found: #{hero_path}; exporting without a hero sprite"
+    end
+  end
+end
 
 # ---- backdrop colour -------------------------------------------------------
 
@@ -458,13 +523,46 @@ end
 
 backdrop = backdrop_for(game_dir, lmu)
 
+# ---- hero frames, precomposited the same way the atlas is -----------------
+
+# A straight sub-rect read, not Game::ChipsetLayout.quads' autotile assembly
+# -- a CharSet frame is one rectangle, not four independently-chosen corner
+# quarters -- but the same colour-key test and the same shared palette, so a
+# hero pixel and a tile pixel of the same source colour are the same index.
+def composite_hero_frame(bmp, rx, ry, rw, rh, palette, palette_index)
+  pixels = Array.new(rw * rh, TRANSPARENT_INDEX)
+  rh.times do |yy|
+    rw.times do |xx|
+      r, g, b, a = bmp.bmp_read(rx + xx, ry + yy)
+      next if a < 128
+      colour = OPAQUE_BIT | (to5(r) << 10) | (to5(g) << 5) | to5(b)
+      pixels[yy * rw + xx] = palette_index_for(colour, palette, palette_index)
+    end
+  end
+  pixels.pack('C*')
+end
+
+hero_present = !hero_bmp.nil?
+hero_frames_bytes =
+  if hero_present
+    HERO_ROW_DIR.keys.sort.map do |row|
+      dir = HERO_ROW_DIR[row]
+      HERO_PATTERNS.map do |pattern|
+        rx, ry, rw, rh = Game::CharSet.frame_rect(hero_charset_index, dir, pattern)
+        composite_hero_frame(hero_bmp, rx, ry, rw, rh, palette, palette_index)
+      end
+    end.flatten.join
+  else
+    ''
+  end
+
 # ---- write map.bin -----------------------------------------------------
 
 Dir.mkdir(out_dir) unless Dir.exist?(out_dir)
 
 File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
   f.write(MAGIC)
-  f.write([VERSION, 0].pack('CC'))
+  f.write([VERSION, hero_present ? 1 : 0].pack('CC'))
   f.write([width, height, start_x, start_y, entries.size, backdrop].pack('v6'))
   f.write([palette.size, atlas_pixels.size].pack('v2'))
   f.write([ab_cycle.size, ab_period, c_cycle.size, c_period].pack('C4'))
@@ -486,14 +584,16 @@ end
 
 File.open(File.join(out_dir, 'tiles.bin'), 'wb') do |f|
   atlas_pixels.each { |px| f.write(px) }
+  f.write(hero_frames_bytes) if hero_present
 end
 
 # The chipset path is part of the output line so scripts/export_nano7_map_check.rb
 # can read the very palette this export keyed on, and check no opaque atlas
 # pixel carries the colour key.
 animated_entries = entries.count { |klass, _| klass != ANIM_STATIC }
+hero_msg = hero_present ? "hero '#{hero_charset_name}'##{hero_charset_index}" : 'no hero'
 puts "wrote #{out_dir}/map.bin (target #{target_name}, #{width}x#{height}, " \
      "start #{start_x},#{start_y}) " \
      "and #{out_dir}/tiles.bin (#{entries.size} entries, #{animated_entries} animated, " \
      "#{atlas_pixels.size} tiles, #{entry_of_tile.size} ids, " \
-     "#{palette.size} palette entries, backdrop 0x%04x) from #{chipset_path}" % backdrop
+     "#{palette.size} palette entries, backdrop 0x%04x, #{hero_msg}) from #{chipset_path}" % backdrop

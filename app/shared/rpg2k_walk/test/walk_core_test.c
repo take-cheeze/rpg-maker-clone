@@ -33,14 +33,21 @@ static void check(int cond, const char* what) {
 #define H 3
 #define TILES 3
 
-/* Palette: 0 is the transparent slot, then red and green. The backdrop is a
- * direct colour rather than an index, so blue is not in the palette. */
-#define PAL_COUNT 3
+/* Palette: 0 is the transparent slot, then red and green, then twelve more
+ * marker colours the hero-frame tests use (one per CharSet frame, so
+ * compositing the "wrong" frame is a wrong colour, not a coincidentally
+ * matching one). The backdrop is a direct colour rather than an index, so
+ * blue is not in the palette. */
 #define IDX_RED 1
 #define IDX_GREEN 2
+#define IDX_HERO_BASE 3 /* palette indices 3..14: one per hero frame 0..11 */
+#define PAL_COUNT (IDX_HERO_BASE + RW_HERO_FRAME_COUNT)
 #define RED (RW_OPAQUE | (31u << 10))
 #define GREEN (RW_OPAQUE | (31u << 5))
 #define BLUE (RW_OPAQUE | 31u)
+/* Distinct, arbitrary opaque colours -- the exact hues don't matter, only
+ * that hero frame k's is not frame j's. */
+#define HERO_MARK(k) (uint16_t)(RW_OPAQUE | (((k) + 1) << 6) | ((k) + 1))
 
 /* Entries: 0 static (atlas 0), 1 static (atlas 1), 2 water cycling 0,1,2,1
  * over the four atlas slots, 3 block-C cycling 0..3. */
@@ -63,8 +70,15 @@ static void check(int cond, const char* what) {
 #define UPPER_AT (CELLS_AT + W * H)
 #define PASS_AT (UPPER_AT + W * H)
 
+/* Room for the ordinary atlas plus the hero frames, whether or not a given
+ * test's map actually turns hero_present on -- the extra tail bytes are
+ * simply never read when it doesn't (rw_open only checks tiles_len against
+ * what the header actually asks for). */
+#define HERO_FRAME_AT(k) (TILES * RW_TILE_PIXELS + (k) * RW_HERO_FRAME_PIXELS)
+#define TILES_BYTES (TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES)
+
 static uint8_t g_map[MAP_BYTES];
-static uint8_t g_tiles[TILES * RW_TILE_PIXELS];
+static uint8_t g_tiles[TILES_BYTES];
 
 static void set_passable(int x, int y, unsigned bits);
 static void set_entry(int entry,
@@ -80,14 +94,24 @@ static void put_u16(uint8_t* p, unsigned v) {
 }
 
 /* Slot 0 is solid red, slot 1 solid green, slot 2 half transparent (its left
- * half green, its right half index 0). */
+ * half green, its right half index 0). Also lays down the twelve hero
+ * frames in the tail of g_tiles, each one solid marker colour k except
+ * frame 7 (row 2 "down", pattern 1 "standing"), whose first pixel is
+ * transparent instead -- the one hero test that isn't a flat colour check. */
 static void build_tiles(void) {
-  int i;
+  int i, k;
   for (i = 0; i < RW_TILE_PIXELS; i++) {
     g_tiles[i] = IDX_RED;
     g_tiles[RW_TILE_PIXELS + i] = IDX_GREEN;
     g_tiles[2 * RW_TILE_PIXELS + i] =
         (i % RW_TS) < RW_TS / 2 ? IDX_GREEN : RW_TRANSPARENT_INDEX;
+  }
+  for (k = 0; k < RW_HERO_FRAME_COUNT; k++) {
+    int base = HERO_FRAME_AT(k);
+    for (i = 0; i < RW_HERO_FRAME_PIXELS; i++)
+      g_tiles[base + i] = (uint8_t)(IDX_HERO_BASE + k);
+    if (k == 7)
+      g_tiles[base] = RW_TRANSPARENT_INDEX;
   }
 }
 
@@ -113,6 +137,14 @@ static void build_map(void) {
   put_u16(g_map + RW_MAP_HEADER_BYTES, 0); /* the transparent slot */
   put_u16(g_map + RW_MAP_HEADER_BYTES + 2, RED);
   put_u16(g_map + RW_MAP_HEADER_BYTES + 4, GREEN);
+  {
+    int k;
+    for (k = 0; k < RW_HERO_FRAME_COUNT; k++)
+      put_u16(g_map + RW_MAP_HEADER_BYTES + (IDX_HERO_BASE + k) * 2,
+              HERO_MARK(k));
+  }
+  /* hero_present (byte 5) stays 0 from the memset above; set_hero_present
+   * turns it on for the tests that need it. */
   set_entry(E_RED, RW_ANIM_STATIC, 0, 0, 0, 0);
   set_entry(E_GREEN, RW_ANIM_STATIC, 1, 1, 1, 1);
   /* The ping-pong Game::ChipsetLayout.anim_ab walks for animation_type 0:
@@ -133,6 +165,10 @@ static void set_lower(int x, int y, unsigned slot) {
 
 static void set_upper(int x, int y, unsigned slot) {
   g_map[UPPER_AT + y * W + x] = (uint8_t)slot;
+}
+
+static void set_hero_present(int present) {
+  g_map[5] = (uint8_t)present;
 }
 
 static void set_entry(int entry,
@@ -257,10 +293,26 @@ static void test_open(void) {
   check(rw_open(&m, g_map, sizeof(g_map) - 1, g_tiles, sizeof(g_tiles)) ==
             RW_ERR_MAP_TRUNCATED,
         "a map bigger than the buffer is refused");
-  check(rw_open(&m, g_map, sizeof(g_map), g_tiles, sizeof(g_tiles) - 1) ==
+  check(rw_open(&m, g_map, sizeof(g_map), g_tiles, TILES * RW_TILE_PIXELS - 1) ==
             RW_ERR_TILES_TRUNCATED,
         "an atlas bigger than the buffer is refused");
   check(rw_status_str(RW_ERR_MAGIC)[0] != '\0', "a failure has a reason");
+
+  /* hero_present (byte 5) is a bool, not a general byte, and a truncated
+   * hero region is caught the same way an atlas one is. */
+  memcpy(bad, g_map, sizeof(bad));
+  bad[5] = 2;
+  check(rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
+        "a hero_present byte that is not 0 or 1 is refused");
+
+  memcpy(bad, g_map, sizeof(bad));
+  bad[5] = 1;
+  check(rw_open(&m, bad, sizeof(bad), g_tiles, TILES * RW_TILE_PIXELS) ==
+            RW_ERR_TILES_TRUNCATED,
+        "a hero export with no room for its frames in the tiles buffer is "
+        "refused");
+  check(rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_OK,
+        "the same export opens once the buffer has room for the hero frames");
 }
 
 static void test_move(void) {
@@ -310,6 +362,29 @@ static void test_move(void) {
             rw_passable_at(&m, 2, 0) == 0 &&
             rw_passable_at(&m, 3, 0) == RW_DIR_DOWN,
         "each cell reads its own passability nibble");
+
+  /* RPG2000's own bump-turn (Scene::Map#step_movement): a blocked step still
+   * turns the player to face it, and only a successful one counts toward
+   * the walk-cycle pattern. */
+  build_map();
+  open_default(&m);
+  check(m.direction == RW_NUMPAD_DOWN, "the player starts facing down");
+  check(rw_try_move(&m, 1, 0) == 1 && m.direction == RW_NUMPAD_RIGHT,
+        "a successful step turns to face it");
+  check(m.step_count == 1, "a successful step counts toward the walk cycle");
+
+  build_map();
+  set_passable(1, 1, RW_DIR_UP | RW_DIR_DOWN | RW_DIR_LEFT); /* not right */
+  open_default(&m);
+  check(rw_try_move(&m, 1, 0) == 0 && m.direction == RW_NUMPAD_RIGHT,
+        "a blocked step still turns to face it");
+  check(m.step_count == 0, "a blocked step does not count toward the walk cycle");
+
+  build_map();
+  open_default(&m);
+  m.player_x = 0;
+  check(rw_try_move(&m, -1, 0) == 0 && m.direction == RW_NUMPAD_LEFT,
+        "walking off the map edge still turns to face that way");
 }
 
 static void test_camera(void) {
@@ -434,6 +509,93 @@ static void test_animation(void) {
   check(rw_cell_animated(&m, 0, 0) == 0, "and no cell claims to move");
 }
 
+/* A frame's own solid marker colour, except position 0 of frame 7 (row 2
+ * "down", pattern 1 "standing"), which build_tiles left transparent. */
+static int hero_frame_matches(const uint16_t* out, int frame) {
+  int i;
+  for (i = 0; i < RW_HERO_FRAME_PIXELS; i++) {
+    uint16_t want = (frame == 7 && i == 0) ? 0 : HERO_MARK(frame);
+    if (out[i] != want)
+      return 0;
+  }
+  return 1;
+}
+
+/* The party leader's own CharSet (ADR 95): which of the 12 exported frames
+ * RPG2000's facing/walk-cycle rule picks, and that a hero-less export draws
+ * nothing rather than something wrong. */
+static void test_hero(void) {
+  rw_map m;
+  uint16_t out[RW_HERO_FRAME_PIXELS];
+  int i, x, y;
+
+  /* No hero was exported: every pixel is transparent regardless of facing or
+   * motion, so a caller that blits unconditionally simply draws nothing. */
+  build_map();
+  open_default(&m);
+  check(m.hero_present == 0, "a map with no exported hero says so");
+  rw_compose_hero(&m, 0, out);
+  rw_compose_hero(&m, 1, out);
+  for (i = 0; i < RW_HERO_FRAME_PIXELS && out[i] == 0; i++) {
+  }
+  check(i == RW_HERO_FRAME_PIXELS,
+        "a hero-less export composites as fully transparent");
+
+  build_map();
+  set_hero_present(1);
+  open_default(&m);
+  check(m.hero_present == 1, "a map with an exported hero says so");
+
+  /* Standing (not moving) is always pattern 1, in every direction -- the
+   * default facing (down) is frame 7, the one build_tiles gave a
+   * transparent pixel. */
+  rw_compose_hero(&m, 0, out);
+  check(hero_frame_matches(out, 7),
+        "standing, facing down (the default), shows frame 7");
+  check(out[0] == 0,
+        "a transparent source pixel stays transparent, not the backdrop");
+
+  m.direction = RW_NUMPAD_UP;
+  rw_compose_hero(&m, 0, out);
+  check(hero_frame_matches(out, 1), "standing, facing up, shows frame 1");
+
+  m.direction = RW_NUMPAD_RIGHT;
+  rw_compose_hero(&m, 0, out);
+  check(hero_frame_matches(out, 4), "standing, facing right, shows frame 4");
+
+  m.direction = RW_NUMPAD_LEFT;
+  rw_compose_hero(&m, 0, out);
+  check(hero_frame_matches(out, 10), "standing, facing left, shows frame 10");
+
+  /* Moving cycles the walk pattern with step_count: neutral, one lean,
+   * neutral, the other lean (Game::CharSet::WALK_PATTERNS), facing down. */
+  m.direction = RW_NUMPAD_DOWN;
+  m.step_count = 0;
+  rw_compose_hero(&m, 1, out);
+  check(hero_frame_matches(out, 7), "step 0 is still pattern 1 (neutral)");
+  m.step_count = 1;
+  rw_compose_hero(&m, 1, out);
+  check(hero_frame_matches(out, 8), "step 1 is pattern 2 (a lean)");
+  m.step_count = 2;
+  rw_compose_hero(&m, 1, out);
+  check(hero_frame_matches(out, 7), "step 2 is pattern 1 again (neutral)");
+  m.step_count = 3;
+  rw_compose_hero(&m, 1, out);
+  check(hero_frame_matches(out, 6), "step 3 is pattern 0 (the other lean)");
+  m.step_count = 4;
+  rw_compose_hero(&m, 1, out);
+  check(hero_frame_matches(out, 7), "step 4 wraps the cycle back to step 0");
+
+  /* The screen anchor: centred over the tile horizontally, flush with its
+   * bottom -- Scene::Map#render's own `px - (WIDTH-TILE)/2, py -
+   * (HEIGHT-TILE)`, for a player at (1, 1) and a camera at (0, 0). */
+  rw_hero_screen_pos(&m, 0, 0, &x, &y);
+  check(x == 1 * RW_TS - (RW_HERO_FRAME_W - RW_TS) / 2,
+        "the sprite is centred over its tile horizontally");
+  check(y == 1 * RW_TS - (RW_HERO_FRAME_H - RW_TS),
+        "the sprite's bottom is flush with its tile's");
+}
+
 int main(void) {
   build_tiles();
   build_map();
@@ -443,6 +605,7 @@ int main(void) {
   test_camera();
   test_compose();
   test_animation();
+  test_hero();
 
   printf("walk_core: %d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

@@ -8,9 +8,10 @@ this is a separate minimal engine rather than the mruby/RGSS engine the rest
 of this repo runs everywhere else, and for the full scope/limitations.
 
 **Scope**: tile rendering (including autotiles, and the water/block-C tiles
-animating on RPG2000's own clocks) + grid movement + collision, for one
-static map. No events, no interpreter, no battle, no menus — this walks a
-map, it does not play the game.
+animating on RPG2000's own clocks) + grid movement + collision + the
+player's own CharSet sprite (the project's initial party leader, walking
+RPG2000's own cycle), for one static map. No events, no interpreter, no
+battle, no menus — this walks a map, it does not play the game.
 
 ## What you need
 
@@ -115,11 +116,19 @@ at a time while held, blocked by the map's real passability data.
   transparent. Nepheshel's world map draws its whole sea that way, so the
   approximation is what makes it look like sea; a detailed panorama will
   read as a flat colour.
-- Animation is the water autotiles and the block-C animated tiles, on
-  RPG2000's own two clocks (`docs/adr/0094`). Everything else an RPG2000 map
-  animates — events, pictures, weather, the hero — needs the interpreter and
-  is out of scope. `--no-animate` freezes every tile if an export needs the
-  atlas slots back.
+- Animation is the water autotiles, the block-C animated tiles and the
+  hero's own walk cycle, on RPG2000's own clocks (`docs/adr/0094`,
+  `docs/adr/0096`). Everything else an RPG2000 map animates — events,
+  pictures, weather — needs the interpreter and is out of scope.
+  `--no-animate` freezes every tile if an export needs the atlas slots back
+  (the hero still walks; its cycle costs no atlas slots, being a fixed
+  block of its own).
+- The player is the project's *initial* party leader (`RPG_RT.ldb`'s own
+  System/player rows), drawn only if that leader carries a CharSet — a
+  project whose real hero graphic is a runtime Change Sprite Association
+  or a title-screen event (Nepheshel's own default party is exactly this:
+  a blank placeholder actor) falls back to nothing being drawn, same as
+  before this feature existed. No live game state to ask instead.
 - No events, message boxes, battle, or menus.
 - Map size capped at 128×128 tiles / 255 distinct composited tiles (see
   `rpg2k_walk.c`); a larger map is refused by the exporter rather than

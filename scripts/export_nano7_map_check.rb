@@ -24,6 +24,14 @@ require 'open3'
 ROOT = File.expand_path('..', __dir__)
 EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 
+# For check_hero_geometry only: the same Game::CharSet.frame_rect geometry
+# and colour-keyed PNG decoder the exporter's own hero code calls, loaded
+# independently here (this check never calls into export_nano7_map.rb's own
+# Ruby) the same way scripts/rpg2k_render_check.rb already exercises
+# Game::ChipsetLayout standalone.
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
+load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
+
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
 TARGETS = {
   'nano7' => { max_w: 128, max_h: 128, max_tiles: 255 },
@@ -32,7 +40,7 @@ TARGETS = {
 MAP_MAX_W = TARGETS['nano7'][:max_w]
 MAP_MAX_H = TARGETS['nano7'][:max_h]
 MAX_TILES = TARGETS['nano7'][:max_tiles]
-MAP_VERSION = 5
+MAP_VERSION = 6
 UPPER_NONE = 0xFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
 TILE_BYTES = 16 * 16       # one palette index per pixel
@@ -43,6 +51,12 @@ ANIM_CLASSES = [0, 1, 2].freeze
 OPAQUE_BIT = 0x8000
 TRANSPARENT_INDEX = 0
 MAX_PALETTE = 256
+# The hero sprite's own fixed geometry -- see HERO_FRAME_W/H in the exporter.
+HERO_FRAME_W = 24
+HERO_FRAME_H = 32
+HERO_FRAME_COUNT = 12 # 4 directions * 3 walk-cycle patterns
+HERO_FRAME_BYTES = HERO_FRAME_W * HERO_FRAME_H
+HERO_FRAMES_BYTES = HERO_FRAME_COUNT * HERO_FRAME_BYTES
 
 $failures = 0
 $checks = 0
@@ -91,7 +105,7 @@ end
 def read_map_bin(path)
   bytes = File.binread(path)
   magic = bytes[0, 4]
-  version, _pad = bytes[4, 2].unpack('CC')
+  version, hero_present = bytes[4, 2].unpack('CC')
   width, height, start_x, start_y, tile_count, backdrop = bytes[6, 12].unpack('v6')
   palette_count, atlas_count = bytes[18, 4].unpack('v2')
   ab_len, ab_period, c_len, c_period = bytes[22, 4].unpack('C4')
@@ -110,8 +124,8 @@ def read_map_bin(path)
   passable = (0...cells).map { |i| i.even? ? (packed[i / 2] & 0x0F) : (packed[i / 2] >> 4) }
   ok(off == bytes.bytesize, "map.bin has #{bytes.bytesize - off} trailing bytes")
   {
-    magic: magic, version: version, width: width, height: height,
-    start_x: start_x, start_y: start_y, tile_count: tile_count,
+    magic: magic, version: version, hero_present: hero_present, width: width,
+    height: height, start_x: start_x, start_y: start_y, tile_count: tile_count,
     atlas_count: atlas_count, backdrop: backdrop, palette: palette,
     entries: entries, ab_len: ab_len, ab_period: ab_period,
     c_len: c_len, c_period: c_period,
@@ -150,8 +164,12 @@ def check_export(game_dir, map_id)
       ok map[:start_x] >= 0 && map[:start_x] < map[:width], "start_x #{map[:start_x]}"
       ok map[:start_y] >= 0 && map[:start_y] < map[:height], "start_y #{map[:start_y]}"
     end
-    check("map #{map_id}: tiles.bin size matches atlas_count") do
+    check("map #{map_id}: hero_present is a bool") do
+      ok [0, 1].include?(map[:hero_present]), map[:hero_present]
+    end
+    check("map #{map_id}: tiles.bin size matches atlas_count (+ hero frames)") do
       expected = map[:atlas_count] * TILE_BYTES
+      expected += HERO_FRAMES_BYTES if map[:hero_present] == 1
       ok tiles_bytes.bytesize == expected, "#{tiles_bytes.bytesize} != #{expected}"
     end
     check("map #{map_id}: every entry names real atlas slots and a real clock") do
@@ -328,6 +346,56 @@ def check_no_animate(game_dir, map_id)
   end
 end
 
+# Independent verification of the hero geometry the exporter's
+# composite_hero_frame relies on: Game::CharSet.frame_rect never returns a
+# rectangle outside the real CharSet PNG it names, for every direction and
+# pattern, and the PNG's own colour key (like a chipset's) never comes out
+# as an opaque pixel.
+#
+# Not run through the exporter's own db-driven leader lookup: this repo's
+# only real RPG2000/2003 test-bed data has no project whose *initial* party
+# actually carries a static CharSet (see the limitations note atop the
+# exporter -- Nepheshel's own default leader is a blank-charset placeholder
+# a runtime Change Sprite Association event fills in later, mtf-meido-
+# action's chipsets are not the 256-colour PNGs this exporter requires at
+# all). `charset_name`/`charset_index` are passed in explicitly instead, so
+# this still exercises the exact geometry and pixel-decode calls the
+# exporter's hero path makes, against a real CharSet PNG this test bed does
+# ship, just not by way of a real project's own database.
+def check_hero_geometry(png_path, charset_index)
+  check("hero geometry: #{File.basename(png_path)}##{charset_index}") do
+    ok File.file?(png_path), "no such file: #{png_path}"
+    bmp = RGSS::Bitmap.allocate
+    ok bmp.send(:_init_file, png_path, true), "failed to decode #{png_path}"
+    pal0 = png_palette0(png_path)
+    ok pal0, "no PLTE in #{png_path}"
+    key = pack1555(*pal0)
+
+    Game::CharSet::DIR_ROW.each_key do |dir|
+      [0, 1, 2].each do |pattern|
+        rx, ry, rw, rh = Game::CharSet.frame_rect(charset_index, dir, pattern)
+        ok rw == HERO_FRAME_W && rh == HERO_FRAME_H,
+           "frame_rect(#{charset_index}, #{dir}, #{pattern}) is #{rw}x#{rh}, " \
+           "not #{HERO_FRAME_W}x#{HERO_FRAME_H}"
+        ok rx >= 0 && ry >= 0 && rx + rw <= bmp.width && ry + rh <= bmp.height,
+           "frame_rect(#{charset_index}, #{dir}, #{pattern}) = " \
+           "[#{rx},#{ry},#{rw},#{rh}] is outside the #{bmp.width}x#{bmp.height} PNG"
+
+        opaque_key = false
+        rh.times do |yy|
+          rw.times do |xx|
+            r, g, b, a = bmp.bmp_read(rx + xx, ry + yy)
+            next if a < 128
+            opaque_key = true if pack1555(r, g, b) == key
+          end
+        end
+        ok !opaque_key,
+           "frame_rect(#{charset_index}, #{dir}, #{pattern}) draws the colour key opaque"
+      end
+    end
+  end
+end
+
 def discover_default_maps(game_dir, sample = 5)
   ids = Dir[File.join(game_dir, 'Map*.lmu')].map { |f| File.basename(f)[/\d+/].to_i }.sort
   return ids if ids.size <= sample
@@ -349,6 +417,17 @@ map_ids.each do |id|
   check_wio_target(game_dir, id)
   check_no_animate(game_dir, id)
 end
+
+# See check_hero_geometry's own comment: this test bed's own default party
+# has no static hero to export (Nepheshel's own database row is a blank
+# placeholder a runtime event fills in), so this checks the same geometry
+# and pixel-decode calls the exporter's hero path makes directly, against
+# the real CharSet a runtime Change Sprite Association actually assigns --
+# "mainchr", index 4, per mruby-lcf/mrblib/schema.rb's own SAVE_PARTY_ACTOR
+# comment (confirmed against genuine RPG_RT.exe under wine) -- rather than
+# through a full db-driven export.
+mainchr = File.join(game_dir, 'CharSet', 'mainchr.png')
+check_hero_geometry(mainchr, 4) if File.file?(mainchr)
 
 # An oversized map (bigger than MAP_MAX_W/H) must be refused cleanly with a
 # non-zero exit and a clear message, not crash or silently truncate. Only

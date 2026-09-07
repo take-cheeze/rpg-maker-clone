@@ -15,7 +15,9 @@
 // So this is a second, much smaller engine, not the `wio` env's firmware with
 // pieces disabled: no LVGL, no interpreter, no RGSS, and nothing this repo
 // builds for the desktop. It walks a map -- with its water animating on
-// RPG2000's own clock (docs/adr/0094) -- but it does not play the game.
+// RPG2000's own clock (docs/adr/0094) and the player drawn as the project's
+// own initial party leader (docs/adr/0096) when one was exported -- but it
+// does not play the game.
 //
 // Board half only, and all of it is here: the SD card, the LCD, the 5-way
 // switch, and the frame timing.
@@ -46,13 +48,17 @@ namespace {
 // reading past them, and the exporter's `--target wio` refuses to write one).
 //
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
-// to (docs/adr/0007's own headline constraint). These caps spend 90 KB of it:
+// to (docs/adr/0007's own headline constraint). These caps spend ~100 KB of
+// it:
 //
 //   map.bin   26 + 256*2 + 192*5 + 128*128*2.5 =  42,458 B
-//   tiles.bin              192 * 16*16          =  49,152 B
+//   tiles.bin       192 * 16*16 + 12 * 24*32    =  58,368 B
 //
-// leaving ~100 KB for the Arduino core, the SD and LCD drivers, the stack and
-// this file's own statics. The map bound has doubled twice as the format
+// (the 12*24*32 is the hero's own frames, docs/adr/0096 -- a fixed 9,216 B
+// whether or not a given export actually carries one, reserved unconditionally
+// the same way the nano app does) leaving ~90 KB for the Arduino core, the SD
+// and LCD drivers, the stack and this file's own statics. The map bound has
+// doubled twice as the format
 // shrank -- 64x64 when a tile pixel was 16-bit, 96x96 once it became a
 // palette index (docs/adr/0092), 128x128 now a cell costs 2.5 bytes rather
 // than 5 (docs/adr/0093) -- so this board now takes exactly the map sizes the
@@ -76,12 +82,20 @@ constexpr char kTilesPath[] = "/RPG2kWalk/tiles.bin";
 constexpr uint32_t kStepIntervalMs = 160;
 
 uint8_t g_map_raw[kMapBytes];
-// One palette index per pixel; the colours live in map.bin's palette.
-uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS];
+// One palette index per pixel; the colours live in map.bin's palette. The
+// hero's own frames (RW_HERO_FRAMES_BYTES), when the export carries one, sit
+// right after the ordinary atlas -- see rw_open. Reserved unconditionally,
+// same reasoning as the nano app: a fixed 9,216 B beats a second size to get
+// right.
+uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES];
 // One composited cell, converted to the panel's RGB565 (512 B, so a static
 // rather than a stack buffer on a board with this little SRAM).
 uint16_t g_cell565[RW_TILE_PIXELS];
 uint16_t g_cell1555[RW_TILE_PIXELS];
+// The hero's own composited frame, ARGB1555 like g_cell1555 but with a
+// transparent pixel staying 0 rather than resolving to the backdrop -- see
+// rw_compose_hero -- so draw_hero skips it instead of drawing over it.
+uint16_t g_hero1555[RW_HERO_FRAME_PIXELS];
 
 TFT_eSPI g_tft;
 rw_map g_map;
@@ -144,11 +158,41 @@ void message(const char* line1, const char* line2) {
     g_tft.drawString(line2, 8, 32);
 }
 
+// The hero sprite, drawn over whatever the cell loop already put down: wider
+// and taller than a tile (rw_hero_screen_pos centres and bottom-anchors it
+// the same way the genuine renderer does) and, unlike a cell, not every
+// pixel is opaque -- a transparent one is skipped rather than drawn, so
+// pushImage's unconditional rect copy cannot draw this; it goes through
+// drawPixel (the scalar path, hence to565 rather than to565_push) one opaque
+// pixel at a time instead. No hero was exported for a project whose initial
+// party carries no CharSet (rw_compose_hero fills g_hero1555 with all zeroes
+// then), so this simply draws nothing.
+void draw_hero(int cam_x, int cam_y, bool moving) {
+  rw_compose_hero(&g_map, moving, g_hero1555);
+  int px, py;
+  rw_hero_screen_pos(&g_map, cam_x, cam_y, &px, &py);
+
+  for (int y = 0; y < RW_HERO_FRAME_H; ++y) {
+    const int sy = py + y;
+    if (sy < 0 || sy >= g_tft.height())
+      continue;
+    for (int x = 0; x < RW_HERO_FRAME_W; ++x) {
+      const uint16_t c = g_hero1555[y * RW_HERO_FRAME_W + x];
+      const int sx = px + x;
+      if (c == 0 || sx < 0 || sx >= g_tft.width())
+        continue;
+      g_tft.drawPixel(sx, sy, to565(c));
+    }
+  }
+}
+
 // `moving_only` redraws just the cells the animation clocks moved -- the
 // water, typically -- which matters more here than on the nano: a full
 // repaint is a whole 320x240 frame over SPI, and an animation tick lands
-// several times a second.
-void draw_map(bool moving_only = false) {
+// several times a second. The hero always redraws on top regardless -- an
+// animation tick can repaint a cell it overlaps, and its own pose can have
+// changed on a step this same call is already handling.
+void draw_map(bool moving_only = false, bool moving = false) {
   const int view_w = g_tft.width() / RW_TS;
   const int view_h = g_tft.height() / RW_TS;
   int cam_x, cam_y;
@@ -176,12 +220,7 @@ void draw_map(bool moving_only = false) {
     }
   }
 
-  const int px = (g_map.player_x - cam_x) * RW_TS;
-  const int py = (g_map.player_y - cam_y) * RW_TS;
-  // TFT_eSPI's TFT_RED/TFT_BLUE constants are plain RGB565 bit patterns, not
-  // adjusted for this panel's BGR order (see the to565 comment above) --
-  // TFT_BLUE's bit pattern is what actually paints red here.
-  g_tft.fillCircle(px + RW_TS / 2, py + RW_TS / 2, RW_TS / 2 - 1, TFT_BLUE);
+  draw_hero(cam_x, cam_y, moving);
 }
 
 // The 5-way switch, straight off the board's own pin macros (the same signals
@@ -244,14 +283,15 @@ void loop(void) {
 
   int dx, dy;
   input_direction(&dx, &dy);
+  const bool moving = dx != 0 || dy != 0;
 
-  if (dx != 0 || dy != 0) {
+  if (moving) {
     const uint32_t now = millis();
     if (now - g_last_step_ms >= kStepIntervalMs) {
       rw_try_move(&g_map, dx, dy);
       g_last_step_ms = now;
       rw_set_frame(&g_map, rpg_frame());
-      draw_map();
+      draw_map(false, true);
       return;
     }
   } else {
@@ -261,7 +301,9 @@ void loop(void) {
   }
 
   // A still map never reaches the redraw: rw_set_frame reports a step only
-  // when a clock this map actually uses has moved.
+  // when a clock this map actually uses has moved. Still redraws the hero on
+  // its own, held-direction pose -- a bump against a wall keeps the walk
+  // cycle alive rather than freezing mid-step.
   if (g_map.animated && rw_set_frame(&g_map, rpg_frame()))
-    draw_map(true);
+    draw_map(true, moving);
 }

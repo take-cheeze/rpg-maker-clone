@@ -21,8 +21,11 @@
  * events/interpreter/battle/menus. Water and the block-C animated tiles do
  * animate, on RPG2000's own two clocks (docs/adr/0094) -- the export asks
  * mruby-rpg2k what those are, so this file only advances a counter and
- * redraws the cells the core says moved. This walks a real map; it does not
- * play the game.
+ * redraws the cells the core says moved. The player is the project's own
+ * initial party leader, drawn as their real CharSet sprite when one was
+ * exported (docs/adr/0096) rather than a plain marker, walking RPG2000's own
+ * cycle and turning to face a bump the same way the genuine renderer does.
+ * This walks a real map; it does not play the game.
  *
  * Input: hold anywhere on screen. The direction is whichever of up/down/
  * left/right is furthest from screen center (a whole-screen virtual
@@ -48,11 +51,13 @@
  *
  * At these caps the static buffers below are the whole of .bss: 42,782 B of
  * map.bin (its palette and entry table included) + 65,280 B of atlas +
- * 1,536 B of composited cell = ~107 KB. Both halves have shrunk in turn: the atlas twice (32-bit
- * pixels to 16-bit with the transparency fix, then one palette index per
- * pixel, docs/adr/0092) and the cell arrays once (2.5 bytes per cell,
- * docs/adr/0093), which is why these caps leave room to spare rather than
- * needing to grow. */
+ * 9,216 B of hero frames + 1,536 B of composited cell + 1,536 B of the hero's
+ * own composited frame = ~120 KB. Both halves have shrunk in turn: the atlas
+ * twice (32-bit pixels to 16-bit with the transparency fix, then one palette
+ * index per pixel, docs/adr/0092) and the cell arrays once (2.5 bytes per
+ * cell, docs/adr/0093), which is why the hero frames (docs/adr/0096) -- a
+ * fixed cost, not scaled by map size -- still leave these caps room to
+ * spare rather than needing to grow. */
 #define MAP_MAX_W 128
 #define MAP_MAX_H 128
 #define MAX_TILES RW_MAX_TILES
@@ -66,8 +71,11 @@
 #define STEP_INTERVAL_MS 160u
 
 static uint8_t s_map_raw[MAP_BIN_MAX_BYTES];
-/* One palette index per pixel; the colours live in map.bin's palette. */
-static uint8_t s_tiles[MAX_TILES * RW_TILE_PIXELS];
+/* One palette index per pixel; the colours live in map.bin's palette. The
+ * hero's own frames (RW_HERO_FRAMES_BYTES), when the export carries one, sit
+ * right after the ordinary atlas -- see rw_open. Reserved unconditionally: a
+ * fixed 9,216 B is cheaper than a second buffer size to get right. */
+static uint8_t s_tiles[MAX_TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES];
 /* One composited cell in the surface's own pixel format: hb_raw_blit takes a
  * finished tile, so each cell is merged (see rw_compose_cell) and converted
  * once, then blitted once. */
@@ -76,6 +84,10 @@ static uint32_t s_cell[RW_TILE_PIXELS];
  * budget this app has to spare, the stack on a homebrew app is whatever the
  * loader left it. */
 static uint16_t s_cell_1555[RW_TILE_PIXELS];
+/* The hero's own composited frame, same convention as s_cell_1555 except a
+ * transparent pixel stays 0 rather than resolving to the backdrop -- see
+ * rw_compose_hero -- so draw_hero skips it instead of blitting over it. */
+static uint16_t s_hero_1555[RW_HERO_FRAME_PIXELS];
 
 static rw_map s_map;
 static rw_status s_status;
@@ -126,11 +138,42 @@ static void blit_cell(int tx, int ty, int mx, int my)
     hb_raw_blit(tx * RW_TS, ty * RW_TS, RW_TS, RW_TS, s_cell);
 }
 
+/* The hero sprite, drawn over whatever the cell loop above already put down:
+ * wider and taller than a tile (rw_hero_screen_pos centres and bottom-
+ * anchors it the same way the genuine renderer does) and, unlike a cell, not
+ * every pixel is opaque -- a transparent one is skipped rather than blitted,
+ * so hb_raw_blit's unconditional rect copy cannot draw this, and it goes
+ * straight to the framebuffer pixel by pixel instead. No hero was exported
+ * for a project whose initial party carries no CharSet (rw_compose_hero
+ * fills s_hero_1555 with all zeroes then), so this simply draws nothing. */
+static void draw_hero(int cam_x, int cam_y, int moving)
+{
+    int x, y, px, py;
+    uint32_t *fb = hb_raw_fb();
+    int fb_w = hb_raw_w(), fb_h = hb_raw_h();
+
+    rw_compose_hero(&s_map, moving, s_hero_1555);
+    rw_hero_screen_pos(&s_map, cam_x, cam_y, &px, &py);
+
+    for (y = 0; y < RW_HERO_FRAME_H; y++) {
+        int sy = py + y;
+        if (sy < 0 || sy >= fb_h) continue;
+        for (x = 0; x < RW_HERO_FRAME_W; x++) {
+            uint16_t c = s_hero_1555[y * RW_HERO_FRAME_W + x];
+            int sx = px + x;
+            if (c == 0 || sx < 0 || sx >= fb_w) continue;
+            fb[sy * fb_w + sx] = rgb1555_to_native(c);
+        }
+    }
+}
+
 /* `moving_only` redraws just the cells whose tiles the clocks moved, for an
  * animation tick: on a typical map that is the water and nothing else, so a
  * tick costs a fraction of a full redraw. A step or a first paint passes 0
- * and draws everything. */
-static void draw_map(int moving_only)
+ * and draws everything. The hero always redraws on top regardless -- an
+ * animation tick can repaint a cell it overlaps, and its own pose can have
+ * changed on a step this same call is already handling. */
+static void draw_map(int moving_only, int moving)
 {
     int view_w = hb_raw_w() / RW_TS;
     int view_h = hb_raw_h() / RW_TS;
@@ -151,8 +194,7 @@ static void draw_map(int moving_only)
         }
     }
 
-    int ppx = (s_map.player_x - cam_x) * RW_TS, ppy = (s_map.player_y - cam_y) * RW_TS;
-    hb_raw_disc(ppx + RW_TS / 2, ppy + RW_TS / 2, RW_TS / 2 - 1, HB_RGB(0xff, 0x40, 0x40));
+    draw_hero(cam_x, cam_y, moving);
 }
 
 /* RPG2000 counts animation in 60ths of a second, which is what the export's
@@ -170,7 +212,7 @@ void hb_raw_init(int w, int h)
     s_last_step_ms = hb_time_uptime_ms();
     if (s_status == RW_OK) {
         rw_set_frame(&s_map, rpg_frame());
-        draw_map(0);
+        draw_map(0, 0);
     } else {
         hb_raw_fill(HB_BLACK);
         hb_draw_str(8, 8, "no map to walk:", 2, HB_WHITE, HB_BLACK);
@@ -186,14 +228,15 @@ void hb_raw_frame(const hb_spoint_t *touch)
 
     int dx, dy;
     touch_direction(touch, &dx, &dy);
+    int moving = dx != 0 || dy != 0;
 
-    if (dx != 0 || dy != 0) {
+    if (moving) {
         uint32_t now = hb_time_uptime_ms();
         if (now - s_last_step_ms >= STEP_INTERVAL_MS) {
             rw_try_move(&s_map, dx, dy);
             s_last_step_ms = now;
             rw_set_frame(&s_map, rpg_frame());
-            draw_map(0);
+            draw_map(0, 1);
             return;
         }
     } else {
@@ -203,7 +246,9 @@ void hb_raw_frame(const hb_spoint_t *touch)
     }
 
     /* A still map never reaches the redraw: rw_set_frame reports a step only
-     * when a clock this map actually uses has moved. */
+     * when a clock this map actually uses has moved. Still redraws the hero
+     * on its own, held-direction pose -- a bump against a wall keeps the
+     * walk cycle alive rather than freezing mid-step. */
     if (s_map.animated && rw_set_frame(&s_map, rpg_frame()))
-        draw_map(1);
+        draw_map(1, moving);
 }
