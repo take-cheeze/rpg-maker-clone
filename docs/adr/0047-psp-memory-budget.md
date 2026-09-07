@@ -220,6 +220,44 @@ unaddressed cost:
   gem, not currently part of this project's gem set) removes it and gives
   byte-identical output to compiling without `-g` in the first place —
   confirmed directly, both in file size and in loaded RSS.
+- **Half of this finding is a real, still-open gap, and the other half is a
+  dead end worth recording so it isn't re-attempted.** `build_config.rb`'s
+  `psp` block strips `-g` from `mrbc` believing it drops both the DEBUG
+  (line/file) and local-variable sections, but `-g` (`MRB_DUMP_DEBUG_INFO`)
+  only ever gated DEBUG. The local-variable table is a separate RITE
+  section, gated by a different flag (`MRB_DUMP_NO_LVAR`, `mrbc
+  --remove-lv`) that vendored mruby's `-S` C-struct dump (what
+  `Command::Mrbc#run` always requests) never actually checked, in either
+  dump path -- confirmed by reading `src/cdump.c`'s two `if (irep->lv)`
+  sites, neither gated on any flag, unlike the `MRB_DUMP_DEBUG_INFO` check
+  seven lines below the first one. So `-g`'s removal bought only the
+  smaller table; this finding's 240–350 KB figure is still live, unfixed.
+  A two-line patch mirroring that existing DEBUG-section gate makes
+  `--remove-lv` work as documented, and does shrink this project's own
+  compiled mrblib (measured 5.6% on the Wio's Cortex-M4 cross-build) --
+  but turning it on breaks real functionality this project's gem set
+  actually needs: `mruby-eval` and `mruby-binding` both read `irep->lv` to
+  resolve a bare identifier against an *enclosing* local by name
+  (`Kernel#eval`'s implicit-scope form, `Binding#local_variable_get`, ...),
+  and both are real, linked dependencies here -- pulled in transitively by
+  `mruby-rpgxp`'s own `add_dependency` chain (see
+  `rpg_maker_gem_dispatch`'s comment on it), not by anything
+  `rpg_maker_gems` declares directly, which is exactly why it is easy to
+  believe this project doesn't use either gem. Confirmed by an A/B
+  `ctest -R mruby_test` run against the real, patched submodule: `KO` 0→8,
+  `Crash` 3→11, every new failure inside `mruby-eval`'s or `mruby-binding`'s
+  own bundled test suite (`Kernel#eval [15.3.1.3.12]`, `Binding#eval`,
+  `Binding#local_variable_get`, `Binding#dup`, `String instance_eval`,
+  `NameError`/`NoMethodError` throughout). `mrbc`'s local-variable strip is
+  a build-wide setting (`conf.mrbc.compile_options`), not a per-gem one, so
+  there is no way to keep it off for `mruby-rgss`/`mruby-rpgxp`'s share of
+  one shared `libmruby.a` while it is on for `mruby-rpg2k`/`mruby-wolf`/
+  `mruby-lcf`'s without either a real per-gem mrbc option this project's
+  build machinery does not have, or dropping `mruby-rpgxp` (and every
+  format it makes possible) from whichever build wants the saving --
+  neither of which this ADR's scope covers. Not applied; recorded here
+  instead of shipped as a patch, so a future attempt starts from why this
+  one stopped rather than rediscovering the same regression.
 
 ## Decision
 
