@@ -688,15 +688,18 @@ fs::path vx_rtp_path(const fs::path& gd) {
                        ace ? "RPGVXAce" : "RPGVX");
 }
 
-// A WOLF RPG Editor (ウディタ / Woditor) project: a loose Data/BasicData/
-// Game.dat, the one file every unpacked project has regardless of editor
-// version (2.x through 3.5+ all write it, under the same name). Mirrors
-// Wolf::Project.project? (mruby-wolf/mrblib/data.rb), which the Ruby side
-// re-checks once it has a directory to build a Wolf::Project from. A packed
-// release (Data.wolf, DxLib-encrypted) is not recognised yet — see
-// docs/adr/0054-wolf-rpg-editor-data-layer.md's follow-ups.
+// A WOLF RPG Editor (ウディタ / Woditor) project: either a loose
+// Data/BasicData/Game.dat (the one file every unpacked project has
+// regardless of editor version, 2.x through 3.5+ all write it under the same
+// name), or a released game's packed Data.wolf (a DxLib DXA archive,
+// Wolf::DataWolf, ADR 0093). Mirrors Wolf::Project.project?
+// (mruby-wolf/mrblib/data.rb), which the Ruby side re-checks once it has a
+// directory to build a Wolf::Project from, the same "loose tree or the
+// maker's own packed archive" shape is_xp_game below already has for
+// Game.rgssad.
 bool is_wolf_game(const fs::path& game_dir) {
-  return fs::exists(game_dir / "Data" / "BasicData" / "Game.dat");
+  return fs::exists(game_dir / "Data" / "BasicData" / "Game.dat") ||
+         fs::exists(game_dir / "Data.wolf");
 }
 
 // An RPG Maker XP project: Game.ini plus either a loose Data/System.rxdata or

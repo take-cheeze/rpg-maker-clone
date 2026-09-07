@@ -942,17 +942,35 @@ module Wolf
     SYS_POSITIONS = 7
     SYS_CHARACTER_IMAGES = 8
 
+    # The prefix every #read call passes for a file that lives under Data/ --
+    # every one of them does (BASIC itself is "Data/BasicData", #map uses
+    # "Data/#{file}" directly). A packed release's own Data.wolf archives the
+    # *contents* of Data/, not a wrapper folder named "Data" (WolfDec's own
+    # DXArchive.cpp: EncodeArchiveOneDirectory lists a directory's children,
+    # not the directory itself -- see data_wolf.rb's own file header), so
+    # #read strips this prefix before asking @archive for a name.
+    DATA_PREFIX = "Data/"
+
     attr_reader :dir, :game, :map_tree, :tilesets, :databases, :common_events
 
-    # Whether `dir` holds a WOLF RPG Editor project: a loose Data/BasicData
-    # tree with a Game.dat. (A packed release keeps everything in Data.wolf,
-    # which this layer does not open yet -- see the ADR's follow-ups.)
+    # Whether `dir` holds a WOLF RPG Editor project, either shape: a loose
+    # Data/BasicData tree with a Game.dat, or a released game's packed
+    # Data.wolf.
     def self.project?(dir)
-      File.exist?("#{dir}/#{BASIC}/Game.dat")
+      File.exist?("#{dir}/#{BASIC}/Game.dat") || File.exist?("#{dir}/Data.wolf")
     end
 
+    # One seam for both backing stores (ADR, "one clean seam" over scattering
+    # `if packed? ... else ...` through every reader below): a loose project
+    # sets @archive to nil and #read stays a plain File.read; a packed one
+    # opens Data.wolf once here and every #read call after this becomes a
+    # DataWolf#read instead, with no other method in this file (or any of
+    # GameDat/MapTree/TileSetData/Database/CommonEvents/Map, all of which
+    # only ever go through #read) needing to know which.
     def initialize(dir)
       @dir = dir
+      archive_path = File.exist?("#{dir}/#{BASIC}/Game.dat") ? nil : DataWolf.find(dir)
+      @archive = archive_path && DataWolf.open(archive_path)
       @game = GameDat.parse(read("#{BASIC}/Game.dat"))
       @map_tree = MapTree.parse(read("#{BASIC}/MapTree.dat"))
       @tilesets = TileSetData.parse(read("#{BASIC}/TileSetData.dat"))
@@ -966,6 +984,13 @@ module Wolf
     end
 
     def read(rel)
+      if @archive
+        raise Error, "#{rel}: packed Data.wolf projects only read paths under Data/" unless rel.start_with?(DATA_PREFIX)
+        name = rel[DATA_PREFIX.bytesize..-1]
+        data = @archive.read(name)
+        raise Error, "#{name}: not found in Data.wolf" unless data
+        return data
+      end
       path = "#{@dir}/#{rel}"
       File.open(path, "rb") { |f| f.read }
     end
