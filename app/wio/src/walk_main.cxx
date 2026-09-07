@@ -45,24 +45,26 @@ namespace {
 // reading past them, and the exporter's `--target wio` refuses to write one).
 //
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
-// to (docs/adr/0007's own headline constraint). These caps spend 95 KB of it:
+// to (docs/adr/0007's own headline constraint). These caps spend 90 KB of it:
 //
-//   map.bin   20 + 256*2 + 96*96*5  =  46,612 B
-//   tiles.bin       192 * 16*16     =  49,152 B
+//   map.bin   20 + 256*2 + 128*128*2.5 =  41,492 B
+//   tiles.bin        192 * 16*16       =  49,152 B
 //
-// leaving ~95 KB for the Arduino core, the SD and LCD drivers, the stack and
-// this file's own statics. Both caps grew when format v3 made a tile pixel
-// one palette index instead of a 16-bit colour (docs/adr/0092): a 96x96 map
-// with 192 atlas entries now costs less RAM than 64x64 with 160 did, so the
-// board takes maps it used to refuse. Still deliberately conservative rather
-// than fitted to the last kilobyte; raising them is a two-line change once a
-// real build reports what the drivers actually take.
-constexpr int kMapMaxW = 96;
-constexpr int kMapMaxH = 96;
+// leaving ~100 KB for the Arduino core, the SD and LCD drivers, the stack and
+// this file's own statics. The map bound has doubled twice as the format
+// shrank -- 64x64 when a tile pixel was 16-bit, 96x96 once it became a
+// palette index (docs/adr/0092), 128x128 now a cell costs 2.5 bytes rather
+// than 5 (docs/adr/0093) -- so this board now takes exactly the map sizes the
+// iPod nano 7G does, in less SRAM than 64x64 cost it two revisions ago. Only
+// the atlas cap still differs (192 here, 255 there). Still deliberately
+// conservative; raising it is a two-line change once a real build reports
+// what the drivers actually take.
+constexpr int kMapMaxW = 128;
+constexpr int kMapMaxH = 128;
 constexpr int kMaxTiles = 192;
 
 constexpr uint32_t kMapBytes = RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +
-                               kMapMaxW * kMapMaxH * RW_MAP_BYTES_PER_CELL;
+                               RW_MAP_CELL_BYTES(kMapMaxW * kMapMaxH);
 
 // Where the exported pair lives on the microSD card.
 constexpr char kMapPath[] = "/RPG2kWalk/map.bin";

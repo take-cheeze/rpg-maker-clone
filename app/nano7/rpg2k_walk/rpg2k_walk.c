@@ -43,19 +43,20 @@
  * is safe to exceed either, so this stays well under it rather than finding
  * out on real hardware. Raise with caution.
  *
- * At these caps the static buffers below are the whole of .bss: 82,450 B of
- * map.bin (its palette included) + 65,536 B of atlas + 1,536 B of composited
- * cell = ~146 KB. The atlas has halved twice: 32-bit pixels became 16-bit
- * with the transparency fix, then one palette index per pixel in format v3
- * (docs/adr/0092), which is why these caps now leave room to spare rather
- * than needing to grow. */
+ * At these caps the static buffers below are the whole of .bss: 41,492 B of
+ * map.bin (its palette included) + 65,280 B of atlas + 1,536 B of composited
+ * cell = ~106 KB. Both halves have shrunk in turn: the atlas twice (32-bit
+ * pixels to 16-bit with the transparency fix, then one palette index per
+ * pixel, docs/adr/0092) and the cell arrays once (2.5 bytes per cell,
+ * docs/adr/0093), which is why these caps leave room to spare rather than
+ * needing to grow. */
 #define MAP_MAX_W 128
 #define MAP_MAX_H 128
-#define MAX_TILES 256
+#define MAX_TILES RW_MAX_TILES
 
-#define MAP_BIN_MAX_BYTES                                   \
-    (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +             \
-     MAP_MAX_W * MAP_MAX_H * RW_MAP_BYTES_PER_CELL)
+#define MAP_BIN_MAX_BYTES                       \
+    (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 + \
+     RW_MAP_CELL_BYTES(MAP_MAX_W * MAP_MAX_H))
 
 #define MAP_DATA_DIR "/Apps/Data/RPG2kWalk"
 

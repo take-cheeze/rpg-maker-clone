@@ -1156,13 +1156,16 @@
   composites a cell's two layers before blitting, and a map's parallax
   background is reduced to a single backdrop colour behind it — an island
   map's sea comes out as sea rather than as holes. See the ADR.
-- **A tile pixel is one byte**, an index into the map's own palette
-  ([`docs/adr/0092`](docs/adr/0092-walk-map-indexed-atlas.md)) — which is
-  what an RPG Maker chipset is to begin with, so it costs no colour and is
-  byte-for-byte the same picture. The atlas is the largest thing either
-  device holds, so this is what the port's RAM budget turns on: the nano
-  app's `.bss` is 150 KB where the first slice needed 336 KB, and the Wio
-  Terminal takes a 96x96 map in less RAM than a 64x64 one used to cost.
+- **A tile pixel is one byte** and **a map cell 2.5**
+  ([`docs/adr/0092`](docs/adr/0092-walk-map-indexed-atlas.md),
+  [`0093`](docs/adr/0093-walk-map-packed-cells.md)): a pixel indexes the
+  map's own palette — which is what an RPG Maker chipset is to begin with —
+  and a cell is a byte of lower-layer index, a byte of upper, and a nibble of
+  passability. Both are lossless, byte-for-byte the same picture and the same
+  collision. This is what the port's RAM budget turns on: the nano app's
+  `.bss` is **108 KB** where the first slice needed 336 KB, and the Wio
+  Terminal now takes the same 128×128 maps the nano does, in less SRAM than
+  64×64 cost it two revisions ago.
 - **The same engine also runs on the Wio Terminal.** The device-independent
   half — the file format, the movement rule, the camera, the layer
   compositing — is
