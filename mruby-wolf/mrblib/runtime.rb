@@ -522,6 +522,31 @@ class WolfRPG
       entry[:flicker] = { interval: interval, r: r, g: g, b: b, counter: interval, on: false }
     end
 
+    # Effect(290)'s own Picture-target "シェイク" (Shake): starts,
+    # redirects, or stops a persistent per-picture back-and-forth nudge by
+    # (dx, dy), toggling every `interval` frames, `count` displacements
+    # total (interpreter.rb's own comment on the "one displacement away
+    # from center is one shake" assumption this picks, unconfirmed against
+    # real data one way or the other). Undoes any in-flight displacement
+    # first, the same reason #set_picture_flicker does, and always settles
+    # back to center before stopping -- #update_picture_effects only clears
+    # the state once `count` reaches 0 *and* the picture is back at center,
+    # never mid-displacement, so a picture is never left stuck offset.
+    def set_picture_shake(number, interval, dx, dy, count)
+      entry = @pictures[number]
+      return unless entry
+      active = entry[:shake]
+      if active && active[:on]
+        entry[:sprite].x -= active[:dx]
+        entry[:sprite].y -= active[:dy]
+      end
+      if interval <= 0 || count <= 0 || (dx == 0 && dy == 0)
+        entry[:shake] = nil
+        return
+      end
+      entry[:shake] = { interval: interval, dx: dx, dy: dy, count: count, counter: interval, on: false }
+    end
+
     # ChangeColor(151) ("色調変更", help/04ev_effect.html): `flash` is a
     # one-shot overlay using native RGSS `Viewport#flash` (its own timed
     # decay needs no state kept here), scaling WOLF's own [0, 200] range
@@ -588,21 +613,40 @@ class WolfRPG
     def update_picture_effects
       @pictures.each do |number, entry|
         # #flash_picture's own native Sprite#flash decays only when
-        # Sprite#update is actually called -- unlike Viewport's own
-        # flash/tone (ticked automatically wherever the map's single
-        # @viewport already gets drawn), nothing else in this reader calls
-        # it per picture sprite, so it happens here alongside Flicker's own
-        # tick rather than needing a separate pass.
+        # Sprite#update is actually called, the same per-sprite-instance
+        # requirement #update's own @viewport.update call satisfies for
+        # @viewport -- nothing else in this reader calls it per picture
+        # sprite, so it happens here alongside Flicker/Shake's own tick
+        # rather than needing a separate pass.
         entry[:sprite].update
 
         flicker = entry[:flicker]
-        next unless flicker
-        flicker[:counter] -= 1
-        next unless flicker[:counter] <= 0
-        flicker[:counter] = flicker[:interval]
-        flicker[:on] = !flicker[:on]
-        sign = flicker[:on] ? 1 : -1
-        tint_picture(number, sign * flicker[:r], sign * flicker[:g], sign * flicker[:b])
+        if flicker
+          flicker[:counter] -= 1
+          if flicker[:counter] <= 0
+            flicker[:counter] = flicker[:interval]
+            flicker[:on] = !flicker[:on]
+            sign = flicker[:on] ? 1 : -1
+            tint_picture(number, sign * flicker[:r], sign * flicker[:g], sign * flicker[:b])
+          end
+        end
+
+        shake = entry[:shake]
+        next unless shake
+        shake[:counter] -= 1
+        next unless shake[:counter] <= 0
+        shake[:counter] = shake[:interval]
+        if shake[:on]
+          entry[:sprite].x -= shake[:dx]
+          entry[:sprite].y -= shake[:dy]
+          shake[:on] = false
+          entry[:shake] = nil if shake[:count] <= 0
+        else
+          shake[:count] -= 1
+          entry[:sprite].x += shake[:dx]
+          entry[:sprite].y += shake[:dy]
+          shake[:on] = true
+        end
       end
     end
 

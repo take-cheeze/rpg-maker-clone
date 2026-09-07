@@ -726,6 +726,10 @@
   called `Viewport#update`, so it would freeze at full intensity forever
   instead of fading — fixed alongside. See
   [`docs/adr/0084-wolf-rpg-editor-effect-flash.md`](docs/adr/0084-wolf-rpg-editor-effect-flash.md)
+- **Picture shake.** `Effect`(290)'s Picture-target `Shake` nudges a
+  picture by (dx, dy) a given number of times, toggling every N frames and
+  always settling back to center before stopping. See
+  [`docs/adr/0085-wolf-rpg-editor-effect-picture-shake.md`](docs/adr/0085-wolf-rpg-editor-effect-picture-shake.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

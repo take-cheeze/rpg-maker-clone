@@ -36265,6 +36265,22 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   so a real flash call would freeze at full intensity forever instead of
   fading. Both fixed together (`WolfRPG::MapScene#update` now calls
   `@viewport.update`). See `docs/adr/0084-wolf-rpg-editor-effect-flash.md`.
+- ✅ **Effect(290), Picture Shake (2026-09-07).** Next by real frequency in
+  the Picture target (4 calls), tied with the Map target's own `Zoom`
+  (also 4) -- picked as the smaller, better-scoped step, since `Zoom`
+  needs a whole-camera transform this reader's single map `@viewport` has
+  no surveyed native support for yet. Fully confirmed by the crate's own
+  `PictureEffectType`, the same "duration is a genuine frames value here"
+  exception `Flash`/`SwitchFlicker` already established. Shakes a picture
+  by (dx, dy) a given number of times, toggling every `arg(1)` frames,
+  always settling back to center before stopping (`#update_picture_effects`
+  never clears the state mid-displacement). The manual does not say
+  whether one "shake" counts a displacement away from center or a full
+  round trip; picked the more literal reading, flagged as an unconfirmed
+  assumption -- the one real call's own near-infinite count (999999,
+  matching the manual's own "≥100,000 becomes infinite" note) cannot
+  distinguish either reading. See `docs/adr/0085-wolf-rpg-editor-effect-
+  picture-shake.md`.
 - Suggested next order (by real frequency, from the same census):
   `220` itself (2 occurrences, needs the real save-file format above --
   a much larger undertaking than its own occurrence count suggests),
@@ -36272,9 +36288,10 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   the crate's own `party_graphics_command` covers party member *graphics*,
   which implies multiple visible party sprites following the hero,
   unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
-  remaining Picture effect kinds (Shake/Zoom/SwitchAutoFlash/AutoEnlarge/
+  remaining Picture effect kinds (Zoom/SwitchAutoFlash/AutoEnlarge/
   the auto-pattern-switch family) and the Map target (Zoom/Shake, both
-  fully confirmed by the crate's own `MapEffectType`),
+  fully confirmed by the crate's own `MapEffectType`, `Zoom` needing the
+  whole-camera transform noted above),
   `Teleport`(130)'s own remaining surface (persistent per-map event state,
   needed for both its own `-1`/`-3..-7` targets and for switches/
   variables/moved events to survive a revisited map at all), and
