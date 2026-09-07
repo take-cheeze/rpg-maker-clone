@@ -111,6 +111,19 @@ module Wolf
     # CSV import/export).
     C_DATABASE = 250
     C_SET_MOVE_ROUTE = 201
+    # "→完了までウェイト" (04ev_control.html: "does not execute the next
+    # command until the currently-processing ■動作指定 finishes"). The
+    # wolfrpg-map-parser crate models it as a bare marker with no fields
+    # at all (`EventControlCommand::WaitForMoveRoute`, `parse_empty_
+    # command`), matching the sample game's own lone real call (0 args, 0
+    # strings). #run_route_commands already applies every SetMoveRoute
+    # (201) step instantly ("snap, no gradual animation" -- its own
+    # comment), so by the time control reaches *any* next command,
+    # including this one, the current event's own move route has already
+    # fully finished -- a genuine no-op here, not missing functionality,
+    # the same reasoning `Blank`(0)/`Checkpoint`(99) already established
+    # for a marker command with nothing left to do at runtime.
+    C_WAIT_FOR_MOVE = 202
     C_START_LOOP = 170
     C_BREAK_LOOP = 171
     C_BREAK_EVENT = 172
@@ -211,7 +224,7 @@ module Wolf
 
       def dispatch(cmd)
         case cmd.code
-        when Interpreter::C_BLANK, Interpreter::C_CHECKPOINT
+        when Interpreter::C_BLANK, Interpreter::C_CHECKPOINT, Interpreter::C_WAIT_FOR_MOVE
           nil
         when Interpreter::C_SET_VARIABLE then @interp.exec_set_variable(cmd)
         when Interpreter::C_SET_VARIABLE_EX then @interp.exec_set_variable_ex(cmd)

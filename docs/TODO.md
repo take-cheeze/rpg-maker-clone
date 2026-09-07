@@ -36193,6 +36193,16 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `docs/adr/0080-wolf-rpg-editor-teleport.md` -- including why the actual
   native scene-rebuild path itself could not be exercised by real data
   this pass (reviewed by hand instead).
+- ✅ **WaitForMove(202) (2026-09-07).** help/04ev_control.html's own
+  "→完了までウェイト": does not execute the next command until the
+  currently-processing `SetMoveRoute`(201) finishes. The crate models it
+  as a bare marker with no fields at all, matching the sample game's own
+  lone real call (0 arguments). `#run_route_commands` already applies
+  every move-route step instantly ("snap, no gradual animation"), so by
+  the time control reaches *any* next command a move route has already
+  fully finished -- a genuine no-op in this reader's specific
+  architecture, the same reasoning `Blank`(0)/`Checkpoint`(99) already
+  established. See `docs/adr/0081-wolf-rpg-editor-wait-for-move.md`.
 - Suggested next order (by real frequency, from the same census):
   save/load (220-222, 13 occurrences combined, though 220's own `Base`/
   Save operation needs a real save-file *format* serializing the whole
@@ -36201,17 +36211,15 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   this reader does not have at all -- the crate's own
   `party_graphics_command` covers party member *graphics*, which implies
   multiple visible party sprites following the hero, unbuilt), transitions
-  (160-162, almost unused), `WaitForMove`(202, 1 occurrence -- pairs with
-  `SetMoveRoute`(201)'s own "→完了までウェイト" wait-for-move-to-finish
-  bit), `Effect`(290)'s own remaining surface (every other Picture effect
-  kind, the Character and Map targets, its own Flash/Shake/blink effects
-  being a natural fit for `ChangeColor`'s own new `#update_tone`
-  per-frame-tick pattern), `Teleport`(130)'s own remaining surface
-  (persistent per-map event state, needed for both its own `-1`/`-3..-7`
-  targets and for switches/variables/moved events to survive a revisited
-  map at all), and `Database`(250)'s own remaining surface (XY配列, the
-  eight name<->index lookups, data reset/insert/extract/copy/sort, CSV
-  import/export via `ImportDatabase`(251)).
+  (160-162, almost unused), `Effect`(290)'s own remaining surface (every
+  other Picture effect kind, the Character and Map targets, its own
+  Flash/Shake/blink effects being a natural fit for `ChangeColor`'s own
+  new `#update_tone` per-frame-tick pattern), `Teleport`(130)'s own
+  remaining surface (persistent per-map event state, needed for both its
+  own `-1`/`-3..-7` targets and for switches/variables/moved events to
+  survive a revisited map at all), and `Database`(250)'s own remaining
+  surface (XY配列, the eight name<->index lookups, data reset/insert/
+  extract/copy/sort, CSV import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
