@@ -629,6 +629,41 @@ assert "Wolf::Interpreter's GotoLoopStart(176) restarts the loop without running
   assert_equal 0, store.number(2_000_001)
 end
 
+assert "Wolf::Interpreter's BreakEvent(172) stops the rest of the event's own commands" do
+  # "イベント処理中断" (04ev_control.html): "以降のイベントコマンドを無視
+  # して、イベントを終了します" [ignores every subsequent event command
+  # and ends the event]. 303 real calls, every one a bare `args=[],
+  # strings=[]` marker -- no packed layout to get wrong.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+    wolf_test_cmd(172, [], [], 0), # BreakEvent
+    wolf_test_cmd(121, [2_000_000, 0, 2, 0xf000], [], 0), # never runs
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter's BreakEvent(172) ends the whole event even from inside a nested loop/branch" do
+  # The manual's own wording is "ends the event," not "ends the current
+  # loop/branch" -- confirmed here by nesting BreakEvent three levels deep
+  # (StartLoop > VariableCondition > BreakEvent) and checking that nothing
+  # after any of those constructs' own closing markers runs either.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(170, [], [], 0),                        # StartLoop
+    wolf_test_cmd(111, [0x01, 2_000_000, 0, 2], [], 1),    # if V[0] == 0 (true)
+    wolf_test_cmd(401, [0], [], 1),
+    wolf_test_cmd(172, [], [], 2),                         # BreakEvent
+    wolf_test_cmd(121, [2_000_000, 0, 111, 0xf000], [], 2), # never runs
+    wolf_test_cmd(499, [], [], 1),                          # BranchEnd
+    wolf_test_cmd(498, [], [], 0),                          # LoopEnd
+    wolf_test_cmd(121, [2_000_000, 0, 222, 0xf000], [], 0), # never runs either
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 0, store.number(2_000_000)
+end
+
 assert "Wolf::Interpreter's Blank(0) is a no-op that does not disturb its siblings" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   commands = [
