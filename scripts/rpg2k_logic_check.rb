@@ -7640,24 +7640,23 @@ check "Game::Actor#battler_animation_id resolves the actor's own database defaul
   eq 3, a.battler_animation_id
 end
 
-check "Game::Actor#battler_animation_id warns and returns 0 for an unset (0) database default, " \
-      'even with a real battleranimations table present' do
-  # battler_animation 0 means "chunk never written"; id 0 names no entry in
-  # any real table (every id here is 1-based, "matching every other database
-  # table id in this format" -- schema.rb's own comment), so this behaves
-  # exactly like any other dangling id: warn and return 0. The "resolved id 0
-  # -> battleranimations id 1" fallback only ever fires from the class-changed
-  # branch (see the two checks below) -- ported from a reference implementation,
-  # NOT independently confirmed against genuine RPG_RT under wine: its
-  # db-default branch returns 0 immediately on a failed
-  # `ReaderUtil::GetElement` lookup, never reaching its own tail "anim == 0"
-  # check at all.
+check "Game::Actor#battler_animation_id falls back to battleranimations id 1 for an unset (0) " \
+      'database default, silently -- it is an absent field, not a dangling id' do
+  # battler_animation 0 means "chunk 11 field 62 was never written", and every
+  # real table id is 1-based, so id 0 can never name an entry. **Confirmed
+  # against genuine RPG_RT.EXE under wine (cycle #255)** on `data/kk1.12`: its
+  # actor 1 (ユーティル) writes no field 62 at all, yet the genuine runtime
+  # draws it the BattleCharSet `勇者男b` row 2 that battleranimations entry 1
+  # (勇者男) names -- template-matched pixel-exact in the side-view party
+  # line-up. So the unset field resolves to 1, the same tail fallback the
+  # class-changed branch already used; this branch used to run the entry
+  # lookup for id 0 too, fail it, warn, and return 0 (no sprite at all).
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
   anims = { 1 => FakeBattlerAnimation.new('Default', 20, {}) }
   db = FakeActorDB.new(players, [1], battleranimations: anims)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
-  out = capture_stderr { eq 0, a.battler_animation_id }
-  ok out.include?('[RPG2k]'), 'the unset default is reported, not silently invented'
+  out = capture_stderr { eq 1, a.battler_animation_id }
+  eq '', out, 'an absent field is normal authoring, not a reported gap'
 end
 
 check "Game::Actor#battler_animation_id warns and returns 0 for a dangling database default id" do
@@ -8424,22 +8423,32 @@ check 'to_lsd writes the party roster as a count-then-data pair (chunk 109 ' \
   eq [1, 2, 3], round.party.actors.map(&:id)
 end
 
-# Bag order is the order the bag was built in, never an id sort -- measured
-# against genuine RPG_RT.exe under wine (cycle #252): a save whose chunk 109
-# `item_ids` was written deliberately out of order listed on RPG_RT's own field
-# Item screen in exactly that stored order. These three checks used to assert a
-# sorted list, which was the pre-measurement assumption, not a finding.
+# Bag order is the order the bag holds, never an id sort -- measured against
+# genuine RPG_RT.exe under wine (cycle #252): a save whose chunk 109 `item_ids`
+# was written deliberately out of order listed on RPG_RT's own field Item screen
+# in exactly that stored order. These three checks used to assert a sorted list,
+# which was the pre-measurement assumption, not a finding.
+#
+# The out-of-order bag has to be *seeded* rather than gained: cycle #258
+# measured that a newly gained id is inserted before the first larger one it
+# finds (Game::Party#insert_item_in_bag), so a bag built purely by gaining is
+# always ascending, and only a save can carry another order -- which is exactly
+# the case cycle #252 photographed on the real runtime.
+def stored_bag(st, pairs)
+  bag = st.party.instance_variable_get(:@items)
+  pairs.each { |id, n| bag[id] = n }
+  st
+end
+
 check 'field_items lists every held item in the bag\'s own order with counts, ' \
       'including an unusable one -- RPG_RT lists it disabled, it does not omit it' do
   items = { 5 => fake_item(type: 6, rhp: 50),   # medicine
             7 => fake_item(type: 1, atk: 10),   # weapon -- not field-usable
             9 => fake_item(type: 6, rsp: 10) }  # medicine
-  st = item_party(items)
-  st.party.gain_item(9, 2)
-  st.party.gain_item(5, 1)
-  st.party.gain_item(7, 1)   # weapon in the bag, listed but not menu-usable
+  # 7 is the weapon: in the bag, listed, but not menu-usable.
+  st = stored_bag(item_party(items), [[9, 2], [5, 1], [7, 1]])
   eq [[9, 2], [5, 1], [7, 1]], st.party.field_items,
-     'the order the three were gained in, not 5/7/9'
+     'the order the save stores, not 5/7/9'
   ok !st.party.field_usable?(7), 'still not usable -- only listing changed'
 end
 
@@ -8448,12 +8457,9 @@ check 'to_lsd writes the bag in its own order, so a save/load round trip ' \
   items = { 5 => fake_item(type: 6, rhp: 50),
             7 => fake_item(type: 1, atk: 10),
             9 => fake_item(type: 6, rsp: 10) }
-  st = item_party(items)
-  st.party.gain_item(9, 2)
-  st.party.gain_item(5, 1)
-  st.party.gain_item(7, 1)
+  st = stored_bag(item_party(items), [[9, 2], [5, 1], [7, 1]])
   inv = st.to_lsd[109]
-  eq [9, 5, 7], inv.item_ids, 'chunk 109 field 12 keeps the gained order'
+  eq [9, 5, 7], inv.item_ids, 'chunk 109 field 12 keeps the stored order'
   eq [2, 1, 1], inv.item_counts, 'and field 13 stays parallel to it'
 end
 
@@ -8715,10 +8721,9 @@ check 'field_items includes skill books alongside medicines, and the ' \
   items = { 5 => fake_item(type: 6, rhp: 10),       # medicine
             8 => fake_item(type: 7, skill_id: 42),  # skill book
             3 => fake_item(type: 1, atk: 5) }       # weapon (not usable)
-  st = item_party(items)
-  [5, 8, 3].each { |id| st.party.gain_item(id, 1) }
+  st = stored_bag(item_party(items), [[5, 1], [8, 1], [3, 1]])
   eq [[5, 1], [8, 1], [3, 1]], st.party.field_items,
-     'gained order, not an id sort (cycle #252)'
+     'stored order, not an id sort (cycle #252)'
   ok !st.party.field_usable?(3)
 end
 
@@ -8808,11 +8813,9 @@ end
 check 'field_items includes seeds; a seed with no boost is ineffective' do
   items = { 9 => fake_item(type: 8, mhp: 20),   # seed with a boost
             4 => fake_item(type: 8) }           # seed with no boost
-  st = item_party(items)
-  st.party.gain_item(9, 1)
-  st.party.gain_item(4, 1)
+  st = stored_bag(item_party(items), [[9, 1], [4, 1]])
   eq [[9, 1], [4, 1]], st.party.field_items,
-     'gained order, not an id sort (cycle #252)'     # both held seeds are listed
+     'stored order, not an id sort (cycle #252)'     # both held seeds are listed
   hero = st.party.leader
   eq false, st.party.item_effective?(4, hero)   # no boost -> ineffective
   eq [], st.party.use_item(4, hero)             # nothing happens

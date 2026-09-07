@@ -614,8 +614,36 @@ module RGSS
     # while its title backgrounds are .jpg, so a png-only search left every XP
     # title screen on the fallback background (found by
     # scripts/compare-rpgxp-wine.bash). stb decodes JPEG, so both spellings of
-    # the extension are just more candidates.
+    # the extension are just more candidates. This is the RGSS (XP/VX/VX Ace)
+    # order and stays the default; RPG Maker 2000/2003 uses its own, below.
     EXTENSIONS = [:png, :jpg, :jpeg, :xyz, :bmp].freeze
+
+    # What a genuine RPG Maker 2000 RPG_RT.exe probes, in its own order.
+    # Measured under wine (cycle #258, Nepheshel): with `Title/Nepheshel_logo`
+    # deleted, a `WINEDEBUG=+file` trace opens exactly
+    # `Nepheshel_logo.bmp`, `Nepheshel_logo.png`, `Nepheshel_logo.xyz` in that
+    # order and nothing else -- **no** `.jpg`/`.jpeg` candidate exists on this
+    # runtime at all. And when both spellings are on disk the `.bmp` is the one
+    # drawn: a flat gradient `.bmp` dropped beside the game's own shipped `.png`
+    # replaced the picture on screen for `Title/Nepheshel_logo`,
+    # `System/システム` and `GameOver/gameover` alike, with the `.png` never
+    # even opened. (A name that resolves to nothing is not skipped and gets no
+    # placeholder: RPG_RT puts up a modal "ファイル <name> は開けません" message
+    # box and goes no further.)
+    RPG2K_EXTENSIONS = [:bmp, :png, :xyz].freeze
+
+    class << self
+      # The candidate extension list the loaders below actually walk. Defaults
+      # to the RGSS order (EXTENSIONS); a maker whose runtime probes in a
+      # different order installs its own once at boot -- RPG2k#initialize sets
+      # RPG2K_EXTENSIONS, since one process only ever runs one game. Assigning
+      # nil restores the default.
+      attr_writer :extensions
+
+      def extensions
+        @extensions || EXTENSIONS
+      end
+    end
 
     # Raised when a String load resolves to nothing loadable. Carries the two
     # halves of the message separately so a caller that already names the file
@@ -642,7 +670,7 @@ module RGSS
         [GAME_DIR, RTP_DIR].each do |d|
           next if d.nil? || d.empty?
           i = self._init_file("#{d}/#{f}", s) unless i
-          EXTENSIONS.each do |ext|
+          Bitmap.extensions.each do |ext|
             i = self._init_file("#{d}/#{f}.#{ext}", s) unless i
           end
         end
@@ -691,7 +719,7 @@ module RGSS
                else
                  "not in the encrypted archive"
                end
-      "not found (tried .#{EXTENSIONS.join("/.")}): #{where.join("; ")}"
+      "not found (tried .#{extensions.join("/.")}): #{where.join("; ")}"
     end
 
     # Font used by #draw_text. Created lazily from the current defaults.
@@ -718,7 +746,7 @@ module RGSS
       return nil if archive.nil?
       bytes = archive.read(f)
       if bytes.nil?
-        EXTENSIONS.each do |ext|
+        Bitmap.extensions.each do |ext|
           bytes = archive.read("#{f}.#{ext}")
           break if bytes
         end

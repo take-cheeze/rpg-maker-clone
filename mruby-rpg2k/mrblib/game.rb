@@ -3605,14 +3605,20 @@ module Game
     #    Change Class did run and left the actor in a real class.
     # 3. This actor's own database default (chunk 11 field 62), looked up as
     #    an id into `db.battleranimations` -- warns and returns 0 (no sprite
-    #    data at all) if that id names no entry, matching a reference
-    #    implementation's own warn-and-early-return there (ported from its
-    #    source, NOT
-    #    independently confirmed against genuine RPG_RT under wine).
+    #    data at all) if that *positive* id names no entry.
     #
     # A resolved id of 0 (the chunk was never written) falls back to
-    # battleranimations id 1, matching `GetBattleAnimationId`'s own final
-    # "chunk was missing, set to proper default" step.
+    # battleranimations id 1 instead of being reported as dangling.
+    # **Confirmed against genuine RPG_RT.EXE under wine (cycle #255)** on
+    # `data/kk1.12` (a real RPG2003 game): its actor 1 (ユーティル) writes no
+    # chunk 11 field 62 at all, and the genuine runtime still draws it a
+    # battler -- the BattleCharSet `勇者男b` row 2 that `battleranimations`
+    # **entry 1** (勇者男) names, template-matched pixel-exact in the party's
+    # side-view line-up. Zero is therefore "field absent, use the first
+    # entry", not "dangling id": this branch used to run the entry lookup for
+    # bid 0 too, fail it (every real table is 1-based), warn and return 0
+    # before the tail `anim == 0 ? 1 : anim` below could ever fire, so an
+    # actor authored this way got no battler sprite at all.
     def battler_animation_id
       return @battler_animation_override if @battler_animation_override && @battler_animation_override > 0
 
@@ -3622,10 +3628,12 @@ module Game
         else
           bid = @db_row.respond_to?(:battler_animation) ? (@db_row.battler_animation || 0) : 0
           table = @db.respond_to?(:battleranimations) ? @db.battleranimations : nil
-          entry = table ? table[bid] : nil
-          unless entry
-            $stderr.puts "[RPG2k] actor ##{@id}: invalid battle animation id #{bid}, no sprite drawn"
-            return 0
+          if bid > 0
+            entry = table ? table[bid] : nil
+            unless entry
+              $stderr.puts "[RPG2k] actor ##{@id}: invalid battle animation id #{bid}, no sprite drawn"
+              return 0
+            end
           end
           bid
         end
@@ -4332,12 +4340,64 @@ module Game
       if c == 0
         return c unless @items.key?(id)
         @items.delete(id)
-      else
+      elsif @items.key?(id)
         return c if @items[id] == c
         @items[id] = c
+      else
+        insert_item_in_bag(id, c)
       end
       @revision += 1
       c
+    end
+
+    # Put a *newly* held id into the bag where RPG_RT puts it.
+    #
+    # The bag is stored, and listed, in the order the save carries -- cycle
+    # #252 proved the Item screen never re-sorts it -- which left open where a
+    # freshly gained id lands. Measured under wine (cycle #258): a Save01.lsd
+    # whose chunk 109 `item_ids` was written deliberately out of order
+    # ([42, 92, 67, 28, 103] = ショートソード/メイス/ファルシオン/グラディウス/
+    # ロングスピア), resumed in genuine RPG_RT.exe, and one weapon bought from
+    # Nepheshel's own weapon shop (Map0015 event 2, `--map 15 --at 5,9`):
+    #   * buying **44** listed 42, **44**, 92, 67, 28, 103 -- inserted at index
+    #     1, immediately before 92, the first *stored* entry whose id is larger;
+    #   * buying **27** listed **27**, 42, 92, 67, 28, 103 -- index 0, before
+    #     42, again the first larger stored id;
+    #   * buying **127** listed 42, 92, 67, 28, 103, **127** -- appended,
+    #     because no stored entry is larger.
+    # So the rule is a single forward scan: insert immediately before the first
+    # stored entry with a greater id, and append when there is none. It is not
+    # an append (44 and 27 both landed ahead of entries that were already
+    # there), not a sort of the whole bag (that would have reordered 92/67/28),
+    # and not "after the last smaller id" (that would have put 44 at index 4).
+    #
+    # `@items` is a Hash whose insertion order *is* the bag order, so inserting
+    # in the middle means re-appending the tail behind the new key.
+    def insert_item_in_bag(id, count)
+      keys = @items.keys
+      at = keys.size
+      i = 0
+      while i < keys.size
+        if keys[i] > id
+          at = i
+          break
+        end
+        i += 1
+      end
+      if at == keys.size
+        @items[id] = count
+        return count
+      end
+      tail = []
+      j = at
+      while j < keys.size
+        k = keys[j]
+        tail.push([k, @items.delete(k)])
+        j += 1
+      end
+      @items[id] = count
+      tail.each { |pair| @items[pair[0]] = pair[1] }
+      count
     end
 
     def lose_item(id, n = 1); gain_item(id, -n); end
@@ -4642,9 +4702,10 @@ module Game
     # is built in the save's own order by `.from_lsd`, so preserving the hash's
     # insertion order is preserving RPG_RT's.
     #
-    # Still open: where RPG_RT *inserts* a newly gained id (append, or into some
-    # internal order) is not settled by this -- the capture only proves the
-    # screen does not re-sort what the save holds.
+    # Where RPG_RT *inserts* a newly gained id was left open by that capture and
+    # is settled by cycle #258's: immediately before the first stored entry with
+    # a greater id, appended when there is none. See #insert_item_in_bag, which
+    # carries the three purchases that measured it.
     def field_items(state = nil)
       @items.keys.select do |id|
         it = db_item(id)

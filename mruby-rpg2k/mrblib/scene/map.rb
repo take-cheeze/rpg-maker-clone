@@ -8930,11 +8930,19 @@ class RPG2k
 
       # RPG2000's message window is a fixed 320x80 panel pinned to the left edge
       # — it does not shrink to the message, and it does not inset from the
-      # screen. Measured off a genuine RPG_RT frame under wine (ADR 0021): the
-      # bottom-positioned window occupies exactly (0, 160)-(319, 239).
+      # screen. Measured off a genuine RPG_RT frame under wine (ADR 0021), and
+      # re-measured for all three display positions in cycle #257 (a synthetic
+      # autostart Show Message spliced onto a scratch copy of Nepheshel's
+      # Map0012, driven on genuine RPG_RT.exe under wine): the window's own
+      # frame lands on native rows 0/77, 80/157 and 160/237 for Message
+      # Options' Up / Center / Down, i.e. (0, 0), (0, 80) and (0, 160), always
+      # 320 wide with its outer frame column at native x 0 and 317.
       MSG_WIN_W = 320
       MSG_WIN_H = 80
-      # One text row. Four rows fit in the 64px interior.
+      # One text row. Four rows fit in the 64px interior. Confirmed under wine
+      # (cycle #257): a four-line message put its glyph ink on native rows
+      # 12..18, 28..34, 44..50 and 60..66 of a top-positioned window — a
+      # 16px pitch, first row starting at the contents origin (window + 8).
       MSG_LINE_H = 16
       # Lines the message window shows before it paginates (the 64px interior
       # holds exactly four 16px rows). RPG2000 keeps one window and shows the
@@ -8942,17 +8950,52 @@ class RPG2k
       # merged Show Choices) runs past this many lines.
       MSG_LINES_PER_PAGE = 4
       # Characters revealed per frame for the message typewriter effect.
+      # Confirmed against genuine RPG_RT.exe under wine (cycle #257): a
+      # 40-glyph line burst-captured while it typed advanced in 24px (four
+      # half-width glyph) steps every 0.0335s — 2.0 frames at RPG_RT's
+      # confirmed 60fps (ADR 0021), i.e. exactly two characters a frame.
       MSG_REVEAL_SPEED = 2
       # RPG_RT unrolls the message window (and its `\$` gold window) open and
-      # shut over 7 frames rather than popping it, except during battle where
-      # it appears/disappears instantly (ported from a reference
-      # implementation, not independently confirmed against genuine
-      # RPG_RT under wine).
-      MSG_ANIM_FRAMES = 7
+      # shut from its own horizontal centre line rather than popping it, except
+      # during battle where it appears/disappears instantly. Eight frames, not
+      # the seven this was originally ported in with: burst-captured under wine
+      # (cycle #257) the window's drawn height stepped 20 -> 40 -> 60 -> 80
+      # about every two sample frames while opening and 60 -> 40 -> 20 -> gone
+      # while closing, i.e. 10px (= 80/8) a frame, and the whole animation ran
+      # 0.127s / 0.115s ≈ 7.6 / 6.9 sampled frames end to end. 80/7 = 11.4px
+      # a frame does not fit those heights.
+      MSG_ANIM_FRAMES = 8
       # RPG2000 FaceSet geometry: a 4x4 grid of 48x48 face cells, drawn beside
-      # the message text with a small gap.
+      # the message text. Measured under wine (cycle #257) with a Change Face
+      # Graphic spliced ahead of a Show Message: the 48x48 cell lands at native
+      # (16, 176) in the bottom window for a left-hand face and (256, 176) for
+      # a right-hand one -- i.e. inset FACE_INSET from the *contents* origin
+      # (window + Window::BORDER) on its own side and on the top, not flush
+      # into the corner the way this used to draw it.
       FACE_SIZE = 48
-      FACE_MARGIN = 4
+      FACE_INSET = 8
+      # Gap between the face cell and the message text: the same measurement
+      # put the text column at native x 80 with a left-hand face (contents 72 =
+      # FACE_INSET + FACE_SIZE + FACE_GAP) and clipped it at native x 237 with
+      # a right-hand one (contents 229 = 301 - 72), so the face reserves
+      # FACE_INSET + FACE_SIZE + FACE_GAP = 72px of text width on its side
+      # whichever side that is.
+      FACE_GAP = 16
+      # Message text stops three pixels short of the contents area's own right
+      # edge: an overlong (70 half-width glyph) line clipped mid-glyph at
+      # native x 309 in a 320-wide window, i.e. contents x 301 = 304 - 3, with
+      # no wrap onto the next row. Nothing about the clip is glyph-aligned --
+      # RPG_RT drew the first column of the 51st glyph and cut the rest.
+      MSG_TEXT_RIGHT_MARGIN = 3
+      # Show Choices labels are indented this far past the message text's own
+      # column: measured native x 20 against a plain message's x 8 in the same
+      # window (cycle #257).
+      MSG_CHOICE_INDENT = 12
+      # The choice cursor is drawn 2px *inside* the contents area on each side
+      # (native x 10..309 for a 320-wide window, height exactly MSG_LINE_H),
+      # not with the 4px overhang menu list cursors carry (ADR 0021) --
+      # measured under wine, cycle #257.
+      MSG_CURSOR_INSET = 2
 
       # Look up an actor name by id for the \n[] message control code.
       #
@@ -9073,10 +9116,17 @@ class RPG2k
         face_sheet = load_face(cfg)
         face_left = face_sheet && !cfg.face_right
         face_right = face_sheet && cfg.face_right
-        text_x = face_left ? FACE_SIZE + FACE_MARGIN : 0
-
+        # A face reserves FACE_INSET + FACE_SIZE + FACE_GAP of the text area on
+        # its own side, and the text always stops MSG_TEXT_RIGHT_MARGIN short of
+        # the contents area's right edge -- both measured off genuine RPG_RT
+        # frames under wine (see the constants above). Right-hand faces used to
+        # keep only FACE_SIZE + 4 clear, so an overlong line ran straight over
+        # the portrait.
         inner_w = MSG_WIN_W - Window::BORDER * 2
-        text_w = inner_w - text_x - (face_right ? FACE_SIZE + FACE_MARGIN : 0)
+        face_reserve = FACE_INSET + FACE_SIZE + FACE_GAP
+        text_x = face_left ? face_reserve : 0
+        text_right = inner_w - MSG_TEXT_RIGHT_MARGIN - (face_right ? face_reserve : 0)
+        text_w = text_right - text_x
         inner_h = MSG_WIN_H - Window::BORDER * 2
         win_h = MSG_WIN_H
         # The timer's own bottom-edge-avoidance reads this (see #draw_timer's
@@ -9116,7 +9166,8 @@ class RPG2k
                      inner_w: inner_w, seg_lines: seg_lines, interp: interp,
                      page: 0, pages: pages, auto_close: auto_close,
                      face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
-                     face_x: face_right ? inner_w - FACE_SIZE : 0,
+                     face_x: face_right ? inner_w - FACE_INSET - FACE_SIZE : FACE_INSET,
+                     face_y: FACE_INSET,
                      text_x: text_x, text_w: text_w, gold_window: gold_window,
                      # The colour still in effect once this text ends -- a Show
                      # Choices later merged onto this same window (see
@@ -9168,8 +9219,44 @@ class RPG2k
         end
         @message[:trailing_color] = color
         new_seg_lines = scans.map { |s| s[:segments] }
+        # RPG_RT only merges the options *under* the text when they still fit
+        # in the window's four rows; when they do not, the text page finishes
+        # on its own (pause arrow, one confirm) and the options open a fresh
+        # page of their own with the text gone. Measured under wine (cycle
+        # #257): one text line + two options showed both together, while three
+        # text lines + two options showed the text alone first and then the two
+        # options at rows 1-2 with the text cleared -- not the text plus the
+        # first option paginated, which is what appending unconditionally and
+        # letting #message_page_layout split it produced here before.
+        if @message[:seg_lines].length + new_seg_lines.length > MSG_LINES_PER_PAGE
+          # No room: hold the options back until the text page has been
+          # confirmed on its own (#drive_text_message answers :pending_choice),
+          # then they replace it.
+          @message[:pending_choice] = new_seg_lines
+          @message[:window].pause = true
+          return
+        end
         @message[:choice_start] = @message[:seg_lines].length
         @message[:seg_lines] = @message[:seg_lines] + new_seg_lines
+        install_choice_lines(new_seg_lines)
+      end
+
+      # Show the options that #append_choice_lines could not fit under the text
+      # they follow: the text page has now had its confirm, so the options take
+      # the window over from row 0 with the text gone.
+      def apply_pending_choice_lines
+        new_seg_lines = @message[:pending_choice]
+        @message[:pending_choice] = nil
+        @message[:window].pause = false
+        @message[:choice_start] = 0
+        @message[:seg_lines] = new_seg_lines
+        install_choice_lines(new_seg_lines)
+      end
+
+      # Turn the open window into a choice prompt around `new_seg_lines`
+      # (already spliced into @message[:seg_lines] by the caller, either merged
+      # under the text or on their own page).
+      def install_choice_lines(new_seg_lines)
         @message[:choice] = true
         @message[:count] = new_seg_lines.length
         # Choice lists appear at once, same as a standalone choice window; the
@@ -9337,7 +9424,7 @@ class RPG2k
         vis = Game::Message.visible_segments(slice, rel)
         right = @message[:text_x] + @message[:text_w]
         vis.each_with_index do |segs, i|
-          x = @message[:text_x]
+          x = @message[:text_x] + choice_row_indent(start + i)
           y = i * MSG_LINE_H
           segs.each do |seg|
             draw_message_run(c, x, y, right - x, seg)
@@ -9345,6 +9432,16 @@ class RPG2k
           end
         end
         draw_message_more if page + 1 < (@message[:pages] || 1)
+      end
+
+      # Show Choices labels sit MSG_CHOICE_INDENT past the message text's own
+      # column; plain message rows (including the Show Text a choice list is
+      # merged onto) do not. Measured under wine (cycle #257): a four-option
+      # list drew its labels at native x 20 in the same window whose plain text
+      # sat at native x 8.
+      def choice_row_indent(line_index)
+        return 0 unless @message && @message[:choice]
+        line_index >= (@message[:choice_start] || 0) ? MSG_CHOICE_INDENT : 0
       end
 
       # RPG2000's "▼" continuation marker, drawn bottom-right of the message
@@ -9375,8 +9472,8 @@ class RPG2k
       # boundary. This happened to look right in the common case (no right-side
       # face), since the boundary coincides with the contents bitmap's own
       # right edge and glyphs simply run off the bitmap -- but a right-side Face
-      # Graphic (`#open_message`'s `text_w`) leaves `FACE_SIZE + FACE_MARGIN` of
-      # *bitmap* width beyond the intended text boundary for the portrait,
+      # Graphic (`#open_message`'s `text_w`) leaves `FACE_INSET + FACE_SIZE +
+      # FACE_GAP` of *bitmap* width beyond the intended text boundary for it,
       # so an overflowing run kept drawing straight over it instead of
       # disappearing there. `#clip_text_to_width` (Scene::Base -- shared with
       # Scene::Battle's status panel, which hits the same unclipped-overflow
@@ -9400,7 +9497,7 @@ class RPG2k
       def draw_message_face
         face = @message[:face]
         return unless face
-        @message[:contents].blt @message[:face_x], 0, face,
+        @message[:contents].blt @message[:face_x], @message[:face_y] || 0, face,
                                 Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
 
@@ -9432,9 +9529,16 @@ class RPG2k
         if sel >= page * MSG_LINES_PER_PAGE &&
            sel < (page + 1) * MSG_LINES_PER_PAGE
           row = sel - page * MSG_LINES_PER_PAGE
+          # Window#draw_cursor overhangs the rect it is handed by
+          # Game::WindowCursor::OVERHANG on each side (ADR 0021, measured for
+          # menu lists). The message window's own choice cursor does not
+          # overhang at all -- it lands 2px *inside* the contents area on each
+          # side (native x 10..309 for the 320-wide window, cycle #257) -- so
+          # the rect handed over is pulled in by the overhang plus that inset.
+          inset = MSG_CURSOR_INSET + Game::WindowCursor::OVERHANG
           @message[:window].cursor_rect =
-            Rect.new(0, row * MSG_LINE_H,
-                     @message[:window].contents.width, MSG_LINE_H)
+            Rect.new(inset, row * MSG_LINE_H,
+                     @message[:window].contents.width - inset * 2, MSG_LINE_H)
         else
           @message[:window].cursor_rect = Rect.new(0, 0, 0, 0)
         end
@@ -9601,6 +9705,35 @@ class RPG2k
           draw_message_contents
           return
         end
+        # Options held back because they did not fit under this text (see
+        # #append_choice_lines): the text page takes one confirm of its own,
+        # then they replace it. The interpreter is already suspended on its
+        # Show Choices, so nothing is resumed here.
+        if @message[:pending_choice]
+          @message[:window].pause = true
+          apply_pending_choice_lines if confirm
+          return
+        end
+        # A Show Choices that directly follows this Show Text needs no keypress
+        # of its own: RPG_RT drops the options straight into the same window
+        # the moment the text has finished typing. Measured under wine (cycle
+        # #257) -- a spliced autostart of Show Message "HEAD" + a two-option
+        # Show Choices showed the text and both options together, cursor up,
+        # with nothing pressed since the previous message closed. Resume the
+        # interpreter so its Show Choices runs now; #append_choice_lines then
+        # either merges the options under the text or parks them above.
+        # Input Number is left waiting for its confirm -- not measured.
+        if interp.message_followup == :choice && !@message[:followup_resumed]
+          @message[:followup_resumed] = true
+          @message[:awaiting_followup] = :choice
+          interp.resume
+          return
+        end
+        # Already resumed for that merge: the interpreter's own Show Choices is
+        # what answers next (this frame or the one after), so a confirm landing
+        # in the gap must not resume it a second time and step straight past
+        # the choices.
+        return if @message[:followup_resumed]
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || confirm
           followup = interp.message_followup

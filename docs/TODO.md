@@ -10185,6 +10185,84 @@ The work below is roughly ordered by the critical path to a walkable game
   pages on confirm; exactly four lines stays single-page; the current page shows
   only its four lines), all confirmed to fail against the pre-paging code (a
   six-line message revealing past its fourth line with no page pause / `pages`).
+  ✅ **Follow-up (cycle #257, 2026-09-06): the map message window and Show
+  Choices measured directly on genuine RPG_RT.exe for the first time.** ADR
+  0021 pinned the panel to a fixed 320x80 at x=0 early on and everything else
+  about it — face layout, text clipping, choice indent/cursor, unroll length,
+  when a Show Choices merges — was inference; cycle #248 noted the window was
+  never re-measured because no talkable event was reachable from the tested
+  spot. **Recipe**: Nepheshel's own town map 16 turned out to be a dead end —
+  its NPC events (2 "iris" at (14,9), 4 at (14,10), the shop NPC that scripts
+  Buy/Sell/Cancel via Show Choices) all carry switch-gated later pages, and the
+  canonical debug save has those switches set, so every one of them resolves to
+  an empty page and answers the Decision key with nothing at all (the hero is
+  also invisible there — the save's leader デモ用 has no CharSet — so "nothing
+  moved" is not evidence either way). Used the established splice instead: a
+  synthetic autostart page written onto event 1 of a scratch copy of `Map0012`
+  through this repo's own LCF writer (recomputing the page's field 51 byte
+  length, per cycle #181's rule), the save moved to map 12 (40,15) with
+  `--clear-scene`, resumed on genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox, Continue → file 1) and captured with
+  `xwd`; burst captures (a shell loop grabbing frames as fast as they come with
+  a wall clock per frame, ~140 samples/s of which about half are wine's black
+  buffer-flip frames) for everything timed. All figures below are native
+  (capture/2) pixels. **Confirmed unchanged**: the window is exactly 320x80 at
+  x=0 for all three Message Options positions — its own frame lands on rows
+  0/77, 80/157, 160/237 for Up/Center/Down (i.e. y = 0 / 80 / 160) with the
+  outer frame column at x 0 and 317; rows are 16px apart with the first row's
+  glyph ink on rows 12..18 of the window (the contents origin, window + 8); an
+  overlong line is **clipped, never wrapped**; the typewriter runs at exactly
+  **two characters a frame** (a 40-glyph line stepped 24px — four half-width
+  glyphs — every 0.0335s = 2.0 frames at 60fps), so `MSG_REVEAL_SPEED` = 2 is
+  right; the pause arrow blinks **20 frames on / 20 off** (transition midpoints
+  0.187 / 0.523 / 0.856 / 1.190s → 20.1, 19.97, 20.05 frames), re-confirming
+  `Window::ARROW_BLINK_FRAMES`, and its ink sits at x 155..165, y (window
+  bottom − 7)..(bottom − 2), i.e. centred on the window with the existing
+  16x8 sprite at `(width/2 − 8, height − 8)`; a standalone Show Choices reuses
+  that same 320x80 panel rather than opening a window of its own; Cancel with
+  the block's cancel type 0 is swallowed outright, and with cancel type *n* it
+  picks option *n* and closes. **Fixed, all measured**: (1) a FaceSet cell is
+  drawn at contents (8, 8) — native (16, 176) left / (256, 176) right — not
+  flush in the contents corner, so `FACE_INSET` (8) and a stored `face_y` join
+  `FACE_SIZE`; (2) a face reserves `FACE_INSET + FACE_SIZE + FACE_GAP` = 72px
+  of text width on its own side, so left-face text starts at contents 72 (was
+  52) and right-face text stops at contents 229 (was 252, which ran an
+  overlong line straight over the portrait); (3) message text stops
+  `MSG_TEXT_RIGHT_MARGIN` = 3px short of the 304px contents width — a 70-glyph
+  line's last ink column was x 308 with background from 309, cut mid-glyph —
+  so `text_w` is 301 with no face; (4) Show Choices labels are indented
+  `MSG_CHOICE_INDENT` = 12px past the message text column (native x 20 against
+  a plain message's x 8) — this engine drew them flush; (5) the choice cursor
+  is drawn 2px *inside* the contents area on each side (x 10..309, exactly
+  `MSG_LINE_H` tall), not with the 4px overhang menu lists carry (ADR 0021),
+  so `#set_choice_cursor` hands `Window#draw_cursor` a rect pulled in by that
+  overhang plus `MSG_CURSOR_INSET`; (6) `MSG_ANIM_FRAMES` is **8**, not the
+  ported 7 — the unroll's drawn height stepped 20→40→60→80 opening and
+  60→40→20→gone closing at ~2 sample frames a step (10px = 80/8 a frame, over
+  0.127s / 0.115s end to end; 80/7 = 11.4px fits none of those heights), and
+  it does unroll from the window's own horizontal centre line as coded;
+  (7) a Show Choices directly after a Show Text now merges with **no keypress
+  at all** (RPG_RT showed "HEAD" plus both options together with nothing
+  pressed since the previous message closed) and only when the options still
+  fit the window's four rows — three text rows plus two options showed the
+  text alone with the pause arrow, and one confirm replaced it with the two
+  options at rows 1-2, text gone, rather than the "text + first option, then a
+  lone second option" pagination this engine produced. `#append_choice_lines`
+  now either merges or parks the options in `:pending_choice` for
+  `#drive_text_message`'s confirm (`#apply_pending_choice_lines`), with the
+  shared tail in `#install_choice_lines`. **Left open**: consecutive Show
+  Message commands keep *one* window up in RPG_RT with no unroll at all — a
+  burst across the confirm between two spliced Show Message commands showed the
+  frame rows pinned at 160/237 throughout, and the second command's text simply
+  replaced the first's (it does not append below it even when the rows would
+  fit) — where this engine closes the window and unrolls a fresh one, a visible
+  blink between every adjacent pair of messages; matching it needs the
+  interpreter's own `message_followup` lookahead extended to report a following
+  Show Message, which is outside this cycle's file. Also left open: whether an
+  Input Number following a Show Text merges without a confirm the way a Show
+  Choices does (not measured; it still waits for one here). Eight new
+  `scripts/rpg2k_scene_check.rb` checks pin every fixed figure, each confirmed
+  to fail against the pre-fix code. No EasyRPG source was consulted.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by
@@ -11914,6 +11992,63 @@ The work below is roughly ordered by the critical path to a walkable game
   what the save holds, not what `gain_item` should do with a new id; and
   `Game::Party#equip_candidates` still sorts, left alone because the Equip
   screen was being measured in parallel this same round (cycle #250). No
+  EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #258, 2026-09-06): where a newly gained id lands in
+  the bag, measured on genuine RPG_RT.exe — it is *inserted*, before the first
+  stored entry with a larger id, not appended.** The entry above deliberately
+  left this open; three real purchases settle it. *Recipe*: `Save01_clean.lsd`
+  moved with `gen-rpg2k-save.rb --map 15 --at 5,9 --facing up --clear-scene`
+  (Nepheshel's own weapon shop, `Map0015.lmu` event 2 `武器屋の親父`, the same
+  zero-synthetic-editing NPC cycles #145/#152 used — its Open Shop is buy-only
+  and, unlike the item shop on Map0016, its event does **nothing** to the bag
+  afterwards, which is why it was chosen), then chunk 109 rewritten through the
+  LCF writer to hold `item_ids` deliberately out of id order —
+  `[42, 92, 67, 28, 103]` with counts `[1, 2, 3, 4, 5]`
+  (ショートソード/メイス/ファルシオン/グラディウス/ロングスピア, so each row's
+  count identifies its id) and `gold` 900000 — reassigned to the parent chunk
+  (`save[109] = inv`) before writing, without which the edit is silently
+  dropped; verified with `ruby scripts/lcf_save_check.rb`. Resumed under wine
+  (Xvfb 640x480x16, matchbox, LANG=ja_JP.UTF-8, `BOOT_WAIT=40`), the field Item
+  screen first re-confirmed the stored order 42/92/67/28/103 (re-confirming
+  cycle #252 on a second, independent bag), then one weapon was bought from the
+  shop's own Buy list and the Item screen photographed again. Note for future
+  runs: the party resumes **facing down** even from a `--facing up` save, so a
+  bare `z` in front of the NPC does nothing — press `Up` first (the hero is also
+  invisible here, drawn behind the counter's upper-layer tile, so "nothing
+  happened" looks identical to "wrong tile"); `x` is Cancel/menu, `z` Decision.
+  *Measured*: buying **44** (ブロードソード) listed 42, **44**, 92, 67, 28, 103
+  — index 1, immediately before 92, the first stored id larger than 44; buying
+  **27** (ダガー) listed **27**, 42, 92, 67, 28, 103 — index 0, before 42;
+  buying **127** (麻の服) listed 42, 92, 67, 28, 103, **127** — appended,
+  because no stored id is larger. So the rule is one forward scan: insert
+  before the first larger stored id, append when there is none. It is **not**
+  an append (44 and 27 both landed ahead of entries already held), **not** a
+  sort of the whole bag (92/67/28 never moved), and **not** "after the last
+  smaller id" (that would have put 44 at index 4). The obvious reading is that
+  RPG_RT keeps its inventory sorted and does a linear search for the insertion
+  point; a hand-built unsorted bag is out of spec for that search, and this is
+  where the scan lands — which also means a bag built purely by play is always
+  ascending, and only a save (or an editor) can carry another order.
+  **Fixed**: `Game::Party#gain_item` (`mruby-rpg2k/mrblib/game.rb`) now routes a
+  *new* id through a new `#insert_item_in_bag` implementing exactly that scan
+  (`@items` is a Hash whose insertion order is the bag order, so inserting in
+  the middle re-appends the tail behind the new key); an id already held still
+  only has its count bumped, and still keeps its slot. Three new checks at the
+  end of `scripts/rpg2k_scene_check.rb` pin the three measured purchases, a
+  restock, and a lose-then-re-gain; the first and third fail against the pre-fix
+  code (`expected [42, 44, 92, 67, 28, 103], got [42, 92, 67, 28, 103, 44]`).
+  **Fallout, corrected rather than papered over**: four `scripts/
+  rpg2k_logic_check.rb` fixtures built their deliberately unsorted bag by
+  *gaining* ids in descending order, which the measurement says can no longer
+  produce one — they now seed the stored order directly (a new `stored_bag`
+  helper) which is exactly the case cycle #252 photographed, and still pin the
+  same thing: neither the Item screen nor `to_lsd` re-sorts what the bag holds.
+  **Deliberately left open**: cycle #250's passing observation of a
+  30/27/29/28/61/66 grid after an *equip* is not explained by this rule (no
+  gain sequence produces it), and the equip path was not driven under wine this
+  cycle; `Game::Party#equip_candidates` still sorts, still untouched. Suites:
+  scene 1041, logic 1201, render 41, test-bed 174, rpg2k3 gauge 15 / row 19 /
+  command OK, `rgss_cruby_test_check` OK, `rpg2k_save_load_check` OK. No
   EasyRPG source was consulted.
   ✅ **Follow-up (2026-08-22): the field-menu half is now fixed, re-verified
   against genuine RPG_RT.exe rather than trusting the reference-implementation-only
@@ -14143,6 +14278,79 @@ The work below is roughly ordered by the critical path to a walkable game
   the `wait_label`/atb_mode follow-up below). No code change — both
   citations were already correct, only "NOT independently confirmed"
   became a wine confirmation.
+  ✅ **Follow-up (cycle #256, 2026-09-06): the RPG2003-only field-menu
+  commands measured for real — `Scene::StatusMenu` rewritten from one
+  full-screen window to RPG_RT's own five, and Row/Wait confirmed as
+  modelled.** *Recipe:* private wine prefix copied from the shared one (RTP
+  already installed), `$SCRATCH/kk` = a copy of `data/kk1.12` plus the
+  lowercase `RPG_RT.exe` symlink, `BOOT_WAIT=45 drive.sh start_ref`. The
+  earlier follow-up above built a synthetic one-actor save; this cycle
+  instead **played the real opening** — roughly 150 held Returns through the
+  credits and the dorm cutscene — until the menu opened with the game's own
+  three-member party (ユーティル / とんま / エマワトソン), then used the
+  menu's own セーブ to write a genuine `Save01.lsd` that every later boot
+  resumed from in seconds. That save was also the lever for the harder
+  cases: editing chunk 108's actor 1 (fields 31 level, 32 exp, 71 hp, 72 mp,
+  82 states) through this project's own LCF writer — reassigning the whole
+  `actors` table back to the parent, per this file's own save-editing rule —
+  produced a level-27, 13/2100-HP, 5/138-MP, state-afflicted actor without
+  touching the party list. *Measured (640x480 captures, halved; window rects
+  from each frame's own border bbox, calibrated against the field menu's
+  independently known 88px command window):* the Status screen is **five**
+  windows, not one — actor panel (0,0,124,208), gold (0,208,124,32),
+  HP/MP/EXP (124,0,196,64), parameters (124,64,196,80), equipment
+  (124,144,196,96), tiling 320x240 exactly. The actor panel puts a 48x48
+  FaceSet portrait at content (0,0), the front/back row label (RPG_RT's own
+  前衛 / 後衛 — no Term slot exists for either) right-aligned on line 0, then
+  *label-line/value-line pairs* at lines 3-10 for 名前 / 職業 / 肩書き / 状態
+  (all four hardcoded by the Japanese runtime, values indented to x=36), and
+  the level alone on line 11 with the `level` term as its label and the
+  figure right-aligned to x=78 (checked at both "1" and "27"). HP/MP/EXP use
+  the **full** `hp`/`mp` terms (ＨＰ/ＭＰ) and `exp_short`, each row drawn as
+  label at x=0, current right-aligned to x=90, "/" at 90, max right-aligned
+  to x=138 — verified across 1- to 5-digit figures (13/2100, 96/96,
+  12345/79050), and 12345/79050 confirms the right-hand EXP figure is the
+  *absolute* next-level threshold. Parameters are Attack/Defense/Mind/Agility
+  right-aligned to the same x=90 (order proved from kk1.12's own curves:
+  actor 3's base 10/18/50/7 vs a displayed 20/21/54/7, i.e. base + equipment
+  bonus). Equipment is five rows, label at x=0 and item name at x=60, and the
+  **second slot's label follows 二刀流** — the dual-wielding とんま showed
+  武器 twice where the leader showed the (empty) shield term. Colours come
+  from the skin's own swatches: sampling kk1.12's `System/00-03file12.png`
+  gives index 0 (250,250,255) for every value, index 1 (113,239,186) for
+  every label and index 4 (252,176,62) for the critical figure — matching the
+  captured (255,251,255)/(115,239,189)/(255,178,57) after the reference X
+  server's RGB565 quantisation, which confirms `#value_font_color`'s
+  quarter-of-max rule *and* that it applies to MP as well as HP. *Row (id 6):*
+  choosing 隊列変更 hands focus to the party list exactly as Skill/Status do;
+  Decision there moves that member's portrait 8px right in the menu's own
+  panel (screen x=92 → 100, nothing else moving) and drops straight back to
+  the command list; re-entering starts the party cursor at the first member
+  again; and the "don't empty the front row" guard is **real** — with two of
+  three members in the back, Decision on the last front-row member changed
+  nothing, and the same member moved as soon as someone else went back to the
+  front. *Wait (id 8):* one Decision changed nothing on screen but that row's
+  own label (whole-frame diff: a single band, y 92..101 x 38..74, ﾊﾞﾄﾙ/Active
+  → ﾊﾞﾄﾙ/Wait), the cursor stayed put, and a second Decision restored a
+  pixel-identical frame. *Fixed:* `status_menu.rb` rewritten to the measured
+  five-window layout (it had one 320x240 window drawing an invented
+  `"Class: X"` run, an English "State" label, a flowing HP/MP row, a "Next
+  NNN" EXP string, a Gold line inside the same window, English Front/Back and
+  no portrait at all); the doc comments in `menu.rb`'s class header,
+  `RPG2K3_COMMAND_IDS`, `#confirm_actor_selection`'s `:row` branch,
+  `#select_command`'s `:row`/`:order`/`:wait` branches and `#wait_label` now
+  say what was measured instead of "NOT independently confirmed". Seven new
+  `scripts/rpg2k_scene_check.rb` checks pin the rects, the panel's lines and
+  columns, the shared value grid, the dual-wield slot label and the Order
+  screen (below); the pre-existing Status checks that encoded the old ported
+  model were rewritten to the measured one. All seven were confirmed to fail
+  against the pre-fix code. *Left open:* whether a **solo** party really
+  leaves Left/Right silent on this screen (kk1.12's party is three from its
+  first menu on, and shrinking a genuine save's party list blackens RPG_RT on
+  Continue), the max-level `------` EXP rendering on *this* screen (borrowed
+  from the field menu's own cycle #248 measurement of the same data), and the
+  English runtime's wording for the four hardcoded labels and 前衛/後衛 —
+  only the Japanese RPG_RT was available. No EasyRPG source was consulted.
   ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
   cursor opens on whichever slot was saved most recently" claim is now
   independently confirmed against a genuine RPG_RT.exe, not just a
@@ -15806,6 +16014,117 @@ The work below is roughly ordered by the critical path to a walkable game
   that makes this one present), after which the screen is reachable from any
   save whose party has two members.
   No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #256, 2026-09-06): unblocked and measured — and the
+  note above was always about *Song-of-the-Sea's* binary specifically, not
+  about RPG2003 under this wine.** `data/kk1.12` ships a genuine
+  `RPG_RT.EXE` that renders perfectly here (title, map, field menu and every
+  sub-screen), so "a genuine RPG2003 runtime that renders under wine" is no
+  longer the missing piece; what remained was that kk1.12's own
+  `menu_commands` is `[1, 2, 5, 3, 6, 8, 4]` with **no id 7**, while the
+  games that do list id 7 (`data/mtf-meido-action/Debug`, Song-of-the-Sea)
+  ship no usable genuine runtime. Two ways past that were tried. *(a) Borrow
+  the runtime:* a genuine `RPG_RT.EXE` is a generic runtime, so kk1.12's exe
+  was copied beside a scratch copy of `data/mtf-meido-action/Debug`'s data —
+  it booted to an **empty message box** titled with the game name and then
+  unmapped its own window (mean 0, no window left on the display), i.e. that
+  Chinese-encoded EasyRPG-authored project is not loadable by this runtime;
+  not pursued further. *(b) Add the command to a copy of the database
+  instead — this is what worked:* a scratch copy of kk1.12 had its own
+  `RPG_RT.ldb` System chunk 22 rewritten through this project's own LCF
+  writer, field 27 to `[1, 2, 5, 3, 6, 8, 4, 7]` and field 26 to 8 (nothing
+  else touched, and nothing under `data/` touched at all). The genuine
+  runtime then drew a ninth, **blank-labelled** menu row between Save and End
+  Game (kk1.12's `order` term is the empty string; RPG_RT draws the row
+  anyway, the same rule Nepheshel's blank Save row established) and choosing
+  it opened the real Order screen on the three-member party of the save from
+  the Status follow-up above. *Measured:* two list windows, left
+  (68,48,88,80) and right (164,48,88,80) — 88 wide, an 8px gap, the pair
+  centred horizontally — and a Confirm/Redo prompt at (120,144,80,48), also
+  centred. Both list windows are 80 tall (four 16px rows + border) for a
+  *three*-member party, so they are sized for the four-member maximum; the
+  cursor still only walks the members present (Up from row 0 wrapped to row
+  2, never the empty fourth row) and spans the full 72px content width. The
+  screen has no backdrop of its own: the uncovered area is a uniform
+  (0,0,24), exactly kk1.12's System pixel (0,32) — (0,2,30) — under the
+  reference X server's RGB565 quantisation, i.e. the parent `Scene::Menu`'s
+  own `#build_field_background` fill showing through `Scene::Menu#suspend`.
+  Every behavioural claim in `order.rb` held: picking blanks the name in
+  place and appends it to the right column in pick order; re-picking a
+  blanked row does nothing (frame-identical); Cancel undoes the last pick one
+  at a time and, with nothing picked, leaves to the menu; the last pick
+  swaps in the 決定/やりなおし prompt and clears the left cursor outright;
+  やりなおし *and* Cancel there both reset to the pristine screen; 決定
+  applies the order and closes (the party list came back as
+  エマワトソン/とんま/ユーティル after picking in that order). *Fixed:* the
+  windows were at (20,20) and 96 wide with a party-size-dependent height and
+  a bottom-anchored prompt — all three rects replaced with the measured ones;
+  the prompt's labels were the English "Confirm"/"Redo" and are now RPG_RT's
+  own 決定 / やりなおし; and all three windows drew their text with a flat
+  `draw_text` (no shadow, no palette) where every genuine frame shows the
+  usual shadowed system-palette glyphs, so they now go through
+  `#draw_system_text` like the rest of the port. Four new
+  `scripts/rpg2k_scene_check.rb` checks pin the rects, the fixed four-row
+  sizing, the prompt wording and the cursor width; all four fail against the
+  pre-fix code. *Left open:* the two SE claims (`#pick_current`'s rejected
+  re-pick and `#redo_picks`'s cancel sound) — the reference X server has no
+  audio, so no capture can settle them; whether the list height is really a
+  fixed four rows or `size * 16 + 32` (the two agree at three members, and no
+  four-member party was reachable); and `Scene::Menu`'s `size <= 1` buzzer
+  gate, since shrinking a genuine save's party list blackens RPG_RT on
+  Continue. No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #258, 2026-09-06): the asset extension order the entry
+  above found in passing is settled — genuine RPG_RT probes `.bmp`, `.png`,
+  `.xyz` and *nothing else*, and when both spellings are on disk the `.bmp` is
+  the one drawn — and this engine now uses that order for RPG2000/2003 without
+  costing the XP RTP its `.jpg` title screens.** *Recipe*: a private copy of
+  Nepheshel, a flat 320x240 (or 160x80) 8-bit-palettised uncompressed BMP
+  written beside the game's own shipped PNG under the same base name
+  (`convert -size WxH gradient:... -colors 256 -type Palette -depth 8
+  -compress None BMP3:<name>.bmp`; an RLE-compressed or 1-bit BMP is not a
+  fair probe), booted under wine with `WINEDEBUG=+file`. *Measured, three
+  directories*: `Title/Nepheshel_logo` — the title screen drew the flat
+  magenta→green gradient, and the trace opened `Nepheshel_logo.bmp` only, never
+  the `.png`; `System/システム` — with the title `.bmp` removed again, the
+  title screen's own command window was framed in the red→blue gradient
+  windowskin BMP instead of the game's `システム.png`; `GameOver/gameover` —
+  reached by a real party wipe (cycle #251's recipe: `Save01_battle_map2.lsd`
+  with every chunk-108 actor record rewritten to level 1 / 1 HP / no equipment,
+  then Decision through the fight), the Game Over screen drew the yellow→blue
+  gradient BMP and the trace again never opened `gameover.png`. *Probe order,
+  exactly*: with `Title/Nepheshel_logo.png` moved away entirely and no `.bmp`
+  present, the `+file` trace opens `Nepheshel_logo.bmp`, `Nepheshel_logo.png`,
+  `Nepheshel_logo.xyz` in that order, twice, and **no `.jpg`/`.jpeg` candidate
+  exists on this runtime at all**. *And what a missing asset does*: not a
+  silent skip and not a placeholder — RPG_RT puts up a modal Win32 message box
+  reading `ファイル Nepheshel_logo は開けません` with an OK button and goes no
+  further (captured with `xwd -id` on the 263x84 child window; the root capture
+  shows it unpainted). **Fixed**: `RGSS::Bitmap::EXTENSIONS` stays the RGSS
+  order and is now the *default* behind a new `RGSS::Bitmap.extensions`
+  accessor that both search paths (loose files and the encrypted archive) and
+  the `failure_reason` diagnostic read; a new `RGSS::Bitmap::RPG2K_EXTENSIONS`
+  (`[bmp, png, xyz]`) is installed once by `RPG2k#initialize`, so the order is
+  per-runtime rather than global — the XP RTP's `.jpg` title screens (the
+  reason the non-png entries exist at all, see
+  `scripts/compare-rpgxp-wine.bash`) keep the png-first list they need.
+  `RGSS::Bitmap::EXTENSIONS` had exactly three readers, all in
+  `mruby-rgss/mrblib/lib.rb`, so nothing else needed touching;
+  `Scene::GameOver#gameover_bitmap`'s doc comment, which carried the open
+  question, now records the answer. Three new asserts in `mruby-rgss/test/
+  test.rb` (run by `ctest -R mruby_test` and by
+  `scripts/rgss_cruby_test_check.rb`) pin the default list, the exact RPG2000
+  candidate order through the order-recording `FakeArchive`, and that the
+  `.bmp` wins for RPG2000 while the `.png` still wins under the RGSS default;
+  all three fail against the pre-fix code, and re-spelling `RPG2K_EXTENSIONS`
+  png-first makes two of them fail on the value rather than the missing API
+  (`expected 10.0, got 200.0`). **Deliberately left open**: whether RPG2000
+  RPG_RT prefers `.bmp` over `.png` for *audio*-adjacent or Movie assets was
+  not probed (only Bitmap loads were); a process that ran an RPG2000 game and
+  then an XP one would keep the RPG2000 order, which cannot happen today
+  (one game per process) but is worth knowing if that ever changes; and the
+  message box's exact modality/exit code was not measured beyond "the game
+  does not proceed". Suites: `rgss_cruby_test_check` OK (112 asserts), scene
+  1041, logic 1201, render 41, test-bed 174, rpg2k3 gauge 15 / row 19 /
+  command OK. No EasyRPG source was consulted.
   ✅ **`order.rb` (RPG2003's party-reordering screen) next (2026-08-18) —
   back to needing the fix, both of its cursors this time.** Checked
   against a reference implementation's actual source (ported from a
@@ -32048,6 +32367,119 @@ above are repeated here)
   to the generic bad-status pose, still not Idle), both confirmed to fail
   against the pre-fix code (both drew the Idle pose regardless) before the
   fix.
+  ✅ **Follow-up (cycle #255, 2026-09-06): the whole RPG2003 side-view battle
+  screen measured against a genuine `RPG_RT.EXE` for the first time — the
+  party drew *no battler sprites at all*, and automatic placement was off by
+  a whole anchor.** No EasyRPG source was consulted; every number below comes
+  from a pixel measurement of a genuine capture.
+  **Recipe (this is the reusable part).** `data/kk1.12` ships a genuine
+  RPG2003 `RPG_RT.EXE` and does boot under this wine, but its initial party is
+  `[]`. Of the three routes the brief listed, **(a) playing the opening won**:
+  ~90 `Return` presses under `$SCRATCH/drive.sh` (credits, then a scripted
+  dorm scene) reach a walkable map with a real 3-member party
+  (ユーティル/とんま/エマワトソン), and the game's own field menu → セーブ then
+  writes a genuine `Save01.lsd` (validated by `scripts/lcf_save_check.rb`).
+  `scripts/gen-rpg2k-save.rb <copy> --map 48 --at 21,30 --facing up
+  --clear-scene` then parks that save next to `Map0048`'s event 45 — found by
+  an adapted `find_battles.rb` as the only *single-page, condition-free,
+  action-key* event whose command list contains Enemy Encounter (10710, troop
+  70) — so the fight is one `Up`, one `Return`, one `Return` away, identically
+  for both runtimes. **One trap cost an hour and is worth recording**: kk1.12's
+  battle BGM is an `.mp3`, wine here has no 32-bit GStreamer base plugins, and
+  RPG_RT then throws a Delphi error box (wine's Japanese `ERROR_CALL_NOT_
+  IMPLEMENTED` text, 「未実装です。」) *every frame* — hundreds of 134x84
+  windows over a black screen, which looks exactly like "2003 renders
+  nothing". Dropping a `.mid` in under the same base name makes the battle
+  render. For the gauge presentation, a *copy* of the database with
+  `battlecommands.battle_type` flipped 1 → 2 through this repo's own LCF
+  writer was used (the writer round-trips kk1.12's 641,555-byte `RPG_RT.ldb`
+  byte-identically, so the one edited field is the only difference); kk1.12
+  itself ships `battle_type` 1 (alternative) and `placement` 1 (automatic).
+  **What was measured, and fixed.** (1) *Battler poses are 1-based.* Every
+  `battleranimations` row in kk1.12 names poses 1 基本動作(待機) / 2 右手攻撃 /
+  3 左手攻撃 / 4 特殊技能 / 5 死亡 / 6 ダメージ / 7 状態異常 / 8 防御 / 9-10
+  歩き / 11 勝利 / 12 アイテム — there is no row 0, so the 0-based
+  `ACTOR_IDLE_POSE`/`_DEAD_`/`_BAD_STATUS_`/`_DEFEND_` constants (0/4/6/7)
+  selected nothing and `#build_actor_sprite` returned nil for everyone: our
+  engine put *zero* battlers on screen next to the genuine runtime's three.
+  Now 1/5/7/8, with the state row's own (0-based) `battler_animation_id`
+  shifted `+1` where it selects a pose — which is also what makes its schema
+  default 6 land on 状態異常. (2) *`battler_animation` 0 means "field absent,
+  use entry 1"*, not "dangling id": kk1.12's actor 1 writes no chunk 11 field
+  62 and the genuine runtime still draws it `勇者男b` row 2, i.e.
+  `battleranimations` entry 1 — `Game::Actor#battler_animation_id` used to
+  warn and return 0 for that, short-circuiting its own documented tail
+  fallback. (3) *The automatic-placement grid slot is a centre-x / bottom-y
+  anchor.* The three 48x48 BattleCharSet cells were located by exact template
+  match (score 1.000) against the sheets the database names, at logical
+  top-left (232, 64), (240, 86), (248, 109); the slots behind them are
+  (16, 112), (8, 134), (0, 157) on kk1.12's terrain 1 (`grid_top_y` 112,
+  `grid_elongation` 375, `grid_inclination` 16400), so the sprite is drawn at
+  (centre − 24, baseline − 48). We were handing that back as a top-left, i.e.
+  every battler sat 24px right and 24px low. (4) *The grid's y term is linear
+  in `grid_elongation`* — `top_y + (elongation / 1000) * 120 * t`, giving
+  exactly 112/134/157; the `sin(elongation / 1000) * 120` shape we had gives
+  112/133/155, ruled out by both the middle and last member. (5) *The gauge
+  card panel is borderless*: with `battle_type` 2 the faces land at (76, 184),
+  (156, 184), (236, 184) and the System2 bar caps at (108/188/268, 184) and
+  (149/229, 184) — i.e. panel-relative (80·i, 24) and (32 + 80·i, 24) /
+  (73 + 80·i, 24), with the panel's own top-left at (`battle_status_x`, 160)
+  and **no 8px frame inset**; we inset it, putting every card 8px off in both
+  axes. Everything *inside* the card was already right and is now confirmed
+  rather than ported: the 25px stretched centre, the fill stripe 12px into
+  each 16px row (a full HP bar measures exactly 25px wide, a half-full one
+  the proportional width), the distinct "full" fill tile 16px over, and the
+  right-aligned 8x16 digit cells from (40 + 80·i) on 16px rows. (6) *The card
+  has a third, ATB ("T") bar* under HP/SP, filled from System2 row 64 exactly
+  like the other two — it reads empty as a fight opens and runs to the full
+  tile as the charge completes. Now drawn from `Combatant#gauge`. (7) *The
+  gauge layout moves the actor command window*: instead of the RPG2000
+  position beside the status panel (x=244, cycle #244), it floats at
+  x=0..75, y=80..159 — one panel height *above* the cards, which then run
+  from x=0. The traditional/alternative layouts keep the old position, and
+  `#battle_status_x`'s existing "push the panel to `BATTLE_CMD_W` while the
+  Fight/Auto window is up" rule was confirmed for both layouts (the panel's
+  own frame measured at x=76 in that state, x=0 otherwise).
+  **Confirmed correct, no change needed.** The active-time model matches:
+  with the Fight/Auto options window open the T gauges are *frozen* (six
+  consecutive captures over several seconds, all 12/25 px), and with an
+  actor's command window open they keep filling (18 → 22 → 24 → full over
+  ~2s, and the enemy acts and can wipe the party while the menu sits there) —
+  exactly what `#atb_accumulating?`/`ATB_MENU_PHASES` already do, since
+  `:battle_options` is not a menu phase. The RPG2003 `battle_type` 1
+  (alternative) layout's own text status rows, the window swap, and the
+  76/244 split of the bottom panel all already match.
+  **Left open, deliberately.** (i) The `atb_mode` (Wait) *value* is still
+  unconfirmed: a save hand-edited to `atb_mode = 1` still filled its gauges
+  during the actor command menu, so either 1 is not "wait", RPG_RT re-derives
+  the flag, or the toggle needs to be flipped through the game's own
+  ウェイト/Active menu row rather than the save field — the existing
+  liblcf-enum citation in `battle_rpg2k3.rb` is therefore *not* replaced.
+  (ii) The idle pose **animates**: two captures of the same fight show the
+  same sprite position but different sheet columns (col 2 then col 1 of the
+  3-frame pose row); we always draw column 0, and the frame timing was not
+  measured. (iii) The gauge card panel is only rebuilt on
+  `#refresh_battle_status`, so our ATB bar steps where the real one sweeps.
+  (iv) In `battle_type` 1 the genuine runtime draws a System2 gauge at the
+  right end of each *text* status row (clipped by the panel edge); we draw
+  none, and its HP label sits at logical x=216 against our 222, with the max
+  right-aligned in its own field ("350/ 350") rather than butted up against
+  the slash — all three left alone because that row geometry is shared with
+  the RPG2000 screen measured in cycles #244-#247. (v) Manual placement
+  (`placement` 0), back-row `row_x_offset`, and party sizes other than 3 were
+  not reachable in kk1.12. (vi) Out of scope but noted: our engine resolves
+  the RTP through the `Software\ASCII\RPG2000\RuntimePackagePath` registry key
+  only, so an RPG2003 game finds none of its RTP art (kk1.12's own System2 and
+  BattleCharSet folders are empty) — the 2003 key is
+  `Software\Enterbrain\RPG2003\RUNTIMEPACKAGEPATH`; that is native C++
+  (`src/main.cxx`), so this cycle worked around it by copying the RTP into the
+  game-dir copy instead.
+  Covered by five new `scripts/rpg2k_scene_check.rb` checks (the measured
+  three-member line-up; the linear grid-y term; the 1-based pose table; the
+  borderless card panel's origin; the gauge layout's command-window rect), one
+  rewritten `scripts/rpg2k_logic_check.rb` check (`battler_animation_id` 0 →
+  1, silently) and an extended gauge-card check (the ATB row's own fill), all
+  confirmed to fail against the pre-fix code before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

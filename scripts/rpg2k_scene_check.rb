@@ -688,8 +688,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
 end
 
 # A `db.battleranimations[id]` entry: a name, plus a poses hash keyed by
-# Pose id (0 idle, matching schema.rb's own comment on chunk 32) -- pass
-# `poses: { 0 => battle_pose(...) }` for the common one-pose case.
+# Pose id -- **1-based**, like every id in this file format and like a real
+# RPG2003 database's own table (data/kk1.12: 1 待機 / 5 死亡 / 7 状態異常 /
+# 8 防御, see Scene::Battle::ACTOR_IDLE_POSE) -- pass
+# `poses: { 1 => battle_pose(...) }` for the common one-pose case.
 def battle_pose_set(name: 'Fighter', poses: {})
   OpenStruct.new(name: name, speed: 20, poses: poses)
 end
@@ -14171,7 +14173,7 @@ check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Id
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   hero = BattleStubActor.new(id: 1, battler_animation_id: 5, battle_x: 40, battle_y: 120)
@@ -14193,15 +14195,15 @@ end
 # genuine RPG_RT under wine: it resolves a
 # monster's Knockout state straight to AnimationState_Dead rather than
 # hiding it; a party member is treated the same way here
-# (#build_actor_sprite's `dead:` keyword, Pose id 4) -- so a member already
+# (#build_actor_sprite's `dead:` keyword, Pose id 5) -- so a member already
 # KO'd the instant the fight opens gets that pose rather than no sprite at
 # all, the gap this check pins.
 check "Enemy Encounter scene: a party member already KO'd going into the fight draws the Dead pose, not no sprite" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2),
-                                          4 => battle_pose(battler_name: 'Hero', battler_index: 6) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2),
+                                          5 => battle_pose(battler_name: 'Hero', battler_index: 6) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   fallen = BattleStubActor.new(id: 1, battler_animation_id: 5, hp: 0)
@@ -14233,11 +14235,14 @@ check "Enemy Encounter scene: a living party member carrying a non-death " \
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   anims = { 5 => battle_pose_set(poses: {
-    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
-    3 => battle_pose(battler_name: 'Hero', battler_index: 9)  # Poison's own pose
+    1 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    4 => battle_pose(battler_name: 'Hero', battler_index: 9)  # Poison's own pose
   }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
-  scene.db.situation[3].battler_animation_id = 3 # Poison (priority 30) -> pose id 3
+  # The state row's own animation value is 0-based (schema default 6 =
+  # "bad status"); the pose table it selects from is 1-based, so 3 picks
+  # pose id 4. See #build_actor_sprite's own +1.
+  scene.db.situation[3].battler_animation_id = 3 # Poison (priority 30) -> pose id 4
   st = scene.instance_variable_get(:@state)
   poisoned = BattleStubActor.new(id: 1, battler_animation_id: 5, states: [3])
   st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
@@ -14257,8 +14262,8 @@ check 'Enemy Encounter scene: a state naming no pose of its own falls back ' \
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   anims = { 5 => battle_pose_set(poses: {
-    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
-    6 => battle_pose(battler_name: 'Hero', battler_index: 9)  # generic "bad status" pose
+    1 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    7 => battle_pose(battler_name: 'Hero', battler_index: 9)  # generic "bad status" pose
   }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   # Poison's own battler_animation_id is left unset in the fixture, matching
@@ -14296,7 +14301,7 @@ check 'Enemy Encounter scene: an Idle pose using the battle-animation (CBA) form
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(animation_type: 1) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(animation_type: 1) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
@@ -15914,22 +15919,24 @@ end
 
 # -- automatic battler placement (`battlecommands.placement == 1`) -------------
 #
-# Ported from a reference implementation (its Calculate2k3BattlePosition), NOT
-# independently confirmed against genuine RPG_RT under wine: a
-# placement-1 database computes each party member's battle sprite position
+# A placement-1 database computes each party member's battle sprite position
 # from a grid keyed by party index/size and the encounter terrain, instead of
-# the manual battle_x/battle_y. The fixture terrain (fake_db's tile tag 42)
-# names no grid fields, so the reference's no-terrain defaults (112 / 392 /
-# 16000) apply; half a 48px BattleCharSet cell (24) is the row/width offset.
+# the manual battle_x/battle_y. Confirmed against genuine RPG_RT.EXE under
+# wine (cycle #255) on `data/kk1.12`: the fixture terrain below now carries
+# that game's own terrain-1 grid parameters (grid_top_y 112, grid_elongation
+# 375, grid_inclination 16400), and the three-member expectations match the
+# real runtime's own battler positions pixel-for-pixel. Half a 48px
+# BattleCharSet cell (24) is the row/width offset, and the grid slot is the
+# sprite's centre-x / bottom-y anchor (see #automatic_battle_position).
 
 # A placement-1 gauge battle whose actor sprites build, for the placement
 # checks. `ids` become the party (one BattleStubActor each, carrying its own
 # BattlerAnimation id so `build_actor_sprite` draws a sprite -- the harness
 # Bitmap stub stands in for the BattleCharSet sheet). The fixture terrain the
-# party stands on (tag 42) is given the reference's own no-terrain grid
-# parameters (112 / 392 / 16000) so the checks' expected coordinates are
-# explicit; `battle_xy:` supplies per-actor manual coordinates for the
-# placement-0 check.
+# party stands on (tag 42) is given kk1.12's own terrain-1 grid parameters
+# (112 / 375 / 16400, measured under wine) so the checks' expected
+# coordinates are explicit; `battle_xy:` supplies per-actor manual
+# coordinates for the placement-0 check.
 def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: nil)
   members = ids.map do |id|
     xy = battle_xy[id] || [0, 0]
@@ -15939,7 +15946,7 @@ def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: ni
   anims = {}
   members.each do |a|
     anims[a.id] = battle_pose_set(name: 'Fighter',
-                                  poses: poses || { 0 => battle_pose(battler_name: 'Party', battler_index: 0) })
+                                  poses: poses || { 1 => battle_pose(battler_name: 'Party', battler_index: 0) })
   end
   party = BattleStubParty.new(members.first, alternate_layout: true,
                               automatic_placement: placement == 1, actors: members)
@@ -15948,8 +15955,8 @@ def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: ni
                                    battleranimations: anims)
   grid = scene.db.terrain[42]
   grid.grid_top_y = 112
-  grid.grid_elongation = 392
-  grid.grid_inclination = 16000
+  grid.grid_elongation = 375
+  grid.grid_inclination = 16400
   # Drive the battle open (the actor sprites are built in Scene::Battle#start).
   # A round-based (battle_type 0) command phase commands actor 0 first and
   # deterministically, unlike a gauge fight's ready-first ordering, which is
@@ -15967,16 +15974,18 @@ check 'automatic battler placement seats a lone party member on the grid, not ba
   scene = placement_battle([1])
   sprites = placement_sprites(scene)
   ok sprites && sprites[0], 'the actor sprite was built'
-  eq [264, 110], [sprites[0].x, sprites[0].y],
-     'the no-terrain grid for a party of one: 320 - (grid.x 8 + 24 + 24), grid.y 134 - 24'
+  eq [240, 86], [sprites[0].x, sprites[0].y],
+     'kk1.12 terrain 1, party of one: centre 320 - (grid.x 8 + 24 + 24) = 264 and ' \
+     'baseline grid.y 134, i.e. a top-left of (264 - 24, 134 - 48)'
 end
 
 check 'automatic battler placement seats a two-member party on its two grid slots' do
   scene = placement_battle([1, 2])
   sprites = placement_sprites(scene)
-  eq [[256, 88], [272, 133]],
+  eq [[232, 64], [248, 109]],
      [[sprites[0].x, sprites[0].y], [sprites[1].x, sprites[1].y]],
-     'member 0 at grid slot (16, 112), member 1 at (0, 157), each minus a 24px half-cell'
+     'member 0 on grid slot (16, 112), member 1 on (0, 157), each anchored ' \
+     'centre-x / bottom-y'
 end
 
 check 'manual battler placement keeps the database battle_x/battle_y, unchanged' do
@@ -15988,15 +15997,16 @@ end
 
 check 'the Row command moves an automatic-placement actor sprite by row_x_offset' do
   # A two-member party's own grid slots (the "seats a two-member party"
-  # check above): member 0 starts front row at x=256 (320 - (grid.x 16 + a
-  # 24px half-cell + the front-row row_x_offset, also 24)). Flipping it to
-  # the back row drops row_x_offset to 0, moving the sprite to x=280 -- the
+  # check above): member 0 starts front row at x=232 (its centre, 320 -
+  # (grid.x 16 + a 24px half-cell + the front-row row_x_offset, also 24) =
+  # 256, less the half-cell again). Flipping it to
+  # the back row drops row_x_offset to 0, moving the sprite to x=256 -- the
   # same reposition #reposition_actor_sprite now drives right when the Row
   # command's toggle succeeds, rather than leaving the old front-row sprite
   # on screen until an unrelated redraw happens to catch it up.
   scene = placement_battle([1, 2], battle_type: 0)
   sprites = placement_sprites(scene)
-  eq [256, 88], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
+  eq [232, 64], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
   ui = battle_ui(scene)
   eq %w[Attack Skill Defend Item Row], ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
   4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
@@ -16004,7 +16014,7 @@ check 'the Row command moves an automatic-placement actor sprite by row_x_offset
   hero = ui[:allies][0]
   eq Game::Battle::ROW_BACK, hero.row, 'member 0 moved to the back row'
   sprites = placement_sprites(scene)
-  eq [280, 88], [sprites[0].x, sprites[0].y],
+  eq [256, 64], [sprites[0].x, sprites[0].y],
      'the sprite followed the row change: same grid slot, row_x_offset now 0 instead of 24'
 end
 
@@ -16013,10 +16023,10 @@ check 'a defending actor draws the Defend pose, reverting to Idle once the round
   # genuine RPG_RT under wine: it checks
   # IsDefending() before anything else -- ported as #build_actor_sprite's
   # `defending:` keyword
-  # (Pose id 7), driven by #reposition_actor_sprite right when Defend
+  # (Pose id 8), driven by #reposition_actor_sprite right when Defend
   # commits and again once Game::Battle#end_round clears the flag.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           8 => battle_pose(battler_name: 'Party', battler_index: 3) }
   scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
   ui = battle_ui(scene)
   # The sprite's src_rect Y is `pose.battler_index * ACTOR_CHARSET_CELL`
@@ -16051,8 +16061,8 @@ check 'a gauge battle: Defend swaps the sprite too, via the RPG2k3 scene\'s own 
   # (calling `super` only when `!gauge_battle?`) and calls `Game::Battle
   # #end_round` itself -- needs the identical defenders-snapshot fix, not
   # just the base class.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           8 => battle_pose(battler_name: 'Party', battler_index: 3) }
   scene = placement_battle([1], battle_type: 2, poses: poses)
   ui = battle_ui(scene)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -16076,8 +16086,8 @@ check 'a party member killed mid-round switches to the Dead pose once the round 
   # felled ally's sprite up -- `hp` is set directly here rather than driving
   # a full damage exchange, the same "simulate the moment, not the whole
   # pipeline" idiom the Defend checks above use for `defending`.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           5 => battle_pose(battler_name: 'Party', battler_index: 6) }
   scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -16094,8 +16104,8 @@ check 'a party member killed mid-round switches to the Dead pose once the round 
 end
 
 check 'a gauge battle: a felled ally switches to the Dead pose too, via the RPG2k3 scene\'s own #finish_round_animation' do
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           5 => battle_pose(battler_name: 'Party', battler_index: 6) }
   scene = placement_battle([1, 2], battle_type: 2, poses: poses)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -18888,8 +18898,17 @@ check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbe
   eq [73, 24], right_cap[0, 2], 'right bar cap at 32 + 16 (cap) + 25 (centre) = 73'
   eq [32, 32, 16, 48], [right_cap[3].x, right_cap[3].y, right_cap[3].width, right_cap[3].height]
 
-  eq 3, c.stretch_calls.size, 'one bar-centre stretch, plus one fill each for HP and SP'
-  center, hp_fill, sp_fill = c.stretch_calls
+  eq 4, c.stretch_calls.size,
+     'one bar-centre stretch, plus one fill each for HP, SP and the ATB ("T") row'
+  center, hp_fill, sp_fill, atb_fill = c.stretch_calls
+  # The third bar the 48px cap block already draws is RPG2003's own ATB gauge
+  # -- genuine RPG_RT.EXE fills it from System2 row 64 exactly like HP/SP
+  # (measured under wine, cycle #255). This round-based fixture never charges
+  # a gauge, so it reads empty.
+  eq [48, 56, 0, 16], [atb_fill[0].x, atb_fill[0].y, atb_fill[0].width, atb_fill[0].height],
+     'ATB fill on the third row (y + 32), empty at 0/GAUGE_MAX'
+  eq [48, 64, 16, 16], [atb_fill[2].x, atb_fill[2].y, atb_fill[2].width, atb_fill[2].height],
+     'reading the ATB row of the System2 fill column (32 + 16*2 = 64)'
   eq [48, 24, 25, 48], [center[0].x, center[0].y, center[0].width, center[0].height],
      'the bar centre stretches to fill the full 25px slot between the caps'
   eq [48, 24, 12, 16], [hp_fill[0].x, hp_fill[0].y, hp_fill[0].width, hp_fill[0].height],
@@ -19202,7 +19221,7 @@ check 'a Change Party Member add on a battle page builds that actor\'s sprite ' 
   ic = Game::Interpreter::Cmd
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5, hp: 50)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(hero, alternate_layout: true, roster_actors: [ally])
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [0, 0, 2])]) } # add actor 2
   scene, ui = battle_at_command(pages, party: party, battleranimations: anims)
@@ -19226,7 +19245,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
   third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true)
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [1, 0, 2])]) } # remove actor 2
   scene, = battle_scene_with_pages(pages, party: party, battleranimations: anims)
@@ -19311,7 +19330,7 @@ check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
       'never a leaked duplicate, never a disposed-and-reused one' do
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally], alternate_layout: true)
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
 
@@ -19346,7 +19365,7 @@ check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
   third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
   newcomer = BattleStubActor.new(id: 4, name: 'New', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true,
                               roster_actors: [newcomer])
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
@@ -24853,35 +24872,56 @@ check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild,
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it
-# always draws a labelled Class/Profession row
-# (`TextDraw(..., "Class"); DrawActorClass(actor, ...)`), with no version
-# gate around it -- an RPG2000 database with no class table still gets the
-# row, just blank.
-check 'the status screen shows a labelled Class row' do
+# The five windows the genuine RPG2003 status screen tiles the screen with,
+# measured under wine in cycle #256 (kk1.12 + the official RTP, its own
+# RPG_RT.EXE, resumed from a save the game itself wrote): each window's border
+# bounding box in a 640x480 capture, halved, gives the rects below -- and they
+# tile 320x240 exactly, 124+196 across and 208+32 / 64+80+96 down.
+def status_rects(scene)
+  %i[@actor_window @gold_window @gauge_window @param_window @equip_window]
+    .map do |iv|
+      w = scene.instance_variable_get(iv)
+      w && [w.x, w.y, w.width, w.height]
+    end
+end
+
+check 'the status screen tiles the screen with RPG_RT\'s own five windows' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  eq [[0, 0, 124, 208],      # actor panel: face, name/class/title/condition/level
+      [0, 208, 124, 32],     # gold
+      [124, 0, 196, 64],     # HP / MP / EXP
+      [124, 64, 196, 80],    # attack / defense / mind / agility
+      [124, 144, 196, 96]],  # the five equipment slots
+     status_rects(scene), 'measured window rects'
+end
+
+# The actor panel's own rows, all measured on the same captures: a label line
+# then an indented value line for name/class/title/condition, and the level
+# alone on a row that carries its label and its (right-aligned) figure on one
+# line. The four labels are RPG_RT's own -- they have no Term-chunk slot at
+# all, and the Japanese runtime draws 名前 / 職業 / 肩書き / 状態.
+check 'the status screen gives the class its own labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.any? { |t| t.start_with?('Class:') },
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('職業'),
      "the row is labelled even with no class (RPG2000), got: #{texts.inspect}"
-  eq 'Class: ', texts.find { |t| t.start_with?('Class:') },
-     'blank value with no class table'
+  ok !texts.any? { |t| t.start_with?('Class:') },
+     "the label is its own draw, never a 'Class: value' run, got: #{texts.inspect}"
 
   classed = Class.new(MenuStubActor) { def class_name; 'Paladin'; end }.new
   st.party.instance_variable_set(:@actors, [classed])
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('Paladin'), "shows the class name, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it
-# draws `actor.GetAtk()`/`GetDef()`/
-# `GetSpi()`/`GetAgi()`, and its own battler stat accessors run the base value through `AdjustParam`, which halves
-# or doubles it against whatever states the actor currently carries -- a
-# state that persists onto the map affects this screen too, not just battle
-# math.
+# The parameter window's four rows are Attack / Defense / Mind / Agility in
+# that order -- confirmed under wine against kk1.12's own database (its
+# actor 3 has base 10/18/50/7 at level 1 and the screen showed 20/21/54/7,
+# each the base plus that actor's equipment bonus, so row 3 is Mind and row 4
+# Agility). The figures are the state-adjusted effective values, so a
+# halving state shows on this screen too, not just in battle math.
 check 'the status screen shows a battle stat halved by an active state, ' \
       'not the raw base value' do
   st = menu_state
@@ -24890,103 +24930,102 @@ check 'the status screen shows a battle stat halved by an active state, ' \
   hero.add_state(5)
   st.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10;
-  # matched by number rather than term text since the term table (a real
-  # database's own, unlike this fixture's bare fallback labels) is not what
-  # this check is about.
-  stat_line = texts.find { |t| t.include?('12') && t.include?('9') && t.include?('14') }
-  ok stat_line, "expected the stat row somewhere, got: #{texts.inspect}"
-  ok stat_line.match?(/\b10\b/), "expected the halved Atk (10), not the raw base (20): #{stat_line.inspect}"
-  ok !stat_line.match?(/\b20\b/), "the raw base Atk (20) should not still appear: #{stat_line.inspect}"
+                         .instance_variable_get(:@param_window))
+  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10,
+  # and every figure is now its own draw call in its own right-aligned column.
+  ok texts.include?('10'), "expected the halved Atk (10), got: #{texts.inspect}"
+  ok !texts.include?('20'), "the raw base Atk (20) should not still appear: #{texts.inspect}"
+  %w[12 9 14].each do |v|
+    ok texts.include?(v), "the unaffected stats still draw (#{v}), got: #{texts.inspect}"
+  end
+  ok texts.index('10') < texts.index('12'),
+     "Attack is the first row and Defense the second, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it draws the Exp row via
-# `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
-# `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
-# its own next-exp-string accessor stringifies
-# `GetNextExp()` -- the absolute cumulative-total curve value for the next
-# level, not a subtraction against current EXP. `MenuStubActor` gives
-# `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
-# this check can tell which one the screen actually reads.
-check 'the status screen\'s "Next" EXP figure is the absolute next-level ' \
-      'threshold, not the remaining delta' do
+# EXP shares the HP/MP window as its third row -- "label, current, /, max" in
+# the same columns -- and the right-hand figure is the *absolute* next-level
+# threshold, not the remaining delta: kk1.12's level-27 leader (12345 EXP)
+# showed 12345/79050 under wine, and 79050 - 12345 is not a curve value.
+# `MenuStubActor` gives `#next_level_exp`/`#exp_to_next` distinct values (420
+# vs 120) precisely so this check can tell which one the screen reads.
+check 'the status screen\'s EXP row is the absolute next-level threshold, ' \
+      'not the remaining delta' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Lv 5    EXP 300    Next 420'),
-     "expected the absolute threshold (420), got: #{texts.inspect}"
-  ok !texts.any? { |t| t.include?('Next 120') },
-     "must not show the remaining-EXP delta (120) instead, got: #{texts.inspect}"
+                         .instance_variable_get(:@gauge_window))
+  ok texts.include?('EXP'), "the exp_short term labels the row, got: #{texts.inspect}"
+  # The EXP row is the last of the three, so its own four draws are the tail
+  # (the earlier '120' in the list is the HP maximum, not an EXP figure).
+  eq %w[EXP 300 / 420], texts[texts.index('EXP'), 4],
+     "expected 'current / absolute threshold', got: #{texts.inspect}"
+  # HP and MP take the two rows above it, each as its own label/cur/slash/max
+  # run in the same columns.
+  ok texts.include?('ＨＰ') && texts.include?('ＭＰ'),
+     "HP/MP use the *full* terms, not the short ones, got: #{texts.inspect}"
+  eq 3, texts.count('/'), 'three rows, each with its own slash'
 end
 
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('State'), 'the row is labelled'
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('状態'), 'the row is labelled (RPG_RT\'s own wording)'
   ok texts.include?('Normal'), 'and reads normal for a clear actor'
 
   st.party.actors.first.add_state(1)                    # the death state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
+                         .instance_variable_get(:@actor_window))
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
 end
 
-# Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Window_Gold`, created unconditionally
-# by its own status-scene start (no visibility gate
-# anywhere in the file) -- missing here entirely.
+# The gold window is its own window under the actor panel (0, 208, 124, 32) --
+# measured, and 124 wide here against the field menu's own 88, the only
+# difference between the two.
 check 'the status screen shows the party\'s own Gold' do
   st = menu_state
   st.party.instance_variable_set(:@gold, 1234)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('1234G'), "Gold is drawn as its own line, got: #{texts.inspect}"
+                         .instance_variable_get(:@gold_window))
+  ok texts.include?('1234G'), "Gold is drawn in its own window, got: #{texts.inspect}"
 
-  # Per a reference implementation (not independently confirmed under wine),
-  # its Window_Gold draws unconditionally, including at 0 -- not only
-  # once the party has money.
   st.party.instance_variable_set(:@gold, 0)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
+                         .instance_variable_get(:@gold_window))
   ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
 end
 
-# Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its own actor-info window's draw-info additionally
-# draws "Front"/"Back" right-aligned at the top of the panel whenever
-# `Feature::HasRow()` holds -- which for a genuine,
-# unmodified project reduces to "the database is RPG2003". An RPG2000
-# database never shows either label.
+# The RPG2003 front/back row indicator: line 0 of the actor panel, right-
+# aligned to the content width, drawn in RPG_RT's own Japanese wording
+# (前衛 / 後衛 -- there is no Term slot for either). Measured under wine by
+# toggling a member's row from the field menu's Row command and re-opening
+# this screen: the label's two glyphs changed, in place, and nothing else did.
 check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok !texts.include?('Front') && !texts.include?('Back'),
+                         .instance_variable_get(:@actor_window))
+  ok !texts.include?('前衛') && !texts.include?('後衛'),
      "an RPG2000 party draws neither row label, got: #{texts.inspect}"
 
   rpg2003_party = Class.new(MenuStubParty) { def rpg2003?; true; end }.new
   st2 = Game::State.new(rpg2003_party, 1, 0, 0)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Front'), "front row shows by default, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('前衛'), "front row shows by default, got: #{texts.inspect}"
 
   rpg2003_party.actors.first.battle_row = Game::Battle::ROW_BACK
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('後衛'), "back row shows once toggled, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it, the shared routine behind
-# `DrawActorHp`/`DrawActorSp` (in turn used by its own actor-status window's
-# draw-status) -- the *current* HP/MP figure
-# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
-# red/orange (index 4) at or below a quarter of max, the ordinary default
-# (index 0) otherwise. SP never shows the knockout colour even at 0
-# (`DrawActorSp` always passes `can_knockout` false).
+# The *current* HP/MP figure alone recolours: knockout gray (index 5) at
+# exactly 0 HP, critical red/orange (index 4) at or below a quarter of max,
+# the ordinary default (index 0) otherwise; MP never takes the knockout
+# colour. **The critical rule is confirmed on genuine RPG_RT under wine
+# (cycle #256):** an edited kk1.12 save's 13/2100 HP and 5/138 MP both drew
+# in that skin's index-4 swatch ((252,176,62), captured as (255,178,57) after
+# the reference X server's RGB565 quantisation), while every label sampled
+# index 1 and every other figure index 0.
 check 'the status screen colours a knocked-out HP figure and a critical MP ' \
       'figure through the windowskin\'s own swatches, not a flat colour' do
   db = fake_db
@@ -24996,7 +25035,7 @@ check 'the status screen colours a knocked-out HP figure and a critical MP ' \
   hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
   hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
   scene = menu_scene(RPG2k::Scene::StatusMenu, st, db)
-  bc = scene.instance_variable_get(:@window).contents.blend_calls || []
+  bc = scene.instance_variable_get(:@gauge_window).contents.blend_calls || []
   # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
   ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
      "the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
@@ -25004,8 +25043,10 @@ check 'the status screen colours a knocked-out HP figure and a critical MP ' \
   ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
      "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
      "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
-  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+  ok bc.any? { |call| call[4] == '120' && call[6] == 0 && call[7] == 48 },
      'the HP max figure stays the default colour (index 0)'
+  ok bc.any? { |call| call[4] == 'ＨＰ' && call[6] == 16 && call[7] == 48 },
+     'and every label draws in the system swatch, index 1 (16, 48)'
 end
 
 check 'Scene::StatusMenu: the actor cursor wraps around' do
@@ -25077,13 +25118,13 @@ check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild
   ok out.include?('[RPG2k] Status screen: item #99 not found in the database, ' \
                    'showing a placeholder label'), out
 
-  texts = window_texts(scene.instance_variable_get(:@window))
+  texts = window_texts(scene.instance_variable_get(:@equip_window))
   ok texts.any? { |t| t.include?('Item 99') }, "the placeholder label still shows, got: #{texts.inspect}"
 
-  # Switching actors and back rebuilds the whole window (#build_window)
-  # without a fresh database shrink -- the same dangling id re-renders every
-  # time, and must not add a second line to the console.
-  out2 = capture_stderr { 3.times { scene.send(:build_window) } }
+  # Switching actors and back redraws every window (#refresh) without a fresh
+  # database shrink -- the same dangling id re-renders every time, and must
+  # not add a second line to the console.
+  out2 = capture_stderr { 3.times { scene.send(:refresh) } }
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
@@ -28797,6 +28838,532 @@ check 'a held item whose database row has a blank name draws a blank name, ' \
   ok texts.include?('Potion'), 'the named row still draws its name'
   ok texts.none? { |t| t.to_s.include?('Item 2') },
      "no invented placeholder for the blank-named row, got #{texts.inspect}"
+end
+
+
+# -- where a newly gained item lands in the bag (cycle #258) -------------------
+#
+# Cycle #252 proved the Item screen lists the bag in the order the save stores,
+# never sorted by id, and left open where RPG_RT *inserts* a newly gained id.
+# Measured against genuine RPG_RT.exe under wine (cycle #258): a Save01.lsd
+# whose chunk 109 `item_ids` was written out of order ([42, 92, 67, 28, 103]),
+# resumed on Nepheshel's own weapon-shop map (Map0015 event 2, `--map 15 --at
+# 5,9`), with one weapon bought from that shop's own Buy list:
+#   * buying 44  listed 42, 44, 92, 67, 28, 103  (index 1, before 92)
+#   * buying 27  listed 27, 42, 92, 67, 28, 103  (index 0, before 42)
+#   * buying 127 listed 42, 92, 67, 28, 103, 127 (appended, nothing is larger)
+# i.e. the new id goes immediately before the first stored entry with a greater
+# id, and on the end when there is none.
+def bag_party_with(ids)
+  party = Game::Party.new(OpenStruct.new(system: OpenStruct.new(party: []),
+                                         enemy_group: Hash.new(true),
+                                         rpg2003?: false))
+  items = party.instance_variable_get(:@items)
+  ids.each_with_index { |id, i| items[id] = i + 1 }
+  party
+end
+
+check 'a newly gained item is inserted before the first larger stored id, ' \
+      'not appended (the three purchases measured under wine)' do
+  # 44 lands at index 1, ahead of 92 -- the exact frame cycle #258 captured.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(44, 1)
+  eq [42, 44, 92, 67, 28, 103], party.items.keys,
+     'gaining 44 into a [42,92,67,28,103] bag'
+
+  # 27 is smaller than everything, so it goes to the very front.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(27, 1)
+  eq [27, 42, 92, 67, 28, 103], party.items.keys,
+     'gaining 27 into a [42,92,67,28,103] bag'
+
+  # 127 is larger than everything, so there is nothing to insert before.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(127, 1)
+  eq [42, 92, 67, 28, 103, 127], party.items.keys,
+     'gaining 127 into a [42,92,67,28,103] bag'
+end
+
+check 'gaining more of an id already held leaves the bag order alone' do
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.gain_item(67, 4)
+  eq [42, 92, 67, 28, 103], party.items.keys, 'a restock does not reposition'
+  eq 7, party.item_count(67), 'the count still went up'
+end
+
+check 'the bag order survives losing and re-gaining an id' do
+  # Losing the last copy drops the entry outright, so the re-gain is a fresh
+  # insertion and must land by the same rule rather than back where it was.
+  party = bag_party_with([42, 92, 67, 28, 103])
+  party.lose_item(92, 2)
+  eq [42, 67, 28, 103], party.items.keys, 'the depleted id left the bag'
+  party.gain_item(92, 1)
+  eq [42, 67, 28, 92, 103], party.items.keys,
+     're-gaining 92 puts it before 103 -- the first larger id *now* stored, ' \
+     'not back in the slot it used to occupy'
+end
+
+# -- map message window / Show Choices, measured under wine (cycle #257) ------
+#
+# Recipe for every number below: a synthetic autostart page spliced onto event
+# 1 of a scratch copy of Nepheshel's own Map0012 (through the LCF writer,
+# recomputing the page's field 51 byte length), resumed on genuine RPG_RT.exe
+# under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox) from the
+# canonical debug save moved to map 12 (40,15) with --clear-scene, then
+# captured with xwd and measured in native (capture/2) pixels. No EasyRPG
+# source was consulted.
+check 'the message window reserves a face-sized column measured off RPG_RT: ' \
+      'left face at contents (8, 8) with the text at contents 72' do
+  # Genuine frame: the 48x48 FaceSet cell landed at native (16, 176) in the
+  # bottom-positioned window (= contents (8, 8), the contents origin being
+  # window + Window::BORDER), and the first text row's glyph ink began at
+  # native x 80 (= contents 72 = FACE_INSET + FACE_SIZE + FACE_GAP). This
+  # engine drew the face flush into the contents corner (0, 0) and started the
+  # text at contents 52.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 0, 0], string: 'Faces1'), # left-hand face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'F1'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 72, msg[:text_x], 'text column pushed past the face by 8 + 48 + 16'
+  eq 229, msg[:text_w], 'text runs to contents 301 (304 - 3), so 301 - 72 wide'
+  eq 8, msg[:face_x], 'face inset 8px from the contents left edge'
+  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
+  eq m::FACE_INSET, msg[:face_x], 'the inset is FACE_INSET'
+  face_blt = (msg[:contents].blt_calls || []).find { |a| a[2].equal?(msg[:face]) }
+  ok face_blt, 'the face cell was actually blitted into the contents'
+  eq [m::FACE_INSET, m::FACE_INSET], [face_blt[0], face_blt[1]],
+     'blitted at the measured contents offset, not the corner'
+end
+
+check 'a right-hand face reserves the same 72px on the right, so an overlong ' \
+      'line stops at contents 229 instead of running over the portrait' do
+  # Genuine frame: with the face on the right the 48x48 cell landed at native
+  # (256, 176) (= contents (248, 8)) and a 60-glyph line clipped mid-glyph at
+  # native x 237 (= contents 229). This engine put the cell at contents
+  # (256, 0) and let the text run to contents 252.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 1, 0], string: 'Faces1'), # right-hand face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'M' * 60),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 0, msg[:text_x], 'the text column itself is unmoved by a right-hand face'
+  eq 229, msg[:text_w], 'but it stops 72px short of the contents right edge'
+  eq 248, msg[:face_x], 'face inset 8px from the contents right edge'
+  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
+  eq msg[:inner_w] - m::FACE_INSET - m::FACE_SIZE, msg[:face_x],
+     'i.e. inner_w - FACE_INSET - FACE_SIZE'
+  ok msg[:text_x] + msg[:text_w] <= msg[:face_x],
+     'the text boundary never reaches the portrait'
+end
+
+check 'message text stops MSG_TEXT_RIGHT_MARGIN short of the contents edge ' \
+      'with no face at all' do
+  # Genuine frame: a 70-glyph line in a 320-wide window drew its last ink
+  # column at native x 308 and background from 309 -- contents 301, three
+  # pixels short of the 304px contents width, cut mid-glyph rather than
+  # dropping the glyph or wrapping onto the next row.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'M' * 70)]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 301, msg[:text_w], 'contents width 304 less the measured 3px right margin'
+  eq 1, msg[:count], 'an overlong line is clipped, never wrapped onto a second row'
+end
+
+check 'Show Choices labels are drawn MSG_CHOICE_INDENT past the message text column' do
+  # Genuine frame: the options of a Show Choices drew their glyph ink from
+  # native x 20 in the same 320-wide window whose plain message text sat at
+  # native x 8 -- a 12px indent this engine did not apply at all.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'HEAD'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'A1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'A2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  12.times { RGSS::Input.reset; scene.update; break if msg[:choice] }
+  ok msg[:choice], 'the options merged into the window'
+  drawn = {}
+  (msg[:contents].blend_calls || []).each { |a| drawn[a[4]] = a[0] }
+  (msg[:contents].draw_calls || []).each { |a| drawn[a[4]] = a[0] }
+  eq 0, drawn['HEAD'], 'the Show Text row above keeps the plain text column'
+  eq m::MSG_CHOICE_INDENT, drawn['A1'], 'the first option is indented'
+  eq m::MSG_CHOICE_INDENT, drawn['A2'], 'and so is the second'
+end
+
+check 'the message window choice cursor lands 2px inside the contents area, ' \
+      'not 4px outside it the way menu list cursors do' do
+  # Genuine frame: the green cursor frame around the selected option spanned
+  # native x 10..309 and y 168..183 in the bottom window -- 300px wide, exactly
+  # MSG_LINE_H tall, 2px inside the 8..311 contents span. Window#draw_cursor
+  # overhangs the rect it is handed by Game::WindowCursor::OVERHANG on each
+  # side, so the rect itself is pulled in by that overhang plus the inset.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'S1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'S2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'the standalone choice window opened'
+  eq m::MSG_WIN_W, msg[:window].width, 'a standalone choice list reuses the message panel'
+  eq m::MSG_WIN_H, msg[:window].height, 'at its full fixed height, not a fitted box'
+  r = msg[:window].cursor_rect
+  x, y, w, h = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height,
+                                            RPG2k::Window::BORDER)
+  eq 10, x, 'drawn cursor starts at native x 10'
+  eq 300, w, 'and is 300 wide, ending at native x 309'
+  eq 8, y, 'row 0 starts at the contents origin'
+  eq m::MSG_LINE_H, h, 'exactly one text row tall'
+end
+
+check 'the message window unrolls over MSG_ANIM_FRAMES = 8 frames, not 7' do
+  # Burst-captured under wine: the window's drawn height stepped 20 -> 40 ->
+  # 60 -> 80 while opening (and 60 -> 40 -> 20 -> gone while closing) at about
+  # two sample frames a step, i.e. 10px = 80/8 a frame; 80/7 = 11.4 does not
+  # produce those heights.
+  eq 8, RPG2k::Scene::Map::MSG_ANIM_FRAMES, 'measured eight-frame unroll'
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  win = msg[:window]
+  eq 8, win.instance_variable_get(:@anim_frames_left), 'eight frames still to run'
+  7.times { RGSS::Input.reset; scene.update }
+  ok win.instance_variable_get(:@openness) < 1.0, 'still unrolling after seven frames'
+  RGSS::Input.reset
+  scene.update
+  eq 1.0, win.instance_variable_get(:@openness), 'fully open on the eighth'
+end
+
+check 'a Show Choices directly after a Show Text merges with no keypress at all' do
+  # Genuine RPG_RT under wine: an autostart of Show Message "HEAD" plus a
+  # two-option Show Choices showed the text on row 1 and both options on rows
+  # 2-3 with the cursor up, with nothing pressed since the previous message
+  # closed. This engine made the player confirm the text first.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'HEAD'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'A1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'A2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  merged = false
+  12.times do
+    RGSS::Input.reset
+    scene.update
+    merged = msg[:choice]
+    break if merged
+  end
+  ok merged, 'the options appeared without a single button press'
+  eq 3, msg[:seg_lines].length, 'one text row plus two option rows'
+  eq 1, msg[:choice_start], 'the options start on the row under the text'
+  eq 1, msg[:pages], 'and all three rows fit one page'
+end
+
+check 'Show Choices that cannot fit under the text open on a fresh page ' \
+      'instead, once the text has had its own confirm' do
+  # Genuine RPG_RT under wine: three text rows plus two options (five rows,
+  # one more than the window holds) showed the three text rows alone with the
+  # pause arrow up; one confirm replaced them with the two options at rows
+  # 1-2, the text gone. This engine appended the options regardless and let
+  # its own pagination split the result, leaving the text plus the first
+  # option on page 1 and a lone second option on page 2.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'H1'),
+    ECmd.new(ic::MESSAGE_2, [], string: 'H2'),
+    ECmd.new(ic::MESSAGE_2, [], string: 'H3'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'B1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'B2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  12.times { RGSS::Input.reset; scene.update; break if msg[:pending_choice] }
+  ok msg[:pending_choice], 'the options were held back rather than appended'
+  ok !msg[:choice], 'the window is still a plain text page'
+  eq 3, msg[:seg_lines].length, 'showing exactly the three text rows'
+  eq 1, msg[:pages], 'no pagination was invented for the overflow'
+  ok msg[:window].pause, 'with the pause arrow asking for a confirm'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok msg[:choice], 'the confirm turns the window into the choice prompt'
+  eq 2, msg[:seg_lines].length, 'the text rows are gone; only the options remain'
+  eq 0, msg[:choice_start], 'the options start at row 0'
+  eq 2, msg[:count], 'both options are selectable'
+  eq 1, msg[:pages], 'still one page'
+end
+
+# -- RPG2003-only field-menu screens, measured under wine (cycle #256) --------
+#
+# Every number in this block is halved from a 640x480 capture of a genuine
+# RPG2003 `RPG_RT.EXE` (kk1.12 plus the official RTP, driven under wine on its
+# own data, resumed from a save the game itself wrote). The Order screen alone
+# needed a scratch copy of kk1.12 whose `RPG_RT.ldb` System chunk 22 field 27
+# was rewritten to `[1, 2, 5, 3, 6, 8, 4, 7]` through this project's own LCF
+# writer -- kk1.12's own database has no Order id, and no game here that does
+# ships a genuine runtime. No EasyRPG source was consulted.
+
+check 'Scene::Order: the two columns and the Confirm prompt sit where ' \
+      'RPG_RT puts them' do
+  scene, = order_scene
+  left = scene.instance_variable_get(:@left_window)
+  right = scene.instance_variable_get(:@right_window)
+  confirm = scene.instance_variable_get(:@confirm_window)
+  eq [68, 48, 88, 80], [left.x, left.y, left.width, left.height],
+     'the current-order column'
+  eq [164, 48, 88, 80], [right.x, right.y, right.width, right.height],
+     'the picked-order column: the same size, 8px to the right of it'
+  eq [120, 144, 80, 48], [confirm.x, confirm.y, confirm.width, confirm.height],
+     'the Confirm/Redo prompt, horizontally centred below both'
+  # The pair is centred as a unit: equal margins either side of 88+8+88.
+  eq RPG2k::WIDTH - (right.x + right.width), left.x, 'equal margins'
+end
+
+check 'Scene::Order: both list columns are sized for a full four-member ' \
+      'party, not for the party actually present' do
+  scene, state = order_scene
+  eq 2, state.party.actors.size, 'this fixture party is two members'
+  eq 80, scene.instance_variable_get(:@left_window).height,
+     'still four 16px rows plus the 8px border twice'
+  # The cursor still only walks the members that exist: Up from the first row
+  # wrapped to the *last member*, not to the empty fourth slot (measured on a
+  # three-member party, where Up from row 0 landed on row 2).
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@cursor_index),
+     'Up from the first row wraps to the last *member*'
+end
+
+check 'Scene::Order: the Confirm/Redo prompt uses RPG_RT\'s own wording' do
+  scene, = order_scene
+  texts = window_texts(scene.instance_variable_get(:@confirm_window))
+  eq %w[決定 やりなおし], texts,
+     'the Japanese runtime draws these two itself -- neither has a Term slot'
+end
+
+check 'Scene::Order: the row cursor spans the whole column, and the picked ' \
+      'column never carries one' do
+  scene, = order_scene
+  left = scene.instance_variable_get(:@left_window)
+  r = left.cursor_rect
+  eq [0, 0, left.contents.width, 16], [r.x, r.y, r.width, r.height],
+     'the cursor covers the full content width of the row it is on'
+  eq 72, left.contents.width, '88 wide minus the 8px border twice'
+  ok scene.instance_variable_get(:@right_window).cursor_rect.width.to_i.zero?,
+     'the picked column is never given a cursor of its own'
+end
+
+check 'Scene::StatusMenu: the actor panel\'s label/value rows land on ' \
+      'RPG_RT\'s own lines and columns' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  calls = scene.instance_variable_get(:@actor_window).contents.draw_calls
+  by_text = calls.each_with_object({}) { |c, h| h[c[4]] = c }
+  # Label lines 3/5/7/9, each value on the line below it at x=36.
+  eq [0, 3 * 16], by_text['名前'][0, 2], 'the name label'
+  eq [36, 4 * 16], by_text['Hero'][0, 2], 'the name value, one line down'
+  eq [0, 5 * 16], by_text['職業'][0, 2], 'the class label'
+  eq [0, 7 * 16], by_text['肩書き'][0, 2], 'the title label'
+  eq [36, 8 * 16], by_text['Wanderer'][0, 2], 'the title value'
+  eq [0, 9 * 16], by_text['状態'][0, 2], 'the condition label'
+  eq [36, 10 * 16], by_text['Normal'][0, 2], 'the condition value'
+  # The level is the one row whose figure shares its label's line, and it is
+  # right-aligned: measured right edge 78 for both "1" and "27".
+  eq [0, 11 * 16, 78, 16, '5', 2], by_text['5'], 'the level figure, right-aligned'
+end
+
+check 'Scene::StatusMenu: the HP/MP/EXP and parameter windows share one ' \
+      'column grid' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  gauge = scene.instance_variable_get(:@gauge_window).contents.draw_calls
+  # Row 0: label at x=0, current right-aligned to 90, slash at 90, max
+  # right-aligned to 138.
+  eq [0, 0, gauge.first[2], 16, 'ＨＰ', 0], gauge[0], 'the HP label'
+  eq [0, 0, 90, 16, '80', 2], gauge[1], 'the current HP, right-aligned at 90'
+  eq [90, 0, gauge[2][2], 16, '/', 0], gauge[2], 'the slash at 90'
+  eq [0, 0, 138, 16, '120', 2], gauge[3], 'the maximum, right-aligned at 138'
+  eq 32, gauge[8][1], 'EXP is the third row (y = 2 * 16)'
+
+  param = scene.instance_variable_get(:@param_window).contents.draw_calls
+  eq [0, 0, 90, 16, '20', 2], param[1],
+     'a parameter value right-aligns to the same x=90 column'
+  eq [0, 3 * 16], param[6][0, 2], 'four rows, the last at y = 3 * 16'
+end
+
+check 'Scene::StatusMenu: the equipment window labels its second slot with ' \
+      'the weapon term for a 二刀流 actor' do
+  db = fake_db
+  db.term.weapon = 'Weapon'
+  db.term.shield = 'Shield'
+  db.term.armor = 'Armor'
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st, db)
+                         .instance_variable_get(:@equip_window))
+  eq %w[Weapon Shield Armor], texts.each_slice(2).map(&:first).first(3),
+     'an ordinary actor gets the shield term on the second row'
+
+  dual = Class.new(MenuStubActor) { def double_hand?; true; end }.new
+  st.party.instance_variable_set(:@actors, [dual])
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st, db)
+                         .instance_variable_get(:@equip_window))
+  eq %w[Weapon Weapon Armor], texts.each_slice(2).map(&:first).first(3),
+     'a dual-wielding actor gets the weapon term twice (kk1.12\'s とんま)'
+  # Five rows either way, at 16px pitch, the item name column at x=60.
+  calls = menu_scene(RPG2k::Scene::StatusMenu, st, db)
+            .instance_variable_get(:@equip_window).contents.draw_calls
+  eq [0, 4 * 16], calls[8][0, 2], 'the fifth slot label'
+  eq 60, calls[1][0], 'the item name column'
+end
+
+# -- RPG2003 side-view battlers, measured against genuine RPG_RT.EXE (cycle #255)
+#
+# Recipe: `data/kk1.12` (a genuine RPG2003 game shipping a genuine
+# `RPG_RT.EXE`), played through its opening under wine to reach a real party,
+# saved through its own in-game Save, the save then moved next to Map0048's
+# event 45 (a single-page, condition-free action-key event whose third command
+# is Enemy Encounter troop 70) with scripts/gen-rpg2k-save.rb, then one
+# keypress into the fight. The party's three 48x48 BattleCharSet cells were
+# located in the 640x480 capture by exact template match against the sheets
+# the database itself names (勇者男b / 男性２b / 男性５b, sheet row 2 each),
+# giving logical top-left corners (232, 64), (240, 86) and (248, 109).
+# No EasyRPG source was consulted.
+
+check 'RPG2003 automatic placement seats a three-member party exactly where genuine ' \
+      'RPG_RT.EXE does (kk1.12, terrain 112/375/16400)' do
+  scene = placement_battle([1, 2, 3])
+  sprites = placement_sprites(scene)
+  eq 3, sprites.compact.length, 'every member gets a battler sprite'
+  eq [[232, 64], [240, 86], [248, 109]], sprites.map { |s| [s.x, s.y] },
+     'the measured line-up: grid slots (16,112)/(8,134)/(0,157), each read as a ' \
+     'centre-x / bottom-y anchor for the 48x48 cell'
+end
+
+check 'RPG2003 grid y is linear in grid_elongation, not sinusoidal' do
+  # kk1.12 terrain 1 leaves grid_elongation at its schema default 375, and the
+  # measured baselines are 112 / 134 / 157 -- steps of 22 and 45, i.e.
+  # int(375 * 120 * t / 1000). A sin(375 / 1000) * 120 term gives 21 / 43,
+  # which would put the second and third members 1px and 2px too high.
+  scene = placement_battle([1, 2, 3])
+  battle = scene.instance_variable_get(:@battle)
+  eq [[16, 112], [8, 134], [0, 157]],
+     (0..2).map { |i| battle.send(:battle_grid_position, i, 3) }
+end
+
+check 'the RPG2003 pose table is 1-based: an entry defining only pose 1 draws the Idle sprite' do
+  # Read off kk1.12's own `battleranimations` rows, every one of which names
+  # its poses 1 基本動作(待機) / 2 右手攻撃 / 3 左手攻撃 / 4 特殊技能 /
+  # 5 死亡 / 6 ダメージ / 7 状態異常 / 8 防御 / ... -- there is no row 0 at
+  # all, so the old 0-based constants selected nothing and an RPG2003 party
+  # went into battle with no battlers on screen at all (exactly what our
+  # engine did on kk1.12 next to the genuine runtime's three).
+  eq 1, RPG2k::Scene::Battle::ACTOR_IDLE_POSE
+  eq 5, RPG2k::Scene::Battle::ACTOR_DEAD_POSE
+  eq 7, RPG2k::Scene::Battle::ACTOR_BAD_STATUS_POSE
+  eq 8, RPG2k::Scene::Battle::ACTOR_DEFEND_POSE
+
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  st = scene.instance_variable_get(:@state)
+  hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
+  st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
+  ui = battle_to_command(scene)
+  spr = ui[:actor_sprites] && ui[:actor_sprites][0]
+  ok spr, 'pose id 1 is the Idle pose, so the battler is drawn'
+  cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  eq RGSS::Rect.new(0, 2 * cell, cell, cell), spr.src_rect
+end
+
+check 'the RPG2003 gauge card panel is borderless: its contents start at the panel ' \
+      "rect itself, where genuine RPG_RT.EXE puts kk1.12's faces and bars" do
+  # Measured with kk1.12's own data and a copy of its database whose
+  # battlecommands.battle_type was flipped 1 -> 2 through this repo's LCF
+  # writer, driven into a real fight under wine: with the party Fight/Auto
+  # window up (so the panel starts at BATTLE_CMD_W = 76), the three 48x48
+  # FaceSet crops sit at logical (76,184)/(156,184)/(236,184) and the System2
+  # bar left caps at (108,184)/(188,184)/(268,184) -- i.e. contents (0,24),
+  # (80,24), (160,24) and (32,24), (112,24), (192,24) with the panel's own
+  # top-left at (76, BATTLE_PANEL_Y). A frame-inset panel would put all of
+  # them 8px right and 8px down.
+  battle_mod = RPG2k::Scene::Battle
+  actor = BattleStubActor.new(hp: 200, mp: 20, faceset_name: 'HeroFace', faceset_index: 0)
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  win = ui[:status_win]
+  status_x = scene.instance_variable_get(:@battle).send(:battle_status_x)
+  eq [status_x, battle_mod::BATTLE_PANEL_Y],
+     [win.x + RPG2k::Window::BORDER, win.y + RPG2k::Window::BORDER],
+     'the contents sprite (always inset by Window::BORDER) lands on the panel rect itself'
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_H],
+     [win.contents.width, win.contents.height],
+     'and spans the whole panel, not the panel minus two borders'
+  face = win.contents.blt_calls[0]
+  eq [0, battle_mod::ACTOR_FACE_HEIGHT], face[0, 2],
+     'so the first face draws at screen (panel x, panel y + 24)'
+end
+
+check "the RPG2003 gauge layout floats the actor command window above the cards, " \
+      'not beside the status panel' do
+  # Measured under wine (cycle #255) on kk1.12 forced to battle_type 2: with an
+  # actor's Attack/Skill/Defend/Item menu up, the window's frame spans
+  # x=0..75, y=80..159 -- the screen's left edge, one panel height above the
+  # gauge cards, which themselves run from x=0 in that state (their leftmost
+  # bar fill measured at logical x=48 = panel 0 + 48). The traditional /
+  # alternative layouts keep the cycle #244 position, (BATTLE_STATUS_W, 160).
+  battle_mod = RPG2k::Scene::Battle
+  gauge_party = BattleStubParty.new(BattleStubActor.new, gauge_layout: true)
+  _, gauge_ui = battle_at_command(nil, party: gauge_party)
+  eq [0, battle_mod::BATTLE_PANEL_Y - battle_mod::BATTLE_PANEL_H],
+     [gauge_ui[:cmd_win].x, gauge_ui[:cmd_win].y],
+     'the gauge layout docks the command window at (0, 80)'
+  eq [battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [gauge_ui[:cmd_win].width, gauge_ui[:cmd_win].height],
+     'same 76x80 shape as everywhere else'
+
+  _, plain_ui = battle_at_command(nil, party: BattleStubParty.new)
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y],
+     [plain_ui[:cmd_win].x, plain_ui[:cmd_win].y],
+     'the RPG2000 / traditional position is untouched'
 end
 
 # -- summary ------------------------------------------------------------------

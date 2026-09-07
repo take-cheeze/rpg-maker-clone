@@ -10,10 +10,11 @@ class RPG2k
     # list without opening anything -- ported from a reference implementation,
     # where all four cases share this one actor-selection panel (there is no
     # separate handler for the Row toggle; it is inline in that same
-    # actor-selection switch), NOT independently confirmed against genuine
-    # RPG_RT under wine for Status/Row (RPG2003-only rows Nepheshel has no
-    # way to show); the Skill/Equip half of it *is* confirmed on genuine
-    # RPG_RT.exe under wine (cycle #240): both hand focus to the party list
+    # actor-selection switch). All four are now confirmed on genuine
+    # RPG_RT.exe under wine: Skill/Equip in cycle #240 (Nepheshel, RPG2000)
+    # and the RPG2003-only Status/Row in cycle #256 (kk1.12 + the official
+    # RTP -- its own menu offers both). Both pairs behave the same way: they
+    # hand focus to the party list
     # first, a second Return opens the screen, and Escape from that screen
     # lands back on the command list with the cursor still on the command,
     # never on the actor-selection state -- see #leave_actor_selection.
@@ -105,6 +106,15 @@ class RPG2k
       # closed as "structurally unreachable with any fixture this session
       # has" (no genuine RPG2003 `RPG_RT.exe` existed yet) is resolved: it is
       # reachable, and works.
+      # **Order (id 7) is confirmed too (cycle #256)**, the one id no game
+      # here lists: rewriting a scratch *copy* of kk1.12's own `RPG_RT.ldb`
+      # to `[1, 2, 5, 3, 6, 8, 4, 7]` (field 26 to 8) through this project's
+      # LCF writer made the genuine runtime draw a ninth row between Save and
+      # End Game -- blank-labelled, since kk1.12's `order` term is the empty
+      # string, and drawn anyway (the same "an empty term still gets its row"
+      # rule Nepheshel's blank Save row established) -- and choosing it
+      # opened the real Order screen (see Scene::Order). So the list is
+      # honoured id-for-id and position-for-position, End Game always last.
       RPG2K3_COMMAND_IDS = {
         1 => [:item, :battle_item],
         2 => [:skill, :battle_skill],
@@ -277,14 +287,24 @@ class RPG2k
         when :equip  then @parent.push Scene::EquipMenu.new(@parent, @state, index)
         when :status then @parent.push Scene::StatusMenu.new(@parent, @state, index)
         when :row
-          # No sub-scene: ported from a reference implementation's own Row
-          # case, NOT independently confirmed against genuine RPG_RT under wine --
-          # it toggles the picked actor's row right on the actor-selection
-          # panel and falls straight back to the command list, playing
-          # Decision regardless of whether the toggle actually took
-          # (`Game::Party#toggle_actor_row` silently
-          # no-ops a refused one -- see its own comment on the "don't empty
-          # the front row" guard).
+          # No sub-scene: it toggles the picked actor's row right on the
+          # actor-selection panel and falls straight back to the command
+          # list, playing Decision regardless of whether the toggle actually
+          # took (`Game::Party#toggle_actor_row` silently no-ops a refused
+          # one -- see its own comment on the "don't empty the front row"
+          # guard). **Confirmed against a genuine RPG2003 RPG_RT.EXE under
+          # wine (cycle #256, kk1.12 + the official RTP):** Return on a
+          # member of the party list redrew the menu with that member's
+          # portrait indented 8px to the right (the back-row marker in
+          # RPG_RT's own party panel: the leader's face moved from screen
+          # x=92 to x=100, nothing else on the row moving) and with no actor
+          # cursor left, i.e. straight back to the command list. Re-entering
+          # Row started the party cursor at the first member again, never
+          # where it had been. The refusal is real too, not just this port's
+          # invention: with two of three members already in the back row,
+          # Return on the last front-row member changed nothing at all, and
+          # the same member moved as soon as somebody else was put back in
+          # front.
           @state.party.toggle_actor_row(actor) if @state.party.respond_to?(:toggle_actor_row)
         end
       end
@@ -349,7 +369,12 @@ class RPG2k
       # once it is active (raw 0, the default) -- ported from a reference
       # implementation's own Wait row: a mode-check expression selecting
       # wait_on : wait_off. Confirmed against genuine RPG_RT.exe under wine
-      # (2026-09-06, kk1.12 + the official RTP) -- see #build_commands.
+      # (2026-09-06, kk1.12 + the official RTP) -- see #build_commands, and
+      # confirmed again live in cycle #256, this time by *toggling* rather
+      # than by preparing two saves: a fresh save's row read kk1.12's
+      # `wait_off` (ﾊﾞﾄﾙ/Active), one Return on it redrew that row alone as
+      # `wait_on` (ﾊﾞﾄﾙ/Wait), and a second Return restored the first frame
+      # pixel for pixel (see #select_command's :wait branch).
       def wait_label
         @state.atb_mode == 1 ? term(:wait_on) : term(:wait_off)
       end
@@ -692,8 +717,16 @@ class RPG2k
           # Row shares the exact same empty-party gate as Skill/Equipment/
           # Status here -- a reference implementation's command-update logic
           # groups all four cases under one shared empty-party gate (buzzer
-          # if empty, otherwise proceed and activate the actor panel), not
-          # independently confirmed against genuine RPG_RT under wine.
+          # if empty, otherwise proceed and activate the actor panel); the
+          # empty-party half is not measurable here (kk1.12's party is three
+          # members from its very first menu on), but **Row's handing focus
+          # to the actor panel is confirmed against a genuine RPG2003
+          # RPG_RT.EXE under wine (cycle #256, kk1.12 + the official RTP)**:
+          # choosing its 隊列変更 row put the selection cursor on the party
+          # list exactly the way Status and Equip do, and a second Return
+          # there toggled that one member's row and dropped straight back to
+          # the command list with no actor cursor left (see
+          # #confirm_actor_selection).
           # Unlike Order's `size <= 1` gate, a
           # single-member party's Row toggle is still meaningful (front vs.
           # back matters for a solo character), so it is not specially
@@ -705,12 +738,21 @@ class RPG2k
             enter_actor_selection(key)
           end
         when :order
+          # Order acts on the whole party at once, so it opens Scene::Order
+          # directly instead of the actor-selection panel -- **confirmed
+          # against a genuine RPG2003 RPG_RT.EXE under wine (cycle #256:
+          # kk1.12 + the official RTP, a scratch copy of its `menu_commands`
+          # rewritten to carry id 7 -- see Scene::Order's own citation)**:
+          # choosing the row replaced the whole menu with the two-column
+          # Order screen in one step, with no party cursor in between.
           # Reordering a single-member (or empty) party is meaningless --
-          # ported from a reference implementation's own command-update
-          # Order branch, NOT independently confirmed against genuine
-          # RPG_RT under wine: it gates on the party having one or fewer
-          # actors rather than the plain-empty check every other command
-          # here uses.
+          # that `size <= 1` gate is ported from a reference implementation's
+          # own command-update Order branch and remains NOT independently
+          # confirmed against genuine RPG_RT under wine (shrinking a genuine
+          # save's party list blackens RPG_RT on Continue, so no capture
+          # could reach a solo party): it gates on the party having one or
+          # fewer actors rather than the plain-empty check every other
+          # command here uses.
           if @state.party.actors.size <= 1
             play_system_se(SFX_BUZZER)
           else
@@ -718,13 +760,20 @@ class RPG2k
             @parent.push Scene::Order.new(@parent, @state)
           end
         when :wait
-          # The active-time Wait/active toggle, ported from a reference
-          # implementation's own command-update Wait branch, not
-          # independently confirmed against genuine RPG_RT under wine: play
-          # the Decision SE,
-          # flip `SaveSystem.atb_mode` (0 wait <-> 1 active), and relabel the
-          # row to the other mode's term. The gauge battle scene reads the
+          # The active-time Wait/active toggle: play the Decision SE, flip
+          # `SaveSystem.atb_mode` (0 active <-> 1 wait) and relabel the row
+          # to the now-current mode's term. The gauge battle scene reads the
           # same field (#atb_accumulating? in battle_rpg2k3.rb).
+          # **Confirmed against a genuine RPG2003 RPG_RT.EXE under wine
+          # (cycle #256, kk1.12 + the official RTP):** pressing Return on the
+          # Wait row changed *nothing on screen but that row's own label* --
+          # a whole-frame diff against the frame before the press came back
+          # as a single band, y 92..101 x 38..74, exactly the label's own
+          # changed glyph run (ﾊﾞﾄﾙ/Active -> ﾊﾞﾄﾙ/Wait; the shared ﾊﾞﾄﾙ/
+          # prefix is pixel-identical). The screen stays on the menu, the
+          # cursor stays on the Wait row, and a second press restored a
+          # pixel-identical frame -- a plain two-state toggle with no scene
+          # of its own.
           play_system_se(SFX_DECISION)
           @state.atb_mode = @state.atb_mode == 1 ? 0 : 1
           @commands[@index] = [:wait, wait_label]
