@@ -1,0 +1,168 @@
+cpu0: CPU.CortexM @ sysbus
+    cpuType: "cortex-m4f"
+    nvic: nvic
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    -> cpu0@0
+
+sercom3: UART.SAMD5_UART @ sysbus 0x41014000
+    ->nvic@58
+
+sram0: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x30000
+
+flash0: Memory.MappedMemory @ sysbus 0x0
+    size: 0x80000
+
+dwt: Miscellaneous.DWT @ sysbus 0xE0001000
+    frequency: 72000000
+
+// --- Clock-tree stubs for Arduino SAMD51's SystemInit() (startup.c) -------
+// SystemInit spins on each of these as a "wait until ready"/"wait while
+// busy" bit-test loop. flipflop.py toggles the whole register between
+// 0x00000000 and 0xFFFFFFFF on every read, which satisfies either polarity
+// of that test within at most two reads regardless of which bit is being
+// checked -- unlike counter.py (kept below only where it was already
+// proven to work), which resolves a high bit only after that many reads.
+// Addresses are this repo's own read of the SAMD51 CMSIS headers
+// (framework-cmsis-atmel/.../instance/{oscctrl,osc32kctrl,gclk}.h), not a
+// full peripheral model: SystemInit only ever writes control fields (which
+// land on "non existing peripheral" WARNINGs, harmless) and polls the
+// status/syncbusy bit below it.
+
+// OSC32KCTRL_STATUS (0x4000140C): XOSC32KRDY, the external 32kHz crystal's
+// ready bit -- the very first thing SystemInit waits on.
+osc32kctrl_status: Python.PythonPeripheral @ sysbus 0x4000140C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// GCLK_SYNCBUSY (0x40001C04): shared by every GENCTRL[n]/SWRST synchronise
+// wait in SystemInit (7 separate call sites, one register).
+gclk_syncbusy: Python.PythonPeripheral @ sysbus 0x40001C04
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_STATUS (0x40001010): DFLLRDY. Renode's own base atsamd51g19a.repl
+// already stubbed this address (as "pac_intflag", a leftover name from
+// whatever it was first stood up against) -- kept, renamed for what it
+// actually is on this firmware's boot path.
+oscctrl_status: Python.PythonPeripheral @ sysbus 0x40001010
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DFLLSYNC (0x4000102C): DFLLMUL/DFLLCTRLB/ENABLE/DFLLVAL sync
+// (4 call sites, one register).
+oscctrl_dfllsync: Python.PythonPeripheral @ sysbus 0x4000102C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DPLLSYNCBUSY0/1 (0x4000103C / 0x40001050): DPLLRATIO sync for
+// each PLL.
+oscctrl_dpllsyncbusy0: Python.PythonPeripheral @ sysbus 0x4000103C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+oscctrl_dpllsyncbusy1: Python.PythonPeripheral @ sysbus 0x40001050
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// OSCCTRL_DPLLSTATUS0/1 (0x40001040 / 0x40001054): compiled from
+// `DPLLSTATUS.bit.CLKRDY == 0 || DPLLSTATUS.bit.LOCK == 0`, which re-reads
+// the register once per `.bit.X` access rather than caching one snapshot --
+// two separate reads, one per bit. flipflop can never satisfy this: it only
+// ever presents all-0 or all-1, so consecutive reads are always the
+// complementary extreme and the "other" bit is never simultaneously set.
+// counter sweeps every value in order, so it always eventually lands on a
+// read ending ...10 immediately followed by one ending ...11 -- both bits
+// set on the read that matters. 0x40001040 is the base platform's own
+// pre-existing stub (already a counter); 0x40001054 is new, matched to it.
+oscctrl_dpllstatus0: Python.PythonPeripheral @ sysbus 0x40001040
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/counter.py"
+
+oscctrl_dpllstatus1: Python.PythonPeripheral @ sysbus 0x40001054
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/counter.py"
+
+// GCLK_PCHCTRL[0..47] (0x40001C80 .. 0x40001D3C, 4 bytes each): Arduino's
+// wiring.c init() enables a peripheral's generic-clock channel by writing
+// CHEN then re-reading the *same* register's CHEN bit back (a single fresh
+// read per poll iteration, so flipflop's toggle is enough -- this is not
+// the DPLLSTATUS two-different-bits trap above). One stub spans every
+// channel index since whichever ones init() touches depend only on which
+// peripherals this firmware uses.
+gclk_pchctrl: Python.PythonPeripheral @ sysbus 0x40001C80
+    size: 0xC0
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+// --- P2: the two SERCOM instances this board wires to SPI mode -----------
+// Per the Wio Terminal Arduino variant (variants/wio_terminal/variant.h):
+// SDCARD_SPI is SPI2 -> SERCOM6 (0x43000800), LCD_SPI is SPI3 -> SERCOM7
+// (0x43000C00) -- two separate buses, not one shared bus (this repo's own
+// walk_main.cxx SDCARD_SPI fallback to plain `SPI` never actually triggers
+// on this board; the variant already defines it). Genuinely modelling
+// SERCOM's SPI mode (a real ISPIPeripheral so an attached ILI9341/SD model
+// could receive real bytes, ADR 94 P3/P4) is new work -- nothing upstream
+// implements SERCOM at all (checked: SAM_SPI is the unrelated classic SAM4
+// "SPI" peripheral, PDC and all, not SERCOM).
+//
+// For P2 the polling loops just need to terminate, no real card/panel is
+// listening yet -- but *one wide stub per instance does not work*: it was
+// tried first and live-locked in SERCOM::resetSPI(), which writes CTRLA
+// (+0x00) then polls CTRLA's own SWRST self-clear bit, and *then* polls the
+// separate SYNCBUSY register (+0x1C) for the same bit position. A single
+// shared flipflop toggle answers both polls from the same alternating
+// state, so the two reads are always complementary and the pair never
+// reads "ready" together -- the exact same trap as OSCCTRL_DPLLSTATUS
+// above, just at register rather than bit granularity. Each real register
+// this firmware's SERCOM driver actually touches (CTRLA, SYNCBUSY, INTFLAG,
+// DATA) gets its own independent stub instead, so their toggles don't
+// correlate.
+sercom6_ctrla: Python.PythonPeripheral @ sysbus 0x43000800
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom6_intflag: Python.PythonPeripheral @ sysbus 0x43000818
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom6_syncbusy: Python.PythonPeripheral @ sysbus 0x4300081C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom6_data: Python.PythonPeripheral @ sysbus 0x43000828
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom7_ctrla: Python.PythonPeripheral @ sysbus 0x43000C00
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom7_intflag: Python.PythonPeripheral @ sysbus 0x43000C18
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom7_syncbusy: Python.PythonPeripheral @ sysbus 0x43000C1C
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
+
+sercom7_data: Python.PythonPeripheral @ sysbus 0x43000C28
+    size: 0x4
+    initable: true
+    filename: "scripts/pydev/flipflop.py"
