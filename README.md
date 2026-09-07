@@ -702,6 +702,10 @@
   party member) instead of the hero remains unimplemented — it needs
   persistent per-map event state this reader does not have at all. See
   [`docs/adr/0080-wolf-rpg-editor-teleport.md`](docs/adr/0080-wolf-rpg-editor-teleport.md)
+- **WaitForMove.** `WaitForMove`(202) is a no-op, since `SetMoveRoute`
+  (201) already applies every step instantly — there is nothing left to
+  wait for. See
+  [`docs/adr/0081-wolf-rpg-editor-wait-for-move.md`](docs/adr/0081-wolf-rpg-editor-wait-for-move.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

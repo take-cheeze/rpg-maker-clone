@@ -476,6 +476,18 @@ assert "Wolf::Interpreter's Checkpoint(99) is a no-op regardless of its own \"ç‰
   assert_equal 2, store.number(2_000_001)
 end
 
+assert "Wolf::Interpreter's WaitForMove(202) is a no-op, since SetMoveRoute already applies instantly" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+    wolf_test_cmd(202, [], [], 0), # WaitForMove
+    wolf_test_cmd(121, [2_000_001, 0, 2, 0xf000], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+  assert_equal 2, store.number(2_000_001)
+end
+
 # ---- Wolf::Interpreter LoopTimes(179) ----------------------------------------
 
 assert "Wolf::Interpreter's LoopTimes(179) repeats exactly the configured (possibly variable-held) count" do
