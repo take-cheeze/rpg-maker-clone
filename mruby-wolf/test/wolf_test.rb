@@ -524,7 +524,7 @@ end
 # surface (#x/#y/#passable?/#hero_at?/#hero_pos/#hero_pos=), which
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
-  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased
+  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se
   attr_accessor :x, :y, :blocked, :choice_inputs
 
   def initialize
@@ -538,6 +538,7 @@ class WolfTestFakeScene
     @facing = :down
     @blocked = []
     @choice_inputs = []
+    @played_se = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -549,6 +550,7 @@ class WolfTestFakeScene
   # the sequence of key presses to hand back, one per call, `nil` (nothing
   # queued) standing in for a frame nothing was pressed.
   def choice_input; @choice_inputs.shift; end
+  def play_se(*args); @played_se << args; end
 
   def passable?(x, y); !@blocked.include?([x, y]); end
   def hero_at?(x, y); x == @x && y == @y; end
@@ -856,6 +858,96 @@ assert "Wolf::Interpreter#exec_choices skips a left/right-key or forced-interrup
   run.step while !run.done && (count += 1) < 20
   assert_equal 0, store.number(2_000_000)
   assert_equal 9, store.number(2_000_001)
+end
+
+# ---- Wolf::Interpreter#exec_sound (Sound(140)) ------------------------------
+
+def wolf_test_sound_header(process: Wolf::Interpreter::SOUND_PROCESS_PLAYBACK,
+                            operation: Wolf::Interpreter::SOUND_OP_SE,
+                            sound_type: Wolf::Interpreter::SOUND_TYPE_FILENAME,
+                            systemdb_entry: 0)
+  (process & 0x0f) | ((operation & 0x0f) << 4) | ((systemdb_entry & 0xffff) << 8) | ((sound_type & 0xff) << 24)
+end
+
+assert "Wolf::Interpreter#exec_sound plays an SE by filename, reading volume/pitch from the confirmed argument slots" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  # The real sample game's own map1 ev#19 carries exactly this shape: a
+  # non-default volume/pitch pair, proving those are real argument slots
+  # rather than always-100 placeholders.
+  cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 60, 70], ["SE/Effect_Bomb1_panop.ogg"])
+  interp.exec_sound(cmd)
+
+  assert_equal 1, scene.played_se.size
+  path, volume, pitch = scene.played_se.first
+  assert_equal "SE/Effect_Bomb1_panop.ogg", path
+  assert_equal 60, volume
+  assert_equal 70, pitch
+end
+
+assert "Wolf::Interpreter#exec_sound accepts the real 7-argument variant with a trailing extra field" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 100, 100, 0], ["SystemFile/SE_Get.ogg"])
+  interp.exec_sound(cmd)
+
+  assert_equal 1, scene.played_se.size
+end
+
+assert "Wolf::Interpreter#exec_sound resolves volume/pitch through variable references, not just literals" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 42)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 2_000_000, 100], ["SE/Foo.ogg"])
+  interp.exec_sound(cmd)
+
+  assert_equal 42, scene.played_se.first[1]
+end
+
+assert "Wolf::Interpreter#exec_sound skips BGM/BGS and non-filename sound sources rather than guessing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  bgm = wolf_test_cmd(140, [wolf_test_sound_header(operation: 0), 0, 0, 0, 100, 100], ["BGM/Foo.ogg"]) # operation 0 = BGM
+  interp.exec_sound(bgm)
+
+  db_entry = wolf_test_cmd(140, [wolf_test_sound_header(sound_type: 0), 0, 0, 0])
+  interp.exec_sound(db_entry)
+
+  odd_argc = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 100, 100, 0, 1_100_000], ["Pan/Demo.ogg"])
+  interp.exec_sound(odd_argc)
+
+  assert_equal 0, scene.played_se.size
+end
+
+assert "Wolf::Interpreter#exec_sound skips a string-interpolated filename rather than guessing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 100, 100], ["\\cself[9]"])
+  interp.exec_sound(cmd)
+
+  assert_equal 0, scene.played_se.size
+end
+
+assert "Wolf::Interpreter#exec_sound tolerates a nil #current_scene" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 100, 100], ["SE/Foo.ogg"])
+  interp.exec_sound(cmd) # must not raise
 end
 
 # ---- Wolf::Interpreter#exec_picture -----------------------------------------

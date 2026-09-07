@@ -192,9 +192,10 @@ module Wolf
           @interp.exec_set_move_route(cmd)
         when Interpreter::C_CHOICES
           exec_choices(cmd)
+        when Interpreter::C_SOUND
+          @interp.exec_sound(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
-             Interpreter::C_SOUND,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
              Interpreter::C_END_GAME
           @interp.unimplemented(cmd.code)
@@ -564,6 +565,59 @@ module Wolf
     def exec_message(cmd)
       text = cmd.strings.first || ""
       $stderr.puts "[Wolf-MSG] #{text}" unless text.empty?
+    end
+
+    # Sound(140): arg(0) packs, byte by byte (cross-confirmed against the
+    # wolfrpg-map-parser crate's own `Options`/`SoundType` structs -- its own
+    # 1-byte `options` + 2-byte `systemdb_entry` + 1-byte `sound_type` read
+    # is exactly this reader's single 4-byte `arg(0)` word, byte for byte):
+    # byte 0 low nibble "process type" (0 normal playback, 1 preload, 3 free
+    # unused memory), byte 0 high nibble "operation" (0 BGM, 1 BGS, 2 SE),
+    # bytes 1-2 a system-database entry index (only meaningful for the two
+    # sound-type kinds below that are not Filename), byte 3 "sound type" (0
+    # a direct system-database selection, 1 a variable naming one, 2 a
+    # literal/string-variable filename). Only "normal playback of an SE by
+    # filename" -- the confirmed 6/7-argument layout every real match of
+    # that combination in the sample game's own data carries, volume at
+    # arg(4) and frequency/pitch at arg(5) (both vary from their 100/100
+    # default in at least one real call, confirming the slots) -- is
+    # implemented; everything else (BGM/BGS, a system-database or variable
+    # sound source, preload/free-memory, any other argument count) is
+    # logged and skipped, the same discipline as every other WOLF command
+    # whose full argument layout this reader has not cross-checked. A
+    # filename that is itself one of WOLF's own "\cself[N]"/"\s[N]" string-
+    # interpolation escapes (real, found in the sample game's own Common
+    # Events) needs a string-escape engine this reader does not have for
+    # *any* command yet (Message(101) does not expand them either) and is
+    # skipped the same way a Picture(150) special file directive is.
+    SOUND_PROCESS_PLAYBACK = 0
+    SOUND_OP_SE = 2
+    SOUND_TYPE_FILENAME = 2
+
+    def exec_sound(cmd)
+      header = cmd.arg(0)
+      process_type = header & 0x0f
+      operation = (header >> 4) & 0x0f
+      sound_type = (header >> 24) & 0xff
+
+      unless process_type == SOUND_PROCESS_PLAYBACK && operation == SOUND_OP_SE && sound_type == SOUND_TYPE_FILENAME
+        unimplemented("Sound(140) process #{process_type}/operation #{operation}/sound type #{sound_type}")
+        return
+      end
+      unless cmd.args.size == 6 || cmd.args.size == 7
+        unimplemented("Sound(140) SE-by-filename with #{cmd.args.size} arguments (only the confirmed 6/7-argument layout is understood)")
+        return
+      end
+
+      path = cmd.strings.first || ""
+      if path.start_with?("\\")
+        unimplemented("Sound(140) string-interpolated filename #{path.inspect}")
+        return
+      end
+
+      volume = var_store.number(cmd.arg(4))
+      pitch = var_store.number(cmd.arg(5))
+      current_scene&.play_se(path, volume, pitch)
     end
 
     # Picture(150) operation nibble (bits 0-3 of arg(0)).

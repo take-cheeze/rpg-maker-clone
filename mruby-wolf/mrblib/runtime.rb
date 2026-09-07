@@ -221,6 +221,18 @@ class WolfRPG
       nil
     end
 
+    # Wolf::Interpreter#exec_sound's own rendering-adjacent seam for
+    # Sound(140)'s "play an SE by filename" case. `path` is already
+    # `Data/`-relative the same way a Picture(150) file argument is (real
+    # command dumps confirm the same convention: "SE/System_Get2_wolf.ogg",
+    # "SystemFile/SE_Get.ogg"), but unlike `RGSS::Bitmap.new`,
+    # `RGSS::Audio.se_play` does its own `GAME_DIR`-relative search rather
+    # than taking an absolute path, so this only has to add the `Data/`
+    # prefix `GAME_DIR` itself does not know about.
+    def play_se(path, volume, pitch)
+      RGSS::Audio.se_play(File.join("Data", path), volume, pitch)
+    end
+
     # Public (not just #move_hero's own concern any more): Wolf::Interpreter's
     # own event-movement code (#step_event_pos) checks the same tile
     # passability before letting a moving event step onto it.

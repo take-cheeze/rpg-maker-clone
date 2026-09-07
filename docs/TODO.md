@@ -35975,9 +35975,28 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   yield on) is gone. Confirmed against the real binary: boots the sample
   game to its own title screen and correctly blocks on its real
   Start/Continue/Exit choice. See
-  `docs/adr/0070-wolf-rpg-editor-choices.md`. Suggested next order: input
-  commands 123-126, save/load 220-222, database read/write 250/251, sound
-  140, transitions 160-162/281/290.
+  `docs/adr/0070-wolf-rpg-editor-choices.md`.
+- ✅ **Sound(140), SE-by-filename only (2026-09-07).** `arg(0)` decodes byte
+  by byte (process type/operation/system-database entry/sound type),
+  cross-confirmed against the wolfrpg-map-parser crate's own `Options`/
+  `SoundType` structs and, since (like Choices) the crate's own overall
+  command shape does not obviously match this reader's, against every one
+  of the 30 real `Sound` commands in the sample game's own data decoded by
+  hand. Only "normal playback of an SE named by a literal filename" -- the
+  one combination with a confirmed trailing-argument layout (volume at
+  `arg(4)`, frequency/pitch at `arg(5)`, both proven by a real call whose
+  values differ from their 100/100 default) -- actually plays, via a new
+  `WolfRPG::MapScene#play_se`; BGM/BGS, a system-database or variable sound
+  source, preload/free-memory, any other argument count, and a filename
+  that is itself one of WOLF's own string-interpolation escapes (no
+  command has a string-escape engine yet) are logged and skipped rather
+  than guessed. See `docs/adr/0071-wolf-rpg-editor-sound.md`. Suggested
+  next order: BGM/BGS playback (real examples already dumped and
+  byte-decoded in that ADR), input commands 123-126 (123 InputKey is
+  tractable alone; 124 SetVariableEx/SetVariablePlus is a large,
+  many-sub-field command better scoped on its own -- help/04ev_valuenext
+  .html), save/load 220-222, database read/write 250/251, transitions
+  160-162/281/290.
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
