@@ -81,6 +81,11 @@ module Wolf
     C_TELEPORT = 130
     C_SOUND = 140
     C_PICTURE = 150
+    # "その他1" tab's "■色調変更" button (help/04ev_effect.html's own
+    # "色調変更" section -- part of the same page as Effect(290), but its
+    # own separate WOLF command code). See #exec_change_color's own
+    # comment for the byte layout and the RGB/tone scale conversion.
+    C_CHANGE_COLOR = 151
     # "その他2" tab's "■エフェクト" button (help/04ev_effect.html:
     # "キャラクターやピクチャ・マップに対してエフェクトをかけたり..."). One of
     # this reader's largest remaining commands by real frequency (279
@@ -269,6 +274,8 @@ module Wolf
           @interp.exec_database(cmd)
         when Interpreter::C_EFFECT
           @interp.exec_effect(cmd)
+        when Interpreter::C_CHANGE_COLOR
+          @interp.exec_change_color(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -1615,6 +1622,35 @@ module Wolf
       else
         unimplemented("Effect(290) picture effect type #{effect_type}")
       end
+    end
+
+    # ChangeColor(151) ("色調変更", help/04ev_effect.html): the wolfrpg-
+    # map-parser crate's own `ChangeColor` struct (red/green/blue/flash/
+    # duration -- 2 packed u32 fields, matching every one of the 10 real
+    # calls' own 2-argument shape exactly) reads byte-for-byte the same
+    # way here: `arg(0)`'s four bytes are red/green/blue/flash(a raw byte,
+    # nonzero true), `arg(1)` the duration. Unlike Effect(290)'s own
+    # Picture-target effects (an additive delta on top of whatever a
+    # picture already has), ChangeColor's own RGB values are *absolute*:
+    # the manual documents 0 the darkest, 200 the brightest, 100 "the
+    # normal value" -- and real data's own duration is never 0 (10-40 real
+    # frames every time), so the visible effect is a genuine, gradual
+    # transition, not an instant set. `#current_scene`'s own
+    # `#change_color` does the actual work (flash vs. animated tone
+    # transition, and the RGB-to-RGSS-Tone/Color scale conversions) --
+    # this reader has no rendering state of its own for it.
+    def exec_change_color(cmd)
+      unless cmd.args.size == 2
+        unimplemented("ChangeColor(151) with #{cmd.args.size} arguments")
+        return
+      end
+      packed = cmd.arg(0)
+      red = packed & 0xff
+      green = (packed >> 8) & 0xff
+      blue = (packed >> 16) & 0xff
+      flash = ((packed >> 24) & 0xff) != 0
+      duration = var_store.number(cmd.arg(1))
+      current_scene&.change_color(red, green, blue, flash, duration)
     end
 
     # Runs one RouteCommand list against `pos` (either a map event's own
