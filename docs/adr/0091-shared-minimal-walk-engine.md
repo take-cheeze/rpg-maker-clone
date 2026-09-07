@@ -94,14 +94,15 @@ transparency fix, so the numbers are the same toolchain on both sides:
 127 KB of working set, and the packed image stays under 1% of NanoApps'
 500 KB ceiling.
 
-The Wio firmware is **not** build-verified: PlatformIO's package registry is
-not reachable from the environment this was written in, so `pio run -e
-wio_walk` could not resolve the `atmelsam` platform. What was checked is that
-the sketch compiles as C++ against stub declarations matching the real
-`TFT_eSPI` / `Seeed_FS` signatures (read out of those libraries' own
-headers), and that the core it calls passes its host test. Treat the
-environment as untested on hardware until someone with a board runs it — the
-same standing as ADR 7's own P1 firmware, and stated in `app/wio/README.md`.
+The Wio firmware could not be built where this was written — PlatformIO's
+package registry is not reachable from that environment, so `pio run -e
+wio_walk` could not resolve the `atmelsam` platform. Locally it was checked
+against stub declarations matching the real `TFT_eSPI` / `Seeed_FS`
+signatures, read out of those libraries' own headers. **CI compiles it for
+real**: the `wio` job builds both environments, which is what the job already
+existed for. It has still never been *run* — no board, and nothing emulates
+one — so treat it as untried on hardware, the same standing as ADR 7's own P1
+firmware.
 
 ## Consequences
 

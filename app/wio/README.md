@@ -64,11 +64,10 @@ not fit rather than writing one the firmware cannot load. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 
 **Scope, and status.** It walks one static map: no events, no battle, no
-menus, no interpreter — see the ADRs before expecting a game. And it has not
-been run on hardware, or even linked: the shared core is covered by the
-`walk_core` ctest on the host, and the sketch has only been checked against
-the `TFT_eSPI`/`Seeed_FS` signatures it calls. Treat it as untried on a real
-board, exactly like the `wio` firmware above.
+menus, no interpreter — see the ADRs before expecting a game. CI compiles it
+(the `wio` job builds both environments) and the shared core has its own host
+test (the `walk_core` ctest), but nobody has run it on a board yet — treat it
+as untried on real hardware, exactly like the `wio` firmware above.
 
 ## Not yet wired (later slices)
 

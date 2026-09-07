@@ -1352,11 +1352,15 @@ jobs:
             wasm-build/timidity*.data
 
   wio:
-    # Build the Wio Terminal (SAMD51) bring-up firmware with PlatformIO. This is
-    # the external check for the port's HAL: this environment cannot cross-build
-    # or flash the board, so CI compiles it. Builds the display + input HAL and
-    # the Arduino sketch; the mruby interpreter is layered on in a later slice
-    # (see app/wio/README.md and docs/adr/0005-wio-terminal-port.md).
+    # Build both Wio Terminal (SAMD51) firmwares with PlatformIO. This is the
+    # external check for the port: this environment cannot cross-build or flash
+    # the board, so CI compiles it. `wio` is the bring-up firmware -- the
+    # display + input HAL and the Arduino sketch, with the mruby interpreter
+    # layered on in a later slice (see app/wio/README.md and
+    # docs/adr/0005-wio-terminal-port.md). `wio_walk` is the minimal,
+    # non-mruby map-walk firmware over the shared engine the iPod nano 7G app
+    # runs (docs/adr/0091); the nano side of that engine has no CI toolchain at
+    # all, so this job is the only place either firmware is compiled.
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     steps:
@@ -1389,7 +1393,9 @@ jobs:
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
       - name: Build firmware
-        run: pio run -e wio
+        run: |
+          pio run -e wio
+          pio run -e wio_walk
 
   psp:
     # Build the PSP EBOOT bring-up with the pspdev toolchain. Like the Wio job,
