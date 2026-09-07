@@ -518,7 +518,9 @@ class RPG2k
       # #take_revealed_monsters), building the sprite on screen mid-battle.
       def build_battle_sprites
         build_battle_back(encounter_backdrop)
-        @ui[:enemy_sprites] = @ui[:troop].members.each_with_index.map do |enemy, i|
+        troop_members = @ui[:troop].members
+        @ui[:enemy_sprites] = Array.new(troop_members.size) do |i|
+          enemy = troop_members[i]
           next nil if enemy.hidden
           bmp = battler_bitmap(enemy)
           spr = Sprite.new
@@ -557,7 +559,9 @@ class RPG2k
         @ui[:actor_sprites] = nil
         return unless @state.party.respond_to?(:alternate_battle_layout?) &&
                       @state.party.alternate_battle_layout?
-        @ui[:actor_sprites] = @ui[:allies].each_with_index.map do |ally, i|
+        allies = @ui[:allies]
+        @ui[:actor_sprites] = Array.new(allies.size) do |i|
+          ally = allies[i]
           build_actor_sprite(ally.actor, i, defending: ally.defending, dead: ally.dead?,
                              states: ally.states)
         end
