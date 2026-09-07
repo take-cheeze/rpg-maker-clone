@@ -674,6 +674,14 @@
   name↔index lookups, data reset/insert/extract/copy/sort, and CSV
   import/export via `ImportDatabase`(251)) remains unimplemented. See
   [`docs/adr/0075-wolf-rpg-editor-database-command.md`](docs/adr/0075-wolf-rpg-editor-database-command.md)
+- **Blank/LoopTimes.** `Blank`(0) — the single most common command code in
+  the sample game (3468 real occurrences) — is a deliberate no-op.
+  `LoopTimes`(179) repeats its body a real, possibly variable-held number
+  of times, sharing `StartLoop`(170)'s own `LoopEnd`(498) terminator;
+  `BreakLoop`/`GotoLoopStart` both work inside it, and two manual-documented
+  edge cases (0-or-fewer iterations; a label jump landing inside the loop
+  from outside it) are handled exactly. See
+  [`docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md`](docs/adr/0076-wolf-rpg-editor-blank-and-loop-times.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
