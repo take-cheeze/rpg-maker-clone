@@ -1,0 +1,35 @@
+diff --git a/src/Emulator/Peripherals/Peripherals/SD/SDCard.cs b/src/Emulator/Peripherals/Peripherals/SD/SDCard.cs
+index 2c62818..54f4e9c 100644
+--- a/src/Emulator/Peripherals/Peripherals/SD/SDCard.cs
++++ b/src/Emulator/Peripherals/Peripherals/SD/SDCard.cs
+@@ -500,6 +500,22 @@ private bool TryHandleApplicationSpecificCommand(SdCardApplicationSpecificComman
+                     : CardStatus;
+                 return true;
+ 
++            case SdCardApplicationSpecificCommand.SetClearCardDetect_ACMD42:
++                // Only meaningful for the DAT3/CD pin's pull-up, irrelevant
++                // in SPI mode -- acknowledged harmlessly, the same way
++                // EnableCRCChecking_CMD59 is below despite not doing
++                // anything either. Genuine SD-over-SPI drivers (e.g.
++                // Seeed_Arduino_FS, github.com/Seeed-Studio/
++                // Seeed_Arduino_FS) send this unconditionally during
++                // SD.begin() and treat any non-R1-idle response as fatal
++                // ("illegal command", this method's previous behaviour for
++                // an unrecognised command) rather than tolerating an
++                // unsupported optional command.
++                result = spiMode
++                    ? GenerateR1Response()
++                    : CardStatus;
++                return true;
++
+             default:
+                 this.Log(LogLevel.Noisy, "Command #{0} seems not to be any application specific command", command);
+                 result = null;
+@@ -1112,6 +1128,7 @@ public enum SdCardApplicationSpecificCommand
+         {
+             SendSDCardStatus_ACMD13 = 13,
+             SendOperatingConditionRegister_ACMD41 = 41,
++            SetClearCardDetect_ACMD42 = 42,
+             SendSDConfigurationRegister_ACMD51 = 51
+         }
+ 

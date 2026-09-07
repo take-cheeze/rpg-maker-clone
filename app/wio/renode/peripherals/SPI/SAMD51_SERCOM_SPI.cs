@@ -20,6 +20,7 @@
 // real controller class makes that correct instead of coincidental, and is
 // what actually lets a device attached via .repl receive real bytes.
 using Antmicro.Renode.Core;
+using Antmicro.Renode.Core.Extensions;
 using Antmicro.Renode.Core.Structure;
 using Antmicro.Renode.Core.Structure.Registers;
 using Antmicro.Renode.Logging;
@@ -27,7 +28,7 @@ using Antmicro.Renode.Peripherals.Bus;
 
 namespace Antmicro.Renode.Peripherals.SPI
 {
-    public class SAMD51_SERCOM_SPI : NullRegistrationPointPeripheralContainer<ISPIPeripheral>, IDoubleWordPeripheral, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IKnownSize
+    public class SAMD51_SERCOM_SPI : NullRegistrationPointPeripheralContainer<ISPIPeripheral>, IDoubleWordPeripheral, IBytePeripheral, IProvidesRegisterCollection<DoubleWordRegisterCollection>, IKnownSize
     {
         public SAMD51_SERCOM_SPI(IMachine machine) : base(machine)
         {
@@ -46,6 +47,22 @@ namespace Antmicro.Renode.Peripherals.SPI
 
         public void WriteDoubleWord(long offset, uint value) => RegistersCollection.Write(offset, value);
 
+        // Real SERCOM SPI registers are a mix of widths (CTRLA is 32-bit,
+        // but BAUD/INTFLAG/DATA are 8-bit) and this firmware's driver
+        // (SERCOM.cpp in the Arduino SAMD core) accesses them at their real
+        // width -- INTFLAG via ldrb, in particular, which is the poll this
+        // repo's SPI code spins on for every single byte transferred. A
+        // DoubleWordPeripheral alone does not automatically serve a byte
+        // access for its callers: measured on real firmware, not assumed --
+        // it live-locked (INTFLAG always read back 0 to the CPU's own ldrb,
+        // even though sysbus ReadDoubleWord on the same address correctly
+        // computed the ready bits) until this was added, logged by Renode
+        // itself as "Attempted Byte read isn't supported by the peripheral"
+        // at NOISY level, easy to miss if not looking for it.
+        public byte ReadByte(long offset) => this.ReadByteUsingDoubleWord(offset);
+
+        public void WriteByte(long offset, byte value) => this.WriteByteUsingDoubleWord(offset, value);
+
         public DoubleWordRegisterCollection RegistersCollection { get; }
 
         public long Size => 0x30;
@@ -60,7 +77,7 @@ namespace Antmicro.Renode.Peripherals.SPI
                         Reset();
                     }
                 })
-                .WithFlag(1, out enabledFlag, name: "ENABLE",
+                .WithFlag(1, out _, name: "ENABLE",
                     writeCallback: (_, value) => enabled = value)
                 .WithIgnoredBits(2, 30)
             ;
@@ -101,7 +118,6 @@ namespace Antmicro.Renode.Peripherals.SPI
             ;
         }
 
-        private IFlagRegisterField enabledFlag;
         private bool enabled;
         private byte lastReceived;
 
