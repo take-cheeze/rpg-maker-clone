@@ -1,0 +1,30 @@
+# Boots one of this repos Wio Terminal firmwares under Renode far enough to
+# prove the CPU actually runs (P1/P2 of docs/adr/0094) rather than hanging on
+# an unstubbed clock-tree or SERCOM register. See app/wio/renode/README.md.
+#
+# Usage: pass -e "set elf_path @/path/to/firmware.elf" before including this,
+# plus platform_path (@/path/to/wio_terminal.repl) and setup_addr/loop_addr
+# -- that ELFs own setup/loop symbol addresses (arm-none-eabi-nm firmware.elf,
+# grep -w setup and loop). scripts/wio_renode_boot.bash wraps all of this.
+
+mach create "wio"
+machine LoadPlatformDescription $platform_path
+sysbus LoadELF $elf_path
+
+cpu0 AddHook $setup_addr "print(\"=== REACHED setup() ===\")"
+cpu0 AddHook $loop_addr "print(\"=== REACHED loop() ===\")"
+
+# Unmapped-register warnings are expected background noise once past the
+# clock tree (peripherals this platform does not model at all yet, e.g. the
+# ADC, timers, the DMA controller); quiet them so a real hang is visible
+# instead of scrolling off screen.
+logLevel 3
+
+# Wall-clock cost is roughly linear in virtual time simulated (a few seconds
+# of wall time per 100ms of virtual time on the machine this was authored
+# on); a genuine unstubbed spin loop instead shows as much worse than that
+# ratio, or as the same PC on every sample when this is run repeatedly.
+$duration?="00:00:00.300"
+emulation RunFor $duration
+echo "PC after that much virtual time:"
+cpu0 PC

@@ -1,0 +1,102 @@
+# A regression test for ILI9341_SPI (docs/adr/0094 P3), not the boot smoke
+# test that boot.resc is -- drives the SERCOM7/LCD registers directly (no
+# firmware involved) to check CASET/PASET windowing, RAMWR auto-increment
+# addressing and RGB565 decode are all correct in isolation. Usage:
+#   RENODE_BIN=<built renode> $RENODE_BIN --disable-gui --console --plain \
+#     -e "include @app/wio/renode/lcd_smoke_test.resc" -e "quit"
+# Then check /tmp/wio_lcd_smoke_test.png: a 16x1 pure-red strip directly above
+# a 16x1 pure-blue strip in the top-left corner, black everywhere else --
+# e.g. `magick /tmp/wio_lcd_smoke_test.png -format "%[pixel:p{8,0}]" info:`
+# should print srgb(255,0,0), and the same at {8,1} should print srgb(0,0,255).
+mach create "lcd_smoke_test"
+machine LoadPlatformDescription @app/wio/renode/wio_terminal.repl
+
+# Enable SERCOM7 (LCD SPI): CTRLA.ENABLE (bit1)
+sysbus WriteDoubleWord 0x43000C00 0x2
+
+# CASET: x0=0, x1=15 (16px window)
+sysbus WriteDoubleWord 0x41008114 0x40
+sysbus WriteDoubleWord 0x43000C28 0x2A
+sysbus WriteDoubleWord 0x41008118 0x40
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF
+# PASET: y0=0, y1=1 (2px window)
+sysbus WriteDoubleWord 0x41008114 0x40
+sysbus WriteDoubleWord 0x43000C28 0x2B
+sysbus WriteDoubleWord 0x41008118 0x40
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1
+# RAMWR: row0 = pure red (0xF800) x16, row1 = pure blue (0x001F) x16
+sysbus WriteDoubleWord 0x41008114 0x40
+sysbus WriteDoubleWord 0x43000C28 0x2C
+sysbus WriteDoubleWord 0x41008118 0x40
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0xF8
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+sysbus WriteDoubleWord 0x43000C28 0x0
+sysbus WriteDoubleWord 0x43000C28 0x1F
+
+sercom7_spi.lcd SaveFramebufferPng "/tmp/wio_lcd_smoke_test.png"
