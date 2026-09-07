@@ -42,12 +42,15 @@ static void check(int cond, const char* what) {
 #define BLUE (RW_OPAQUE | 31u)
 
 #define PAL_BYTES (PAL_COUNT * 2)
-#define MAP_BYTES \
-  (RW_MAP_HEADER_BYTES + PAL_BYTES + W * H * RW_MAP_BYTES_PER_CELL)
+#define MAP_BYTES (RW_MAP_HEADER_BYTES + PAL_BYTES + RW_MAP_CELL_BYTES(W * H))
 #define CELLS_AT (RW_MAP_HEADER_BYTES + PAL_BYTES)
+#define UPPER_AT (CELLS_AT + W * H)
+#define PASS_AT (UPPER_AT + W * H)
 
 static uint8_t g_map[MAP_BYTES];
 static uint8_t g_tiles[TILES * RW_TILE_PIXELS];
+
+static void set_passable(int x, int y, unsigned bits);
 
 static void put_u16(uint8_t* p, unsigned v) {
   p[0] = (uint8_t)(v & 0xff);
@@ -84,23 +87,30 @@ static void build_map(void) {
   put_u16(g_map + RW_MAP_HEADER_BYTES + 2, RED);
   put_u16(g_map + RW_MAP_HEADER_BYTES + 4, GREEN);
   for (i = 0; i < W * H; i++) {
-    put_u16(g_map + CELLS_AT + i * 2, 0);
-    put_u16(g_map + CELLS_AT + W * H * 2 + i * 2, RW_UPPER_NONE);
-    g_map[CELLS_AT + W * H * 4 + i] =
-        RW_DIR_UP | RW_DIR_DOWN | RW_DIR_LEFT | RW_DIR_RIGHT;
+    g_map[CELLS_AT + i] = 0;
+    g_map[UPPER_AT + i] = RW_UPPER_NONE;
+    set_passable(i % W, i / W,
+                 RW_DIR_UP | RW_DIR_DOWN | RW_DIR_LEFT | RW_DIR_RIGHT);
   }
 }
 
 static void set_lower(int x, int y, unsigned slot) {
-  put_u16(g_map + CELLS_AT + (y * W + x) * 2, slot);
+  g_map[CELLS_AT + y * W + x] = (uint8_t)slot;
 }
 
 static void set_upper(int x, int y, unsigned slot) {
-  put_u16(g_map + CELLS_AT + W * H * 2 + (y * W + x) * 2, slot);
+  g_map[UPPER_AT + y * W + x] = (uint8_t)slot;
 }
 
+/* Two cells per byte, the even cell in the low nibble -- the packing the
+ * exporter writes. */
 static void set_passable(int x, int y, unsigned bits) {
-  g_map[CELLS_AT + W * H * 4 + y * W + x] = (uint8_t)bits;
+  int cell = y * W + x;
+  uint8_t* byte = &g_map[PASS_AT + (cell >> 1)];
+  if (cell & 1)
+    *byte = (uint8_t)((*byte & 0x0f) | (bits << 4));
+  else
+    *byte = (uint8_t)((*byte & 0xf0) | (bits & 0x0f));
 }
 
 static rw_status open_default(rw_map* m) {
@@ -143,6 +153,12 @@ static void test_open(void) {
   check(
       rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
       "a start position outside the map is refused");
+
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 14, RW_MAX_TILES + 1);
+  check(
+      rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_ERR_HEADER,
+      "an atlas too big to index in a byte is refused");
 
   /* The palette always holds at least its transparent slot, and can never
    * hold more entries than a one-byte index can reach. */
@@ -210,6 +226,19 @@ static void test_move(void) {
   build_map();
   open_default(&m);
   check(rw_passable_at(&m, -1, 0) == 0, "outside the map is impassable");
+
+  /* Two cells share a byte, so a cell must not read its neighbour's nibble. */
+  build_map();
+  set_passable(0, 0, RW_DIR_UP);
+  set_passable(1, 0, RW_DIR_LEFT | RW_DIR_RIGHT);
+  set_passable(2, 0, 0);
+  set_passable(3, 0, RW_DIR_DOWN);
+  open_default(&m);
+  check(rw_passable_at(&m, 0, 0) == RW_DIR_UP &&
+            rw_passable_at(&m, 1, 0) == (RW_DIR_LEFT | RW_DIR_RIGHT) &&
+            rw_passable_at(&m, 2, 0) == 0 &&
+            rw_passable_at(&m, 3, 0) == RW_DIR_DOWN,
+        "each cell reads its own passability nibble");
 }
 
 static void test_camera(void) {

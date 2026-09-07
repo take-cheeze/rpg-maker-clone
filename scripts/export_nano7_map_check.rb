@@ -26,14 +26,14 @@ EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
 TARGETS = {
-  'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
-  'wio' => { max_w: 96, max_h: 96, max_tiles: 192 }
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255 },
+  'wio' => { max_w: 128, max_h: 128, max_tiles: 192 }
 }.freeze
 MAP_MAX_W = TARGETS['nano7'][:max_w]
 MAP_MAX_H = TARGETS['nano7'][:max_h]
 MAX_TILES = TARGETS['nano7'][:max_tiles]
-MAP_VERSION = 3
-UPPER_NONE = 0xFFFF
+MAP_VERSION = 4
+UPPER_NONE = 0xFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
 TILE_BYTES = 16 * 16       # one palette index per pixel
 OPAQUE_BIT = 0x8000
@@ -93,9 +93,11 @@ def read_map_bin(path)
   palette = bytes[20, palette_count * 2].unpack('v*')
   off = 20 + palette_count * 2
   cells = width * height
-  lower = bytes[off, cells * 2].unpack('v*'); off += cells * 2
-  upper = bytes[off, cells * 2].unpack('v*'); off += cells * 2
-  passable = bytes[off, cells].unpack('C*'); off += cells
+  lower = bytes[off, cells].unpack('C*'); off += cells
+  upper = bytes[off, cells].unpack('C*'); off += cells
+  # Passability is a nibble per cell, the even cell in the low half.
+  packed = bytes[off, (cells + 1) / 2].unpack('C*'); off += (cells + 1) / 2
+  passable = (0...cells).map { |i| i.even? ? (packed[i / 2] & 0x0F) : (packed[i / 2] >> 4) }
   ok(off == bytes.bytesize, "map.bin has #{bytes.bytesize - off} trailing bytes")
   {
     magic: magic, version: version, width: width, height: height,
@@ -126,7 +128,12 @@ def check_export(game_dir, map_id)
       ok map[:width].positive? && map[:height].positive?, 'non-positive dimensions'
       ok map[:width] <= MAP_MAX_W && map[:height] <= MAP_MAX_H, "#{map[:width]}x#{map[:height]}"
     end
-    check("map #{map_id}: tile_count in bounds") { ok map[:tile_count] <= MAX_TILES, map[:tile_count] }
+    check("map #{map_id}: tile_count in bounds") do
+      ok map[:tile_count] <= MAX_TILES, map[:tile_count]
+      # An atlas index is a byte on-device, with 0xFF reserved for "no upper
+      # tile", so 255 entries is a hard ceiling whatever the target allows.
+      ok map[:tile_count] <= UPPER_NONE, "#{map[:tile_count]} entries cannot be indexed by a byte"
+    end
     check("map #{map_id}: start position inside map") do
       ok map[:start_x] >= 0 && map[:start_x] < map[:width], "start_x #{map[:start_x]}"
       ok map[:start_y] >= 0 && map[:start_y] < map[:height], "start_y #{map[:start_y]}"
@@ -180,9 +187,9 @@ def check_export(game_dir, map_id)
       bad = map[:upper].reject { |i| i == UPPER_NONE || i < map[:tile_count] }
       ok bad.empty?, "#{bad.size} out-of-range indices, e.g. #{bad.first}"
     end
-    check("map #{map_id}: passable bytes use only the four direction bits") do
+    check("map #{map_id}: passable nibbles use only the four direction bits") do
       bad = map[:passable].reject { |b| (b & ~VALID_PASSABLE_BITS).zero? }
-      ok bad.empty?, "#{bad.size} bytes with stray bits, e.g. 0x%02x" % (bad.first || 0)
+      ok bad.empty?, "#{bad.size} nibbles with stray bits, e.g. 0x%02x" % (bad.first || 0)
     end
   end
 end

@@ -9,8 +9,8 @@ static int in_bounds(const rw_map* m, int x, int y) {
   return x >= 0 && y >= 0 && x < m->width && y < m->height;
 }
 
-static uint16_t cell_index(const uint8_t* base, const rw_map* m, int x, int y) {
-  return rd_u16(base + (uint32_t)(y * m->width + x) * 2);
+static uint8_t cell_index(const uint8_t* base, const rw_map* m, int x, int y) {
+  return base[(uint32_t)(y * m->width + x)];
 }
 
 rw_status rw_open(rw_map* m,
@@ -36,6 +36,8 @@ rw_status rw_open(rw_map* m,
 
   if (w <= 0 || h <= 0 || sx >= w || sy >= h)
     return RW_ERR_HEADER;
+  if (tile_count > RW_MAX_TILES)
+    return RW_ERR_HEADER;
   /* Index 0 is the transparent slot, so even an all-transparent map has one
    * entry; more than RW_MAX_PALETTE cannot be addressed by a one-byte
    * index. */
@@ -46,8 +48,8 @@ rw_status rw_open(rw_map* m,
   uint32_t palette_bytes = (uint32_t)palette_count * 2;
   if (map_len < RW_MAP_HEADER_BYTES + palette_bytes)
     return RW_ERR_MAP_TRUNCATED;
-  if (map_len - RW_MAP_HEADER_BYTES - palette_bytes <
-      cells * RW_MAP_BYTES_PER_CELL)
+  if ((uint32_t)(map_len - RW_MAP_HEADER_BYTES - palette_bytes) <
+      RW_MAP_CELL_BYTES(cells))
     return RW_ERR_MAP_TRUNCATED;
   if (tiles_len < (uint32_t)tile_count * RW_TILE_BYTES)
     return RW_ERR_TILES_TRUNCATED;
@@ -61,8 +63,8 @@ rw_status rw_open(rw_map* m,
   m->palette = map_bytes + RW_MAP_HEADER_BYTES;
   m->palette_count = palette_count;
   m->lower = m->palette + palette_bytes;
-  m->upper = m->lower + cells * 2;
-  m->passable = m->upper + cells * 2;
+  m->upper = m->lower + cells;
+  m->passable = m->upper + cells;
   m->tiles = tiles;
   return RW_OK;
 }
@@ -96,9 +98,15 @@ uint16_t rw_palette_colour(const rw_map* m, uint8_t index) {
 }
 
 uint8_t rw_passable_at(const rw_map* m, int x, int y) {
+  uint32_t cell;
+  uint8_t packed;
   if (!in_bounds(m, x, y))
     return 0;
-  return m->passable[y * m->width + x];
+  /* Two cells to a byte: the even one in the low nibble, the odd one in the
+   * high nibble, in the same order the exporter packs them. */
+  cell = (uint32_t)(y * m->width + x);
+  packed = m->passable[cell >> 1];
+  return (uint8_t)((cell & 1u) ? (packed >> 4) : (packed & 0x0fu));
 }
 
 int rw_try_move(rw_map* m, int dx, int dy) {
@@ -160,11 +168,11 @@ void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out) {
   int i;
 
   if (in_bounds(m, mx, my)) {
-    uint16_t lo = cell_index(m->lower, m, mx, my);
-    uint16_t up = cell_index(m->upper, m, mx, my);
-    if (lo < (uint16_t)m->tile_count)
+    uint8_t lo = cell_index(m->lower, m, mx, my);
+    uint8_t up = cell_index(m->upper, m, mx, my);
+    if ((int)lo < m->tile_count)
       lower = m->tiles + (uint32_t)lo * RW_TILE_PIXELS;
-    if (up != RW_UPPER_NONE && up < (uint16_t)m->tile_count)
+    if (up != RW_UPPER_NONE && (int)up < m->tile_count)
       upper = m->tiles + (uint32_t)up * RW_TILE_PIXELS;
   }
 

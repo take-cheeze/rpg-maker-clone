@@ -58,9 +58,12 @@ ruby scripts/export_nano7_map.rb --target wio \
 pio run -e wio_walk -t upload
 ```
 
-`--target wio` sizes the export for this board's buffers (96x96 tiles, 192
-atlas entries — about 95 KB of its 192 KB SRAM) and refuses a map that would
-not fit rather than writing one the firmware cannot load. Hold a direction on
+`--target wio` sizes the export for this board's buffers (128x128 tiles, 192
+atlas entries — about 90 KB of its 192 KB SRAM) and refuses a map that would
+not fit rather than writing one the firmware cannot load. That is the same
+map bound the iPod nano 7G takes: the format shrank to 2.5 bytes a cell
+(`docs/adr/0093`), so this board's cap doubled twice while its SRAM use went
+down. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 
 **Scope, and status.** It walks one static map: no events, no battle, no

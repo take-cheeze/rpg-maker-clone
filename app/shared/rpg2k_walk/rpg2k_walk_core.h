@@ -43,11 +43,20 @@ extern "C" {
 #define RW_TS 16 /* chipset tile size, matches the exporter */
 #define RW_TILE_PIXELS (RW_TS * RW_TS)
 
-#define RW_FORMAT_VERSION 3
+#define RW_FORMAT_VERSION 4
 /* Up to and including palette_count; the palette itself follows. */
 #define RW_MAP_HEADER_BYTES 20
-#define RW_MAP_BYTES_PER_CELL 5      /* u16 lower + u16 upper + u8 passable */
 #define RW_TILE_BYTES RW_TILE_PIXELS /* one palette index per pixel */
+
+/* Bytes the cell arrays take for `cells` cells: one byte of lower-layer
+ * atlas index, one of upper, and a *nibble* of passability -- four direction
+ * bits is all a cell has, so two cells share a byte. */
+#define RW_MAP_CELL_BYTES(cells) \
+  ((uint32_t)(cells) * 2u + (((uint32_t)(cells) + 1u) / 2u))
+
+/* An atlas index is a byte and 0xFF is the "no upper tile" sentinel, so an
+ * export may hold at most 255 entries, addressed 0..254. */
+#define RW_MAX_TILES 255
 
 /* Palette index 0 is the transparent slot, so a palette holds at most 255
  * opaque colours. */
@@ -55,7 +64,7 @@ extern "C" {
 #define RW_MAX_PALETTE 256
 
 /* "no upper-layer tile here", written by the exporter for a blank chip. */
-#define RW_UPPER_NONE 0xFFFFu
+#define RW_UPPER_NONE 0xFFu
 /* ARGB1555's alpha bit. */
 #define RW_OPAQUE 0x8000u
 
@@ -71,7 +80,7 @@ typedef enum {
   RW_ERR_SHORT_HEADER,   /* fewer bytes than a header */
   RW_ERR_MAGIC,          /* not a map.bin */
   RW_ERR_VERSION,        /* a format this build does not read */
-  RW_ERR_HEADER,         /* dimensions or start position out of range */
+  RW_ERR_HEADER,         /* dimensions, start position or tile count bad */
   RW_ERR_PALETTE,        /* palette missing, or too big to index in a byte */
   RW_ERR_MAP_TRUNCATED,  /* map.bin did not fit the buffer it was read into */
   RW_ERR_TILES_TRUNCATED /* tiles.bin did not fit its buffer */
@@ -85,9 +94,9 @@ typedef struct {
 
   const uint8_t* palette; /* palette_count ARGB1555 entries, little-endian */
   int palette_count;
-  const uint8_t* lower; /* width*height u16, little-endian */
-  const uint8_t* upper;
-  const uint8_t* passable; /* width*height u8 of RW_DIR_* bits */
+  const uint8_t* lower;    /* width*height atlas indices, one byte each */
+  const uint8_t* upper;    /* same, with RW_UPPER_NONE for "no upper tile" */
+  const uint8_t* passable; /* RW_DIR_* bits, two cells per byte */
   const uint8_t* tiles;    /* tile_count * RW_TILE_PIXELS palette indices */
 } rw_map;
 
@@ -112,7 +121,8 @@ const char* rw_status_str(rw_status status);
  * read as transparent. */
 uint16_t rw_palette_colour(const rw_map* m, uint8_t index);
 
-/* The passability bits of one cell; 0 for a cell outside the map. */
+/* The passability bits of one cell (its nibble, unpacked); 0 for a cell
+ * outside the map. */
 uint8_t rw_passable_at(const rw_map* m, int x, int y);
 
 /*

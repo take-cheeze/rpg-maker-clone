@@ -60,14 +60,19 @@
 # map tree's own start position (RPG_RT.lmt initial_x/initial_y) when MAP_ID
 # is the project's configured start map, or the map's center otherwise.
 #
-# Output format (v3, both files little-endian):
+# Output format (v4, both files little-endian):
 #
-#   map.bin   'N7WM' | u8 version=3 | u8 pad | u16 w | u16 h | u16 start_x
+#   map.bin   'N7WM' | u8 version=4 | u8 pad | u16 w | u16 h | u16 start_x
 #             | u16 start_y | u16 tile_count | u16 backdrop
 #             | u16 palette_count | u16 palette[palette_count]
-#             | u16 lower[w*h] | u16 upper[w*h] | u8 passable[w*h]
+#             | u8 lower[w*h] | u8 upper[w*h] | u4 passable[w*h]
 #   tiles.bin tile_count * 256 bytes, row-major within each 16x16 tile: one
 #             palette index per pixel.
+#
+# A cell costs 2.5 bytes. An atlas index is a byte (0xFF on the upper layer
+# means "no tile here"), which caps an export at 255 entries -- no map in the
+# test data comes near it, the largest needing 146 -- and passability is four
+# direction bits, so two cells share a byte, the even cell in the low nibble.
 #
 # Colours are ARGB1555 (bit 15 "opaque", then r5g5b5) and live only in the
 # palette; index 0 is the transparent slot, so a pixel is one byte. That is
@@ -108,16 +113,18 @@ load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 # arrays: app/nano7/rpg2k_walk/rpg2k_walk.c (kept well under the ~512 KB
 # BSS_VA..LINK_VA gap in NanoApps' sdk/hb_app.mk) and
 # app/wio/src/walk_main.cxx (192 KB of SRAM for everything, so smaller).
+# MAX_TILES can never exceed 255: an atlas index is one byte on-device and
+# 0xFF is the upper layer's "no tile" sentinel (RW_MAX_TILES in the core).
 TARGETS = {
-  'nano7' => { max_w: 128, max_h: 128, max_tiles: 256 },
-  'wio' => { max_w: 96, max_h: 96, max_tiles: 192 }
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255 },
+  'wio' => { max_w: 128, max_h: 128, max_tiles: 192 }
 }.freeze
 DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
-VERSION = 3
-UPPER_NONE = 0xFFFF
+VERSION = 4
+UPPER_NONE = 0xFF
 
 # ARGB1555 (see the format note at the top): bit 15 opaque, then r5g5b5.
 OPAQUE_BIT = 0x8000
@@ -357,9 +364,12 @@ File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
   f.write([width, height, start_x, start_y, atlas_pixels.size, backdrop].pack('v6'))
   f.write([palette.size].pack('v'))
   f.write(palette.pack('v*'))
-  f.write(lower_out.pack('v*'))
-  f.write(upper_out.pack('v*'))
-  f.write(passable_out.pack('C*'))
+  f.write(lower_out.pack('C*'))
+  f.write(upper_out.pack('C*'))
+  # Two cells per byte, the even cell in the low nibble -- see the format
+  # note; a map with an odd number of cells pads the last byte's high nibble
+  # with zeroes, which no cell reads.
+  f.write(passable_out.each_slice(2).map { |lo, hi| lo | ((hi || 0) << 4) }.pack('C*'))
 end
 
 File.open(File.join(out_dir, 'tiles.bin'), 'wb') do |f|

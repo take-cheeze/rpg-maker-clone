@@ -54,7 +54,7 @@ device needed) — run it after touching the exporter or this app's binary
 format.
 
 The exporter rejects (does not truncate) a map bigger than 128×128 tiles or
-with more than 256 distinct on-screen tile ids — see the size-budget comment
+with more than 255 distinct composited tiles — see the size-budget comment
 in `rpg2k_walk.c`. Pick a smaller map if your project's start map is larger.
 
 ## 2. Build the app
@@ -118,5 +118,7 @@ at a time while held, blocked by the map's real passability data.
 - Autotiles (water, terrain edges) render correctly but frozen at their
   first animation frame — no water/ground animation on-device.
 - No events, message boxes, battle, or menus.
-- Map size capped at 128×128 tiles / 256 distinct tile ids (see `rpg2k_walk.c`);
-  a larger map is refused by the exporter rather than truncated.
+- Map size capped at 128×128 tiles / 255 distinct composited tiles (see
+  `rpg2k_walk.c`); a larger map is refused by the exporter rather than
+  truncated. 255 is the format's own ceiling now that an atlas index is one
+  byte — the largest real map in the test data needs 146.
