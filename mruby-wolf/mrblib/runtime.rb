@@ -233,6 +233,27 @@ class WolfRPG
       RGSS::Audio.se_play(File.join("Data", path), volume, pitch)
     end
 
+    # Wolf::Interpreter#exec_sound_track_db_entry's own seam for Sound(140)'s
+    # BGM/BGS "direct system-database selection" case. `operation` is
+    # Wolf::Interpreter::SOUND_OP_BGM/SOUND_OP_BGS, the same value the
+    # command's own header decodes to.
+    def play_track(operation, path, volume, pitch)
+      full_path = File.join("Data", path)
+      if operation == Wolf::Interpreter::SOUND_OP_BGM
+        RGSS::Audio.bgm_play(full_path, volume, pitch)
+      else
+        RGSS::Audio.bgs_play(full_path, volume, pitch)
+      end
+    end
+
+    def stop_track(operation)
+      if operation == Wolf::Interpreter::SOUND_OP_BGM
+        RGSS::Audio.bgm_stop
+      else
+        RGSS::Audio.bgs_stop
+      end
+    end
+
     # Public (not just #move_hero's own concern any more): Wolf::Interpreter's
     # own event-movement code (#step_event_pos) checks the same tile
     # passability before letting a moving event step onto it.

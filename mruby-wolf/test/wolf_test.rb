@@ -222,6 +222,21 @@ class WolfTestFakeProject
   # when a test only cares about map events -- an empty stand-in keeps that
   # scan a no-op instead of a NoMethodError.
   def common_events; @common_events ||= Struct.new(:events).new([]); end
+  # Wolf::Interpreter#exec_sound_track_db_entry's own lookup -- a plain Hash
+  # (type id => a WolfTestFakeSoundTable) mirrors Wolf::Database#[]'s own
+  # by-index access closely enough for that one caller.
+  def system_db; @system_db ||= {}; end
+end
+
+# Mirrors Wolf::DBType#value(datum_index, field_index)'s own surface, for
+# Wolf::Interpreter#exec_sound_track_db_entry's own BGM/BGS-by-database-
+# entry tests.
+class WolfTestFakeSoundTable
+  def initialize(entries); @entries = entries; end
+  def value(datum_index, field_index)
+    row = @entries[datum_index]
+    row && row[field_index]
+  end
 end
 
 assert "Wolf::VarStore reads and writes plain variables/strings" do
@@ -524,7 +539,7 @@ end
 # surface (#x/#y/#passable?/#hero_at?/#hero_pos/#hero_pos=), which
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
-  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se
+  attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks
   attr_accessor :x, :y, :blocked, :choice_inputs
 
   def initialize
@@ -539,6 +554,8 @@ class WolfTestFakeScene
     @blocked = []
     @choice_inputs = []
     @played_se = []
+    @played_tracks = []
+    @stopped_tracks = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -551,6 +568,8 @@ class WolfTestFakeScene
   # queued) standing in for a frame nothing was pressed.
   def choice_input; @choice_inputs.shift; end
   def play_se(*args); @played_se << args; end
+  def play_track(*args); @played_tracks << args; end
+  def stop_track(operation); @stopped_tracks << operation; end
 
   def passable?(x, y); !@blocked.include?([x, y]); end
   def hero_at?(x, y); x == @x && y == @y; end
@@ -948,6 +967,102 @@ assert "Wolf::Interpreter#exec_sound tolerates a nil #current_scene" do
   interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
   cmd = wolf_test_cmd(140, [wolf_test_sound_header, 0, 0, 0, 100, 100], ["SE/Foo.ogg"])
   interp.exec_sound(cmd) # must not raise
+end
+
+assert "Wolf::Interpreter#exec_sound plays a BGM database entry, matching the sample game's own staff-roll track" do
+  project = WolfTestFakeProject.new
+  # Mirrors map1 ev#13's own real entry 1 -- name "スタッフロール" (staff
+  # roll), volume 100, frequency 100.
+  project.system_db[Wolf::Project::SYS_BGM_LIST] = WolfTestFakeSoundTable.new(1 => ["BGM/Piece01_Takumi.mid", 100, 100])
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGM, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: 1)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0, 0]))
+
+  assert_equal 1, scene.played_tracks.size
+  operation, path, volume, pitch = scene.played_tracks.first
+  assert_equal Wolf::Interpreter::SOUND_OP_BGM, operation
+  assert_equal "BGM/Piece01_Takumi.mid", path
+  assert_equal 100, volume
+  assert_equal 100, pitch
+end
+
+assert "Wolf::Interpreter#exec_sound treats a 0%% database volume/frequency as \"use the file's own default\"" do
+  project = WolfTestFakeProject.new
+  project.system_db[Wolf::Project::SYS_BGM_LIST] = WolfTestFakeSoundTable.new(0 => ["BGM/Town01_Takumi.mid", 0, 0])
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGM, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: 0)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0, 0]))
+
+  _operation, _path, volume, pitch = scene.played_tracks.first
+  assert_equal 100, volume
+  assert_equal 100, pitch
+end
+
+assert "Wolf::Interpreter#exec_sound stops the BGM on the database \"(停止)\" sentinel, matching map1 ev#13" do
+  project = WolfTestFakeProject.new
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGM, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: -1)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0, 0]))
+
+  assert_equal [Wolf::Interpreter::SOUND_OP_BGM], scene.stopped_tracks
+  assert_equal 0, scene.played_tracks.size
+end
+
+assert "Wolf::Interpreter#exec_sound plays a BGS database entry the same way, through #play_track" do
+  project = WolfTestFakeProject.new
+  project.system_db[Wolf::Project::SYS_BGS_LIST] = WolfTestFakeSoundTable.new(2 => ["BGS/Wind.ogg", 80, 100])
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGS, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: 2)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0, 0]))
+
+  operation, path, volume, = scene.played_tracks.first
+  assert_equal Wolf::Interpreter::SOUND_OP_BGS, operation
+  assert_equal "BGS/Wind.ogg", path
+  assert_equal 80, volume
+end
+
+assert "Wolf::Interpreter#exec_sound skips a database entry with no matching row rather than raising" do
+  project = WolfTestFakeProject.new
+  project.system_db[Wolf::Project::SYS_BGM_LIST] = WolfTestFakeSoundTable.new({})
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGM, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: 99)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0, 0]))
+
+  assert_equal 0, scene.played_tracks.size
+end
+
+assert "Wolf::Interpreter#exec_sound skips a BGM/BGS database entry with an unrecognised argument count" do
+  project = WolfTestFakeProject.new
+  project.system_db[Wolf::Project::SYS_BGM_LIST] = WolfTestFakeSoundTable.new(1 => ["BGM/Piece01_Takumi.mid", 100, 100])
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  header = wolf_test_sound_header(operation: Wolf::Interpreter::SOUND_OP_BGM, sound_type: Wolf::Interpreter::SOUND_TYPE_DB_ENTRY, systemdb_entry: 1)
+  interp.exec_sound(wolf_test_cmd(140, [header, 10, 0])) # only 3 arguments
+
+  assert_equal 0, scene.played_tracks.size
 end
 
 # ---- Wolf::Interpreter#exec_picture -----------------------------------------

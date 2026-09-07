@@ -35990,13 +35990,29 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   source, preload/free-memory, any other argument count, and a filename
   that is itself one of WOLF's own string-interpolation escapes (no
   command has a string-escape engine yet) are logged and skipped rather
-  than guessed. See `docs/adr/0071-wolf-rpg-editor-sound.md`. Suggested
-  next order: BGM/BGS playback (real examples already dumped and
-  byte-decoded in that ADR), input commands 123-126 (123 InputKey is
-  tractable alone; 124 SetVariableEx/SetVariablePlus is a large,
-  many-sub-field command better scoped on its own -- help/04ev_valuenext
-  .html), save/load 220-222, database read/write 250/251, transitions
-  160-162/281/290.
+  than guessed. See `docs/adr/0071-wolf-rpg-editor-sound.md`.
+- ✅ **Sound(140), BGM/BGS by system-database selection (2026-09-07).**
+  `Wolf::Project::SYS_BGM_LIST`/`SYS_BGS_LIST` (system database types 1/2,
+  help/05systemtype.html's own documented fields: filename, volume%,
+  frequency%, loop-start-ms) resolve a database-selection BGM/BGS call's
+  entry index to a real track and play it through a new
+  `WolfRPG::MapScene#play_track`, or stop it on the manual's own documented
+  `-1` "(停止)" sentinel via `#stop_track`. Cross-confirmed end to end
+  against the sample game's own real data -- `map1 ev#13`'s own two
+  `Sound` calls decode to database entry 1, whose own *name* read straight
+  off the table is literally "スタッフロール" (staff roll, matching the
+  very next thing that script does), and the stop sentinel right after it.
+  A variable-named source, Filename-mode BGM/BGS (no real non-default
+  example to confirm its own trailing-argument slots against), preload/
+  free-memory, and any unrecognised argument count remain logged and
+  skipped. BGS itself has no real example anywhere in the sample game's
+  own data -- implemented by direct symmetry with BGM's own confirmed
+  layout, not independently verified. See
+  `docs/adr/0072-wolf-rpg-editor-bgm-bgs.md`. Suggested next order: input
+  commands 123-126 (123 InputKey is tractable alone; 124 SetVariableEx/
+  SetVariablePlus is a large, many-sub-field command better scoped on its
+  own -- help/04ev_valuenext.html), save/load 220-222, database read/write
+  250/251, transitions 160-162/281/290.
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
