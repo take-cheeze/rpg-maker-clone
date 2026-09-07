@@ -2077,6 +2077,37 @@ assert "Wolf::Interpreter#exec_teleport skips a target/precise-coordinates/argum
   assert_nil interp.pending_teleport
 end
 
+# ---- Wolf::Interpreter#exec_party (Party(270)) -------------------------------
+
+assert "Wolf::Interpreter's Party(270) Special EraseAllCharacters/WarpPartyToHero are no-ops, matching two of the sample game's own three real Special calls" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  commands = [
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
+    wolf_test_cmd(270, [20], [], 0), # Special: EraseAllCharacters (CE#80's own real value)
+    wolf_test_cmd(270, [36], [], 0), # Special: WarpPartyToHero (CE#39's own real value)
+    wolf_test_cmd(121, [2_000_001, 0, 2, 0xf000], [], 0),
+  ]
+  wolf_test_run(store, commands)
+  assert_equal 1, store.number(2_000_000)
+  assert_equal 2, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter#exec_party skips an operation/special-operation/argument-count it does not understand" do
+  # Real sample-game data's own fourth call (CE#80's own Insert, member
+  # 1600010 / graphics variable 1600009) needs an actual party system this
+  # reader does not have at all -- the genuine "still unimplemented" case.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+  interp.exec_party(wolf_test_cmd(270, [0x101])) # Insert, graphics_is_variable
+
+  synchro_start = (4 & 0x0f) | (3 << 4) # Special: StartHeroPartySynchro
+  interp.exec_party(wolf_test_cmd(270, [synchro_start]))
+
+  interp.exec_party(wolf_test_cmd(270, []))
+  interp.exec_party(wolf_test_cmd(270, [20, 0])) # real Special shape never carries a second argument
+end
+
 # ---- Wolf::Interpreter#exec_save_load (SaveLoad(220)) -----------------------
 
 assert "Wolf::Interpreter#exec_save_load round-trips variables/strings/map/hero-position through a real save file" do
