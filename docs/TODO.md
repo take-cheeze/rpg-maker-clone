@@ -36299,26 +36299,46 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   confirms codes 0-3 and its own numbering does not match that prose
   order, the same "no independent source" wall `BanInput`(126) already
   hit. See `docs/adr/0086-wolf-rpg-editor-effect-character.md`.
+- ✅ **SaveLoad(220) (2026-09-07).** Revisited after `Effect`(290)'s own
+  real-frequency well ran dry -- the actual blocker turned out smaller
+  than the "needs the whole game state" reasoning ADR 0082 originally
+  deferred it under: `VarStore`'s four flat banks are already plain
+  Hashes (`Wolf::SaveData` already Marshals arbitrary values, including a
+  Hash's own default -- verified directly against `mruby-marshal`'s own
+  C++ source, not assumed), `Teleport`(130)'s own `pending_teleport`
+  already does the "rebuild the scene once this frame ends" dance this
+  needs too, and "no event executing after Load" turned out to be a
+  near-trivial reset -- `@common_runs`/`@map_runs` are plain Arrays, so
+  dropping them outright orphans every `Run` in either one, permanently,
+  with no Fiber surgery needed. Real data (2 calls, both a string-named
+  save file, already proven by `LoadVariable`/`SaveVariable`) does not
+  need the *entire* state either, so this keeps the same deliberately
+  partial posture ADR 0082 established one level down: `VarStore`'s own
+  four banks plus current map/hero position, not self-variables, the
+  database, or anything `Party`(270)-shaped. See `docs/adr/0087-wolf-rpg-
+  editor-save-load.md`.
 - Suggested next order (by real frequency, from the same census):
-  `220` itself (2 occurrences, needs the real save-file format above --
-  a much larger undertaking than its own occurrence count suggests),
   `Party`(270) (needs a party system this reader does not have at all --
   the crate's own `party_graphics_command` covers party member *graphics*,
   which implies multiple visible party sprites following the hero,
   unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
   remaining Picture effect kinds (Zoom/SwitchAutoFlash/AutoEnlarge/
-  the auto-pattern-switch family) -- `Zoom` here too needing the native
-  `Viewport` zoom support noted above -- and the Map target's own `Shake`
+  the auto-pattern-switch family) -- `Zoom` needing native `Viewport` zoom
+  support this reader does not have (checked directly against `mruby-rgss/
+  src/lib.cxx`'s own method table) -- and the Map target's own `Shake`
   (`MapEffectType`-confirmed, though whether its own real field layout
   routes through Effect(290) at all or belongs to the separate `MapEffect`
   (280) command the crate's own dedicated `MapShake` struct seems to model
   needs checking before implementing either),
   `Teleport`(130)'s own remaining surface (persistent per-map event state,
   needed for both its own `-1`/`-3..-7` targets and for switches/
-  variables/moved events to survive a revisited map at all), and
-  `Database`(250)'s own remaining surface (XY配列, the eight
-  name<->index lookups, data reset/insert/extract/copy/sort, CSV
-  import/export via `ImportDatabase`(251)).
+  variables/moved events to survive a revisited map at all -- `SaveLoad`
+  (220) inherits this same gap for `@event_positions` rather than fixing
+  it), `SaveLoad`(220)'s own remaining surface (self-variables, the
+  database, and everything else this pass's own deliberately partial
+  snapshot left out), and `Database`(250)'s own remaining surface (XY配列,
+  the eight name<->index lookups, data reset/insert/extract/copy/sort,
+  CSV import/export via `ImportDatabase`(251)).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

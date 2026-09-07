@@ -1,11 +1,15 @@
 # WOLF RPG Editor SaveVariable(222)/LoadVariable(221) ("セーブデータへの
-# 書き込み"/"セーブデータからの読み込み", help/04ev_file.html): unlike
-# the full "保存・読込"(220) Save/Load operation -- out of scope here, since
-# it needs to serialize this reader's *entire* running game state, not just
-# a handful of variables, and this reader has no such format at all yet --
-# these two commands only ever touch one variable or string at a time,
-# keyed by its own raw WOLF value-ref id, inside a small per-save-slot
-# key/value blob.
+# 書き込み"/"セーブデータからの読み込み", help/04ev_file.html) and
+# SaveLoad(220)'s own "保存・読込" operation (see interpreter.rb's own
+# `#exec_save_load`): 221/222 only ever touch one variable or string at a
+# time, keyed by its own raw WOLF value-ref id, inside a small per-save-
+# slot key/value blob; 220 stores its own deliberately partial whole-
+# reader snapshot (`VarStore#snapshot`'s four flat banks, plus the current
+# map/hero position -- *not* self-variables, the database, or anything
+# else a real `.sav` file also carries) under a reserved Symbol key
+# (`Wolf::Interpreter::SAVE_LOAD_FULL_SAVE_KEY`) in the exact same file,
+# alongside whatever 221/222 keys (always raw Integer ids, so they can
+# never collide with a Symbol) already live there.
 #
 # Persisted as a flat `{raw_id => value}` Hash via Marshal, matching the
 # same "serialize a plain Ruby value straight to a project-relative file"
