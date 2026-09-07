@@ -72,12 +72,14 @@ and add a second platform half for the Wio Terminal:
   NanoApps checkout together, since NanoApps builds from inside its own tree
   and `sdk/hb_app.mk` resolves `SRCS` relative to the app directory.
 - **The core gets a CI test** (`app/shared/rpg2k_walk/test/walk_core_test.c`,
-  the `walk_core` ctest). Neither device is reachable from CI — no toolchain,
-  no emulator, no board — but the core is plain C with no I/O, so format
-  parsing, the movement rule, camera clamping and layer compositing run on
-  the host against synthetic fixtures built byte by byte in the exporter's
-  format. ADR 61 had to say the port's only automated coverage was the
-  exporter check; the half that runs on the device now has some too.
+  the `walk_core` ctest). Neither device can be *run* in CI — no emulator, no
+  board — and the nano side cannot even be compiled there, but the core is
+  plain C with no I/O, so format parsing, the movement rule, camera clamping
+  and layer compositing run on the host against synthetic fixtures built byte
+  by byte in the exporter's format. ADR 61 had to say the port's only
+  automated coverage was the exporter check; the half that runs on the device
+  now has some too. The `wio` CI job compiles the `wio_walk` firmware, so the
+  shared engine is at least cross-compiled somewhere on every push.
 
 ### What was measured
 
@@ -115,11 +117,13 @@ firmware.
   read by two independent platform halves with different pixel formats and
   very different budgets, which is what turned "the on-device caps" from
   constants compiled into one app into an explicit part of the core's API.
-- **A change to the walk engine now touches two firmwares.** Neither can be
-  built in CI, so the host test is the guard rail: anything that could be
-  wrong in the core belongs there rather than in a device-only code path.
-  Anything genuinely device-specific stays in the platform half, where it is
-  visibly device-specific.
+- **A change to the walk engine now touches two firmwares.** CI compiles one
+  of them (`wio_walk`) and neither can be run there, so the host test is the
+  guard rail for behaviour: anything that could be wrong in the core belongs
+  there rather than in a device-only code path. Anything genuinely
+  device-specific stays in the platform half, where it is visibly
+  device-specific — and the nano half is only ever compiled by whoever has a
+  NanoApps checkout.
 - **The nano's app directory is no longer self-contained**, hence the staging
   script. Copying only `app/nano7/rpg2k_walk` into NanoApps now fails to
   build with a missing `rpg2k_walk_core.c` — a loud failure, not a silent
