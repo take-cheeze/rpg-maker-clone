@@ -41,6 +41,17 @@ module Wolf
     # the sample game. A genuine no-op, not missing functionality, so it
     # skips #unimplemented's own "not implemented yet" log entirely.
     C_BLANK = 0
+    # WolfTL's own "Checkpoint" (help/04eventwindowB.html's own "チェック
+    # Ｐ追加"/"次チェックＰへジャンプ": the event editor's own bookmark/
+    # navigation aid for finding a spot again in a large event script, not
+    # a runtime behavior at all -- the wolfrpg-map-parser crate models it
+    # as a unit variant carrying no fields whatsoever). Its own lone
+    # argument is the manual's documented "特モード" (a second, separate
+    # bookmark category the editor's own search can filter on) -- real
+    # data confirms both 0 and 1 appear, but neither means anything once
+    # the event is actually running, so this is a no-op like Blank(0)
+    # regardless of its value.
+    C_CHECKPOINT = 99
     C_MESSAGE = 101
     C_CHOICES = 102
     # Choices(102)'s own "キャンセル時の分岐先" (cancel-key destination) field,
@@ -190,7 +201,7 @@ module Wolf
 
       def dispatch(cmd)
         case cmd.code
-        when Interpreter::C_BLANK
+        when Interpreter::C_BLANK, Interpreter::C_CHECKPOINT
           nil
         when Interpreter::C_SET_VARIABLE then @interp.exec_set_variable(cmd)
         when Interpreter::C_SET_VARIABLE_EX then @interp.exec_set_variable_ex(cmd)
