@@ -666,6 +666,14 @@
   `SetMoveRoute`(201) already uses. Its map-tile, Picture-number and
   "other" (map id/BGM-BGS/mouse) query kinds remain unimplemented. See
   [`docs/adr/0074-wolf-rpg-editor-set-variable-ex.md`](docs/adr/0074-wolf-rpg-editor-set-variable-ex.md)
+- **Database read/write.** `Database`(250) — by far the most common
+  unimplemented command left, 2544 real occurrences — reads and writes a
+  single field of the changeable/system/user database, sharing the same
+  assignment-operator logic as `SetVariable`(121)/`SetVariableEx`(124).
+  Its much larger documented surface (a separate XY-array target,
+  name↔index lookups, data reset/insert/extract/copy/sort, and CSV
+  import/export via `ImportDatabase`(251)) remains unimplemented. See
+  [`docs/adr/0075-wolf-rpg-editor-database-command.md`](docs/adr/0075-wolf-rpg-editor-database-command.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

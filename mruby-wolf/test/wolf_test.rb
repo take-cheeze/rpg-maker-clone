@@ -222,10 +222,13 @@ class WolfTestFakeProject
   # when a test only cares about map events -- an empty stand-in keeps that
   # scan a no-op instead of a NoMethodError.
   def common_events; @common_events ||= Struct.new(:events).new([]); end
-  # Wolf::Interpreter#exec_sound_track_db_entry's own lookup -- a plain Hash
-  # (type id => a WolfTestFakeSoundTable) mirrors Wolf::Database#[]'s own
-  # by-index access closely enough for that one caller.
+  # Wolf::Interpreter#exec_sound_track_db_entry's own lookup, and
+  # #exec_database's own (:system/:user/:changeable) -- a plain Hash (type
+  # id => a WolfTestFakeSoundTable/WolfTestFakeDBType) mirrors
+  # Wolf::Database#[]'s own by-index access closely enough for those.
   def system_db; @system_db ||= {}; end
+  def user_db; @user_db ||= {}; end
+  def changeable_db; @changeable_db ||= {}; end
 end
 
 # Mirrors Wolf::DBType#value(datum_index, field_index)'s own surface, for
@@ -236,6 +239,36 @@ class WolfTestFakeSoundTable
   def value(datum_index, field_index)
     row = @entries[datum_index]
     row && row[field_index]
+  end
+end
+
+# Mirrors Wolf::DBField#string?'s own surface.
+class WolfTestFakeDBField
+  def initialize(string); @string = string; end
+  def string?; @string; end
+end
+
+# Mirrors Wolf::DBType#field/#value/#set_value's own surface, for
+# Wolf::Interpreter#exec_database's own read/write tests. `rows` a Hash of
+# datum index => a mutable Hash of field index => value; `fields` a Hash of
+# field index => :number/:string (Wolf::DBField#string?'s own surface) -- an
+# index missing from `fields` mirrors a real out-of-range field (nil),
+# #exec_database's own "log and skip" path for it.
+class WolfTestFakeDBType
+  def initialize(rows, fields)
+    @rows = rows
+    @fields = fields
+  end
+  def field(field_index)
+    kind = @fields[field_index]
+    kind && WolfTestFakeDBField.new(kind == :string)
+  end
+  def value(datum_index, field_index)
+    row = @rows[datum_index]
+    row && row[field_index]
+  end
+  def set_value(datum_index, field_index, value)
+    (@rows[datum_index] ||= {})[field_index] = value
   end
 end
 
@@ -1480,4 +1513,109 @@ assert "Wolf::Interpreter#exec_picture tolerates a nil #current_scene" do
   interp.exec_picture(wolf_test_cmd(150, [options, 1, 0, 0, 0, 0, 255, 0, 0, 100, 0], ["hi"]))
   options = wolf_test_picture_options(operation: 2)
   interp.exec_picture(wolf_test_cmd(150, [options, 1]))
+end
+
+# ---- Wolf::Interpreter#exec_database (Database(250)) ------------------------
+
+def wolf_test_db_packed(db_op:, section:, assign_op: 0, use_var_ref: 0)
+  section_nibble = { changeable: 0, system: 1, user: 2 }[section]
+  assignment_byte = ((assign_op & 0x0f) << 4) | (use_var_ref & 1)
+  options_byte = ((db_op & 0x0f) << 4) | section_nibble
+  assignment_byte | (options_byte << 8)
+end
+
+assert "Wolf::Interpreter#exec_database reads a numeric field into the target, matching CE#0's own real item-count read" do
+  project = WolfTestFakeProject.new
+  project.user_db[2] = WolfTestFakeDBType.new({ 3 => { 1 => 42 } }, 0 => :string, 1 => :number)
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user)
+  interp.exec_database(wolf_test_cmd(250, [2, 3, 1, packed, 2_000_000]))
+  assert_equal 42, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#exec_database writes a numeric field, applying the assignment operator against the DB's own current value" do
+  # Mirrors map1's own "メンバーの増減" Common Event, which decrements an
+  # invoker-tracking changeable-DB field by 1 (MinusEquals) rather than
+  # overwriting it outright.
+  project = WolfTestFakeProject.new
+  project.changeable_db[14] = WolfTestFakeDBType.new({ 5 => { 0 => 9 } }, 0 => :number)
+  store = Wolf::VarStore.new(project)
+  store.set_number(2_000_000, 1)
+  interp = Wolf::Interpreter.new(project, store)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_WRITE, section: :changeable, assign_op: 2) # -=
+  interp.exec_database(wolf_test_cmd(250, [14, 5, 0, packed, 2_000_000]))
+  assert_equal 8, project.changeable_db[14].value(5, 0)
+end
+
+assert "Wolf::Interpreter#exec_database reads a string field into the target, matching CE#0's own real item-name read" do
+  project = WolfTestFakeProject.new
+  project.user_db[2] = WolfTestFakeDBType.new({ 3 => { 0 => "Potion" } }, 0 => :string)
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user)
+  interp.exec_database(wolf_test_cmd(250, [2, 3, 0, packed, 3_000_000]))
+  assert_equal "Potion", store.string(3_000_000)
+end
+
+assert "Wolf::Interpreter#exec_database writes a string field from the command's own lone string, the real 4-argument shape" do
+  # Mirrors map1's own "お店内部情報更新" Common Event, whose own `data`
+  # argument (1600022) is itself "this common event's self-var 22" -- the
+  # same value-reference addressing every other numeric slot uses.
+  project = WolfTestFakeProject.new
+  project.changeable_db[19] = WolfTestFakeDBType.new({}, 5 => :string)
+  store = Wolf::VarStore.new(project)
+  store.current_common_event_id = 86
+  store.set_number(1_600_022, 3)
+  interp = Wolf::Interpreter.new(project, store)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_WRITE, section: :changeable)
+  interp.exec_database(wolf_test_cmd(250, [19, 1_600_022, 5, packed], ["------"]))
+  assert_equal "------", project.changeable_db[19].value(3, 5)
+end
+
+assert "Wolf::Interpreter#exec_database concatenates a string field with PlusEquals" do
+  project = WolfTestFakeProject.new
+  project.user_db[7] = WolfTestFakeDBType.new({ 0 => { 2 => "Hello, " } }, 2 => :string)
+  store = Wolf::VarStore.new(project)
+  store.set_string(3_000_000, "world!")
+  interp = Wolf::Interpreter.new(project, store)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_WRITE, section: :user, assign_op: 1) # +=
+  interp.exec_database(wolf_test_cmd(250, [7, 0, 2, packed, 3_000_000]))
+  assert_equal "Hello, world!", project.user_db[7].value(0, 2)
+end
+
+assert "Wolf::Interpreter#exec_database skips what it does not understand: db type selector/name-lookup/argument count/db type/field/4-arg-read" do
+  project = WolfTestFakeProject.new
+  project.user_db[2] = WolfTestFakeDBType.new({ 0 => { 0 => 5 } }, 0 => :number)
+  store = Wolf::VarStore.new(project)
+  interp = Wolf::Interpreter.new(project, store)
+
+  bad_section = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user) | (1 << 8) # selector 3
+  interp.exec_database(wolf_test_cmd(250, [2, 0, 0, bad_section, 2_000_000]))
+  assert_equal 0, store.number(2_000_000)
+
+  name_lookup = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user, use_var_ref: 1)
+  interp.exec_database(wolf_test_cmd(250, [2, 0, 0, name_lookup, 2_000_001]))
+  assert_equal 0, store.number(2_000_001)
+
+  odd_argc = wolf_test_cmd(250, [2, 0, 0])
+  interp.exec_database(odd_argc)
+
+  packed = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user)
+  no_such_type = wolf_test_cmd(250, [99, 0, 0, packed, 2_000_002])
+  interp.exec_database(no_such_type)
+  assert_equal 0, store.number(2_000_002)
+
+  no_such_field = wolf_test_cmd(250, [2, 0, 9, packed, 2_000_003])
+  interp.exec_database(no_such_field)
+  assert_equal 0, store.number(2_000_003)
+
+  four_arg_read = wolf_test_db_packed(db_op: Wolf::Interpreter::DB_OP_READ, section: :user)
+  interp.exec_database(wolf_test_cmd(250, [2, 0, 0, four_arg_read], ["nope"]))
+  assert_equal 5, project.user_db[2].value(0, 0) # untouched
 end

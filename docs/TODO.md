@@ -36046,20 +36046,42 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   `Picture`(150) number's own state, and a grab-bag "other" category --
   current map id, BGM/BGS playback, mouse) and every `CharacterField`
   beyond the six answered here remain logged and skipped. See
-  `docs/adr/0074-wolf-rpg-editor-set-variable-ex.md`. Suggested next order:
-  save/load 220-222, database read/write 250/251 (2544 real occurrences --
-  by far the most common unimplemented command left; this pass's own
-  research found the wolfrpg-map-parser crate *does* model it
-  [`db_management_command`], with a header layout that maps onto this
-  reader's framing the same clean way `SetVariableEx`'s did, but the
-  command also covers a large "DB操作"/"XY配列" surface -- help/04ev_db
-  .html -- well beyond the crate's own simple single-field read/write
-  model [insert/extract/copy/sort, CSV import/export, name<->index
-  lookups, a whole second "XY配列" 2D-array target], and a real 3rd data
-  byte in the packed options word this reader dumped but could not place
-  in either source; scope tightly to the plain read/write case before
-  attempting any of the rest), transitions 160-162/281/290 (161/162 have
-  zero real examples in the sample game; 160 has exactly one).
+  `docs/adr/0074-wolf-rpg-editor-set-variable-ex.md`.
+- ✅ **Database(250), plain read/write (2026-09-07).** By far the most
+  common unimplemented command left (2544 real occurrences across 225
+  Common Events). The wolfrpg-map-parser crate's own
+  `db_management_command` maps cleanly onto this reader's `arg(N)` framing;
+  its packed word's real, non-zero third byte (the crate's own comment
+  calls it padding) decodes as a "which of the three optional 名前で呼出
+  strings are attached" flag that never disagrees with the strings'
+  emptiness -- cross-checked directly against the parsed database
+  (`user_db[2].name == "アイテム"` for CE#0's own real "○アイテム増減",
+  matching its own embedded label byte for byte, including one real call
+  whose label is stale and names no real DB type at all), confirming those
+  strings are the editor's own auto-filled display labels, not a live
+  name-lookup trigger, so only the numeric `db_type`/`data`/`field`
+  selectors are used. `use_variable_as_reference` is 0 in all 2544 real
+  calls and left unimplemented. Read and Write share the identical
+  current/computed-then-assign-op pattern SetVariable/SetVariableEx
+  already use (current/computed simply swapped), confirmed by a real
+  `MinusEquals` call that decrements a DB field by 1 rather than
+  overwriting it. Which of `var_store.number`/`.string` a call goes
+  through is decided by the target field's own type, not the packed word
+  -- CE#0's own real call reads a *string* field (an item's name) into a
+  common-event self-var, which surfaced two real bugs fixed alongside this
+  command: a naive numeric-only implementation would silently coerce that
+  string to 0, and `VarStore#number`/`#string` did not defend against a
+  self-variable bank slot whose last write and next read disagree on type
+  (reachable any time a real project's own script reuses a self-var for a
+  different type across separate common-event invocations -- self-var
+  banks persist between them) -- both would have crashed `ctest`/the soak
+  check the moment real data exercised them. See
+  `docs/adr/0075-wolf-rpg-editor-database-command.md`. Suggested next
+  order: save/load 220-222, transitions 160-162/281/290 (161/162 have zero
+  real examples in the sample game; 160 has exactly one), Database(250)'s
+  own remaining surface (XY配列, the eight name<->index lookups, data
+  reset/insert/extract/copy/sort, CSV import/export via `ImportDatabase`
+  (251)) as a well-scoped follow-up once something else needs it.
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

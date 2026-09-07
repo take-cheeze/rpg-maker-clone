@@ -283,6 +283,15 @@ module Wolf
       return nil unless slot
       slot[0] == :string ? @strings[slot[1]] : @numbers[slot[1]]
     end
+
+    # Writes `value` into `field`'s own slot, for Database(250)'s "DBへ代入"
+    # (write) operation. A no-op when `field` carries no slot (a name past
+    # the .dat's own real field count -- see #read_dat's own comment).
+    def []=(field, value)
+      slot = field.slot
+      return unless slot
+      (slot[0] == :string ? @strings : @numbers)[slot[1]] = value
+    end
   end
 
   class DBType
@@ -373,6 +382,14 @@ module Wolf
       d = @data[di]
       f = @fields[fi]
       d && f ? d[f] : nil
+    end
+
+    # Writes `value` into field `fi` of datum `di`; a no-op when either is
+    # out of range (Database(250)'s own write path -- see #value above).
+    def set_value(di, fi, value)
+      d = @data[di]
+      f = @fields[fi]
+      d[f] = value if d && f
     end
   end
 
