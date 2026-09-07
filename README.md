@@ -730,6 +730,11 @@
   picture by (dx, dy) a given number of times, toggling every N frames and
   always settling back to center before stopping. See
   [`docs/adr/0085-wolf-rpg-editor-effect-picture-shake.md`](docs/adr/0085-wolf-rpg-editor-effect-picture-shake.md)
+- **Character flash/shake.** `Effect`(290)'s Character-target `Flash`/
+  `Shake` reuse the same Picture-target mechanics, resolved to the hero's
+  or an event's own live sprite instead of a picture number, via
+  `SetMoveRoute`(201)'s own target convention. See
+  [`docs/adr/0086-wolf-rpg-editor-effect-character.md`](docs/adr/0086-wolf-rpg-editor-effect-character.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

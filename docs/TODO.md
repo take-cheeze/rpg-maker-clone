@@ -36281,6 +36281,24 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   matching the manual's own "≥100,000 becomes infinite" note) cannot
   distinguish either reading. See `docs/adr/0085-wolf-rpg-editor-effect-
   picture-shake.md`.
+- ✅ **Effect(290), Character Flash/Shake (2026-09-07).** The Map target's
+  own `Zoom` (4 real calls) was ruled out this round: checking
+  `mruby-rgss/src/lib.cxx`'s own `Viewport` method table directly confirms
+  it has no zoom of any kind (`ox`/`oy`/`rect`/`color`/`tone`/`flash`/
+  `update` only), so unlike every other Effect(290) increment this
+  session, `Zoom` needs a native engine change, not a Ruby-only addition.
+  Picked the Character target's own `Flash`(0)/`Shake`(1) instead (2 real
+  calls, both "this event") -- lower frequency, but fully crate-confirmed
+  and reusing this reader's own already-built Picture Flash/Shake
+  mechanics almost directly, just resolved to the hero/an event's own live
+  sprite (via `SetMoveRoute`(201)/`SetVariableEx`(124)'s own already-
+  cross-confirmed target convention) instead of a picture number. The
+  Character target's own dominant real usage (`effect_type` 7/8/12, 66+
+  calls, almost certainly "ピクセル移動(β版)"/pixel movement by prose menu
+  order) stays unimplemented -- the crate's own `CharacterEffectType` only
+  confirms codes 0-3 and its own numbering does not match that prose
+  order, the same "no independent source" wall `BanInput`(126) already
+  hit. See `docs/adr/0086-wolf-rpg-editor-effect-character.md`.
 - Suggested next order (by real frequency, from the same census):
   `220` itself (2 occurrences, needs the real save-file format above --
   a much larger undertaking than its own occurrence count suggests),
@@ -36289,9 +36307,12 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   which implies multiple visible party sprites following the hero,
   unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
   remaining Picture effect kinds (Zoom/SwitchAutoFlash/AutoEnlarge/
-  the auto-pattern-switch family) and the Map target (Zoom/Shake, both
-  fully confirmed by the crate's own `MapEffectType`, `Zoom` needing the
-  whole-camera transform noted above),
+  the auto-pattern-switch family) -- `Zoom` here too needing the native
+  `Viewport` zoom support noted above -- and the Map target's own `Shake`
+  (`MapEffectType`-confirmed, though whether its own real field layout
+  routes through Effect(290) at all or belongs to the separate `MapEffect`
+  (280) command the crate's own dedicated `MapShake` struct seems to model
+  needs checking before implementing either),
   `Teleport`(130)'s own remaining surface (persistent per-map event state,
   needed for both its own `-1`/`-3..-7` targets and for switches/
   variables/moved events to survive a revisited map at all), and

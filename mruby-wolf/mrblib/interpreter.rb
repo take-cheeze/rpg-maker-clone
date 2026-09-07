@@ -1596,9 +1596,9 @@ module Wolf
     # (0 Picture, 1 Character, 2 Map -- byte-for-byte the crate's own
     # `EffectTarget`), high nibble the effect kind within it.
     #
-    # Only the Picture target is implemented, and only its two effect
-    # kinds real data actually favors and this reader already has a native
-    # rendering hook for: `DrawPositionShift`("描画座標シフト[最終値]",
+    # The Picture target's own instant effect kinds real data actually
+    # favors and this reader already has a native rendering hook for:
+    # `DrawPositionShift`("描画座標シフト[最終値]",
     # effect_type 2, 123 of 279 real calls, by far the largest single
     # combination) is an instant, one-time (X, Y) nudge added directly to
     # whatever `Wolf::Interpreter#exec_picture` last drew -- the manual's
@@ -1624,9 +1624,9 @@ module Wolf
     # visibly wrong delay rather than an honestly-missing one.
     #
     # Not implemented: every other Picture effect kind (Zoom,
-    # SwitchAutoFlash, the auto-pattern-switch family), the Character and
-    # Map targets entirely, and `duration`/delay > 0 for the two instant
-    # effect kinds.
+    # SwitchAutoFlash, the auto-pattern-switch family), the Map target
+    # entirely, `duration`/delay > 0 for the two instant Picture effect
+    # kinds, and the Character target's own remaining surface (see below).
     #
     # `Flash`(effect_type 0, 10 real calls), `Shake`(effect_type 3, 4 real
     # calls) and `SwitchFlicker`("点滅A[明滅]", effect_type 5, 31 real
@@ -1659,12 +1659,34 @@ module Wolf
     # `#update_picture_effects` for the persistent, per-frame-ticked state
     # these two still need, the same shape ChangeColor(151)'s
     # `#update_tone` already established.
+    #
+    # The Character target's own real calls are dominated by `effect_type`
+    # 7/8/12 (66+ of them, almost certainly "ピクセル移動(β版)"/pixel
+    # movement by help/04ev_effect.html's own prose menu order), but the
+    # crate's own `CharacterEffectType` only confirms codes 0-3
+    # (Flash/Shake/SwitchFlicker/SwitchAutoFlash), `Unknown` beyond, and
+    # that prose order does not match the crate's own 0-3 numbering --
+    # exactly `BanInput`(126)'s own "no independent source for the exact
+    # encoding" situation, so those stay unimplemented. Only `Flash`(0) and
+    # `Shake`(1) are implemented, both fully crate-confirmed and reusing
+    # the exact same mechanics as their Picture-target namesakes (see
+    # runtime.rb's own `#flash_character`/`#shake_character`), just
+    # resolved to the hero/an event's own live sprite via
+    # `#resolve_character_pos` (SetMoveRoute(201)/SetVariableEx(124)'s own
+    # already-cross-confirmed target convention) instead of a picture
+    # number. 2 real calls total, both "this event" targeting itself.
     EFFECT_TARGET_PICTURE = 0
+    EFFECT_TARGET_CHARACTER = 1
     EFFECT_PICTURE_FLASH = 0
     EFFECT_PICTURE_COLOR_CORRECT = 1
     EFFECT_PICTURE_DRAW_POSITION_SHIFT = 2
     EFFECT_PICTURE_SHAKE = 3
     EFFECT_PICTURE_SWITCH_FLICKER = 5
+    # The crate's own `CharacterEffectType`: byte-for-byte the same 0/1
+    # codes as the Picture target's own Flash/Shake, unlike Picture's own
+    # numbering (which starts ColorCorrect at 1, DrawPositionShift at 2).
+    EFFECT_CHARACTER_FLASH = 0
+    EFFECT_CHARACTER_SHAKE = 1
 
     def exec_effect(cmd)
       unless cmd.args.size == 7
@@ -1676,11 +1698,17 @@ module Wolf
       target_sel = options & 0x0f
       effect_type = (options >> 4) & 0x0f
 
-      unless target_sel == EFFECT_TARGET_PICTURE
+      case target_sel
+      when EFFECT_TARGET_PICTURE
+        exec_effect_picture(cmd, effect_type)
+      when EFFECT_TARGET_CHARACTER
+        exec_effect_character(cmd, effect_type)
+      else
         unimplemented("Effect(290) target #{target_sel}")
-        return
       end
+    end
 
+    def exec_effect_picture(cmd, effect_type)
       first = var_store.number(cmd.arg(2))
       last = var_store.number(cmd.arg(3))
 
@@ -1726,6 +1754,46 @@ module Wolf
         (first..last).each { |n| current_scene&.tint_picture(n, r, g, b) }
       else
         unimplemented("Effect(290) picture effect type #{effect_type}")
+      end
+    end
+
+    # Character-target Effect(290): `arg(2)` reuses SetMoveRoute(201)/
+    # SetVariableEx(124)'s own already-cross-confirmed target convention
+    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member --
+    # no party system exists, logged and skipped the same way
+    # `#resolve_route_target` already does). `arg(3)` ("range" in the
+    # Picture target's own field layout) is always 0 in real data -- there
+    # is only ever one character per call, unlike Picture's own contiguous
+    # number range -- so it is read but otherwise unused.
+    def exec_effect_character(cmd, effect_type)
+      target = var_store.number(cmd.arg(2))
+      sprite_key =
+        if target == ROUTE_TARGET_HERO
+          :hero
+        else
+          _pos, event = resolve_character_pos(target)
+          event&.id
+        end
+      unless sprite_key
+        unimplemented("Effect(290) character target #{target}")
+        return
+      end
+
+      case effect_type
+      when EFFECT_CHARACTER_FLASH
+        duration = var_store.number(cmd.arg(1))
+        r = var_store.number(cmd.arg(4))
+        g = var_store.number(cmd.arg(5))
+        b = var_store.number(cmd.arg(6))
+        current_scene&.flash_character(sprite_key, r, g, b, duration)
+      when EFFECT_CHARACTER_SHAKE
+        interval = var_store.number(cmd.arg(1))
+        dx = var_store.number(cmd.arg(4))
+        dy = var_store.number(cmd.arg(5))
+        count = var_store.number(cmd.arg(6))
+        current_scene&.shake_character(sprite_key, interval, dx, dy, count)
+      else
+        unimplemented("Effect(290) character effect type #{effect_type}")
       end
     end
 

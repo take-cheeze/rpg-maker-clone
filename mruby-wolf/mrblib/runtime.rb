@@ -190,6 +190,11 @@ class WolfRPG
       # ChangeColor(151)'s own in-flight animated tone transition (nil when
       # none is active) -- see #change_color/#update_tone.
       @tone_transition = nil
+      # Effect(290)'s own Character-target Shake, keyed by #character_sprite's
+      # own sprite_key (:hero, or an event's own id) -- see #shake_character/
+      # #update_character_effects, the character-target counterpart to
+      # @pictures[number][:shake].
+      @character_shakes = {}
       update_camera
     end
 
@@ -217,6 +222,7 @@ class WolfRPG
       # than fading, since nothing else ever re-ran its own decay tick.
       @viewport.update
       update_picture_effects
+      update_character_effects
     end
 
     # The hero's own runtime position/facing, so Wolf::Interpreter can move
@@ -547,6 +553,54 @@ class WolfRPG
       entry[:shake] = { interval: interval, dx: dx, dy: dy, count: count, counter: interval, on: false }
     end
 
+    # Effect(290)'s own Character-target Flash/Shake seam: resolves
+    # interpreter.rb's own `sprite_key` (`:hero`, or an event's own id, per
+    # `#resolve_character_pos`) to the live sprite that key already owns --
+    # @hero_sprite directly, or whatever #update_events has (lazily) built
+    # for that event id in @event_sprites. `nil` for an event id nothing
+    # has ever drawn yet (its very first frame, before #update_events --
+    # which runs after Wolf::Interpreter#update finishes -- has had a
+    # chance to build its sprite), the same "nothing to touch yet"
+    # tolerance #shift_picture/#tint_picture already extend to a picture
+    # number with no active sprite.
+    def character_sprite(sprite_key)
+      return @hero_sprite if sprite_key == :hero
+      @event_sprites[sprite_key]
+    end
+
+    # Effect(290)'s own Character-target "フラッシュ": the exact same
+    # native `Sprite#flash` #flash_picture already uses, just resolved to
+    # a character's own sprite instead of a picture's.
+    def flash_character(sprite_key, r, g, b, duration)
+      sprite = character_sprite(sprite_key)
+      return unless sprite
+      color = RGSS::Color.new(0, 0, 0, 255)
+      color.red = r
+      color.green = g
+      color.blue = b
+      sprite.flash(color, duration)
+    end
+
+    # Effect(290)'s own Character-target "シェイク": the same persistent
+    # nudge-and-settle state #set_picture_shake already establishes for
+    # Picture, keyed by sprite_key in @character_shakes instead (a
+    # character has no @pictures-style entry hash of its own to hang state
+    # off of).
+    def shake_character(sprite_key, interval, dx, dy, count)
+      sprite = character_sprite(sprite_key)
+      return unless sprite
+      active = @character_shakes[sprite_key]
+      if active && active[:on]
+        sprite.x -= active[:dx]
+        sprite.y -= active[:dy]
+      end
+      if interval <= 0 || count <= 0 || (dx == 0 && dy == 0)
+        @character_shakes.delete(sprite_key)
+        return
+      end
+      @character_shakes[sprite_key] = { interval: interval, dx: dx, dy: dy, count: count, counter: interval, on: false }
+    end
+
     # ChangeColor(151) ("色調変更", help/04ev_effect.html): `flash` is a
     # one-shot overlay using native RGSS `Viewport#flash` (its own timed
     # decay needs no state kept here), scaling WOLF's own [0, 200] range
@@ -645,6 +699,41 @@ class WolfRPG
           shake[:count] -= 1
           entry[:sprite].x += shake[:dx]
           entry[:sprite].y += shake[:dy]
+          shake[:on] = true
+        end
+      end
+    end
+
+    # The Character-target counterpart to #update_picture_effects: native
+    # `Sprite#flash` needs the same periodic `#update` tick for the hero
+    # and every live event sprite that pictures already get, and any
+    # active #shake_character state needs the same toggle-and-settle tick
+    # #update_picture_effects's own Picture Shake already gets. A plain
+    # `@character_shakes.keys` snapshot rather than iterating the Hash
+    # directly, since a settled shake deletes its own entry mid-loop.
+    def update_character_effects
+      @hero_sprite.update
+      @event_sprites.each_value(&:update)
+
+      @character_shakes.keys.each do |sprite_key|
+        shake = @character_shakes[sprite_key]
+        shake[:counter] -= 1
+        next unless shake[:counter] <= 0
+        shake[:counter] = shake[:interval]
+        sprite = character_sprite(sprite_key)
+        unless sprite
+          @character_shakes.delete(sprite_key)
+          next
+        end
+        if shake[:on]
+          sprite.x -= shake[:dx]
+          sprite.y -= shake[:dy]
+          shake[:on] = false
+          @character_shakes.delete(sprite_key) if shake[:count] <= 0
+        else
+          shake[:count] -= 1
+          sprite.x += shake[:dx]
+          sprite.y += shake[:dy]
           shake[:on] = true
         end
       end
