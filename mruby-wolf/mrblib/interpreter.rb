@@ -1624,11 +1624,25 @@ module Wolf
     # visibly wrong delay rather than an honestly-missing one.
     #
     # Not implemented: every other Picture effect kind (Flash, Shake,
-    # Zoom, the point-blink/auto-pattern-switch family), the Character and
-    # Map targets entirely, and `duration` > 0.
+    # Zoom, the auto-pattern-switch family), the Character and Map targets
+    # entirely, and `duration`/delay > 0 for the two instant effect kinds.
+    #
+    # `SwitchFlicker`("点滅A[明滅]", effect_type 5, 31 of the remaining real
+    # calls) is the one exception to "`duration` means an unsupported
+    # delay": help/04ev_effect.html's own wording for this specific effect
+    # kind repurposes the very same field as the *toggle interval in
+    # frames* instead ("指定したRGB分の差だけ、指定フレームでカラー変更に
+    # よる明滅...を繰り返します"), matching every real call -- some with a
+    # real non-zero interval, never seen for the other two kinds. Stops
+    # ("点滅は停止します") on either a zero interval or an all-zero RGB
+    # delta, both real (14 of the 31 calls); see runtime.rb's own
+    # `#set_picture_flicker`/`#update_picture_effects` for the persistent,
+    # per-frame-ticked state this needs, the same shape ChangeColor(151)'s
+    # `#update_tone` already established.
     EFFECT_TARGET_PICTURE = 0
     EFFECT_PICTURE_COLOR_CORRECT = 1
     EFFECT_PICTURE_DRAW_POSITION_SHIFT = 2
+    EFFECT_PICTURE_SWITCH_FLICKER = 5
 
     def exec_effect(cmd)
       unless cmd.args.size == 7
@@ -1645,14 +1659,23 @@ module Wolf
         return
       end
 
+      first = var_store.number(cmd.arg(2))
+      last = var_store.number(cmd.arg(3))
+
+      if effect_type == EFFECT_PICTURE_SWITCH_FLICKER
+        interval = var_store.number(cmd.arg(1))
+        r = var_store.number(cmd.arg(4))
+        g = var_store.number(cmd.arg(5))
+        b = var_store.number(cmd.arg(6))
+        (first..last).each { |n| current_scene&.set_picture_flicker(n, interval, r, g, b) }
+        return
+      end
+
       duration = var_store.number(cmd.arg(1))
       unless duration == 0
         unimplemented("Effect(290) picture effect delay (duration #{duration})")
         return
       end
-
-      first = var_store.number(cmd.arg(2))
-      last = var_store.number(cmd.arg(3))
 
       case effect_type
       when EFFECT_PICTURE_DRAW_POSITION_SHIFT

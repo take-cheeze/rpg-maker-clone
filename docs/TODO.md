@@ -36223,6 +36223,32 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   command wiring -- left unimplemented, the same "no foundation yet"
   reasoning `Party`(270) is already documented under. See `docs/adr/
   0082-wolf-rpg-editor-save-variable.md`.
+- ✅ **Effect(290), Picture SwitchFlicker (2026-09-07).** A fresh census
+  turned up no further new top-level command worth implementing (`220`/
+  `Party`(270) both need foundations this reader lacks; `126`/`160-162`/
+  `280` each have too few real calls and no independent source for their
+  exact field layout; `Effect`(290)'s own *Character*-target real calls,
+  66 of them at `effect_type` 8 alone and almost certainly "ピクセル移動
+  (β版)"/pixel movement by prose menu order, hit the same "no independent
+  source" wall -- the crate's own `CharacterEffectType` only confirms
+  codes 0-3, `Unknown` beyond, and prose order does not match the crate's
+  own 0-3 numbering), so this extends the already-partly-implemented
+  Picture target instead: `SwitchFlicker`("点滅A[明滅]", effect_type 5,
+  fully confirmed by the crate's `PictureEffectType`) is next by real
+  frequency there (31 calls). Persistently alternates a picture's color
+  between base and base+RGB every `arg(1)` frames -- WOLF's own editor UI
+  reuses that same field slot as a *toggle interval* for this effect kind
+  specifically, unlike the delay the two already-implemented one-shot
+  kinds use it for, so `exec_effect` special-cases it ahead of their
+  shared delay-must-be-0 gate. Stops (both real, both together in every
+  real stop call) on an all-zero RGB delta or a zero interval. A new
+  `WolfRPG::MapScene#set_picture_flicker`/`#update_picture_effects`
+  (ticked once per frame, the same shape ChangeColor's own `#update_tone`
+  already established) reuses `#tint_picture`'s own additive `Sprite#color`
+  semantics -- toggling "on" adds the delta, "off" subtracts it back out --
+  so a picture's own persistent `ColorCorrect` tint is only ever nudged,
+  never clobbered. See `docs/adr/0083-wolf-rpg-editor-effect-switch-
+  flicker.md`.
 - Suggested next order (by real frequency, from the same census):
   `220` itself (2 occurrences, needs the real save-file format above --
   a much larger undertaking than its own occurrence count suggests),
@@ -36230,9 +36256,9 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   the crate's own `party_graphics_command` covers party member *graphics*,
   which implies multiple visible party sprites following the hero,
   unbuilt), transitions (160-162, almost unused), `Effect`(290)'s own
-  remaining surface (every other Picture effect kind, the Character and Map
-  targets, its own Flash/Shake/blink effects being a natural fit for
-  `ChangeColor`'s own new `#update_tone` per-frame-tick pattern),
+  remaining Picture effect kinds (Flash/Shake/Zoom/SwitchAutoFlash/
+  AutoEnlarge/the auto-pattern-switch family) and the Map target (Zoom/
+  Shake, both fully confirmed by the crate's own `MapEffectType`),
   `Teleport`(130)'s own remaining surface (persistent per-map event state,
   needed for both its own `-1`/`-3..-7` targets and for switches/
   variables/moved events to survive a revisited map at all), and

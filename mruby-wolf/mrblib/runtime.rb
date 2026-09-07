@@ -207,6 +207,7 @@ class WolfRPG
       end
       update_camera
       update_tone
+      update_picture_effects
     end
 
     # The hero's own runtime position/facing, so Wolf::Interpreter can move
@@ -459,6 +460,38 @@ class WolfRPG
       entry[:sprite].color = fresh
     end
 
+    # Effect(290)'s own Picture-target "点滅A[明滅]" (SwitchFlicker):
+    # starts, redirects, or stops a persistent per-picture toggle between
+    # the picture's own base color and base+(r,g,b), alternating every
+    # `interval` frames (interpreter.rb's own comment on why this reuses
+    # the "duration" field as an interval rather than a delay). Ticked once
+    # per frame by #update_picture_effects, the same shape ChangeColor's
+    # own #update_tone already established for a persistent screen-wide
+    # animation, just keyed per picture number here instead of singular.
+    #
+    # Reuses #tint_picture's own additive `Sprite#color` semantics rather
+    # than tracking an absolute base color: toggling "on" adds the delta,
+    # toggling "off" subtracts the exact same delta back out, so a picture
+    # that also has its own persistent ColorCorrect tint is never
+    # clobbered, only ever nudged by this effect's own contribution.
+    #
+    # Stops (help/04ev_effect.html's own "RGB全て0" or "フレーム数0"
+    # wording) on a non-positive interval or an all-zero delta, undoing
+    # first if the picture was mid-"on" -- otherwise starting a *new*
+    # flicker while a different one is already "on" would leave its own
+    # delta stuck applied forever.
+    def set_picture_flicker(number, interval, r, g, b)
+      entry = @pictures[number]
+      return unless entry
+      active = entry[:flicker]
+      tint_picture(number, -active[:r], -active[:g], -active[:b]) if active && active[:on]
+      if interval <= 0 || (r == 0 && g == 0 && b == 0)
+        entry[:flicker] = nil
+        return
+      end
+      entry[:flicker] = { interval: interval, r: r, g: g, b: b, counter: interval, on: false }
+    end
+
     # ChangeColor(151) ("色調変更", help/04ev_effect.html): `flash` is a
     # one-shot overlay using native RGSS `Viewport#flash` (its own timed
     # decay needs no state kept here), scaling WOLF's own [0, 200] range
@@ -520,6 +553,19 @@ class WolfRPG
 
     def wolf_lerp(from, to, progress)
       (from + (to - from) * progress).to_i
+    end
+
+    def update_picture_effects
+      @pictures.each do |number, entry|
+        flicker = entry[:flicker]
+        next unless flicker
+        flicker[:counter] -= 1
+        next unless flicker[:counter] <= 0
+        flicker[:counter] = flicker[:interval]
+        flicker[:on] = !flicker[:on]
+        sign = flicker[:on] ? 1 : -1
+        tint_picture(number, sign * flicker[:r], sign * flicker[:g], sign * flicker[:b])
+      end
     end
 
     # Positions `entry`'s sprite so that (x, y) is the point `anchor` names
