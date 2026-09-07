@@ -1,49 +1,77 @@
 class RPG2k
   module Scene
     # The field Order screen (RPG2003 main menu -> Order, System chunk 22 field
-    # 27's `menu_commands` id 7). Reorders the party front-to-back -- ported
-    # from a reference implementation's own order scene, NOT independently
-    # confirmed against genuine RPG_RT under wine: it is a *pick-and-place*
-    # build, not a swap or a drag-drop. The left column lists the current
-    # party in its existing order; the player picks members one at a time
-    # (DOWN/UP to move, C to pick), and each pick is appended to the right
-    # column in the order picked -- the eventual front-to-back order. A
-    # picked member's name disappears from the left column (but the row
-    # stays selectable and picking it again is rejected with the Cancel SE,
-    # that reference implementation's own already-picked guard) so the
-    # player always sees who is left. Cancel undoes
-    # the most recent pick one at a time, or leaves the screen once nothing is
-    # picked yet. Once every member has been picked, a Confirm/Redo prompt
-    # takes over (`window_confirm`): Confirm applies the new order and closes
-    # the screen, Redo (or Cancel here) clears every pick and starts over.
-    # Reordering can change the party leader outright -- `Game::Party#leader`
-    # is simply `@actors.first` -- exactly like genuine RPG_RT.
+    # 27's `menu_commands` id 7). Reorders the party front-to-back, and it is a
+    # *pick-and-place* build, not a swap or a drag-drop. The left column lists
+    # the current party in its existing order; the player picks members one at
+    # a time (DOWN/UP to move, C to pick), and each pick is appended to the
+    # right column in the order picked -- the eventual front-to-back order. A
+    # picked member's name disappears from the left column (the row stays, and
+    # stays selectable, but picking it again does nothing) so the player always
+    # sees who is left. Cancel undoes the most recent pick one at a time, or
+    # leaves the screen once nothing is picked yet. Once every member has been
+    # picked, a Confirm/Redo prompt takes over: Confirm applies the new order
+    # and closes the screen, Redo (or Cancel here) clears every pick and starts
+    # over. Reordering can change the party leader outright --
+    # `Game::Party#leader` is simply `@actors.first`.
     #
-    # **Still unmeasured, and cycle #251 established exactly why.** Nepheshel
-    # (this project's RPG2000 wine test-bed) has no Order command at all, so a
-    # genuine *2003* runtime is needed. Both RPG2003 games available here do
-    # offer it -- Song-of-the-Sea Ch.1 and mtf-meido-action both carry
-    # `menu_commands` = [1,2,3,4,5,6,7,8], id 7 included -- and Song-of-the-Sea
-    # ships a genuine `RPG_RT.exe`, so the material is right. What blocks it is
-    # that binary under this container's wine: with the 2003 RTP installed and
-    # found (it queries `Software\KADOKAWA\RPG2003\RuntimePackagePath`, not the
-    # `Enterbrain` key the RTP installer writes) it boots and then presents
-    # nothing -- a uniform grey screen, standard deviation 0, its own window's
-    # contents pure black -- under every combination tried (640x480x16 and
-    # 1280x960x24 Xvfb, the zh_CN and the ja_JP prefix, winxp and win10,
-    # wine's GDI Direct3D/DirectDraw renderer, fullscreen and F4-windowed),
-    # while Nepheshel's RPG2000 `RPG_RT.exe` rendered normally on a fresh
-    # display in the same environment minutes later. So none of the geometry,
-    # SE or cursor claims below could be checked, and none of them were
-    # guessed at: they stand exactly as ported. See docs/TODO.md for the full
-    # account.
+    # **Measured at last, against a genuine RPG2003 `RPG_RT.EXE` under wine
+    # (cycle #256, 2026-09-06)**, closing what cycle #251 recorded as blocked.
+    # The block was never "2003 renders nothing here" in general -- it was
+    # *Song-of-the-Sea's* binary specifically. kk1.12's own `RPG_RT.EXE` boots
+    # and renders fine (title, map, field menu, every sub-screen), but its
+    # database's `menu_commands` is `[1, 2, 5, 3, 6, 8, 4]` with no Order in
+    # it, so the way in was to copy kk1.12 into a scratch directory and rewrite
+    # *that copy's* `RPG_RT.ldb` System chunk 22 field 27 to
+    # `[1, 2, 5, 3, 6, 8, 4, 7]` (field 26, the count, to 8) through this
+    # project's own LCF writer -- no game data of the checkout was touched, and
+    # nothing but that one array changed. The genuine runtime then drew a real
+    # Order row (blank-labelled: kk1.12's `order` term is the empty string) and
+    # opened the screen below, on a three-member party resumed from a save the
+    # game itself wrote. Every geometry number here is halved from a 640x480
+    # capture of that session; each behavioural claim names the frame pair that
+    # shows it. The two SE claims (#pick_current's rejected re-pick, #redo's
+    # cancel sound) remain unconfirmed -- the reference X server has no audio,
+    # so no capture can settle them -- and a one-or-fewer-member party's buzzer
+    # (`Scene::Menu#select_command`'s Order gate) is likewise still unmeasured,
+    # since shrinking a genuine save's party list blackens RPG_RT on Continue.
+    #
+    # The screen draws over the field menu's own backdrop, not one of its own:
+    # the uncovered area of every Order capture is a uniform (0,0,24), which is
+    # exactly kk1.12's System graphic pixel (0,32) -- (0,2,30) -- under the
+    # reference X server's RGB565 quantisation, i.e. the colour
+    # `Scene::Base#build_field_background` already fills the screen with for
+    # the parent `Scene::Menu` (whose own windows `Scene::Menu#suspend` hides
+    # while this screen is up).
     class Order < Base
       SCREEN_W = RPG2k::WIDTH
       SCREEN_H = RPG2k::HEIGHT
       LINE_H = 16
-      # Width of the left (current order) and right (picked order) columns,
-      # and of the Confirm/Redo prompt below them.
-      COLUMN_W = 96
+      # The two list columns, measured from their window borders' own bounding
+      # boxes: left (68, 48, 88, 80) and right (164, 48, 88, 80) -- 88 wide
+      # each with an 8px gap, the pair centred horizontally (68 of margin on
+      # each side of 88+8+88 = 184).
+      COLUMN_W = 88
+      COLUMN_GAP = 8
+      LIST_X = (SCREEN_W - COLUMN_W * 2 - COLUMN_GAP) / 2
+      LIST_Y = 48
+      # Both list windows are 80 tall on a *three*-member party -- four 16px
+      # rows plus the 8px border twice -- so they are sized for RPG2003's
+      # four-member maximum rather than for the party actually present (the
+      # fourth row simply stays empty, and the cursor never reaches it: UP from
+      # the first row wrapped to the third, not the fourth). A four-member
+      # party was not available to tell this apart from a `size * 16 + 32`
+      # sizing that happens to agree at three; see docs/TODO.md.
+      MAX_PARTY_ROWS = 4
+      LIST_H = MAX_PARTY_ROWS * LINE_H + Window::BORDER * 2
+      # The Confirm/Redo prompt: (120, 144, 80, 48), horizontally centred,
+      # two 16px rows plus the border.
+      CONFIRM_W = 80
+      CONFIRM_Y = 144
+      # RPG_RT's own (Japanese runtime) wording for the prompt -- see
+      # #build_windows.
+      CONFIRM_LABEL = '決定'.freeze
+      REDO_LABEL = 'やりなおし'.freeze
 
       def initialize parent, state
         super parent
@@ -196,30 +224,33 @@ class RPG2k
       end
 
       def build_windows
-        h = @names.size * LINE_H + Window::BORDER * 2
-        @left_window = Window.new(20, 20, COLUMN_W, h)
+        @left_window = Window.new(LIST_X, LIST_Y, COLUMN_W, LIST_H)
         @left_window.z = 400
         @left_window.windowskin = @skin
-        @right_window = Window.new(20 + COLUMN_W, 20, COLUMN_W, h)
+        @right_window = Window.new(LIST_X + COLUMN_W + COLUMN_GAP, LIST_Y,
+                                   COLUMN_W, LIST_H)
         @right_window.z = 400
         @right_window.windowskin = @skin
         refresh_left_window
         refresh_right_window
         refresh_left_cursor
 
-        # "Confirm"/"Redo" have no slot of their own in RPG2000/2003's Term
-        # table -- a reference implementation only gained translatable
-        # fields for them as its own extension, which this schema (modelled
-        # on genuine RPG_RT's own chunk layout) does not carry, so these
-        # stay plain English same as genuine RPG_RT itself.
-        labels = ['Confirm', 'Redo']
+        # The prompt's two labels have no slot of their own in RPG2000/2003's
+        # Term table (schema.rb's Terms carry nothing of the sort, and
+        # kk1.12's own table has no such string), so RPG_RT draws them itself:
+        # the Japanese runtime's own wording, measured on the genuine frame, is
+        # 決定 / やりなおし.
+        labels = [CONFIRM_LABEL, REDO_LABEL]
         ch = labels.size * LINE_H + Window::BORDER * 2
-        @confirm_window = Window.new((SCREEN_W - COLUMN_W) / 2, SCREEN_H - ch - 20, COLUMN_W, ch)
+        @confirm_window = Window.new((SCREEN_W - CONFIRM_W) / 2, CONFIRM_Y,
+                                     CONFIRM_W, ch)
         @confirm_window.z = 450
         @confirm_window.windowskin = @skin
-        cc = Bitmap.new(COLUMN_W - Window::BORDER * 2, labels.size * LINE_H)
+        cc = Bitmap.new(CONFIRM_W - Window::BORDER * 2, labels.size * LINE_H)
         cc.font.color = Color.new(255, 255, 255, 255)
-        labels.each_with_index { |l, i| cc.draw_text 0, i * LINE_H, cc.width, LINE_H, l }
+        labels.each_with_index do |l, i|
+          draw_system_text cc, 0, i * LINE_H, cc.width, LINE_H, l, @skin
+        end
         @confirm_window.contents = cc
         @confirm_window.visible = false
         @confirm_window.active = false
@@ -231,7 +262,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         @names.each_with_index do |name, i|
           next if @picked.include?(i)
-          c.draw_text 0, i * LINE_H, inner_w, LINE_H, name
+          draw_system_text c, 0, i * LINE_H, inner_w, LINE_H, name, @skin
         end
         @left_window.contents = c
       end
@@ -242,7 +273,7 @@ class RPG2k
         c.font.color = Color.new(255, 255, 255, 255)
         @picked.each_with_index do |orig, i|
           next unless orig
-          c.draw_text 0, i * LINE_H, inner_w, LINE_H, @names[orig]
+          draw_system_text c, 0, i * LINE_H, inner_w, LINE_H, @names[orig], @skin
         end
         @right_window.contents = c
       end

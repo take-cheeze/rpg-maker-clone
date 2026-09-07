@@ -14278,6 +14278,79 @@ The work below is roughly ordered by the critical path to a walkable game
   the `wait_label`/atb_mode follow-up below). No code change — both
   citations were already correct, only "NOT independently confirmed"
   became a wine confirmation.
+  ✅ **Follow-up (cycle #256, 2026-09-06): the RPG2003-only field-menu
+  commands measured for real — `Scene::StatusMenu` rewritten from one
+  full-screen window to RPG_RT's own five, and Row/Wait confirmed as
+  modelled.** *Recipe:* private wine prefix copied from the shared one (RTP
+  already installed), `$SCRATCH/kk` = a copy of `data/kk1.12` plus the
+  lowercase `RPG_RT.exe` symlink, `BOOT_WAIT=45 drive.sh start_ref`. The
+  earlier follow-up above built a synthetic one-actor save; this cycle
+  instead **played the real opening** — roughly 150 held Returns through the
+  credits and the dorm cutscene — until the menu opened with the game's own
+  three-member party (ユーティル / とんま / エマワトソン), then used the
+  menu's own セーブ to write a genuine `Save01.lsd` that every later boot
+  resumed from in seconds. That save was also the lever for the harder
+  cases: editing chunk 108's actor 1 (fields 31 level, 32 exp, 71 hp, 72 mp,
+  82 states) through this project's own LCF writer — reassigning the whole
+  `actors` table back to the parent, per this file's own save-editing rule —
+  produced a level-27, 13/2100-HP, 5/138-MP, state-afflicted actor without
+  touching the party list. *Measured (640x480 captures, halved; window rects
+  from each frame's own border bbox, calibrated against the field menu's
+  independently known 88px command window):* the Status screen is **five**
+  windows, not one — actor panel (0,0,124,208), gold (0,208,124,32),
+  HP/MP/EXP (124,0,196,64), parameters (124,64,196,80), equipment
+  (124,144,196,96), tiling 320x240 exactly. The actor panel puts a 48x48
+  FaceSet portrait at content (0,0), the front/back row label (RPG_RT's own
+  前衛 / 後衛 — no Term slot exists for either) right-aligned on line 0, then
+  *label-line/value-line pairs* at lines 3-10 for 名前 / 職業 / 肩書き / 状態
+  (all four hardcoded by the Japanese runtime, values indented to x=36), and
+  the level alone on line 11 with the `level` term as its label and the
+  figure right-aligned to x=78 (checked at both "1" and "27"). HP/MP/EXP use
+  the **full** `hp`/`mp` terms (ＨＰ/ＭＰ) and `exp_short`, each row drawn as
+  label at x=0, current right-aligned to x=90, "/" at 90, max right-aligned
+  to x=138 — verified across 1- to 5-digit figures (13/2100, 96/96,
+  12345/79050), and 12345/79050 confirms the right-hand EXP figure is the
+  *absolute* next-level threshold. Parameters are Attack/Defense/Mind/Agility
+  right-aligned to the same x=90 (order proved from kk1.12's own curves:
+  actor 3's base 10/18/50/7 vs a displayed 20/21/54/7, i.e. base + equipment
+  bonus). Equipment is five rows, label at x=0 and item name at x=60, and the
+  **second slot's label follows 二刀流** — the dual-wielding とんま showed
+  武器 twice where the leader showed the (empty) shield term. Colours come
+  from the skin's own swatches: sampling kk1.12's `System/00-03file12.png`
+  gives index 0 (250,250,255) for every value, index 1 (113,239,186) for
+  every label and index 4 (252,176,62) for the critical figure — matching the
+  captured (255,251,255)/(115,239,189)/(255,178,57) after the reference X
+  server's RGB565 quantisation, which confirms `#value_font_color`'s
+  quarter-of-max rule *and* that it applies to MP as well as HP. *Row (id 6):*
+  choosing 隊列変更 hands focus to the party list exactly as Skill/Status do;
+  Decision there moves that member's portrait 8px right in the menu's own
+  panel (screen x=92 → 100, nothing else moving) and drops straight back to
+  the command list; re-entering starts the party cursor at the first member
+  again; and the "don't empty the front row" guard is **real** — with two of
+  three members in the back, Decision on the last front-row member changed
+  nothing, and the same member moved as soon as someone else went back to the
+  front. *Wait (id 8):* one Decision changed nothing on screen but that row's
+  own label (whole-frame diff: a single band, y 92..101 x 38..74, ﾊﾞﾄﾙ/Active
+  → ﾊﾞﾄﾙ/Wait), the cursor stayed put, and a second Decision restored a
+  pixel-identical frame. *Fixed:* `status_menu.rb` rewritten to the measured
+  five-window layout (it had one 320x240 window drawing an invented
+  `"Class: X"` run, an English "State" label, a flowing HP/MP row, a "Next
+  NNN" EXP string, a Gold line inside the same window, English Front/Back and
+  no portrait at all); the doc comments in `menu.rb`'s class header,
+  `RPG2K3_COMMAND_IDS`, `#confirm_actor_selection`'s `:row` branch,
+  `#select_command`'s `:row`/`:order`/`:wait` branches and `#wait_label` now
+  say what was measured instead of "NOT independently confirmed". Seven new
+  `scripts/rpg2k_scene_check.rb` checks pin the rects, the panel's lines and
+  columns, the shared value grid, the dual-wield slot label and the Order
+  screen (below); the pre-existing Status checks that encoded the old ported
+  model were rewritten to the measured one. All seven were confirmed to fail
+  against the pre-fix code. *Left open:* whether a **solo** party really
+  leaves Left/Right silent on this screen (kk1.12's party is three from its
+  first menu on, and shrinking a genuine save's party list blackens RPG_RT on
+  Continue), the max-level `------` EXP rendering on *this* screen (borrowed
+  from the field menu's own cycle #248 measurement of the same data), and the
+  English runtime's wording for the four hardcoded labels and 前衛/後衛 —
+  only the Japanese RPG_RT was available. No EasyRPG source was consulted.
   ✅ **Follow-up (cycle #123, 2026-08-22): `save_load.rb`'s "the file-select
   cursor opens on whichever slot was saved most recently" claim is now
   independently confirmed against a genuine RPG_RT.exe, not just a
@@ -15941,6 +16014,64 @@ The work below is roughly ordered by the critical path to a walkable game
   that makes this one present), after which the screen is reachable from any
   save whose party has two members.
   No EasyRPG source was consulted.
+  ✅ **Follow-up (cycle #256, 2026-09-06): unblocked and measured — and the
+  note above was always about *Song-of-the-Sea's* binary specifically, not
+  about RPG2003 under this wine.** `data/kk1.12` ships a genuine
+  `RPG_RT.EXE` that renders perfectly here (title, map, field menu and every
+  sub-screen), so "a genuine RPG2003 runtime that renders under wine" is no
+  longer the missing piece; what remained was that kk1.12's own
+  `menu_commands` is `[1, 2, 5, 3, 6, 8, 4]` with **no id 7**, while the
+  games that do list id 7 (`data/mtf-meido-action/Debug`, Song-of-the-Sea)
+  ship no usable genuine runtime. Two ways past that were tried. *(a) Borrow
+  the runtime:* a genuine `RPG_RT.EXE` is a generic runtime, so kk1.12's exe
+  was copied beside a scratch copy of `data/mtf-meido-action/Debug`'s data —
+  it booted to an **empty message box** titled with the game name and then
+  unmapped its own window (mean 0, no window left on the display), i.e. that
+  Chinese-encoded EasyRPG-authored project is not loadable by this runtime;
+  not pursued further. *(b) Add the command to a copy of the database
+  instead — this is what worked:* a scratch copy of kk1.12 had its own
+  `RPG_RT.ldb` System chunk 22 rewritten through this project's own LCF
+  writer, field 27 to `[1, 2, 5, 3, 6, 8, 4, 7]` and field 26 to 8 (nothing
+  else touched, and nothing under `data/` touched at all). The genuine
+  runtime then drew a ninth, **blank-labelled** menu row between Save and End
+  Game (kk1.12's `order` term is the empty string; RPG_RT draws the row
+  anyway, the same rule Nepheshel's blank Save row established) and choosing
+  it opened the real Order screen on the three-member party of the save from
+  the Status follow-up above. *Measured:* two list windows, left
+  (68,48,88,80) and right (164,48,88,80) — 88 wide, an 8px gap, the pair
+  centred horizontally — and a Confirm/Redo prompt at (120,144,80,48), also
+  centred. Both list windows are 80 tall (four 16px rows + border) for a
+  *three*-member party, so they are sized for the four-member maximum; the
+  cursor still only walks the members present (Up from row 0 wrapped to row
+  2, never the empty fourth row) and spans the full 72px content width. The
+  screen has no backdrop of its own: the uncovered area is a uniform
+  (0,0,24), exactly kk1.12's System pixel (0,32) — (0,2,30) — under the
+  reference X server's RGB565 quantisation, i.e. the parent `Scene::Menu`'s
+  own `#build_field_background` fill showing through `Scene::Menu#suspend`.
+  Every behavioural claim in `order.rb` held: picking blanks the name in
+  place and appends it to the right column in pick order; re-picking a
+  blanked row does nothing (frame-identical); Cancel undoes the last pick one
+  at a time and, with nothing picked, leaves to the menu; the last pick
+  swaps in the 決定/やりなおし prompt and clears the left cursor outright;
+  やりなおし *and* Cancel there both reset to the pristine screen; 決定
+  applies the order and closes (the party list came back as
+  エマワトソン/とんま/ユーティル after picking in that order). *Fixed:* the
+  windows were at (20,20) and 96 wide with a party-size-dependent height and
+  a bottom-anchored prompt — all three rects replaced with the measured ones;
+  the prompt's labels were the English "Confirm"/"Redo" and are now RPG_RT's
+  own 決定 / やりなおし; and all three windows drew their text with a flat
+  `draw_text` (no shadow, no palette) where every genuine frame shows the
+  usual shadowed system-palette glyphs, so they now go through
+  `#draw_system_text` like the rest of the port. Four new
+  `scripts/rpg2k_scene_check.rb` checks pin the rects, the fixed four-row
+  sizing, the prompt wording and the cursor width; all four fail against the
+  pre-fix code. *Left open:* the two SE claims (`#pick_current`'s rejected
+  re-pick and `#redo_picks`'s cancel sound) — the reference X server has no
+  audio, so no capture can settle them; whether the list height is really a
+  fixed four rows or `size * 16 + 32` (the two agree at three members, and no
+  four-member party was reachable); and `Scene::Menu`'s `size <= 1` buzzer
+  gate, since shrinking a genuine save's party list blackens RPG_RT on
+  Continue. No EasyRPG source was consulted.
   ✅ **Follow-up (cycle #258, 2026-09-06): the asset extension order the entry
   above found in passing is settled — genuine RPG_RT probes `.bmp`, `.png`,
   `.xyz` and *nothing else*, and when both spellings are on disk the `.bmp` is

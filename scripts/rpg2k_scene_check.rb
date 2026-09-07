@@ -24853,35 +24853,56 @@ check 'Scene::EquipMenu: a dangling equipped item id logs once, not per rebuild,
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it
-# always draws a labelled Class/Profession row
-# (`TextDraw(..., "Class"); DrawActorClass(actor, ...)`), with no version
-# gate around it -- an RPG2000 database with no class table still gets the
-# row, just blank.
-check 'the status screen shows a labelled Class row' do
+# The five windows the genuine RPG2003 status screen tiles the screen with,
+# measured under wine in cycle #256 (kk1.12 + the official RTP, its own
+# RPG_RT.EXE, resumed from a save the game itself wrote): each window's border
+# bounding box in a 640x480 capture, halved, gives the rects below -- and they
+# tile 320x240 exactly, 124+196 across and 208+32 / 64+80+96 down.
+def status_rects(scene)
+  %i[@actor_window @gold_window @gauge_window @param_window @equip_window]
+    .map do |iv|
+      w = scene.instance_variable_get(iv)
+      w && [w.x, w.y, w.width, w.height]
+    end
+end
+
+check 'the status screen tiles the screen with RPG_RT\'s own five windows' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  eq [[0, 0, 124, 208],      # actor panel: face, name/class/title/condition/level
+      [0, 208, 124, 32],     # gold
+      [124, 0, 196, 64],     # HP / MP / EXP
+      [124, 64, 196, 80],    # attack / defense / mind / agility
+      [124, 144, 196, 96]],  # the five equipment slots
+     status_rects(scene), 'measured window rects'
+end
+
+# The actor panel's own rows, all measured on the same captures: a label line
+# then an indented value line for name/class/title/condition, and the level
+# alone on a row that carries its label and its (right-aligned) figure on one
+# line. The four labels are RPG_RT's own -- they have no Term-chunk slot at
+# all, and the Japanese runtime draws 名前 / 職業 / 肩書き / 状態.
+check 'the status screen gives the class its own labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.any? { |t| t.start_with?('Class:') },
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('職業'),
      "the row is labelled even with no class (RPG2000), got: #{texts.inspect}"
-  eq 'Class: ', texts.find { |t| t.start_with?('Class:') },
-     'blank value with no class table'
+  ok !texts.any? { |t| t.start_with?('Class:') },
+     "the label is its own draw, never a 'Class: value' run, got: #{texts.inspect}"
 
   classed = Class.new(MenuStubActor) { def class_name; 'Paladin'; end }.new
   st.party.instance_variable_set(:@actors, [classed])
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Class: Paladin'), "shows the class name, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('Paladin'), "shows the class name, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it
-# draws `actor.GetAtk()`/`GetDef()`/
-# `GetSpi()`/`GetAgi()`, and its own battler stat accessors run the base value through `AdjustParam`, which halves
-# or doubles it against whatever states the actor currently carries -- a
-# state that persists onto the map affects this screen too, not just battle
-# math.
+# The parameter window's four rows are Attack / Defense / Mind / Agility in
+# that order -- confirmed under wine against kk1.12's own database (its
+# actor 3 has base 10/18/50/7 at level 1 and the screen showed 20/21/54/7,
+# each the base plus that actor's equipment bonus, so row 3 is Mind and row 4
+# Agility). The figures are the state-adjusted effective values, so a
+# halving state shows on this screen too, not just in battle math.
 check 'the status screen shows a battle stat halved by an active state, ' \
       'not the raw base value' do
   st = menu_state
@@ -24890,103 +24911,102 @@ check 'the status screen shows a battle stat halved by an active state, ' \
   hero.add_state(5)
   st.party.situation = { 5 => OpenStruct.new(affect_type: 0, affect_attack: true) }
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10;
-  # matched by number rather than term text since the term table (a real
-  # database's own, unlike this fixture's bare fallback labels) is not what
-  # this check is about.
-  stat_line = texts.find { |t| t.include?('12') && t.include?('9') && t.include?('14') }
-  ok stat_line, "expected the stat row somewhere, got: #{texts.inspect}"
-  ok stat_line.match?(/\b10\b/), "expected the halved Atk (10), not the raw base (20): #{stat_line.inspect}"
-  ok !stat_line.match?(/\b20\b/), "the raw base Atk (20) should not still appear: #{stat_line.inspect}"
+                         .instance_variable_get(:@param_window))
+  # Def/Int/Agi (12/9/14) are unaffected -- only Atk (base 20) halves to 10,
+  # and every figure is now its own draw call in its own right-aligned column.
+  ok texts.include?('10'), "expected the halved Atk (10), got: #{texts.inspect}"
+  ok !texts.include?('20'), "the raw base Atk (20) should not still appear: #{texts.inspect}"
+  %w[12 9 14].each do |v|
+    ok texts.include?(v), "the unaffected stats still draw (#{v}), got: #{texts.inspect}"
+  end
+  ok texts.index('10') < texts.index('12'),
+     "Attack is the first row and Defense the second, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it draws the Exp row via
-# `DrawMinMax(90, 34, -1, -1)`, whose sentinel routes both halves through
-# `GetExpString`/`GetNextExpString` rather than a literal min/max pair;
-# its own next-exp-string accessor stringifies
-# `GetNextExp()` -- the absolute cumulative-total curve value for the next
-# level, not a subtraction against current EXP. `MenuStubActor` gives
-# `#next_level_exp`/`#exp_to_next` distinct values (420 vs 120) precisely so
-# this check can tell which one the screen actually reads.
-check 'the status screen\'s "Next" EXP figure is the absolute next-level ' \
-      'threshold, not the remaining delta' do
+# EXP shares the HP/MP window as its third row -- "label, current, /, max" in
+# the same columns -- and the right-hand figure is the *absolute* next-level
+# threshold, not the remaining delta: kk1.12's level-27 leader (12345 EXP)
+# showed 12345/79050 under wine, and 79050 - 12345 is not a curve value.
+# `MenuStubActor` gives `#next_level_exp`/`#exp_to_next` distinct values (420
+# vs 120) precisely so this check can tell which one the screen reads.
+check 'the status screen\'s EXP row is the absolute next-level threshold, ' \
+      'not the remaining delta' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Lv 5    EXP 300    Next 420'),
-     "expected the absolute threshold (420), got: #{texts.inspect}"
-  ok !texts.any? { |t| t.include?('Next 120') },
-     "must not show the remaining-EXP delta (120) instead, got: #{texts.inspect}"
+                         .instance_variable_get(:@gauge_window))
+  ok texts.include?('EXP'), "the exp_short term labels the row, got: #{texts.inspect}"
+  # The EXP row is the last of the three, so its own four draws are the tail
+  # (the earlier '120' in the list is the HP maximum, not an EXP figure).
+  eq %w[EXP 300 / 420], texts[texts.index('EXP'), 4],
+     "expected 'current / absolute threshold', got: #{texts.inspect}"
+  # HP and MP take the two rows above it, each as its own label/cur/slash/max
+  # run in the same columns.
+  ok texts.include?('ＨＰ') && texts.include?('ＭＰ'),
+     "HP/MP use the *full* terms, not the short ones, got: #{texts.inspect}"
+  eq 3, texts.count('/'), 'three rows, each with its own slash'
 end
 
 check 'the status screen gives the condition a labelled row' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('State'), 'the row is labelled'
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('状態'), 'the row is labelled (RPG_RT\'s own wording)'
   ok texts.include?('Normal'), 'and reads normal for a clear actor'
 
   st.party.actors.first.add_state(1)                    # the death state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
+                         .instance_variable_get(:@actor_window))
   ok texts.include?('Down'), 'a downed actor reads as such, not merely HP 0'
 end
 
-# Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its `Window_Gold`, created unconditionally
-# by its own status-scene start (no visibility gate
-# anywhere in the file) -- missing here entirely.
+# The gold window is its own window under the actor panel (0, 208, 124, 32) --
+# measured, and 124 wide here against the field menu's own 88, the only
+# difference between the two.
 check 'the status screen shows the party\'s own Gold' do
   st = menu_state
   st.party.instance_variable_set(:@gold, 1234)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok texts.include?('1234G'), "Gold is drawn as its own line, got: #{texts.inspect}"
+                         .instance_variable_get(:@gold_window))
+  ok texts.include?('1234G'), "Gold is drawn in its own window, got: #{texts.inspect}"
 
-  # Per a reference implementation (not independently confirmed under wine),
-  # its Window_Gold draws unconditionally, including at 0 -- not only
-  # once the party has money.
   st.party.instance_variable_set(:@gold, 0)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
+                         .instance_variable_get(:@gold_window))
   ok texts.include?('0G'), "zero Gold still shows, got: #{texts.inspect}"
 end
 
-# Per a reference implementation (NOT independently confirmed against genuine
-# RPG_RT under wine), its own actor-info window's draw-info additionally
-# draws "Front"/"Back" right-aligned at the top of the panel whenever
-# `Feature::HasRow()` holds -- which for a genuine,
-# unmodified project reduces to "the database is RPG2003". An RPG2000
-# database never shows either label.
+# The RPG2003 front/back row indicator: line 0 of the actor panel, right-
+# aligned to the content width, drawn in RPG_RT's own Japanese wording
+# (前衛 / 後衛 -- there is no Term slot for either). Measured under wine by
+# toggling a member's row from the field menu's Row command and re-opening
+# this screen: the label's two glyphs changed, in place, and nothing else did.
 check 'the status screen shows the RPG2003 battle row, gated on rpg2003?' do
   st = menu_state
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st)
-                         .instance_variable_get(:@window))
-  ok !texts.include?('Front') && !texts.include?('Back'),
+                         .instance_variable_get(:@actor_window))
+  ok !texts.include?('前衛') && !texts.include?('後衛'),
      "an RPG2000 party draws neither row label, got: #{texts.inspect}"
 
   rpg2003_party = Class.new(MenuStubParty) { def rpg2003?; true; end }.new
   st2 = Game::State.new(rpg2003_party, 1, 0, 0)
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Front'), "front row shows by default, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('前衛'), "front row shows by default, got: #{texts.inspect}"
 
   rpg2003_party.actors.first.battle_row = Game::Battle::ROW_BACK
   texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st2)
-                         .instance_variable_get(:@window))
-  ok texts.include?('Back'), "back row shows once toggled, got: #{texts.inspect}"
+                         .instance_variable_get(:@actor_window))
+  ok texts.include?('後衛'), "back row shows once toggled, got: #{texts.inspect}"
 end
 
-# Ported from a reference implementation, NOT independently confirmed against
-# genuine RPG_RT under wine: it, the shared routine behind
-# `DrawActorHp`/`DrawActorSp` (in turn used by its own actor-status window's
-# draw-status) -- the *current* HP/MP figure
-# alone recolors: knockout gray (index 5) at exactly 0 HP, critical
-# red/orange (index 4) at or below a quarter of max, the ordinary default
-# (index 0) otherwise. SP never shows the knockout colour even at 0
-# (`DrawActorSp` always passes `can_knockout` false).
+# The *current* HP/MP figure alone recolours: knockout gray (index 5) at
+# exactly 0 HP, critical red/orange (index 4) at or below a quarter of max,
+# the ordinary default (index 0) otherwise; MP never takes the knockout
+# colour. **The critical rule is confirmed on genuine RPG_RT under wine
+# (cycle #256):** an edited kk1.12 save's 13/2100 HP and 5/138 MP both drew
+# in that skin's index-4 swatch ((252,176,62), captured as (255,178,57) after
+# the reference X server's RGB565 quantisation), while every label sampled
+# index 1 and every other figure index 0.
 check 'the status screen colours a knocked-out HP figure and a critical MP ' \
       'figure through the windowskin\'s own swatches, not a flat colour' do
   db = fake_db
@@ -24996,7 +25016,7 @@ check 'the status screen colours a knocked-out HP figure and a critical MP ' \
   hero.instance_variable_set(:@hp, 0) # knocked out -- HP figure draws in index 5
   hero.instance_variable_set(:@mp, 5) # <= a quarter of max_mp (30) -- index 4
   scene = menu_scene(RPG2k::Scene::StatusMenu, st, db)
-  bc = scene.instance_variable_get(:@window).contents.blend_calls || []
+  bc = scene.instance_variable_get(:@gauge_window).contents.blend_calls || []
   # swatch cell (idx % 10 * 16, idx / 10 * 16 + 48) -- see Game::MessagePalette.
   ok bc.any? { |call| call[4] == '0' && call[6] == 80 && call[7] == 48 },
      "the knocked-out HP figure must blend from swatch index 5 (80, 48), got: " \
@@ -25004,8 +25024,10 @@ check 'the status screen colours a knocked-out HP figure and a critical MP ' \
   ok bc.any? { |call| call[4] == '5' && call[6] == 64 && call[7] == 48 },
      "the critical MP figure must blend from swatch index 4 (64, 48), got: " \
      "#{bc.map { |c| [c[4], c[6], c[7]] }.inspect}"
-  ok bc.any? { |call| call[4] == '/120' && call[6] == 0 && call[7] == 48 },
+  ok bc.any? { |call| call[4] == '120' && call[6] == 0 && call[7] == 48 },
      'the HP max figure stays the default colour (index 0)'
+  ok bc.any? { |call| call[4] == 'ＨＰ' && call[6] == 16 && call[7] == 48 },
+     'and every label draws in the system swatch, index 1 (16, 48)'
 end
 
 check 'Scene::StatusMenu: the actor cursor wraps around' do
@@ -25077,13 +25099,13 @@ check 'Scene::StatusMenu: a dangling equipped item id logs once, not per rebuild
   ok out.include?('[RPG2k] Status screen: item #99 not found in the database, ' \
                    'showing a placeholder label'), out
 
-  texts = window_texts(scene.instance_variable_get(:@window))
+  texts = window_texts(scene.instance_variable_get(:@equip_window))
   ok texts.any? { |t| t.include?('Item 99') }, "the placeholder label still shows, got: #{texts.inspect}"
 
-  # Switching actors and back rebuilds the whole window (#build_window)
-  # without a fresh database shrink -- the same dangling id re-renders every
-  # time, and must not add a second line to the console.
-  out2 = capture_stderr { 3.times { scene.send(:build_window) } }
+  # Switching actors and back redraws every window (#refresh) without a fresh
+  # database shrink -- the same dangling id re-renders every time, and must
+  # not add a second line to the console.
+  out2 = capture_stderr { 3.times { scene.send(:refresh) } }
   ok out2.empty?, "re-rendering the already-warned id must stay silent, got: #{out2.inspect}"
 end
 
@@ -29086,6 +29108,128 @@ check 'Show Choices that cannot fit under the text open on a fresh page ' \
   eq 0, msg[:choice_start], 'the options start at row 0'
   eq 2, msg[:count], 'both options are selectable'
   eq 1, msg[:pages], 'still one page'
+end
+
+# -- RPG2003-only field-menu screens, measured under wine (cycle #256) --------
+#
+# Every number in this block is halved from a 640x480 capture of a genuine
+# RPG2003 `RPG_RT.EXE` (kk1.12 plus the official RTP, driven under wine on its
+# own data, resumed from a save the game itself wrote). The Order screen alone
+# needed a scratch copy of kk1.12 whose `RPG_RT.ldb` System chunk 22 field 27
+# was rewritten to `[1, 2, 5, 3, 6, 8, 4, 7]` through this project's own LCF
+# writer -- kk1.12's own database has no Order id, and no game here that does
+# ships a genuine runtime. No EasyRPG source was consulted.
+
+check 'Scene::Order: the two columns and the Confirm prompt sit where ' \
+      'RPG_RT puts them' do
+  scene, = order_scene
+  left = scene.instance_variable_get(:@left_window)
+  right = scene.instance_variable_get(:@right_window)
+  confirm = scene.instance_variable_get(:@confirm_window)
+  eq [68, 48, 88, 80], [left.x, left.y, left.width, left.height],
+     'the current-order column'
+  eq [164, 48, 88, 80], [right.x, right.y, right.width, right.height],
+     'the picked-order column: the same size, 8px to the right of it'
+  eq [120, 144, 80, 48], [confirm.x, confirm.y, confirm.width, confirm.height],
+     'the Confirm/Redo prompt, horizontally centred below both'
+  # The pair is centred as a unit: equal margins either side of 88+8+88.
+  eq RPG2k::WIDTH - (right.x + right.width), left.x, 'equal margins'
+end
+
+check 'Scene::Order: both list columns are sized for a full four-member ' \
+      'party, not for the party actually present' do
+  scene, state = order_scene
+  eq 2, state.party.actors.size, 'this fixture party is two members'
+  eq 80, scene.instance_variable_get(:@left_window).height,
+     'still four 16px rows plus the 8px border twice'
+  # The cursor still only walks the members that exist: Up from the first row
+  # wrapped to the *last member*, not to the empty fourth slot (measured on a
+  # three-member party, where Up from row 0 landed on row 2).
+  RGSS::Input.triggered = [RGSS::Input::UP]
+  scene.update
+  RGSS::Input.reset
+  eq 1, scene.instance_variable_get(:@cursor_index),
+     'Up from the first row wraps to the last *member*'
+end
+
+check 'Scene::Order: the Confirm/Redo prompt uses RPG_RT\'s own wording' do
+  scene, = order_scene
+  texts = window_texts(scene.instance_variable_get(:@confirm_window))
+  eq %w[決定 やりなおし], texts,
+     'the Japanese runtime draws these two itself -- neither has a Term slot'
+end
+
+check 'Scene::Order: the row cursor spans the whole column, and the picked ' \
+      'column never carries one' do
+  scene, = order_scene
+  left = scene.instance_variable_get(:@left_window)
+  r = left.cursor_rect
+  eq [0, 0, left.contents.width, 16], [r.x, r.y, r.width, r.height],
+     'the cursor covers the full content width of the row it is on'
+  eq 72, left.contents.width, '88 wide minus the 8px border twice'
+  ok scene.instance_variable_get(:@right_window).cursor_rect.width.to_i.zero?,
+     'the picked column is never given a cursor of its own'
+end
+
+check 'Scene::StatusMenu: the actor panel\'s label/value rows land on ' \
+      'RPG_RT\'s own lines and columns' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  calls = scene.instance_variable_get(:@actor_window).contents.draw_calls
+  by_text = calls.each_with_object({}) { |c, h| h[c[4]] = c }
+  # Label lines 3/5/7/9, each value on the line below it at x=36.
+  eq [0, 3 * 16], by_text['名前'][0, 2], 'the name label'
+  eq [36, 4 * 16], by_text['Hero'][0, 2], 'the name value, one line down'
+  eq [0, 5 * 16], by_text['職業'][0, 2], 'the class label'
+  eq [0, 7 * 16], by_text['肩書き'][0, 2], 'the title label'
+  eq [36, 8 * 16], by_text['Wanderer'][0, 2], 'the title value'
+  eq [0, 9 * 16], by_text['状態'][0, 2], 'the condition label'
+  eq [36, 10 * 16], by_text['Normal'][0, 2], 'the condition value'
+  # The level is the one row whose figure shares its label's line, and it is
+  # right-aligned: measured right edge 78 for both "1" and "27".
+  eq [0, 11 * 16, 78, 16, '5', 2], by_text['5'], 'the level figure, right-aligned'
+end
+
+check 'Scene::StatusMenu: the HP/MP/EXP and parameter windows share one ' \
+      'column grid' do
+  scene = menu_scene(RPG2k::Scene::StatusMenu, menu_state)
+  gauge = scene.instance_variable_get(:@gauge_window).contents.draw_calls
+  # Row 0: label at x=0, current right-aligned to 90, slash at 90, max
+  # right-aligned to 138.
+  eq [0, 0, gauge.first[2], 16, 'ＨＰ', 0], gauge[0], 'the HP label'
+  eq [0, 0, 90, 16, '80', 2], gauge[1], 'the current HP, right-aligned at 90'
+  eq [90, 0, gauge[2][2], 16, '/', 0], gauge[2], 'the slash at 90'
+  eq [0, 0, 138, 16, '120', 2], gauge[3], 'the maximum, right-aligned at 138'
+  eq 32, gauge[8][1], 'EXP is the third row (y = 2 * 16)'
+
+  param = scene.instance_variable_get(:@param_window).contents.draw_calls
+  eq [0, 0, 90, 16, '20', 2], param[1],
+     'a parameter value right-aligns to the same x=90 column'
+  eq [0, 3 * 16], param[6][0, 2], 'four rows, the last at y = 3 * 16'
+end
+
+check 'Scene::StatusMenu: the equipment window labels its second slot with ' \
+      'the weapon term for a 二刀流 actor' do
+  db = fake_db
+  db.term.weapon = 'Weapon'
+  db.term.shield = 'Shield'
+  db.term.armor = 'Armor'
+  st = menu_state
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st, db)
+                         .instance_variable_get(:@equip_window))
+  eq %w[Weapon Shield Armor], texts.each_slice(2).map(&:first).first(3),
+     'an ordinary actor gets the shield term on the second row'
+
+  dual = Class.new(MenuStubActor) { def double_hand?; true; end }.new
+  st.party.instance_variable_set(:@actors, [dual])
+  texts = window_texts(menu_scene(RPG2k::Scene::StatusMenu, st, db)
+                         .instance_variable_get(:@equip_window))
+  eq %w[Weapon Weapon Armor], texts.each_slice(2).map(&:first).first(3),
+     'a dual-wielding actor gets the weapon term twice (kk1.12\'s とんま)'
+  # Five rows either way, at 16px pitch, the item name column at x=60.
+  calls = menu_scene(RPG2k::Scene::StatusMenu, st, db)
+            .instance_variable_get(:@equip_window).contents.draw_calls
+  eq [0, 4 * 16], calls[8][0, 2], 'the fifth slot label'
+  eq 60, calls[1][0], 'the item name column'
 end
 
 # -- summary ------------------------------------------------------------------
