@@ -36027,15 +36027,39 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   wait the manual documents remain logged and skipped. Confirmed against
   the real binary: the title screen's own `InputKey` call no longer logs
   as unimplemented. See `docs/adr/0073-wolf-rpg-editor-input-key.md`.
-  Suggested next order: `SetVariableEx`/124 (a large, many-sub-field
-  command better scoped on its own -- help/04ev_valuenext.html), save/load
-  220-222, database read/write 250/251 (2544 real occurrences -- by far
-  the most common unimplemented command left -- but this reader could not
-  cross-validate its own dominant 5-argument/4-string shape's field-
-  selection encoding against any independent source; needs either a second
-  source or a lot more real data to place with confidence), transitions
-  160-162/281/290 (161/162 have zero real examples in the sample game;
-  160 has exactly one).
+- ✅ **SetVariableEx(124), Character-state queries (2026-09-07).** Reads
+  standard/precise position, numpad direction, and event id off a
+  character (any map event, "this event", or the hero -- the exact same
+  target convention `SetMoveRoute`(201) already uses, now shared via
+  `#resolve_character_pos`), cross-confirmed against the wolfrpg-map-parser
+  crate's own `SetVariablePlusCommand`/`CharacterField` structs, whose own
+  byte layout this time maps directly onto this reader's `arg(N)` framing
+  (unlike `Choices`/`Sound`, which needed real data to reconcile a
+  differently-shaped crate model at all). The assignment-operator word is
+  shared with `SetVariable`(121) via a newly-extracted `#apply_assign_op`
+  -- pulling it out surfaced and fixed a real, previously-dormant
+  `Integer#zero?` bug in two of its own branches (this project's vendored
+  mruby fork does not have that method -- see ADR 0069's own discovery of
+  the same trap), untested until `SetVariableEx` reused the switch against
+  the sample game's own real `DivideEquals` call. The other three variable
+  types this command covers (a map tile's own state, a specific
+  `Picture`(150) number's own state, and a grab-bag "other" category --
+  current map id, BGM/BGS playback, mouse) and every `CharacterField`
+  beyond the six answered here remain logged and skipped. See
+  `docs/adr/0074-wolf-rpg-editor-set-variable-ex.md`. Suggested next order:
+  save/load 220-222, database read/write 250/251 (2544 real occurrences --
+  by far the most common unimplemented command left; this pass's own
+  research found the wolfrpg-map-parser crate *does* model it
+  [`db_management_command`], with a header layout that maps onto this
+  reader's framing the same clean way `SetVariableEx`'s did, but the
+  command also covers a large "DB操作"/"XY配列" surface -- help/04ev_db
+  .html -- well beyond the crate's own simple single-field read/write
+  model [insert/extract/copy/sort, CSV import/export, name<->index
+  lookups, a whole second "XY配列" 2D-array target], and a real 3rd data
+  byte in the packed options word this reader dumped but could not place
+  in either source; scope tightly to the plain read/write case before
+  attempting any of the rest), transitions 160-162/281/290 (161/162 have
+  zero real examples in the sample game; 160 has exactly one).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/
