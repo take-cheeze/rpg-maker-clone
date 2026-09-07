@@ -28862,6 +28862,232 @@ check 'the bag order survives losing and re-gaining an id' do
      'not back in the slot it used to occupy'
 end
 
+# -- map message window / Show Choices, measured under wine (cycle #257) ------
+#
+# Recipe for every number below: a synthetic autostart page spliced onto event
+# 1 of a scratch copy of Nepheshel's own Map0012 (through the LCF writer,
+# recomputing the page's field 51 byte length), resumed on genuine RPG_RT.exe
+# under wine (Xvfb 640x480x16, LIBGL_ALWAYS_SOFTWARE=1, matchbox) from the
+# canonical debug save moved to map 12 (40,15) with --clear-scene, then
+# captured with xwd and measured in native (capture/2) pixels. No EasyRPG
+# source was consulted.
+check 'the message window reserves a face-sized column measured off RPG_RT: ' \
+      'left face at contents (8, 8) with the text at contents 72' do
+  # Genuine frame: the 48x48 FaceSet cell landed at native (16, 176) in the
+  # bottom-positioned window (= contents (8, 8), the contents origin being
+  # window + Window::BORDER), and the first text row's glyph ink began at
+  # native x 80 (= contents 72 = FACE_INSET + FACE_SIZE + FACE_GAP). This
+  # engine drew the face flush into the contents corner (0, 0) and started the
+  # text at contents 52.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 0, 0], string: 'Faces1'), # left-hand face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'F1'),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 72, msg[:text_x], 'text column pushed past the face by 8 + 48 + 16'
+  eq 229, msg[:text_w], 'text runs to contents 301 (304 - 3), so 301 - 72 wide'
+  eq 8, msg[:face_x], 'face inset 8px from the contents left edge'
+  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
+  eq m::FACE_INSET, msg[:face_x], 'the inset is FACE_INSET'
+  face_blt = (msg[:contents].blt_calls || []).find { |a| a[2].equal?(msg[:face]) }
+  ok face_blt, 'the face cell was actually blitted into the contents'
+  eq [m::FACE_INSET, m::FACE_INSET], [face_blt[0], face_blt[1]],
+     'blitted at the measured contents offset, not the corner'
+end
+
+check 'a right-hand face reserves the same 72px on the right, so an overlong ' \
+      'line stops at contents 229 instead of running over the portrait' do
+  # Genuine frame: with the face on the right the 48x48 cell landed at native
+  # (256, 176) (= contents (248, 8)) and a 60-glyph line clipped mid-glyph at
+  # native x 237 (= contents 229). This engine put the cell at contents
+  # (256, 0) and let the text run to contents 252.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::CHANGE_FACE, [0, 1, 0], string: 'Faces1'), # right-hand face
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'M' * 60),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 0, msg[:text_x], 'the text column itself is unmoved by a right-hand face'
+  eq 229, msg[:text_w], 'but it stops 72px short of the contents right edge'
+  eq 248, msg[:face_x], 'face inset 8px from the contents right edge'
+  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
+  eq msg[:inner_w] - m::FACE_INSET - m::FACE_SIZE, msg[:face_x],
+     'i.e. inner_w - FACE_INSET - FACE_SIZE'
+  ok msg[:text_x] + msg[:text_w] <= msg[:face_x],
+     'the text boundary never reaches the portrait'
+end
+
+check 'message text stops MSG_TEXT_RIGHT_MARGIN short of the contents edge ' \
+      'with no face at all' do
+  # Genuine frame: a 70-glyph line in a 320-wide window drew its last ink
+  # column at native x 308 and background from 309 -- contents 301, three
+  # pixels short of the 304px contents width, cut mid-glyph rather than
+  # dropping the glyph or wrapping onto the next row.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'M' * 70)]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  eq 301, msg[:text_w], 'contents width 304 less the measured 3px right margin'
+  eq 1, msg[:count], 'an overlong line is clipped, never wrapped onto a second row'
+end
+
+check 'Show Choices labels are drawn MSG_CHOICE_INDENT past the message text column' do
+  # Genuine frame: the options of a Show Choices drew their glyph ink from
+  # native x 20 in the same 320-wide window whose plain message text sat at
+  # native x 8 -- a 12px indent this engine did not apply at all.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'HEAD'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'A1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'A2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  12.times { RGSS::Input.reset; scene.update; break if msg[:choice] }
+  ok msg[:choice], 'the options merged into the window'
+  drawn = {}
+  (msg[:contents].blend_calls || []).each { |a| drawn[a[4]] = a[0] }
+  (msg[:contents].draw_calls || []).each { |a| drawn[a[4]] = a[0] }
+  eq 0, drawn['HEAD'], 'the Show Text row above keeps the plain text column'
+  eq m::MSG_CHOICE_INDENT, drawn['A1'], 'the first option is indented'
+  eq m::MSG_CHOICE_INDENT, drawn['A2'], 'and so is the second'
+end
+
+check 'the message window choice cursor lands 2px inside the contents area, ' \
+      'not 4px outside it the way menu list cursors do' do
+  # Genuine frame: the green cursor frame around the selected option spanned
+  # native x 10..309 and y 168..183 in the bottom window -- 300px wide, exactly
+  # MSG_LINE_H tall, 2px inside the 8..311 contents span. Window#draw_cursor
+  # overhangs the rect it is handed by Game::WindowCursor::OVERHANG on each
+  # side, so the rect itself is pulled in by that overhang plus the inset.
+  ic = Game::Interpreter::Cmd
+  m = RPG2k::Scene::Map
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'S1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'S2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'the standalone choice window opened'
+  eq m::MSG_WIN_W, msg[:window].width, 'a standalone choice list reuses the message panel'
+  eq m::MSG_WIN_H, msg[:window].height, 'at its full fixed height, not a fitted box'
+  r = msg[:window].cursor_rect
+  x, y, w, h = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height,
+                                            RPG2k::Window::BORDER)
+  eq 10, x, 'drawn cursor starts at native x 10'
+  eq 300, w, 'and is 300 wide, ending at native x 309'
+  eq 8, y, 'row 0 starts at the contents origin'
+  eq m::MSG_LINE_H, h, 'exactly one text row tall'
+end
+
+check 'the message window unrolls over MSG_ANIM_FRAMES = 8 frames, not 7' do
+  # Burst-captured under wine: the window's drawn height stepped 20 -> 40 ->
+  # 60 -> 80 while opening (and 60 -> 40 -> 20 -> gone while closing) at about
+  # two sample frames a step, i.e. 10px = 80/8 a frame; 80/7 = 11.4 does not
+  # produce those heights.
+  eq 8, RPG2k::Scene::Map::MSG_ANIM_FRAMES, 'measured eight-frame unroll'
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [ECmd.new(ic::SHOW_MESSAGE, [], string: 'hi')]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  win = msg[:window]
+  eq 8, win.instance_variable_get(:@anim_frames_left), 'eight frames still to run'
+  7.times { RGSS::Input.reset; scene.update }
+  ok win.instance_variable_get(:@openness) < 1.0, 'still unrolling after seven frames'
+  RGSS::Input.reset
+  scene.update
+  eq 1.0, win.instance_variable_get(:@openness), 'fully open on the eighth'
+end
+
+check 'a Show Choices directly after a Show Text merges with no keypress at all' do
+  # Genuine RPG_RT under wine: an autostart of Show Message "HEAD" plus a
+  # two-option Show Choices showed the text on row 1 and both options on rows
+  # 2-3 with the cursor up, with nothing pressed since the previous message
+  # closed. This engine made the player confirm the text first.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'HEAD'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'A1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'A2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  merged = false
+  12.times do
+    RGSS::Input.reset
+    scene.update
+    merged = msg[:choice]
+    break if merged
+  end
+  ok merged, 'the options appeared without a single button press'
+  eq 3, msg[:seg_lines].length, 'one text row plus two option rows'
+  eq 1, msg[:choice_start], 'the options start on the row under the text'
+  eq 1, msg[:pages], 'and all three rows fit one page'
+end
+
+check 'Show Choices that cannot fit under the text open on a fresh page ' \
+      'instead, once the text has had its own confirm' do
+  # Genuine RPG_RT under wine: three text rows plus two options (five rows,
+  # one more than the window holds) showed the three text rows alone with the
+  # pause arrow up; one confirm replaced them with the two options at rows
+  # 1-2, the text gone. This engine appended the options regardless and let
+  # its own pagination split the result, leaving the text plus the first
+  # option on page 1 and a lone second option on page 2.
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = [
+    ECmd.new(ic::SHOW_MESSAGE, [], string: 'H1'),
+    ECmd.new(ic::MESSAGE_2, [], string: 'H2'),
+    ECmd.new(ic::MESSAGE_2, [], string: 'H3'),
+    ECmd.new(ic::SHOW_CHOICES, [0], indent: 0),
+    ECmd.new(ic::CHOICE_OPTION, [0], indent: 0, string: 'B1'),
+    ECmd.new(ic::CHOICE_OPTION, [1], indent: 0, string: 'B2'),
+    ECmd.new(ic::CHOICE_END, [], indent: 0),
+  ]
+  scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
+  msg = open_msg(scene)
+  ok msg, 'message window opened'
+  12.times { RGSS::Input.reset; scene.update; break if msg[:pending_choice] }
+  ok msg[:pending_choice], 'the options were held back rather than appended'
+  ok !msg[:choice], 'the window is still a plain text page'
+  eq 3, msg[:seg_lines].length, 'showing exactly the three text rows'
+  eq 1, msg[:pages], 'no pagination was invented for the overflow'
+  ok msg[:window].pause, 'with the pause arrow asking for a confirm'
+  RGSS::Input.triggered = [RGSS::Input::C]
+  scene.update
+  RGSS::Input.reset
+  ok msg[:choice], 'the confirm turns the window into the choice prompt'
+  eq 2, msg[:seg_lines].length, 'the text rows are gone; only the options remain'
+  eq 0, msg[:choice_start], 'the options start at row 0'
+  eq 2, msg[:count], 'both options are selectable'
+  eq 1, msg[:pages], 'still one page'
+end
+
 # -- summary ------------------------------------------------------------------
 
 if $failures.zero?

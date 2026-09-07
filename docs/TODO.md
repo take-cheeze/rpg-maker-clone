@@ -10185,6 +10185,84 @@ The work below is roughly ordered by the critical path to a walkable game
   pages on confirm; exactly four lines stays single-page; the current page shows
   only its four lines), all confirmed to fail against the pre-paging code (a
   six-line message revealing past its fourth line with no page pause / `pages`).
+  ✅ **Follow-up (cycle #257, 2026-09-06): the map message window and Show
+  Choices measured directly on genuine RPG_RT.exe for the first time.** ADR
+  0021 pinned the panel to a fixed 320x80 at x=0 early on and everything else
+  about it — face layout, text clipping, choice indent/cursor, unroll length,
+  when a Show Choices merges — was inference; cycle #248 noted the window was
+  never re-measured because no talkable event was reachable from the tested
+  spot. **Recipe**: Nepheshel's own town map 16 turned out to be a dead end —
+  its NPC events (2 "iris" at (14,9), 4 at (14,10), the shop NPC that scripts
+  Buy/Sell/Cancel via Show Choices) all carry switch-gated later pages, and the
+  canonical debug save has those switches set, so every one of them resolves to
+  an empty page and answers the Decision key with nothing at all (the hero is
+  also invisible there — the save's leader デモ用 has no CharSet — so "nothing
+  moved" is not evidence either way). Used the established splice instead: a
+  synthetic autostart page written onto event 1 of a scratch copy of `Map0012`
+  through this repo's own LCF writer (recomputing the page's field 51 byte
+  length, per cycle #181's rule), the save moved to map 12 (40,15) with
+  `--clear-scene`, resumed on genuine RPG_RT.exe under wine (Xvfb 640x480x16,
+  `LIBGL_ALWAYS_SOFTWARE=1`, matchbox, Continue → file 1) and captured with
+  `xwd`; burst captures (a shell loop grabbing frames as fast as they come with
+  a wall clock per frame, ~140 samples/s of which about half are wine's black
+  buffer-flip frames) for everything timed. All figures below are native
+  (capture/2) pixels. **Confirmed unchanged**: the window is exactly 320x80 at
+  x=0 for all three Message Options positions — its own frame lands on rows
+  0/77, 80/157, 160/237 for Up/Center/Down (i.e. y = 0 / 80 / 160) with the
+  outer frame column at x 0 and 317; rows are 16px apart with the first row's
+  glyph ink on rows 12..18 of the window (the contents origin, window + 8); an
+  overlong line is **clipped, never wrapped**; the typewriter runs at exactly
+  **two characters a frame** (a 40-glyph line stepped 24px — four half-width
+  glyphs — every 0.0335s = 2.0 frames at 60fps), so `MSG_REVEAL_SPEED` = 2 is
+  right; the pause arrow blinks **20 frames on / 20 off** (transition midpoints
+  0.187 / 0.523 / 0.856 / 1.190s → 20.1, 19.97, 20.05 frames), re-confirming
+  `Window::ARROW_BLINK_FRAMES`, and its ink sits at x 155..165, y (window
+  bottom − 7)..(bottom − 2), i.e. centred on the window with the existing
+  16x8 sprite at `(width/2 − 8, height − 8)`; a standalone Show Choices reuses
+  that same 320x80 panel rather than opening a window of its own; Cancel with
+  the block's cancel type 0 is swallowed outright, and with cancel type *n* it
+  picks option *n* and closes. **Fixed, all measured**: (1) a FaceSet cell is
+  drawn at contents (8, 8) — native (16, 176) left / (256, 176) right — not
+  flush in the contents corner, so `FACE_INSET` (8) and a stored `face_y` join
+  `FACE_SIZE`; (2) a face reserves `FACE_INSET + FACE_SIZE + FACE_GAP` = 72px
+  of text width on its own side, so left-face text starts at contents 72 (was
+  52) and right-face text stops at contents 229 (was 252, which ran an
+  overlong line straight over the portrait); (3) message text stops
+  `MSG_TEXT_RIGHT_MARGIN` = 3px short of the 304px contents width — a 70-glyph
+  line's last ink column was x 308 with background from 309, cut mid-glyph —
+  so `text_w` is 301 with no face; (4) Show Choices labels are indented
+  `MSG_CHOICE_INDENT` = 12px past the message text column (native x 20 against
+  a plain message's x 8) — this engine drew them flush; (5) the choice cursor
+  is drawn 2px *inside* the contents area on each side (x 10..309, exactly
+  `MSG_LINE_H` tall), not with the 4px overhang menu lists carry (ADR 0021),
+  so `#set_choice_cursor` hands `Window#draw_cursor` a rect pulled in by that
+  overhang plus `MSG_CURSOR_INSET`; (6) `MSG_ANIM_FRAMES` is **8**, not the
+  ported 7 — the unroll's drawn height stepped 20→40→60→80 opening and
+  60→40→20→gone closing at ~2 sample frames a step (10px = 80/8 a frame, over
+  0.127s / 0.115s end to end; 80/7 = 11.4px fits none of those heights), and
+  it does unroll from the window's own horizontal centre line as coded;
+  (7) a Show Choices directly after a Show Text now merges with **no keypress
+  at all** (RPG_RT showed "HEAD" plus both options together with nothing
+  pressed since the previous message closed) and only when the options still
+  fit the window's four rows — three text rows plus two options showed the
+  text alone with the pause arrow, and one confirm replaced it with the two
+  options at rows 1-2, text gone, rather than the "text + first option, then a
+  lone second option" pagination this engine produced. `#append_choice_lines`
+  now either merges or parks the options in `:pending_choice` for
+  `#drive_text_message`'s confirm (`#apply_pending_choice_lines`), with the
+  shared tail in `#install_choice_lines`. **Left open**: consecutive Show
+  Message commands keep *one* window up in RPG_RT with no unroll at all — a
+  burst across the confirm between two spliced Show Message commands showed the
+  frame rows pinned at 160/237 throughout, and the second command's text simply
+  replaced the first's (it does not append below it even when the rows would
+  fit) — where this engine closes the window and unrolls a fresh one, a visible
+  blink between every adjacent pair of messages; matching it needs the
+  interpreter's own `message_followup` lookahead extended to report a following
+  Show Message, which is outside this cycle's file. Also left open: whether an
+  Input Number following a Show Text merges without a confirm the way a Show
+  Choices does (not measured; it still waits for one here). Eight new
+  `scripts/rpg2k_scene_check.rb` checks pin every fixed figure, each confirmed
+  to fail against the pre-fix code. No EasyRPG source was consulted.
 - ✅ Common events — auto-start common events run once on the map, and parallel
   common events now run **continuously** in the background alongside the player
   via their own looping interpreter (`Scene::Map#step_parallels`), each gated by

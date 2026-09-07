@@ -53,6 +53,14 @@ class RPG2k
     # and it starts in the "on" phase the instant the window pauses, exactly
     # as coded here. See scripts/rpg2k_scene_check.rb's "pause arrow blinks
     # on a 20-frame-on/20-frame-off cycle" check.
+    # Re-confirmed once more on the *map* message window (cycle #257, a
+    # synthetic autostart Show Message spliced onto a scratch Map0012, burst
+    # captured while paused): transition midpoints 0.187 / 0.523 / 0.856 /
+    # 1.190s give runs of 20.1, 19.97 and 20.05 frames at 60fps. The same
+    # frames put the arrow's ink at native x 155..165 and y (window bottom
+    # - 7)..(bottom - 2) of the 320x80 window, i.e. horizontally centred with
+    # this 16x8 sprite at (width / 2 - ARROW_W / 2, height - ARROW_H) --
+    # #position_arrow's own placement, confirmed rather than changed.
     ARROW_SRC_X = 40
     ARROW_SRC_Y = 16
     ARROW_W = 16
