@@ -110,6 +110,13 @@ module Wolf
     # surface (XY配列, name<->index lookups, insert/extract/copy/sort,
     # CSV import/export).
     C_DATABASE = 250
+    # "その他2" tab's own party member/graphics command (WolfTL's own
+    # Command.hpp names it Party; the wolfrpg-map-parser crate's own
+    # `party_graphics_command`, fully confirmed field-for-field including
+    # its own `SpecialOperation` sub-enum). See #exec_party's own comment
+    # for what real data needs versus what still needs an unbuilt party
+    # system.
+    C_PARTY = 270
     C_SET_MOVE_ROUTE = 201
     # "→完了までウェイト" (04ev_control.html: "does not execute the next
     # command until the currently-processing ■動作指定 finishes"). The
@@ -319,6 +326,8 @@ module Wolf
           @interp.exec_change_color(cmd)
         when Interpreter::C_TELEPORT
           @interp.exec_teleport(cmd)
+        when Interpreter::C_PARTY
+          @interp.exec_party(cmd)
         when Interpreter::C_SAVE_LOAD
           @interp.exec_save_load(cmd)
         when Interpreter::C_LOAD_VARIABLE
@@ -1916,6 +1925,58 @@ module Wolf
       y = var_store.number(cmd.arg(2))
       map_id = var_store.number(cmd.arg(3))
       self.pending_teleport = [map_id, x, y]
+    end
+
+    # Party(270) ("パーティ画像", help/04ev_party.html): changes the
+    # walking-graphics/formation of the party -- "プレイヤーキャラクター
+    # たちは隊列を組んで歩かせることが可能です...パーティーはプレイヤー
+    # キャラクターを含めて最大6人まで" (up to 6 party members, formation-
+    # walking behind the hero), a whole feature this reader has never
+    # built any part of (no party-member sprites, no roster, no
+    # formation-following movement) -- `Remove`/`Insert`/`Replace`/
+    # `RemoveGraphic` (`options`'s low nibble) all need it and stay
+    # unimplemented, `Party`(270)'s own entry in the "no foundation yet"
+    # camp `BanInput`(126)/`Zoom`(Map target, Effect(290)) already sit in.
+    #
+    # `Special`(the fifth operation, `options`'s own next nibble selecting
+    # one of 11 sub-operations) is different: 3 of this reader's 4 real
+    # calls are `EraseAllCharacters`("キャラクター画像を全消去する",
+    # special_operation 1) and `WarpPartyToHero`("仲間全員を主人公の位置
+    # にワープ", special_operation 2), both fully confirmed by the crate's
+    # own `SpecialOperation` enum *and* the manual's own matching wording
+    # -- and both are genuine no-ops in this reader specifically, the same
+    # "nothing to do without the feature this needs" reasoning `Blank`(0)/
+    # `Checkpoint`(99)/`WaitForMove`(202) already established for a marker
+    # command: erasing party-member images that were never drawn, or
+    # warping party members that do not exist, both trivially already
+    # true. The remaining Special sub-operations (formation-synchro,
+    # transparency, memorize/recall, following on/off) are not implemented
+    # -- unlike Erase/Warp, treating them as no-ops would be a visibly
+    # wrong "did nothing" for a feature that is supposed to change
+    # something observable once a party actually exists, not an honestly-
+    # missing one.
+    PARTY_OP_SPECIAL = 4
+    PARTY_SPECIAL_ERASE_ALL = 1
+    PARTY_SPECIAL_WARP_TO_HERO = 2
+
+    def exec_party(cmd)
+      unless cmd.args.size == 1
+        unimplemented("Party(270) with #{cmd.args.size} arguments")
+        return
+      end
+      options = cmd.arg(0)
+      operation = options & 0x0f
+      unless operation == PARTY_OP_SPECIAL
+        unimplemented("Party(270) operation #{operation}")
+        return
+      end
+      special_operation = (options >> 4) & 0x0f
+      case special_operation
+      when PARTY_SPECIAL_ERASE_ALL, PARTY_SPECIAL_WARP_TO_HERO
+        nil
+      else
+        unimplemented("Party(270) special operation #{special_operation}")
+      end
     end
 
     # SaveLoad(220) ("保存・読込", help/04ev_file.html's own "[保存・読込

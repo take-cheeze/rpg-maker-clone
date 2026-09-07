@@ -743,6 +743,12 @@
   guarantee. Self-variables, the database, and party state are not
   captured. See
   [`docs/adr/0087-wolf-rpg-editor-save-load.md`](docs/adr/0087-wolf-rpg-editor-save-load.md)
+- **Party image reset/warp.** `Party`(270)'s "キャラクター画像を全消去
+  する"/"仲間全員を主人公の位置にワープ" Special sub-operations are
+  no-ops, since this reader has no party-member sprites at all to erase
+  or move. Adding, removing, or replacing an actual member still needs a
+  real party system. See
+  [`docs/adr/0088-wolf-rpg-editor-party.md`](docs/adr/0088-wolf-rpg-editor-party.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
