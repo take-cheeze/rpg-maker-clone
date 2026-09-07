@@ -922,6 +922,32 @@ assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explici
   assert_equal 0, scene.x
 end
 
+assert "Wolf::Interpreter#event_position keys by [current_map_id, event.id], not event.id alone" do
+  # Two different maps' own event id spaces both start from small numbers
+  # (0/1/2) and would otherwise collide -- Teleport(130)/SaveLoad(220)'s
+  # own Load both replace current_map/current_map_id without clearing
+  # @event_positions, so a revisited map must find its own events exactly
+  # where they were left, not some *other* map's same-id event's position.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+
+  event_a = WolfTestEvent.new(5, 1, 1, [])
+  interp.current_map = WolfTestMap.new([event_a])
+  interp.current_map_id = 100
+  pos_a = interp.event_position(event_a)
+  pos_a[:x] = 9 # moved on map 100
+
+  event_b = WolfTestEvent.new(5, 2, 2, []) # same event id, a different map
+  interp.current_map = WolfTestMap.new([event_b])
+  interp.current_map_id = 200
+  pos_b = interp.event_position(event_b)
+  assert_equal 2, pos_b[:x] # its own real starting x, unaffected by map 100's own move
+
+  interp.current_map = WolfTestMap.new([event_a])
+  interp.current_map_id = 100
+  assert_equal 9, interp.event_position(event_a)[:x] # map 100's own move survived the round trip
+end
+
 # ---- Wolf::Interpreter#exec_set_variable_ex (SetVariableEx(124)) ------------
 
 def wolf_test_var_ex_header(assign_op: 0, var_type: Wolf::Interpreter::SET_VAR_EX_TYPE_CHARACTER)

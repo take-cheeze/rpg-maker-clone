@@ -749,6 +749,11 @@
   or move. Adding, removing, or replacing an actual member still needs a
   real party system. See
   [`docs/adr/0088-wolf-rpg-editor-party.md`](docs/adr/0088-wolf-rpg-editor-party.md)
+- **Per-map event position keying.** A revisited map (`Teleport`(130) or
+  `SaveLoad`(220)'s own Load) now correctly finds its own events exactly
+  where they were left, instead of colliding with a different map's
+  identically-numbered event. See
+  [`docs/adr/0089-wolf-rpg-editor-event-position-per-map.md`](docs/adr/0089-wolf-rpg-editor-event-position-per-map.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
