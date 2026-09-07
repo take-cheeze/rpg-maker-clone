@@ -22,10 +22,27 @@ elf="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
 duration="${2:-00:00:00.300}"
 renode="${RENODE_BIN:-renode}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-nm="${ARM_NM:-arm-none-eabi-nm}"
 
 if ! command -v "$renode" >/dev/null 2>&1; then
   echo "error: '$renode' not found -- install Renode or set RENODE_BIN" >&2
+  exit 1
+fi
+
+nm="${ARM_NM:-}"
+if [[ -z "$nm" ]]; then
+  if command -v arm-none-eabi-nm >/dev/null 2>&1; then
+    nm=arm-none-eabi-nm
+  else
+    # PlatformIO's own toolchain (pio run already downloaded this to build
+    # the ELF being booted) is not put on PATH by pio itself -- fall back to
+    # its well-known install location rather than requiring a separate
+    # system arm-none-eabi-nm (CI's `wio-renode` job relies on exactly this;
+    # it never installs one).
+    nm="$HOME/.platformio/packages/toolchain-gccarmnoneeabi/bin/arm-none-eabi-nm"
+  fi
+fi
+if ! command -v "$nm" >/dev/null 2>&1; then
+  echo "error: no arm-none-eabi-nm found (checked PATH and PlatformIO's toolchain) -- set ARM_NM" >&2
   exit 1
 fi
 

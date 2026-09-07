@@ -1352,15 +1352,18 @@ jobs:
             wasm-build/timidity*.data
 
   wio:
-    # Build both Wio Terminal (SAMD51) firmwares with PlatformIO. This is the
-    # external check for the port: this environment cannot cross-build or flash
-    # the board, so CI compiles it. `wio` is the bring-up firmware -- the
+    # Build all three Wio Terminal (SAMD51) firmwares with PlatformIO. This is
+    # the external check for the port: this environment cannot cross-build or
+    # flash the board, so CI compiles it. `wio` is the bring-up firmware -- the
     # display + input HAL and the Arduino sketch, with the mruby interpreter
     # layered on in a later slice (see app/wio/README.md and
     # docs/adr/0005-wio-terminal-port.md). `wio_walk` is the minimal,
     # non-mruby map-walk firmware over the shared engine the iPod nano 7G app
-    # runs (docs/adr/0091); the nano side of that engine has no CI toolchain at
-    # all, so this job is the only place either firmware is compiled.
+    # runs (docs/adr/0091). `wio_sd_upload` is the throwaway serial-to-SD
+    # loader (app/wio/README.md's "No SD card reader?" section). The nano side
+    # of the shared walk engine has no CI toolchain at all, so this job is the
+    # only place any of the three firmwares is compiled -- the `wio-renode`
+    # job below additionally boots them (docs/adr/0094).
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     steps:
@@ -1396,6 +1399,132 @@ jobs:
         run: |
           pio run -e wio
           pio run -e wio_walk
+          pio run -e wio_sd_upload
+
+  wio-renode:
+    # Boots the three firmwares the `wio` job above compiles under Renode
+    # (docs/adr/0094-wio-terminal-renode-emulator.md), far enough to prove
+    # the CPU actually runs its own setup()/loop() rather than only
+    # compiling -- this is ADR 94 P5's "does this run in CI" question,
+    # answered for the parts that are fast and bounded (P1-P3). It also runs
+    # the ILI9341 display peripheral's own regression test
+    # (app/wio/renode/lcd_smoke_test.resc), an actual pixel-correctness
+    # check, not just a boot check.
+    #
+    # Not covered here: a full firmware-driven render (wio_walk reading a
+    # real SD card and drawing an actual map tile). Both wio and wio_walk's
+    # tile/frame push goes through SPIClass's DMA-driven bulk transfer
+    # (Adafruit_ZeroDMA), which this platform does not model yet (P2's
+    # DMAC gap, app/wio/renode/README.md) -- a real, understood, separate
+    # piece of work, not a performance concern like the two bugs below were.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the firmware.
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - uses: actions/setup-dotnet@v4
+        with:
+          # Building Renode from source (below) needs the SDK; the portable
+          # release binary this repo's own dev docs point at for P1/P2-only
+          # use bundles just the runtime, which is not enough to compile a
+          # new peripheral into it.
+          dotnet-version: "8.0.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        run: |
+          pio run -e wio
+          pio run -e wio_walk
+          pio run -e wio_sd_upload
+
+      - name: Install mtools/dosfstools/ImageMagick
+        # mtools/dosfstools: scripts/wio_renode_sdcard.bash's own smoke test
+        # below. ImageMagick: reading pixels back out of the ILI9341 model's
+        # PNG dump.
+        run: sudo apt-get update -q && sudo apt-get install -y -q mtools dosfstools imagemagick
+
+      - name: Cache the Renode build
+        id: renode-cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/wio-renode-build
+          # Keyed on the pinned commit scripts/wio_renode_build.bash checks
+          # out and on the peripheral sources it copies in -- either
+          # changing invalidates the cache; nothing else does, so this is a
+          # cache hit on almost every run.
+          key: wio-renode-${{ runner.os }}-${{ hashFiles('scripts/wio_renode_build.bash', 'app/wio/renode/peripherals/**') }}
+
+      - name: Build Renode with the Wio Terminal peripherals
+        if: steps.renode-cache.outputs.cache-hit != 'true'
+        run: scripts/wio_renode_build.bash /tmp/wio-renode-build
+
+      - name: Boot each firmware under Renode
+        env:
+          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
+        run: |
+          "$RENODE_BIN" --version
+          for env in wio wio_walk wio_sd_upload; do
+            echo "::group::$env"
+            out="$(scripts/wio_renode_boot.bash ".pio/build/$env/firmware.elf" "00:00:00.300")"
+            echo "$out"
+            echo "$out" | grep -q "REACHED setup()" || { echo "::error::$env did not reach setup()"; exit 1; }
+            echo "$out" | grep -q "REACHED loop()" || { echo "::error::$env did not reach loop()"; exit 1; }
+            echo "::endgroup::"
+          done
+
+      - name: ILI9341 display peripheral regression test
+        env:
+          RENODE_BIN: /tmp/wio-renode-build/renode-src/renode
+        run: |
+          rm -f /tmp/wio_lcd_smoke_test.png
+          "$RENODE_BIN" --disable-gui --console --plain \
+            -e "include @app/wio/renode/lcd_smoke_test.resc" -e "quit" < /dev/null
+          # apt's "imagemagick" package on ubuntu-24.04 is IM6, which has no
+          # `magick` binary at all (that unified CLI is IM7-only, a separate
+          # package); IM7 installs, in turn, without the `convert` name.
+          # Support either.
+          im_convert=convert
+          command -v magick >/dev/null 2>&1 && im_convert=magick
+          check() {
+            local got
+            got="$("$im_convert" /tmp/wio_lcd_smoke_test.png -format '%[pixel:p{'"$1"'}]' info:)"
+            [ "$got" = "$2" ] || { echo "::error::pixel {$1} was $got, expected $2"; exit 1; }
+          }
+          check "8,0" "srgb(255,0,0)"   # inside the CASET/PASET window, red row
+          check "8,1" "srgb(0,0,255)"   # inside the window, blue row
+          check "20,0" "srgb(0,0,0)"    # outside the window, untouched
+
+      - name: SD card image tooling smoke test
+        # scripts/wio_renode_sdcard.bash itself, not a firmware boot (see
+        # the job comment for why the full SD-backed boot is out of scope
+        # here): builds a real FAT image and confirms mtools can read back
+        # what it wrote.
+        run: |
+          mkdir -p /tmp/wio_renode_sdcard_check
+          echo hello > /tmp/wio_renode_sdcard_check_input.txt
+          scripts/wio_renode_sdcard.bash /tmp/wio_renode_sdcard_check \
+            /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
+          mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
 
   psp:
     # Build the PSP EBOOT bring-up with the pspdev toolchain. Like the Wio job,

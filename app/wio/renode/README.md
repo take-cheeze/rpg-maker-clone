@@ -1,47 +1,24 @@
 # Wio Terminal under Renode
 
-P1/P2/P3 of [ADR 94](../../../docs/adr/0094-wio-terminal-renode-emulator.md):
-a [Renode](https://renode.io) platform that boots this repo's real Wio
-Terminal firmware ELFs (`wio`, `wio_walk`, `wio_sd_upload`) far enough to
-prove the CPU actually runs its own `setup()`/`loop()` -- instead of only
-compiling, as CI's `wio` job does today -- and now a real ILI9341 SPI
-display model behind it, so a frame can be captured as a PNG.
+P1-P4 of [ADR 94](../../../docs/adr/0094-wio-terminal-renode-emulator.md): a
+[Renode](https://renode.io) platform that boots this repo's real Wio
+Terminal firmware ELFs (`wio`, `wio_walk`, `wio_sd_upload`), reliably and
+fast, all the way to their own `loop()` -- instead of only compiling, as
+CI's `wio` job does today -- with a real ILI9341 SPI display model and a
+real (emulated) SD card behind it, so `wio_walk` reads an actual exported
+Nepheshel map off an actual FAT filesystem before anything this platform
+still lacks (a DMA controller model) stops it short of a full render.
 
 ## Status
 
 **Verified, this platform:**
 
 - All three firmware environments (`wio`, `wio_walk`, `wio_sd_upload`) reach
-  their own `setup()`.
-- `wio` (LVGL bring-up) and `wio_sd_upload` reach `loop()` and keep running
-  it stably (sampled PC across repeated `RunFor` calls stays within the
-  expected hot addresses, not stuck at one instruction).
-- `wio_walk` reaches `setup()` but, even with a real SD card attached (P4),
-  takes far longer than expected to reach `loop()`. Confirmed genuinely not
-  a hang -- `millis()`/SysTick was checked directly (`_ulTickCount` read
-  back over successive `RunFor` calls increases monotonically) -- and the
-  root cause is broader than SD specifically: this model runs every SPI
-  transfer instantaneously with no per-byte clock-rate cost, so *any*
-  `delay()`/`millis()`-bounded real-time wait anywhere in the firmware costs
-  vastly more *emulated instructions* than the same wall-clock wait costs on
-  real hardware (which spends most of that time idle, not executing).
-  `TFT_eSPI::init()` alone has ~295 ms of unconditional `delay()` calls
-  (reset pulse timing, post-reset settle) that run *before* `SD.begin()` is
-  even reached, on top of whatever `Seeed_Arduino_FS`'s own `sdWait()` retry
-  logic costs on top of that. Measured: a single ~500 ms real-time wait this
-  way costs on the order of a minute of wall-clock time on the machine this
-  was measured on. Not a correctness bug -- worth a cheaper fix (e.g. a
-  virtual-time-aware `SPI.transfer()` cost, or a monitor-side time-warp past
-  known delay loops) before relying on full-boot timing for anything. A
-  30-virtual-second attempt (with a real SD card attached, P4) ran for
-  about 5 real minutes and still had not reached `loop()` when it hit a
-  second, *unrelated* problem: Renode's own `ConsoleIOSource.HandleInput()`
-  crashed with an unhandled `SemaphoreFullException` (a genuine upstream
-  bug in its console/stdin-redirection handling on long-running headless
-  sessions with `< /dev/null`, not anything in this platform or firmware --
-  reproducible, but not investigated further here). Long unattended runs
-  should account for this: redirecting from `/dev/null` is not safe for
-  multi-minute sessions today.
+  their own `setup()` **and** `loop()`, reliably and fast (well under a
+  second of wall-clock time for 300 ms of virtual time) -- see below for
+  why earlier rounds of this work saw `wio_walk`/`wio_sd_upload` take what
+  looked like a fundamental, unfixable amount of wall-clock time to get
+  there, and were wrong about why.
 - **The ILI9341 display model is verified correct**, directly: **P3's own
   regression test**, `app/wio/renode/lcd_smoke_test.resc`, drives
   SERCOM7/LCD's registers by hand (enable, then a 16x1 CASET/PASET window,
@@ -50,41 +27,77 @@ display model behind it, so a frame can be captured as a PNG.
   `{8,0}` reads `srgb(255,0,0)`, `{8,1}` reads `srgb(0,0,255)`, `{20,0}`
   (outside the CASET window) stays `srgb(0,0,0)` -- CASET/PASET windowing,
   RAMWR auto-increment addressing and RGB565→RGB24 decode are all correct.
-  Driving it from real firmware instead of by hand is blocked on the same
-  delay()-cost problem above (`wio`'s LVGL path is separately blocked on
-  the DMAC gap below) -- the peripheral itself is not in question, only how
-  expensive it is to reach through the firmware's own boot path.
+- `wio_walk`, booted with a real SD card attached (P4,
+  `scripts/wio_renode_sdcard.bash`), now gets **all the way through
+  `SD.begin()` and `draw_map()`'s backdrop fill** -- a real file was read
+  off a real (emulated) FAT filesystem. What's on screen at that point is a
+  solid, *wrong-coloured* fill, not a rendering bug: `draw_map()` calls
+  `fillScreen(to565(backdrop))` before it draws any tiles, and `to565()`
+  encodes for a different real-hardware SPI quirk (a byte-swap specific to
+  `TFT_eSPI`'s *scalar* single-pixel writes) than `to565_push()` does (the
+  same board's *bulk*/DMA writes, what tiles use, and what `ILI9341_SPI`
+  was written to expect) -- see the colour-fix session this whole ADR
+  exists because of. This platform does not replicate that hardware quirk
+  at all (there is nothing to correct for, on either path), so it only
+  ever decodes one of the two encodings correctly. This is a known,
+  understood cost of not modelling that specific quirk, not a fix TODO.
 
-**Known gap, found along the way:** `wio`'s LVGL flush path uses
-`SPIClass::transfer`'s DMA-driven bulk mode (`Adafruit_ZeroDMA`), which
-spins forever waiting on a "job done" flag no DMA controller model ever
-sets, once `loop()` actually tries to push a frame. `wio_walk`'s
-`SPI.transfer()` (single-byte, blocking, no DMA) does not hit this. A DMAC
-peripheral is not modelled here -- it is new scope, distinct from (and
-smaller than) the ILI9341 peripheral P3 already delivered, since Renode's
-own `sysbus` already provides DMA engine building blocks used elsewhere;
-nobody has checked yet whether one of Renode's existing DMAC models (e.g.
-for other Cortex-M SoCs) is close enough to adapt.
+**Two real bugs found and fixed getting here, not a platform limitation.**
+Earlier drafts of this document explained `wio_walk` and `wio_sd_upload`
+taking what looked like forever to reach `loop()` as an inherent cost of
+this platform running every SPI transfer instantaneously (so any real
+`delay()`/`millis()` wait would cost hugely more emulated instructions than
+wall-clock time on real hardware). That diagnosis was wrong. The actual
+causes were two fixable bugs, found by refusing to accept "it's just slow"
+without checking what the CPU's own reads were actually seeing:
 
-**P4 (SD card): the peripheral half needed no new code, wiring it up did
-not unblock the render path either.** `SD.SDCard` (upstream, unmodified)
-already implements SD-over-SPI directly -- `spiMode: true` in its
-constructor, checked by reading `Transmit()` itself this time, not just the
-class list (which is exactly what missed it originally: `SDCardExtensions.cs`
-and the class name suggested "block storage only", but the class itself
-already has a full SPI front end). `scripts/wio_renode_sdcard.bash` builds a
-real FAT16 image with a real Nepheshel export on it and a `.repl` snippet
-wiring it onto `sercom6_spi`. Attaching it, though, did **not** turn out to
-be the last piece: `wio_walk` still does not reach `loop()` in any budget
-tried (up to 30 virtual seconds). Register-level inspection at the stuck
-point (`cpu0 AddHook` reading `r0`/`r1` — not `r3`, which the instruction at
-that address had not written yet; sampling it was a measurement mistake,
-not evidence of memory corruption) shows genuine `SERCOM::transferDataSPI`
-traffic on `sercom7` (LCD), not SD -- the bottleneck is `TFT_eSPI::init()`'s
-own ~295 ms of `delay()` calls, which run *before* `SD.begin()` is ever
-reached. See the delay()-cost note above: this is the same root cause,
-just showing up somewhere new, and disproves the hope that a successful SD
-init alone would route around it.
+- **`SAMD51_SERCOM_SPI` needed `IBytePeripheral`, not just
+  `IDoubleWordPeripheral`.** Real SERCOM registers are a mix of widths --
+  `INTFLAG` is 8-bit, and this firmware's driver (`SERCOM.cpp` in the
+  Arduino SAMD core) polls it with `ldrb`, a byte-sized load. Renode does
+  **not** automatically serve a byte access against a peripheral that only
+  implements `IDoubleWordPeripheral` -- it logs "Attempted Byte read isn't
+  supported by the peripheral" at `NOISY` level (easy to miss unless you go
+  looking) and returns 0. `INTFLAG` always reading 0 to the CPU's own poll
+  loop -- while a `sysbus ReadDoubleWord` on the exact same address, from
+  the Monitor, correctly computed the ready bits -- is what "hangs forever"
+  actually was: not a slow but finite retry loop, a genuine live-lock,
+  every single byte a device sent, for every firmware that touches SPI at
+  all past the clock tree. The fix is two one-line methods
+  (`ReadByte`/`WriteByte`, delegating to `ReadByteUsingDoubleWord`/
+  `WriteByteUsingDoubleWord`) -- see `SAMD51_SERCOM_SPI.cs` and the
+  `SAMD21_GPIO` peripheral it copies the pattern from.
+- **Renode's own upstream `SD.SDCard` doesn't implement `ACMD42`**
+  (`SET_CLR_CARD_DETECT`), an optional command that only matters for a
+  DAT3/CD pin pull-up SPI mode does not use. `Seeed_Arduino_FS`'s driver
+  sends it unconditionally during `SD.begin()` anyway and treats *any*
+  non-ready response as fatal -- including the "illegal command" R1 a
+  correctly-behaving card gives back for a command it does not support,
+  which is exactly what `SD.SDCard` correctly did. `SD.begin()` aborting
+  right after otherwise succeeding through `CMD0`/`CMD8`/`ACMD41`/`CMD58`
+  looked, from this session's side, like it must be more of the same
+  delay-cost problem; it was a real (if obscure) driver/card incompatibility
+  instead. `app/wio/renode/patches/sdcard-acmd42.patch` adds a harmless
+  R1-ready response for `ACMD42`, mirroring how the same file already
+  handles `CMD59` (also not really implemented, also given a benign
+  response because real drivers expect one).
+
+Once both were fixed, the "delay-cost" theory evaporated along with the
+bugs it was actually describing: SD init, FatFs directory traversal and
+reading `map.bin` all now happen in a small fraction of a second of virtual
+time, at a normal wall-clock cost.
+
+**What's still genuinely missing, not a bug:** a DMA controller model.
+Both `wio`'s LVGL flush path and `wio_walk`'s `pushImage()` (for tiles, not
+the scalar `fillScreen`/`fillCircle` calls) go through `SPIClass::transfer`'s
+DMA-driven bulk mode (`Adafruit_ZeroDMA`), which spins forever waiting on a
+"job done" flag no DMA controller model ever sets. This is new scope,
+distinct from (and smaller than) the ILI9341 peripheral P3 already
+delivered, since Renode's own `sysbus` already provides DMA engine building
+blocks used elsewhere; nobody has checked yet whether one of Renode's
+existing DMAC models (e.g. for other Cortex-M SoCs) is close enough to
+adapt. This -- not delay() cost -- is the real remaining blocker on the
+original "render a real frame and compare it pixel-for-pixel" goal.
 
 ```sh
 ruby scripts/export_nano7_map.rb --target wio \
@@ -96,32 +109,33 @@ scripts/wio_renode_sdcard.bash /tmp/wio_renode_sdcard \
 #   machine LoadPlatformDescription @/tmp/wio_renode_sdcard/sdcard.repl
 ```
 
+**A genuine, unrelated Renode stability bug, found along the way and worth
+knowing about separately:** a 30-virtual-second run (from before the two
+fixes above, back when that much virtual time still seemed necessary) ran
+for about 5 real minutes and crashed on `ConsoleIOSource.HandleInput()`
+throwing an unhandled `SemaphoreFullException` -- an upstream bug in
+Renode's own console/stdin-redirection handling on long-running headless
+sessions with `< /dev/null`, reproducible but not investigated further
+here. Long unattended runs should still account for this if they ever need
+to run for real minutes rather than fractions of a second.
+
 ## Running it
 
 Requires Renode itself (not a repo dependency -- nothing else here needs
-it). Two ways to get it, depending on whether you need the display model:
-
-- **Boot-only (P1/P2), the release binary**: grab a
-  `*-portable-dotnet.tar.gz`/`.zip` release from
-  [github.com/renode/renode/releases](https://github.com/renode/renode/releases)
-  (needs no separate .NET install) and put `renode` on `PATH`, or point
-  `RENODE_BIN` at the binary.
-- **With the ILI9341 display (P3)**: the release binary is precompiled and
-  cannot pick up new peripherals -- `scripts/wio_renode_build.bash` clones
-  Renode's source at the pinned commit this was built and verified against,
-  drops in `app/wio/renode/peripherals/`, and builds it (needs `git`,
-  `cmake`, a C/C++ toolchain for tlib's native CPU cores, and the **.NET 8
-  SDK** specifically -- not just the runtime the portable release bundles).
-  Takes a few minutes the first time.
+it) **built from source**, not a release binary: `wio_terminal.repl` uses
+`SPI.SAMD51_SERCOM_SPI` and `Video.ILI9341_SPI` (this repo's own
+peripherals, since P3) for SERCOM6/7 unconditionally, which no release
+binary has compiled in -- there is no plain-release-binary path for even a
+P1/P2-style boot check any more.
 
 ```sh
-pio run -e wio_sd_upload   # or wio, or wio_walk
-scripts/wio_renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
-# a longer virtual-time budget for firmware that needs more of it to settle:
-scripts/wio_renode_boot.bash .pio/build/wio_walk/firmware.elf "00:00:02"
+scripts/wio_renode_build.bash   # needs git, cmake, a C/C++ toolchain (tlib's
+                                 # native CPU cores) and the .NET 8 SDK
+                                 # specifically -- not just the runtime a
+                                 # release binary would bundle. A few minutes
+                                 # the first time.
 
-# To use the built-from-source Renode (needed for the ILI9341 model):
-scripts/wio_renode_build.bash
+pio run -e wio_sd_upload   # or wio, or wio_walk
 RENODE_BIN=/tmp/wio-renode-build/renode-src/renode \
   scripts/wio_renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
 ```
@@ -147,7 +161,11 @@ assumed -- see ADR 94's peripheral-feasibility table):
   enabled, matching the "everything is instantaneous" model the rest of
   this platform already uses -- and, unlike a register stub, actually calls
   `Transmit()` on whatever `ISPIPeripheral` is registered on it via `@` in
-  the `.repl`, delivering real bytes to a real device.
+  the `.repl`, delivering real bytes to a real device. Implements
+  `IBytePeripheral` as well as `IDoubleWordPeripheral` (delegating to
+  `ReadByteUsingDoubleWord`/`WriteByteUsingDoubleWord`) -- without that,
+  every `ldrb` poll of `INTFLAG` live-locked; see the Status section above
+  for the full story.
 - **`Video/ILI9341_SPI.cs`**: the 320x240 panel itself. Scoped to exactly
   what this firmware's `TFT_eSPI` fork sends -- `CASET`/`PASET`/`RAMWR` are
   interpreted (including RAMWR's auto-increment addressing across many
@@ -166,7 +184,19 @@ assumed -- see ADR 94's peripheral-feasibility table):
 `app/wio/renode/lcd_smoke_test.resc` is the regression test for the second
 one: see its header comment for exact usage and expected pixel values.
 
-Two more debugging pitfalls, found while chasing P4's boot-timing question:
+## `app/wio/renode/patches/` -- one small upstream fix (P4)
+
+`sdcard-acmd42.patch`: adds a harmless R1-ready response to upstream
+`SD.SDCard` for `ACMD42` (`SET_CLR_CARD_DETECT`), which it does not
+implement and `Seeed_Arduino_FS`'s driver sends unconditionally, treating
+the correct "illegal command" response as fatal (see the Status section
+above). `scripts/wio_renode_build.bash` applies it automatically
+(`git apply`, against the `src/Infrastructure` submodule specifically,
+since that is where `SDCard.cs` actually lives) -- nothing else needs to
+know it exists.
+
+Two more debugging pitfalls, found while chasing what turned out to be the
+two bugs above:
 
 - **`.repl` files do not support `$variable` substitution** -- that is a
   `.resc` (Monitor script) feature only; putting `$foo` in a `.repl` is a

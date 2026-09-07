@@ -11,8 +11,14 @@ mach create "wio"
 machine LoadPlatformDescription $platform_path
 sysbus LoadELF $elf_path
 
-cpu0 AddHook $setup_addr "print(\"=== REACHED setup() ===\")"
-cpu0 AddHook $loop_addr "print(\"=== REACHED loop() ===\")"
+# Each hook removes itself (cpu.PC is its own trigger address, since a hook
+# fires before the instruction there executes) after firing once: loop() in
+# particular gets called on every pass through the firmware's main loop, so
+# a hook that just kept printing would flood the log (and, for a firmware
+# whose loop() runs thousands of times in a short RunFor, overflow a
+# calling script's command-line length capturing this script's stdout).
+cpu0 AddHook $setup_addr "print(\"=== REACHED setup() ===\"); cpu.RemoveHooksAt(cpu.PC)"
+cpu0 AddHook $loop_addr "print(\"=== REACHED loop() ===\"); cpu.RemoveHooksAt(cpu.PC)"
 
 # Unmapped-register warnings are expected background noise once past the
 # clock tree (peripherals this platform does not model at all yet, e.g. the
