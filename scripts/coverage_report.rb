@@ -66,6 +66,11 @@ CHECKS = [
   { name: 'rpg2k-scene',        command: %w[scripts/rpg2k_scene_check.rb] },
   { name: 'rpg2k-render',       command: %w[scripts/rpg2k_render_check.rb] },
   { name: 'rpg2k-testbed-logic', command: %w[scripts/rpg2k_testbed_logic_check.rb] },
+  # Spawns the exporter as a child process; the coverage hook rides RUBYOPT
+  # into it, so Game::ChipsetLayout/ChipSet and the LCF readers it drives are
+  # measured here like any other check.
+  { name: 'nano7-map-export',   command: %w[scripts/export_nano7_map_check.rb],
+    needs: :rpg2k_game },
   { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
   # through the RGSS compatibility layer (scripts/rgss_cruby_compat.rb), so the

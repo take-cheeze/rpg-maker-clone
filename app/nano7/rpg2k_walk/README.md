@@ -44,7 +44,9 @@ ruby scripts/export_nano7_map.rb \
   data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/rpg2k_walk_out
 ```
 
-writes `map.bin` + `tiles.bin` to `OUT_DIR`. `scripts/export_nano7_map_check.rb`
+writes `map.bin` + `tiles.bin` to `OUT_DIR` (the format is described at the
+top of the exporter; `tiles.bin` is an ARGB1555 tile atlas, 512 bytes per
+tile). `scripts/export_nano7_map_check.rb`
 round-trips the exporter's output against its own invariants (no mruby or
 device needed) — run it after touching the exporter or this app's binary
 format.
@@ -100,6 +102,11 @@ at a time while held, blocked by the map's real passability data.
 ## Known limitations
 
 - One static map per export; no map tree, no teleport/transitions.
+- A map's parallax background becomes **one backdrop colour** (its average),
+  painted behind the map and through any pixel the chipset leaves
+  transparent. Nepheshel's world map draws its whole sea that way, so the
+  approximation is what makes it look like sea; a detailed panorama will
+  read as a flat colour.
 - Autotiles (water, terrain edges) render correctly but frozen at their
   first animation frame — no water/ground animation on-device.
 - No events, message boxes, battle, or menus.

@@ -1143,9 +1143,12 @@
   collision, for one static map — no events, battle or menus.
 - Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
   ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
-  exported map with working collision. One known issue: cells whose
-  lower-layer chip resolves to the chipset's transparent/placeholder region
-  render as solid magenta instead of being handled — see the ADR.
+  exported map with working collision. Chipset transparency is honoured: the
+  export keys on palette index 0 exactly as the real renderer does, tile
+  pixels are ARGB1555 (one alpha bit, half the atlas of the 32-bit first
+  cut), the app composites a cell's two layers before blitting, and a map's
+  parallax background is reduced to a single backdrop colour behind it — an
+  island map's sea comes out as sea rather than as holes. See the ADR.
 
 ### Reporting an error
 

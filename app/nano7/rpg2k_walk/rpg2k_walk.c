@@ -15,6 +15,13 @@
  * events/interpreter/battle/menus, tiles frozen at their first animation
  * frame. This walks a real map; it does not play the game.
  *
+ * Tile pixels are ARGB1555 (bit 15 opaque, then r5g5b5). One alpha bit is
+ * all RPG Maker's colour key needs, and 16 bits rather than 32 halves the
+ * atlas in .bss and in the file. Transparency is not decoration: a chipset
+ * whose water autotile is empty (Nepheshel's island map is exactly that,
+ * with a parallax sea behind it) leaves real holes in the lower layer, which
+ * this draws in the exported backdrop colour.
+ *
  * Input: hold anywhere on screen. The direction is whichever of up/down/
  * left/right is furthest from screen center (a whole-screen virtual
  * joystick, the same "zone" input convention apps/tetris and apps/paint
@@ -32,7 +39,11 @@
  * between BSS_VA and LINK_VA in sdk/hb_app.mk (0x09200000..0x09280000) --
  * that gap is not documented as a hard per-app .bss ceiling, but nothing in
  * the SDK says it is safe to exceed either, so this stays well under it
- * rather than finding out on real hardware. Raise with caution. */
+ * rather than finding out on real hardware. Raise with caution.
+ *
+ * At these caps the three static buffers below are the whole of .bss:
+ * 81,938 B of map.bin + 131,072 B of atlas + 1,024 B of composited cell =
+ * ~209 KB. (The atlas was twice that before tile pixels became 16-bit.) */
 #define MAP_MAX_W 128
 #define MAP_MAX_H 128
 #define MAX_TILES 256
@@ -41,7 +52,12 @@
 /* map.bin layout: 18-byte header + cells*(u16 lower + u16 upper + u8 passable). */
 #define MAP_BIN_MAX_BYTES (18 + MAP_CELLS * 5)
 
+#define MAP_VERSION 2
+
 #define UPPER_NONE 0xFFFFu
+
+/* ARGB1555, matching the exporter: bit 15 set means the pixel is drawn. */
+#define PIXEL_OPAQUE 0x8000u
 
 /* Matches DIR_BITS in scripts/export_nano7_map.rb (RPG2000's own numpad
  * direction convention, Game::ChipSet::DIR_BIT in mruby-rpg2k/mrblib/game.rb). */
@@ -55,16 +71,32 @@
 #define STEP_INTERVAL_MS 160u
 
 static uint8_t s_map_raw[MAP_BIN_MAX_BYTES];
-static uint32_t s_tiles[MAX_TILES * TILE_PIXELS];
+static uint16_t s_tiles[MAX_TILES * TILE_PIXELS];
+/* One composited 16x16 cell (lower under upper, holes filled with the
+ * backdrop), the only pixel buffer this app needs: hb_raw_blit takes a
+ * finished tile, so the two layers are merged here rather than blitted twice
+ * -- which is also what makes an upper tile's transparent pixels show the
+ * lower layer instead of painting over it. */
+static uint32_t s_cell[TILE_PIXELS];
 
 static int s_map_w, s_map_h, s_tile_count;
 static const uint8_t *s_lower_base, *s_upper_base, *s_pass_base;
+static uint32_t s_backdrop;
 
 static int s_player_x, s_player_y;
 static uint32_t s_last_step_ms;
 static int s_loaded;
 
 static uint16_t rd_u16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
+
+/* ARGB1555 -> the surface's 8-bit-per-channel pixel. The low bits are
+ * replicated into the gap (r << 3 | r >> 2) so a full-scale 31 maps to 255
+ * rather than 248 -- otherwise white greys out. */
+static uint32_t rgb1555_to_native(uint16_t c)
+{
+    unsigned r = (c >> 10) & 0x1fu, g = (c >> 5) & 0x1fu, b = c & 0x1fu;
+    return HB_RGB((r << 3) | (r >> 2), (g << 3) | (g >> 2), (b << 3) | (b >> 2));
+}
 
 static uint16_t lower_at(int x, int y) { return rd_u16(s_lower_base + (long)(y * s_map_w + x) * 2); }
 static uint16_t upper_at(int x, int y) { return rd_u16(s_upper_base + (long)(y * s_map_w + x) * 2); }
@@ -77,13 +109,14 @@ static int load_map(void)
     uint32_t n = hb_fs_read(MAP_DATA_DIR "/map.bin", s_map_raw, sizeof(s_map_raw));
     if (n < 18) return 0;
     if (s_map_raw[0] != 'N' || s_map_raw[1] != '7' || s_map_raw[2] != 'W' || s_map_raw[3] != 'M') return 0;
-    if (s_map_raw[4] != 1) return 0; /* version */
+    if (s_map_raw[4] != MAP_VERSION) return 0;
 
     int w = rd_u16(s_map_raw + 6);
     int h = rd_u16(s_map_raw + 8);
     int sx = rd_u16(s_map_raw + 10);
     int sy = rd_u16(s_map_raw + 12);
     int tile_count = rd_u16(s_map_raw + 14);
+    uint16_t backdrop = rd_u16(s_map_raw + 16);
     if (w <= 0 || h <= 0 || w > MAP_MAX_W || h > MAP_MAX_H) return 0;
     if (tile_count > MAX_TILES) return 0;
     if (sx < 0 || sy < 0 || sx >= w || sy >= h) return 0;
@@ -100,8 +133,9 @@ static int load_map(void)
     s_lower_base = s_map_raw + 18;
     s_upper_base = s_lower_base + cells * 2;
     s_pass_base = s_upper_base + cells * 2;
+    s_backdrop = rgb1555_to_native(backdrop);
 
-    uint32_t tiles_bytes = (uint32_t)tile_count * TILE_PIXELS * 4;
+    uint32_t tiles_bytes = (uint32_t)tile_count * TILE_PIXELS * 2;
     uint32_t got = hb_fs_read(MAP_DATA_DIR "/tiles.bin", s_tiles, sizeof(s_tiles));
     if (got < tiles_bytes) return 0;
 
@@ -154,6 +188,28 @@ static void touch_direction(const hb_spoint_t *t, int *dx, int *dy)
     else *dy = ddy > 0 ? 1 : -1;
 }
 
+/* Merge one map cell's two layers into s_cell. A pixel the chipset leaves
+ * transparent is a hole, not black: the upper layer's transparent pixels show
+ * the lower tile through them, and a lower tile that is itself transparent
+ * (an empty water autotile over what the real runtime draws as a parallax
+ * background) shows the backdrop colour the exporter reduced that background
+ * to. */
+static void compose_cell(int mx, int my)
+{
+    uint16_t lo = lower_at(mx, my);
+    uint16_t up = upper_at(mx, my);
+    const uint16_t *lower = lo < (uint16_t)s_tile_count ? &s_tiles[(uint32_t)lo * TILE_PIXELS] : 0;
+    const uint16_t *upper =
+        (up != UPPER_NONE && up < (uint16_t)s_tile_count) ? &s_tiles[(uint32_t)up * TILE_PIXELS] : 0;
+
+    for (int i = 0; i < TILE_PIXELS; i++) {
+        uint16_t c = 0;
+        if (lower && (lower[i] & PIXEL_OPAQUE)) c = lower[i];
+        if (upper && (upper[i] & PIXEL_OPAQUE)) c = upper[i];
+        s_cell[i] = c ? rgb1555_to_native(c) : s_backdrop;
+    }
+}
+
 static void draw_map(void)
 {
     int view_w = hb_raw_w() / TS;
@@ -166,7 +222,7 @@ static void draw_map(void)
     if (cam_x < 0) cam_x = 0;
     if (cam_y < 0) cam_y = 0;
 
-    hb_raw_fill(HB_BLACK);
+    hb_raw_fill(s_backdrop);
 
     for (int ty = 0; ty < view_h; ty++) {
         int my = cam_y + ty;
@@ -176,13 +232,8 @@ static void draw_map(void)
             if (mx >= s_map_w) break;
             int px = tx * TS, py = ty * TS;
 
-            uint16_t lo = lower_at(mx, my);
-            if (lo < (uint16_t)s_tile_count)
-                hb_raw_blit(px, py, TS, TS, &s_tiles[(uint32_t)lo * TILE_PIXELS]);
-
-            uint16_t up = upper_at(mx, my);
-            if (up != UPPER_NONE && up < (uint16_t)s_tile_count)
-                hb_raw_blit(px, py, TS, TS, &s_tiles[(uint32_t)up * TILE_PIXELS]);
+            compose_cell(mx, my);
+            hb_raw_blit(px, py, TS, TS, s_cell);
         }
     }
 

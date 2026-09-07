@@ -962,6 +962,16 @@ jobs:
               ruby scripts/rpg2k_scene_check.rb
               ruby scripts/rpg2k_render_check.rb
 
+          # The iPod nano 7G map-walk export (scripts/export_nano7_map.rb, ADR
+          # 61): runs the exporter over real test-bed maps and re-parses
+          # map.bin/tiles.bin against the invariants the on-device C reader
+          # relies on. This port has no CI build and no emulator, so this is
+          # the only automated coverage it has -- and it is what catches an
+          # exporter/reader format drift, or the chipset colour key leaking
+          # back into the atlas, without a device.
+          - name: iPod nano 7G map export check
+            run: ruby scripts/export_nano7_map_check.rb
+
           # The join of the two check kinds above: real test-bed databases
           # (LCF test-bed smoke check's data) driven through the real
           # Game::Interpreter, so a rule only genuine game data violates gets

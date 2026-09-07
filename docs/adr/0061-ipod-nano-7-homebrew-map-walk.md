@@ -69,20 +69,27 @@ The pieces:
   `scripts/rgss_cruby_compat.rb` for `RGSS::Bitmap`'s pure-Ruby PNG decoder.
   All LCF parsing and chipset compositing happens once, on the host, using
   the same logic the real engine uses — not a reimplementation of it.
-- **Output format**: `map.bin` (dimensions, start position, per-cell lower/
-  upper tile-atlas indices, and a precomputed 4-bit-per-cell passability
-  mask — both halves of `Scene::Map#char_passable?`'s check, "can this cell
-  be exited this way" and "can the target cell be entered from the
-  opposite side," baked in at export time) and `tiles.bin` (a flat XRGB8888
-  atlas, one 16×16 entry per distinct tile id the map actually uses, each
-  composited via `Game::ChipsetLayout.quads` at animation frame 0). The
-  on-device C code never parses LCF, never assembles a quarter-tile
-  autotile, and never computes passability — it reads two flat files and
-  indexes arrays.
+- **Output format**: `map.bin` (dimensions, start position, backdrop colour,
+  per-cell lower/upper tile-atlas indices, and a precomputed 4-bit-per-cell
+  passability mask — both halves of `Scene::Map#char_passable?`'s check,
+  "can this cell be exited this way" and "can the target cell be entered
+  from the opposite side," baked in at export time) and `tiles.bin` (a flat
+  ARGB1555 atlas, one 16×16 entry per distinct *composited result* the map
+  actually uses, each built via `Game::ChipsetLayout.quads` at animation
+  frame 0). The on-device C code never parses LCF, never assembles a
+  quarter-tile autotile, and never computes passability — it reads two flat
+  files and indexes arrays.
+- **Transparency is one bit per pixel** (format v2). RPG Maker's chipset
+  transparency is a colour key — palette index 0 — so a pixel is either drawn
+  or absent, and 16-bit ARGB1555 carries that in the space 32-bit XRGB8888
+  spent on an alpha channel nothing needed, halving both the file and the
+  atlas in `.bss`. The device merges a cell's two layers into one composited
+  tile before blitting, which is what lets an upper tile's transparent
+  pixels show the lower tile through them.
 - **On-device app** (`app/nano7/rpg2k_walk/`): a `RAW_SURFACE` NanoApps app
   (`hb_raw_init`/`hb_raw_frame`) that loads both files via `hb_fs_read` into
-  static `.bss` buffers, blits the visible viewport (lower then upper layer,
-  camera clamped to map bounds), and steps the player one tile at a time on
+  static `.bss` buffers, blits the visible viewport (one composited tile per
+  cell, camera clamped to map bounds), and steps the player one tile at a time on
   continuous zone-hold touch input (a whole-screen virtual joystick, the
   input convention `apps/tetris`/`apps/paint` already use in NanoApps —
   N7G has no D-pad).
@@ -90,12 +97,17 @@ The pieces:
   (mirrored between the exporter and the C bounds, so an oversized map is
   refused at export time rather than truncated or overflowed on-device).
   Built for real against a scratch NanoApps checkout with `arm-none-eabi-gcc`
-  in this session: the linked `.text` is **4.3 KB**, `.bss` is **336 KB**,
-  and the packed `.hbapp` NanoApps' loader actually uploads is **4.5 KB** —
-  under 1% of the 500 KB ceiling, and `.bss` sits comfortably below the
-  ~512 KB gap between `BSS_VA` and `LINK_VA` in `sdk/hb_app.mk` (that gap is
-  not a documented hard cap, so the caps above deliberately leave headroom
-  rather than target it exactly).
+  when this ADR was written: the linked `.text` was **4.3 KB**, `.bss`
+  **336 KB**, and the packed `.hbapp` NanoApps' loader actually uploads
+  **4.5 KB** — under 1% of the 500 KB ceiling, and `.bss` sits comfortably
+  below the ~512 KB gap between `BSS_VA` and `LINK_VA` in `sdk/hb_app.mk`
+  (that gap is not a documented hard cap, so the caps above deliberately
+  leave headroom rather than target it exactly). Format v2's 16-bit tiles
+  cut `.bss` to **~209 KB**: the three static buffers are the whole of it
+  (81,938 B of `map.bin` + 131,072 B of atlas + 1,024 B of composited cell),
+  so that figure is exact from their declarations rather than measured; the
+  code side grew by one compositing loop and has not been re-linked on a
+  toolchain since.
 - **No CI job.** CI has no NanoApps toolchain and no iPod; unlike the PSP
   port's best-effort `psp-smoke` job there is not even an emulator to boot
   this under. `scripts/export_nano7_map_check.rb` (round-trips the exporter
@@ -124,11 +136,26 @@ The pieces:
   exporter's `map.bin`/`tiles.bin` load correctly via `hb_fs_read`, tile
   rendering and grid movement/collision work, and touch-hold steps the
   player as designed.
-- **Known bug, not yet fixed**: `composite_tile` in
-  `scripts/export_nano7_map.rb` copies chipset pixels for every referenced
-  tile id with no transparency handling. Cells whose tile id resolves to the
-  chipset's transparent/placeholder region (confirmed on real map data, not
-  just theoretical) render as solid magenta on-device instead of being
-  skipped or resolved to something sensible. Root cause not yet isolated to
-  a specific tile id or `Game::ChipsetLayout.quads` gap — tracked as
-  follow-up work, not fixed in this slice.
+- **The magenta-cell bug is fixed.** It was recorded here as a known bug
+  with the root cause not yet isolated; it was not a tile id or a
+  `Game::ChipsetLayout.quads` gap. `composite_tile` loaded the chipset
+  through `RGSS::Bitmap#_init_file` **without** RPG Maker's colour-key flag,
+  the one `Scene::Map#load_chipset_graphic` passes for the real renderer
+  (`Bitmap.new "ChipSet/#{name}", true`). Palette entry 0 therefore exported
+  as an ordinary opaque colour — (255, 103, 139) on Nepheshel's chipsets,
+  exactly the magenta seen on-device — across 15.7% of map 1's exported
+  atlas. The export now passes the flag, carries the resulting one-bit
+  transparency through the atlas, and the app composites the layers
+  on-device; `scripts/export_nano7_map_check.rb` reads the palette out of
+  the very chipset the exporter reports using and fails if any opaque atlas
+  pixel is that colour key again.
+- **A transparent chipset region is legitimate, and needs a backdrop.**
+  Isolating that bug turned up why those cells are keyed at all: Nepheshel's
+  map 1 is an island whose entire sea is water autotile id 0 over an empty
+  block A, with the sea drawn by the map's `BG` **parallax background** —
+  and `Game::ChipsetLayout.block` already documents id 0 as *not* being
+  empty. Honouring the colour key alone would only have swapped magenta for
+  black holes. A whole panorama does not fit this device's budget, so the
+  exporter reduces it to its average colour (a `u16` in `map.bin`'s header,
+  (24, 74, 198) for that map) and the app paints that behind the map.
+  Per-pixel parallax stays out of scope.
