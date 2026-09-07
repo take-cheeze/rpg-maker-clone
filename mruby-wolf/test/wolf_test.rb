@@ -686,7 +686,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased, :played_se, :played_tracks, :stopped_tracks,
-              :shifted, :tinted, :changed_colors
+              :shifted, :tinted, :changed_colors, :flickered
   attr_accessor :x, :y, :blocked, :choice_inputs, :keys_down
 
   def initialize
@@ -707,6 +707,7 @@ class WolfTestFakeScene
     @shifted = []
     @tinted = []
     @changed_colors = []
+    @flickered = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -717,6 +718,7 @@ class WolfTestFakeScene
   # Wolf::Interpreter#exec_effect's own Picture-target seam.
   def shift_picture(number, dx, dy); @shifted << [number, dx, dy]; end
   def tint_picture(number, r, g, b); @tinted << [number, r, g, b]; end
+  def set_picture_flicker(number, interval, r, g, b); @flickered << [number, interval, r, g, b]; end
   # Wolf::Interpreter#exec_change_color's own seam.
   def change_color(r, g, b, flash, duration); @changed_colors << [r, g, b, flash, duration]; end
   # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
@@ -1808,6 +1810,51 @@ assert "Wolf::Interpreter#exec_effect skips a target/effect-type/duration/argume
 
   assert_equal [], scene.shifted
   assert_equal [], scene.tinted
+end
+
+assert "Wolf::Interpreter#exec_effect's SwitchFlicker reads the 'duration' field as a toggle interval, matching a real active call" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_SWITCH_FLICKER)
+  # A real store-display Common Event's own call: 20-frame interval, picture
+  # 21 only, RGB +100/+100/+100.
+  interp.exec_effect(wolf_test_cmd(290, [options, 20, 21, 21, 100, 100, 100]))
+  assert_equal [[21, 20, 100, 100, 100]], scene.flickered
+end
+
+assert "Wolf::Interpreter#exec_effect's SwitchFlicker applies across a real contiguous picture-number range" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_SWITCH_FLICKER)
+  # A real stop call: zero interval *and* zero RGB, across a real range.
+  interp.exec_effect(wolf_test_cmd(290, [options, 0, 21, 26, 0, 0, 0]))
+  assert_equal [[21, 0, 0, 0, 0], [22, 0, 0, 0, 0], [23, 0, 0, 0, 0],
+                [24, 0, 0, 0, 0], [25, 0, 0, 0, 0], [26, 0, 0, 0, 0]],
+               scene.flickered
+end
+
+assert "Wolf::Interpreter#exec_effect's SwitchFlicker is not gated by the other Picture effect kinds' delay-must-be-zero rule" do
+  # Real SwitchFlicker calls use a genuinely non-zero "duration" (the
+  # toggle interval), unlike DrawPositionShift/ColorCorrect where a
+  # non-zero value means an unsupported delay -- must not fall into that
+  # shared gate.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+
+  options = wolf_test_effect_options(target: Wolf::Interpreter::EFFECT_TARGET_PICTURE,
+                                      effect_type: Wolf::Interpreter::EFFECT_PICTURE_SWITCH_FLICKER)
+  interp.exec_effect(wolf_test_cmd(290, [options, 3, 5, 5, -100, -100, -100]))
+  assert_equal [[5, 3, -100, -100, -100]], scene.flickered
 end
 
 # ---- Wolf::Interpreter#exec_change_color (ChangeColor(151)) -----------------
