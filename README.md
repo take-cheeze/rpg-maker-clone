@@ -1170,9 +1170,16 @@
   a compact binary the on-device app reads directly. See
   [`docs/adr/0061-ipod-nano-7-homebrew-map-walk.md`](docs/adr/0061-ipod-nano-7-homebrew-map-walk.md)
   for why, and the app's own README for build/install instructions.
-- **Scope: map walking, not the game.** Tile rendering (including autotiles,
-  frozen at their first animation frame) and grid movement with real
-  collision, for one static map — no events, battle or menus.
+- **Scope: map walking, not the game.** Tile rendering (including autotiles)
+  and grid movement with real collision, for one static map — no events,
+  battle or menus.
+- **The water animates**, on RPG2000's own two clocks
+  ([`docs/adr/0094`](docs/adr/0094-walk-map-tile-animation.md)). The export
+  asks `Game::ChipsetLayout.anim_ab` / `.anim_c` what those clocks are rather
+  than restating their rules, ships the frames each tile cycles through, and
+  the device advances a counter and redraws only the cells that moved. 480
+  bytes of device code, and a map that animates nothing costs the frame loop
+  nothing.
 - Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
   ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
   exported map with working collision. Chipset transparency is honoured: the

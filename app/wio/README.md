@@ -66,7 +66,8 @@ map bound the iPod nano 7G takes: the format shrank to 2.5 bytes a cell
 down. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 
-**Scope, and status.** It walks one static map: no events, no battle, no
+**Scope, and status.** It walks one static map, with the water animating on
+RPG2000's own clock (`docs/adr/0094`): no events, no battle, no
 menus, no interpreter — see the ADRs before expecting a game. CI compiles it
 (the `wio` job builds both environments) and the shared core has its own host
 test (the `walk_core` ctest). It has now run on real hardware — a real

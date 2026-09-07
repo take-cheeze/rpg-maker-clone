@@ -32,10 +32,14 @@ TARGETS = {
 MAP_MAX_W = TARGETS['nano7'][:max_w]
 MAP_MAX_H = TARGETS['nano7'][:max_h]
 MAX_TILES = TARGETS['nano7'][:max_tiles]
-MAP_VERSION = 4
+MAP_VERSION = 5
 UPPER_NONE = 0xFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
 TILE_BYTES = 16 * 16       # one palette index per pixel
+ENTRY_BYTES = 5            # u8 frame[4] + u8 animation class
+ANIM_MAX_FRAMES = 4
+ANIM_STATIC = 0
+ANIM_CLASSES = [0, 1, 2].freeze
 OPAQUE_BIT = 0x8000
 TRANSPARENT_INDEX = 0
 MAX_PALETTE = 256
@@ -89,9 +93,15 @@ def read_map_bin(path)
   magic = bytes[0, 4]
   version, _pad = bytes[4, 2].unpack('CC')
   width, height, start_x, start_y, tile_count, backdrop = bytes[6, 12].unpack('v6')
-  palette_count = bytes[18, 2].unpack1('v')
-  palette = bytes[20, palette_count * 2].unpack('v*')
-  off = 20 + palette_count * 2
+  palette_count, atlas_count = bytes[18, 4].unpack('v2')
+  ab_len, ab_period, c_len, c_period = bytes[22, 4].unpack('C4')
+  off = 26
+  palette = bytes[off, palette_count * 2].unpack('v*'); off += palette_count * 2
+  entries = (0...tile_count).map do |i|
+    fields = bytes[off + i * ENTRY_BYTES, ENTRY_BYTES].unpack('C5')
+    { frames: fields.first(ANIM_MAX_FRAMES), klass: fields.last }
+  end
+  off += tile_count * ENTRY_BYTES
   cells = width * height
   lower = bytes[off, cells].unpack('C*'); off += cells
   upper = bytes[off, cells].unpack('C*'); off += cells
@@ -102,8 +112,10 @@ def read_map_bin(path)
   {
     magic: magic, version: version, width: width, height: height,
     start_x: start_x, start_y: start_y, tile_count: tile_count,
-    backdrop: backdrop, palette: palette, lower: lower, upper: upper,
-    passable: passable
+    atlas_count: atlas_count, backdrop: backdrop, palette: palette,
+    entries: entries, ab_len: ab_len, ab_period: ab_period,
+    c_len: c_len, c_period: c_period,
+    lower: lower, upper: upper, passable: passable
   }
 end
 
@@ -138,9 +150,41 @@ def check_export(game_dir, map_id)
       ok map[:start_x] >= 0 && map[:start_x] < map[:width], "start_x #{map[:start_x]}"
       ok map[:start_y] >= 0 && map[:start_y] < map[:height], "start_y #{map[:start_y]}"
     end
-    check("map #{map_id}: tiles.bin size matches tile_count") do
-      expected = map[:tile_count] * TILE_BYTES
+    check("map #{map_id}: tiles.bin size matches atlas_count") do
+      expected = map[:atlas_count] * TILE_BYTES
       ok tiles_bytes.bytesize == expected, "#{tiles_bytes.bytesize} != #{expected}"
+    end
+    check("map #{map_id}: every entry names real atlas slots and a real clock") do
+      bad = map[:entries].reject { |e| e[:frames].all? { |f| f < map[:atlas_count] } }
+      ok bad.empty?, "#{bad.size} entries point past the atlas, e.g. #{(bad.first || {})[:frames].inspect}"
+      klasses = map[:entries].map { |e| e[:klass] }.uniq
+      ok (klasses - ANIM_CLASSES).empty?, "unknown animation classes #{(klasses - ANIM_CLASSES).inspect}"
+    end
+    check("map #{map_id}: a still entry is one picture, a moving one is not") do
+      map[:entries].each_with_index do |e, i|
+        if e[:klass] == ANIM_STATIC
+          ok e[:frames].uniq.size == 1, "entry #{i} is static but names #{e[:frames].uniq.size} pictures"
+        else
+          ok e[:frames].uniq.size > 1, "entry #{i} is animated but names one picture"
+        end
+      end
+    end
+    check("map #{map_id}: both animation clocks are usable") do
+      ok map[:ab_len].between?(1, ANIM_MAX_FRAMES), "ab_len #{map[:ab_len]}"
+      ok map[:c_len].between?(1, ANIM_MAX_FRAMES), "c_len #{map[:c_len]}"
+      ok map[:ab_period] >= 1 && map[:c_period] >= 1,
+         "periods #{map[:ab_period]}/#{map[:c_period]}"
+    end
+    check("map #{map_id}: every phase of every entry resolves") do
+      bad = map[:entries].reject do |e|
+        len = case e[:klass]
+              when 1 then map[:ab_len]
+              when 2 then map[:c_len]
+              else 1
+              end
+        e[:frames].first(len).all? { |f| f < map[:atlas_count] }
+      end
+      ok bad.empty?, "#{bad.size} entries have a phase pointing past the atlas"
     end
     check("map #{map_id}: the palette fits a one-byte index") do
       ok map[:palette].size.between?(1, MAX_PALETTE), "#{map[:palette].size} entries"
@@ -171,19 +215,23 @@ def check_export(game_dir, map_id)
       ok !map[:palette].include?(key),
          "the colour key 0x%04x (#{pal0.inspect}) is in the palette" % key
     end
-    check("map #{map_id}: atlas entries are deduplicated") do
-      slots = (0...map[:tile_count]).map { |i| tiles[i * TILE_BYTES, TILE_BYTES] }
-      ok slots.uniq.size == slots.size, "#{slots.size - slots.uniq.size} duplicate atlas entries"
+    check("map #{map_id}: atlas pictures are deduplicated") do
+      slots = (0...map[:atlas_count]).map { |i| tiles[i * TILE_BYTES, TILE_BYTES] }
+      ok slots.uniq.size == slots.size, "#{slots.size - slots.uniq.size} duplicate atlas pictures"
+    end
+    check("map #{map_id}: entries are deduplicated") do
+      keys = map[:entries].map { |e| [e[:klass], e[:frames]] }
+      ok keys.uniq.size == keys.size, "#{keys.size - keys.uniq.size} duplicate entries"
     end
     check("map #{map_id}: backdrop is opaque or absent") do
       bd = map[:backdrop]
       ok bd.zero? || (bd & OPAQUE_BIT) != 0, "0x%04x" % bd
     end
-    check("map #{map_id}: every lower-layer index resolves into the atlas") do
+    check("map #{map_id}: every lower-layer index resolves into the entries") do
       bad = map[:lower].reject { |i| i < map[:tile_count] }
       ok bad.empty?, "#{bad.size} out-of-range indices, e.g. #{bad.first}"
     end
-    check("map #{map_id}: every upper-layer index resolves or is NONE") do
+    check("map #{map_id}: every upper-layer index resolves to an entry or is NONE") do
       bad = map[:upper].reject { |i| i == UPPER_NONE || i < map[:tile_count] }
       ok bad.empty?, "#{bad.size} out-of-range indices, e.g. #{bad.first}"
     end
@@ -224,6 +272,62 @@ def check_wio_target(game_dir, map_id)
   end
 end
 
+# --no-animate is the fallback for an export that will not otherwise fit. It
+# must be the animated export's *first frame*, not a different map: same
+# dimensions and start, and every cell drawing the very pixels the animated
+# export draws at phase 0. (Entry numbering may legitimately differ -- with
+# nothing to animate, entries that differed only in later frames merge -- so
+# this compares pictures, not indices.)
+def cell_pictures(dir)
+  map = read_map_bin(File.join(dir, 'map.bin'))
+  tiles = File.binread(File.join(dir, 'tiles.bin'))
+  picture = lambda do |entry_index|
+    return nil if entry_index == UPPER_NONE
+    return :bad if entry_index >= map[:tile_count]
+    slot = map[:entries][entry_index][:frames][0]
+    tiles[slot * TILE_BYTES, TILE_BYTES]
+  end
+  [map, map[:lower].map(&picture), map[:upper].map(&picture)]
+end
+
+def check_no_animate(game_dir, map_id)
+  Dir.mktmpdir('n7anim') do |animated_dir|
+    Dir.mktmpdir('n7still') do |still_dir|
+      _o, _e, animated_status =
+        Open3.capture3('ruby', EXPORTER, game_dir, map_id.to_s, animated_dir)
+      stdout, stderr, status =
+        Open3.capture3('ruby', EXPORTER, '--no-animate', game_dir, map_id.to_s, still_dir)
+      check("map #{map_id} (--no-animate): exporter exits 0") do
+        ok status.success?, "exit #{status.exitstatus}: #{stderr}"
+      end
+      next unless status.success? && animated_status.success?
+
+      still, still_lower, still_upper = cell_pictures(still_dir)
+      animated, anim_lower, anim_upper = cell_pictures(animated_dir)
+
+      check("map #{map_id} (--no-animate): nothing animates") do
+        moving = still[:entries].count { |e| e[:klass] != ANIM_STATIC }
+        ok moving.zero?, "#{moving} entries still move"
+        ok still[:entries].all? { |e| e[:frames].uniq.size == 1 },
+           'a still entry names more than one picture'
+        ok stdout.include?('0 animated'), stdout
+      end
+      check("map #{map_id} (--no-animate): it is the animated export's first frame") do
+        ok still[:width] == animated[:width] && still[:height] == animated[:height],
+           'dimensions differ'
+        ok still[:start_x] == animated[:start_x] && still[:start_y] == animated[:start_y],
+           'start position differs'
+        ok still_lower == anim_lower, 'a lower-layer cell draws different pixels'
+        ok still_upper == anim_upper, 'an upper-layer cell draws different pixels'
+      end
+      check("map #{map_id} (--no-animate): the atlas holds no unused frames") do
+        ok still[:atlas_count] <= animated[:atlas_count],
+           "#{still[:atlas_count]} pictures against the animated export's #{animated[:atlas_count]}"
+      end
+    end
+  end
+end
+
 def discover_default_maps(game_dir, sample = 5)
   ids = Dir[File.join(game_dir, 'Map*.lmu')].map { |f| File.basename(f)[/\d+/].to_i }.sort
   return ids if ids.size <= sample
@@ -243,6 +347,7 @@ map_ids = discover_default_maps(game_dir) if map_ids.empty?
 map_ids.each do |id|
   check_export(game_dir, id)
   check_wio_target(game_dir, id)
+  check_no_animate(game_dir, id)
 end
 
 # An oversized map (bigger than MAP_MAX_W/H) must be refused cleanly with a

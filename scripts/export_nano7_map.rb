@@ -29,8 +29,11 @@
 #
 # Limitations (see docs/adr/0061 for the full rationale):
 #   * one static map per export -- no map tree, no teleport/transitions.
-#   * one animation frame per tile id (abf=0, cf=0) -- water/ground/terrain
-#     autotiles render their first frame, never animate on-device.
+#   * animation is the water autotiles and the block-C animated tiles, at
+#     RPG2000's own two rates -- the export asks Game::ChipsetLayout.anim_ab
+#     and .anim_c what those are rather than restating them. Everything else
+#     an RPG2000 map animates (events, pictures, weather, the hero) needs the
+#     interpreter and is out of scope.
 #   * per-pixel transparency is one bit, not an alpha channel: RPG Maker's
 #     colour key is binary, so a pixel is either opaque or absent and the
 #     device composites upper over lower with a test, not a blend. It is
@@ -51,7 +54,10 @@
 # --target picks the device the export has to fit (default nano7). Each
 # target's caps are the sizes of the static buffers that device's firmware
 # declares, so an export that does not fit is refused here rather than
-# failing to load on the device.
+# failing to load on the device. --no-animate freezes every tile at its first
+# frame, which is what this exporter did before v5: it costs a map its water
+# but spends the fewest atlas slots, so it is the fallback when an animated
+# export does not fit.
 #
 # GAME_DIR is an RPG2000/2003 project directory (containing RPG_RT.ldb/.lmt
 # and Map####.lmu files). MAP_ID is the numeric map id (e.g. 1 for
@@ -60,14 +66,23 @@
 # map tree's own start position (RPG_RT.lmt initial_x/initial_y) when MAP_ID
 # is the project's configured start map, or the map's center otherwise.
 #
-# Output format (v4, both files little-endian):
+# Output format (v5, both files little-endian):
 #
-#   map.bin   'N7WM' | u8 version=4 | u8 pad | u16 w | u16 h | u16 start_x
-#             | u16 start_y | u16 tile_count | u16 backdrop
-#             | u16 palette_count | u16 palette[palette_count]
+#   map.bin   'N7WM' | u8 version=5 | u8 pad | u16 w | u16 h | u16 start_x
+#             | u16 start_y | u16 entry_count | u16 backdrop
+#             | u16 palette_count | u16 atlas_count
+#             | u8 ab_len | u8 ab_period | u8 c_len | u8 c_period
+#             | u16 palette[palette_count]
+#             | entry[entry_count]: u8 frame[4] | u8 anim_class
 #             | u8 lower[w*h] | u8 upper[w*h] | u4 passable[w*h]
-#   tiles.bin tile_count * 256 bytes, row-major within each 16x16 tile: one
+#   tiles.bin atlas_count * 256 bytes, row-major within each 16x16 tile: one
 #             palette index per pixel.
+#
+# A cell names an *entry*, not a picture: an entry is up to four atlas slots
+# and the class that says which of RPG2000's two animation clocks advances
+# through them (0 static, 1 the water autotiles, 2 the block-C animated
+# tiles). A still tile is one slot and class 0, so animation costs nothing
+# where there is none -- 477 of Nepheshel's 543 maps animate no tile at all.
 #
 # A cell costs 2.5 bytes. An atlas index is a byte (0xFF on the upper layer
 # means "no tile here"), which caps an export at 255 entries -- no map in the
@@ -123,7 +138,7 @@ DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
-VERSION = 4
+VERSION = 5
 UPPER_NONE = 0xFF
 
 # ARGB1555 (see the format note at the top): bit 15 opaque, then r5g5b5.
@@ -133,6 +148,16 @@ TRANSPARENT = 0x0000
 # Palette index 0 is the transparent slot, so opaque colours run 1..255.
 TRANSPARENT_INDEX = 0
 MAX_PALETTE = 256
+
+# An atlas slot is named by a byte inside an entry, and an entry by a byte in
+# a cell (with 0xFF reserved for "no upper tile"), so neither can pass 255
+# whatever a target's buffers allow -- see MAX_ATLAS below.
+
+# An entry's animation class: which of RPG2000's clocks moves it, if any.
+ANIM_STATIC = 0
+ANIM_WATER = 1  # blocks A/B, Game::ChipsetLayout.anim_ab
+ANIM_BLOCK_C = 2 # block C, Game::ChipsetLayout.anim_c
+ANIM_MAX_FRAMES = 4
 
 DIR_DOWN = 2
 DIR_LEFT = 4
@@ -149,10 +174,13 @@ end
 
 argv = ARGV.dup
 target_name = DEFAULT_TARGET
+animate = true
 until argv.empty?
   case argv.first
   when '--target' then argv.shift; target_name = argv.shift.to_s
   when /\A--target=(.+)\z/ then target_name = Regexp.last_match(1); argv.shift
+  when '--no-animate' then argv.shift; animate = false
+  when '--animate' then argv.shift; animate = true
   else break
   end
 end
@@ -161,6 +189,9 @@ usage_abort("unknown target #{target_name.inspect}; one of #{TARGETS.keys.join('
 MAP_MAX_W = target[:max_w]
 MAP_MAX_H = target[:max_h]
 MAX_TILES = target[:max_tiles]
+# The device holds one atlas, sized by the same cap: a slot and an entry cost
+# it the same buffer.
+MAX_ATLAS = target[:max_tiles]
 
 game_dir, map_id_arg, out_dir, start_x_arg, start_y_arg = argv
 usage_abort('missing arguments') if game_dir.nil? || map_id_arg.nil? || out_dir.nil?
@@ -257,9 +288,44 @@ if start_x.nil? || start_y.nil?
   end
 end
 
-# ---- build the deduplicated tile atlas -------------------------------------
+# ---- animation, asked of the engine's own code -----------------------------
 
-atlas_index = {} # tile id -> atlas slot
+# RPG2000 animates two classes of tile on two clocks, and mruby-rpg2k already
+# implements both: Game::ChipsetLayout.anim_ab walks the water autotiles
+# (blocks A/B) and .anim_c the block-C animated tiles. Rather than restate
+# either rule -- the step lengths, the ping-pong the water does for one
+# animation_type and not the other -- ask the real functions: probe for the
+# frame at which each first changes (its step), then sample it at its own
+# step boundaries and take the shortest repeat. A chipset this export has
+# never seen still animates the way the engine would animate it.
+def anim_step_frames(max_probe = 240)
+  first = yield(0)
+  (1..max_probe).each { |f| return f if yield(f) != first }
+  max_probe
+end
+
+def anim_cycle(step, max_len)
+  values = (0...(2 * max_len)).map { |k| yield(k * step) }
+  (1..max_len).each do |p|
+    return values.first(p) if (0...max_len).all? { |i| values[i] == values[i + p] }
+  end
+  values.first(max_len)
+end
+
+ab_period = anim_step_frames { |f| Game::ChipsetLayout.anim_ab(f, cset.animation_type, cset.animation_speed) }
+c_period = anim_step_frames { |f| Game::ChipsetLayout.anim_c(f) }
+ab_cycle = anim_cycle(ab_period, ANIM_MAX_FRAMES) { |f| Game::ChipsetLayout.anim_ab(f, cset.animation_type, cset.animation_speed) }
+c_cycle = anim_cycle(c_period, ANIM_MAX_FRAMES) { |f| Game::ChipsetLayout.anim_c(f) }
+unless animate
+  ab_cycle = [ab_cycle.first]
+  c_cycle = [c_cycle.first]
+end
+
+# ---- build the deduplicated tile atlas and entry table ---------------------
+
+entry_of_tile = {} # tile id -> entry index
+entry_by_key = {} # [class, slots] -> entry index
+entries = [] # entry index -> [class, [atlas slots]]
 atlas_by_pixels = {} # packed pixel string -> atlas slot
 atlas_pixels = [] # atlas slot -> 256 palette indices (top-left origin, row-major)
 
@@ -288,9 +354,9 @@ def to5(v)
   (v * 31 + 127) / 255
 end
 
-def composite_tile(bmp, tile_id, palette, palette_index)
+def composite_tile(bmp, tile_id, abf, cf, palette, palette_index)
   pixels = Array.new(TS * TS, TRANSPARENT_INDEX)
-  Game::ChipsetLayout.quads(tile_id, 0, 0).each do |dx, dy, sx, sy, w, h|
+  Game::ChipsetLayout.quads(tile_id, abf, cf).each do |dx, dy, sx, sy, w, h|
     h.times do |yy|
       w.times do |xx|
         r, g, b, a = bmp.bmp_read(sx + xx, sy + yy)
@@ -305,44 +371,82 @@ def composite_tile(bmp, tile_id, palette, palette_index)
       end
     end
   end
-  pixels
+  pixels.pack('C*')
 end
 
-def atlas_slot_for(tile_id, bmp, atlas_index, atlas_by_pixels, atlas_pixels, palette, palette_index)
-  slot = atlas_index[tile_id]
+# Distinct tile ids routinely composite to identical pixels -- an autotile
+# whose neighbours differ only where the chipset draws nothing, the blank chip
+# reached through several ids, every frame of a water tile the chipset draws
+# still -- and the device's caps are on slots and entries, not on ids, so fold
+# them together before spending either.
+def atlas_slot_for(pixels, atlas_by_pixels, atlas_pixels)
+  slot = atlas_by_pixels[pixels]
   return slot if slot
 
-  pixels = composite_tile(bmp, tile_id, palette, palette_index)
-  # Distinct tile ids routinely composite to identical pixels -- an autotile
-  # whose neighbours differ only where the chipset draws nothing, the blank
-  # chip reached through several ids -- and the on-device cap is on atlas
-  # entries, not on ids, so fold them together before spending a slot.
-  key = pixels.pack('C*')
-  slot = atlas_by_pixels[key]
-  if slot.nil?
-    usage_abort("map uses #{atlas_pixels.size + 1} distinct tiles, exceeding the on-device cap #{MAX_TILES}") if atlas_pixels.size >= MAX_TILES
-    slot = atlas_pixels.size
-    atlas_by_pixels[key] = slot
-    atlas_pixels << pixels
-  end
-  atlas_index[tile_id] = slot
+  usage_abort("map needs #{atlas_pixels.size + 1} distinct tile pictures, " \
+              "exceeding the on-device cap #{MAX_ATLAS}") if atlas_pixels.size >= MAX_ATLAS
+  slot = atlas_pixels.size
+  atlas_by_pixels[pixels] = slot
+  atlas_pixels << pixels
   slot
+end
+
+# The entry a cell names: the atlas slots one tile id cycles through, and the
+# clock that moves it. A tile whose frames all composite alike is recorded as
+# static, so a chipset that draws its water without animating it costs the
+# device nothing at run time.
+def entry_for(tile_id, bmp, ctx)
+  index = ctx[:entry_of_tile][tile_id]
+  return index if index
+
+  klass, phases =
+    case Game::ChipsetLayout.block(tile_id)
+    when :water then [ANIM_WATER, ctx[:ab_cycle].map { |ab| [ab, 0] }]
+    when :animated then [ANIM_BLOCK_C, ctx[:c_cycle].map { |cf| [0, cf] }]
+    else [ANIM_STATIC, [[0, 0]]]
+    end
+
+  slots = phases.map do |abf, cf|
+    atlas_slot_for(composite_tile(bmp, tile_id, abf, cf, ctx[:palette], ctx[:palette_index]),
+                   ctx[:atlas_by_pixels], ctx[:atlas_pixels])
+  end
+  if slots.uniq.size == 1
+    klass = ANIM_STATIC
+    slots = [slots.first]
+  end
+
+  key = [klass, slots]
+  index = ctx[:entry_by_key][key]
+  if index.nil?
+    usage_abort("map uses #{ctx[:entries].size + 1} distinct tiles, " \
+                "exceeding the on-device cap #{MAX_TILES}") if ctx[:entries].size >= MAX_TILES
+    index = ctx[:entries].size
+    ctx[:entry_by_key][key] = index
+    ctx[:entries] << [klass, slots]
+  end
+  ctx[:entry_of_tile][tile_id] = index
+  index
 end
 
 lower_out = Array.new(width * height)
 upper_out = Array.new(width * height)
 passable_out = Array.new(width * height)
 
+entry_ctx = {
+  entry_of_tile: entry_of_tile, entry_by_key: entry_by_key, entries: entries,
+  atlas_by_pixels: atlas_by_pixels, atlas_pixels: atlas_pixels,
+  palette: palette, palette_index: palette_index,
+  ab_cycle: ab_cycle, c_cycle: c_cycle
+}
+
 (0...(width * height)).each do |i|
   lo = lower_layer[i]
   up = upper_layer[i]
-  lower_out[i] = atlas_slot_for(lo, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels,
-                                palette, palette_index)
+  lower_out[i] = entry_for(lo, chipset_bmp, entry_ctx)
   upper_out[i] = if Game::ChipsetLayout.upper_blank?(up)
                    UPPER_NONE
                  else
-                   atlas_slot_for(up, chipset_bmp, atlas_index, atlas_by_pixels, atlas_pixels,
-                                  palette, palette_index)
+                   entry_for(up, chipset_bmp, entry_ctx)
                  end
 
   flags = 0
@@ -361,9 +465,17 @@ Dir.mkdir(out_dir) unless Dir.exist?(out_dir)
 File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
   f.write(MAGIC)
   f.write([VERSION, 0].pack('CC'))
-  f.write([width, height, start_x, start_y, atlas_pixels.size, backdrop].pack('v6'))
-  f.write([palette.size].pack('v'))
+  f.write([width, height, start_x, start_y, entries.size, backdrop].pack('v6'))
+  f.write([palette.size, atlas_pixels.size].pack('v2'))
+  f.write([ab_cycle.size, ab_period, c_cycle.size, c_period].pack('C4'))
   f.write(palette.pack('v*'))
+  # One entry: its atlas slots, padded to four with its first (a phase a
+  # shorter cycle never reaches still reads as the tile itself), then the
+  # clock that moves it.
+  entries.each do |klass, slots|
+    padded = slots + Array.new(ANIM_MAX_FRAMES - slots.size, slots.first)
+    f.write((padded + [klass]).pack('C5'))
+  end
   f.write(lower_out.pack('C*'))
   f.write(upper_out.pack('C*'))
   # Two cells per byte, the even cell in the low nibble -- see the format
@@ -373,13 +485,15 @@ File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
 end
 
 File.open(File.join(out_dir, 'tiles.bin'), 'wb') do |f|
-  atlas_pixels.each { |px| f.write(px.pack('C*')) }
+  atlas_pixels.each { |px| f.write(px) }
 end
 
 # The chipset path is part of the output line so scripts/export_nano7_map_check.rb
 # can read the very palette this export keyed on, and check no opaque atlas
 # pixel carries the colour key.
+animated_entries = entries.count { |klass, _| klass != ANIM_STATIC }
 puts "wrote #{out_dir}/map.bin (target #{target_name}, #{width}x#{height}, " \
      "start #{start_x},#{start_y}) " \
-     "and #{out_dir}/tiles.bin (#{atlas_pixels.size} tiles, #{atlas_index.size} ids, " \
+     "and #{out_dir}/tiles.bin (#{entries.size} entries, #{animated_entries} animated, " \
+     "#{atlas_pixels.size} tiles, #{entry_of_tile.size} ids, " \
      "#{palette.size} palette entries, backdrop 0x%04x) from #{chipset_path}" % backdrop
