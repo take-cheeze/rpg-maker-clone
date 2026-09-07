@@ -41,15 +41,22 @@ MRuby::Gem::Specification.new('mruby-wolf') do |spec|
   # Load order matters: wolf.rb defines the Wolf module, its byte-level Reader,
   # LZ4 decoder and Wolf.bin/utf8 helpers that data_wolf.rb and data.rb's
   # per-file classes (and their MAGIC/TERMINATOR constants, evaluated at
-  # class-body time) depend on; data_wolf.rb's Wolf::DataWolf (the Data.wolf
-  # packed-release reader) only needs wolf.rb's Wolf::Error, but must load
-  # before data.rb since Wolf::Project#initialize calls DataWolf.find/.open;
-  # vars.rb's ValueRef/VarStore need Wolf::Error; save_data.rb's Wolf::SaveData
-  # runs against vars.rb's VarStore#string_ref?; interpreter.rb runs against
-  # data.rb's Command/CommonEvent classes and vars.rb's VarStore (and, for
-  # SaveVariable/LoadVariable, save_data.rb's Wolf::SaveData); runtime.rb's
-  # WolfRPG boot class depends on all of the above plus mruby-rgss's shared
-  # RGSS namespace. Set the order explicitly rather than relying on the
-  # default alphabetical glob (see mruby-rpgvx/mrbgem.rake for the same need).
-  spec.rbfiles = %w[wolf data_wolf data vars save_data interpreter runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
+  # class-body time) depend on; wolf_crypt_pro.rb reopens Wolf::Crypt to add
+  # the actual Pro-protected (v3.5) decryption wolf.rb's own `.open_envelope`
+  # calls, so it must load right after wolf.rb and before data.rb/data_wolf.rb
+  # (data_wolf.rb's own file header only *documents* the Pro-protection gate,
+  # it does not call it, so either order relative to data_wolf.rb would work,
+  # but keeping the whole Crypt module's pieces adjacent in the load order
+  # keeps this list itself easy to read); data_wolf.rb's Wolf::DataWolf (the
+  # Data.wolf packed-release reader) only needs wolf.rb's Wolf::Error, but
+  # must load before data.rb since Wolf::Project#initialize calls
+  # DataWolf.find/.open; vars.rb's ValueRef/VarStore need Wolf::Error;
+  # save_data.rb's Wolf::SaveData runs against vars.rb's VarStore#string_ref?;
+  # interpreter.rb runs against data.rb's Command/CommonEvent classes and
+  # vars.rb's VarStore (and, for SaveVariable/LoadVariable, save_data.rb's
+  # Wolf::SaveData); runtime.rb's WolfRPG boot class depends on all of the
+  # above plus mruby-rgss's shared RGSS namespace. Set the order explicitly
+  # rather than relying on the default alphabetical glob (see
+  # mruby-rpgvx/mrbgem.rake for the same need).
+  spec.rbfiles = %w[wolf wolf_crypt_pro data_wolf data vars save_data interpreter runtime].map { |name| "#{dir}/mrblib/#{name}.rb" }
 end

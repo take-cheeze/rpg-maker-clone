@@ -779,6 +779,17 @@
   editor version (auto-detected the same way WolfDec's own tool does),
   transparently through the same `Wolf::Project` a loose tree uses. See
   [`docs/adr/0093-wolf-rpg-editor-data-wolf.md`](docs/adr/0093-wolf-rpg-editor-data-wolf.md)
+- **Pro-protected data (v3.5) decrypts for real**, not just a "refused with a
+  clear error" — the AES-128 key/IV a protected `Game.dat`/`TileSetData.dat`/
+  `CommonEvent.dat`/database is keyed with are derived entirely from bytes
+  the protected file's own header already carries plus a small hardcoded
+  per-file-type salt, so no external secret is ever needed (contrary to an
+  earlier assumption here); a from-scratch SHA-512 + AES-128 port,
+  cross-validated against a compiled C++ WolfTL reference and a full
+  Pro-protected round trip of the real sample game. The older v3.1/v3.3
+  sub-schemes and Pro-protected `Map` files are deliberately left refused by
+  name rather than guessed at. See
+  [`docs/adr/0095-wolf-rpg-editor-pro-protected.md`](docs/adr/0095-wolf-rpg-editor-pro-protected.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
