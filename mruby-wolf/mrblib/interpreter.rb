@@ -36,6 +36,14 @@ module Wolf
     # wolftrans' CID_TO_CLASS and the crate's Signature enum).
     C_MESSAGE = 101
     C_CHOICES = 102
+    # Choices(102)'s own "キャンセル時の分岐先" (cancel-key destination) field,
+    # cross-confirmed against the wolfrpg-map-parser crate's own independent
+    # `CancelCase` enum: 0 a dedicated CancelCase(421) branch follows the
+    # choice cases ("別分岐"), 1 the cancel key does nothing at all
+    # ("キャンセル不能"), anything else (2+) means "act as if choice N-2 was
+    # picked" -- no separate branch marker for that last one.
+    CHOICE_CANCEL_SEPARATE = 0
+    CHOICE_CANCEL_DISABLED = 1
     C_COMMENT = 103
     C_FORCE_STOP_MESSAGE = 105
     C_DEBUG_MESSAGE = 106
@@ -182,7 +190,9 @@ module Wolf
           @interp.exec_picture(cmd)
         when Interpreter::C_SET_MOVE_ROUTE
           @interp.exec_set_move_route(cmd)
-        when Interpreter::C_CHOICES, Interpreter::C_FORCE_STOP_MESSAGE,
+        when Interpreter::C_CHOICES
+          exec_choices(cmd)
+        when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_SOUND,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -237,11 +247,44 @@ module Wolf
           base = 1 + 3 * i
           [cmd.arg(base), cmd.arg(base + 1), cmd.arg(base + 2) & 0xff]
         end
+        select_branch(cmd.indent) { |idx| conditions[idx] && @interp.evaluate_condition(conditions[idx]) }
+      end
 
+      # Shared by VariableCondition(111) and Choices(102): both compile down
+      # to the same flat branch-marker shape (some number of ChoiceCase/
+      # SpecialChoiceCase markers in source order, an optional trailing
+      # ElseCase/CancelCase, closed by BranchEnd(499)) -- confirmed for
+      # Choices by dumping real map-event Choices commands from the sample
+      # game and walking what follows them by hand: a two-choice Choices
+      # carries exactly two ChoiceCase markers (in source order, one per
+      # configured choice slot) and, only when its own "cancel behaviour" is
+      # the documented "別分岐" [separate branch] option, one trailing
+      # CancelCase -- otherwise none, matching the manual's own
+      # help/04ev_movesettingB.html-adjacent 04ev_select.html description of
+      # a "same as choosing option N" cancel not needing its own branch.
+      #
+      # `matcher` is called with each ChoiceCase/SpecialChoiceCase's own
+      # 0-based *encounter order*, not its own numeric argument -- real
+      # command dumps show that argument does not track selection order at
+      # all (a two-choice Choices' own two ChoiceCase markers carry
+      # `args=[2]`/`args=[3]` in one example, `args=[2]`/`args=[3]` again in
+      # a completely differently-shaped one; VariableCondition's own
+      # ChoiceCase/SpecialChoiceCase markers already ignored this argument
+      # for the same reason before this method existed).
+      #
+      # Stops (leaving @index just past whatever it landed on, so that
+      # marker's own body runs next by falling through normally) the first
+      # time `matcher` returns true for a ChoiceCase/SpecialChoiceCase, or
+      # immediately upon reaching an ElseCase/CancelCase (its body always
+      # runs when reached this way -- the caller decides whether to walk
+      # into one at all, e.g. Choices only reaches this when the player
+      # actually canceled). Falls through past the whole construct (no
+      # `skip_to` match at all) on BranchEnd or a malformed/missing one.
+      def select_branch(indent)
         idx = 0
         loop do
           landed = nil
-          skip_to(cmd.indent) do |c|
+          skip_to(indent) do |c|
             match = Interpreter::BRANCH_MARKERS.include?(c.code) || c.code == Interpreter::C_BRANCH_END
             landed = c if match
             match
@@ -249,12 +292,87 @@ module Wolf
           return if landed.nil? # ran off the end without even a BranchEnd (malformed); nothing left to do
           return if landed.code == Interpreter::C_BRANCH_END # no case matched; fall through normally
           if landed.code == Interpreter::C_ELSE_CASE || landed.code == Interpreter::C_CANCEL_CASE
-            return # else body starts right here; let it fall through
+            return # this body starts right here; let it fall through
           end
-          cond = conditions[idx]
-          return if cond && @interp.evaluate_condition(cond)
+          return if yield(idx)
           idx += 1
         end
+      end
+
+      # Choices(102): args[0] packs the choice count (low nibble), the
+      # "cancel behaviour" (bits 4-7: 0 a separate CancelCase branch, 1
+      # cancel disabled, 2+ "act as if choice N-2 was picked" -- cross-
+      # confirmed against the wolfrpg-map-parser crate's own independent
+      # `CancelCase` enum and the manual's own numbered description) and,
+      # unimplemented here, a left/right-key or forced-interrupt extra-case
+      # bitmask (bits 8-10 -- real command dumps from the sample game never
+      # carry any of these three bits set, so there is no real example to
+      # cross-check the crate's own `ExtraCases` struct against; logged and
+      # the whole construct skipped rather than guessed at). The choice
+      # texts are the command's own string arguments, one per slot
+      # (`cmd.strings`); a blank one is not selectable (help/04ev_select
+      # .html's own documented "文字列が空白ならその選択肢が消去される") but
+      # still owns a real ChoiceCase marker, and if *every* slot is blank
+      # the whole command -- markers, cases, all of it -- is skipped
+      # ("文字列が全て空だった場合は、選択肢コマンド自体がスキップされる").
+      #
+      # No native choice window is drawn (mirroring Message(101)'s own
+      # "stderr line, no real window" scope); this is the same "wait for
+      # real player input via RGSS::Input, dispatch by index" primitive the
+      # RPG Basic System's own Picture-drawn menus sit on top of. Suspends
+      # the Fiber every frame it has nothing to report -- exactly like
+      # #exec_wait -- so a soak check with no real player supplying input
+      # spins here until its own dispatched-command safety net catches it
+      # (already an accepted, documented outcome category: see
+      # scripts/wolf_interpreter_check.rb's own "suspected infinite loop (or
+      # a real input-wait loop this soak check cannot satisfy)" note).
+      def exec_choices(cmd)
+        options = cmd.arg(0)
+        selected = options & 0x0f
+        cancel_word = (options >> 4) & 0x0f
+        extra = (options >> 8) & 0x07
+
+        if selected == 0
+          @interp.unimplemented("Choices(102) with no choices configured")
+          return
+        end
+        if extra != 0
+          @interp.unimplemented("Choices(102) left/right-key or forced-interrupt branch")
+          skip_to(cmd.indent) { |c| c.code == Interpreter::C_BRANCH_END }
+          return
+        end
+
+        texts = cmd.strings
+        visible = (0...selected).reject { |i| (texts[i] || "").empty? }
+        if visible.empty?
+          skip_to(cmd.indent) { |c| c.code == Interpreter::C_BRANCH_END }
+          return
+        end
+
+        $stderr.puts "[Wolf-CHOICE] #{visible.map { |i| texts[i] }.join(' / ')}"
+
+        cancel_disabled = cancel_word == Interpreter::CHOICE_CANCEL_DISABLED
+        cancel_separate = cancel_word == Interpreter::CHOICE_CANCEL_SEPARATE
+        cursor = 0
+        chosen = nil
+        canceled = false
+        until chosen || canceled
+          Fiber.yield
+          case @interp.current_scene&.choice_input
+          when :down then cursor = (cursor + 1) % visible.size
+          when :up then cursor = (cursor - 1) % visible.size
+          when :confirm then chosen = visible[cursor]
+          when :cancel
+            next if cancel_disabled
+            if cancel_separate
+              canceled = true
+            else
+              chosen = cancel_word - 2
+            end
+          end
+        end
+
+        select_branch(cmd.indent) { |idx| idx == chosen }
       end
 
       # The index of the StartLoop enclosing the BreakLoop/GotoLoopStart

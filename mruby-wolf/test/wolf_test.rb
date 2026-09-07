@@ -525,7 +525,7 @@ end
 # Interpreter's event-movement code reads and writes.
 class WolfTestFakeScene
   attr_reader :shown, :shown_files, :shown_shapes, :moved, :erased
-  attr_accessor :x, :y, :blocked
+  attr_accessor :x, :y, :blocked, :choice_inputs
 
   def initialize
     @shown = []
@@ -537,6 +537,7 @@ class WolfTestFakeScene
     @y = 0
     @facing = :down
     @blocked = []
+    @choice_inputs = []
   end
 
   def show_string_picture(*args); @shown << args; end
@@ -544,6 +545,10 @@ class WolfTestFakeScene
   def show_shape_picture(*args); @shown_shapes << args; end
   def move_picture(*args); @moved << args; end
   def erase_picture(number); @erased << number; end
+  # Wolf::Interpreter::Run#exec_choices' own input seam -- a caller queues
+  # the sequence of key presses to hand back, one per call, `nil` (nothing
+  # queued) standing in for a frame nothing was pressed.
+  def choice_input; @choice_inputs.shift; end
 
   def passable?(x, y); !@blocked.include?([x, y]); end
   def hero_at?(x, y); x == @x && y == @y; end
@@ -697,6 +702,160 @@ assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explici
   party_cmd.route = [WolfTestRouteCommand.new(0, [])]
   interp.exec_set_move_route(party_cmd) # must not raise
   assert_equal 0, scene.x
+end
+
+# ---- Wolf::Interpreter#exec_choices (Choices(102)) --------------------------
+
+def wolf_test_choice_options(selected:, cancel: Wolf::Interpreter::CHOICE_CANCEL_SEPARATE, extra: 0)
+  (selected & 0x0f) | ((cancel & 0x0f) << 4) | ((extra & 0x07) << 8)
+end
+
+# A two-choice Choices with a separate CancelCase branch -- the exact shape
+# `map1 ev#23`'s own real Choices command has (opt=2: selected=2, cancel=0
+# "separate", extra=0), cross-checked by hand against what actually follows
+# it in the sample game's own data (two ChoiceCase(401) markers, each own
+# body ending in a real command, then a CancelCase(421), then BranchEnd).
+def wolf_test_choice_commands(cancel: Wolf::Interpreter::CHOICE_CANCEL_SEPARATE, texts: ["A", "B"])
+  options = wolf_test_choice_options(selected: texts.size, cancel: cancel)
+  [
+    wolf_test_cmd(102, [options], texts, 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1), # V[0] = 1 (choice A)
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 2, 0xf000], [], 1), # V[0] = 2 (choice B)
+    wolf_test_cmd(421, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 3, 0xf000], [], 1), # V[0] = 3 (canceled)
+    wolf_test_cmd(499, [], [], 0),
+    wolf_test_cmd(121, [2_000_001, 0, 9, 0xf000], [], 0), # after the whole construct
+  ]
+end
+
+assert "Wolf::Interpreter#exec_choices waits for a Fiber.yield-driven confirm and dispatches the chosen ChoiceCase" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands)
+
+  run.step # dispatches Choices(102); its own first Fiber.yield returns here without polling input yet
+  assert_equal 0, store.number(2_000_000) # still waiting; nothing ran yet
+
+  scene.choice_inputs = [:confirm] # confirm on the default cursor (choice A)
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 1, store.number(2_000_000)
+  assert_equal 9, store.number(2_000_001) # falls through past the whole construct afterward
+end
+
+assert "Wolf::Interpreter#exec_choices moves the cursor with up/down before confirming" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands)
+
+  run.step
+  scene.choice_inputs = [:down, :confirm] # move to choice B, then pick it
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#exec_choices cancel (\"separate\" behaviour) runs the CancelCase branch" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands(cancel: Wolf::Interpreter::CHOICE_CANCEL_SEPARATE))
+
+  run.step
+  scene.choice_inputs = [:cancel]
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 3, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#exec_choices ignores the cancel key when cancel is disabled" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands(cancel: Wolf::Interpreter::CHOICE_CANCEL_DISABLED))
+
+  run.step
+  scene.choice_inputs = [:cancel, :cancel, :confirm] # both cancels are no-ops; confirm still picks choice A
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 1, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#exec_choices' \"cancel acts as choice N\" behaviour needs no CancelCase marker" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  # cancel_word 3 => "act as choice 3-2 = 1" (choice B), matching the real
+  # sample game's own map1 ev#9/map2 ev#5/map3 ev#1 shape (opt=50: cancel=3)
+  # -- no CancelCase marker at all needed for this behaviour, so this run's
+  # own command list omits one entirely (unlike wolf_test_choice_commands'
+  # default shape).
+  commands = [
+    wolf_test_cmd(102, [wolf_test_choice_options(selected: 2, cancel: 3)], ["A", "B"], 0),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 1),
+    wolf_test_cmd(401, [0], [], 0),
+    wolf_test_cmd(121, [2_000_000, 0, 2, 0xf000], [], 1),
+    wolf_test_cmd(499, [], [], 0),
+  ]
+  run = Wolf::Interpreter::Run.new(interp, commands)
+  run.step
+  scene.choice_inputs = [:cancel]
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 2, store.number(2_000_000) # cancel behaved exactly like choosing B
+end
+
+assert "Wolf::Interpreter#exec_choices skips a blank choice slot's own body but still counts its marker" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  # help/04ev_select.html: a blank choice string is removed from what the
+  # player can pick, but the manual is explicit its ChoiceCase marker still
+  # exists -- so with slot 0 blank, the *first* visible choice is really
+  # slot 1, and confirming immediately (no down-press needed) must land on
+  # slot 1's own body, not slot 0's.
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands(texts: ["", "B"]))
+  run.step
+  scene.choice_inputs = [:confirm]
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 2, store.number(2_000_000)
+end
+
+assert "Wolf::Interpreter#exec_choices skips the whole construct when every choice slot is blank" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  run = Wolf::Interpreter::Run.new(interp, wolf_test_choice_commands(texts: ["", ""]))
+  count = 0
+  run.step while !run.done && (count += 1) < 20 # never actually waits; nothing to pick
+  assert_equal 0, store.number(2_000_000)
+  assert_equal 9, store.number(2_000_001)
+end
+
+assert "Wolf::Interpreter#exec_choices skips a left/right-key or forced-interrupt variant rather than guessing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.current_scene = WolfTestFakeScene.new
+  commands = wolf_test_choice_commands
+  commands[0] = wolf_test_cmd(102, [wolf_test_choice_options(selected: 2, extra: 1)], ["A", "B"], 0)
+  run = Wolf::Interpreter::Run.new(interp, commands)
+  count = 0
+  run.step while !run.done && (count += 1) < 20
+  assert_equal 0, store.number(2_000_000)
+  assert_equal 9, store.number(2_000_001)
 end
 
 # ---- Wolf::Interpreter#exec_picture -----------------------------------------

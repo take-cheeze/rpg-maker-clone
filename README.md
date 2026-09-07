@@ -636,6 +636,13 @@
   no independent source could place, logged and skipped rather than
   guessed, the same discipline as everywhere else in this maker. See
   [`docs/adr/0069-wolf-rpg-editor-event-movement.md`](docs/adr/0069-wolf-rpg-editor-event-movement.md)
+- **Choices really wait for the player.** `Choices`(102) now blocks (once a
+  frame, exactly like `Wait`) on real up/down/confirm/cancel input and
+  dispatches to the chosen branch — the sample game's own real title-screen
+  choice (Start/Continue/Exit) is reachable and correctly stops there against
+  the compiled binary. No native choice window is drawn yet, the same scope
+  `Message`(101) already keeps. See
+  [`docs/adr/0070-wolf-rpg-editor-choices.md`](docs/adr/0070-wolf-rpg-editor-choices.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

@@ -9,18 +9,24 @@
 # (the "RPG Basic System" that ships with the editor and that every real game
 # customises). `Wolf::Interpreter` (interpreter.rb) runs every auto-start and
 # parallel-process Common Event each frame against a `Wolf::VarStore`
-# (vars.rb), and drives map events too (trigger/page-selection, not their own
-# movement yet). Several commands (StringCondition, messages beyond a log
-# line, real 9-slice window-skin pictures, sound, teleport, ...) are
-# explicitly unimplemented rather than guessed at -- see docs/TODO.md and
-# interpreter.rb's own header for which command semantics are cross-confirmed
-# versus best-effort. `Wolf::Interpreter#exec_picture` calls into
+# (vars.rb), drives map events (trigger/page-selection, and their own
+# movement -- Page#move_type/SetMoveRoute(201)), and dispatches Choices(102)
+# by waiting on real player input. Several commands (StringCondition,
+# messages beyond a log line, real 9-slice window-skin pictures, sound,
+# teleport, ...) are explicitly unimplemented rather than guessed at -- see
+# docs/TODO.md and interpreter.rb's own header for which command semantics
+# are cross-confirmed versus best-effort. Interpreter has no rendering or
+# input code of its own -- it calls into this file's own
 # `WolfRPG::MapScene#show_string_picture`/`#show_file_picture`/
-# `#show_shape_picture`/`#move_picture`/`#erase_picture` below for
-# Picture(150) -- text pictures, real image files, and the manual's
-# documented procedural shapes (`<SQUARE>`/`<GRADX-...>`/`<GRADY-...>`/
-# `<LINE>`) -- the one real rendering hook Interpreter has into this file.
-# What exists here besides that is the map-rendering and movement foundation
+# `#show_shape_picture`/`#move_picture`/`#erase_picture` (Picture(150)'s own
+# text pictures, real image files, and the manual's documented procedural
+# shapes -- `<SQUARE>`/`<GRADX-...>`/`<GRADY-...>`/`<LINE>`),
+# `#passable?`/`#hero_pos`/`#hero_at?` (event movement's own collision and
+# hero-relative queries), and `#choice_input` (Choices(102)'s own up/down/
+# confirm/cancel poll -- no native choice window is drawn, mirroring
+# Message(101)'s own "stderr line, no real window" scope) for every real
+# effect any of that has. What exists here besides that is the map-rendering
+# and movement foundation
 # every later piece sits on: it loads the project's database, tile data and
 # start position, and lets the hero walk around the starting map with the
 # real per-tile passability flags, the same incremental order mruby-rpg2k's
@@ -197,6 +203,22 @@ class WolfRPG
 
     def hero_at?(x, y)
       x == @x && y == @y
+    end
+
+    # Wolf::Interpreter::Run#exec_choices' own input seam -- Interpreter has
+    # no rendering/input code of its own (this file's own header comment),
+    # so it asks #current_scene rather than touching RGSS::Input directly,
+    # the same separation every other rendering hook here already keeps.
+    # One event per call (whichever of the four is currently triggered, in
+    # this fixed priority order -- WOLF's own choice window is never
+    # diagonal, so only one of up/down/confirm/cancel can matter at once in
+    # practice); nil while nothing relevant was just pressed.
+    def choice_input
+      return :up if RGSS::Input.trigger?(RGSS::Input::UP)
+      return :down if RGSS::Input.trigger?(RGSS::Input::DOWN)
+      return :confirm if RGSS::Input.trigger?(RGSS::Input::C)
+      return :cancel if RGSS::Input.trigger?(RGSS::Input::B)
+      nil
     end
 
     # Public (not just #move_hero's own concern any more): Wolf::Interpreter's
