@@ -66,8 +66,27 @@ the 5-way switch to walk; collision is the map's real passability data.
 **Scope, and status.** It walks one static map: no events, no battle, no
 menus, no interpreter — see the ADRs before expecting a game. CI compiles it
 (the `wio` job builds both environments) and the shared core has its own host
-test (the `walk_core` ctest), but nobody has run it on a board yet — treat it
-as untried on real hardware, exactly like the `wio` firmware above.
+test (the `walk_core` ctest). It has now run on real hardware — a real
+Nepheshel map, exported and copied to the card as above, walks correctly on
+the board's LCD with the 5-way switch. The `wio` bring-up firmware above is
+still untried on a board.
+
+### No SD card reader? `wio_sd_upload`
+
+`pio run -e wio_sd_upload -t upload` flashes a throwaway loader that writes
+files to the microSD card over the same USB-CDC serial connection used to
+flash the board, for a dev machine with a Wio Terminal but no way to pull the
+card out and mount it directly. Drive it with `scripts/wio_sd_upload.py`:
+
+```sh
+pio run -e wio_sd_upload -t upload
+scripts/wio_sd_upload.py \
+  /tmp/rpg2k_walk_out/map.bin:/RPG2kWalk/map.bin \
+  /tmp/rpg2k_walk_out/tiles.bin:/RPG2kWalk/tiles.bin
+pio run -e wio_walk -t upload   # reflash the firmware you actually want running
+```
+
+See `app/wio/src/sd_upload_main.cxx` for the (tiny) serial protocol.
 
 ## Not yet wired (later slices)
 

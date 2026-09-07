@@ -81,15 +81,38 @@ rw_map g_map;
 rw_status g_status = RW_ERR_SHORT_HEADER;
 uint32_t g_last_step_ms;
 
-// ARGB1555 (what the export carries) -> RGB565 (what the ILI9341 takes). The
-// alpha bit is gone by now -- rw_compose_cell resolves every hole to the
-// backdrop -- so only the green channel has to grow, its low bit replicated
-// from the high one so a full-scale 31 stays full-scale 63.
+// ARGB1555 (what the export carries) -> BGR565 (what this panel's pushImage
+// actually wants -- confirmed on real hardware: packing straight RGB565 came
+// out with red and blue swapped on screen, i.e. this board's colour order is
+// BGR, not TFT_eSPI's RGB default). The alpha bit is gone by now
+// (rw_compose_cell resolves every hole to the backdrop), so only the green
+// channel has to grow, its low bit replicated from the high one so a
+// full-scale 31 stays full-scale 63.
 inline uint16_t to565(uint16_t c) {
   uint16_t r = (c >> 10) & 0x1f;
   uint16_t g = (c >> 5) & 0x1f;
   uint16_t b = c & 0x1f;
-  return (uint16_t)((r << 11) | (((g << 1) | (g >> 4)) << 5) | b);
+  return (uint16_t)((b << 11) | (((g << 1) | (g >> 4)) << 5) | r);
+}
+
+// Same, but for TFT_eSPI::pushImage(w, h, uint16_t*) specifically (i.e. the
+// per-tile buffer below, not fillScreen/fillCircle/print). Measured on real
+// hardware with a primaries test pattern (a pushImage swatch next to a
+// fillRect swatch of the same intended colour): pushImage's bulk path
+// (TFT_eSPI.cpp's pushColors -> a raw _com.transfer of the buffer, which
+// ignores setSwapBytes on this SAMD51 build) does *not* need the BGR field
+// swap to565() applies for the scalar path -- feeding it that swap plus a
+// byte-swap measured as a clean, full R<->B flip (pure R rendered blue, pure
+// B rendered red, G and white untouched), i.e. the two corrections cancelled
+// wrongly instead of stacking. Packing plain (unswapped) R5G6B5 and then
+// byte-swapping is what actually lands correctly here -- see the swatch
+// test in the git history of this file if this ever needs re-deriving.
+inline uint16_t to565_push(uint16_t c) {
+  const uint16_t r = (c >> 10) & 0x1f;
+  const uint16_t g = (c >> 5) & 0x1f;
+  const uint16_t b = c & 0x1f;
+  const uint16_t v = (uint16_t)((r << 11) | (((g << 1) | (g >> 4)) << 5) | b);
+  return (uint16_t)((v << 8) | (v >> 8));
 }
 
 // Read a whole file into `buf`, returning the byte count (0 when it is
@@ -133,7 +156,7 @@ void draw_map(void) {
 
       rw_compose_cell(&g_map, mx, my, g_cell1555);
       for (int i = 0; i < RW_TILE_PIXELS; ++i)
-        g_cell565[i] = to565(g_cell1555[i]);
+        g_cell565[i] = to565_push(g_cell1555[i]);
 
       g_tft.pushImage(tx * RW_TS, ty * RW_TS, RW_TS, RW_TS, g_cell565);
     }
@@ -141,7 +164,10 @@ void draw_map(void) {
 
   const int px = (g_map.player_x - cam_x) * RW_TS;
   const int py = (g_map.player_y - cam_y) * RW_TS;
-  g_tft.fillCircle(px + RW_TS / 2, py + RW_TS / 2, RW_TS / 2 - 1, TFT_RED);
+  // TFT_eSPI's TFT_RED/TFT_BLUE constants are plain RGB565 bit patterns, not
+  // adjusted for this panel's BGR order (see the to565 comment above) --
+  // TFT_BLUE's bit pattern is what actually paints red here.
+  g_tft.fillCircle(px + RW_TS / 2, py + RW_TS / 2, RW_TS / 2 - 1, TFT_BLUE);
 }
 
 // The 5-way switch, straight off the board's own pin macros (the same signals
