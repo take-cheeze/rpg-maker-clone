@@ -36008,11 +36008,34 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   skipped. BGS itself has no real example anywhere in the sample game's
   own data -- implemented by direct symmetry with BGM's own confirmed
   layout, not independently verified. See
-  `docs/adr/0072-wolf-rpg-editor-bgm-bgs.md`. Suggested next order: input
-  commands 123-126 (123 InputKey is tractable alone; 124 SetVariableEx/
-  SetVariablePlus is a large, many-sub-field command better scoped on its
-  own -- help/04ev_valuenext.html), save/load 220-222, database read/write
-  250/251, transitions 160-162/281/290.
+  `docs/adr/0072-wolf-rpg-editor-bgm-bgs.md`.
+- ✅ **InputKey(123), "Basic" key kind (2026-09-07).** Direction-keys mode
+  (enum, not a bitmask -- cross-confirmed against the wolfrpg-map-parser
+  crate's own `DirectionKeys`, but only its 0/1/7/8 values, the ones real
+  data actually carries) plus confirm/cancel/sub-key enable bits and a
+  "wait until pressed" bit, all packed into `arg(1)` the same way the
+  crate's own `BasicOptions` struct does. The returned key codes (10
+  confirm, 11 cancel, 12 sub, 2/4/6/8 for down/left/right/up) are read
+  straight off the editor's own event-command window (help/Ev_keyinput
+  .png), not reverse-engineered. `Wolf::Interpreter::Run#exec_input_key`
+  checks every configured key each frame, immediately or -- on the wait
+  bit -- looping via `Fiber.yield` exactly like `Wait`/`Choices` already
+  do, until one is down. Keyboard-all-keys/mouse/gamepad key kinds (no
+  discriminator field found in this reader's own framing, and none
+  exercised by any real command either), 8-way/single-direction modes, a
+  3-argument call, and the three capture modes beyond plain press-state/
+  wait the manual documents remain logged and skipped. Confirmed against
+  the real binary: the title screen's own `InputKey` call no longer logs
+  as unimplemented. See `docs/adr/0073-wolf-rpg-editor-input-key.md`.
+  Suggested next order: `SetVariableEx`/124 (a large, many-sub-field
+  command better scoped on its own -- help/04ev_valuenext.html), save/load
+  220-222, database read/write 250/251 (2544 real occurrences -- by far
+  the most common unimplemented command left -- but this reader could not
+  cross-validate its own dominant 5-argument/4-string shape's field-
+  selection encoding against any independent source; needs either a second
+  source or a lot more real data to place with confidence), transitions
+  160-162/281/290 (161/162 have zero real examples in the sample game;
+  160 has exactly one).
 - 🚧 **Real ChipSet-image tile rendering.** Base chips read from the
   tileset's own PNG (8 columns x N rows, laid out per `Wolf::GameDat#tile_size`)
   and autotile quarter-tile assembly (`Wolf::Map.autotile_slot`/

@@ -52,6 +52,7 @@ module Wolf
     C_STRING_CONDITION = 112
     C_SET_VARIABLE = 121
     C_SET_STRING = 122
+    C_INPUT_KEY = 123
     C_TELEPORT = 130
     C_SOUND = 140
     C_PICTURE = 150
@@ -194,6 +195,8 @@ module Wolf
           exec_choices(cmd)
         when Interpreter::C_SOUND
           @interp.exec_sound(cmd)
+        when Interpreter::C_INPUT_KEY
+          exec_input_key(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -374,6 +377,64 @@ module Wolf
         end
 
         select_branch(cmd.indent) { |idx| idx == chosen }
+      end
+
+      # InputKey(123), "Basic" mode only ("基本" -- confirm/cancel/sub/
+      # direction, help/Ev_keyinput.png's own screenshot: "キー種 基本
+      # （決定/ｷｬﾝｾﾙ/ｻﾌﾞ/方向）"). Only 2-argument calls are handled --
+      # every real one in the sample game's own data (54 of 58; the
+      # remaining 4 carry a 3rd argument this reader has not placed) has
+      # exactly that shape, and (structurally, not semantically -- no
+      # separate "which of Basic/keyboard-all/mouse/gamepad" field has
+      # been found in this reader's own framing) the other three "キー種"
+      # (key kind) modes are never exercised by any real command in the
+      # sample game either, so there is nothing to cross-check a discriminator
+      # field against even if one exists. arg(0) is the target; arg(1)
+      # packs (cross-confirmed against the wolfrpg-map-parser crate's own
+      # `BasicOptions` struct) a direction-keys mode (low nibble --
+      # `Interpreter::INPUT_KEY_DIRECTIONS`' own keys are the ones real
+      # data actually uses: 0 none, 1 all four cardinal, 7 up/down, 8
+      # left/right; 2/3/4/5/6 -- 8-way and the four single-direction modes
+      # -- are logged and skipped, not guessed, for lack of a real
+      # example), confirm/cancel/sub-key enable bits (0x10/0x20/0x40), and
+      # a "wait until pressed" bit (0x80). The returned key codes (10
+      # confirm, 11 cancel, 12 sub, 2/4/6/8 down/left/right/up) are the
+      # editor's own documented ones, read straight off the same
+      # screenshot -- not reverse-engineered. `@interp.current_scene`'s
+      # own default key bindings (confirm C, cancel B, sub Shift) match
+      # help/04ev_keyinput.html's own documented defaults
+      # ("決定キー(Enter/スペース)"/"キャンセルキー(Esc/Backspace/Delete)"/
+      # "サブキー(Shift)"); the "システム変数52～57で...設定した" custom-
+      # keycode override is not modeled. Checks every frame it has nothing
+      # to report -- exactly `#exec_wait`/`#exec_choices`'s own shape --
+      # when the "wait until pressed" bit is set; otherwise reports once,
+      # immediately (0 when nothing configured is currently down, per the
+      # manual's own "何もなければ0が代入されます").
+      def exec_input_key(cmd)
+        unless cmd.args.size == 2
+          @interp.unimplemented("InputKey(123) with #{cmd.args.size} arguments (only the confirmed 2-argument Basic-mode layout is understood)")
+          return
+        end
+        options = cmd.arg(1)
+        keys = @interp.input_key_candidates(options)
+        if keys.nil?
+          @interp.unimplemented("InputKey(123) direction mode #{options & 0x0f}")
+          return
+        end
+        target = cmd.arg(0)
+        wait = !keys.empty? && (options & 0x80) != 0
+        loop do
+          pressed = keys.find { |k| @interp.current_scene&.input_key_pressed?(k) }
+          if pressed
+            @interp.var_store.set_number(target, Interpreter::INPUT_KEY_CODE[pressed])
+            return
+          end
+          unless wait
+            @interp.var_store.set_number(target, 0)
+            return
+          end
+          Fiber.yield
+        end
       end
 
       # The index of the StartLoop enclosing the BreakLoop/GotoLoopStart
@@ -678,6 +739,35 @@ module Wolf
       volume = 100 if volume == 0
       pitch = 100 if pitch == 0
       current_scene&.play_track(operation, path, volume, pitch)
+    end
+
+    # InputKey(123)'s own "Basic" mode -- see Run#exec_input_key's own
+    # comment for the full cross-check. The editor's own documented key
+    # codes (help/Ev_keyinput.png's screenshot): direction keys return the
+    # numpad-style code of whichever one is down (2/4/6/8), confirm/cancel/
+    # sub return 10/11/12.
+    INPUT_KEY_DIRECTIONS = {
+      0 => [].freeze,                    # "指定なし" (none)
+      1 => [:up, :down, :left, :right].freeze, # "4方向" (all four cardinal)
+      7 => [:up, :down].freeze,          # "上下" (up/down only)
+      8 => [:left, :right].freeze,       # "左右" (left/right only)
+    }.freeze
+    INPUT_KEY_CODE = { up: 8, down: 2, left: 4, right: 6, confirm: 10, cancel: 11, subkey: 12 }.freeze
+
+    # The keys `options` (InputKey(123)'s own arg(1)) asks about, in the
+    # fixed check order direction-keys-then-confirm-then-cancel-then-sub --
+    # ties (more than one candidate down at once) are not modeled beyond
+    # that order, since no real command in the sample game exercises the
+    # question. `nil` when the direction-keys nibble is not one of the
+    # confirmed values above.
+    def input_key_candidates(options)
+      directions = INPUT_KEY_DIRECTIONS[options & 0x0f]
+      return nil unless directions
+      keys = directions.dup
+      keys << :confirm if (options & 0x10) != 0
+      keys << :cancel if (options & 0x20) != 0
+      keys << :subkey if (options & 0x40) != 0
+      keys
     end
 
     # Picture(150) operation nibble (bits 0-3 of arg(0)).

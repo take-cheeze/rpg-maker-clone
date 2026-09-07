@@ -653,6 +653,13 @@
   mode BGM/BGS, and a string-interpolated SE filename are logged and
   skipped rather than guessed. See
   [`docs/adr/0071-wolf-rpg-editor-sound.md`](docs/adr/0071-wolf-rpg-editor-sound.md)/[`0072`](docs/adr/0072-wolf-rpg-editor-bgm-bgs.md)
+- **Real key input.** `InputKey`(123)'s "Basic" key kind (direction keys/
+  confirm/cancel/sub) now checks or blocks on real player input — the same
+  `Wait`/`Choices`-shaped `Fiber.yield` loop — and returns the editor's own
+  documented key codes, read straight off its event-command window rather
+  than reverse-engineered. Keyboard/mouse/gamepad key kinds and a few
+  unconfirmed direction modes are logged and skipped. See
+  [`docs/adr/0073-wolf-rpg-editor-input-key.md`](docs/adr/0073-wolf-rpg-editor-input-key.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event
