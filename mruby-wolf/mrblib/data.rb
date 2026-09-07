@@ -842,6 +842,13 @@ module Wolf
     # localises the names only in the English edition, which renames them; ids
     # are stable across editions, so they are the primary key).
     SYS_MAP_SETTINGS = 0
+    # help/05systemtype.html's own "タイプ1 BGMリスト / タイプ2 BGSリスト":
+    # field 0 filename, field 1 playback volume% (0 = the file's own
+    # default), field 2 playback frequency% (0 = the file's own default),
+    # field 3 loop start position (ms). Sound(140)'s own "direct system-
+    # database selection" mode looks a BGM/BGS entry up here.
+    SYS_BGM_LIST = 1
+    SYS_BGS_LIST = 2
     SYS_POSITIONS = 7
     SYS_CHARACTER_IMAGES = 8
 

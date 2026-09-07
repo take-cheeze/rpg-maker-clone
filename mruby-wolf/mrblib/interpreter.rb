@@ -573,26 +573,31 @@ module Wolf
     # is exactly this reader's single 4-byte `arg(0)` word, byte for byte):
     # byte 0 low nibble "process type" (0 normal playback, 1 preload, 3 free
     # unused memory), byte 0 high nibble "operation" (0 BGM, 1 BGS, 2 SE),
-    # bytes 1-2 a system-database entry index (only meaningful for the two
-    # sound-type kinds below that are not Filename), byte 3 "sound type" (0
-    # a direct system-database selection, 1 a variable naming one, 2 a
-    # literal/string-variable filename). Only "normal playback of an SE by
-    # filename" -- the confirmed 6/7-argument layout every real match of
-    # that combination in the sample game's own data carries, volume at
-    # arg(4) and frequency/pitch at arg(5) (both vary from their 100/100
-    # default in at least one real call, confirming the slots) -- is
-    # implemented; everything else (BGM/BGS, a system-database or variable
-    # sound source, preload/free-memory, any other argument count) is
-    # logged and skipped, the same discipline as every other WOLF command
-    # whose full argument layout this reader has not cross-checked. A
-    # filename that is itself one of WOLF's own "\cself[N]"/"\s[N]" string-
-    # interpolation escapes (real, found in the sample game's own Common
-    # Events) needs a string-escape engine this reader does not have for
-    # *any* command yet (Message(101) does not expand them either) and is
-    # skipped the same way a Picture(150) special file directive is.
+    # bytes 1-2 a system-database entry index, signed 16-bit (-1 is the
+    # manual's own documented "(停止)" stop sentinel), byte 3 "sound type"
+    # (0 a direct system-database selection, 1 a variable naming one, 2 a
+    # literal/string-variable filename). Two combinations are implemented:
+    # "normal playback of an SE by filename" (the confirmed 6/7-argument
+    # layout every real match in the sample game's own data carries, volume
+    # at arg(4) and frequency/pitch at arg(5) -- both vary from their
+    # 100/100 default in at least one real call, confirming the slots), and
+    # "BGM/BGS by a direct system-database selection" (#exec_sound_track_db_
+    # entry's own comment). Everything else (a variable sound source,
+    # preload/free-memory, any other argument count) is logged and skipped,
+    # the same discipline as every other WOLF command whose full argument
+    # layout this reader has not cross-checked. A filename that is itself
+    # one of WOLF's own "\cself[N]"/"\s[N]" string-interpolation escapes
+    # (real, found in the sample game's own Common Events) needs a string-
+    # escape engine this reader does not have for *any* command yet
+    # (Message(101) does not expand them either) and is skipped the same
+    # way a Picture(150) special file directive is.
     SOUND_PROCESS_PLAYBACK = 0
+    SOUND_OP_BGM = 0
+    SOUND_OP_BGS = 1
     SOUND_OP_SE = 2
+    SOUND_TYPE_DB_ENTRY = 0
     SOUND_TYPE_FILENAME = 2
+    SOUND_DB_STOP = -1
 
     def exec_sound(cmd)
       header = cmd.arg(0)
@@ -600,8 +605,18 @@ module Wolf
       operation = (header >> 4) & 0x0f
       sound_type = (header >> 24) & 0xff
 
-      unless process_type == SOUND_PROCESS_PLAYBACK && operation == SOUND_OP_SE && sound_type == SOUND_TYPE_FILENAME
-        unimplemented("Sound(140) process #{process_type}/operation #{operation}/sound type #{sound_type}")
+      unless process_type == SOUND_PROCESS_PLAYBACK
+        unimplemented("Sound(140) process type #{process_type}")
+        return
+      end
+
+      if (operation == SOUND_OP_BGM || operation == SOUND_OP_BGS) && sound_type == SOUND_TYPE_DB_ENTRY
+        exec_sound_track_db_entry(cmd, header, operation)
+        return
+      end
+
+      unless operation == SOUND_OP_SE && sound_type == SOUND_TYPE_FILENAME
+        unimplemented("Sound(140) operation #{operation}/sound type #{sound_type}")
         return
       end
       unless cmd.args.size == 6 || cmd.args.size == 7
@@ -618,6 +633,51 @@ module Wolf
       volume = var_store.number(cmd.arg(4))
       pitch = var_store.number(cmd.arg(5))
       current_scene&.play_se(path, volume, pitch)
+    end
+
+    # BGM/BGS "direct system-database selection" (help/05systemtype.html's
+    # own "タイプ1 BGMリスト/タイプ2 BGSリスト": filename, volume%,
+    # frequency%, loop start ms). Cross-confirmed end to end against the
+    # sample game's own real data: `map1 ev#13`'s two real Sound calls
+    # decode to system-database entry 1 (whose own *name* -- read straight
+    # off `Wolf::Project::SYS_BGM_LIST`'s table -- is literally
+    # "スタッフロール" [staff roll], and the very next thing the same
+    # script does is show its own staff-roll credits) and entry -1 (the
+    # manual's own documented stop sentinel, packed the same signed-16-bit
+    # way this reader already decodes). Only 4-argument calls are handled
+    # -- both real examples have exactly 4 -- and only this sound type:
+    # help/04ev_sound.html's own words, volume/frequency are settable
+    # *only* in Filename mode, so a database-entry call always uses the
+    # table's own stored values (0 meaning "use the file's own default",
+    # matching `RGSS::Audio`'s own default of 100). The fade-time argument
+    # (`arg(1)`, present and identical across both real examples, but
+    # without a confirmed unit) is read by neither this method nor
+    # `WolfRPG::MapScene#play_track` -- playback snaps immediately, the
+    # same simplification Picture(150)'s own `process_time` already gets.
+    def exec_sound_track_db_entry(cmd, header, operation)
+      unless cmd.args.size == 4
+        unimplemented("Sound(140) BGM/BGS database entry with #{cmd.args.size} arguments (only the confirmed 4-argument layout is understood)")
+        return
+      end
+      entry = (header >> 8) & 0xffff
+      entry -= 0x1_0000 if entry >= 0x8000
+
+      if entry == SOUND_DB_STOP
+        current_scene&.stop_track(operation)
+        return
+      end
+
+      table = project.system_db[operation == SOUND_OP_BGM ? Wolf::Project::SYS_BGM_LIST : Wolf::Project::SYS_BGS_LIST]
+      path = table && table.value(entry, 0)
+      unless path.is_a?(String) && !path.empty?
+        unimplemented("Sound(140) BGM/BGS database entry #{entry}: no such entry")
+        return
+      end
+      volume = table.value(entry, 1) || 0
+      pitch = table.value(entry, 2) || 0
+      volume = 100 if volume == 0
+      pitch = 100 if pitch == 0
+      current_scene&.play_track(operation, path, volume, pitch)
     end
 
     # Picture(150) operation nibble (bits 0-3 of arg(0)).
