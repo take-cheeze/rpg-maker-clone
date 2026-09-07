@@ -181,6 +181,13 @@ Phase 1** rather than assumed:
   the moment the P1 image grows into P2 rather than being a Wio number today
   — but the trim is in the shared build config, not a PSP-only switch, so it
   cannot be forgotten at that point.
+- Drop engine code a released game never reaches. **Done** — ADR 0097 drops
+  RPG_RT's own Test Play-only F9 debug menu (a Switch/Variable browser, the
+  chipset passability editor, the whole-map viewer) from `mruby-rpg2k`'s
+  `psp`/`wio` cross builds: 18,259 of its 413,612 bytes of compiled mrblib
+  bytecode, measured with real `mrbc -g`. Small next to onigmo/uni-algo, but
+  free of the "will some game need this" question the other levers here
+  still carry.
 - Place read-only bytecode, rodata and — importantly — the game assets in the
   **4 MB external QSPI flash** (XIP / a read-only FS), keeping internal flash for
   hot code.
