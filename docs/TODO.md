@@ -36518,6 +36518,25 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   comes back identical through the packed copy. Compressed DXA entries and
   the older pre-2.281 v5/v6 container are refused with a clear error rather
   than mis-parsed. See `docs/adr/0093-wolf-rpg-editor-data-wolf.md`.
+- ✅ **`Data.wolf` compressed header tables (2026-09-07).** The expectation
+  above ("real releases probably skip DXA's own redundant compression") was
+  wrong: this session's first real, freely-distributable released game
+  ("About a Certain Witch" v1.03, freem.ne.jp) ships a Huffman+LZ-compressed
+  header table. `Wolf::DataWolf.huffman_decode`/`.dxa_lz_decode` now read it,
+  ported from and cross-validated against the same vendored `Huffman.cpp`/
+  `DXArchive.cpp` (compiled the untouched reference encoders and decoded
+  their real output, catching a real LSB-vs-MSB bit-order bug this way that
+  a hand-traced port would not have). That specific game still cannot be
+  opened, for an unrelated, separately-scoped reason: its `DARC_HEAD` fields
+  are additionally scrambled by a newer WOLF-RPG-Editor-specific modified
+  DxArchive (`DxArchive_WOLF_MOD_security`, visible in its shipped `Game.exe`)
+  that the vendored WolfDec source does not model — the actively-maintained
+  [UberWolf](https://github.com/Sinflower/UberWolf) successor project has a
+  dedicated `WolfX` module for exactly this, built from extensive reverse
+  engineering (a large precomputed magic-value lookup table) rather than a
+  documented algorithm, so it was not ported without a way to verify it
+  against a compiled reference. See
+  `docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`.
 - ✅ **Pro-protected data (v3.5) decrypted for real (2026-09-07).** The
   earlier claim here -- "from editor 3.5 on the protection key is not even
   stored in the game (only a hash), so a 3.5+ Pro-protected release may be

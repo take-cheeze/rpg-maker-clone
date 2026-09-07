@@ -101,17 +101,24 @@
 # Pro-protected *file* sub-schemes are not implemented (see
 # wolf_crypt_pro.rb's file header):
 #
-#   * A **compressed** table or entry (`NO_HEAD_PRESS` unset, or a file whose
-#     `PressDataSize`/`HuffPressDataSize` is not the "uncompressed" sentinel)
-#     needs DxLib's own Huffman + LZ77-family decoders (~1000 more lines of
-#     `Huffman.cpp`/`DXArchive.cpp` to port) on top of everything above. There
-#     is no `Data.wolf` fixture in this repo to confirm real releases actually
-#     exercise that path -- WOLF's own asset formats are already independently
-#     LZ4-compressed at the *content* layer (`Wolf::LZ4`, wolf.rb) before ever
-#     reaching the archive, which is reason to expect `Data.wolf` itself skips
-#     DXA's own (redundant) compression, but that is an expectation, not a
-#     confirmed fact, so this reader raises a specific, named error instead of
-#     silently mis-decoding a compressed archive as garbage.
+#   * A compressed **table** (`NO_HEAD_PRESS` unset) *is* decoded --
+#     `.huffman_decode`/`.dxa_lz_decode` below port DxLib's own
+#     `Huffman_Decode`/`DXArchive::Decode`. This turned out not to be a
+#     hypothetical: the expectation this reader originally shipped with (that
+#     `Data.wolf` itself would skip DXA's own redundant compression, since
+#     WOLF's own asset formats are already independently LZ4-compressed at
+#     the *content* layer -- `Wolf::LZ4`, wolf.rb -- before ever reaching the
+#     archive) was wrong, discovered by pointing this reader at a real,
+#     freely-distributable released game's own `Data.wolf` rather than only
+#     this repo's own round-trip fixture (`.pack` always writes an
+#     uncompressed table, so `scripts/wolf_data_wolf_check.rb`'s round trip
+#     alone could never have exercised this path). A compressed **file
+#     entry** (`PressDataSize`/`HuffPressDataSize` not the "uncompressed"
+#     sentinel) is still refused with a clear error rather than mis-parsed:
+#     no real archive's own individual files have been seen using it yet
+#     (consistent with the LZ4-at-the-content-layer reasoning above still
+#     holding for file *data*, just not for the header table), so there is
+#     nothing to cross-validate a decoder against.
 #   * Pro-protected **data.wolf containers** are not a thing distinct from
 #     Pro-protected *files*: Pro protection (byte 1 == 0x50) is a separate
 #     AES scheme applied to individual `Data/` files' own bytes, wholly
@@ -243,18 +250,49 @@ module Wolf
       flags = self.class.u32_at(raw_head, 44)
       @no_key = (flags & FLAG_NO_KEY) != 0
       no_head_press = (flags & FLAG_NO_HEAD_PRESS) != 0
-      unless no_head_press
-        raise Error, "Data.wolf: the header table is compressed " \
-                     "(Huffman/LZ); only an uncompressed DXA header is supported"
+
+      # `name_table_start` is one of `DARC_HEAD`'s own supposedly-plain
+      # fields (see the file header's "Format"); a huge, clearly-bogus value
+      # here means this archive was not built the way this reader (matching
+      # the vendored WolfDec reference) expects `DARC_HEAD` to be laid out --
+      # seen in the wild on at least one current, real released game whose
+      # own `Game.exe` bundles a `DxArchive_WOLF_MOD_security.cpp`-derived
+      # archiver rather than the stock DxLib one, per Sinflower/UberWolf's
+      # own newer "WolfX" reverse-engineering effort (a large, still
+      # actively-updated per-release magic-value table this reader does not
+      # attempt to port -- see docs/TODO.md's own "Packed releases" entry).
+      # Caught here as a clear, named error rather than a raw `Errno::EINVAL`
+      # from seeking to nonsense.
+      if name_table_start > (1 << 48)
+        raise Error, "Data.wolf: DARC_HEAD's own table offsets look bogus " \
+                     "(name table at #{name_table_start}) -- this archive " \
+                     "was likely built by a WOLF-specific modified DxArchive " \
+                     "this reader does not yet support, not the stock DxLib " \
+                     "one (see the file header's \"Scope\")"
       end
 
       @io.seek(name_table_start)
-      raw_table = @io.read(@head_size)
-      if raw_table.nil? || raw_table.bytesize < @head_size
-        raise Error, "Data.wolf: truncated name/file/directory table"
+      if no_head_press
+        raw_table = @io.read(@head_size)
+        if raw_table.nil? || raw_table.bytesize < @head_size
+          raise Error, "Data.wolf: truncated name/file/directory table"
+        end
+      else
+        # Compressed header (see the file header's "Scope" -- real released
+        # games do take this path, not just the uncompressed one this reader
+        # originally assumed). The compressed blob runs from here to EOF
+        # (OpenArchiveFile's own `HuffHeadSize = FileSize - ftell(...)`);
+        # `@head_size` itself still holds the true *uncompressed* size either
+        # way (DXArchive.cpp's own encoder sets it before compressing), used
+        # below both as the Huffman decode's expected size and as a cheap
+        # per-key plausibility gate before committing to a full decode.
+        raw_table = @io.read
+        if raw_table.nil? || raw_table.empty?
+          raise Error, "Data.wolf: truncated compressed name/file/directory table"
+        end
       end
 
-      @key_string, @key, blob = find_key(raw_table, key_string)
+      @key_string, @key, blob = find_key(raw_table, key_string, !no_head_press)
 
       @entries = {}
       walk_directory(blob, 0, "", [])
@@ -397,17 +435,41 @@ module Wolf
     # `key_string:` forced) against the raw table bytes, keeping the first
     # whose decrypted root directory record looks like a real one --
     # `WolfDec`'s own `main.cpp` has no better way to pick either (see the
-    # file header). Returns [key_string_bytes_or_nil, derived_key_or_nil,
-    # decrypted_table]. Raises if nothing plausible turns up.
-    def find_key(raw_table, key_string)
+    # file header). `compressed` is whether `raw_table` still needs the
+    # Huffman+LZ decode below (see #initialize) before it is a real table.
+    # Returns [key_string_bytes_or_nil, derived_key_or_nil, decoded_table].
+    # Raises if nothing plausible turns up.
+    def find_key(raw_table, key_string, compressed)
       if @no_key
-        return [nil, nil, raw_table]
+        blob = compressed ? decompress_table(raw_table) : raw_table
+        return [nil, nil, blob]
       end
 
       candidates = key_string ? [self.class.truncate_key(key_string)] : KNOWN_KEYS
       candidates.each do |ks|
         key = self.class.key_create(ks)
-        blob = self.class.xor_cycle(raw_table, key, 0)
+        decrypted = self.class.xor_cycle(raw_table, key, 0)
+        if compressed
+          # A wrong key turns the Huffman size prefix into noise -- possibly
+          # a huge 64-bit value -- so this checks the cheap size-only prefix
+          # (a handful of bit reads, see .huffman_decoded_size) before ever
+          # committing to a full Huffman+LZ decode of the candidate. That
+          # prefix is the size of the *LZ-compressed* intermediate (Huffman's
+          # own immediate input, see `.decompress_table`'s ordering) rather
+          # than the final table's -- not `@head_size` itself, which is only
+          # known once the table is fully decoded -- so this is a generous
+          # sanity bound tied to it (real archives don't inflate anywhere
+          # near this much at the LZ stage) rather than an exact check; the
+          # final blob's own size against `@head_size`, and the same
+          # #plausible? check the uncompressed path uses, are what actually
+          # confirm the key below.
+          lz_size = self.class.huffman_decoded_size(decrypted)
+          next if lz_size <= 0 || lz_size > @head_size * 4 + 4096
+          blob = decompress_table(decrypted)
+          next unless blob.bytesize == @head_size
+        else
+          blob = decrypted
+        end
         return [ks, key, blob] if plausible?(blob)
       end
       raise Error, "Data.wolf: could not decrypt the archive header with " \
@@ -415,6 +477,13 @@ module Wolf
                    "a Pro-protected release still uses a plain DXA container " \
                    "(see the file header), so this means the key table itself " \
                    "is missing this game's editor version"
+    end
+
+    # The name/file/directory table, Huffman-decoded then LZ-decoded (see the
+    # file header's "Format" -- `DXArchive::OpenArchiveFile`'s own order for
+    # a compressed header). `bytes` is already XOR-decrypted.
+    def decompress_table(bytes)
+      self.class.dxa_lz_decode(self.class.huffman_decode(bytes))
     end
 
     # A cheap, non-cryptographic sanity check on a candidate decryption of the
@@ -530,6 +599,252 @@ module Wolf
         j += 1
       end
       Wolf.bin(b.pack("C*"))
+    end
+
+    # ---- compressed-header decode (DxLib's own Huffman + custom LZ) ----
+    #
+    # Ported from `Huffman.cpp`'s `Huffman_Decode` and `DXArchive.cpp`'s
+    # `DXArchive::Decode` (see the file header's "Format"/"Scope") -- the
+    # two-stage decompression a real released game's `Data.wolf` header table
+    # needs whenever `NO_HEAD_PRESS` is unset. Deliberately decode-only: this
+    # reader never *writes* a compressed header (`.pack` below always sets
+    # `NO_HEAD_PRESS`, a spec-valid choice a real DXA reader accepts fine),
+    # so `Huffman_Encode`/`DirectoryEncode`'s own compression path is not
+    # ported.
+    #
+    # Reads `n` bits (MSB-first, matching `Huffman.cpp`'s own `BIT_STREAM`)
+    # from `bytes` starting at zero-based bit offset `pos`, without requiring
+    # `pos` to be byte-aligned. Returns `[value, pos + n]` so callers thread
+    # the position through a sequence of reads the same way `BitStream_Read`
+    # advances its own cursor.
+    def self.bits_read(bytes, pos, n)
+      v = 0
+      i = 0
+      while i < n
+        bit_pos = pos + i
+        byte = bytes.getbyte(bit_pos / 8) || 0
+        bit = (byte >> (7 - bit_pos % 8)) & 1
+        v = (v << 1) | bit
+        i += 1
+      end
+      [v, pos + n]
+    end
+
+    # Just the compressed blob's own claimed *uncompressed* size, without
+    # decoding the rest of the stream (the frequency table and the compressed
+    # bits themselves) -- the first two `BitStream_Read` calls
+    # `Huffman_Decode(Src, NULL)` itself would do to answer the same
+    # question. Used by `#find_key`'s per-candidate-key gate: cheap enough to
+    # try for every `KNOWN_KEYS` entry, unlike a full decode of a stream a
+    # wrong key has turned to noise (whose *own* claimed size could be
+    # anything up to 2**64-1).
+    def self.huffman_decoded_size(bytes)
+      size_bits, pos = bits_read(bytes, 0, 6)
+      original_size, = bits_read(bytes, pos, size_bits + 1)
+      original_size
+    end
+
+    # Full Huffman decode: rebuilds the same 511-node tree `Huffman_Encode`
+    # built from the per-byte-value frequency table stored in the stream
+    # (256 signed differences from the previous entry, `Weight[0]` on its
+    # own), then walks it root-to-leaf one output byte at a time. Skips
+    # `Huffman_Decode`'s own `NodeIndexTable` (a 9-bit lookup table purely for
+    # decode speed in the original C++) in favor of the plain bit-by-bit walk
+    # `Huffman_Decode` itself falls back to for a stream's last 17 bytes --
+    # both visit the exact same tree edges for the exact same output, so the
+    # lookup table's absence changes nothing but how many bits are read one
+    # at a time.
+    def self.huffman_decode(bytes)
+      size_bits, pos = bits_read(bytes, 0, 6)
+      original_size, pos = bits_read(bytes, pos, size_bits + 1)
+      press_bits, pos = bits_read(bytes, pos, 6)
+      _press_size, pos = bits_read(bytes, pos, press_bits + 1)
+
+      weight = Array.new(256, 0)
+      prev = 0
+      i = 0
+      while i < 256
+        diff_bits, p1 = bits_read(bytes, pos, 3)
+        diff_bits = (diff_bits + 1) * 2
+        minus, p2 = bits_read(bytes, p1, 1)
+        diff, p3 = bits_read(bytes, p2, diff_bits)
+        pos = p3
+        prev = minus == 1 ? (prev - diff) & 0xffff : (prev + diff) & 0xffff
+        weight[i] = prev
+        i += 1
+      end
+
+      # Repeatedly merge the two lowest-weight not-yet-merged nodes (linear
+      # scan, first-found-wins on ties) into a new node, same as
+      # `Huffman_Encode` itself does to build the tree it assigned codes
+      # from -- this must reproduce that exact tree, not just any valid one,
+      # since the bits in the stream were chosen against it.
+      node_weight = Array.new(511, 0)
+      child = Array.new(511) { [-1, -1] }
+      parent = Array.new(511, -1)
+      i = 0
+      while i < 256
+        node_weight[i] = weight[i]
+        i += 1
+      end
+
+      data_num = 256
+      node_num = 256
+      while data_num > 1
+        min1 = -1
+        min2 = -1
+        idx = 0
+        seen = 0
+        while seen < data_num
+          if parent[idx] == -1
+            seen += 1
+            if min1 == -1 || node_weight[min1] > node_weight[idx]
+              min2 = min1
+              min1 = idx
+            elsif min2 == -1 || node_weight[min2] > node_weight[idx]
+              min2 = idx
+            end
+          end
+          idx += 1
+        end
+        node_weight[node_num] = node_weight[min1] + node_weight[min2]
+        child[node_num] = [min1, min2]
+        parent[min1] = node_num
+        parent[min2] = node_num
+        node_num += 1
+        data_num -= 1
+      end
+
+      root = 510
+      out = Wolf.bin("\x00" * original_size)
+      # The compressed *payload* (unlike the header fields/weight table just
+      # above) is not more `BIT_STREAM`/`BitStream_Read` -- `Huffman_Encode`
+      # packs it with a separate, simpler bit writer (`PressData[...] |=
+      # (BitData & 1) << PressBitCounter`, `BitData >>= 1` each step): LSB-
+      # first within each byte rather than MSB-first, and always starting at
+      # a fresh byte boundary right after the header (`HeadSize` itself is
+      # `BitStream_GetBytes`, i.e. already rounded up past the header's own
+      # last partial byte) rather than continuing mid-byte from `pos`.
+      byte_pos = (pos + 7) / 8
+      cur_byte = bytes.getbyte(byte_pos) || 0
+      bit_counter = 0
+      n = 0
+      while n < original_size
+        node = root
+        while node > 255
+          if bit_counter == 8
+            byte_pos += 1
+            cur_byte = bytes.getbyte(byte_pos) || 0
+            bit_counter = 0
+          end
+          bit = cur_byte & 1
+          cur_byte >>= 1
+          bit_counter += 1
+          node = child[node][bit]
+        end
+        out.setbyte(n, node)
+        n += 1
+      end
+      out
+    end
+
+    # `DXArchive::Decode`'s custom LZ77-family decoder, for the LZ-compressed
+    # (post-Huffman-decode) stream: a plain byte is copied through as-is; a
+    # run of the stream's own "key" byte value repeated twice copies one
+    # literal key byte through; any other `key, code` pair is a back-
+    # reference (`code` packs a length nibble/extra-length-byte and a
+    # 1/2/3-byte distance, `MIN_COMPRESS` == 4 added back to the length since
+    # the encoder subtracted it to fit more lengths in fewer bits). The
+    # `index < conbo` branch is a self-overlapping copy (the referenced run
+    # extends past the position being written), expanded by doubling the
+    # already-copied span each pass -- exactly `Decode`'s own loop, not a
+    # generic `memcpy` (which would corrupt an overlapping copy that way).
+    def self.dxa_lz_decode(bytes)
+      dest_size = u32_at(bytes, 0)
+      src_size = u32_at(bytes, 4) - 9
+      keycode = bytes.getbyte(8)
+
+      out = Wolf.bin("\x00" * dest_size)
+      sp = 9
+      dp = 0
+      while src_size > 0
+        b = bytes.getbyte(sp)
+        if b != keycode
+          out.setbyte(dp, b)
+          dp += 1
+          sp += 1
+          src_size -= 1
+          next
+        end
+
+        if bytes.getbyte(sp + 1) == keycode
+          out.setbyte(dp, keycode)
+          dp += 1
+          sp += 2
+          src_size -= 2
+          next
+        end
+
+        code = bytes.getbyte(sp + 1)
+        code -= 1 if code > keycode # undo the encoder's +1 keycode dodge
+        sp += 2
+        src_size -= 2
+
+        conbo = code >> 3
+        if (code & 0x4) != 0
+          conbo |= bytes.getbyte(sp) << 5
+          sp += 1
+          src_size -= 1
+        end
+        conbo += 4 # MIN_COMPRESS
+
+        index_size = code & 0x3
+        case index_size
+        when 0
+          index = bytes.getbyte(sp)
+          sp += 1
+          src_size -= 1
+        when 1
+          index = u16_at(bytes, sp)
+          sp += 2
+          src_size -= 2
+        else
+          index = u16_at(bytes, sp) | (bytes.getbyte(sp + 2) << 16)
+          sp += 3
+          src_size -= 3
+        end
+        index += 1
+
+        if index < conbo
+          num = index
+          while conbo > num
+            i = 0
+            while i < num
+              out.setbyte(dp + i, out.getbyte(dp - num + i))
+              i += 1
+            end
+            dp += num
+            conbo -= num
+            num += num
+          end
+          if conbo != 0
+            i = 0
+            while i < conbo
+              out.setbyte(dp + i, out.getbyte(dp - num + i))
+              i += 1
+            end
+            dp += conbo
+          end
+        else
+          i = 0
+          while i < conbo
+            out.setbyte(dp + i, out.getbyte(dp - index + i))
+            i += 1
+          end
+          dp += conbo
+        end
+      end
+      out
     end
 
     # 32-bit XOR of two (possibly bignum-range) integers via byte-wise `^` --

@@ -777,8 +777,17 @@
   tree — `Wolf::DataWolf` reads the DxLib DXA archive a released game packs
   its whole `Data/` tree into, XOR-encrypted with a key that differs per
   editor version (auto-detected the same way WolfDec's own tool does),
-  transparently through the same `Wolf::Project` a loose tree uses. See
+  transparently through the same `Wolf::Project` a loose tree uses, including
+  a Huffman+LZ-compressed header table (found to be a real, not just
+  theoretical, path via this session's first real freely-distributable WOLF
+  game). That same real game still cannot be opened for an unrelated reason —
+  a newer, WOLF-RPG-Editor-specific modified DxArchive scrambles it, and
+  [UberWolf](https://github.com/Sinflower/UberWolf)'s own `WolfX` module
+  exists specifically to defeat it, via a large reverse-engineered
+  lookup-table scheme this reader does not port. See
   [`docs/adr/0093-wolf-rpg-editor-data-wolf.md`](docs/adr/0093-wolf-rpg-editor-data-wolf.md)
+  and
+  [`docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`](docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md)
 - **Pro-protected data (v3.5) decrypts for real**, not just a "refused with a
   clear error" — the AES-128 key/IV a protected `Game.dat`/`TileSetData.dat`/
   `CommonEvent.dat`/database is keyed with are derived entirely from bytes
