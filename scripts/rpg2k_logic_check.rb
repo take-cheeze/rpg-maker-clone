@@ -7640,24 +7640,23 @@ check "Game::Actor#battler_animation_id resolves the actor's own database defaul
   eq 3, a.battler_animation_id
 end
 
-check "Game::Actor#battler_animation_id warns and returns 0 for an unset (0) database default, " \
-      'even with a real battleranimations table present' do
-  # battler_animation 0 means "chunk never written"; id 0 names no entry in
-  # any real table (every id here is 1-based, "matching every other database
-  # table id in this format" -- schema.rb's own comment), so this behaves
-  # exactly like any other dangling id: warn and return 0. The "resolved id 0
-  # -> battleranimations id 1" fallback only ever fires from the class-changed
-  # branch (see the two checks below) -- ported from a reference implementation,
-  # NOT independently confirmed against genuine RPG_RT under wine: its
-  # db-default branch returns 0 immediately on a failed
-  # `ReaderUtil::GetElement` lookup, never reaching its own tail "anim == 0"
-  # check at all.
+check "Game::Actor#battler_animation_id falls back to battleranimations id 1 for an unset (0) " \
+      'database default, silently -- it is an absent field, not a dangling id' do
+  # battler_animation 0 means "chunk 11 field 62 was never written", and every
+  # real table id is 1-based, so id 0 can never name an entry. **Confirmed
+  # against genuine RPG_RT.EXE under wine (cycle #255)** on `data/kk1.12`: its
+  # actor 1 (ユーティル) writes no field 62 at all, yet the genuine runtime
+  # draws it the BattleCharSet `勇者男b` row 2 that battleranimations entry 1
+  # (勇者男) names -- template-matched pixel-exact in the side-view party
+  # line-up. So the unset field resolves to 1, the same tail fallback the
+  # class-changed branch already used; this branch used to run the entry
+  # lookup for id 0 too, fail it, warn, and return 0 (no sprite at all).
   players = { 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100, max_mp: 30, atk: 10, def: 8) }
   anims = { 1 => FakeBattlerAnimation.new('Default', 20, {}) }
   db = FakeActorDB.new(players, [1], battleranimations: anims)
   a = Game::State.new(Game::Party.new(db), 1, 0, 0).party.actor_by_id(1)
-  out = capture_stderr { eq 0, a.battler_animation_id }
-  ok out.include?('[RPG2k]'), 'the unset default is reported, not silently invented'
+  out = capture_stderr { eq 1, a.battler_animation_id }
+  eq '', out, 'an absent field is normal authoring, not a reported gap'
 end
 
 check "Game::Actor#battler_animation_id warns and returns 0 for a dangling database default id" do

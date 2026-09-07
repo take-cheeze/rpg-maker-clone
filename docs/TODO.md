@@ -32367,6 +32367,119 @@ above are repeated here)
   to the generic bad-status pose, still not Idle), both confirmed to fail
   against the pre-fix code (both drew the Idle pose regardless) before the
   fix.
+  ✅ **Follow-up (cycle #255, 2026-09-06): the whole RPG2003 side-view battle
+  screen measured against a genuine `RPG_RT.EXE` for the first time — the
+  party drew *no battler sprites at all*, and automatic placement was off by
+  a whole anchor.** No EasyRPG source was consulted; every number below comes
+  from a pixel measurement of a genuine capture.
+  **Recipe (this is the reusable part).** `data/kk1.12` ships a genuine
+  RPG2003 `RPG_RT.EXE` and does boot under this wine, but its initial party is
+  `[]`. Of the three routes the brief listed, **(a) playing the opening won**:
+  ~90 `Return` presses under `$SCRATCH/drive.sh` (credits, then a scripted
+  dorm scene) reach a walkable map with a real 3-member party
+  (ユーティル/とんま/エマワトソン), and the game's own field menu → セーブ then
+  writes a genuine `Save01.lsd` (validated by `scripts/lcf_save_check.rb`).
+  `scripts/gen-rpg2k-save.rb <copy> --map 48 --at 21,30 --facing up
+  --clear-scene` then parks that save next to `Map0048`'s event 45 — found by
+  an adapted `find_battles.rb` as the only *single-page, condition-free,
+  action-key* event whose command list contains Enemy Encounter (10710, troop
+  70) — so the fight is one `Up`, one `Return`, one `Return` away, identically
+  for both runtimes. **One trap cost an hour and is worth recording**: kk1.12's
+  battle BGM is an `.mp3`, wine here has no 32-bit GStreamer base plugins, and
+  RPG_RT then throws a Delphi error box (wine's Japanese `ERROR_CALL_NOT_
+  IMPLEMENTED` text, 「未実装です。」) *every frame* — hundreds of 134x84
+  windows over a black screen, which looks exactly like "2003 renders
+  nothing". Dropping a `.mid` in under the same base name makes the battle
+  render. For the gauge presentation, a *copy* of the database with
+  `battlecommands.battle_type` flipped 1 → 2 through this repo's own LCF
+  writer was used (the writer round-trips kk1.12's 641,555-byte `RPG_RT.ldb`
+  byte-identically, so the one edited field is the only difference); kk1.12
+  itself ships `battle_type` 1 (alternative) and `placement` 1 (automatic).
+  **What was measured, and fixed.** (1) *Battler poses are 1-based.* Every
+  `battleranimations` row in kk1.12 names poses 1 基本動作(待機) / 2 右手攻撃 /
+  3 左手攻撃 / 4 特殊技能 / 5 死亡 / 6 ダメージ / 7 状態異常 / 8 防御 / 9-10
+  歩き / 11 勝利 / 12 アイテム — there is no row 0, so the 0-based
+  `ACTOR_IDLE_POSE`/`_DEAD_`/`_BAD_STATUS_`/`_DEFEND_` constants (0/4/6/7)
+  selected nothing and `#build_actor_sprite` returned nil for everyone: our
+  engine put *zero* battlers on screen next to the genuine runtime's three.
+  Now 1/5/7/8, with the state row's own (0-based) `battler_animation_id`
+  shifted `+1` where it selects a pose — which is also what makes its schema
+  default 6 land on 状態異常. (2) *`battler_animation` 0 means "field absent,
+  use entry 1"*, not "dangling id": kk1.12's actor 1 writes no chunk 11 field
+  62 and the genuine runtime still draws it `勇者男b` row 2, i.e.
+  `battleranimations` entry 1 — `Game::Actor#battler_animation_id` used to
+  warn and return 0 for that, short-circuiting its own documented tail
+  fallback. (3) *The automatic-placement grid slot is a centre-x / bottom-y
+  anchor.* The three 48x48 BattleCharSet cells were located by exact template
+  match (score 1.000) against the sheets the database names, at logical
+  top-left (232, 64), (240, 86), (248, 109); the slots behind them are
+  (16, 112), (8, 134), (0, 157) on kk1.12's terrain 1 (`grid_top_y` 112,
+  `grid_elongation` 375, `grid_inclination` 16400), so the sprite is drawn at
+  (centre − 24, baseline − 48). We were handing that back as a top-left, i.e.
+  every battler sat 24px right and 24px low. (4) *The grid's y term is linear
+  in `grid_elongation`* — `top_y + (elongation / 1000) * 120 * t`, giving
+  exactly 112/134/157; the `sin(elongation / 1000) * 120` shape we had gives
+  112/133/155, ruled out by both the middle and last member. (5) *The gauge
+  card panel is borderless*: with `battle_type` 2 the faces land at (76, 184),
+  (156, 184), (236, 184) and the System2 bar caps at (108/188/268, 184) and
+  (149/229, 184) — i.e. panel-relative (80·i, 24) and (32 + 80·i, 24) /
+  (73 + 80·i, 24), with the panel's own top-left at (`battle_status_x`, 160)
+  and **no 8px frame inset**; we inset it, putting every card 8px off in both
+  axes. Everything *inside* the card was already right and is now confirmed
+  rather than ported: the 25px stretched centre, the fill stripe 12px into
+  each 16px row (a full HP bar measures exactly 25px wide, a half-full one
+  the proportional width), the distinct "full" fill tile 16px over, and the
+  right-aligned 8x16 digit cells from (40 + 80·i) on 16px rows. (6) *The card
+  has a third, ATB ("T") bar* under HP/SP, filled from System2 row 64 exactly
+  like the other two — it reads empty as a fight opens and runs to the full
+  tile as the charge completes. Now drawn from `Combatant#gauge`. (7) *The
+  gauge layout moves the actor command window*: instead of the RPG2000
+  position beside the status panel (x=244, cycle #244), it floats at
+  x=0..75, y=80..159 — one panel height *above* the cards, which then run
+  from x=0. The traditional/alternative layouts keep the old position, and
+  `#battle_status_x`'s existing "push the panel to `BATTLE_CMD_W` while the
+  Fight/Auto window is up" rule was confirmed for both layouts (the panel's
+  own frame measured at x=76 in that state, x=0 otherwise).
+  **Confirmed correct, no change needed.** The active-time model matches:
+  with the Fight/Auto options window open the T gauges are *frozen* (six
+  consecutive captures over several seconds, all 12/25 px), and with an
+  actor's command window open they keep filling (18 → 22 → 24 → full over
+  ~2s, and the enemy acts and can wipe the party while the menu sits there) —
+  exactly what `#atb_accumulating?`/`ATB_MENU_PHASES` already do, since
+  `:battle_options` is not a menu phase. The RPG2003 `battle_type` 1
+  (alternative) layout's own text status rows, the window swap, and the
+  76/244 split of the bottom panel all already match.
+  **Left open, deliberately.** (i) The `atb_mode` (Wait) *value* is still
+  unconfirmed: a save hand-edited to `atb_mode = 1` still filled its gauges
+  during the actor command menu, so either 1 is not "wait", RPG_RT re-derives
+  the flag, or the toggle needs to be flipped through the game's own
+  ウェイト/Active menu row rather than the save field — the existing
+  liblcf-enum citation in `battle_rpg2k3.rb` is therefore *not* replaced.
+  (ii) The idle pose **animates**: two captures of the same fight show the
+  same sprite position but different sheet columns (col 2 then col 1 of the
+  3-frame pose row); we always draw column 0, and the frame timing was not
+  measured. (iii) The gauge card panel is only rebuilt on
+  `#refresh_battle_status`, so our ATB bar steps where the real one sweeps.
+  (iv) In `battle_type` 1 the genuine runtime draws a System2 gauge at the
+  right end of each *text* status row (clipped by the panel edge); we draw
+  none, and its HP label sits at logical x=216 against our 222, with the max
+  right-aligned in its own field ("350/ 350") rather than butted up against
+  the slash — all three left alone because that row geometry is shared with
+  the RPG2000 screen measured in cycles #244-#247. (v) Manual placement
+  (`placement` 0), back-row `row_x_offset`, and party sizes other than 3 were
+  not reachable in kk1.12. (vi) Out of scope but noted: our engine resolves
+  the RTP through the `Software\ASCII\RPG2000\RuntimePackagePath` registry key
+  only, so an RPG2003 game finds none of its RTP art (kk1.12's own System2 and
+  BattleCharSet folders are empty) — the 2003 key is
+  `Software\Enterbrain\RPG2003\RUNTIMEPACKAGEPATH`; that is native C++
+  (`src/main.cxx`), so this cycle worked around it by copying the RTP into the
+  game-dir copy instead.
+  Covered by five new `scripts/rpg2k_scene_check.rb` checks (the measured
+  three-member line-up; the linear grid-y term; the 1-based pose table; the
+  borderless card panel's origin; the gauge layout's command-window rect), one
+  rewritten `scripts/rpg2k_logic_check.rb` check (`battler_animation_id` 0 →
+  1, silently) and an extended gauge-card check (the ATB row's own fill), all
+  confirmed to fail against the pre-fix code before the fix.
 
 **Asset / graphics format notes** (lower priority — content-authoring
 constraints more than runtime-correctness gaps, but recorded for

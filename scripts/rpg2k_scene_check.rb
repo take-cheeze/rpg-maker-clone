@@ -688,8 +688,10 @@ def fake_db(common = nil, troop_pages = nil, terrain_damage = 0, bush_depth = 0,
 end
 
 # A `db.battleranimations[id]` entry: a name, plus a poses hash keyed by
-# Pose id (0 idle, matching schema.rb's own comment on chunk 32) -- pass
-# `poses: { 0 => battle_pose(...) }` for the common one-pose case.
+# Pose id -- **1-based**, like every id in this file format and like a real
+# RPG2003 database's own table (data/kk1.12: 1 待機 / 5 死亡 / 7 状態異常 /
+# 8 防御, see Scene::Battle::ACTOR_IDLE_POSE) -- pass
+# `poses: { 1 => battle_pose(...) }` for the common one-pose case.
 def battle_pose_set(name: 'Fighter', poses: {})
   OpenStruct.new(name: name, speed: 20, poses: poses)
 end
@@ -14171,7 +14173,7 @@ check 'Enemy Encounter scene: the alternative/gauge layout draws a positioned Id
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   hero = BattleStubActor.new(id: 1, battler_animation_id: 5, battle_x: 40, battle_y: 120)
@@ -14193,15 +14195,15 @@ end
 # genuine RPG_RT under wine: it resolves a
 # monster's Knockout state straight to AnimationState_Dead rather than
 # hiding it; a party member is treated the same way here
-# (#build_actor_sprite's `dead:` keyword, Pose id 4) -- so a member already
+# (#build_actor_sprite's `dead:` keyword, Pose id 5) -- so a member already
 # KO'd the instant the fight opens gets that pose rather than no sprite at
 # all, the gap this check pins.
 check "Enemy Encounter scene: a party member already KO'd going into the fight draws the Dead pose, not no sprite" do
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Hero', battler_index: 2),
-                                          4 => battle_pose(battler_name: 'Hero', battler_index: 6) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2),
+                                          5 => battle_pose(battler_name: 'Hero', battler_index: 6) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   fallen = BattleStubActor.new(id: 1, battler_animation_id: 5, hp: 0)
@@ -14233,11 +14235,14 @@ check "Enemy Encounter scene: a living party member carrying a non-death " \
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   anims = { 5 => battle_pose_set(poses: {
-    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
-    3 => battle_pose(battler_name: 'Hero', battler_index: 9)  # Poison's own pose
+    1 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    4 => battle_pose(battler_name: 'Hero', battler_index: 9)  # Poison's own pose
   }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
-  scene.db.situation[3].battler_animation_id = 3 # Poison (priority 30) -> pose id 3
+  # The state row's own animation value is 0-based (schema default 6 =
+  # "bad status"); the pose table it selects from is 1-based, so 3 picks
+  # pose id 4. See #build_actor_sprite's own +1.
+  scene.db.situation[3].battler_animation_id = 3 # Poison (priority 30) -> pose id 4
   st = scene.instance_variable_get(:@state)
   poisoned = BattleStubActor.new(id: 1, battler_animation_id: 5, states: [3])
   st.instance_variable_set(:@party, BattleStubParty.new(poisoned, alternate_layout: true))
@@ -14257,8 +14262,8 @@ check 'Enemy Encounter scene: a state naming no pose of its own falls back ' \
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
   anims = { 5 => battle_pose_set(poses: {
-    0 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
-    6 => battle_pose(battler_name: 'Hero', battler_index: 9)  # generic "bad status" pose
+    1 => battle_pose(battler_name: 'Hero', battler_index: 2), # Idle
+    7 => battle_pose(battler_name: 'Hero', battler_index: 9)  # generic "bad status" pose
   }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   # Poison's own battler_animation_id is left unset in the fixture, matching
@@ -14296,7 +14301,7 @@ check 'Enemy Encounter scene: an Idle pose using the battle-animation (CBA) form
   ic = Game::Interpreter::Cmd
   auto = page(trigger: 3)
   auto.event_commands = battle_event_commands(ic)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(animation_type: 1) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(animation_type: 1) }) }
   scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
   st = scene.instance_variable_get(:@state)
   hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
@@ -15914,22 +15919,24 @@ end
 
 # -- automatic battler placement (`battlecommands.placement == 1`) -------------
 #
-# Ported from a reference implementation (its Calculate2k3BattlePosition), NOT
-# independently confirmed against genuine RPG_RT under wine: a
-# placement-1 database computes each party member's battle sprite position
+# A placement-1 database computes each party member's battle sprite position
 # from a grid keyed by party index/size and the encounter terrain, instead of
-# the manual battle_x/battle_y. The fixture terrain (fake_db's tile tag 42)
-# names no grid fields, so the reference's no-terrain defaults (112 / 392 /
-# 16000) apply; half a 48px BattleCharSet cell (24) is the row/width offset.
+# the manual battle_x/battle_y. Confirmed against genuine RPG_RT.EXE under
+# wine (cycle #255) on `data/kk1.12`: the fixture terrain below now carries
+# that game's own terrain-1 grid parameters (grid_top_y 112, grid_elongation
+# 375, grid_inclination 16400), and the three-member expectations match the
+# real runtime's own battler positions pixel-for-pixel. Half a 48px
+# BattleCharSet cell (24) is the row/width offset, and the grid slot is the
+# sprite's centre-x / bottom-y anchor (see #automatic_battle_position).
 
 # A placement-1 gauge battle whose actor sprites build, for the placement
 # checks. `ids` become the party (one BattleStubActor each, carrying its own
 # BattlerAnimation id so `build_actor_sprite` draws a sprite -- the harness
 # Bitmap stub stands in for the BattleCharSet sheet). The fixture terrain the
-# party stands on (tag 42) is given the reference's own no-terrain grid
-# parameters (112 / 392 / 16000) so the checks' expected coordinates are
-# explicit; `battle_xy:` supplies per-actor manual coordinates for the
-# placement-0 check.
+# party stands on (tag 42) is given kk1.12's own terrain-1 grid parameters
+# (112 / 375 / 16400, measured under wine) so the checks' expected
+# coordinates are explicit; `battle_xy:` supplies per-actor manual
+# coordinates for the placement-0 check.
 def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: nil)
   members = ids.map do |id|
     xy = battle_xy[id] || [0, 0]
@@ -15939,7 +15946,7 @@ def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: ni
   anims = {}
   members.each do |a|
     anims[a.id] = battle_pose_set(name: 'Fighter',
-                                  poses: poses || { 0 => battle_pose(battler_name: 'Party', battler_index: 0) })
+                                  poses: poses || { 1 => battle_pose(battler_name: 'Party', battler_index: 0) })
   end
   party = BattleStubParty.new(members.first, alternate_layout: true,
                               automatic_placement: placement == 1, actors: members)
@@ -15948,8 +15955,8 @@ def placement_battle(ids, placement: 1, battle_xy: {}, battle_type: 2, poses: ni
                                    battleranimations: anims)
   grid = scene.db.terrain[42]
   grid.grid_top_y = 112
-  grid.grid_elongation = 392
-  grid.grid_inclination = 16000
+  grid.grid_elongation = 375
+  grid.grid_inclination = 16400
   # Drive the battle open (the actor sprites are built in Scene::Battle#start).
   # A round-based (battle_type 0) command phase commands actor 0 first and
   # deterministically, unlike a gauge fight's ready-first ordering, which is
@@ -15967,16 +15974,18 @@ check 'automatic battler placement seats a lone party member on the grid, not ba
   scene = placement_battle([1])
   sprites = placement_sprites(scene)
   ok sprites && sprites[0], 'the actor sprite was built'
-  eq [264, 110], [sprites[0].x, sprites[0].y],
-     'the no-terrain grid for a party of one: 320 - (grid.x 8 + 24 + 24), grid.y 134 - 24'
+  eq [240, 86], [sprites[0].x, sprites[0].y],
+     'kk1.12 terrain 1, party of one: centre 320 - (grid.x 8 + 24 + 24) = 264 and ' \
+     'baseline grid.y 134, i.e. a top-left of (264 - 24, 134 - 48)'
 end
 
 check 'automatic battler placement seats a two-member party on its two grid slots' do
   scene = placement_battle([1, 2])
   sprites = placement_sprites(scene)
-  eq [[256, 88], [272, 133]],
+  eq [[232, 64], [248, 109]],
      [[sprites[0].x, sprites[0].y], [sprites[1].x, sprites[1].y]],
-     'member 0 at grid slot (16, 112), member 1 at (0, 157), each minus a 24px half-cell'
+     'member 0 on grid slot (16, 112), member 1 on (0, 157), each anchored ' \
+     'centre-x / bottom-y'
 end
 
 check 'manual battler placement keeps the database battle_x/battle_y, unchanged' do
@@ -15988,15 +15997,16 @@ end
 
 check 'the Row command moves an automatic-placement actor sprite by row_x_offset' do
   # A two-member party's own grid slots (the "seats a two-member party"
-  # check above): member 0 starts front row at x=256 (320 - (grid.x 16 + a
-  # 24px half-cell + the front-row row_x_offset, also 24)). Flipping it to
-  # the back row drops row_x_offset to 0, moving the sprite to x=280 -- the
+  # check above): member 0 starts front row at x=232 (its centre, 320 -
+  # (grid.x 16 + a 24px half-cell + the front-row row_x_offset, also 24) =
+  # 256, less the half-cell again). Flipping it to
+  # the back row drops row_x_offset to 0, moving the sprite to x=256 -- the
   # same reposition #reposition_actor_sprite now drives right when the Row
   # command's toggle succeeds, rather than leaving the old front-row sprite
   # on screen until an unrelated redraw happens to catch it up.
   scene = placement_battle([1, 2], battle_type: 0)
   sprites = placement_sprites(scene)
-  eq [256, 88], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
+  eq [232, 64], [sprites[0].x, sprites[0].y], 'member 0 starts on its front-row grid slot'
   ui = battle_ui(scene)
   eq %w[Attack Skill Defend Item Row], ui[:cmd_win].contents.draw_calls.map { |c| c[4] }
   4.times { press_key(scene, RGSS::Input::DOWN) } # Attack -> Skill -> Defend -> Item -> Row
@@ -16004,7 +16014,7 @@ check 'the Row command moves an automatic-placement actor sprite by row_x_offset
   hero = ui[:allies][0]
   eq Game::Battle::ROW_BACK, hero.row, 'member 0 moved to the back row'
   sprites = placement_sprites(scene)
-  eq [280, 88], [sprites[0].x, sprites[0].y],
+  eq [256, 64], [sprites[0].x, sprites[0].y],
      'the sprite followed the row change: same grid slot, row_x_offset now 0 instead of 24'
 end
 
@@ -16013,10 +16023,10 @@ check 'a defending actor draws the Defend pose, reverting to Idle once the round
   # genuine RPG_RT under wine: it checks
   # IsDefending() before anything else -- ported as #build_actor_sprite's
   # `defending:` keyword
-  # (Pose id 7), driven by #reposition_actor_sprite right when Defend
+  # (Pose id 8), driven by #reposition_actor_sprite right when Defend
   # commits and again once Game::Battle#end_round clears the flag.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           8 => battle_pose(battler_name: 'Party', battler_index: 3) }
   scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
   ui = battle_ui(scene)
   # The sprite's src_rect Y is `pose.battler_index * ACTOR_CHARSET_CELL`
@@ -16051,8 +16061,8 @@ check 'a gauge battle: Defend swaps the sprite too, via the RPG2k3 scene\'s own 
   # (calling `super` only when `!gauge_battle?`) and calls `Game::Battle
   # #end_round` itself -- needs the identical defenders-snapshot fix, not
   # just the base class.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           7 => battle_pose(battler_name: 'Party', battler_index: 3) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           8 => battle_pose(battler_name: 'Party', battler_index: 3) }
   scene = placement_battle([1], battle_type: 2, poses: poses)
   ui = battle_ui(scene)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -16076,8 +16086,8 @@ check 'a party member killed mid-round switches to the Dead pose once the round 
   # felled ally's sprite up -- `hp` is set directly here rather than driving
   # a full damage exchange, the same "simulate the moment, not the whole
   # pipeline" idiom the Defend checks above use for `defending`.
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           5 => battle_pose(battler_name: 'Party', battler_index: 6) }
   scene = placement_battle([1, 2], placement: 0, battle_type: 0, poses: poses)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -16094,8 +16104,8 @@ check 'a party member killed mid-round switches to the Dead pose once the round 
 end
 
 check 'a gauge battle: a felled ally switches to the Dead pose too, via the RPG2k3 scene\'s own #finish_round_animation' do
-  poses = { 0 => battle_pose(battler_name: 'Party', battler_index: 0),
-           4 => battle_pose(battler_name: 'Party', battler_index: 6) }
+  poses = { 1 => battle_pose(battler_name: 'Party', battler_index: 0),
+           5 => battle_pose(battler_name: 'Party', battler_index: 6) }
   scene = placement_battle([1, 2], battle_type: 2, poses: poses)
   idle_y = 0 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
   dead_y = 6 * RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
@@ -18888,8 +18898,17 @@ check 'battle_type 2 (gauge) draws the gauge card: face, HP/SP bars, digit numbe
   eq [73, 24], right_cap[0, 2], 'right bar cap at 32 + 16 (cap) + 25 (centre) = 73'
   eq [32, 32, 16, 48], [right_cap[3].x, right_cap[3].y, right_cap[3].width, right_cap[3].height]
 
-  eq 3, c.stretch_calls.size, 'one bar-centre stretch, plus one fill each for HP and SP'
-  center, hp_fill, sp_fill = c.stretch_calls
+  eq 4, c.stretch_calls.size,
+     'one bar-centre stretch, plus one fill each for HP, SP and the ATB ("T") row'
+  center, hp_fill, sp_fill, atb_fill = c.stretch_calls
+  # The third bar the 48px cap block already draws is RPG2003's own ATB gauge
+  # -- genuine RPG_RT.EXE fills it from System2 row 64 exactly like HP/SP
+  # (measured under wine, cycle #255). This round-based fixture never charges
+  # a gauge, so it reads empty.
+  eq [48, 56, 0, 16], [atb_fill[0].x, atb_fill[0].y, atb_fill[0].width, atb_fill[0].height],
+     'ATB fill on the third row (y + 32), empty at 0/GAUGE_MAX'
+  eq [48, 64, 16, 16], [atb_fill[2].x, atb_fill[2].y, atb_fill[2].width, atb_fill[2].height],
+     'reading the ATB row of the System2 fill column (32 + 16*2 = 64)'
   eq [48, 24, 25, 48], [center[0].x, center[0].y, center[0].width, center[0].height],
      'the bar centre stretches to fill the full 25px slot between the caps'
   eq [48, 24, 12, 16], [hp_fill[0].x, hp_fill[0].y, hp_fill[0].width, hp_fill[0].height],
@@ -19202,7 +19221,7 @@ check 'a Change Party Member add on a battle page builds that actor\'s sprite ' 
   ic = Game::Interpreter::Cmd
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5, hp: 50)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(hero, alternate_layout: true, roster_actors: [ally])
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [0, 0, 2])]) } # add actor 2
   scene, ui = battle_at_command(pages, party: party, battleranimations: anims)
@@ -19226,7 +19245,7 @@ check 'a Change Party Member remove on a battle page disposes only that ' \
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
   third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true)
   pages = { 1 => troop_page([ECmd.new(ic::CHANGE_PARTY, [1, 0, 2])]) } # remove actor 2
   scene, = battle_scene_with_pages(pages, party: party, battleranimations: anims)
@@ -19311,7 +19330,7 @@ check 'leaving and rejoining the same fight reuses the same Combatant (and ' \
       'never a leaked duplicate, never a disposed-and-reused one' do
   hero = BattleStubActor.new(id: 1, name: 'Hero', battler_animation_id: 5)
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally], alternate_layout: true)
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
 
@@ -19346,7 +19365,7 @@ check 'actor sprite Z stays collision-free across a remove-then-add cycle, ' \
   ally = BattleStubActor.new(id: 2, name: 'Ally', battler_animation_id: 5)
   third = BattleStubActor.new(id: 3, name: 'Third', battler_animation_id: 5)
   newcomer = BattleStubActor.new(id: 4, name: 'New', battler_animation_id: 5)
-  anims = { 5 => battle_pose_set(poses: { 0 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Party', battler_index: 0) }) }
   party = BattleStubParty.new(actors: [hero, ally, third], alternate_layout: true,
                               roster_actors: [newcomer])
   scene, ui = battle_at_command(nil, party: party, battleranimations: anims)
@@ -29230,6 +29249,121 @@ check 'Scene::StatusMenu: the equipment window labels its second slot with ' \
             .instance_variable_get(:@equip_window).contents.draw_calls
   eq [0, 4 * 16], calls[8][0, 2], 'the fifth slot label'
   eq 60, calls[1][0], 'the item name column'
+end
+
+# -- RPG2003 side-view battlers, measured against genuine RPG_RT.EXE (cycle #255)
+#
+# Recipe: `data/kk1.12` (a genuine RPG2003 game shipping a genuine
+# `RPG_RT.EXE`), played through its opening under wine to reach a real party,
+# saved through its own in-game Save, the save then moved next to Map0048's
+# event 45 (a single-page, condition-free action-key event whose third command
+# is Enemy Encounter troop 70) with scripts/gen-rpg2k-save.rb, then one
+# keypress into the fight. The party's three 48x48 BattleCharSet cells were
+# located in the 640x480 capture by exact template match against the sheets
+# the database itself names (勇者男b / 男性２b / 男性５b, sheet row 2 each),
+# giving logical top-left corners (232, 64), (240, 86) and (248, 109).
+# No EasyRPG source was consulted.
+
+check 'RPG2003 automatic placement seats a three-member party exactly where genuine ' \
+      'RPG_RT.EXE does (kk1.12, terrain 112/375/16400)' do
+  scene = placement_battle([1, 2, 3])
+  sprites = placement_sprites(scene)
+  eq 3, sprites.compact.length, 'every member gets a battler sprite'
+  eq [[232, 64], [240, 86], [248, 109]], sprites.map { |s| [s.x, s.y] },
+     'the measured line-up: grid slots (16,112)/(8,134)/(0,157), each read as a ' \
+     'centre-x / bottom-y anchor for the 48x48 cell'
+end
+
+check 'RPG2003 grid y is linear in grid_elongation, not sinusoidal' do
+  # kk1.12 terrain 1 leaves grid_elongation at its schema default 375, and the
+  # measured baselines are 112 / 134 / 157 -- steps of 22 and 45, i.e.
+  # int(375 * 120 * t / 1000). A sin(375 / 1000) * 120 term gives 21 / 43,
+  # which would put the second and third members 1px and 2px too high.
+  scene = placement_battle([1, 2, 3])
+  battle = scene.instance_variable_get(:@battle)
+  eq [[16, 112], [8, 134], [0, 157]],
+     (0..2).map { |i| battle.send(:battle_grid_position, i, 3) }
+end
+
+check 'the RPG2003 pose table is 1-based: an entry defining only pose 1 draws the Idle sprite' do
+  # Read off kk1.12's own `battleranimations` rows, every one of which names
+  # its poses 1 基本動作(待機) / 2 右手攻撃 / 3 左手攻撃 / 4 特殊技能 /
+  # 5 死亡 / 6 ダメージ / 7 状態異常 / 8 防御 / ... -- there is no row 0 at
+  # all, so the old 0-based constants selected nothing and an RPG2003 party
+  # went into battle with no battlers on screen at all (exactly what our
+  # engine did on kk1.12 next to the genuine runtime's three).
+  eq 1, RPG2k::Scene::Battle::ACTOR_IDLE_POSE
+  eq 5, RPG2k::Scene::Battle::ACTOR_DEAD_POSE
+  eq 7, RPG2k::Scene::Battle::ACTOR_BAD_STATUS_POSE
+  eq 8, RPG2k::Scene::Battle::ACTOR_DEFEND_POSE
+
+  ic = Game::Interpreter::Cmd
+  auto = page(trigger: 3)
+  auto.event_commands = battle_event_commands(ic)
+  anims = { 5 => battle_pose_set(poses: { 1 => battle_pose(battler_name: 'Hero', battler_index: 2) }) }
+  scene = new_scene({ 1 => event(2, 2, auto) }, battleranimations: anims)
+  st = scene.instance_variable_get(:@state)
+  hero = BattleStubActor.new(id: 1, battler_animation_id: 5)
+  st.instance_variable_set(:@party, BattleStubParty.new(hero, alternate_layout: true))
+  ui = battle_to_command(scene)
+  spr = ui[:actor_sprites] && ui[:actor_sprites][0]
+  ok spr, 'pose id 1 is the Idle pose, so the battler is drawn'
+  cell = RPG2k::Scene::Battle::ACTOR_CHARSET_CELL
+  eq RGSS::Rect.new(0, 2 * cell, cell, cell), spr.src_rect
+end
+
+check 'the RPG2003 gauge card panel is borderless: its contents start at the panel ' \
+      "rect itself, where genuine RPG_RT.EXE puts kk1.12's faces and bars" do
+  # Measured with kk1.12's own data and a copy of its database whose
+  # battlecommands.battle_type was flipped 1 -> 2 through this repo's LCF
+  # writer, driven into a real fight under wine: with the party Fight/Auto
+  # window up (so the panel starts at BATTLE_CMD_W = 76), the three 48x48
+  # FaceSet crops sit at logical (76,184)/(156,184)/(236,184) and the System2
+  # bar left caps at (108,184)/(188,184)/(268,184) -- i.e. contents (0,24),
+  # (80,24), (160,24) and (32,24), (112,24), (192,24) with the panel's own
+  # top-left at (76, BATTLE_PANEL_Y). A frame-inset panel would put all of
+  # them 8px right and 8px down.
+  battle_mod = RPG2k::Scene::Battle
+  actor = BattleStubActor.new(hp: 200, mp: 20, faceset_name: 'HeroFace', faceset_index: 0)
+  party = BattleStubParty.new(actor, gauge_layout: true)
+  scene, ui = battle_at_command(nil, party: party)
+  scene.db.system.system2_name = 'BattleStatus'
+  scene.instance_variable_get(:@battle).send(:refresh_battle_status)
+  win = ui[:status_win]
+  status_x = scene.instance_variable_get(:@battle).send(:battle_status_x)
+  eq [status_x, battle_mod::BATTLE_PANEL_Y],
+     [win.x + RPG2k::Window::BORDER, win.y + RPG2k::Window::BORDER],
+     'the contents sprite (always inset by Window::BORDER) lands on the panel rect itself'
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_H],
+     [win.contents.width, win.contents.height],
+     'and spans the whole panel, not the panel minus two borders'
+  face = win.contents.blt_calls[0]
+  eq [0, battle_mod::ACTOR_FACE_HEIGHT], face[0, 2],
+     'so the first face draws at screen (panel x, panel y + 24)'
+end
+
+check "the RPG2003 gauge layout floats the actor command window above the cards, " \
+      'not beside the status panel' do
+  # Measured under wine (cycle #255) on kk1.12 forced to battle_type 2: with an
+  # actor's Attack/Skill/Defend/Item menu up, the window's frame spans
+  # x=0..75, y=80..159 -- the screen's left edge, one panel height above the
+  # gauge cards, which themselves run from x=0 in that state (their leftmost
+  # bar fill measured at logical x=48 = panel 0 + 48). The traditional /
+  # alternative layouts keep the cycle #244 position, (BATTLE_STATUS_W, 160).
+  battle_mod = RPG2k::Scene::Battle
+  gauge_party = BattleStubParty.new(BattleStubActor.new, gauge_layout: true)
+  _, gauge_ui = battle_at_command(nil, party: gauge_party)
+  eq [0, battle_mod::BATTLE_PANEL_Y - battle_mod::BATTLE_PANEL_H],
+     [gauge_ui[:cmd_win].x, gauge_ui[:cmd_win].y],
+     'the gauge layout docks the command window at (0, 80)'
+  eq [battle_mod::BATTLE_CMD_W, battle_mod::BATTLE_PANEL_H],
+     [gauge_ui[:cmd_win].width, gauge_ui[:cmd_win].height],
+     'same 76x80 shape as everywhere else'
+
+  _, plain_ui = battle_at_command(nil, party: BattleStubParty.new)
+  eq [battle_mod::BATTLE_STATUS_W, battle_mod::BATTLE_PANEL_Y],
+     [plain_ui[:cmd_win].x, plain_ui[:cmd_win].y],
+     'the RPG2000 / traditional position is untouched'
 end
 
 # -- summary ------------------------------------------------------------------

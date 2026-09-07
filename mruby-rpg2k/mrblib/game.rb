@@ -3605,14 +3605,20 @@ module Game
     #    Change Class did run and left the actor in a real class.
     # 3. This actor's own database default (chunk 11 field 62), looked up as
     #    an id into `db.battleranimations` -- warns and returns 0 (no sprite
-    #    data at all) if that id names no entry, matching a reference
-    #    implementation's own warn-and-early-return there (ported from its
-    #    source, NOT
-    #    independently confirmed against genuine RPG_RT under wine).
+    #    data at all) if that *positive* id names no entry.
     #
     # A resolved id of 0 (the chunk was never written) falls back to
-    # battleranimations id 1, matching `GetBattleAnimationId`'s own final
-    # "chunk was missing, set to proper default" step.
+    # battleranimations id 1 instead of being reported as dangling.
+    # **Confirmed against genuine RPG_RT.EXE under wine (cycle #255)** on
+    # `data/kk1.12` (a real RPG2003 game): its actor 1 (ユーティル) writes no
+    # chunk 11 field 62 at all, and the genuine runtime still draws it a
+    # battler -- the BattleCharSet `勇者男b` row 2 that `battleranimations`
+    # **entry 1** (勇者男) names, template-matched pixel-exact in the party's
+    # side-view line-up. Zero is therefore "field absent, use the first
+    # entry", not "dangling id": this branch used to run the entry lookup for
+    # bid 0 too, fail it (every real table is 1-based), warn and return 0
+    # before the tail `anim == 0 ? 1 : anim` below could ever fire, so an
+    # actor authored this way got no battler sprite at all.
     def battler_animation_id
       return @battler_animation_override if @battler_animation_override && @battler_animation_override > 0
 
@@ -3622,10 +3628,12 @@ module Game
         else
           bid = @db_row.respond_to?(:battler_animation) ? (@db_row.battler_animation || 0) : 0
           table = @db.respond_to?(:battleranimations) ? @db.battleranimations : nil
-          entry = table ? table[bid] : nil
-          unless entry
-            $stderr.puts "[RPG2k] actor ##{@id}: invalid battle animation id #{bid}, no sprite drawn"
-            return 0
+          if bid > 0
+            entry = table ? table[bid] : nil
+            unless entry
+              $stderr.puts "[RPG2k] actor ##{@id}: invalid battle animation id #{bid}, no sprite drawn"
+              return 0
+            end
           end
           bid
         end

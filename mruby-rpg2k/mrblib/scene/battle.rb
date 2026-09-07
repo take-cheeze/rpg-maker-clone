@@ -563,22 +563,29 @@ class RPG2k
         end
       end
 
-      # Idle, Dead and Defend pose ids within a `db.battleranimations` entry's
-      # `poses` table (lcf::rpg::BattlerAnimation::Pose_Idle/Pose_Dead/
-      # Pose_Defend -- schema.rb's own comment on chunk 32 lists the full
-      # 12-pose order this is drawn from: 0 idle, 4 dead, 7 defend, among the
-      # rest).
-      # `ACTOR_BAD_STATUS_POSE` is the same shift applied to
-      # `AnimationState_BadStatus` (7) -- the generic pose an active state
-      # falls back to when its own `battler_animation_id` field (`Game::
-      # States.animation_pose`) names none of its own, matching liblcf's own
-      # schema default for that field (6, not the C++ side's raw
-      # pre-translation sentinel 100 -- see `Game::States.animation_pose`'s
-      # own comment).
-      ACTOR_IDLE_POSE = 0
-      ACTOR_DEAD_POSE = 4
-      ACTOR_BAD_STATUS_POSE = 6
-      ACTOR_DEFEND_POSE = 7
+      # Idle, Dead, Bad-status and Defend pose ids within a
+      # `db.battleranimations` entry's `poses` table. **These are 1-based**,
+      # like every other id in this file format -- read straight off a real
+      # RPG2003 database this cycle (#255): `data/kk1.12`'s own
+      # `battleranimations` entries all carry the same 32-row pose table whose
+      # first twelve rows are named, in id order,
+      #   1 基本動作(待機) 2 右手攻撃 3 左手攻撃 4 特殊技能 5 死亡
+      #   6 ダメージ 7 状態異常 8 防御 9 歩き(左) 10 歩き(右) 11 勝利 12 アイテム
+      # so Idle is 1, Dead 5, BadStatus 7 and Defend 8. These constants used to
+      # be the 0-based enum offsets (0/4/6/7), which made `poses[ACTOR_IDLE_POSE]`
+      # read the *absent* row 0 and #build_actor_sprite return nil -- i.e. an
+      # RPG2003 party drew no battlers at all, exactly what a genuine
+      # RPG_RT.EXE / our-engine comparison on kk1.12 showed this cycle (three
+      # side-view party sprites there, none here).
+      #
+      # A state's own configured pose (`Game::States.animation_pose`, chunk 18
+      # field 39) stays 0-based -- its schema default 6 lines up with 状態異常
+      # only after the same +1 shift -- so #build_actor_sprite converts it
+      # rather than this table changing base.
+      ACTOR_IDLE_POSE = 1
+      ACTOR_DEAD_POSE = 5
+      ACTOR_BAD_STATUS_POSE = 7
+      ACTOR_DEFEND_POSE = 8
       # `poses[id].animation_type` values: 0 a BattleCharSet sprite sheet
       # (implemented below), 1 a full Battle/<name> (CBA) animation sequence
       # played in place of a static sprite (not implemented here -- see
@@ -660,7 +667,11 @@ class RPG2k
                   else
                     situations = db.respond_to?(:situation) ? db.situation : nil
                     sig = Game::States.significant(states, situations)
-                    state_pose = sig && Game::States.animation_pose(sig, situations)
+                    # `animation_pose` is the state row's own 0-based
+                    # AnimationState value; the pose table it indexes is
+                    # 1-based (see ACTOR_IDLE_POSE), so shift it.
+                    sp = sig && Game::States.animation_pose(sig, situations)
+                    state_pose = sp && sp + 1
                     (state_pose && poses[state_pose]) ? state_pose : ACTOR_IDLE_POSE
                   end
         pose = poses[pose_id]
@@ -697,8 +708,12 @@ class RPG2k
 
       # -- automatic battler placement (`battlecommands.placement == 1`) --------
       #
-      # Port of a reference implementation's grid-position calculation, not
-      # independently confirmed against genuine RPG_RT under wine: when the database
+      # The grid-position calculation, confirmed for the three-member /
+      # front-row / terrain-1 case against genuine RPG_RT.EXE under wine
+      # (cycle #255, `data/kk1.12`) -- see #battle_grid_position and
+      # #automatic_battle_position below for the measured numbers. The back-row
+      # `row_x_offset` branch and party sizes other than 3 are still
+      # unconfirmed. When the database
       # asks for automatic placement, each party member's sprite sits on a grid
       # slot computed from its party index, the party size and the encounter's
       # terrain (the `grid_top_y` / `grid_elongation` / `grid_inclination`
@@ -711,9 +726,23 @@ class RPG2k
       # front, 0 for back, exactly the reference implementation's own
       # front-row-gets-half-width, back-row-gets-zero rule.
       #
-      # Returns [x, y] for the `i`-th member of `@ui[:allies]`, or nil when
-      # the database asks for manual placement (the caller falls back to
-      # battle_x/battle_y) or the party outgrows the reference grid (8 rows).
+      # Returns the sprite's top-left [x, y] for the `i`-th member of
+      # `@ui[:allies]`, or nil when the database asks for manual placement
+      # (the caller falls back to battle_x/battle_y) or the party outgrows the
+      # grid (8 rows).
+      #
+      # **The grid slot is an anchor, not a top-left**: its x is the sprite's
+      # horizontal *centre* and its y the sprite's *bottom* edge, so the cell
+      # is drawn at (centre - 24, bottom - 48). Confirmed against genuine
+      # RPG_RT.EXE under wine (cycle #255) on `data/kk1.12` -- a three-member
+      # party (grid fractions 0.0/0.5/1.0) on terrain 1 (grid_top_y 112,
+      # grid_elongation 375, grid_inclination 16400) puts its 48x48
+      # BattleCharSet cells at exactly (232,64), (240,86) and (248,109),
+      # template-matched pixel-exact against the sheets themselves. The
+      # centres those come from are 320 - (16|8|0 + 24 + 24) = 256/264/272 and
+      # the bottoms 112/134/157. This step used to hand back the *centre*
+      # (x unshifted, y only half a cell up), i.e. every battler sat 24px
+      # right and 24px low.
       def automatic_battle_position(i)
         return nil unless @state.party.respond_to?(:automatic_battle_placement?) &&
                           @state.party.automatic_battle_placement?
@@ -722,12 +751,11 @@ class RPG2k
         half = ACTOR_CHARSET_CELL / 2
         ally = @ui[:allies][i]
         row_x_offset = ally && ally.back_row? ? 0 : half
-        # The reference implementation's actor-path x/y for the normal battle condition, then the
-        # same x clamp (y is deliberately unclamped for actors -- the
-        # reference doesn't).
-        x = SCREEN_W - (pos[0] + half + row_x_offset)
-        y = pos[1] - half
-        [Game.clamp(x, half, SCREEN_W - half), y]
+        # The clamp keeps the *centre* on screen (y is deliberately unclamped
+        # for actors); the sprite's own top-left is then half a cell left of
+        # it and a whole cell above the grid's baseline.
+        cx = Game.clamp(SCREEN_W - (pos[0] + half + row_x_offset), half, SCREEN_W - half)
+        [cx - half, pos[1] - ACTOR_CHARSET_CELL]
       end
 
       # The reference implementation's grid table 0
@@ -751,15 +779,26 @@ class RPG2k
       GRID_INCLINATION_DEFAULT = 16000
 
       # The grid slot for the `i`-th of `party_size` members, or nil when the
-      # party outgrows the table. Integer-truncated like the reference's
-      # `(int)` casts.
+      # party outgrows the table. Integer-truncated (RPG_RT's own `(int)`
+      # casts).
+      #
+      # The y term is **linear in `grid_elongation`**, not sinusoidal:
+      # `top_y + (elongation / 1000) * 120 * t`. Confirmed against genuine
+      # RPG_RT.EXE under wine (cycle #255) on `data/kk1.12`, terrain 1
+      # (grid_top_y 112, grid_elongation 375 -- its schema default, the row
+      # writes only field 46): the three party battlers' measured tops are 64,
+      # 86 and 109, i.e. baselines 112, 134 and 157, so the full-`t` term is
+      # exactly 45 = 375 * 120 / 1000. A `sin(elongation / 1000)` term (the
+      # shape this used to compute) gives 43.95 -> 43 there, which would have
+      # put the last member 2px high -- ruled out by the middle member too
+      # (int(22.5) = 22 lands on 134; sin gives 21).
       def battle_grid_position(i, party_size)
         row = GRID_TABLE_0[party_size - 1]
         return nil unless row && row[i]
         t = row[i]
         grid = battle_grid_params
         x = ((1.0 - t) * (grid[:inclination] / 1000.0)).to_i
-        y = grid[:top_y] + (Math.sin(grid[:elongation] / 1000.0) * 120.0 * t).to_i
+        y = grid[:top_y] + (grid[:elongation] / 1000.0 * 120.0 * t).to_i
         [x, y]
       end
 
@@ -3670,30 +3709,40 @@ class RPG2k
 
       # The gauge card layout (`battle_type` 2): one 80px-wide card per party
       # member -- face, HP/SP bars and digit-glyph numbers, drawn straight
-      # from the database's own System2 graphic -- ported column-for-column
-      # from a reference implementation's real gauge-card drawing
-      # (the equivalent gauge-battle-type branch) --
-      # ported from that reference implementation's source, not
-      # independently confirmed against
-      # genuine RPG_RT under wine. Borderless like that reference
-      # implementation's own gauge
-      # window ("simulate a borderless window...
-      # makes the implementation on scene-side easier"), and never gets a
-      # cursor rect: no row is ever highlighted here, unlike the
-      # text status window's acting-actor cursor. The ATB/wait gauge row
-      # that reference implementation also draws
-      # is skipped -- this runtime has no ATB/wait-timer
-      # subsystem to read a value from. Returns nil (so `#refresh_battle_status`
-      # falls back to the plain text rows) when the database names no System2
-      # graphic, or names one that fails to load -- there is no sensible
-      # placeholder gauge sprite sheet the way there's a placeholder colour
-      # block for a missing battler graphic.
+      # from the database's own System2 graphic.
+      #
+      # **Confirmed against genuine RPG_RT.EXE under wine (cycle #255)**, on
+      # `data/kk1.12` with a copy of its database whose `battlecommands`
+      # `battle_type` was flipped from 1 to 2 through this repo's own LCF
+      # writer (a byte-identical round-trip otherwise): the three cards' 48x48
+      # FaceSet crops land at logical (76,184), (156,184), (236,184) and their
+      # System2 bar caps at (108,184)/(188,184)/(268,184) and
+      # (149,184)/(229,184) -- all template-matched pixel-exact. So the card
+      # arithmetic below (face at `80*i`, left cap at `32 + 80*i`, a 25px
+      # stretched centre, right cap at `73 + 80*i`, numbers right-aligned in
+      # four 8px cells from `40 + 80*i`, rows 16px apart, the fill stripe
+      # 12px down each row) is exactly right -- but the panel is drawn at the
+      # window rect's **own origin**, with no 8px frame inset, since it is
+      # borderless. This step used to inset it, putting every card 8px right
+      # and 8px low; the window is therefore built 8px up-left and 16px
+      # larger so its contents sprite (always offset by `Window::BORDER`)
+      # lands back on the panel rect itself.
+      #
+      # It never gets a cursor rect: no row is ever highlighted here, unlike
+      # the text status window's acting-actor cursor. The third, ATB/"T" gauge
+      # row genuine RPG_RT draws under the HP/SP pair (empty at battle start
+      # in the capture above) is still skipped -- see docs/TODO.md. Returns
+      # nil (so `#refresh_battle_status` falls back to the plain text rows)
+      # when the database names no System2 graphic, or names one that fails to
+      # load -- there is no sensible placeholder gauge sprite sheet the way
+      # there's a placeholder colour block for a missing battler graphic.
       def battle_status_gauge_window(allies)
         system2 = battle_system2_bitmap
         return nil unless system2
-        inner_w = BATTLE_STATUS_W - Window::BORDER * 2
-        inner_h = BATTLE_PANEL_H - Window::BORDER * 2
-        win = Window.new(battle_status_x, BATTLE_PANEL_Y, BATTLE_STATUS_W, BATTLE_PANEL_H)
+        inner_w = BATTLE_STATUS_W
+        inner_h = BATTLE_PANEL_H
+        win = Window.new(battle_status_x - Window::BORDER, BATTLE_PANEL_Y - Window::BORDER,
+                         BATTLE_STATUS_W + Window::BORDER * 2, BATTLE_PANEL_H + Window::BORDER * 2)
         win.z = 300
         win.transparent = true
         c = Bitmap.new(inner_w, inner_h)
@@ -3706,12 +3755,28 @@ class RPG2k
       # `Game::Battle::Combatant` (`Game::Battle.from_actor`) -- its `.actor`
       # is the underlying `Game::Actor`, the only place `faceset_name`/
       # `faceset_index` (chunk 11 fields 15/16, including any Change Actor
-      # Face override) live. Ported from `RefreshGauge`'s own gauge-card
-      # block: the face, then the bar's left cap / stretched centre / right
-      # cap at `System2` (0,32,16,48)/(16,32,16,48)/(32,32,16,48), then the
-      # HP row (`which` 0) and SP row (`which` 1) fills and numbers -- the
-      # exact x/y arithmetic (`32 + 80*i`, `40 + 80*i`, `y + 12 + 4`) is
-      # copied from the real source rather than re-derived.
+      # Face override) live. The face, then the bar's left cap / stretched
+      # centre / right cap at `System2` (0,32,16,48)/(16,32,16,48)/
+      # (32,32,16,48), then the HP row (`which` 0), SP row (1) and ATB row (2)
+      # fills, and the HP/SP numbers.
+      #
+      # Every offset here is confirmed against genuine RPG_RT.EXE under wine
+      # (cycle #255, kk1.12 forced to `battle_type` 2 -- see
+      # #battle_status_gauge_window): the caps land at panel-relative
+      # (32 + 80*i, 24) and (73 + 80*i, 24), the HP fill stripe spans exactly
+      # 25px from (48 + 80*i, 24 + 12), and the numbers' four 8px cells start
+      # at (40 + 80*i), 16px apart vertically.
+      #
+      # The third bar the 48px-tall cap block already draws (the "T" row, 32px
+      # under the HP one) is RPG2003's own ATB gauge, and the genuine runtime
+      # fills it from `System2` row 64 exactly like HP/SP: it reads empty the
+      # instant a fight opens and runs to the full-fill tile as the charge
+      # completes, measured frame by frame. `Combatant#gauge` is this
+      # runtime's own charge (0..`Game::Battle::GAUGE_MAX`, ADR 0053 Phase 2),
+      # so it is drawn from that -- `respond_to?`-guarded for the bare
+      # fixtures that carry no gauge model at all. NOTE the panel is only
+      # rebuilt on `#refresh_battle_status`, not per frame, so unlike the real
+      # runtime this bar steps rather than sweeps (left open, see docs/TODO.md).
       def draw_battle_gauge_card(c, system2, ally, i)
         draw_battle_gauge_face(c, ally.actor, i)
         x = 32 + i * 80
@@ -3725,6 +3790,10 @@ class RPG2k
         hp = ally.hp < 0 ? 0 : ally.hp
         draw_gauge_system2(c, system2, fill_x, y, hp, ally.display_max_hp, 0)
         draw_gauge_system2(c, system2, fill_x, y + 16, ally.mp, ally.display_max_mp, 1)
+        if ally.respond_to?(:gauge)
+          draw_gauge_system2(c, system2, fill_x, y + 32, ally.gauge,
+                             Game::Battle::GAUGE_MAX, 2)
+        end
         num_x = 40 + 80 * i
         draw_number_system2(c, system2, num_x, y, hp)
         draw_number_system2(c, system2, num_x, y + 12 + 4, ally.mp)
@@ -3835,12 +3904,28 @@ class RPG2k
       # label can still change per actor (`#skill_command_label`), the same way
       # a reference implementation updates that one row's item text
       # after the window is built rather than rebuilding the whole thing.
+      # Where the per-actor command window sits. RPG2000 (and RPG2003's
+      # traditional/alternative layouts) dock it to the *right* of the status
+      # panel, at (BATTLE_STATUS_W, BATTLE_PANEL_Y) -- the cycle #244
+      # measurement above. RPG2003's **gauge** layout instead floats it at the
+      # screen's left edge one panel-height *above* the gauge cards, at
+      # (0, BATTLE_PANEL_Y - BATTLE_PANEL_H) = (0, 80), leaving the card panel
+      # the full width below it. Confirmed against genuine RPG_RT.EXE under
+      # wine (cycle #255) on kk1.12 forced to `battle_type` 2: the window's
+      # frame spans x=0..75, y=80..159, with the leftmost gauge card's own
+      # bar fill back at panel x=0 (48 on screen) in that state.
+      def battle_cmd_window_rect
+        return [BATTLE_STATUS_W, BATTLE_PANEL_Y] unless gauge_battle_layout?
+        [0, BATTLE_PANEL_Y - BATTLE_PANEL_H]
+      end
+
       def draw_battle_command
         actor = current_actor
         return unless actor
         @ui[:cmd_win].dispose if @ui[:cmd_win]
         labels = battle_commands
-        win = Window.new(BATTLE_STATUS_W, BATTLE_PANEL_Y, BATTLE_CMD_W, BATTLE_PANEL_H)
+        cmd_x, cmd_y = battle_cmd_window_rect
+        win = Window.new(cmd_x, cmd_y, BATTLE_CMD_W, BATTLE_PANEL_H)
         win.z = 320
         win.windowskin = windowskin
         inner_w = BATTLE_CMD_W - Window::BORDER * 2
