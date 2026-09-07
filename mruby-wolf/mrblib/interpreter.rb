@@ -69,6 +69,13 @@ module Wolf
     # "カスタム" route). Confirmed empirically: every real command whose
     # generic framing parsed a trailing move-route block (`Command#route?`)
     # carries this code, in both Common Events and map event pages.
+    # "その他2" tab's "■ＤＢ操作" button (help/04ev_db.html; WolfTL's own
+    # Command.hpp names it Database, the wolfrpg-map-parser crate's own
+    # `db_management_command`). See #exec_database's own comment for what
+    # this reader implements versus the manual's much larger documented
+    # surface (XY配列, name<->index lookups, insert/extract/copy/sort,
+    # CSV import/export).
+    C_DATABASE = 250
     C_SET_MOVE_ROUTE = 201
     C_START_LOOP = 170
     C_BREAK_LOOP = 171
@@ -205,6 +212,8 @@ module Wolf
           @interp.exec_sound(cmd)
         when Interpreter::C_INPUT_KEY
           exec_input_key(cmd)
+        when Interpreter::C_DATABASE
+          @interp.exec_database(cmd)
         when Interpreter::C_FORCE_STOP_MESSAGE,
              Interpreter::C_CLEAR_DEBUG_TEXT, Interpreter::C_TELEPORT,
              Interpreter::C_BREAK_EVENT, Interpreter::C_RETURN_TO_TITLE,
@@ -1241,6 +1250,175 @@ module Wolf
       target = cmd.arg(0)
       current = var_store.number(target)
       var_store.set_number(target, fold32(apply_assign_op(current, computed, assign_op)))
+    end
+
+    # Database(250) ("ＤＢ操作"): arg(0)/arg(1)/arg(2) the db type/data/field
+    # selectors (each, like every other numeric slot, a `ValueRef`-decodable
+    # reference -- real data uses variable-held field selectors, not just
+    # literals), arg(3) packs the crate's own `Assignment`(byte 0)/
+    # `Options`(byte 1) bytes -- byte 0's low bit `use_variable_as_reference`
+    # and high nibble the assignment operator shared with SetVariable(121)
+    # via #apply_assign_op (identical 0-8 numbering, cross-confirmed again by
+    # the crate's own enum for this command); byte 1's low nibble a `DBType`
+    # (0 可変DB "changeable", 1 システムDB "system", 2 ユーザDB "user") and
+    # high nibble Read(1)/Write(0) -- plus a real, non-zero third byte the
+    # crate's own comment calls padding, decoded here across every real
+    # occurrence in the sample game (2544) as a 3-bit "which of the three
+    # optional 名前で呼出 strings are attached" flag that never disagrees
+    # with the strings' own emptiness, so it adds nothing beyond what
+    # `cmd.strings` already carries. Real data cross-checked directly against
+    # the parsed database (`user_db[2].name == "アイテム"` for CE#0's own
+    # "○アイテム増減", matching its own embedded string byte for byte) shows
+    # those strings are the editor's own auto-filled display labels for the
+    # current *numeric* selection, not a live name-lookup trigger switching
+    # how arg(0..2) resolve -- every real command's numeric selectors already
+    # name the same row/field the strings describe. `use_variable_as_
+    # reference` is 0 in all 2544 real calls, so name-lookup mode (and that
+    # bit) is left unimplemented rather than guessed.
+    #
+    # value/target lives in arg(4) when there is one (5-argument shape, the
+    # dominant real case, WolfTL/the crate's own `Base` state, a plain u32);
+    # a 4-argument shape (19 real, all Write) has no arg(4) at all -- the
+    # value is the command's own lone string, `cmd.string(0)` (the crate's
+    # own `String` state). Which of `var_store.number`/`.string` a call's
+    # value/target/current actually goes through is *not* carried by the
+    # packed word at all -- it is decided by the target `DBField`'s own
+    # `#string?`/slot (real data confirms both directions: CE#0's own
+    # "○アイテム増減" reads user DB type 2's own "アイテム名" field, a string
+    # field, into common-event self-var 8, itself in the string quintet
+    # (help/06valueget.html's own self-var 5-9 string band) -- reading it as
+    # a *number* the way #exec_set_variable_ex's own numeric fields do would
+    # silently coerce it to 0 and fire VarStore's own string/number-mismatch
+    # warning on every call). Read and Write apply the identical assign-op
+    # pattern SetVariable/SetVariableEx already use, current/computed simply
+    # swapped: Read combines the DB's own current value with the target's
+    # current value and writes the result to the target (a "get" that can
+    # also be "+="); Write combines the DB's own current value with the
+    # resolved source value and writes the result back into the DB
+    # (confirmed by a real MinusEquals member-management call that
+    # decrements an invoker-tracking field by 1 rather than overwriting it,
+    # and, for strings, real PlusEquals calls that concatenate).
+    #
+    # Not implemented: XY配列 (a whole second, non-DBType target the manual
+    # documents with its own addressing, unrelated to `DBType`'s 0-2 enum),
+    # every "DB操作" utility beyond plain read/write (name<->index lookups,
+    # データ数/項目数取得, 全データ初期化, 新データ挿入/データ抜き取り/
+    # データコピー/データソート), and CSV import/export (a separate command,
+    # ImportDatabase(251)).
+    DB_OP_WRITE = 0
+    DB_OP_READ = 1
+    DB_TYPE_SECTION = { 0 => :changeable, 1 => :system, 2 => :user }.freeze
+
+    def exec_database(cmd)
+      unless cmd.args.size == 4 || cmd.args.size == 5
+        unimplemented("Database(250) with #{cmd.args.size} arguments")
+        return
+      end
+
+      packed = cmd.arg(3)
+      assignment_byte = packed & 0xff
+      options_byte = (packed >> 8) & 0xff
+      db_op = (options_byte >> 4) & 0x0f
+      section = DB_TYPE_SECTION[options_byte & 0x0f]
+      use_var_ref = assignment_byte & 1
+      assign_op = (assignment_byte >> 4) & 0x0f
+
+      unless section
+        unimplemented("Database(250) db type selector #{options_byte & 0x0f}")
+        return
+      end
+      if use_var_ref != 0
+        unimplemented("Database(250) name-lookup mode (use_variable_as_reference)")
+        return
+      end
+      if cmd.args.size == 4 && db_op != DB_OP_WRITE
+        unimplemented("Database(250) with 4 arguments and operation #{db_op} (only the real Write/string-literal shape is understood)")
+        return
+      end
+
+      type_id = var_store.number(cmd.arg(0))
+      data_id = var_store.number(cmd.arg(1))
+      field_id = var_store.number(cmd.arg(2))
+      db = database_section(section)
+      db_type = db && db[type_id]
+      unless db_type
+        unimplemented("Database(250) #{section} db type #{type_id} not found")
+        return
+      end
+      field = db_type.field(field_id)
+      unless field
+        unimplemented("Database(250) #{section} db type #{type_id} field #{field_id} not found")
+        return
+      end
+
+      if field.string?
+        exec_database_string(cmd, db_type, data_id, field_id, db_op, assign_op)
+      elsif cmd.args.size == 4
+        unimplemented("Database(250) 4-argument string-literal shape targeting a numeric field")
+      else
+        exec_database_number(cmd, db_type, data_id, field_id, db_op, assign_op)
+      end
+    end
+
+    def exec_database_number(cmd, db_type, data_id, field_id, db_op, assign_op)
+      case db_op
+      when DB_OP_READ
+        computed = db_type.value(data_id, field_id)
+        computed = computed.is_a?(Integer) ? computed : 0
+        target = cmd.arg(4)
+        current = var_store.number(target)
+        var_store.set_number(target, fold32(apply_assign_op(current, computed, assign_op)))
+      when DB_OP_WRITE
+        current = db_type.value(data_id, field_id)
+        current = current.is_a?(Integer) ? current : 0
+        computed = var_store.number(cmd.arg(4))
+        db_type.set_value(data_id, field_id, fold32(apply_assign_op(current, computed, assign_op)))
+      else
+        unimplemented("Database(250) operation #{db_op}")
+      end
+    end
+
+    def exec_database_string(cmd, db_type, data_id, field_id, db_op, assign_op)
+      case db_op
+      when DB_OP_READ
+        computed = db_type.value(data_id, field_id)
+        computed = computed.is_a?(String) ? computed : ""
+        target = cmd.arg(4)
+        current = var_store.string(target)
+        var_store.set_string(target, apply_assign_op_string(current, computed, assign_op))
+      when DB_OP_WRITE
+        current = db_type.value(data_id, field_id)
+        current = current.is_a?(String) ? current : ""
+        computed = cmd.args.size == 4 ? cmd.string(0) : var_store.string(cmd.arg(4))
+        db_type.set_value(data_id, field_id, apply_assign_op_string(current, computed, assign_op))
+      else
+        unimplemented("Database(250) operation #{db_op}")
+      end
+    end
+
+    # Database(250)'s own string fields only ever carry assignment operator
+    # 0 (=) or 1 (+=, concatenation) for real; every other operator (a
+    # handful of real LowerBound calls -- presumably a stand-in for the
+    # manual's own "文字列の並び替え" DB-sort feature, not a per-call
+    # operation) falls through to plain assignment, matching
+    # #apply_assign_op's own defensive default for an operator it does not
+    # implement.
+    def apply_assign_op_string(current, computed, assign_op)
+      case assign_op
+      when 0x0 then computed
+      when 0x1 then current + computed
+      else
+        var_store.warn_once("assign-op-str-#{assign_op}", "assignment operator #{assign_op} not implemented for a string DB field; assigning directly")
+        computed
+      end
+    end
+
+    def database_section(section)
+      case section
+      when :changeable then project.changeable_db
+      when :system then project.system_db
+      when :user then project.user_db
+      end
     end
 
     # Runs one RouteCommand list against `pos` (either a map event's own

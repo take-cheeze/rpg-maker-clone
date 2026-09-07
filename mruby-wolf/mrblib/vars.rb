@@ -194,20 +194,28 @@ module Wolf
       @common_event_self[common_id] ||= Hash.new(0)
     end
 
-    # Reads `raw` (an int32 command argument) as a number.
+    # Reads `raw` (an int32 command argument) as a number. Self-variable
+    # banks (map/common event) are untyped storage a real project can (and,
+    # per Database(250)'s own real command dumps, sometimes does) write a
+    # string into via one code path and read as a number via another --
+    # coerced defensively here (see #coerce_number) rather than handed
+    # straight to a caller that assumes an Integer, the same "log rather
+    # than guess" rule the string/system_string branch below already
+    # follows for a slot whose *address* (not its current runtime value)
+    # says it is a string.
     def number(raw)
       kind, *rest = ValueRef.decode(raw)
       case kind
       when :literal then rest[0]
-      when :variable then @variables[rest[0]]
-      when :system_variable then @system_variables[rest[0]]
+      when :variable then coerce_number(kind, raw, @variables[rest[0]])
+      when :system_variable then coerce_number(kind, raw, @system_variables[rest[0]])
       when :random
         max = rest[0]
         max <= 0 ? 0 : rand(max + 1)
-      when :map_event_self then map_event_self_bank(rest[0])[rest[1]]
+      when :map_event_self then coerce_number(kind, raw, map_event_self_bank(rest[0])[rest[1]])
       when :this_map_event_self
         require_current_map_event!
-        map_event_self_bank(@current_map_event_id)[rest[0]]
+        coerce_number(kind, raw, map_event_self_bank(@current_map_event_id)[rest[0]])
       when :common_event_self then common_self_number(rest[0], rest[1])
       when :this_common_event_self
         require_current_common_event!
@@ -222,7 +230,8 @@ module Wolf
       end
     end
 
-    # Reads `raw` as a string.
+    # Reads `raw` as a string. See #number's own comment on why the untyped
+    # self-variable banks are coerced defensively rather than trusted.
     def string(raw)
       kind, *rest = ValueRef.decode(raw)
       case kind
@@ -294,7 +303,8 @@ module Wolf
 
     def common_self_number(common_id, index)
       warn_once("common-self-type-#{index}", "reading common event self-var #{index} as a number, but it is the string quintet") if ValueRef.common_event_self_string?(index)
-      common_event_self_bank(common_id)[index]
+      v = common_event_self_bank(common_id)[index]
+      coerce_number(:common_event_self, index, v)
     end
 
     def common_self_string(common_id, index)
@@ -328,6 +338,21 @@ module Wolf
       t = db_type(section, type_id)
       v = t && t.value(data_id, field_id)
       v.is_a?(String) ? v : ""
+    end
+
+    # A variable/self-variable bank slot's stored value, defensively typed:
+    # every bank is a plain untyped Hash (`set_number`/`set_string` share
+    # the same slot), so a project that writes one type into a slot and
+    # later reads it as the other -- Database(250)'s own real command dumps
+    # show a common event doing exactly this across its own self-vars, once
+    # the numeric-field and string-field read/write calls for the same
+    # common event's own scratch slots are replayed in isolation -- must not
+    # hand a caller (fold32, `apply_assign_op`'s arithmetic, a DBType index)
+    # something it cannot use.
+    def coerce_number(kind, raw, v)
+      return v if v.is_a?(Integer)
+      warn_once("num-wrong-type-#{kind}", "#{kind} reference (#{raw}) holds #{v.inspect}, not a number; treating as 0")
+      0
     end
   end
 end
