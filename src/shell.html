@@ -645,7 +645,7 @@
         // assets, written once by the loader -- is left alone.
         Module.FS.trackingDelegate = Module.FS.trackingDelegate || {};
         Module.FS.trackingDelegate.onCloseFile = function (path) {
-          if (restoring || path.indexOf('/game/') !== 0) return;
+          if (restoring || mirroring || path.indexOf('/game/') !== 0) return;
           var rel = path.slice('/game/'.length);
           if (isSavePath(rel)) mirrorSave(rel);
         };
@@ -655,6 +655,19 @@
       // just wrote into /game -- FS.writeFile closes the file same as any
       // other write, so it fires the trackingDelegate hook below too.
       var restoring = false;
+
+      // Guards against mirrorSave re-triggering itself: FS.readFile('/game/'
+      // + rel) below closes that same file once it's done reading, which
+      // fires onCloseFile for that very save-shaped path again. Since
+      // persistReady is already resolved by the time saves happen, the
+      // resulting mirrorSave() call chains a new already-resolved-promise
+      // microtask immediately rather than waiting on anything -- with no
+      // guard, that recursion never bottoms out and the microtask queue
+      // never drains, freezing the tab solid on every single save. (This is
+      // a different bug from the syncfs re-entrancy runSyncfs guards
+      // against; that one only covers overlapping IDBFS.syncfs calls, not
+      // this self-triggering read.)
+      var mirroring = false;
 
       // Copy back whatever was persisted for this project, right before it
       // starts. Only two shapes exist (see isSavePath): root-level save files,
@@ -708,12 +721,15 @@
           var FS = Module.FS;
           var dst = persistDir() + '/' + rel;
           var dstDir = dst.slice(0, dst.lastIndexOf('/'));
+          mirroring = true;
           try {
             FS.mkdirTree(dstDir);
             FS.writeFile(dst, FS.readFile('/game/' + rel));
           } catch (e) {
             log('(could not stage "' + rel + '" for browser storage: ' + (e && e.message ? e.message : e) + ')');
             return;
+          } finally {
+            mirroring = false;
           }
           if (syncTimer) clearTimeout(syncTimer);
           syncTimer = setTimeout(function () {

@@ -82,6 +82,23 @@ every later flush — through one `runSyncfs` queue that keeps at most one call
 in flight and coalesces anything requested while it runs into a single
 follow-up call, rather than starting a second one concurrently.
 
+**Staging a save file must not read it back through `/game`, or the mirror
+hook triggers itself.** The first fix above still left a second, distinct
+hang: `mirrorSave`'s own staging step read the just-closed file back with
+`FS.readFile('/game/' + rel)` to copy its bytes into `/persist/<slug>/`, but
+that read closes the file too, and closing a save-shaped path under `/game`
+is exactly what `onCloseFile` is watching for — so the read re-fired
+`mirrorSave` on itself. Because `persistReady` is already resolved by the
+time any real save happens, each recursive call chains a new
+already-resolved-promise microtask immediately rather than waiting on
+anything, so the recursion never bottomed out: the microtask queue never
+drained, and the tab froze solid on every single save, indistinguishable
+from the `syncfs` re-entrancy hang above except that it reproduced on the
+*first* save rather than only on a rapid burst of them. Fixed with a
+`mirroring` re-entrancy flag around that read/write, mirroring (no pun
+intended) the `restoring` flag `restoreSaves()` already used to keep its own
+writes into `/game` from re-triggering the hook.
+
 Before a project starts (`mountAndStart`/`startBundledSample` in
 `src/shell.html`, right after the fresh assets are written and before
 `rpg_start_game()`), whatever is under `/persist/<slug>/` is copied back onto
