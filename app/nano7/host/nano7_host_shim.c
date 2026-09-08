@@ -1,11 +1,20 @@
 /*
- * nano7_host_shim -- a host-side implementation of the hb_raw_surface/hb_sdk
- * subset app/nano7/rpg2k_walk/rpg2k_walk.c calls, plus a main() driving it.
+ * nano7_host_shim -- the host-platform half of a hb_raw_surface/hb_sdk
+ * implementation for app/nano7/rpg2k_walk/rpg2k_walk.c: hb_fs_read (over
+ * stdio), hb_time_uptime_ms, and a main() driving it via SDL2 for a window
+ * or headlessly. The framebuffer array, the hb_raw_ pixel primitives and
+ * hb_draw_str are shared with app/nano7/qemu's bare-metal build -- see
+ * app/nano7/shim_common/hb_fb_ops.c.
+ *
  * See docs/adr/0102-ipod-nano-7-host-emulator.md for why this repo builds a
  * host implementation of the app's own API instead of emulating the real
  * device's Cortex-A8 SoC and proprietary OS underneath that API (unlike the
  * Wio Terminal's bare-metal Renode platform, docs/adr/0094, where modelling
- * the SoC *is* modelling the firmware's whole execution environment).
+ * the SoC *is* modelling the firmware's whole execution environment), and
+ * docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md for app/nano7/qemu,
+ * which -- unlike this file -- *does* run the real ARM Cortex-A8 instruction
+ * stream, for a genuine (if approximate) CPU cost signal this file's native
+ * host execution cannot give at all.
  *
  * This file links app/nano7/rpg2k_walk/rpg2k_walk.c and
  * app/shared/rpg2k_walk/rpg2k_walk_core.c completely unmodified -- the only
@@ -35,54 +44,12 @@
 #include "hb_raw_surface.h"
 #include "hb_sdk.h"
 
-/* ---- the framebuffer hb_raw_fb() hands out ----
- *
- * hb_raw_surface.h's own comment says the exact layout: "XRGB8888, w*h,
- * row-major". HB_RGB(r,g,b) packs (r<<16 | g<<8 | b) into a native uint32_t,
- * which on this host is byte order B,G,R,00 -- the same layout SDL's
- * SDL_PIXELFORMAT_RGB888 names, so the array below feeds the interactive
- * window's texture with no per-pixel conversion; write_bmp24 below extracts
- * each channel by shift instead of relying on that layout, so it stays
- * correct regardless of host endianness. */
-static uint32_t s_fb[HB_SCREEN_W * HB_SCREEN_H];
+/* hb_raw_fb() and the pixel primitives are app/nano7/shim_common/hb_fb_ops.c
+ * (shared with app/nano7/qemu); this file needs read access to the same
+ * array for the interactive texture update and the BMP screenshot. */
+extern uint32_t *hb_raw_fb(void);
 
-uint32_t *hb_raw_fb(void) { return s_fb; }
-int hb_raw_w(void) { return HB_SCREEN_W; }
-int hb_raw_h(void) { return HB_SCREEN_H; }
-
-static inline void put_px(int x, int y, uint32_t rgb) {
-  if ((unsigned)x < (unsigned)HB_SCREEN_W && (unsigned)y < (unsigned)HB_SCREEN_H)
-    s_fb[y * HB_SCREEN_W + x] = rgb;
-}
-
-void hb_raw_fill(uint32_t rgb) {
-  for (int i = 0; i < HB_SCREEN_W * HB_SCREEN_H; i++) s_fb[i] = rgb;
-}
-
-void hb_raw_fill_rect(int x, int y, int w, int h, uint32_t rgb) {
-  for (int yy = y; yy < y + h; yy++)
-    for (int xx = x; xx < x + w; xx++) put_px(xx, yy, rgb);
-}
-
-void hb_raw_rect_outline(int x, int y, int w, int h, int t, uint32_t rgb) {
-  hb_raw_fill_rect(x, y, w, t, rgb);
-  hb_raw_fill_rect(x, y + h - t, w, t, rgb);
-  hb_raw_fill_rect(x, y, t, h, rgb);
-  hb_raw_fill_rect(x + w - t, y, t, h, rgb);
-}
-
-void hb_raw_disc(int cx, int cy, int r, uint32_t rgb) {
-  for (int yy = -r; yy <= r; yy++)
-    for (int xx = -r; xx <= r; xx++)
-      if (xx * xx + yy * yy <= r * r) put_px(cx + xx, cy + yy, rgb);
-}
-
-void hb_raw_blit(int x, int y, int w, int h, const uint32_t *src) {
-  for (int yy = 0; yy < h; yy++)
-    for (int xx = 0; xx < w; xx++) put_px(x + xx, y + yy, src[yy * w + xx]);
-}
-
-/* ---- hb_sdk.h's verified subset ---- */
+/* ---- hb_sdk.h's platform-specific half ---- */
 
 /* rpg2k_walk.c reads "/Apps/Data/RPG2kWalk/map.bin" and "/.../tiles.bin"
  * (MAP_DATA_DIR); joined onto a host root given on the command line rather
@@ -108,20 +75,6 @@ static uint32_t s_sim_ms;
 
 uint32_t hb_time_uptime_ms(void) {
   return s_headless ? s_sim_ms : (uint32_t)SDL_GetTicks();
-}
-
-/* NOT a faithful replica of the real device's glyph bitmap font
- * (NanoApps' sdk/generated/hb_glyphs.c) -- a blocky per-character rectangle
- * instead. rpg2k_walk.c only calls this for its "no map to walk" error
- * screen, never the map-rendering path this harness exists to check (see
- * docs/adr/0102), so pixel-exact text is not worth vendoring that font for. */
-void hb_draw_str(int16_t x, int16_t y, const char *s, uint8_t scale,
-                  hb_color_t fg, hb_color_t bg) {
-  int cell = 8 * scale;
-  for (; *s; s++, x = (int16_t)(x + cell)) {
-    hb_raw_fill_rect(x, y, cell, cell, bg);
-    if (*s != ' ') hb_raw_fill_rect(x + 1, y + 1, cell - 2, cell - 2, fg);
-  }
 }
 
 /* ---- the harness ---- */
@@ -232,7 +185,7 @@ int main(int argc, char **argv) {
       hb_raw_frame(&touch);
       s_sim_ms += 20;
     }
-    if (screenshot && write_bmp24(screenshot, HB_SCREEN_W, HB_SCREEN_H, s_fb) != 0) {
+    if (screenshot && write_bmp24(screenshot, HB_SCREEN_W, HB_SCREEN_H, hb_raw_fb()) != 0) {
       fprintf(stderr, "screenshot failed: could not write %s\n", screenshot);
       return 1;
     }
@@ -282,7 +235,7 @@ int main(int argc, char **argv) {
 
     hb_raw_frame(&touch);
 
-    SDL_UpdateTexture(tex, NULL, s_fb, HB_SCREEN_W * 4);
+    SDL_UpdateTexture(tex, NULL, hb_raw_fb(), HB_SCREEN_W * 4);
     SDL_RenderClear(ren);
     SDL_RenderCopy(ren, tex, NULL, NULL);
     SDL_RenderPresent(ren);

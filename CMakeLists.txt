@@ -908,6 +908,7 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
     nano7_walk_host
     ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
     ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/rpg2k_walk/rpg2k_walk.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/shim_common/hb_fb_ops.c
     ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/nano7_host_shim.c)
   target_include_directories(
     nano7_walk_host

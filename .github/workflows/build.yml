@@ -1526,6 +1526,63 @@ jobs:
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
 
+  nano7-qemu:
+    # A real ARM Cortex-A8 instruction stream for the iPod nano 7G walk app
+    # (docs/adr/0103), complementing app/nano7/host's native-host build
+    # (docs/adr/0102, the `nano7_host_smoke` ctest in the `build` job below):
+    # builds app/nano7/rpg2k_walk/rpg2k_walk.c itself with the same
+    # arm-none-eabi-gcc -mcpu=cortex-a8 NanoApps' own sdk/hb_app.mk uses,
+    # boots it under qemu-system-arm's `cortex-a8` CPU model on the
+    # `realview-pb-a8` machine -- a real PL110 display controller QEMU
+    # already ships, not a new peripheral written for this repo the way
+    # `wio-renode` above needed two -- and checks both that the real PL110
+    # framebuffer shows a real rendered map (screendump, pixel-checked, the
+    # same way `wio-renode`'s lcd_smoke_test checks its own display model)
+    # and that the Cortex-A8 PMU's cycle counter gives a genuine, working
+    # per-frame cost signal (printed, not asserted on -- see the ADR for why
+    # that's a comparative signal rather than a pass/fail threshold).
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # No submodule this job needs: it links only this repo's own
+          # app/nano7 and app/shared/rpg2k_walk sources against a bare-metal
+          # shim, nothing from 3rd/.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q gcc-arm-none-eabi qemu-system-arm unar
+
+      - name: Download Nepheshel
+        run: ./scripts/download-nepheshel.bash
+
+      - name: Export a real map
+        run: |
+          mkdir -p /tmp/nano7_qemu_export
+          ruby scripts/export_nano7_map.rb --target nano7 \
+            data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/nano7_qemu_export
+
+      - name: Build the Cortex-A8 image
+        run: |
+          scripts/nano7_qemu_build.bash \
+            /tmp/nano7_qemu_export/map.bin /tmp/nano7_qemu_export/tiles.bin \
+            /tmp/nano7_walk_qemu.elf
+
+      - name: Boot under QEMU and screendump the real PL110 framebuffer
+        run: |
+          scripts/nano7_qemu_run.bash /tmp/nano7_walk_qemu.elf \
+            /tmp/nano7_qemu_frame.ppm /tmp/nano7_qemu_uart.log
+
+      - name: Check the rendered frame and print the cycle-count log
+        run: |
+          grep "NANO7-QEMU" /tmp/nano7_qemu_uart.log || true
+          ruby scripts/nano7_qemu_smoke_check.rb /tmp/nano7_qemu_frame.ppm /tmp/nano7_qemu_uart.log
+
   psp:
     # Build the PSP EBOOT bring-up with the pspdev toolchain. Like the Wio job,
     # this is the external check for the port's HAL: this environment cannot

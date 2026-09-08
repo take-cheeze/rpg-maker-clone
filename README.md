@@ -1267,6 +1267,19 @@
   ctest exports a real Nepheshel map and asserts the rendered frame actually
   shows real map content, not a blank fill. See
   [`docs/adr/0102-ipod-nano-7-host-emulator.md`](docs/adr/0102-ipod-nano-7-host-emulator.md).
+- **A real ARM Cortex-A8 build too, for CPU cost.** The host build above
+  runs natively on the build machine's own CPU, so it has nothing to say
+  about device timing. [`app/nano7/qemu`](app/nano7/qemu) cross-compiles
+  `rpg2k_walk.c` with the same `arm-none-eabi-gcc -mcpu=cortex-a8` NanoApps'
+  own SDK uses and boots it under `qemu-system-arm`'s real `cortex-a8` core
+  on the `realview-pb-a8` machine — a real PL110 display controller QEMU
+  already ships (verified pixel-correct against a hand-drawn test pattern,
+  no new peripheral code needed, unlike the Wio Terminal's Renode work
+  below), and the Cortex-A8 PMU's real cycle counter, giving a genuine (if
+  approximate — see the ADR) per-frame CPU cost signal the host build
+  cannot. The `nano7-qemu` CI job boots a real exported map through it on
+  every push. See
+  [`docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`](docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md).
 
 ### Reporting an error
 
