@@ -170,8 +170,23 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
   mrb_int len;
   mrb_get_args(M, "s", &ptr, &len);
+#ifdef WIO_TERMINAL
+  // uni-algo's NFD decomposition/combining-class tables are ~94 KB on their
+  // own (docs/adr/0105's own real measurement) -- a meaningful slice of this
+  // board's 496 KB flash budget for a feature that exists to paper over a
+  // real but narrow bug class (a macOS-authored zip/archive storing
+  // filenames in NFD while the game data references them in NFC, or vice
+  // versa). mrblib/lib.rb's exist_with_ext calls this as a *second-chance*
+  // fallback only when the exact filename already failed to resolve, so
+  // returning the input unchanged here just means that second chance never
+  // fires on this target -- an asset whose filename's normalization form
+  // already matches (by far the common case: this project's own export
+  // pipeline writes one consistent form) still loads exactly as before.
+  return mrb_str_new(M, ptr, len);
+#else
   std::string nfd = una::norm::to_nfd_utf8(std::string_view(ptr, len));
   return mrb_str_new(M, nfd.data(), nfd.size());
+#endif
 }
 
 // Inflate a zlib stream and return the decompressed bytes as a String. RGSS
@@ -1455,13 +1470,17 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   if (slurp_file(f, data) &&
       bmp_decode_into(M, self, data.data(), data.size(), f, trans))
     return self;
+#ifndef WIO_TERMINAL
   // Some archives store filenames in NFD form while the game data refers to
   // them in NFC (or vice versa); retry with the decomposed form before giving
-  // up so accented paths still resolve.
+  // up so accented paths still resolve. Skipped on wio: see to_nfd's own
+  // comment above for why this ~94 KB uni-algo table set isn't worth it on a
+  // 496 KB-flash target -- the exact same tradeoff applies here.
   const std::string nfd_f = una::norm::to_nfd_utf8(f);
   if (nfd_f != f && slurp_file(nfd_f.c_str(), data) &&
       bmp_decode_into(M, self, data.data(), data.size(), nfd_f.c_str(), trans))
     return self;
+#endif
   return mrb_nil_value();
 }
 
