@@ -1186,15 +1186,18 @@
   [`docs/adr/0061-ipod-nano-7-homebrew-map-walk.md`](docs/adr/0061-ipod-nano-7-homebrew-map-walk.md)
   for why, and the app's own README for build/install instructions.
 - **Scope: map walking, not the game.** Tile rendering (including autotiles)
-  and grid movement with real collision, for one static map — no events,
-  battle or menus.
-- **The water animates**, on RPG2000's own two clocks
-  ([`docs/adr/0094`](docs/adr/0094-walk-map-tile-animation.md)). The export
-  asks `Game::ChipsetLayout.anim_ab` / `.anim_c` what those clocks are rather
-  than restating their rules, ships the frames each tile cycles through, and
-  the device advances a counter and redraws only the cells that moved. 480
-  bytes of device code, and a map that animates nothing costs the frame loop
-  nothing.
+  and grid movement with real collision, for one static map, drawn as the
+  project's own initial party leader — no events, battle or menus.
+- **The water animates, and so does the hero**, on RPG2000's own clocks
+  ([`docs/adr/0094`](docs/adr/0094-walk-map-tile-animation.md),
+  [`0096`](docs/adr/0096-walk-map-hero-sprite.md)). The export asks
+  `Game::ChipsetLayout.anim_ab` / `.anim_c` and `Game::CharSet` what those
+  clocks and frames are rather than restating their rules, ships the frames
+  each tile or the hero's own walk cycle draws, and the device advances a
+  counter and redraws only what moved. A blocked step still turns the player
+  to face it, the same bump-turn the genuine renderer does. 480 bytes of
+  device code for the tile clocks, and a map that animates nothing costs the
+  frame loop nothing.
 - Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
   ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
   exported map with working collision. Chipset transparency is honoured: the
@@ -1209,7 +1212,8 @@
   and a cell is a byte of lower-layer index, a byte of upper, and a nibble of
   passability. Both are lossless, byte-for-byte the same picture and the same
   collision. This is what the port's RAM budget turns on: the nano app's
-  `.bss` is **108 KB** where the first slice needed 336 KB, and the Wio
+  `.bss` is **120 KB** (108 KB of map/atlas plus a fixed ~11 KB for the
+  hero's own frames) where the first slice needed 336 KB, and the Wio
   Terminal now takes the same 128×128 maps the nano does, in less SRAM than
   64×64 cost it two revisions ago.
 - **The same engine also runs on the Wio Terminal.** The device-independent
