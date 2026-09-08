@@ -27,7 +27,17 @@ mkdir -p "$OUT_DIR"
 SRC_DIR="$OUT_DIR/renode-src"
 
 if [[ ! -d "$SRC_DIR" ]]; then
-  git clone --recurse-submodules --shallow-submodules https://github.com/renode/renode.git "$SRC_DIR"
+  # No --recurse-submodules/--shallow-submodules here: that would shallow-pin
+  # every submodule to whatever commit *renode's current default branch tip*
+  # references, not to $RENODE_REF's (older) submodule pins. The checkout
+  # below then needs different, older submodule commits, and deepening an
+  # already-shallow submodule clone to an unrelated historical commit hits
+  # "remote error: upload-pack: not our ref" on some of Renode's submodule
+  # hosts (seen in CI: src/Emulator/Cores/tlib, its nested softfloat-3, and
+  # src/Infrastructure). Initializing submodules only after the checkout
+  # (below) makes each one a first-time, non-shallow clone straight to the
+  # commit $RENODE_REF actually needs, which always has it.
+  git clone https://github.com/renode/renode.git "$SRC_DIR"
 fi
 
 git -C "$SRC_DIR" checkout "$RENODE_REF"
