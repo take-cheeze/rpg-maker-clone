@@ -134,6 +134,17 @@ int _fstat(int fd, struct stat* st) {
   return 0;
 }
 
+// hal-wio-io's own mrb_hal_io_unlink backs File.delete (mruby-rgss/mrblib/
+// lib.rb's wave-cache eviction, the one real caller on this target) with
+// this directly -- no open file descriptor involved.
+int _unlink(const char* path) {
+  if (!SD.remove(to_sd_path(path))) {
+    errno = ENOENT;
+    return -1;
+  }
+  return 0;
+}
+
 }  // extern "C"
 
 #endif  // WIO_WITH_SD

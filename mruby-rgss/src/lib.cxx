@@ -36,7 +36,27 @@
 #include <utility>
 #include <vector>
 
+// The Wio Terminal's bare arm-none-eabi newlib has no dirent implementation
+// at all (a hard #error in <dirent.h>, unlike PSP's own pspsdk newlib) --
+// find_font_path below (its only caller here) degrades to "no custom Fonts/
+// folder on this board" rather than a build that cannot compile at all; a
+// bundled default font (default_font.cxx, gated the same way) still resolves
+// through its own fixed-path fallback.
+#ifdef WIO_TERMINAL
+typedef void DIR;
+static inline DIR* opendir(const char*) {
+  return nullptr;
+}
+static inline void closedir(DIR*) {}
+struct dirent {
+  char d_name[1];
+};
+static inline dirent* readdir(DIR*) {
+  return nullptr;
+}
+#else
 #include <dirent.h>
+#endif
 
 #include <iostream>
 
