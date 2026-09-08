@@ -36565,6 +36565,34 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   already gives Random/TowardHero, not a fresh guess. All 3 real
   repeating-route pages in the bundled sample game exercise this now. See
   `docs/adr/0097-wolf-rpg-editor-repeating-custom-route.md`.
+- ✅ **A basic party roster and formation-following (2026-09-08).** ADR
+  0088's own remaining gap: `Party`(270)'s `Remove`/`Insert`/`Replace`/
+  `RemoveGraphic` now edit a real roster (`Wolf::Interpreter#@party`, 5
+  companion slots), `EraseAllCharacters`/`WarpPartyToHero` act on it
+  instead of a trivially-empty one, and `TurnOnPartyFollowing`/
+  `TurnOffPartyFollowing` toggle real formation-following movement:
+  `#party_advance`, called from `WolfRPG::MapScene#move_hero` on every
+  real hero step, chains each occupied slot one step behind the slot
+  ahead of it (or the hero), which by induction reproduces help/
+  04ev_party.html's own documented "X番目の仲間の動きは、主人公のY回前の
+  移動方向を再現する" with no separate history buffer. Grounded the same
+  "byte layout confirmed by the crate, semantics confirmed by the manual"
+  way StringCondition/BreakEvent were despite most of these operations
+  having 0 real calls of their own (only `Insert` has one, `CE#80`'s
+  `[257, 1600010, 1600009]`, and even that call's own `member`/`graphics`
+  values are variable-held, never resolved statically). Party-member
+  graphics are still drawn as colour blocks, matching the hero's own
+  current fidelity. `StartHeroPartySynchro`/`CancelHeroPartySynchro`
+  (a *different*, fixed-relative-offset following mode),
+  `MakePartyTransparent`/`CancelPartyTransparency`, and
+  `SavePartyMembers`/`LoadPartyMembers` stay unimplemented -- 0 real
+  calls, each needing a new rendering/snapshot concept nothing real
+  confirms a design against. Also newly relevant: `vars.rb`'s own
+  `ValueRef` table already reserves (and rejects) `9180000..9189999` for
+  getting/setting a party member's own position through the ordinary
+  variable-reference mechanism -- that runtime now exists for the first
+  time, but wiring the addressing range up is left for a follow-up. See
+  `docs/adr/0099-wolf-rpg-editor-party-system.md`.
 
 
 ## Tooling

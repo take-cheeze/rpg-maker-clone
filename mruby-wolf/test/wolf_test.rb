@@ -2543,7 +2543,7 @@ end
 
 # ---- Wolf::Interpreter#exec_party (Party(270)) -------------------------------
 
-assert "Wolf::Interpreter's Party(270) Special EraseAllCharacters/WarpPartyToHero are no-ops, matching two of the sample game's own three real Special calls" do
+assert "Wolf::Interpreter's Party(270) Special EraseAllCharacters/WarpPartyToHero still no-op on an empty roster, matching two of the sample game's own three real Special calls" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   commands = [
     wolf_test_cmd(121, [2_000_000, 0, 1, 0xf000], [], 0),
@@ -2556,20 +2556,159 @@ assert "Wolf::Interpreter's Party(270) Special EraseAllCharacters/WarpPartyToHer
   assert_equal 2, store.number(2_000_001)
 end
 
-assert "Wolf::Interpreter#exec_party skips an operation/special-operation/argument-count it does not understand" do
-  # Real sample-game data's own fourth call (CE#80's own Insert, member
-  # 1600010 / graphics variable 1600009) needs an actual party system this
-  # reader does not have at all -- the genuine "still unimplemented" case.
+assert "Wolf::Interpreter#exec_party Insert seeds a new companion at the hero's current position, matching the sample game's own real CE#80 call shape" do
+  # CE#80's own real args ([257, 1600010, 1600009]): options 0x101 decodes
+  # to Insert+graphics_is_variable, member/graphics both variable-held (in
+  # CE#80's own case, this-common-event-self addresses, unresolvable
+  # statically) -- this exercises the identical 3-argument shape with the
+  # flat variable/string banks instead, so no common-event context is
+  # needed just to set the fixture up.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  store.set_number(2_000_000, 1) # member: 1人目
+  store.set_string(3_000_000, "hero_walk.png")
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 5
+  scene.y = 7
+  interp.current_scene = scene
+
+  interp.exec_party(wolf_test_cmd(270, [257, 2_000_000, 3_000_000]))
+
+  assert_equal({ graphic: "hero_walk.png" }, interp.party_members[0])
+  assert_nil interp.party_members[1]
+  assert_equal 5, interp.party_position(0)[:x]
+  assert_equal 7, interp.party_position(0)[:y]
+end
+
+assert "Wolf::Interpreter#exec_party Insert with a literal graphics string shifts later members back" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["first.png"])) # Insert at slot 1, literal
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["second.png"])) # Insert before slot 1 again
+  assert_equal({ graphic: "second.png" }, interp.party_members[0])
+  assert_equal({ graphic: "first.png" }, interp.party_members[1])
+  assert_nil interp.party_members[2]
+end
+
+assert "Wolf::Interpreter#exec_party Remove closes the slot and shifts the rest forward" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"]))
+  interp.exec_party(wolf_test_cmd(270, [1, 2], ["b.png"]))
+  interp.exec_party(wolf_test_cmd(270, [0, 1])) # Remove 1人目 ("a.png")
+  assert_equal({ graphic: "b.png" }, interp.party_members[0])
+  assert_nil interp.party_members[1]
+end
+
+assert "Wolf::Interpreter#exec_party Replace changes a slot's own graphic without moving it" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"]))
+  interp.exec_party(wolf_test_cmd(270, [2, 1], ["a2.png"])) # Replace 1人目
+  assert_equal({ graphic: "a2.png" }, interp.party_members[0])
+end
+
+assert "Wolf::Interpreter#exec_party RemoveGraphic removes every matching slot regardless of position" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["dupe.png"]))
+  interp.exec_party(wolf_test_cmd(270, [1, 2], ["keep.png"]))
+  interp.exec_party(wolf_test_cmd(270, [1, 3], ["dupe.png"]))
+  interp.exec_party(wolf_test_cmd(270, [3], ["dupe.png"])) # RemoveGraphic, literal
+  assert_nil interp.party_members[0]
+  assert_equal({ graphic: "keep.png" }, interp.party_members[1])
+  assert_nil interp.party_members[2]
+end
+
+assert "Wolf::Interpreter#exec_party Special PushCharactersToFront compacts gaps left by Remove/RemoveGraphic" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"]))
+  interp.exec_party(wolf_test_cmd(270, [1, 2], ["gap.png"]))
+  interp.exec_party(wolf_test_cmd(270, [1, 3], ["c.png"]))
+  interp.exec_party(wolf_test_cmd(270, [3], ["gap.png"])) # leaves slot 1 empty
+  push_to_front = 4 | (0 << 4) # Special: PushCharactersToFront
+  interp.exec_party(wolf_test_cmd(270, [push_to_front]))
+  assert_equal({ graphic: "a.png" }, interp.party_members[0])
+  assert_equal({ graphic: "c.png" }, interp.party_members[1])
+  assert_nil interp.party_members[2]
+end
+
+assert "Wolf::Interpreter#exec_party Special WarpPartyToHero resets every occupied slot's own position" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 1
+  scene.y = 1
+  interp.current_scene = scene
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"])) # seeded at (1, 1)
+  scene.x = 9
+  scene.y = 4
+  interp.exec_party(wolf_test_cmd(270, [36])) # Special: WarpPartyToHero
+  assert_equal 9, interp.party_position(0)[:x]
+  assert_equal 4, interp.party_position(0)[:y]
+end
+
+assert "Wolf::Interpreter#exec_party Special EraseAllCharacters clears a real roster, not just an empty one" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"]))
+  interp.exec_party(wolf_test_cmd(270, [20])) # Special: EraseAllCharacters
+  assert_nil interp.party_members[0]
+  assert_nil interp.party_position(0)
+end
+
+assert "Wolf::Interpreter#party_advance chains occupied slots one step behind the slot ahead of them, matching help/04ev_party.html's own \"Y回前\" wording" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 0
+  scene.y = 0
+  interp.current_scene = scene
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"])) # slot 0, seeded at (0, 0)
+  interp.exec_party(wolf_test_cmd(270, [1, 2], ["b.png"])) # slot 1, seeded at (0, 0)
+
+  # The hero steps (0,0) -> (1,0) -> (2,0) -> (3,0); each #party_advance
+  # call passes the position the hero just left.
+  interp.party_advance({ x: 0, y: 0, direction: :down })
+  interp.party_advance({ x: 1, y: 0, direction: :down })
+  interp.party_advance({ x: 2, y: 0, direction: :down })
+
+  assert_equal 2, interp.party_position(0)[:x] # one step behind the hero's own (3,0)
+  assert_equal 1, interp.party_position(1)[:x] # one step behind slot 0's own previous (2,0)
+end
+
+assert "Wolf::Interpreter#party_advance does nothing once TurnOffPartyFollowing runs, and resumes after TurnOnPartyFollowing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"]))
+
+  turn_off = 4 | (0x0a << 4) # Special: TurnOffPartyFollowing
+  interp.exec_party(wolf_test_cmd(270, [turn_off]))
+  interp.party_advance({ x: 5, y: 5, direction: :down })
+  assert_equal 0, interp.party_position(0)[:x] # unchanged -- following is off
+
+  turn_on = 4 | (0x09 << 4) # Special: TurnOnPartyFollowing
+  interp.exec_party(wolf_test_cmd(270, [turn_on]))
+  interp.party_advance({ x: 6, y: 6, direction: :down })
+  assert_equal 6, interp.party_position(0)[:x]
+end
+
+assert "Wolf::Interpreter#exec_party skips an out-of-range member, a still-unimplemented Special sub-operation, and an argument count that does not match the real shape" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
 
-  interp.exec_party(wolf_test_cmd(270, [0x101])) # Insert, graphics_is_variable
+  interp.exec_party(wolf_test_cmd(270, [1, 6], ["a.png"])) # member 6: no 6th companion slot
+  assert_nil interp.party_members[0]
 
-  synchro_start = (4 & 0x0f) | (3 << 4) # Special: StartHeroPartySynchro
+  synchro_start = (4 & 0x0f) | (3 << 4) # Special: StartHeroPartySynchro -- still unimplemented (0 real calls)
   interp.exec_party(wolf_test_cmd(270, [synchro_start]))
 
-  interp.exec_party(wolf_test_cmd(270, []))
+  interp.exec_party(wolf_test_cmd(270, [])) # no operation nibble to even read
   interp.exec_party(wolf_test_cmd(270, [20, 0])) # real Special shape never carries a second argument
+  interp.exec_party(wolf_test_cmd(270, [1, 1])) # Insert with no graphics argument at all
 end
 
 # ---- Wolf::Interpreter#exec_save_load (SaveLoad(220)) -----------------------

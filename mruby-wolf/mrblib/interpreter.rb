@@ -753,6 +753,19 @@ module Wolf
       # immutable data, the same separation mruby-rpg2k's own Game::Character
       # keeps from its own read-only LcfMapEvent.
       @event_positions = {}
+      # Party(270)'s own roster (see #exec_party's own comment): a fixed
+      # PARTY_MAX_MEMBERS slots, index 0 = "1人目" (the manual's own
+      # "Nth companion" wording never counts the hero, so slot 0 is the
+      # first companion trailing the hero, not the hero itself). nil =
+      # no one in that slot; a Hash `{graphic:}` = a real member, whose
+      # own `graphic` can itself be nil ("空白キャラ" -- present, no
+      # walking graphic assigned). @party_positions is the parallel
+      # per-slot runtime `{x:, y:, direction:}` (see #party_advance),
+      # and @party_following mirrors the manual's own documented default
+      # ("パーティの隊列をオンにする（※初期状態）").
+      @party = Array.new(PARTY_MAX_MEMBERS)
+      @party_positions = Array.new(PARTY_MAX_MEMBERS)
+      @party_following = true
       @rng = Rng.new
     end
 
@@ -2050,52 +2063,236 @@ module Wolf
     # Party(270) ("パーティ画像", help/04ev_party.html): changes the
     # walking-graphics/formation of the party -- "プレイヤーキャラクター
     # たちは隊列を組んで歩かせることが可能です...パーティーはプレイヤー
-    # キャラクターを含めて最大6人まで" (up to 6 party members, formation-
-    # walking behind the hero), a whole feature this reader has never
-    # built any part of (no party-member sprites, no roster, no
-    # formation-following movement) -- `Remove`/`Insert`/`Replace`/
-    # `RemoveGraphic` (`options`'s low nibble) all need it and stay
-    # unimplemented, `Party`(270)'s own entry in the "no foundation yet"
-    # camp `BanInput`(126)/`Zoom`(Map target, Effect(290)) already sit in.
+    # キャラクターを含めて最大6人まで" (up to 6 party members total, the
+    # hero plus up to PARTY_MAX_MEMBERS=5 "仲間"/companions walking in
+    # formation behind them). ADR 0088 left this whole feature
+    # unimplemented beyond two Special no-ops, for want of any roster to
+    # act on; this builds that roster (`@party`/`@party_positions`, see
+    # #initialize's own comment) and the operations real data + the
+    # crate's own fully-confirmed field layout (`options`'s low nibble
+    # `Operation`, next nibble `SpecialOperation`, bit 8
+    # `graphics_is_variable`) support without inventing anything the
+    # manual does not already say plainly:
     #
-    # `Special`(the fifth operation, `options`'s own next nibble selecting
-    # one of 11 sub-operations) is different: 3 of this reader's 4 real
-    # calls are `EraseAllCharacters`("キャラクター画像を全消去する",
-    # special_operation 1) and `WarpPartyToHero`("仲間全員を主人公の位置
-    # にワープ", special_operation 2), both fully confirmed by the crate's
-    # own `SpecialOperation` enum *and* the manual's own matching wording
-    # -- and both are genuine no-ops in this reader specifically, the same
-    # "nothing to do without the feature this needs" reasoning `Blank`(0)/
-    # `Checkpoint`(99)/`WaitForMove`(202) already established for a marker
-    # command: erasing party-member images that were never drawn, or
-    # warping party members that do not exist, both trivially already
-    # true. The remaining Special sub-operations (formation-synchro,
-    # transparency, memorize/recall, following on/off) are not implemented
-    # -- unlike Erase/Warp, treating them as no-ops would be a visibly
-    # wrong "did nothing" for a feature that is supposed to change
-    # something observable once a party actually exists, not an honestly-
-    # missing one.
+    # - `Remove`(0)/`Insert`(1)/`Replace`(2) all carry a 1-based "[指定]
+    #   人目" `member` argument (`cmd.arg(1)`, always counting companions
+    #   only -- never the hero, per the manual's own "仲間" framing
+    #   throughout) resolved through `#party_slot_index`; `RemoveGraphic`
+    #   (3) has no `member` field at all (it matches every slot by
+    #   graphic instead). `Insert`/`Replace` also carry a graphics field,
+    #   `cmd.arg(2)` (`var_store.string`) if `graphics_is_variable`,
+    #   otherwise `cmd.strings.first` -- the same "value or variable-held
+    #   string" convention Picture(150)'s own file argument already uses.
+    #   All four are confirmed structurally by the crate's own `parse`
+    #   (`member` present only for `Remove`/`Insert`/`Replace`,
+    #   `graphics_variable` present only when the bit is set) even though
+    #   only `Insert` has a real call in this sample game (CE#80's
+    #   `[257, 1600010, 1600009]` -- `options` 0x101 decodes to
+    #   `Insert`+`graphics_is_variable`, `member`/`graphics` both
+    #   variable-held so their actual runtime values were never resolved
+    #   statically); the manual's own description of each ("[指定]人目の
+    #   キャラをパーティーから削除", "[指定]人目の前に…挿入", "[指定]人目
+    #   の画像を別の画像に変更", "指定した画像のキャラクターを全て削除")
+    #   is unambiguous enough to implement the other three from the same
+    #   confirmed layout, the same "byte layout confirmed independently,
+    #   semantics confirmed by the manual" standard StringCondition(111)/
+    #   BreakEvent(172) already used with 0 or few real calls of their
+    #   own.
+    # - `Special`(4)'s own 11 sub-operations: `EraseAllCharacters`(1)/
+    #   `WarpPartyToHero`(2) (3 of this reader's 4 real Party calls,
+    #   `CE#80`/`CE#39`) now act on the real roster (clearing it outright,
+    #   or resetting every occupied slot's own position to the hero's
+    #   current one) instead of ADR 0088's own "nothing existed to
+    #   act on anyway" no-ops. `PushCharactersToFront`(0) ("空白キャラが
+    #   いた場合、その間を詰めます") compacts blank/removed gaps forward.
+    #   `TurnOnPartyFollowing`(9)/`TurnOffPartyFollowing`(10) toggle
+    #   `@party_following` (see #party_advance), matching "隊列オン" as
+    #   the manual's own stated default. `StartHeroPartySynchro`(3)/
+    #   `CancelHeroPartySynchro`(4) (a *different* following mode --
+    #   "現在の位置関係を保ったまま移動させる", preserving each member's
+    #   own fixed relative offset rather than trailing through position
+    #   history), `MakePartyTransparent`(5)/`CancelPartyTransparency`(6)
+    #   and `SavePartyMembers`(7)/`LoadPartyMembers`(8) all still have 0
+    #   real calls *and* would each need a genuinely new rendering/
+    #   snapshot concept with no real-data shape to confirm a design
+    #   against -- left unimplemented, the same "would be a visibly wrong
+    #   'did nothing' once a party exists" line ADR 0088 already drew.
+    #
+    # Formation-following movement itself (#party_advance, called from
+    # WolfRPG::MapScene#move_hero) is a plain follow-the-leader chain:
+    # help/04ev_party.html's own "X番目の仲間の動きは、主人公のY回前の
+    # 移動方向を再現する" falls out of shifting each occupied slot into
+    # the position the slot ahead of it (or the hero, for slot 0) held
+    # *before* this step, by induction, with no separate history-depth
+    # buffer needed. Party-member graphics are drawn the same colour-block
+    # way the hero itself still is (ADR 0064's own real-ChipSet follow-up,
+    # ADR 0093, only ever covered map tiles, not character sprites) --
+    # WolfRPG::MapScene's own #build_party_sprite/#update_party.
+    PARTY_MAX_MEMBERS = 5
+    PARTY_OP_REMOVE = 0
+    PARTY_OP_INSERT = 1
+    PARTY_OP_REPLACE = 2
+    PARTY_OP_REMOVE_GRAPHIC = 3
     PARTY_OP_SPECIAL = 4
+    PARTY_SPECIAL_PUSH_TO_FRONT = 0
     PARTY_SPECIAL_ERASE_ALL = 1
     PARTY_SPECIAL_WARP_TO_HERO = 2
+    PARTY_SPECIAL_TURN_ON_FOLLOWING = 9
+    PARTY_SPECIAL_TURN_OFF_FOLLOWING = 10
+
+    # WolfRPG::MapScene's own read-only view of the roster for rendering:
+    # index 0..PARTY_MAX_MEMBERS-1 = companion 1..PARTY_MAX_MEMBERS, nil
+    # where no member occupies that slot.
+    def party_members
+      @party
+    end
+
+    # Slot `i`'s own live `{x:, y:, direction:}` (see #party_advance), or
+    # nil if it has never been given one yet (an empty slot, or one
+    # #exec_party_insert only just seeded this same frame).
+    def party_position(i)
+      @party_positions[i]
+    end
+
+    # WolfRPG::MapScene calls this immediately after the hero's own tile
+    # position actually changes in #move_hero, passing the position it
+    # just left. See this method group's own header comment for why a
+    # plain one-step chain reproduces "Y moves ago" with no extra state:
+    # slot 0 receives `hero_prev_pos` outright; slot 1 receives whatever
+    # slot 0 held *before* this call (i.e. two hero-steps back), and so
+    # on. An empty slot has no position of its own to receive, but does
+    # not interrupt the chain either -- the value that would have gone to
+    # it simply carries through to the next occupied slot, so a gap left
+    # by Remove/RemoveGraphic does not "swallow" a step; only the
+    # explicit PushCharactersToFront operation ever actually closes one.
+    def party_advance(hero_prev_pos)
+      return unless @party_following
+      carry = hero_prev_pos
+      (0...PARTY_MAX_MEMBERS).each do |i|
+        next unless @party[i]
+        previous = @party_positions[i] || hero_prev_pos
+        @party_positions[i] = carry
+        carry = previous
+      end
+    end
 
     def exec_party(cmd)
-      unless cmd.args.size == 1
-        unimplemented("Party(270) with #{cmd.args.size} arguments")
-        return
-      end
       options = cmd.arg(0)
-      operation = options & 0x0f
-      unless operation == PARTY_OP_SPECIAL
-        unimplemented("Party(270) operation #{operation}")
+      case options & 0x0f
+      when PARTY_OP_REMOVE then exec_party_remove(cmd)
+      when PARTY_OP_INSERT then exec_party_insert(cmd, options)
+      when PARTY_OP_REPLACE then exec_party_replace(cmd, options)
+      when PARTY_OP_REMOVE_GRAPHIC then exec_party_remove_graphic(cmd, options)
+      when PARTY_OP_SPECIAL then exec_party_special(cmd, options)
+      else unimplemented("Party(270) operation #{options & 0x0f}")
+      end
+    end
+
+    # 1-based "[指定]人目" -> a 0-based `@party`/`@party_positions` index,
+    # or nil (already logged) if it names no real companion slot.
+    def party_slot_index(raw)
+      n = var_store.number(raw)
+      return n - 1 if n >= 1 && n <= PARTY_MAX_MEMBERS
+      unimplemented("Party(270) member #{n} outside 1..#{PARTY_MAX_MEMBERS}")
+      nil
+    end
+
+    # `Insert`/`Replace`'s shared graphics-argument resolution, at
+    # `cmd.arg(index)` (a string-variable address) if `graphics_is_variable`,
+    # otherwise the command's own literal string constant -- the same
+    # "value or variable-held string" convention Picture(150)'s own file
+    # argument already uses.
+    def party_graphics_arg(cmd, variable, index)
+      variable ? var_store.string(cmd.arg(index)) : (cmd.strings.first || "")
+    end
+
+    def exec_party_remove(cmd)
+      unless cmd.args.size == 2
+        unimplemented("Party(270) Remove with #{cmd.args.size} arguments")
         return
       end
-      special_operation = (options >> 4) & 0x0f
-      case special_operation
-      when PARTY_SPECIAL_ERASE_ALL, PARTY_SPECIAL_WARP_TO_HERO
-        nil
+      slot = party_slot_index(cmd.arg(1))
+      return unless slot
+      slot.upto(PARTY_MAX_MEMBERS - 2) do |i|
+        @party[i] = @party[i + 1]
+        @party_positions[i] = @party_positions[i + 1]
+      end
+      @party[PARTY_MAX_MEMBERS - 1] = nil
+      @party_positions[PARTY_MAX_MEMBERS - 1] = nil
+    end
+
+    def exec_party_insert(cmd, options)
+      variable = (options >> 8) & 1 != 0
+      expected = variable ? 3 : 2
+      unless cmd.args.size == expected
+        unimplemented("Party(270) Insert with #{cmd.args.size} arguments")
+        return
+      end
+      slot = party_slot_index(cmd.arg(1))
+      return unless slot
+      graphic = party_graphics_arg(cmd, variable, 2)
+      (PARTY_MAX_MEMBERS - 1).downto(slot + 1) do |i|
+        @party[i] = @party[i - 1]
+        @party_positions[i] = @party_positions[i - 1]
+      end
+      @party[slot] = { graphic: graphic }
+      @party_positions[slot] = current_scene ? current_scene.hero_pos.dup : { x: 0, y: 0, direction: :down }
+    end
+
+    def exec_party_replace(cmd, options)
+      variable = (options >> 8) & 1 != 0
+      expected = variable ? 3 : 2
+      unless cmd.args.size == expected
+        unimplemented("Party(270) Replace with #{cmd.args.size} arguments")
+        return
+      end
+      slot = party_slot_index(cmd.arg(1))
+      return unless slot
+      graphic = party_graphics_arg(cmd, variable, 2)
+      @party[slot] = { graphic: graphic }
+      @party_positions[slot] ||= current_scene ? current_scene.hero_pos.dup : { x: 0, y: 0, direction: :down }
+    end
+
+    def exec_party_remove_graphic(cmd, options)
+      variable = (options >> 8) & 1 != 0
+      expected = variable ? 2 : 1
+      unless cmd.args.size == expected
+        unimplemented("Party(270) RemoveGraphic with #{cmd.args.size} arguments")
+        return
+      end
+      graphic = party_graphics_arg(cmd, variable, 1)
+      (0...PARTY_MAX_MEMBERS).each do |i|
+        next unless @party[i] && @party[i][:graphic] == graphic
+        @party[i] = nil
+        @party_positions[i] = nil
+      end
+    end
+
+    def exec_party_special(cmd, options)
+      unless cmd.args.size == 1
+        unimplemented("Party(270) Special with #{cmd.args.size} arguments")
+        return
+      end
+      case (options >> 4) & 0x0f
+      when PARTY_SPECIAL_PUSH_TO_FRONT
+        present = (0...PARTY_MAX_MEMBERS).select { |i| @party[i] }
+        new_party = Array.new(PARTY_MAX_MEMBERS)
+        new_positions = Array.new(PARTY_MAX_MEMBERS)
+        present.each_with_index { |old_i, new_i| new_party[new_i] = @party[old_i]; new_positions[new_i] = @party_positions[old_i] }
+        @party = new_party
+        @party_positions = new_positions
+      when PARTY_SPECIAL_ERASE_ALL
+        @party = Array.new(PARTY_MAX_MEMBERS)
+        @party_positions = Array.new(PARTY_MAX_MEMBERS)
+      when PARTY_SPECIAL_WARP_TO_HERO
+        hero = current_scene&.hero_pos
+        (0...PARTY_MAX_MEMBERS).each { |i| @party_positions[i] = hero.dup if @party[i] && hero }
+      when PARTY_SPECIAL_TURN_ON_FOLLOWING
+        @party_following = true
+      when PARTY_SPECIAL_TURN_OFF_FOLLOWING
+        @party_following = false
       else
-        unimplemented("Party(270) special operation #{special_operation}")
+        unimplemented("Party(270) special operation #{(options >> 4) & 0x0f}")
       end
     end
 

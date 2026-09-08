@@ -161,6 +161,12 @@ class WolfRPG
     GRID = RGSS::Color.new(0, 0, 0, 40)
     HERO = RGSS::Color.new(240, 220, 120, 255)
     EVENT_MARKER = RGSS::Color.new(160, 96, 200, 255)
+    # Party(270)'s own roster (Wolf::Interpreter#party_members): a
+    # smaller, dimmer block than the hero's own so a formation is
+    # visually distinguishable from a line of near-identical events, the
+    # same colour-block fidelity level the hero itself is still at (ADR
+    # 0093's real-ChipSet work only ever covered map tiles).
+    PARTY_MEMBER = RGSS::Color.new(220, 170, 60, 255)
     SHAPE_COLOR = RGSS::Color.new(255, 255, 255, 255)
     SHAPE_SQUARE_FRAME_THICKNESS = 2
 
@@ -178,6 +184,7 @@ class WolfRPG
       @facing = :down
       @interpreter = interpreter
       @event_sprites = {}
+      @party_sprites = []
       @pictures = {}
       @tileset = project.tilesets[map.tileset_id]
       # Loaded once up front (like @tileset itself), not per tile: #draw_tiles
@@ -227,6 +234,7 @@ class WolfRPG
         move_hero
         check_confirm
       end
+      update_party
       update_camera
       update_tone
       # ChangeColor(151)'s own "flash" case (#change_color) sets
@@ -447,6 +455,7 @@ class WolfRPG
     # resources.
     def dispose
       @event_sprites.each_value(&:dispose)
+      @party_sprites.compact.each(&:dispose)
       @pictures.each_value { |entry| entry[:sprite].dispose }
       @hero_sprite.dispose
       @hero_bitmap.dispose
@@ -983,8 +992,15 @@ class WolfRPG
         @interpreter.trigger_touch(event)
         return unless page.slip_through?
       end
+      prev_pos = hero_pos
       @x = nx
       @y = ny
+      # Party(270)'s own formation-following (Wolf::Interpreter#party_advance):
+      # fires on every real hero step, not just the ones a party actually
+      # exists for -- #party_advance itself is a no-op with an empty
+      # roster, the same "nothing to do without the feature this needs"
+      # shape ADR 0088 already established for Erase/WarpToHero.
+      @interpreter.party_advance(prev_pos)
     end
 
     # Confirm-trigger pages: fire on standing on a walk-through event (per
@@ -1026,6 +1042,34 @@ class WolfRPG
     def build_event_sprite
       bitmap = RGSS::Bitmap.new(@tile, @tile)
       bitmap.fill_rect(2, 2, [@tile - 4, 1].max, [@tile - 4, 1].max, EVENT_MARKER)
+      sprite = RGSS::Sprite.new(@viewport)
+      sprite.bitmap = bitmap
+      sprite
+    end
+
+    # Party(270)'s own roster, drawn the same lazily-built-per-slot way
+    # #update_events draws map events -- Wolf::Interpreter#party_members/
+    # #party_position are this scene's only view into the roster, kept
+    # there (not here) since #exec_party's own operations need to update
+    # it whether or not a scene/MapScene exists at all yet (the CRuby
+    # test harness's own Interpreter-only fixtures included).
+    def update_party
+      members = @interpreter.party_members
+      members.each_index do |i|
+        sprite = (@party_sprites[i] ||= build_party_sprite)
+        member = members[i]
+        pos = member && @interpreter.party_position(i)
+        next sprite.visible = false unless pos
+        sprite.x = pos[:x] * @tile
+        sprite.y = pos[:y] * @tile
+        sprite.z = 1
+        sprite.visible = true
+      end
+    end
+
+    def build_party_sprite
+      bitmap = RGSS::Bitmap.new(@tile, @tile)
+      bitmap.fill_rect(4, 4, [@tile - 8, 1].max, [@tile - 8, 1].max, PARTY_MEMBER)
       sprite = RGSS::Sprite.new(@viewport)
       sprite.bitmap = bitmap
       sprite
