@@ -75,11 +75,11 @@ void build_ui(const char* status) {
 
   g_status_label = lv_label_create(scr);
   lv_label_set_text(g_status_label, status);
-  lv_obj_set_style_text_color(
-      g_status_label,
-      g_result == kResultPass ? lv_palette_main(LV_PALETTE_GREEN)
-                              : lv_palette_main(LV_PALETTE_RED),
-      0);
+  lv_obj_set_style_text_color(g_status_label,
+                              g_result == kResultPass
+                                  ? lv_palette_main(LV_PALETTE_GREEN)
+                                  : lv_palette_main(LV_PALETTE_RED),
+                              0);
   lv_obj_align(g_status_label, LV_ALIGN_CENTER, 0, 20);
 }
 

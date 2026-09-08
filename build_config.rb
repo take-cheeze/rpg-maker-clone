@@ -530,6 +530,24 @@ if wio
       # makes for this board. Still nowhere near enough on its own to fit --
       # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
       t.flags << '-Os'
+      # Neither this rake-driven compile nor mruby's own gcc.rake defaults set
+      # these, so every mrbgem's whole .text/.data/.bss lands in one section
+      # per object file -- env:wio_rgss_boot's real link already passes
+      # `-Wl,--gc-sections` (PlatformIO's own Arduino/LVGL build already
+      # needs it for the same reason), but that can only drop a section
+      # entirely, so one live symbol anywhere in a .o keeps every other
+      # unused function and global data table in that same file too. Splitting
+      # each function/global into its own section lets --gc-sections actually
+      # prune at that granularity instead. Confirmed real, not just reasoned
+      # about in the abstract: a real env:wio_rgss_boot link's own flash
+      # overflow dropped by 196,012 bytes from this alone, and
+      # mruby-rgss/src/iterm.cxx and sixel.cxx (dead PNG/sixel-encoding code
+      # on wio -- see terminal.cxx's own file comment) are now provably
+      # absent from the linked image's own map file, closing
+      # docs/adr/0103's own flagged gap without ever needing an explicit
+      # PSP_BUILD/WIO_TERMINAL guard on either file. See
+      # docs/adr/0105-wio-flash-shrink-sections-and-font-subsetting.md.
+      t.flags << '-ffunction-sections' << '-fdata-sections'
       # Bare-metal newlib falls through mruby's string.c to a 1 MiB default cap
       # (see below); game data (maps/images loaded as strings, and whole packed
       # archives read in one shot by RGSSAD.open) can exceed that many times
