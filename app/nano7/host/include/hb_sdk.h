@@ -14,23 +14,23 @@
 #ifndef HB_SDK_H_
 #define HB_SDK_H_
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /* ---- Screen geometry ---- */
 
-#define HB_SCREEN_W   240
-#define HB_SCREEN_H   432
+#define HB_SCREEN_W 240
+#define HB_SCREEN_H 432
 
 /* ---- Color ---- */
 
-typedef uint32_t hb_color_t;   /* 0x00RRGGBB, alpha unused */
+typedef uint32_t hb_color_t; /* 0x00RRGGBB, alpha unused */
 
 #define HB_RGB(r, g, b) \
-    ((((uint32_t)(r)) << 16) | (((uint32_t)(g)) << 8) | (uint32_t)(b))
+  ((((uint32_t)(r)) << 16) | (((uint32_t)(g)) << 8) | (uint32_t)(b))
 
-#define HB_BLACK     HB_RGB(0x00, 0x00, 0x00)
-#define HB_WHITE     HB_RGB(0xFF, 0xFF, 0xFF)
+#define HB_BLACK HB_RGB(0x00, 0x00, 0x00)
+#define HB_WHITE HB_RGB(0xFF, 0xFF, 0xFF)
 
 /* ---- ASCII text rendering (hb_font.c on the real device) ----
  *
@@ -39,14 +39,18 @@ typedef uint32_t hb_color_t;   /* 0x00RRGGBB, alpha unused */
  * 8x8 glyph bitmap font in NanoApps' sdk/generated/hb_glyphs.c) -- it only
  * ever draws this app's "no map to walk" error screen, never the
  * map-rendering path this harness exists to check. See docs/adr/0102. */
-void hb_draw_str(int16_t x, int16_t y, const char *s, uint8_t scale,
-                 hb_color_t fg, hb_color_t bg);
+void hb_draw_str(int16_t x,
+                 int16_t y,
+                 const char* s,
+                 uint8_t scale,
+                 hb_color_t fg,
+                 hb_color_t bg);
 
 /* ---- Filesystem (hb_fs.c on the real device) ---- */
 
 /* Read up to `max_size` bytes from `path` into `buf`. Returns the
    number of bytes actually read (0 if file is missing or read failed). */
-uint32_t hb_fs_read(const char *path, void *buf, uint32_t max_size);
+uint32_t hb_fs_read(const char* path, void* buf, uint32_t max_size);
 
 /* ---- Uptime (hb_time.c on the real device) ---- */
 

@@ -77,8 +77,9 @@ the register boundary because that is where this device's real boundary is.
 
 - **`app/nano7/host/include/{hb_surface_input,hb_raw_surface,hb_sdk}.h`** —
   drop-in headers matching upstream NanoApps
-  (`nfzerox/NanoApps@80d439d`) byte-for-byte for the two small, stable
-  headers this app includes in full (`hb_surface_input.h`,
+  (`nfzerox/NanoApps@80d439d`) declaration-for-declaration (reformatted to
+  this repo's own clang-format style, not kept byte-identical) for the two
+  small, stable headers this app includes in full (`hb_surface_input.h`,
   `hb_raw_surface.h`), and a **verified subset** of `hb_sdk.h` covering only
   what `rpg2k_walk.c` and `rpg2k_walk_core.c` actually call
   (`HB_RGB`/`HB_BLACK`/`HB_WHITE`, `hb_draw_str`, `hb_fs_read`,
