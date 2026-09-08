@@ -37,14 +37,18 @@ module Wolf
   #     layer count per map, and every event command carries a trailing byte
   #     array.
   #
-  # Pro-edition "protected" data (byte 1 == 0x50) is AES-encrypted, keyed
-  # entirely from bytes the protected file itself already carries (no
-  # external secret, at any editor version -- see wolf_crypt_pro.rb's file
-  # header and docs/adr/0095-wolf-rpg-editor-pro-protected.md). The v3.5
-  # scheme (what a modern editor release, e.g. this repo's own bundled
-  # sample game, would use) is decrypted for real; the older v3.1/v3.3
-  # sub-schemes are detected and refused with a clear, version-specific
-  # error rather than mis-parsed or guessed at.
+  # Pro-edition "protected" data (byte 1 == 0x50) is AES/ChaCha-encrypted;
+  # detected and refused with a clear error rather than decrypted. This
+  # reader deliberately does not decrypt Pro-protected data: the official
+  # WOLF RPG Editor terms of use (silversecond.com/WolfRPGEditor/
+  # Download.shtml, "9.2. 暗号化データ（「.wolf」ファイル）の解析・解凍、
+  # ならびに情報共有は禁止です" -- analysis/decryption of encrypted ".wolf"
+  # data is prohibited) explicitly excludes Pro-protected files from the
+  # format-analysis permission its own 9.1 otherwise grants Game.dat/
+  # CommonEvent.dat/TileSetData/the Database.dat and MapTree.dat families/
+  # .mps maps. See docs/adr/0095-wolf-rpg-editor-pro-protected.md for the
+  # history (a real, working decryptor was briefly shipped here, then
+  # removed once this term was found).
   UTF8_MARK = 0x55
 
   class Error < StandardError; end
@@ -247,27 +251,26 @@ module Wolf
     end
 
     # Pro-edition protection (3.1+) marks a file with 0x50 in its second
-    # byte. Actual decryption (v3.5) and the version-specific refusals
-    # (v3.1/v3.3) live in wolf_crypt_pro.rb's `.decrypt_protected`, loaded
-    # right after this file; `protected?` itself stays here since it is
-    # cheap, has no dependency on that file, and is useful standalone (the
-    # unit tests call it directly).
+    # byte. Refused up front, with a message that says so -- see the file
+    # header's note on why this reader does not decrypt Pro-protected data.
     def self.protected?(data)
       data.bytesize > 5 && data.getbyte(1) == 0x50
     end
+
+    def self.refuse_protected!(data, what)
+      return unless protected?(data)
+      raise Error, "#{what} is Pro-protected (byte 1 == 0x50); protected games are not supported"
+    end
   end
 
-  # Peel the (optionally v2- or Pro-encrypted) envelope off a BasicData file:
-  # returns [reader, encrypted]. A plain (or now-decrypted) file starts with
-  # a 0 indicator byte followed by its magic; the reader is left just past
-  # the indicator so the caller can verify the magic and learn the string
-  # encoding. A v2-encrypted file has no magic at all (it is v2, so
-  # Shift_JIS), and the reader starts at its first field. `file_type` (one
-  # of `Crypt::FileType`, or nil for a caller with no Pro-protection story --
-  # only `Map` today) is only consulted when `data` is actually
-  # Pro-protected; see `Crypt.decrypt_protected`.
-  def self.open_envelope(data, seeds, what, file_type: nil)
-    data = Crypt.decrypt_protected(data, what, file_type)
+  # Peel the (optionally v2-encrypted) envelope off a BasicData file: returns
+  # [reader, encrypted]. A plain file starts with a 0 indicator byte followed
+  # by its magic; the reader is left just past the indicator so the caller can
+  # verify the magic and learn the string encoding. An encrypted file has no
+  # magic at all (it is v2, so Shift_JIS), and the reader starts at its first
+  # field.
+  def self.open_envelope(data, seeds, what)
+    Crypt.refuse_protected!(data, what)
     indicator = data.getbyte(0)
     raise Error, "#{what}: empty file" if indicator.nil?
     if indicator == 0 || seeds.nil?
