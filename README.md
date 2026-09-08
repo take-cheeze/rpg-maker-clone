@@ -774,6 +774,12 @@
   numpad-convention facing; pixel height, shadow number, pixel offset and
   character-chip image stay unimplemented. See
   [`docs/adr/0100-wolf-rpg-editor-position-addressing.md`](docs/adr/0100-wolf-rpg-editor-position-addressing.md)
+- **SetMoveRoute/Effect(290)'s own party-member target.** `SetMoveRoute`
+  (201)/`SetVariableEx`(124)'s `-3..-7` target band now resolves to a real
+  companion's own position instead of a no-op; `Effect`(290)'s Character
+  target resolves one too, but still cannot flash/shake it — the renderer
+  has no sprite lookup for a party member yet. See
+  [`docs/adr/0101-wolf-rpg-editor-move-route-party-target.md`](docs/adr/0101-wolf-rpg-editor-move-route-party-target.md)
 - **Per-map event position keying.** A revisited map (`Teleport`(130) or
   `SaveLoad`(220)'s own Load) now correctly finds its own events exactly
   where they were left, instead of colliding with a different map's

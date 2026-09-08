@@ -114,8 +114,7 @@ module Wolf
     # Command.hpp names it Party; the wolfrpg-map-parser crate's own
     # `party_graphics_command`, fully confirmed field-for-field including
     # its own `SpecialOperation` sub-enum). See #exec_party's own comment
-    # for what real data needs versus what still needs an unbuilt party
-    # system.
+    # for the roster this now maintains and what still stays unimplemented.
     C_PARTY = 270
     C_SET_MOVE_ROUTE = 201
     # "→完了までウェイト" (04ev_control.html: "does not execute the next
@@ -1425,11 +1424,16 @@ module Wolf
 
     # SetMoveRoute(201)'s own "動作指定する対象" target encoding
     # (help/04ev_movesettingB.html: ">=0 the event with that id, -1 this
-    # event, -2 the hero (party leader), -3..-7 party member 1-5"). No party
-    # system exists yet, so a party-member target is logged and skipped the
-    # same as any other not-yet-modeled command.
+    # event, -2 the hero (party leader), -3..-7 party member 1-5"). -3..-7
+    # maps onto Party(270)'s own 1-based "1人目"-style companion numbering
+    # (ADR 0099) the same direction #resolve_character_pos already resolves
+    # it: target -3 is companion 1 (`#party_position(0)`), ..., -7 is
+    # companion 5 (`#party_position(4)`) -- `#party_position`'s own arg is
+    # 0-based, so `-target - 3` (not `#exec_party`'s own 1-based "member").
     ROUTE_TARGET_SELF = -1
     ROUTE_TARGET_HERO = -2
+    ROUTE_TARGET_PARTY_MIN = -7
+    ROUTE_TARGET_PARTY_MAX = -3
 
     # How far (Manhattan distance) MoveTowardHero/Page#move_type's own
     # "TowardHero" will path before falling back to a random step, per
@@ -1483,19 +1487,27 @@ module Wolf
       return [nil, nil] unless pos
       # #exec_set_move_route's own generic "target N" message covers a
       # dangling event id, a "this event" outside any map event's own
-      # context, or a party member (-3..-7, no party system exists yet) --
-      # #resolve_character_pos returns nil pos for all three.
+      # context, or a party slot with no member in it -- #resolve_
+      # character_pos returns nil pos for all three. A party member's own
+      # `pos` (from `#party_position`) is already the live stored Hash, the
+      # same as a map event's own `#event_position` -- mutating it in place
+      # already moves that member, no writeback needed; only the hero's own
+      # `#hero_pos` returns a fresh Hash every call and needs one.
       writeback = target == ROUTE_TARGET_HERO ? ->(p) { current_scene.hero_pos = p } : nil
       [pos, writeback]
     end
 
     # Shared by SetMoveRoute(201) and SetVariableEx(124)'s own Character
     # mode: help/04ev_movesettingB.html's documented target convention
-    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member --
-    # no party system exists yet) resolved to a `{x:, y:, direction:}` pos
-    # hash and, when it names a real map event (not the hero), that event
-    # itself (for SetVariableEx's own EventId field). `[nil, nil]` when
-    # nothing resolves.
+    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member,
+    # `ROUTE_TARGET_PARTY_MIN`..`ROUTE_TARGET_PARTY_MAX`'s own comment)
+    # resolved to a `{x:, y:, direction:}` pos hash and, when it names a
+    # real map event (not the hero or a party member), that event itself
+    # (for SetVariableEx's own EventId field). `[nil, nil]` when nothing
+    # resolves -- an out-of-range/dangling event id, "this event" outside
+    # any map event's own context, or a party slot with no member in it
+    # (`#party_position` already returns nil for that, the same as a
+    # roster slot #exec_party's own operations never occupied).
     def resolve_character_pos(target)
       if target >= 0
         event = current_map && current_map.events.find { |e| e.id == target }
@@ -1509,6 +1521,8 @@ module Wolf
       elsif target == ROUTE_TARGET_HERO
         return [nil, nil] unless current_scene
         [current_scene.hero_pos, nil]
+      elsif target >= ROUTE_TARGET_PARTY_MIN && target <= ROUTE_TARGET_PARTY_MAX
+        [party_position(-target - 3), nil]
       else
         [nil, nil]
       end
@@ -1976,12 +1990,17 @@ module Wolf
 
     # Character-target Effect(290): `arg(2)` reuses SetMoveRoute(201)/
     # SetVariableEx(124)'s own already-cross-confirmed target convention
-    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member --
-    # no party system exists, logged and skipped the same way
-    # `#resolve_route_target` already does). `arg(3)` ("range" in the
-    # Picture target's own field layout) is always 0 in real data -- there
-    # is only ever one character per call, unlike Picture's own contiguous
-    # number range -- so it is read but otherwise unused.
+    # (>=0 an event id, -1 this event, -2 the hero, -3..-7 a party member).
+    # `#resolve_character_pos` itself resolves a party-member target now
+    # (ADR 0099's own roster), but `sprite_key` here still only ever names
+    # `:hero` or a real map event's own id -- `WolfRPG::MapScene#character_
+    # sprite` (this command's own rendering seam) has no equivalent lookup
+    # for a party slot, so a party-member target still logs and skips, for
+    # a narrower, still-true reason than "no party system exists" (0 real
+    # calls target one anyway). `arg(3)` ("range" in the Picture target's
+    # own field layout) is always 0 in real data -- there is only ever one
+    # character per call, unlike Picture's own contiguous number range --
+    # so it is read but otherwise unused.
     def exec_effect_character(cmd, effect_type)
       target = var_store.number(cmd.arg(2))
       sprite_key =
