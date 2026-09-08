@@ -41,4 +41,27 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
       #{dir}/mrblib/scene/map_viewer.rb
     ]
   end
+
+  # A live fight's own bytecode -- Game::Battle (the headless combat model,
+  # split into its own file for exactly this exclusion), Scene::Battle and
+  # RPG2k3::Scene::Battle -- is 180,368 bytes on its own (docs/adr/0107's
+  # own real measurement: three separate mrbc compiles, summed), a sixth of
+  # the Wio Terminal's entire flash budget, for a feature most of any given
+  # session never reaches (a save/load/menu-only play session, or this
+  # port's own current boot-test firmware, which loads no game data and so
+  # starts no fight at all). Unlike the debug-tools trim above, this is
+  # *wio-only*, not psp -- PSP has real flash/storage headroom this board
+  # does not, and dropping these files here does not yet come with any way
+  # to get them back: no runtime loader reads them from the SD card the way
+  # ADR 0007's still-unbuilt P3 asset-streaming work would need to, so a
+  # wio build with this exclusion cannot actually start a fight today. This
+  # trim exists to prove the split is real and measure its actual cost, not
+  # to claim battle done as a wio feature -- see the ADR for what remains.
+  if build.name == 'wio'
+    spec.rbfiles -= %W[
+      #{dir}/mrblib/game/battle.rb
+      #{dir}/mrblib/scene/battle.rb
+      #{dir}/mrblib/scene/battle_rpg2k3.rb
+    ]
+  end
 end
