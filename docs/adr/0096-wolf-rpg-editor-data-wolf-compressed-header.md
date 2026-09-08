@@ -96,36 +96,68 @@ implementing decompression (see "Consequences"):
 - **This specific real game still cannot be opened**, and the reason is a
   separate, deeper gap than table compression: after decompression support
   landed, "About a Certain Witch"'s `DARC_HEAD` fields past `HeadSize`
-  (`DataStartAddress`, `FileNameTableStartAddress`, ..., `Flags` itself) come
-  back as noise under every `KNOWN_KEYS` candidate -- and, per this reader's
-  and WolfDec's own shared assumption, `DARC_HEAD` is supposed to need no key
-  at all. Its shipped `Game.exe` bundles debug strings naming
+  (`DataStartAddress`, `FileNameTableStartAddress`, `FileTableStartAddress`,
+  `DirectoryTableStartAddress`) come back as implausibly huge 64-bit values --
+  and, per this reader's and WolfDec's own shared assumption, those fields are
+  supposed to need no key at all. **This is not isolated to one game**: the
+  two other freem.ne.jp candidates found alongside it ("He_reitis",
+  「グリーンフェアリーの緑化活動」, different creators, different file sizes)
+  were downloaded and tried too, and hit the exact same wall -- strong
+  evidence this is now the standard shape of a current WOLF RPG Editor
+  release, not a one-off. Its shipped `Game.exe` bundles debug strings naming
   `DxArchive_WOLF_MOD.cpp`/`DxArchive_WOLF_MOD_security.cpp` -- a
-  WOLF-RPG-Editor-specific *modified* DxArchive, not the stock DxLib one
-  `WolfDec`'s vendored source (and so this reader) models. Cross-referencing
-  the actively-maintained [UberWolf](https://github.com/Sinflower/UberWolf)
-  project (WolfDec's own successor) confirms this is real and already known
-  in the community: its `UberWolfLib/WolfX` module exists specifically to
-  defeat this newer scheme, via a large precomputed magic-value lookup table
-  (`WolfXDecryptCollection`, indexed by up to 10,000 x 1,000,000 candidate
-  values, validated by an embedded checksum) built from extensive reverse
-  engineering -- not a documented algorithm this session could cross-validate
-  the way `Huffman_Decode`/`DXArchive::Decode` above were. Porting it without
-  being able to verify it against a compiled reference would risk exactly the
-  "silently wrong crypto" failure mode this project's own WOLF work has
-  consistently refused to ship (see ADR 0095's own methodology) -- so it is
-  named here as a concrete, currently-out-of-scope gap rather than attempted.
-  `Wolf::DataWolf.new` reports this case with a clear, specific error instead
-  of a raw IO exception or (worse) silently wrong data.
-- **What this means for "can this reader boot a real game"**: the two other
-  freem.ne.jp candidates found alongside this one ("He_reitis",
-  「グリーンフェアリーの緑化活動」) were not tried and may or may not hit the
-  same WolfX-modified archiver -- newer editor releases plausibly all ship
-  it, in which case *any* packed real release needs the same unported WolfX
-  scheme, while a loose (unpacked, in-editor-working-tree) real project would
-  be unaffected (this gap is specific to `Data.wolf`, not the data format
-  itself). This is a materially different, better-understood blocker than
-  the "permanently out of reach" framing this session's own earlier (later
-  corrected, see ADR 0095) assessment of Pro-protected data used: there is a
-  known, actively-maintained reference implementation, just not one this
-  session could responsibly port from a lossy summary alone.
+  WOLF-RPG-Editor-specific *modified* DxArchive.
+  - **What this session ruled out, with a concrete lead that does not pan
+    out.** `Flags`' own upper 16 bits (`Flags >> 16`) turn out to be a real,
+    meaningful "cryptVersion" selector -- confirmed via the actively-
+    maintained [UberWolf](https://github.com/Sinflower/UberWolf) project's
+    current `WolfDec.cpp` (`getCryptVersion`), fetched and read directly
+    (not through a lossy summarizer) via `raw.githubusercontent.com`. All
+    three real games here decode that field to exactly `350`, matching a
+    named `"Wolf RPG v3.50"` entry (with its own known 51-byte static key)
+    in UberWolf's own current `DEFAULT_CRYPT_MODES` table -- not a
+    coincidence across three independent files, and confirmation that
+    `HeadSize`/`Flags`/`CharCodeFormat` genuinely are plain, exactly as
+    assumed. `cryptVersion` 350 is *not* one of the values (`1000`, `0xC8`,
+    `1010`) UberWolf's own `WolfPro.cpp` treats as needing its separate
+    Game.dat-derived-key "Pro" path (that path, and its `WolfX` crack module,
+    turned out to be for a *different* problem -- individual files bearing
+    their own `"WOLFX"` 5-byte magic header, not the `Data.wolf` container
+    itself). By UberWolf's own code, `cryptVersion` 350 is a plain, ordinary,
+    already-named key, and `DXArchive::OpenArchiveFile` -- confirmed
+    byte-identical between the original vendored WolfDec source and
+    UberWolf's own current copy -- never applies any key to `DARC_HEAD`'s
+    address fields for *any* `cryptVersion`. None of that explains why those
+    four fields come out as noise here. Since a key cannot fix a field the
+    reference implementation never keys in the first place, the "v3.50" key
+    was not added to `KNOWN_KEYS` -- it would be dead code with no way to
+    verify it does anything.
+  - **What remains unexplained**, precisely scoped for whoever picks this up
+    next: something about how a current WOLF RPG Editor release actually
+    produces these four `DARC_HEAD` fields differs from every available
+    public reference implementation (original WolfDec, and UberWolf's own
+    current fork) -- despite the rest of the same 64-byte header
+    (`Head`/`Version`/`HeadSize`/`CharCodeFormat`/`Flags`) matching that
+    reference exactly. This looks like an undocumented change specific to
+    `DxArchive_WOLF_MOD_security.cpp`, which no public source tree vendors --
+    not something guessable from the outside without either that source or a
+    live binary to test candidate transforms against (WOLF RPG Editor itself
+    is Windows-only; not run in this session). Porting a guess without a way
+    to verify it would risk exactly the "silently wrong crypto" failure mode
+    this project's WOLF work has consistently refused to ship (see ADR 0095's
+    own methodology) -- so this stays a named, precisely-scoped gap rather
+    than a speculative fix. `Wolf::DataWolf.new` reports it with a clear,
+    specific error instead of a raw IO exception or (worse) silently wrong
+    data.
+- **What this means for "can this reader boot a real game"**: of three
+  independent, real, freely-distributable current WOLF RPG Editor releases
+  tried this session, all three hit this same wall -- packed releases are
+  very likely uniformly blocked on it now, while a loose (unpacked,
+  in-editor-working-tree) real project remains unaffected (this gap is
+  specific to `Data.wolf`'s container, not the data format itself). This is a
+  materially better-understood blocker than the "permanently out of reach"
+  framing this session's own earlier (later corrected, see ADR 0095)
+  assessment of Pro-protected data used: the exact field, the exact
+  `cryptVersion` value, and the exact reference code that fails to explain it
+  are all pinned down -- what's missing is the one piece of source or a live
+  binary that isn't publicly available to verify a fix against.

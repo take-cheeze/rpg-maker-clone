@@ -36526,16 +36526,26 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   ported from and cross-validated against the same vendored `Huffman.cpp`/
   `DXArchive.cpp` (compiled the untouched reference encoders and decoded
   their real output, catching a real LSB-vs-MSB bit-order bug this way that
-  a hand-traced port would not have). That specific game still cannot be
-  opened, for an unrelated, separately-scoped reason: its `DARC_HEAD` fields
-  are additionally scrambled by a newer WOLF-RPG-Editor-specific modified
-  DxArchive (`DxArchive_WOLF_MOD_security`, visible in its shipped `Game.exe`)
-  that the vendored WolfDec source does not model — the actively-maintained
-  [UberWolf](https://github.com/Sinflower/UberWolf) successor project has a
-  dedicated `WolfX` module for exactly this, built from extensive reverse
-  engineering (a large precomputed magic-value lookup table) rather than a
-  documented algorithm, so it was not ported without a way to verify it
-  against a compiled reference. See
+  a hand-traced port would not have). That specific game (and two more real,
+  independent, freely-distributable current releases tried the same way —
+  all three hit this identically) still cannot be opened, for an unrelated,
+  separately-scoped reason: `DARC_HEAD`'s four table/data-address fields come
+  back as noise, despite `HeadSize`/`Flags`/`CharCodeFormat` in the same
+  64-byte header genuinely being plain (confirmed via `Flags`' own upper 16
+  bits, a real per-editor-version `cryptVersion` selector all three games
+  agree on: `350`, matching a named, known key in the actively-maintained
+  [UberWolf](https://github.com/Sinflower/UberWolf) project's own current
+  source — fetched and read directly, not through a lossy summarizer). That
+  key doesn't help: UberWolf's own current `DXArchive::OpenArchiveFile` never
+  applies any key to those four fields for any `cryptVersion`, so a key
+  cannot be what's missing — something about how a current WOLF RPG Editor
+  release actually produces them differs from every available public
+  reference (original WolfDec and UberWolf's own fork alike), most likely
+  specific to the `DxArchive_WOLF_MOD_security` modification named in the
+  shipped `Game.exe`'s own debug strings, which no public source tree
+  vendors. Not guessable without either that source or a live (Windows-only,
+  not run this session) binary to verify a candidate transform against, so
+  left as a precisely-scoped named gap rather than a speculative fix. See
   `docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`.
 - ✅ **Pro-protected data (v3.5) decrypted for real (2026-09-07).** The
   earlier claim here -- "from editor 3.5 on the protection key is not even
