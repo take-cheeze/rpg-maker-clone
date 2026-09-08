@@ -101,6 +101,47 @@ README. If the app opens to "no map.bin/tiles.bin", the data directory copy
 didn't land — re-check the mount point and path
 (`/Apps/Data/RPG2kWalk/map.bin` on the iPod's own filesystem).
 
+## Trying it without a device
+
+You don't need a jailbroken iPod or the NanoApps toolchain to see this app
+actually walk a real map: `app/nano7/host` links this file (`rpg2k_walk.c`)
+completely unmodified against a host implementation of the small
+`hb_raw_surface`/`hb_sdk` API it calls, built as part of this repo's normal
+CMake build (`nano7_walk_host`, wherever SDL2 already is). See
+`docs/adr/0102-ipod-nano-7-host-emulator.md` for why this is a host-side API
+harness rather than a full SoC emulator like the Wio Terminal's Renode
+platform (`docs/adr/0094`).
+
+```sh
+ruby scripts/export_nano7_map.rb --target nano7 \
+  data/Nepheshel206beta/Nepheshel206Nbeta 1 /tmp/rpg2k_walk_out
+mkdir -p /tmp/nano7_host_root/Apps/Data/RPG2kWalk
+cp /tmp/rpg2k_walk_out/*.bin /tmp/nano7_host_root/Apps/Data/RPG2kWalk/
+./build/nano7_walk_host /tmp/nano7_host_root      # interactive window, mouse = touch
+```
+
+`nano7_walk_host DATA_ROOT --frames N --screenshot out.bmp` runs headless (no
+display needed at all) for `N` simulated ticks and saves the final frame —
+what `scripts/nano7_host_smoke.bash` / the `nano7_host_smoke` ctest use to
+check a real map actually renders, on every build.
+
+That host build runs natively on your machine's own CPU, so it has nothing
+useful to say about how expensive a frame is on the real device. For that,
+`app/nano7/qemu` cross-compiles this same file with the real
+`arm-none-eabi-gcc -mcpu=cortex-a8` and boots it under `qemu-system-arm`'s
+`cortex-a8` core on a real PL110 display controller — a genuine (if
+approximate) ARM instruction stream and per-frame cycle count, not a
+fabricated one. See `docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`.
+
+```sh
+sudo apt-get install -y gcc-arm-none-eabi qemu-system-arm
+scripts/nano7_qemu_build.bash /tmp/rpg2k_walk_out/map.bin \
+  /tmp/rpg2k_walk_out/tiles.bin /tmp/nano7_walk_qemu.elf
+scripts/nano7_qemu_run.bash /tmp/nano7_walk_qemu.elf \
+  /tmp/frame.ppm /tmp/uart.log
+grep NANO7-QEMU /tmp/uart.log   # per-frame PMU cycle counts
+```
+
 ## Controls
 
 Touch anywhere and hold. The direction is whichever of up/down/left/right is

@@ -1253,6 +1253,33 @@
   covered by the `walk_core` ctest — neither device is reachable from CI, but
   the engine half of both firmwares is plain host-testable C. See
   [`docs/adr/0091-shared-minimal-walk-engine.md`](docs/adr/0091-shared-minimal-walk-engine.md).
+- **A host-side emulator for the nano 7G app itself.**
+  [`app/nano7/host`](app/nano7/host) implements the small
+  `hb_raw_surface`/`hb_sdk` API surface `rpg2k_walk.c` calls (on top of this
+  repo's own SDL2 dependency, no new one added) and links that device source
+  file *unmodified* into a native `nano7_walk_host` executable — an
+  interactive window with the mouse as touch, or a headless
+  `--frames N --screenshot out.bmp` mode that needs no display at all. Unlike
+  the Wio Terminal's Renode platform ([`docs/adr/0094`](docs/adr/0094-wio-terminal-renode-emulator.md)),
+  this does not emulate the nano 7G's Cortex-A8 SoC or its proprietary OS —
+  `rpg2k_walk.c` never touches either directly, only this six-function API,
+  which is the right thing to reimplement instead. The `nano7_host_smoke`
+  ctest exports a real Nepheshel map and asserts the rendered frame actually
+  shows real map content, not a blank fill. See
+  [`docs/adr/0102-ipod-nano-7-host-emulator.md`](docs/adr/0102-ipod-nano-7-host-emulator.md).
+- **A real ARM Cortex-A8 build too, for CPU cost.** The host build above
+  runs natively on the build machine's own CPU, so it has nothing to say
+  about device timing. [`app/nano7/qemu`](app/nano7/qemu) cross-compiles
+  `rpg2k_walk.c` with the same `arm-none-eabi-gcc -mcpu=cortex-a8` NanoApps'
+  own SDK uses and boots it under `qemu-system-arm`'s real `cortex-a8` core
+  on the `realview-pb-a8` machine — a real PL110 display controller QEMU
+  already ships (verified pixel-correct against a hand-drawn test pattern,
+  no new peripheral code needed, unlike the Wio Terminal's Renode work
+  below), and the Cortex-A8 PMU's real cycle counter, giving a genuine (if
+  approximate — see the ADR) per-frame CPU cost signal the host build
+  cannot. The `nano7-qemu` CI job boots a real exported map through it on
+  every push. See
+  [`docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md`](docs/adr/0103-ipod-nano-7-qemu-cortex-a8-emulation.md).
 
 ### Reporting an error
 

@@ -44,10 +44,22 @@
  * leaving it to fail on-device.
  *
  * Sized to keep total .bss comfortably under the ~512 KB gap between BSS_VA
- * and LINK_VA in sdk/hb_app.mk (0x09200000..0x09280000) -- that gap is not
- * documented as a hard per-app .bss ceiling, but nothing in the SDK says it
- * is safe to exceed either, so this stays well under it rather than finding
- * out on real hardware. Raise with caution.
+ * and LINK_VA in sdk/hb_app.mk (0x09200000..0x09280000). Correction, found
+ * building docs/adr/0103's QEMU harness: that gap is specifically for
+ * LV_SURFACE apps sharing address space with the live compositor
+ * (hb_app.mk's own comment: parking .bss there is so such an app doesn't
+ * stomp the compositor's heap) -- this app builds RAW_SURFACE, i.e. RELOC,
+ * whose .bss the resident instead gives "an operator-new arena" (same
+ * file), not that fixed gap. So this was never actually the enforced
+ * per-app ceiling it was assumed to be; the real, ADR-61-verified NanoApps
+ * limit for a RELOC app is the ~500 KB packed .hbapp blob (code + reloc
+ * table), which this file's own .text/.rodata sits nowhere near. The ~512
+ * KB figure below is kept anyway as this app's own conservative,
+ * self-imposed budget -- docs/adr/0103's app_bss linker region now enforces
+ * it at link time for the QEMU build, which is more than a comment ever
+ * did -- not because it turned out to be a real hardware ceiling after all.
+ * Raise with caution regardless: still unverified against real allocator
+ * behaviour either way.
  *
  * At these caps the static buffers below are the whole of .bss: 42,782 B of
  * map.bin (its palette and entry table included) + 65,280 B of atlas +
