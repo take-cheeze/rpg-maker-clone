@@ -197,7 +197,13 @@ Phase 1** rather than assumed:
   RPG2000/2003 on either.
 - Place read-only bytecode, rodata and — importantly — the game assets in the
   **4 MB external QSPI flash** (XIP / a read-only FS), keeping internal flash for
-  hot code.
+  hot code. **Mechanism verified, not yet wired in** — ADR 0099: mrblib
+  compiles to a plain RITE binary (759,086-872,074 bytes for the trimmed
+  psp/wio stack) loadable at boot with `mrb_read_irep_file` instead of
+  baked-in C arrays, round-tripped for real against `mruby-lcf`'s actual
+  schema/reader code. Not yet wired into either board's own boot sequence,
+  since neither links `libmruby.a` yet — that ADR is the design and the
+  numbers, ready for whichever slice starts the interpreter.
 
 ### LCD bandwidth (frame rate)
 
