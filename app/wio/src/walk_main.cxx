@@ -97,7 +97,7 @@ uint8_t g_map_raw[kMapBytes];
 // rw_open. Both reserved unconditionally, same reasoning: a fixed size beats
 // a second/third buffer size to get right.
 uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES +
-               kMaxEventFrames * RW_EVENT_FRAME_PIXELS];
+                kMaxEventFrames * RW_EVENT_FRAME_PIXELS];
 // One composited cell, converted to the panel's RGB565 (512 B, so a static
 // rather than a stack buffer on a board with this little SRAM).
 uint16_t g_cell565[RW_TILE_PIXELS];

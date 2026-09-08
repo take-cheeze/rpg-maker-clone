@@ -73,7 +73,7 @@ extern "C" {
 #define RW_EVENT_BYTES 4
 
 #define RW_EVENT_LAYER_BELOW 0 /* always drawn under the hero */
-#define RW_EVENT_LAYER_SAME 1  /* under or over the hero, by row -- see below */
+#define RW_EVENT_LAYER_SAME 1  /* under or over, by row -- see below */
 #define RW_EVENT_LAYER_ABOVE 2 /* always drawn over the hero */
 
 /* A frame index is a byte, the same reasoning as RW_MAX_TILES for the
