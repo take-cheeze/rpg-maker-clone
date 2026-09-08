@@ -58,7 +58,7 @@ class Checker
   # do not match its schema type raises here instead of at game runtime.
   def walk(row, schema, path)
     return unless schema && schema[:elements]
-    schema[:elements].each do |idx, e|
+    LCF.elements_of(schema).each do |idx, e|
       begin
         v = row[idx]
       rescue => ex

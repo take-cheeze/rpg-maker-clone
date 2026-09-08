@@ -67,7 +67,7 @@ end
 # byte-exact-round-trip path, not just scalars.
 def build_map_unit_fixture
   schema = LCF::Schema::MAP_UNIT
-  events_field = schema[:elements][81]
+  events_field = LCF.elements_of(schema)[81]
   page_field = events_field[:elements][5]
 
   talk_page = LCF::Array1D.new('', page_field)
@@ -82,7 +82,7 @@ def build_map_unit_fixture
   talker[3] = 3
   talker[5] = talk_pages
 
-  move_route_field = page_field[:elements][41]
+  move_route_field = LCF.elements_of(page_field)[41]
   move_route = LCF::Array1D.new('', move_route_field)
   move_route[12] = [LCF::MoveCommand.new(0, '', 0, 0, 0),   # move_down (bare)
                      LCF::MoveCommand.new(32, '', 7, 0, 0),  # switch_on + id

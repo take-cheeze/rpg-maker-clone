@@ -86,7 +86,7 @@ end
 # e.g. Scene::DebugMenu#max_id).
 def array1d_to_text(obj, schema)
   h = {}
-  schema[:elements].each do |idx, field|
+  LCF.elements_of(schema).each do |idx, field|
     next unless obj.key?(idx)
     h[field[:name].to_s] = value_to_text(obj[idx], field)
   end
@@ -172,7 +172,7 @@ def validate_array1d(value, schema, path, errors)
     return
   end
   by_name = {}
-  schema[:elements].each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
+  LCF.elements_of(schema).each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
   value.each do |name, v|
     entry = by_name[name.to_s]
     unless entry
@@ -285,7 +285,7 @@ end
 def build_array1d(hash, schema)
   obj = LCF::Array1D.new('', schema)
   by_name = {}
-  schema[:elements].each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
+  LCF.elements_of(schema).each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
   hash.each do |name, value|
     idx, field = by_name[name.to_s]
     obj[idx] = build_value(value, field)
@@ -325,7 +325,7 @@ def to_binary(in_path, out_path)
   klass, = FILE_TYPES[doc['type']]
   file = klass.new
   by_name = {}
-  file.schema[:elements].each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
+  LCF.elements_of(file.schema).each { |idx, f| by_name[f[:name].to_s] = [idx, f] }
   doc['data'].each do |name, value|
     idx, field = by_name[name.to_s]
     file[idx] = build_value(value, field)
