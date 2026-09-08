@@ -36,12 +36,16 @@ trap cleanup EXIT
 rm -f "$out_uart_log"
 touch "$out_uart_log"
 
-# -display none: this target's whole point is running headless in CI; the
+# -m 4M: sized against app/nano7/qemu/link.ld's own MEMORY regions (image +
+# blobs + app_bss + shadow_fb + stack sums to ~1.76 MiB from ORIGIN(image)),
+# not an arbitrary guess -- see that file's header for exactly which of
+# those regions maps to a real NanoApps limit and which don't. -display
+# none: this target's whole point is running headless in CI; the
 # screendump below reads the real PL110 framebuffer directly, no window
 # needed. Audio is left at its default backend -- ALSA warnings are the
 # realview board's unrelated on-board codec probing a device this
 # container doesn't have, harmless and unrelated to this target.
-qemu-system-arm -M realview-pb-a8 -cpu cortex-a8 -m 128M -display none \
+qemu-system-arm -M realview-pb-a8 -cpu cortex-a8 -m 4M -display none \
     -chardev file,id=ser0,path="$out_uart_log" -serial chardev:ser0 \
     -qmp unix:"$qmp_sock",server,nowait \
     -kernel "$elf" >/dev/null 2>&1 &

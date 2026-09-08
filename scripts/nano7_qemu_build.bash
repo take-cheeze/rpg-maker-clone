@@ -45,7 +45,7 @@ cflags=(-mcpu=cortex-a8 -marm -ffreestanding -fno-builtin -nostdlib -O2 -Wall -W
 
 "$CC" "${cflags[@]}" -c "$qemu_dir/boot.S" -o "$build/boot.o"
 "$CC" "${cflags[@]}" -c "$qemu_dir/nano7_qemu_shim.c" -o "$build/shim.o"
-"$CC" "${cflags[@]}" -c "$root/app/nano7/shim_common/hb_fb_ops.c" -o "$build/fb_ops.o"
+"$CC" "${cflags[@]}" -c "$root/app/nano7/shim_common/hb_fb_ops.c" -o "$build/hb_fb_ops.o"
 "$CC" "${cflags[@]}" -c "$root/app/shared/rpg2k_walk/rpg2k_walk_core.c" -o "$build/core.o"
 "$CC" "${cflags[@]}" -c "$root/app/nano7/rpg2k_walk/rpg2k_walk.c" -o "$build/app.o"
 
@@ -56,7 +56,7 @@ libgcc=$("$CC" -mcpu=cortex-a8 -print-libgcc-file-name)
 
 "$CC" -mcpu=cortex-a8 -marm -ffreestanding -nostdlib -nostartfiles \
     -T "$qemu_dir/link.ld" \
-    "$build"/boot.o "$build"/shim.o "$build"/fb_ops.o "$build"/core.o "$build"/app.o \
+    "$build"/boot.o "$build"/shim.o "$build"/hb_fb_ops.o "$build"/core.o "$build"/app.o \
     "$build"/map_bin.o "$build"/tiles_bin.o "$libgcc" \
     -o "$out_elf"
 

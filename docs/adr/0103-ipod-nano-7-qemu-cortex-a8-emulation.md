@@ -4,7 +4,19 @@ Date: 2026-09-08
 
 ## Status
 
-Accepted
+Accepted, extended same-day: the "What this does and does not answer about
+CPU cost" section prompted a follow-up question about QEMU's `-m 128M` --
+an arbitrary figure bearing no relationship to any real limit. The **Memory
+budget** section below (and `app/nano7/qemu/link.ld`) replaces it with
+linker `MEMORY` regions sized against the one real NanoApps limit this app
+is actually subject to, `-m` shrunk from 128 MiB to 4 MiB to match, and a
+naming bug in the first draft of that change (a linker-script file-match
+pattern silently not matching its object file, so the intended split
+overflowed instead of separating cleanly) was caught by the overflow itself
+demanding a fix, then confirmed fixed by checking the resulting section
+sizes directly -- and confirmed for real, not just assumed working, by
+deliberately linking a 600 KB oversized `.rodata` blob in and watching the
+linker reject it with the expected region-overflow error.
 
 ## Context
 
@@ -197,6 +209,72 @@ further than that one did, precisely because it never needed a DMA
 controller at all: `hb_raw_blit` is a plain CPU-store loop in this app, not
 a DMA-driven bulk transfer the way Wio's `pushImage` is.
 
+## Memory budget: which real limit, and which one isn't real
+
+QEMU's `-m` originally read `128M` — comfortably enough to run in, and
+completely arbitrary. Asked to size it against the app's actual NanoApps
+limit instead, the first thing worth getting right is *which* limit that
+is, because the codebase already has an answer that turns out not to apply
+here.
+
+`app/nano7/rpg2k_walk`'s `Makefile` sets `RAW_SURFACE := 1`, which NanoApps'
+own `sdk/hb_app.mk` turns into `RELOC := 1`: **"the resident loads a
+`.hbapp` into an operator-new arena"** (that file's own comment on the
+`RELOC` block). That is a different loading path from the fixed
+`BSS_VA`/`LINK_VA` scheme (`0x09200000`/`0x09280000`) — that scheme is
+`LV_SURFACE`-specific, per `hb_app.mk`'s own comment on it: parking `.bss`
+there is so an LVGL app **coexisting with the live compositor** doesn't
+stomp its heap, a concern that doesn't apply to a `RELOC` app running
+standalone. `rpg2k_walk.c`'s own `MAP_MAX_W`/`MAP_MAX_H`/`MAX_TILES` comment
+already cites that 512 KiB gap as its `.bss` budget, and already hedges
+that "that gap is not documented as a hard per-app `.bss` ceiling" — this
+ADR can now say why: it's the wrong app kind's limit, carried over as a
+conservative guess. ADR 61 is explicit about what a `RELOC` app's real
+constraint is instead: **"the 500 KB ceiling is specifically the
+relocatable app blob"** — code plus the reloc table `mkrelocapp.py` emits
+from it — while "a large runtime data set is free; only the code has to be
+tiny." `.bss` isn't the number that was ever actually measured to matter.
+
+`app/nano7/qemu/link.ld` now encodes that distinction with named `MEMORY`
+regions instead of one blanket figure:
+
+| Region | Size | What | Real NanoApps limit? |
+| --- | --- | --- | --- |
+| `image` | 500 KiB | `.text` + `.rodata` | **Yes** — the packed-`.hbapp` ceiling ADR 61 measured apps crashing past |
+| `blobs` | 128 KiB | the two exported map files, linked in directly (no filesystem here at all) | No — on real hardware these are read from disk at runtime, not part of the uploaded blob at all |
+| `app_bss` | 512 KiB | `rpg2k_walk.c`'s and `rpg2k_walk_core.c`'s own static buffers | No, per ADR 61 above — kept anyway because it's what the app was actually engineered against, now enforced instead of an unchecked comment |
+| `shadow_fb` | 405 KiB | `hb_fb_ops.c`'s framebuffer array | No — on real hardware this is the resident's own OS-composited buffer (`hb_raw_surface.h`: "hands us the OS-composited framebuffer"), not something the app allocates at all |
+| `stack` | 256 KiB | this harness's own stack | No — undocumented where a `RELOC` app's stack actually comes from |
+
+Only `image` is a real, verified NanoApps limit; the other four are this
+harness's own bookkeeping, kept in separate regions specifically so a
+generously-sized convenience (`blobs`, `shadow_fb`, `stack`) can never
+silently absorb headroom that should have been checked against a real one,
+and so `app_bss`'s own (unverified-for-this-app-kind, but intentionally
+kept) budget can't be masked by `shadow_fb` sharing its region — which is
+exactly what happened building this: the first cut put the framebuffer in
+`app_bss` by mistake (a linker-script file-match pattern targeting the
+wrong object filename), and the resulting overflow read as "the app is 10 KB
+over its real budget" when the app itself was nowhere close — a wrong
+verdict a shared, unlabelled region would have kept giving. Separating them
+by *what each byte count would mean on real hardware*, not just by which
+`.c` file it comes from, is what makes the `image` region's pass/fail
+actually mean something.
+
+Total span from `ORIGIN(image)`: 1,844,224 B (~1.76 MiB). `-m` is `4M` —
+sized to that with headroom, not the original `128M`, and confirmed booting
+correctly at that size. This is not itself a NanoApps limit (QEMU's
+`realview-pb-a8` RAM bank has nothing to do with the real device's address
+space at all) — it just stops the harness from being handed two orders of
+magnitude more RAM than anything here could plausibly use, which was the
+actual complaint about `128M`.
+
+**Verified, not assumed**: deliberately linking an extra ~600 KB `.rodata`
+blob into a scratch build reproduces the exact failure mode the real
+`image` limit exists to catch — `ld` refuses with `region 'image'
+overflowed by 109684 bytes` — confirming the enforcement is real and not
+just a MEMORY block that happens to compile.
+
 ## Consequences
 
 - **A second, complementary tier alongside ADR 102**, not a replacement for
@@ -209,6 +287,15 @@ a DMA-driven bulk transfer the way Wio's `pushImage` is.
 - **Refactor lands with it**: `app/nano7/shim_common/hb_fb_ops.c` is now
   shared, which also *simplified* ADR 102's own host shim (removed, not
   added, code there) rather than only adding new surface area.
+- **A real, new CI failure mode**: a future change that grows
+  `rpg2k_walk.c`/`rpg2k_walk_core.c`'s compiled code past the 500 KiB
+  `image` region now fails the link step outright, catching the one thing
+  ADR 61 says actually breaks on real hardware ("apps hang or crash on
+  launch" past that ceiling) before it would ever reach a jailbroken
+  device. The other four regions (`blobs`/`app_bss`/`shadow_fb`/`stack`)
+  exist to keep that one check honest, not to police limits of their own —
+  see the memory-budget section above for why none of them are real
+  NanoApps ceilings.
 - **Still not real-hardware verification.** Neither this nor ADR 102
   replaces the real jailbroken-device session ADR 61 documents. A quirk in
   the real NanoApps resident, the real OS compositor, or the real touch
