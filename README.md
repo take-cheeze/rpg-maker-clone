@@ -1211,7 +1211,8 @@
   for why, and the app's own README for build/install instructions.
 - **Scope: map walking, not the game.** Tile rendering (including autotiles)
   and grid movement with real collision, for one static map, drawn as the
-  project's own initial party leader — no events, battle or menus.
+  project's own initial party leader with map events as static sprites
+  alongside it — no event commands, battle or menus.
 - **The water animates, and so does the hero**, on RPG2000's own clocks
   ([`docs/adr/0094`](docs/adr/0094-walk-map-tile-animation.md),
   [`0096`](docs/adr/0096-walk-map-hero-sprite.md)). The export asks
@@ -1222,6 +1223,15 @@
   to face it, the same bump-turn the genuine renderer does. 480 bytes of
   device code for the tile clocks, and a map that animates nothing costs the
   frame loop nothing.
+- **Map events draw too, as static sprites**
+  ([`docs/adr/0102`](docs/adr/0102-walk-map-event-sprites.md)): whichever
+  page a fresh save's own page-selection rules would pick, if that page
+  carries a CharSet graphic, drawn before or after the player by the same
+  below/same/above-characters layering the genuine renderer uses — no live
+  facing, walk cycle, or event command, just the one resting frame a
+  brand-new save would see. Verified against Nepheshel's own 543 maps: the
+  worst carries 256 sprited events reducing to 12 distinct pictures, well
+  inside each target's cap.
 - Verified on real hardware: `.hbapp` image ~4.5 KB (well under the ~500 KB
   ceiling), installed via NanoApps on a jailbroken nano 7G, walking a real
   exported map with working collision. Chipset transparency is honoured: the
@@ -1236,10 +1246,12 @@
   and a cell is a byte of lower-layer index, a byte of upper, and a nibble of
   passability. Both are lossless, byte-for-byte the same picture and the same
   collision. This is what the port's RAM budget turns on: the nano app's
-  `.bss` is **120 KB** (108 KB of map/atlas plus a fixed ~11 KB for the
-  hero's own frames) where the first slice needed 336 KB, and the Wio
-  Terminal now takes the same 128×128 maps the nano does, in less SRAM than
-  64×64 cost it two revisions ago.
+  `.bss` is **~171 KB** (108 KB of map/atlas, a fixed ~9 KB for the hero's
+  own frames, and a fixed ~54 KB for the event-sprite atlas and table —
+  [`docs/adr/0102`](docs/adr/0102-walk-map-event-sprites.md)) where the
+  first slice needed 336 KB, and the Wio Terminal now takes the same
+  128×128 maps the nano does, in less SRAM than 64×64 cost it two revisions
+  ago.
 - **The same engine also runs on the Wio Terminal.** The device-independent
   half — the file format, the movement rule, the camera, the layer
   compositing — is

@@ -36,18 +36,24 @@ static void check(int cond, const char* what) {
 /* Palette: 0 is the transparent slot, then red and green, then twelve more
  * marker colours the hero-frame tests use (one per CharSet frame, so
  * compositing the "wrong" frame is a wrong colour, not a coincidentally
- * matching one). The backdrop is a direct colour rather than an index, so
- * blue is not in the palette. */
+ * matching one), then two more the event-sprite tests use the same way. The
+ * backdrop is a direct colour rather than an index, so blue is not in the
+ * palette. */
 #define IDX_RED 1
 #define IDX_GREEN 2
 #define IDX_HERO_BASE 3 /* palette indices 3..14: one per hero frame 0..11 */
-#define PAL_COUNT (IDX_HERO_BASE + RW_HERO_FRAME_COUNT)
+#define IDX_EVENT_BASE (IDX_HERO_BASE + RW_HERO_FRAME_COUNT) /* 15..16 */
+#define EVENT_FRAMES 2
+#define PAL_COUNT (IDX_EVENT_BASE + EVENT_FRAMES)
 #define RED (RW_OPAQUE | (31u << 10))
 #define GREEN (RW_OPAQUE | (31u << 5))
 #define BLUE (RW_OPAQUE | 31u)
 /* Distinct, arbitrary opaque colours -- the exact hues don't matter, only
  * that hero frame k's is not frame j's. */
 #define HERO_MARK(k) (uint16_t)(RW_OPAQUE | (((k) + 1) << 6) | ((k) + 1))
+/* Same idea, a disjoint range so an event frame's colour can never be
+ * mistaken for a hero frame's. */
+#define EVENT_MARK(k) (uint16_t)(RW_OPAQUE | (((k) + 1) << 3))
 
 /* Entries: 0 static (atlas 0), 1 static (atlas 1), 2 water cycling 0,1,2,1
  * over the four atlas slots, 3 block-C cycling 0..3. */
@@ -61,26 +67,40 @@ static void check(int cond, const char* what) {
 #define C_LEN 4
 #define C_PERIOD 6
 
+/* Room for three events, whether or not a given test's map actually sets
+ * event_count that high -- same "reserve the tail, never read when unused"
+ * reasoning as the hero frames below. */
+#define EVENTS 3
+
 #define PAL_BYTES (PAL_COUNT * 2)
 #define ENTRY_BYTES (ENTRIES * RW_ENTRY_BYTES)
-#define MAP_BYTES \
-  (RW_MAP_HEADER_BYTES + PAL_BYTES + ENTRY_BYTES + RW_MAP_CELL_BYTES(W * H))
+#define EVENT_BYTES (EVENTS * RW_EVENT_BYTES)
+#define MAP_BYTES                                                        \
+  (RW_MAP_HEADER_BYTES + PAL_BYTES + ENTRY_BYTES + EVENT_BYTES +         \
+   RW_MAP_CELL_BYTES(W * H))
 #define ENTRIES_AT (RW_MAP_HEADER_BYTES + PAL_BYTES)
-#define CELLS_AT (ENTRIES_AT + ENTRY_BYTES)
+#define EVENTS_AT (ENTRIES_AT + ENTRY_BYTES)
+#define CELLS_AT (EVENTS_AT + EVENT_BYTES)
 #define UPPER_AT (CELLS_AT + W * H)
 #define PASS_AT (UPPER_AT + W * H)
 
-/* Room for the ordinary atlas plus the hero frames, whether or not a given
- * test's map actually turns hero_present on -- the extra tail bytes are
- * simply never read when it doesn't (rw_open only checks tiles_len against
- * what the header actually asks for). */
+/* Room for the ordinary atlas plus the hero frames plus the event frames,
+ * whether or not a given test's map actually turns hero_present on or sets
+ * event_frame_count that high -- the extra tail bytes are simply never read
+ * when it doesn't (rw_open only checks tiles_len against what the header
+ * actually asks for). */
 #define HERO_FRAME_AT(k) (TILES * RW_TILE_PIXELS + (k) * RW_HERO_FRAME_PIXELS)
-#define TILES_BYTES (TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES)
+#define EVENT_FRAME_AT(k) \
+  (TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES + (k) * RW_EVENT_FRAME_PIXELS)
+#define TILES_BYTES                                                 \
+  (TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES +                  \
+   EVENT_FRAMES * RW_EVENT_FRAME_PIXELS)
 
 static uint8_t g_map[MAP_BYTES];
 static uint8_t g_tiles[TILES_BYTES];
 
 static void set_passable(int x, int y, unsigned bits);
+static void set_event_count(int count, int frame_count);
 static void set_entry(int entry,
                       unsigned klass,
                       unsigned f0,
@@ -97,7 +117,8 @@ static void put_u16(uint8_t* p, unsigned v) {
  * half green, its right half index 0). Also lays down the twelve hero
  * frames in the tail of g_tiles, each one solid marker colour k except
  * frame 7 (row 2 "down", pattern 1 "standing"), whose first pixel is
- * transparent instead -- the one hero test that isn't a flat colour check. */
+ * transparent instead -- the one hero test that isn't a flat colour check --
+ * then two event frames the same way (frame 1's first pixel transparent). */
 static void build_tiles(void) {
   int i, k;
   for (i = 0; i < RW_TILE_PIXELS; i++) {
@@ -111,6 +132,13 @@ static void build_tiles(void) {
     for (i = 0; i < RW_HERO_FRAME_PIXELS; i++)
       g_tiles[base + i] = (uint8_t)(IDX_HERO_BASE + k);
     if (k == 7)
+      g_tiles[base] = RW_TRANSPARENT_INDEX;
+  }
+  for (k = 0; k < EVENT_FRAMES; k++) {
+    int base = EVENT_FRAME_AT(k);
+    for (i = 0; i < RW_EVENT_FRAME_PIXELS; i++)
+      g_tiles[base + i] = (uint8_t)(IDX_EVENT_BASE + k);
+    if (k == 1)
       g_tiles[base] = RW_TRANSPARENT_INDEX;
   }
 }
@@ -142,9 +170,20 @@ static void build_map(void) {
     for (k = 0; k < RW_HERO_FRAME_COUNT; k++)
       put_u16(g_map + RW_MAP_HEADER_BYTES + (IDX_HERO_BASE + k) * 2,
               HERO_MARK(k));
+    for (k = 0; k < EVENT_FRAMES; k++)
+      put_u16(g_map + RW_MAP_HEADER_BYTES + (IDX_EVENT_BASE + k) * 2,
+              EVENT_MARK(k));
   }
   /* hero_present (byte 5) stays 0 from the memset above; set_hero_present
-   * turns it on for the tests that need it. */
+   * turns it on for the tests that need it. Unlike the hero, whose frames
+   * live only in tiles.bin, the event table sits inside map.bin itself,
+   * ahead of the cell arrays -- so event_count has to match the EVENTS
+   * words of room actually reserved in g_map (CELLS_AT and friends below),
+   * not just default to 0 like hero_present does, or rw_open would locate
+   * the cells EVENT_BYTES too early for every test that never calls
+   * set_event_count itself. event_frame_count stays 0 (no event pixel data
+   * claimed) until a test opts in. */
+  set_event_count(EVENTS, 0);
   set_entry(E_RED, RW_ANIM_STATIC, 0, 0, 0, 0);
   set_entry(E_GREEN, RW_ANIM_STATIC, 1, 1, 1, 1);
   /* The ping-pong Game::ChipsetLayout.anim_ab walks for animation_type 0:
@@ -169,6 +208,19 @@ static void set_upper(int x, int y, unsigned slot) {
 
 static void set_hero_present(int present) {
   g_map[5] = (uint8_t)present;
+}
+
+static void set_event_count(int count, int frame_count) {
+  put_u16(g_map + 26, (unsigned)count);
+  g_map[28] = (uint8_t)frame_count;
+}
+
+static void set_event(int index, unsigned x, unsigned y, unsigned frame, unsigned layer) {
+  uint8_t* e = &g_map[EVENTS_AT + (unsigned)index * RW_EVENT_BYTES];
+  e[0] = (uint8_t)x;
+  e[1] = (uint8_t)y;
+  e[2] = (uint8_t)frame;
+  e[3] = (uint8_t)layer;
 }
 
 static void set_entry(int entry,
@@ -313,6 +365,33 @@ static void test_open(void) {
         "refused");
   check(rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_OK,
         "the same export opens once the buffer has room for the hero frames");
+
+  /* An event table bigger than the map buffer is caught the same way an
+   * oversized palette or entry table is, and an event-frame export with no
+   * room in the tiles buffer is caught the same way the hero's is. */
+  memcpy(bad, g_map, sizeof(bad));
+  put_u16(bad + 26, EVENTS);
+  check(rw_open(&m, bad,
+               RW_MAP_HEADER_BYTES + PAL_BYTES + ENTRY_BYTES + EVENT_BYTES - 1,
+               g_tiles, sizeof(g_tiles)) == RW_ERR_MAP_TRUNCATED,
+        "an event table bigger than the map buffer is refused");
+
+  memcpy(bad, g_map, sizeof(bad));
+  /* The event-frame atlas sits after the hero's, same as build_tiles' own
+   * layout (EVENT_FRAME_AT) -- so this check needs a hero present too, or
+   * rw_open would not reserve that gap and TILES * RW_TILE_PIXELS +
+   * RW_HERO_FRAMES_BYTES bytes would already be more room than it asks
+   * for. */
+  bad[5] = 1;
+  bad[28] = EVENT_FRAMES;
+  check(rw_open(&m, bad, sizeof(bad), g_tiles,
+               TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES) ==
+            RW_ERR_TILES_TRUNCATED,
+        "an event-frame export with no room for its frames in the tiles "
+        "buffer is refused");
+  check(rw_open(&m, bad, sizeof(bad), g_tiles, sizeof(g_tiles)) == RW_OK,
+        "the same export opens once the buffer has room for the event "
+        "frames");
 }
 
 static void test_move(void) {
@@ -596,6 +675,99 @@ static void test_hero(void) {
         "the sprite's bottom is flush with its tile's");
 }
 
+/* Event sprites (ADR 102): a single precomposited frame each, picked once at
+ * export time -- no live facing or walk cycle here, just an atlas lookup --
+ * and drawn before or after the hero depending on layer and, for the
+ * same-as-hero layer, row (Scene::Map's own event_target_buffer split). */
+static void test_events(void) {
+  rw_map m;
+  uint16_t out[RW_EVENT_FRAME_PIXELS];
+  int i, x, y;
+
+  /* No events exported: every index composites as fully transparent, and an
+   * out-of-range index reads as "before the hero" -- the harmless default,
+   * never actually reached since a real caller loops 0..event_count. */
+  build_map();
+  set_event_count(0, 0);
+  open_default(&m);
+  check(m.event_count == 0, "a map with no exported events says so");
+  rw_compose_event(&m, 0, out);
+  for (i = 0; i < RW_EVENT_FRAME_PIXELS && out[i] == 0; i++) {
+  }
+  check(i == RW_EVENT_FRAME_PIXELS,
+        "an out-of-range event index composites as fully transparent");
+  check(rw_event_before_hero(&m, 0) == 1,
+        "an out-of-range event index reads as drawn before the hero");
+
+  /* Three events: below (always under the hero), and two on the same layer
+   * as the hero (the player starts at y=1) -- one behind (y < player_y,
+   * drawn under) and one level with or ahead of the player (y >= player_y,
+   * drawn over) -- matching event_target_buffer's own rule exactly. */
+  build_map();
+  /* The event-frame atlas sits in tiles.bin right after the hero's own
+   * frames when a hero is exported -- build_tiles laid the marker pixels
+   * down on that assumption (EVENT_FRAME_AT), so this fixture needs a hero
+   * present too, or rw_open would point event_tiles at the hero region
+   * instead (hero_present == 0 skips reserving that gap). */
+  set_hero_present(1);
+  set_event_count(EVENTS, EVENT_FRAMES);
+  set_event(0, 0, 0, 0, RW_EVENT_LAYER_BELOW);
+  set_event(1, 3, 0, 1, RW_EVENT_LAYER_SAME); /* y 0 < player_y 1 */
+  set_event(2, 2, 1, 1, RW_EVENT_LAYER_SAME); /* y 1 >= player_y 1 */
+  open_default(&m);
+  check(m.event_count == EVENTS, "event count is read");
+  check(m.event_frame_count == EVENT_FRAMES, "event frame count is read");
+
+  check(rw_event_layer(&m, 0) == RW_EVENT_LAYER_BELOW, "an event's layer is read");
+  check(rw_event_before_hero(&m, 0) == 1,
+        "a below-layer event always draws before (under) the hero");
+  check(rw_event_before_hero(&m, 1) == 1,
+        "a same-layer event behind the player draws before the hero");
+  check(rw_event_before_hero(&m, 2) == 0,
+        "a same-layer event level with or ahead of the player draws after "
+        "the hero");
+
+  /* An above-layer event always draws after the hero, regardless of row. */
+  set_event(2, 2, 0, 1, RW_EVENT_LAYER_ABOVE); /* y 0, still ahead of nothing */
+  open_default(&m);
+  check(rw_event_before_hero(&m, 2) == 0,
+        "an above-layer event always draws after the hero");
+
+  /* Composited frame: event 0 shows frame 0 (a flat marker colour), event 1
+   * shows frame 1, whose first pixel build_tiles left transparent -- the one
+   * check here that isn't a flat colour comparison, same convention as the
+   * hero's own frame 7. */
+  rw_compose_event(&m, 0, out);
+  for (i = 0; i < RW_EVENT_FRAME_PIXELS; i++)
+    check(out[i] == EVENT_MARK(0), "event 0's frame composites its marker colour");
+  rw_compose_event(&m, 1, out);
+  check(out[0] == 0, "a transparent source pixel stays transparent, not the backdrop");
+  for (i = 1; i < RW_EVENT_FRAME_PIXELS; i++)
+    check(out[i] == EVENT_MARK(1),
+          "event 1's frame composites its marker colour past the "
+          "transparent pixel");
+
+  /* Screen anchor: centred over its own tile horizontally, bottom-anchored
+   * -- the same formula as the hero's, at the event's own cell rather than
+   * the player's (event 1 sits at (3, 0)). */
+  rw_event_screen_pos(&m, 1, 0, 0, &x, &y);
+  check(x == 3 * RW_TS - (RW_EVENT_FRAME_W - RW_TS) / 2,
+        "the sprite is centred over its own tile horizontally");
+  check(y == 0 * RW_TS - (RW_EVENT_FRAME_H - RW_TS),
+        "the sprite's bottom is flush with its own tile's");
+
+  /* A frame index the export never wrote (>= event_frame_count) composites
+   * as fully transparent rather than reading past the atlas -- the same
+   * defensive read rw_compose_cell already gives an out-of-range entry. */
+  set_event(2, 0, 0, EVENT_FRAMES + 5, RW_EVENT_LAYER_BELOW);
+  open_default(&m);
+  rw_compose_event(&m, 2, out);
+  for (i = 0; i < RW_EVENT_FRAME_PIXELS && out[i] == 0; i++) {
+  }
+  check(i == RW_EVENT_FRAME_PIXELS,
+        "an out-of-range frame index composites as fully transparent");
+}
+
 int main(void) {
   build_tiles();
   build_map();
@@ -606,6 +778,7 @@ int main(void) {
   test_compose();
   test_animation();
   test_hero();
+  test_events();
 
   printf("walk_core: %d checks, %d failures\n", g_checks, g_failures);
   return g_failures == 0 ? 0 : 1;

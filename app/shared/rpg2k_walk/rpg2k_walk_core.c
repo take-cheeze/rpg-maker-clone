@@ -38,9 +38,14 @@ rw_status rw_open(rw_map* m,
   int ab_period = map_bytes[23];
   int c_len = map_bytes[24];
   int c_period = map_bytes[25];
-  /* Byte 5 was pad through v5; v6 repurposes it rather than growing the
-   * header, since a version bump already means every export is regenerated. */
+  /* Byte 5 was pad through v5; v6 repurposed it rather than growing the
+   * header, since a version bump already means every export is regenerated.
+   * v7 grows the header outright instead (26 -> 29 bytes), for the same
+   * reason growing it further costs nothing an in-place repurposing would
+   * have saved. */
   int hero_present = map_bytes[5];
+  int event_count = rd_u16(map_bytes + 26);
+  int event_frame_count = map_bytes[28];
 
   if (w <= 0 || h <= 0 || sx >= w || sy >= h)
     return RW_ERR_HEADER;
@@ -63,17 +68,21 @@ rw_status rw_open(rw_map* m,
   uint32_t cells = (uint32_t)w * (uint32_t)h;
   uint32_t palette_bytes = (uint32_t)palette_count * 2;
   uint32_t entry_bytes = (uint32_t)entry_count * RW_ENTRY_BYTES;
-  uint32_t fixed = RW_MAP_HEADER_BYTES + palette_bytes + entry_bytes;
+  uint32_t event_bytes = (uint32_t)event_count * RW_EVENT_BYTES;
+  uint32_t fixed =
+      RW_MAP_HEADER_BYTES + palette_bytes + entry_bytes + event_bytes;
   if (map_len < fixed)
     return RW_ERR_MAP_TRUNCATED;
   if ((uint32_t)(map_len - fixed) < RW_MAP_CELL_BYTES(cells))
     return RW_ERR_MAP_TRUNCATED;
   {
-    /* The hero's own frames sit in tiles.bin right after the ordinary atlas
-     * -- one buffer, one length check, no second file. */
+    /* The hero's own frames, then the event frames, sit in tiles.bin right
+     * after the ordinary atlas -- one buffer, one length check, no second
+     * file. */
     uint32_t tiles_needed = (uint32_t)atlas_count * RW_TILE_BYTES;
     if (hero_present)
       tiles_needed += RW_HERO_FRAMES_BYTES;
+    tiles_needed += (uint32_t)event_frame_count * RW_EVENT_FRAME_PIXELS;
     if (tiles_len < tiles_needed)
       return RW_ERR_TILES_TRUNCATED;
   }
@@ -93,6 +102,14 @@ rw_status rw_open(rw_map* m,
   m->step_count = 0;
   m->hero_present = hero_present;
   m->hero_tiles = hero_present ? tiles + (uint32_t)atlas_count * RW_TILE_BYTES : 0;
+  m->event_count = event_count;
+  m->event_frame_count = event_frame_count;
+  {
+    uint32_t event_tiles_off = (uint32_t)atlas_count * RW_TILE_BYTES;
+    if (hero_present)
+      event_tiles_off += RW_HERO_FRAMES_BYTES;
+    m->event_tiles = tiles + event_tiles_off;
+  }
   m->ab_len = ab_len;
   m->ab_period = ab_period;
   m->c_len = c_len;
@@ -102,7 +119,8 @@ rw_status rw_open(rw_map* m,
   m->palette = map_bytes + RW_MAP_HEADER_BYTES;
   m->palette_count = palette_count;
   m->entries = m->palette + palette_bytes;
-  m->lower = m->entries + entry_bytes;
+  m->events = m->entries + entry_bytes;
+  m->lower = m->events + event_bytes;
   m->upper = m->lower + cells;
   m->passable = m->upper + cells;
   m->tiles = tiles;
@@ -344,4 +362,65 @@ void rw_hero_screen_pos(const rw_map* m, int cam_x, int cam_y, int* x, int* y) {
   int tile_y = (m->player_y - cam_y) * RW_TS;
   *x = tile_x - (RW_HERO_FRAME_W - RW_TS) / 2;
   *y = tile_y - (RW_HERO_FRAME_H - RW_TS);
+}
+
+/* An event's own map cell (x, y) or frame index, or 0 for an out-of-range
+ * index -- every caller below already treats "nothing to draw" as the
+ * all-zero/all-transparent case, the same convention rw_compose_hero uses
+ * for hero_present == 0. */
+static uint8_t event_byte(const rw_map* m, int index, int field) {
+  if (index < 0 || index >= m->event_count)
+    return 0;
+  return m->events[(uint32_t)index * RW_EVENT_BYTES + (uint32_t)field];
+}
+
+void rw_compose_event(const rw_map* m, int index, uint16_t* out) {
+  const uint8_t* frame;
+  uint8_t f;
+  int i;
+
+  f = event_byte(m, index, 2);
+  if (index < 0 || index >= m->event_count || (int)f >= m->event_frame_count) {
+    for (i = 0; i < RW_EVENT_FRAME_PIXELS; i++)
+      out[i] = 0;
+    return;
+  }
+
+  frame = m->event_tiles + (uint32_t)f * RW_EVENT_FRAME_PIXELS;
+  for (i = 0; i < RW_EVENT_FRAME_PIXELS; i++) {
+    /* Transparent stays 0, same reasoning as rw_compose_hero: an event
+     * sprite draws over the map too, not into a hole that needs filling. */
+    uint8_t index_ = frame[i];
+    out[i] = index_ == RW_TRANSPARENT_INDEX ? 0 : rw_palette_colour(m, index_);
+  }
+}
+
+void rw_event_screen_pos(const rw_map* m,
+                         int index,
+                         int cam_x,
+                         int cam_y,
+                         int* x,
+                         int* y) {
+  int ex = event_byte(m, index, 0);
+  int ey = event_byte(m, index, 1);
+  int tile_x = (ex - cam_x) * RW_TS;
+  int tile_y = (ey - cam_y) * RW_TS;
+  *x = tile_x - (RW_EVENT_FRAME_W - RW_TS) / 2;
+  *y = tile_y - (RW_EVENT_FRAME_H - RW_TS);
+}
+
+int rw_event_layer(const rw_map* m, int index) {
+  return (int)event_byte(m, index, 3);
+}
+
+int rw_event_before_hero(const rw_map* m, int index) {
+  int layer = rw_event_layer(m, index);
+  if (layer == RW_EVENT_LAYER_ABOVE)
+    return 0;
+  if (layer == RW_EVENT_LAYER_BELOW)
+    return 1;
+  /* RW_EVENT_LAYER_SAME: the genuine renderer's own event_target_buffer
+   * split -- an event on the player's row or above (smaller/equal y) draws
+   * before the hero, one below it draws after. */
+  return (int)event_byte(m, index, 1) < m->player_y;
 }

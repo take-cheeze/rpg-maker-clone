@@ -32,24 +32,31 @@
 #   * animation is the water autotiles, the block-C animated tiles and the
 #     party leader's own walk cycle, at RPG2000's own rates -- the export
 #     asks Game::ChipsetLayout.anim_ab/.anim_c and Game::CharSet::WALK_
-#     PATTERNS what those are rather than restating them. Everything else an
-#     RPG2000 map animates (events, pictures, weather) needs the interpreter
-#     and is out of scope. The hero sprite is the project's *initial* party
-#     leader (RPG_RT.ldb's own System.party / player rows) -- there is no
-#     live game state to ask instead, so a Change Hero Graphic event command
-#     or a mid-game party swap is not reflected.
+#     PATTERNS what those are rather than restating them. A map event with a
+#     CharSet graphic on its own *initially-active* page (docs/adr/0102) draws
+#     as a single static sprite -- its own walk cycle, move route and any
+#     runtime Change Graphic all need the interpreter and are out of scope,
+#     the same limit the hero sprite already carries. An event with a
+#     chipset-tile ("chip") graphic instead of a CharSet, or no graphic at
+#     all, is not exported at all. Pictures and weather need the interpreter
+#     too and are out of scope entirely. The hero sprite is the project's
+#     *initial* party leader (RPG_RT.ldb's own System.party / player rows) --
+#     there is no live game state to ask instead, so a Change Hero Graphic
+#     event command or a mid-game party swap is not reflected either.
 #   * per-pixel transparency is one bit, not an alpha channel: RPG Maker's
 #     colour key is binary, so a pixel is either opaque or absent and the
 #     device composites upper over lower with a test, not a blend. It is
-#     palette index 0, so transparency costs nothing per pixel.
+#     palette index 0, so transparency costs nothing per pixel. A translucent
+#     event page (its own half-opacity blend) draws fully opaque instead --
+#     the same binary-only limit.
 #   * a map's parallax background becomes a single backdrop colour. A chipset
 #     may leave a lower-layer tile wholly transparent -- Nepheshel's map 1 is
 #     an island whose entire sea is an empty water autotile over the "BG"
 #     panorama -- and the genuine runtime shows the panorama through it. A
 #     panorama image does not fit this device's budget, so the export reduces
 #     it to its average colour and the device paints that behind the map.
-#   * events, message boxes, battle and everything interpreter-driven are out
-#     of scope entirely; this is a walkable map, not a playable game.
+#   * message boxes, battle and everything else interpreter-driven are out of
+#     scope entirely; this is a walkable map, not a playable game.
 #
 # Usage:
 #   ruby scripts/export_nano7_map.rb [--target nano7|wio] \
@@ -70,21 +77,26 @@
 # map tree's own start position (RPG_RT.lmt initial_x/initial_y) when MAP_ID
 # is the project's configured start map, or the map's center otherwise.
 #
-# Output format (v6, both files little-endian):
+# Output format (v7, both files little-endian):
 #
-#   map.bin   'N7WM' | u8 version=6 | u8 hero_present | u16 w | u16 h
+#   map.bin   'N7WM' | u8 version=7 | u8 hero_present | u16 w | u16 h
 #             | u16 start_x | u16 start_y | u16 entry_count | u16 backdrop
 #             | u16 palette_count | u16 atlas_count
 #             | u8 ab_len | u8 ab_period | u8 c_len | u8 c_period
+#             | u16 event_count | u8 event_frame_count
 #             | u16 palette[palette_count]
 #             | entry[entry_count]: u8 frame[4] | u8 anim_class
+#             | event[event_count]: u8 x | u8 y | u8 frame | u8 layer
 #             | u8 lower[w*h] | u8 upper[w*h] | u4 passable[w*h]
 #   tiles.bin atlas_count * 256 bytes, row-major within each 16x16 tile: one
 #             palette index per pixel; then, only when hero_present is 1, 12
 #             more frames of 24x32 (768) bytes each, same encoding -- the
 #             party leader's own CharSet, in [direction][pattern] order
 #             (up/right/down/left rows -- Game::CharSet::DIR_ROW's own order
-#             -- of 3 walk-cycle patterns each).
+#             -- of 3 walk-cycle patterns each); then event_frame_count more
+#             24x32 frames, one per distinct event sprite picture (see the
+#             "event sprites" section below), named by a map event's own
+#             `frame` byte.
 #
 # A cell names an *entry*, not a picture: an entry is up to four atlas slots
 # and the class that says which of RPG2000's two animation clocks advances
@@ -138,15 +150,28 @@ load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 # app/wio/src/walk_main.cxx (192 KB of SRAM for everything, so smaller).
 # MAX_TILES can never exceed 255: an atlas index is one byte on-device and
 # 0xFF is the upper layer's "no tile" sentinel (RW_MAX_TILES in the core).
+# max_event_frames bounds format v7's event-sprite atlas (see the "events"
+# section below): nano7's own .bss budget has ample room (v6 spent ~120 KB
+# of the ~512 KB gap app/nano7/rpg2k_walk/rpg2k_walk.c's own header comment
+# tracks), so 64 frames (49,152 B) is comfortably affordable; wio's 192 KB
+# of total SRAM is far tighter (v6 already reserves ~100 KB for map.bin +
+# tiles.bin's own maximum-size buffers), so 16 (12,288 B) instead.
+#
+# max_events bounds map.bin's event table itself: unlike max_event_frames
+# (real RAM pressure -- a full 24x32 picture each), an event costs 4 bytes
+# regardless of how many distinct sprites it shares, so both targets get the
+# same generous cap -- comfortably past the 258-events-on-one-map high-water
+# mark the Nepheshel test bed's own worst map reaches (before this filters
+# down to only the ones carrying a CharSet graphic, which is always fewer).
 TARGETS = {
-  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255 },
-  'wio' => { max_w: 128, max_h: 128, max_tiles: 192 }
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255, max_event_frames: 64, max_events: 1024 },
+  'wio' => { max_w: 128, max_h: 128, max_tiles: 192, max_event_frames: 16, max_events: 1024 }
 }.freeze
 DEFAULT_TARGET = 'nano7'
 TS = Game::ChipsetLayout::TS # 16
 
 MAGIC = 'N7WM'
-VERSION = 6
+VERSION = 7
 UPPER_NONE = 0xFF
 
 # ARGB1555 (see the format note at the top): bit 15 opaque, then r5g5b5.
@@ -211,6 +236,8 @@ MAX_TILES = target[:max_tiles]
 # The device holds one atlas, sized by the same cap: a slot and an entry cost
 # it the same buffer.
 MAX_ATLAS = target[:max_tiles]
+MAX_EVENT_FRAMES = target[:max_event_frames]
+MAX_EVENTS = target[:max_events]
 
 game_dir, map_id_arg, out_dir, start_x_arg, start_y_arg = argv
 usage_abort('missing arguments') if game_dir.nil? || map_id_arg.nil? || out_dir.nil?
@@ -556,6 +583,128 @@ hero_frames_bytes =
     ''
   end
 
+# ---- event sprites ----------------------------------------------------------
+
+# A map event whose *initially-active* page (Game::EventPage.select against a
+# fresh project's own switches/variables/party -- Game::Switches.new,
+# Game::Variables.new and Game::Party.new(db) build exactly that "New Game,
+# nothing has happened yet" state, the same source db.system.party the hero
+# lookup above already draws from) carries a CharSet graphic: one
+# precomposited frame, the same way the hero's twelve are, not simulated
+# movement or an on-page move route's own Change Graphic (ADR 96's own "no
+# live game state" limit, extended from the hero to events -- see ADR 102).
+# An event whose active page has no CharSet -- blank, or a chipset-tile
+# ("chip") graphic instead (empty charset_name, graphic_index > 0,
+# Scene::Map#draw_event_tile) -- is not exported at all; both are a real,
+# separate follow-up (see the ADR).
+#
+# Frames are deduplicated the same way tile pixels are: many events commonly
+# share one NPC CharSet (58 distinct names project-wide in the Nepheshel test
+# bed), so the atlas is sized by distinct *pictures*, not by event count.
+if lmu.events
+  switches = Game::Switches.new
+  variables = Game::Variables.new
+  # party_ids passed explicitly, not left to Game::Party#initialize's own
+  # `ids ||= db.system.party` default: under plain CRuby (this script's own
+  # host, not the real mruby runtime) `db.system` hits Kernel#system before
+  # method_missing ever sees it -- the exact trap the hero lookup above
+  # already avoids by spelling this `db[22].party` instead.
+  party = Game::Party.new(db, party_ids)
+
+  event_bmp_by_path = {}
+  event_frame_by_pixels = {}
+  event_frames = [] # index -> packed pixel string
+  events_out = []   # [x, y, frame_index, layer]
+
+  lmu.events.each do |event_id, ev|
+    selected = Game::EventPage.select(ev.pages, switches, variables, party)
+    next unless selected
+
+    _, page = selected
+    charset_name = page.charset_name.to_s
+    next if charset_name.empty?
+
+    charset_index = page.charset_index || 0
+    if charset_index < 0 || charset_index > 7
+      warn "[nano7] event ##{event_id}'s CharSet index #{charset_index} is out of the " \
+           '0..7 a CharSet PNG holds; skipping its sprite'
+      next
+    end
+
+    charset_path = File.join(game_dir, 'CharSet', "#{charset_name}.png")
+    unless File.file?(charset_path)
+      warn "[nano7] event ##{event_id}'s CharSet image not found: #{charset_path}; skipping its sprite"
+      next
+    end
+    bmp = event_bmp_by_path[charset_path]
+    if bmp.nil? && !event_bmp_by_path.key?(charset_path)
+      candidate = RGSS::Bitmap.allocate
+      bmp = candidate.send(:_init_file, charset_path, true) ? candidate : nil
+      warn "[nano7] failed to decode event CharSet PNG #{charset_path}; skipping affected sprites" if bmp.nil?
+      event_bmp_by_path[charset_path] = bmp
+    end
+    next if bmp.nil?
+
+    # page.direction is liblcf's own 0..3 (up/right/down/left) encoding, not
+    # RPG2000's numpad convention -- Scene::Map#build_event converts it via
+    # Game::EventGraphic.numpad_direction the same way this does (see that
+    # method's own comment: "Converted to the runtime numpad convention by
+    # build_event"). A fresh spawn's live facing starts at that same
+    # converted value (Game::Character.new(x, y, dir)), so it doubles as
+    # both the page's base facing and the "char_dir" #frame wants -- nothing
+    # here ever turns the character afterwards, unlike the genuine renderer.
+    base_dir = page.direction
+    base_dir = 2 unless (0..3).include?(base_dir)
+    base_dir_numpad = Game::EventGraphic.numpad_direction(base_dir)
+    base_pattern = page.pattern
+    base_pattern = 1 unless (0..2).include?(base_pattern)
+    anim_type = page.animation_type || 0
+    # phase 0, moving false: the frame a freshly-loaded map shows before
+    # anything has stepped or a move route has run a single sub-command --
+    # see Game::EventGraphic.frame's own comment for exactly which anim_type
+    # this does and doesn't hold static (a SPIN event's phase-0 frame is a
+    # real, if arbitrary, single frame of its spin, not a "wrong" one; a
+    # CONTINUOUS one's is its walk cycle's own resting frame).
+    dir, pattern = Game::EventGraphic.frame(anim_type, base_dir_numpad, base_pattern,
+                                            base_dir_numpad, 0, false)
+    rx, ry, rw, rh = Game::CharSet.frame_rect(charset_index, dir, pattern)
+    pixels = composite_hero_frame(bmp, rx, ry, rw, rh, palette, palette_index)
+
+    frame_index = event_frame_by_pixels[pixels]
+    if frame_index.nil?
+      if event_frames.size >= MAX_EVENT_FRAMES
+        usage_abort("map needs more than #{MAX_EVENT_FRAMES} distinct event sprite " \
+                    "pictures, exceeding the on-device cap for target #{target_name}")
+      end
+      frame_index = event_frames.size
+      event_frame_by_pixels[pixels] = frame_index
+      event_frames << pixels
+    end
+
+    layer = page.layer
+    layer = 0 unless (0..2).include?(layer)
+    events_out << [ev.x.to_i, ev.y.to_i, frame_index, layer]
+  end
+
+  # The genuine renderer's own same-tier y-sort (Scene::Map#draw_events:
+  # `sort_by { |e| [e[:char].y, e[:char].x, e[:id]] }`), applied once here
+  # rather than on-device: two events landing on the same side of the hero
+  # (see rw_event_before_hero) still need to draw in the right relative
+  # order, and a device that just walks this array in stored order gets that
+  # for free once the export itself is sorted. Event id is not carried into
+  # the export at all, so ties break in whatever order Array2D#each yielded
+  # them -- LCF chunk id order, not draw-relevant to begin with.
+  events_out.sort_by! { |x, y, _frame, _layer| [y, x] }
+
+  if events_out.size > MAX_EVENTS
+    usage_abort("map has #{events_out.size} sprited events, exceeding the on-device " \
+                "cap #{MAX_EVENTS} for target #{target_name}")
+  end
+else
+  event_frames = []
+  events_out = []
+end
+
 # ---- write map.bin -----------------------------------------------------
 
 Dir.mkdir(out_dir) unless Dir.exist?(out_dir)
@@ -566,6 +715,7 @@ File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
   f.write([width, height, start_x, start_y, entries.size, backdrop].pack('v6'))
   f.write([palette.size, atlas_pixels.size].pack('v2'))
   f.write([ab_cycle.size, ab_period, c_cycle.size, c_period].pack('C4'))
+  f.write([events_out.size, event_frames.size].pack('vC'))
   f.write(palette.pack('v*'))
   # One entry: its atlas slots, padded to four with its first (a phase a
   # shorter cycle never reaches still reads as the tile itself), then the
@@ -574,6 +724,9 @@ File.open(File.join(out_dir, 'map.bin'), 'wb') do |f|
     padded = slots + Array.new(ANIM_MAX_FRAMES - slots.size, slots.first)
     f.write((padded + [klass]).pack('C5'))
   end
+  # One event: its map cell, its precomposited frame, and its draw layer --
+  # see the "event sprites" section above for how each was picked.
+  events_out.each { |x, y, frame, layer| f.write([x, y, frame, layer].pack('C4')) }
   f.write(lower_out.pack('C*'))
   f.write(upper_out.pack('C*'))
   # Two cells per byte, the even cell in the low nibble -- see the format
@@ -585,6 +738,7 @@ end
 File.open(File.join(out_dir, 'tiles.bin'), 'wb') do |f|
   atlas_pixels.each { |px| f.write(px) }
   f.write(hero_frames_bytes) if hero_present
+  event_frames.each { |px| f.write(px) }
 end
 
 # The chipset path is part of the output line so scripts/export_nano7_map_check.rb
@@ -596,4 +750,6 @@ puts "wrote #{out_dir}/map.bin (target #{target_name}, #{width}x#{height}, " \
      "start #{start_x},#{start_y}) " \
      "and #{out_dir}/tiles.bin (#{entries.size} entries, #{animated_entries} animated, " \
      "#{atlas_pixels.size} tiles, #{entry_of_tile.size} ids, " \
-     "#{palette.size} palette entries, backdrop 0x%04x, #{hero_msg}) from #{chipset_path}" % backdrop
+     "#{palette.size} palette entries, backdrop 0x%04x, #{hero_msg}, " \
+     "#{events_out.size} sprited events, #{event_frames.size} event frames) " \
+     "from #{chipset_path}" % backdrop

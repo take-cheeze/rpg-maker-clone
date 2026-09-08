@@ -15,9 +15,10 @@
 // So this is a second, much smaller engine, not the `wio` env's firmware with
 // pieces disabled: no LVGL, no interpreter, no RGSS, and nothing this repo
 // builds for the desktop. It walks a map -- with its water animating on
-// RPG2000's own clock (docs/adr/0094) and the player drawn as the project's
-// own initial party leader (docs/adr/0096) when one was exported -- but it
-// does not play the game.
+// RPG2000's own clock (docs/adr/0094), the player drawn as the project's own
+// initial party leader (docs/adr/0096) when one was exported, and any map
+// event with a CharSet graphic on its own initially-active page drawn as a
+// static sprite too (docs/adr/0102) -- but it does not play the game.
 //
 // Board half only, and all of it is here: the SD card, the LCD, the 5-way
 // switch, and the frame timing.
@@ -48,17 +49,18 @@ namespace {
 // reading past them, and the exporter's `--target wio` refuses to write one).
 //
 // SRAM is the whole budget here -- 192 KB, no external RAM, nothing to spill
-// to (docs/adr/0007's own headline constraint). These caps spend ~100 KB of
+// to (docs/adr/0007's own headline constraint). These caps spend ~114.5 KB of
 // it:
 //
-//   map.bin   26 + 256*2 + 192*5 + 128*128*2.5 =  42,458 B
-//   tiles.bin       192 * 16*16 + 12 * 24*32    =  58,368 B
+//   map.bin   29 + 256*2 + 192*5 + 1024*4 + 128*128*2.5 =  46,557 B
+//   tiles.bin      192*16*16 + 12*24*32 + 16*24*32       =  70,656 B
 //
-// (the 12*24*32 is the hero's own frames, docs/adr/0096 -- a fixed 9,216 B
-// whether or not a given export actually carries one, reserved unconditionally
-// the same way the nano app does) leaving ~90 KB for the Arduino core, the SD
-// and LCD drivers, the stack and this file's own statics. The map bound has
-// doubled twice as the format
+// (the 12*24*32 is the hero's own frames, docs/adr/0096; the 16*24*32 is the
+// event-sprite atlas, docs/adr/0102 -- both fixed costs whether or not a
+// given export actually carries any, reserved unconditionally the same way
+// the nano app does) leaving ~77.5 KB for the Arduino core, the SD and LCD
+// drivers, the stack and this file's own statics. The map bound has doubled
+// twice as the format
 // shrank -- 64x64 when a tile pixel was 16-bit, 96x96 once it became a
 // palette index (docs/adr/0092), 128x128 now a cell costs 2.5 bytes rather
 // than 5 (docs/adr/0093) -- so this board now takes exactly the map sizes the
@@ -69,9 +71,16 @@ namespace {
 constexpr int kMapMaxW = 128;
 constexpr int kMapMaxH = 128;
 constexpr int kMaxTiles = 192;
+// Mirrors export_nano7_map.rb's own `wio` target max_event_frames/max_events
+// -- see that file's own comment for the RAM budget and real-data numbers
+// behind these (real worst case in the Nepheshel test bed: 256 events, 12
+// distinct frames, on its most event-heavy map).
+constexpr int kMaxEventFrames = 16;
+constexpr int kMaxEvents = 1024;
 
 constexpr uint32_t kMapBytes = RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +
                                kMaxTiles * RW_ENTRY_BYTES +
+                               (uint32_t)kMaxEvents * RW_EVENT_BYTES +
                                RW_MAP_CELL_BYTES(kMapMaxW * kMapMaxH);
 
 // Where the exported pair lives on the microSD card.
@@ -84,10 +93,11 @@ constexpr uint32_t kStepIntervalMs = 160;
 uint8_t g_map_raw[kMapBytes];
 // One palette index per pixel; the colours live in map.bin's palette. The
 // hero's own frames (RW_HERO_FRAMES_BYTES), when the export carries one, sit
-// right after the ordinary atlas -- see rw_open. Reserved unconditionally,
-// same reasoning as the nano app: a fixed 9,216 B beats a second size to get
-// right.
-uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES];
+// right after the ordinary atlas, then up to kMaxEventFrames more -- see
+// rw_open. Both reserved unconditionally, same reasoning: a fixed size beats
+// a second/third buffer size to get right.
+uint8_t g_tiles[kMaxTiles * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES +
+                kMaxEventFrames * RW_EVENT_FRAME_PIXELS];
 // One composited cell, converted to the panel's RGB565 (512 B, so a static
 // rather than a stack buffer on a board with this little SRAM).
 uint16_t g_cell565[RW_TILE_PIXELS];
@@ -96,6 +106,8 @@ uint16_t g_cell1555[RW_TILE_PIXELS];
 // transparent pixel staying 0 rather than resolving to the backdrop -- see
 // rw_compose_hero -- so draw_hero skips it instead of drawing over it.
 uint16_t g_hero1555[RW_HERO_FRAME_PIXELS];
+// One event's own composited frame, same convention as g_hero1555.
+uint16_t g_event1555[RW_EVENT_FRAME_PIXELS];
 
 TFT_eSPI g_tft;
 rw_map g_map;
@@ -186,12 +198,42 @@ void draw_hero(int cam_x, int cam_y, bool moving) {
   }
 }
 
+// One event sprite, the same drawing shape as draw_hero (wider/taller than a
+// tile, not every pixel opaque, so a per-pixel skip test rather than
+// pushImage's unconditional rect copy) but with no live facing or walk cycle
+// to pick between -- rw_compose_event already names the one frame the
+// export chose. Always redrawn along with every other event whenever
+// draw_map runs at all, moving_only included, for the same reason draw_hero
+// is: an animation tick's cell repaint can land on a tile a static event
+// sprite is sitting on, and only redrawing the event on top again -- rather
+// than skipping it because nothing about the *event* changed -- keeps it
+// from being erased.
+void draw_event(int index, int cam_x, int cam_y) {
+  rw_compose_event(&g_map, index, g_event1555);
+  int px, py;
+  rw_event_screen_pos(&g_map, index, cam_x, cam_y, &px, &py);
+
+  for (int y = 0; y < RW_EVENT_FRAME_H; ++y) {
+    const int sy = py + y;
+    if (sy < 0 || sy >= g_tft.height())
+      continue;
+    for (int x = 0; x < RW_EVENT_FRAME_W; ++x) {
+      const uint16_t c = g_event1555[y * RW_EVENT_FRAME_W + x];
+      const int sx = px + x;
+      if (c == 0 || sx < 0 || sx >= g_tft.width())
+        continue;
+      g_tft.drawPixel(sx, sy, to565(c));
+    }
+  }
+}
+
 // `moving_only` redraws just the cells the animation clocks moved -- the
 // water, typically -- which matters more here than on the nano: a full
 // repaint is a whole 320x240 frame over SPI, and an animation tick lands
-// several times a second. The hero always redraws on top regardless -- an
-// animation tick can repaint a cell it overlaps, and its own pose can have
-// changed on a step this same call is already handling.
+// several times a second. The hero and every event always redraw on top
+// regardless -- an animation tick can repaint a cell either overlaps, and
+// the hero's own pose can have changed on a step this same call is already
+// handling.
 void draw_map(bool moving_only = false, bool moving = false) {
   const int view_w = g_tft.width() / RW_TS;
   const int view_h = g_tft.height() / RW_TS;
@@ -220,7 +262,19 @@ void draw_map(bool moving_only = false, bool moving = false) {
     }
   }
 
+  // Below/same-behind first (under the hero), then the hero, then
+  // same-in-front/above (over the hero) -- rw_event_before_hero's own doc
+  // comment names the exact rule, matching the genuine renderer's
+  // event_target_buffer split. Events export sorted by (y, x)
+  // (export_nano7_map.rb), so this loop's own draw order within each half
+  // already matches RPG_RT's same-tier y-sort with no on-device work.
+  for (int i = 0; i < g_map.event_count; ++i)
+    if (rw_event_before_hero(&g_map, i))
+      draw_event(i, cam_x, cam_y);
   draw_hero(cam_x, cam_y, moving);
+  for (int i = 0; i < g_map.event_count; ++i)
+    if (!rw_event_before_hero(&g_map, i))
+      draw_event(i, cam_x, cam_y);
 }
 
 // The 5-way switch, straight off the board's own pin macros (the same signals
