@@ -36614,12 +36614,19 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   mrbgem, a reminder that the fast harness is a first pass, never a
   substitute, for load-time (class-body) code. See `docs/adr/0100-wolf-
   rpg-editor-position-addressing.md`.
-- Found along the way, not fixed: `#resolve_character_pos`'s own "-3..-7
-  a party member -- no party system exists yet" comment is now stale --
-  `SetMoveRoute`(201)/`SetVariableEx`(124)'s own party-member target band
-  could plausibly resolve through the same `#party_position` the position-
-  addressing work above already uses, now that a real roster exists. A
-  separate, still-open follow-up.
+- ✅ **SetMoveRoute/Effect(290)'s own party-member target (2026-09-08).**
+  The stale comment flagged just above, fixed: `#resolve_character_pos`'s
+  own `-3..-7` band now resolves to a real companion via `#party_position
+  (-target - 3)` (0-based, one less than `#exec_party`'s own 1-based
+  "member" -- a real off-by-one the new test caught by asserting *which*
+  slot moved, not just that a move happened). `Effect`(290)'s own
+  Character target resolves one too, but still cannot flash/shake it --
+  `WolfRPG::MapScene#character_sprite` has no sprite lookup for a party
+  slot, a separate, still-open follow-up of its own. 0 real calls target
+  this band in the sample game, the same "byte layout/semantics
+  confirmed, free once the machinery exists" bar this whole cycle's own
+  other 0-real-call additions already cleared. See `docs/adr/0101-wolf-
+  rpg-editor-move-route-party-target.md`.
 
 
 ## Tooling

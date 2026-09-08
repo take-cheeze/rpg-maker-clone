@@ -1328,8 +1328,10 @@ end
 
 assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explicit event id/the hero as SetMoveRoute(201)'s target" do
   # help/04ev_movesettingB.html's own documented target convention: >=0 an
-  # event id, -1 this event, -2 the hero, -3..-7 a party member (no party
-  # system exists yet, so that last band is logged and skipped).
+  # event id, -1 this event, -2 the hero, -3..-7 a party member (a real
+  # target once ADR 0099's roster exists -- see the dedicated party-target
+  # test right after this one; here the roster is empty, so -3 resolves to
+  # a real, but member-less, slot and is a no-op).
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
   scene = WolfTestFakeScene.new
@@ -1359,6 +1361,31 @@ assert "Wolf::Interpreter#exec_set_move_route resolves \"this event\"/an explici
   party_cmd.route = [WolfTestRouteCommand.new(0, [])]
   interp.exec_set_move_route(party_cmd) # must not raise
   assert_equal 0, scene.x
+end
+
+assert "Wolf::Interpreter#exec_set_move_route/#exec_effect_character resolve a real party member as SetMoveRoute(201)/Effect(290)'s own -3..-7 target" do
+  # -3 is companion 1 (party_position(0)) ... -7 is companion 5
+  # (party_position(4)) -- `#resolve_character_pos`'s own comment.
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"])) # companion 1
+
+  move_cmd = wolf_test_cmd(201, [-3])
+  move_cmd.route = [WolfTestRouteCommand.new(0, [])] # MoveDown
+  interp.exec_set_move_route(move_cmd)
+  assert_equal 1, interp.party_position(0)[:y]
+
+  # Companion 2's slot is empty -- the generic "target N" message, the
+  # same as a dangling event id or "this event" outside any map event.
+  interp.exec_set_move_route(wolf_test_cmd(201, [-4]))
+
+  # Effect(290)'s own character target: resolves to a real position now,
+  # but WolfRPG::MapScene#character_sprite still has no lookup for a party
+  # slot, so it stays a narrower, still-real "unimplemented" -- must not
+  # raise either way.
+  interp.exec_effect_character(wolf_test_cmd(290, [2, 0, -3, 0, 255, 255, 255]), Wolf::Interpreter::EFFECT_CHARACTER_FLASH)
 end
 
 assert "Wolf::Interpreter#event_position keys by [current_map_id, event.id], not event.id alone" do
