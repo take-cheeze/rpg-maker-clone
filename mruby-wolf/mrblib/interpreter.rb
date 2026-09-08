@@ -2369,23 +2369,50 @@ module Wolf
     def update_event_movement(event, page_index, page)
       pos = event_position(event)
       return unless page
-      if pos[:page_index] != page_index
+      just_activated = pos[:page_index] != page_index
+      if just_activated
         pos[:page_index] = page_index
-        apply_initial_move_route(pos, page) if page.move_type == Wolf::Page::MOVE_CUSTOM
         pos[:move_timer] = 0
+        apply_initial_move_route(pos, page) if page.move_type == Wolf::Page::MOVE_CUSTOM
       end
       case page.move_type
       when Wolf::Page::MOVE_RANDOM then tick_ambient_move(pos, page) { random_step_delta }
       when Wolf::Page::MOVE_TOWARD_HERO then tick_ambient_move(pos, page) { toward_hero_delta(pos) }
+      when Wolf::Page::MOVE_CUSTOM then tick_repeating_route(pos, page) unless just_activated
       end
     end
 
+    # `route_options`' own bit 0 ("動作を繰り返す", repeat -- cross-confirmed
+    # against the wolfrpg-map-parser crate's own `Options` struct, ADR 0069).
+    def repeating_route?(page)
+      ((page.route_options || 0) & 0x01) != 0
+    end
+
+    # Runs a Custom page's own route once, immediately, on activation (the
+    # same "snap, no gradual animation" #run_route_commands already gives
+    # SetMoveRoute(201)). A repeating route's own further loops happen in
+    # #tick_repeating_route below instead -- @move_timer is primed here to
+    # the same #move_pause_frames cadence #tick_ambient_move already gives
+    # Random/TowardHero. #update_event_movement skips calling
+    # #tick_repeating_route on this same activation frame (`just_activated`)
+    # so that fresh timer is not immediately ticked down a frame early.
     def apply_initial_move_route(pos, page)
-      if ((page.route_options || 0) & 0x01) != 0
-        unimplemented("map event page's own repeating custom move route")
+      run_route_commands(pos, page.route || [])
+      pos[:move_timer] = move_pause_frames(page.move_frequency) if repeating_route?(page)
+    end
+
+    # Re-triggers a repeating Custom route from its start every
+    # #move_pause_frames(page.move_frequency) frames, forever. A
+    # non-repeating route already ran its one and only time in
+    # #apply_initial_move_route above and has nothing further to do here.
+    def tick_repeating_route(pos, page)
+      return unless repeating_route?(page)
+      if pos[:move_timer] > 0
+        pos[:move_timer] -= 1
         return
       end
-      run_route_commands(pos, page.route)
+      run_route_commands(pos, page.route || [])
+      pos[:move_timer] = move_pause_frames(page.move_frequency)
     end
 
     def tick_ambient_move(pos, page)

@@ -36452,15 +36452,6 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
     (the way this reader's own already-implemented 16-27 run consecutively)
     would rest on the same weaker "never independently confirmed" basis
     `SetTransition`(160) was already deprioritized under.
-  - A map-event page's own repeating "カスタム" move route (`page.route_
-    options & 0x01`, `#apply_initial_move_route`'s own unimplemented gate)
-    is real (3 of 3 real custom-route pages in this sample game set it)
-    but is not a marker-command-shaped fix like BreakEvent was: today's
-    `#run_route_commands` applies a route once, to completion, so
-    "repeat forever" needs the page's own ambient-move tick
-    (`#tick_ambient_move`'s own sibling in `#advance_map_event`) to
-    re-trigger the whole route from its start indefinitely -- a real
-    runtime-shape change, not a one-line fix, for 3 real occurrences.
   - `SetVariableEx(124) character target -2`/`SetMoveRoute(201) target
     -2` (the hero) are *not* real reader gaps at all: `#resolve_character_
     pos`'s own `ROUTE_TARGET_HERO` branch already requires a real
@@ -36574,6 +36565,16 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   the time available), and Pro-protected `Map` files (no `PRO_MAGIC` entry
   exists for `Map` even in WolfTL's own reference). See
   `docs/adr/0095-wolf-rpg-editor-pro-protected.md`.
+- ✅ **A map event page's own repeating Custom move route (2026-09-08).**
+  ADR 0069's own named gap: a Custom-move page with `route_options`'s
+  repeat bit set (0x01, cross-confirmed there against the wolfrpg-map-
+  parser crate's own `Options` struct) now actually loops instead of
+  running its route once and stopping. `#update_event_movement` re-triggers
+  the whole route from its start every `#move_pause_frames(page.move_
+  frequency)` frames, forever -- the same cadence `#tick_ambient_move`
+  already gives Random/TowardHero, not a fresh guess. All 3 real
+  repeating-route pages in the bundled sample game exercise this now. See
+  `docs/adr/0097-wolf-rpg-editor-repeating-custom-route.md`.
 
 
 ## Tooling

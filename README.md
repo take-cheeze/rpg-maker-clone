@@ -635,14 +635,18 @@
   explicit `SetMoveRoute`(201) "■動作指定" command both run, against a
   runtime position kept separate from the parsed map data (mirroring
   `mruby-rpg2k`'s own `Game::Character` wrapper). A Custom page plays its
-  own route once, on activation; Random/TowardHero tick a step on a
-  best-effort cadence; `SetMoveRoute` can retarget any event or the hero.
-  Only the RouteCommand ids this reader could cross-check one by one
-  against the editor's own "動作指定" window (help/Ev_routeset.png) are
-  implemented — real command dumps from the sample game itself carry ids
-  no independent source could place, logged and skipped rather than
-  guessed, the same discipline as everywhere else in this maker. See
+  own route once, on activation, then loops it forever on a move_frequency-
+  paced cadence if its own "動作を繰り返す" repeat option is set; Random/
+  TowardHero tick a step on the same cadence; `SetMoveRoute` can retarget
+  any event or the hero. Only the RouteCommand ids this reader could
+  cross-check one by one against the editor's own "動作指定" window
+  (help/Ev_routeset.png) are implemented — real command dumps from the
+  sample game itself carry ids no independent source could place, logged
+  and skipped rather than guessed, the same discipline as everywhere else
+  in this maker. See
   [`docs/adr/0069-wolf-rpg-editor-event-movement.md`](docs/adr/0069-wolf-rpg-editor-event-movement.md)
+  and
+  [`docs/adr/0097-wolf-rpg-editor-repeating-custom-route.md`](docs/adr/0097-wolf-rpg-editor-repeating-custom-route.md)
 - **Choices really wait for the player.** `Choices`(102) now blocks (once a
   frame, exactly like `Wait`) on real up/down/confirm/cancel input and
   dispatches to the chosen branch — the sample game's own real title-screen
