@@ -120,6 +120,32 @@ int mrb_hal_io_lstat(mrb_state* mrb, const char* path, mrb_io_stat* st) {
   return mrb_hal_io_stat(mrb, path, st);
 }
 
+/*
+ * mruby-io's own core src/io.c calls plain dup()/waitpid() directly (IO#dup
+ * -- symdup -- and fptr_finalize's process-reaping path for a pid-bearing
+ * IO object), not through this HAL's own mrb_hal_io_dup/spawn_process/
+ * waitpid contract -- those two call sites are genuinely unreachable here
+ * (a pid-bearing IO object never exists: mrb_hal_io_spawn_process above
+ * always fails), but newlib declares both in <unistd.h>/<sys/wait.h>
+ * without ever defining them for this bare-metal target, so the link still
+ * needs something. Same "operations no game here ever reaches" reasoning
+ * as the rest of this file, just satisfying the linker rather than the
+ * HAL's own C API this time.
+ */
+int dup(int fd) {
+  (void)fd;
+  errno = ENOSYS;
+  return -1;
+}
+
+int waitpid(int pid, int* status, int options) {
+  (void)pid;
+  (void)status;
+  (void)options;
+  errno = ENOSYS;
+  return -1;
+}
+
 int mrb_hal_io_unlink(mrb_state* mrb, const char* path) {
   (void)mrb;
   return unlink(path);
@@ -326,4 +352,20 @@ void mrb_hal_io_init(mrb_state* mrb) {
 
 void mrb_hal_io_final(mrb_state* mrb) {
   (void)mrb;
+}
+
+/*
+ * Gem initialization -- the entry points mruby's own generated gem_init.c
+ * calls (GENERATED_TMP_mrb_hal_wio_io_gem_init/_final), named from this
+ * gem's own directory name the same way hal-posix-io's are.
+ */
+
+void mrb_hal_wio_io_gem_init(mrb_state* mrb) {
+  (void)mrb;
+  /* HAL interface functions are called by mruby-io gem */
+}
+
+void mrb_hal_wio_io_gem_final(mrb_state* mrb) {
+  (void)mrb;
+  /* Cleanup handled by mrb_hal_io_final, called from mruby-io */
 }

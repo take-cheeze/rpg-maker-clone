@@ -420,10 +420,26 @@ if wio
   MRuby::CrossBuild.new('wio') do |conf|
     toolchain :gcc
 
-    conf.cc.command = 'arm-none-eabi-gcc'
-    conf.cxx.command = 'arm-none-eabi-g++'
-    conf.linker.command = 'arm-none-eabi-gcc'
-    conf.archiver.command = 'arm-none-eabi-ar'
+    # A real `pio run -e wio_rgss_boot` link surfaced a whole class of bogus
+    # undefined references (__aeabi_read_tp, from stack-protector code no
+    # bare-metal newlib here implements) that turned out to have nothing to
+    # do with mruby-rgss at all: a bare `arm-none-eabi-gcc` resolves via PATH
+    # to this machine's distro package (13.2.1, built with
+    # -fstack-protector-strong baked into ITS OWN defaults) rather than
+    # PlatformIO's own bundled toolchain (7.2.1, which the final link always
+    # uses) -- two different compiler majors, silently disagreeing on ABI
+    # and codegen defaults, is not something any amount of flag-matching can
+    # paper over. Prefer PlatformIO's own copy so the object files this rake
+    # build produces are built by the exact same compiler that links them;
+    # fall back to plain PATH resolution (the prior behaviour) where that
+    # package isn't installed, e.g. a standalone measurement-only build (see
+    # RGSS_WIO_STUB_HEADERS above) never needs a real link to agree with.
+    pio_gcc_bin = "#{ENV['HOME']}/.platformio/packages/toolchain-gccarmnoneeabi/bin"
+    gcc_prefix = Dir.exist?(pio_gcc_bin) ? "#{pio_gcc_bin}/" : ''
+    conf.cc.command = "#{gcc_prefix}arm-none-eabi-gcc"
+    conf.cxx.command = "#{gcc_prefix}arm-none-eabi-g++"
+    conf.linker.command = "#{gcc_prefix}arm-none-eabi-gcc"
+    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-ar"
 
     # onigmo's (old) config.sub needs a triplet it recognizes to enter
     # cross-compile mode; arm-none-eabi is such a bare-metal triple.
@@ -441,12 +457,79 @@ if wio
     # them). Pointing this at a directory with minimal declaration-only stubs
     # of both lets `MRUBY_TARGET=wio rake` produce a real, complete libmruby.a
     # standalone -- e.g. for a real arm-none-eabi-size measurement -- without
-    # a PlatformIO project. Nothing in this repo sets it by default.
+    # a PlatformIO project. NOT suitable for an actual PlatformIO link: TFT_eSPI
+    # is a real stateful C++ class (fields, a Print base), and wio.cxx embeds a
+    # `TFT_eSPI g_tft` global by value, so the object's size and layout must
+    # match the real class exactly -- a declarations-only stub compiles fine
+    # but silently gives g_tft the wrong (too small, unrelated) layout, which
+    # the real library's own methods then read/write past. See
+    # RGSS_WIO_ARDUINO_INCLUDES below for the real-headers alternative this
+    # implies. Nothing in this repo sets either by default.
     [conf.cc, conf.cxx].each { |t| t.include_paths << ENV['RGSS_WIO_STUB_HEADERS'] } if ENV['RGSS_WIO_STUB_HEADERS']
+
+    # Real-link escape hatch, a no-op unless set: points wio.cxx's compile at
+    # the actual PlatformIO framework headers (Arduino.h, TFT_eSPI.h and their
+    # own transitive includes -- CMSIS, the SAMD51 device headers, the board's
+    # variant.h) instead of the measurement-only stub above, so the resulting
+    # wio.o is truly ABI-compatible with a real `pio run -e wio_rgss_boot`
+    # link: same extern "C" linkage and parameter types for pinMode/
+    # digitalRead/delay/millis (the stub had the wrong types and was missing
+    # extern "C" entirely, so the linker looked for mangled C++ symbols no
+    # framework object ever defines), and the same true TFT_eSPI layout.
+    # RGSS_WIO_ARDUINO_INCLUDES is a colon-separated list of -I directories --
+    # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR for
+    # the exact set (extracted from a real `pio run -v` compile of a
+    # PlatformIO-framework file, since the PlatformIO package cache paths are
+    # host- and package-version-specific and cannot be hardcoded here). The
+    # defines below are true Wio Terminal board/toolchain constants, not host
+    # paths, so they are hardcoded rather than threaded through the
+    # environment -- they only apply once real Arduino headers are actually
+    # in play.
+    if ENV['RGSS_WIO_ARDUINO_INCLUDES']
+      ENV['RGSS_WIO_ARDUINO_INCLUDES'].split(':').each { |p| conf.cxx.include_paths << p }
+      conf.cxx.defines +=
+        %w[PLATFORMIO=60200 __SAMD51P19A__ SEEED_WIO_TERMINAL SEEED_GROVE_UI_WIRELESS __SAMD51__
+           __FPU_PRESENT ARM_MATH_CM4 VARIANT_QSPI_BAUD_DEFAULT=50000000 TXRXLED_ENABLE ROLE=0
+           ARDUINO=10805 F_CPU=120000000L USBCON USB_VID=0x2886 USB_PID=0x802D ARDUINO_ARCH_SAMD
+           USB_CONFIG_POWER=100]
+    end
+
+    # Not gated behind RGSS_WIO_ARDUINO_INCLUDES above: this is a real,
+    # always-applicable fix, found the same way (a real `pio run -e
+    # wio_rgss_boot` link). GCC's C++11 thread-safe static-local-variable
+    # guards (mruby-rgss's stb_image-derived decoders and mruby-lcf's cp932
+    # conversion both have function-local statics with non-trivial init)
+    # compile, on ARM EABI, to an inline fast path that reads the current
+    # thread id via __aeabi_read_tp -- a helper no arm-none-eabi newlib
+    # multilib in this toolchain actually defines (single-threaded bare-metal
+    # firmware has no thread pointer to read), so the link fails outright.
+    # PlatformIO's own Arduino framework compiles already build every C++
+    # file with this same flag for the same reason; libmruby.a just never
+    # picked it up before there was a real, non-stub link to catch it.
+    conf.cxx.flags << '-fno-threadsafe-statics'
+
+    # mruby-lcf and mruby-rgss both need C++17 (uni-algo's own conv.h hard-
+    # errors below it, and mruby-lcf/src/lcf.cxx includes <optional>). Every
+    # other cross build here (host, wasm) gets this for free because the
+    # system/emsdk compiler's OWN default standard happens to already be new
+    # enough -- but PlatformIO's bundled arm-none-eabi-g++ is GCC 7.2.1,
+    # whose default (gnu++14) is not, and using PlatformIO's own toolchain
+    # (see the gcc_prefix comment above) is exactly what surfaced this.
+    conf.cxx.flags << '-std=gnu++17'
 
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags
+      # mruby's own gcc.rake defaults to -O3 (dropping only the debug
+      # build's -O0 above leaves that -O3 in place, same as PSP's own cross
+      # build); PSP has UMD-backed storage to spare, but the Wio Terminal's
+      # 512 KB internal flash does not -- a real `pio run -e wio_rgss_boot`
+      # link overflows FLASH by over 1.5 MB even before this. -Os (GCC's
+      # last -O flag wins) trades some speed for meaningfully smaller code,
+      # the same tradeoff PlatformIO's own Arduino framework build already
+      # makes for this board. Still nowhere near enough on its own to fit --
+      # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
+      t.flags << '-Os'
       # Bare-metal newlib falls through mruby's string.c to a 1 MiB default cap
       # (see below); game data (maps/images loaded as strings, and whole packed
       # archives read in one shot by RGSSAD.open) can exceed that many times
