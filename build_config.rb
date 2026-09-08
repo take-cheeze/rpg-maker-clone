@@ -57,7 +57,16 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # (Android confirmed on-device) died in mrb_open() with "NameError:
   # uninitialized constant Dir" the moment mruby-rpgxp's rgss_library.rb --
   # which patches Dir.glob over it -- loaded. Declare it for real.
-  conf.gem core: 'mruby-dir'
+  #
+  # wio is the one exception: its bare arm-none-eabi newlib has no dirent
+  # implementation at all (a hard #error in <dirent.h>, unlike PSP's own
+  # pspsdk newlib), which is exactly what hal-posix-dir needs -- and nothing
+  # reachable there needs Dir at all in the first place: mruby-rpgxp is the
+  # only real caller (rgss_library.rb's Dir.glob patch) and it is already
+  # excluded from wio's own single_format_only gem set below, so unlike the
+  # desktop/android history above, there is no live NameError risk to guard
+  # against by keeping it.
+  conf.gem core: 'mruby-dir' unless conf.name == 'wio'
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
@@ -426,6 +435,15 @@ if wio
     # compile and link lines so the mruby objects match the firmware's ABI.
     cpu_flags = %w[-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16]
 
+    # Dev/measurement escape hatch, a no-op unless set: wio.cxx's real HAL
+    # (mruby-rgss/src/wio.cxx) needs Arduino.h/TFT_eSPI.h, which normally only
+    # exist inside a PlatformIO build (app/wio's own env:wio already has
+    # them). Pointing this at a directory with minimal declaration-only stubs
+    # of both lets `MRUBY_TARGET=wio rake` produce a real, complete libmruby.a
+    # standalone -- e.g. for a real arm-none-eabi-size measurement -- without
+    # a PlatformIO project. Nothing in this repo sets it by default.
+    [conf.cc, conf.cxx].each { |t| t.include_paths << ENV['RGSS_WIO_STUB_HEADERS'] } if ENV['RGSS_WIO_STUB_HEADERS']
+
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags
@@ -447,8 +465,26 @@ if wio
       # docs/adr/0047-psp-memory-budget.md.
       t.defines << 'MRB_HEAP_PAGE_SIZE=256'
       t.defines << 'KHASH_INITIAL_SIZE=16'
+      # Mirrors PSP_BUILD below: gates the wio.cxx HAL in the mruby-rgss gem
+      # on and the desktop-only sixel/iTerm2 terminal.cxx backend off (that
+      # file's own guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`).
+      # PlatformIO's app/wio build already defines this for the app half
+      # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
+      # its own copy since it never sees that build's flags.
+      t.defines << 'WIO_TERMINAL'
     end
     conf.linker.flags += cpu_flags
+
+    # Own HAL for mruby-io (see its own file comment): this board's bare
+    # newlib is close enough to POSIX for plain file I/O (open/read/write/
+    # lseek/fstat/unlink all compile and, once app/wio/src/sd_syscalls.cxx's
+    # WIO_WITH_SD syscalls are linked in by the firmware, work), but has none
+    # of hal-posix-io's wider POSIX surface (lstat, symlinks, fork/exec,
+    # select) -- and none of that surface is reachable from a real
+    # RPG2000/2003 game running through this exporter's own file access
+    # anyway. Added before rpg_maker_gems (which pulls in mruby-io itself) so
+    # mruby-io's own "no HAL specified" auto-selection never fires here.
+    conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
 
     rpg_maker_gems(conf)
   end

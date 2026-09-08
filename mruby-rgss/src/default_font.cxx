@@ -9,6 +9,15 @@
 // Deliberately dependency-free: this gem is also built for the terminal-only
 // and Emscripten variants, so the search is plain POSIX directory reading plus
 // whatever directory the executable hands in (see default_font.hxx).
+//
+// The Wio Terminal is the one target this does not hold for: its bare
+// arm-none-eabi newlib has no dirent implementation at all (a hard #error in
+// <dirent.h>, unlike PSP's own pspsdk newlib), and there is no real
+// "enumerate this directory" concept to give it in exchange -- a project
+// ships one font at a fixed path or it does not, decided at export time, not
+// discovered on-device. is_dir/first_font_in below always answer "not found"
+// there instead, which is exactly probe()'s own existing fallback path for
+// every candidate a real directory read would come up empty on anyway.
 
 #include "default_font.hxx"
 
@@ -18,7 +27,21 @@
 #include <string>
 #include <vector>
 
+#ifdef WIO_TERMINAL
+typedef void DIR;
+static inline DIR* opendir(const char*) {
+  return nullptr;
+}
+static inline void closedir(DIR*) {}
+struct dirent {
+  char d_name[1];
+};
+static inline dirent* readdir(DIR*) {
+  return nullptr;
+}
+#else
 #include <dirent.h>
+#endif
 
 namespace rgss {
 namespace {

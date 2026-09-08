@@ -188,6 +188,21 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-stringio-native-getbyte.patch")
   set(mruby_stringio_prefix "${ARG_REPO_ROOT}/3rd/mruby-stringio")
 
+  # mruby-marshal's own mrbgem.rake unconditionally add_dependency'd
+  # mruby-onig-regexp, silently defeating ADR 0098's psp/wio onigmo trim (that
+  # ADR's own top-level conf.gem exclusion never stopped this unconditional
+  # dependency from pulling onigmo right back in) -- not noticed until a real
+  # end-to-end MRUBY_TARGET=wio build first ran to completion. Made conditional,
+  # paired with a marshal.cpp fix so Marshal.dump/load do not hard-require the
+  # Regexp class to exist at all once onigmo (which alone defines it) is really
+  # gone. Same project-owned-submodule, no-push-access reasoning as the
+  # mruby-stringio patch above: mruby-marshal is take-cheeze's own repo, but
+  # this session's access is scoped to rpg-maker-clone, so it is patched in
+  # place here instead.
+  set(mruby_marshal_onigmo_patch
+      "${ARG_REPO_ROOT}/patches/mruby-marshal-psp-wio-onigmo-optional.patch")
+  set(mruby_marshal_prefix "${ARG_REPO_ROOT}/3rd/mruby-marshal")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -212,6 +227,8 @@ function(rpg2k_add_mruby)
             "${mruby_gc_type_counts_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
             "${mruby_stringio_prefix}" "${mruby_stringio_getbyte_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
+            "${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -227,6 +244,7 @@ function(rpg2k_add_mruby)
             "${mruby_nomem_patch}"
             "${mruby_gc_type_counts_patch}"
             "${mruby_stringio_getbyte_patch}"
+            "${mruby_marshal_onigmo_patch}"
             ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
