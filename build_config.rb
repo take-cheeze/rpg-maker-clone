@@ -114,9 +114,28 @@ def rpg_maker_gems(conf, include_mvjs: true)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
+
+  # psp/wio ship one RPG Maker format only, RPG2000/2003 (ADR 0061/0091/0097)
+  # -- unlike desktop/wasm/android, which run whichever format a game
+  # directory on disk turns out to be (rpg_maker_gem_dispatch below picks the
+  # matching one at runtime). mruby-rpgxp (RPG Maker XP), mruby-rpgvx (VX/VX
+  # Ace, itself add_dependency'd on rpgxp) and mruby-wolf (WOLF RPG Editor)
+  # are dead weight there: 30,812 + 11,994 + 82,367 = 125,173 bytes of the
+  # ~639 KB this project's mrblib compiles to in total, measured with real
+  # `mrbc -g` the same way ADR 0097's debug-tools trim was. mruby-onig-regexp
+  # (onigmo, "easily hundreds of KB" per ADR 0007) goes with them: profiling
+  # mruby-rpg2k/mruby-lcf/mruby-rgss's own mrblib for Regexp/=~/.match/.scan
+  # found none (mruby-rpg2k/mrblib/main.rb even says so outright, "this mruby
+  # build bundles neither a regexp engine nor String#strip") -- every real
+  # user is one of the three gems this drops (mruby-wolf's Picture window-
+  # shape tags, mruby-rpgxp's Dir.glob fallback, mruby-mvjs's JSON/HTML
+  # scanning), so nothing left needs it once they're gone. See docs/adr/
+  # 0098-rpg2k-single-format-trim.md.
+  single_format_only = %w[psp wio].include?(conf.name)
+
   conf.gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
     bundle_onigmo
-  end
+  end unless single_format_only
 
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf"
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
@@ -127,12 +146,14 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # namespace.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
-  conf.gem "#{MRUBY_ROOT}/../../mruby-wolf"
-  conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
+  unless single_format_only
+    conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
+    conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
+    conf.gem "#{MRUBY_ROOT}/../../mruby-wolf"
+    conf.gem "#{MRUBY_ROOT}/../../mruby-mvjs" if include_mvjs
+  end
 
-  rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs)
+  rpg_maker_gem_dispatch(conf, include_mvjs: include_mvjs, single_format_only: single_format_only)
 end
 
 # mrb_open() eagerly runs *every* configured gem's init -- defining every
@@ -160,9 +181,18 @@ end
 # entry points mrb_init_mrbgems already calls, so it costs nothing beyond
 # which function calls which of them. See src/main.cxx's "Deferred per-maker
 # gem init" section for the call side.
-def rpg_maker_gem_dispatch(conf, include_mvjs:)
-  maker_gem_names = %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf] +
-                     (include_mvjs ? %w[mruby-mvjs] : [])
+def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
+  # single_format_only (psp/wio, see rpg_maker_gems) compiles mruby-rpg2k
+  # alone -- the closure/dispatch machinery below still runs, generating a
+  # trivial rpg_maker_init_rpg2k_gem with nothing to dispatch *between*, so
+  # the two builds keep exactly one code path instead of a parallel
+  # single-maker special case.
+  maker_gem_names = if single_format_only
+                       %w[mruby-rpg2k]
+                     else
+                       %w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf] +
+                         (include_mvjs ? %w[mruby-mvjs] : [])
+                     end
   src = "#{conf.build_dir}/mrbgems/rpg_maker_gem_dispatch.c"
 
   # Gems declared directly, at the top of rpg_maker_gems, rather than pulled
@@ -250,28 +280,41 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:)
       shared.each(&emit_call)
       f.puts '}'
 
-      rpg2k, rpgxp, rpgvx, wolf, mvjs = makers
+      # single_format_only's maker_gem_names is just ['mruby-rpg2k'], so
+      # rpgxp/rpgvx/wolf/mvjs all come out nil here -- guard each of their
+      # blocks the same way mvjs already had to (include_mvjs: false), rather
+      # than assuming every maker this dispatch has ever known about is
+      # still active.
+      rpg2k, rpgxp, rpgvx, wolf, mvjs = maker_gem_names.zip(makers).to_h.values_at(
+        *%w[mruby-rpg2k mruby-rpgxp mruby-rpgvx mruby-wolf mruby-mvjs]
+      )
       f.puts
       f.puts 'void rpg_maker_init_rpg2k_gem(mrb_state *mrb) {'
       maker_private['mruby-rpg2k'].each(&emit_call)
       emit_call.call(rpg2k)
       f.puts '}'
-      f.puts
-      f.puts 'void rpg_maker_init_rpgxp_gem(mrb_state *mrb) {'
-      maker_private['mruby-rpgxp'].each(&emit_call)
-      emit_call.call(rpgxp)
-      f.puts '}'
-      f.puts
-      f.puts 'void rpg_maker_init_rpgvx_gem(mrb_state *mrb) {'
-      f.puts '  rpg_maker_init_rpgxp_gem(mrb); /* RGSS2/3 extends RGSS */'
-      maker_private['mruby-rpgvx'].each(&emit_call)
-      emit_call.call(rpgvx)
-      f.puts '}'
-      f.puts
-      f.puts 'void rpg_maker_init_wolf_gem(mrb_state *mrb) {'
-      maker_private['mruby-wolf'].each(&emit_call)
-      emit_call.call(wolf)
-      f.puts '}'
+      if rpgxp
+        f.puts
+        f.puts 'void rpg_maker_init_rpgxp_gem(mrb_state *mrb) {'
+        maker_private['mruby-rpgxp'].each(&emit_call)
+        emit_call.call(rpgxp)
+        f.puts '}'
+      end
+      if rpgvx
+        f.puts
+        f.puts 'void rpg_maker_init_rpgvx_gem(mrb_state *mrb) {'
+        f.puts '  rpg_maker_init_rpgxp_gem(mrb); /* RGSS2/3 extends RGSS */'
+        maker_private['mruby-rpgvx'].each(&emit_call)
+        emit_call.call(rpgvx)
+        f.puts '}'
+      end
+      if wolf
+        f.puts
+        f.puts 'void rpg_maker_init_wolf_gem(mrb_state *mrb) {'
+        maker_private['mruby-wolf'].each(&emit_call)
+        emit_call.call(wolf)
+        f.puts '}'
+      end
       if mvjs
         f.puts
         f.puts 'void rpg_maker_init_mvjs_gem(mrb_state *mrb) {'

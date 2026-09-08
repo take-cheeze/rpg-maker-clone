@@ -188,6 +188,13 @@ Phase 1** rather than assumed:
   bytecode, measured with real `mrbc -g`. Small next to onigmo/uni-algo, but
   free of the "will some game need this" question the other levers here
   still carry.
+- Drop onigmo, and the three RPG Maker formats that alone justify carrying
+  it. **Done** — ADR 0098: `mruby-onig-regexp` plus `mruby-rpgxp`,
+  `mruby-rpgvx` and `mruby-wolf` (169,464 bytes of Ruby bytecode for wio;
+  onigmo's own size is this ADR's "easily hundreds of KB" estimate still,
+  not yet a measurement — see that ADR's Consequences) drop from the
+  psp/wio builds outright, since this project has never run anything but
+  RPG2000/2003 on either.
 - Place read-only bytecode, rodata and — importantly — the game assets in the
   **4 MB external QSPI flash** (XIP / a read-only FS), keeping internal flash for
   hot code.
