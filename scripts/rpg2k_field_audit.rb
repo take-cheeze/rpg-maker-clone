@@ -143,7 +143,7 @@ mixed = makers.values.uniq.size > 1
 
 rows = []
 LCF::Schema::DATABASE[:elements].each do |cid, spec|
-  els = spec[:elements]
+  els = LCF.elements_of(spec)
   next unless els
   els.each_value do |f|
     name = f[:name]

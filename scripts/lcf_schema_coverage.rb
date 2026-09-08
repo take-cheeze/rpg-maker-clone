@@ -44,7 +44,7 @@ def declared_ids(schema)
   if schema.is_a?(Array)
     schema.flat_map { |s| declared_ids(s) }.to_set
   elsif schema && schema[:elements]
-    schema[:elements].keys.to_set
+    LCF.elements_of(schema).keys.to_set
   else
     Set.new
   end
@@ -65,10 +65,15 @@ def scan(obj, schema, path)
   return if schema[:type] == :Tree
   return unless schema[:elements]
   # An Array2D is a table of records: its "present" ids are table entry keys, not
-  # chunk ids, so do not compare them -- descend into each record instead.
+  # chunk ids, so do not compare them -- descend into each record instead. Each
+  # decoded row is an Array1D built against this SAME schema node (see
+  # Array2D#[] in lcf.rb, which hands its own @schema to Array1D.new
+  # unchanged) -- not schema[:elements] (that is only the row's *field list*,
+  # with no :type/:elements of its own for scan's own top-of-function checks
+  # to key off).
   if schema[:type] == :Array2D
     begin
-      obj.each { |_id, entry| scan(entry, schema[:elements], "#{path}[]") }
+      obj.each { |_id, entry| scan(entry, schema, "#{path}[]") }
     rescue
     end
     return
@@ -77,7 +82,7 @@ def scan(obj, schema, path)
   present = present_ids(obj)
   declared = declared_ids(schema)
   (present - declared).sort.each { |id| $gaps[path] << id }
-  schema[:elements].each do |idx, e|
+  LCF.elements_of(schema).each do |idx, e|
     next unless e[:type] == :Array1D || e[:type] == :Array2D
     begin
       v = obj[idx]
@@ -86,7 +91,7 @@ def scan(obj, schema, path)
     end
     next unless v
     if e[:type] == :Array2D
-      v.each { |_id, entry| scan(entry, e[:elements], "#{path}.#{e[:name]}[]") }
+      v.each { |_id, entry| scan(entry, e, "#{path}.#{e[:name]}[]") }
     else
       scan(v, e, "#{path}.#{e[:name]}")
     end

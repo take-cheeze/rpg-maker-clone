@@ -11187,7 +11187,7 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
      current_tone_red current_tone_green current_tone_blue
      current_tone_saturation finish_x finish_y zoom transparency
      tone_red tone_green tone_blue tone_saturation].each do |name|
-    id = LCF::Schema::SAVE_PICTURE.find { |_, spec| spec[:name] == name }.first
+    id = LCF::Schema::SAVE_PICTURE.call.find { |_, spec| spec[:name] == name }.first
     ok erased.key?(id), "field #{id} (#{name}) is still present after erase"
   end
   eq 111, erased.show_x
@@ -11202,7 +11202,7 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
   # Control: an id that was never shown at all is still a fully field-less
   # placeholder (cycle #154, unchanged by this fix).
   never_touched = pics[6]
-  eq [], (1..51).select { |id| LCF::Schema::SAVE_PICTURE[id] && never_touched.key?(id) },
+  eq [], (1..51).select { |id| LCF::Schema::SAVE_PICTURE.call[id] && never_touched.key?(id) },
      'a never-touched id carries no fields at all, not even absent-name'
 end
 
@@ -11388,7 +11388,7 @@ check 'to_lsd writes player_transparent to the hero record (SAVE_MOVABLE ' \
   # SAVE_SYSTEM no longer declares field 55 as :transparent at all, so a
   # genuine save's own event_message_active (unrelated to visibility) has no
   # code path left that could ever misread it as one.
-  ok !LCF::Schema::SAVE_SYSTEM.key?(55),
+  ok !LCF::Schema::SAVE_SYSTEM.call.key?(55),
      'field 55 is no longer claimed as player-transparent'
 end
 
