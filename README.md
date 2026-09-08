@@ -754,12 +754,19 @@
   guarantee. Self-variables, the database, and party state are not
   captured. See
   [`docs/adr/0087-wolf-rpg-editor-save-load.md`](docs/adr/0087-wolf-rpg-editor-save-load.md)
-- **Party image reset/warp.** `Party`(270)'s "キャラクター画像を全消去
-  する"/"仲間全員を主人公の位置にワープ" Special sub-operations are
-  no-ops, since this reader has no party-member sprites at all to erase
-  or move. Adding, removing, or replacing an actual member still needs a
-  real party system. See
+- **A basic party roster and formation-following.** `Party`(270)'s
+  `Remove`/`Insert`/`Replace`/`RemoveGraphic` edit a real roster of up to
+  5 companions; `EraseAllCharacters`/`WarpPartyToHero` act on it instead
+  of a trivially-empty one; `TurnOnPartyFollowing`/`TurnOffPartyFollowing`
+  toggle real formation-following — each companion walks one tile behind
+  the hero, or the companion ahead of it, matching the manual's own
+  documented default. Party-member graphics are still colour blocks, the
+  hero's own current fidelity. Formation-synchro, transparency, and
+  memorize/recall stay unimplemented — 0 real calls, each needing a new
+  rendering/snapshot concept nothing real confirms a design against. See
   [`docs/adr/0088-wolf-rpg-editor-party.md`](docs/adr/0088-wolf-rpg-editor-party.md)
+  and
+  [`docs/adr/0099-wolf-rpg-editor-party-system.md`](docs/adr/0099-wolf-rpg-editor-party-system.md)
 - **Per-map event position keying.** A revisited map (`Teleport`(130) or
   `SaveLoad`(220)'s own Load) now correctly finds its own events exactly
   where they were left, instead of colliding with a different map's
