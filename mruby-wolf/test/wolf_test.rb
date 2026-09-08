@@ -412,7 +412,9 @@ assert "Wolf::ValueRef.decode resolves the documented value-reference bands" do
   assert_equal [:system_variable, 9], Wolf::ValueRef.decode(9_000_009)
   assert_equal [:system_string, 1], Wolf::ValueRef.decode(9_900_001)
   assert_equal [:common_event_self, 5, 42], Wolf::ValueRef.decode(15_000_000 + 100 * 5 + 42)
-  assert_equal [:unsupported, 9_100_005], Wolf::ValueRef.decode(9_100_005)
+  assert_equal [:event_position, 0, 5], Wolf::ValueRef.decode(9_100_005) # event 0, field 5 (shadow number)
+  assert_equal [:party_position, 3, 6], Wolf::ValueRef.decode(9_180_036) # who=3 (companion 3), field 6 (direction)
+  assert_equal [:this_event_position, 1], Wolf::ValueRef.decode(9_190_001) # field 1 (mapY)
 end
 
 assert "Wolf::ValueRef.decode splits the DB triple as 10-AA-BBBB-CC" do
@@ -2709,6 +2711,77 @@ assert "Wolf::Interpreter#exec_party skips an out-of-range member, a still-unimp
   interp.exec_party(wolf_test_cmd(270, [])) # no operation nibble to even read
   interp.exec_party(wolf_test_cmd(270, [20, 0])) # real Special shape never carries a second argument
   interp.exec_party(wolf_test_cmd(270, [1, 1])) # Insert with no graphics argument at all
+end
+
+# ---- Wolf::VarStore position-addressing (9100000/9180000/9190000) -----------
+
+assert "Wolf::VarStore#number/#set_number read/write the hero's own tile position and facing through 9180000+10*0+X (the sample game's own real \"who=0\" shape)" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  scene.x = 3
+  scene.y = 5
+  interp.current_scene = scene
+
+  assert_equal 3, store.number(9_180_000) # who=0 field=0: hero mapX
+  assert_equal 5, store.number(9_180_001) # who=0 field=1: hero mapY
+  assert_equal 6, store.number(9_180_002) # who=0 field=2: hero preciseX (3*2)
+  assert_equal 9, store.number(9_180_003) # who=0 field=3: hero preciseY (5*2-1)
+  assert_equal 2, store.number(9_180_006) # who=0 field=6: hero facing, numpad "down"
+
+  store.set_number(9_180_000, 7)
+  store.set_number(9_180_001, 8)
+  assert_equal 7, scene.x
+  assert_equal 8, scene.y
+
+  store.set_number(9_180_006, 8) # numpad "up"
+  assert_equal :up, scene.hero_pos[:direction]
+end
+
+assert "Wolf::VarStore#number/#set_number read/write a companion's own position through 9180000+10*Y+X, Y=1..5" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.exec_party(wolf_test_cmd(270, [1, 1], ["a.png"])) # slot 0 ("1人目"), seeded at (0, 0)
+
+  assert_equal 0, store.number(9_180_010) # who=1 (companion 1) field=0
+
+  store.set_number(9_180_010, 4) # who=1 field=0: companion 1's own mapX
+  store.set_number(9_180_011, 6) # who=1 field=1: mapY
+  assert_equal 4, interp.party_position(0)[:x]
+  assert_equal 6, interp.party_position(0)[:y]
+
+  # who=2 (companion 2): no member in that slot -- reads 0, writes are a no-op.
+  assert_equal 0, store.number(9_180_020)
+  store.set_number(9_180_020, 99) # must not raise
+  assert_nil interp.party_members[1]
+end
+
+assert "Wolf::VarStore#number degrades to 0/no-op with no Interpreter attached, and logs an unimplemented field rather than guessing" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new) # no Interpreter constructed at all
+  assert_equal 0, store.number(9_180_000)
+  store.set_number(9_180_000, 5) # must not raise
+
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  scene = WolfTestFakeScene.new
+  interp.current_scene = scene
+  assert_equal 0, store.number(9_180_004) # field 4: pixel height, not implemented
+  store.set_number(9_180_007, 12) # field 7: pixel offset X, not implemented -- must not raise
+end
+
+assert "Wolf::Interpreter#resolve_position_ref resolves a real map event through 9100000+10*Y+X and this-event through 9190000+X" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  event = WolfTestEvent.new(3, 2, 2, [])
+  interp.current_map = WolfTestMap.new([event])
+
+  assert_equal 2, store.number(9_100_030) # event id 3, field 0 (9100000+10*3+0)
+  store.set_number(9_100_031, 9) # event id 3, field 1 (mapY)
+  assert_equal 9, interp.event_position(event)[:y]
+
+  store.current_map_event_id = 3
+  assert_equal 9, store.number(9_190_001) # this event's own field 1 (mapY)
+
+  assert_equal 0, store.number(9_100_990) # event id 99: no such event
 end
 
 # ---- Wolf::Interpreter#exec_save_load (SaveLoad(220)) -----------------------
