@@ -4,12 +4,14 @@ Date: 2026-09-08
 
 ## Status
 
-Proposed
+Accepted
 
-Design record and mechanism verification only. No runtime or build code
-changes ship with this ADR — matching ADR 0007's own P0, this is budget
-before code, because the thing this would wire into (wio's own
-`libmruby.a` link) does not exist yet (see Consequences).
+Design record and mechanism verification, now including a real
+Renode-emulated-hardware boot (see "On real (emulated) hardware" below).
+Still no *shipped* runtime or build code — matching ADR 0007's own P0,
+this is budget before code, because the thing this would wire into
+(wio's own `libmruby.a` link) does not exist yet (see Consequences) — but
+the mechanism itself is no longer just a host-side claim.
 
 ## Context
 
@@ -108,6 +110,64 @@ native registration, then `mrb_read_irep_file` the Ruby half), which is
 real integration work belonging with whatever actually wires a file loader
 into a boot sequence — not proven or disproven by this ADR either way.
 
+## On real (emulated) hardware
+
+The round-trip above ran on the x86-64 host. `app/wio/src/mruby_sd_smoke_main.cxx`
+(a scratch smoke test, not part of the shipped firmware) reruns the same
+check on the Wio's own Cortex-M4, under Renode built from source with this
+project's own SAMD51/ILI9341 peripherals (`scripts/wio_renode_build.bash`):
+reads a plain RITE binary off an emulated SD card
+(`scripts/wio_renode_sdcard.bash`), loads it with `mrb_load_irep_buf`,
+and checks the resulting `LCF::Schema` constants through mruby's C API,
+reporting pass/fail as a magic value in a fixed global Renode reads back
+with `sysbus ReadDoubleWord` (no UART model needed). It passed — `0xC0FFEE42`
+read back after a real boot, real SD read, real bytecode load, real Ruby
+constant lookups.
+
+Getting there surfaced two real bugs neither the host round-trip nor
+ADR 0098's own measurements could have found, since both need an actual
+32-bit target:
+
+- **`mrb_int` size mismatch.** `build_config.rb`'s host `mrbc` (used to
+  compile bytecode for every target, cross builds included) defaults to
+  `MRB_INT64` — `mrbconf.h`'s own auto-detection picks it for any 64-bit
+  host — while psp/wio cross targets default to `MRB_INT32`. `mruby-lcf`'s
+  own `schema.rb` has a literal that lands in exactly the gap: too big for
+  32 bits, small enough that mruby doesn't promote it to an arbitrary-
+  precision bignum (a compile-time constant-folded computation reducing to
+  `2251799813685248`) — so the host `mrbc` emits an `IREP_TT_INT64` pool
+  entry, and the 32-bit reader's own `case IREP_TT_INT64: #else return
+  FALSE #endif` (`3rd/mruby/src/load.c`) can't parse it at all. The
+  failure surfaces as a bare `ScriptError` ("irep load error") with no
+  hint that a specific literal, let alone its size, is the cause — found
+  by patching a debug line-number marker into a local, uncommitted copy of
+  `load.c`'s 24 `return FALSE` sites and re-running under Renode until one
+  actually fired, not by inspection. **Not fixed in `build_config.rb`** —
+  forcing `MRB_INT32` onto the shared host build would also change
+  desktop/wasm/android, and that deserves its own real look rather than a
+  rushed one here. Worked around for this smoke test only, with a scratch
+  host `mrbc` forcing `MRB_INT32` to match the cross target.
+- **A real memory ceiling, not just a theoretical one.** Loading
+  `mruby-lcf`'s *entire* `schema.rb` (all 25 record types, ~930 fields,
+  ADR 0098's own count) this way raises `NoMemoryError` on the Wio's
+  192 KB SRAM under a stock Arduino SAMD malloc arena — confirmed by
+  reading back the raised exception's own class name from memory, not
+  assumed from the `NoMemoryError` result code alone. A smaller, still
+  real slice (`COMMON_EVENT` through `BATTLER_ANIMATION`, ~27 fields —
+  the same slice the schema-hash-literal A/B mentioned in ADR 0097 used)
+  loads and executes cleanly. Streaming or splitting the schema so the
+  full thing fits is real follow-up work this surfaced, not something
+  either ADR attempts.
+
+Neither finding is specific to *this* ADR's file-loading mechanism — both
+would equally bite the existing cdump path the moment anyone actually
+boots psp/wio's mruby build on real silicon (or, for the int-size bug, an
+emulator) for the first time. They surfaced here because this is the
+first time in the project's history anything has: psp's bring-up EBOOT
+and the Wio firmware have both linked `libmruby.a` only during a `rake`
+build, never during a real boot, until this smoke test's `pio run`
+existed to make one.
+
 ## Consequences
 
 - **There is nowhere to wire this in yet.** `app/psp`'s bring-up EBOOT does
@@ -116,15 +176,27 @@ into a boot sequence — not proven or disproven by this ADR either way.
   isolation, ready for whichever slice actually starts the interpreter on
   either board, rather than half-wired into a boot path that does not
   exist.
-- **SD/QSPI read latency at boot is not measured here and needs real
-  hardware or a Renode SD model** — this sandbox has neither. Until then,
-  "load 760-870 KB from an SD card once at boot" is a design claim backed
-  by the mechanism working, not a timing budget.
+- **SD read *works* under Renode now (see above); latency is still not
+  measured.** Renode models `SD.SDCard`'s real wire protocol, not its
+  timing characteristics in detail, and this smoke test's own file is a
+  single ~1 KB read at boot, not the 730-870 KB whole-stack figure this
+  ADR's own numbers are about. "Load hundreds of KB from an SD card once
+  at boot" is now a design claim backed by *a* working read, not yet a
+  timing budget for *the* real one.
 - **The file-loading path needs a filesystem** — `app/wio/src/sd_syscalls.cxx`
   (routing newlib `_open`/`_read` to the microSD card, gated by
   `WIO_WITH_SD`) already exists for exactly this and is unused today; QSPI
   XIP (map the flash chip directly into address space, no read call at
   all) is a different, bigger lever this ADR does not attempt.
+- **Two real, actionable bugs came out of the first-ever real boot**, and
+  neither is this ADR's to fix: the host/cross `mrb_int` size mismatch
+  (`MRB_INT64` vs `MRB_INT32`, see above) affects *any* build touching
+  psp/wio, cdump included, the moment a `.rb` file anywhere in the gem
+  stack has a literal in the 33-to-64-bit range — not just files loaded
+  this ADR's way. The schema memory ceiling is specific to loading the
+  whole of `schema.rb` at once, whichever mechanism does it. Both are
+  follow-up work for whoever picks either up, recorded here because this
+  ADR's own smoke test is what found them.
 - **ADR 0098's single-format trim and this ADR compound, not compete.**
   Once psp/wio compile only `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss`, that is
   the *entire* remaining Ruby payload this lever would move off internal

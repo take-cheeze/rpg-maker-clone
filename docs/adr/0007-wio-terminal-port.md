@@ -197,13 +197,19 @@ Phase 1** rather than assumed:
   RPG2000/2003 on either.
 - Place read-only bytecode, rodata and — importantly — the game assets in the
   **4 MB external QSPI flash** (XIP / a read-only FS), keeping internal flash for
-  hot code. **Mechanism verified, not yet wired in** — ADR 0099: mrblib
-  compiles to a plain RITE binary (759,086-872,074 bytes for the trimmed
-  psp/wio stack) loadable at boot with `mrb_read_irep_file` instead of
-  baked-in C arrays, round-tripped for real against `mruby-lcf`'s actual
-  schema/reader code. Not yet wired into either board's own boot sequence,
-  since neither links `libmruby.a` yet — that ADR is the design and the
-  numbers, ready for whichever slice starts the interpreter.
+  hot code. **Mechanism verified on real emulated hardware, not yet wired
+  into the shipped firmware** — ADR 0099: mrblib compiles to a plain RITE
+  binary (759,086-872,074 bytes for the trimmed psp/wio stack) loadable at
+  boot with `mrb_load_irep_buf` instead of baked-in C arrays. Round-tripped
+  for real against `mruby-lcf`'s actual schema/reader code on the host,
+  then again on the Wio's own Cortex-M4 under a from-source Renode build
+  with a real emulated SD card — a real pass, after finding and working
+  around a real `mrb_int` size mismatch between the host `mrbc` and 32-bit
+  cross targets (`MRB_INT64` vs `MRB_INT32`) that ADR 0099 now documents
+  as its own open follow-up. Still not wired into either board's shipped
+  boot sequence, since neither links `libmruby.a` there yet — that ADR is
+  the design, the numbers, and now a working scratch smoke test, ready for
+  whichever slice starts the interpreter for real.
 
 ### LCD bandwidth (frame rate)
 
