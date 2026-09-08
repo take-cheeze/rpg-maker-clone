@@ -19,16 +19,25 @@
 #                          the value-reference trick doubles as a pseudo-RNG
 #                          call)
 #   9000000 + X            system variable X
+#   9100000 + 10*Y + X     map event Y's own position/facing field X (get or
+#                          set -- see Wolf::Interpreter#resolve_position_ref)
+#   9180000 + 10*Y + X     the hero's (Y=0) or a companion's (Y=1..5) own
+#                          position/facing field X
+#   9190000 + X            this map event's own position/facing field X
 #   9900000 + X            system string X
 #   1000000000 + AA*1000000 + BBBB*100 + CC   user DB type AA / data BBBB / field CC
 #   1100000000 + ...                          changeable DB, same digit grouping
 #   1300000000 + ...                          system DB, same digit grouping
 #
-# Not implemented (decoded but rejected with a clear, once-per-kind log
-# rather than silently returning 0 -- see AGENTS.md's error-handling rule):
-# the 9100000/9180000/9190000 event/hero position get-or-set range, which
-# reads or *moves* a character through the same mechanism and needs the map
-# runtime this gem does not drive yet.
+# The position ranges' own field X (help/06valueget.html's own ※1) is only
+# partly implemented -- X=0/1 (plain tile X/Y), 2/3 (precise X/Y, read-only:
+# the same half-tile formula SetVariableEx(124)'s own Character/PreciseX/Y
+# field already uses, get-only there too) and 6 (numpad-convention facing)
+# read or write a real position; X=4/5/7/8/9 (pixel height, shadow number,
+# pixel offset X/Y, character-chip image) are decoded but rejected with a
+# clear, once-per-kind log rather than silently returning 0 (see AGENTS.md's
+# error-handling rule) -- each needs state (sub-tile pixel position, a
+# shadow graphic, ...) this reader has never tracked for any character.
 module Wolf
   module ValueRef
     LITERAL_MAX = 999_999
@@ -80,8 +89,9 @@ module Wolf
     # `[:literal, value]` or one of the tagged forms `vars.rb`'s `VarStore`
     # understands (`:map_event_self`, `:this_map_event_self`, `:variable`,
     # `:string`, `:random`, `:system_variable`, `:system_string`,
-    # `:common_event_self`, `:this_common_event_self`, `:db`) or
-    # `[:unsupported, value]` for the position get/set range.
+    # `:common_event_self`, `:this_common_event_self`, `:db`,
+    # `:event_position`, `:party_position`, `:this_event_position`) or
+    # `[:unsupported, value]` for anything past the last named band.
     def self.decode(value)
       return [:literal, value] if value >= -LITERAL_MAX && value <= LITERAL_MAX
       return [:literal, value] if value < 0
@@ -110,13 +120,17 @@ module Wolf
         return [:system_variable, value - SYSTEM_VARIABLE_BASE]
       end
       if value >= EVENT_POSITION_BASE && value < EVENT_POSITION_END
-        return [:unsupported, value]
+        off = value - EVENT_POSITION_BASE
+        event_id, field = off.divmod(10)
+        return [:event_position, event_id, field]
       end
       if value >= PARTY_POSITION_BASE && value < PARTY_POSITION_END
-        return [:unsupported, value]
+        off = value - PARTY_POSITION_BASE
+        who, field = off.divmod(10)
+        return [:party_position, who, field]
       end
       if value >= THIS_EVENT_POSITION_BASE && value < THIS_EVENT_POSITION_END
-        return [:unsupported, value]
+        return [:this_event_position, value - THIS_EVENT_POSITION_BASE]
       end
       if value >= SYSTEM_STRING_BASE && value < SYSTEM_STRING_END
         return [:system_string, value - SYSTEM_STRING_BASE]
@@ -183,10 +197,20 @@ module Wolf
       # one implicit map still keys uniquely off its own id there, same as
       # before this existed.
       @current_map_id = nil
+      # Wolf::Interpreter#initialize sets this to itself, the seam
+      # `#position_number`/`#set_position_number` (the 9100000/9180000/
+      # 9190000 position-addressing ranges) resolve a live character
+      # position through -- see `Interpreter#resolve_position_ref`'s own
+      # comment. `nil` in a context with no real Interpreter at all (most
+      # of this class's own test suite, which constructs a bare VarStore):
+      # those ranges then log once and return 0/no-op, the same graceful
+      # "not available in this context" degradation `#number`'s own
+      # `:string`/`:system_string` branch already uses.
+      @interpreter = nil
       @warned = {}
     end
 
-    attr_accessor :current_map_event_id, :current_common_event_id, :current_map_id
+    attr_accessor :current_map_event_id, :current_common_event_id, :current_map_id, :interpreter
 
     def warn_once(key, message)
       return if @warned[key]
@@ -257,6 +281,9 @@ module Wolf
         require_current_common_event!
         common_self_number(@current_common_event_id, rest[0])
       when :db then db_number(rest[0], rest[1], rest[2], rest[3])
+      when :event_position then position_number(:event_position, rest[0], rest[1])
+      when :party_position then position_number(:party_position, rest[0], rest[1])
+      when :this_event_position then position_number(:this_event_position, nil, rest[0])
       when :string, :system_string
         warn_once("num-from-string-#{kind}", "reading a string reference (#{raw}) as a number; treating as 0")
         0
@@ -317,6 +344,9 @@ module Wolf
       when :this_common_event_self
         require_current_common_event!
         set_common_self_number(@current_common_event_id, rest[0], value)
+      when :event_position then set_position_number(:event_position, rest[0], rest[1], value)
+      when :party_position then set_position_number(:party_position, rest[0], rest[1], value)
+      when :this_event_position then set_position_number(:this_event_position, nil, rest[0], value)
       when :literal
         warn_once("write-literal", "command writes to a literal (#{raw}); ignoring")
       else
@@ -351,6 +381,98 @@ module Wolf
     def require_current_common_event!
       return if @current_common_event_id
       raise UnsupportedRef, "\"this common event\" self-variable reference outside a running common event"
+    end
+
+    # help/06valueget.html's own ※1 field table, `X`'s shared meaning across
+    # all three position-addressing ranges. Only the fields this reader can
+    # actually answer without inventing new state: 0/1 plain tile X/Y, 2/3
+    # precise X/Y (get-only -- the exact half-tile formula SetVariableEx
+    # (124)'s own Character/PreciseX/Y field already uses and cross-
+    # validates, get-only there too), 6 numpad-convention facing (get/set --
+    # the same down/left/right/up -> 2/4/6/8 table SetVariableEx(124)'s own
+    # `CHAR_DIRECTION_NUMPAD` already established, matching every other
+    # maker in this codebase's own numpad direction convention). 4 (pixel
+    # height), 5 (shadow number), 7/8
+    # (pixel offset X/Y) and 9 (character-chip image, a string field this
+    # numeric path never reaches) are all logged and left alone -- each
+    # needs sub-tile pixel state or a shadow/image concept this reader has
+    # never tracked for any character, map event or party member alike.
+    POSITION_FIELD_X = 0
+    POSITION_FIELD_Y = 1
+    POSITION_FIELD_PRECISE_X = 2
+    POSITION_FIELD_PRECISE_Y = 3
+    POSITION_FIELD_DIRECTION = 6
+    POSITION_DIRECTION_NUMPAD = { down: 2, left: 4, right: 6, up: 8 }.freeze
+    # The plain inverse of the table above, spelled out rather than built
+    # with `Hash#invert` (an mruby-hash-ext method -- this gem does not
+    # depend on that gem, the exact per-gem-isolation trap AGENTS.md and
+    # this file's own mrbgem.rake comment already document elsewhere).
+    POSITION_NUMPAD_DIRECTION = { 2 => :down, 4 => :left, 6 => :right, 8 => :up }.freeze
+    # `kind`'s own plain-English label for a log line -- spelled out rather
+    # than `kind.to_s.tr("_", " ")`/`#gsub`, neither of which this build's
+    # mruby actually provides (`String#tr`/`#gsub` are full-CRuby-only
+    # here, confirmed by grepping every vendored gem's own source).
+    POSITION_KIND_LABEL = {
+      event_position: "event position",
+      party_position: "party/hero position",
+      this_event_position: "this event's own position",
+    }.freeze
+
+    def position_number(kind, who, field)
+      label = POSITION_KIND_LABEL[kind] || kind.to_s
+      unless @interpreter
+        warn_once("position-no-runtime-#{kind}", "#{label} query with no interpreter attached; treating as 0")
+        return 0
+      end
+      pos, = @interpreter.resolve_position_ref(kind, who)
+      unless pos
+        warn_once("position-none-#{kind}-#{who}", "#{label} query (who=#{who.inspect}): nothing there; treating as 0")
+        return 0
+      end
+      case field
+      when POSITION_FIELD_X then pos[:x]
+      when POSITION_FIELD_Y then pos[:y]
+      when POSITION_FIELD_PRECISE_X then pos[:x] * 2
+      when POSITION_FIELD_PRECISE_Y then pos[:y] * 2 - 1
+      when POSITION_FIELD_DIRECTION then POSITION_DIRECTION_NUMPAD[pos[:direction]] || 0
+      else
+        warn_once("position-field-#{kind}-#{field}", "#{label} field #{field} is not implemented yet; treating as 0")
+        0
+      end
+    end
+
+    # Assigning to the "position" reference is documented as moving the
+    # character at its own configured speed ("設定された移動速度で"), not
+    # instantly -- this reader has no gradual/sub-tile movement model at
+    # all (every other instant-scene-change command here, Teleport(130)
+    # included, already snaps rather than animates), so this snaps here
+    # too rather than inventing one just for this seam.
+    def set_position_number(kind, who, field, value)
+      label = POSITION_KIND_LABEL[kind] || kind.to_s
+      unless @interpreter
+        warn_once("position-write-no-runtime-#{kind}", "#{label} write with no interpreter attached; ignoring")
+        return
+      end
+      pos, writeback = @interpreter.resolve_position_ref(kind, who)
+      unless pos
+        warn_once("position-write-none-#{kind}-#{who}", "#{label} write (who=#{who.inspect}): nothing there; ignoring")
+        return
+      end
+      case field
+      when POSITION_FIELD_X then pos[:x] = value
+      when POSITION_FIELD_Y then pos[:y] = value
+      when POSITION_FIELD_DIRECTION
+        dir = POSITION_NUMPAD_DIRECTION[value]
+        unless dir
+          warn_once("position-write-direction-#{value}", "#{label} direction write: #{value} is not a numpad 2/4/6/8 facing; ignoring")
+          return
+        end
+        pos[:direction] = dir
+      else
+        warn_once("position-write-field-#{kind}-#{field}", "#{label} field #{field} is not implemented yet; ignoring")
+        return
+      end
+      writeback&.call(pos)
     end
 
     def common_self_number(common_id, index)

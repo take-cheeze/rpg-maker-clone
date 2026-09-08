@@ -767,6 +767,12 @@ module Wolf
       @party_positions = Array.new(PARTY_MAX_MEMBERS)
       @party_following = true
       @rng = Rng.new
+      # VarStore#position_number/#set_position_number's own seam back into
+      # a real running Interpreter (#resolve_position_ref) -- see that
+      # method's own comment. A plain reference, not attempted before this
+      # point: nothing above this line ever calls into var_store in a way
+      # that would need it yet.
+      var_store.interpreter = self
     end
 
     attr_reader :var_store, :project
@@ -1503,6 +1509,41 @@ module Wolf
       elsif target == ROUTE_TARGET_HERO
         return [nil, nil] unless current_scene
         [current_scene.hero_pos, nil]
+      else
+        [nil, nil]
+      end
+    end
+
+    # Wolf::VarStore's own seam for the "変数呼び出し値" position-addressing
+    # ranges (help/06valueget.html: `9100000+10*Y+X` a map event, `9180000+
+    # 10*Y+X` the hero (`Y`=0)/a companion (`Y`=1..PARTY_MAX_MEMBERS, "主人公
+    # ・仲間の座標" naming both together in one range), `9190000+X` this map
+    # event -- `Y` folded away here since it is always "self"). Returns
+    # `[pos, writeback]`: `pos` a live `{x:, y:, direction:}` -- mutating it
+    # in place already moves a map event or a party member, since
+    # `#event_position`/`#party_position` both return the actual stored
+    # Hash, not a copy -- and `writeback` is only ever set for the hero,
+    # whose own `#hero_pos` returns a fresh Hash every call (mirrors
+    # `#resolve_route_target`'s own identical hero special-case). `[nil,
+    # nil]` when `who` names nothing real -- an event id with no such event,
+    # a companion slot with no member in it, or party addressing with no
+    # `current_scene` to ask for the hero at all.
+    def resolve_position_ref(kind, who)
+      case kind
+      when :event_position
+        event = current_map && current_map.events.find { |e| e.id == who }
+        return [nil, nil] unless event
+        [event_position(event), nil]
+      when :this_event_position
+        pos, = resolve_character_pos(ROUTE_TARGET_SELF)
+        [pos, nil]
+      when :party_position
+        if who == 0
+          return [nil, nil] unless current_scene
+          [current_scene.hero_pos, ->(p) { current_scene.hero_pos = p }]
+        else
+          [party_position(who - 1), nil]
+        end
       else
         [nil, nil]
       end

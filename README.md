@@ -767,6 +767,13 @@
   [`docs/adr/0088-wolf-rpg-editor-party.md`](docs/adr/0088-wolf-rpg-editor-party.md)
   and
   [`docs/adr/0099-wolf-rpg-editor-party-system.md`](docs/adr/0099-wolf-rpg-editor-party-system.md)
+- **Variable-reference position addressing.** The `9100000`/`9180000`/
+  `9190000` ranges (a map event's, the hero's/a party member's, or "this
+  event"'s own position/facing, get or set through the ordinary variable
+  mechanism) now read/write plain tile X/Y, precise X/Y, and
+  numpad-convention facing; pixel height, shadow number, pixel offset and
+  character-chip image stay unimplemented. See
+  [`docs/adr/0100-wolf-rpg-editor-position-addressing.md`](docs/adr/0100-wolf-rpg-editor-position-addressing.md)
 - **Per-map event position keying.** A revisited map (`Teleport`(130) or
   `SaveLoad`(220)'s own Load) now correctly finds its own events exactly
   where they were left, instead of colliding with a different map's

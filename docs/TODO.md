@@ -36593,6 +36593,33 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   variable-reference mechanism -- that runtime now exists for the first
   time, but wiring the addressing range up is left for a follow-up. See
   `docs/adr/0099-wolf-rpg-editor-party-system.md`.
+- ✅ **Variable-reference position addressing (2026-09-08).** The
+  follow-up flagged just above: `9100000`/`9180000`/`9190000`'s own
+  shared field table (help/06valueget.html) is now partly wired up --
+  plain tile X/Y, precise X/Y (reusing SetVariableEx(124)'s own already-
+  cross-validated half-tile formula, get-only there too), and numpad-
+  convention facing read or write a real map event/hero/party-member
+  position through `Wolf::Interpreter#resolve_position_ref`, a new
+  `VarStore#interpreter` back-reference. Pixel height/shadow number/pixel
+  offset/character-chip image (fields 4/5/7/8/9) stay logged and rejected
+  -- each needs sub-tile pixel or shadow/image state nothing here has ever
+  tracked, and covers most of this range's own actual real-data well
+  (`CE#39`'s 5 real calls, all `who=0`/the hero: 1 facing, 4 pixel-offset
+  -- the smaller, honestly-answerable slice, not the whole thing).
+  **Caught two real mruby-vs-CRuby incompatibilities the CRuby-only test
+  harness this session otherwise leans on for fast iteration could not
+  see at all** (`Hash#invert` from an undeclared `mruby-hash-ext`
+  dependency, `Integer#zero?` not implemented by any vendored gem here) --
+  both only surfaced once `ctest -R mruby_test` ran the real compiled
+  mrbgem, a reminder that the fast harness is a first pass, never a
+  substitute, for load-time (class-body) code. See `docs/adr/0100-wolf-
+  rpg-editor-position-addressing.md`.
+- Found along the way, not fixed: `#resolve_character_pos`'s own "-3..-7
+  a party member -- no party system exists yet" comment is now stale --
+  `SetMoveRoute`(201)/`SetVariableEx`(124)'s own party-member target band
+  could plausibly resolve through the same `#party_position` the position-
+  addressing work above already uses, now that a real roster exists. A
+  separate, still-open follow-up.
 
 
 ## Tooling
