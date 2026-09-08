@@ -166,6 +166,22 @@ function(rpg2k_add_mruby)
   set(mruby_gc_type_counts_patch
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
+  # Vendored mruby-io's file.c unconditionally uses MAXPATHLEN (a `char
+  # buf[MAXPATHLEN]` in path_getwd, backing Dir.getwd/File.expand_path) after
+  # `#include <sys/param.h>` on every non-Windows target -- true on glibc and
+  # most BSD/Darwin libcs, but this board's bare-metal arm-none-eabi newlib's
+  # own sys/param.h defines PATHSIZE, not MAXPATHLEN, so the file fails to
+  # compile outright (a real `MRUBY_TARGET=wio rake` run against PlatformIO's
+  # own toolchain-gccarmnoneeabi never got this far before -- see
+  # docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR). Adds the
+  # same `#ifndef MAXPATHLEN #define MAXPATHLEN 1024` fallback the file's own
+  # _WIN32 branch already carries a few lines up, just gated for any libc
+  # missing the macro rather than only Windows's. Same patch-in- place treatment
+  # as the other mruby patches above, for the same reason (no fork of upstream
+  # mruby/mruby this project controls).
+  set(mruby_io_maxpathlen_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-maxpathlen-fallback.patch")
+
   # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
   # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no allocation),
   # but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded through a StringIO,
@@ -225,6 +241,8 @@ function(rpg2k_add_mruby)
             "${mruby_nomem_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_gc_type_counts_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_io_maxpathlen_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
             "${mruby_stringio_prefix}" "${mruby_stringio_getbyte_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
@@ -243,6 +261,7 @@ function(rpg2k_add_mruby)
             "${mruby_defined_keyword_patch}"
             "${mruby_nomem_patch}"
             "${mruby_gc_type_counts_patch}"
+            "${mruby_io_maxpathlen_patch}"
             "${mruby_stringio_getbyte_patch}"
             "${mruby_marshal_onigmo_patch}"
             ${mrb_files})

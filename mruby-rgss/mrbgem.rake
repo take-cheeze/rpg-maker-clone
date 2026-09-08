@@ -35,17 +35,22 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<
     "#{dir}/../3rd/lvgl"
-  # PSP wants its own lv_conf.h (LV_USE_LOG 0, LVGL's pool sized for the
-  # PSP's ~24 MB) ahead of the shared repo-root one below: LVGL's
-  # lv_conf_internal.h auto-includes whichever lv_conf.h __has_include finds
-  # first on the search path, and this rake-driven compile of mruby-rgss
-  # (which calls into LVGL -- lib.cxx's vp_refresh_overlay/gfx_snap_to_bitmap)
-  # needs to see the same config app/psp/CMakeLists.txt's own LVGL build
-  # used, or the two disagree on what LVGL actually compiled in
-  # (LV_USE_LOG/LV_USE_SNAPSHOT) and the final EBOOT link fails with
-  # undefined references (lv_log_add, lv_snapshot_take) that only the
-  # *other* config's LVGL build would have provided.
+  # PSP and wio each want their own lv_conf.h (LV_USE_LOG 0, and for PSP its
+  # own LVGL pool sized for the PSP's ~24 MB) ahead of the shared repo-root
+  # one below: LVGL's lv_conf_internal.h auto-includes whichever lv_conf.h
+  # __has_include finds first on the search path, and this rake-driven
+  # compile of mruby-rgss (which calls into LVGL -- lib.cxx's
+  # vp_refresh_overlay/gfx_snap_to_bitmap) needs to see the same config the
+  # real firmware's own LVGL build uses (app/psp/CMakeLists.txt's
+  # add_subdirectory, or PlatformIO's own `lib_deps = symlink://3rd/lvgl`
+  # for wio's platformio.ini environments), or the two disagree on what LVGL
+  # actually compiled in (LV_USE_LOG/LV_USE_SNAPSHOT) and the final link
+  # fails with undefined references (lv_log_add, lv_snapshot_take) that only
+  # the *other* config's LVGL build would have provided -- confirmed for
+  # real linking env:wio_rgss_boot against this gem's own libmruby.a before
+  # this line existed for wio.
   cxx.include_paths << "#{dir}/../app/psp" if build.name == 'psp'
+  cxx.include_paths << "#{dir}/../app/wio" if build.name == 'wio'
   cxx.include_paths <<
     "#{dir}/../include" <<
     "#{dir}/../3rd/stb" <<
