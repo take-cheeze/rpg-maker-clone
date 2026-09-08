@@ -1253,6 +1253,20 @@
   covered by the `walk_core` ctest — neither device is reachable from CI, but
   the engine half of both firmwares is plain host-testable C. See
   [`docs/adr/0091-shared-minimal-walk-engine.md`](docs/adr/0091-shared-minimal-walk-engine.md).
+- **A host-side emulator for the nano 7G app itself.**
+  [`app/nano7/host`](app/nano7/host) implements the small
+  `hb_raw_surface`/`hb_sdk` API surface `rpg2k_walk.c` calls (on top of this
+  repo's own SDL2 dependency, no new one added) and links that device source
+  file *unmodified* into a native `nano7_walk_host` executable — an
+  interactive window with the mouse as touch, or a headless
+  `--frames N --screenshot out.bmp` mode that needs no display at all. Unlike
+  the Wio Terminal's Renode platform ([`docs/adr/0094`](docs/adr/0094-wio-terminal-renode-emulator.md)),
+  this does not emulate the nano 7G's Cortex-A8 SoC or its proprietary OS —
+  `rpg2k_walk.c` never touches either directly, only this six-function API,
+  which is the right thing to reimplement instead. The `nano7_host_smoke`
+  ctest exports a real Nepheshel map and asserts the rendered frame actually
+  shows real map content, not a blank fill. See
+  [`docs/adr/0102-ipod-nano-7-host-emulator.md`](docs/adr/0102-ipod-nano-7-host-emulator.md).
 
 ### Reporting an error
 

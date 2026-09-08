@@ -897,6 +897,36 @@ if(NOT EMSCRIPTEN AND NOT ANDROID)
     walk_core_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk)
   add_test(NAME walk_core COMMAND walk_core_test)
 
+  # A host-side implementation of the hb_raw_surface/hb_sdk subset the iPod
+  # nano 7G app calls (app/nano7/host, docs/adr/0102), linking
+  # app/nano7/rpg2k_walk/rpg2k_walk.c itself unmodified -- unlike walk_core
+  # above, this exercises the app's real entry points (hb_raw_init/
+  # hb_raw_frame), not just the platform-independent core behind them. Built
+  # here alongside walk_core_test (desktop only, like it), linking the same
+  # SDL2::SDL2 target src/main.cxx does.
+  add_executable(
+    nano7_walk_host
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk/rpg2k_walk_core.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/rpg2k_walk/rpg2k_walk.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/nano7_host_shim.c)
+  target_include_directories(
+    nano7_walk_host
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/app/shared/rpg2k_walk
+            ${CMAKE_CURRENT_SOURCE_DIR}/app/nano7/host/include)
+  target_link_libraries(nano7_walk_host PRIVATE SDL2::SDL2)
+
+  # scripts/nano7_host_smoke.bash exports a real Nepheshel map, runs
+  # nano7_walk_host headless against it and saves a BMP;
+  # scripts/nano7_host_smoke_check.rb (a plain-Ruby BMP reader, no
+  # ImageMagick) asserts the frame actually carries real map content rather
+  # than a blank/flat fill. Needs no display -- see docs/adr/0102 -- so
+  # unlike exe_open/render_probe below this needs no xvfb-run/--server-num.
+  add_test(
+    NAME nano7_host_smoke
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/nano7_host_smoke.bash
+            $<TARGET_FILE:nano7_walk_host>
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+
   set(exe_open_cmd ${CMAKE_CURRENT_BINARY_DIR}/rpg_maker_clone --timeout_ms=100
                    --game_dir ./data/Nepheshel206beta/Nepheshel206Rbeta)
   # The SDL window backend needs a real display. Linux CI runners are headless,
