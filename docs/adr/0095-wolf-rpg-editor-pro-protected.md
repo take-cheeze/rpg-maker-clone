@@ -4,7 +4,11 @@ Date: 2026-09-07
 
 ## Status
 
-Accepted
+Superseded by [ADR 0098](0098-wolf-rpg-editor-remove-pro-protected-decryption.md) --
+the decryptor this ADR shipped was removed once the official WOLF RPG
+Editor terms of use were found to explicitly prohibit it. This ADR's own
+content (the cross-validation methodology, the actual decryption research)
+is kept as a historical record, not because any of it still ships.
 
 ## Context
 

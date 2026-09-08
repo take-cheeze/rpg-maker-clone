@@ -794,17 +794,21 @@
   [`docs/adr/0093-wolf-rpg-editor-data-wolf.md`](docs/adr/0093-wolf-rpg-editor-data-wolf.md)
   and
   [`docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`](docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md)
-- **Pro-protected data (v3.5) decrypts for real**, not just a "refused with a
-  clear error" — the AES-128 key/IV a protected `Game.dat`/`TileSetData.dat`/
-  `CommonEvent.dat`/database is keyed with are derived entirely from bytes
-  the protected file's own header already carries plus a small hardcoded
-  per-file-type salt, so no external secret is ever needed (contrary to an
-  earlier assumption here); a from-scratch SHA-512 + AES-128 port,
-  cross-validated against a compiled C++ WolfTL reference and a full
-  Pro-protected round trip of the real sample game. The older v3.1/v3.3
-  sub-schemes and Pro-protected `Map` files are deliberately left refused by
-  name rather than guessed at. See
+- **Pro-protected data is detected and refused, by name — not decrypted.**
+  A real AES-128 decryptor for this was briefly built (the key/IV genuinely
+  are derivable entirely from bytes the protected file's own header
+  carries, no external secret needed), then removed once the official WOLF
+  RPG Editor terms of use were read directly from the primary source: §9.2
+  explicitly prohibits analysis/decryption of encrypted ".wolf" data, and
+  §9.1's own permission for `Game.dat`/`CommonEvent.dat`/`TileSetData`/the
+  database/`MapTree` families/`.mps` maps explicitly excludes any
+  Pro-protected copy of those same files. `Wolf::Crypt.protected?` still
+  detects the byte-1-`0x50` marker; every Pro-protected file (any
+  protection version) is refused with a clear error the instant it's seen.
+  See
   [`docs/adr/0095-wolf-rpg-editor-pro-protected.md`](docs/adr/0095-wolf-rpg-editor-pro-protected.md)
+  and
+  [`docs/adr/0098-wolf-rpg-editor-remove-pro-protected-decryption.md`](docs/adr/0098-wolf-rpg-editor-remove-pro-protected-decryption.md)
 - `ruby scripts/wolf_testbed_check.rb path/to/Project` validates any project's
   whole database and every map, and `ruby scripts/wolf_interpreter_check.rb
   path/to/Project` soak-tests the interpreter itself — every Common Event

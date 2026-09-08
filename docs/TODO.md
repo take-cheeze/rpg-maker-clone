@@ -36538,33 +36538,23 @@ Full design and rationale: `docs/adr/0004-javascript-maker-mv-quickjs.md`.
   not run this session) binary to verify a candidate transform against, so
   left as a precisely-scoped named gap rather than a speculative fix. See
   `docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`.
-- ✅ **Pro-protected data (v3.5) decrypted for real (2026-09-07).** The
-  earlier claim here -- "from editor 3.5 on the protection key is not even
-  stored in the game (only a hash), so a 3.5+ Pro-protected release may be
-  permanently out of reach" -- was wrong: v3.5's AES-128 key/IV are
-  `SHA-512(saltPassword("", dynamicSaltFromTheFile'sOwnBytes,
-  hardcodedPerFileTypeStaticSalt))`, derived entirely from bytes the
-  protected file's own header already carries plus a small hardcoded
-  per-file-type string, with no external secret ever needed (`WolfTL`'s
-  `WolfDataDecrypt.hpp`'s `v3_5::decryptData`; `WolfProtKey.hpp`'s
-  `calcProtKey` independently confirms the whole family needs no external
-  key, by recovering the human-chosen protection password itself straight
-  out of `Game.dat`). `Wolf::Crypt.decrypt_protected`
-  (`mruby-wolf/mrblib/wolf_crypt_pro.rb`) decrypts `Game.dat`/
-  `TileSetData.dat`/`CommonEvent.dat`/all three `*DataBase.dat` files for
-  real (a from-scratch SHA-512 + AES-128 port, cross-validated against a
-  compiled C++ WolfTL reference harness, then against a full Pro-protected
-  round trip of the real 660-file sample game through `Wolf::Project` and
-  the compiled engine itself) -- `Wolf::Crypt.protected?` still detects the
-  marker (byte 1 == `0x50`) the same way it always did. **Deliberately left
-  refused, by name, not guessed at**: the older v3.1 sub-scheme (`WolfTL`
-  itself has no decrypt function to port -- `WolfDataDecrypt.hpp`'s own
-  `namespace v3_1 { }` is empty), the v3.3 sub-scheme (a real, self-
-  contained reference exists, but its key derivation is a large custom PRNG
-  state machine this session could not cross-validate with confidence in
-  the time available), and Pro-protected `Map` files (no `PRO_MAGIC` entry
-  exists for `Map` even in WolfTL's own reference). See
-  `docs/adr/0095-wolf-rpg-editor-pro-protected.md`.
+- ✅ **Pro-protected data: refused by name, not decrypted (2026-09-08).**
+  A v3.5 Pro-protection decryptor was briefly built and shipped here (see
+  `docs/adr/0095-wolf-rpg-editor-pro-protected.md` for the technical
+  finding -- the AES-128 key/IV genuinely are derivable entirely from bytes
+  the protected file's own header carries, no external secret needed,
+  correcting an earlier "may be permanently out of reach" claim), then
+  removed once the official WOLF RPG Editor terms of use were read directly
+  from the primary source (`silversecond.com/WolfRPGEditor/Download.shtml`,
+  §9.2: "暗号化データ（「.wolf」ファイル）の解析・解凍、ならびに情報共有は
+  禁止です" -- analysis/decryption of encrypted ".wolf" data is prohibited;
+  §9.1's own permission for Game.dat/CommonEvent.dat/TileSetData/the
+  Database.dat and MapTree.dat families/.mps maps explicitly excludes any
+  Pro-protected copy of those same files). `Wolf::Crypt.protected?` still
+  detects the marker (byte 1 == `0x50`); `Wolf.open_envelope` refuses any
+  protected file outright, by name, the instant it's seen -- no version of
+  Pro-protection (v3.1/v3.3/v3.5) is decrypted. See
+  `docs/adr/0098-wolf-rpg-editor-remove-pro-protected-decryption.md`.
 - ✅ **A map event page's own repeating Custom move route (2026-09-08).**
   ADR 0069's own named gap: a Custom-move page with `route_options`'s
   repeat bit set (0x01, cross-confirmed there against the wolfrpg-map-

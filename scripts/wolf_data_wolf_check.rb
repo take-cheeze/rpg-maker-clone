@@ -98,7 +98,6 @@ end
 
 mrblib = File.expand_path('../mruby-wolf/mrblib', __dir__)
 load File.join(mrblib, 'wolf.rb')
-load File.join(mrblib, 'wolf_crypt_pro.rb')
 load File.join(mrblib, 'data_wolf.rb')
 load File.join(mrblib, 'data.rb')
 

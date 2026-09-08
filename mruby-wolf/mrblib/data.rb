@@ -44,7 +44,7 @@ module Wolf
     end
 
     def initialize(data)
-      r, @encrypted = Wolf.open_envelope(data, SEEDS, "Game.dat", file_type: Crypt::FileType::GAME_DAT)
+      r, @encrypted = Wolf.open_envelope(data, SEEDS, "Game.dat")
       if @encrypted
         @utf8 = false
       else
@@ -218,7 +218,7 @@ module Wolf
     end
 
     def initialize(data)
-      r, _enc = Wolf.open_envelope(data, nil, "TileSetData.dat", file_type: Crypt::FileType::TILE_SET_DATA)
+      r, _enc = Wolf.open_envelope(data, nil, "TileSetData.dat")
       @utf8 = Wolf.read_magic(r, MAGIC, UTF8_INDEX, "TileSetData.dat")
       @version = r.u8
       n = r.int
@@ -409,7 +409,7 @@ module Wolf
     end
 
     def initialize(project_data, dat_data, name)
-      r, @encrypted = Wolf.open_envelope(dat_data, SEEDS, "#{name}.dat", file_type: Crypt::FileType::DATA_BASE)
+      r, @encrypted = Wolf.open_envelope(dat_data, SEEDS, "#{name}.dat")
       if @encrypted
         @utf8 = false
         # An encrypted v2 .dat carries one extra byte where the version sits.
@@ -603,7 +603,7 @@ module Wolf
     end
 
     def initialize(data)
-      r, enc = Wolf.open_envelope(data, nil, "CommonEvent.dat", file_type: Crypt::FileType::COMMON_EVENT)
+      r, enc = Wolf.open_envelope(data, nil, "CommonEvent.dat")
       raise Error, "CommonEvent.dat: encrypted common events are not supported" if enc
       @utf8 = Wolf.read_magic(r, MAGIC, UTF8_INDEX, "CommonEvent.dat")
       @version = r.u8
@@ -778,11 +778,7 @@ module Wolf
 
     def initialize(data, name)
       @name = name
-      # No `PRO_MAGIC` entry exists for Map in WolfTL's own reference either
-      # (see wolf_crypt_pro.rb's file header), so a Pro-protected map is
-      # always refused here -- `file_type: Crypt::FileType::MAP` only makes
-      # that refusal name the file type instead of raising blind.
-      data = Crypt.decrypt_protected(data, name, Crypt::FileType::MAP)
+      Crypt.refuse_protected!(data, name)
       r = Reader.new(data, true)
       @utf8 = Wolf.read_magic(r, MAGIC, UTF8_INDEX, name)
       unless data.getbyte(data.bytesize - 1) == TERMINATOR
