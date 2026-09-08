@@ -38,6 +38,9 @@ rw_status rw_open(rw_map* m,
   int ab_period = map_bytes[23];
   int c_len = map_bytes[24];
   int c_period = map_bytes[25];
+  /* Byte 5 was pad through v5; v6 repurposes it rather than growing the
+   * header, since a version bump already means every export is regenerated. */
+  int hero_present = map_bytes[5];
 
   if (w <= 0 || h <= 0 || sx >= w || sy >= h)
     return RW_ERR_HEADER;
@@ -54,6 +57,8 @@ rw_status rw_open(rw_map* m,
    * index. */
   if (palette_count < 1 || palette_count > RW_MAX_PALETTE)
     return RW_ERR_PALETTE;
+  if (hero_present != 0 && hero_present != 1)
+    return RW_ERR_HEADER;
 
   uint32_t cells = (uint32_t)w * (uint32_t)h;
   uint32_t palette_bytes = (uint32_t)palette_count * 2;
@@ -63,8 +68,15 @@ rw_status rw_open(rw_map* m,
     return RW_ERR_MAP_TRUNCATED;
   if ((uint32_t)(map_len - fixed) < RW_MAP_CELL_BYTES(cells))
     return RW_ERR_MAP_TRUNCATED;
-  if (tiles_len < (uint32_t)atlas_count * RW_TILE_BYTES)
-    return RW_ERR_TILES_TRUNCATED;
+  {
+    /* The hero's own frames sit in tiles.bin right after the ordinary atlas
+     * -- one buffer, one length check, no second file. */
+    uint32_t tiles_needed = (uint32_t)atlas_count * RW_TILE_BYTES;
+    if (hero_present)
+      tiles_needed += RW_HERO_FRAMES_BYTES;
+    if (tiles_len < tiles_needed)
+      return RW_ERR_TILES_TRUNCATED;
+  }
 
   m->width = w;
   m->height = h;
@@ -73,6 +85,14 @@ rw_status rw_open(rw_map* m,
   m->backdrop = backdrop;
   m->player_x = sx;
   m->player_y = sy;
+  /* RPG2000's own New Game default facing (Game::Character#initialize's
+   * direction default, Game::Party#initial_state) -- the exporter carries
+   * no explicit facing to override it with, since a walk-map export has no
+   * live game state, only the project's own initial party. */
+  m->direction = RW_NUMPAD_DOWN;
+  m->step_count = 0;
+  m->hero_present = hero_present;
+  m->hero_tiles = hero_present ? tiles + (uint32_t)atlas_count * RW_TILE_BYTES : 0;
   m->ab_len = ab_len;
   m->ab_period = ab_period;
   m->c_len = c_len;
@@ -185,23 +205,32 @@ uint8_t rw_passable_at(const rw_map* m, int x, int y) {
 
 int rw_try_move(rw_map* m, int dx, int dy) {
   uint8_t leave, enter;
-  int nx, ny;
+  int nx, ny, dir;
 
   if (dx < 0) {
     leave = RW_DIR_LEFT;
     enter = RW_DIR_RIGHT;
+    dir = RW_NUMPAD_LEFT;
   } else if (dx > 0) {
     leave = RW_DIR_RIGHT;
     enter = RW_DIR_LEFT;
+    dir = RW_NUMPAD_RIGHT;
   } else if (dy < 0) {
     leave = RW_DIR_UP;
     enter = RW_DIR_DOWN;
+    dir = RW_NUMPAD_UP;
   } else if (dy > 0) {
     leave = RW_DIR_DOWN;
     enter = RW_DIR_UP;
+    dir = RW_NUMPAD_DOWN;
   } else {
     return 0;
   }
+
+  /* Bump-turn: face the attempted direction before the passability check,
+   * same as real RPG2000, and leave it turned even when the step below
+   * fails. */
+  m->direction = dir;
 
   nx = m->player_x + dx;
   ny = m->player_y + dy;
@@ -214,6 +243,7 @@ int rw_try_move(rw_map* m, int dx, int dy) {
 
   m->player_x = nx;
   m->player_y = ny;
+  m->step_count++;
   return 1;
 }
 
@@ -264,4 +294,54 @@ void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out) {
      * shows through an empty chip (an island map's whole sea, say). */
     out[i] = c ? c : (uint16_t)(m->backdrop | RW_OPAQUE);
   }
+}
+
+/* numpad direction -> row within a CharSet template (Game::CharSet::DIR_ROW:
+ * up, right, down, left, top to bottom); an unrecognised value reads as
+ * "down", the same fallback DIR_ROW's own `|| 2` applies. */
+static int hero_dir_row(int direction) {
+  switch (direction) {
+    case RW_NUMPAD_UP:
+      return 0;
+    case RW_NUMPAD_RIGHT:
+      return 1;
+    case RW_NUMPAD_LEFT:
+      return 3;
+    default:
+      return 2;
+  }
+}
+
+void rw_compose_hero(const rw_map* m, int moving, uint16_t* out) {
+  /* Neutral, one lean, neutral, the other lean -- Game::CharSet::WALK_
+   * PATTERNS, the cycle a run of steps advances through. */
+  static const int walk_patterns[RW_WALK_PATTERN_COUNT] = {1, 2, 1, 0};
+  const uint8_t* frame;
+  int pattern, row, i;
+
+  if (!m->hero_present) {
+    for (i = 0; i < RW_HERO_FRAME_PIXELS; i++)
+      out[i] = 0;
+    return;
+  }
+
+  pattern = moving ? walk_patterns[m->step_count % RW_WALK_PATTERN_COUNT] : 1;
+  row = hero_dir_row(m->direction);
+  frame = m->hero_tiles +
+          (uint32_t)(row * RW_HERO_PATTERNS + pattern) * RW_HERO_FRAME_PIXELS;
+
+  for (i = 0; i < RW_HERO_FRAME_PIXELS; i++) {
+    /* Transparent stays 0 rather than resolving to the backdrop: a hero
+     * frame draws over whatever the map already put there, not into a hole
+     * that needs filling. */
+    uint8_t index = frame[i];
+    out[i] = index == RW_TRANSPARENT_INDEX ? 0 : rw_palette_colour(m, index);
+  }
+}
+
+void rw_hero_screen_pos(const rw_map* m, int cam_x, int cam_y, int* x, int* y) {
+  int tile_x = (m->player_x - cam_x) * RW_TS;
+  int tile_y = (m->player_y - cam_y) * RW_TS;
+  *x = tile_x - (RW_HERO_FRAME_W - RW_TS) / 2;
+  *y = tile_y - (RW_HERO_FRAME_H - RW_TS);
 }

@@ -5382,6 +5382,11 @@ class RPG2k
         return if event_busy? && @battle.nil?
         return unless @parent.test_play
         return unless Input.trigger?(Input::F9)
+        # psp/wio builds drop debug_menu.rb (mruby-rpg2k/mrbgem.rake, docs/adr/
+        # 0097): Test Play never happens on those, but nothing else stops a
+        # future build flag from flipping @parent.test_play on regardless, so
+        # this stays a no-op rather than a NameError if that ever happens.
+        return unless defined?(Scene::DebugMenu)
         @parent.push Scene::DebugMenu.new(@parent, @state)
       end
 

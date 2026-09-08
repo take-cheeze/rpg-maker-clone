@@ -59,7 +59,7 @@ pio run -e wio_walk -t upload
 ```
 
 `--target wio` sizes the export for this board's buffers (128x128 tiles, 192
-atlas entries — about 90 KB of its 192 KB SRAM) and refuses a map that would
+atlas entries — about 100 KB of its 192 KB SRAM) and refuses a map that would
 not fit rather than writing one the firmware cannot load. That is the same
 map bound the iPod nano 7G takes: the format shrank to 2.5 bytes a cell
 (`docs/adr/0093`), so this board's cap doubled twice while its SRAM use went
@@ -67,13 +67,14 @@ down. Hold a direction on
 the 5-way switch to walk; collision is the map's real passability data.
 
 **Scope, and status.** It walks one static map, with the water animating on
-RPG2000's own clock (`docs/adr/0094`): no events, no battle, no
-menus, no interpreter — see the ADRs before expecting a game. CI compiles it
-(the `wio` job builds both environments) and the shared core has its own host
-test (the `walk_core` ctest). It has now run on real hardware — a real
-Nepheshel map, exported and copied to the card as above, walks correctly on
-the board's LCD with the 5-way switch. The `wio` bring-up firmware above is
-still untried on a board.
+RPG2000's own clock and the player drawn as the project's own initial party
+leader (`docs/adr/0094`, `docs/adr/0096`) when one was exported: no events,
+no battle, no menus, no interpreter — see the ADRs before expecting a game.
+CI compiles it (the `wio` job builds both environments) and the shared core
+has its own host test (the `walk_core` ctest). It has now run on real
+hardware — a real Nepheshel map, exported and copied to the card as above,
+walks correctly on the board's LCD with the 5-way switch. The `wio` bring-up
+firmware above is still untried on a board.
 
 ### No SD card reader? `wio_sd_upload`
 

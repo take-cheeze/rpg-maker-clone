@@ -43,7 +43,22 @@ extern "C" {
 #define RW_TS 16 /* chipset tile size, matches the exporter */
 #define RW_TILE_PIXELS (RW_TS * RW_TS)
 
-#define RW_FORMAT_VERSION 5
+/* A CharSet frame's pixel geometry, matching Game::CharSet::WIDTH/HEIGHT in
+ * mruby-rpg2k: wider and taller than a tile, so the hero draws centred over
+ * it horizontally and anchored to its bottom -- see rw_hero_screen_pos. Four
+ * directions (down/left/right/up) by three walk-cycle patterns (RPG2000's
+ * own numbering: 1 is standing/neutral, 0 and 2 are the two lean poses
+ * either side of it -- see RW_WALK_PATTERN_COUNT below for the cycle
+ * that walks through them). */
+#define RW_HERO_FRAME_W 24
+#define RW_HERO_FRAME_H 32
+#define RW_HERO_FRAME_PIXELS (RW_HERO_FRAME_W * RW_HERO_FRAME_H)
+#define RW_HERO_DIRS 4
+#define RW_HERO_PATTERNS 3
+#define RW_HERO_FRAME_COUNT (RW_HERO_DIRS * RW_HERO_PATTERNS)
+#define RW_HERO_FRAMES_BYTES (RW_HERO_FRAME_COUNT * RW_HERO_FRAME_PIXELS)
+
+#define RW_FORMAT_VERSION 6
 /* Up to and including the animation clocks; the palette follows, then the
  * entry table, then the cells. */
 #define RW_MAP_HEADER_BYTES 26
@@ -89,6 +104,21 @@ extern "C" {
 #define RW_DIR_RIGHT 0x04
 #define RW_DIR_UP 0x08
 
+/* RPG2000's own numpad-direction values (distinct from the RW_DIR_* bitmask
+ * above): rw_map::direction and a CharSet frame's row both use these, the
+ * same values Game::CharSet::DIR_ROW keys on. */
+#define RW_NUMPAD_DOWN 2
+#define RW_NUMPAD_LEFT 4
+#define RW_NUMPAD_RIGHT 6
+#define RW_NUMPAD_UP 8
+
+/* RPG2000's walk-cycle pattern for each of the 4 phases a step advances
+ * through (Game::CharSet::WALK_PATTERNS): neutral, one lean, neutral, the
+ * other lean -- so a walk that stops on an odd step still lands on a real
+ * mid-stride pose, matching the genuine renderer's own cycle. Standing
+ * (not moving) always shows the neutral pose, pattern 1. */
+#define RW_WALK_PATTERN_COUNT 4
+
 typedef enum {
   RW_OK = 0,
   RW_ERR_SHORT_HEADER,   /* fewer bytes than a header */
@@ -106,6 +136,15 @@ typedef struct {
   int atlas_count;   /* pictures in tiles.bin, named by an entry's frames */
   uint16_t backdrop; /* ARGB1555; what shows through a transparent pixel */
   int player_x, player_y;
+  int direction; /* RW_NUMPAD_*; RPG2000 turns to face a blocked step too */
+  unsigned step_count; /* successful steps taken; drives the walk pattern */
+
+  /* The party leader's own CharSet, precomposited the same way the atlas
+   * is (palette indices into the map's own palette). 0 when the project's
+   * initial party has no leader or the leader carries no CharSet -- an empty
+   * map export, or one with an odd custom title-screen party setup. */
+  int hero_present;
+  const uint8_t* hero_tiles; /* RW_HERO_FRAME_COUNT * RW_HERO_FRAME_PIXELS */
 
   /* The two animation clocks, as the export measured them off the engine:
    * how many frames a step lasts and how many steps the cycle has. The
@@ -171,6 +210,12 @@ uint8_t rw_passable_at(const rw_map* m, int x, int y);
  * of the four unit directions; a diagonal is not a move this engine makes.
  * Returns 1 when the player moved. There are no events to block a step --
  * this engine has no interpreter.
+ *
+ * Always turns `direction` to face (dx, dy) first, even when the step is
+ * blocked -- RPG2000's own bump-turn (Scene::Map#step_movement sets
+ * @state.direction before its passability check, and never reverts it on a
+ * blocked step). A successful step also advances step_count, which picks
+ * the hero's walk-cycle pattern.
  */
 int rw_try_move(rw_map* m, int dx, int dy);
 
@@ -188,6 +233,31 @@ void rw_camera(const rw_map* m, int view_w, int view_h, int* cam_x, int* cam_y);
  * plain backdrop rather than reading past the buffers.
  */
 void rw_compose_cell(const rw_map* m, int mx, int my, uint16_t* out);
+
+/*
+ * Composite the hero's current CharSet frame into `out` (RW_HERO_FRAME_PIXELS
+ * ARGB1555 pixels, RW_HERO_FRAME_W wide): the frame RPG2000's own facing and
+ * walk-cycle rule picks -- rw_try_move's bump-turn for direction, `moving`
+ * (a direction currently held, the caller's own input state) and step_count
+ * for the pattern (standing when `moving` is 0). A transparent source pixel
+ * composites as 0 rather than the backdrop -- unlike rw_compose_cell, a hero
+ * frame draws *over* whatever the map already put there, so a caller blits
+ * it with a per-pixel skip test, not unconditionally. When no hero was
+ * exported (hero_present is 0), every pixel is 0 and a caller that blits
+ * unconditionally simply draws nothing.
+ */
+void rw_compose_hero(const rw_map* m, int moving, uint16_t* out);
+
+/*
+ * The hero sprite's top-left screen pixel for a viewport whose own top-left
+ * cell is (cam_x, cam_y): centred horizontally over the player's tile and
+ * anchored to its bottom, matching the genuine renderer's own
+ * `px - (WIDTH-TILE)/2, py - (HEIGHT-TILE)` (Scene::Map#render). Pixels, not
+ * cells -- unlike rw_camera's cam_x/cam_y -- and may fall outside the
+ * viewport (a caller must clip), since the sprite overhangs its tile on
+ * every side.
+ */
+void rw_hero_screen_pos(const rw_map* m, int cam_x, int cam_y, int* x, int* y);
 
 #ifdef __cplusplus
 }
