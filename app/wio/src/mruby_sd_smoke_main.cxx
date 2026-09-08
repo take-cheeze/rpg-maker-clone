@@ -84,12 +84,12 @@
 #include "SD/Seeed_SD.h"
 
 #include <mruby.h>
-#include <mruby/irep.h>
-#include <mruby/variable.h>
-#include <mruby/hash.h>
-#include <mruby/string.h>
 #include <mruby/array.h>
 #include <mruby/error.h>
+#include <mruby/hash.h>
+#include <mruby/irep.h>
+#include <mruby/string.h>
+#include <mruby/variable.h>
 #include <cstring>
 
 #ifndef SDCARD_SS_PIN
@@ -119,7 +119,8 @@ volatile uint32_t g_bytes_read = 0;
 volatile uint32_t g_file_size = 0;
 
 void record_exc(mrb_state* mrb) {
-  if (!mrb->exc) return;
+  if (!mrb->exc)
+    return;
   const char* name = mrb_obj_classname(mrb, mrb_obj_value(mrb->exc));
   std::strncpy(g_exc_class, name, sizeof(g_exc_class) - 1);
 }
@@ -170,48 +171,77 @@ void test_fail(uint32_t code) {
 // removed since a future fix narrowing that gap should re-run this exact
 // check to see it finally pass end to end).
 bool check_schema(mrb_state* mrb) {
-  mrb_value lcf = mrb_const_get(mrb, mrb_obj_value(mrb->object_class), mrb_intern_cstr(mrb, "LCF"));
-  if (mrb->exc) return false;
+  mrb_value lcf = mrb_const_get(mrb, mrb_obj_value(mrb->object_class),
+                                mrb_intern_cstr(mrb, "LCF"));
+  if (mrb->exc)
+    return false;
   mrb_value schema = mrb_const_get(mrb, lcf, mrb_intern_cstr(mrb, "Schema"));
-  if (mrb->exc) return false;
-  mrb_value common_event = mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "COMMON_EVENT"));
-  if (mrb->exc || !mrb_hash_p(common_event)) return false;
-  if (mrb_hash_size(mrb, common_event) != 6) return false;
+  if (mrb->exc)
+    return false;
+  mrb_value common_event =
+      mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "COMMON_EVENT"));
+  if (mrb->exc || !mrb_hash_p(common_event))
+    return false;
+  if (mrb_hash_size(mrb, common_event) != 6)
+    return false;
 
   mrb_value field11 = mrb_hash_get(mrb, common_event, mrb_fixnum_value(11));
-  if (mrb->exc || !mrb_hash_p(field11)) return false;
-  mrb_value name = mrb_hash_get(mrb, field11, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
-  if (mrb->exc || !mrb_symbol_p(name)) return false;
-  if (mrb_symbol(name) != mrb_intern_cstr(mrb, "start_term")) return false;
+  if (mrb->exc || !mrb_hash_p(field11))
+    return false;
+  mrb_value name = mrb_hash_get(mrb, field11,
+                                mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
+  if (mrb->exc || !mrb_symbol_p(name))
+    return false;
+  if (mrb_symbol(name) != mrb_intern_cstr(mrb, "start_term"))
+    return false;
 
-  mrb_value battler_animation = mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "BATTLER_ANIMATION"));
-  if (mrb->exc || !mrb_hash_p(battler_animation)) return false;
-  mrb_value field14 = mrb_hash_get(mrb, battler_animation, mrb_fixnum_value(14));
-  if (mrb->exc || !mrb_hash_p(field14)) return false;
-  mrb_value field14_name = mrb_hash_get(mrb, field14, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
-  if (mrb->exc || !mrb_symbol_p(field14_name)) return false;
-  if (mrb_symbol(field14_name) != mrb_intern_cstr(mrb, "battle_animation_id")) return false;
+  mrb_value battler_animation =
+      mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "BATTLER_ANIMATION"));
+  if (mrb->exc || !mrb_hash_p(battler_animation))
+    return false;
+  mrb_value field14 =
+      mrb_hash_get(mrb, battler_animation, mrb_fixnum_value(14));
+  if (mrb->exc || !mrb_hash_p(field14))
+    return false;
+  mrb_value field14_name = mrb_hash_get(
+      mrb, field14, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
+  if (mrb->exc || !mrb_symbol_p(field14_name))
+    return false;
+  if (mrb_symbol(field14_name) != mrb_intern_cstr(mrb, "battle_animation_id"))
+    return false;
 
-  mrb_value database = mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "DATABASE"));
-  if (mrb->exc || !mrb_hash_p(database)) return false;
-  mrb_value db_elements = mrb_hash_get(mrb, database, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
-  if (mrb->exc || !mrb_hash_p(db_elements)) return false;
+  mrb_value database =
+      mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "DATABASE"));
+  if (mrb->exc || !mrb_hash_p(database))
+    return false;
+  mrb_value db_elements = mrb_hash_get(
+      mrb, database, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
+  if (mrb->exc || !mrb_hash_p(db_elements))
+    return false;
   mrb_value chunk11 = mrb_hash_get(mrb, db_elements, mrb_fixnum_value(11));
-  if (mrb->exc || !mrb_hash_p(chunk11)) return false;
-  mrb_value chunk11_elements = mrb_hash_get(mrb, chunk11, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
+  if (mrb->exc || !mrb_hash_p(chunk11))
+    return false;
+  mrb_value chunk11_elements = mrb_hash_get(
+      mrb, chunk11, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
   // Must still be an unresolved Proc here -- this is the point of the fix:
   // building all of chunk 11's ~30 fields never happened just from getting
   // this far.
-  if (mrb->exc || !mrb_proc_p(chunk11_elements)) return false;
+  if (mrb->exc || !mrb_proc_p(chunk11_elements))
+    return false;
   g_result = kResultLazyConfirmed;
 
   mrb_value resolved = mrb_funcall(mrb, chunk11_elements, "call", 0);
-  if (mrb->exc || !mrb_hash_p(resolved)) return false;
+  if (mrb->exc || !mrb_hash_p(resolved))
+    return false;
   mrb_value field31 = mrb_hash_get(mrb, resolved, mrb_fixnum_value(31));
-  if (mrb->exc || !mrb_hash_p(field31)) return false;
-  mrb_value field31_name = mrb_hash_get(mrb, field31, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
-  if (mrb->exc || !mrb_symbol_p(field31_name)) return false;
-  if (mrb_symbol(field31_name) != mrb_intern_cstr(mrb, "status")) return false;
+  if (mrb->exc || !mrb_hash_p(field31))
+    return false;
+  mrb_value field31_name = mrb_hash_get(
+      mrb, field31, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
+  if (mrb->exc || !mrb_symbol_p(field31_name))
+    return false;
+  if (mrb_symbol(field31_name) != mrb_intern_cstr(mrb, "status"))
+    return false;
 
   return true;
 }
@@ -237,7 +267,8 @@ void setup() {
   size_t n = 0;
   while (n < sizeof(g_bytecode)) {
     const size_t got = f.read(g_bytecode + n, sizeof(g_bytecode) - n);
-    if (got == 0) break;
+    if (got == 0)
+      break;
     n += got;
   }
   f.close();
