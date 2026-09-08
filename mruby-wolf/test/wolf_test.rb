@@ -1476,19 +1476,58 @@ assert "Wolf::Interpreter#update_event_movement applies a Custom page's own rout
   assert_equal 4, pos[:y]
 end
 
-assert "Wolf::Interpreter#update_event_movement skips a repeating Custom route rather than applying it forever" do
+assert "Wolf::Interpreter#update_event_movement re-triggers a repeating Custom route " \
+       "from its start on a move_frequency cadence, forever" do
+  store = Wolf::VarStore.new(WolfTestFakeProject.new)
+  interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
+  interp.current_scene = WolfTestFakeScene.new
+  page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL,
+                         move_type: Wolf::Page::MOVE_CUSTOM,
+                         route: [WolfTestRouteCommand.new(0, [])], # MoveDown
+                         move_frequency: 3,
+                         route_options: 0x01) # "動作を繰り返す" (repeat)
+  event = WolfTestEvent.new(0, 3, 3, [page])
+  idx, active = interp.active_page(event)
+  pos = interp.event_position(event)
+
+  # Activation runs the route once immediately, same as a non-repeating one.
+  interp.update_event_movement(event, idx, active)
+  assert_equal 4, pos[:y]
+
+  # #move_pause_frames(3) = 8: the route must not re-run before the pause
+  # elapses (the same "N.times then one more" cadence the TowardHero test
+  # above already exercises for #tick_ambient_move -- not a fresh guess),
+  # then re-runs from its start once it does -- not just once, and not on
+  # every frame.
+  8.times { interp.update_event_movement(event, idx, active) }
+  assert_equal 4, pos[:y] # still paused
+
+  interp.update_event_movement(event, idx, active)
+  assert_equal 5, pos[:y] # the pause elapsed; the route ran again
+
+  8.times { interp.update_event_movement(event, idx, active) }
+  assert_equal 5, pos[:y] # paused again
+  interp.update_event_movement(event, idx, active)
+  assert_equal 6, pos[:y] # and again
+end
+
+assert "Wolf::Interpreter#update_event_movement does not repeat a non-repeating Custom route" do
   store = Wolf::VarStore.new(WolfTestFakeProject.new)
   interp = Wolf::Interpreter.new(WolfTestFakeProject.new, store)
   interp.current_scene = WolfTestFakeScene.new
   page = wolf_test_page(Wolf::Page::TRIGGER_PARALLEL,
                          move_type: Wolf::Page::MOVE_CUSTOM,
                          route: [WolfTestRouteCommand.new(0, [])],
-                         route_options: 0x01) # "動作を繰り返す" (repeat)
+                         route_options: 0) # no repeat bit
   event = WolfTestEvent.new(0, 3, 3, [page])
-
   idx, active = interp.active_page(event)
+  pos = interp.event_position(event)
+
   interp.update_event_movement(event, idx, active)
-  assert_equal 3, interp.event_position(event)[:y]
+  assert_equal 4, pos[:y]
+
+  20.times { interp.update_event_movement(event, idx, active) }
+  assert_equal 4, pos[:y] # never repeats, however many frames pass
 end
 
 assert "Wolf::Interpreter#update_event_movement steps a TowardHero page toward the hero on a move_frequency cadence" do
