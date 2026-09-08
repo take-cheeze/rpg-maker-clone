@@ -779,12 +779,14 @@
   editor version (auto-detected the same way WolfDec's own tool does),
   transparently through the same `Wolf::Project` a loose tree uses, including
   a Huffman+LZ-compressed header table (found to be a real, not just
-  theoretical, path via this session's first real freely-distributable WOLF
-  game). That same real game still cannot be opened for an unrelated reason —
-  a newer, WOLF-RPG-Editor-specific modified DxArchive scrambles it, and
-  [UberWolf](https://github.com/Sinflower/UberWolf)'s own `WolfX` module
-  exists specifically to defeat it, via a large reverse-engineered
-  lookup-table scheme this reader does not port. See
+  theoretical, path via three real, independent, freely-distributable WOLF
+  games this session tried). All three still cannot be opened, for an
+  unrelated reason: a newer, WOLF-RPG-Editor-specific modified DxArchive
+  (`DxArchive_WOLF_MOD_security`, per debug strings in their shipped
+  `Game.exe`s) scrambles four of `DARC_HEAD`'s own fields in a way no public
+  reference implementation — including
+  [UberWolf](https://github.com/Sinflower/UberWolf)'s own actively-maintained
+  fork — explains. See
   [`docs/adr/0093-wolf-rpg-editor-data-wolf.md`](docs/adr/0093-wolf-rpg-editor-data-wolf.md)
   and
   [`docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md`](docs/adr/0096-wolf-rpg-editor-data-wolf-compressed-header.md)
