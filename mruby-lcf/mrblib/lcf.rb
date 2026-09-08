@@ -440,11 +440,28 @@ module LCF
     end
   end
 
+  # DATABASE's own per-record-type `elements:` sub-schemas (schema.rb) are
+  # `-> { {...} }` lambdas, not the hash literal directly -- building all ~930
+  # fields' worth of nested Hash/Symbol objects at gem-load time is what
+  # raised a real NoMemoryError on the Wio's 192 KB SRAM (see docs/adr/0099).
+  # Resolved and cached in place on first real access, the same way
+  # Array1D#[]/Array2D#[] already cache a chunk's *decoded value* rather than
+  # re-running LCF.to_rb on every read -- this just extends that to the
+  # schema descriptor itself. A schema whose `elements:` was already a plain
+  # Hash (every record type outside DATABASE, plus DATABASE entries that
+  # reference an existing shared constant like `elements: COMMON_EVENT`) is
+  # returned as-is; `respond_to?(:call)` is what tells the two apart.
+  def elements_of schema
+    e = schema[:elements]
+    return e unless e.respond_to?(:call)
+    schema[:elements] = e.call
+  end
+
   module_function :read_ber, :write_ber, :to_rb, :read_section,
                   :parse_event_commands, :encode_event_commands,
                   :parse_move_commands, :encode_move_commands,
                   :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
-                  :pack_double, :encode, :binstr
+                  :pack_double, :encode, :binstr, :elements_of
 
   MODE = 2000 # 2003
 
@@ -503,7 +520,7 @@ module LCF
     def [] idx
       cached = @decoded && @decoded[idx]
       return cached if cached
-      elem = @schema[:elements][idx]
+      elem = LCF.elements_of(@schema)[idx]
       value = LCF.to_rb @data[idx], elem
       if value.is_a?(Array1D) || value.is_a?(Array2D) ||
          elem[:type] == :event || elem[:type] == :move_commands
@@ -547,7 +564,7 @@ module LCF
     # schema type of that field (LCF.encode) so an authored/edited section can
     # be written back out. With no schema attached a raw String is stored as-is.
     def []= idx, value
-      elem = @schema && @schema[:elements] && @schema[:elements][idx]
+      elem = @schema && LCF.elements_of(@schema)[idx]
       if elem
         @data[idx] = LCF.encode(value, elem[:type])
       elsif value.is_a? String
@@ -612,7 +629,7 @@ module LCF
       @sym2idx = @schema[:sym2idx]
       return @sym2idx if @sym2idx
       @sym2idx = {}
-      @schema[:elements].each { |k, e| @sym2idx[e[:name]] = k }
+      LCF.elements_of(@schema).each { |k, e| @sym2idx[e[:name]] = k }
       @schema[:sym2idx] = @sym2idx
     end
   end

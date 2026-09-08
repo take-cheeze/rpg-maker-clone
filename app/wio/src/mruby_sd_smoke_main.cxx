@@ -34,19 +34,50 @@
 //      in build_config.rb itself, since forcing 32-bit ints onto the
 //      shared host build affects desktop/wasm/android too and deserves its
 //      own real look, not a rushed one alongside this ADR.
-//   2. Real memory ceiling. mruby-lcf's schema.rb defines all 25 record
-//      types (~930 fields total, ADR 0098's own count) as nested hash
-//      literals executed in one shot; loading the *whole* file this way
-//      raises NoMemoryError on the Wio's 192 KB SRAM under a stock Arduino
-//      SAMD malloc arena. A smaller, still-real slice (COMMON_EVENT
-//      through BATTLER_ANIMATION, ~27 fields, `head -75
-//      mruby-lcf/mrblib/schema.rb`) loads and executes cleanly. Streaming
-//      or splitting the schema is real follow-up work this smoke test
-//      surfaced, not something it attempts.
-// What this firmware carries: the int-size fix. What it does NOT carry:
-// the exact scratch mruby-bigint/MRB_INT32 core build used to verify it
-// (a local, uncommitted rake config -- see docs/adr/0099), or a
-// memory-budgeted way to load the full schema.
+//   2. Real memory ceiling. mruby-lcf's schema.rb originally defined all 25
+//      record types (~930 fields total, ADR 0098's own count) as nested
+//      hash literals executed in one shot; loading the *whole* file this
+//      way raised NoMemoryError on the Wio's 192 KB SRAM under a stock
+//      Arduino SAMD malloc arena.
+//
+// UPDATE (2026-09-08): mruby-lcf/mrblib/schema.rb's large top-level
+// constants (DATABASE's own 17 biggest per-record-type `elements:` values,
+// plus 15 more standalone constants -- SAVE_SYSTEM, SAVE_MOVABLE, etc --
+// referenced the same way) are now `-> { {...} } ` lambdas, resolved and
+// cached on first real access (LCF.elements_of, mruby-lcf/mrblib/lcf.rb) --
+// see that file's own comment for why some of these self-memoize instead
+// (`Schema.lazy`) and MAP_UNIT/MAP_TREE/DATABASE/SAVE_DATA's own top-level
+// Hashes stay eager (used as a `.lmu`/`.lmt`/`.ldb`/`.lsd` file's root
+// schema directly, never through an `elements:` indirection). Verified
+// byte-for-byte structurally identical to the pre-change file for every
+// LCF::Schema constant via an automated deep-resolve comparison (force
+// every lambda, diff against the original), and the existing ctest suite
+// (2052 assertions, mruby-lcf's own `test/lcf_test.rb` included) passes
+// unchanged.
+//
+// On real emulated hardware this closes *part* of finding 2: the real,
+// complete, unmodified-content schema.rb + lcf.rb (now ~54 KB compiled,
+// not a synthetic reduction) loads cleanly through mrb_load_irep_buf --
+// something the pre-laziness file could not do at all. It does not close
+// the finding entirely: resolving even one record type's lazy fields
+// afterward (DATABASE chunk 11, "player", ~30 fields -- see check_schema
+// below) still exhausts what little headroom is left in *this test's*
+// current layout and crashes the same way the original all-eager file
+// did (PC lands in newlib's abort/_exit path, not a catchable mrb->exc --
+// consistent with mruby's own "out of memory while raising NoMemoryError"
+// fallback). g_bytecode below shrank from 64 KB to 60 KB specifically to
+// buy the headroom that made the *load* succeed; there was no slack left
+// over for anything past it. The likely dominant remaining costs are the
+// interpreter's own IREP structures for the ~54 KB of bytecode (a cost
+// that scales with total compiled size, not with how much Ruby data is
+// actually live) and lcf.rb's ~700 lines of real reader/writer code --
+// neither shrinks just because schema.rb's data got lazier. Closing the
+// rest for real looks like mrb_load_irep_file streamed from an actual
+// FILE* (app/wio/src/sd_syscalls.cxx already provides the newlib _open/
+// _read plumbing for this, gated by WIO_WITH_SD, and is unwired today)
+// instead of this test's whole-file-into-a-static-buffer
+// mrb_load_irep_buf, which needs the entire compiled size resident in RAM
+// on top of whatever the parse itself allocates.
 
 #include <Arduino.h>
 #include <Seeed_FS.h>
@@ -77,7 +108,7 @@ const char kBytecodePath[] = "/lcf_only.mrb";
 // story on the desktop/psp/android side. No gems means nothing to init.
 extern "C" void mrb_init_mrbgems(mrb_state*) {}
 
-uint8_t g_bytecode[64 * 1024];
+uint8_t g_bytecode[60 * 1024];
 
 // Debug aid: the raised exception's class name, ASCII, readable via Renode
 // `sysbus ReadByte` in a loop (or a hex dump) when g_result comes back
@@ -114,6 +145,11 @@ constexpr uint32_t kResultFailCheck = 0xBAD10006;
 // does next, since check_schema calls mrb_const_get directly (unprotected)
 // and a *missing* constant's raise path is untested on this target.
 constexpr uint32_t kResultLoadedOk = 0x600D10AD;
+// Written after confirming DATABASE's chunk 11 elements: is still an
+// unresolved Proc (laziness held all the way through mrb_load_irep_buf) --
+// isolates that finding from whatever #call (resolving chunk 11's ~30 real
+// fields) does next.
+constexpr uint32_t kResultLazyConfirmed = 0x1A2100D;
 
 void test_pass() {
   g_result = kResultPass;
@@ -122,13 +158,17 @@ void test_fail(uint32_t code) {
   g_result = code;
 }
 
-// Checks COMMON_EVENT/BGM/SE/LEARNING/BATTLER_ANIMATION only, not the full
-// schema's DATABASE tree: DATABASE only exists when the *whole* 930-field
-// schema.rb loads, and that does not fit today (see this file's own header
-// comment, finding 2) -- so /lcf_only.mrb on the SD card for this smoke
-// test must be the reduced slice (`head -75 mruby-lcf/mrblib/schema.rb`),
-// not the real project's full file, or mrb_load_irep_buf itself fails
-// with NoMemoryError before check_schema ever runs.
+// Checks COMMON_EVENT/BGM/SE/LEARNING/BATTLER_ANIMATION (already-eager,
+// small constants), then reaches into DATABASE's chunk 11 (player) the same
+// way real game code does -- through the lazy `elements:` lambda, not a
+// hash literal -- to confirm the laziness actually held: LOADING the whole
+// file does not force it. /lcf_only.mrb on the SD card for this smoke test
+// is the real, complete mruby-lcf/mrblib/lcf.rb + schema.rb, not a reduced
+// slice; see this file's own header comment for how far this gets on real
+// hardware today (the load succeeds; resolving chunk 11's fields via #call,
+// past kResultLazyConfirmed below, still does not -- kept here rather than
+// removed since a future fix narrowing that gap should re-run this exact
+// check to see it finally pass end to end).
 bool check_schema(mrb_state* mrb) {
   mrb_value lcf = mrb_const_get(mrb, mrb_obj_value(mrb->object_class), mrb_intern_cstr(mrb, "LCF"));
   if (mrb->exc) return false;
@@ -151,6 +191,27 @@ bool check_schema(mrb_state* mrb) {
   mrb_value field14_name = mrb_hash_get(mrb, field14, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
   if (mrb->exc || !mrb_symbol_p(field14_name)) return false;
   if (mrb_symbol(field14_name) != mrb_intern_cstr(mrb, "battle_animation_id")) return false;
+
+  mrb_value database = mrb_const_get(mrb, schema, mrb_intern_cstr(mrb, "DATABASE"));
+  if (mrb->exc || !mrb_hash_p(database)) return false;
+  mrb_value db_elements = mrb_hash_get(mrb, database, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
+  if (mrb->exc || !mrb_hash_p(db_elements)) return false;
+  mrb_value chunk11 = mrb_hash_get(mrb, db_elements, mrb_fixnum_value(11));
+  if (mrb->exc || !mrb_hash_p(chunk11)) return false;
+  mrb_value chunk11_elements = mrb_hash_get(mrb, chunk11, mrb_symbol_value(mrb_intern_cstr(mrb, "elements")));
+  // Must still be an unresolved Proc here -- this is the point of the fix:
+  // building all of chunk 11's ~30 fields never happened just from getting
+  // this far.
+  if (mrb->exc || !mrb_proc_p(chunk11_elements)) return false;
+  g_result = kResultLazyConfirmed;
+
+  mrb_value resolved = mrb_funcall(mrb, chunk11_elements, "call", 0);
+  if (mrb->exc || !mrb_hash_p(resolved)) return false;
+  mrb_value field31 = mrb_hash_get(mrb, resolved, mrb_fixnum_value(31));
+  if (mrb->exc || !mrb_hash_p(field31)) return false;
+  mrb_value field31_name = mrb_hash_get(mrb, field31, mrb_symbol_value(mrb_intern_cstr(mrb, "name")));
+  if (mrb->exc || !mrb_symbol_p(field31_name)) return false;
+  if (mrb_symbol(field31_name) != mrb_intern_cstr(mrb, "status")) return false;
 
   return true;
 }

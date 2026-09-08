@@ -168,6 +168,75 @@ and the Wio firmware have both linked `libmruby.a` only during a `rake`
 build, never during a real boot, until this smoke test's `pio run`
 existed to make one.
 
+## Schema laziness: a real, partial fix for the memory ceiling
+
+Finding 2 above came from `schema.rb` building all ~930 fields' worth of
+nested Hash/Symbol objects the moment the file loads — DATABASE's own
+17 largest per-record-type `elements:` values, plus 15 more standalone
+top-level constants referenced the same way (`SAVE_SYSTEM`, `SAVE_MOVABLE`,
+`SAVE_PICTURE`, ...), are now `-> { {...} }` lambdas instead, resolved and
+cached in place on first real access (`LCF.elements_of`, `mruby-lcf/mrblib/
+lcf.rb`) — the same lazy-decode philosophy `Array1D#[]`/`Array2D#[]` already
+apply to *data*, extended to the schema *descriptors* themselves. A few
+constants that are only ever consumed through a fresh, throwaway `{
+elements: SAVE_X }` wrapper built on every call (`mruby-rpg2k/mrblib/
+game.rb`'s `Game::State#to_lsd`/`.from_lsd`) self-memoize instead
+(`Schema.lazy`, `mruby-lcf/mrblib/schema.rb`), so the block still runs only
+once per process rather than once per save. `DATABASE`/`MAP_UNIT`/
+`MAP_TREE`/`SAVE_DATA`'s own outer Hashes stay eager — each is used as a
+`.ldb`/`.lmu`/`.lmt`/`.lsd` file's *root* schema directly
+(`LCF::Database#schema`, etc., accessing `schema[:type]` straight off it),
+never reached through the `elements:` indirection `LCF.elements_of`
+generically resolves, so wrapping the outer Hash itself would break that
+access rather than defer it — confirmed the hard way: an earlier pass
+wrapped `MAP_UNIT` outright and `ArgumentError: wrong number of arguments
+(given 1, expected 0)` came back from `Proc#[]` (`schema[:type]` on an
+unresolved Proc silently means `schema.call(:type)`, not a `NoMethodError`
+that would have been obvious).
+
+Correctness is verified two ways, not just asserted: an automated
+deep-resolve comparison (force every lambda across all of `LCF::Schema`'s
+constants, recursively, then diff the result against the same walk over
+the pre-change file) comes back byte-for-byte identical, and the existing
+`ctest -R mruby_test` suite (2052 assertions, `mruby-lcf/test/lcf_test.rb`
+included) passes unchanged. One real bug the deep-resolve comparison
+caught before it shipped: `SAVE_MOVABLE[108] = {...}`, a post-definition
+mutation adding a field once `SAVE_EVENT_EXEC_STATE` existed (added later
+in the file, so the assignment couldn't be inlined at `SAVE_MOVABLE`'s own
+original definition site) — raised `NoMethodError: undefined method '[]='
+for an instance of Proc` the moment `SAVE_MOVABLE` became lazy. Fixed by
+moving field 108 into `SAVE_MOVABLE`'s own literal outright: laziness
+means the forward reference to `SAVE_EVENT_EXEC_STATE` no longer needs to
+wait for that constant to exist, only for someone to actually resolve
+`SAVE_MOVABLE`'s elements, which happens well after the whole file has
+loaded.
+
+On real (emulated) hardware this closes *part* of finding 2, not all of
+it. `mruby_sd_smoke_main.cxx` reran with the real, complete, unmodified-
+content `schema.rb` + `lcf.rb` (~54 KB compiled, no reduced slice) and
+this time `mrb_load_irep_buf` succeeded — something the pre-laziness file
+could not do at all under the same harness. Getting even that far needed
+shrinking the smoke test's own static SD-read buffer from 64 KB to 60 KB;
+there was no headroom left over past the load itself. Resolving even one
+record type's fields afterward (`DATABASE` chunk 11 "player", ~30 fields,
+reached the same way `Array1D#sym2idx` would — through the lazy
+`elements:` lambda) still exhausts what little remains and crashes the
+same way the original all-eager file did (lands in newlib's `abort`/`_exit`
+path, not a catchable `mrb->exc` — consistent with mruby's own "out of
+memory while raising `NoMemoryError`" fallback). The likely dominant
+remaining costs are not schema data at all: the interpreter's own IREP
+structures for ~54 KB of bytecode scale with total compiled size
+regardless of how much Ruby data ends up live, and `lcf.rb`'s ~700 lines
+of real reader/writer code do not shrink just because `schema.rb`'s data
+got lazier. Closing the rest for real looks like `mrb_load_irep_file`
+streamed from an actual `FILE*` (`app/wio/src/sd_syscalls.cxx` already
+provides the newlib `_open`/`_read` plumbing for this, gated by
+`WIO_WITH_SD`, and is unused today) instead of this smoke test's whole-
+file-into-a-static-buffer `mrb_load_irep_buf`, which needs the entire
+compiled size resident in RAM on top of whatever the parse itself
+allocates — real follow-up work this update surfaced, not something it
+attempts.
+
 ## Consequences
 
 - **There is nowhere to wire this in yet.** `app/psp`'s bring-up EBOOT does
@@ -188,15 +257,20 @@ existed to make one.
   `WIO_WITH_SD`) already exists for exactly this and is unused today; QSPI
   XIP (map the flash chip directly into address space, no read call at
   all) is a different, bigger lever this ADR does not attempt.
-- **Two real, actionable bugs came out of the first-ever real boot**, and
-  neither is this ADR's to fix: the host/cross `mrb_int` size mismatch
-  (`MRB_INT64` vs `MRB_INT32`, see above) affects *any* build touching
+- **Two real, actionable bugs came out of the first-ever real boot.** The
+  host/cross `mrb_int` size mismatch (`MRB_INT64` vs `MRB_INT32`, see
+  above) is not this ADR's to fix — it affects *any* build touching
   psp/wio, cdump included, the moment a `.rb` file anywhere in the gem
-  stack has a literal in the 33-to-64-bit range — not just files loaded
-  this ADR's way. The schema memory ceiling is specific to loading the
-  whole of `schema.rb` at once, whichever mechanism does it. Both are
-  follow-up work for whoever picks either up, recorded here because this
-  ADR's own smoke test is what found them.
+  stack has a literal in the 33-to-64-bit range, not just files loaded
+  this ADR's way. The schema memory ceiling *is* this ADR's own smoke test
+  finding to carry forward: "Schema laziness" above lands a real, verified
+  fix for the part of it that was `schema.rb` eagerly building data it
+  might never use, but real-hardware testing found that alone does not
+  clear the Wio's 192 KB SRAM for the *whole* file — the remaining gap
+  looks like it's in the interpreter's own bytecode-loading overhead and
+  `lcf.rb`'s code size, not schema data, and needs the streaming-load
+  lever (`mrb_load_irep_file` over a real `FILE*`) that section's own last
+  paragraph names as the likely next step.
 - **ADR 0098's single-format trim and this ADR compound, not compete.**
   Once psp/wio compile only `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss`, that is
   the *entire* remaining Ruby payload this lever would move off internal

@@ -10,6 +10,23 @@
 # documented, matching the pre-existing :int16_array convention.
 module LCF
   module Schema
+    # Wraps a hash-literal block as lazily-built and self-memoizing: unlike
+    # DATABASE's own per-entry `elements:` lambdas (LCF.elements_of in
+    # lcf.rb caches the resolved Hash back onto the shared, persistent
+    # schema entry that held the lambda), several of the constants below are
+    # only ever consumed through a fresh, throwaway `{ elements: SAVE_X }`
+    # wrapper built on every call (see mruby-rpg2k/mrblib/game.rb's
+    # Game::State#to_lsd/.from_lsd) -- LCF.elements_of would cache onto that
+    # throwaway wrapper, not onto SAVE_X's own constant binding, so the
+    # block would otherwise re-run on every single save/load. `cache`, a
+    # local captured by the returned lambda's own closure, survives across
+    # calls to that same Proc object (the module-level constant itself)
+    # regardless of which wrapper's #call reached it.
+    def self.lazy(&block)
+      cache = nil
+      -> { cache ||= block.call }
+    end
+
     COMMON_EVENT = {
       1 => {
         name: :name, type: :string, default: ''
@@ -79,7 +96,7 @@ module LCF
         11 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E4%B8%BB%E4%BA%BA%E5%85%AC
           name: :player, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :title, type: :string, default: '' },
             3 => { name: :charset_name, type: :string, default: '' },
@@ -126,12 +143,12 @@ module LCF
             74 => { name: :attribute_ranks, type: :int8_array },             # 属性有効度 (byte[])
 
             80 => { name: :battle_commands, type: :int32_array },            # 戦闘コマンド (int[7], 2003)
-          }
+          } }
         },
         12 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%89%B9%E6%AE%8A%E6%8A%80%E8%83%BD
           name: :skill, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :description, type: :string, default: '' },
             3 => { name: :using_message1, type: :string, default: '' },
@@ -168,12 +185,12 @@ module LCF
             45 => { name: :affect_attr_defence, type: :bool, default: false },
             49 => { name: :battler_animation_data_size, type: :int, default: 0 },
             50 => { name: :battler_animation_data, type: :Array2D, elements: BATTLER_ANIMATION },
-          }
+          } }
         },
         13 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%A2%E3%82%A4%E3%83%86%E3%83%A0
           name: :item, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :description, type: :string, default: '' },
             3 => { name: :type, type: :int, default: 0 },
@@ -239,12 +256,12 @@ module LCF
             71 => { name: :use_skill, type: :bool, default: false },
             72 => { name: :class_set_size, type: :int, default: 0 },
             73 => { name: :class_set, type: :int8_array },                  # bool[]
-          }
+          } }
         },
         14 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%AD%E3%83%A3%E3%83%A9
           name: :enemy, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :battler_name, type: :string, default: '' },
             3 => { name: :battler_hue, type: :int, default: 0 },
@@ -285,12 +302,12 @@ module LCF
                 13 => { name: :rating, type: :int, default: 50 },
               }
             },
-          }
+          } }
         },
         15 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%B0%E3%83%AB%E3%83%BC%E3%83%97
           name: :enemy_group, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => {
               name: :members, type: :Array2D,
@@ -341,12 +358,12 @@ module LCF
                 12 => { name: :event, type: :event },
               }
             },
-          }
+          } }
         },
         16 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%9C%B0%E5%BD%A2
           name: :terrain, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :damage, type: :int, default: 0 },
             3 => { name: :encounter_rate, type: :int, default: 100 },
@@ -384,12 +401,12 @@ module LCF
             46 => { name: :grid_top_y, type: :int, default: 0 },
             47 => { name: :grid_elongation, type: :int, default: 375 },
             48 => { name: :grid_inclination, type: :int, default: 16400 },
-          }
+          } }
         },
         17 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%B1%9E%E6%80%A7
           name: :property, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :type, type: :int, default: 0 },      # 0: weapon, 1: magic
             11 => { name: :a_rate, type: :int, default: 300 },
@@ -397,12 +414,12 @@ module LCF
             13 => { name: :c_rate, type: :int, default: 100 },
             14 => { name: :d_rate, type: :int, default: 50 },
             15 => { name: :e_rate, type: :int, default: 0 },
-          }
+          } }
         },
         18 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%8A%B6%E6%85%8B
           name: :situation, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :type, type: :int, default: 0 },      # 0: battle only, 1: also on map
             3 => { name: :color, type: :int, default: 6 },
@@ -445,12 +462,12 @@ module LCF
             66 => { name: :sp_change_val, type: :int, default: 0 },
             67 => { name: :sp_change_map_steps, type: :int, default: 0 },
             68 => { name: :sp_change_map_val, type: :int, default: 0 },
-          }
+          } }
         },
         19 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1
           name: :battle_anime, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :animation_name, type: :string, default: '' },
             3 => { name: :large, type: :int, default: 0 },     # 2003; 0: 480x480, 1: 640x640
@@ -490,12 +507,12 @@ module LCF
                 },
               }
             },
-          }
+          } }
         },
         20 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%83%81%E3%83%83%E3%83%97%E3%82%BB%E3%83%83%E3%83%88
           name: :chipset, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :chipset_name, type: :string, default: '' },
             3 => { name: :terrain_data, type: :int16_array },        # 地形ID (short[162])
@@ -503,12 +520,12 @@ module LCF
             5 => { name: :passable_data_upper, type: :int8_array },  # 上層通行 (byte[144])
             11 => { name: :animation_type, type: :int, default: 0 }, # 水アニメパターン
             12 => { name: :animation_speed, type: :int, default: 0 }, # 水アニメ速度
-          }
+          } }
         },
         21 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
           name: :term, type: :Array1D,
-          elements: {
+          elements: -> { {
             # Battle messages
             1 => { name: :encounter, type: :string, default: '' },
             2 => { name: :special_combat, type: :string, default: '' },
@@ -659,12 +676,12 @@ module LCF
             151 => { name: :end_game_confirm, type: :string, default: '' },
             152 => { name: :yes, type: :string, default: '' },
             153 => { name: :no, type: :string, default: '' },
-          }
+          } }
         },
         22 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0
           name: :system, type: :Array1D,
-          elements: {
+          elements: -> { {
             10 => { name: :maker_version, type: :int },                    # 使用ツクールバージョン
             11 => { name: :boat_name, type: :string, default: '' },
             12 => { name: :ship_name, type: :string, default: '' },
@@ -756,19 +773,19 @@ module LCF
             101 => { name: :invert_animations, type: :bool, default: false },
 
             111 => { name: :show_title, type: :bool, default: true },
-          }
+          } }
         },
         23 => {
           name: :switch, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
-          }
+          } }
         },
         24 => {
           name: :variable, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
-          }
+          } }
         },
          25 => {
            # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B3%E3%83%A2%E3%83%B3%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88
@@ -799,7 +816,7 @@ module LCF
           # (Row) and -1 (an empty slot), which name no entry and are handled
           # by the caller instead.
           name: :battlecommands, type: :Array1D,
-          elements: {
+          elements: -> { {
             # Where a living party member's battle sprite is positioned in the
             # alternative/gauge layouts (BattleCommands::Placement in liblcf):
             # 0 manual (the actor's own database `battle_x`/`battle_y`, see
@@ -860,12 +877,12 @@ module LCF
             27 => { name: :death_teleport_x, type: :int, default: 0 },
             28 => { name: :death_teleport_y, type: :int, default: 0 },
             29 => { name: :death_teleport_face, type: :int, default: 0 },
-          }
+          } }
         },
         30 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E8%81%B7%E6%A5%AD
           name: :job, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             21 => { name: :double_hand, type: :bool, default: false },       # 二刀流
             22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
@@ -886,7 +903,7 @@ module LCF
             73 => { name: :attribute_ranks_size, type: :int, default: 0 },
             74 => { name: :attribute_ranks, type: :int8_array },
              80 => { name: :battle_commands, type: :int32_array },
-           }
+           } }
          },
          # RPG2003-only database section (chunk 31) between the 2003 Classes
          # table and the Battler-Animation table. Present-but-empty in the only
@@ -914,7 +931,7 @@ module LCF
           #
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1%EF%BC%92
           name: :battleranimations, type: :Array2D,
-          elements: {
+          elements: -> { {
             1 => { name: :name, type: :string, default: '' },
             2 => { name: :speed, type: :int, default: 20 },
             10 => {
@@ -941,7 +958,7 @@ module LCF
                 3 => { name: :battler_position, type: :int, default: 0 },   # グラフィック/位置
               }
             },
-          }
+          } }
         },
       },
     }
@@ -1004,7 +1021,7 @@ module LCF
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%9E%E3%83%83%E3%83%97
     #
     # Conditions that must hold for an event page to be active.
-    MAP_EVENT_PAGE_CONDITION = {
+    MAP_EVENT_PAGE_CONDITION = lazy { {
       # Bit flags selecting which of the conditions below are enabled.
       1 => { name: :flags, type: :int, default: 0 },
       2 => { name: :switch_a_id, type: :int, default: 1 },
@@ -1032,7 +1049,7 @@ module LCF
       # ordinary ">=" reading, not "==", once EventPage actually consults
       # this field.
       10 => { name: :compare_operator, type: :int, default: 1 },
-    }
+    } }
 
     MOVE_ROUTE = {
       11 => { name: :command_size, type: :int, default: 0 },
@@ -1041,7 +1058,7 @@ module LCF
       22 => { name: :skippable, type: :bool, default: false },
     }
 
-    MAP_EVENT_PAGE = {
+    MAP_EVENT_PAGE = lazy { {
       2 => { name: :condition, type: :Array1D, elements: MAP_EVENT_PAGE_CONDITION },
       21 => { name: :charset_name, type: :string, default: '' },
       22 => { name: :charset_index, type: :int, default: 0 },
@@ -1076,7 +1093,7 @@ module LCF
       # do the same.
       51 => { name: :event_command_size, type: :int, default: 0 },
       52 => { name: :event_commands, type: :event },
-    }
+    } }
 
     MAP_EVENT = {
       1 => { name: :name, type: :string, default: '' },
@@ -1085,9 +1102,14 @@ module LCF
       5 => { name: :pages, type: :Array2D, elements: MAP_EVENT_PAGE },
     }
 
+    # Used directly as a `.lmu` file's own root schema (LCF::MapUnit#schema
+    # below), the same way DATABASE is a `.ldb`'s -- so, like DATABASE, this
+    # outer Hash itself must stay eager (File#initialize reads `schema[:type]`
+    # off it directly, never through LCF.elements_of); only the `elements:`
+    # value, one map's worth of live fields, is lazy.
     MAP_UNIT = {
       name: :Map, type: :Array1D,
-      elements: {
+      elements: -> { {
         1 => { name: :chipset_id, type: :int, default: 1 },
         2 => { name: :width, type: :int, default: 20 },
         3 => { name: :height, type: :int, default: 15 },
@@ -1146,13 +1168,13 @@ module LCF
         # mtf-meido-action's first map holds 593.
         90 => { name: :save_count_2k3e, type: :int, default: 0 },
         91 => { name: :save_count, type: :int, default: 0 },
-      }
+      } }
     }
 
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%82%BB%E3%83%BC%E3%83%96%E3%83%87%E3%83%BC%E3%82%BF
     #
     # Snapshot of a hero or vehicle on the map. Vehicles reuse the same layout.
-    SAVE_MOVABLE = {
+    SAVE_MOVABLE = lazy { {
       11 => { name: :map_id, type: :int },
       12 => { name: :x, type: :int },
       13 => { name: :y, type: :int },
@@ -1308,18 +1330,53 @@ module LCF
       # ever been boarded that session -- see SAVE_DATA's own 105-107
       # comment for the larger discovery this field was found alongside.
       101 => { name: :vehicle, type: :int },
-      # Field 108 (0x6C, `parallel_event_execstate` -- liblcf's own
-      # `SaveMapEvent`, generator/csv/fields.csv) is added just below
-      # SAVE_EVENT_EXEC_STATE's own definition further down this file, not
-      # inline here: its `elements:` is that very struct, which is not
-      # defined yet at this point in the file (SAVE_MOVABLE is one of the
-      # earliest tables declared; SAVE_EVENT_EXEC_STATE, added by cycle #191,
-      # comes much later). See that assignment's own comment for the field
-      # itself, and for why fields 101 (already spoken for, above) and
-      # 102/103 (liblcf's own `waiting_execution`/`original_move_route_index`
-      # /`triggered_by_decision_key` neighbours) are deliberately left
-      # unmodelled here.
-    }
+      # Field 108 (0x6C, liblcf's own `SaveMapEvent.parallel_event_execstate`,
+      # generator/csv/fields.csv) -- a map event's OWN Parallel Process's full
+      # call-stack snapshot, the identical SAVE_EVENT_EXEC_STATE struct chunk
+      # 111's own sibling chunks 113/114 (SAVE_FOREGROUND_EVENT/
+      # SAVE_COMMON_EVENT) already use. `elements:` names SAVE_EVENT_EXEC_STATE,
+      # declared later in this file (SAVE_MOVABLE is one of the earliest
+      # tables; SAVE_EVENT_EXEC_STATE, added by cycle #191, comes much
+      # later) -- referencing it here by name only works (rather than a
+      # load-order NameError) because `lazy` above defers actually
+      # evaluating this hash literal until first real access, long after
+      # every constant in the file exists.
+      #
+      # Cycle #193 closes the one gap cycle #191/#192's own foreground/
+      # common-event call-stack persistence deliberately left open: a Map
+      # Event's own Parallel Process (trigger Parallel Process on the event's
+      # own page, distinct from a Common Event's Parallel Process, already
+      # covered by SAVE_COMMON_EVENT) previously had no persistence at all --
+      # not even the older, coarser #resumable_index-style cursor
+      # `Game::State#common_event_progress` gives common events, since no such
+      # cursor ever existed for map events (`Scene::Map#build_parallels`'s own
+      # comment: "a real 'visit' gives a map event's own parallel process no
+      # id that means anything on the map being left"). See
+      # `Game::State#map_event_exec`'s own comment (game.rb) for the full
+      # engine-side wiring this field now backs, and why -- unlike
+      # `#common_event_exec` -- it is scoped to the currently-loaded map only,
+      # matching `#map_event_positions`.
+      #
+      # liblcf's own two neighbouring fields on `SaveMapEvent` --
+      # `waiting_execution` (0x65/101, "this event is waiting for foreground
+      # execution") and `original_move_route_index` (0x66/102) /
+      # `triggered_by_decision_key` (0x67/103) -- are deliberately left
+      # unmodelled: 101 collides with this same shared SAVE_MOVABLE table's
+      # pre-existing, differently-typed `:vehicle` field (chunks 105-107's own
+      # boat/ship/airship ordinal, write-only byte parity with no reader), so
+      # giving it a second meaning here is not possible without splitting
+      # SAVE_MOVABLE into per-chunk tables -- out of scope for this cycle,
+      # which only needs field 108. 102/103 are real, uncontested fields this
+      # codebase's own `Game::State` simply has no distinct "original route
+      # before an override"/"triggered by decision key" concept to source for
+      # a map event specifically (the latter is already carried per-frame
+      # inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`, field 13, which
+      # is what this codebase's reader actually consults) -- left for a future
+      # cycle alongside SAVE_MOVABLE's own already-catalogued larger gaps (see
+      # that table's own comment on the hero's unmodelled move-route chunk/
+      # `through`/movement timers).
+      108 => { name: :parallel_event_execstate, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
+    } }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
     # carries a lot more of liblcf's full `SaveMapEventBase` struct
@@ -1380,7 +1437,7 @@ module LCF
     # Whether genuine RPG_RT ever *reads* this pair back for anything beyond
     # round-tripping it through Save/Continue is not established either way
     # -- see docs/TODO.md.
-    SAVE_PICTURE = {
+    SAVE_PICTURE = lazy { {
       1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
       # Show Picture's own "fixed to map position" checkbox (param4 in
       # `Interpreter#do_show_picture`, which pins the picture to scroll with
@@ -1486,7 +1543,7 @@ module LCF
       # covering both a still picture and an old save missing this field
       # entirely) means #restore_pictures does not start a fresh move on load.
       51 => { name: :time_left, type: :int, default: 0 },
-    }
+    } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html
     #
@@ -1518,7 +1575,7 @@ module LCF
     # are also identified by liblcf as `hp_mod` (`0x21`→33) and `sp_mod`
     # (`0x22`→34) — unconfirmed stat modifiers, not the title — which is why
     # they stay undecoded here.
-    SAVE_PARTY_ACTOR = {
+    SAVE_PARTY_ACTOR = lazy { {
       1 => { name: :actor_name, type: :string },            # 名前
       2 => { name: :title, type: :string },                 # 二つ名 (Change Actor Title)
       # A live Change Sprite Association (10630) override, confirmed against
@@ -1627,20 +1684,20 @@ module LCF
       42 => { name: :defense_mod, type: :int, default: 0 },
       43 => { name: :spirit_mod, type: :int, default: 0 },
       44 => { name: :agility_mod, type: :int, default: 0 },
-    }
+    } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html
     #
     # Remembered teleport/escape destination (chunk 110), indexed by map id.
     # Index 0 is reserved for the escape target.
-    SAVE_TARGET = {
+    SAVE_TARGET = lazy { {
       1 => { name: :map_id, type: :int },
       2 => { name: :x, type: :int, default: 0 },
       3 => { name: :y, type: :int, default: 0 },
       # Turn the switch on after teleporting.
       4 => { name: :switch_on, type: :bool, default: false },
       5 => { name: :switch_id, type: :int, default: 1 },
-    }
+    } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/27.html
     #
@@ -1672,7 +1729,7 @@ module LCF
     # the hero, and puts it at (320,240) for that tile) over all but 260 of
     # 307200 pixels, the residual being one animated coastline autotile. That is
     # what pins the unit: 5120/16 = 320.
-    SAVE_MAP_EVENT = {
+    SAVE_MAP_EVENT = lazy { {
       1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
       2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
       # A live Change Encounter Rate (11740) override, or -1/absent for "no
@@ -1700,7 +1757,7 @@ module LCF
       11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
       21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
       22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
-    }
+    } }
 
     # Camera scroll fields of SAVE_MAP_EVENT are stored in 1/16 pixel.
     SCROLL_UNITS_PER_PIXEL = 16
@@ -1732,7 +1789,7 @@ module LCF
     # a few hundred lines down in game.rb already flagged and worked around
     # without diagnosing). `#to_lsd`/`#from_lsd` (mruby-rpg2k/mrblib/game.rb)
     # updated to match.
-    SAVE_INVENTORY = {
+    SAVE_INVENTORY = lazy { {
       1 => { name: :party_count, type: :int, default: 0 },
       2 => { name: :party, type: :int16_array },
       11 => { name: :item_count, type: :int, default: 0 },
@@ -1765,7 +1822,7 @@ module LCF
       35 => { name: :victories, type: :int },
       41 => { name: :turns, type: :int },
       42 => { name: :steps, type: :int },
-    }
+    } }
 
     # One stack frame of an interpreter's own call stack (liblcf's
     # `SaveEventExecFrame`), nested inside SAVE_EVENT_EXEC_STATE's own `stack`
@@ -1824,7 +1881,7 @@ module LCF
     # reading our `.lsd` files (or the reverse) -- a real save captured mid a
     # Show Choices prompt would need this field decoded to resume the exact
     # same way genuine RPG_RT would.
-    SAVE_EVENT_EXEC_FRAME = {
+    SAVE_EVENT_EXEC_FRAME = lazy { {
       1  => { name: :command_size, type: :int, default: 0 },
       2  => { name: :commands, type: :event, default: [] },
       11 => { name: :current_command, type: :int, default: 0 },
@@ -1832,7 +1889,7 @@ module LCF
       13 => { name: :triggered_by_decision_key, type: :bool, default: false },
       21 => { name: :subcommand_path_size, type: :int, default: 0 },
       22 => { name: :subcommand_path, type: :int8_array, default: [] },
-    }
+    } }
 
     # An interpreter's full execution state (liblcf's `SaveEventExecState`):
     # `stack` (0x01, `Array<SaveEventExecFrame>` -- see SAVE_EVENT_EXEC_FRAME
@@ -1860,7 +1917,7 @@ module LCF
     # blocking wait" (Show Message/Choices/Key Input/etc.) does and does not
     # preserve today -- the call-stack position survives, the UI-facing wait
     # itself does not.
-    SAVE_EVENT_EXEC_STATE = {
+    SAVE_EVENT_EXEC_STATE = lazy { {
       1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
       4  => { name: :show_message, type: :bool, default: false },
       11 => { name: :abort_on_escape, type: :bool, default: false },
@@ -1883,53 +1940,7 @@ module LCF
       38 => { name: :keyinput_2k3up, type: :int, default: 0 },
       41 => { name: :keyinput_timed, type: :bool, default: false },
       42 => { name: :wait_key_enter, type: :bool, default: false },
-    }
-
-    # SAVE_MOVABLE field 108 (0x6C, liblcf's own `SaveMapEvent.
-    # parallel_event_execstate`, generator/csv/fields.csv) -- a map event's
-    # OWN Parallel Process's full call-stack snapshot, the identical
-    # SAVE_EVENT_EXEC_STATE struct chunk 111's own sibling chunks 113/114
-    # (SAVE_FOREGROUND_EVENT/SAVE_COMMON_EVENT) already use. Assigned here,
-    # after SAVE_EVENT_EXEC_STATE's own definition just above, rather than
-    # inline in SAVE_MOVABLE's own literal further up this file -- see that
-    # table's own field-108 comment for why (a forward-reference: this
-    # struct did not exist yet at that point in the file).
-    #
-    # Cycle #193 closes the one gap cycle #191/#192's own foreground/
-    # common-event call-stack persistence deliberately left open: a Map
-    # Event's own Parallel Process (trigger Parallel Process on the event's
-    # own page, distinct from a Common Event's Parallel Process, already
-    # covered by SAVE_COMMON_EVENT) previously had no persistence at all --
-    # not even the older, coarser #resumable_index-style cursor
-    # `Game::State#common_event_progress` gives common events, since no such
-    # cursor ever existed for map events (`Scene::Map#build_parallels`'s own
-    # comment: "a real 'visit' gives a map event's own parallel process no
-    # id that means anything on the map being left"). See
-    # `Game::State#map_event_exec`'s own comment (game.rb) for the full
-    # engine-side wiring this field now backs, and why -- unlike
-    # `#common_event_exec` -- it is scoped to the currently-loaded map only,
-    # matching `#map_event_positions`.
-    #
-    # liblcf's own two neighbouring fields on `SaveMapEvent` --
-    # `waiting_execution` (0x65/101, "this event is waiting for foreground
-    # execution") and `original_move_route_index` (0x66/102) /
-    # `triggered_by_decision_key` (0x67/103) -- are deliberately left
-    # unmodelled: 101 collides with this same shared SAVE_MOVABLE table's
-    # pre-existing, differently-typed `:vehicle` field (chunks 105-107's own
-    # boat/ship/airship ordinal, write-only byte parity with no reader), so
-    # giving it a second meaning here is not possible without splitting
-    # SAVE_MOVABLE into per-chunk tables -- out of scope for this cycle,
-    # which only needs field 108. 102/103 are real, uncontested fields this
-    # codebase's own `Game::State` simply has no distinct "original route
-    # before an override"/"triggered by decision key" concept to source for
-    # a map event specifically (the latter is already carried per-frame
-    # inside `stack`'s own outermost `SAVE_EVENT_EXEC_FRAME`, field 13, which
-    # is what this codebase's reader actually consults) -- left for a future
-    # cycle alongside SAVE_MOVABLE's own already-catalogued larger gaps (see
-    # that table's own comment on the hero's unmodelled move-route chunk/
-    # `through`/movement timers).
-    SAVE_MOVABLE[108] = { name: :parallel_event_execstate, type: :Array1D,
-                          elements: SAVE_EVENT_EXEC_STATE }
+    } }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by
     # common-event id -- 505 entries in a real Nepheshel save (this codebase's
@@ -1949,9 +1960,9 @@ module LCF
     # `scripts/rpg2k_logic_check.rb`), not against a genuine wine-saved
     # mid-Parallel-Process `.lsd`, since none was available to compare
     # byte-for-byte against.
-    SAVE_COMMON_EVENT = {
+    SAVE_COMMON_EVENT = lazy { {
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
-    }
+    } }
 
     # Foreground (map / parallel) event interpreter state (chunk 113): the
     # event that was mid-execution when the game was saved. A save taken from
@@ -1976,7 +1987,7 @@ module LCF
       1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
 
-    SAVE_SYSTEM = {
+    SAVE_SYSTEM = lazy { {
       # 0 map, 1 menu, 2 battle, 3 shop, 4 name input, 5 save/load,
       # 6 title, 7 game over, 8 F9 debug menu.
       1 => { name: :scene, type: :int, default: 0 },
@@ -2220,11 +2231,11 @@ module LCF
       # what the field menu's Wait command (id 8) flips. RPG2000 saves never
       # carry it (the chunk is 2003-only), so an absent chunk reads 0 (wait).
       140 => { name: :atb_mode, type: :int, default: 0 },
-    }
+    } }
 
     # Fields shown on the file-select screen (chunk 100 of the save file). The
     # wiki lists them inline at the top of the save-data page.
-    SAVE_TITLE = {
+    SAVE_TITLE = lazy { {
       1 => { name: :timestamp, type: :double },
       11 => { name: :hero_name, type: :string },
       12 => { name: :hero_level, type: :int },
@@ -2237,13 +2248,13 @@ module LCF
       26 => { name: :face3_index, type: :int, default: 0 },
       27 => { name: :face4_name, type: :string },
       28 => { name: :face4_index, type: :int, default: 0 },
-    }
+    } }
 
     # liblcf's SaveScreen (generator/csv/fields.csv), the screen-tint subset
     # only -- flash/shake/pan/weather/battle-animation are a separate, larger
     # save-state surface this codebase does not yet model at all in
     # Game::Screen, and are left out here too.
-    SAVE_SCREEN = {
+    SAVE_SCREEN = lazy { {
       1 => { name: :tint_finish_red, type: :int, default: 100 },
       2 => { name: :tint_finish_green, type: :int, default: 100 },
       3 => { name: :tint_finish_blue, type: :int, default: 100 },
@@ -2271,7 +2282,7 @@ module LCF
       # capture). `Game::Screen` has no equivalent "last played battle
       # animation" state to source these from at all, so left undecoded --
       # a larger gap than the pan fields above, for a future cycle.
-    }
+    } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/13.html documents the LcfSaveData chunk
     # map. Chunks 109 (inventory) and 114 (common-event state), still marked
