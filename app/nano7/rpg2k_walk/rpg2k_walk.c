@@ -18,13 +18,17 @@
  * firmware (app/wio/src/walk_main.cxx) runs too. See docs/adr/0091.
  *
  * Scope (see docs/adr/0061 for the full rationale): one static map, no
- * events/interpreter/battle/menus. Water and the block-C animated tiles do
+ * interpreter/battle/menus. Water and the block-C animated tiles do
  * animate, on RPG2000's own two clocks (docs/adr/0094) -- the export asks
  * mruby-rpg2k what those are, so this file only advances a counter and
  * redraws the cells the core says moved. The player is the project's own
  * initial party leader, drawn as their real CharSet sprite when one was
  * exported (docs/adr/0096) rather than a plain marker, walking RPG2000's own
  * cycle and turning to face a bump the same way the genuine renderer does.
+ * A map event with a CharSet graphic on its own initially-active page draws
+ * too, as a single static sprite (docs/adr/0102) -- its own walk cycle,
+ * move route and runtime graphic changes all need the interpreter and stay
+ * out of scope, same as everything else events could otherwise do.
  * This walks a real map; it does not play the game.
  *
  * Input: hold anywhere on screen. The direction is whichever of up/down/
@@ -49,22 +53,32 @@
  * is safe to exceed either, so this stays well under it rather than finding
  * out on real hardware. Raise with caution.
  *
- * At these caps the static buffers below are the whole of .bss: 42,782 B of
- * map.bin (its palette and entry table included) + 65,280 B of atlas +
- * 9,216 B of hero frames + 1,536 B of composited cell + 1,536 B of the hero's
- * own composited frame = ~120 KB. Both halves have shrunk in turn: the atlas
- * twice (32-bit pixels to 16-bit with the transparency fix, then one palette
- * index per pixel, docs/adr/0092) and the cell arrays once (2.5 bytes per
- * cell, docs/adr/0093), which is why the hero frames (docs/adr/0096) -- a
- * fixed cost, not scaled by map size -- still leave these caps room to
- * spare rather than needing to grow. */
+ * At these caps the static buffers below are the whole of .bss: 46,872 B of
+ * map.bin (its palette, entry and event tables included) + 65,280 B of atlas
+ * + 9,216 B of hero frames + 49,152 B of event frames + 1,536 B of
+ * composited cell + 1,536 B of the hero's own composited frame + 1,536 B of
+ * an event's own composited frame = ~171 KB, still well under the ~512 KB
+ * gap. Both halves have shrunk in turn: the atlas twice (32-bit pixels to
+ * 16-bit with the transparency fix, then one palette index per pixel,
+ * docs/adr/0092) and the cell arrays once (2.5 bytes per cell,
+ * docs/adr/0093), which is why the hero frames (docs/adr/0096) and the
+ * event-sprite atlas (docs/adr/0102) -- fixed costs, not scaled by map
+ * size -- still leave these caps room to spare rather than needing to
+ * grow. */
 #define MAP_MAX_W 128
 #define MAP_MAX_H 128
 #define MAX_TILES RW_MAX_TILES
+/* Mirrors export_nano7_map.rb's own `nano7` target max_event_frames/
+ * max_events -- see that file's own comment for the RAM budget and
+ * real-data numbers behind these (real worst case in the Nepheshel test
+ * bed: 256 events, 12 distinct frames, on its most event-heavy map). */
+#define MAX_EVENT_FRAMES 64
+#define MAX_EVENTS 1024
 
 #define MAP_BIN_MAX_BYTES                                              \
     (RW_MAP_HEADER_BYTES + RW_MAX_PALETTE * 2 +                        \
-     RW_MAX_TILES * RW_ENTRY_BYTES + RW_MAP_CELL_BYTES(MAP_MAX_W * MAP_MAX_H))
+     RW_MAX_TILES * RW_ENTRY_BYTES + (uint32_t)MAX_EVENTS * RW_EVENT_BYTES + \
+     RW_MAP_CELL_BYTES(MAP_MAX_W * MAP_MAX_H))
 
 #define MAP_DATA_DIR "/Apps/Data/RPG2kWalk"
 
@@ -73,9 +87,11 @@
 static uint8_t s_map_raw[MAP_BIN_MAX_BYTES];
 /* One palette index per pixel; the colours live in map.bin's palette. The
  * hero's own frames (RW_HERO_FRAMES_BYTES), when the export carries one, sit
- * right after the ordinary atlas -- see rw_open. Reserved unconditionally: a
- * fixed 9,216 B is cheaper than a second buffer size to get right. */
-static uint8_t s_tiles[MAX_TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES];
+ * right after the ordinary atlas, then up to MAX_EVENT_FRAMES more -- see
+ * rw_open. Both reserved unconditionally: a fixed size is cheaper than a
+ * second/third buffer size to get right. */
+static uint8_t s_tiles[MAX_TILES * RW_TILE_PIXELS + RW_HERO_FRAMES_BYTES +
+                       MAX_EVENT_FRAMES * RW_EVENT_FRAME_PIXELS];
 /* One composited cell in the surface's own pixel format: hb_raw_blit takes a
  * finished tile, so each cell is merged (see rw_compose_cell) and converted
  * once, then blitted once. */
@@ -88,6 +104,8 @@ static uint16_t s_cell_1555[RW_TILE_PIXELS];
  * transparent pixel stays 0 rather than resolving to the backdrop -- see
  * rw_compose_hero -- so draw_hero skips it instead of blitting over it. */
 static uint16_t s_hero_1555[RW_HERO_FRAME_PIXELS];
+/* One event's own composited frame, same convention as s_hero_1555. */
+static uint16_t s_event_1555[RW_EVENT_FRAME_PIXELS];
 
 static rw_map s_map;
 static rw_status s_status;
@@ -167,12 +185,42 @@ static void draw_hero(int cam_x, int cam_y, int moving)
     }
 }
 
+/* One event sprite, the same shape as draw_hero but with no live facing or
+ * walk cycle to pick between -- rw_compose_event already names the one
+ * frame the export chose for this event's initially-active page. Always
+ * redrawn along with every other event whenever draw_map runs at all,
+ * moving_only included, for the same reason draw_hero is: an animation
+ * tick's cell repaint can land on a tile a static event sprite is sitting
+ * on, and only redrawing it again on top -- rather than skipping it because
+ * nothing about the *event* changed -- keeps it from being erased. */
+static void draw_event(int index, int cam_x, int cam_y)
+{
+    int x, y, px, py;
+    uint32_t *fb = hb_raw_fb();
+    int fb_w = hb_raw_w(), fb_h = hb_raw_h();
+
+    rw_compose_event(&s_map, index, s_event_1555);
+    rw_event_screen_pos(&s_map, index, cam_x, cam_y, &px, &py);
+
+    for (y = 0; y < RW_EVENT_FRAME_H; y++) {
+        int sy = py + y;
+        if (sy < 0 || sy >= fb_h) continue;
+        for (x = 0; x < RW_EVENT_FRAME_W; x++) {
+            uint16_t c = s_event_1555[y * RW_EVENT_FRAME_W + x];
+            int sx = px + x;
+            if (c == 0 || sx < 0 || sx >= fb_w) continue;
+            fb[sy * fb_w + sx] = rgb1555_to_native(c);
+        }
+    }
+}
+
 /* `moving_only` redraws just the cells whose tiles the clocks moved, for an
  * animation tick: on a typical map that is the water and nothing else, so a
  * tick costs a fraction of a full redraw. A step or a first paint passes 0
- * and draws everything. The hero always redraws on top regardless -- an
- * animation tick can repaint a cell it overlaps, and its own pose can have
- * changed on a step this same call is already handling. */
+ * and draws everything. The hero and every event always redraw on top
+ * regardless -- an animation tick can repaint a cell either overlaps, and
+ * the hero's own pose can have changed on a step this same call is already
+ * handling. */
 static void draw_map(int moving_only, int moving)
 {
     int view_w = hb_raw_w() / RW_TS;
@@ -194,7 +242,17 @@ static void draw_map(int moving_only, int moving)
         }
     }
 
+    /* Below/same-behind first (under the hero), then the hero, then
+     * same-in-front/above (over the hero) -- rw_event_before_hero's own doc
+     * comment names the exact rule, matching the genuine renderer's
+     * event_target_buffer split. Events export sorted by (y, x)
+     * (export_nano7_map.rb), so this loop's own draw order within each half
+     * already matches RPG_RT's same-tier y-sort with no on-device work. */
+    for (int i = 0; i < s_map.event_count; i++)
+        if (rw_event_before_hero(&s_map, i)) draw_event(i, cam_x, cam_y);
     draw_hero(cam_x, cam_y, moving);
+    for (int i = 0; i < s_map.event_count; i++)
+        if (!rw_event_before_hero(&s_map, i)) draw_event(i, cam_x, cam_y);
 }
 
 /* RPG2000 counts animation in 60ths of a second, which is what the export's

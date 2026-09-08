@@ -34,17 +34,19 @@ load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.
 TARGETS = {
-  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255 },
-  'wio' => { max_w: 128, max_h: 128, max_tiles: 192 }
+  'nano7' => { max_w: 128, max_h: 128, max_tiles: 255, max_event_frames: 64, max_events: 1024 },
+  'wio' => { max_w: 128, max_h: 128, max_tiles: 192, max_event_frames: 16, max_events: 1024 }
 }.freeze
 MAP_MAX_W = TARGETS['nano7'][:max_w]
 MAP_MAX_H = TARGETS['nano7'][:max_h]
 MAX_TILES = TARGETS['nano7'][:max_tiles]
-MAP_VERSION = 6
+MAP_VERSION = 7
 UPPER_NONE = 0xFF
 VALID_PASSABLE_BITS = 0x0F # down|left|right|up -- see DIR_BITS in the exporter
 TILE_BYTES = 16 * 16       # one palette index per pixel
 ENTRY_BYTES = 5            # u8 frame[4] + u8 animation class
+EVENT_BYTES = 4            # u8 x | u8 y | u8 frame | u8 layer
+EVENT_LAYERS = [0, 1, 2].freeze # below | same | above -- see RW_EVENT_LAYER_* in the core
 ANIM_MAX_FRAMES = 4
 ANIM_STATIC = 0
 ANIM_CLASSES = [0, 1, 2].freeze
@@ -57,6 +59,8 @@ HERO_FRAME_H = 32
 HERO_FRAME_COUNT = 12 # 4 directions * 3 walk-cycle patterns
 HERO_FRAME_BYTES = HERO_FRAME_W * HERO_FRAME_H
 HERO_FRAMES_BYTES = HERO_FRAME_COUNT * HERO_FRAME_BYTES
+# Event sprites reuse the hero's own 24x32 CharSet geometry (see RW_EVENT_FRAME_W/H).
+EVENT_FRAME_BYTES = HERO_FRAME_W * HERO_FRAME_H
 
 $failures = 0
 $checks = 0
@@ -109,13 +113,20 @@ def read_map_bin(path)
   width, height, start_x, start_y, tile_count, backdrop = bytes[6, 12].unpack('v6')
   palette_count, atlas_count = bytes[18, 4].unpack('v2')
   ab_len, ab_period, c_len, c_period = bytes[22, 4].unpack('C4')
-  off = 26
+  event_count, = bytes[26, 2].unpack('v')
+  event_frame_count = bytes[28].unpack1('C')
+  off = 29
   palette = bytes[off, palette_count * 2].unpack('v*'); off += palette_count * 2
   entries = (0...tile_count).map do |i|
     fields = bytes[off + i * ENTRY_BYTES, ENTRY_BYTES].unpack('C5')
     { frames: fields.first(ANIM_MAX_FRAMES), klass: fields.last }
   end
   off += tile_count * ENTRY_BYTES
+  events = (0...event_count).map do |i|
+    x, y, frame, layer = bytes[off + i * EVENT_BYTES, EVENT_BYTES].unpack('C4')
+    { x: x, y: y, frame: frame, layer: layer }
+  end
+  off += event_count * EVENT_BYTES
   cells = width * height
   lower = bytes[off, cells].unpack('C*'); off += cells
   upper = bytes[off, cells].unpack('C*'); off += cells
@@ -129,6 +140,7 @@ def read_map_bin(path)
     atlas_count: atlas_count, backdrop: backdrop, palette: palette,
     entries: entries, ab_len: ab_len, ab_period: ab_period,
     c_len: c_len, c_period: c_period,
+    event_count: event_count, event_frame_count: event_frame_count, events: events,
     lower: lower, upper: upper, passable: passable
   }
 end
@@ -167,9 +179,10 @@ def check_export(game_dir, map_id)
     check("map #{map_id}: hero_present is a bool") do
       ok [0, 1].include?(map[:hero_present]), map[:hero_present]
     end
-    check("map #{map_id}: tiles.bin size matches atlas_count (+ hero frames)") do
+    check("map #{map_id}: tiles.bin size matches atlas_count (+ hero frames + event frames)") do
       expected = map[:atlas_count] * TILE_BYTES
       expected += HERO_FRAMES_BYTES if map[:hero_present] == 1
+      expected += map[:event_frame_count] * EVENT_FRAME_BYTES
       ok tiles_bytes.bytesize == expected, "#{tiles_bytes.bytesize} != #{expected}"
     end
     check("map #{map_id}: every entry names real atlas slots and a real clock") do
@@ -257,6 +270,32 @@ def check_export(game_dir, map_id)
       bad = map[:passable].reject { |b| (b & ~VALID_PASSABLE_BITS).zero? }
       ok bad.empty?, "#{bad.size} nibbles with stray bits, e.g. 0x%02x" % (bad.first || 0)
     end
+    caps = TARGETS['nano7']
+    check("map #{map_id}: event_count and event_frame_count are in bounds") do
+      ok map[:event_count] <= caps[:max_events], "#{map[:event_count]} events"
+      ok map[:event_frame_count] <= caps[:max_event_frames], "#{map[:event_frame_count]} event frames"
+      # A frame index is a byte on-device, same reasoning as the atlas's own
+      # 255-entry ceiling above.
+      ok map[:event_frame_count] <= 255, "#{map[:event_frame_count]} event frames cannot be indexed by a byte"
+    end
+    check("map #{map_id}: every event sits on the map and names a real frame and layer") do
+      bad_pos = map[:events].reject { |e| e[:x] < map[:width] && e[:y] < map[:height] }
+      ok bad_pos.empty?, "#{bad_pos.size} events off the map, e.g. #{bad_pos.first.inspect}"
+      bad_frame = map[:events].reject { |e| e[:frame] < map[:event_frame_count] }
+      ok bad_frame.empty?, "#{bad_frame.size} events name a frame past event_frame_count, e.g. #{bad_frame.first.inspect}"
+      bad_layer = map[:events].reject { |e| EVENT_LAYERS.include?(e[:layer]) }
+      ok bad_layer.empty?, "#{bad_layer.size} events have an unknown layer, e.g. #{bad_layer.first.inspect}"
+    end
+    check("map #{map_id}: events are pre-sorted by (y, x)") do
+      keys = map[:events].map { |e| [e[:y], e[:x]] }
+      ok keys == keys.sort, 'event table is not sorted by (y, x), so on-device same-layer stacking would be wrong'
+    end
+    check("map #{map_id}: event frame pictures are deduplicated") do
+      hero_bytes = map[:hero_present] == 1 ? HERO_FRAMES_BYTES : 0
+      event_tiles_off = map[:atlas_count] * TILE_BYTES + hero_bytes
+      pics = (0...map[:event_frame_count]).map { |i| tiles[event_tiles_off + i * EVENT_FRAME_BYTES, EVENT_FRAME_BYTES] }
+      ok pics.uniq.size == pics.size, "#{pics.size - pics.uniq.size} duplicate event frame pictures"
+    end
   end
 end
 
@@ -278,6 +317,8 @@ def check_wio_target(game_dir, map_id)
         ok map[:width] <= caps[:max_w] && map[:height] <= caps[:max_h],
            "#{map[:width]}x#{map[:height]} past #{caps[:max_w]}x#{caps[:max_h]}"
         ok map[:tile_count] <= caps[:max_tiles], "#{map[:tile_count]} tiles"
+        ok map[:event_count] <= caps[:max_events], "#{map[:event_count]} events"
+        ok map[:event_frame_count] <= caps[:max_event_frames], "#{map[:event_frame_count]} event frames"
       end
       check("map #{map_id} (wio): output names the target") do
         ok stdout.include?('target wio'), stdout

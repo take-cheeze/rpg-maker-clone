@@ -58,10 +58,34 @@ extern "C" {
 #define RW_HERO_FRAME_COUNT (RW_HERO_DIRS * RW_HERO_PATTERNS)
 #define RW_HERO_FRAMES_BYTES (RW_HERO_FRAME_COUNT * RW_HERO_FRAME_PIXELS)
 
-#define RW_FORMAT_VERSION 6
-/* Up to and including the animation clocks; the palette follows, then the
- * entry table, then the cells. */
-#define RW_MAP_HEADER_BYTES 26
+/* An event sprite's frame is the same CharSet geometry as the hero's --
+ * events with a "chip" (chipset-tile) graphic instead of a CharSet, or no
+ * graphic at all, are not exported at all (see rpg2k_walk_core.c's own
+ * v7 format note and scripts/export_nano7_map.rb) -- so no separate
+ * dimensions are needed. */
+#define RW_EVENT_FRAME_W RW_HERO_FRAME_W
+#define RW_EVENT_FRAME_H RW_HERO_FRAME_H
+#define RW_EVENT_FRAME_PIXELS RW_HERO_FRAME_PIXELS
+
+/* One event: its map cell, which precomposited frame it shows, and which of
+ * RPG2000's three draw layers it belongs to (RW_EVENT_LAYER_*, matching
+ * MAP_EVENT_PAGE field 34's own 0/1/2). */
+#define RW_EVENT_BYTES 4
+
+#define RW_EVENT_LAYER_BELOW 0 /* always drawn under the hero */
+#define RW_EVENT_LAYER_SAME 1  /* under or over the hero, by row -- see below */
+#define RW_EVENT_LAYER_ABOVE 2 /* always drawn over the hero */
+
+/* A frame index is a byte, the same reasoning as RW_MAX_TILES for the
+ * ordinary atlas -- this is the format's own ceiling, not any one target's;
+ * see scripts/export_nano7_map.rb's own TARGETS for the smaller, real
+ * per-device budget each one actually exports within. */
+#define RW_MAX_EVENT_FRAMES 255
+
+#define RW_FORMAT_VERSION 7
+/* Up to and including event_frame_count; the palette follows, then the
+ * entry table, then the event table, then the cells. */
+#define RW_MAP_HEADER_BYTES 29
 #define RW_TILE_BYTES RW_TILE_PIXELS /* one palette index per pixel */
 
 /* Bytes the cell arrays take for `cells` cells: one byte of lower-layer
@@ -145,6 +169,19 @@ typedef struct {
    * map export, or one with an odd custom title-screen party setup. */
   int hero_present;
   const uint8_t* hero_tiles; /* RW_HERO_FRAME_COUNT * RW_HERO_FRAME_PIXELS */
+
+  /* Map events with a CharSet graphic on their own initially-active page
+   * (see rw_compose_event's own doc comment) -- one precomposited frame
+   * each, picked once at export time the same way the hero's twelve are,
+   * not twelve per event, since nothing here simulates a page's own
+   * animation type or move route (see the v7 format note in
+   * rpg2k_walk_core.c). event_frame_count many distinct frames, shared
+   * across event_count events by index the same way the ordinary tile
+   * atlas is shared across cells. */
+  int event_count;
+  int event_frame_count;
+  const uint8_t* events;      /* event_count * RW_EVENT_BYTES */
+  const uint8_t* event_tiles; /* event_frame_count * RW_EVENT_FRAME_PIXELS */
 
   /* The two animation clocks, as the export measured them off the engine:
    * how many frames a step lasts and how many steps the cycle has. The
@@ -258,6 +295,49 @@ void rw_compose_hero(const rw_map* m, int moving, uint16_t* out);
  * every side.
  */
 void rw_hero_screen_pos(const rw_map* m, int cam_x, int cam_y, int* x, int* y);
+
+/*
+ * Composite event `index`'s single precomposited frame into `out`
+ * (RW_EVENT_FRAME_PIXELS ARGB1555 pixels, RW_EVENT_FRAME_W wide). Unlike
+ * rw_compose_hero, there is no live facing or walk-cycle to pick between --
+ * the export already chose the one frame this event's initially-active page
+ * would show (see the format note in rpg2k_walk_core.c) -- so this is a
+ * straight palette-indexed copy, transparent staying 0 the same way a hero
+ * frame's does (an event sprite draws *over* the map too). An out-of-range
+ * `index` composites as fully transparent rather than reading past the
+ * buffers.
+ */
+void rw_compose_event(const rw_map* m, int index, uint16_t* out);
+
+/*
+ * Event `index`'s top-left screen pixel, for a viewport whose own top-left
+ * cell is (cam_x, cam_y) -- the same centred-horizontally,
+ * bottom-anchored-to-its-tile anchor rw_hero_screen_pos uses, at the
+ * event's own map cell rather than the player's. Pixels, not cells, and may
+ * fall outside the viewport (a caller must clip), same as the hero's.
+ */
+void rw_event_screen_pos(const rw_map* m,
+                         int index,
+                         int cam_x,
+                         int cam_y,
+                         int* x,
+                         int* y);
+
+/* Event `index`'s own draw layer (RW_EVENT_LAYER_*); RW_EVENT_LAYER_BELOW
+ * for an out-of-range index. */
+int rw_event_layer(const rw_map* m, int index);
+
+/*
+ * Whether event `index` belongs in the group a caller draws *before* the
+ * hero (so the hero, and anything from rw_event_before_hero's own 0 group,
+ * draws over it) this frame -- RW_EVENT_LAYER_BELOW always does,
+ * RW_EVENT_LAYER_ABOVE never does, and RW_EVENT_LAYER_SAME depends on
+ * whether the event's own row is above the player's, matching the genuine
+ * renderer's own event_target_buffer split (Scene::Map). An out-of-range
+ * index reads as 1 (drawn before/under, the harmless default -- nothing
+ * calls this with one in practice, since a caller loops 0..event_count).
+ */
+int rw_event_before_hero(const rw_map* m, int index);
 
 #ifdef __cplusplus
 }
