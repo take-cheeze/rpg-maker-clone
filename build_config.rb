@@ -708,6 +708,23 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
 
     rpg_maker_gems(conf)
+
+    # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
+    # framework build (platformio.ini's own comment on this). This project's
+    # own .cxx files (mruby-rgss/src, mruby-lcf/src, app/wio/src) have no
+    # try/catch/throw at all, but that turned out not to be the real
+    # question -- mruby's own gem loader (lib/mruby/build/load_gems.rb)
+    # auto-enables MRB_USE_CXX_EXCEPTION the moment any gem has a .cxx
+    # source (mruby-rgss/mruby-lcf/mruby-marshal all do here), which
+    # compiles mruby's own core error.c as C++ (build/wio/.../error-cxx.cxx)
+    # and implements Ruby's own begin/rescue/ensure -- MRB_TRY/MRB_CATCH,
+    # src/throw.h -- as real C++ throw/catch rather than setjmp/longjmp,
+    # specifically because longjmp does not run C++ destructors and would
+    # leak/corrupt any C++ object on the stack being unwound through. A
+    # real, load-bearing use of exceptions this build cannot do without:
+    # -fno-exceptions fails to even compile mruby's own core
+    # ("'e' was not declared in this scope" inside MRB_CATCH's own
+    # expansion). Not attempted further.
   end
 end
 
