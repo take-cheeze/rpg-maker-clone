@@ -1397,9 +1397,18 @@ jobs:
 
       - name: Build firmware
         run: |
-          pio run -e wio
-          pio run -e wio_walk
-          pio run -e wio_sd_upload
+          pio run -e wio 2>&1 | tee wio-build.log
+          pio run -e wio_walk 2>&1 | tee -a wio-build.log
+          pio run -e wio_sd_upload 2>&1 | tee -a wio-build.log
+
+      # Turns the flash/RAM usage `pio run` already printed above into a job-
+      # summary table -- this project's own ADR 91+ series tracks the Wio
+      # Terminal's tight flash/SRAM budget closely enough that CI should
+      # surface it on every run. if: always() so a failed build still shows
+      # whichever environments got far enough to link before it died.
+      - name: wio size report
+        if: always()
+        run: ruby scripts/wio_size_report.rb wio-build.log
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode
