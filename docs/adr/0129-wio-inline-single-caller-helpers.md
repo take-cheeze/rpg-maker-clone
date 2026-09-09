@@ -1,4 +1,4 @@
-# 129. Fold a handful of single-caller helpers into their call site, for wio only
+# 129. Fold a handful of low-use-count helpers into their call site, for wio only
 
 Date: 2026-09-09
 
@@ -92,6 +92,46 @@ Every other real call site (repo-wide grep, all of `mrblib/**` and
 all keep calling the six methods normally, against the untouched real
 source, exactly as before.
 
+### Expanded to methods with 2-3 real callers
+
+Since this mechanism never touches the checked-in source at all, the
+`scripts/**` test-coverage blocker above cannot recur regardless of which
+method is picked -- `scripts/**` only ever sees the untouched original.
+That freed up a second, larger candidate pool the first pass deliberately
+left alone: methods with exactly 2 or 3 real callers within the 14-file
+wio `rbfiles` list (395 of them). Inlining one of these means *duplicating*
+its body at every call site instead of removing one irep node outright, so
+whether it is still a net win depends entirely on the body's own shape --
+checked by hand-testing each candidate (inline, recompile, compare), not
+assumed from its byte size:
+
+- **Straight-line expressions/one-line delegations duplicate cheaply and
+  win**: `valid_move_freq` (a one-line ternary, 3 callers) saved 55 bytes;
+  `item_cured_states` (a one-line delegation to `item_state_ids`, 2
+  callers -- inlining it here means redirecting both callers to call
+  `item_state_ids` directly, not copying any real logic) saved 80 bytes;
+  `numpad_direction`/`continuous?`/`frame_dir` (`self.`-module one-liners on
+  `Game::EventGraphic`, called from both a bare same-module site and an
+  externally-qualified one) saved 69/19/39 bytes respectively -- smaller
+  margins here since one call site's own constant requalification tax
+  partly offsets the other's savings, but real and positive in every case,
+  measured per file and summed.
+- **Anything with its own loop or branch chain duplicates expensively and
+  loses**: hand-tested and rejected on real numbers, not guessed --
+  `lower_index` (an if/elsif chain, 3 callers, self_bytes 144) cost +100
+  bytes; `quads_from_quarters` (a nested `2.times` loop building an array,
+  2 callers) cost +71; `kana_step_col` (a `loop do...end` with an array
+  lookup, 2 callers) cost +14. All three were left alone.
+- **Foreign-receiver call sites rule out most of the remaining pool
+  outright**: `shown?`, `moving?` (one call site uses `&:moving?`, not
+  even a plain dot-call), `reset_frame_steps`, `map_step_damaged?`,
+  `shaking?` and `class_name` all have at least one call site on a
+  receiver other than `self` (`pic.shown?`, `@state.screen.shaking?`,
+  `@interpreter.reset_frame_steps`, ...) -- inlining an ivar-touching
+  method's body into a call on a *different* object is not achievable by
+  source substitution at all, so these were never tested, just excluded
+  the moment the receiver check failed.
+
 ### What was verified
 
 - The rewrite script's own output diffed directly against the exact
@@ -99,13 +139,17 @@ source, exactly as before.
 - All four rewritten copies pass `mrbc -c` (syntax) cleanly.
 - `git status` on `mruby-rpg2k/mrblib/` after running the rewrite script:
   empty -- the real source is provably untouched.
+- Every candidate's net effect (win or loss) was measured with a real
+  `mrbc --remove-lv` compile before being included or rejected -- none of
+  the duplication-cost numbers above are estimated.
 - **Real whole-gem measurement**: compiled `mruby-rpg2k`'s exact wio-shaped
   `rbfiles` list with `mrbc --remove-lv` (matching this board's real
   flags), once with the four original files, once with the four rewritten
-  copies swapped in: **477,860 -> 477,395 bytes (465-byte reduction)** for
-  these six methods combined.
+  copies swapped in: **477,860 -> 477,133 bytes (727-byte reduction)** for
+  all eleven methods combined (the original six plus the five from the
+  2-3-caller expansion).
 - Repo-wide grep (both `mrblib/**` and `scripts/**`) for every one of the
-  six method names, confirming no other real caller exists anywhere.
+  eleven method names, confirming no other real caller exists anywhere.
 
 ### What was not verified
 
@@ -126,17 +170,17 @@ source, exactly as before.
 
 ## Consequences
 
-- A real, if modest, ~465-byte flash win for wio, at zero behavioural
+- A real, if modest, ~727-byte flash win for wio, at zero behavioural
   change everywhere else and zero loss of test coverage anywhere --
   `scripts/rpg2k_render_check.rb` and friends keep exercising the full,
   original definitions on every target.
 - This is deliberately not a general inliner and not something to extend
-  mechanically: the remaining ~663 "single mrblib caller" candidates found
-  by the original scan were not re-audited against `scripts/**`, and this
-  ADR's own finding is that a fair number of exactly this "looks like an
-  internal helper" shape turn out to be directly unit-tested. Any further
-  candidate needs the same by-hand receiver/test-coverage check this ADR's
-  six got, not a blanket re-run of the naive scan.
+  mechanically: the 2-3-caller pool alone was 395 methods, and only 5
+  survived hand-testing -- most fail on a foreign receiver (checkable by
+  inspection) or a net-negative duplication cost (checkable only by really
+  compiling both versions). Any further candidate, at any caller count,
+  needs the same by-hand receiver check plus a real before/after compile,
+  not a blanket re-run of either scan.
 - desktop/psp/wasm/android builds are entirely unaffected -- they never run
   `wio_strip_inline_helpers` (gated on `build.name == 'wio'`) and keep
   compiling the real, unmodified source files directly.

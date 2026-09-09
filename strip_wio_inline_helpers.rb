@@ -54,14 +54,41 @@ REWRITES = {
       { first: '    # Animation frame (0..3) for the block-C animated tiles (advances every 6',
         last: '    end', # def self.anim_c's own `end`
         expect_lines: 5 },
+      { first: '    def self.numpad_direction(lcf_dir)',
+        last: '    end', # def self.numpad_direction's own `end`
+        expect_lines: 3 },
+      { first: '    def self.continuous?(anim_type)',
+        last: '    end', # def self.continuous?'s own `end`
+        expect_lines: 4 },
+      { first: '    def self.frame_dir(anim_type, char_dir, phase)',
+        last: '    end', # def self.frame_dir's own `end`
+        expect_lines: 3 },
+      { first: '    def item_cured_states(it)',
+        last: '    end', # def item_cured_states's own `end`
+        expect_lines: 3 },
     ],
-    substitutions: [],
+    substitutions: [
+      { old: '      @direction = EventGraphic.numpad_direction(m.direction)',
+        new: '      @direction = EventGraphic::LCF_DIR_TO_NUMPAD[m.direction] || 2' },
+      { old: '        (moving || continuous?(anim_type)) ? pattern_column(phase) : base_pattern',
+        new: '        (moving || anim_type == CONTINUOUS || anim_type == FIXED_CONTINUOUS || ' \
+             'anim_type == SPIN) ? pattern_column(phase) : base_pattern' },
+      { old: '      [frame_dir(anim_type, char_dir, phase),',
+        new: '      [(anim_type == SPIN ? spin_direction(phase) : char_dir),' },
+      { old: '          item_cured_states(it).any? { |s| actor.state?(s) }',
+        new: '          item_state_ids(it).any? { |s| actor.state?(s) }' },
+      { old: '      cured = item_cured_states(it)',
+        new: '      cured = item_state_ids(it)' },
+    ],
   },
   'mruby-rpg2k/mrblib/scene/map.rb' => {
     deletions: [
       { first: '      # Drive the just-started foreground Auto-Start process, then -- yado.tk',
         last: '      end', # def drive_autostart_cascade's own `end`
         expect_lines: 45 },
+      { first: '      def valid_move_freq(f)',
+        last: '      end', # def valid_move_freq's own `end`
+        expect_lines: 3 },
     ],
     substitutions: [
       { old: '        sunk = Game::CharSet.bush_opacity(opacity)',
@@ -75,6 +102,21 @@ REWRITES = {
              "              start_autostart\n" \
              "              break unless event_busy?\n" \
              '            end' },
+      { old: '        dir = Game::EventGraphic.numpad_direction(page_direction(page))',
+        new: '        dir = Game::EventGraphic::LCF_DIR_TO_NUMPAD[page_direction(page)] || 2' },
+      { old: '        return unless sliding || Game::EventGraphic.continuous?(type)',
+        new: '        return unless sliding || type == Game::EventGraphic::CONTINUOUS || ' \
+             'type == Game::EventGraphic::FIXED_CONTINUOUS || type == Game::EventGraphic::SPIN' },
+      { old: '        dir = Game::EventGraphic.frame_dir(e[:anim_type], ch.direction, e[:anim_phase])',
+        new: '        dir = e[:anim_type] == Game::EventGraphic::SPIN ? ' \
+             'Game::EventGraphic.spin_direction(e[:anim_phase]) : ch.direction' },
+      { old: '        ev[:forced_freq] = valid_move_freq(freq)',
+        new: '        ev[:forced_freq] = ((freq && freq >= 1 && freq <= 8) ? freq : nil)' },
+      { old: '        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency',
+        new: '        ch.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) || ' \
+             'ch.move_frequency' },
+      { old: '        @player_char.move_frequency = valid_move_freq(freq) ||',
+        new: '        @player_char.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) ||' },
     ],
   },
   'mruby-rpg2k/mrblib/scene/base.rb' => {
