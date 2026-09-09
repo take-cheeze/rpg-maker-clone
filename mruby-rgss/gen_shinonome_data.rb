@@ -60,8 +60,10 @@ if ENV["SHINONOME_GLYPH_TEXT_FILE"]
                         .each_codepoint.to_a.uniq.to_set
 end
 
-# docs/adr/0110: a second, independent escape hatch (a no-op unless set,
-# same convention as SHINONOME_GLYPH_TEXT_FILE above) -- rather than
+# docs/adr/0110/0112: a second, independent escape hatch (a no-op unless
+# set, same convention as SHINONOME_GLYPH_TEXT_FILE above -- build_config.rb
+# sets it by default for wio specifically, everywhere else it stays opt-in)
+# -- rather than
 # *trimming* the GOTHIC (JIS0208 kanji) face's flash cost, moves the whole
 # thing to the SD card: every glyph this pass would otherwise emit as a
 # compiled-in C array entry is instead packed into a flat binary file

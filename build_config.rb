@@ -348,6 +348,25 @@ psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
 cross = emscripten || wio || psp || android
 
+if wio
+  # docs/adr/0112: wio's own RAM/flash margin (ADR 107/111) is tight enough
+  # that the GOTHIC (JIS0208 kanji) face's SD offload (ADR 110) -- previously
+  # a no-op-unless-set escape hatch, same as every other opt-in knob in this
+  # series -- is now this target's *default*, not something a caller has to
+  # remember to ask for. `||=` so an explicit override (e.g. a measurement
+  # build that wants the old compiled-in GOTHIC array back) still wins.
+  # SHINONOME_GOTHIC_SD_FILE is read by gen_shinonome_data.rb from inside
+  # mruby-rgss's own build_dir (mrbgem.rake's Dir.chdir), so a bare filename
+  # lands there rather than needing an absolute path computed this early.
+  # RGSS_SHINONOME_GOTHIC_SD_PATH is the on-device path baked into the
+  # firmware; no real SD deployment step writes gothic.bin there yet (ADR
+  # 110's own "what was not done" section), so this only fixes what the
+  # *build* produces -- getting the generated file onto a real card remains
+  # future work.
+  ENV['SHINONOME_GOTHIC_SD_FILE'] ||= 'gothic.bin'
+  ENV['RGSS_SHINONOME_GOTHIC_SD_PATH'] ||= '/gothic.bin'
+end
+
 MRuby::Build.new do |conf|
   toolchain :gcc
 
