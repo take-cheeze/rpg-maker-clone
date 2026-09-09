@@ -2,6 +2,13 @@
 
 #include "terminal.hxx"
 
+// Wio Terminal: everything below WIO_TERMINAL's own #else branch (near the
+// bottom of this file) is a from-scratch, minimal stand-in for the real
+// profiler -- it needs none of these headers (mruby.h's own declarations are
+// already forward-declared by profiler.hxx, "to avoid pulling <mruby.h> into
+// every includer", the same reasoning applies to LVGL/STL here). See that
+// #else branch's own comment for why, and docs/adr/0125.
+#ifndef WIO_TERMINAL
 #include <mruby.h>
 #include <mruby/gc.h>
 #include <mruby/hash.h>
@@ -11,7 +18,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cstdint>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -739,3 +745,87 @@ void profiler_init(mrb_state* M) {
   mrb_define_module_function(M, prof, "tracing?", prof_tracing_p,
                              MRB_ARGS_NONE());
 }
+
+#else  // WIO_TERMINAL
+
+// The real profiler above is dev-only tooling (Chrome-trace JSON export,
+// memory/allocator stats, the RGSS::Profiler Ruby module) with no call site
+// anywhere on this board: app/wio's own main.cxx/wio_rgss_boot_main.cxx never
+// calls profiler_configure()/profiler_trace_start() (only src/main.cxx, the
+// desktop entry point, does, wiring up --profile/--profile_trace), and no
+// RPG2000 game script can reach RGSS::Profiler -- it is this project's own
+// dev API, registered here, not exposed by any Maker format. That leaves a
+// real, unconditionally-linked cost with nothing on wio ever reading it: a
+// dozen-plus snprintf calls (several %f/%g, which pull in newlib's
+// float-to-string core), a std::map<std::string, SectionAgg>, and ten
+// mrb_define_module_function registrations, all reachable from
+// mruby-rgss/src/lib.cxx's own gem-init and main-loop calls whether or not
+// g_enabled is ever true. See docs/adr/0125.
+//
+// This stand-in keeps every call site lib.cxx actually reaches on wio
+// working identically: #profiler_note_frame_drop / #profiler_note_idle (the
+// main-loop calls), and ProfilerScope's use of #profiler_section_begin /
+// #profiler_section_end (mruby-rgss/src/lib.cxx's gfx.zorder / gfx.invalidate
+// / gfx.lvgl sections). Nothing observable changes: on this board g_enabled
+// never turns true in the real implementation either, since nothing calls
+// profiler_configure()/profiler_trace_start() -- these are that same
+// always-false state made explicit instead of reachable through a runtime
+// check.
+
+namespace {
+uint32_t g_total_drops = 0;
+profiler_allocf_t g_downstream_allocf = nullptr;
+}  // namespace
+
+void profiler_configure(bool, int32_t) {}
+
+bool profiler_enabled() {
+  return false;
+}
+
+void profiler_set_downstream_allocf(profiler_allocf_t downstream) {
+  g_downstream_allocf = downstream;
+}
+
+void* profiler_allocf(void* ptr, size_t size) {
+  return g_downstream_allocf ? g_downstream_allocf(ptr, size) : nullptr;
+}
+
+void profiler_frame_begin() {}
+
+void profiler_frame_end() {}
+
+void profiler_note_idle(uint32_t) {}
+
+void profiler_note_frame_drop() {
+  ++g_total_drops;
+}
+
+uint32_t profiler_total_frame_drops() {
+  return g_total_drops;
+}
+
+uint64_t profiler_section_begin() {
+  return 0;
+}
+
+void profiler_section_end(const char*, uint64_t) {}
+
+ProfilerScope::ProfilerScope(const char* name)
+    : name_(name), start_(profiler_section_begin()) {}
+
+ProfilerScope::~ProfilerScope() {
+  profiler_section_end(name_, start_);
+}
+
+void profiler_trace_start(const char*) {}
+
+void profiler_trace_stop() {}
+
+bool profiler_tracing() {
+  return false;
+}
+
+void profiler_init(mrb_state*) {}
+
+#endif  // WIO_TERMINAL
