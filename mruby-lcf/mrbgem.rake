@@ -25,4 +25,24 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
       ruby  t.prereqs.first
     end
   end
+
+  # docs/adr/0109: mrblib/schema.rb's ~1,150 field descriptors, each its own
+  # Hash-literal-construction bytecode sequence, measured at 45,293 bytes
+  # (real `mrbc -g`) -- the single largest file in this gem. Replaced here
+  # with a compact packed binary blob plus a small, constant-size decoder
+  # (gen_schema_blob.rb), verified byte-for-byte behaviorally identical
+  # (every constant, every nested/lazy field, every default, the two
+  # object-identity-sharing cases) against schema.rb by that ADR's own
+  # comparison script -- 23,878 bytes, a real 47% cut.
+  #
+  # schema.rb itself is untouched and stays the single source of truth
+  # (every scripts/*_check.rb script `load`s it directly under CRuby, with
+  # no dependency on this generator or its output); only the *mruby build's
+  # own copy* is swapped for the generated one.
+  spec.rbfiles -= ["#{dir}/mrblib/schema.rb"]
+  spec.rbfiles << "#{build_dir}/schema_blob.rb"
+  file "#{build_dir}/schema_blob.rb" => ["#{dir}/gen_schema_blob.rb", "#{dir}/mrblib/schema.rb", "#{dir}/mrblib/lcf.rb"] do |t|
+    FileUtils.mkdir_p build_dir, verbose: true
+    ruby t.prereqs.first, "#{dir}/mrblib/schema.rb", "#{build_dir}/schema_blob.rb"
+  end
 end
