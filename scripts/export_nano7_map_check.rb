@@ -30,6 +30,7 @@ EXPORTER = File.join(ROOT, 'scripts/export_nano7_map.rb')
 # Ruby) the same way scripts/rpg2k_render_check.rb already exercises
 # Game::ChipsetLayout standalone.
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
+load File.join(ROOT, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 
 # Mirrors TARGETS in the exporter, which mirrors each firmware's buffers.

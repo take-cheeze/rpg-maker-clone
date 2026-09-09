@@ -63,6 +63,7 @@ load File.join(root, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(root, 'mruby-lcf/mrblib/schema.rb')
 load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 
 # Database chunk ids used directly. `db.system` is unusable here — it resolves to
