@@ -21,13 +21,17 @@
 
 #define LV_COLOR_DEPTH 16
 
-/* Built-in allocator with a small static pool. The whole firmware -- LVGL
- * objects, the draw buffers in wio.cxx, the stack, and (later) the mruby heap
- * -- shares 192 KB, so keep this modest. */
-#define LV_USE_STDLIB_MALLOC  LV_STDLIB_BUILTIN
-#define LV_USE_STDLIB_STRING  LV_STDLIB_BUILTIN
-#define LV_USE_STDLIB_SPRINTF LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE (40 * 1024U)
+/* LV_STDLIB_BUILTIN (the default) reserves its own static LV_MEM_SIZE pool
+ * in .bss up front, on top of newlib's own malloc that mruby's GC already
+ * links in regardless of this setting -- two heaps, one of them a fixed
+ * size whether LVGL uses it or not. CLIB instead points lv_malloc/
+ * lv_free/lv_snprintf/string ops straight at the already-linked libc
+ * versions, so this board's minimal canvas/image/label usage draws from
+ * the same dynamic heap mruby uses instead of a second, statically-sized
+ * one. See docs/adr/0112. */
+#define LV_USE_STDLIB_MALLOC  LV_STDLIB_CLIB
+#define LV_USE_STDLIB_STRING  LV_STDLIB_CLIB
+#define LV_USE_STDLIB_SPRINTF LV_STDLIB_CLIB
 
 /*====================
    HAL / TICK
