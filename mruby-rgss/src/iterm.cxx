@@ -1,4 +1,16 @@
+// Only ever reached through iterm_display_create, which only src/main.cxx
+// (the desktop entry point's --iterm flag) calls. terminal.cxx's own file
+// comment already excludes its real implementation -- the only caller this
+// file's encoder has -- on the same two targets for the same reason (no
+// controlling tty, no way to select a terminal backend at all); compiled out
+// here too rather than left linked with nothing left able to reach it. This
+// is the one that matters most for flash: stb_image_write's bundled DEFLATE
+// encoder (pulled in below) is otherwise real, unique weight -- lib.cxx's own
+// stb_image (STB_IMAGE_IMPLEMENTATION) only ever inflates, never deflates, so
+// nothing else in this build needs a compressor.
 #include "iterm.hxx"
+
+#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)
 
 #include <cstdint>
 #include <string>
@@ -119,3 +131,11 @@ lv_display_t* iterm_display_create(int32_t hor_res,
   stbi_write_png_compression_level = 6;
   return terminal_display_create(hor_res, ver_res, scale, iterm_encode_frame);
 }
+
+#else  // PSP_BUILD || WIO_TERMINAL
+
+lv_display_t* iterm_display_create(int32_t, int32_t, int) {
+  return nullptr;
+}
+
+#endif  // !PSP_BUILD && !WIO_TERMINAL
