@@ -52,6 +52,35 @@ def wio_strip_debug_rbfiles(spec)
   end
 end
 
+# docs/adr/0129: wio-only, per-gem build step, the same shape as
+# wio_strip_debug_rbfiles above (and calling convention: last among filters
+# that subtract/substitute an rbfiles entry by its original path, before
+# wio_strip_debug_rbfiles itself). Rewrites a copy of a small, hand-picked
+# set of files to fold a handful of methods with exactly one real *engine*
+# caller into that call site -- strip_wio_inline_helpers.rb's own file
+# comment covers why this is a curated, hand-verified rewrite table rather
+# than a general single-caller inliner: scripts/*.rb's own CRuby-based
+# regression checks call several of these same methods directly by name,
+# so deleting them from the checked-in source would silently break real
+# test coverage that has nothing to do with wio. This rewrites only a
+# wio-only build-time copy; the checked-in definitions, and every other
+# target's build, are untouched.
+def wio_strip_inline_helpers(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('strip_wio_inline_helpers.rb', __dir__)
+  out_dir = "#{spec.build_dir}/wio_inline_helpers"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script] do |t|
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, src, out
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
