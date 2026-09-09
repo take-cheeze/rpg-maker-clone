@@ -531,47 +531,6 @@ module Game
       @battle_animation
     end
 
-    # Drain the Show Hidden Monster (13150) troop-member indices queued since the
-    # last call. The scene polls this and builds the sprites for the revealed
-    # members. Non-blocking.
-    def take_revealed_monsters
-      ids = @revealed_monsters
-      @revealed_monsters = []
-      ids
-    end
-
-    # Drain the Force Flee (1006) troop-member indices queued since the last
-    # call — the members that just ran from the fight. The scene polls this and
-    # drops their sprites. Non-blocking.
-    def take_fled_monsters
-      ids = @fled_monsters
-      @fled_monsters = []
-      ids
-    end
-
-    # Drain the troop-member indices Change Monster HP (13110) has just killed
-    # since the last call. Ported from a reference implementation, not
-    # independently confirmed against genuine RPG_RT under wine:
-    # the command plays the enemy-kill system SE the instant its own
-    # dead-check goes true, same as any other in-combat kill --
-    # #do_change_monster_hp writes straight to the live combatant with no
-    # `entry` hash for the scene's own #play_battle_action_se to read, so
-    # this queue is this command's only way to tell the scene a kill just
-    # happened. Non-blocking.
-    def take_monster_kills
-      ids = @monster_kills
-      @monster_kills = []
-      ids
-    end
-
-    # Drain the Change Battle Background (13210) name queued since the last call,
-    # or nil. Non-blocking.
-    def take_battle_background
-      name = @battle_background
-      @battle_background = nil
-      name
-    end
-
     # Upper bound on commands run in a single real frame (1/60s): RPG_RT
     # processes at most 10000 "steps" of event commands per frame, after which
     # the rest waits for the next frame -- this is what makes a tight/heavy

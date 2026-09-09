@@ -55,6 +55,7 @@ load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf.rb')
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'schema.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
 
 $errors = 0
 def eq(expected, actual, msg)

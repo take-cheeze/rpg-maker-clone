@@ -80,5 +80,21 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
     ]
   end
 
+  # game/battle_support.rb and scene/battle_support.rb hold the game.rb/
+  # interpreter.rb/scene/base.rb methods and whole classes (Game::Troop,
+  # Game::Enemy, Game::EnemyAction, Game::EnemyAi, Game::BattlePage, Game::
+  # States::BattleText, ...) that were only ever reachable from the three
+  # files just excluded above -- confirmed by grepping every real call site
+  # of each before it moved, see docs/adr/0124-rpg2k-battle-only-helpers-trim.md.
+  # Excluded on exactly the same condition as those three files (psp keeps
+  # battle, so psp keeps this too): a wio-only exclusion, not the psp/wio
+  # debug-tools one above.
+  if build.name == 'wio'
+    spec.rbfiles -= %W[
+      #{dir}/mrblib/game/battle_support.rb
+      #{dir}/mrblib/scene/battle_support.rb
+    ]
+  end
+
   wio_strip_debug_rbfiles(spec)
 end

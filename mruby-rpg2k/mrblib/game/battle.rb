@@ -561,8 +561,11 @@ module Game
     # the map. Matches liblcf's `Persistence` enum (`Persistence_ends` = 0,
     # `Persistence_persists` = 1) verified against its generated state.h --
     # a reference implementation's own end-of-battle state cleanup
-    # strips exactly the `ends` states.
-    STATE_PERSISTS_ON_MAP = 1
+    # strips exactly the `ends` states. Aliases `Game::States::PERSISTS_ON_MAP`
+    # (see its own doc comment) rather than redeclaring it, so this stays the
+    # one real definition every internal `STATE_PERSISTS_ON_MAP` reference in
+    # this class still resolves to.
+    STATE_PERSISTS_ON_MAP = States::PERSISTS_ON_MAP
 
     # True once one side has been wiped out, or the party has fled — the battle
     # is decided. The two sides use genuinely different tests, not a shared
