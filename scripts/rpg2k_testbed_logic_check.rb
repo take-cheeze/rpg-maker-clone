@@ -65,6 +65,7 @@ load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 
 # Database chunk ids used directly. `db.system` is unusable here — it resolves to

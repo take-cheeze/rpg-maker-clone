@@ -45,6 +45,7 @@ lib = File.expand_path('../mruby-rpg2k/mrblib', __dir__)
 load File.join(lib, 'game.rb')
 load File.join(lib, 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 load File.join(lib, 'game', 'battle_support.rb') # battle-only helpers dropped from game.rb/interpreter.rb, see docs/adr/0124
+load File.join(lib, 'game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
 load File.join(lib, 'interpreter.rb')
 
 $failures = 0
