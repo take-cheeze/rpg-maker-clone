@@ -618,6 +618,16 @@ if wio
     # (see the gcc_prefix comment above) is exactly what surfaced this.
     conf.cxx.flags << '-std=gnu++17'
 
+    # docs/adr/0120/0122: unlike -fno-exceptions (reverted -- mruby's own
+    # core needs real C++ exceptions whenever any gem has a C++ source),
+    # -fno-rtti has no auto-re-enabling gem-loader hook to fight and no
+    # other blocker once lib.cxx's own one real `typeid` use (a
+    # per-type diagnostic label on each DataType<T>::data_type, ADR 122)
+    # is replaced with a plain static name each wrapped type supplies
+    # itself. Matches PlatformIO's own Arduino framework build
+    # (platformio.ini's own comment on this).
+    conf.cxx.flags << '-fno-rtti'
+
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags

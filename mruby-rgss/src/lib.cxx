@@ -224,21 +224,28 @@ double clamp_signed255(double v) {
 }
 
 struct Rect {
+  // DataType<T>::data_type's own struct_name (docs/adr/0122): a plain,
+  // manually-supplied label instead of typeid(T).name(), so this file
+  // doesn't need RTTI just to name its own mrb_data_type entries.
+  static constexpr const char* kTypeName = "Rect";
   mrb_int x{0}, y{0}, width{0}, height{0};
 };
 
 // RGSS Color: floating point RGBA components in the range 0..255.
 struct Color {
+  static constexpr const char* kTypeName = "Color";
   double red{0}, green{0}, blue{0}, alpha{255};
 };
 
 // RGSS Tone: red/green/blue in -255..255 and gray in 0..255.
 struct Tone {
+  static constexpr const char* kTypeName = "Tone";
   double red{0}, green{0}, blue{0}, gray{0};
 };
 
 // RGSS Table: 1..3 dimensional array of 16bit integers used for map data.
 struct Table {
+  static constexpr const char* kTypeName = "Table";
   int32_t dim{1};
   int32_t xsize{0}, ysize{1}, zsize{1};
   std::vector<int16_t> data;
@@ -261,6 +268,7 @@ static size_t g_bitmap_bytes_decoded = 0;
 static size_t g_bitmap_bytes_blank = 0;
 
 struct Bitmap {
+  static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
   lv_color_format_t format;
   std::vector<uint8_t> buffer;
@@ -365,7 +373,7 @@ struct DataType {
 
 template <class T>
 mrb_data_type DataType<T>::data_type{
-    typeid(T).name(),
+    T::kTypeName,
     &DataType<T>::free_obj,
 };
 
