@@ -15,11 +15,17 @@
 // <dirent.h>, unlike PSP's own pspsdk newlib), and there is no real
 // "enumerate this directory" concept to give it in exchange -- a project
 // ships one font at a fixed path or it does not, decided at export time, not
-// discovered on-device. is_dir/first_font_in below always answer "not found"
-// there instead, which is exactly probe()'s own existing fallback path for
-// every candidate a real directory read would come up empty on anyway.
+// discovered on-device. `add_default_font_dir` is also never called on wio
+// (only src/main.cxx's desktop entry point calls it). So the whole
+// directory-scan implementation below -- and the std::vector<std::string>/
+// std::string machinery it pulls in -- is provably dead weight there, the
+// same shape docs/adr/0125 already found and fixed for profiler.cxx; gated
+// out here the same way, behind the same WIO_TERMINAL macro terminal.cxx
+// already uses. See docs/adr/0126.
 
 #include "default_font.hxx"
+
+#ifndef WIO_TERMINAL
 
 #include <cctype>
 #include <cstdio>
@@ -27,21 +33,7 @@
 #include <string>
 #include <vector>
 
-#ifdef WIO_TERMINAL
-typedef void DIR;
-static inline DIR* opendir(const char*) {
-  return nullptr;
-}
-static inline void closedir(DIR*) {}
-struct dirent {
-  char d_name[1];
-};
-static inline dirent* readdir(DIR*) {
-  return nullptr;
-}
-#else
 #include <dirent.h>
-#endif
 
 namespace rgss {
 namespace {
@@ -158,3 +150,27 @@ const std::string& default_font_path() {
 }
 
 }  // namespace rgss
+
+#else  // WIO_TERMINAL
+
+#include <string>
+
+namespace rgss {
+
+// Never called on wio (only src/main.cxx's desktop entry point calls this),
+// but keep it a real, harmless no-op rather than an unimplemented symbol in
+// case that ever changes.
+void add_default_font_dir(const std::string&) {}
+
+// Always "" on wio: every real candidate above (dirent-based directory scan)
+// is unreachable on this board's bare newlib, so this always resolved to
+// "not found" already -- see the file comment. RGSS::Font falls back to the
+// bundled shinonome bitmap font, same as before this file was gated.
+const std::string& default_font_path() {
+  static const std::string kEmpty;
+  return kEmpty;
+}
+
+}  // namespace rgss
+
+#endif  // WIO_TERMINAL
