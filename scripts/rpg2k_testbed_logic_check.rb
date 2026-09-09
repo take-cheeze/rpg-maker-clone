@@ -61,6 +61,7 @@ end
 root = File.expand_path('..', __dir__)
 load File.join(root, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(root, 'mruby-lcf/mrblib/schema.rb')
+load File.join(root, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 

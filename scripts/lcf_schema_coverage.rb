@@ -29,6 +29,7 @@ end
 mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
+load File.join(mrblib, 'lcf_file.rb')
 
 def present_ids(obj)
   root = obj.respond_to?(:instance_variable_get) ? obj.instance_variable_get(:@root) : obj

@@ -49,6 +49,7 @@ end
 ROOT = File.expand_path('..', __dir__)
 load File.join(ROOT, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
+load File.join(ROOT, 'mruby-lcf/mrblib/lcf_file.rb')
 
 # Fields this runtime should **not** grow, with the reason, so nobody spends an
 # afternoon rediscovering it. Each was checked against a reference

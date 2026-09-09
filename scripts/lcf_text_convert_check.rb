@@ -47,6 +47,7 @@ end
 mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
+load File.join(mrblib, 'lcf_file.rb')
 
 CONVERTER = File.expand_path('lcf_text_convert.rb', __dir__)
 

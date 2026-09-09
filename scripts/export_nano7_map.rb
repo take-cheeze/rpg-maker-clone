@@ -140,6 +140,7 @@ end
 ROOT = File.expand_path('..', __dir__)
 load File.join(ROOT, 'mruby-lcf/mrblib/lcf.rb')
 load File.join(ROOT, 'mruby-lcf/mrblib/schema.rb')
+load File.join(ROOT, 'mruby-lcf/mrblib/lcf_file.rb')
 load File.join(ROOT, 'mruby-rpg2k/mrblib/game.rb')
 load File.join(ROOT, 'scripts/rgss_cruby_compat.rb')
 

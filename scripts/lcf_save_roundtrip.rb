@@ -50,6 +50,7 @@ end
 mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
+load File.join(mrblib, 'lcf_file.rb')
 
 class RoundTripper
   attr_reader :errors
