@@ -54,6 +54,7 @@ ROOT = File.expand_path('..', __dir__)
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'lcf.rb')
 load File.join(ROOT, 'mruby-lcf', 'mrblib', 'schema.rb')
 load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game.rb')
+load File.join(ROOT, 'mruby-rpg2k', 'mrblib', 'game', 'battle.rb') # Game::Battle now lives in its own file, see docs/adr/0107
 
 $errors = 0
 def eq(expected, actual, msg)

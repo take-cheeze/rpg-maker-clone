@@ -41,4 +41,44 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
       #{dir}/mrblib/scene/map_viewer.rb
     ]
   end
+
+  # docs/adr/0108's own real attempt: mruby-rpg2k is a pure-Ruby gem (its own
+  # src/rgss_ext.cxx is two empty gem_init/gem_final stubs -- everything real
+  # is mrblib/*.rb), so in principle its entire compiled bytecode could live
+  # on the SD card instead of the firmware, loaded once at boot via
+  # mrb_load_irep_buf the same way ADR 0099's own smoke test loads
+  # mruby-lcf's. RGSS_WIO_EXTERNAL_RPG2K, a no-op unless set, drops every one
+  # of this gem's own rbfiles for *whichever* build it's set for (not just
+  # wio -- a host build with it set is exactly how the ADR's own host-side
+  # proof produces a "core + shared gems, no rpg2k Ruby" libmruby.a to load
+  # a matching external .mrb into), superseding the narrower debug-tools/
+  # battle trims above wherever it's active. Not the default: see the ADR
+  # for why loading it back in on real wio hardware is the open, unresolved
+  # half of this attempt.
+  if ENV['RGSS_WIO_EXTERNAL_RPG2K']
+    spec.rbfiles = []
+  elsif build.name == 'wio'
+    # A live fight's own bytecode -- Game::Battle (the headless combat model,
+    # split into its own file for exactly this exclusion), Scene::Battle and
+    # RPG2k3::Scene::Battle -- is 180,368 bytes on its own (docs/adr/0107's
+    # own real measurement: three separate mrbc compiles, summed), a sixth of
+    # the Wio Terminal's entire flash budget, for a feature most of any given
+    # session never reaches (a save/load/menu-only play session, or this
+    # port's own current boot-test firmware, which loads no game data and so
+    # starts no fight at all). Unlike the debug-tools trim above, this is
+    # *wio-only*, not psp -- PSP has real flash/storage headroom this board
+    # does not, and dropping these files here does not yet come with any way
+    # to get them back: no runtime loader reads them from the SD card the way
+    # ADR 0007's still-unbuilt P3 asset-streaming work would need to, so a
+    # wio build with this exclusion cannot actually start a fight today. This
+    # trim exists to prove the split is real and measure its actual cost, not
+    # to claim battle done as a wio feature -- see the ADR for what remains.
+    spec.rbfiles -= %W[
+      #{dir}/mrblib/game/battle.rb
+      #{dir}/mrblib/scene/battle.rb
+      #{dir}/mrblib/scene/battle_rpg2k3.rb
+    ]
+  end
+
+  wio_strip_debug_rbfiles(spec)
 end

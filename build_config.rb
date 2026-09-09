@@ -23,6 +23,35 @@ UNI_ALGO_TRIM_DEFINES = %w[
   UNI_ALGO_DISABLE_SEGMENT_WORD
 ].freeze
 
+# docs/adr/0119: wio-only, per-gem build step. Rewrites a copy of each of
+# spec's own .rb files (never the checked-in source itself) to drop
+# $stderr.puts diagnostic statements before mrbc ever sees them --
+# strip_wio_debug_output.rb's own file comment covers the mechanism and why
+# it is a real Ripper-based rewrite rather than a regex/sed pass. A no-op
+# for every other target (build.name != 'wio'): desktop/wasm/psp keep every
+# line, including the ones mruby-rgss/mrblib/error_report.rb's Tee
+# specifically exists to capture into a crash report and a terminal log
+# console -- see that file's own comment. Call this *last* in a gem's own
+# spec block, after every other spec.rbfiles filter (debug-tools/battle
+# trims, schema.rb's own blob swap, ...): it replaces each surviving
+# entry's path outright, so anything that still needs to subtract or
+# substitute an entry by its original path has to run before this does.
+def wio_strip_debug_rbfiles(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('strip_wio_debug_output.rb', __dir__)
+  out_dir = "#{spec.build_dir}/wio_debug_stripped"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script] do |t|
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, src, out
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -348,6 +377,25 @@ psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
 cross = emscripten || wio || psp || android
 
+if wio
+  # docs/adr/0112: wio's own RAM/flash margin (ADR 107/111) is tight enough
+  # that the GOTHIC (JIS0208 kanji) face's SD offload (ADR 110) -- previously
+  # a no-op-unless-set escape hatch, same as every other opt-in knob in this
+  # series -- is now this target's *default*, not something a caller has to
+  # remember to ask for. `||=` so an explicit override (e.g. a measurement
+  # build that wants the old compiled-in GOTHIC array back) still wins.
+  # SHINONOME_GOTHIC_SD_FILE is read by gen_shinonome_data.rb from inside
+  # mruby-rgss's own build_dir (mrbgem.rake's Dir.chdir), so a bare filename
+  # lands there rather than needing an absolute path computed this early.
+  # RGSS_SHINONOME_GOTHIC_SD_PATH is the on-device path baked into the
+  # firmware; no real SD deployment step writes gothic.bin there yet (ADR
+  # 110's own "what was not done" section), so this only fixes what the
+  # *build* produces -- getting the generated file onto a real card remains
+  # future work.
+  ENV['SHINONOME_GOTHIC_SD_FILE'] ||= 'gothic.bin'
+  ENV['RGSS_SHINONOME_GOTHIC_SD_PATH'] ||= '/gothic.bin'
+end
+
 MRuby::Build.new do |conf|
   toolchain :gcc
 
@@ -447,6 +495,59 @@ if wio
 
     enable_debug
 
+    # enable_debug also appends ` -g` to mrbc's own compile options (default
+    # "-B%{funcname} -o-", see mruby's Command::Mrbc#initialize), which embeds
+    # line-number/local-variable debug tables in every gem's compiled mrblib
+    # bytecode -- the game's own Ruby (mruby-rpg2k, mruby-rgss, mruby-lcf,
+    # mruby's own core mrblib, ...), not mruby's C core. Unlike the C-level
+    # -g3 kept below (native DWARF, never mapped into RAM -- ELF debug
+    # sections sit outside every PT_LOAD segment), mrb_load_irep parses these
+    # Ruby-level tables into live heap structures the moment the interpreter
+    # boots -- docs/adr/0047-psp-memory-budget.md already measured this at
+    # roughly 240-350 KB of live RAM for the very same rpg2k+lcf+rgss mrblib
+    # stack on PSP, and made this same fix there. Wio never got the sibling
+    # fix: real host-side `mrbc` runs on this project's own rpg2k mrblib (16
+    # files, minus the debug-menu/battle files already trimmed above) show
+    # `-g` alone costs 85,188 bytes on that slice alone, before rgss/lcf/core
+    # are even counted -- and unlike PSP's ~24 MB+ budget, wio's 192 KB RAM
+    # has nowhere to absorb a boot-time cost of that shape at all (docs/adr/
+    # 0111 already found one hidden-RAM bug invisible to every static relink
+    # measurement this series relies on; this is the same class of risk).
+    conf.mrbc.compile_options =
+      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
+
+    # --remove-lv (MRB_DUMP_NO_LVAR) drops a *second* debug-only table, the
+    # separate local-variable name array -- it exists purely for
+    # introspection/backtraces (`Kernel#local_variables`, a debugger) this
+    # firmware never calls, confirmed by grepping every rpg2k/rgss/lcf .rb
+    # file for eval/instance_eval/class_eval/binding, all absent. Passing it
+    # to mrbc alone does *not* work here, though: this build's own
+    # Command::Mrbc#run always adds `-S` (mrbgem.rake's `cdump: true`,
+    # mruby's default), which routes through mruby's own src/cdump.c rather
+    # than the *binary* .mrb path (src/dump.c) -- and cdump.c's own two
+    # `if (irep->lv)` checks never look at MRB_DUMP_NO_LVAR at all, unlike
+    # dump.c's `lv_defined = (flags & MRB_DUMP_NO_LVAR) ? FALSE : ...`. A
+    # real gap in mruby's own C-struct dumper (confirmed: a real relink with
+    # 3rd/mruby/src/cdump.c locally patched to also check the flag recovers
+    # a further 43,416 bytes on top of the `-g` strip above), not something
+    # fixable from this file alone -- 3rd/mruby is the real upstream
+    # mruby/mruby, not a fork this project can push a patch to. Get the same
+    # effect from this side of the fence instead: wrap conf.mrbc's own `run`
+    # to strip the `<name>_lv_<N>` array mruby's compiler always populates
+    # (mrbgems/mruby-compiler/core/codegen.c does this unconditionally for
+    # every scope with named locals -- there is no compile-time flag to stop
+    # it at the source) out of the C source cdump.c already wrote, the same
+    # way ADR 111 patched a build-time generator rather than the C++ it fed
+    # instead of leaving the runtime construction broken.
+    conf.mrbc.define_singleton_method(:run) do |out, *args, **kwargs|
+      method(:run).super_method.call(out, *args, **kwargs)
+      path = out.path
+      src = File.read(path)
+      src.gsub!(/^mrb_DEFINE_SYMS_VAR\(\w+_lv_\d+, .*\);\n/, '')
+      src.gsub!(/^(  )(\w+_lv_\d+),\n/, "\\1NULL,\t\t\t\t\t/* lv */\n")
+      File.write(path, src)
+    end
+
     # Cortex-M4F with hardware single-precision FPU. Must be identical on the
     # compile and link lines so the mruby objects match the firmware's ABI.
     cpu_flags = %w[-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16]
@@ -517,6 +618,16 @@ if wio
     # (see the gcc_prefix comment above) is exactly what surfaced this.
     conf.cxx.flags << '-std=gnu++17'
 
+    # docs/adr/0120/0122: unlike -fno-exceptions (reverted -- mruby's own
+    # core needs real C++ exceptions whenever any gem has a C++ source),
+    # -fno-rtti has no auto-re-enabling gem-loader hook to fight and no
+    # other blocker once lib.cxx's own one real `typeid` use (a
+    # per-type diagnostic label on each DataType<T>::data_type, ADR 122)
+    # is replaced with a plain static name each wrapped type supplies
+    # itself. Matches PlatformIO's own Arduino framework build
+    # (platformio.ini's own comment on this).
+    conf.cxx.flags << '-fno-rtti'
+
     [conf.cc, conf.cxx].each do |t|
       t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
       t.flags += cpu_flags
@@ -573,6 +684,25 @@ if wio
       # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
       # its own copy since it never sees that build's flags.
       t.defines << 'WIO_TERMINAL'
+      # docs/adr/0115 already found and stripped mrbc's own `-g` (Ruby-level
+      # line-number/local-variable debug tables baked into compiled
+      # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
+      # harmless C-level sibling (native DWARF, never mapped into RAM -- ELF
+      # debug sections sit outside every PT_LOAD segment, same reasoning
+      # docs/adr/0047-psp-memory-budget.md already gave). MRB_DEBUG is a
+      # third, different thing enable_debug also defines here: a C
+      # preprocessor flag (mruby.h) that turns mrb_assert(...) -- used
+      # ~100 times across mruby's own core (vm.c/gc.c/class.c/dump.c/...,
+      # not counting mrbgems) -- from a no-op into a real libc assert(),
+      # each one a real branch plus a string literal holding the assertion
+      # source text and file/line for every call site. Real, unavoidable
+      # flash cost for checks that would only ever fire on an actual mruby
+      # VM/GC bug (this project's own code, not a game's), which a device
+      # with no attached debugger and no serial console wired to it in this
+      # firmware could not usefully report anyway -- a failed assert here
+      # just calls abort() into nothing. Not part of ADR 115's own fix (a
+      # different mechanism, mrbc vs cc/cxx), so removed separately.
+      t.defines.delete('MRB_DEBUG')
     end
     conf.linker.flags += cpu_flags
 
@@ -588,6 +718,23 @@ if wio
     conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
 
     rpg_maker_gems(conf)
+
+    # Tried and reverted: -fno-exceptions, matching PlatformIO's own Arduino
+    # framework build (platformio.ini's own comment on this). This project's
+    # own .cxx files (mruby-rgss/src, mruby-lcf/src, app/wio/src) have no
+    # try/catch/throw at all, but that turned out not to be the real
+    # question -- mruby's own gem loader (lib/mruby/build/load_gems.rb)
+    # auto-enables MRB_USE_CXX_EXCEPTION the moment any gem has a .cxx
+    # source (mruby-rgss/mruby-lcf/mruby-marshal all do here), which
+    # compiles mruby's own core error.c as C++ (build/wio/.../error-cxx.cxx)
+    # and implements Ruby's own begin/rescue/ensure -- MRB_TRY/MRB_CATCH,
+    # src/throw.h -- as real C++ throw/catch rather than setjmp/longjmp,
+    # specifically because longjmp does not run C++ destructors and would
+    # leak/corrupt any C++ object on the stack being unwound through. A
+    # real, load-bearing use of exceptions this build cannot do without:
+    # -fno-exceptions fails to even compile mruby's own core
+    # ("'e' was not declared in this scope" inside MRB_CATCH's own
+    # expansion). Not attempted further.
   end
 end
 

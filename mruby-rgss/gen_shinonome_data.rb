@@ -60,6 +60,23 @@ if ENV["SHINONOME_GLYPH_TEXT_FILE"]
                         .each_codepoint.to_a.uniq.to_set
 end
 
+# docs/adr/0110/0112: a second, independent escape hatch (a no-op unless
+# set, same convention as SHINONOME_GLYPH_TEXT_FILE above -- build_config.rb
+# sets it by default for wio specifically, everywhere else it stays opt-in)
+# -- rather than
+# *trimming* the GOTHIC (JIS0208 kanji) face's flash cost, moves the whole
+# thing to the SD card: every glyph this pass would otherwise emit as a
+# compiled-in C array entry is instead packed into a flat binary file
+# (u32 glyph_count, then glyph_count * (u32 codepoint, GOTHIC_WORDS * u32
+# bitmap data), all little-endian, still sorted by codepoint) that
+# mruby-rgss/src/lib.cxx's own find_gothic_char reads back with a plain
+# fseek/fread binary search (RGSS_SHINONOME_GOTHIC_SD_PATH) instead of
+# find_char's in-memory one. GOTHIC's own compiled-in array still gets
+# written -- just empty (GOTHIC_LEN 0) -- so a build that sets this without
+# also defining RGSS_SHINONOME_GOTHIC_SD_PATH simply finds no kanji glyphs
+# at all rather than failing to compile.
+gothic_sd_file = ENV["SHINONOME_GOTHIC_SD_FILE"]
+
 f = File.new "shinonome.cxx", "w"
 
 f.write <<EOS
@@ -118,24 +135,40 @@ EOS
     end
   end
 
+  to_sd = gothic_sd_file && name == "GOTHIC"
+  sd_out = nil
+  if to_sd
+    sd_out = File.open(gothic_sd_file, "wb")
+    sd_out.write [t.size].pack("V") # glyph_count, little-endian u32
+  end
+
   f.write <<EOS
-const unsigned #{name}_LEN = #{t.size};
+const unsigned #{name}_LEN = #{to_sd ? 0 : t.size};
 const Char<#{full ? "HEIGHT" : "HEIGHT / 2"}> #{name}[] = {
 EOS
 
   t.sort.to_h.each do |u, b|
     b = b.map(&:strip).reduce(&:+)
-    d = b.scan(/.{1,32}/).map do |s|
+    words = b.scan(/.{1,32}/).map do |s|
       v = 0
       s.each_char.each_with_index do |p, idx|
         v |= (1 << idx) if p == "@"
       end
-      "0x#{v.to_s(16)}"
+      v
     end
+
+    if to_sd
+      sd_out.write [u, *words].pack("V*")
+      next
+    end
+
+    d = words.map { |v| "0x#{v.to_s(16)}" }
     f.write <<EOS
   { 0x#{u.to_s(16)}, {#{d.join(", ")}} },
 EOS
   end
+
+  sd_out&.close
 
   f.write <<EOS
 };

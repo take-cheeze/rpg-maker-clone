@@ -170,8 +170,23 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
   const char* ptr;
   mrb_int len;
   mrb_get_args(M, "s", &ptr, &len);
+#ifdef WIO_TERMINAL
+  // uni-algo's NFD decomposition/combining-class tables are ~94 KB on their
+  // own (docs/adr/0105's own real measurement) -- a meaningful slice of this
+  // board's 496 KB flash budget for a feature that exists to paper over a
+  // real but narrow bug class (a macOS-authored zip/archive storing
+  // filenames in NFD while the game data references them in NFC, or vice
+  // versa). mrblib/lib.rb's exist_with_ext calls this as a *second-chance*
+  // fallback only when the exact filename already failed to resolve, so
+  // returning the input unchanged here just means that second chance never
+  // fires on this target -- an asset whose filename's normalization form
+  // already matches (by far the common case: this project's own export
+  // pipeline writes one consistent form) still loads exactly as before.
+  return mrb_str_new(M, ptr, len);
+#else
   std::string nfd = una::norm::to_nfd_utf8(std::string_view(ptr, len));
   return mrb_str_new(M, nfd.data(), nfd.size());
+#endif
 }
 
 // Inflate a zlib stream and return the decompressed bytes as a String. RGSS
@@ -209,21 +224,28 @@ double clamp_signed255(double v) {
 }
 
 struct Rect {
+  // DataType<T>::data_type's own struct_name (docs/adr/0122): a plain,
+  // manually-supplied label instead of typeid(T).name(), so this file
+  // doesn't need RTTI just to name its own mrb_data_type entries.
+  static constexpr const char* kTypeName = "Rect";
   mrb_int x{0}, y{0}, width{0}, height{0};
 };
 
 // RGSS Color: floating point RGBA components in the range 0..255.
 struct Color {
+  static constexpr const char* kTypeName = "Color";
   double red{0}, green{0}, blue{0}, alpha{255};
 };
 
 // RGSS Tone: red/green/blue in -255..255 and gray in 0..255.
 struct Tone {
+  static constexpr const char* kTypeName = "Tone";
   double red{0}, green{0}, blue{0}, gray{0};
 };
 
 // RGSS Table: 1..3 dimensional array of 16bit integers used for map data.
 struct Table {
+  static constexpr const char* kTypeName = "Table";
   int32_t dim{1};
   int32_t xsize{0}, ysize{1}, zsize{1};
   std::vector<int16_t> data;
@@ -246,6 +268,7 @@ static size_t g_bitmap_bytes_decoded = 0;
 static size_t g_bitmap_bytes_blank = 0;
 
 struct Bitmap {
+  static constexpr const char* kTypeName = "Bitmap";
   int32_t width, height;
   lv_color_format_t format;
   std::vector<uint8_t> buffer;
@@ -350,7 +373,7 @@ struct DataType {
 
 template <class T>
 mrb_data_type DataType<T>::data_type{
-    typeid(T).name(),
+    T::kTypeName,
     &DataType<T>::free_obj,
 };
 
@@ -1455,13 +1478,17 @@ mrb_value bmp_init_file(mrb_state* M, mrb_value self) {
   if (slurp_file(f, data) &&
       bmp_decode_into(M, self, data.data(), data.size(), f, trans))
     return self;
+#ifndef WIO_TERMINAL
   // Some archives store filenames in NFD form while the game data refers to
   // them in NFC (or vice versa); retry with the decomposed form before giving
-  // up so accented paths still resolve.
+  // up so accented paths still resolve. Skipped on wio: see to_nfd's own
+  // comment above for why this ~94 KB uni-algo table set isn't worth it on a
+  // 496 KB-flash target -- the exact same tradeoff applies here.
   const std::string nfd_f = una::norm::to_nfd_utf8(f);
   if (nfd_f != f && slurp_file(nfd_f.c_str(), data) &&
       bmp_decode_into(M, self, data.data(), data.size(), nfd_f.c_str(), trans))
     return self;
+#endif
   return mrb_nil_value();
 }
 
@@ -2363,6 +2390,130 @@ auto find_char = [](char32_t c, const auto* g, unsigned g_len) -> const auto* {
   return i;
 };
 
+// docs/adr/0110: the JIS0208 GOTHIC face is 165,624 bytes flash (real
+// measurement, ADR 0104) -- by far the single largest piece of static data
+// mruby-rgss carries, and RGSS_SHINONOME_GOTHIC_SD_PATH (a no-op unless
+// defined) moves it to the SD card instead: gen_shinonome_data.rb's own
+// SHINONOME_GOTHIC_SD_FILE writes the same sorted (codepoint, bitmap) pairs
+// find_char above already binary-searches, as flat packed binary, to a file
+// this reads back with plain std::fopen/fseek/fread -- the same file API
+// bmp_init_file already uses for every game asset, on every target
+// including wio, so this needs no new HAL. Unlike mruby-rpg2k's compiled
+// Ruby (docs/adr/0108's own attempt, abandoned once RAM-scaling made it
+// impractical), a glyph bitmap is raw data with a fixed, tiny per-entry
+// size -- no mrb_load_irep_buf, no interpreter IREP overhead, no cost that
+// scales with how much of the face is "loaded": binary search touches
+// O(log n) records, and a small fixed-size cache (shinonome_sd::Cache below)
+// keeps every glyph a session actually draws resident after its first,
+// one-time SD read, so a dialogue box that reuses the same few hundred
+// kanji over and over reads the card once per glyph, not once per frame.
+#ifdef RGSS_SHINONOME_GOTHIC_SD_PATH
+namespace shinonome_sd {
+
+using GothicChar = shinonome::Char<shinonome::HEIGHT>;
+// Mirrors shinonome.hxx's own std::array<uint32_t, PIXELS/32 + ...> sizing
+// for Char::data exactly, so a record here is byte-for-byte the same shape
+// gen_shinonome_data.rb's SHINONOME_GOTHIC_SD_FILE writer emits.
+constexpr unsigned GOTHIC_WORDS =
+    GothicChar::PIXELS / 32 + ((GothicChar::PIXELS % 32) > 0 ? 1 : 0);
+
+// Fixed-size, direct-mapped cache: CAPACITY slots, replaced round-robin as
+// new glyphs are looked up. Not an LRU (no per-access bookkeeping) -- with
+// a few dozen distinct kanji in an ordinary dialogue box, a round-robin
+// still keeps the working set resident far more often than it evicts it,
+// and costs nothing to maintain per lookup. 64, not a rounder-looking 256:
+// each slot is sizeof(GothicChar) (24 bytes) of static BSS, and a real
+// relink at 256 slots (docs/adr/0110's own measurement) overflowed the
+// board's 192 KB RAM budget by 248 bytes -- this board has none to spare
+// for a cache size picked without checking.
+struct Cache {
+  static constexpr unsigned CAPACITY = 64;
+  std::array<GothicChar, CAPACITY> slots{};
+  unsigned next = 0;
+  std::FILE* fp = nullptr;
+  bool tried_open = false;
+  uint32_t count = 0;
+
+  Cache() {
+    for (auto& s : slots)
+      s.codepoint = 0xffffffffu;  // never a real Unicode codepoint
+  }
+
+  static uint32_t read_u32le(std::FILE* f) {
+    uint8_t b[4];
+    if (std::fread(b, 1, 4, f) != 4)
+      return 0;
+    return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
+           (static_cast<uint32_t>(b[2]) << 16) |
+           (static_cast<uint32_t>(b[3]) << 24);
+  }
+
+  bool ensure_open() {
+    if (tried_open)
+      return fp != nullptr;
+    tried_open = true;
+    fp = std::fopen(RGSS_SHINONOME_GOTHIC_SD_PATH, "rb");
+    if (!fp)
+      return false;
+    count = read_u32le(fp);
+    return true;
+  }
+
+  const GothicChar* find(char32_t c) {
+    for (const auto& s : slots)
+      if (s.codepoint == c)
+        return &s;
+
+    if (!ensure_open())
+      return nullptr;
+
+    constexpr long kRecordSize = 4 + GOTHIC_WORDS * 4;
+    long lo = 0, hi = static_cast<long>(count);
+    while (lo < hi) {
+      const long mid = lo + (hi - lo) / 2;
+      std::fseek(fp, 4 + mid * kRecordSize, SEEK_SET);
+      const uint32_t cp = read_u32le(fp);
+      if (cp == c) {
+        GothicChar& slot = slots[next];
+        next = (next + 1) % CAPACITY;
+        slot.codepoint = c;
+        for (auto& word : slot.data)
+          word = read_u32le(fp);
+        return &slot;
+      }
+      if (cp < c)
+        lo = mid + 1;
+      else
+        hi = mid;
+    }
+    return nullptr;
+  }
+};
+
+Cache g_cache;
+
+}  // namespace shinonome_sd
+#endif  // RGSS_SHINONOME_GOTHIC_SD_PATH
+
+// Every real call site already reads shinonome::GOTHIC through find_char
+// directly; route them all through here instead so the SD fallback above is
+// one place, not three. Checks the (possibly now-empty, see
+// gen_shinonome_data.rb) compiled-in table first -- a build that never
+// defined RGSS_SHINONOME_GOTHIC_SD_PATH behaves exactly as before, and one
+// that did but shipped some glyphs in flash anyway (a partial
+// SHINONOME_GLYPH_TEXT_FILE allow-list, say) never pays for an SD lookup on
+// those.
+const shinonome::Char<shinonome::HEIGHT>* find_gothic_char(char32_t c) {
+  auto* f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+  if (f)
+    return f;
+#ifdef RGSS_SHINONOME_GOTHIC_SD_PATH
+  return shinonome_sd::g_cache.find(c);
+#else
+  return nullptr;
+#endif
+}
+
 // --- TrueType text rendering -------------------------------------------------
 //
 // RPG Maker XP/VX projects ship their UI font as a TrueType/OpenType file under
@@ -2857,7 +3008,7 @@ void measure_text(std::string_view s, int& width, unsigned& height) {
   width = 0;
   height = 0;
   for (const char32_t c : s | una::views::utf8) {
-    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    auto f = find_gothic_char(c);
     if (f) {
       width += f->WIDTH;
       height = std::max<unsigned>(height, f->HEIGHT);
@@ -2980,7 +3131,7 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   };
 
   for (const char32_t c : sv | una::views::utf8) {
-    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    auto f = find_gothic_char(c);
     if (f) {
       draw(*f);
       continue;
@@ -3067,7 +3218,7 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   };
 
   for (const char32_t c : sv | una::views::utf8) {
-    auto f = find_char(c, shinonome::GOTHIC, shinonome::GOTHIC_LEN);
+    auto f = find_gothic_char(c);
     if (f) {
       draw(*f);
       continue;

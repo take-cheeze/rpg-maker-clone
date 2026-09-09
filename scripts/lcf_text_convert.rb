@@ -62,6 +62,7 @@ end
 mrblib = File.expand_path('../mruby-lcf/mrblib', __dir__)
 load File.join(mrblib, 'lcf.rb')
 load File.join(mrblib, 'schema.rb')
+load File.join(mrblib, 'lcf_file.rb')
 
 # type name (as it appears in the YAML `type:` field) -> [LCF file class, the
 # file extensions `to_text` recognises for it].

@@ -4,7 +4,6 @@
 #include <algorithm>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include <uni_algo/conv.h>
 
@@ -62,31 +61,28 @@ mrb_value cp932_to_utf8(mrb_state* M, mrb_value self) {
   return mrb_str_new(M, ret.data(), ret.size());
 }
 
-// Inverse of cp932_to_utf8, built by reversing the same cp932_table: sorted
-// by Unicode code point (rather than by CP932 code) so a code point can be
-// looked up the same way the decoder looks up a CP932 byte sequence. A
-// looked-up value <= 0xff is a single CP932 byte (e.g. halfwidth katakana);
-// anything larger is a two-byte code, emitted big-endian to match the byte
-// order cp932_to_utf8 reads it in.
+// Inverse of cp932_to_utf8. docs/adr/0111: cp932_reverse_table is the exact
+// reverse of cp932_table -- sorted by Unicode code point (rather than by
+// CP932 code) so a code point can be looked up the same way the decoder
+// looks up a CP932 byte sequence -- generated at *build time* by
+// cp932_to_unicode.rb now, not built into a heap-allocated std::vector the
+// first time this function ever ran: that lazy build cost the whole
+// table's size again in RAM (~38 KB, confirmed by inspection -- this board
+// has none to spare) for data that, like cp932_table itself, never
+// changes at runtime and so never needed to live anywhere but flash. A
+// looked-up value <= 0xff is a single CP932 byte (e.g. halfwidth
+// katakana); anything larger is a two-byte code, emitted big-endian to
+// match the byte order cp932_to_utf8 reads it in.
 mrb_value utf8_to_cp932(mrb_state* M, mrb_value self) {
   const uint8_t* p;
   mrb_int l;
   mrb_get_args(M, "s", &p, &l);
 
-  static const std::vector<std::pair<uint16_t, uint16_t>> reverse_table = [] {
-    std::vector<std::pair<uint16_t, uint16_t>> t;
-    t.reserve(cp932_table_len);
-    for (size_t i = 0; i < cp932_table_len; ++i)
-      t.emplace_back(cp932_table[i].second, cp932_table[i].first);
-    std::sort(t.begin(), t.end());
-    return t;
-  }();
-
   const auto find_cp932 = [](const uint16_t v) -> std::optional<uint16_t> {
     const auto cmp = [](const std::pair<uint16_t, uint16_t>& l,
                         const uint16_t& r) -> bool { return l.first < r; };
-    const auto* b = reverse_table.data();
-    const auto* e = b + reverse_table.size();
+    const auto* b = cp932_reverse_table;
+    const auto* e = b + cp932_reverse_table_len;
     const auto* i = std::lower_bound(b, e, v, cmp);
     if (i < e and i->first == v)
       return i->second;

@@ -8309,15 +8309,6 @@ class RPG2k
         end
       end
 
-      # A vehicle's own map-pixel position, read straight off its live
-      # `Game::Vehicle` record -- no interpolation, unlike a walking
-      # player/event, since nothing here animates a standing vehicle's slide.
-      def vehicle_pixel(type)
-        v = @state.vehicle(type)
-        return player_pixel unless v
-        [v.x * TILE, v.y * TILE]
-      end
-
       # Fire the current frame's timings request: flash_scope 2 (whole screen,
       # already implemented) or flash_scope 1 (the animation's own target --
       # #fire_target_flash in battle, #fire_map_target_flash on the map), plus

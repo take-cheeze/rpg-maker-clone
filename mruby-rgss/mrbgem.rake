@@ -71,6 +71,26 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
 
   objs << objfile("#{build_dir}/shinonome")
 
+  # docs/adr/0110/0112: build_config.rb's wio CrossBuild defaults both this
+  # and SHINONOME_GOTHIC_SD_FILE (read directly from ENV by
+  # gen_shinonome_data.rb itself, below) so a plain wio build gets the SD
+  # offload without asking -- still a plain ENV-gated no-op for every other
+  # target (desktop/wasm/psp/android), same convention as the project's
+  # other opt-in escape hatches. Names the on-device path lib.cxx's own
+  # find_gothic_char binary-searches when the GOTHIC face isn't found in the
+  # (then-empty) compiled-in array -- must agree with whatever real path a
+  # game's SD-card deployment step actually writes gothic.bin to; that
+  # deployment step doesn't exist yet (ADR 110's own "what was not done"),
+  # so this fixes what the build produces, not how it reaches a real card.
+  if ENV["RGSS_SHINONOME_GOTHIC_SD_PATH"]
+    # mruby's own Command::Compiler#_run shells out via a single interpolated
+    # string (no per-argument shellquote) -- a plain #inspect'd C string
+    # literal's own `"..."` gets stripped by the shell before gcc ever sees
+    # it, leaving a bare, unterminated path token. Escaping the quotes here
+    # (\\") is what survives that shell round-trip as a real `"..."` token.
+    cxx.defines << %(RGSS_SHINONOME_GOTHIC_SD_PATH=\\"#{ENV["RGSS_SHINONOME_GOTHIC_SD_PATH"]}\\")
+  end
+
   file "#{dir}/src/lib.cxx" => "#{build_dir}/shinonome.hxx"
   file "#{build_dir}/shinonome.hxx" => "#{build_dir}/shinonome.cxx"
   file "#{build_dir}/shinonome.cxx" => "#{dir}/gen_shinonome_data.rb" do |t|
@@ -79,4 +99,6 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
       ruby  t.prereqs.first
     end
   end
+
+  wio_strip_debug_rbfiles(spec)
 end

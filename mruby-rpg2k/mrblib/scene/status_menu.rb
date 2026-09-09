@@ -362,7 +362,7 @@ class RPG2k
       # the content width (measured at screen x=92..113 for a 12px-per-glyph
       # pair whose cell ends exactly on the content's right edge, 116).
       def draw_battle_row(c, a)
-        back = a.respond_to?(:battle_row) && a.battle_row == Game::Battle::ROW_BACK
+        back = a.respond_to?(:battle_row) && a.battle_row == Game::Actor::ROW_BACK
         draw_system_text c, 0, ROW_LABEL_LINE * LINE_H, c.width, LINE_H,
                          back ? ROW_BACK_LABEL : ROW_FRONT_LABEL, @skin, 0, 2
       end
