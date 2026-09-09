@@ -96,5 +96,23 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
     ]
   end
 
+  # game/lsd_io.rb (Game::State#to_lsd/.from_lsd and their exclusive helpers)
+  # is the RPG_RT-interop save/load path: exporting/importing a genuine
+  # Save<N>.lsd so a save this game writes can round-trip through real
+  # RPG_RT or other RPG2000/2003 editor tooling. wio has no PC to hand a
+  # save file to and no editor tooling to receive one from, so that
+  # interop has no audience there -- Save/Continue itself keeps working
+  # unchanged through Game::State#to_h/.load, the separate Marshal-based
+  # format main.rb's own #save_game already documents as this game's
+  # actual authoritative save (see docs/adr/0128). A wio-only exclusion,
+  # same reasoning as the debug-tools trim above (psp keeps it: real
+  # flash/storage headroom, and a real editor-facing interop use there is
+  # at least plausible).
+  if build.name == 'wio'
+    spec.rbfiles -= %W[
+      #{dir}/mrblib/game/lsd_io.rb
+    ]
+  end
+
   wio_strip_debug_rbfiles(spec)
 end

@@ -1004,8 +1004,13 @@ class RPG2k
   end
 
   # Write a real Save<slot>.lsd next to the Marshal save. Best-effort: any error
-  # is logged and swallowed so it cannot break the primary save.
+  # is logged and swallowed so it cannot break the primary save. A no-op where
+  # #to_lsd does not exist at all (wio -- see mrbgem.rake/docs/adr/0128): there
+  # is no PC there to hand this file to, so skip the attempt outright rather
+  # than pay for it only to have the rescue below swallow a NoMethodError
+  # every single save.
   def export_lsd state, slot = 1
+    return unless state.respond_to?(:to_lsd)
     state.to_lsd(state.save_count, nil, slot, @db, @map_tree).save_to(lsd_path(slot))
   rescue StandardError => e
     $stderr.puts "[RPG2k] .lsd export failed for slot #{slot}: #{e.message}"
@@ -1030,7 +1035,11 @@ class RPG2k
     if File.exist?(save_path(slot))
       data = File.open(save_path(slot), "rb") { |f| f.read }
       Game::State.load(@db, Marshal.load(data))
-    elsif File.exist?(lsd_path(slot))
+    elsif File.exist?(lsd_path(slot)) && Game::State.respond_to?(:from_lsd)
+      # .from_lsd does not exist at all on wio (see mrbgem.rake/docs/adr/0128)
+      # -- there is no editor there to have written this file in the first
+      # place, so a dropped-in .lsd with no Marshal save alongside it stays
+      # unreadable there rather than resuming with lost fidelity.
       Game::State.from_lsd(@db, LCF::SaveData.new(File.open(lsd_path(slot), "rb")))
     end
   rescue StandardError => e
