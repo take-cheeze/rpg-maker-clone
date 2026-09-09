@@ -99,4 +99,6 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
       ruby  t.prereqs.first
     end
   end
+
+  wio_strip_debug_rbfiles(spec)
 end

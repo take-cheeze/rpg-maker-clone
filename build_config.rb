@@ -23,6 +23,35 @@ UNI_ALGO_TRIM_DEFINES = %w[
   UNI_ALGO_DISABLE_SEGMENT_WORD
 ].freeze
 
+# docs/adr/0119: wio-only, per-gem build step. Rewrites a copy of each of
+# spec's own .rb files (never the checked-in source itself) to drop
+# $stderr.puts diagnostic statements before mrbc ever sees them --
+# strip_wio_debug_output.rb's own file comment covers the mechanism and why
+# it is a real Ripper-based rewrite rather than a regex/sed pass. A no-op
+# for every other target (build.name != 'wio'): desktop/wasm/psp keep every
+# line, including the ones mruby-rgss/mrblib/error_report.rb's Tee
+# specifically exists to capture into a crash report and a terminal log
+# console -- see that file's own comment. Call this *last* in a gem's own
+# spec block, after every other spec.rbfiles filter (debug-tools/battle
+# trims, schema.rb's own blob swap, ...): it replaces each surviving
+# entry's path outright, so anything that still needs to subtract or
+# substitute an entry by its original path has to run before this does.
+def wio_strip_debug_rbfiles(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('strip_wio_debug_output.rb', __dir__)
+  out_dir = "#{spec.build_dir}/wio_debug_stripped"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script] do |t|
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, src, out
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded

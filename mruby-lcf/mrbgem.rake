@@ -45,4 +45,6 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
     FileUtils.mkdir_p build_dir, verbose: true
     ruby t.prereqs.first, "#{dir}/mrblib/schema.rb", "#{build_dir}/schema_blob.rb"
   end
+
+  wio_strip_debug_rbfiles(spec)
 end

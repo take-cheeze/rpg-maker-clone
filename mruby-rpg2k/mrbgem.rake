@@ -79,4 +79,6 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
       #{dir}/mrblib/scene/battle_rpg2k3.rb
     ]
   end
+
+  wio_strip_debug_rbfiles(spec)
 end
