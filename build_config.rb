@@ -466,6 +466,35 @@ if wio
 
     enable_debug
 
+    # enable_debug also appends ` -g` to mrbc's own compile options (default
+    # "-B%{funcname} -o-", see mruby's Command::Mrbc#initialize), which embeds
+    # line-number/local-variable debug tables in every gem's compiled mrblib
+    # bytecode -- the game's own Ruby (mruby-rpg2k, mruby-rgss, mruby-lcf,
+    # mruby's own core mrblib, ...), not mruby's C core. Unlike the C-level
+    # -g3 kept below (native DWARF, never mapped into RAM -- ELF debug
+    # sections sit outside every PT_LOAD segment), mrb_load_irep parses these
+    # Ruby-level tables into live heap structures the moment the interpreter
+    # boots -- docs/adr/0047-psp-memory-budget.md already measured this at
+    # roughly 240-350 KB of live RAM for the very same rpg2k+lcf+rgss mrblib
+    # stack on PSP, and made this same fix there. Wio never got the sibling
+    # fix: real host-side `mrbc` runs on this project's own rpg2k mrblib (16
+    # files, minus the debug-menu/battle files already trimmed above) show
+    # `-g` alone costs 85,188 bytes on that slice alone, before rgss/lcf/core
+    # are even counted -- and unlike PSP's ~24 MB+ budget, wio's 192 KB RAM
+    # has nowhere to absorb a boot-time cost of that shape at all (docs/adr/
+    # 0111 already found one hidden-RAM bug invisible to every static relink
+    # measurement this series relies on; this is the same class of risk).
+    # --remove-lv (MRB_DUMP_NO_LVAR, mruby-bin-strip's own flag for the same
+    # purpose) drops the separate local-variable name table the same way, for
+    # the same reason: it exists purely for introspection/backtraces
+    # (`Kernel#local_variables`, a debugger) this firmware never calls --
+    # confirmed by grepping every rpg2k/rgss/lcf .rb file for eval/
+    # instance_eval/class_eval/binding, all absent. It buys nothing on a
+    # device with no interactive Ruby debugger attached to it, so strip both
+    # from mrbc the same way -O0 is stripped from cc/cxx below.
+    conf.mrbc.compile_options =
+      (conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' } << '--remove-lv').join(' ')
+
     # Cortex-M4F with hardware single-precision FPU. Must be identical on the
     # compile and link lines so the mruby objects match the firmware's ABI.
     cpu_flags = %w[-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16]
