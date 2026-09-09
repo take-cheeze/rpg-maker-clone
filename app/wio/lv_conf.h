@@ -47,6 +47,24 @@
 #define LV_USE_DRAW_SW 1
 #define LV_DRAW_SW_DRAW_UNIT_CNT 1
 
+/* lv_draw_sw_blend.c dispatches on a *destination layer's* own color format
+ * with a runtime switch -- every case it compiles in gets linked whether or
+ * not this firmware ever actually creates a layer in that format, since the
+ * linker can only prove a whole function/case unreachable, not a specific
+ * enum value. Checked against every real call site (RGSS::Bitmap always
+ * backs its canvases with LV_COLOR_FORMAT_ARGB8888 or, for opaque 3-channel
+ * decoded images, RGB888 -- mruby-rgss/src/lib.cxx; the display itself is
+ * plain RGB565, wio.cxx's own lv_display_set_color_format call, no swap).
+ * I1 (1-bit canvases), byte-swapped RGB565, and premultiplied-alpha ARGB8888
+ * are never requested by any of that, so their backends are pure dead
+ * weight here -- unlike A8/L8/AL88 (LVGL's own font-glyph and image-mask
+ * decoding paths reach those internally, confirmed by grepping
+ * 3rd/lvgl/src for each format outside this dispatcher) or RGB888/ARGB8888/
+ * RGB565 (all three used directly above). See docs/adr/0114. */
+#define LV_DRAW_SW_SUPPORT_I1 0
+#define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
+#define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
+
 /*====================
    LOGGING / ASSERTS
  *====================*/
