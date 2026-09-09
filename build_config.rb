@@ -484,16 +484,40 @@ if wio
     # has nowhere to absorb a boot-time cost of that shape at all (docs/adr/
     # 0111 already found one hidden-RAM bug invisible to every static relink
     # measurement this series relies on; this is the same class of risk).
-    # --remove-lv (MRB_DUMP_NO_LVAR, mruby-bin-strip's own flag for the same
-    # purpose) drops the separate local-variable name table the same way, for
-    # the same reason: it exists purely for introspection/backtraces
-    # (`Kernel#local_variables`, a debugger) this firmware never calls --
-    # confirmed by grepping every rpg2k/rgss/lcf .rb file for eval/
-    # instance_eval/class_eval/binding, all absent. It buys nothing on a
-    # device with no interactive Ruby debugger attached to it, so strip both
-    # from mrbc the same way -O0 is stripped from cc/cxx below.
     conf.mrbc.compile_options =
-      (conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' } << '--remove-lv').join(' ')
+      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
+
+    # --remove-lv (MRB_DUMP_NO_LVAR) drops a *second* debug-only table, the
+    # separate local-variable name array -- it exists purely for
+    # introspection/backtraces (`Kernel#local_variables`, a debugger) this
+    # firmware never calls, confirmed by grepping every rpg2k/rgss/lcf .rb
+    # file for eval/instance_eval/class_eval/binding, all absent. Passing it
+    # to mrbc alone does *not* work here, though: this build's own
+    # Command::Mrbc#run always adds `-S` (mrbgem.rake's `cdump: true`,
+    # mruby's default), which routes through mruby's own src/cdump.c rather
+    # than the *binary* .mrb path (src/dump.c) -- and cdump.c's own two
+    # `if (irep->lv)` checks never look at MRB_DUMP_NO_LVAR at all, unlike
+    # dump.c's `lv_defined = (flags & MRB_DUMP_NO_LVAR) ? FALSE : ...`. A
+    # real gap in mruby's own C-struct dumper (confirmed: a real relink with
+    # 3rd/mruby/src/cdump.c locally patched to also check the flag recovers
+    # a further 43,416 bytes on top of the `-g` strip above), not something
+    # fixable from this file alone -- 3rd/mruby is the real upstream
+    # mruby/mruby, not a fork this project can push a patch to. Get the same
+    # effect from this side of the fence instead: wrap conf.mrbc's own `run`
+    # to strip the `<name>_lv_<N>` array mruby's compiler always populates
+    # (mrbgems/mruby-compiler/core/codegen.c does this unconditionally for
+    # every scope with named locals -- there is no compile-time flag to stop
+    # it at the source) out of the C source cdump.c already wrote, the same
+    # way ADR 111 patched a build-time generator rather than the C++ it fed
+    # instead of leaving the runtime construction broken.
+    conf.mrbc.define_singleton_method(:run) do |out, *args, **kwargs|
+      method(:run).super_method.call(out, *args, **kwargs)
+      path = out.path
+      src = File.read(path)
+      src.gsub!(/^mrb_DEFINE_SYMS_VAR\(\w+_lv_\d+, .*\);\n/, '')
+      src.gsub!(/^(  )(\w+_lv_\d+),\n/, "\\1NULL,\t\t\t\t\t/* lv */\n")
+      File.write(path, src)
+    end
 
     # Cortex-M4F with hardware single-precision FPU. Must be identical on the
     # compile and link lines so the mruby objects match the firmware's ABI.
