@@ -66,6 +66,9 @@ REWRITES = {
       { first: '    def item_cured_states(it)',
         last: '    end', # def item_cured_states's own `end`
         expect_lines: 3 },
+      { first: '    # `MAX_EFFECTIVE_HP_2K3` on an RPG2003 database, `MAX_EFFECTIVE_HP_2K`',
+        last: '    end', # def max_hp_cap's own `end`
+        expect_lines: 5 },
     ],
     substitutions: [
       { old: '      @direction = EventGraphic.numpad_direction(m.direction)',
@@ -79,6 +82,9 @@ REWRITES = {
         new: '          item_state_ids(it).any? { |s| actor.state?(s) }' },
       { old: '      cured = item_cured_states(it)',
         new: '      cured = item_state_ids(it)' },
+      { old: '      @max_hp = Game.clamp(@base_raw[0] + equip_bonus(0), 1, max_hp_cap)',
+        new: '      @max_hp = Game.clamp(@base_raw[0] + equip_bonus(0), 1, ' \
+             '(rpg2003? ? MAX_EFFECTIVE_HP_2K3 : MAX_EFFECTIVE_HP_2K))' },
     ],
   },
   'mruby-rpg2k/mrblib/scene/map.rb' => {
@@ -89,6 +95,9 @@ REWRITES = {
       { first: '      def valid_move_freq(f)',
         last: '      end', # def valid_move_freq's own `end`
         expect_lines: 3 },
+      { first: '      def apply_tile_substitution(interp)',
+        last: '      end', # def apply_tile_substitution's own `end`
+        expect_lines: 4 },
     ],
     substitutions: [
       { old: '        sunk = Game::CharSet.bush_opacity(opacity)',
@@ -117,6 +126,8 @@ REWRITES = {
              'ch.move_frequency' },
       { old: '        @player_char.move_frequency = valid_move_freq(freq) ||',
         new: '        @player_char.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) ||' },
+      { old: '        apply_tile_substitution(interp)',
+        new: '        (interp.take_tiles_changed; nil)' },
     ],
   },
   'mruby-rpg2k/mrblib/scene/base.rb' => {
@@ -127,6 +138,54 @@ REWRITES = {
       { old: "        sx, sy = Game::MessagePalette.cell_origin(idx)\n",
         new: "        sx = (idx % Game::MessagePalette::COLS) * cell\n" \
              "        sy = (idx / Game::MessagePalette::COLS) * cell + Game::MessagePalette::Y_OFFSET\n" },
+    ],
+  },
+  'mruby-rpg2k/mrblib/interpreter.rb' => {
+    deletions: [
+      { first: '    def trunc_mod(n, d)',
+        last: '    end', # def trunc_mod's own `end`
+        expect_lines: 3 },
+      { first: '    # lets an event open the menu it has otherwise locked out.',
+        last: '    end', # def do_open_main_menu's own `end`
+        expect_lines: 5 },
+      { first: '    # the Decision key (the Maniac Patch\'s own extra wait_type/mode encoding is a',
+        last: '    end', # def do_wait's own `end`
+        expect_lines: 11 },
+    ],
+    substitutions: [
+      { old: '      when 5 then val == 0 ? 0 : trunc_mod(cur, val)',
+        new: '      when 5 then val == 0 ? 0 : (cur - val * trunc_div(cur, val))' },
+      { old: '      when Cmd::OPEN_MAIN_MENU   then do_open_main_menu cmd',
+        new: '      when Cmd::OPEN_MAIN_MENU   then (@wait_kind = :menu; @waiting = true)' },
+      { old: '      when Cmd::WAIT             then do_wait cmd',
+        new: '      when Cmd::WAIT             then ' \
+             '(if @state.party.rpg2003? && cmd.parameters.size > 1 && cmd.param(1) != 0; ' \
+             '@wait_kind = :wait_key_enter; else; @wait_frames = cmd.param(0); ' \
+             '@wait_kind = :wait; end; @waiting = true)' },
+    ],
+  },
+  'mruby-rpg2k/mrblib/scene/title.rb' => {
+    deletions: [
+      { first: '      def continue_available?',
+        last: '      end', # def continue_available?'s own `end`
+        expect_lines: 5 },
+    ],
+    substitutions: [
+      { old: '        @continue_available = continue_available?',
+        new: '        @continue_available = (parent.any_save_exists? rescue false)' },
+    ],
+  },
+  'mruby-rpg2k/mrblib/scene/status_menu.rb' => {
+    deletions: [
+      { first: '      def draw_battle_row(c, a)',
+        last: '      end', # def draw_battle_row's own `end`
+        expect_lines: 5 },
+    ],
+    substitutions: [
+      { old: '        draw_battle_row c, a if rpg2003_party?',
+        new: '        (back = a.respond_to?(:battle_row) && a.battle_row == Game::Actor::ROW_BACK; ' \
+             'draw_system_text c, 0, ROW_LABEL_LINE * LINE_H, c.width, LINE_H, ' \
+             'back ? ROW_BACK_LABEL : ROW_FRONT_LABEL, @skin, 0, 2) if rpg2003_party?' },
     ],
   },
   'mruby-rpg2k/mrblib/scene/item_menu.rb' => {

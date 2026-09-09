@@ -132,11 +132,76 @@ assumed from its byte size:
   source substitution at all, so these were never tested, just excluded
   the moment the receiver check failed.
 
+### A validated rule for single-caller methods -- and a general-automation attempt that failed
+
+Going back to single-caller (not 2-3-caller) methods with fresh eyes:
+receiver-safety was already established for the "bare call within the same
+class" pool (502 of the original 669 single-caller candidates), but only 6
+of those had actually been tried. Hand-testing 7 more, spanning self_bytes
+52 to 258 and including `if`/`else` branches, a `rescue` modifier, and a
+multi-statement body wrapped in parens at a bare call site, all won (55 to
+134 bytes each) -- giving a real rule: **a single-caller method called
+bare on implicit `self` within the same class is safe and reliably
+net-positive to inline if its body has no loop/iterator keyword and no
+`return`/`yield`**, regardless of `if`/`else` or `rescue`. Filtering the
+full 502-candidate pool to exactly that shape leaves 166 methods (35,669
+combined `self_bytes`) -- a large remaining pool by this rule alone.
+
+Attempting to apply that rule *automatically* across the full 166 --
+generating each deletion/substitution mechanically (matching def
+parameters to call-site arguments, splicing the body in) -- was tried and
+abandoned after four rounds of real, escalating bugs, each caught by
+re-verifying rather than trusting the previous fix:
+
+1. The original single-caller scan (used across this whole ADR) turned
+   out to record the wrong line number for a call site -- copy-paste had
+   substituted the *def's* line for the *call's* line everywhere. The
+   call *text* was right; the stored line number was always just the
+   def's own line. Every one of the 6 already-shipped methods was
+   unaffected only because each was found and verified by hand (a real
+   `grep`, read in context) rather than by trusting that field -- but the
+   automated batch trusted it blindly and generated 165 substitutions
+   against the wrong location.
+2. Fixed by re-deriving the true line from the call text -- which then
+   exposed a second bug: naive substring search for the method name
+   matched a `:battle_row` *symbol literal* (inside a `respond_to?`
+   check) instead of the real call, corrupting the line.
+3. Fixed with a token-boundary regex (rejecting a match preceded by `:`
+   or a word character) -- which then surfaced call sites spanning
+   multiple physical lines (a trailing comma continuing the argument list
+   onto the next line) that a single-line substitution silently mangled,
+   and bodies containing a `rescue`/`ensure` clause that can't be
+   flattened into a semicolon-joined statement list without becoming a
+   syntax error.
+4. Excluding both, plus comment-only body lines and bare (paren-less)
+   calls whose argument list has no unambiguous end, got every remaining
+   candidate to pass a full-file `ruby -c`/`mrbc -c` check -- at which
+   point continuing would have meant trusting a five-times-patched
+   heuristic pipeline against 100+ methods with no per-method human
+   review, in a real production codebase. That is a materially different
+   risk than the six-line, individually-authored table this file already
+   is. Stopped there rather than ship it.
+
+Kept only the second batch of 7, each individually authored and verified
+exactly like the original 11 (real before/after compile, diffed against
+the actual generated output): `apply_tile_substitution`, `trunc_mod`,
+`do_open_main_menu`, `max_hp_cap`, `continue_available?` (the `rescue`
+case, spliced as a `rescue` modifier), `do_wait` (the `if`/`else` case),
+and `draw_battle_row` (a 2-statement body spliced at a call site with a
+trailing modifier `if`, sharing that source line with an untouched sibling
+call to `rpg2003_party?`).
+
+The other ~159 methods in the 166-candidate pool are real, by this rule,
+and not yet done -- each still needs the same individual treatment (locate
+the real call site by hand, splice, verify with a real compile) the 18
+methods in this file got. That is the honest state to hand off, not a
+partially-automated batch with unverified edge cases in it.
+
 ### What was verified
 
 - The rewrite script's own output diffed directly against the exact
-  hand-verified before/after text for all four touched files -- identical.
-- All four rewritten copies pass `mrbc -c` (syntax) cleanly.
+  hand-verified before/after text for all seven touched files -- identical.
+- All seven rewritten copies pass `mrbc -c` (syntax) cleanly.
 - `git status` on `mruby-rpg2k/mrblib/` after running the rewrite script:
   empty -- the real source is provably untouched.
 - Every candidate's net effect (win or loss) was measured with a real
@@ -144,12 +209,13 @@ assumed from its byte size:
   the duplication-cost numbers above are estimated.
 - **Real whole-gem measurement**: compiled `mruby-rpg2k`'s exact wio-shaped
   `rbfiles` list with `mrbc --remove-lv` (matching this board's real
-  flags), once with the four original files, once with the four rewritten
-  copies swapped in: **477,860 -> 477,133 bytes (727-byte reduction)** for
-  all eleven methods combined (the original six plus the five from the
-  2-3-caller expansion).
+  flags), once with the seven original files, once with the seven
+  rewritten copies swapped in: **477,860 -> 476,491 bytes (1,369-byte
+  reduction)** for all eighteen methods combined (six single-caller, five
+  from the 2-3-caller expansion, seven more single-caller from the
+  validated-rule pass).
 - Repo-wide grep (both `mrblib/**` and `scripts/**`) for every one of the
-  eleven method names, confirming no other real caller exists anywhere.
+  eighteen method names, confirming no other real caller exists anywhere.
 
 ### What was not verified
 
@@ -170,17 +236,23 @@ assumed from its byte size:
 
 ## Consequences
 
-- A real, if modest, ~727-byte flash win for wio, at zero behavioural
+- A real, if modest, ~1,369-byte flash win for wio, at zero behavioural
   change everywhere else and zero loss of test coverage anywhere --
   `scripts/rpg2k_render_check.rb` and friends keep exercising the full,
   original definitions on every target.
 - This is deliberately not a general inliner and not something to extend
-  mechanically: the 2-3-caller pool alone was 395 methods, and only 5
-  survived hand-testing -- most fail on a foreign receiver (checkable by
-  inspection) or a net-negative duplication cost (checkable only by really
-  compiling both versions). Any further candidate, at any caller count,
-  needs the same by-hand receiver check plus a real before/after compile,
-  not a blanket re-run of either scan.
+  mechanically. Two pools were explored: the 2-3-caller pool (395
+  methods, only 5 survived hand-testing -- most fail on a foreign
+  receiver or a net-negative duplication cost, each only checkable by
+  really compiling both versions) and the single-caller "no loop, no
+  return" pool (166 methods after filtering, 18 of which -- the original 6
+  plus these 7 -- are done). A real, validated rule exists for the
+  second pool (see above), but *applying* it safely still costs one
+  individually-authored table entry and one real compile per method --
+  an attempt to automate that generation step hit four rounds of genuine
+  bugs before being abandoned. ~159 real candidates remain in that pool
+  for whoever picks this up next, each needing that same individual
+  treatment, not a mechanical batch.
 - desktop/psp/wasm/android builds are entirely unaffected -- they never run
   `wio_strip_inline_helpers` (gated on `build.name == 'wio'`) and keep
   compiling the real, unmodified source files directly.
