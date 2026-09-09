@@ -2436,7 +2436,7 @@ struct Cache {
 
   Cache() {
     for (auto& s : slots)
-      s.codepoint = 0xffffffffu; // never a real Unicode codepoint
+      s.codepoint = 0xffffffffu;  // never a real Unicode codepoint
   }
 
   static uint32_t read_u32le(std::FILE* f) {
