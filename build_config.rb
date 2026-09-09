@@ -621,6 +621,25 @@ if wio
       # (platformio.ini's `-DWIO_TERMINAL`); this rake-driven libmruby.a needs
       # its own copy since it never sees that build's flags.
       t.defines << 'WIO_TERMINAL'
+      # docs/adr/0115 already found and stripped mrbc's own `-g` (Ruby-level
+      # line-number/local-variable debug tables baked into compiled
+      # bytecode); enable_debug's `-g3` on this same cc/cxx loop is its
+      # harmless C-level sibling (native DWARF, never mapped into RAM -- ELF
+      # debug sections sit outside every PT_LOAD segment, same reasoning
+      # docs/adr/0047-psp-memory-budget.md already gave). MRB_DEBUG is a
+      # third, different thing enable_debug also defines here: a C
+      # preprocessor flag (mruby.h) that turns mrb_assert(...) -- used
+      # ~100 times across mruby's own core (vm.c/gc.c/class.c/dump.c/...,
+      # not counting mrbgems) -- from a no-op into a real libc assert(),
+      # each one a real branch plus a string literal holding the assertion
+      # source text and file/line for every call site. Real, unavoidable
+      # flash cost for checks that would only ever fire on an actual mruby
+      # VM/GC bug (this project's own code, not a game's), which a device
+      # with no attached debugger and no serial console wired to it in this
+      # firmware could not usefully report anyway -- a failed assert here
+      # just calls abort() into nothing. Not part of ADR 115's own fix (a
+      # different mechanism, mrbc vs cc/cxx), so removed separately.
+      t.defines.delete('MRB_DEBUG')
     end
     conf.linker.flags += cpu_flags
 
