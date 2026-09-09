@@ -533,6 +533,225 @@
         showCrash('Unhandled promise rejection', r && r.stack ? r.stack : String(r));
       });
 
+      // --- Save persistence (IndexedDB via Emscripten IDBFS, see ADR 0064) --
+      // Every maker this build supports writes saves as plain files relative
+      // to the game directory (/game here) -- the same place the loader just
+      // unzipped the whole project into, and which is rebuilt from scratch on
+      // every page load. Mounting IDBFS directly on /game would persist every
+      // asset the project ships (art, music, database files) right along with
+      // the save, forever growing the origin's IndexedDB quota for no benefit
+      // -- the archive itself is already cached separately (Cache Storage,
+      // above). Instead only files shaped like a save are mirrored into a
+      // side directory backed by IDBFS, keyed by the loaded project so two
+      // games' saves never collide, and copied back onto /game right before
+      // that project starts.
+      var PERSIST_ROOT = '/persist';
+      // Root-level filenames only: RPG2000/2003 (this engine's own Marshal
+      // dump, plus the exported editor-format Save<N>.lsd sibling -- see
+      // #save_path/#lsd_path in mruby-rpg2k/mrblib/main.rb), RPG Maker XP
+      // (Save<N>.rxdata) and VX/VX Ace (Save<N>.rvdata[2]) -- all written by
+      // stock scripts via bare `File.open("SaveN.xxx", "wb")`, resolved
+      // against the game directory (src/main.cxx's chdir for RGSS games).
+      var SAVE_NAME_PATTERNS = [
+        /^save\d+\.mrb$/i,
+        /^save\d+\.lsd$/i,
+        /^save\d+\.rxdata$/i,
+        /^save\d+\.rvdata2?$/i,
+      ];
+      // RPG Maker MV/MZ funnels its whole localStorage-backed save store
+      // through this one fixed path (mruby-mvjs/src/mvjs.cxx).
+      var MV_SAVE_PATH = 'save/websave.json';
+
+      // Whether `rel` (a /game-relative path) is save data worth persisting.
+      // Root-level names are matched by extension/shape only -- a project's
+      // own asset files never sit at the game root with these shapes (e.g.
+      // an XP project's database .rxdata files live under Data/, filtered
+      // out here by the "no extra slash" check).
+      function isSavePath(rel) {
+        if (rel === MV_SAVE_PATH) return true;
+        if (rel.indexOf('/') >= 0) return false;
+        return SAVE_NAME_PATTERNS.some(function (re) { return re.test(rel); });
+      }
+
+      // A filesystem-safe key for the currently loaded project, so unrelated
+      // games don't share a save slot. Derived from `currentProject` (the
+      // loaded zip's URL/repo text or local filename, already tracked above
+      // for the crash report) -- stable across reloads for the common
+      // bookmarked-?url= flow, though two different projects sharing a bare
+      // filename will collide; a real per-project id is future work.
+      function projectSlug() {
+        var raw = (currentProject || 'game').toLowerCase();
+        return raw.replace(/[^a-z0-9._-]+/g, '_').slice(0, 80) || 'game';
+      }
+      function persistDir() { return PERSIST_ROOT + '/' + projectSlug(); }
+
+      // Resolved once the runtime's FS exists and IDBFS has populated /persist
+      // from IndexedDB; restoreSaves/mirrorSave both wait on it so neither
+      // races the initial read. Falls back to "no persistence" rather than
+      // rejecting -- a browser without IndexedDB (private-mode Safari, some
+      // embedded webviews) should still run the game, just without it. Built
+      // lazily by initPersistence() (called from onRuntimeInitialized below):
+      // Module.FS does not exist until the runtime is up, so this cannot run
+      // at script-evaluation time the way the rest of this section can.
+      var persistReady = null;
+
+      // Emscripten's IDBFS.syncfs has no re-entrancy guard of its own: two
+      // overlapping calls race the same IndexedDB reconcile, and a callback
+      // can simply never fire -- which reads as the page hanging. RPG Maker
+      // MV/MZ's save flow writes save/websave.json once per localStorage key
+      // it persists (several in a row for one "save"), so mirrorSave's own
+      // debounce below is not enough by itself: a slow flush can still be in
+      // flight when the next debounce elapses. Every syncfs call in
+      // this file -- the initial populate and every later flush -- goes
+      // through this one queue instead, so at most one is ever in flight;
+      // a call made while another is running is coalesced into a single
+      // follow-up run rather than started concurrently.
+      var syncInFlight = false;
+      var syncQueued = false;
+      function runSyncfs(FS, populate, callback) {
+        if (syncInFlight) {
+          syncQueued = true;
+          if (callback) callback(null);
+          return;
+        }
+        syncInFlight = true;
+        FS.syncfs(populate, function (err) {
+          syncInFlight = false;
+          if (callback) callback(err);
+          if (syncQueued) {
+            syncQueued = false;
+            runSyncfs(FS, false, null);
+          }
+        });
+      }
+
+      function initPersistence() {
+        persistReady = new Promise(function (resolve) {
+          try {
+            var FS = Module.FS;
+            FS.mkdir(PERSIST_ROOT);
+            FS.mount(FS.filesystems.IDBFS, {}, PERSIST_ROOT);
+            runSyncfs(FS, true, function (err) {
+              if (err) log('(save sync: could not read saved data from IndexedDB: ' + err.message + ')');
+              resolve(true);
+            });
+          } catch (e) {
+            log('(save persistence unavailable in this browser: ' + (e && e.message ? e.message : e) + ')');
+            resolve(false);
+          }
+        });
+        // Any write under /game shaped like a save gets mirrored into IDBFS
+        // (see mirrorSave below); everything else -- the project's own
+        // assets, written once by the loader -- is left alone.
+        Module.FS.trackingDelegate = Module.FS.trackingDelegate || {};
+        Module.FS.trackingDelegate.onCloseFile = function (path) {
+          if (restoring || mirroring || path.indexOf('/game/') !== 0) return;
+          var rel = path.slice('/game/'.length);
+          if (isSavePath(rel)) mirrorSave(rel);
+        };
+      }
+
+      // Guards mirrorSave against re-persisting the very files restoreSaves
+      // just wrote into /game -- FS.writeFile closes the file same as any
+      // other write, so it fires the trackingDelegate hook below too.
+      var restoring = false;
+
+      // Guards against mirrorSave re-triggering itself: FS.readFile('/game/'
+      // + rel) below closes that same file once it's done reading, which
+      // fires onCloseFile for that very save-shaped path again. Since
+      // persistReady is already resolved by the time saves happen, the
+      // resulting mirrorSave() call chains a new already-resolved-promise
+      // microtask immediately rather than waiting on anything -- with no
+      // guard, that recursion never bottoms out and the microtask queue
+      // never drains, freezing the tab solid on every single save. (This is
+      // a different bug from the syncfs re-entrancy runSyncfs guards
+      // against; that one only covers overlapping IDBFS.syncfs calls, not
+      // this self-triggering read.)
+      var mirroring = false;
+
+      // Copy back whatever was persisted for this project, right before it
+      // starts. Only two shapes exist (see isSavePath): root-level save files,
+      // and MV/MZ's single nested save/websave.json.
+      async function restoreSaves() {
+        var ok = await persistReady;
+        if (!ok) return;
+        var FS = Module.FS;
+        var dir = persistDir();
+        var entries;
+        try { entries = FS.readdir(dir); } catch (e) { return; } // nothing saved yet
+        restoring = true;
+        try {
+          var restored = 0;
+          entries.forEach(function (name) {
+            if (name === '.' || name === '..') return;
+            var src = dir + '/' + name;
+            if (FS.isDir(FS.stat(src).mode)) {
+              // Only 'save/' (MV/MZ) ever nests; copy its one file straight
+              // through rather than a general recursive walk.
+              var sub;
+              try { sub = FS.readdir(src); } catch (e) { sub = []; }
+              sub.forEach(function (leaf) {
+                if (leaf === '.' || leaf === '..') return;
+                try {
+                  FS.mkdirTree('/game/' + name);
+                  FS.writeFile('/game/' + name + '/' + leaf, FS.readFile(src + '/' + leaf));
+                  restored++;
+                } catch (e) { /* leave that one file absent */ }
+              });
+            } else {
+              try {
+                FS.writeFile('/game/' + name, FS.readFile(src));
+                restored++;
+              } catch (e) { /* leave that one file absent */ }
+            }
+          });
+          if (restored) log('Restored ' + restored + ' saved file(s) from browser storage.');
+        } finally {
+          restoring = false;
+        }
+      }
+
+      // Mirror one just-written /game save file into the IDBFS-backed persist
+      // dir and (debounced, so a burst of saves -- e.g. the Marshal dump plus
+      // its .lsd export -- costs one flush) push it to IndexedDB.
+      var syncTimer = null;
+      function mirrorSave(rel) {
+        persistReady.then(function (ok) {
+          if (!ok) return;
+          var FS = Module.FS;
+          var dst = persistDir() + '/' + rel;
+          var dstDir = dst.slice(0, dst.lastIndexOf('/'));
+          mirroring = true;
+          try {
+            FS.mkdirTree(dstDir);
+            FS.writeFile(dst, FS.readFile('/game/' + rel));
+          } catch (e) {
+            log('(could not stage "' + rel + '" for browser storage: ' + (e && e.message ? e.message : e) + ')');
+            return;
+          } finally {
+            mirroring = false;
+          }
+          if (syncTimer) clearTimeout(syncTimer);
+          syncTimer = setTimeout(function () {
+            syncTimer = null;
+            runSyncfs(FS, false, function (err) {
+              if (err) log('(save sync failed: ' + err.message + ')');
+            });
+          }, 500);
+        });
+      }
+
+      // Best-effort: flush a pending debounced sync immediately if the tab is
+      // going away. syncfs is inherently asynchronous (IndexedDB), so this
+      // cannot guarantee completion before the page actually unloads -- it
+      // only gives the in-flight write a head start.
+      window.addEventListener('pagehide', function () {
+        if (!syncTimer) return;
+        clearTimeout(syncTimer);
+        syncTimer = null;
+        try { runSyncfs(Module.FS, false, function () {}); } catch (e) {}
+      });
+
       // --- Emscripten module wiring -----------------------------------------
       var runtimeReady = false;
       var Module = {
@@ -553,6 +772,7 @@
         onAbort: function (what) { showCrash('Runtime abort', String(what)); },
         onRuntimeInitialized: function () {
           runtimeReady = true;
+          initPersistence();
           loadBtn.disabled = false;
           setStatus('Ready — choose a project to load.');
           // Offer the one-click preset when a sample project is baked into the
@@ -671,7 +891,7 @@
         return null;
       }
 
-      function mountAndStart(files) {
+      async function mountAndStart(files) {
         var prefix = findRootPrefix(files);
         if (prefix === null) {
           throw new Error('No RPG_RT.ldb, Game.ini, or js/rpg_core.js in the archive — is this an RPG Maker 2000/2003, XP, or MV project?');
@@ -693,6 +913,10 @@
         }
         log('Mounted ' + written + ' file(s) under /game (root: "' + (prefix || './') + '").');
 
+        // Bring back this project's own saved data (if any) before it starts,
+        // so Continue/Load sees whatever the last session left behind.
+        await restoreSaves();
+
         var rc = Module.ccall('rpg_start_game', 'number', [], []);
         if (rc !== 0) {
           throw new Error('The runtime could not start the project (see the runtime log for details).');
@@ -704,7 +928,7 @@
 
       // Start the sample project baked into the FS at /game_sample: copy it to
       // /game (where rpg_start_game looks) and run it. No download needed.
-      function startBundledSample() {
+      async function startBundledSample() {
         var FS = Module.FS;
         function copyTree(src, dst) {
           FS.mkdirTree(dst);
@@ -721,6 +945,7 @@
           setStatus('Starting the bundled sample…');
           currentProject = 'the bundled sample';
           copyTree('/game_sample', '/game');
+          await restoreSaves();
           var rc = Module.ccall('rpg_start_game', 'number', [], []);
           if (rc !== 0) throw new Error('runtime returned ' + rc);
           loaderEl.hidden = true;
@@ -829,7 +1054,7 @@
           setStatus('Unpacking (' + kib(buf) + ' KiB)…', 'busy');
           var files = await unzip(buf);
           setStatus('Starting…', 'busy');
-          mountAndStart(files);
+          await mountAndStart(files);
         } catch (e) {
           log('Error: ' + (e && e.message ? e.message : e));
           setStatus(e && e.message ? e.message : String(e), 'error');

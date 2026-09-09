@@ -1143,6 +1143,11 @@
   shareable — opening a link with a `?url=` auto-loads that project. (Values are
   also kept in `localStorage`, so a plain reload restores whatever was last
   typed even without a query string.)
+- **Save data survives a reload.** Every maker's save file is mirrored into the
+  browser's IndexedDB (via Emscripten's `IDBFS`), keyed by the loaded project,
+  and copied back before that project next starts — Continue/Load sees the
+  previous session's progress even though `/game` itself is rebuilt from
+  scratch on every page load. See [docs/adr/0064](docs/adr/0064-wasm-save-persistence-idbfs.md).
 - A project can still be **baked into the page** at build time with
   `-DWASM_GAME_DIR=/abs/path/to/game`; that page auto-starts the game with no
   interaction (and the loader is skipped).
