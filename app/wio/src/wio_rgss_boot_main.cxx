@@ -142,6 +142,20 @@ void setup(void) {
     return;
   }
 
+  // Every class/method this firmware will ever define is now registered --
+  // rpg_maker_init_shared_gems/_rpg2k_gem is the only place anything calls
+  // mrb_load_irep, and nothing past this point loads more Ruby. That load
+  // path itself allocates real GC-tracked scaffolding along the way (RProc/
+  // Array wrapper objects mrb_load_irep builds while walking each IREP
+  // tree, not retained by the classes/methods it ends up defining), which
+  // would otherwise just sit as garbage until the VM's own incremental GC
+  // happens to cross its threshold sometime during the main loop. A single
+  // full sweep here, before `loop()` (Arduino's own main routine) starts,
+  // reclaims it up front instead -- cheap (a one-time boot cost, not a
+  // per-frame one) and, since ADR 112, returned to the same newlib heap
+  // LVGL's own allocations now draw from too.
+  mrb_full_gc(M);
+
   g_result = kResultPass;
   build_ui("mruby+RGSS+LVGL: OK");
 
