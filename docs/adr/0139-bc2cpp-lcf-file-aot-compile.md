@@ -197,3 +197,111 @@ dependency gem's mrblib has loaded -- now has one real, verified,
 end-to-end example to extend from. The `RPGMAKER_BC2CPP=1` gate and
 `ONLY_OWNERS` mechanism both generalize directly to a second target class
 without new design work.
+
+## Follow-up: Game::Picture (mruby-rpg2k)
+
+Extending to a second real class, in `mruby-rpg2k` this time (not
+`mruby-lcf`), confirmed the pipeline generalizes -- and surfaced three more
+real bugs, none of them hypothetical, all caught by the same discipline
+(run it for real, diff it for real) this ADR's own LCF::File work
+established.
+
+`Game::Picture` (`mruby-rpg2k/mrblib/game.rb`) was picked by re-running
+`bc2cpp` against the whole closed world and ranking classes by clean-method
+ratio: 19/26 methods compiled clean even before any new opcode work, the
+best real ratio of any class over ~40 methods. Getting the rest required
+seven more opcodes, all mechanical mirrors of ones `bc2cpp` already had:
+
+- `SUB`/`DIV` (`ADD`'s own fixnum-fastpath-else-`mrb_funcall` shape;
+  `DIV` skips the fastpath entirely -- real Ruby integer division floors
+  toward negative infinity, not C's truncating `/`, and duplicating
+  `mrb_div_int`'s own rounding wasn't worth it for this prototype's scope,
+  so it always goes through the real method).
+- `SUBI` (`ADDI`'s own shape).
+- `EQ`/`LT`/`LE`/`GT`/`GE` (`OP_CMP`'s own real shape, `src/vm.c`: a
+  fixnum-fixnum fast path, else the real method by name).
+- `LOADFALSE`/`LOADTRUE` (`LOADNIL`'s own shape) and `RETNIL` (a bare
+  `return mrb_nil_value();`, the peephole mrbc itself emits for a
+  tail-position bare `nil`).
+- `LOADSYM` (`mrb_symbol_value(mrb_intern_cstr(M, "..."))`).
+- `HASH` -- `HASH Rd N` builds a Hash from N key/value pairs held in `2N`
+  consecutive registers starting at `Rd` (`(Rd,Rd+1)=(k0,v0)`, ...), the
+  result overwriting `Rd` itself; every pair register still holds its
+  original value when the `mrb_hash_new_capa`/`mrb_hash_set` sequence
+  reads them (nothing writes `Rd` until the very end), so this is a
+  straightforward unrolled loop. Needed `#include <mruby/hash.h>` in the
+  generated file's own header block, the one real build-level omission
+  (`mrb_hash_new_capa`/`mrb_hash_set` aren't declared by any header
+  already included).
+
+This got 25 of 26 real methods clean (only `#initialize`, which takes an
+optional `opts = {}` argument, stays interpreted).
+
+**A real memory-safety bug in the ivar-embedding pass itself**, never
+exposed by `LCF::File` (which has zero embeddable ivars): `Game::Picture`
+has 11 real, provably-Fixnum embeddable ivars (`@x`, `@y`, `@zoom`, ...),
+but its `#initialize` is exactly the one method that can't compile
+(optional args) -- so the `mrb_data_init` call that would allocate the
+embedded struct never runs, and every *other* compiled method's own
+GETIV/SETIV would read/write `DATA_PTR(self)` on an object that's still a
+plain `MRB_TT_OBJECT`. Garbage or a crash, not a missed optimization, and
+not something any `#error` check could ever catch (the generated code
+compiles and links fine). Fixed with a new `CodeGen#drop_unsafe_embeddings`
+guard, run once at construction: an owner's ivars are only treated as
+embeddable if that owner has its *own* `#initialize` and it fits the pure-
+mandatory-arity constraint everywhere else in this compiler already
+requires. Verified with a matching toy case (`Calc`, 0-arg `#initialize`,
+safely embeds; `Calc2`, optional-arg `#initialize`, correctly falls back to
+the ordinary dynamic `iv_tbl` for a provably-Fixnum ivar the raw analysis
+still reports as embeddable) -- both diffed byte-identical against CRuby.
+
+**A real method-visibility bug, caught only by the runtime diff, not by
+anything `bc2cpp` itself printed**: `Game::Picture#step` and `#finish_move`
+are both `private` in the real interpreted source (a bare `private` call
+before their own `def`s, in effect through the end of the class body) --
+but the first hand-written `register.cxx` registered both with plain
+`mrb_define_method`, silently making them public. `bc2cpp` itself doesn't
+care (a private method is only ever legitimately reached via a self-
+implicit call, which compiles identically either way), so nothing in
+compilation ever flagged this -- it only surfaced as an observable
+behavior difference: `picture.step(...)` raised `NoMethodError` against
+the pure interpreter but silently succeeded against the first compiled
+build. Fixed two ways: `build_registry` now tracks real Ruby visibility
+(the bare `private`/`protected`/`public` mode-switch form, and the
+`private :sym1, :sym2` retroactive form, both plain self-implicit sends to
+`Kernel#private` etc. -- `SSEND0`/`SSEND` to that name), so `MethodDef`
+carries a real `visibility`, and the `== compiled entry points ==`
+diagnostic now flags a private/protected entry with the exact fix needed
+(`mrb_define_private_method`, not `mrb_define_method`); and
+`mruby-rpg2k-compiled/src/register.cxx` itself now uses
+`mrb_define_private_method` for both. Re-verified byte-identical against
+the interpreter afterward, this time including the now-identical
+`NoMethodError` both builds raise on an illegitimate external `.step(...)`
+call. Re-checked `LCF::File`'s own 16 registered methods against the same
+new diagnostic -- all public, no latent bug there.
+
+**Verified the same way**: the real `build_config.rb` + `rake` pipeline
+built successfully with both `mruby-lcf-compiled` and `mruby-rpg2k-compiled`
+enabled; a narrower host build (`mruby-lcf`+`mruby-rgss`+`mruby-rpg2k`+both
+`-compiled` gems) let a harness construct a real `Game::Picture`, call
+`move_to`/`update` (which drive real internal `step`/`finish_move` calls),
+`to_h`, `erase!`, `shown?`, diffing full output against a build with
+`mruby-rpg2k-compiled` left out -- byte-identical, including the
+`NoMethodError` from the private-method fix above. LVGL is a real link-time
+dependency of `mruby-rgss` even for a plain host/native build (undefined
+`lv_*` symbols otherwise) -- satisfied with a small native stub library
+(real signatures from `3rd/lvgl`'s own headers, no-op bodies), since this
+harness never touches rendering.
+
+**Flash cost, again measured on the real target**: a real `wio` cross-build
+of `libmruby.a` with both `-compiled` gems enabled, compared against the
+LCF-only baseline via `arm-none-eabi-size`: `mruby-rpg2k-compiled`'s own
+`register.o` is 5,120 bytes of `.text`, its gem-init wrapper another 24,
+the shared dispatch table's growth 8 more -- **5,152 bytes added** for
+`Game::Picture` alone, **7,223 bytes total** for both compiled gems
+together, against the 507,904-byte budget. `mruby-rpg2k`'s own
+`gem_init.o` (its interpreted bytecode) is byte-identical `.text`/`.data`/
+`.bss` between the two builds (a raw `ls -la` byte count differed by 12
+bytes, entirely explained by the two builds' own directory path strings
+embedded in debug info, not by any code difference) -- confirming again
+that nothing was removed, only added.

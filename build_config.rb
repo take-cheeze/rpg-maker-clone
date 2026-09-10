@@ -222,6 +222,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # namespace.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
+  # docs/adr/0139's own follow-up: same opt-in mechanism, this time for 25
+  # of Game::Picture's 26 real methods (everything but #initialize).
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if ENV['RPGMAKER_BC2CPP']
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
