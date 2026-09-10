@@ -305,3 +305,53 @@ together, against the 507,904-byte budget. `mruby-rpg2k`'s own
 bytes, entirely explained by the two builds' own directory path strings
 embedded in debug info, not by any code difference) -- confirming again
 that nothing was removed, only added.
+
+## Follow-up: whole-program call-site argument-type inference
+
+A cheap, deliberately narrow extension: for a method name with exactly
+one real definition (MONO -- the same registry devirtualization and
+`IvarLayout` both already trust), *every* `SEND`/`SSEND` anywhere in the
+program sending that name can only be calling this one definition
+(dispatch is by name, not signature, so pooling a POLY name's call sites
+this way would be unsound -- each one could be targeting a different real
+method). `ArgTypes.analyze` walks every such call site's own argument
+registers with `IvarLayout.trace_type` itself (the exact same backward
+scan `SETIV` sites already use, just re-pointed at a `SEND`'s argument
+registers), and feeds the result back into `IvarLayout.trace_type`'s own
+"opaque incoming argument" fallback -- a `SETIV` whose only source is a
+bare method parameter (previously always `UNKNOWN`, e.g. the toy
+example's own `Animal#@name`) can now embed when every real caller
+happens to pass the same primitive type there.
+
+Run against the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world:
+71 real argument positions across the whole program inferred `fixnum`,
+but **zero new ivars unlocked** in that same real code. The reason is
+structural, not a bug: `X.new(args)` compiles to `SEND :new` -- `Class#new`
+is a C-defined core method, invisible to this bytecode-only registry --
+never a real `SEND :initialize`, confirmed against the actual
+disassembly. So `#initialize`'s own arguments are permanently invisible to
+this mechanism, and `#initialize` is exactly where nearly every real
+ivar-from-argument pattern in this codebase lives (`Game::Picture`'s own
+`@x = opts[:x] || 0`-shaped `#initialize` included -- a Hash-default
+pattern this compiler doesn't parse yet regardless).
+
+Verified the mechanism itself is sound on the one real shape it *can*
+reach: a bare argument assigned to an ivar in a method other than
+`#initialize` (a real setter, `#foo=`, reached by an ordinary `obj.foo =
+value` `SEND`, not by `.new`). A new toy case (`Sized#n=`, called once
+with a literal `42` from `SizedUser#make`) confirmed `@n` becomes
+embeddable only because of this pass, generates the same guarded
+`DATA_PTR(self)` struct write every other embedded ivar gets, and diffs
+byte-identical against CRuby end to end. Re-verified both already-shipped
+targets (`LCF::File`, `Game::Picture`) emit byte-identical output with this
+change applied -- this pass only ever *adds* embedding opportunities that
+weren't there before, never changes an existing one, so a real-code
+no-op result is exactly what a correct implementation should produce
+given this codebase's own actual `#initialize`-heavy style.
+
+Not pursued further in this pass: usage-based type inference (typing a
+register from the *set* of methods called on it, intersected against the
+whole-program class registry) would reach further, but needs real
+dataflow across the now-arbitrary goto-threaded control flow rather than
+this pass's straight-line backward scan -- a materially bigger piece of
+work, left as a real, understood next step rather than attempted here.
