@@ -155,27 +155,38 @@ compiled method (`header`/`schema`/`terminate_root?`/`rpg2003?`/`maker`/
 build with `mruby-lcf-compiled` left out entirely (pure interpreter) --
 **byte-identical** in both builds.
 
-**Flash cost, not yet a saving**: this swap installs compiled overrides
-*alongside* the existing interpreted bytecode (`mruby-lcf`'s own mrblib is
-untouched) -- the bytecode for all 16 methods is still compiled in and
-still reachable (via `#send`, or simply because nothing was told to strop
-compiling it). Measured on the host build, `register.o`'s own text section
-is 3,498 bytes (x86-64; not directly comparable to Cortex-M4 code size,
-which a real wio measurement would need). This session's own scope was
-proving the pipeline correct and wired in, not a flash reduction --
-turning "compiled overrides installed" into "smaller flash image" needs a
-follow-up that actually drops the now-redundant bytecode for the classes
-this covers (nontrivial: `LCF::File` has other methods, like
-`#initialize`, that still need the interpreter, so the whole file can't
-simply be dropped from `spec.rbfiles`).
+**Flash cost, not yet a saving -- now measured on the real target**: this
+swap installs compiled overrides *alongside* the existing interpreted
+bytecode (`mruby-lcf`'s own mrblib is untouched) -- the bytecode for all
+16 methods is still compiled in and still reachable (via `#send`, or
+simply because nothing was told to stop compiling it). A real `wio`
+(Cortex-M4, `arm-none-eabi-gcc`) cross-build of `libmruby.a`, built twice
+(`MRUBY_TARGET=wio`, with and without `RPGMAKER_BC2CPP=1`) and compared
+with `arm-none-eabi-size`, confirms this precisely: `register.o`'s own
+`.text` is 2,039 bytes, `mruby-lcf-compiled`'s own tiny gem-init wrapper
+adds another 24, and the top-level `mrbgems/gem_init.c` dispatch table
+grows by 8 bytes for the extra init/final function-pointer pair -- **2,071
+bytes added** to the `wio_rgss_boot` image, against its 507,904-byte flash
+budget. `mruby-lcf`'s own `gem_init.o` (the interpreted bytecode this
+overrides) is byte-identical between the two builds (447,424 bytes both
+times) -- confirming directly that nothing was removed. This session's own
+scope was proving the pipeline correct and wired in, not a flash
+reduction -- turning "compiled overrides installed" into "smaller flash
+image" needs a follow-up that actually drops the now-redundant bytecode
+for the classes this covers (nontrivial: `LCF::File` has other methods,
+like `#initialize`, that still need the interpreter, so the whole file
+can't simply be dropped from `spec.rbfiles`).
 
-**Not done, explicitly out of scope for this pass**: a wio (ARM
-cross-compile) build with `RPGMAKER_BC2CPP=1`, and a matching Renode boot
-check -- this session's verification stayed on the host/native build,
-which is what a plain, no-`MRUBY_TARGET` build already is. Nothing in the
-design is wio-specific (`spec.build.mrbcfile` already resolves correctly
-under cross-compilation the same way core mruby's own mrblib compilation
-does), but it hasn't been run for real yet.
+**Not done, explicitly out of scope for this pass**: a Renode boot check
+with `RPGMAKER_BC2CPP=1` on a real `wio_rgss_boot` firmware image (this
+ADR's own flash measurement only needed `libmruby.a`, not a full linked
+firmware) -- this session's runtime *behavioral* verification (the diff
+against the pure interpreter) stayed on the host/native build. Nothing in
+the design is wio-specific (`spec.build.mrbcfile` already resolves
+correctly under cross-compilation the same way core mruby's own mrblib
+compilation does, confirmed by this same measurement's own successful wio
+cross-build), but a real on-device (or Renode) boot exercising the
+compiled `LCF::File` path specifically hasn't been run yet.
 
 **What this proves for future targets**: the whole pipeline -- codegen,
 narrowing emission via `ONLY_OWNERS` while keeping registry soundness,
