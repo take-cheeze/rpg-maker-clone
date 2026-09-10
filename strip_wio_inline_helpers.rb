@@ -225,9 +225,6 @@ REWRITES = {
       { first: '      def setup_pictures',
         last: '      end', # def setup_pictures's own `end`
         expect_lines: 12 },
-      { first: '      def rebuild_chipset',
-        last: '      end', # def rebuild_chipset's own `end`
-        expect_lines: 6 },
       { first: '      def record_foreground_event_exec',
         last: '      end', # def record_foreground_event_exec's own `end`
         expect_lines: 5 },
@@ -309,9 +306,6 @@ REWRITES = {
       { first: '      def try_open_menu',
         last: '      end', # def try_open_menu's own `end`
         expect_lines: 6 },
-      { first: '      def try_open_debug_menu',
-        last: '      end', # def try_open_debug_menu's own `end`
-        expect_lines: 11 },
       { first: '      def close_name_input',
         last: '      end', # def close_name_input's own `end`
         expect_lines: 12 },
@@ -416,10 +410,6 @@ REWRITES = {
 ',
         new: '        (@picture_sprite = Sprite.new; @picture_sprite.z = 250; @picture_tone_cache = {})
 ' }, # setup_pictures
-      { old: '        rebuild_chipset
-',
-        new: '        (@chipset = build_chipset; old = @chipset_bmp; @chipset_bmp = load_chipset_graphic; old.dispose if old && !old.equal?(@chipset_bmp))
-' }, # rebuild_chipset
       { old: '        record_foreground_event_exec
 ',
         new: '        (frames = @interpreter.call_stack_snapshot; @state.foreground_event_exec =
@@ -563,10 +553,6 @@ REWRITES = {
 ',
         new: '            (unless (event_busy?) || !(@state.menu_access) || !(Input.trigger?(Input::B)); @parent.push Scene::Menu.new(@parent, @state); end)
 ' }, # try_open_menu
-      { old: '            try_open_debug_menu
-',
-        new: '            (unless (event_busy? && @battle.nil?) || !(@parent.test_play) || !(Input.trigger?(Input::F9)) || !(defined?(Scene::DebugMenu)); @parent.push Scene::DebugMenu.new(@parent, @state); end)
-' }, # try_open_debug_menu
       { old: '        close_name_input
 ',
         new: '        (unless !(@name_ui); @name_ui[:background].dispose if @name_ui[:background]; if @name_ui[:kana]
