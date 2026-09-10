@@ -265,7 +265,7 @@ class RPG2k
         path = parent.lsd_path(slot)
         return nil unless path && File.exist?(path)
         title = LCF::SaveData.new(File.open(path, "rb"))[100]
-        title && title.timestamp
+        title && title[:timestamp]
       rescue StandardError
         nil
       end

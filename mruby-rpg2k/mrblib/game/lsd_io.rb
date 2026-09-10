@@ -1020,15 +1020,15 @@ module Game
     # populated to compare against.
     def self.read_event_exec_frames(exec_state)
       return nil unless exec_state
-      stack = exec_state.stack
+      stack = exec_state[:stack]
       return nil unless stack
       frames = []
       stack.each do |_, frame|
         frames << {
-          commands: frame.commands || [],
-          current_command: frame.current_command || 0,
-          event_id: frame.event_id || 0,
-          triggered_by_decision_key: !!frame.triggered_by_decision_key,
+          commands: frame[:commands] || [],
+          current_command: frame[:current_command] || 0,
+          event_id: frame[:event_id] || 0,
+          triggered_by_decision_key: !!frame[:triggered_by_decision_key],
         }
       end
       frames.empty? ? nil : frames
@@ -1135,18 +1135,18 @@ module Game
     # under CRuby (where the loaders are unit-tested) and the latter is kept
     # parallel to it.
     def self.from_lsd(db, save)
-      hero = save.hero
-      inv = save.inventory
-      member_ids = inv.party || []
+      hero = save[:hero]
+      inv = save[:inventory]
+      member_ids = inv[:party] || []
       party = Party.new(db, member_ids)
       items = {}
-      ids = inv.item_ids || []
-      counts = inv.item_counts || []
+      ids = inv[:item_ids] || []
+      counts = inv[:item_counts] || []
       # `item_usage` (chunk 109 field 14) runs parallel to the id/count arrays:
       # how many uses the copy currently in hand has already spent, so a potion
       # with 使用回数 3 that RPG_RT had used twice resumes with one use left
       # rather than three (see Party#consume_item_use).
-      usage_arr = inv.item_usage || []
+      usage_arr = inv[:item_usage] || []
       usage = {}
       ids.each_index do |i|
         items[ids[i]] = counts[i] || 0
@@ -1171,10 +1171,10 @@ module Game
           # and exp restored just below are read against. -1 (liblcf's own
           # field default) means "never changed", not "class 0" -- Change
           # Class to "no class" is itself a real, persisted change.
-          cid = sa.class_id
+          cid = sa[:class_id]
           actor.restore_class(cid) if cid && cid != -1
-          actor.set_level(sa.level) if sa.level
-          actor.exp = sa.exp if sa.exp
+          actor.set_level(sa[:level]) if sa[:level]
+          actor.exp = sa[:exp] if sa[:exp]
           # A live Change Parameters edit (#change_param) -- #set_level just
           # above re-seeds @base/@base_raw from the level-derived baseline,
           # discarding it, so it's restored after, the same order the
@@ -1183,26 +1183,26 @@ module Game
           # sentinel, distinct from a real 0 the other four fields already
           # use); the other four default to 0 outright. Confirmed against a
           # genuine RPG_RT.exe -- see SAVE_PARTY_ACTOR's own comment.
-          hp_mod = sa.hp_mod
-          sp_mod = sa.sp_mod
+          hp_mod = sa[:hp_mod]
+          sp_mod = sa[:sp_mod]
           mods = [hp_mod && hp_mod != -1 ? hp_mod : 0,
                   sp_mod && sp_mod != -1 ? sp_mod : 0,
-                  sa.attack_mod || 0, sa.defense_mod || 0,
-                  sa.spirit_mod || 0, sa.agility_mod || 0]
+                  sa[:attack_mod] || 0, sa[:defense_mod] || 0,
+                  sa[:spirit_mod] || 0, sa[:agility_mod] || 0]
           if mods.any? { |m| m != 0 }
             curve = actor.base_stats(actor.level)
             actor.restore_base(Array.new(curve.size) { |i| curve[i] + mods[i] })
           end
-          actor.equip(sa.equipment) if sa.equipment
-          actor.skills = sa.skills if sa.skills
+          actor.equip(sa[:equipment]) if sa[:equipment]
+          actor.skills = sa[:skills] if sa[:skills]
           # sa.states is the same dense, database-sized array #to_lsd now
           # writes (see Actor#total_state_count's own citation) -- a
           # nonzero slot means "afflicted", regardless of its actual
           # turn-counter value, which this codebase does not otherwise
           # track once a state survives past the battle that inflicted it.
-          if sa.states
+          if sa[:states]
             ids = []
-            sa.states.each_index { |i| ids << (i + 1) if sa.states[i] && sa.states[i] != 0 }
+            sa[:states].each_index { |i| ids << (i + 1) if sa[:states][i] && sa[:states][i] != 0 }
             actor.states = ids
           end
           # A live Change Battle Commands (or a Change Class, which also
@@ -1211,12 +1211,12 @@ module Game
           # "the field is
           # present", since an empty list is schema.rb's own declared
           # default rather than a real Change Battle Commands to nothing.
-          actor.battle_commands = sa.battle_commands if sa.changed_battle_commands
+          actor.battle_commands = sa[:battle_commands] if sa[:changed_battle_commands]
           # RPG2003 battle row (0x5B/91) -- the schema default (0/front)
           # restores the same as never having touched it, so no changed-flag
           # gating is needed the way battle_commands' own nil-vs-empty
           # ambiguity requires above.
-          actor.battle_row = sa.row if sa.respond_to?(:row)
+          actor.battle_row = sa[:row] if sa.respond_to?(:row)
           # A Change Actor Name override on *any* roster member, not just the
           # leader (whose name chunk 100's title also carries below). ADR
           # 0014 already flagged this field's other case when it was first
@@ -1227,13 +1227,13 @@ module Game
           # placeholder). Applying it verbatim overwrites the actor's correct
           # database name with a control character, which then defeats any
           # later lookup by name (see the title-chunk leader fixup below).
-          nm = sa.actor_name
+          nm = sa[:actor_name]
           actor.name = nm if nm && !nm.empty? && nm != "\x01"
           # Field 2 (title) has no equivalent "blank means unchanged" rule --
           # do_change_actor_title explicitly lets an empty string *clear* the
           # title -- so an empty string is applied, unlike actor_name above;
           # only the reserve-actor placeholder byte is skipped.
-          tt = sa.title
+          tt = sa[:title]
           actor.title = tt if tt && tt != "\x01"
           # A live Change Sprite Association override (chunk 108 fields
           # 11/12/13) -- what genuine RPG_RT.exe itself restores the on-map
@@ -1244,25 +1244,25 @@ module Game
           # presence, the same "the command actually ran" signal #to_lsd
           # writes it under; an absent field leaves the actor's own database
           # default charset (#initialize) untouched.
-          sn = sa.sprite_name
+          sn = sa[:sprite_name]
           actor.set_charset(sn, sa.sprite_id || 0) if sn
           actor.transparent = (sa.sprite_transparent || 0) != 0 if sn
         end
-        hp[aid] = sa.hp if sa.hp
-        mp[aid] = sa.mp if sa.mp
+        hp[aid] = sa[:hp] if sa[:hp]
+        mp[aid] = sa[:mp] if sa[:mp]
       end
-      party.load_state(items: items, item_usage: usage, gold: inv.gold,
+      party.load_state(items: items, item_usage: usage, gold: inv[:gold],
                        hp: hp, mp: mp)
-      state = new(party, hero.map_id, hero.x, hero.y)
+      state = new(party, hero[:map_id], hero[:x], hero[:y])
       # liblcf's own 0..3 (up/right/down/left) convention on the wire; see
       # #to_lsd's own citation for why this needs the same conversion
       # EventGraphic::LCF_DIR_TO_NUMPAD already applies to the identically-
       # encoded database-side event-page facing field.
-      state.direction = EventGraphic.numpad_direction(hero.direction)
+      state.direction = EventGraphic.numpad_direction(hero[:direction])
       # Set Transparent Flag's own override (Player Visibility, 11310):
       # liblcf's "0 or 3" convention on the hero's own movable record (see
       # #to_lsd's own citation on why this lives here, not the system chunk).
-      state.player_transparent = (hero.transparency || 0) != 0
+      state.player_transparent = (hero[:transparency] || 0) != 0
       # Fields 81-85 (flash_red/_green/_blue/_current_level/_time_left): see
       # #to_lsd's own citation. A flash is only "live" once time_left is
       # actually present and positive -- the RGB triple alone (0 or a stale
@@ -1275,11 +1275,11 @@ module Game
       # enough that the visual difference is a single frame, not a
       # citation this codebase can make stronger without a wine capture of
       # an actual in-progress flash to compare against.
-      if hero.flash_time_left && hero.flash_time_left > 0
-        frames = hero.flash_time_left
-        level = hero.flash_current_level || 0.0
-        state.player_flash = { red: hero.flash_red || 0, green: hero.flash_green || 0,
-                               blue: hero.flash_blue || 0, power: level.round, frames: frames,
+      if hero[:flash_time_left] && hero[:flash_time_left] > 0
+        frames = hero[:flash_time_left]
+        level = hero[:flash_current_level] || 0.0
+        state.player_flash = { red: hero[:flash_red] || 0, green: hero[:flash_green] || 0,
+                               blue: hero[:flash_blue] || 0, power: level.round, frames: frames,
                                total: frames }
       end
       # Fields 32/41/43/51 (move_frequency/move_route/move_route_index/
@@ -1287,18 +1287,18 @@ module Game
       # field 41 is actually present with at least one command -- an absent
       # chunk (or one with zero commands, which #to_lsd never itself
       # writes) leaves the hero walking freely.
-      route = hero.move_route
-      if route && route.commands && !route.commands.empty?
-        state.player_route = { commands: route.commands, repeat: route.repeat ? true : false,
-                               skippable: route.skippable ? true : false,
-                               index: hero.move_route_index, frequency: hero.move_frequency }
+      route = hero[:move_route]
+      if route && route[:commands] && !route[:commands].empty?
+        state.player_route = { commands: route[:commands], repeat: route[:repeat] ? true : false,
+                               skippable: route[:skippable] ? true : false,
+                               index: hero[:move_route_index], frequency: hero[:move_frequency] }
       end
-      state.player_through = (hero.through || false) ? true : false
+      state.player_through = (hero[:through] || false) ? true : false
       # Vehicle locations (chunks 105 boat / 106 ship / 107 airship), each a
       # SAVE_MOVABLE; an absent chunk leaves that vehicle unplaced.
-      state.vehicle(:boat).load_movable(save.boat)
-      state.vehicle(:ship).load_movable(save.ship)
-      state.vehicle(:airship).load_movable(save.airship)
+      state.vehicle(:boat).load_movable(save[:boat])
+      state.vehicle(:ship).load_movable(save[:ship])
+      state.vehicle(:airship).load_movable(save[:airship])
       # Chunk 110 (SAVE_TARGET): every Set Teleport Target/Set Escape Target
       # destination, the same shape #to_lsd writes -- see that method's own
       # citation. Array id 0 is always the escape slot (RPG_RT's own
@@ -1310,14 +1310,14 @@ module Game
       targets = save[110]
       if targets
         esc = targets[0]
-        if esc && esc.map_id && esc.map_id != 0
-          state.escape_target = { map_id: esc.map_id, x: esc.x || 0, y: esc.y || 0,
-                                  switch_id: esc.switch_on ? esc.switch_id : nil }
+        if esc && esc[:map_id] && esc[:map_id] != 0
+          state.escape_target = { map_id: esc[:map_id], x: esc[:x] || 0, y: esc[:y] || 0,
+                                  switch_id: esc[:switch_on] ? esc[:switch_id] : nil }
         end
         targets.each do |id, t|
-          next if id == 0 || t.map_id.nil?
-          state.teleport_targets[t.map_id] =
-            { x: t.x || 0, y: t.y || 0, switch_id: t.switch_on ? t.switch_id : nil }
+          next if id == 0 || t[:map_id].nil?
+          state.teleport_targets[t[:map_id]] =
+            { x: t[:x] || 0, y: t[:y] || 0, switch_id: t[:switch_on] ? t[:switch_id] : nil }
         end
       end
       # A live Change Sprite Association override is restored per-actor above,
@@ -1326,33 +1326,33 @@ module Game
       # citation and SAVE_PARTY_ACTOR's schema.rb comment for why).
       sys = save[101]
       switches = {}
-      (sys.switches || []).each_with_index { |v, i| switches[i + 1] = v if v }
+      (sys[:switches] || []).each_with_index { |v, i| switches[i + 1] = v if v }
       state.switches.replace(switches)
       variables = {}
-      (sys.variables || []).each_with_index { |v, i| variables[i + 1] = v unless v == 0 }
+      (sys[:variables] || []).each_with_index { |v, i| variables[i + 1] = v unless v == 0 }
       state.variables.replace(variables)
       # Message-window configuration (inverse of the mapping #to_lsd writes).
       mc = state.message_config
-      mc.transparent = (sys.message_transparent || 0) != 0
-      mc.position = sys.message_position || MessageConfig::POS_BOTTOM
-      mc.position_fixed = sys.message_prevent_overlap ? false : true
-      mc.continue_events = sys.message_continue_events ? true : false
-      mc.face_name = sys.face_name || ''
-      mc.face_index = sys.face_index || 0
-      mc.face_right = (sys.face_right_position || 0) != 0
-      mc.face_flipped = sys.face_flip ? true : false
+      mc.transparent = (sys[:message_transparent] || 0) != 0
+      mc.position = sys[:message_position] || MessageConfig::POS_BOTTOM
+      mc.position_fixed = sys[:message_prevent_overlap] ? false : true
+      mc.continue_events = sys[:message_continue_events] ? true : false
+      mc.face_name = sys[:face_name] || ''
+      mc.face_index = sys[:face_index] || 0
+      mc.face_right = (sys[:face_right_position] || 0) != 0
+      mc.face_flipped = sys[:face_flip] ? true : false
       # An absent field 61 (the schema's own default) means "not stopping",
       # matching a genuine save that never wrote the field at all -- see
       # SAVE_SYSTEM's own comment in schema.rb.
-      state.bgm_stopping = sys.bgm_stopping ? true : false
+      state.bgm_stopping = sys[:bgm_stopping] ? true : false
       # Overridden BGM playback state; an empty file name means "none".
-      state.current_bgm = bgm_from_chunk(sys.current_bgm)
-      state.memorized_bgm = bgm_from_chunk(sys.stored_bgm)
+      state.current_bgm = bgm_from_chunk(sys[:current_bgm])
+      state.memorized_bgm = bgm_from_chunk(sys[:stored_bgm])
       # The vehicle/battle BGM restore point -- "(OFF)" (RPG_RT's own
       # placeholder, see #to_lsd's own citation) reads back as nil, the same
       # as an empty file name, via #bgm_from_chunk's own sentinel handling.
-      state.pre_vehicle_bgm = bgm_from_chunk(sys.before_vehicle_music)
-      state.pre_battle_bgm = bgm_from_chunk(sys.before_battle_music)
+      state.pre_vehicle_bgm = bgm_from_chunk(sys[:before_vehicle_music])
+      state.pre_battle_bgm = bgm_from_chunk(sys[:before_battle_music])
       # Change System BGM (10660) / Change System SFX (10670) overrides, read
       # back by the same slot -> field map #to_lsd wrote them with. A slot the
       # save left un-overridden is simply absent from the hash, matching
@@ -1371,36 +1371,36 @@ module Game
       state.system_sfx = system_sfx
       # Access flags: only an explicitly-stored value overrides the constructor
       # default (so a foreign save that omits them keeps our defaults).
-      state.teleport_access = sys.teleport_allowed unless sys.teleport_allowed.nil?
-      state.escape_access = sys.escape_allowed unless sys.escape_allowed.nil?
-      state.save_access = sys.save_allowed unless sys.save_allowed.nil?
-      state.menu_access = sys.menu_allowed unless sys.menu_allowed.nil?
+      state.teleport_access = sys[:teleport_allowed] unless sys[:teleport_allowed].nil?
+      state.escape_access = sys[:escape_allowed] unless sys[:escape_allowed].nil?
+      state.save_access = sys[:save_allowed] unless sys[:save_allowed].nil?
+      state.menu_access = sys[:menu_allowed] unless sys[:menu_allowed].nil?
       # How many times the menu's Save command has been used (RPG_RT increments
       # this on every save; see #to_lsd's sys[131] write above).
-      state.save_count = sys.save_count unless sys.save_count.nil?
+      state.save_count = sys[:save_count] unless sys[:save_count].nil?
       # The carried battle background (field 125). Read unconditionally, an
       # absent chunk included: an absent field is RPG_RT's own empty default,
       # which draws the flat black field rather than falling back to a
       # map-tree walk -- see #battle_background's own citation for the wine
       # captures this was measured from.
-      state.battle_background = sys.battle_background.to_s
+      state.battle_background = sys[:battle_background].to_s
       # Screen-transition slots (chunks 111..116). A slot the save left
       # un-overridden comes back out of range rather than as a setting, and
       # #seed_screen_transitions refills those from the database below.
       state.screen_transitions = [
-        sys.teleport_erase_transition, sys.teleport_show_transition,
-        sys.battle_start_erase_transition, sys.battle_start_show_transition,
-        sys.battle_end_erase_transition, sys.battle_end_show_transition
+        sys[:teleport_erase_transition], sys[:teleport_show_transition],
+        sys[:battle_start_erase_transition], sys[:battle_start_show_transition],
+        sys[:battle_end_erase_transition], sys[:battle_end_show_transition]
       ]
       state.seed_screen_transitions(db)
       # System windowskin / font override; an empty graphic means "use the
       # database default" (left unset).
-      sg = sys.system_graphic
+      sg = sys[:system_graphic]
       state.system_graphic = sg unless sg.nil? || sg.empty?
-      state.font_id = sys.font || 0
+      state.font_id = sys[:font] || 0
       # RPG2003's wait/active toggle. The chunk's own default is 0 (wait), so
       # an absent chunk (RPG2000 saves, or a wait-mode 2003 save) reads wait.
-      state.atb_mode = sys.atb_mode || 0
+      state.atb_mode = sys[:atb_mode] || 0
       # The leader's display name from the file-screen title chunk. This used
       # to be treated as always redundant with chunk 109's own party list
       # (field 1: "both hold the same live name in a genuine save"), so a
@@ -1415,7 +1415,7 @@ module Game
       # cached name and promoted, rather than cosmetically relabelled.
       title = save[100]
       if title && party.leader
-        nm = title.hero_name
+        nm = title[:hero_name]
         if nm && !nm.empty? && nm != party.leader.name
           real_leader = party.roster.all.find { |a| a.name == nm }
           if real_leader
@@ -1434,10 +1434,10 @@ module Game
         # populates them), the same "blank
         # name -> no face" rule Scene::SaveLoad#draw_slot_faces already
         # applies elsewhere.
-        faces = [[title.face1_name, title.face1_index],
-                 [title.face2_name, title.face2_index],
-                 [title.face3_name, title.face3_index],
-                 [title.face4_name, title.face4_index]].map do |name, index|
+        faces = [[title[:face1_name], title[:face1_index]],
+                 [title[:face2_name], title[:face2_index]],
+                 [title[:face3_name], title[:face3_index]],
+                 [title[:face4_name], title[:face4_index]]].map do |name, index|
           name && !name.empty? ? [name, index] : nil
         end
         state.preview_faces = faces if faces.any?
@@ -1449,8 +1449,8 @@ module Game
         # chunk-108 entry happens to agree in every genuine save this codebase
         # has seen, but RPG_RT itself never reads that entry for this screen
         # at all, so this build should not either.
-        state.preview_level = title.hero_level unless title.hero_level.nil?
-        state.preview_hp = title.hero_hp unless title.hero_hp.nil?
+        state.preview_level = title[:hero_level] unless title[:hero_level].nil?
+        state.preview_hp = title[:hero_hp] unless title[:hero_hp].nil?
       end
       # Chunk 102 is the screen tint transition; only #restore_tint's tint
       # sub-fields are modelled here (see #to_lsd's own comment on chunk 102
@@ -1462,42 +1462,42 @@ module Game
       # SAVE_SCREEN defaults.
       scr = save[102]
       if scr
-        state.screen.restore_tint([scr.tint_finish_red, scr.tint_finish_green,
-                                    scr.tint_finish_blue, scr.tint_finish_sat],
-                                   [scr.tint_current_red, scr.tint_current_green,
-                                    scr.tint_current_blue, scr.tint_current_sat],
-                                   scr.tint_time_left)
+        state.screen.restore_tint([scr[:tint_finish_red], scr[:tint_finish_green],
+                                    scr[:tint_finish_blue], scr[:tint_finish_sat]],
+                                   [scr[:tint_current_red], scr[:tint_current_green],
+                                    scr[:tint_current_blue], scr[:tint_current_sat]],
+                                   scr[:tint_time_left])
         # The live Pan Screen offset (fields 41/42) -- a genuine save never
         # carries a separate in-flight target, so this restores at rest
         # (current == target), the same idle-sync convention already used
         # for tint/pictures elsewhere in this method.
-        px = scr.pan_x || 0
-        py = scr.pan_y || 0
+        px = scr[:pan_x] || 0
+        py = scr[:pan_y] || 0
         state.screen.load_h(pan_x: px, pan_y: py, pan_tx: px, pan_ty: py)
       end
       restore_pictures(state, save[103])
       # Both Timer Operation countdowns (inventory chunk 109 fields 23-30); a
       # save written before this landed simply omits them, leaving the fresh
       # `Timer.new` defaults #initialize already seeded in place.
-      state.timer(0).frames = inv.timer1_frames unless inv.timer1_frames.nil?
-      state.timer(0).running = inv.timer1_active unless inv.timer1_active.nil?
-      state.timer(0).visible = inv.timer1_visible unless inv.timer1_visible.nil?
-      state.timer(0).in_battle = inv.timer1_battle unless inv.timer1_battle.nil?
-      state.timer(1).frames = inv.timer2_frames unless inv.timer2_frames.nil?
-      state.timer(1).running = inv.timer2_active unless inv.timer2_active.nil?
-      state.timer(1).visible = inv.timer2_visible unless inv.timer2_visible.nil?
-      state.timer(1).in_battle = inv.timer2_battle unless inv.timer2_battle.nil?
+      state.timer(0).frames = inv[:timer1_frames] unless inv[:timer1_frames].nil?
+      state.timer(0).running = inv[:timer1_active] unless inv[:timer1_active].nil?
+      state.timer(0).visible = inv[:timer1_visible] unless inv[:timer1_visible].nil?
+      state.timer(0).in_battle = inv[:timer1_battle] unless inv[:timer1_battle].nil?
+      state.timer(1).frames = inv[:timer2_frames] unless inv[:timer2_frames].nil?
+      state.timer(1).running = inv[:timer2_active] unless inv[:timer2_active].nil?
+      state.timer(1).visible = inv[:timer2_visible] unless inv[:timer2_visible].nil?
+      state.timer(1).in_battle = inv[:timer2_battle] unless inv[:timer2_battle].nil?
       # Step counter and battle win/defeat/escape/victory tallies (inventory
       # chunk 109 fields 32-35/42); a save written before this landed simply
       # omits them, leaving the fresh State's zeroed defaults in place.
-      state.battle_count = inv.battles unless inv.battles.nil?
-      state.defeat_count = inv.defeats unless inv.defeats.nil?
-      state.escape_count = inv.escapes unless inv.escapes.nil?
-      state.win_count = inv.victories unless inv.victories.nil?
-      state.steps = inv.steps unless inv.steps.nil?
+      state.battle_count = inv[:battles] unless inv[:battles].nil?
+      state.defeat_count = inv[:defeats] unless inv[:defeats].nil?
+      state.escape_count = inv[:escapes] unless inv[:escapes].nil?
+      state.win_count = inv[:victories] unless inv[:victories].nil?
+      state.steps = inv[:steps] unless inv[:steps].nil?
       # "Turns passed in latest battle" (field 41); absent on a save written
       # before this landed, or one taken before any battle ever finished.
-      state.last_battle_turns = inv.turns unless inv.turns.nil?
+      state.last_battle_turns = inv[:turns] unless inv[:turns].nil?
       # The currently-loaded map's own live event table (chunk 111,
       # #to_lsd's write above): position/facing into #map_event_positions, a
       # page's custom-route cursor (field 43) into #map_event_route_index,
@@ -1517,18 +1517,18 @@ module Game
       # #map_event_exec's own comment on why the two are not assumed to
       # always co-occur.
       map_events = save[111]
-      saved_events = map_events && map_events.events
+      saved_events = map_events && map_events[:events]
       if saved_events
         positions = {}
         route_index = {}
         exec_snapshots = {}
         saved_events.each do |id, mv|
-          if mv.x && mv.y
-            positions[id] = [mv.x, mv.y, EventGraphic.numpad_direction(mv.direction)]
-            idx = mv.move_route_index
+          if mv[:x] && mv[:y]
+            positions[id] = [mv[:x], mv[:y], EventGraphic.numpad_direction(mv[:direction])]
+            idx = mv[:move_route_index]
             route_index[id] = idx unless idx.nil?
           end
-          frames = read_event_exec_frames(mv.parallel_event_execstate)
+          frames = read_event_exec_frames(mv[:parallel_event_execstate])
           exec_snapshots[id] = frames if frames
         end
         state.map_event_positions = positions
@@ -1538,8 +1538,8 @@ module Game
       # The same chunk's Tile Substitution table (fields 21/22): absent on a
       # save that never rewrote a tile, or one written before this landed.
       if map_events
-        lower = map_events.chip_replacement_lower
-        upper = map_events.chip_replacement_upper
+        lower = map_events[:chip_replacement_lower]
+        upper = map_events[:chip_replacement_upper]
         state.tile_substitutions = [
           lower ? tile_replacement_hash(lower) : {},
           upper ? tile_replacement_hash(upper) : {},
@@ -1550,7 +1550,7 @@ module Game
       # or absent both mean "no override, use the map's own rate", the same
       # `nil` #encounter_rate already means live -- see
       # Scene::Map#current_encounter_steps.
-      steps = map_events && map_events.encounter_steps
+      steps = map_events && map_events[:encounter_steps]
       state.encounter_rate = steps if steps && steps >= 0
       # The same chunk's own Change Parallax Background override (fields
       # 32-38): a blank/absent name means "no override, use the map's own
@@ -1560,14 +1560,14 @@ module Game
       # that implementation
       # itself cannot distinguish from "never overridden" either (its own
       # map-change handling writes a default-constructed, empty-name struct).
-      pname = map_events && map_events.parallax_name
+      pname = map_events && map_events[:parallax_name]
       if pname && !pname.empty?
-        state.set_parallax(name: pname, loop_x: !!map_events.parallax_horz,
-                           loop_y: !!map_events.parallax_vert,
-                           auto_x: !!map_events.parallax_horz_auto,
-                           sx: map_events.parallax_horz_speed,
-                           auto_y: !!map_events.parallax_vert_auto,
-                           sy: map_events.parallax_vert_speed)
+        state.set_parallax(name: pname, loop_x: !!map_events[:parallax_horz],
+                           loop_y: !!map_events[:parallax_vert],
+                           auto_x: !!map_events[:parallax_horz_auto],
+                           sx: map_events[:parallax_horz_speed],
+                           auto_y: !!map_events[:parallax_vert_auto],
+                           sy: map_events[:parallax_vert_speed])
       end
       # Chunk 113 (SAVE_FOREGROUND_EVENT): whatever event was mid-execution
       # in the shared foreground interpreter at save time -- see
@@ -1578,7 +1578,7 @@ module Game
       # time, by Scene::Map#restore_foreground_event_exec -- this method
       # itself only decodes the chunk onto Game::State, it does not touch a
       # live interpreter (there is none to touch here).
-      fg_state = save[113] && save[113].execution_state
+      fg_state = save[113] && save[113][:execution_state]
       fg_frames = read_event_exec_frames(fg_state)
       state.foreground_event_exec = fg_frames && { event_id: fg_frames.first[:event_id], frames: fg_frames }
       # Chunk 114 (SAVE_COMMON_EVENT): one entry per currently-running Common
@@ -1589,7 +1589,7 @@ module Game
       common_events = save[114]
       if common_events
         common_events.each do |id, entry|
-          frames = read_event_exec_frames(entry.execution_state)
+          frames = read_event_exec_frames(entry[:execution_state])
           state.common_event_exec[id] = frames if frames
         end
       end
@@ -1646,7 +1646,7 @@ module Game
       return unless pictures
       pictures.each do |id, pic|
         next unless pic
-        name = pic.name
+        name = pic[:name]
         # A blank name means either "never shown" (a fully field-less
         # placeholder -- see SAVE_PICTURE's own comment) or "shown, then
         # Erase Picture'd" (every position/zoom/tone field still present,
@@ -1668,30 +1668,30 @@ module Game
           next unless pic.key?(4)
           name = ''
         end
-        time_left = pic.time_left || 0
+        time_left = pic[:time_left] || 0
         moving = time_left > 0
-        transparency = moving ? pic.current_transparency : pic.transparency
+        transparency = moving ? pic[:current_transparency] : pic[:transparency]
         state.show_picture(id, name: name,
-                               x: ((moving ? pic.current_x : pic.finish_x) || 0).to_i,
-                               y: ((moving ? pic.current_y : pic.finish_y) || 0).to_i,
-                               show_x: pic.key?(2) ? pic.show_x : nil,
-                               show_y: pic.key?(3) ? pic.show_y : nil,
-                               zoom: moving ? pic.current_zoom : pic.zoom,
+                               x: ((moving ? pic[:current_x] : pic[:finish_x]) || 0).to_i,
+                               y: ((moving ? pic[:current_y] : pic[:finish_y]) || 0).to_i,
+                               show_x: pic.key?(2) ? pic[:show_x] : nil,
+                               show_y: pic.key?(3) ? pic[:show_y] : nil,
+                               zoom: moving ? pic[:current_zoom] : pic[:zoom],
                                opacity: transparency ? Game.trans_to_opacity(transparency) : nil,
-                               red: moving ? pic.current_tone_red : pic.tone_red,
-                               green: moving ? pic.current_tone_green : pic.tone_green,
-                               blue: moving ? pic.current_tone_blue : pic.tone_blue,
-                               saturation: moving ? pic.current_tone_saturation : pic.tone_saturation,
-                               fixed_to_map: pic.fixed_to_map,
-                               use_transparent_color: pic.use_transparent_color)
-        state.erase_picture(id) if pic.name.nil? || pic.name.empty?
+                               red: moving ? pic[:current_tone_red] : pic[:tone_red],
+                               green: moving ? pic[:current_tone_green] : pic[:tone_green],
+                               blue: moving ? pic[:current_tone_blue] : pic[:tone_blue],
+                               saturation: moving ? pic[:current_tone_saturation] : pic[:tone_saturation],
+                               fixed_to_map: pic[:fixed_to_map],
+                               use_transparent_color: pic[:use_transparent_color])
+        state.erase_picture(id) if pic[:name].nil? || pic[:name].empty?
         next unless moving
-        finish_trans = pic.transparency
-        state.move_picture(id, (pic.finish_x || 0).to_i, (pic.finish_y || 0).to_i,
-                           pic.zoom,
+        finish_trans = pic[:transparency]
+        state.move_picture(id, (pic[:finish_x] || 0).to_i, (pic[:finish_y] || 0).to_i,
+                           pic[:zoom],
                            finish_trans ? Game.trans_to_opacity(finish_trans) : 255,
-                           pic.tone_red, pic.tone_green, pic.tone_blue,
-                           pic.tone_saturation, time_left)
+                           pic[:tone_red], pic[:tone_green], pic[:tone_blue],
+                           pic[:tone_saturation], time_left)
       end
     end
 
@@ -1728,20 +1728,20 @@ module Game
     # decode as a real request to play a file literally named "(OFF)").
     def self.bgm_from_chunk(chunk)
       return nil unless chunk
-      name = chunk.file
+      name = chunk[:file]
       return nil if name.nil? || name.empty? || name == '(OFF)'
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
-        balance: chunk.balance || 50, fadein: chunk.fade_in || 0 }
+      { name: name, volume: chunk[:volume] || 100, tempo: chunk[:pitch] || 100,
+        balance: chunk[:balance] || 50, fadein: chunk[:fade_in] || 0 }
     end
 
     # #bgm_from_chunk's SE counterpart: rebuild our `{ name:, volume:, tempo: }`
     # SE hash from a parsed SE chunk (an LCF::Array1D over the SE schema).
     def self.se_from_chunk(chunk)
       return nil unless chunk
-      name = chunk.file
+      name = chunk[:file]
       return nil if name.nil? || name.empty?
-      { name: name, volume: chunk.volume || 100, tempo: chunk.pitch || 100,
-        balance: chunk.balance || 50 }
+      { name: name, volume: chunk[:volume] || 100, tempo: chunk[:pitch] || 100,
+        balance: chunk[:balance] || 50 }
     end
   end
 end

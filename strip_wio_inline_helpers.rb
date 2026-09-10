@@ -117,8 +117,8 @@ REWRITES = {
         expect_lines: 5 },
     ],
     substitutions: [
-      { old: '      @direction = EventGraphic.numpad_direction(m.direction)',
-        new: '      @direction = EventGraphic::LCF_DIR_TO_NUMPAD[m.direction] || 2' },
+      { old: '      @direction = EventGraphic.numpad_direction(m[:direction])',
+        new: '      @direction = EventGraphic::LCF_DIR_TO_NUMPAD[m[:direction]] || 2' },
       { old: '        (moving || continuous?(anim_type)) ? pattern_column(phase) : base_pattern',
         new: '        (moving || anim_type == CONTINUOUS || anim_type == FIXED_CONTINUOUS || ' \
              'anim_type == SPIN) ? pattern_column(phase) : base_pattern' },
