@@ -205,6 +205,15 @@ def rpg_maker_gems(conf, include_mvjs: true)
   end unless single_format_only
 
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf"
+  # docs/adr/0139: an opt-in, new parallel build path -- RPGMAKER_BC2CPP=1
+  # swaps a hand-picked, provably-safe subset of LCF::File's own bytecode
+  # methods (header/schema/terminate_root?/rpg2003?/maker/key?/to_lcf) for
+  # C++ generated at build time by tools/bc2cpp/bc2cpp.rb from that exact
+  # same mrblib source, with the ordinary interpreter (mruby-lcf, just
+  # above) as the unconditional fallback for everything this doesn't
+  # override. Never part of the default build for any target -- this whole
+  # gem doesn't even exist in the gem list unless the env var is set.
+  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if ENV['RPGMAKER_BC2CPP']
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a
   # class one of them defines under RGSS replaces mruby-rgss's for the whole
