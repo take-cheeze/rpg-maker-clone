@@ -78,6 +78,26 @@ static inline dirent* readdir(DIR*) {
 #define STBI_NO_PIC
 #define STBI_NO_PNM
 
+// JPEG is real, reachable code on every *other* target: RGSS::Bitmap::
+// EXTENSIONS (this gem's own mrblib/lib.rb) tries :jpg/:jpeg because the RPG
+// Maker XP RTP genuinely ships .jpg title screens (see the comment on that
+// constant). wio, though, is a single_format_only build (build_config.rb) --
+// it compiles mruby-rpg2k alone, never mruby-rpgxp/mruby-rpgvx/mruby-wolf, so
+// no Ruby path on this target can ever select the XP/VX maker that .jpg
+// candidate exists for. RPG2k::Game#initialize (mruby-rpg2k/mrblib/main.rb)
+// installs RGSS::Bitmap::RPG2K_EXTENSIONS instead -- `[:bmp, :png, :xyz]`,
+// measured directly against a real RPG_RT.exe under wine to have "no
+// `.jpg`/`.jpeg` candidate ... at all" -- before any asset load this engine's
+// own boot sequence performs. So on wio specifically, every stbi__jpeg_*
+// function stb_image.h compiles in is dead weight the same way GIF/PSD/TGA/
+// HDR/PIC/PNM already are above: linked and flashed, never reachable at
+// runtime. Scoped to WIO_TERMINAL only (not a blanket single_format_only
+// check) so desktop/wasm/android/psp, none of which this measurement
+// touched, keep their current behaviour unchanged.
+#ifdef WIO_TERMINAL
+#define STBI_NO_JPEG
+#endif
+
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 
