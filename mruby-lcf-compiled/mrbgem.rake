@@ -1,4 +1,5 @@
 require 'shellwords'
+require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for a hand-picked, provably-safe
 # subset of LCF::File/Database/MapTree/MapUnit/SaveData's own bytecode
@@ -51,7 +52,18 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # names, never an owner class or a callable C++ symbol.
   native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
 
-  target_owners = %w[LCF::File LCF::Database LCF::MapTree LCF::MapUnit LCF::SaveData]
+  this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-lcf-compiled')
+  other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-lcf-compiled' }
+  target_owners = this_gem[:owners]
+  # Every *other* bc2cpp-generated gem's own target classes -- a
+  # devirtualized call site here can reference one of these as a real,
+  # externally-linked _impl (see bc2cpp.rb's own compile_send/
+  # emit_decls_header comments), resolved by the linker once this gem's
+  # own object file and the other gem's are both part of the same final
+  # binary (already true -- both are ordinary mrbgems in the same build).
+  other_owners = other_gems.values.flat_map { |g| g[:owners] }
+  other_decls_headers = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_decls.h" }
+  other_generated = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_gen.cpp" }
 
   generated = "#{build_dir}/lcf_compiled_gen.cpp"
 
@@ -62,6 +74,8 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
       'OUT_SYMBOL' => 'lcf_compiled',
       'OUT_DIR' => build_dir,
       'ONLY_OWNERS' => target_owners.join(','),
+      'OTHER_OWNERS' => other_owners.join(','),
+      'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
       'NATIVE_SRCS' => Shellwords.join(native_srcs),
       # See bc2cpp.rb's own comment: a `#error` this C++ toolchain actually
       # compiles halts the whole build. Any LCF::File-family method bc2cpp
@@ -75,12 +89,19 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
     sh env, cmd
   end
 
-  # register.cxx #includes the generated file directly (its own functions
-  # are all `static`, same shape as bc2cpp's own toy harness) -- so it's
-  # the only real translation unit, auto-discovered from src/ like any
-  # other mrbgem source; this `file` dependency just forces codegen to run
-  # before it's compiled, mirroring mruby-lcf's own lcf.cxx => cp932.h
-  # pattern one directory over.
-  file "#{dir}/src/register.cxx" => generated
+  # register.cxx #includes the generated file directly -- so it's the only
+  # real translation unit, auto-discovered from src/ like any other mrbgem
+  # source; this `file` dependency just forces codegen to run before it's
+  # compiled, mirroring mruby-lcf's own lcf.cxx => cp932.h pattern one
+  # directory over. Also depends on every *other* compiled gem's own
+  # generated file -- not because this gem's own codegen needs their
+  # content (it doesn't; OTHER_OWNERS/OTHER_DECLS_HEADER above are static,
+  # known without reading anything the other gem produces), but because
+  # *this* gem's own #include of their *_decls.h (emitted as a side effect
+  # of their own codegen run) needs that file to actually exist by the
+  # time this translation unit is compiled. Depending on `generated`
+  # itself (not on `other_generated` here) keeps this a DAG, not a cycle:
+  # neither gem's own codegen step waits on the other's.
+  file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
 end

@@ -1,4 +1,5 @@
 require 'shellwords'
+require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for Game::Picture's own bytecode
 # methods (docs/adr/0139's own follow-up) -- 25 of its 26 real methods
@@ -34,7 +35,15 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # bytecode-defined one, and why closing it only needs the flat name set.
   native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
 
-  target_owners = %w[Game::Picture]
+  this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rpg2k-compiled')
+  other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rpg2k-compiled' }
+  target_owners = this_gem[:owners]
+  # See mruby-lcf-compiled/mrbgem.rake's own comment on OTHER_OWNERS/
+  # OTHER_DECLS_HEADER -- cross-gem devirtualization, the other half of
+  # this same mechanism.
+  other_owners = other_gems.values.flat_map { |g| g[:owners] }
+  other_decls_headers = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_decls.h" }
+  other_generated = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_gen.cpp" }
 
   generated = "#{build_dir}/rpg2k_compiled_gen.cpp"
 
@@ -45,6 +54,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
       'OUT_SYMBOL' => 'rpg2k_compiled',
       'OUT_DIR' => build_dir,
       'ONLY_OWNERS' => target_owners.join(','),
+      'OTHER_OWNERS' => other_owners.join(','),
+      'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
       'NATIVE_SRCS' => Shellwords.join(native_srcs),
       'SKIP_UNSUPPORTED' => '1',
     }
@@ -54,7 +65,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   end
 
   # register.cxx #includes the generated file directly, mirroring
-  # mruby-lcf-compiled's own src/register.cxx one gem over.
-  file "#{dir}/src/register.cxx" => generated
+  # mruby-lcf-compiled's own src/register.cxx one gem over -- also depends
+  # on every other compiled gem's own generated file for the same reason
+  # (its #include of their *_decls.h needs that file to exist by compile
+  # time; see the sibling file's own comment for why this stays a DAG).
+  file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
 end

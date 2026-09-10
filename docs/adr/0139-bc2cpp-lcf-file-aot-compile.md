@@ -597,3 +597,105 @@ analysis. Not implemented in this pass (the two data sources barely
 overlap in practice today, since `#initialize` -- where annotations
 actually matter -- is exactly what `ArgTypes` can't reach), but a natural
 small addition if annotations spread to non-`#initialize` methods too.
+
+## Follow-up: cross-gem devirtualization
+
+`compile_send`'s own guard already refused to devirtualize a call whose
+target's owner wasn't in this run's `ONLY_OWNERS` (the real
+`LCF.write_ber`/`LCF.binstr` bug this ADR documents above) -- but the
+deeper reason was structural, not just that guard: every `_impl` function
+was `static`, so even *without* the guard, a devirtualized call from
+`mruby-rpg2k-compiled`'s own generated `.cpp` into
+`mruby-lcf-compiled`'s own compiled `LCF::Array1D#delete` (the README's
+own aspirational example) could never have linked -- `static` gives a
+function internal linkage, invisible outside its own translation unit.
+Each compiled gem's generated file is its own separate TU, so this made
+cross-*gem* devirtualization structurally impossible before this pass,
+independent of the `ONLY_OWNERS` guard.
+
+Explored a parallel "unwrapped core" design first (a raw-C++-typed
+`_core` alongside the existing `mrb_value`-boxed `_impl`, `inline` in a
+shared header, so a caller with an already-proven-typed value could skip
+boxing it into `mrb_value` just to have the callee immediately unbox it
+again). Didn't build it: this compiler's entire internal representation
+is uniformly `mrb_value` -- every register is already a boxed
+`mrb_value` local, and `_impl`'s own body would still need to re-box a
+raw incoming argument into one on its very first line either way (the
+same "goto-threaded, straight-line, always-`mrb_value`" codegen strategy
+this whole prototype uses throughout). A `_core` variant taking a raw
+`mrb_int` would save nothing real under this design -- the actual,
+concrete blocker was always the linkage problem, not boxing. Making
+`_core` genuinely pay off would mean giving the whole register
+representation real, tracked C++ types end to end, a materially bigger
+rewrite than this pass attempts -- noted here so this exploration isn't
+silently repeated.
+
+What actually shipped: `_impl` (and its own declaration) dropped
+`static` -- real, external linkage, the minimum change needed to make a
+cross-TU call possible at all. The entry wrapper (`mrb_get_args`
+marshaling) stayed `static`; nothing outside a gem's own registration
+code ever calls it. A new `emit_decls_header` emits a standalone,
+`#pragma once`-guarded header of the same non-static declarations
+(written to `OUT_DIR/<symbol>_decls.h` on every run, unconditionally --
+cheap, and a given run doesn't know in advance whether anything will
+ever reference it). Two new env vars, mirroring `ONLY_OWNERS`'s own
+shape: `OTHER_OWNERS` (classes this run trusts *some other* gem's own
+run to compile -- widens `compile_send`'s owner guard for devirtualizing
+into them, without adding them to this run's own emitted output) and
+`OTHER_DECLS_HEADER` (real file paths this run `#include`s so those
+classes' declarations are actually in scope).
+
+A new `tools/bc2cpp/compiled_gems.rb` is the single source of truth both
+`mrbgem.rake`s now `require_relative` -- each compiled gem's own target
+owners and `OUT_SYMBOL`, keyed by gem name. Each `mrbgem.rake` computes
+its own `OTHER_OWNERS`/`OTHER_DECLS_HEADER` from every *other* entry
+there, rather than hardcoding the sibling gem's owner list directly (real
+drift risk otherwise). `register.cxx`'s own `file` dependency grew to
+include every other compiled gem's own generated file too -- not because
+this gem's own codegen needs to *read* that file (`OTHER_OWNERS` is
+static config, known without it), but because this gem's own `#include`
+of the other's `*_decls.h` (written as a side effect of the other's own
+codegen run) needs that file to actually exist by the time this
+translation unit is compiled. Depending on the other's `generated` (the
+`.cpp`) rather than nothing at all from `register.cxx` specifically --
+never from `generated` itself -- keeps this a DAG: neither gem's own
+codegen step ever waits on the other's, so two compiled gems each
+naming the other in `OTHER_OWNERS` can't deadlock Rake.
+
+Verified for real, three ways, using the actual project build
+(`RPGMAKER_BC2CPP=1`, both real compiled gems wired to trust each
+other):
+1. Both gems' own `bc2cpp.rb` runs still succeed and each emits a real
+   `#include "/abs/path/to/the/other/gem/<symbol>_decls.h"` line, with
+   **zero other change** to either gem's own generated output (confirmed
+   by diffing against the pre-cross-gem run -- the only diff in either
+   file is that one new `#include` line).
+2. `rake .../mruby-lcf-compiled/src/register.pi
+   .../mruby-rpg2k-compiled/src/register.pi` -- a real, targeted
+   compile of both translation units -- succeeds with **zero errors or
+   warnings**, proving the mutual header inclusion and the Rake
+   dependency graph (no cycle) both actually work, not just plan cleanly
+   on paper.
+3. A full real host build, `rake .../host/lib/libmruby.a` with
+   `RPGMAKER_BC2CPP=1` (every real gem, `mruby-lcf-compiled` and
+   `mruby-rpg2k-compiled` included, both now non-static) -- succeeds,
+   archives cleanly. `nm -C` on the result shows exactly 41 external
+   (`T`) `_impl` symbols and 41 local (`t`) entry symbols from these two
+   gems, one of each per compiled method, no duplicates -- confirming
+   dropping `static` introduced no real symbol-collision risk in
+   practice (`cpp_name`'s `::`-to-`_` collapsing is theoretically
+   collision-prone across two *different* real owners that happened to
+   sanitize to the same string, but this project's actual namespacing
+   -- `RGSS::`/`RPG2k::`/`LCF::`/`Game::`, gem-specific prefixes that
+   never overlap -- makes that implausible in practice, and it was
+   already an equally real risk *within* a single gem's own TU before
+   this change, just never yet hit).
+
+No real cross-gem devirtualized call actually appears in either
+shipped target's own output, same "verified sound, zero live effect"
+result as the native-method-registry and magic-comment-annotation
+follow-ups above: neither `LCF::File`-family nor `Game::Picture` (the
+only two real target classes compiled today) happens to call into the
+other's own target set from a compiled method body. The mechanism is
+real and now provably works end to end; it simply has nothing to bite
+into yet with only two, non-overlapping compiled gems.
