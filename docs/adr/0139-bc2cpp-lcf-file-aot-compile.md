@@ -463,3 +463,137 @@ future native method added to another file in that directory is picked
 up automatically) and add those files to the generated file's own
 prerequisites, so a change to RGSS's native method set correctly
 triggers regeneration.
+
+## Follow-up: magic-comment argument-type annotation
+
+`ArgTypes` (above) is structurally blind to `#initialize`'s own
+arguments -- `X.new(args)` always compiles to `SEND :new`, never `SEND
+:initialize` -- and `#initialize` is exactly where nearly every real
+ivar-from-argument pattern in this codebase lives. Closing that gap needs
+an actual type declaration from somewhere other than call sites. Chose a
+plain Ruby comment over a real Ruby-syntax annotation (a `sig(...)`-style
+method call before the `def`) specifically because every other bc2cpp
+feature so far has *zero* effect on the interpreted path: a comment is
+invisible to `mrbc` (stripped at parse time, long before any bytecode
+exists), while a real method call would need a stub defined in mrblib and
+would execute on every load of that class body, compiled or not -- a real
+behavior and performance cost this project's whole opt-in design
+deliberately avoids everywhere else.
+
+Syntax: `# bc2cpp: (T1, T2, ...) -> T3` on the line immediately above
+(blank lines skipped) a `def`. Only `fixnum`/`Fixnum`/`Integer` mean
+anything today, matching the one primitive type `IvarLayout`/`ArgTypes`
+themselves already model; any other token is simply not recognized (never
+an error).
+
+Finding the comment needed a small new data source: `mrbc -v`'s own
+disassembly already prints a `file: path/to/x.rb` line at the top of each
+irep block (previously discarded by `parse_disasm_blocks`) plus real,
+1-indexed source line numbers on every instruction (confirmed: a leaf
+method's own `ENTER` instruction's line number lands exactly on its `def`
+line). `Annotations.extract` uses that -- no new source-text parser, no
+correlating anything by name or textual order, just open the exact file at
+the exact line `mrbc` already reports and look one line up.
+
+Unlike `ArgTypes`, an annotation is safe for *any* method regardless of
+how many other classes define the same name: it names its own irep
+directly (found via `MethodDef#irep`, one per real `def`), never pooling
+call sites under a name the way `ArgTypes` has to (which is exactly why
+`ArgTypes` stays restricted to MONO names -- a POLY name's call sites
+could each be targeting a different real method). This is what makes
+`#initialize` -- about as POLY a name as they come, since nearly every
+class defines one -- safe to annotate at all. Wired into
+`IvarLayout.trace_type`'s own "opaque incoming argument" fallback,
+checked before `ArgTypes`' pooled inference (both only ever add embedding
+opportunities, never remove one).
+
+A wrong annotation cannot silently corrupt anything: `IvarLayout`'s own
+`SETIV`-embedding codegen already guards every embedded write with a real
+`mrb_integer_p` check + `mrb_raise` regardless of how the type was
+established (a literal, `ArgTypes` inference, or this) -- lying in a
+comment just means a real `TypeError` at runtime instead of a wrong
+build, the same safety net every other embedded ivar already has.
+
+Verified with a new toy case (`Budget#initialize(capacity)`, annotated
+`# bc2cpp: (fixnum) -> nil`): confirmed `@capacity` is UNKNOWN and stays
+un-embedded with the comment removed, and correctly embeds
+(`EMBED Budget#@capacity (fixnum)`) with it present; the full harness
+(built with the annotated, embedding codegen) runs byte-identical against
+`ruby toy.rb` end to end, `Budget.new(500).capacity` included. Re-verified
+both already-shipped targets (`LCF::File`-family, `Game::Picture`) emit
+byte-identical output through the real `rake` build path -- neither has
+any magic comments yet, so `Annotations.extract` finds nothing for either,
+exactly the no-op result a correct implementation should produce.
+
+### Where hand annotation would actually help in the real codebase
+
+Added a second, purely diagnostic pass, `report_annotation_candidates`:
+for every real `def`, find every `SETIV` site whose source register,
+tracing back through `MOVE` chains, was *never* written by anything else
+in that method body (a true opaque incoming argument, in a mandatory-arg
+position) and isn't already resolved by `ArgTypes` or an existing
+annotation -- mirroring `drop_unsafe_embeddings`' own gate (a class whose
+`#initialize` isn't purely mandatory-arity can never embed *any* ivar
+regardless of what else is annotated, so those are excluded too, or the
+count would overstate what annotation can actually unlock).
+
+Run against the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed
+world: **37 real candidate argument positions** (roughly 26 methods),
+**21 of them (14 methods) owned by `mruby-rpg2k` itself** -- the gem this
+question was actually asked about. That's the honest structural number:
+every position on this list is a case where nothing *but* annotation
+could unlock the ivar (call-site inference literally cannot reach it).
+
+It is not, however, the number of positions actually worth annotating --
+`fixnum` is still the only type this compiler understands, and most of
+these aren't Fixnum-typed at all. Spot-checked several real ones by
+reading the actual source: `RPG2k::Scene::Map::LRUBitmapCache#initialize
+(capacity_bytes)` is a genuine, correct target (`@bytes > @capacity_bytes`
+a few lines later is a real numeric comparison); `RPG2k::Scene::
+{Item,Skill}Menu#enter_target_confirm(lock)` is not (`lock == :self` and
+a bare `enter_target_confirm(nil)` call site both appear in the same
+class -- `lock` is `nil`/Symbol-typed, not Fixnum); `RPG2k::Scene::
+Menu#enter_actor_selection(key)` looks the same way (`@focus = :actors`
+sits right next to it). Most of the 21 are class/scene/state object
+references (`@parent`, `@scene`, `@state`, `@map`, `@owner`, ...), never
+annotatable under this compiler's current one-type model regardless. A
+real accounting would need reading each candidate's actual usage the same
+way, which this pass deliberately doesn't attempt -- it only finds
+*where* to look, not what type is actually there.
+
+### Automatic annotation
+
+Partially possible, not fully. For a MONO name's *non*-`#initialize`
+methods, `ArgTypes` already infers the type automatically from real call
+sites -- there's nothing to hand-annotate there in the first place, the
+whole point of that pass. For the real gap (`#initialize`, and any POLY
+name `ArgTypes` can't pool), no static derivation is possible without
+either a human actually reading the usage (as above), or a **dynamic**
+source: this project already diffs real gameplay behavior byte-for-byte
+between interpreted mruby and CRuby throughout its own test/verification
+process (this ADR's own verification steps included) -- the exact same
+mechanism could drive a lightweight runtime profiler, instrumenting every
+`report_annotation_candidates` method (a `TracePoint` or a thin
+`prepend`-based wrapper, loaded only for this one profiling run) to record
+the real Ruby class of every argument actually passed across a real
+CRuby test/logic-check run, then auto-emit a magic comment wherever every
+observed call agreed. That would give broader, *executed* coverage than
+`ArgTypes`' own static call-site scan (catching call sites `ArgTypes`
+already can't reach for other reasons too, like `#send`), at the same
+evidentiary weight `ArgTypes` itself already has -- strong evidence, not
+a soundness proof, so still subject to the exact same guarded-write
+safety net every annotation gets regardless of its source. Not built in
+this pass -- a real, scoped next step, not attempted here.
+
+### Static consistency checking
+
+One cheap static check *is* free and worth doing: wherever an annotation
+and `ArgTypes`' own pooled inference independently cover the very same
+name and position (a MONO, non-`#initialize` method that happens to be
+annotated too), bc2cpp could compare the two and warn on disagreement --
+a real, purely static contradiction check requiring no CRuby test run at
+all, since both sides already come from the same closed-world bytecode
+analysis. Not implemented in this pass (the two data sources barely
+overlap in practice today, since `#initialize` -- where annotations
+actually matter -- is exactly what `ArgTypes` can't reach), but a natural
+small addition if annotations spread to non-`#initialize` methods too.
