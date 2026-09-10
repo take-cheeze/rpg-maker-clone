@@ -33,7 +33,9 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # own comment on NATIVE_SRCS for why that makes bc2cpp's MONO/POLY
   # registry unsound wherever a native method collides by bare name with a
   # bytecode-defined one, and why closing it only needs the flat name set.
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
+  # mruby's own core is the same gap against the standard library instead
+  # of RGSS -- see compiled_gems.rb's own core_native_srcs comment.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby")
 
   this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rpg2k-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rpg2k-compiled' }

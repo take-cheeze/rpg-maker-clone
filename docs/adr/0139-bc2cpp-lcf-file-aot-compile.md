@@ -743,3 +743,86 @@ only two real target classes compiled today) happens to call into the
 other's own target set from a compiled method body. The mechanism is
 real and now provably works end to end; it simply has nothing to bite
 into yet with only two, non-overlapping compiled gems.
+
+## Follow-up: mruby core native method registry extraction
+
+The RGSS native-registry follow-up above closed the registry-soundness
+gap for RGSS's own C++-implemented methods. The exact same class of gap
+exists against mruby's *own* core (`Array`/`Hash`/`String`/`Kernel`/
+`Symbol`/...) -- and it was still wide open, because mruby's own C
+source doesn't register its methods the way `mruby-rgss/src/lib.cxx`
+does.
+
+Confirmed by reading the real source, not assumed: mruby 4.0 registers
+most of its own core methods through a declarative ROM method-table
+macro instead of individual `mrb_define_method(klass, "name", ...)`
+calls -- e.g. `3rd/mruby/src/symbol.c`'s own `symbol_rom_entries`:
+```c
+static const mrb_mt_entry symbol_rom_entries[] = {
+  MRB_MT_ENTRY(sym_name, MRB_SYM(name), MRB_ARGS_NONE()),
+  MRB_MT_ENTRY(sym_cmp,  MRB_OPSYM(cmp), MRB_ARGS_REQ(1)),   // <=>
+  ...
+};
+MRB_MT_INIT_ROM(mrb, sym, symbol_rom_entries);
+```
+`Symbol#name`/`Class#name` -- exactly the two names behind this
+session's own earlier-caught `Game::Shop#name` bug -- are registered
+this way. `extract_native_method_names`'s original regex, built only
+against RGSS's own literal-string call shape, could never see this at
+all: pointing `NATIVE_SRCS` at mruby's own core source wouldn't have
+found a single name without also teaching the extractor this second,
+completely different registration idiom.
+
+Two more regex patterns cover it: `MRB_MT_ENTRY(fn, MRB_SYM(name)|
+MRB_OPSYM(op), flags)` (the ROM-table form above) and
+`mrb_define_method_id(mrb, klass, MRB_SYM(name)|MRB_OPSYM(op), func,
+aspec)` (the direct-call form a few core mrbgems, e.g. `mruby-task`,
+still use instead of a ROM table). `MRB_OPSYM(op)` needed one more
+piece: it spells an operator method in mruby's own internal C-safe
+token, never the operator text itself (`MRB_OPSYM(cmp)` means `<=>`,
+never literally "cmp") -- `extract_native_method_names` now carries the
+inverse of `3rd/mruby/lib/mruby/presym.rb`'s own `OPERATORS` table (a
+small, closed, finite list -- mruby's own presym generator has no other
+source of truth for this mapping either) to translate it back to the
+real Ruby name the registry actually keys on.
+
+`mruby-lcf-compiled`/`mruby-rpg2k-compiled` now also feed
+`NATIVE_SRCS` with `3rd/mruby/src/*.c` plus the C sources of every core
+mrbgem `build_config.rb` actually enables (`mruby-array-ext`,
+`mruby-hash-ext`, `mruby-enum-ext`, `mruby-io`, `mruby-dir`,
+`mruby-numeric-ext`, `mruby-range-ext`, `mruby-fiber`, `mruby-exit`,
+`mruby-sprintf`, `mruby-kernel-ext`, `mruby-random`, `mruby-math`,
+`mruby-time`, `mruby-bigint`) -- a new `core_native_srcs` helper in
+`tools/bc2cpp/compiled_gems.rb`, the same shared file both gems already
+`require_relative` for their owner lists, so the core-gem list has one
+place to stay in sync with `build_config.rb`'s own `conf.gem core:
+'mruby-xxx'` calls.
+
+Run against the whole real closed world: 469 native names extracted
+(up from 115 RGSS-only), **27 real collisions found** against the
+current `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` mrblib set (up from the
+6 RGSS-only ones) -- the previous 6 (`:x`/`:y`/`:width`/`:height`/
+`:ox`/`:oy`) plus 21 more entirely new ones against mruby's own core,
+including a genuinely serious one: `LCF::Array1D#delete` colliding
+with core `Array#delete`/`Hash#delete` -- this tool's own README
+example (`Game::Actor#forget_skill`'s `@skills.delete(skill_id)`
+devirtualizing into `LCF::Array1D#delete`) was only ever safe because
+`@skills` really is always an `Array1D` there; before this fix, *any*
+other `.delete` call anywhere in the whole program on a real `Array`/
+`Hash` would have been unsoundly devirtualized into `LCF::Array1D`'s
+own implementation instead of core's. Others: `:puts`/`:print`/`:write`/
+`:<<` (`RGSS::ErrorReport::Tee` vs. `Kernel`/`IO`), `:resume`/`:start`
+(`RPG2k::Scene::Menu`/`Battle` vs. `Fiber`), `:ungetbyte` (`StringIO`
+vs. core `IO`).
+
+Verified sound and zero-regression the same way as every other native-
+registry change in this file: a real toy case (a new `MRB_MT_ENTRY`/
+`MRB_SYM`/`MRB_OPSYM`-shaped fixture colliding with `Sized#n`, plus a
+literal `MRB_OPSYM(cmp)` entry confirming the operator-table
+translation) flips exactly as expected; both already-shipped targets
+(`LCF::File`-family, `Game::Picture`) emit **byte-identical** output
+through the real Rake build path, confirmed against a true `git
+stash`-based before/after (not a stale reference) -- neither currently
+calls any of the 27 flipped names from a compiled call site, so this
+is, once again, a real, verified safety fix with zero live effect on
+what ships today.
