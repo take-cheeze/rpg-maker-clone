@@ -27,17 +27,25 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
                        Dir["#{dir}/../mruby-lcf/mrblib/*.rb"] +
                        Dir["#{dir}/../mruby-rgss/mrblib/*.rb"]
 
+  # RGSS's own C++-implemented methods are invisible to closed_world_srcs
+  # above (no .rb source for them) -- see mruby-lcf-compiled/mrbgem.rake's
+  # own comment on NATIVE_SRCS for why that makes bc2cpp's MONO/POLY
+  # registry unsound wherever a native method collides by bare name with a
+  # bytecode-defined one, and why closing it only needs the flat name set.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
+
   target_owners = %w[Game::Picture]
 
   generated = "#{build_dir}/rpg2k_compiled_gen.cpp"
 
-  file generated => [bc2cpp, *closed_world_srcs] do |t|
+  file generated => [bc2cpp, *closed_world_srcs, *native_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
       'OUT_SYMBOL' => 'rpg2k_compiled',
       'OUT_DIR' => build_dir,
       'ONLY_OWNERS' => target_owners.join(','),
+      'NATIVE_SRCS' => Shellwords.join(native_srcs),
       'SKIP_UNSUPPORTED' => '1',
     }
     cmd = "#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \

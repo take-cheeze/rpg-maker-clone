@@ -36,17 +36,33 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
                        Dir["#{lcf_mrblib}/*.rb"] +
                        Dir["#{dir}/../mruby-rgss/mrblib/*.rb"]
 
+  # RGSS's own C++-implemented methods (Sprite/Bitmap/Viewport/Window/Rect/
+  # ...) are invisible to the closed_world_srcs scan above -- there's no .rb
+  # source for them, so bc2cpp's own MONO/POLY registry never sees them at
+  # all. A method name real bytecode defines exactly once still looks MONO
+  # even when a *different* class registers a same-named method natively --
+  # dispatch is by name only, so that's unsound wherever it happens (found
+  # 6 real collisions running this against mruby-rgss/src/lib.cxx: :x/:y/
+  # :width/:height/:ox/:oy, RGSS::Sprite's own bytecode readers vs.
+  # RGSS::Rect/Viewport's natively-registered same-named accessors). Feeding
+  # every mruby-rgss/src/*.cxx file's mrb_define_method-family call sites in
+  # via NATIVE_SRCS closes that gap -- see bc2cpp.rb's own comment on
+  # extract_native_method_names for why this only ever needs the flat set of
+  # names, never an owner class or a callable C++ symbol.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
+
   target_owners = %w[LCF::File LCF::Database LCF::MapTree LCF::MapUnit LCF::SaveData]
 
   generated = "#{build_dir}/lcf_compiled_gen.cpp"
 
-  file generated => [bc2cpp, *closed_world_srcs] do |t|
+  file generated => [bc2cpp, *closed_world_srcs, *native_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
       'OUT_SYMBOL' => 'lcf_compiled',
       'OUT_DIR' => build_dir,
       'ONLY_OWNERS' => target_owners.join(','),
+      'NATIVE_SRCS' => Shellwords.join(native_srcs),
       # See bc2cpp.rb's own comment: a `#error` this C++ toolchain actually
       # compiles halts the whole build. Any LCF::File-family method bc2cpp
       # can't safely compile is simply never emitted here -- it keeps

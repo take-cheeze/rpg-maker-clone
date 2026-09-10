@@ -355,3 +355,111 @@ whole-program class registry) would reach further, but needs real
 dataflow across the now-arbitrary goto-threaded control flow rather than
 this pass's straight-line backward scan -- a materially bigger piece of
 work, left as a real, understood next step rather than attempted here.
+
+## Follow-up: RGSS native method name registry extraction
+
+bc2cpp's whole-program registry (`build_registry`) only ever sees methods
+`def`'d in Ruby -- it walks `mrbc`'s own bytecode dump, so a method
+registered directly onto a class via C++ (`mrb_define_method` and its
+`_class_method`/`_module_function` siblings, the shape every RGSS class
+--`Sprite`, `Bitmap`, `Viewport`, `Window`, `Rect`, ... -- uses in
+`mruby-rgss/src/lib.cxx`) is invisible to it. Since the registry keys
+purely by bare method *name* (dispatch is by name, not by class -- see
+`build_registry`'s own comment), a name real bytecode defines exactly
+once still looks MONO even when a *different* class registers a
+same-named method natively -- unsound wherever that collision happens.
+
+Checked first, before writing anything, whether a *direct* devirtualized
+call into one of these native C++ methods (skipping `mrb_funcall`'s own
+method-table lookup, mirroring what this pass already does for MONO
+bytecode names) could also be made sound and worth adding here. It
+can't, not without a lot more work than this pass attempts: every
+`mrb_get_args`/`mrb_get_argc` call reads the current call's arguments
+from `mrb->c->ci` (the VM's own call-info frame), and that frame is only
+populated by `mrb_funcall`'s own `cipush` + `funcall_args_capture` +
+`ci->u.target_class`/`ci->mid` assignment (confirmed reading
+`3rd/mruby/src/vm.c`'s `mrb_funcall_with_block`, lines 797-865, and
+`3rd/mruby/src/class.c`'s `get_args_v`) -- a raw C function is only ever
+invoked as `(mrb_state*, mrb_value self)`, with every actual argument
+already staged into that frame beforehand, never passed as direct C
+parameters. Calling an RGSS method's function pointer directly would
+skip all of that setup, so any `mrb_get_args` inside it would read a
+stale or wrong frame -- a real correctness bug, not a missed
+optimization. So this stays a **registry-soundness fix only**: extract
+just the flat set of names these call sites register, never an owner
+class or a callable C++ symbol (neither is needed to make MONO/POLY
+accounting sound again), and never attempt a direct call into one.
+
+`extract_native_method_names` scans a list of C/C++ source files for
+`mrb_define_method`/`mrb_define_class_method`/`mrb_define_module_function`
+call sites and pulls out each one's literal method-name argument (a
+single multiline-aware regex -- these calls are mechanically regular, no
+real C++ parsing needed). The CLI driver merges the result into the
+registry as synthetic `MethodDef`s with `owner: '<native>'` and
+`irep: nil` before any analysis runs, gated behind a new `NATIVE_SRCS`
+env var (shell-word-separated source paths) that's optional the same way
+every other env knob here is -- omitting it just leaves the registry as
+unsound as it always was with respect to that native gem.
+
+A `MethodDef` with `irep: nil` has no bytecode body -- three real crash
+sites had to be guarded once this was wired up and run for real
+(`IvarLayout.analyze`'s `methods_of`/`def_of_irep` building,
+`ArgTypes.analyze`'s per-name walk, and `monomorphic_target` itself, the
+function every direct-call decision in `compile_send` goes through) --
+each now simply skips/excludes a native-only entry rather than
+dereferencing a `nil` irep label. `monomorphic_target` in particular
+means a name that's *only* ever natively defined (no bytecode
+definition anywhere) just falls back to ordinary dynamic dispatch, same
+as any other call this compiler can't resolve.
+
+Ran against `mruby-rgss/src/lib.cxx` (115 unique method names across its
+199 real `mrb_define_method`-family call sites) merged into the real
+`mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world: **6 real name
+collisions found and fixed** -- `:x`, `:y`, `:width`, `:height`, `:ox`,
+`:oy` all flipped from MONO to POLY. Every one is a genuine, previously
+unsound case with exactly the same shape as this ADR's own earlier
+`Game::Shop#name` bug: `RGSS::Sprite`'s own bytecode-level readers
+(`mruby-rgss/mrblib/lib.rb`, e.g. `def x; @x || 0; end`) share a bare
+name with `RGSS::Rect#x`/`RGSS::Rect#width`/`RGSS::Rect#height` and
+`RGSS::Viewport#ox`/`RGSS::Viewport#oy`, both registered natively in
+`lib.cxx` -- a different class entirely. Before this fix, any compiled
+call site sending `.x` anywhere in the whole program would have been
+devirtualized straight into `RGSS::Sprite`'s compiled body regardless of
+the receiver's real class -- silently wrong (or a crash, depending on
+the receiver's actual shape) had a compiled caller ever reached one of
+these names with a non-`Sprite` receiver.
+
+Re-verified both already-shipped targets (`LCF::File`-family,
+`Game::Picture`) two ways: first by replaying `mruby-lcf-compiled`/
+`mruby-rpg2k-compiled`'s own exact `bc2cpp.rb` invocation by hand with
+`NATIVE_SRCS=mruby-rgss/src/lib.cxx` added, then for real -- running the
+actual `rake <build_dir>/lcf_compiled_gen.cpp
+<build_dir>/rpg2k_compiled_gen.cpp` targets through this repo's real host
+build (`RPGMAKER_BC2CPP=1`) with `mrbgem.rake` now wiring
+`NATIVE_SRCS = Dir["mruby-rgss/src/*.cxx"]` into both gems. Both ways,
+both targets emit **byte-identical output** with this change applied --
+neither one happens to call any of the 6 flipped names from a compiled
+call site, so this is a real, verified safety fix with zero effect on
+what's actually shipping today, not a live bug in either compiled gem.
+
+Built and verified a minimal end-to-end toy case on top of the existing
+`classes.rb`/`toy.rb`/`main.cxx` harness (not part of the git repo, a
+scratch reproduction only): added `Calc2#label` on the bytecode side, a
+plain-text native fixture file with a colliding `mrb_define_method(...,
+"label", ...)` on a different (fictional) class, and a top-level
+`read_label(o) = o.label` call site. Without `NATIVE_SRCS`, `:label`
+looks MONO and `read_label` compiles to an unsound direct call
+(`Calc2_label_impl(M, r3)`) regardless of what `o` actually is -- the
+exact bug shape above, deliberately reproduced small. With the fixture
+fed in via `NATIVE_SRCS`, `:label` correctly flips to POLY and the same
+call site compiles to `mrb_funcall(M, r3, "label", 0)` instead. The full
+harness (built with the fixed, safe codegen) still runs byte-identical
+against `ruby toy.rb`, including the new `read_label(calc2)` call.
+
+`mruby-lcf-compiled/mrbgem.rake` and `mruby-rpg2k-compiled/mrbgem.rake`
+both now pass `NATIVE_SRCS = Dir["mruby-rgss/src/*.cxx"]` (currently only
+`lib.cxx` actually defines any methods; the rest are globbed too so a
+future native method added to another file in that directory is picked
+up automatically) and add those files to the generated file's own
+prerequisites, so a change to RGSS's native method set correctly
+triggers regeneration.
