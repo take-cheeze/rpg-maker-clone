@@ -582,8 +582,52 @@ observed call agreed. That would give broader, *executed* coverage than
 already can't reach for other reasons too, like `#send`), at the same
 evidentiary weight `ArgTypes` itself already has -- strong evidence, not
 a soundness proof, so still subject to the exact same guarded-write
-safety net every annotation gets regardless of its source. Not built in
-this pass -- a real, scoped next step, not attempted here.
+safety net every annotation gets regardless of its source.
+
+Built as `tools/bc2cpp/profile_annotations.rb`: runs `bc2cpp.rb` for
+real (the same closed-world source list/`NATIVE_SRCS` both real
+`mrbgem.rake`s use) to get the live candidate list, then re-runs this
+project's own real CRuby game-logic harnesses
+(`scripts/rpg2k_logic_check.rb`, `scripts/rpg2k_scene_check.rb`, and
+others) each in its own clean subprocess with a `TracePoint(:call)`
+probe installed, recording the real Ruby class of each candidate's
+argument on every real call. Chose `TracePoint` over a
+`Module#prepend` wrapper specifically because it needs no class to
+already exist at install time -- it matches dynamically as real
+classes get defined, so one unmodified probe works across every
+harness regardless of load order. A first version had a real bug,
+caught before it was treated as done: it emitted one "ready to paste"
+comment *per candidate position* rather than per method, each
+independently claiming *every* mandatory position was `fixnum`
+regardless of whether that specific position had any evidence at all
+(a 4-argument `#initialize` with only argument 2 confirmed would print
+a comment claiming all 4). Fixed by grouping candidates per method and
+building one combined signature per method, leaving every
+unconfirmed position blank -- a real, already-supported partial
+annotation (an empty token between commas parses to `nil` in
+`Annotations::TYPES`, the same "no claim" an unrecognized token
+already gets); also dropped the unfounded `-> T` return-type guess
+entirely, since this tool only ever observes incoming *arguments*
+(`TracePoint(:call)`), never a method's own return value.
+
+Run for real against the whole project: of 71 live candidates, **26
+are confidently resolvable to `fixnum`** from real observed evidence
+(thousands of real calls for some, e.g. `LCF::Array1D#initialize`'s
+`@schema` argument -- correctly reported as `Hash`, *not* annotatable,
+17,196 real calls observed). The other 45 are either genuinely not
+Fixnum-typed (confirmed by real evidence, not guesswork -- `Game::
+State#initialize`'s `@party` argument is one of 30+ real `Party`
+subclasses; `RGSS::ErrorReport::Tee#initialize`'s `@io` is `StringIO`/
+`IO`/a custom sink) or have zero real coverage in this environment
+(`LCF::Tree#initialize`'s two arguments are only reached by parsing a
+real `RPG_RT.lmt` map-tree file, which this environment's `./data`
+doesn't have -- an honest, traceable "no evidence" rather than a
+guess). One real near-miss the dynamic approach caught that source-
+reading alone would have missed: `RPG2k::Scene::SaveLoad#initialize`'s
+second argument is `NilClass` 33 times and `Game::State` only 9 times
+in real observed calls -- it would have looked like a plausible
+Fixnum candidate from the name alone (`@state`) but isn't fixnum at
+all, in either observed shape.
 
 ### Static consistency checking
 
