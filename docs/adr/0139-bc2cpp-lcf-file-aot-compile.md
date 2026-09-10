@@ -305,3 +305,441 @@ together, against the 507,904-byte budget. `mruby-rpg2k`'s own
 bytes, entirely explained by the two builds' own directory path strings
 embedded in debug info, not by any code difference) -- confirming again
 that nothing was removed, only added.
+
+## Follow-up: whole-program call-site argument-type inference
+
+A cheap, deliberately narrow extension: for a method name with exactly
+one real definition (MONO -- the same registry devirtualization and
+`IvarLayout` both already trust), *every* `SEND`/`SSEND` anywhere in the
+program sending that name can only be calling this one definition
+(dispatch is by name, not signature, so pooling a POLY name's call sites
+this way would be unsound -- each one could be targeting a different real
+method). `ArgTypes.analyze` walks every such call site's own argument
+registers with `IvarLayout.trace_type` itself (the exact same backward
+scan `SETIV` sites already use, just re-pointed at a `SEND`'s argument
+registers), and feeds the result back into `IvarLayout.trace_type`'s own
+"opaque incoming argument" fallback -- a `SETIV` whose only source is a
+bare method parameter (previously always `UNKNOWN`, e.g. the toy
+example's own `Animal#@name`) can now embed when every real caller
+happens to pass the same primitive type there.
+
+Run against the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world:
+71 real argument positions across the whole program inferred `fixnum`,
+but **zero new ivars unlocked** in that same real code. The reason is
+structural, not a bug: `X.new(args)` compiles to `SEND :new` -- `Class#new`
+is a C-defined core method, invisible to this bytecode-only registry --
+never a real `SEND :initialize`, confirmed against the actual
+disassembly. So `#initialize`'s own arguments are permanently invisible to
+this mechanism, and `#initialize` is exactly where nearly every real
+ivar-from-argument pattern in this codebase lives (`Game::Picture`'s own
+`@x = opts[:x] || 0`-shaped `#initialize` included -- a Hash-default
+pattern this compiler doesn't parse yet regardless).
+
+Verified the mechanism itself is sound on the one real shape it *can*
+reach: a bare argument assigned to an ivar in a method other than
+`#initialize` (a real setter, `#foo=`, reached by an ordinary `obj.foo =
+value` `SEND`, not by `.new`). A new toy case (`Sized#n=`, called once
+with a literal `42` from `SizedUser#make`) confirmed `@n` becomes
+embeddable only because of this pass, generates the same guarded
+`DATA_PTR(self)` struct write every other embedded ivar gets, and diffs
+byte-identical against CRuby end to end. Re-verified both already-shipped
+targets (`LCF::File`, `Game::Picture`) emit byte-identical output with this
+change applied -- this pass only ever *adds* embedding opportunities that
+weren't there before, never changes an existing one, so a real-code
+no-op result is exactly what a correct implementation should produce
+given this codebase's own actual `#initialize`-heavy style.
+
+Not pursued further in this pass: usage-based type inference (typing a
+register from the *set* of methods called on it, intersected against the
+whole-program class registry) would reach further, but needs real
+dataflow across the now-arbitrary goto-threaded control flow rather than
+this pass's straight-line backward scan -- a materially bigger piece of
+work, left as a real, understood next step rather than attempted here.
+
+## Follow-up: RGSS native method name registry extraction
+
+bc2cpp's whole-program registry (`build_registry`) only ever sees methods
+`def`'d in Ruby -- it walks `mrbc`'s own bytecode dump, so a method
+registered directly onto a class via C++ (`mrb_define_method` and its
+`_class_method`/`_module_function` siblings, the shape every RGSS class
+--`Sprite`, `Bitmap`, `Viewport`, `Window`, `Rect`, ... -- uses in
+`mruby-rgss/src/lib.cxx`) is invisible to it. Since the registry keys
+purely by bare method *name* (dispatch is by name, not by class -- see
+`build_registry`'s own comment), a name real bytecode defines exactly
+once still looks MONO even when a *different* class registers a
+same-named method natively -- unsound wherever that collision happens.
+
+Checked first, before writing anything, whether a *direct* devirtualized
+call into one of these native C++ methods (skipping `mrb_funcall`'s own
+method-table lookup, mirroring what this pass already does for MONO
+bytecode names) could also be made sound and worth adding here. It
+can't, not without a lot more work than this pass attempts: every
+`mrb_get_args`/`mrb_get_argc` call reads the current call's arguments
+from `mrb->c->ci` (the VM's own call-info frame), and that frame is only
+populated by `mrb_funcall`'s own `cipush` + `funcall_args_capture` +
+`ci->u.target_class`/`ci->mid` assignment (confirmed reading
+`3rd/mruby/src/vm.c`'s `mrb_funcall_with_block`, lines 797-865, and
+`3rd/mruby/src/class.c`'s `get_args_v`) -- a raw C function is only ever
+invoked as `(mrb_state*, mrb_value self)`, with every actual argument
+already staged into that frame beforehand, never passed as direct C
+parameters. Calling an RGSS method's function pointer directly would
+skip all of that setup, so any `mrb_get_args` inside it would read a
+stale or wrong frame -- a real correctness bug, not a missed
+optimization. So this stays a **registry-soundness fix only**: extract
+just the flat set of names these call sites register, never an owner
+class or a callable C++ symbol (neither is needed to make MONO/POLY
+accounting sound again), and never attempt a direct call into one.
+
+`extract_native_method_names` scans a list of C/C++ source files for
+`mrb_define_method`/`mrb_define_class_method`/`mrb_define_module_function`
+call sites and pulls out each one's literal method-name argument (a
+single multiline-aware regex -- these calls are mechanically regular, no
+real C++ parsing needed). The CLI driver merges the result into the
+registry as synthetic `MethodDef`s with `owner: '<native>'` and
+`irep: nil` before any analysis runs, gated behind a new `NATIVE_SRCS`
+env var (shell-word-separated source paths) that's optional the same way
+every other env knob here is -- omitting it just leaves the registry as
+unsound as it always was with respect to that native gem.
+
+A `MethodDef` with `irep: nil` has no bytecode body -- three real crash
+sites had to be guarded once this was wired up and run for real
+(`IvarLayout.analyze`'s `methods_of`/`def_of_irep` building,
+`ArgTypes.analyze`'s per-name walk, and `monomorphic_target` itself, the
+function every direct-call decision in `compile_send` goes through) --
+each now simply skips/excludes a native-only entry rather than
+dereferencing a `nil` irep label. `monomorphic_target` in particular
+means a name that's *only* ever natively defined (no bytecode
+definition anywhere) just falls back to ordinary dynamic dispatch, same
+as any other call this compiler can't resolve.
+
+Ran against `mruby-rgss/src/lib.cxx` (115 unique method names across its
+199 real `mrb_define_method`-family call sites) merged into the real
+`mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world: **6 real name
+collisions found and fixed** -- `:x`, `:y`, `:width`, `:height`, `:ox`,
+`:oy` all flipped from MONO to POLY. Every one is a genuine, previously
+unsound case with exactly the same shape as this ADR's own earlier
+`Game::Shop#name` bug: `RGSS::Sprite`'s own bytecode-level readers
+(`mruby-rgss/mrblib/lib.rb`, e.g. `def x; @x || 0; end`) share a bare
+name with `RGSS::Rect#x`/`RGSS::Rect#width`/`RGSS::Rect#height` and
+`RGSS::Viewport#ox`/`RGSS::Viewport#oy`, both registered natively in
+`lib.cxx` -- a different class entirely. Before this fix, any compiled
+call site sending `.x` anywhere in the whole program would have been
+devirtualized straight into `RGSS::Sprite`'s compiled body regardless of
+the receiver's real class -- silently wrong (or a crash, depending on
+the receiver's actual shape) had a compiled caller ever reached one of
+these names with a non-`Sprite` receiver.
+
+Re-verified both already-shipped targets (`LCF::File`-family,
+`Game::Picture`) two ways: first by replaying `mruby-lcf-compiled`/
+`mruby-rpg2k-compiled`'s own exact `bc2cpp.rb` invocation by hand with
+`NATIVE_SRCS=mruby-rgss/src/lib.cxx` added, then for real -- running the
+actual `rake <build_dir>/lcf_compiled_gen.cpp
+<build_dir>/rpg2k_compiled_gen.cpp` targets through this repo's real host
+build (`RPGMAKER_BC2CPP=1`) with `mrbgem.rake` now wiring
+`NATIVE_SRCS = Dir["mruby-rgss/src/*.cxx"]` into both gems. Both ways,
+both targets emit **byte-identical output** with this change applied --
+neither one happens to call any of the 6 flipped names from a compiled
+call site, so this is a real, verified safety fix with zero effect on
+what's actually shipping today, not a live bug in either compiled gem.
+
+Built and verified a minimal end-to-end toy case on top of the existing
+`classes.rb`/`toy.rb`/`main.cxx` harness (not part of the git repo, a
+scratch reproduction only): added `Calc2#label` on the bytecode side, a
+plain-text native fixture file with a colliding `mrb_define_method(...,
+"label", ...)` on a different (fictional) class, and a top-level
+`read_label(o) = o.label` call site. Without `NATIVE_SRCS`, `:label`
+looks MONO and `read_label` compiles to an unsound direct call
+(`Calc2_label_impl(M, r3)`) regardless of what `o` actually is -- the
+exact bug shape above, deliberately reproduced small. With the fixture
+fed in via `NATIVE_SRCS`, `:label` correctly flips to POLY and the same
+call site compiles to `mrb_funcall(M, r3, "label", 0)` instead. The full
+harness (built with the fixed, safe codegen) still runs byte-identical
+against `ruby toy.rb`, including the new `read_label(calc2)` call.
+
+`mruby-lcf-compiled/mrbgem.rake` and `mruby-rpg2k-compiled/mrbgem.rake`
+both now pass `NATIVE_SRCS = Dir["mruby-rgss/src/*.cxx"]` (currently only
+`lib.cxx` actually defines any methods; the rest are globbed too so a
+future native method added to another file in that directory is picked
+up automatically) and add those files to the generated file's own
+prerequisites, so a change to RGSS's native method set correctly
+triggers regeneration.
+
+## Follow-up: magic-comment argument-type annotation
+
+`ArgTypes` (above) is structurally blind to `#initialize`'s own
+arguments -- `X.new(args)` always compiles to `SEND :new`, never `SEND
+:initialize` -- and `#initialize` is exactly where nearly every real
+ivar-from-argument pattern in this codebase lives. Closing that gap needs
+an actual type declaration from somewhere other than call sites. Chose a
+plain Ruby comment over a real Ruby-syntax annotation (a `sig(...)`-style
+method call before the `def`) specifically because every other bc2cpp
+feature so far has *zero* effect on the interpreted path: a comment is
+invisible to `mrbc` (stripped at parse time, long before any bytecode
+exists), while a real method call would need a stub defined in mrblib and
+would execute on every load of that class body, compiled or not -- a real
+behavior and performance cost this project's whole opt-in design
+deliberately avoids everywhere else.
+
+Syntax: `# bc2cpp: (T1, T2, ...) -> T3` on the line immediately above
+(blank lines skipped) a `def`. Only `fixnum`/`Fixnum`/`Integer` mean
+anything today, matching the one primitive type `IvarLayout`/`ArgTypes`
+themselves already model; any other token is simply not recognized (never
+an error).
+
+Finding the comment needed a small new data source: `mrbc -v`'s own
+disassembly already prints a `file: path/to/x.rb` line at the top of each
+irep block (previously discarded by `parse_disasm_blocks`) plus real,
+1-indexed source line numbers on every instruction (confirmed: a leaf
+method's own `ENTER` instruction's line number lands exactly on its `def`
+line). `Annotations.extract` uses that -- no new source-text parser, no
+correlating anything by name or textual order, just open the exact file at
+the exact line `mrbc` already reports and look one line up.
+
+Unlike `ArgTypes`, an annotation is safe for *any* method regardless of
+how many other classes define the same name: it names its own irep
+directly (found via `MethodDef#irep`, one per real `def`), never pooling
+call sites under a name the way `ArgTypes` has to (which is exactly why
+`ArgTypes` stays restricted to MONO names -- a POLY name's call sites
+could each be targeting a different real method). This is what makes
+`#initialize` -- about as POLY a name as they come, since nearly every
+class defines one -- safe to annotate at all. Wired into
+`IvarLayout.trace_type`'s own "opaque incoming argument" fallback,
+checked before `ArgTypes`' pooled inference (both only ever add embedding
+opportunities, never remove one).
+
+A wrong annotation cannot silently corrupt anything: `IvarLayout`'s own
+`SETIV`-embedding codegen already guards every embedded write with a real
+`mrb_integer_p` check + `mrb_raise` regardless of how the type was
+established (a literal, `ArgTypes` inference, or this) -- lying in a
+comment just means a real `TypeError` at runtime instead of a wrong
+build, the same safety net every other embedded ivar already has.
+
+Verified with a new toy case (`Budget#initialize(capacity)`, annotated
+`# bc2cpp: (fixnum) -> nil`): confirmed `@capacity` is UNKNOWN and stays
+un-embedded with the comment removed, and correctly embeds
+(`EMBED Budget#@capacity (fixnum)`) with it present; the full harness
+(built with the annotated, embedding codegen) runs byte-identical against
+`ruby toy.rb` end to end, `Budget.new(500).capacity` included. Re-verified
+both already-shipped targets (`LCF::File`-family, `Game::Picture`) emit
+byte-identical output through the real `rake` build path -- neither has
+any magic comments yet, so `Annotations.extract` finds nothing for either,
+exactly the no-op result a correct implementation should produce.
+
+### Where hand annotation would actually help in the real codebase
+
+Added a second, purely diagnostic pass, `report_annotation_candidates`:
+for every real `def`, find every `SETIV` site whose source register,
+tracing back through `MOVE` chains, was *never* written by anything else
+in that method body (a true opaque incoming argument, in a mandatory-arg
+position) and isn't already resolved by `ArgTypes` or an existing
+annotation -- mirroring `drop_unsafe_embeddings`' own gate (a class whose
+`#initialize` isn't purely mandatory-arity can never embed *any* ivar
+regardless of what else is annotated, so those are excluded too, or the
+count would overstate what annotation can actually unlock).
+
+Run against the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed
+world: **37 real candidate argument positions** (roughly 26 methods),
+**21 of them (14 methods) owned by `mruby-rpg2k` itself** -- the gem this
+question was actually asked about. That's the honest structural number:
+every position on this list is a case where nothing *but* annotation
+could unlock the ivar (call-site inference literally cannot reach it).
+
+It is not, however, the number of positions actually worth annotating --
+`fixnum` is still the only type this compiler understands, and most of
+these aren't Fixnum-typed at all. Spot-checked several real ones by
+reading the actual source: `RPG2k::Scene::Map::LRUBitmapCache#initialize
+(capacity_bytes)` is a genuine, correct target (`@bytes > @capacity_bytes`
+a few lines later is a real numeric comparison); `RPG2k::Scene::
+{Item,Skill}Menu#enter_target_confirm(lock)` is not (`lock == :self` and
+a bare `enter_target_confirm(nil)` call site both appear in the same
+class -- `lock` is `nil`/Symbol-typed, not Fixnum); `RPG2k::Scene::
+Menu#enter_actor_selection(key)` looks the same way (`@focus = :actors`
+sits right next to it). Most of the 21 are class/scene/state object
+references (`@parent`, `@scene`, `@state`, `@map`, `@owner`, ...), never
+annotatable under this compiler's current one-type model regardless. A
+real accounting would need reading each candidate's actual usage the same
+way, which this pass deliberately doesn't attempt -- it only finds
+*where* to look, not what type is actually there.
+
+### Automatic annotation
+
+Partially possible, not fully. For a MONO name's *non*-`#initialize`
+methods, `ArgTypes` already infers the type automatically from real call
+sites -- there's nothing to hand-annotate there in the first place, the
+whole point of that pass. For the real gap (`#initialize`, and any POLY
+name `ArgTypes` can't pool), no static derivation is possible without
+either a human actually reading the usage (as above), or a **dynamic**
+source: this project already diffs real gameplay behavior byte-for-byte
+between interpreted mruby and CRuby throughout its own test/verification
+process (this ADR's own verification steps included) -- the exact same
+mechanism could drive a lightweight runtime profiler, instrumenting every
+`report_annotation_candidates` method (a `TracePoint` or a thin
+`prepend`-based wrapper, loaded only for this one profiling run) to record
+the real Ruby class of every argument actually passed across a real
+CRuby test/logic-check run, then auto-emit a magic comment wherever every
+observed call agreed. That would give broader, *executed* coverage than
+`ArgTypes`' own static call-site scan (catching call sites `ArgTypes`
+already can't reach for other reasons too, like `#send`), at the same
+evidentiary weight `ArgTypes` itself already has -- strong evidence, not
+a soundness proof, so still subject to the exact same guarded-write
+safety net every annotation gets regardless of its source.
+
+Built as `tools/bc2cpp/profile_annotations.rb`: runs `bc2cpp.rb` for
+real (the same closed-world source list/`NATIVE_SRCS` both real
+`mrbgem.rake`s use) to get the live candidate list, then re-runs this
+project's own real CRuby game-logic harnesses
+(`scripts/rpg2k_logic_check.rb`, `scripts/rpg2k_scene_check.rb`, and
+others) each in its own clean subprocess with a `TracePoint(:call)`
+probe installed, recording the real Ruby class of each candidate's
+argument on every real call. Chose `TracePoint` over a
+`Module#prepend` wrapper specifically because it needs no class to
+already exist at install time -- it matches dynamically as real
+classes get defined, so one unmodified probe works across every
+harness regardless of load order. A first version had a real bug,
+caught before it was treated as done: it emitted one "ready to paste"
+comment *per candidate position* rather than per method, each
+independently claiming *every* mandatory position was `fixnum`
+regardless of whether that specific position had any evidence at all
+(a 4-argument `#initialize` with only argument 2 confirmed would print
+a comment claiming all 4). Fixed by grouping candidates per method and
+building one combined signature per method, leaving every
+unconfirmed position blank -- a real, already-supported partial
+annotation (an empty token between commas parses to `nil` in
+`Annotations::TYPES`, the same "no claim" an unrecognized token
+already gets); also dropped the unfounded `-> T` return-type guess
+entirely, since this tool only ever observes incoming *arguments*
+(`TracePoint(:call)`), never a method's own return value.
+
+Run for real against the whole project: of 71 live candidates, **26
+are confidently resolvable to `fixnum`** from real observed evidence
+(thousands of real calls for some, e.g. `LCF::Array1D#initialize`'s
+`@schema` argument -- correctly reported as `Hash`, *not* annotatable,
+17,196 real calls observed). The other 45 are either genuinely not
+Fixnum-typed (confirmed by real evidence, not guesswork -- `Game::
+State#initialize`'s `@party` argument is one of 30+ real `Party`
+subclasses; `RGSS::ErrorReport::Tee#initialize`'s `@io` is `StringIO`/
+`IO`/a custom sink) or have zero real coverage in this environment
+(`LCF::Tree#initialize`'s two arguments are only reached by parsing a
+real `RPG_RT.lmt` map-tree file, which this environment's `./data`
+doesn't have -- an honest, traceable "no evidence" rather than a
+guess). One real near-miss the dynamic approach caught that source-
+reading alone would have missed: `RPG2k::Scene::SaveLoad#initialize`'s
+second argument is `NilClass` 33 times and `Game::State` only 9 times
+in real observed calls -- it would have looked like a plausible
+Fixnum candidate from the name alone (`@state`) but isn't fixnum at
+all, in either observed shape.
+
+### Static consistency checking
+
+One cheap static check *is* free and worth doing: wherever an annotation
+and `ArgTypes`' own pooled inference independently cover the very same
+name and position (a MONO, non-`#initialize` method that happens to be
+annotated too), bc2cpp could compare the two and warn on disagreement --
+a real, purely static contradiction check requiring no CRuby test run at
+all, since both sides already come from the same closed-world bytecode
+analysis. Not implemented in this pass (the two data sources barely
+overlap in practice today, since `#initialize` -- where annotations
+actually matter -- is exactly what `ArgTypes` can't reach), but a natural
+small addition if annotations spread to non-`#initialize` methods too.
+
+## Follow-up: cross-gem devirtualization
+
+`compile_send`'s own guard already refused to devirtualize a call whose
+target's owner wasn't in this run's `ONLY_OWNERS` (the real
+`LCF.write_ber`/`LCF.binstr` bug this ADR documents above) -- but the
+deeper reason was structural, not just that guard: every `_impl` function
+was `static`, so even *without* the guard, a devirtualized call from
+`mruby-rpg2k-compiled`'s own generated `.cpp` into
+`mruby-lcf-compiled`'s own compiled `LCF::Array1D#delete` (the README's
+own aspirational example) could never have linked -- `static` gives a
+function internal linkage, invisible outside its own translation unit.
+Each compiled gem's generated file is its own separate TU, so this made
+cross-*gem* devirtualization structurally impossible before this pass,
+independent of the `ONLY_OWNERS` guard.
+
+Explored a parallel "unwrapped core" design first (a raw-C++-typed
+`_core` alongside the existing `mrb_value`-boxed `_impl`, `inline` in a
+shared header, so a caller with an already-proven-typed value could skip
+boxing it into `mrb_value` just to have the callee immediately unbox it
+again). Didn't build it: this compiler's entire internal representation
+is uniformly `mrb_value` -- every register is already a boxed
+`mrb_value` local, and `_impl`'s own body would still need to re-box a
+raw incoming argument into one on its very first line either way (the
+same "goto-threaded, straight-line, always-`mrb_value`" codegen strategy
+this whole prototype uses throughout). A `_core` variant taking a raw
+`mrb_int` would save nothing real under this design -- the actual,
+concrete blocker was always the linkage problem, not boxing. Making
+`_core` genuinely pay off would mean giving the whole register
+representation real, tracked C++ types end to end, a materially bigger
+rewrite than this pass attempts -- noted here so this exploration isn't
+silently repeated.
+
+What actually shipped: `_impl` (and its own declaration) dropped
+`static` -- real, external linkage, the minimum change needed to make a
+cross-TU call possible at all. The entry wrapper (`mrb_get_args`
+marshaling) stayed `static`; nothing outside a gem's own registration
+code ever calls it. A new `emit_decls_header` emits a standalone,
+`#pragma once`-guarded header of the same non-static declarations
+(written to `OUT_DIR/<symbol>_decls.h` on every run, unconditionally --
+cheap, and a given run doesn't know in advance whether anything will
+ever reference it). Two new env vars, mirroring `ONLY_OWNERS`'s own
+shape: `OTHER_OWNERS` (classes this run trusts *some other* gem's own
+run to compile -- widens `compile_send`'s owner guard for devirtualizing
+into them, without adding them to this run's own emitted output) and
+`OTHER_DECLS_HEADER` (real file paths this run `#include`s so those
+classes' declarations are actually in scope).
+
+A new `tools/bc2cpp/compiled_gems.rb` is the single source of truth both
+`mrbgem.rake`s now `require_relative` -- each compiled gem's own target
+owners and `OUT_SYMBOL`, keyed by gem name. Each `mrbgem.rake` computes
+its own `OTHER_OWNERS`/`OTHER_DECLS_HEADER` from every *other* entry
+there, rather than hardcoding the sibling gem's owner list directly (real
+drift risk otherwise). `register.cxx`'s own `file` dependency grew to
+include every other compiled gem's own generated file too -- not because
+this gem's own codegen needs to *read* that file (`OTHER_OWNERS` is
+static config, known without it), but because this gem's own `#include`
+of the other's `*_decls.h` (written as a side effect of the other's own
+codegen run) needs that file to actually exist by the time this
+translation unit is compiled. Depending on the other's `generated` (the
+`.cpp`) rather than nothing at all from `register.cxx` specifically --
+never from `generated` itself -- keeps this a DAG: neither gem's own
+codegen step ever waits on the other's, so two compiled gems each
+naming the other in `OTHER_OWNERS` can't deadlock Rake.
+
+Verified for real, three ways, using the actual project build
+(`RPGMAKER_BC2CPP=1`, both real compiled gems wired to trust each
+other):
+1. Both gems' own `bc2cpp.rb` runs still succeed and each emits a real
+   `#include "/abs/path/to/the/other/gem/<symbol>_decls.h"` line, with
+   **zero other change** to either gem's own generated output (confirmed
+   by diffing against the pre-cross-gem run -- the only diff in either
+   file is that one new `#include` line).
+2. `rake .../mruby-lcf-compiled/src/register.pi
+   .../mruby-rpg2k-compiled/src/register.pi` -- a real, targeted
+   compile of both translation units -- succeeds with **zero errors or
+   warnings**, proving the mutual header inclusion and the Rake
+   dependency graph (no cycle) both actually work, not just plan cleanly
+   on paper.
+3. A full real host build, `rake .../host/lib/libmruby.a` with
+   `RPGMAKER_BC2CPP=1` (every real gem, `mruby-lcf-compiled` and
+   `mruby-rpg2k-compiled` included, both now non-static) -- succeeds,
+   archives cleanly. `nm -C` on the result shows exactly 41 external
+   (`T`) `_impl` symbols and 41 local (`t`) entry symbols from these two
+   gems, one of each per compiled method, no duplicates -- confirming
+   dropping `static` introduced no real symbol-collision risk in
+   practice (`cpp_name`'s `::`-to-`_` collapsing is theoretically
+   collision-prone across two *different* real owners that happened to
+   sanitize to the same string, but this project's actual namespacing
+   -- `RGSS::`/`RPG2k::`/`LCF::`/`Game::`, gem-specific prefixes that
+   never overlap -- makes that implausible in practice, and it was
+   already an equally real risk *within* a single gem's own TU before
+   this change, just never yet hit).
+
+No real cross-gem devirtualized call actually appears in either
+shipped target's own output, same "verified sound, zero live effect"
+result as the native-method-registry and magic-comment-annotation
+follow-ups above: neither `LCF::File`-family nor `Game::Picture` (the
+only two real target classes compiled today) happens to call into the
+other's own target set from a compiled method body. The mechanism is
+real and now provably works end to end; it simply has nothing to bite
+into yet with only two, non-overlapping compiled gems.

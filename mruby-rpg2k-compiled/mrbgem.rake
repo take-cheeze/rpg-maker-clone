@@ -1,4 +1,5 @@
 require 'shellwords'
+require_relative '../tools/bc2cpp/compiled_gems'
 
 # Opt-in AOT-compiled C++ replacements for Game::Picture's own bytecode
 # methods (docs/adr/0139's own follow-up) -- 25 of its 26 real methods
@@ -27,17 +28,35 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
                        Dir["#{dir}/../mruby-lcf/mrblib/*.rb"] +
                        Dir["#{dir}/../mruby-rgss/mrblib/*.rb"]
 
-  target_owners = %w[Game::Picture]
+  # RGSS's own C++-implemented methods are invisible to closed_world_srcs
+  # above (no .rb source for them) -- see mruby-lcf-compiled/mrbgem.rake's
+  # own comment on NATIVE_SRCS for why that makes bc2cpp's MONO/POLY
+  # registry unsound wherever a native method collides by bare name with a
+  # bytecode-defined one, and why closing it only needs the flat name set.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
+
+  this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rpg2k-compiled')
+  other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rpg2k-compiled' }
+  target_owners = this_gem[:owners]
+  # See mruby-lcf-compiled/mrbgem.rake's own comment on OTHER_OWNERS/
+  # OTHER_DECLS_HEADER -- cross-gem devirtualization, the other half of
+  # this same mechanism.
+  other_owners = other_gems.values.flat_map { |g| g[:owners] }
+  other_decls_headers = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_decls.h" }
+  other_generated = other_gems.map { |name, g| "#{spec.build.build_dir}/mrbgems/#{name}/#{g[:out_symbol]}_gen.cpp" }
 
   generated = "#{build_dir}/rpg2k_compiled_gen.cpp"
 
-  file generated => [bc2cpp, *closed_world_srcs] do |t|
+  file generated => [bc2cpp, *closed_world_srcs, *native_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
       'OUT_SYMBOL' => 'rpg2k_compiled',
       'OUT_DIR' => build_dir,
       'ONLY_OWNERS' => target_owners.join(','),
+      'OTHER_OWNERS' => other_owners.join(','),
+      'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
+      'NATIVE_SRCS' => Shellwords.join(native_srcs),
       'SKIP_UNSUPPORTED' => '1',
     }
     cmd = "#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
@@ -46,7 +65,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   end
 
   # register.cxx #includes the generated file directly, mirroring
-  # mruby-lcf-compiled's own src/register.cxx one gem over.
-  file "#{dir}/src/register.cxx" => generated
+  # mruby-lcf-compiled's own src/register.cxx one gem over -- also depends
+  # on every other compiled gem's own generated file for the same reason
+  # (its #include of their *_decls.h needs that file to exist by compile
+  # time; see the sibling file's own comment for why this stays a DAG).
+  file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
 end
