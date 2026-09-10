@@ -36,6 +36,14 @@ module LCF
     def header; raise end
     def schema; raise end
 
+    # Forward straight to the root record/section -- a real method instead of
+    # relying on method_missing below, which every numeric- or symbol-keyed
+    # `file[idx]`/`file[idx] = v` call site already went through anyway
+    # (Array1D/Sections' own #[]/#[]= already accept both forms).
+    def [] idx ; @root[idx] end
+    def []= idx, value ; @root[idx] = value end
+    def key? idx ; @root.key?(idx) end
+
     # Whether the root chunk list ends with a trailing 0x00 terminator.
     # `.lsd` (SaveData) and `.ldb` (Database) do not -- confirmed by a
     # byte-exact round-trip of a genuine RPG_RT.ldb and Save01.lsd with no

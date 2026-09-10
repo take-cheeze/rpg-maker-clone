@@ -92,13 +92,20 @@
    WIDGETS
  *====================*/
 
-/* The bring-up firmware renders through base lv_obj containers and the lv_label
- * status screen; lv_canvas/lv_image are kept on to match the PSP config (the
- * same minimal set the RGSS runtime needs once mruby is layered on) rather than
- * churning this file per slice. Every other widget is dead weight on a 192 KB
- * board, so it is compiled out -- and each one is also dragged into the link by
- * the default theme's styles, so trimming here is what lets the linker drop it
- * (see THEMES below). */
+/* lv_canvas/lv_image are the only widgets the real RGSS runtime needs (Sprite/
+ * Viewport/Bitmap render through them) and are kept on to match the PSP
+ * config. LV_USE_LABEL looked droppable too -- neither bring-up screen's own
+ * status/key echo (rewritten to a background-color signal + Serial output,
+ * docs/adr/0132) nor the real RGSS render path (which renders game text
+ * through this project's own shinonome/cp932 pipeline, never LVGL's) calls
+ * lv_label_* any more -- but LV_USE_IMAGE itself hard-requires it: LVGL's own
+ * lv_image.h #errors at compile time ("lv_img: lv_label is required") when
+ * LV_USE_LABEL is off, confirmed by a real MRUBY_TARGET=wio build. Sprite/
+ * Viewport zoom and rotation genuinely need lv_image, so this stays on as a
+ * forced dependency, not a measurement oversight. Every other widget is dead
+ * weight on a 192 KB board, so it is compiled out -- and each one is also
+ * dragged into the link by the default theme's styles, so trimming here is
+ * what lets the linker drop it (see THEMES below). */
 #define LV_USE_CANVAS     1
 #define LV_USE_IMAGE      1
 #define LV_USE_LABEL      1

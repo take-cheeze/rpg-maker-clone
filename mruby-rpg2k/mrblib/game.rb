@@ -9298,16 +9298,16 @@ module Game
     # Populate from a parsed SAVE_MOVABLE chunk (a vehicle location in a `.lsd`).
     def load_movable(m)
       return unless m
-      @map_id = m.map_id || 0
-      @x = m.x || 0
-      @y = m.y || 0
+      @map_id = m[:map_id] || 0
+      @x = m[:x] || 0
+      @y = m[:y] || 0
       # liblcf's own 0..3 (up/right/down/left) convention on the wire --
       # #numpad_direction is the same conversion Change Event Location's own
       # facing sub-parameter and the database-side event-page facing field
       # already go through (EventGraphic::LCF_DIR_TO_NUMPAD).
-      @direction = EventGraphic.numpad_direction(m.direction)
-      @charset_name = m.charset_name || ''
-      @charset_index = m.charset_index || 0
+      @direction = EventGraphic.numpad_direction(m[:direction])
+      @charset_name = m[:charset_name] || ''
+      @charset_index = m[:charset_index] || 0
     end
   end
 

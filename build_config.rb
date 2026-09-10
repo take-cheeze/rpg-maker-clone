@@ -52,6 +52,35 @@ def wio_strip_debug_rbfiles(spec)
   end
 end
 
+# docs/adr/0129: wio-only, per-gem build step, the same shape as
+# wio_strip_debug_rbfiles above (and calling convention: last among filters
+# that subtract/substitute an rbfiles entry by its original path, before
+# wio_strip_debug_rbfiles itself). Rewrites a copy of a small, hand-picked
+# set of files to fold a handful of methods with exactly one real *engine*
+# caller into that call site -- strip_wio_inline_helpers.rb's own file
+# comment covers why this is a curated, hand-verified rewrite table rather
+# than a general single-caller inliner: scripts/*.rb's own CRuby-based
+# regression checks call several of these same methods directly by name,
+# so deleting them from the checked-in source would silently break real
+# test coverage that has nothing to do with wio. This rewrites only a
+# wio-only build-time copy; the checked-in definitions, and every other
+# target's build, are untouched.
+def wio_strip_inline_helpers(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('strip_wio_inline_helpers.rb', __dir__)
+  out_dir = "#{spec.build_dir}/wio_inline_helpers"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script] do |t|
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, src, out
+    end
+    out
+  end
+end
+
 # Gems shared by every build variant (the actual game libraries).
 #
 # include_mvjs: false drops mruby-mvjs (RPG Maker MV/MZ via embedded
@@ -641,6 +670,44 @@ if wio
       # makes for this board. Still nowhere near enough on its own to fit --
       # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
       t.flags << '-Os'
+      # docs/adr/0135: -flto was tried (docs/adr/0133) and reverted -- a
+      # real, previously-unverified regression, not a size/speed tradeoff.
+      # Booting the real, linked env:wio/env:wio_rgss_boot under this
+      # project's own Renode emulator (docs/adr/0094) with -flto in play
+      # aborts on a wild jump moments after reset, on every build that
+      # includes it, isolated by testing GCC 14.2.1 and -fmerge-all-constants
+      # independently (both boot fine alone). Root cause, confirmed by
+      # reading the linked ELF directly: with -flto, the .isr_vector section
+      # -- the ARM Cortex-M reset/interrupt vector table a real chip reads at
+      # boot for its initial SP and Reset_Handler address -- is missing from
+      # the binary entirely, not just misplaced. PlatformIO's vendored
+      # Arduino/SAMD startup code (this project does not own it) references
+      # that array only via the linker script's own KEEP(*(.isr_vector)),
+      # never through a real call-graph edge or an explicit
+      # __attribute__((used)) -- exactly the shape LTO's own whole-program
+      # dead-code elimination (which runs before the final link, earlier
+      # than KEEP()/--gc-sections ever get a say) is liable to discard. Not
+      # a Renode-only artifact: a real SAMD51 boots by reading the identical
+      # fixed vector table location, so this would very likely have kept
+      # the real board from booting at all despite linking cleanly and
+      # reporting a correctly-sized image -- ADR 133 was verified only by
+      # linker output size and CI compile success, never actually run.
+      # -fno-ident/-fmerge-all-constants below are unaffected (each verified
+      # independently to boot correctly on their own) and stay.
+      # Free: drops the per-object GCC-version comment string.
+      t.flags << '-fno-ident'
+      # More aggressive than the default -fmerge-constants: deduplicates
+      # equal-valued constants across translation units too. GCC's own docs
+      # flag this as not strictly conforming for constants whose identity
+      # could matter (distinct addresses expected for two "different"
+      # equal-valued literals) -- nothing in this project's own code relies
+      # on that.
+      t.flags << '-fmerge-all-constants'
+      # docs/adr/0134 measurement only: forcing mruby's own core off the
+      # real-C++-exception path (see the "Tried and reverted" comment
+      # below) needs -fno-exceptions too, once MRUBY_FORCE_NO_CXX_EXCEPTION
+      # has kept load_gems.rb from ever calling enable_cxx_exception.
+      t.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
       # Neither this rake-driven compile nor mruby's own gcc.rake defaults set
       # these, so every mrbgem's whole .text/.data/.bss lands in one section
       # per object file -- env:wio_rgss_boot's real link already passes
