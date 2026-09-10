@@ -516,11 +516,7 @@ if wio
     conf.cc.command = "#{gcc_prefix}arm-none-eabi-gcc"
     conf.cxx.command = "#{gcc_prefix}arm-none-eabi-g++"
     conf.linker.command = "#{gcc_prefix}arm-none-eabi-gcc"
-    # gcc-ar, not plain ar: with -flto below (docs/adr/0133), archiving and
-    # re-indexing needs the LTO plugin loaded to read a member's real symbol
-    # table (LTO objects carry IR, not final symbols) -- gcc-ar loads it
-    # automatically; plain ar/ranlib are not guaranteed to.
-    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-gcc-ar"
+    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-ar"
 
     # onigmo's (old) config.sub needs a triplet it recognizes to enter
     # cross-compile mode; arm-none-eabi is such a bare-metal triple.
@@ -674,18 +670,30 @@ if wio
       # makes for this board. Still nowhere near enough on its own to fit --
       # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
       t.flags << '-Os'
-      # docs/adr/0133: cross-TU inlining/dead-code elimination on top of
-      # --gc-sections below, real once the toolchain actually supports it --
-      # PlatformIO's own atmelsam-bundled GCC 7.2.1 does not (a real link
-      # failure, "unresolvable R_ARM_THM_CALL relocation against
-      # __aeabi_ldivmod": a 64-bit-division helper LTO's own late link-time
-      # codegen pass discovers a need for only after normal library
-      # resolution has already run). platformio.ini pins a current Arm GNU
-      # Toolchain release (14.2.1) for the real link to match; gcc_prefix
-      # above already resolves to whichever is currently installed under
-      # PlatformIO's own default (unversioned) package path, so this rake
-      # build picks up the same compiler with no separate pin needed here.
-      t.flags << '-flto'
+      # docs/adr/0135: -flto was tried (docs/adr/0133) and reverted -- a
+      # real, previously-unverified regression, not a size/speed tradeoff.
+      # Booting the real, linked env:wio/env:wio_rgss_boot under this
+      # project's own Renode emulator (docs/adr/0094) with -flto in play
+      # aborts on a wild jump moments after reset, on every build that
+      # includes it, isolated by testing GCC 14.2.1 and -fmerge-all-constants
+      # independently (both boot fine alone). Root cause, confirmed by
+      # reading the linked ELF directly: with -flto, the .isr_vector section
+      # -- the ARM Cortex-M reset/interrupt vector table a real chip reads at
+      # boot for its initial SP and Reset_Handler address -- is missing from
+      # the binary entirely, not just misplaced. PlatformIO's vendored
+      # Arduino/SAMD startup code (this project does not own it) references
+      # that array only via the linker script's own KEEP(*(.isr_vector)),
+      # never through a real call-graph edge or an explicit
+      # __attribute__((used)) -- exactly the shape LTO's own whole-program
+      # dead-code elimination (which runs before the final link, earlier
+      # than KEEP()/--gc-sections ever get a say) is liable to discard. Not
+      # a Renode-only artifact: a real SAMD51 boots by reading the identical
+      # fixed vector table location, so this would very likely have kept
+      # the real board from booting at all despite linking cleanly and
+      # reporting a correctly-sized image -- ADR 133 was verified only by
+      # linker output size and CI compile success, never actually run.
+      # -fno-ident/-fmerge-all-constants below are unaffected (each verified
+      # independently to boot correctly on their own) and stay.
       # Free: drops the per-object GCC-version comment string.
       t.flags << '-fno-ident'
       # More aggressive than the default -fmerge-constants: deduplicates

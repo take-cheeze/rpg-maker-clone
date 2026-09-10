@@ -4,7 +4,13 @@ Date: 2026-09-10
 
 ## Status
 
-Accepted
+Accepted, **partially superseded by docs/adr/0135**: `-flto` specifically
+was found to strip the ARM vector table from the linked binary (a real
+boot-breaking bug, not caught by anything this ADR verified with) and has
+been reverted. The GCC 14.2.1 toolchain upgrade and `-fno-ident`/
+`-fmerge-all-constants` are unaffected and still stand as written here; the
+corrected real flash number without `-flto` is 158,264 bytes reduced, not
+this ADR's own 190,520 -- see ADR 135 for the full account.
 
 ## Context
 
