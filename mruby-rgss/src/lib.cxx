@@ -196,7 +196,8 @@ mrb_value to_nfd(mrb_state* M, mrb_value self) {
 // decoder -- already linked for PNG/XYZ loading -- so no extra dependency is
 // pulled in. Falls back to a raw (headerless) DEFLATE decode the way load_xyz
 // does, and raises RGSS::RGSSError when the stream cannot be inflated.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value zlib_inflate(mrb_state* M, mrb_value self) {
   const char* ptr;
   mrb_int len;
@@ -1303,7 +1304,8 @@ mrb_value bmp_init_size(mrb_state* M, mrb_value self) {
 // cache's original along with the variant. The copy starts dirty so anything
 // already showing it repaints, and gets its own Font, so setting a size or
 // colour on the clone cannot reach back into the bitmap it came from.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_init_copy(mrb_state* M, V self) {
   V other;
   mrb_get_args(M, "o", &other);
@@ -1710,7 +1712,8 @@ mrb_value bmp_tone_blt(mrb_state* M, V self) {
 // (x, y, width, height, color1, color2, vertical=false): fill the rect with a
 // linear gradient from color1 to color2, left-to-right (or top-to-bottom when
 // vertical). Like fill_rect, it overwrites the pixels (colour + alpha).
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y, w, h;
@@ -1759,7 +1762,8 @@ mrb_value bmp_gradient_fill_rect(mrb_state* M, V self) {
 // transparent neighbour dragging colour out of an opaque pixel: a transparent
 // pixel has no colour to contribute, only weight. RGSS's own blur is a
 // fixed, mild one with no parameters, so there is nothing here to tune.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_blur(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   if (b.width < 1 || b.height < 1)
@@ -1818,7 +1822,8 @@ mrb_value bmp_blur(mrb_state* M, V self) {
 //
 // division < 2 or angle == 0 is the identity, matching "no rotation to spread
 // over" rather than dividing by zero.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_radial_blur(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int angle, division;
@@ -1872,7 +1877,8 @@ mrb_value bmp_radial_blur(mrb_state* M, V self) {
 }
 #endif  // !defined(WIO_TERMINAL)
 
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_hue_change(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int hue;
@@ -1953,7 +1959,8 @@ mrb_value bmp_get_pixel(mrb_state* M, V self) {
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Color"), 4, args);
 }
 
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value bmp_set_pixel(mrb_state* M, V self) {
   Bitmap& b = bmp_self(M, self);
   mrb_int x, y;
@@ -3378,7 +3385,8 @@ uint32_t g_render_acc = 0;
 //
 // Dropping the deadline is the whole implementation: the next update sees
 // !g_paced and starts counting from then.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value gfx_frame_reset(mrb_state* M, mrb_value self) {
   (void)M;
   g_paced = false;
@@ -4215,7 +4223,8 @@ mrb_value obj_visible(mrb_state* M, mrb_value self) {
   return mrb_nil_p(v) ? mrb_true_value() : v;
 }
 
-#if !defined(WIO_TERMINAL)  // Plane: dead weight on wio, no Ruby path ever instantiates it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // Plane: dead weight on wio, no Ruby path ever
+                            // instantiates it (docs/adr/0132)
 // ---- Plane ----------------------------------------------------------------
 
 // Redraw the plane's canvas: fill it by tiling the source bitmap, wrapping the
@@ -5521,7 +5530,8 @@ mrb_value tilemap_set_flags(mrb_state* M, mrb_value self) {
 // The VX / VX Ace tile geometry, exposed so it can be pinned by unit tests: the
 // drawing needs a display the headless test binary has not got, but the decode
 // is pure arithmetic. Answers an empty Array for an id that draws nothing.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
   mrb_int tile_id = 0, frame = 0;
   mrb_bool table = FALSE;
@@ -5552,7 +5562,8 @@ mrb_value tilemap_vx_tile_quads(mrb_state* M, mrb_value self) {
 // vx_table_leg_quads above), exposed the same way vx_tile_quads is: pure
 // arithmetic, pinned without needing the display the headless test binary
 // has not got.
-#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // dead weight on wio: no Ruby path reaches it
+                            // (docs/adr/0132)
 mrb_value tilemap_vx_table_leg_quads(mrb_state* M, mrb_value self) {
   mrb_int tile_id = 0;
   mrb_get_args(M, "i", &tile_id);
@@ -7118,7 +7129,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, spr, "bush_depth=", spr_set_bush_depth, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "flash", spr_flash, MRB_ARGS_REQ(2));
 
-#if !defined(WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby (docs/adr/0132)
+#if !defined( \
+    WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby (docs/adr/0132)
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
   mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
@@ -7152,7 +7164,8 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   // flags table, in place of XP's single tileset + autotiles + priorities.
   mrb_define_method(M, tilemap, "bitmaps", tilemap_bitmaps, MRB_ARGS_NONE());
   mrb_define_method(M, tilemap, "flags=", tilemap_set_flags, MRB_ARGS_REQ(1));
-#if !defined(WIO_TERMINAL)  // VX-only tilemap rendering; wio ships no mruby-rpgvx (docs/adr/0132)
+#if !defined(WIO_TERMINAL)  // VX-only tilemap rendering; wio ships no
+                            // mruby-rpgvx (docs/adr/0132)
   mrb_define_class_method(M, tilemap, "vx_tile_quads", tilemap_vx_tile_quads,
                           MRB_ARGS_ARG(1, 2));
   mrb_define_class_method(M, tilemap, "vx_table_leg_quads",
@@ -7247,7 +7260,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, bmp, "gradient_fill_rect", bmp_gradient_fill_rect,
                     MRB_ARGS_REQ(3) | MRB_ARGS_OPT(4));
   mrb_define_method(M, bmp, "hue_change", bmp_hue_change, MRB_ARGS_REQ(1));
-#endif  // !defined(WIO_TERMINAL)
+#endif                      // !defined(WIO_TERMINAL)
 #if !defined(WIO_TERMINAL)  // docs/adr/0132
   mrb_define_method(M, bmp, "blur", bmp_blur, MRB_ARGS_NONE());
   mrb_define_method(M, bmp, "radial_blur", bmp_radial_blur, MRB_ARGS_REQ(2));

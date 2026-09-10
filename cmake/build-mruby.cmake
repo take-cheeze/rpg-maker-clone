@@ -223,19 +223,20 @@ function(rpg2k_add_mruby)
   # MRUBY_FORCE_NO_CXX_EXCEPTION is set in the environment: mruby's own gem
   # loader (lib/mruby/build/load_gems.rb) unconditionally calls
   # enable_cxx_exception the moment any gem has a .cxx/.cpp/.cc source
-  # (mruby-rgss/mruby-lcf/mruby-marshal all do here), which compiles mruby's
-  # own core error.c/vm.c/gc.c as real C++ and implements Ruby's own begin/
+  # (mruby-rgss/mruby-lcf/mruby-marshal all do here), which compiles mruby's own
+  # core error.c/vm.c/gc.c as real C++ and implements Ruby's own begin/
   # rescue/ensure as real C++ throw/catch (src/throw.h) rather than setjmp/
   # longjmp -- specifically because longjmp does not run C++ destructors and
   # would leak any C++ object (std::string/std::vector, real ones exist on
-  # mruby-rgss's own call stacks) left on the stack being unwound through.
-  # This patch only adds the environment-variable check itself; it changes
-  # nothing for every normal build, on any target, where that variable is
-  # unset. See the ADR for the real, measured flash number this unlocks and,
-  # just as importantly, why it is a real correctness tradeoff this project
-  # has not decided to accept as the default.
+  # mruby-rgss's own call stacks) left on the stack being unwound through. This
+  # patch only adds the environment-variable check itself; it changes nothing
+  # for every normal build, on any target, where that variable is unset. See the
+  # ADR for the real, measured flash number this unlocks and, just as
+  # importantly, why it is a real correctness tradeoff this project has not
+  # decided to accept as the default.
   set(mruby_force_no_cxx_exception_patch
-      "${ARG_REPO_ROOT}/patches/mruby-force-no-cxx-exception-escape-hatch.patch")
+      "${ARG_REPO_ROOT}/patches/mruby-force-no-cxx-exception-escape-hatch.patch"
+  )
 
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
