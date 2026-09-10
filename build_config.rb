@@ -516,7 +516,11 @@ if wio
     conf.cc.command = "#{gcc_prefix}arm-none-eabi-gcc"
     conf.cxx.command = "#{gcc_prefix}arm-none-eabi-g++"
     conf.linker.command = "#{gcc_prefix}arm-none-eabi-gcc"
-    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-ar"
+    # gcc-ar, not plain ar: with -flto below (docs/adr/0133), archiving and
+    # re-indexing needs the LTO plugin loaded to read a member's real symbol
+    # table (LTO objects carry IR, not final symbols) -- gcc-ar loads it
+    # automatically; plain ar/ranlib are not guaranteed to.
+    conf.archiver.command = "#{gcc_prefix}arm-none-eabi-gcc-ar"
 
     # onigmo's (old) config.sub needs a triplet it recognizes to enter
     # cross-compile mode; arm-none-eabi is such a bare-metal triple.
@@ -670,6 +674,27 @@ if wio
       # makes for this board. Still nowhere near enough on its own to fit --
       # see docs/adr/0103-wio-mruby-rgss-first-real-build.md's follow-up ADR.
       t.flags << '-Os'
+      # docs/adr/0133: cross-TU inlining/dead-code elimination on top of
+      # --gc-sections below, real once the toolchain actually supports it --
+      # PlatformIO's own atmelsam-bundled GCC 7.2.1 does not (a real link
+      # failure, "unresolvable R_ARM_THM_CALL relocation against
+      # __aeabi_ldivmod": a 64-bit-division helper LTO's own late link-time
+      # codegen pass discovers a need for only after normal library
+      # resolution has already run). platformio.ini pins a current Arm GNU
+      # Toolchain release (14.2.1) for the real link to match; gcc_prefix
+      # above already resolves to whichever is currently installed under
+      # PlatformIO's own default (unversioned) package path, so this rake
+      # build picks up the same compiler with no separate pin needed here.
+      t.flags << '-flto'
+      # Free: drops the per-object GCC-version comment string.
+      t.flags << '-fno-ident'
+      # More aggressive than the default -fmerge-constants: deduplicates
+      # equal-valued constants across translation units too. GCC's own docs
+      # flag this as not strictly conforming for constants whose identity
+      # could matter (distinct addresses expected for two "different"
+      # equal-valued literals) -- nothing in this project's own code relies
+      # on that.
+      t.flags << '-fmerge-all-constants'
       # Neither this rake-driven compile nor mruby's own gcc.rake defaults set
       # these, so every mrbgem's whole .text/.data/.bss lands in one section
       # per object file -- env:wio_rgss_boot's real link already passes
