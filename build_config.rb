@@ -695,6 +695,11 @@ if wio
       # equal-valued literals) -- nothing in this project's own code relies
       # on that.
       t.flags << '-fmerge-all-constants'
+      # docs/adr/0134 measurement only: forcing mruby's own core off the
+      # real-C++-exception path (see the "Tried and reverted" comment
+      # below) needs -fno-exceptions too, once MRUBY_FORCE_NO_CXX_EXCEPTION
+      # has kept load_gems.rb from ever calling enable_cxx_exception.
+      t.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
       # Neither this rake-driven compile nor mruby's own gcc.rake defaults set
       # these, so every mrbgem's whole .text/.data/.bss lands in one section
       # per object file -- env:wio_rgss_boot's real link already passes

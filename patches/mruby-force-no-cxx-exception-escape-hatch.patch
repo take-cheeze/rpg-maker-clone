@@ -1,0 +1,13 @@
+diff --git a/lib/mruby/build/load_gems.rb b/lib/mruby/build/load_gems.rb
+index 8198abc..1662a34 100644
+--- a/lib/mruby/build/load_gems.rb
++++ b/lib/mruby/build/load_gems.rb
+@@ -51,7 +51,7 @@ module MRuby
+       gems << current
+ 
+       cxx_srcs = Dir.glob("#{current.dir}/{src,test,tools}/*.{cpp,cxx,cc}")
+-      enable_cxx_exception unless cxx_srcs.empty?
++      enable_cxx_exception unless cxx_srcs.empty? || ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
+ 
+       current
+     end
