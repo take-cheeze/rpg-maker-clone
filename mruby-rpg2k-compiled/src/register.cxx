@@ -602,6 +602,120 @@
 // lead for a future round: RPG2k::Scene::VehicleWorld's own identical
 // protocol shape.
 //
+// A twenty-second, independent round adds RPG2k::Scene::VehicleWorld
+// (mruby-rpg2k/mrblib/scene/base.rb, defined right below MapWorld) -- the
+// same `world` protocol adapter MapWorld exposes to the movement engine,
+// adapted for a Move Event/Set Move Route driving a vehicle (boat/ship/
+// airship) instead of the hero: passability/landing route through
+// Scene::Map#vehicle_char_passable?/#vehicle_char_can_land? (each
+// carrying the extra @type argument) instead of MapWorld's own
+// #char_passable?/#char_can_land?, and there is no #in_sight?
+// counterpart at all (not a gap -- Approach/Away from Player is not a
+// valid Move Type for a vehicle's own Set Move Route, confirmed directly
+// against the real source comment). 6 of its own 7 real bytecode-defined
+// methods compile clean, needing no new opcode work at all. #play_sound
+// is the one gap, confirmed against its own real generated #error lines
+// (EXCEPT/RESCUE/RAISEIF): a real `rescue StandardError => e` clause, the
+// same already-established out-of-scope shape as MapWorld's own
+// identically-shaped #play_sound.
+//
+// #initialize (`initialize(scene, rng, type)`, already carrying its own
+// real `# bc2cpp: (RPG2k::Scene::Map, Game::Rng, Symbol)` magic-comment
+// annotation in the source) compiles clean -- 3 purely mandatory
+// arguments, no super, no block -- so its own @type ivar (always a
+// literal Symbol from Game::Vehicle::TYPES, confirmed by the annotation
+// and by the real whole-program EMBED diagnostic) gets real RData struct
+// embedding, the third Symbol-embedding target after Game::ChipSet/
+// Game::Switches's own Fixnum embeddings established the mechanism, here
+// for a Symbol instead. Checked directly against the exact
+// Game::Actor-shaped embedding bug several follow-ups up, not assumed
+// safe by analogy: grepping the whole closed world for
+// `VehicleWorld.new`/`.allocate`/a subclass finds exactly one real
+// construction site (mruby-rpg2k/mrblib/scene/map.rb's own `#load_map`,
+// `h[type] = VehicleWorld.new(self, @rng, type)` inside a
+// `Game::Vehicle::TYPES.each_with_object` loop), a plain three-argument
+// `.new` call, no bypass and no subclass anywhere -- and the real
+// generated #initialize body was confirmed to call mrb_data_init before
+// any other statement. @scene and @rng stay on the ordinary dynamic
+// iv_tbl (both opaque object references, CLASS_HINT-typed for
+// devirtualization only, never embedded), mixed safely on the same
+// object with the one embedded field.
+//
+// A real, whole-program MONO/POLY registry-soundness gap was found (and
+// deliberately left unfixed, out of this round's own scope) while
+// verifying #set_switch's own `@scene.state.switches[id] = on`:
+// `:switches` has exactly one bytecode-visible definition anywhere in
+// the closed world (Game::Interpreter#switches, itself `@state.
+// switches`), so an unrestricted whole-program diagnostic (no
+// ONLY_OWNERS) reports it MONO and would devirtualize this call straight
+// into Game__Interpreter_switches_impl -- but every real call site in
+// the whole codebase actually sends it to a Game::State instance, whose
+// own real `:switches` is an attr_reader installed at runtime via a
+// Symbol argument to Module#attr_reader, never a literal
+// mrb_define_method-family call site, so it is structurally invisible to
+// extract_native_method_names's own regex-based scanner regardless of
+// NATIVE_SRCS. Had this actually been devirtualized, it would be real
+// infinite recursion (Game::Interpreter#switches' own body devirtualizes
+// right back into itself when called with a Game::State receiver,
+// confirmed directly against the real generated code) -- the same
+// failure mode Game::MoveRoute#empty? already documented, against a
+// different structural blind spot (attr_reader/attr_writer, not a native
+// mrb_define_method call site or an MRB_MT_ENTRY/MRB_SYM(_Q/_B/_E)
+// ROM-table entry, the two shapes extract_native_method_names already
+// covers). Verified NOT live in the real build, not just reasoned about:
+// Game::Interpreter is not in this gem's own ONLY_OWNERS (nor any other
+// compiled gem's OTHER_OWNERS), so compile_send's own already-established
+// owner-not-emitted guard correctly refuses the devirtualization and
+// falls back to ordinary mrb_funcall -- confirmed directly against the
+// real generated output with ONLY_OWNERS set exactly as this gem's own
+// mrbgem.rake sets it: #set_switch's own `.switches` send compiles to
+// plain `mrb_funcall(M, r5, "switches", 0)`, never a direct call.
+// Flagged here for whoever next adds Game::Interpreter (or any other
+// attr_reader-heavy class) to a compiled gem's own owners list --
+// extract_native_method_names would need a third scanning mode (a
+// literal `attr_reader`/`attr_writer`/`attr_accessor` call-site scan
+// across every real .rb source file, not just C/C++) before that could
+// ever be safe.
+//
+// A twenty-third, independent round adds Game::TextReveal
+// (mruby-rpg2k/mrblib/game.rb) -- the message-window character-by-
+// character text reveal/typewriter-effect backing model: `\!`/`\.`/`\|`
+// pause markers, `\^` auto-close, `\>`...`\<` instant spans, `\s[n]`
+// speed changes. Only 6 of its own 11 real bytecode-defined methods
+// compile clean, needing no new opcode work at all: #auto_close? (a bare
+// ivar read), #done? (a plain GE compare against @total), #reveal_all (a
+// MONO self-call into #next_pause, a Hash#[] GETIDX read on the pause it
+// returns, and a ternary), #next_pause (an Array GETIDX read),
+// #pending_pause (the same Array GETIDX read plus a Hash#[] GETIDX read
+// and a GE compare), and #release_pause (a MONO self-call into
+// #pending_pause plus an ADDI increment) -- all confirmed directly
+// against the real generated output, including a specific re-check for
+// this file's own operator-regex bug (none of these six bodies uses a
+// bitwise/modulo operator SEND at all, so nothing here could trigger it
+// either way; the project-wide zero-match empty-name grep covers it
+// regardless). #initialize (`lines, revealed = 0, pauses = [],
+// auto_close = false, instants = [], speeds = []`, five optional
+// arguments) and #advance (`n = 1`, one optional argument) both have the
+// same established non-mandatory-arity gap as every other unembedded
+// target above. #speed_at, #through_instant and #visible_lines each end
+// in a genuine Ruby block, BLOCK/SENDB, the same established out-of-
+// scope shape every other block-using method above already documents.
+//
+// #initialize never compiling means drop_unsafe_embeddings correctly
+// refuses to embed any of this class's own ivars, even though the raw,
+// class-blind IvarLayout analysis proposes two (@total/@released, both
+// provably-Fixnum): confirmed directly against the real generated
+// output, Game::TextReveal does not appear in bc2cpp's own "classes
+// needing MRB_SET_INSTANCE_TT" diagnostic, so no MRB_SET_INSTANCE_TT
+// call belongs here, and no DATA_PTR(self) access appears in any of its
+// own compiled methods below.
+//
+// No bare `private`/`protected`/`public` anywhere in the real source, so
+// every method below is `mrb_define_method`; #initialize itself stays
+// entirely interpreted (it never compiles), so it needs no registration
+// line at all here, unlike every other target in this file whose own
+// #initialize does compile.
+//
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
 // looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
@@ -3229,6 +3343,58 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #play_sound is NOT registered here -- its own body has a real `rescue
   // StandardError` clause (RESCUE/RAISEIF/EXCEPT), an already-established
   // out-of-scope shape (see this file's own top comment).
+
+  // RPG2k::Scene::VehicleWorld (mruby-rpg2k/mrblib/scene/base.rb) -- see
+  // this file's own top comment for the real construction-site safety
+  // check, the Symbol-embedding writeup, and the real (checked-but-not-
+  // fixed) attr_reader registry-soundness gap #set_switch surfaced.
+  // #initialize is always private (the same real interpreter special case
+  // as every other compiled #initialize in this file). No bare
+  // `private`/`protected`/`public` anywhere in the real source, so every
+  // other method below is `mrb_define_method`. Reuses the `scene` RClass*
+  // declared at the top of this function.
+  RClass* vehicle_world = mrb_class_get_under(M, scene, "VehicleWorld");
+  MRB_SET_INSTANCE_TT(vehicle_world, MRB_TT_DATA);
+  mrb_define_private_method(M, vehicle_world, "initialize",
+                            RPG2k__Scene__VehicleWorld_initialize,
+                            MRB_ARGS_REQ(3));
+  mrb_define_method(M, vehicle_world, "passable?",
+                    RPG2k__Scene__VehicleWorld_passable_, MRB_ARGS_REQ(2));
+  mrb_define_method(M, vehicle_world, "can_land?",
+                    RPG2k__Scene__VehicleWorld_can_land_, MRB_ARGS_REQ(3));
+  mrb_define_method(M, vehicle_world, "hero_position",
+                    RPG2k__Scene__VehicleWorld_hero_position, MRB_ARGS_NONE());
+  mrb_define_method(M, vehicle_world, "set_switch",
+                    RPG2k__Scene__VehicleWorld_set_switch, MRB_ARGS_REQ(2));
+  mrb_define_method(M, vehicle_world, "random",
+                    RPG2k__Scene__VehicleWorld_random, MRB_ARGS_REQ(1));
+  // #play_sound is NOT registered here -- its own body ends in a real
+  // `rescue StandardError => e` clause (EXCEPT/RESCUE/RAISEIF), the same
+  // already-established out-of-scope shape as MapWorld's own identically-
+  // shaped #play_sound.
+
+  // Game::TextReveal (mruby-rpg2k/mrblib/game.rb) -- see this file's own
+  // top comment for the real gap breakdown (#initialize's/#advance's own
+  // non-mandatory arguments; #speed_at/#through_instant/#visible_lines'
+  // own real Ruby blocks) and why no MRB_SET_INSTANCE_TT call belongs
+  // here. No bare `private`/`protected`/`public` anywhere in the real
+  // source, so every method below is `mrb_define_method`; #initialize
+  // itself stays entirely interpreted (it never compiles), so it needs no
+  // registration line at all. Reuses the `game` RClass* declared at the
+  // top of this function.
+  RClass* text_reveal = mrb_class_get_under(M, game, "TextReveal");
+  mrb_define_method(M, text_reveal, "auto_close?", Game__TextReveal_auto_close_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, text_reveal, "done?", Game__TextReveal_done_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, text_reveal, "reveal_all", Game__TextReveal_reveal_all,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, text_reveal, "next_pause", Game__TextReveal_next_pause,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, text_reveal, "pending_pause",
+                    Game__TextReveal_pending_pause, MRB_ARGS_NONE());
+  mrb_define_method(M, text_reveal, "release_pause",
+                    Game__TextReveal_release_pause, MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
