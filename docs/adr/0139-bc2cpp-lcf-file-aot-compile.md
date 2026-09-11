@@ -5274,3 +5274,260 @@ diagnostic. Verified via the established `g++ -fsyntax-only -std=gnu++17
 `lcf_compiled_gen.cpp` plus the edited `register.cxx`: zero errors, zero
 `-Winfinite-recursion` warnings. Empty-method-name grep against the
 regenerated file: zero matches.
+
+## Follow-up: RGSS::Window, mruby-rgss-compiled's third owner, and a new "alias_method is invisible to build_registry" registry gap
+
+A parallel round adds `RGSS::Window` (`mruby-rgss/mrblib/lib.rb`, line
+1019) as the gem's third owner. Unlike `Sprite`/`Plane`, `Window` mixes
+many plain zero-argument readers with a real, optional-argument
+`#initialize` and an `alias_method` call, read in full from the real
+source rather than assumed from a summary: `attr_reader :contents,
+:windowskin, :x, :y, :width, :height, :ox, :oy, :z, :viewport,
+:contents_opacity` (native/uncompiled, as always), then 12 real
+bytecode-defined methods, then `alias_method :_rgss1_initialize,
+:initialize` immediately followed by a redefined `#initialize(x = nil, y
+= nil, width = nil, height = nil)`.
+
+All 12 non-`#initialize` methods compile clean, confirmed directly
+against the real `== compiled entry points ==` listing and the real
+generated bodies: `#opacity`/`#back_opacity`/`#active`/`#stretch`/
+`#openness` (`@ivar.nil? ? default : @ivar`) and `#pause`
+(`@pause || false`) reuse the exact nil-guarded-default/`||` shape
+`Sprite`/`Plane` already established; `#cursor_rect` (`@cursor_rect ||=
+Rect.new(0, 0, 0, 0)`) reuses the `||=` + owner-scope-first-GETCONST
+shape already proven by `Sprite`'s own `@tone ||=`/`@color ||=`; and
+`#padding`/`#arrows_visible` repeat the nil-guarded-default shape once
+more. The three same-class self-call methods this task specifically
+flagged for direct verification all confirm the expected MONO
+devirtualization rather than an ordinary `mrb_funcall`, checked against
+the real regenerated bodies, not assumed from the Ruby source shape:
+`#open?`'s `openness == 255` and `#close?`'s `openness.zero?` each carry
+a `// MONO :openness -> RGSS::Window#openness, direct C++ call (no
+mrb_funcall)` comment followed by a direct `RGSS__Window_openness_impl(M,
+self)` call, and `#padding_bottom`'s `@padding_bottom.nil? ? padding :
+@padding_bottom` carries the matching `// MONO :padding ->
+RGSS::Window#padding, direct C++ call` comment followed by a direct
+`RGSS__Window_padding_impl(M, self)` call -- the identical mechanism
+already exercised for every other same-owner self-call in this whole
+program, needing zero new bc2cpp.rb work.
+
+`#initialize` does **not** compile, confirmed directly against the real
+`#error` marker rather than assumed from its 4 optional arguments:
+`#error RGSS::Window#initialize has non-mandatory arguments
+(optional/rest/keyword/block) -- not in this prototype's supported
+subset`, the exact same `pure_mandatory_arity?` gap every other
+optional-argument `#initialize` in this codebase already hits (this
+one's own arity check fires unconditionally on the method's signature,
+before any of its own SEND instructions -- including the `_rgss1_
+initialize`/`self.x=`/`self.y=`/... calls inside its `if`/`elsif`/`else`
+body -- are ever inspected).
+
+The `alias_method :_rgss1_initialize, :initialize` line right before it
+is a genuinely new shape for this ADR, checked directly rather than
+assumed to behave like `class << self`/`def self.x` (this compiler's
+fifth severe-bug fix, an earlier follow-up above) or like a native
+method: `alias_method` is a plain self-implicit method call -- it
+compiles to an ordinary `SSEND :alias_method n=2` instruction, confirmed
+by disassembling an isolated repro with the real `mrbc -v -S` (two
+`def initialize`s each get their own `TDEF R1 :initialize I[n]`; the
+`alias_method` line between them lowers to `LOADSYM`/`LOADSYM`/`SSEND
+:alias_method n=2`, no dedicated opcode of its own) -- a wholly
+different mechanism than the Ruby *keyword* `alias new_name old_name`,
+which has its own dedicated `OP_ALIAS` bytecode instruction bc2cpp.rb
+does not reference anywhere either, but which at least carries a static,
+scannable operand naming both symbols; `alias_method`'s aliasing effect
+instead happens purely at runtime, inside the ordinary Kernel method
+call, with no bytecode operand naming the new method at all.
+`build_registry` populates its whole name -> definitions map exclusively
+by walking `TDEF`/`DEF` pairs (`walk`'s own `CLASS`/`MODULE`/`SCLASS`+
+`EXEC` and `TCLASS`/`METHOD`+`DEF` handling), so `_rgss1_initialize`
+never becomes a registry key under any owner, confirmed directly: both
+the full registry dump (`== native method names ==`'s neighboring
+MONO/POLY listing) and the fully regenerated `rgss_compiled_gen.cpp`
+were grepped for `_rgss1_initialize` and `rgss1` -- zero matches in
+either, anywhere in this closed world.
+
+This is a **third**, structurally distinct cause of registry-invisibility
+alongside the two this ADR already documents for other reasons: a native
+method (defined in `.cxx`, no Ruby-level `TDEF` at all) is scraped back
+in from `NATIVE_SRCS` by a dedicated `extract_native_method_names` regex
+pass, and a `class << self`/`def self.x` singleton method gets a real
+`DEF` of its own, just filed under a synthesized `"Owner.singleton"`
+pseudo-owner key (`resolve_singleton_receiver`) rather than being
+missing. `alias_method` has no equivalent backfill of any kind on either
+side -- the aliased name is not mis-filed under the wrong owner the way
+an unguarded singleton devirtualization once could have been, it is
+simply never written to the registry at all, under any owner, so
+`compile_send` can only ever see 0 definitions for it and fall back to
+ordinary dynamic `mrb_funcall` dispatch -- never a wrong devirtualization
+of some unrelated same-name method, just a permanently missed
+optimization. Confirmed not currently exploitable as a live bug: the
+only real call site for `_rgss1_initialize` anywhere in this closed world
+is `RGSS::Window#initialize`'s own body, and that body's own SEND
+instructions are never reached by `compile_send` at all, because the
+non-mandatory-arity `#error` above fires first and drops the whole
+method before any of its sends are inspected. Flagged here, per this
+round's task, as a real general gap for whoever next adds an
+`alias_method`-defined name with a live, actually-compiling call site
+elsewhere in the program: under this prototype's own severity bar, a
+silent fallback to dynamic dispatch is always safe (the interpreter
+still runs the real aliased method correctly; only a devirtualization
+opportunity is lost), so this is a documented missed optimization, not a
+correctness risk -- but it is worth a real fix (teaching `build_registry`
+to recognize a self-implicit `SEND/SSEND :alias_method` with two literal
+Symbol arguments and register the new name as a synonym for the old
+name's own definition list) the next time a round's target class relies
+on `alias_method` for a method whose *aliased* name is itself called
+from a call site that would otherwise compile.
+
+Embedding: none, confirmed directly against the real diagnostic rather
+than assumed from `#initialize` not compiling: `RGSS::Window` never
+appears in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`" listing.
+`drop_unsafe_embeddings`'s own class-level gate requires a *compiling*
+`#initialize` with pure mandatory arity before embedding anything on a
+class at all -- `#initialize` here fails that gate outright, so nothing
+on `RGSS::Window` (not even the always-nil-guarded `@padding`/
+`@arrows_visible`/... ivars the 12 compiling readers touch) is ever even
+proposed as an embedding candidate.
+
+Verified via the established `g++ -fsyntax-only -std=gnu++17 -Wall
+-Wextra -Winfinite-recursion` fallback (this gem's own real build still
+depends on a built LVGL this environment's worktree doesn't have) against
+the regenerated `rgss_compiled_gen.cpp` (built with the real `SKIP_
+UNSUPPORTED=1` this gem's own `mrbgem.rake` sets, which drops the
+`#initialize` `#error` entry from the emitted file entirely rather than
+leaving a literal `#error` preprocessor directive in it) plus the edited
+`register.cxx`: zero errors, zero `-Winfinite-recursion` warnings (only
+the same pre-existing, unrelated `-Wunused-but-set-variable` noise on
+`Sprite`/`Plane`'s own already-shipped register-numbered locals that
+predates this round). Empty-method-name grep (`mrb_funcall(M,
+[a-z0-9]*, "", `) against the regenerated file: zero matches.
+
+## Follow-up: RGSS::Tilemap, and a real cross-check of the owner-scope-first GETCONST fix against a bare core-class name
+
+Adds `RGSS::Tilemap` (`mruby-rgss/mrblib/lib.rb`, right above `RGSS::Window`)
+as `mruby-rgss-compiled`'s third owner, alongside the already-shipped
+`RGSS::Sprite`/`RGSS::Plane`. It is an even smaller target than Plane:
+`attr_reader :tileset, :map_data, :ox, :oy, :viewport, :priorities,
+:flags` and `attr_accessor :flash_data` stay native/uncompiled as
+always, leaving exactly one real bytecode-defined method, `#autotiles`
+(`@autotiles ||= Array.new(7)`, RGSS's own fixed 7-slot autotile table).
+Confirmed directly against the real `== compiled entry points ==`
+listing: adding `RGSS::Tilemap` to `ONLY_OWNERS` adds exactly one new
+line (`RGSS__Tilemap_autotiles`, arity 0) and changes nothing already
+shipped.
+
+`#autotiles`'s own `||=` needs no new opcode work -- the same
+GETIV/JMPIF-guarded-GETCONST+SEND+SETIV lowering already verified for
+Sprite's/Plane's own `@tone ||=`/`@color ||=`. But this round's own task
+explicitly called for checking, not assuming, that the owner-scope-first
+GETCONST fix (this ADR's own RGSS::Sprite follow-up) resolves a bare
+*core* class name the same way it resolves an RGSS-namespaced one, since
+`Array` (unlike `Tone`/`Color`/`Rect`) is not nested under `RGSS` at
+all -- it lives directly on `Object`. Read the real regenerated body
+rather than inferring from Plane's own success:
+
+```c
+{
+  mrb_value scope0 = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "RGSS"));
+  mrb_value scope1 = mrb_const_get(M, scope0, mrb_intern_cstr(M, "Tilemap"));
+  mrb_bool ok = FALSE;
+  mrb_value r2_tmp = mrb_nil_value();
+  if (!ok) r2_tmp = bc2cpp_const_try(M, scope1, mrb_intern_cstr(M, "Array"), &ok);
+  if (!ok) r2_tmp = bc2cpp_const_try(M, scope0, mrb_intern_cstr(M, "Array"), &ok);
+  if (!ok) r2_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "Array"));
+  r2 = r2_tmp;
+}
+```
+
+This is a real, meaningfully different path than Plane's own
+`Tone`/`Color` lookups, not just the same shape reapplied: those matched
+at the *first* protected `bc2cpp_const_try` scope (`RGSS`, since `Tone`/
+`Color` are really `RGSS::Tone`/`RGSS::Color`). `Array` matches at
+*neither* protected scope -- `RGSS::Tilemap` and `RGSS` both fail to
+define their own `Array` -- and only resolves at the chain's final,
+unprotected `mrb_const_get` against `M->object_class`, exactly the
+"top-level fallback" case the original GETCONST codegen comment already
+documents for a bare `Object`-owned `def`, just reached here via the
+multi-scope chain instead of the single-scope one. Same resulting
+`Array.new(7)` semantics either way -- confirmed real, not assumed
+identical merely because the `||=` shape matches.
+
+Embedding: none. `RGSS::Tilemap` has no `#initialize` of its own at all
+(the exact same shape as `Plane`), so `drop_unsafe_embeddings`'s own
+class-level gate excludes it from consideration outright, independent of
+ivar type -- confirmed directly against the real diagnostic: it never
+appears in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`" listing
+(5 classes total this round, none of them `RGSS::Tilemap`).
+`@autotiles` picks up a `CLASS_HINT` (`Array`) from its own `||=`
+construction, exactly like Plane's `@tone`/`@color` picking up `Tone`/
+`Color`, but a `CLASS_HINT` alone never embeds without a compiling
+constructor either.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` +
+`rake -f 3rd/mruby/Rakefile` pipeline was attempted end to end in this
+worktree and hit the same two environment gaps this ADR's own
+`Game::Rng`/`Game::Troop`/`RPG2k::Scene::VehicleWorld` follow-ups already
+document: the `3rd/mruby`, `3rd/mruby-marshal`, `3rd/mruby-onig-regexp`,
+`3rd/mruby-stringio`, `3rd/uni-algo`, and `3rd/stb` submodules were
+uninitialized in this fresh worktree (fixed with a plain
+`git submodule update --init`, kept out of this round's own diff, same
+as every prior round's own practice), and, once past that, the pipeline
+still hit the real `mruby-rgss`/LVGL final-link gap (`mruby-rgss/src/
+lib.cxx` needs a real built `lvgl.h`, which a raw `rake -f
+3rd/mruby/Rakefile` invocation has no step to build). This round also
+hit a real, previously-undocumented third setup gap on the way to the
+established `g++ -fsyntax-only` fallback: a bare `rake -f
+3rd/mruby/Rakefile MRUBY_BUILD_DIR=...` run from *this* worktree's own
+root resolves `MRuby::Build.mruby_config_path` to the project's own root
+`build_config.rb` rather than `3rd/mruby`'s `build_config/default.rb`
+(`Dir.pwd != MRUBY_ROOT && File.file?("./build_config.rb")` -- true for
+any invocation from the project root, `MRUBY_CONFIG` unset or not), so
+it pulls in every RPG Maker gem, `mruby-lcf`'s `cp932_table` env-var
+requirement included, well before a plain host `mrbc` is needed at all.
+Building the host `mrbc` alone therefore has to run `rake` from inside
+`3rd/mruby` itself (`Dir.pwd == MRUBY_ROOT`, so `mruby_config_path` falls
+through to the plain `build_config/default.rb` gembox, no RPG Maker gems
+and no `cp932_table` involved) -- confirmed against the real
+`lib/mruby/build.rb` source rather than assumed. That build config also
+defaults to a plain `gcc` linker command, which fails at the final link
+step with undefined `__cxa_*` C++-exception-runtime references (this
+project's own core `vm.c`/`vm-cxx.cxx` is built with `MRB_USE_CXX_
+EXCEPTION`, needing a C++ linker driver) -- root `build_config.rb`'s own
+comment (`conf.cc.command = ENV['HOST_CC'] || 'cc'` /
+`conf.linker.command = ENV['HOST_CXX'] || 'c++'`) documents the fix this
+round applied: `HOST_CXX=c++` (linker only, kept `HOST_CC` as the plain C
+compiler `cc` -- forcing the *compiler* itself to `g++` for `.c` sources
+instead miscompiles `src/fmt_fp.c`'s own `mrb_format_float` with C++
+name-mangled linkage, a real, checked-not-assumed second-order bug this
+round hit and back out of, since `numeric.c` calls it expecting plain C
+linkage from `mruby.h`'s own `extern "C"` wrapper). With both fixes, a
+real host `mrbc` (`mruby 4.0.0`) built clean.
+
+Ran `tools/bc2cpp/bc2cpp.rb` directly against that real host `mrbc`
+(`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` computed exactly the way
+`mruby-rgss-compiled/mrbgem.rake` does, `SKIP_UNSUPPORTED=1`) over the
+whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world -- the real
+`== compiled entry points ==` and "classes needing
+`MRB_SET_INSTANCE_TT`" listings quoted above came from that real run,
+not simulated. Grepped the real regenerated `rgss_compiled_gen.cpp` for
+the broken empty-name `mrb_funcall(M, <reg>, "", ` shape: zero matches.
+`g++ -fsyntax-only -std=gnu++17 -Wall -Wextra -Winfinite-recursion`
+against the real edited `register.cxx` plus that real generated file and
+the real mruby headers (`3rd/mruby/include`, the real generated `mruby/
+presym/id.h` from the plain host `mrbc` build above -- `register.cxx`
+and the generated file both resolve method/ivar names through plain
+`mrb_intern_cstr` at runtime, never a compile-time `MRB_SYM`-family
+macro, so this presym table's own gembox-specific symbol set doesn't
+need to match the real project's for this check to be valid): **zero
+errors, zero `-Winfinite-recursion` warnings** (only the same
+pre-existing, harmless `-Wunused-but-set-variable` warnings every other
+compiled method here already has, `RGSS::Tilemap#autotiles` included).
+Compiled `register.cxx` to a real object file and confirmed with
+`nm -C`: `RGSS__Tilemap_autotiles_impl` is present and externally linked
+(`T`), its `mrb_get_args` wrapper `RGSS__Tilemap_autotiles` correctly
+stays local (`t`), and `RGSS::Tilemap` appears in no embedding-struct
+symbol set at all, confirming the embedding-none conclusion directly
+rather than assuming it: no `RGSS__Tilemap_ivars` struct, no
+`MRB_SET_INSTANCE_TT` call, and the one compiled method reads/writes
+`@autotiles` through the ordinary dynamic `iv_tbl`.
