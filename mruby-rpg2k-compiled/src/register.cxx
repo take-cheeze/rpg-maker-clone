@@ -136,12 +136,34 @@
 // way BLOCK/SENDB do, just via different syntax -- the same permanently-
 // out-of-scope closure-creation gap, not a narrow missing translation.
 // Neither class's own #initialize compiles, so neither gets any ivar
-// embedded.
+// embedded. A ninth, parallel round adds Game::State (mruby-rpg2k/mrblib/
+// game.rb, reopened by mruby-rpg2k/mrblib/game/lsd_io.rb) -- the whole-
+// program root save/session object (party, switches, variables, map
+// position, pictures, both timers, the message window config, screen-
+// transition defaults, vehicle placement, and the Marshal/`.lsd`
+// (de)serialisers), 23 of its own 32 real bytecode-defined methods, and
+// RPG2k::Scene::StatusMenu (mruby-rpg2k/mrblib/scene/status_menu.rb --
+// the field per-character status detail screen: stats, equipped gear,
+// EXP progress for one selected party member, across five windows), 13
+// of its own 21. Neither needed any new opcode work. Game::State's own
+// #initialize (4 purely mandatory arguments) is the third target, after
+// Game::Screen/Game::Transition above, whose own #initialize compiles --
+// and by far the largest: 13 of its own ivars (all provably Fixnum) get
+// real RData struct embedding, mixed safely on the same object with
+// every other real (non-Fixnum) ivar staying on the ordinary dynamic
+// iv_tbl. Confirmed safe against the exact Game::Actor-shaped bug two
+// follow-ups up: `Game::State.load` (interpreted, a class method) never
+// bypasses the compiled #initialize -- it constructs every real instance
+// via a plain `new(party, map_id, x, y)` call, so mrb_data_init always
+// runs before any embedded field is ever touched. StatusMenu's own
+// #initialize hits a non-mandatory optional argument (plus a `super`
+// call), the same established gap as every other non-embedding target
+// above, so its own one real ivar stays unembedded too.
 // mruby-rpg2k (this gem's own add_dependency) has already run its full gem
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all fourteen classes are guaranteed to already exist below.
+// all sixteen classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -1958,6 +1980,144 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__Menu_show_message, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, menu, "close_message",
                             RPG2k__Scene__Menu_close_message, MRB_ARGS_NONE());
+
+  // Game::State (mruby-rpg2k/mrblib/game.rb, reopened by mruby-rpg2k/mrblib/
+  // game/lsd_io.rb) -- see this file's own top comment for the real gap
+  // breakdown and the embedding this class's own compiling #initialize
+  // unlocks. No bare `private` anywhere in either source file (confirmed
+  // directly, not guessed from bc2cpp's own diagnostic), so every method
+  // below is `mrb_define_method` except #initialize itself, which mruby's
+  // own src/class.c forces private unconditionally regardless of source,
+  // the same always-private special case as every other shipped target's
+  // own #initialize.
+  RClass* state = mrb_class_get_under(M, game, "State");
+  MRB_SET_INSTANCE_TT(state, MRB_TT_DATA);
+
+  mrb_define_private_method(M, state, "initialize", Game__State_initialize,
+                            MRB_ARGS_REQ(4));
+  mrb_define_method(M, state, "map_id=", Game__State_map_id_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "set_parallax", Game__State_set_parallax,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "clear_parallax", Game__State_clear_parallax,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "vehicle", Game__State_vehicle, MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "boarded?", Game__State_boarded_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "walk_step", Game__State_walk_step,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "show_picture", Game__State_show_picture,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, state, "erase_picture", Game__State_erase_picture,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "erase_all_pictures",
+                    Game__State_erase_all_pictures, MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_seconds", Game__State_timer_seconds,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_display_text",
+                    Game__State_timer_display_text, MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer2_seconds", Game__State_timer2_seconds,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_frames", Game__State_timer_frames,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_frames=", Game__State_timer_frames_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "timer_running", Game__State_timer_running,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_running=", Game__State_timer_running_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "timer_visible", Game__State_timer_visible,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, state, "timer_visible=", Game__State_timer_visible_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "set_screen_transition",
+                    Game__State_set_screen_transition, MRB_ARGS_REQ(2));
+  mrb_define_method(M, state, "set_system_graphic",
+                    Game__State_set_system_graphic, MRB_ARGS_REQ(2));
+  mrb_define_method(M, state, "bgm_chunk", Game__State_bgm_chunk,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, state, "se_chunk", Game__State_se_chunk,
+                    MRB_ARGS_REQ(1));
+
+  // RPG2k::Scene::StatusMenu (mruby-rpg2k/mrblib/scene/status_menu.rb) --
+  // the field per-character status detail screen (stats, equipped gear,
+  // EXP progress for one selected party member, drawn across five
+  // windows: actor panel, gold, HP/MP/EXP gauges, parameters, equipment).
+  // 13 of its own 21 real bytecode-defined methods compile clean, needing
+  // no new opcode work at all: the opcode set nine rounds of this ADR
+  // have already built up already covers every real shape this class's
+  // own method bodies use.
+  //
+  // #initialize (`actor_index = 0`, one optional argument, plus a
+  // `super parent` call) stays interpreted, the same non-mandatory-arity
+  // gap as Game::Picture/RPG2k::Window/Game::Actor/Game::Party/
+  // RPG2k::Scene::MapViewer/RPG2k::Scene::SkillMenu's own #initialize
+  // above -- so, like those six, bc2cpp's own drop_unsafe_embeddings guard
+  // refuses to embed this class's own one real provably-Fixnum ivar
+  // (@actor_index) into an RData struct: every ivar access below still
+  // goes through the ordinary dynamic iv_tbl, no MRB_SET_INSTANCE_TT call
+  // needed here -- confirmed directly against the real generated output,
+  // the same way as every other non-embedding target's own top-of-file
+  // comment already documents.
+  //
+  // The 7 methods that stay interpreted are genuinely out of this
+  // prototype's scope, not a missing opcode -- confirmed against the real
+  // generated `#error` markers, not guessed: #update and #dispose each
+  // call `windows.each { |w| ... }` (a real Ruby block, BLOCK/SENDB);
+  // #draw_actor_panel, #draw_params and #draw_equipment each use
+  // `.each_with_index do |...| ... end` (also BLOCK/SENDB);
+  // #draw_value_row has one optional argument (`can_knockout = nil`, the
+  // same non-mandatory-arity gap as #initialize); and #load_face_bitmap
+  // has a real `rescue StandardError => e` clause (RESCUE/RAISEIF/
+  // EXCEPT), the same established shape SkillMenu's own #load_face_bitmap
+  // already documents above.
+  //
+  // Every method below is `private` in the real interpreted source --
+  // status_menu.rb's own single `private` sits right before #windows,
+  // line 162, in effect through the end of the class body (confirmed
+  // directly against the real source, not guessed from bc2cpp's own
+  // diagnostic); #initialize/#dispose/#update, the three methods above
+  // that `private` line, all stay interpreted anyway (see above), so
+  // mrb_define_private_method is the only registration this class's own
+  // block below ever needs -- unlike Picture's own #step/#finish_move
+  // fix, there is no plain mrb_define_method call here to get wrong.
+  RClass* status_menu = mrb_class_get_under(M, scene, "StatusMenu");
+  mrb_define_private_method(M, status_menu, "windows",
+                            RPG2k__Scene__StatusMenu_windows, MRB_ARGS_NONE());
+  mrb_define_private_method(M, status_menu, "item_name",
+                            RPG2k__Scene__StatusMenu_item_name,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, status_menu, "warn_missing_item",
+                            RPG2k__Scene__StatusMenu_warn_missing_item,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, status_menu, "build_windows",
+                            RPG2k__Scene__StatusMenu_build_windows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, status_menu, "new_window",
+                            RPG2k__Scene__StatusMenu_new_window,
+                            MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, status_menu, "new_contents",
+                            RPG2k__Scene__StatusMenu_new_contents,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, status_menu, "refresh",
+                            RPG2k__Scene__StatusMenu_refresh, MRB_ARGS_NONE());
+  mrb_define_private_method(M, status_menu, "draw_actor_face",
+                            RPG2k__Scene__StatusMenu_draw_actor_face,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, status_menu, "draw_gold",
+                            RPG2k__Scene__StatusMenu_draw_gold,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, status_menu, "draw_gauges",
+                            RPG2k__Scene__StatusMenu_draw_gauges,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, status_menu, "slot_labels",
+                            RPG2k__Scene__StatusMenu_slot_labels,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, status_menu, "rpg2003_party?",
+                            RPG2k__Scene__StatusMenu_rpg2003_party_,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, status_menu, "draw_battle_row",
+                            RPG2k__Scene__StatusMenu_draw_battle_row,
+                            MRB_ARGS_REQ(2));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
