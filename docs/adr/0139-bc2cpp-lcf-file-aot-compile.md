@@ -2162,3 +2162,144 @@ reading the generated `struct Game__Screen_ivars`/`struct
 Game__State_ivars` definitions out of the post-fix build shows exactly
 10 and 12 fields respectively, matching the fix's own predicted impact
 field-for-field.
+
+## Follow-up: RPG2k::Scene::SaveLoad, RPG2k::Scene::Order, and a real compile_send keyword/splat-argument silent-drop bug
+
+Two more independent classes, plus a third real, live bug found by this
+round's own dedicated adversarial bug hunt (a background agent tasked
+purely with stress-testing already-shipped code, run in parallel with
+the two new-class agents rather than sequentially after them).
+
+**RPG2k::Scene::SaveLoad** (`mruby-rpg2k/mrblib/scene/save_load.rb`) is
+the file-select screen shared by `Scene::Menu`'s own Save command and
+`Scene::Title`'s Continue entry. 12 of its own 22 real bytecode-defined
+methods compile clean, needing no new opcode work. `#initialize`
+(`initialize parent, state, mode`) does not compile -- it opens with its
+own `super parent` call into `RPG2k::Scene::Base` (the same SUPER gap
+`RPG2k::Scene::ItemMenu`/`DebugMenu`/`Menu`/`ChipsetEditor` already hit,
+now a fourth class this same SUPER-opcode lead would unlock) and also
+builds `@slots` via a real `(1..SLOT_COUNT).map { |slot| ... }` block.
+Since `#initialize` never compiles, its own provably-typed ivars (`@mode`,
+Symbol; `@arrow_anim`, Fixnum) stay unembedded too.
+
+**RPG2k::Scene::Order** (`mruby-rpg2k/mrblib/scene/order.rb`) is the
+RPG2003 field Order screen -- a pick-and-place party reorder UI across a
+left (remaining) / right (picked) column pair, plus a Confirm/Redo prompt
+once every member has been picked. 12 of its own 16 real bytecode-defined
+methods compile clean, needing no new opcode work. `#initialize` (`super
+parent` as its own first statement) matches the same SUPER gap exactly --
+a fifth class it would unlock. The other 3 gaps are each a genuine Ruby
+block. No ivars embed, same reasoning as SaveLoad.
+
+**A third real, live bug, found by a dedicated bug-hunt agent stress-
+testing every already-shipped class, not by either new-class agent.**
+`compile_send`'s own SEND/SSEND argument-count parsing used a bare
+`/n=(\d+)/` regex against a call site's real mrbc disassembly. That
+recognizes only a plain positional-argument shape (`"n=3"`), but mrbc's
+own `print_args` (`src/codedump.c`) emits two other real shapes this
+regex silently *misparsed instead of rejecting*: a keyword-argument call
+site (`"n=3|nk=1"`, one Symbol/value register pair per keyword -- `src/
+vm.c`'s own `OP_SEND` packs these into a real Hash *at runtime*, a step
+this codegen never replicated at all) and a splat call site (`"n=*"`,
+mrbc's own `CALL_MAXARGS` sentinel -- a genuinely variable argument count
+this codegen has no fixed register list for). Neither shape matches
+`/n=(\d+)/` (no digits right after `"n="` for a splat; the keyword pair
+registers are simply never looked at for a keyword call), and
+`nil.to_i` silently evaluated to 0 -- so a splat call site used to
+compile to a real zero-argument `mrb_funcall`, silently dropping every
+splatted argument, and a keyword call site compiled with only its real
+positional arguments, silently dropping the keyword hash entirely.
+
+**Confirmed live in six already-shipped, already-compiled methods, not
+hypothetical:**
+- `Game::Battle#enemy_basic_action`/`#enemy_fallback_attack`'s own
+  `deal_attack(b, target, 0, charged: charged)` compiled with `charged:`
+  silently dropped -- every charged enemy attack routed through either
+  method called the real `#deal_attack` with its own `charged: nil`
+  default instead of the caller's real charged state.
+- `Game::Actor#knock_out!`/`Game::Battle#inflict_state`'s own
+  `Game::States.prune(ids, table, keep: permanent_states)` silently
+  dropped `keep:` -- a real permanently-protected state (e.g. an innate
+  racial trait modeled as a state) could be pruned away as if no
+  exemption list existed at all.
+- `Game::Actor#restore_class`'s own `set_level(@level, preserve_mod:
+  false)` silently called with `preserve_mod: true` instead -- a real,
+  load-bearing inversion (the source's own adjacent comment explains why
+  `false` is deliberate for a class restore, to avoid carrying stat
+  modifiers across it).
+- `RPG2k::Scene::DebugMenu#play_animation`'s own call into
+  `RPG2k::Scene::Map#anim_target(tx, ty, height:, index:,
+  flash_target:)` -- three real **mandatory** keyword parameters, no
+  defaults at all -- used to silently compile a call that would raise a
+  real `ArgumentError` (missing keyword) at runtime the moment it ran,
+  not just pass a wrong value.
+
+**Severity, and how this differs from the round's own IvarLayout.join
+fix.** The `IvarLayout.join` bug (found two rounds ago, still worth
+restating for contrast) was a wrong *embedding* decision caught by a
+runtime `mrb_integer_p` type guard before it could do anything worse than
+raise `TypeError` on a code path that used to work. This bug has no such
+safety net: the generated C++ for all six methods above compiled and
+linked completely cleanly either way -- nothing short of noticing the
+real, wrong gameplay behavior (an enemy's charged attack behaving as
+uncharged, a protected state being pruned, stat modifiers persisting
+across a class change) would ever have caught it. This is the most
+severe bug found across every round of this effort so far.
+
+**Fix, applied at the root in `bc2cpp.rb`'s own `compile_send`:** now
+parses `n=(\d+|\*)(?:\|nk=(\d+|\*))?` and refuses to compile (the same
+loud `#error` fallback every other unmodeled shape here already gets,
+leaving the method on the interpreter) whenever the match indicates a
+splat or a keyword argument list, instead of silently mistranslating
+either. `SEND0`/`SSEND0`'s own disassembly never prints `"n="` at all (a
+real, always-zero-argument call, not a shape to reject), so a `nil` match
+still means `n=0`, now explicit instead of incidental on `nil.to_i`.
+
+**Consequence for already-shipped code:** all six affected methods above
+are no longer registered in `mruby-rpg2k-compiled/src/register.cxx` --
+each now correctly falls back to the interpreter, the same established
+fallback every other out-of-scope shape already gets. `Game::Actor`'s own
+entry-point count drops from 76 to 74 (`#knock_out!`/`#restore_class`),
+`Game::Battle`'s from 75 to 72 (`#enemy_basic_action`/
+`#enemy_fallback_attack`/`#inflict_state`), and `RPG2k::Scene::DebugMenu`'s
+from 33 to 32 (`#play_animation`).
+
+**Checked and found NOT live, deliberately not touched** (from this same
+round's dedicated bug hunt): a `GETMCNST` name-extraction regex sharing
+the same `$`-anchored shape a prior round already fixed for `GETCONST` --
+checked all 1412 real `GETMCNST` sites in the closed world, none has a
+trailing local-variable comment, so it never actually triggers today; a
+structural gap where a `SETIV` inside a `BLOCK`/`SENDB` child irep is
+invisible to `IvarLayout` (only TDEF-registered leaf bodies are visited)
+-- confirmed zero live triggers against every currently-embedded ivar via
+a full irep-tree walk, not just registered methods; `mrb_str_new_cstr`
+truncating a STRING literal at an embedded NUL byte (`strlen` vs. the
+byte-escaped length already computed) -- no such literal exists anywhere
+in the closed world; GC safety of a plain C-local `mrb_value` across a
+nested `mrb_funcall` -- confirmed safe directly against `mrb_vm_exec`'s
+own arena save/restore in `3rd/mruby/src/vm.c`/`gc.c`, which never touches
+a caller's own already-arena-pushed values.
+
+**Full-sweep re-check** (all twenty-two now-shipped targets):
+`Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen` (41),
+`RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (**74**,
+down from 76), `Game::Party` (85), `RPG2k::Scene::MapViewer` (34),
+`Game::Battle` (**72**, down from 75), `RPG2k::Scene::ItemMenu` (41),
+`RPG2k::Scene::SkillMenu` (39), `RPG2k::Scene::DebugMenu` (**32**, down
+from 33), `RPG2k::Scene::EquipMenu` (29), `RPG2k::Scene::Menu` (28),
+`Game::State` (23), `RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute`
+(18), `RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12) -- every count matches exactly, including the
+three intentional (and now-verified) drops from the compile_send fix.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** `-Winfinite-recursion`
+warnings and **zero** compile errors. `nm -C` on the resulting
+`libmruby.a` shows all 24 new entry points (12
+`RPG2k::Scene::SaveLoad_*_impl`, 12 `RPG2k::Scene::Order_*_impl`) present
+and externally linked; the six methods the compile_send fix stopped
+compiling are confirmed absent by symbol name; and every one of the
+twenty already-shipped classes' own entry-point counts either matches
+exactly or drops by precisely the number of methods this round's own fix
+predicted, with no other change anywhere.
