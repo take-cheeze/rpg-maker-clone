@@ -1577,3 +1577,90 @@ fix, directly verified). The full, unrestricted closed-world
 `g++ -fsyntax-only` check still reports **0 errors**. The same run now
 emits **2,708** real `_impl` method bodies across the whole closed world
 (up from 2,618).
+
+## Follow-up: Game::Battle and RPG2k::Scene::ItemMenu, no new opcodes needed
+
+A sixth, parallel round -- two independent background agents, each
+starting from its own worktree, then integrated by hand -- adds
+`Game::Battle` and `RPG2k::Scene::ItemMenu`, both getting real coverage
+for the first time **without needing a single new opcode**: every gap
+either class hits was already-known-shape (non-mandatory `#initialize`
+arguments, a genuine Ruby block, or a `super` call), and the opcode set
+landed for `Game::Party`/`RPG2k::Scene::MapViewer` the round before
+already covered everything else, including the one near-opcode-miss
+below.
+
+**`Game::Battle`** (`mruby-rpg2k/mrblib/game/battle.rb`) is the headless
+turn-based/gauge combat-resolution engine: turn order, command
+resolution, hit/damage/state-infliction formulas, enemy AI action
+selection. 75 of its own 141 real bytecode-defined methods compile
+clean. The other 66 split cleanly into the two already-established
+out-of-scope shapes: 15 (including `#initialize` itself, a mix of
+optional positional and keyword arguments) fail on non-mandatory arity,
+and 51 hit a genuine Ruby block (`BLOCK`/`SENDB`/`SSENDB`). One near-miss
+was checked, not assumed: `#apply_knockout_reset`
+(`%i[atk_mod def_mod spi_mod agi_mod].each do |field| ... end`) would
+also need a dynamic-`SYMBOL` opcode this compiler has never modeled --
+but it still ends in that same `.each` block regardless, so adding
+`SYMBOL` support alone would not have unlocked it; genuinely not worth
+chasing, left interpreted. `#initialize` never compiles, so `Game::Battle`'s
+two provably-Fixnum ivars (`@battle_type`, `@rounds`) stay unembedded,
+same shape as every other non-embedding target above. Visibility needed
+its own real check: a single bare `private` (`battle.rb` line 1720) makes
+everything from `#do_nothing_restricted?` on private by default, but
+three names are retroactively reopened `public` right after their own
+`def` -- of those three, only `#inflict_state`/`#cure_state` actually
+compile (the other two, and `#apply_knockout_reset`, all hit the same
+block gap), so they alone are registered with plain `mrb_define_method`
+despite sitting after the `private` line, the same real visibility-
+tracking fix this ADR's own `Game::Picture` `#step`/`#finish_move` bug
+already established the need for.
+
+**`RPG2k::Scene::ItemMenu`** (`mruby-rpg2k/mrblib/scene/item_menu.rb`) is
+the field/battle item-use menu: item list scrolling/selection, target
+selection (including teleport-item map picking), applying item effects.
+41 of its own 47 real methods compile clean. `#initialize` itself hits a
+real `super parent` call (`SUPER`, out of this compiler's opcode scope,
+never added -- no target so far has needed it), and 5 other private
+methods use a genuine Ruby block; one more,
+`#load_face_bitmap`, has a real `rescue StandardError` clause
+(`RETURN_BLK`/`EXCEPT`/`RESCUE`/`RAISEIF`, also out of scope). Because
+`#initialize` never compiles, its own provably-Fixnum/Symbol ivars
+(`@mode`/`@item_index`/`@item_top`/`@target_index`/`@teleport_index`/
+`@arrow_anim`) stay unembedded too.
+
+**Independent duplicate work, reconciled by hand.** Both background
+agents' worktrees were branched before the prior (`Game::Party`/
+`RPG2k::Scene::MapViewer`) round had merged, so each independently
+re-derived and re-applied that round's own `drop_unsafe_embeddings`
+`compiles_clean?` fix and `RANGE_INC`/`RANGE_EXC` opcode against its own
+stale base -- real, correct fixes, just already shipped on `master` by
+the time both agents reported back. Integrating by hand meant diffing
+each agent's own commit against its *real* parent (not `master`) to
+isolate what was actually new, applying only `Game::Battle`'s and
+`RPG2k::Scene::ItemMenu`'s own registration blocks (`register.cxx`) and
+owner-list entries (`compiled_gems.rb`) on top of the already-merged
+`master`, and discarding both agents' redundant `bc2cpp.rb` diffs
+entirely -- `master`'s own shipped fix and opcode implementation were
+kept unchanged rather than replaced with either agent's independently-
+reasoned (differently-worded, equally-correct) reimplementation, to avoid
+churn risk on code that had already passed three rounds of real
+verification.
+
+**Full-sweep re-check, as always.** Since this round added no new
+opcodes, no already-shipped target could gain anything, and a fresh
+unrestricted diagnostic confirmed exactly that: all ten now-shipped
+targets' own entry-point counts -- `Game::Picture` (25),
+`Game::EnemyAction` (6), `Game::Screen` (41), `RPG2k::Window` (32),
+`Game::Transition` (32), `Game::Actor` (76), `Game::Party` (85),
+`RPG2k::Scene::MapViewer` (34), `Game::Battle` (75),
+`RPG2k::Scene::ItemMenu` (41) -- match exactly what each round's own
+independent verification already found; nothing moved.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), and `nm -C` on the resulting
+`libmruby.a` shows all 116 new entry points (75 `Game__Battle_*_impl`,
+41 `RPG2k__Scene__ItemMenu_*_impl`) present and externally linked, with
+every one of the eight already-shipped classes' own symbol counts
+unchanged. The full, unrestricted closed-world `g++ -fsyntax-only` check
+still reports **0 errors**.
