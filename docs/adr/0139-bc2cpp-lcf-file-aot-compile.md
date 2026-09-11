@@ -1750,3 +1750,68 @@ present and externally linked, with every one of the ten already-shipped
 classes' own symbol counts unchanged. The full, unrestricted
 closed-world `g++ -std=c++17 -fsyntax-only` check still reports **0
 errors**.
+
+## Follow-up: RPG2k::Scene::EquipMenu, RPG2k::Scene::Menu, and a real LAMBDA-shaped near-miss
+
+An eighth, parallel round -- again two independent background agents,
+integrated by hand -- adds `RPG2k::Scene::EquipMenu` and
+`RPG2k::Scene::Menu`, two more `RPG2k::Scene` siblings. Neither needed
+any new opcode work.
+
+**`RPG2k::Scene::EquipMenu`** (`mruby-rpg2k/mrblib/scene/equip_menu.rb`)
+is the field equip screen: weapon/armor/accessory slot selection, a
+two-column bag-item candidate grid, per-stat before/after deltas. 29 of
+its own 36 real methods compile clean. `#initialize` (`actor_index = 0`,
+one non-mandatory argument) stays interpreted, the same established gap
+as every other non-embedding target above; the other 6 gaps
+(`#draw_stat_row`/`#build_slot_window`/`#build_cand_window`'s own
+`each_with_index`, `#item_stat_sum`/`#equip_delta`'s own `reduce`,
+`#draw_arrow_fallback`'s own `ARROW_H.times`) are all a genuine Ruby
+block.
+
+**`RPG2k::Scene::Menu`** (`mruby-rpg2k/mrblib/scene/menu.rb`) is the
+field main menu: the top-level party navigation hub covering
+Item/Skill/Equip/Status/Save/Quit, the party-status panel, the end-game
+confirmation dialog, and the gold display. 28 of its own 35 real methods
+compile clean. `#initialize` (a real `super parent` call, `SUPER`) and
+`#load_face_bitmap` (a real `rescue StandardError` clause) match
+`RPG2k::Scene::ItemMenu`'s own pair of gaps exactly -- both classes even
+share the `#load_face_bitmap` method name (POLY at every real call site,
+never MONO). Four more methods
+(`#build_commands`/`#build_windows`/`#draw_command_labels`/
+`#build_end_game_confirm_windows`) end in a genuine Ruby block.
+
+**One real near-miss, checked rather than chased**:
+`#draw_status_row`'s own `line = ->(n) { y + n * LINE_H }` hits a
+**`LAMBDA`** opcode no earlier round had ever seen. Investigated instead
+of assumed: a lambda literal creates a real closure over the enclosing
+scope's own local (`y`) the same way `BLOCK`/`SENDB` do for a `do...end`
+block -- just different call-site syntax (`OP_LAMBDA` vs `OP_BLOCK` both
+create a `RProc` from a child `mrb_irep` capturing the enclosing
+`upper`). Judged the same permanently-out-of-scope closure-creation gap,
+not a narrow single-opcode mechanical translation, so left interpreted
+rather than adding `LAMBDA` support for the one method it would unlock
+here. Neither `RPG2k::Scene::EquipMenu`'s nor `RPG2k::Scene::Menu`'s own
+`#initialize` compiles, so neither gets any ivar embedded.
+
+**Full-sweep re-check.** Since this round added no new opcodes, no
+already-shipped target could gain anything, and a fresh unrestricted
+diagnostic confirmed exactly that: all fourteen now-shipped targets' own
+entry-point counts -- `Game::Picture` (25), `Game::EnemyAction` (6),
+`Game::Screen` (41), `RPG2k::Window` (32), `Game::Transition` (32),
+`Game::Actor` (76), `Game::Party` (85), `RPG2k::Scene::MapViewer` (34),
+`Game::Battle` (75), `RPG2k::Scene::ItemMenu` (41),
+`RPG2k::Scene::SkillMenu` (39), `RPG2k::Scene::DebugMenu` (33),
+`RPG2k::Scene::EquipMenu` (29), `RPG2k::Scene::Menu` (28) -- match
+exactly; nothing moved.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`) -- the first round since the prior
+follow-up's own stale-cache fix to reuse an already-built tree, and it
+succeeded on the first try, confirming that fix holds. `nm -C` on the
+resulting `libmruby.a` shows all 57 new entry points (29
+`RPG2k__Scene__EquipMenu_*_impl`, 28 `RPG2k__Scene__Menu_*_impl`)
+present and externally linked, with every one of the twelve
+already-shipped classes' own symbol counts unchanged. The full,
+unrestricted closed-world `g++ -std=c++17 -fsyntax-only` check still
+reports **0 errors**.
