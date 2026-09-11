@@ -3473,6 +3473,63 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #value is NOT registered here -- its own body ends in a real
   // `@values.each { |d| ... }` block (BLOCK/SENDB), an already-established
   // out-of-scope shape (see this file's own top comment).
+
+  // RPG2k::Scene::GameOver (mruby-rpg2k/mrblib/scene/game_over.rb) -- see
+  // compiled_gems.rb's own comment on this gem's `owners:` entry for the
+  // full writeup, including why the real source has 7 bytecode-defined
+  // methods (not the 3 a first read of just #initialize/#update/#dispose
+  // suggests) and why no MRB_SET_INSTANCE_TT call belongs here (its own
+  // @picture ivar gets a devirtualization-only CLASS_HINT, Sprite, never
+  // embedded, since #initialize never compiles). #update/#dispose are
+  // `mrb_define_method`; #gameover_bgm_override/#database_gameover_bgm are
+  // both `mrb_define_private_method` (a bare `private` mid-class-body, in
+  // effect through the end of the class, confirmed directly against the
+  // real source and flagged by bc2cpp's own diagnostic). #gameover_bitmap
+  // and #play_gameover_bgm are NOT registered here -- each ends in a real
+  // `rescue StandardError => e` clause (RESCUE/RAISEIF/EXCEPT), the same
+  // already-established out-of-scope shape every other rescue-using method
+  // in this file already documents. Reuses the `scene` RClass* declared at
+  // the top of this function.
+  RClass* game_over = mrb_class_get_under(M, scene, "GameOver");
+  mrb_define_method(M, game_over, "update", RPG2k__Scene__GameOver_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, game_over, "dispose", RPG2k__Scene__GameOver_dispose,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, game_over, "gameover_bgm_override",
+                            RPG2k__Scene__GameOver_gameover_bgm_override,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, game_over, "database_gameover_bgm",
+                            RPG2k__Scene__GameOver_database_gameover_bgm,
+                            MRB_ARGS_NONE());
+
+  // Game::Actors (mruby-rpg2k/mrblib/game.rb) -- the actor-cache/lookup
+  // container (plural, not Game::Actor itself, already a compiled owner
+  // above): lazily builds and caches Game::Actor instances by database
+  // id. #[] has a real `rescue RuntimeError => e` clause; #all ends in a
+  // genuine Ruby block; #each takes an explicit `&blk` block parameter, a
+  // non-mandatory-argument shape this compiler's calling convention
+  // doesn't model at all -- none of the three are registered here. None
+  // of this class's own three ivars (@db, @all, @missing) ever gets
+  // embedded: @db is an opaque LCF::Database reference, and @all/
+  // @missing are both real Hash literals, a type bc2cpp's embedding
+  // lattice only ever models for Fixnum/Symbol. No bare `private`/
+  // `protected`/`public` anywhere in the real source, so #existing and
+  // #known_invalid? are both plain `mrb_define_method`; #initialize
+  // itself is forced private by mruby's own interpreter regardless of
+  // source. Reuses the `game` RClass* declared at the top of this
+  // function.
+  RClass* actors = mrb_class_get_under(M, game, "Actors");
+  mrb_define_private_method(M, actors, "initialize", Game__Actors_initialize,
+                            MRB_ARGS_REQ(1));
+  mrb_define_method(M, actors, "existing", Game__Actors_existing,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actors, "known_invalid?", Game__Actors_known_invalid_,
+                    MRB_ARGS_REQ(1));
+  // #[], #all, #each are NOT registered here: #[] has a real `rescue
+  // RuntimeError` clause (RESCUE/RAISEIF/EXCEPT); #all ends in a genuine
+  // Ruby block (BLOCK/SENDB); #each takes an explicit `&blk` block
+  // parameter, a non-mandatory-argument shape this compiler's calling
+  // convention doesn't model at all (see this block's own top comment).
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
