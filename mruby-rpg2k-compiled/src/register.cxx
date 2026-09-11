@@ -543,6 +543,65 @@
 // ordinary mrb_funcall, confirmed directly against the real regenerated
 // output.
 //
+// A twenty-first, independent round adds RPG2k::Scene::MapWorld
+// (mruby-rpg2k/mrblib/scene/base.rb) -- the small adapter Scene::Map's own
+// #initialize builds (`@world = MapWorld.new(self, @rng)`) to bridge
+// Game::MoveRoute/Game::MoveType's own small `world` protocol
+// (passability, hero position, switch/sound side effects, randomness) onto
+// the owning scene and its Game::State, without either movement-engine
+// class needing a direct Scene::Map reference. 7 of its own 8 real
+// bytecode-defined methods compile clean, needing no new opcode work at
+// all: #initialize, #passable?, #can_land?, #hero_position (an Array
+// literal off two chained sends, ARRAY-opcode-shaped), #in_sight?,
+// #set_switch (SETIDX's own real `mrb_funcall(..., "[]=", ...)` fallback,
+// since the real receiver -- Game::Switches -- is never a raw Array/Hash),
+// and #random. The one gap, #play_sound, has a real `rescue StandardError`
+// clause -- the same established out-of-scope shape every other
+// rescue-using method in this file already documents; confirmed directly
+// against the real whole-program diagnostic (SKIP_UNSUPPORTED=1 lists it
+// under "skipped (unsupported, left on the interpreter)", no generated
+// entry point at all). It already carries a real `# bc2cpp: (String, , ,
+// )` magic-comment annotation in the source (predating this round), which
+// resolves to no actual type claim (`ANNOTATED ... ([nil, nil, nil, nil]
+// -> nil)`) since this compiler's annotation parser only recognizes
+// fixnum/symbol tokens, never String -- moot either way, since the rescue
+// clause alone keeps this method interpreted regardless of any annotation.
+//
+// #initialize (`initialize scene, rng`) compiles clean -- pure mandatory
+// arity, no super, no block -- but neither of this class's own two ivars
+// (@scene, @rng) ever gets embedded: both are opaque object references (a
+// RPG2k::Scene::Map and a Game::Rng instance respectively), never provably
+// Fixnum/Symbol. Confirmed directly against the real generated output:
+// RPG2k::Scene::MapWorld does not appear in bc2cpp's own "classes needing
+// MRB_SET_INSTANCE_TT" diagnostic, so no MRB_SET_INSTANCE_TT call belongs
+// in its own registration block below. Every real construction site in
+// the whole closed world goes through a plain `MapWorld.new(scene, rng)`
+// call -- mruby-rpg2k/mrblib/scene/map.rb's own real `@world =
+// MapWorld.new(self, @rng)` (inside a `RGSS::Profiler.section` block, not
+// #initialize itself, but still a real, unconditional construction site),
+// plus one in this project's own scripts/rpg2k_scene_check.rb CRuby test
+// harness (`RPG2k::Scene::MapWorld.new(nil, nil)`, exercising #play_sound
+// only) -- confirmed by grepping the whole closed world for
+// `MapWorld.new`/`.allocate`/a subclass and finding no bypass and no
+// subclass anywhere.
+//
+// Every one of #passable?/#can_land?/#hero_position/#play_sound/#random/
+// #set_switch is a genuinely POLY name in the whole-program registry --
+// RPG2k::Scene::VehicleWorld (the same file, right below MapWorld, "the
+// same `world` protocol... for a Move Event/Set Move Route driving a
+// vehicle") defines every one of them too, plus #passable? also collides
+// with Game::ChipSet, #random with Game::Rng, and #set_switch with
+// Game::Interpreter/Game::EnemyAi. None of that blocks registering
+// MapWorld's own methods below -- POLY only affects whether some *other*
+// compiled call site devirtualizes into one of these, never whether a
+// class's own methods can be registered. No bare `private`/`protected`
+// anywhere in the class body, so every method below is
+// `mrb_define_method` except #initialize itself, forced private by
+// mruby's own interpreter regardless of source, the same always-private
+// special case as every other compiled #initialize in this file. A real
+// lead for a future round: RPG2k::Scene::VehicleWorld's own identical
+// protocol shape.
+//
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
 // looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
@@ -3110,6 +3169,66 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, variables, "clear_dirty", Game__Variables_clear_dirty,
                     MRB_ARGS_NONE());
+
+  // RPG2k::Scene::Title (mruby-rpg2k/mrblib/scene/title.rb) -- see
+  // compiled_gems.rb's own comment on this gem's `owners:` entry for the
+  // full writeup, including the real gap breakdown (13 rescue clauses;
+  // #initialize's own SUPER + BLOCK double gap) and why no
+  // MRB_SET_INSTANCE_TT call belongs here. #refresh_cursor is genuinely
+  // POLY at every real call site (RPG2k::Scene::Menu defines a same-named
+  // method too), so #move_selection's own call into it correctly stays
+  // ordinary mrb_funcall dispatch rather than being devirtualized.
+  // #update/#dispose are mrb_define_method; #refresh_cursor/
+  // #move_selection/#auto_select?/#auto_new_game? are all
+  // mrb_define_private_method (the real bare `private` mode-switch
+  // mid-class-body, in effect through the end of the class), confirmed
+  // directly against the real source. Reuses the `scene` RClass* declared
+  // at the top of this function.
+  RClass* title = mrb_class_get_under(M, scene, "Title");
+  mrb_define_method(M, title, "update", RPG2k__Scene__Title_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, title, "dispose", RPG2k__Scene__Title_dispose,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, title, "refresh_cursor",
+                            RPG2k__Scene__Title_refresh_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, title, "move_selection",
+                            RPG2k__Scene__Title_move_selection,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, title, "auto_select?",
+                            RPG2k__Scene__Title_auto_select_, MRB_ARGS_NONE());
+  mrb_define_private_method(M, title, "auto_new_game?",
+                            RPG2k__Scene__Title_auto_new_game_,
+                            MRB_ARGS_NONE());
+
+  // RPG2k::Scene::MapWorld (mruby-rpg2k/mrblib/scene/base.rb) -- see this
+  // file's own top comment for the real construction-site safety check and
+  // why no MRB_SET_INSTANCE_TT call belongs here (both @scene/@rng are
+  // opaque object references, never Fixnum/Symbol). No bare
+  // `private`/`protected` anywhere in the real source, so every method
+  // below is `mrb_define_method` except #initialize itself, which mruby's
+  // own src/class.c forces private unconditionally regardless of source,
+  // the same always-private special case as every other compiled
+  // #initialize in this file. Reuses the `scene` RClass* declared at the
+  // top of this function.
+  RClass* map_world = mrb_class_get_under(M, scene, "MapWorld");
+  mrb_define_private_method(M, map_world, "initialize",
+                            RPG2k__Scene__MapWorld_initialize, MRB_ARGS_REQ(2));
+  mrb_define_method(M, map_world, "passable?", RPG2k__Scene__MapWorld_passable_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, map_world, "can_land?", RPG2k__Scene__MapWorld_can_land_,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, map_world, "hero_position",
+                    RPG2k__Scene__MapWorld_hero_position, MRB_ARGS_NONE());
+  mrb_define_method(M, map_world, "in_sight?", RPG2k__Scene__MapWorld_in_sight_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, map_world, "set_switch",
+                    RPG2k__Scene__MapWorld_set_switch, MRB_ARGS_REQ(2));
+  mrb_define_method(M, map_world, "random", RPG2k__Scene__MapWorld_random,
+                    MRB_ARGS_REQ(1));
+  // #play_sound is NOT registered here -- its own body has a real `rescue
+  // StandardError` clause (RESCUE/RAISEIF/EXCEPT), an already-established
+  // out-of-scope shape (see this file's own top comment).
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
