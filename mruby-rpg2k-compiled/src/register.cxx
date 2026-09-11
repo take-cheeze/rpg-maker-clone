@@ -500,6 +500,49 @@
 // class's own String/Array-typed (UNKNOWN) ivars on the ordinary dynamic
 // iv_tbl.
 //
+// An eighteenth, independent round adds Game::Timer (mruby-rpg2k/mrblib/
+// game.rb) -- the RPG2000 Timer/Timer2 countdown backing model (both are
+// real instances of this one class, held as Game::State's own @timers
+// array; there is no separate "Timer2" class anywhere in the closed
+// world, confirmed by grep). 7 of its own 10 real bytecode-defined
+// methods compile clean, needing no new opcode work at all -- this class
+// is exactly the shape the operator-regex bug above was found in:
+// #display_text's own `s % 60` compiles to a real Integer#% send,
+// confirmed directly against the real generated output
+// (`mrb_funcall(M, r4, "%", 1, r5)`, never the pre-fix empty-string-name
+// shape). #set (`seconds * FPS + (FPS - 1)`) exercises MUL/ADDI plus the
+// nested-lexical-scope GETCONST fix to resolve the bare `FPS` constant
+// via Game::Timer -> Game -> Object. #start (`visible, in_battle =
+// false`), #tick (`battle = false`) and #drawn? (`battle = false`) each
+// have one non-mandatory optional argument -- the same established
+// out-of-scope shape every other unembedded target above already
+// documents.
+//
+// #initialize compiles clean (zero arguments, pure mandatory arity), but
+// the whole-program EMBED diagnostic proposes nothing for this class at
+// all -- confirmed directly, not assumed: @running/@visible/@in_battle
+// are booleans (a type this compiler's embedding lattice doesn't model),
+// and @frames -- despite a literal-Fixnum source in #initialize (`0`)
+// and #set (`seconds * FPS + ...`) -- gets poisoned back to UNKNOWN by
+// #load_h's own `h[:frames] || 0` (a real opaque Hash#[] read on a
+// caller-provided Hash), the same IvarLayout.join fixed-point poisoning
+// behaviour the earlier round's own join() bugfix established. So
+// Game::Timer does not appear in bc2cpp's own "classes needing
+// MRB_SET_INSTANCE_TT" diagnostic. Confirmed moot regardless by the
+// real, single construction site for this class in the whole closed
+// world (`Game::State#initialize`'s own `@timers = [Timer.new,
+// Timer.new]`, mruby-rpg2k/mrblib/game.rb -- no subclass, no
+// `.allocate`, no bypass, grepped directly).
+//
+// Real full-sweep synergy from adding this class: :seconds and
+// :display_text are both MONO (Game::Timer is their one and only real
+// bytecode definition anywhere), so already-shipped Game::State's own
+// #timer_seconds/#timer2_seconds/#timer_display_text now devirtualize
+// their own internal `timer(id).seconds`/`.display_text` call straight
+// into Game__Timer_seconds_impl/Game__Timer_display_text_impl instead of
+// ordinary mrb_funcall, confirmed directly against the real regenerated
+// output.
+//
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
 // looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
@@ -2975,6 +3018,98 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, chip_set, "terrain", Game__ChipSet_terrain,
                     MRB_ARGS_REQ(1));
+
+  // Game::Timer (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
+  // comment for the real gap breakdown (#start/#tick/#drawn?'s own
+  // non-mandatory arguments) and why no MRB_SET_INSTANCE_TT call belongs
+  // here (no embeddable ivar at all, per the real whole-program EMBED
+  // diagnostic -- @frames is poisoned to UNKNOWN by #load_h's own opaque
+  // Hash#[] read, and @running/@visible/@in_battle are booleans, a type
+  // this compiler's embedding lattice doesn't model). No bare `private`
+  // anywhere in the real source (confirmed directly, not guessed from
+  // bc2cpp's own diagnostic), so every method below is `mrb_define_method`
+  // except #initialize.
+  RClass* timer = mrb_class_get_under(M, game, "Timer");
+
+  // #initialize is always private (the same real interpreter special case
+  // as every other compiled #initialize in this file -- mruby's own
+  // src/class.c forces it regardless of source, not a bare `private` call
+  // here).
+  mrb_define_private_method(M, timer, "initialize", Game__Timer_initialize,
+                            MRB_ARGS_NONE());
+  mrb_define_method(M, timer, "set", Game__Timer_set, MRB_ARGS_REQ(1));
+  mrb_define_method(M, timer, "stop", Game__Timer_stop, MRB_ARGS_NONE());
+  mrb_define_method(M, timer, "seconds", Game__Timer_seconds, MRB_ARGS_NONE());
+  mrb_define_method(M, timer, "to_h", Game__Timer_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, timer, "load_h", Game__Timer_load_h, MRB_ARGS_REQ(1));
+  mrb_define_method(M, timer, "display_text", Game__Timer_display_text,
+                    MRB_ARGS_NONE());
+
+  // Game::Switches (mruby-rpg2k/mrblib/game.rb) -- the 1-indexed boolean
+  // flag store an event page's conditions are read from. Backed by a
+  // plain Hash (`@data = {}`), not a real bit-array, so this class's own method
+  // bodies never hit a bitwise/modulo operator SEND at all -- checked
+  // directly, not assumed, against this file's own operator-regex bug
+  // writeup above: #flip's own `!self[id]` is a real SEND too, to `!`,
+  // but that character was already in the pre-fix charset. ALL 7 of its
+  // own real bytecode-defined methods compile clean, needing no new
+  // opcode work at all (#revision/#dirty are attr_reader-generated,
+  // native, invisible to bc2cpp the same way every other attr_reader/
+  // attr_writer in this codebase is). @revision is a real field on a new
+  // Game__Switches_ivars RData struct, mixed safely with the rest of this
+  // class's own (Hash-typed, UNKNOWN) ivars on the ordinary dynamic
+  // iv_tbl. Checked directly against the exact Game::Actor-shaped
+  // embedding bug several follow-ups up, not assumed safe by analogy:
+  // grepping the whole closed world for `Switches.new`/
+  // `Game::Switches.new`/`.allocate`/a subclass finds exactly two real
+  // construction sites (mruby-rpg2k/mrblib/game.rb's own
+  // Game::State#initialize and this project's own
+  // scripts/export_nano7_map.rb harness), both plain zero-argument `.new`
+  // calls, no bypass and no subclass anywhere. No bare
+  // `private`/`protected`/`public` anywhere in the real source (confirmed
+  // directly, not guessed from bc2cpp's own diagnostic), so every method
+  // below is `mrb_define_method` except #initialize itself, which mruby's
+  // own src/class.c forces private unconditionally regardless of source,
+  // the same always-private special case as every other compiled
+  // #initialize in this file.
+  RClass* switches = mrb_class_get_under(M, game, "Switches");
+  MRB_SET_INSTANCE_TT(switches, MRB_TT_DATA);
+  mrb_define_private_method(M, switches, "initialize",
+                            Game__Switches_initialize, MRB_ARGS_NONE());
+  mrb_define_method(M, switches, "[]", Game__Switches___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, switches, "[]=", Game__Switches____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, switches, "flip", Game__Switches_flip, MRB_ARGS_REQ(1));
+  mrb_define_method(M, switches, "to_h", Game__Switches_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, switches, "replace", Game__Switches_replace,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, switches, "clear_dirty", Game__Switches_clear_dirty,
+                    MRB_ARGS_NONE());
+
+  // Game::Variables (same file, immediately below Switches) -- the
+  // 1-indexed integer store the same page conditions read, clamped to a
+  // fixed +-999999/+-9999999 range on write. Same Hash-backed, no-real-
+  // bitwise-operator shape as Switches above (its own `[]=` clamp is a
+  // plain pair of `>`/`<` sends against @max/@min, already covered by the
+  // existing EQ/LT/LE/GT/GE opcode work). #initialize
+  // (`initialize(rpg2003 = false)`) has one non-mandatory optional
+  // argument -- the same established out-of-scope shape every other
+  // unembedded target in this file documents -- so it stays interpreted
+  // and drop_unsafe_embeddings correctly refuses to embed this class's own
+  // provably-Fixnum @revision too: no MRB_SET_INSTANCE_TT call belongs in
+  // this registration block, and no DATA_PTR(self) access appears in any
+  // of its own compiled methods below. The other 5 of its own 6 real
+  // bytecode-defined methods compile clean, needing no new opcode work at
+  // all. No bare `private`/`protected`/`public` anywhere in the real
+  // source, so every method below is `mrb_define_method`.
+  RClass* variables = mrb_class_get_under(M, game, "Variables");
+  mrb_define_method(M, variables, "[]", Game__Variables___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, variables, "[]=", Game__Variables____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, variables, "to_h", Game__Variables_to_h,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, variables, "replace", Game__Variables_replace,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, variables, "clear_dirty", Game__Variables_clear_dirty,
+                    MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
