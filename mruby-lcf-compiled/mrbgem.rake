@@ -69,7 +69,15 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # same kind of gap, just against the standard library instead of RGSS --
   # see compiled_gems.rb's own core_native_srcs comment for the real,
   # further collisions (:delete, :puts, :resume, ...) this found.
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby")
+  #
+  # external_gem_native_srcs (compiled_gems.rb) closes the same gap one
+  # level further out: mruby-marshal/mruby-onig-regexp/mruby-stringio each
+  # live in their own separate submodule outside mruby_root entirely, so
+  # core_native_srcs above can never reach them regardless of its own gem
+  # list, even though every one of the three is a real, always-active gem
+  # in this project's own build (see that helper's own comment).
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
+                external_gem_native_srcs("#{dir}/..")
 
   this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-lcf-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-lcf-compiled' }

@@ -48,7 +48,13 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # bytecode-defined one, and why closing it only needs the flat name set.
   # mruby's own core is the same gap against the standard library instead
   # of RGSS -- see compiled_gems.rb's own core_native_srcs comment.
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby")
+  #
+  # external_gem_native_srcs (compiled_gems.rb) closes the same gap one
+  # level further out, for the three always-active gems (mruby-marshal/
+  # mruby-onig-regexp/mruby-stringio) that live outside mruby_root
+  # entirely -- see that helper's own comment.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
+                external_gem_native_srcs("#{dir}/..")
 
   this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rpg2k-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rpg2k-compiled' }
