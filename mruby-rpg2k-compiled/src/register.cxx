@@ -786,6 +786,39 @@
 // for these four classes are removed below too (each one's own real
 // #initialize is otherwise completely unaffected -- same arity, same
 // visibility, same registered entry points).
+//
+// A later round adds Game::Interpreter (docs/adr/0139's own follow-up) as
+// this gem's 61st owner -- 173 of its own 207 real bytecode-defined
+// methods, by far the largest single class this gem covers, and a real,
+// previously-shipped severe bug found and fixed along the way. Building
+// out `drop_unsafe_embeddings`'s own #initialize-only compileability gate
+// into a real per-ivar `every_accessor_compiles?` check (does *every*
+// method that ever touches this exact ivar, nested block bodies included,
+// also compile clean -- not just #initialize) surfaced a live instance of
+// the same class of bug this file's own Game::Actor writeup already fixed
+// once, this time triggered by a different method than #initialize failing
+// to compile: Game::Transition's own @width/@height were real embedded
+// struct fields, correct for #initialize and every compiling reader, but 6
+// of Transition's own real methods (#block_rects/#blind_rects/
+// #vertical_stripe_rects/#horizontal_stripe_rects/#clip/
+// #compute_block_order, all real Ruby-block users) also read one or both
+// -- entirely outside any compiled codegen's view -- and stayed on the
+// interpreter, which still reads/writes the same ivar name through the
+// object's own separate, never-populated dynamic `iv_tbl` (`struct RData`
+// carries one independently of the `data` pointer this compiler's embedded
+// struct lives behind -- confirmed directly against 3rd/mruby/include/
+// mruby/data.h). Every real call to any of those 6 methods against an
+// already-constructed Game::Transition would have read a permanently-nil
+// @width/@height instead of the value #initialize actually set -- a real,
+// live crash (`#clip`'s own `x >= @width` raising `NoMethodError` on nil)
+// in already-merged code, not a missed optimization. See that class's own
+// registration block below for the full writeup; the fix itself lives in
+// tools/bc2cpp/bc2cpp.rb. Re-ran this gem's own real bc2cpp invocation
+// before/after the fix with Game::Interpreter still excluded from
+// `owners:` -- confirmed the *only* change anywhere in the whole
+// regenerated file is Game::Transition's own @width/@height losing their
+// embedding; every other already-shipped class's own generated output,
+// entry-point count, and registration is byte-for-byte unaffected.
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -1141,36 +1174,67 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #initialize takes 5 mandatory arguments, no opts -- unlike Game::Picture
   // /RPG2k::Window's own #initialize, it compiles clean, so (like
   // Game::Screen above) drop_unsafe_embeddings does NOT refuse this class
-  // outright -- but only 2 of Transition's own 5 provably-Fixnum ivars
-  // actually end up embedded: @width and @height are real struct fields on
-  // a `Game__Transition_ivars*` RData payload, needing the real
-  // MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA) call Game::Screen's own
-  // block above already established the requirement for. @style/@frames/
-  // @frame do NOT embed, despite being just as provably Fixnum (confirmed
-  // directly against the real generated output: all three write through a
-  // plain `mrb_iv_set`, with an explicit `// @width embedded (fixnum)`-
-  // style comment appearing only on @width/@height's own lines) -- this
-  // class carries a bare `attr_reader :style, :frames, :frame`
-  // (mruby-rpg2k/mrblib/game.rb, right above #initialize) that collides
-  // with exactly those three names, the same attr_reader/embedded-ivar
-  // shape `natively_exposed?`/`drop_unsafe_embeddings` (this ADR's own
-  // eighth severe bug fix, several rounds after this class was first added
-  // here) exists to catch, correctly vetoing just the three colliding
-  // ivars rather than the whole class. This paragraph originally described
-  // all 5 ivars as embedded because it predates that fix (confirmed by
-  // commit history: this class's own initial compile commit is timestamped
-  // before the `natively_exposed?` commit) -- a documentation-drift finding
-  // from a later adversarial sweep, the same "hand-written comment
-  // describes pre-fix behavior" shape this file's own LCF::MoveCommand
-  // writeup already found once, just against a partial ivar list instead
-  // of a whole stale MRB_SET_INSTANCE_TT call; the MRB_SET_INSTANCE_TT call
-  // itself was never wrong; only this comment's claim about *which* fields
-  // it covers was. The one other real, non-Fixnum ivar, @erase (a plain
-  // boolean set once in #initialize and read by #black_alpha/
-  // #vertical_stripe_rects/#horizontal_stripe_rects), stays on the ordinary
-  // dynamic iv_tbl regardless -- this compiler's embedding lattice models
-  // Fixnum/Symbol, not booleans -- mixed safely with the 2 embedded fields
-  // on the very same object, same as Game::Screen's own non-Fixnum ivars.
+  // outright. @style/@frames/@frame do NOT embed: this class carries a bare
+  // `attr_reader :style, :frames, :frame` (mruby-rpg2k/mrblib/game.rb,
+  // right above #initialize) that collides with exactly those three names,
+  // the same attr_reader/embedded-ivar shape `natively_exposed?`/
+  // `drop_unsafe_embeddings` (this ADR's own eighth severe bug fix) exists
+  // to catch.
+  //
+  // Neither @width nor @height embeds either, as of docs/adr/0139's own
+  // Game::Interpreter follow-up -- a real, previously-shipped, LIVE memory-
+  // safety bug this round's own generalized `drop_unsafe_embeddings` fix
+  // found and closed, not merely a documentation drift like the paragraph
+  // this replaces. Before that fix, both were real struct fields on a
+  // `Game__Transition_ivars*` RData payload (`MRB_SET_INSTANCE_TT
+  // (transition, MRB_TT_DATA)`, no longer called here) -- correctly so for
+  // every one of #initialize's own writes and every *compiled* reader, but
+  // wrong for the 6 real methods that never compile at all (BLOCK/SENDB:
+  // #block_rects, #blind_rects, #vertical_stripe_rects,
+  // #horizontal_stripe_rects, #clip, #compute_block_order -- see this
+  // file's own top comment). `#blind_rects`'s own `bands = @height /
+  // BLIND_BAND` reads @height at the method's own top level, *before* its
+  // trailing `bands.times do |i| ... end` block even starts; `#clip`'s own
+  // `rects.each do |x, y, w, h| ... @width ... @height ... end` reads both
+  // only *inside* that block's own separate child irep, invisible to a
+  // scan of #clip's own top-level irep alone (6 instructions: build the
+  // Array, MOVE the argument, `#error unhandled opcode BLOCK` -- it never
+  // itself mentions either ivar). Either way, since none of these 6 methods
+  // ever compiles, every one of them keeps running mruby-rpg2k's own
+  // interpreted mrblib body -- which still executes an ordinary SETIV/
+  // GETIV against the object's own dynamic `iv_tbl` (mrb's own `struct
+  // RData` carries one, entirely separate from the `data` pointer this
+  // compiler's embedded struct lives behind -- confirmed directly against
+  // 3rd/mruby/include/mruby/data.h). Since a compiled #initialize's own
+  // embedded-field write never touches that `iv_tbl` at all, every real
+  // call to any of these 6 methods against a real, already-constructed
+  // Game::Transition would have read a permanently-nil `@width`/`@height`
+  // instead of the value #initialize actually set -- e.g. `#clip`'s own
+  // `x >= @width` raising `NoMethodError` (nil has no `>=`) the first time
+  // any real screen transition ever clipped a rect, a live crash in
+  // already-merged code, not a missed optimization. `every_accessor_
+  // compiles?` (tools/bc2cpp/bc2cpp.rb) now refuses to embed an ivar unless
+  // *every* method that ever touches it -- its own nested block bodies
+  // included, not just its own top-level irep -- also compiles clean;
+  // re-running this gem's own real bc2cpp invocation before/after that fix
+  // (owners: unchanged, `Game::Interpreter` not yet added) confirms the
+  // *only* change anywhere in the whole regenerated file is exactly this:
+  // @width/@height drop out of the `Game__Transition_ivars` struct (which
+  // no longer exists at all, since nothing else on this class was ever
+  // embedded) and every read/write of them across #initialize and the 12
+  // other real methods that reference either one (#block_grid_cols,
+  // #visible_rects, #capture_ops, #scroll_offset, #vertical_split_ops,
+  // #horizontal_split_ops, #cross_split_ops, #zoom_rect,
+  // #border_to_center_rect, #center_to_border_rect, #around) falls back to
+  // plain `mrb_iv_get`/`mrb_iv_set` -- every one of those methods' own
+  // arity/visibility/registration below is completely unaffected, only the
+  // ivar access path underneath changed, the identical "confirm nothing
+  // else moved" shape this same file's own Game::Actor `drop_unsafe_
+  // embeddings` bug-fix writeup already established. The one other real,
+  // non-Fixnum ivar, @erase (a plain boolean set once in #initialize and
+  // read by #black_alpha/#vertical_stripe_rects/#horizontal_stripe_rects),
+  // was never embedded either way -- this compiler's embedding lattice
+  // models Fixnum/Symbol, not booleans.
   //
   // A real, concrete case where the devirtualization-soundness fix
   // (compiles_clean?, this ADR's own follow-up above) actually matters for
@@ -1191,7 +1255,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // mrb_define_private_method for all of them, the same real fix this ADR's
   // own Game::Picture #step/#finish_move bug already needed once.
   RClass* transition = mrb_class_get_under(M, game, "Transition");
-  MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA);
 
   // #initialize is always private (the same real interpreter special case
   // as Game::EnemyAction#initialize/Game::Screen#initialize above -- mruby's
@@ -2742,6 +2805,27 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // itself, which mruby's own src/class.c forces private unconditionally
   // regardless of source, the same always-private special case as every
   // other shipped target's own #initialize.
+  //
+  // `bgm_chunk`/`se_chunk` (both below) are lsd_io.rb's own real
+  // *instance* methods (a hash-field read, `||` defaults, no block/
+  // rescue/super) -- both mandatory-arity-1 and already covered here. A
+  // dedicated later round (docs/adr/0139's own "Game::State (lsd_io.rb
+  // save/load) coverage investigation" follow-up) confirmed that file's
+  // own remaining 9 real methods (`.tile_replacement_bytes`,
+  // `.tile_replacement_hash`, `.build_event_exec_state`,
+  // `.read_event_exec_frames`, `.from_lsd`, `.restore_pictures`,
+  // `.ole_now`, `.bgm_from_chunk`, `.se_from_chunk`) are every one a
+  // `def self.foo` class method, and confirmed directly (not by analogy)
+  // that none of the 9 can ever be registered here regardless of its own
+  // body: even with `Game::State.singleton` added to `ONLY_OWNERS` and
+  // `SKIP_UNSUPPORTED=0`, bc2cpp emits zero output -- no declaration, no
+  // `#error` stub -- for any of the 9, the same `.singleton` pseudo-owner
+  // structural non-emittability this ADR's own `RGSS::Font` follow-up
+  // already established. See compiled_gems.rb's own Game::State writeup
+  // for the full per-method breakdown (4 real blocks, 2 real `rescue`
+  // clauses, and 2 -- `.bgm_from_chunk`/`.se_from_chunk` -- that would
+  // likely compile if this compiler ever gained a way to emit a
+  // `.singleton`-owned method at all).
   RClass* state = mrb_class_get_under(M, game, "State");
 
   mrb_define_private_method(M, state, "initialize", Game__State_initialize,
@@ -3980,6 +4064,546 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__MessageConfig_clear_face, MRB_ARGS_NONE());
   mrb_define_method(M, message_config, "to_h", Game__MessageConfig_to_h,
                     MRB_ARGS_NONE());
+
+  // Game::Interpreter (docs/adr/0139's own follow-up, mruby-rpg2k/mrblib/
+  // interpreter.rb, plus a separate 4-method reopening in mruby-rpg2k/
+  // mrblib/game/battle_support.rb) -- the RPG2000 event-command
+  // interpreter: runs a decoded LCF::EventCommand list against Game::State,
+  // applying state-only commands (switches/variables/party/gold/items/
+  // conditional branches) directly and recording a request (then pausing)
+  // for anything that needs the UI or the map. Already a registry-visible
+  // owner before this round (`bc2cpp`'s own whole-program registry walk
+  // always covers every gem's mrblib regardless of any single compiled
+  // gem's own `owners:` list -- see tools/bc2cpp/compiled_gems.rb's own
+  // `closed_world_mrblib_srcs` comment), used for MONO/POLY
+  // devirtualization soundness elsewhere in this file long before any of
+  // its own methods were ever emitted -- this round adds it as a real
+  // emission owner for the first time. By far the largest class in this
+  // gem by real method count: 207 real bytecode-defined methods (203 in
+  // interpreter.rb + 4 in the battle_support.rb reopening,
+  // #take_revealed_monsters/#take_fled_monsters/#take_monster_kills/
+  // #take_battle_background), legitimately too large to fully cover in one
+  // round -- 173 compile clean and are registered below; the other 34 stay
+  // on the interpreter, all for real, individually confirmed gaps (none
+  // guessed from a shared shape), never a silent drop:
+  //
+  //   - 20 end in a real Ruby block (BLOCK/SENDB): #restore_call_stack,
+  //     #resume_inn, #key_input_result, #do_jump_label,
+  //     #do_control_switches, #do_control_vars,
+  //     #do_control_vars_range_variable, #do_change_exp, #do_change_level,
+  //     #queue_level_up_messages, #do_change_hp, #do_change_mp,
+  //     #do_full_heal, #do_simulated_attack, #do_change_condition,
+  //     #do_change_class, #do_change_battle_commands, #do_change_params,
+  //     #do_change_skills, #do_change_equipment -- every one of these
+  //     iterates a party/target list (`actors.each`, `targets.each`, ...),
+  //     the same already-established out-of-scope shape as every other
+  //     BLOCK/SENDB gap in this file.
+  //   - 8 end in a real `rescue StandardError` clause (EXCEPT/RESCUE/
+  //     RAISEIF): #resolve_call, #do_call_common_event,
+  //     #common_event_commands, #do_store_terrain_id, #do_store_event_id,
+  //     #do_fadeout_bgm, #do_play_memorized_bgm, #play_audio -- the same
+  //     already-established out-of-scope shape as MapWorld's/
+  //     VehicleWorld's own #play_sound.
+  //   - 3 hit a real, still-unmodeled opcode this compiler has never had a
+  //     `when` case for at all: #update, #skip_to, #do_show_choices all
+  //     emit `#error unhandled opcode JMPUW` -- confirmed directly against
+  //     3rd/mruby/src/vm.c's own `OP_JMPUW` (`unwind_and_jump_to`, per its
+  //     own ops.h comment): a jump that has to unwind through an active
+  //     `ensure`/break catch-handler region on its way to the target,
+  //     mrbc's own compiled shape for a `break`/early-`return` reachable
+  //     from inside one of these methods' own `until`/loop bodies. Left
+  //     unfixed (no new bc2cpp.rb opcode work this round) -- a real,
+  //     confirmed-safe structural gap for a future round, the same
+  //     discipline this file's own RETSELF/Game::MessageConfig#load_h
+  //     writeup already established for a different never-modeled opcode.
+  //   - 2 send a keyword-argument-heavy call this compiler's own
+  //     `compile_send` already refuses on sight (a splat/keyword argument
+  //     list, not a plain positional one): #do_show_picture
+  //     (`.show_picture` with 11 keyword arguments, confirmed via the real
+  //     marker `SEND/SSEND :show_picture has a splat and/or keyword
+  //     argument list (n=1|nk=11)`) and #do_change_parallax
+  //     (`.set_parallax` with 7 keyword arguments, `n=0|nk=7`) -- the same
+  //     already-established out-of-scope shape this ADR's own third-
+  //     severe-bug follow-up (the silently-dropped-keyword-argument fix)
+  //     documents at the root.
+  //   - 1 has a real optional argument: #start_random_battle -- the same
+  //     already-established non-mandatory-arity gap as every other
+  //     interpreted #initialize in this codebase.
+  //
+  // #initialize(state) has pure mandatory arity (1 argument) and compiles
+  // clean, so drop_unsafe_embeddings does NOT refuse this class outright --
+  // but it ends up with ZERO real embedded ivars, not from any attr_reader/
+  // writer/accessor collision (this class has none), but from this same
+  // round's own generalized `every_accessor_compiles?` fix (tools/bc2cpp/
+  // bc2cpp.rb): the raw IvarLayout analysis proposes exactly one candidate,
+  // @frame_steps (a provably-Fixnum this-frame step budget, set in
+  // #initialize/#reset_frame_steps and read/incremented in #update's own
+  // `break if @frame_steps >= MAX_STEPS` / `@frame_steps +=
+  // step_cost(cmd.code)`) -- but #update is one of the 3 JMPUW gaps above,
+  // so it never compiles, and every_accessor_compiles? correctly refuses
+  // to embed @frame_steps rather than let a real 4th severe bug ship (a
+  // compiled #initialize/#reset_frame_steps writing a real Fixnum struct
+  // field while #update's own still-interpreted body reads/writes the
+  // exact same ivar name through the ordinary, never-populated `iv_tbl`
+  // instead -- see this round's own bc2cpp.rb fix and its Game::Transition
+  // writeup above for the first real, live instance of this exact bug
+  // class this same fix independently found and closed). No
+  // MRB_SET_INSTANCE_TT call belongs here as a result -- confirmed
+  // directly against the real, current whole-program diagnostic's own
+  // "classes needing MRB_SET_INSTANCE_TT" list, which does not name
+  // Game::Interpreter.
+  //
+  // Visibility: a bare `private` (mruby-rpg2k/mrblib/interpreter.rb) sits
+  // partway through the class body and stays in effect through the end of
+  // it, *except* two names explicitly reopened with `public :name`
+  // immediately afterward (`public :start_random_battle`, `public
+  // :start_death_handler`) -- #start_random_battle never compiles anyway
+  // (see above), but #start_death_handler does, and the real diagnostic
+  // confirms it correctly carries no `[private -- ...]` tag, unlike every
+  // other method below it in source order; registered with plain
+  // `mrb_define_method`, not `mrb_define_private_method`, below.
+  // #initialize itself is *also* always private, the same real interpreter
+  // special case (mruby's own src/class.c forces it unconditionally at
+  // `def`-time) as every other compiled #initialize in this file, not from
+  // the bare `private` above (which sits well after #initialize's own
+  // `def`). Every visibility marking below was cross-checked against the
+  // real `== compiled entry points ==` diagnostic output directly, not
+  // inferred from source position alone.
+  //
+  // Real MONO/POLY registry soundness, checked and confirmed correct, not
+  // just assumed sound because it compiled: #party/#switches/#variables
+  // (all three private, all three a bare `@state.x`) share their own bare
+  // name with Game::State's own public `attr_reader :party, :switches,
+  // ... :variables` -- exactly the same collision shape this ADR's own
+  // third-severe-bug follow-up fixed at the registry level
+  // (`attr_reader`/`writer`/`accessor` sends now register a synthetic,
+  // irep-nil MethodDef). Confirmed live and correctly conservative in the
+  // real current registry dump: `:party`/`:switches`/`:variables` all show
+  // POLY (2 defs: Game::State, Game::Interpreter) now that this class is a
+  // real owner, so every real call site sending any of these three names
+  // anywhere in the whole closed world still goes through ordinary
+  // `mrb_funcall` dynamic dispatch -- never a direct call into the wrong
+  // class's own `_impl`, the same live infinite-recursion shape a prior
+  // follow-up already found and confirmed NOT live for this exact
+  // `Game::Interpreter#switches`/`Game::State#switches` pair, back when
+  // Game::Interpreter was registry-visible but not yet a compiled owner.
+  //
+  // Reuses the `game` RClass* declared at the top of this function.
+  RClass* interpreter = mrb_class_get_under(M, game, "Interpreter");
+  mrb_define_private_method(M, interpreter, "initialize",
+                            Game__Interpreter_initialize, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "finished?", Game__Interpreter_finished_,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "set_switch",
+                            Game__Interpreter_set_switch, MRB_ARGS_REQ(2));
+  mrb_define_method(M, interpreter, "take_revealed_monsters",
+                    Game__Interpreter_take_revealed_monsters, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_fled_monsters",
+                    Game__Interpreter_take_fled_monsters, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_monster_kills",
+                    Game__Interpreter_take_monster_kills, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_battle_background",
+                    Game__Interpreter_take_battle_background, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "trans_to_opacity",
+                            Game__Interpreter_trans_to_opacity,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "execute",
+                            Game__Interpreter_execute, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "compare",
+                            Game__Interpreter_compare, MRB_ARGS_REQ(3));
+  mrb_define_method(M, interpreter, "start", Game__Interpreter_start,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "stop", Game__Interpreter_stop,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "party", Game__Interpreter_party,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "switches",
+                            Game__Interpreter_switches, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "variables",
+                            Game__Interpreter_variables, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "running?", Game__Interpreter_running_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "waiting?", Game__Interpreter_waiting_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_move_route_requests",
+                    Game__Interpreter_take_move_route_requests,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_location_requests",
+                    Game__Interpreter_take_location_requests, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_erase_request",
+                    Game__Interpreter_take_erase_request, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_tileset_request",
+                    Game__Interpreter_take_tileset_request, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_parallax_request",
+                    Game__Interpreter_take_parallax_request, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_halt_movement_request",
+                    Game__Interpreter_take_halt_movement_request,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_actor_graphic_changed",
+                    Game__Interpreter_take_actor_graphic_changed,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_system_graphic_changed",
+                    Game__Interpreter_take_system_graphic_changed,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_tiles_changed",
+                    Game__Interpreter_take_tiles_changed, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_vehicle_toggle_request",
+                    Game__Interpreter_take_vehicle_toggle_request,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_movie_request",
+                    Game__Interpreter_take_movie_request, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_sprite_flash_requests",
+                    Game__Interpreter_take_sprite_flash_requests,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "take_battle_animation_request",
+                    Game__Interpreter_take_battle_animation_request,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "reset_frame_steps",
+                    Game__Interpreter_reset_frame_steps, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "step_cost", Game__Interpreter_step_cost,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "return_from_call",
+                    Game__Interpreter_return_from_call, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "resumable_index",
+                    Game__Interpreter_resumable_index, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "diagnostic_position",
+                    Game__Interpreter_diagnostic_position, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "call_stack_snapshot",
+                    Game__Interpreter_call_stack_snapshot, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "start_at", Game__Interpreter_start_at,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, interpreter, "resume", Game__Interpreter_resume,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "choose", Game__Interpreter_choose,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "choice_cancellable?",
+                    Game__Interpreter_choice_cancellable_, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "cancel_choice",
+                    Game__Interpreter_cancel_choice, MRB_ARGS_NONE());
+  mrb_define_method(M, interpreter, "resume_number",
+                    Game__Interpreter_resume_number, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "resume_name_input",
+                    Game__Interpreter_resume_name_input, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "resume_key_input",
+                    Game__Interpreter_resume_key_input, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "find_inn_option",
+                    Game__Interpreter_find_inn_option, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "resume_shop",
+                    Game__Interpreter_resume_shop, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "find_shop_option",
+                    Game__Interpreter_find_shop_option, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "resume_battle",
+                    Game__Interpreter_resume_battle, MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "find_battle_option",
+                    Game__Interpreter_find_battle_option, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "reset_waits",
+                            Game__Interpreter_reset_waits, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "do_call_event",
+                            Game__Interpreter_do_call_event, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "map_event_call",
+                            Game__Interpreter_map_event_call, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "character_ref",
+                            Game__Interpreter_character_ref, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "consume",
+                            Game__Interpreter_consume, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "do_end_loop",
+                            Game__Interpreter_do_end_loop, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_break_loop",
+                            Game__Interpreter_do_break_loop, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_message",
+                            Game__Interpreter_do_show_message, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_message_options",
+                            Game__Interpreter_do_message_options,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_face",
+                            Game__Interpreter_do_change_face, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "find_choice_option",
+                            Game__Interpreter_find_choice_option,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_input_number",
+                            Game__Interpreter_do_input_number, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_key_input",
+                            Game__Interpreter_do_key_input, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_name_input",
+                            Game__Interpreter_do_name_input, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_inn",
+                            Game__Interpreter_do_show_inn, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_open_shop",
+                            Game__Interpreter_do_open_shop, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_enemy_encounter",
+                            Game__Interpreter_do_enemy_encounter,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "skip_invalid_troop",
+                            Game__Interpreter_skip_invalid_troop,
+                            MRB_ARGS_REQ(1));
+  mrb_define_method(M, interpreter, "start_death_handler",
+                    Game__Interpreter_start_death_handler, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "range", Game__Interpreter_range,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "operand_value",
+                            Game__Interpreter_operand_value, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "event_operand",
+                            Game__Interpreter_event_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "vehicle_operand",
+                            Game__Interpreter_vehicle_operand, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "screen_operand",
+                            Game__Interpreter_screen_operand, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "item_operand",
+                            Game__Interpreter_item_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "random_operand",
+                            Game__Interpreter_random_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "actor_operand",
+                            Game__Interpreter_actor_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "enemy_operand",
+                            Game__Interpreter_enemy_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "other_operand",
+                            Game__Interpreter_other_operand, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "apply", Game__Interpreter_apply,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, interpreter, "trunc_div",
+                            Game__Interpreter_trunc_div, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "trunc_mod",
+                            Game__Interpreter_trunc_mod, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "do_timer",
+                            Game__Interpreter_do_timer, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_gold",
+                            Game__Interpreter_do_change_gold, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_items",
+                            Game__Interpreter_do_change_items, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_party",
+                            Game__Interpreter_do_change_party, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "check_game_over",
+                            Game__Interpreter_check_game_over, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "level_up_message",
+                            Game__Interpreter_level_up_message,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "skill_learned_message",
+                            Game__Interpreter_skill_learned_message,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "party_term",
+                            Game__Interpreter_party_term, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "show_next_pending_message",
+                            Game__Interpreter_show_next_pending_message,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "stat_targets",
+                            Game__Interpreter_stat_targets, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "stat_amount",
+                            Game__Interpreter_stat_amount, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "simulated_attack_variance",
+                            Game__Interpreter_simulated_attack_variance,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "identity_target",
+                            Game__Interpreter_identity_target, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_actor_name",
+                            Game__Interpreter_do_change_actor_name,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_actor_title",
+                            Game__Interpreter_do_change_actor_title,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_actor_sprite",
+                            Game__Interpreter_do_change_actor_sprite,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_actor_face",
+                            Game__Interpreter_do_change_actor_face,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "vehicle_target",
+                            Game__Interpreter_vehicle_target, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_set_vehicle_location",
+                            Game__Interpreter_do_set_vehicle_location,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_vehicle_graphic",
+                            Game__Interpreter_do_change_vehicle_graphic,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "monster_change_amount",
+                            Game__Interpreter_monster_change_amount,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "do_change_monster_hp",
+                            Game__Interpreter_do_change_monster_hp,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_monster_mp",
+                            Game__Interpreter_do_change_monster_mp,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_monster_condition",
+                            Game__Interpreter_do_change_monster_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_hidden_monster",
+                            Game__Interpreter_do_show_hidden_monster,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_force_flee",
+                            Game__Interpreter_do_force_flee, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_enable_combo",
+                            Game__Interpreter_do_enable_combo, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_battle_bg",
+                            Game__Interpreter_do_change_battle_bg,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_battle_animation_b",
+                            Game__Interpreter_do_show_battle_animation_b,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_terminate_battle",
+                            Game__Interpreter_do_terminate_battle,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_conditional_battle",
+                            Game__Interpreter_do_conditional_battle,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "eval_battle_condition",
+                            Game__Interpreter_eval_battle_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "battle_actor_condition",
+                            Game__Interpreter_battle_actor_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "battle_enemy_condition",
+                            Game__Interpreter_battle_enemy_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "battle_command_condition",
+                            Game__Interpreter_battle_command_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "battle_target_enemy_condition",
+                            Game__Interpreter_battle_target_enemy_condition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_conditional",
+                            Game__Interpreter_do_conditional, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "eval_condition",
+                            Game__Interpreter_eval_condition, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "timer_condition",
+                            Game__Interpreter_timer_condition, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "character_facing",
+                            Game__Interpreter_character_facing,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "actor_condition",
+                            Game__Interpreter_actor_condition, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_teleport",
+                            Game__Interpreter_do_teleport, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "teleport_facing",
+                            Game__Interpreter_teleport_facing, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_memorize_location",
+                            Game__Interpreter_do_memorize_location,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_recall_location",
+                            Game__Interpreter_do_recall_location,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_event_location",
+                            Game__Interpreter_do_change_event_location,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_trade_event_locations",
+                            Game__Interpreter_do_trade_event_locations,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "query_position",
+                            Game__Interpreter_query_position, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_move_event",
+                            Game__Interpreter_do_move_event, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "decode_move_route",
+                            Game__Interpreter_decode_move_route,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "do_wait",
+                            Game__Interpreter_do_wait, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_proceed_with_movement",
+                            Game__Interpreter_do_proceed_with_movement,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_player_visibility",
+                            Game__Interpreter_do_player_visibility,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_flash_sprite",
+                            Game__Interpreter_do_flash_sprite, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_open_save_menu",
+                            Game__Interpreter_do_open_save_menu,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_open_main_menu",
+                            Game__Interpreter_do_open_main_menu,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_tile_substitution",
+                            Game__Interpreter_do_tile_substitution,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_return_to_title",
+                            Game__Interpreter_do_return_to_title,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_open_load_menu",
+                            Game__Interpreter_do_open_load_menu,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_exit_game",
+                            Game__Interpreter_do_exit_game, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_toggle_atb_mode",
+                            Game__Interpreter_do_toggle_atb_mode,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_toggle_fullscreen",
+                            Game__Interpreter_do_toggle_fullscreen,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_open_video_options",
+                            Game__Interpreter_do_open_video_options,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_game_over",
+                            Game__Interpreter_do_game_over, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_erase_screen",
+                            Game__Interpreter_do_erase_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_screen",
+                            Game__Interpreter_do_show_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "teleport_transition",
+                            Game__Interpreter_teleport_transition,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_tint_screen",
+                            Game__Interpreter_do_tint_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_flash_screen",
+                            Game__Interpreter_do_flash_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_pan_screen",
+                            Game__Interpreter_do_pan_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_shake_screen",
+                            Game__Interpreter_do_shake_screen, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "message_window_blocks_command?",
+                            Game__Interpreter_message_window_blocks_command_,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "block_pending_picture_command",
+                            Game__Interpreter_block_pending_picture_command,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "block_pending_teleport_command",
+                            Game__Interpreter_block_pending_teleport_command,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "block_pending_screen_command",
+                            Game__Interpreter_block_pending_screen_command,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "block_pending_battle_command",
+                            Game__Interpreter_block_pending_battle_command,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "block_pending_exp_level_command",
+                            Game__Interpreter_block_pending_exp_level_command,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "block_pending_key_input_command",
+                            Game__Interpreter_block_pending_key_input_command,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(
+      M, interpreter, "block_pending_message_config_command",
+      Game__Interpreter_block_pending_message_config_command, MRB_ARGS_NONE());
+  mrb_define_private_method(M, interpreter, "do_move_picture",
+                            Game__Interpreter_do_move_picture, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_erase_picture",
+                            Game__Interpreter_do_erase_picture,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_show_battle_animation",
+                            Game__Interpreter_do_show_battle_animation,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "picture_coord",
+                            Game__Interpreter_picture_coord, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, interpreter, "picture_name",
+                            Game__Interpreter_picture_name, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_weather",
+                            Game__Interpreter_do_weather, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_play_movie",
+                            Game__Interpreter_do_play_movie, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_memorize_bgm",
+                            Game__Interpreter_do_memorize_bgm, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_set_teleport_target",
+                            Game__Interpreter_do_set_teleport_target,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_set_escape_target",
+                            Game__Interpreter_do_set_escape_target,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_system_graphic",
+                            Game__Interpreter_do_change_system_graphic,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_system_bgm",
+                            Game__Interpreter_do_change_system_bgm,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, interpreter, "do_change_system_sfx",
+                            Game__Interpreter_do_change_system_sfx,
+                            MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
