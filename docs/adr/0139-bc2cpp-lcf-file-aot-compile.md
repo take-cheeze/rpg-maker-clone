@@ -2679,3 +2679,105 @@ the prior round's fix). `nm -C` on the resulting `libmruby.a` shows all
 exactly the one predicted `mrb_int` field, `revision`, and
 `Game__Switches_initialize_impl` really calls `mrb_data_init`), with
 every already-shipped class's own symbol count unchanged.
+
+## Follow-up: RPG2k::Scene::Title, RPG2k::Scene::MapWorld
+
+Two more independent classes; both this round's own agents built with a
+strengthened verification discipline given the prior two rounds' own
+mistakes (the empty-method-name operator bug, and a method wrongly
+registered despite never compiling) -- explicitly instructed to grep the
+generated output for the broken `mrb_funcall(M, <reg>, "", ` shape and to
+cross-check every registered method against the diagnostic's own printed
+entry-point list before trusting it. Both re-confirmed zero matches for
+the former and a clean cross-check for the latter.
+
+**RPG2k::Scene::Title** (`mruby-rpg2k/mrblib/scene/title.rb`) is the
+title screen's New Game/Continue/Exit menu. Only 6 of its own 20 real
+bytecode-defined methods compile clean: `#update`/`#dispose` (public)
+plus 4 private methods (`#refresh_cursor`, `#move_selection`,
+`#auto_select?`, `#auto_new_game?`). `#move_selection`'s own real
+`# bc2cpp: (fixnum)` annotation (already present in the source) lets its
+`% @menu_items.length` wraparound arithmetic compile to a real,
+non-empty `mrb_funcall(M, r3, "%", 1, r4)` -- re-checked directly given
+this exact shape is this ADR's own most severe previously-found bug.
+`#auto_select?`'s own real string-interpolated `$stderr.puts` calls
+needed no new opcode either -- `STRING`/`STRCAT` support already existed.
+
+The other 14 real methods split into the two already-established
+out-of-scope shapes: 13 each have a real `rescue StandardError` clause;
+`#initialize` itself hits two separate gaps in the same body -- a real
+`super parent` call (`SUPER`, the same gap `ItemMenu`/`DebugMenu`/
+`Menu`/`ChipsetEditor`/`SaveLoad`/`Order`'s own `#initialize` already
+document) *and* a real `@menu_items.each_with_index do |item, index|
+... end` block (`BLOCK`/`SENDB`) later on -- confirmed directly against
+the real generated output showing both `#error` markers in the same
+(unemitted) body. `#initialize` never compiling means
+`drop_unsafe_embeddings` correctly refuses to embed any of this class's
+own ivars (its own `@title`/`@window` ivars each get a devirtualization-
+only `CLASS_HINT`, `Sprite`/`Window` respectively, never embedded).
+`#refresh_cursor` is genuinely POLY at every real call site
+(`RPG2k::Scene::Menu` defines a same-named method too), so
+`#move_selection`'s own call into it correctly stays ordinary
+`mrb_funcall` dispatch rather than being devirtualized.
+
+**RPG2k::Scene::MapWorld** (`mruby-rpg2k/mrblib/scene/base.rb`) is the
+small adapter `Scene::Map`'s own `#initialize` builds (`@world =
+MapWorld.new(self, @rng)`) to bridge `Game::MoveRoute`/`Game::MoveType`'s
+own small `world` protocol (passability, hero position, switch/sound
+side effects, randomness) onto the owning scene and its `Game::State`,
+without either movement-engine class needing a direct `Scene::Map`
+reference. 7 of its own 8 real bytecode-defined methods compile clean:
+`#initialize`, `#passable?`, `#can_land?`, `#hero_position` (an Array
+literal off two chained sends), `#in_sight?`, `#set_switch` (`SETIDX`'s
+own real `mrb_funcall(..., "[]=", ...)` fallback, since the real
+receiver -- `Game::Switches` -- is never a raw Array/Hash), and
+`#random`. The one gap, `#play_sound`, has a real `rescue
+StandardError` clause; it already carries a real
+`# bc2cpp: (String, , , )` magic-comment annotation predating this
+round, which resolves to no actual type claim since this compiler's
+annotation parser only recognizes fixnum/symbol tokens, never String --
+moot either way, since the rescue clause alone keeps it interpreted.
+
+`#initialize` (`initialize scene, rng`) compiles clean -- pure mandatory
+arity, no `super`, no block -- but neither of this class's own two ivars
+(`@scene`, `@rng`) ever gets embedded: both are opaque object references
+(a `RPG2k::Scene::Map` and a `Game::Rng` instance respectively), never
+provably Fixnum/Symbol. Every real construction site in the whole closed
+world goes through a plain `MapWorld.new(scene, rng)` call --
+`mruby-rpg2k/mrblib/scene/map.rb`'s own real construction site plus one
+in this project's own `scripts/rpg2k_scene_check.rb` CRuby test harness
+-- confirmed by grepping the whole closed world for `MapWorld.new`/
+`.allocate`/a subclass and finding no bypass and no subclass anywhere.
+
+**A concrete lead for a future round**: every one of
+`#passable?`/`#can_land?`/`#hero_position`/`#play_sound`/`#random`/
+`#set_switch` is a genuinely POLY name in the whole-program registry --
+`RPG2k::Scene::VehicleWorld` (the same file, right below `MapWorld`, "the
+same `world` protocol... for a Move Event/Set Move Route driving a
+vehicle") defines every one of them too, an identical-shaped adapter
+class not yet covered.
+
+**Full-sweep re-check** (all thirty-one now-shipped targets): every
+previously-shipped class's own entry-point count matches exactly --
+`Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen` (41),
+`RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (74),
+`Game::Party` (85), `RPG2k::Scene::MapViewer` (34), `Game::Battle` (72),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (32), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12), `Game::Shop` (11), `Game::Map` (12),
+`Game::EnemyAi` (9), `Game::ChipSet` (9), `Game::Timer` (7),
+`Game::Switches` (7), `Game::Variables` (5) -- nothing moved; new:
+`RPG2k::Scene::Title` (6), `RPG2k::Scene::MapWorld` (7).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape. `nm -C` on the resulting
+`libmruby.a` shows all 13 new entry points (6
+`RPG2k::Scene::Title_*_impl`, 7 `RPG2k::Scene::MapWorld_*_impl`) present
+and externally linked, with every already-shipped class's own symbol
+count unchanged.
