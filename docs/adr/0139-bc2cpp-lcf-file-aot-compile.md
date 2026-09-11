@@ -3940,3 +3940,339 @@ the 3 new `Game__Enemy_*_impl` and 7 new `RPG2k3__Scene__Battle_*_impl`
 entry points present and externally linked, no pseudo-owner
 (`.singleton`-suffixed) symbol ever linked anywhere, and every
 already-shipped class's own symbol count unchanged.
+
+## Follow-up: LCF::MoveCommand, mruby-lcf-compiled's first ivar-embedding target
+
+A thirtieth, independent round adds `LCF::MoveCommand`
+(`mruby-lcf/mrblib/lcf.rb`) to `mruby-lcf-compiled` -- the first new
+owner that gem has gained since its original five `LCF::File`-family
+classes. One decoded RPG2000 move-route command: a command id plus the
+optional string/integer parameters a handful of move-route sub-commands
+carry (switch on/off, change graphic, play sound). `attr_reader
+:command_id, :parameter_string, :parameter_a, :parameter_b,
+:parameter_c` stays native/uncompiled, as always -- there is no other
+real bytecode-defined method on this class at all, so `#initialize` is
+this class's only registered method.
+
+`#initialize(command_id, string, a, b, c)` already carried a real
+`# bc2cpp: (fixnum, , fixnum, fixnum, fixnum)` magic-comment annotation
+from several follow-ups up (applied alongside `LCF::EventCommand#
+initialize`'s own, neither wired up as a compiled owner at the time),
+but this round confirmed everything for real against the actual
+diagnostic rather than trusting the comment: the real `== compiled
+entry points ==` listing shows exactly one line for this class,
+`LCF__MoveCommand_initialize / LCF__MoveCommand_initialize_impl
+(LCF::MoveCommand#initialize, arity 5) [private -- use
+mrb_define_private_method, not mrb_define_method]` -- 5 purely
+mandatory arguments, no `super`, no block, needing zero new
+`bc2cpp.rb` opcode work and finding zero live `bc2cpp.rb` bugs.
+
+`LCF::MoveCommand` appears in bc2cpp's own "classes needing
+`MRB_SET_INSTANCE_TT`" diagnostic, and the real generated
+`#initialize` body really does call `mrb_data_init` before any other
+statement (guarded the same way every other embedded ivar write
+already is -- a real `mrb_integer_p` check + `mrb_raise` on a
+non-Integer value, never silent corruption). `@command_id`,
+`@parameter_a`, `@parameter_b` and `@parameter_c` (all provably
+Fixnum, matching the annotation) are real fields on a new
+`LCF__MoveCommand_ivars` RData struct -- confirmed directly against
+the generated code: `EMBED LCF::MoveCommand#@command_id (fixnum)` and
+the same for the other three. `@parameter_string` (a String, not
+Fixnum/Symbol) correctly stays off that struct despite embedding
+alongside three ivars that do: the generated body writes it with a
+plain `mrb_iv_set(M, self, mrb_intern_cstr(M, "@parameter_string"),
+r2)`, the ordinary dynamic-`iv_tbl` path, mixed safely with the four
+embedded fields on the very same object -- the same mixed-embedding
+shape `Game::Screen`/`Game::Transition`/`Game::State`/`Game::Map`/
+`Game::ChipSet` already established. `report_annotation_candidates`'s
+own diagnostic confirms this wasn't guesswork: `CANDIDATE
+LCF::MoveCommand#initialize, arg 2/5 -> @parameter_string` still
+appears (the position is a real opaque-argument-to-ivar candidate this
+compiler's analysis would consider), but the existing annotation's
+blank second-position token (`(fixnum, , fixnum, fixnum, fixnum)`)
+correctly asserts no claim there, so it stays `UNKNOWN` and unembedded.
+
+`:command_id`/`:parameter_a`/`:parameter_b`/`:parameter_c`/
+`:parameter_string` are all POLY in the whole-program registry (2 defs
+each: this class and a real, separate `Game::MoveCommand`,
+`mruby-rpg2k/mrblib/game.rb`, confirmed by grepping the whole closed
+world for `class MoveCommand` and finding two distinct classes in two
+different modules) -- correctly has no bearing on registering this
+class's own method (POLY only affects whether some *other* compiled
+call site could devirtualize into one of these names, never whether a
+class's own methods can be registered), and neither compiled gem's own
+generated output devirtualizes into any of them today. `:initialize`
+itself is POLY too (62 real definitions across the whole closed
+world), same as always -- moot, since `#initialize` is forced private
+by mruby's own interpreter (`mrb_define_method_raw`'s own special case
+for the name) and registered via `mrb_define_private_method`
+regardless of visibility or POLY-ness.
+
+Re-checked `LCF::EventCommand#initialize` (the other real class this
+same earlier annotation round covered) specifically to avoid
+duplicating a sibling round's own writeup: it has not yet joined
+`mruby-lcf-compiled`'s own `owners:` list as of this round, so there is
+no shipped-target finding to report for it here -- it does, however,
+also appear in the real diagnostic's own "classes needing
+`MRB_SET_INSTANCE_TT`" list alongside `LCF::MoveCommand`, a live lead
+for whoever picks it up next.
+
+**Zero real `bc2cpp.rb` bugs found**: this class's own method body
+(five plain `SETIV`s, no arithmetic, no control flow beyond `ENTER`)
+exercises nothing beyond opcode support this compiler has had since
+its very first target. The only thing genuinely checked, not assumed,
+was whether the pre-existing annotation was still honored correctly
+end to end -- it was.
+
+**Verified for real, the same way every real-source-touching round in
+this file is**: `ruby -c` on every `.rb` file touched
+(`tools/bc2cpp/compiled_gems.rb`, `mruby-lcf-compiled/mrbgem.rake`) --
+both clean. This worktree could not run the real `build_config.rb` +
+`rake` pipeline end to end -- a fresh-worktree gap this ADR already
+anticipates, not a code problem: every `3rd/*` submodule (`3rd/mruby`
+included) is uninitialized here (`git submodule status` shows every
+entry `-`-prefixed), and no `rake` binary is even on `PATH`. Used the
+same alternate, still-rigorous verification prior rounds fell back to
+when they hit this exact class of gap: the real host `mrbc` binary
+(found already built in this machine's separate, non-worktree checkout
+at `/home/user/rpg-maker-clone/3rd/mruby/build/host/mrbc/bin/mrbc`) ran
+the real `tools/bc2cpp/bc2cpp.rb` against this worktree's own real
+`mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` mrblib closed world, with the
+exact `ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS`/`SKIP_UNSUPPORTED`
+environment `mruby-lcf-compiled/mrbgem.rake` itself computes (including
+`LCF::MoveCommand` in `ONLY_OWNERS` via this round's own
+`compiled_gems.rb` change) -- `EXIT: 0`, and the generated
+`lcf_compiled_gen.cpp` diffs **byte-identical** against the same run
+with `LCF::MoveCommand` left out of `ONLY_OWNERS` (expected: narrowing
+emission never changes the whole-program registry or any other class's
+own generated code). `g++ -fsyntax-only -std=c++17 -Wall -Wextra
+-Winfinite-recursion` against the real, regenerated `register.cxx` plus
+its own real generated file and the real mruby headers (from that same
+separate checkout's `3rd/mruby/include` and its built
+`build/host/include` for the generated `mruby/presym/id.h`) --
+**zero errors, zero `-Winfinite-recursion` warnings**, only the same
+pre-existing `-Wunused-but-set-variable`/`-Wunused-parameter` noise
+already present in every already-shipped class in this file. Compiled
+`register.cxx` to a real object file and confirmed with `nm -C`:
+`LCF__MoveCommand_initialize_impl` is present and externally linked
+(`T`), its `mrb_get_args` wrapper `LCF__MoveCommand_initialize`
+correctly stays local (`t`), and the embedded-struct symbols
+(`LCF__MoveCommand_ivars_type`/`_ivars_free`) are present too. Grepped
+the freshly regenerated `lcf_compiled_gen.cpp` for the empty-name
+`mrb_funcall(M, <reg>, "", ` shape directly: zero matches.
+
+## Follow-up: LCF::EventCommand, and this compiler's eighth severe bug -- attr_reader/attr_writer/attr_accessor silently missing an ivar this same compiler embedded
+
+A thirtieth round adds `LCF::EventCommand` (`mruby-lcf/mrblib/lcf.rb`) --
+one decoded RPG2000 event-page/common-event/move-route command (code,
+indent, an optional string argument, and an integer parameter list) --
+to `mruby-lcf-compiled`, this gem's first new coverage target since the
+original `LCF::File`-family work. Its own `#initialize` already carried
+a real `# bc2cpp: (fixnum, fixnum, , )` annotation (the "26 more
+annotations" follow-up, several rounds up) identifying `@code`/`@indent`
+as Fixnum, but the class had never actually been added to this gem's
+own `ONLY_OWNERS`. Both of its own two real bytecode-defined methods
+compile clean, needing no new opcode work: `#initialize` (4 purely
+mandatory arguments, no `super`, no block -- plain SETIVs) and `#param`
+(`@parameters[i] || 0`, a Hash/Array GETIDX plus a `||` default).
+`attr_reader :code, :indent, :string, :parameters` stays native,
+uncompiled, as always.
+
+**Confirmed for real, not trusted from the annotation alone, per this
+round's own explicit brief**: cross-checked both registered methods
+against the real diagnostic's own `== compiled entry points ==` listing
+one by one --
+
+```
+LCF__EventCommand_initialize / LCF__EventCommand_initialize_impl  (LCF::EventCommand#initialize, arity 4)  [private -- use mrb_define_private_method, not mrb_define_method]
+LCF__EventCommand_param / LCF__EventCommand_param_impl  (LCF::EventCommand#param, arity 1)
+```
+
+-- matching exactly what's registered below (`#initialize` private, per
+mruby's own always-private-`#initialize` rule; `#param` public, no bare
+`private`/`protected`/`public` anywhere in the real source). Grepped the
+freshly generated `lcf_compiled_gen.cpp` for the empty-name
+`mrb_funcall(M, <reg>, "", ` shape directly: zero matches.
+
+**The real, verified answer on embedding is "no," not "yes" -- the
+opposite of what the annotation alone would suggest, and the reason this
+round exists at all.** `@code`/`@indent` are both provably Fixnum (the
+annotation, and the real whole-program `EMBED` diagnostic, both agree),
+and `#initialize` has pure mandatory arity with no `super`/block --
+every condition `drop_unsafe_embeddings` already checked before this
+round said "safe to embed." Checking one step further, exactly as this
+round's own brief demanded ("confirm this for real against the actual
+diagnostic output rather than just trusting the annotation"), turned up
+a real, live, already-shipped correctness bug this compiler's embedding
+pass had never guarded against: `LCF::EventCommand`'s own `attr_reader
+:code, :indent, :string, :parameters` (`mruby-lcf/mrblib/lcf.rb`, right
+above `#initialize`) covers the *exact same two ivars* `#initialize`
+would otherwise embed.
+
+**The bug:** a plain `attr_reader`/`attr_writer`/`attr_accessor`'s real C
+implementation (`3rd/mruby/src/class.c`'s own `attr_reader`/
+`attr_writer`) is a bare `mrb_iv_get`/`mrb_iv_set` against the ordinary
+dynamic `iv_tbl` -- it has no way to know that this same class's own
+SETIV codegen wrote the value into an embedded `RData` struct field
+instead, since embedding an ivar means its own SETIV site stops calling
+`mrb_iv_set` for it entirely (that's the entire point of embedding --
+skip the dynamic `iv_tbl` lookup). So the native getter always reads
+back `nil` (or the native setter's own write is simply invisible to
+every compiled GETIV reader) regardless of what `#initialize` did, the
+moment an embedded ivar's own bare name collides with one of these.
+`drop_unsafe_embeddings` (`tools/bc2cpp/bc2cpp.rb`) had one gate --
+whether `#initialize` itself compiles clean with pure mandatory arity --
+and never checked whether some *other*, native accessor for the very
+same ivar name already exists on that class. This is a structurally
+different flavor of the same "invisible to a bytecode-only pass" family
+this ADR has documented five times already (`attr_reader`/`writer`/
+`accessor` and `Struct.new` invisible to the MONO/POLY *registry*, `SDEF`
+and `class << self` invisible to it too) -- this time the blind spot is
+in the *embedding* pass instead of the devirtualization one, even though
+`build_registry`'s own `attr_reader`/`writer`/`accessor` case (added
+several rounds up specifically to fix the registry side of this) had
+already been recording exactly the fact needed to close it: a synthetic,
+`irep: nil` `MethodDef` under the exact same owner and name.
+
+**Confirmed live with a real toy repro, not just reasoned about**: a
+minimal `Foo` class (a compiling `#initialize` that embeds `@x`, plus a
+plain `attr_reader :x` installed the ordinary way), built and run
+directly against this project's own real host mruby core
+(`build/mruby/host/mrbc/lib/libmruby_core.a`, the exact `MRB_SET_INSTANCE_TT`/
+`mrb_data_init`/`attr_reader` machinery every compiled gem's own
+generated code and registration already uses) -- `Foo.new(42).x` returns
+`nil`, not `42`, the moment `@x` is embedded.
+
+**Confirmed live in already-shipped, already-registered code, not just
+hypothetically -- four real classes, all in `mruby-rpg2k-compiled`,
+found by re-running the real whole-program diagnostic before and after
+the fix and diffing bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`"
+list** (12 classes before this round's fix, 5 after -- the difference is
+exactly these four plus `LCF::EventCommand` itself and two
+not-yet-shipped classes, `Game::MessageConfig`/`LCF::MoveCommand`, whose
+own embedding was already "real, verified, zero live effect today" the
+same way every other checked-but-not-exploitable gap in this ADR is):
+
+- `Game::State#x`/`#y`/`#direction` -- the hero's own saved position and
+  facing, `attr_accessor :map, :x, :y, :direction`
+  (`mruby-rpg2k/mrblib/game.rb`) -- silently returned `nil` (reads) and
+  silently dropped every write the movement engine made through these
+  three names on any compiled `Game::State` instance, the whole time
+  `@x`/`@y`/`@direction` were three of its own 13 embedded fields.
+- `Game::Map#id`/`#revision` -- `attr_reader :id, ..., :revision`. The
+  latter is the exact counter `Scene::Map#tile_cache_valid?` watches to
+  know the composed tile-layer render cache is stale (this class's own
+  source comment: "anything that starts rewriting tiles must bump it or
+  the change will not reach the screen") -- silently never advanced from
+  a compiled reader's point of view.
+- `Game::ChipSet#animation_type`/`#animation_speed` -- `attr_reader
+  :name, :graphic, :animation_type, :animation_speed`.
+- `Game::Switches#revision` -- `attr_reader :revision`, the exact
+  counter this class's own source comment says "the map scene watches
+  ... to know when a page might have flipped and its events need
+  re-selecting."
+
+All four compiled and linked clean, zero warnings, in the real,
+currently-shipping `RPGMAKER_BC2CPP=1` build -- the same "compiles fine,
+silently wrong at runtime" shape as this ADR's own three prior severe
+bugs, just in a fourth distinct mechanism.
+
+**The fix** (`tools/bc2cpp/bc2cpp.rb`'s `drop_unsafe_embeddings`): now
+filters at the individual-ivar level, not just the whole-owner level --
+an ivar is dropped from the embeddable set if a synthetic (`irep: nil`)
+`MethodDef` exists under the *same owner* for either the bare ivar name
+(a reader) or `"<name>="` (a writer), reusing the exact registry entries
+`build_registry`'s own `attr_reader`/`writer`/`accessor` case (and, for
+what it's worth, `Struct.new`'s and `NATIVE_SRCS`'s own merges) already
+install. This can only ever remove an embedding that was never actually
+safe -- it never turns a genuinely sound embedding unsound, the same
+one-directional safety net every other `drop_unsafe_embeddings`-style fix
+in this file already carries.
+
+**Verified the fix actually changes the generated output**, not just
+that it compiles: `Game__State_initialize_impl`'s own `@x = x` now reads
+a plain `mrb_iv_set(M, self, mrb_intern_cstr(M, "@x"), r3);` where it
+used to write straight into `DATA_PTR(self)`'s own struct field; no
+`Game__State_ivars`/`Game__Map_ivars`/`Game__ChipSet_ivars`/
+`Game__Switches_ivars`/`LCF__EventCommand_ivars` struct is generated at
+all anymore, and none of the five classes appear in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic. `mruby-rpg2k-
+compiled/src/register.cxx`'s own `MRB_SET_INSTANCE_TT(state, ...)`/
+`(map, ...)`/`(chip_set, ...)`/`(switches, ...)` calls (each now
+referencing a class the regenerated file never allocates as `RData` for)
+are removed to match, with each registration block's own comment
+corrected in place (and a full writeup added to this file's own top
+comment) -- otherwise these four classes would keep being tagged
+`MRB_TT_DATA` for no reason the generated code still needs, real drift
+between the hand-written registration file and what the generator
+actually produces. `tools/bc2cpp/compiled_gems.rb`'s own per-class
+comments for `Game::State`/`Game::Map`/`Game::ChipSet`/`Game::Switches`/
+`LCF::EventCommand` are corrected the same way. Every one of these five
+classes' own real, registered entry points is completely unaffected
+(identical arity/visibility/symbol) -- only the ivar access path
+underneath a handful of them changed from an unsafe, silently-stale
+struct-field/native-accessor split back to the ordinary, always-correct
+dynamic `iv_tbl` both sides agree on.
+
+**Other angles checked this round, no further live instance found**: the
+same `natively_exposed?` check was run against every other already-
+embedding class in the whole closed world (`Game::Screen`, `Game::
+Transition`, `Game::Map::LRUBitmapCache`\-style `RPG2k::Scene::Map::
+LRUBitmapCache`, `Game::Interpreter`, `RPG2k::Scene::VehicleWorld`) --
+none of them expose an embedded ivar's own bare name via `attr_reader`/
+`writer`/`accessor` at all (`Game::Screen`'s own dozens of embedded
+Fixnum fields are each read through a real bytecode `def shake_offset;
+@shake_offset; end`\-style getter instead, which *does* get this
+compiler's own embedding-aware GETIV codegen, not a native accessor), so
+none of them lost anything -- confirmed directly by the unchanged
+`MRB_SET_INSTANCE_TT` list membership for all five, not merely assumed
+from the source shape.
+
+**Full-sweep re-check** (all forty-four now-shipped targets, rebuilt with
+this round's own fix applied): every previously-shipped class's own
+entry-point count matches exactly, the same forty-three counts this
+ADR's own prior follow-ups already list, unchanged; new: `LCF::
+EventCommand` (2).
+
+**Verified for real, environment gap noted rather than worked around**:
+a fresh worktree needed the same five mruby submodules (`3rd/mruby`,
+`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/uni-algo`, `3rd/stb`) initialized and the same seven `patches/*.patch`
+files applied by hand (a raw `rake -f 3rd/mruby/Rakefile` invocation runs
+no CMake configure step, so none of this happens automatically the way
+it does for the project's own real `cmake`\-driven build) that this
+ADR's own `Game::Rng` follow-up already found and fixed in its own
+environment; with those and `cp932_table`/`jis0208_table` pointed at this
+environment's pre-staged tables, the real `RPGMAKER_BC2CPP=1` +
+`rake -f 3rd/mruby/Rakefile` (host target) pipeline built a real host
+`mrbc`, ran this round's own real whole-program `bc2cpp.rb` diagnostic
+through it (every quoted listing above came from that real run), fully
+regenerated both `lcf_compiled_gen.cpp` and `rpg2k_compiled_gen.cpp` via
+their own real `mrbgem.rake` rules, and compiled `mruby-lcf-compiled/
+src/register.cxx` all the way through its own presym-scan step with
+**zero** compile errors -- then hit the same genuine, out-of-scope
+environment gap this ADR's `Game::Rng`/`Game::Troop`/`Game::Vehicle`
+follow-ups already documented and did not attempt to repair:
+`mruby-rgss/src/lib.cxx` needs a real, built `lvgl.h`, which a raw `rake
+-f 3rd/mruby/Rakefile` invocation has no step to build at all, before
+`mruby-rpg2k-compiled/src/register.cxx` (ordered after `mruby-rgss` in
+this build's own dependency graph) is ever reached.
+
+Verified both touched register.cxx files the same alternate, still-
+rigorous way this ADR's `Game::Rng`/`Game::Troop` follow-ups already
+established for exactly this gap: `g++ -fsyntax-only -std=gnu++17 -Wall
+-Wextra -Winfinite-recursion` against each real regenerated file plus
+its own real `register.cxx` and the real mruby headers (including the
+real generated `mruby/presym/id.h`, borrowed from this same run's own
+host `mrbc` bootstrap build, which needs no RGSS/LVGL header at all) --
+both: **zero errors, zero `-Winfinite-recursion` warnings** (the only
+warnings anywhere are the same pre-existing, unrelated
+`-Wunused-but-set-variable` ones this ADR's own `Game::Rng` follow-up
+already found, not introduced by this round). Re-confirmed the empty-
+name `mrb_funcall` grep against both full-owner generated files directly:
+zero matches. This does not confirm the final *link* (blocked on LVGL, as
+above) but does confirm every declaration this round's new code and its
+fix reference is type-correct and consistent with the real, already-
+shipped classes around it -- left for a correctly-configured checkout
+(with `3rd/lvgl` actually built) to confirm the final link and runtime
+diff.
