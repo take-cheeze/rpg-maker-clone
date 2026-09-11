@@ -267,10 +267,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, screen, "update_pan", Game__Screen_update_pan,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, screen, "update_shake", Game__Screen_update_shake,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, screen, "update_flash", Game__Screen_update_flash,
-                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, screen, "update_shake",
+                            Game__Screen_update_shake, MRB_ARGS_NONE());
+  mrb_define_private_method(M, screen, "update_flash",
+                            Game__Screen_update_flash, MRB_ARGS_NONE());
   mrb_define_private_method(M, screen, "approach", Game__Screen_approach,
                             MRB_ARGS_REQ(3));
   mrb_define_private_method(M, screen, "pan_step_for",
@@ -303,7 +303,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, window, "y=", RPG2k__Window_y_, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "z=", RPG2k__Window_z_, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "width=", RPG2k__Window_width_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "height=", RPG2k__Window_height_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "height=", RPG2k__Window_height_,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "windowskin=", RPG2k__Window_windowskin_,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "transparent=", RPG2k__Window_transparent_,
@@ -312,47 +313,54 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "cursor_rect=", RPG2k__Window_cursor_rect_,
                     MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "active=", RPG2k__Window_active_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "visible=", RPG2k__Window_visible_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "active=", RPG2k__Window_active_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, window, "visible=", RPG2k__Window_visible_,
+                    MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "open_animation", RPG2k__Window_open_animation,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "close_animation", RPG2k__Window_close_animation,
                     MRB_ARGS_REQ(1));
-  mrb_define_method(M, window, "opening?", RPG2k__Window_opening_, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "closing?", RPG2k__Window_closing_, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "opening?", RPG2k__Window_opening_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, window, "closing?", RPG2k__Window_closing_,
+                    MRB_ARGS_NONE());
   mrb_define_method(M, window, "pause=", RPG2k__Window_pause_, MRB_ARGS_REQ(1));
   mrb_define_method(M, window, "update", RPG2k__Window_update, MRB_ARGS_NONE());
 
   mrb_define_private_method(M, window, "update_rect", RPG2k__Window_update_rect,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, window, "allocate_skin", RPG2k__Window_allocate_skin,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, window, "position_arrow", RPG2k__Window_position_arrow,
-                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, window, "allocate_skin",
+                            RPG2k__Window_allocate_skin, MRB_ARGS_NONE());
+  mrb_define_private_method(M, window, "position_arrow",
+                            RPG2k__Window_position_arrow, MRB_ARGS_NONE());
   mrb_define_private_method(M, window, "draw_arrow", RPG2k__Window_draw_arrow,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, window, "draw_arrow_visibility",
-                            RPG2k__Window_draw_arrow_visibility, MRB_ARGS_NONE());
+                            RPG2k__Window_draw_arrow_visibility,
+                            MRB_ARGS_NONE());
   mrb_define_private_method(M, window, "fully_open?", RPG2k__Window_fully_open_,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, window, "drawn_height", RPG2k__Window_drawn_height,
-                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, window, "drawn_height",
+                            RPG2k__Window_drawn_height, MRB_ARGS_NONE());
   mrb_define_private_method(M, window, "redraw_for_animation",
-                            RPG2k__Window_redraw_for_animation, MRB_ARGS_NONE());
+                            RPG2k__Window_redraw_for_animation,
+                            MRB_ARGS_NONE());
   mrb_define_private_method(M, window, "draw_skin", RPG2k__Window_draw_skin,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, window, "draw_background", RPG2k__Window_draw_background,
-                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, window, "draw_background",
+                            RPG2k__Window_draw_background, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, window, "draw_frame", RPG2k__Window_draw_frame,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, window, "draw_fallback", RPG2k__Window_draw_fallback,
-                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, window, "draw_fallback",
+                            RPG2k__Window_draw_fallback, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, window, "draw_cursor", RPG2k__Window_draw_cursor,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, window, "draw_cursor_skin", RPG2k__Window_draw_cursor_skin,
-                            MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, window, "draw_cursor_skin",
+                            RPG2k__Window_draw_cursor_skin, MRB_ARGS_REQ(4));
   mrb_define_private_method(M, window, "draw_cursor_fallback",
-                            RPG2k__Window_draw_cursor_fallback, MRB_ARGS_REQ(4));
+                            RPG2k__Window_draw_cursor_fallback,
+                            MRB_ARGS_REQ(4));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
