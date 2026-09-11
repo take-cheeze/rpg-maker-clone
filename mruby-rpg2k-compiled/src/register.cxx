@@ -3645,6 +3645,115 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
                     MRB_ARGS_REQ(1));
+
+  // Game::Enemy (mruby-rpg2k/mrblib/game/battle_support.rb) -- see
+  // compiled_gems.rb's own owners-entry comment for the full writeup. 3 of
+  // its own 4 real bytecode-defined methods compile clean, needing zero
+  // bc2cpp.rb changes: #attack_hit_rate (`@miss ? 70 : 90`, a plain GETIV
+  // plus JMPIF-based ternary), #dead? (`@hp <= 0`, the fixnum-fastpath LE
+  // this compiler already has), and #reseed_rewards (four plain SETIVs
+  // fed by `into.exp`/`into.gold`/`into.drop_id`/`into.drop_prob`, each a
+  // real POLY send that correctly stays ordinary mrb_funcall dispatch --
+  // confirmed directly against the real generated output, not merely
+  // assumed from the registry's own dump: see this class's own
+  // compiled_gems.rb comment for why the registry's dump is misleadingly
+  // stale for these four particular names, and why that staleness still
+  // resolves safely here regardless). #initialize (`db, id, x = 0, y = 0,
+  // hidden = false`, three optional arguments) is the one gap -- the same
+  // established non-mandatory-arity shape as every other unembedded
+  // target above, so drop_unsafe_embeddings correctly refuses to embed
+  // any of this class's own thirteen provably-Fixnum ivars (@max_hp,
+  // @max_sp, @atk, @def, @spi, @agi, @x, @y, @hp, @sp, @flying_phase,
+  // @crit_chance, @battler_hue) despite the raw IvarLayout analysis
+  // reporting all thirteen as EMBED-eligible -- confirmed directly
+  // against the real generated output: Game::Enemy does not appear in
+  // bc2cpp's own "classes needing MRB_SET_INSTANCE_TT" diagnostic, and
+  // every compiled method here uses plain mrb_iv_get/mrb_iv_set, never
+  // DATA_PTR(self). attr_reader :id, :name, :battler_name, :max_hp,
+  // :max_sp, :atk, :def, :spi, :agi, :exp, :gold, :x, :y, :drop_id,
+  // :drop_prob (one call, 15 names), attr_accessor :hp, :sp, :hidden,
+  // and the smaller attr_reader :actions / :crit_chance,
+  // :attribute_ranks, :state_ranks / :levitate / :transparent /
+  // :battler_hue / attr_accessor :flying_phase are all native
+  // (Module#attr_reader/attr_writer/attr_accessor), invisible to bc2cpp
+  // the same way every other attr_reader/writer/accessor in this codebase
+  // is, so none of them gets a registration line here either. No bare
+  // `private`/`protected`/`public` anywhere in the real source, so all
+  // three methods below are plain `mrb_define_method`. Reuses the `game`
+  // RClass* declared at the top of this function.
+  RClass* enemy = mrb_class_get_under(M, game, "Enemy");
+  mrb_define_method(M, enemy, "attack_hit_rate", Game__Enemy_attack_hit_rate,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, enemy, "dead?", Game__Enemy_dead_, MRB_ARGS_NONE());
+  mrb_define_method(M, enemy, "reseed_rewards", Game__Enemy_reseed_rewards,
+                    MRB_ARGS_REQ(1));
+
+  // RPG2k3::Scene::Battle (mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb) -- the
+  // real subclass (`class Battle < RPG2k::Scene::Battle`, a distinct
+  // top-level namespace from RPG2k::Scene::* above, not the base UI battle
+  // scene itself, which is not a compiled owner) adding RPG2003's
+  // active-time-battle (ATB) gauge behavior. Has no #initialize of its own
+  // (inherits the base class's), so there is no non-mandatory-arity gap to
+  // worry about here -- but it also means none of its own ivar reads
+  // (@state, @ui) can ever be an embedding concern regardless: embedding
+  // only ever happens for a class whose OWN #initialize compiles with pure
+  // mandatory arity, and confirmed directly against the real generated
+  // output, this class never appears in bc2cpp's own "classes needing
+  // MRB_SET_INSTANCE_TT" diagnostic (it never SETIVs at all in any of its
+  // own methods -- every @ui/@state access here is a Hash #[]/#[]= read or
+  // write, not a direct instance-variable assignment).
+  //
+  // 7 of its own 15 real bytecode-defined methods compile clean, needing no
+  // new opcode work at all: #active_atb? (a MONO self-call into
+  // #gauge_battle? plus an ivar read and a POLY `!=` compare),
+  // #atb_accumulating? (a Hash #[] GETIDX read, a POLY `==`, a MONO
+  // self-call into #active_atb?, and a POLY `Array#include?` send against
+  // the frozen ATB_MENU_PHASES class-constant array literal),
+  // #gauge_battle?, #drive_battle_atb (MONO self-calls into #controllable?
+  // and #start_gauge_action, everything else POLY dynamic dispatch on
+  // `battle`/self), #start_gauge_action, #enter_atb_phase (a MONO self-call
+  // into #drive_battle_atb), and #controllable?. The other 8 all stay on
+  // the interpreter: #update, #drive_battle_command, #enter_command_phase,
+  // #open_battle_options, #advance_actor, and #prev_commandable_actor_index
+  // each end in (or, for #update, has one branch reach) a bare `super` --
+  // OP_SUPER, out of this compiler's opcode scope, the same established gap
+  // RPG2k::Scene::ItemMenu's/DebugMenu's own #initialize already document.
+  // #finish_round_animation also calls `super` (conditionally) on top of
+  // several genuine Ruby blocks (`select(&:defending)`,
+  // `select(&:dead?)`, `.uniq { |a| ... }`, `.each { |ally| ... }` --
+  // BLOCK/SENDB), and #interrupting_ready_combatant ends in one more real
+  // block (`ready_combatants.find { |c| ... }`) -- the same established
+  // out-of-scope shape every other block-using method in this file already
+  // documents. No bare `private`/`protected`/`public` anywhere in the real
+  // source, so all 7 registered methods below are plain `mrb_define_method`
+  // -- confirmed directly against the real diagnostic's own
+  // `== compiled entry points ==` listing, none flagged `[private]`/
+  // `[protected]`. RPG2k3 is a distinct top-level namespace from RPG2k
+  // (not nested under it), so it needs its own fresh mrb_module_get/
+  // mrb_module_get_under chain rather than reusing the `rpg2k`/`scene`
+  // locals declared above for RPG2k::Scene::* -- otherwise this is exactly
+  // the same mrb_class_get_under shape every RPG2k::Scene::X registration
+  // above already uses; mrbgems dependency order still guarantees
+  // mruby-rpg2k's own gem init (which defines RPG2k3::Scene::Battle, in
+  // the same gem) has already fully run by the time this gem's own init
+  // starts.
+  RClass* rpg2k3 = mrb_module_get(M, "RPG2k3");
+  RClass* rpg2k3_scene = mrb_module_get_under(M, rpg2k3, "Scene");
+  RClass* battle_2k3 = mrb_class_get_under(M, rpg2k3_scene, "Battle");
+  mrb_define_method(M, battle_2k3, "active_atb?",
+                    RPG2k3__Scene__Battle_active_atb_, MRB_ARGS_NONE());
+  mrb_define_method(M, battle_2k3, "atb_accumulating?",
+                    RPG2k3__Scene__Battle_atb_accumulating_, MRB_ARGS_NONE());
+  mrb_define_method(M, battle_2k3, "gauge_battle?",
+                    RPG2k3__Scene__Battle_gauge_battle_, MRB_ARGS_NONE());
+  mrb_define_method(M, battle_2k3, "drive_battle_atb",
+                    RPG2k3__Scene__Battle_drive_battle_atb, MRB_ARGS_NONE());
+  mrb_define_method(M, battle_2k3, "start_gauge_action",
+                    RPG2k3__Scene__Battle_start_gauge_action, MRB_ARGS_REQ(1));
+  mrb_define_method(M, battle_2k3, "enter_atb_phase",
+                    RPG2k3__Scene__Battle_enter_atb_phase, MRB_ARGS_NONE());
+  mrb_define_method(M, battle_2k3, "controllable?",
+                    RPG2k3__Scene__Battle_controllable_, MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

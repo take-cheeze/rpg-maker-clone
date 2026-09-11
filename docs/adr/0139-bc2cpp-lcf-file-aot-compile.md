@@ -3688,3 +3688,255 @@ files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
 the 4 new `Game__Vehicle_*_impl` entry points present and externally
 linked, no pseudo-owner (`.singleton`-suffixed) symbol ever linked
 anywhere, and every already-shipped class's own symbol count unchanged.
+
+## Follow-up: Game::Enemy, and a confirmed-but-not-currently-live splat-encoded attr_reader registry gap
+
+A thirtieth, independent round adds `Game::Enemy`
+(`mruby-rpg2k/mrblib/game/battle_support.rb`) -- a single enemy combatant
+built from a database Troop-member row (`Game::Troop#member`, this ADR's
+own immediately preceding follow-up, constructs one per troop member).
+3 of its own 4 real bytecode-defined methods compile clean, needing zero
+`bc2cpp.rb` changes: `#attack_hit_rate` (`@miss ? 70 : 90`, a plain GETIV
+plus JMPIF-based ternary), `#dead?` (`@hp <= 0`, the fixnum-fastpath LE
+this compiler already has), and `#reseed_rewards` (`@exp = into.exp;
+@gold = into.gold; @drop_id = into.drop_id; @drop_prob = into.drop_prob`,
+four plain SETIVs fed by four real POLY sends that correctly stay
+ordinary `mrb_funcall` dispatch -- confirmed directly against the real
+generated output). `#initialize(db, id, x = 0, y = 0, hidden = false)`
+(three optional arguments) is the one gap -- the same established
+non-mandatory-arity shape as every other unembedded target above, so
+`drop_unsafe_embeddings` correctly refuses to embed any of this class's
+own thirteen provably-Fixnum ivars (`@max_hp`, `@max_sp`, `@atk`, `@def`,
+`@spi`, `@agi`, `@x`, `@y`, `@hp`, `@sp`, `@flying_phase`,
+`@crit_chance`, `@battler_hue`) despite the raw `IvarLayout` analysis
+reporting all thirteen as EMBED-eligible -- confirmed directly against
+the real generated output: `Game::Enemy` does not appear in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic, and every compiled
+method here uses plain `mrb_iv_get`/`mrb_iv_set`, never `DATA_PTR(self)`.
+
+**A real, confirmed-but-not-currently-live registry gap**, found by this
+round's own step 5 discipline -- cross-checking every one of
+`#reseed_rewards`'s own four POLY sends individually against the real
+registry dump before registering anything, rather than trusting the
+summary count. `Game::Enemy`'s own large `attr_reader :id, :name,
+:battler_name, :max_hp, :max_sp, :atk, :def, :spi, :agi, :exp, :gold, :x,
+:y, :drop_id, :drop_prob` (15 Symbol arguments in one call,
+`mrblib/game/battle_support.rb:1043-1044`) compiles to `SSEND R1
+:attr_reader n=*` in the real disassembly -- mrbc's own CALL_MAXARGS
+splat encoding, used once a call's direct-encodable argument-count nibble
+would overflow. Confirmed the exact boundary directly rather than
+guessing: the only other attr_reader call project-wide that comes close
+(`Game::Interpreter#initialize`'s own 14-Symbol `attr_reader :wait_kind,
+...`) encodes fine as a literal `n=14`; Enemy's 15th argument is what
+tips it over into `n=*`. `build_registry`'s own attr_reader/writer/
+accessor fix (two rounds ago, this ADR's own EventResolver/NumberInput
+follow-up) parses this same call site's own argument count with
+`insn.args[/n=(\d+)/, 1].to_i` -- against the literal text `*` (not a
+digit string), the regex match returns `nil`, and `nil.to_i` is `0` in
+Ruby, silently -- so `collect_loadsym_names` (bounded by `n`) collects
+zero names, and none of these 15 real Enemy accessor names ever gets a
+synthetic registry entry for `Game::Enemy` at all, the exact same
+"invisible to the registry" shape the original attr_reader fix closed,
+just reopened for this one wider-than-14-argument call shape it didn't
+anticipate.
+
+Checked every one of the 15 names individually against the real registry
+dump before concluding this is safe today, not assumed safe by analogy:
+`:id`/`:name`/`:max_hp`/`:atk`/`:def`/`:agi`/`:exp`/`:x`/`:y` are all
+already POLY from other real definitions (irrelevant either way -- POLY
+already means ordinary dynamic dispatch); `:max_sp`/`:drop_id`/
+`:drop_prob` have zero other definitions anywhere in the closed world
+(nothing to unsoundly devirtualize into regardless); and the three that
+do show a colliding single ("MONO") definition elsewhere --
+`:battler_name`/`:spi` (`Game::Battle::Combatant`, a `Struct.new` member)
+and `:gold` (`Game::Party`, itself only an `attr_reader`) -- are each
+*also* synthetic (`irep: nil`) on that other side, and
+`monomorphic_target` already refuses to devirtualize into any target
+whose own `irep` is `nil` regardless of `defs.size` (`return nil unless
+defs.first.irep`, this compiler's own long-standing guard for exactly
+this "native/synthetic definition, no real body to call into" case).
+Confirmed directly against the real generated output too: `Game::Enemy#
+reseed_rewards`'s own four sends (`into.exp`/`into.gold`/`into.drop_id`/
+`into.drop_prob`) all correctly emit `// POLY :<name> -- real dynamic
+dispatch...` plus a real `mrb_funcall`, never an unsound direct call.
+So this gap can only ever turn an already-safe call into a
+differently-labeled-but-still-safe one, for every real name this
+specific 15-argument call installs, today. Not fixed in this round to
+avoid scope creep (`Game::Enemy`'s own three target methods above compile
+fully clean without it, and the fix itself -- handling mrbc's splat
+argument-count encoding generally, not just for this one call shape --
+is a real, separate piece of work) -- left as a documented,
+confirmed-safe-for-now structural gap for a future round, the same
+"found, not currently exploitable" bucket as this ADR's own
+unfused-SDEF-at-large-class-body finding two rounds up.
+
+**Full-sweep re-check** (all forty-four now-shipped targets across all
+three compiled gems, with zero `bc2cpp.rb` changes this round): every
+previously-shipped class's own entry-point count matches exactly, and a
+real before/after diff of the whole-program `== compiled entry points ==`
+listing (`ONLY_OWNERS` with and without `Game::Enemy` added, everything
+else identical) shows exactly three added lines and zero changed or
+removed ones -- `Game__Enemy_dead_`/`Game__Enemy_attack_hit_rate`/
+`Game__Enemy_reseed_rewards`, matching what's actually registered below.
+
+**Verified for real:** built the real host `mrbc` from this environment's
+own `3rd/mruby` submodule and ran `tools/bc2cpp/bc2cpp.rb` directly
+(`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` computed exactly the way
+`mruby-rpg2k-compiled/mrbgem.rake` does, `SKIP_UNSUPPORTED=1`) against
+the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world. Grepped
+the real generated `rpg2k_compiled_gen.cpp` for the broken empty-name
+`mrb_funcall(M, <reg>, "", ` shape: zero matches. `g++ -std=c++17 -Wall
+-Wextra -Winfinite-recursion -fsyntax-only` against the real
+`register.cxx` plus this real generated file and the real mruby headers:
+**zero errors, zero `-Winfinite-recursion` warnings** (only the same
+pre-existing, unrelated `-Wunused-but-set-variable` warnings already
+present in already-shipped classes, `Game::Enemy`'s own three new
+methods included -- each only from the same harmless unread-`self`-copy
+shape every other compiled method here already has). Compiled
+`register.cxx` to a real object file and confirmed with `nm -C`:
+`Game__Enemy_dead__impl`/`Game__Enemy_attack_hit_rate_impl`/
+`Game__Enemy_reseed_rewards_impl` are present and externally linked
+(`T`), their `mrb_get_args` wrapper functions correctly stay local (`t`),
+and `Game::Enemy` appears in no embedding-struct symbol set at all,
+confirming step 6 directly rather than assuming it: no
+`Game__Enemy_ivars` struct, no `MRB_SET_INSTANCE_TT` call, and every
+compiled method reads/writes ivars through the ordinary dynamic
+`iv_tbl`. This environment's own real, opt-in
+`RPGMAKER_BC2CPP=1` + `rake -f 3rd/mruby/Rakefile` pipeline was not run
+end to end this round: the fresh worktree's `3rd/mruby`,
+`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/uni-algo`, and `3rd/stb` submodules were uninitialized (the same
+gap this ADR's own `Game::Rng` follow-up already documents hitting), and
+the shared host disk this session ran on hit a genuine, transient
+0-bytes-free condition partway through initializing them -- recovered on
+its own, but the environment fix was kept out of this round's own diff,
+matching every prior round's own practice, and the real final-link
+`mruby-rgss`/LVGL gap this ADR's own `Game::Rng` and `Game::Troop`
+follow-ups already document was never reached this round either. The
+`g++ -fsyntax-only`-plus-`nm` check above is the same "real, still-
+rigorous" fallback those two rounds already used for the identical
+reason.
+
+## Follow-up: RPG2k3::Scene::Battle, and this compiler's seventh severe bug -- the unfused `TCLASS`/`SCLASS`+`METHOD`+`DEF` opcode sequence for large class bodies
+
+The same round also adds `RPG2k3::Scene::Battle`
+(`mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb`) -- the real subclass
+(`class Battle < RPG2k::Scene::Battle`, a distinct top-level namespace
+from `RPG2k`, not the base UI battle scene itself, which is not a
+compiled owner) adding RPG2003's active-time-battle (ATB) gauge
+behavior. 7 of its own 15 real bytecode-defined methods compile clean,
+needing no new opcode work at all: `#active_atb?`, `#atb_accumulating?`
+(a Hash `#[]` GETIDX read, a MONO self-call into `#active_atb?`, and a
+POLY `Array#include?` send against the frozen `ATB_MENU_PHASES`
+class-constant array literal), `#gauge_battle?`, `#drive_battle_atb`
+(MONO self-calls into `#controllable?`/`#start_gauge_action`),
+`#start_gauge_action`, `#enter_atb_phase` (a MONO self-call into
+`#drive_battle_atb`), and `#controllable?`. The other 8 (`#update`,
+`#drive_battle_command`, `#enter_command_phase`, `#open_battle_options`,
+`#advance_actor`, `#prev_commandable_actor_index`,
+`#finish_round_animation`, `#interrupting_ready_combatant`) each hit a
+bare `super` (`OP_SUPER`) and/or a genuine Ruby block, both
+already-established out-of-scope shapes. Has no `#initialize` of its
+own (inherits the base class's), so there is no non-mandatory-arity gap
+to worry about, but also nothing to embed: confirmed directly against
+the real generated output, this class never appears in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic (it never `SETIV`s
+at all in any of its own methods -- every `@ui`/`@state` access here is
+a Hash `#[]`/`#[]=` read or write, not a direct instance-variable
+assignment).
+
+The round's own dedicated bug-fix pass had a known starting point,
+same as the immediately preceding round: the previous round's own
+bug-fix pass, while fixing the `SCLASS`/empty-class-body registry gaps,
+surfaced a further, related, but explicitly out-of-scope finding it
+deliberately left unfixed: `mrbc`'s own `codegen_def`/`codegen_defs`
+(`mrbgems/mruby-compiler/core/codegen.c`) fall back to an UNFUSED
+`TCLASS`/`SCLASS`+`METHOD`+`DEF` instruction sequence -- instead of the
+single fused `TDEF`/`SDEF` opcode the registry already recognized --
+whenever a class body's own child-irep index exceeds `0xff` (255), i.e.
+once a class/module body already contains more than 255 real
+method/block child ireps. That round confirmed this real, live, in
+already-shipped source: `RPG2k::Scene::Map#toned?` and `def
+self.tone_channel` (a real singleton method) both use this unfused
+shape, invisible to the registry the same way `SDEF` used to be before
+an earlier round fixed the fused case. `RPG2k::Scene::Map` was not a
+compiled owner at the time, so it was confirmed not yet exploitable --
+but real and general, not specific to that one class. This round
+actually fixes it, closing a seventh severe bug.
+
+**Confirmed with real bytecode disassembly**, not just the description
+above: `RPG2k::Scene::Map`'s own real `mrbc -v` disassembly shows,
+for the ordinary instance method (`def toned?`):
+```
+TCLASS  R1
+EXT2
+METHOD  R2      I[380]
+EXT2
+DEF     R1      :toned?   (R2)
+```
+and, for the singleton method (`def self.tone_channel`):
+```
+LOADSELF R1     (R0)
+SCLASS   R1
+EXT2
+METHOD   R2     I[379]
+EXT2
+DEF      R1     :tone_channel  (R2)
+```
+Real mrbc disassembly can interpose an `OP_EXT1`/`EXT2`/`EXT3`
+pseudo-instruction between two instructions `codegen.c` emits
+back-to-back with no logical gap -- each widens the *immediately
+following* real instruction's own operand width, and is guaranteed to
+appear here since the unfused path's own `METHOD` operand (a child-irep
+index > `0xff`, by construction of reaching this path at all) always
+needs one. Every other adjacency-based backward scan in this file had
+gotten away with a plain `idx-1`/`idx-2` check only because none of
+their own real, closed-world instances happened to need one -- this is
+the first fix in this file that genuinely can't.
+
+**The fix**: a new `when 'DEF'` case recognizes the real `METHOD`+`DEF`
+opcode pair (walking back past any number of `EXT1`/`EXT2`/`EXT3`
+pseudo-instructions to find the real opcode underneath, via a new
+`skip_ext_back` helper), verifies the register alignment
+`codegen_def`'s/`codegen_sdef`'s own unfused branch always emits
+(opener at `R<n>`, `METHOD` at `R<n+1>`, `DEF` back at `R<n>`
+referencing `(R<n+1>)`) rather than trusting adjacency alone, and then
+registers the method exactly the way the fused case would have: as an
+ordinary walkable `MethodDef` with a real `irep` for an instance method
+(the `TCLASS` case), or the same `"X.singleton"` pseudo-owner the
+`SDEF` fix already established for a singleton method (the `SCLASS`
+case) -- except this time there IS a real child irep to compile, so
+it's a real entry, not a synthetic placeholder. The receiver-resolution
+backward scan the `SCLASS`-opened-body fix already has, and the
+builtin-private-name visibility special case the `TDEF` case already
+has, were both extracted into small shared helpers
+(`resolve_singleton_receiver`, `resolve_def_visibility`) so this new
+case reuses them exactly rather than duplicating the logic -- a pure
+refactor of the already-shipped code, verified behavior-preserving by a
+direct byte-for-byte diff against the pre-refactor source before this
+round started.
+
+**Verified the fix actually changes the registry, not just in theory**:
+the real diagnostic's own registry dump now shows `:tone_channel` as
+`MONO (1 def: RPG2k::Scene::Map.singleton)` and `:toned?` as `MONO (1
+def: RPG2k::Scene::Map)` -- both real, walkable entries, exactly as
+intended, where before this fix neither appeared in the registry at
+all.
+
+**Full-sweep re-check** (all forty-five now-shipped targets across all
+three compiled gems, rebuilt with both this round's coverage and the
+unfused-`DEF` fix applied): every previously-shipped class's own
+entry-point count matches exactly, `RGSS::Sprite` and every `LCF::*`
+class included, unchanged; new: `Game::Enemy` (3), `RPG2k3::Scene::Battle`
+(7).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape across all three
+generated files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
+`rgss_compiled_gen.cpp`). `nm -C` on the resulting `libmruby.a` shows
+the 3 new `Game__Enemy_*_impl` and 7 new `RPG2k3__Scene__Battle_*_impl`
+entry points present and externally linked, no pseudo-owner
+(`.singleton`-suffixed) symbol ever linked anywhere, and every
+already-shipped class's own symbol count unchanged.
