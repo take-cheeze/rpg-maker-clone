@@ -2303,3 +2303,126 @@ compiling are confirmed absent by symbol name; and every one of the
 twenty already-shipped classes' own entry-point counts either matches
 exactly or drops by precisely the number of methods this round's own fix
 predicted, with no other change anywhere.
+
+## Follow-up: Game::Shop, and a real native-name-collision instance confirmed live
+
+A fourteenth, independent round adds `Game::Shop`
+(`mruby-rpg2k/mrblib/game.rb`) -- the RPG2000 buy/sell shop-menu backing
+model: the stocked good list, buy/sell affordability and the 99-item
+stack cap, half-price selling. 11 of its own 14 real bytecode-defined
+methods compile clean, needing no new opcode work at all:
+`#price`/`#name`/`#description`/`#equip?` each read one database row
+(`@db.item[id]`, `AREF`-shaped) and `#equip?` also builds and tests a
+Range literal (`RANGE_INC`) plus ordinary POLY dispatch on `#cover?`
+(never devirtualized -- `#cover?` collides with mruby core's own native
+`Range#cover?`); `#sellable_items` chains three ordinary POLY sends;
+`#max_buy`/`#max_sell`/`#sell_price`/`#sellable?` are plain
+arithmetic/conditional compositions of the above, `#sell_price` and
+`#max_sell` each devirtualizing straight into `#price`'s/`#sellable?`'s
+own `_impl` (MONO). The 3 gaps are the same two already-established
+out-of-scope shapes: `#initialize` (a genuine Ruby block, `BLOCK`/
+`SENDB`) and `#buy`/`#sell` (each with one non-mandatory optional
+argument). Since `#initialize` never compiles, `drop_unsafe_embeddings`
+correctly refuses to embed any of this class's own ivars.
+
+**A real, concrete instance of the native-name-collision shape
+`extract_native_method_names`' own `MRB_SYM_Q`/`_B`/`_E` macro coverage
+protects against, confirmed live rather than by analogy:** `:name`
+reports POLY (2 defs: `Game::Shop`, `<native>`) in this class's own
+whole-program registry dump with `NATIVE_SRCS` set the same way
+`mrbgem.rake` always does -- `Game::Shop#name` collides by bare name with
+mruby core's own `Symbol#name`/`Class#name`, registered via
+`src/symbol.c`'s own ROM method table. `#name` correctly stays ordinary
+`mrb_funcall` dispatch in its own registration, never a direct call into
+`Game__Shop_name_impl` from any other compiled call site in the whole
+program.
+
+**Full-sweep re-check:** all twenty-two previously-shipped targets' own
+entry-point counts -- `Game::Picture` (25), `Game::EnemyAction` (6),
+`Game::Screen` (41), `RPG2k::Window` (32), `Game::Transition` (32),
+`Game::Actor` (74), `Game::Party` (85), `RPG2k::Scene::MapViewer` (34),
+`Game::Battle` (72), `RPG2k::Scene::ItemMenu` (41),
+`RPG2k::Scene::SkillMenu` (39), `RPG2k::Scene::DebugMenu` (32),
+`RPG2k::Scene::EquipMenu` (29), `RPG2k::Scene::Menu` (28), `Game::State`
+(23), `RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12) -- match exactly; nothing moved.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors and
+**zero** `-Winfinite-recursion` warnings. `nm -C` on the resulting
+`libmruby.a` shows all 11 new `Game__Shop_*_impl` entry points present
+and externally linked, with every already-shipped class's own symbol
+count unchanged.
+
+## Follow-up: Game::Map, the fourth real embedding target
+
+A fifteenth, independent round adds `Game::Map`
+(`mruby-rpg2k/mrblib/game.rb`, reopened by `mruby-rpg2k/mrblib/game/
+battle_support.rb`) -- one loaded map's own tile-layer data: dimensions/
+chipset id, the lower/upper tile-id layer arrays, and Tile Substitution's
+own per-layer old_id->new_id rewrite table. 12 of its own 13 real
+bytecode-defined methods compile clean, needing no new opcode work at
+all -- the opcode set fourteen rounds of this ADR had already built up
+already covers every real shape this class's own method bodies use.
+`#substitute_tile` is the one gap, confirmed against its own real
+generated `#error` line, not assumed: it ends in two real
+`@substitutions[idx].each { |k, v| ... }`/`rebuilt.each { |k, v| ... }`
+blocks (`BLOCK`/`SENDB`), the same established out-of-scope shape every
+other block-using method in this file already documents.
+
+**`#initialize` compiles clean** (`initialize id, unit`, 2 purely
+mandatory arguments, no `super`, no block) -- the fourth target, after
+`Game::Screen`/`Game::Transition`/`Game::State` above, whose own ivars
+get real `RData` struct embedding: `@id` (the annotated-fixnum first
+argument) and `@revision` (a literal `0`, then only ever `+= 1`) are both
+real, provably-Fixnum fields on a new `Game__Map_ivars` struct. Checked
+directly against the exact `Game::Actor`-shaped embedding bug several
+follow-ups up, not assumed safe by analogy: this class's own single real
+construction site (`Game::Map.new id, LCF::MapUnit.new(...)`,
+`mruby-rpg2k/mrblib/main.rb`'s own `#load_map`) always goes through the
+compiled `#initialize` -- confirmed by grepping the whole closed world
+for `Game::Map.new`/`.allocate`/a subclass and finding exactly that one
+plain `.new` call site, no bypass, and no subclass anywhere. The other 7
+real ivars (`@width`/`@height`/`@chipset_id` -- each `unit.<method>`, a
+method call's own return value, never traced by this compiler's
+Fixnum-literal-only inference; `@lower`/`@upper`/`@substitutions` --
+Array/Hash literals; the two `@substitution_snapshot_*` cache fields,
+also opaque) all stay `UNKNOWN` and so stay on the ordinary dynamic
+`iv_tbl`, mixed safely on the same object with the two embedded fields,
+the same mixed-embedding shape `Game::Screen`/`Game::Transition`/
+`Game::State` already established.
+
+`#set_tile`/`#tile` are `private` (a bare `private` mid-class-body in
+`game.rb`'s own reopening, in effect through the end of it); `#initialize`
+is forced private by mruby's own interpreter (the same real special case
+every other compiled `#initialize` in this file already documents); every
+other method -- including `#sync_layers_to_unit`, defined in the
+*separate* `class Map` reopening in `battle_support.rb`, which starts its
+own fresh, default-public visibility scope -- is public.
+
+**Full-sweep re-check** (`NATIVE_SRCS` set the same way `mrbgem.rake`
+computes it): all twenty-two previously-shipped targets' own entry-point
+counts -- `Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen`
+(41), `RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (74),
+`Game::Party` (85), `RPG2k::Scene::MapViewer` (34), `Game::Battle` (72),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (32), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12), `Game::Shop` (11) -- match exactly; nothing
+moved.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+(`rake -f 3rd/mruby/Rakefile`, host target) succeeds end to end
+(`EXIT: 0`), with **zero** compile errors and **zero**
+`-Winfinite-recursion` warnings anywhere in the log. `nm -C` on the
+resulting `libmruby.a` shows all 12 new `Game__Map_*_impl` entry points
+present and externally linked, plus the new `Game__Map_ivars`/
+`Game__Map_ivars_free`/`Game__Map_ivars_type` symbols confirming the real
+embedding took effect (the generated `struct Game__Map_ivars` has exactly
+the two predicted `mrb_int` fields, `revision` and `id`), with every
+already-shipped class's own symbol count unchanged.

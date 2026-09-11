@@ -364,6 +364,76 @@
 // affected class's own entry-point count dropped by exactly the number
 // of methods this fix stopped compiling.
 //
+// A fourteenth, independent round adds Game::Shop (mruby-rpg2k/mrblib/
+// game.rb) -- the RPG2000 buy/sell shop-menu backing model: the stocked
+// good list, buy/sell affordability and the 99-item stack cap, half-price
+// selling. 11 of its own 14 real bytecode-defined methods compile clean,
+// needing no new opcode work at all: #price/#name/#description/#equip?
+// each read one database row (AREF-shaped) and #equip? also builds and
+// tests a Range literal (RANGE_INC) plus ordinary POLY dispatch on
+// #cover? (never devirtualized: #cover? collides with mruby core's own
+// native Range#cover?); #sellable_items chains three ordinary POLY
+// sends; #max_buy/#max_sell/#sell_price/#sellable? are plain arithmetic/
+// conditional compositions of the above, #sell_price and #max_sell each
+// devirtualizing straight into #price's/#sellable?'s own _impl (MONO).
+// The 3 gaps are the same two already-established out-of-scope shapes:
+// #initialize (a genuine Ruby block, BLOCK/SENDB) and #buy/#sell (each
+// with one non-mandatory optional argument). Since #initialize never
+// compiles, drop_unsafe_embeddings correctly refuses to embed any of
+// this class's own ivars -- confirmed directly against the real
+// generated output: Game::Shop does not appear in bc2cpp's own "classes
+// needing MRB_SET_INSTANCE_TT" diagnostic.
+//
+// A real, concrete instance of the exact native-name-collision shape
+// extract_native_method_names' own MRB_SYM_Q/B/E-macro coverage protects
+// against: `:name` reports POLY (2 defs: Game::Shop, <native>) in this
+// class's own whole-program registry dump with NATIVE_SRCS set the same
+// way mrbgem.rake always does (Game::Shop#name collides by bare name
+// with mruby core's own Symbol#name/Class#name, registered via
+// src/symbol.c's own ROM method table) -- confirmed for real here, not
+// just by analogy, so #name correctly stays ordinary mrb_funcall dispatch
+// below, never a direct call into Game__Shop_name_impl from any other
+// compiled call site in the whole program.
+//
+// A fifteenth, independent round adds Game::Map (mruby-rpg2k/mrblib/
+// game.rb, reopened by mruby-rpg2k/mrblib/game/battle_support.rb) -- one
+// loaded map's own tile-layer data (dimensions/chipset id, the lower/upper
+// tile-id layer arrays, and Tile Substitution's own per-layer rewrite
+// table). 12 of its own 13 real bytecode-defined methods compile clean,
+// needing no new opcode work at all. #substitute_tile is the one gap
+// (confirmed against its own real generated #error line): it ends in two
+// real `.each { |k, v| ... }` blocks (BLOCK/SENDB), the same established
+// out-of-scope shape every other block-using method above already
+// documents. #initialize (`initialize id, unit`) compiles clean -- pure
+// mandatory arity, no super, no block -- and is the fourth target whose
+// own ivars actually get real RData embedding, after Game::Screen/
+// Game::Transition/Game::State above: @id and @revision are both real,
+// provably-Fixnum fields on a new Game__Map_ivars struct.
+//
+// Checked directly against the exact Game::Actor-shaped embedding bug
+// several follow-ups up, not assumed safe by analogy: this class's own
+// single real construction site (`Game::Map.new id, LCF::MapUnit.new
+// (...)`, mruby-rpg2k/mrblib/main.rb's own #load_map) always goes through
+// the compiled #initialize -- confirmed by grepping the whole closed world
+// for `Game::Map.new`/`.allocate`/a subclass and finding exactly that one
+// plain `.new` call site, no bypass, and no subclass anywhere. The other 7
+// real ivars (@width/@height/@chipset_id -- each `unit.<method>`, a method
+// call's own return value, never traced by this compiler's Fixnum-literal-
+// only inference; @lower/@upper/@substitutions -- Array/Hash literals; the
+// two @substitution_snapshot_* cache fields, also opaque) all stay UNKNOWN
+// and so stay on the ordinary dynamic iv_tbl, mixed safely on the same
+// object with the two embedded fields, the same mixed-embedding shape
+// Game::Screen/Game::Transition/Game::State already established.
+//
+// #set_tile/#tile are `private` (a bare `private` mid-class-body in
+// game.rb's own reopening, in effect through the end of it); #initialize
+// is forced private by mruby's own interpreter (mrb_define_method_raw's
+// own special case for the name, not a source-level `private` call, same
+// as every other compiled #initialize in this file); every other method
+// -- including #sync_layers_to_unit, defined in the *separate* `class Map`
+// reopening in battle_support.rb, which starts its own fresh, default-
+// public visibility scope -- is public.
+//
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
 // looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
@@ -2683,6 +2753,80 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, order, "refresh_confirm_cursor",
                             RPG2k__Scene__Order_refresh_confirm_cursor,
                             MRB_ARGS_NONE());
+
+  // Game::Shop (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
+  // comment for the real gap breakdown (#initialize's own genuine Ruby
+  // block; #buy/#sell's own non-mandatory `n = 1` argument) and why no
+  // MRB_SET_INSTANCE_TT call belongs here. No bare `private` anywhere in
+  // the real source (confirmed directly, not guessed from bc2cpp's own
+  // diagnostic), so every method below is `mrb_define_method`.
+  RClass* shop = mrb_class_get_under(M, game, "Shop");
+  mrb_define_method(M, shop, "allow_buy?", Game__Shop_allow_buy_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, shop, "allow_sell?", Game__Shop_allow_sell_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, shop, "price", Game__Shop_price, MRB_ARGS_REQ(1));
+  // #name collides by bare name with mruby core's own Symbol#name/
+  // Class#name (registered via `symbol_rom_entries`'s own MRB_MT_ENTRY
+  // table, src/symbol.c -- invisible without NATIVE_SRCS pointed at
+  // 3rd/mruby's own source) -- correctly registered here regardless
+  // (registration is by class, not by bc2cpp's own MONO/POLY call-site
+  // analysis), the collision only matters for whether some *other*
+  // compiled call site may devirtualize straight into this _impl, which
+  // bc2cpp's own whole-program diagnostic confirms it correctly refuses to
+  // do (":name" reports POLY, 2 defs: Game::Shop, <native>).
+  mrb_define_method(M, shop, "name", Game__Shop_name, MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "description", Game__Shop_description,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "equip?", Game__Shop_equip_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "sell_price", Game__Shop_sell_price,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "sellable?", Game__Shop_sellable_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "sellable_items", Game__Shop_sellable_items,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, shop, "max_buy", Game__Shop_max_buy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, shop, "max_sell", Game__Shop_max_sell, MRB_ARGS_REQ(1));
+
+  // Game::Map (mruby-rpg2k/mrblib/game.rb, reopened by mruby-rpg2k/mrblib/
+  // game/battle_support.rb) -- see this file's own top comment for the
+  // real gap breakdown (#substitute_tile's own two BLOCK/SENDB blocks) and
+  // the real construction-site check backing the embedding below. @id and
+  // @revision are real fields on a new Game__Map_ivars RData struct, mixed
+  // safely with the rest of this class's own ivars on the ordinary
+  // dynamic iv_tbl. Reuses the `game` RClass* declared at the top of this
+  // function.
+  RClass* map = mrb_class_get_under(M, game, "Map");
+  MRB_SET_INSTANCE_TT(map, MRB_TT_DATA);
+
+  // #initialize is always private (the same real interpreter special case
+  // as every other compiled #initialize in this file -- mruby's own
+  // src/class.c forces it regardless of source, not a bare `private` call
+  // here).
+  mrb_define_private_method(M, map, "initialize", Game__Map_initialize,
+                            MRB_ARGS_REQ(2));
+  mrb_define_method(M, map, "sync_layers_to_unit",
+                    Game__Map_sync_layers_to_unit, MRB_ARGS_NONE());
+  mrb_define_method(M, map, "in_bounds?", Game__Map_in_bounds_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, map, "lower", Game__Map_lower, MRB_ARGS_REQ(2));
+  mrb_define_method(M, map, "upper", Game__Map_upper, MRB_ARGS_REQ(2));
+  mrb_define_method(M, map, "substituted?", Game__Map_substituted_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, map, "substitution_snapshot",
+                    Game__Map_substitution_snapshot, MRB_ARGS_NONE());
+  mrb_define_method(M, map, "restore_substitutions",
+                    Game__Map_restore_substitutions, MRB_ARGS_REQ(2));
+  mrb_define_method(M, map, "set_lower", Game__Map_set_lower, MRB_ARGS_REQ(3));
+  mrb_define_method(M, map, "set_upper", Game__Map_set_upper, MRB_ARGS_REQ(3));
+  // #set_tile/#tile are both `private` in the real interpreted source (a
+  // bare `private` mid-class-body in game.rb's own reopening, in effect
+  // through the end of it) -- the same real visibility check this file's
+  // own Game::Picture#step/#finish_move bug (docs/adr/0139) already
+  // established the need for.
+  mrb_define_private_method(M, map, "set_tile", Game__Map_set_tile,
+                            MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, map, "tile", Game__Map_tile, MRB_ARGS_REQ(4));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
