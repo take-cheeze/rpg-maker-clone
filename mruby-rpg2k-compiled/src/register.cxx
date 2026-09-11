@@ -3813,6 +3813,67 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k3__Scene__Battle_enter_atb_phase, MRB_ARGS_NONE());
   mrb_define_method(M, battle_2k3, "controllable?",
                     RPG2k3__Scene__Battle_controllable_, MRB_ARGS_REQ(1));
+
+  // Game::MessageConfig (mruby-rpg2k/mrblib/game.rb) -- Message Options
+  // settings (window transparency, text position, face-graphic selection).
+  // A deliberate stress-test of the eighth severe bug's own fix
+  // (`natively_exposed?`) and its ninth-round follow-up (the stale
+  // `LCF::MoveCommand` MRB_SET_INSTANCE_TT tag), since every one of this
+  // class's own 8 ivars is covered by a plain `attr_accessor` -- see
+  // compiled_gems.rb's own owners-entry comment for the full per-ivar
+  // writeup. #initialize compiles clean (arity 0), and its own
+  // provably-Fixnum ivar (@face_index) genuinely reaches bc2cpp's own
+  // ivar-embedding proposal pass (`EMBED Game::MessageConfig#@face_index
+  // (fixnum)` in the real diagnostic) but is then correctly vetoed by
+  // `natively_exposed?` because of `attr_accessor :face_index` -- confirmed
+  // directly against the real regenerated output: this class does **not**
+  // appear in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT(...,
+  // MRB_TT_DATA)" diagnostic, so no MRB_SET_INSTANCE_TT call belongs here,
+  // and every ivar write below (initialize/clear_face) goes through plain
+  // mrb_iv_set, never DATA_PTR(self)/mrb_data_init. (@position, the other
+  // ivar that looks Fixnum-shaped, is assigned from a GETCONST-fed
+  // constant, not a literal, so IvarLayout never even proposes it as an
+  // embedding candidate in the first place -- a distinct, independent
+  // reason from @face_index's, the same two-reasons-at-once shape this
+  // file's own `LCF::Tree` follow-up already documents for a sibling gem.)
+  //
+  // 4 of its own 5 real bytecode-defined methods compile clean:
+  // #initialize, #face? (`!@face_name.nil? && !@face_name.empty?`),
+  // #clear_face (four plain SETIVs), and #to_h (a literal Hash of all 8
+  // ivars). #load_h is the one gap, and a genuinely new one for
+  // this compiler: both its early-exit `return self unless h` and its own
+  // trailing bare `self` disassemble to RETSELF (mrbc's own dedicated
+  // opcode for returning `self` specifically, distinct from
+  // RETURN/RETNIL/RETFALSE/RETTRUE), and compile_insn has no `when
+  // 'RETSELF'` case at all -- confirmed by grepping bc2cpp.rb (zero hits)
+  // and by disassembling this exact method with the real host `mrbc -v`.
+  // Safe either way, by this compiler's own established discipline
+  // (SKIP_UNSUPPORTED=1 just leaves the whole method on the interpreter);
+  // the other four classes sharing the `:load_h` name (Game::Screen,
+  // Game::Weather, Game::Vehicle, Game::Timer) all use a bare `return
+  // unless h` with no explicit value -- RETNIL, not RETSELF -- so all four
+  // still compile and appear in the real `== compiled entry points ==`
+  // listing; this class's own `#load_h` does not. Not fixed here (no new
+  // bc2cpp.rb opcode work) since nothing here needs it to ship -- left as a
+  // real, confirmed-safe structural gap for a future round.
+  //
+  // Like every other embedding-attempted #initialize above,
+  // mrb_define_private_method for #initialize (Ruby's own implicit
+  // #initialize privacy -- confirmed live in the real diagnostic's own
+  // `== compiled entry points ==` listing: `[private -- use
+  // mrb_define_private_method, not mrb_define_method]`). No bare
+  // `private`/`protected`/`public` anywhere in the real source beyond that,
+  // so the other 2 registered methods below are plain `mrb_define_method`.
+  // Reuses the `game` RClass* declared at the top of this function.
+  RClass* message_config = mrb_class_get_under(M, game, "MessageConfig");
+  mrb_define_private_method(M, message_config, "initialize",
+                            Game__MessageConfig_initialize, MRB_ARGS_NONE());
+  mrb_define_method(M, message_config, "face?", Game__MessageConfig_face_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, message_config, "clear_face",
+                    Game__MessageConfig_clear_face, MRB_ARGS_NONE());
+  mrb_define_method(M, message_config, "to_h", Game__MessageConfig_to_h,
+                    MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
