@@ -2934,7 +2934,10 @@ a compiled caller devirtualize straight into that one class's own `_impl`
 `attr_reader`/`attr_writer`/`attr_accessor`, invisible to the scan that
 declared it MONO in the first place.
 
-**Confirmed live, not hypothetical, in code already shipped to `master`:**
+**Confirmed live, not hypothetical, in code already shipped to `master` --
+two separate instances, both already-registered compiled methods, not just
+one:**
+
 `Game::Actor#crit_chance` (`mruby-rpg2k/mrblib/game.rb`) is a real bytecode
 `def crit_chance; weapon_crit_chance(weapon_crit_bonus); end` -- the *only*
 bytecode-visible definition of `:crit_chance` anywhere in the closed world.
@@ -2954,6 +2957,41 @@ Actor-only `#weapon_crit_bonus` on `self` -- unconditionally, regardless of
 has no `#weapon_crit_bonus`), that's a real `NoMethodError`, crashing every
 enemy attack's own critical-hit roll, in a build that compiles and links
 clean with zero warnings.
+
+Independently, `RPG2k::Window#transparent=(v)` (`mruby-rpg2k/mrblib/main.rb`)
+is a real bytecode `def transparent=(v); @transparent = v ? true : false;
+draw_skin; v; end` -- the *only* bytecode-visible definition of
+`:transparent=` anywhere in the closed world. `Game::Actor` only has
+`attr_accessor :transparent` (`mruby-rpg2k/mrblib/game.rb:1515`) -- a
+second, real definition the old scan never saw. `Game::Party
+#apply_actor_meta(actor, m)` (`mruby-rpg2k/mrblib/game.rb:3831`, `actor.
+transparent = m[:transparent] unless m[:transparent].nil?`) is called with
+`actor` a real `Game::Actor` -- never a `Window`. `Game::Party` and
+`Game::Actor` are both already compiled-gem owners, and `#apply_actor_meta`
+is already registered and shipped. Before this fix, the real generated
+`Game__Party_apply_actor_meta_impl` devirtualized `actor.transparent = ...`
+straight into `RPG2k__Window_transparent__impl` -- which calls the
+Window-only `#draw_skin` on `self` -- unconditionally. Since `actor` here
+is never anything but a `Game::Actor`, this one is not merely a
+theoretical risk gated on which subclass happens to reach the call site
+(unlike `#critical?`'s `Game::Actor`-or-`Game::Enemy` case): every real
+call to `#apply_actor_meta` with a `:transparent` override in the saved
+data crashes, meaning restoring actor metadata from a save file carrying a
+transparency override was unconditionally broken under
+`RPGMAKER_BC2CPP=1` before this fix landed.
+
+The same general fix additionally closes, for free, `RPG2k::Scene::
+ItemMenu#items`/`RPG2k::Scene::SkillMenu#skills` (each collides with
+`Game::Party#items`/`Game::Actor#skills`, both real `attr_reader`s) and 13
+further whole-program name collisions (`active`, `party`, `switches`,
+`variables`, `windowskin`, `z`, and others) -- all confirmed to have zero
+live effect today (every real call site either already resolves to the
+correct class by construction, such as a self-call, or the two colliding
+classes happen to share an identically-named and identically-typed backing
+ivar), the same "confirmed sound today, latent risk for tomorrow" shape
+already established elsewhere in this ADR (e.g. the `Game::Interpreter#
+switches` gap the prior follow-up section documents) -- but now closed
+structurally rather than merely by accident.
 
 **The fix** (`tools/bc2cpp/bc2cpp.rb`'s `build_registry`): recognizes
 `attr_reader`/`attr_writer`/`attr_accessor` sends as a third case alongside
