@@ -120,43 +120,36 @@
 // `class << self; attr_writer :extensions; def extensions; @extensions
 // || EXTENSIONS; end; end` and `def self.failure_reason(f)` both live
 // under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF,
-// this ADR's own established fix), never under `RGSS::Bitmap` itself --
-// neither is reachable with only `RGSS::Bitmap` in `ONLY_OWNERS`, and
-// neither is added here: no `owners:` list in this project has ever
-// named a `.singleton` pseudo-owner (every prior follow-up's own
-// full-sweep verification confirms "no pseudo-owner symbol ever linked
-// anywhere"), so this stays consistent with that precedent. Checked
-// anyway, since verifying `self.failure_reason` against the real
-// diagnostic (rather than assuming the established SDEF registry fix
-// makes it compilable) was explicitly part of this round's own task: it
-// does not compile, for a deeper reason than its own body's opcodes
-// (`if`/early `return`/array `<<`/`.join`/string interpolation are all
-// otherwise-supported shapes) -- `def self.x` outside any `class << self`
-// block always compiles to a single fused `SDEF` instruction (confirmed
-// directly via `mrbc -v` disassembly: `SDEF R1 :failure_reason I[3]`),
-// and bc2cpp.rb's own SDEF case registers that as a synthetic `MethodDef`
-// with `irep: nil` unconditionally, by design ("there is no separate
-// body to recurse into", bc2cpp.rb's own comment) -- so `compile_all`'s
-// `@owner_of` never gains a real entry for it at all. It is therefore not
-// merely left uncompiled the way an arity/opcode gap leaves a method
-// uncompiled (those still leave a `#error`-marked stub, which survives
-// into the "skipped (unsupported)" summary) -- `self.failure_reason` is
-// invisible to `compile_all`'s own leaf worklist from the start: it
-// appears in neither the "skipped" list nor the generated file at all
-// (confirmed: zero matches for `failure_reason` anywhere in the real
-// generated `rgss_compiled_gen.cpp`, with or without
-// `SKIP_UNSUPPORTED`), and would stay that way regardless of what its own
-// body did. `self.extensions` (defined inside the real `class << self
-// ... end` block, an `SCLASS`-opened body that *does* recurse -- this
-// ADR's own established fix for exactly that) is by contrast a real,
-// individually compilable leaf with its own irep (confirmed: it appears
-// in the real generated output, `RGSS__Bitmap_singleton_extensions_impl`,
-// once `RGSS::Bitmap.singleton` is added to `ONLY_OWNERS` in an isolated
-// check), but is left out of this round's `owners:` for the same
-// never-a-`.singleton`-owner precedent `self.failure_reason` is.
-// `attr_writer :extensions`'s own `extensions=` is `Module#attr_writer`'s
-// native/C-installed setter (no bytecode DEF at all, the same as every
-// other `attr_writer`/`attr_accessor`-defined method elsewhere in this
+// this ADR's own established fix), never under `RGSS::Bitmap` itself.
+//
+// Follow-up (docs/adr/0139: ".singleton owner support"): both are now
+// real, compiled entry points -- `RGSS::Bitmap.singleton` was added to
+// this gem's own `owners:` (tools/bc2cpp/compiled_gems.rb), the first
+// `.singleton`-suffixed `owners:` entry anywhere in this project, made
+// possible by that same follow-up's own fix to bc2cpp.rb's SDEF case
+// (previously registered a `def self.x` method's own MethodDef with
+// `irep: nil` unconditionally, discarding a real, compilable child irep
+// mrbc's own SDEF opcode already carries -- see build_registry's own
+// SDEF case for the real bug this closed, confirmed live on exactly this
+// class's own `self.failure_reason`). `self.extensions` (an SCLASS-opened
+// body, already individually compilable via this ADR's own earlier SCLASS
+// fix) compiles to the same `||`-default-array reader shape
+// `RGSS::Window#blend_type`/`#stretch` already ship
+// (`RGSS__Bitmap_singleton_extensions_impl`). `self.failure_reason(f)`
+// -- previously assumed structurally incapable of ever compiling, for a
+// reason independent of its own body -- turned out to compile clean too
+// once given a real irep: its `if`/early `return`/array `<<`/`.join`/
+// string interpolation are all otherwise-supported shapes, and its one
+// call into `extensions` (bare, self-implicit) correctly MONO-
+// devirtualizes into `RGSS__Bitmap_singleton_extensions_impl` directly (no
+// `mrb_funcall`) -- confirmed directly in the real generated output, both
+// methods now living under this same class's own owner in this file.
+// Both are registered below via `mrb_define_class_method`, not
+// `mrb_define_method`: `self` in either compiled body is the `Bitmap`
+// class object itself, never an instance. `attr_writer :extensions`'s
+// own `extensions=` is `Module#attr_writer`'s native/C-installed setter
+// (no bytecode DEF at all, the same as every other
+// `attr_writer`/`attr_accessor`-defined method elsewhere in this
 // codebase), invisible to bc2cpp regardless of owner scoping.
 //
 // Embedding: none, confirmed directly against the real diagnostic --
@@ -288,6 +281,27 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
   mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font_, MRB_ARGS_REQ(1));
+
+  // RGSS::Bitmap.singleton (docs/adr/0139: ".singleton owner support") --
+  // this project's first `.singleton`-owned bc2cpp entries. Both are real
+  // `class << self`/`def self.x` singleton methods (see
+  // mruby-rgss/mrblib/lib.rb), installed onto `bitmap`'s own singleton
+  // class via mrb_define_class_method, not mrb_define_method: `self`
+  // inside either compiled body is the Bitmap class object itself, not an
+  // instance, and mrb_define_method would instead (wrongly) install onto
+  // Bitmap's own *instance* method table, reachable only via
+  // `some_bitmap.extensions`/`some_bitmap.failure_reason(f)`, never the
+  // real `Bitmap.extensions`/`Bitmap.failure_reason(f)` call sites this
+  // class's own #initialize actually uses. Reuses the exact same `bitmap`
+  // RClass* declared just above for the instance-level registrations --
+  // mrb_define_class_method resolves the receiver's own singleton class
+  // internally, so no separate RClass* is needed even though this is a
+  // structurally different method table from font/font='s own.
+  mrb_define_class_method(M, bitmap, "extensions",
+                          RGSS__Bitmap_singleton_extensions, MRB_ARGS_NONE());
+  mrb_define_class_method(M, bitmap, "failure_reason",
+                          RGSS__Bitmap_singleton_failure_reason,
+                          MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {}
