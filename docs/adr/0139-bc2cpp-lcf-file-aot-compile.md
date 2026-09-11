@@ -1903,3 +1903,117 @@ struct/type-descriptor pair confirming the real embedding took effect,
 with every one of the fourteen already-shipped classes' own symbol
 counts unchanged. The full, unrestricted closed-world
 `g++ -std=c++17 -fsyntax-only` check still reports **0 errors**.
+
+## Follow-up: Game::MoveRoute, RPG2k::Scene::ChipsetEditor, and a real MRB_SYM_Q/B/E native-name blind spot
+
+A tenth, parallel round -- again two independent background agents,
+integrated by hand -- adds `Game::MoveRoute` and
+`RPG2k::Scene::ChipsetEditor`. Neither needed any new opcode work, but
+this round's own full-sweep discipline caught a real, live correctness
+bug in `bc2cpp.rb` itself.
+
+**`Game::MoveRoute`** (`mruby-rpg2k/mrblib/game.rb`) is the RPG2000 "Set
+Move Route" event-command engine: a character's programmed queue of
+move/turn/wait/jump/effect sub-commands, with the repeat/skip-if-blocked
+flags a route carries. 18 of its own 19 real bytecode-defined methods
+compile clean. `#initialize` (`commands, repeat: true, skippable:
+false`) hits the same non-mandatory-arguments gap as every other
+unembedded target above, this time via real keyword arguments. Two more
+real methods, `.from_page` and `.same_route?`, turned out to be
+singleton (`def self.`) methods -- invisible to `bc2cpp`'s own
+`build_registry` for a structural reason, not an opcode gap: its own
+`CLASS`/`MODULE`/`TDEF` walk never recognizes an `SCLASS`-opened body,
+so a `def self.foo` method's own `TDEF` is never reached by the walk at
+all. This is an existing, program-wide gap (no compiled gem anywhere in
+this project has ever registered a singleton method) -- `Game::MoveRoute`
+is just the first class whose own singleton methods carry real logic
+worth naming here.
+
+**`RPG2k::Scene::ChipsetEditor`** (`mruby-rpg2k/mrblib/scene/
+chipset_editor.rb`) is the F9 debug menu's Chipset page: a Lower/Upper
+tile-passability grid editor. 17 of its own 20 real methods compile
+clean. `#initialize` (a `quit_on_close:` keyword argument plus a real
+`super parent` call) matches `RPG2k::Scene::ItemMenu`'s/`DebugMenu`'s/
+`Menu`'s own `SUPER` gap, just paired with non-mandatory arity too;
+`#save_to_disk` has a real `rescue StandardError` clause; `#draw_grid`
+ends in a genuine Ruby block.
+
+**A real, live correctness bug, found by this round's own full-sweep
+discipline, not either background agent's own new-class work.**
+`extract_native_method_names` -- the whole-program scanner that makes
+mruby's own *native* (C-implemented) methods visible to `bc2cpp`'s
+MONO/POLY devirtualization registry, so a compiled call site never
+wrongly assumes a name belongs only to a bytecode-defined method --
+recognized `MRB_SYM(name)`/`MRB_OPSYM(op)` but not three real, distinct
+sibling macros `3rd/mruby/include/mruby/presym.h` also defines:
+`MRB_SYM_Q(name)` -> `"name?"`, `MRB_SYM_B(name)` -> `"name!"`,
+`MRB_SYM_E(name)` -> `"name="`. mruby core reaches for these constantly
+-- `Array#empty?`, `Kernel#nil?`/`#frozen?`/`#respond_to?`,
+`Numeric#zero?`/`#even?`/`#odd?`, `Hash#key?`/`#has_key?`,
+`Range#cover?`, `String#chomp!`/`#downcase!`, `IO#sync=`, and more --
+so every one of those names was invisible to the registry, exactly the
+"whole-program" premise the registry itself exists to guarantee.
+
+Surfaced concretely, not hypothetically: `array.c`'s own ROM method
+table spells `Array#empty?` as `MRB_MT_ENTRY(mrb_ary_empty_p,
+MRB_SYM_Q(empty), ...)`, which the old regex simply never matched, so
+the registry saw only `Game::MoveRoute#empty?`'s own bytecode
+definition for the name `:empty?` and reported it MONO.
+`compile_send` then devirtualized `@commands.empty?` (a plain `Array`)
+straight into `Game__MoveRoute_empty__impl` calling itself -- real
+infinite recursion, caught only because g++'s own
+`-Winfinite-recursion` happened to flag a literal self-call. The exact
+same collision against any *other* class's own same-named native method
+(`#nil?`, `#zero?`, `#key?`, ...) would have compiled clean and silently
+misresolved instead, invisible to any compiler warning -- a materially
+worse failure mode than a crash, since it would have run wrong, not
+failed loudly.
+
+Fixed at the root in `bc2cpp.rb` itself: `extract_native_method_names`'s
+own regex now matches all five macros
+(`MRB_(SYM_Q|SYM_B|SYM_E|SYM|OPSYM)\((\w+)\)`, the longer alternatives
+ordered before the bare `SYM` one) and resolves each to its real Ruby
+method name (`"#{name}?"`/`"#{name}!"`/`"#{name}="`/the `OPSYM_TO_RUBY`
+table/the bare name). Confirmed by diff that every one of the sixteen
+previously-shipped classes' own generated C++ is byte-for-byte
+unchanged by the fix -- no live corruption existed in already-shipped
+code, this bug just hadn't been triggered by a same-named
+native/compiled collision yet, purely because no earlier target
+happened to define a method sharing a name with an `MRB_SYM_Q`/`_B`/`_E`
+native one.
+
+**A related methodology gap, found integrating this round.** Every
+prior follow-up's own "full unrestricted closed-world diagnostic" (run
+by hand, directly invoking `bc2cpp.rb` for a post-merge full-sweep
+re-check) never set `NATIVE_SRCS`, unlike every real gem's own
+`mrbgem.rake` invocation -- so it never had visibility into native
+methods at all, the exact blind spot this round's own bug lived in.
+Re-running this round's own full-sweep diagnostic with `NATIVE_SRCS` set
+the same way `mrbgem.rake` computes it (`mruby-rgss/src/*.cxx` plus
+`core_native_srcs`) reproduces the `Game::MoveRoute#empty?` self-call
+directly in the generated text when run against the *pre-fix* source,
+and confirms it now correctly compiles to a real `mrb_funcall`-based
+POLY dispatch post-fix -- direct textual confirmation, not just an
+absent warning. Every future round's own full-sweep diagnostic should
+set `NATIVE_SRCS` the same way from now on.
+
+**Full-sweep re-check** (this time with `NATIVE_SRCS` correctly set):
+all eighteen now-shipped targets' own entry-point counts --
+`Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen` (41),
+`RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (76),
+`Game::Party` (85), `RPG2k::Scene::MapViewer` (34), `Game::Battle` (75),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (33), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17) -- match exactly; nothing moved.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), and the full build log shows **zero**
+`-Winfinite-recursion` warnings anywhere. `nm -C` on the resulting
+`libmruby.a` shows all 35 new entry points (18
+`Game__MoveRoute_*_impl`, 17 `RPG2k__Scene__ChipsetEditor_*_impl`)
+present and externally linked, with every one of the sixteen
+already-shipped classes' own symbol counts unchanged. The full,
+unrestricted, `NATIVE_SRCS`-aware closed-world `g++ -std=c++17
+-fsyntax-only` check reports **0 errors**.
