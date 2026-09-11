@@ -1815,3 +1815,91 @@ present and externally linked, with every one of the twelve
 already-shipped classes' own symbol counts unchanged. The full,
 unrestricted closed-world `g++ -std=c++17 -fsyntax-only` check still
 reports **0 errors**.
+
+## Follow-up: Game::State's own real RData embedding, RPG2k::Scene::StatusMenu, and a checked non-bug
+
+A ninth, parallel round -- again two independent background agents,
+integrated by hand -- adds `Game::State` and `RPG2k::Scene::StatusMenu`.
+Neither needed any new opcode work.
+
+**`Game::State`** (`mruby-rpg2k/mrblib/game.rb`, reopened by
+`mruby-rpg2k/mrblib/game/lsd_io.rb`) is the whole-program root save/
+session object: party, switches, variables, map position, pictures,
+both timers, the message window config, screen-transition defaults,
+vehicle placement, and the Marshal/`.lsd` (de)serialisers. 23 of its own
+32 real bytecode-defined methods compile clean. The other 9 split
+cleanly into the two already-established out-of-scope shapes: 3
+non-mandatory arity (`#move_picture`'s own splat, `#tick_timer`/
+`#timer`'s own optional argument, `#to_lsd`'s own 5 all-optional
+arguments), 4 genuine Ruby blocks (`#update_pictures`/`#pictures_moving?`'s
+own `&:update`/`&:moving?` block-pass shorthand, `#to_h`'s own two), and
+2 that combine a block with a real `rescue StandardError` clause
+(`#seed_screen_transitions`, `#seed_vehicle_positions`).
+
+**`#initialize` compiles clean** (4 purely mandatory arguments, no
+opts) -- the third target, after `Game::Screen`/`Game::Transition`
+above, whose own `#initialize` compiles, and by far the largest: 13 of
+its own ivars (`@map_id`, `@x`, `@y`, `@direction`,
+`@encounter_total`, `@steps`, `@save_count`, `@battle_count`,
+`@win_count`, `@defeat_count`, `@escape_count`, `@font_id`, `@atb_mode`
+-- all provably Fixnum) get real `RData` struct embedding via
+`MRB_SET_INSTANCE_TT(state, MRB_TT_DATA)`, mixed safely on the same
+object with every other real (non-Fixnum) ivar -- `@party`, `@switches`,
+`@pictures`, `@screen`, and more -- staying on the ordinary dynamic
+`iv_tbl`, the same mixed-embedding shape `Game::Screen`'s/
+`Game::Transition`'s own non-Fixnum ivars already established.
+
+**Checked directly against the exact `Game::Actor`-shaped bug two
+follow-ups up**, not assumed safe by analogy: that earlier bug happened
+because a class's own ivars got embedded even though `#initialize`
+itself never actually ran (blocked by a `BLOCK`/`SENDB` gap), so no real
+instance ever got `mrb_data_init`'d. Here `#initialize` genuinely
+compiles and always runs on every real construction path --
+`Game::State.load` (the interpreted class method that rebuilds a
+`Game::State` from a loaded save) never bypasses it, constructing every
+real instance via a plain `new(party, map_id, x, y)` call before setting
+any other field. `mrb_data_init` always runs before an embedded field is
+ever touched, on both the "new game" and "load game" paths -- confirmed
+by reading `Game::State.load`'s own real source, not by re-deriving the
+safety argument from first principles alone.
+
+**`RPG2k::Scene::StatusMenu`** (`mruby-rpg2k/mrblib/scene/status_menu.rb`)
+is the field per-character status detail screen: stats, equipped gear,
+and EXP progress for one selected party member, drawn across five
+windows. 13 of its own 21 real methods compile clean. `#initialize`
+(`actor_index = 0`, one non-mandatory argument, plus a `super parent`
+call) stays interpreted, the same established gap as every other
+non-embedding target above, so its own one real ivar (`@actor_index`)
+stays unembedded too. The other 7 gaps: `#update`/`#dispose` (each a
+real `windows.each { |w| ... }` block), `#draw_actor_panel`/
+`#draw_params`/`#draw_equipment` (each a real `.each_with_index do
+|...| ... end` block), `#draw_value_row` (one non-mandatory argument,
+`can_knockout = nil`), and `#load_face_bitmap` (a real `rescue
+StandardError` clause, the same shape `RPG2k::Scene::SkillMenu`'s own
+same-named method already has).
+
+**Full-sweep re-check.** Since this round added no new opcodes, no
+already-shipped target could gain anything, and a fresh unrestricted
+diagnostic confirmed exactly that: all sixteen now-shipped targets' own
+entry-point counts -- `Game::Picture` (25), `Game::EnemyAction` (6),
+`Game::Screen` (41), `RPG2k::Window` (32), `Game::Transition` (32),
+`Game::Actor` (76), `Game::Party` (85), `RPG2k::Scene::MapViewer` (34),
+`Game::Battle` (75), `RPG2k::Scene::ItemMenu` (41),
+`RPG2k::Scene::SkillMenu` (39), `RPG2k::Scene::DebugMenu` (33),
+`RPG2k::Scene::EquipMenu` (29), `RPG2k::Scene::Menu` (28), `Game::State`
+(23), `RPG2k::Scene::StatusMenu` (13) -- match exactly; nothing moved.
+The whole-program embedding diagnostic confirms `Game::State` now
+correctly appears in the "classes needing `MRB_SET_INSTANCE_TT`" list
+alongside the already-shipped `Game::Screen`/`Game::Transition`.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`; the main checkout's own `3rd/effekseer`
+submodule needed a one-time `git submodule update --init --recursive`
+first -- an unrelated environment gap, not caused by this round's own
+diff). `nm -C` on the resulting `libmruby.a` shows all 36 new entry
+points (23 `Game__State_*_impl`, 13 `RPG2k__Scene__StatusMenu_*_impl`)
+present and externally linked, plus the new `Game__State_ivars`
+struct/type-descriptor pair confirming the real embedding took effect,
+with every one of the fourteen already-shipped classes' own symbol
+counts unchanged. The full, unrestricted closed-world
+`g++ -std=c++17 -fsyntax-only` check still reports **0 errors**.
