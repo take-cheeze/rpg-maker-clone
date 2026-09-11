@@ -2426,3 +2426,157 @@ present and externally linked, plus the new `Game__Map_ivars`/
 embedding took effect (the generated `struct Game__Map_ivars` has exactly
 the two predicted `mrb_int` fields, `revision` and `id`), with every
 already-shipped class's own symbol count unchanged.
+
+## Follow-up: Game::EnemyAi, Game::ChipSet (fifth real embedding target), and this compiler's most severe bug so far
+
+Two more independent classes, plus a fourth real, live bug -- this one
+the most severe found across the whole effort, not caught by a runtime
+type guard the way the `IvarLayout.join` bug was, but a guaranteed
+`NoMethodError` on some of the most common navigation code in the whole
+codebase.
+
+**Game::EnemyAi** (`mruby-rpg2k/mrblib/game/battle_support.rb`) is the
+outside-world collaborator `Game::Battle`'s own enemy action-pattern
+logic reads through: skill-table/database lookups, casting-eligibility/
+effectiveness formulas reused from `Game::Party`, switch read/write, and
+the party's own average level. 9 of its own 10 real bytecode-defined
+methods compile clean, needing no new opcode work. `#initialize` (2
+purely mandatory arguments, `db, state`, no `super`, no block) compiles
+clean too, but neither of this class's own two ivars (`@db`, `@state`)
+ever gets embedded: both are opaque object references, never provably
+Fixnum/Symbol. The one gap, `#party_level`, ends in a real
+`actors.each { |a| ... }` block (`BLOCK`/`SENDB`) -- an already-
+established out-of-scope shape. **This one was caught during integration,
+not by the round's own reporting**: the diff this round's own coverage
+agent produced registered `#party_level` as if it compiled, but a direct
+re-run of the real whole-program diagnostic (`SKIP_UNSUPPORTED=1`)
+against the exact same source shows it silently dropped with no
+generated entry point at all -- confirmed by reading `game/
+battle_support.rb`'s own real source directly. Registering an
+uncompiled method would have failed the build outright (`'...' was not
+declared in this scope`), which is exactly what the first real build
+attempt this round did -- caught and fixed before merge, not shipped.
+
+**Game::ChipSet** (`mruby-rpg2k/mrblib/game.rb`) is one loaded chipset's
+own tile graphic name plus the lower/upper tile-passability tables,
+terrain table, and water-animation parameters (chipset chunks 11/12),
+keyed by the tile-id-to-chip-index math the RPG2000 BlockA/B/C/D chipset
+layout uses. **All 9** of its own real bytecode-defined instance methods
+compile clean, needing no new opcode work -- the best ratio of any
+target so far. `.lower_index` is a real singleton method (`def
+self.lower_index`), structurally invisible to `build_registry`'s own
+CLASS/MODULE/TDEF walk (the same pre-existing gap `Game::MoveRoute`'s own
+class methods already documented), so it stays interpreted; every
+compiled method that calls it correctly falls back to ordinary
+`mrb_funcall` rather than being unsoundly devirtualized.
+
+`#initialize` (`initialize db, id`) compiles clean -- pure mandatory
+arity, no `super`, no block -- the **fifth** target after `Game::Screen`/
+`Game::Transition`/`Game::State`/`Game::Map` above whose own ivars get
+real `RData` struct embedding. Checked directly against the exact
+`Game::Actor`-shaped embedding bug several follow-ups up: grepping the
+whole closed world for `ChipSet.new`/`Game::ChipSet.new`/`.allocate`/a
+subclass finds only plain two-argument `.new(db, id)` call sites
+(`mruby-rpg2k/mrblib/scene/map.rb`, `scene/map_viewer.rb`, `game/
+lsd_io.rb`, plus this project's own `scripts/*_check.rb` harnesses) and
+no subclass anywhere. `@animation_type`/`@animation_speed` (each
+`c.animation_type || 0`/`c.animation_speed || 0`, both real, provably-
+Fixnum) embed into a new `Game__ChipSet_ivars` struct; the real generated
+`#initialize` was confirmed to actually call `mrb_data_init` before
+trusting this. The other 5 ivars (`@name`/`@graphic` -- String-valued
+method-call return values; `@passable_lower`/`@passable_upper`/`@terrain`
+-- Array-typed) stay `UNKNOWN` and remain on the ordinary `iv_tbl`, mixed
+safely with the two embedded fields.
+
+**The most severe real, live bug found in this whole effort, caught
+building this class's own `#passable_tile?`/`#landable_tile?`** (both do
+a real `flags & DIR_BIT[dir]`/`flags & ALL_DIRS`/`flags & ABOVE_BIT` --
+an ordinary `Integer#&` send). Every SEND-name-extraction regex in
+`bc2cpp.rb` (four copies: `build_registry`'s visibility tracking,
+`compile_send` itself, `ArgTypes.analyze`'s call-site walk, and
+`trace_new_target`) used the same character class,
+`[\w+\-*\/<>=!?\[\]]` -- and that class omitted every bitwise/unary
+operator character (`&`, `|`, `^`, `~`, `%`, and the unary-method suffix
+`@` for `-@`/`+@`). A `SEND` to one of those names matched *nothing*
+after the colon, so `name` came back `nil` -- silently interpolated as
+`""` into the generated `mrb_funcall(M, recv, "", n, ...)` call, an
+empty-string method name no real Ruby method ever has. That compiles and
+links completely clean (the same class of bug as this ADR's own earlier
+`?`-omission fix -- a `#error`-marker check can never catch it) but
+raises a real `NoMethodError` the first time it actually runs, with no
+runtime type guard to soften the blow the way the `IvarLayout.join` bug
+had.
+
+**Confirmed live and, independently, far more widespread than the
+triggering case**: a direct grep of the real generated
+`rpg2k_compiled_gen.cpp` (built from the *unfixed* `bc2cpp.rb`, before
+this round's own fix) for the exact broken
+`mrb_funcall(M, <reg>, "", ...)` shape found **41 call sites across 32
+distinct, already-registered compiled methods spanning a dozen already-
+shipped classes** -- not just `RPG2k::Scene::ChipsetEditor`'s own
+`#toggled_byte`/`#cell_color_for`. By far the most common shape is `%`
+used for cursor-wraparound arithmetic (`(index + delta) % list.size` /
+`@cursor_index %= @names.size`), hit by `RPG2k::Scene::Order#
+move_cursor`; `RPG2k::Scene::EquipMenu#move_slot_cursor`/
+`#update_slots`/`#refresh_cand_cursor`/`#tick_arrows`;
+`RPG2k::Scene::ItemMenu#refresh_item_cursor`/`#refresh_teleport_cursor`/
+`#tick_arrows`/`#update_target`/`#draw_target_face`; the identical five on
+`RPG2k::Scene::SkillMenu`; `RPG2k::Scene::Menu#update_command`/
+`#update_actor_selection`/`#draw_actor_face`;
+`RPG2k::Scene::StatusMenu#draw_actor_face`;
+`RPG2k::Scene::DebugMenu#cycle_mode`/`#move_block`/`#move_row`/
+`#update_editor`; `RPG2k::Scene::SaveLoad#tick_arrows`/
+`#build_face_cell`; `RPG2k::Scene::Base#advance_list_arrow_anim`;
+`RPG2k::Window#update`; `Game::Screen#update_shake` (a `% 256` phase
+wrap); `Game::Transition#block_shuffle_rank` (`% total`); and
+`RPG2k::Scene::ChipsetEditor#draw_cursor`/`#move_cursor` (`@idx % COLS`)
+themselves. The remaining two sites are the triggering `&`/`|`/`~`
+bitwise work in `ChipsetEditor#toggled_byte`/`#cell_color_for`. In other
+words: every already-shipped menu's own scrolling-cursor/blink-arrow
+logic -- the single most common UI idiom in this entire codebase, not an
+edge case -- was silently compiling to a guaranteed crash the moment a
+player actually scrolled a list or moved a cursor, in a build that
+compiled and linked with zero warnings.
+
+Fixed at the root: the character class extended to
+`[\w+\-*\/<>=!?\[\]&|^~%@]` in all four occurrences (kept in sync even
+where the surrounding logic could never actually be affected by an
+operator name, e.g. `trace_new_target`'s own `name == 'new'` check).
+Verified directly, not just reasoned about: regenerating with the
+*unfixed* regex reproduces `mrb_funcall(M, r4, "", 1, r5)` verbatim;
+regenerating with the fix in place shows the correct
+`mrb_funcall(M, r4, "&", 1, r5)` (`ChipsetEditor#toggled_byte`) and
+`mrb_funcall(M, r3, "%", 1, r4)` (`RPG2k::Scene::Order#move_cursor`). The
+very next regen of every affected class's own generated output picks up
+the fix automatically -- no hand-edit to any registration block was
+needed beyond this round's own two new classes, the same "fix
+`bc2cpp.rb` once, every affected class regenerates correctly" shape the
+`IvarLayout.join` fix already established.
+
+**Full-sweep re-check** (all twenty-six now-shipped targets):
+`Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen` (41),
+`RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (74),
+`Game::Party` (85), `RPG2k::Scene::MapViewer` (34), `Game::Battle` (72),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (32), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12), `Game::Shop` (11), `Game::Map` (12),
+`Game::EnemyAi` (9), `Game::ChipSet` (9) -- every count matches exactly
+(including `RPG2k::Scene::ChipsetEditor`'s own unchanged 17: the operator
+fix changes what two already-registered methods' bodies *compute*, never
+how many methods compile or their arity/visibility).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors and
+**zero** `-Winfinite-recursion` warnings. `nm -C` on the resulting
+`libmruby.a` shows all 19 new entry points (9 `Game__EnemyAi_*_impl`, 9
+`Game__ChipSet_*_impl`) present and externally linked, plus the new
+`Game__ChipSet_ivars`/`_free`/`_type` symbols (the generated struct has
+exactly the two predicted `mrb_int` fields, `animation_type` and
+`animation_speed`); a direct grep of the post-fix generated
+`rpg2k_compiled_gen.cpp` for the broken `mrb_funcall(M, <reg>, "", ...)`
+shape returns **zero** matches (down from 41); and every already-shipped
+class's own symbol count is unchanged.
