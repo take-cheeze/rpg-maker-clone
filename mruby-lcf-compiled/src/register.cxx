@@ -127,8 +127,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT call belongs here -- neither @selected_id nor @maps
   // is embedded, confirmed directly against the real generated output, not
   // just this class's own attr_reader shape by analogy.
-  mrb_define_private_method(M, tree, "initialize",
-                            LCF__Tree_initialize, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, tree, "initialize", LCF__Tree_initialize,
+                            MRB_ARGS_REQ(2));
 
   RClass* sections = mrb_class_get_under(M, lcf, "Sections");
 
@@ -140,8 +140,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // `private`/`protected`/`public` anywhere in this class's own real
   // source. See this file's own top comment for why no
   // MRB_SET_INSTANCE_TT call belongs here.
-  mrb_define_private_method(M, sections, "initialize",
-                            LCF__Sections_initialize, MRB_ARGS_NONE());
+  mrb_define_private_method(M, sections, "initialize", LCF__Sections_initialize,
+                            MRB_ARGS_NONE());
   mrb_define_method(M, sections, "add", LCF__Sections_add, MRB_ARGS_REQ(2));
   mrb_define_method(M, sections, "key?", LCF__Sections_key_, MRB_ARGS_REQ(1));
   mrb_define_method(M, sections, "[]", LCF__Sections___, MRB_ARGS_REQ(1));
