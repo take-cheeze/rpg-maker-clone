@@ -7,10 +7,13 @@
 // `attr_reader`-generated accessors are native, invisible to bc2cpp the
 // same way every other attr_reader/attr_writer in this codebase is) --
 // plus, as of docs/adr/0139's own array-literal-opcode follow-up (two
-// classes compiled in the same round), 39 of Game::Screen's own 43 real
-// bytecode-defined methods, INCLUDING #initialize itself this time (see
-// that class's own registration block below for why it's different from
-// the other three), and 32 of RPG2k::Window's own 35 real methods
+// classes compiled in the same round), 41 of Game::Screen's own 43 real
+// bytecode-defined methods (39 as of that round; 2 more, #load_h/#pan,
+// unblocked later by the GETIDX opcode a subsequent round added for
+// Game::Actor -- see that class's own block below), INCLUDING
+// #initialize itself this time (see that class's own registration block
+// below for why it's different from the other three), and 32 of
+// RPG2k::Window's own 35 real methods
 // (mruby-rpg2k/mrblib/main.rb: the RPG2000-style UI window, skin/frame/
 // cursor/contents/arrow rendering via four layered Sprites in a
 // Viewport). Getting Screen's and Window's own methods clean needed four
@@ -27,12 +30,21 @@
 // would have: #restore_tint destructures two Array-literal-shaped
 // arguments (AREF), #update_shake/#update_flash each do a plain
 // multiplication (MUL) -- real, additive value from doing this round's
-// two classes together rather than in isolation.
+// two classes together rather than in isolation. Two more classes joined in
+// a third parallel round: 32 of Game::Transition's own 38 real methods
+// (RPG2000's ~38 screen transition styles), the second target after
+// Game::Screen whose own #initialize compiles clean and gets real ivar
+// embedding; and Game::Actor, the biggest real target yet at 75 of its own
+// methods, needing three more new opcodes (GETIDX/SETIDX, a computed-index
+// Array/Hash read/write; GETGV, a bare global-variable read) that also
+// unlocked 348 more real method bodies across roughly 30 other classes
+// project-wide, confirming the same opcode-reuse payoff the prior round's
+// MUL/AREF work already showed.
 // mruby-rpg2k (this gem's own add_dependency) has already run its full gem
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all four classes are guaranteed to already exist below.
+// all six classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -182,14 +194,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // field or an ordinary iv_tbl entry (bc2cpp's ivar_layout keyed lookup),
   // so nothing here has to track which is which by hand.
   //
-  // 4 real methods stay interpreted: #load_h destructures a Hash literal
-  // into locals (`h[:pan_x]`) via GETIDX, an opcode outside this
-  // prototype's modeled subset; #erase/#show both take an optional
-  // `frames = nil` argument (the same non-mandatory-arity gap that already
-  // keeps Game::Picture#initialize/RPG2k::Window#initialize interpreted);
-  // #pan uses GETIDX too (`PAN_DELTA[direction]`, a real Hash#[] lookup,
-  // distinct from AREF's own destructuring-assignment-only real VM
-  // semantics -- see AREF's own compile_insn comment).
+  // Only 2 real methods stay interpreted now: #erase/#show both take an
+  // optional `frames = nil` argument, the same non-mandatory-arity gap
+  // that already keeps Game::Picture#initialize/RPG2k::Window#initialize
+  // interpreted. #load_h (`h[:pan_x]`, a Hash#[] read) and #pan
+  // (`PAN_DELTA[direction]`, same shape) were blocked by the same real
+  // GETIDX gap until docs/adr/0139's own Game::Actor follow-up added it --
+  // a whole-program opcode addition made for a different class entirely
+  // reaching back and unblocking two more methods here, the same real
+  // synergy the ARRAY/AREF round already showed for #restore_tint/
+  // #update_shake/#update_flash above.
   RClass* screen = mrb_class_get_under(M, game, "Screen");
   MRB_SET_INSTANCE_TT(screen, MRB_TT_DATA);
 
@@ -199,6 +213,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, screen, "initialize", Game__Screen_initialize,
                             MRB_ARGS_NONE());
   mrb_define_method(M, screen, "to_h", Game__Screen_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, screen, "load_h", Game__Screen_load_h, MRB_ARGS_REQ(1));
   mrb_define_method(M, screen, "tint", Game__Screen_tint, MRB_ARGS_NONE());
   mrb_define_method(M, screen, "tinting?", Game__Screen_tinting_,
                     MRB_ARGS_NONE());
@@ -251,6 +266,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, screen, "pan_clear", Game__Screen_pan_clear,
                     MRB_ARGS_NONE());
+  mrb_define_method(M, screen, "pan", Game__Screen_pan, MRB_ARGS_REQ(3));
   mrb_define_method(M, screen, "update", Game__Screen_update, MRB_ARGS_NONE());
 
   // Everything from here down is `private` in the real interpreted source
@@ -361,6 +377,302 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, window, "draw_cursor_fallback",
                             RPG2k__Window_draw_cursor_fallback,
                             MRB_ARGS_REQ(4));
+
+  // Game::Transition (docs/adr/0139's own follow-up, mruby-rpg2k/mrblib/
+  // game.rb) -- RPG2000's ~38 screen transition styles (fades, block-
+  // shuffle wipes, zoom, mosaic, wave, scroll-in/out, cut), modeled as pure
+  // geometry/timing logic with no Graphics access of its own (Scene::Map
+  // does the actual drawing). 32 of its 38 real bytecode-defined methods
+  // compile clean -- see this file's own top comment for the real, narrow
+  // reason the other 6 don't (BLOCK/SENDB, real Ruby block usage).
+  //
+  // #initialize takes 5 mandatory arguments, no opts -- unlike Game::Picture
+  // /RPG2k::Window's own #initialize, it compiles clean, so (like
+  // Game::Screen above) drop_unsafe_embeddings does NOT refuse to embed
+  // here: 5 of Transition's own ivars (@style, @frames, @width, @height,
+  // @frame -- all provably Fixnum, per bc2cpp's whole-program EMBED
+  // diagnostic) are real struct fields on a `Game__Transition_ivars*` RData
+  // payload, needing the same real MRB_SET_INSTANCE_TT(transition,
+  // MRB_TT_DATA) call Game::Screen's own block above already established
+  // the requirement for. The one other real ivar, @erase (a plain boolean
+  // set once in #initialize and read by #black_alpha/#vertical_stripe_rects
+  // /#horizontal_stripe_rects), stays on the ordinary dynamic iv_tbl --
+  // this compiler's embedding lattice models Fixnum/Symbol, not booleans --
+  // mixed safely with the 5 embedded fields on the very same object, same
+  // as Game::Screen's own non-Fixnum ivars.
+  //
+  // A real, concrete case where the devirtualization-soundness fix
+  // (compiles_clean?, this ADR's own follow-up above) actually matters for
+  // this class: #block_order's own body (`@block_order ||=
+  // compute_block_order`) sends :compute_block_order, a name with exactly
+  // one bytecode definition anywhere (MONO) -- but #compute_block_order
+  // itself is one of the 6 methods that doesn't compile (BLOCK/SENDB), so
+  // compiles_clean? correctly refuses to devirtualize that call; the
+  // generated #block_order body below falls back to ordinary mrb_funcall
+  // instead of referencing a Game__Transition_compute_block_order_impl
+  // symbol this run never emits -- confirmed directly against the real
+  // generated output, not just reasoned about.
+  //
+  // Every method below is `private` in the real interpreted source *except*
+  // the first 16 (a bare `private` sits right before #block_rects, still in
+  // effect through the end of the class body -- confirmed directly against
+  // the real source, not guessed from bc2cpp's own diagnostic) --
+  // mrb_define_private_method for all of them, the same real fix this ADR's
+  // own Game::Picture #step/#finish_move bug already needed once.
+  RClass* transition = mrb_class_get_under(M, game, "Transition");
+  MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA);
+
+  // #initialize is always private (the same real interpreter special case
+  // as Game::EnemyAction#initialize/Game::Screen#initialize above -- mruby's
+  // own src/class.c forces it regardless of source, not a bare `private`
+  // call here).
+  mrb_define_private_method(M, transition, "initialize",
+                            Game__Transition_initialize, MRB_ARGS_REQ(5));
+  mrb_define_method(M, transition, "done?", Game__Transition_done_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "advance", Game__Transition_advance,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "uniform?", Game__Transition_uniform_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "black_alpha", Game__Transition_black_alpha,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "visible_rects",
+                    Game__Transition_visible_rects, MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "captured?", Game__Transition_captured_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "zoom?", Game__Transition_zoom_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "mosaic?", Game__Transition_mosaic_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "wave?", Game__Transition_wave_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "mosaic_block_size",
+                    Game__Transition_mosaic_block_size, MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "wave_params", Game__Transition_wave_params,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "capture_ops", Game__Transition_capture_ops,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "random_blocks?",
+                    Game__Transition_random_blocks_, MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "new_block_rects",
+                    Game__Transition_new_block_rects, MRB_ARGS_NONE());
+  mrb_define_method(M, transition, "revealed_block_rects",
+                    Game__Transition_revealed_block_rects, MRB_ARGS_NONE());
+
+  // Everything from here down is `private` in the real interpreted source
+  // (mruby-rpg2k/mrblib/game.rb: a bare `private` right before #block_rects,
+  // still in effect through the end of the class body).
+  mrb_define_private_method(M, transition, "span", Game__Transition_span,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "frame_ratio",
+                            Game__Transition_frame_ratio, MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "mosaic_wave_progress",
+                            Game__Transition_mosaic_wave_progress,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "scroll_offset",
+                            Game__Transition_scroll_offset, MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "half", Game__Transition_half,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "vertical_split_ops",
+                            Game__Transition_vertical_split_ops,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "horizontal_split_ops",
+                            Game__Transition_horizontal_split_ops,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "cross_split_ops",
+                            Game__Transition_cross_split_ops, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "zoom_rect",
+                            Game__Transition_zoom_rect, MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "border_to_center_rect",
+                            Game__Transition_border_to_center_rect,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "center_to_border_rect",
+                            Game__Transition_center_to_border_rect,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "around", Game__Transition_around,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "block_grid_cols",
+                            Game__Transition_block_grid_cols, MRB_ARGS_NONE());
+  mrb_define_private_method(M, transition, "block_count_through",
+                            Game__Transition_block_count_through,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, transition, "block_shuffle_rank",
+                            Game__Transition_block_shuffle_rank,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, transition, "block_order",
+                            Game__Transition_block_order, MRB_ARGS_NONE());
+
+  // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 75
+  // real methods, in mruby-rpg2k/mrblib/game.rb's own definition order
+  // first (the class's main ~2,100-line body), then the 9 more the class
+  // reopening in mruby-rpg2k/mrblib/game/battle_support.rb adds. Every one
+  // below is public in the real interpreted source -- confirmed directly
+  // (not guessed from bc2cpp's own diagnostic): battle_support.rb's own
+  // `class Actor` reopening (lines 14-198) has no `private`/`protected`
+  // anywhere in it, and game.rb's own single `private` for this class
+  // (line 3496) only covers the 5 methods registered via
+  // mrb_define_private_method at the end of this block below (plus
+  // #calc_exp, which doesn't compile -- BLOCK/RANGE_INC/SENDB -- so it
+  // has no entry here at all, still running mruby-rpg2k's own interpreted
+  // body).
+  RClass* actor = mrb_class_get_under(M, game, "Actor");
+  mrb_define_method(M, actor, "display_max_hp", Game__Actor_display_max_hp,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "display_max_mp", Game__Actor_display_max_mp,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "class_name", Game__Actor_class_name,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "set_charset", Game__Actor_set_charset,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, actor, "sprite_changed?", Game__Actor_sprite_changed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "name_changed?", Game__Actor_name_changed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "title_changed?", Game__Actor_title_changed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "total_state_count",
+                    Game__Actor_total_state_count, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "faceset_name", Game__Actor_faceset_name,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "faceset_index", Game__Actor_faceset_index,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "set_faceset", Game__Actor_set_faceset,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, actor, "knows_skill?", Game__Actor_knows_skill_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "learn_skill", Game__Actor_learn_skill,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "forget_skill", Game__Actor_forget_skill,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "dead?", Game__Actor_dead_, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "state?", Game__Actor_state_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "state_persists_type?",
+                    Game__Actor_state_persists_type_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "equipped?", Game__Actor_equipped_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "free_two_handed_slot",
+                    Game__Actor_free_two_handed_slot, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "recompute_stats", Game__Actor_recompute_stats,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "rpg2003?", Game__Actor_rpg2003_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "max_hp_cap", Game__Actor_max_hp_cap,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "dual_attack?", Game__Actor_dual_attack_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "weapon_attack_multiplier",
+                    Game__Actor_weapon_attack_multiplier, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "swing_weapon_data",
+                    Game__Actor_swing_weapon_data, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "half_sp_cost?", Game__Actor_half_sp_cost_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "prevents_terrain_damage?",
+                    Game__Actor_prevents_terrain_damage_, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "strong_defence?", Game__Actor_strong_defence_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "force_ai?", Game__Actor_force_ai_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "double_hand?", Game__Actor_double_hand_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "equipment_fixed?", Game__Actor_equipment_fixed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "slot_cursed?", Game__Actor_slot_cursed_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "exp_max", Game__Actor_exp_max, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "max_level", Game__Actor_max_level,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "exp_for_level", Game__Actor_exp_for_level,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "gain_exp", Game__Actor_gain_exp,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "next_level_exp", Game__Actor_next_level_exp,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "exp_to_next", Game__Actor_exp_to_next,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "change_level_by", Game__Actor_change_level_by,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "crit_chance", Game__Actor_crit_chance,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "weapon_crit_chance",
+                    Game__Actor_weapon_crit_chance, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "set_hp", Game__Actor_set_hp, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "knock_out!", Game__Actor_knock_out_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "state_table", Game__Actor_state_table,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "change_mp", Game__Actor_change_mp,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "change_param", Game__Actor_change_param,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, actor, "base_param_limit", Game__Actor_base_param_limit,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "battle_commands", Game__Actor_battle_commands,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_command_row",
+                    Game__Actor_battle_command_row, MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "restore_class", Game__Actor_restore_class,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "class_changed?", Game__Actor_class_changed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_row", Game__Actor_battle_row,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_row=", Game__Actor_battle_row_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "atb_gauge", Game__Actor_atb_gauge,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_commands=", Game__Actor_battle_commands_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "battle_commands_changed?",
+                    Game__Actor_battle_commands_changed_, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "set_battle_combo", Game__Actor_set_battle_combo,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, actor, "rename_skill?", Game__Actor_rename_skill_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_x", Game__Actor_battle_x,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battle_y", Game__Actor_battle_y,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "battler_animation_id",
+                    Game__Actor_battler_animation_id, MRB_ARGS_NONE());
+
+  // The 9 methods mruby-rpg2k/mrblib/game/battle_support.rb's own
+  // `class Actor` reopening adds (see this block's own intro comment --
+  // no `private` anywhere in that reopening, so all 9 are public here
+  // too).
+  mrb_define_method(M, actor, "alive?", Game__Actor_alive_, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "attack_animation_id",
+                    Game__Actor_attack_animation_id, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "ignores_evasion?", Game__Actor_ignores_evasion_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "attack_all?", Game__Actor_attack_all_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "preemptive?", Game__Actor_preemptive_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "weapon_sp_cost", Game__Actor_weapon_sp_cost,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "atb_gauge=", Game__Actor_atb_gauge_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, actor, "clear_battle_combo",
+                    Game__Actor_clear_battle_combo, MRB_ARGS_NONE());
+  mrb_define_method(M, actor, "skill_command_name",
+                    Game__Actor_skill_command_name, MRB_ARGS_NONE());
+
+  // Everything from here down is `private` in the real interpreted source
+  // (mruby-rpg2k/mrblib/game.rb line 3496, in effect through the end of
+  // the class body) -- mrb_define_private_method for all 5, the same
+  // real fix this ADR's own Game::Picture #step/#finish_move bug already
+  // needed once (a hand-written mrb_define_method here would silently
+  // make a private method externally callable).
+  mrb_define_private_method(M, actor, "class_battle_commands",
+                            Game__Actor_class_battle_commands, MRB_ARGS_NONE());
+  mrb_define_private_method(M, actor, "db_exp_param", Game__Actor_db_exp_param,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, actor, "curve_row", Game__Actor_curve_row,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, actor, "set_class_id", Game__Actor_set_class_id,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, actor, "class_row_for",
+                            Game__Actor_class_row_for, MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
