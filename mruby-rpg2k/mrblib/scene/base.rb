@@ -500,6 +500,7 @@ class RPG2k
       # `balance` (cycle #221) was accepted and immediately discarded here
       # (a `_balance` parameter) until RGSS::Audio.se_play grew a native pan
       # argument to forward it to -- see that method's own doc comment.
+      # bc2cpp: (String, , , )
       def play_sound(name, volume, tempo, balance)
         return if name.nil? || name.empty? || name == '(OFF)' || name == '(Brak)'
         RGSS::Audio.se_play(name, volume, tempo, balance)
@@ -520,6 +521,7 @@ class RPG2k
     # event-blocking rule) instead of the hero's on-foot #char_passable? —
     # the only difference from MapWorld.
     class VehicleWorld
+      # bc2cpp: (RPG2k::Scene::Map, Game::Rng, Symbol)
       def initialize(scene, rng, type)
         @scene = scene
         @rng = rng

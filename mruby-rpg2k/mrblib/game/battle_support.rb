@@ -1338,6 +1338,7 @@ module Game
   # partial source so the check harnesses can hand in a stub (or nothing at all,
   # in which case the enemies fall back to plain attacking as before).
   class EnemyAi
+    # bc2cpp: (, Game::State)
     def initialize(db, state)
       @db = db
       @state = state

@@ -1732,6 +1732,7 @@ module Game
     # while restoring a saved override (Game::State.from_lsd) -- both are a
     # real, persisted "changed" event, not the actor's own untouched database
     # default set at #initialize -- see @sprite_changed's own comment there.
+    # bc2cpp: (String, )
     def set_charset(name, index)
       @charset_name = name
       @charset_index = index
@@ -10024,6 +10025,7 @@ module Game
     # carries :name, :loop_x, :loop_y, :auto_x, :sx, :auto_y, :sy (see the
     # interpreter). An empty name leaves the backdrop blank. Scene::Map rebuilds
     # its parallax sprite from this override.
+    # bc2cpp: (Hash)
     def set_parallax(opts)
       @parallax = opts
     end
@@ -10196,6 +10198,7 @@ module Game
     # Change System Graphics: override the windowskin graphic (System/<name>) and
     # font id. Scene::Map reloads the windowskin so windows created afterwards use
     # the new skin.
+    # bc2cpp: (String, )
     def set_system_graphic(name, font)
       @system_graphic = name
       @font_id = font || 0

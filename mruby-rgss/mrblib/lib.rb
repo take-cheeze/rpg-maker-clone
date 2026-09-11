@@ -652,6 +652,7 @@ module RGSS
     # what `raise "..."` used to produce here, so `rescue` clauses around
     # Bitmap.new keep working.
     class LoadError < RuntimeError
+      # bc2cpp: (String, String)
       def initialize(path, reason)
         @path = path
         @reason = reason

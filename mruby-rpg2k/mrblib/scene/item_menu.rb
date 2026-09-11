@@ -107,6 +107,7 @@ class RPG2k
       DOWN_ARROW_SRC_Y = Window::ARROW_SRC_Y
       ARROW_BLINK_FRAMES = Window::ARROW_BLINK_FRAMES
 
+      # bc2cpp: (, Game::State)
       def initialize parent, state
         super parent
         @state = state

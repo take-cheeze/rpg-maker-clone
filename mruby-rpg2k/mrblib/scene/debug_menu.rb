@@ -83,6 +83,7 @@ class RPG2k
       LEFT_W = 96
       SW_TOP = 32
 
+      # bc2cpp: (, Game::State)
       def initialize(parent, state)
         super parent
         @state = state

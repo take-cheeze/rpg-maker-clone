@@ -126,6 +126,7 @@ class RPG2k
         8 => [:wait, :wait]
       }.freeze
 
+      # bc2cpp: (, Game::State)
       def initialize parent, state
         super parent
         @state = state
@@ -359,6 +360,7 @@ class RPG2k
 
       # The label for a command row: the Wait row is dynamic (the current
       # mode's term), every other row is a plain Term lookup.
+      # bc2cpp: (Symbol, )
       def wait_term_for(key, term_name)
         return wait_label if key == :wait
         term(term_name)
@@ -689,6 +691,7 @@ class RPG2k
       # the command window stays `active` (input is routed by `@focus`, not
       # by the window flag); it used to go inactive here, which
       # RPG2k::Window#draw_cursor renders as no cursor at all.
+      # bc2cpp: (Symbol)
       def enter_actor_selection(key)
         @focus = :actors
         @pending_key = key

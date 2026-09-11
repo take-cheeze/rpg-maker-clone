@@ -73,6 +73,7 @@ class RPG2k
       CONFIRM_LABEL = '決定'.freeze
       REDO_LABEL = 'やりなおし'.freeze
 
+      # bc2cpp: (, Game::State)
       def initialize parent, state
         super parent
         @state = state
