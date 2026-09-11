@@ -2580,3 +2580,102 @@ exactly the two predicted `mrb_int` fields, `animation_type` and
 `rpg2k_compiled_gen.cpp` for the broken `mrb_funcall(M, <reg>, "", ...)`
 shape returns **zero** matches (down from 41); and every already-shipped
 class's own symbol count is unchanged.
+
+## Follow-up: Game::Timer, Game::Switches, Game::Variables (sixth real embedding target)
+
+Three more independent classes, both this round's own agents
+independently re-deriving and re-verifying the operator-regex fix above
+against their own (stale) base before adding coverage -- confirmed
+byte-identical to the already-shipped fix, so no duplicate was applied,
+just each round's own new-class work merged onto the real current tip.
+
+**Game::Timer** (`mruby-rpg2k/mrblib/game.rb`) is the RPG2000 Timer/
+Timer2 countdown backing model -- both are real instances of this one
+class, held as `Game::State`'s own `@timers` array; there is no separate
+"Timer2" class anywhere in the closed world. 7 of its own 10 real
+bytecode-defined methods compile clean, needing no new opcode work --
+this class is exactly the shape the operator-regex bug was found in:
+`#display_text`'s own `s % 60` compiles to a real `Integer#%` send,
+confirmed directly against the real generated output
+(`mrb_funcall(M, r4, "%", 1, r5)`, never the pre-fix empty-string-name
+shape). `#start`/`#tick`/`#drawn?` each have one non-mandatory optional
+argument. `#initialize` compiles clean (zero arguments, pure mandatory
+arity), but the whole-program EMBED diagnostic proposes nothing for this
+class: `@running`/`@visible`/`@in_battle` are booleans (a type this
+compiler's embedding lattice doesn't model), and `@frames` -- despite a
+literal-Fixnum source in `#initialize` (`0`) and `#set` (`seconds * FPS +
+...`) -- gets poisoned back to `UNKNOWN` by `#load_h`'s own
+`h[:frames] || 0` (a real opaque `Hash#[]` read on a caller-provided
+Hash), the same `IvarLayout.join` fixed-point poisoning behaviour the
+earlier round's own join() bugfix established -- a nice real-world
+confirmation that fix still works correctly on exactly the shape it was
+designed for. Real full-sweep synergy: `:seconds`/`:display_text` are
+both MONO (`Game::Timer` is their one and only real bytecode definition
+anywhere), so already-shipped `Game::State#timer_seconds`/
+`#timer2_seconds`/`#timer_display_text` now devirtualize straight into
+`Game__Timer_seconds_impl`/`Game__Timer_display_text_impl`, confirmed
+directly against the real regenerated output.
+
+**Game::Switches** and **Game::Variables** (same file) are the
+1-indexed boolean/integer flag stores an event page's conditions read
+from, each backed by a plain Hash. Neither class's own method bodies use
+a bitwise/modulo operator at all (`Switches#flip`'s own `!self[id]` is a
+real SEND too, to `!`, but that character was already in the pre-fix
+charset) -- re-checked specifically for the operator-regex bug's own
+shape given how recently it shipped, confirmed by a zero-match grep of
+the freshly regenerated output for the empty-name
+`mrb_funcall(M, <reg>, "", ` shape project-wide.
+
+All 7 of `Game::Switches`'s own real bytecode-defined methods compile
+clean (`#revision`/`#dirty` are `attr_reader`-generated, native,
+invisible to `bc2cpp` the same way every other `attr_reader`/
+`attr_writer` in this codebase is). `#initialize`
+(`initialize; @data = {}; @revision = 0; @dirty = {}; end`) compiles
+clean -- zero arguments, no `super`, no block -- so its own provably-
+Fixnum `@revision` gets real `RData` struct embedding, the **sixth**
+target after `Game::Screen`/`Game::Transition`/`Game::State`/`Game::Map`/
+`Game::ChipSet` above. Checked directly against the exact
+`Game::Actor`-shaped embedding bug several follow-ups up: grepping the
+whole closed world for `Switches.new`/`Game::Switches.new`/`.allocate`/a
+subclass finds exactly two real construction sites
+(`Game::State#initialize`'s own `@switches = Switches.new`, and this
+project's own `scripts/export_nano7_map.rb` harness), both plain
+zero-argument `.new` calls, no bypass and no subclass anywhere.
+`@data`/`@dirty` (Hash literals) stay `UNKNOWN`.
+
+`Game::Variables` has 6 real bytecode-defined methods, but `#initialize`
+(`initialize(rpg2003 = false)`) has one non-mandatory optional argument
+-- the same established out-of-scope shape every other unembedded target
+documents -- so `drop_unsafe_embeddings` correctly refuses to embed this
+class's own provably-Fixnum `@revision` too. The other 5 methods compile
+clean, needing no new opcode work -- `#[]=`'s own clamp against
+`@max`/`@min` is a plain pair of `>`/`<` comparisons already covered by
+the existing `EQ`/`LT`/`LE`/`GT`/`GE` opcode work.
+
+**Full-sweep re-check** (all twenty-nine now-shipped targets): every
+previously-shipped class's own entry-point count matches exactly --
+`Game::Picture` (25), `Game::EnemyAction` (6), `Game::Screen` (41),
+`RPG2k::Window` (32), `Game::Transition` (32), `Game::Actor` (74),
+`Game::Party` (85), `RPG2k::Scene::MapViewer` (34), `Game::Battle` (72),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (32), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14), `RPG2k::Scene::SaveLoad` (12),
+`RPG2k::Scene::Order` (12), `Game::Shop` (11), `Game::Map` (12),
+`Game::EnemyAi` (9), `Game::ChipSet` (9) -- nothing moved; new:
+`Game::Timer` (7), `Game::Switches` (7), `Game::Variables` (5).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape (re-checked explicitly as
+part of this round's own verification discipline, not just assumed from
+the prior round's fix). `nm -C` on the resulting `libmruby.a` shows all
+19 new entry points (7 `Game__Timer_*_impl`, 7 `Game__Switches_*_impl`,
+5 `Game__Variables_*_impl`) present and externally linked, plus the new
+`Game__Switches_ivars`/`_free`/`_type` symbols (the generated struct has
+exactly the one predicted `mrb_int` field, `revision`, and
+`Game__Switches_initialize_impl` really calls `mrb_data_init`), with
+every already-shipped class's own symbol count unchanged.
