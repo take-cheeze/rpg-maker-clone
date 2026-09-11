@@ -3816,3 +3816,127 @@ follow-ups already document was never reached this round either. The
 `g++ -fsyntax-only`-plus-`nm` check above is the same "real, still-
 rigorous" fallback those two rounds already used for the identical
 reason.
+
+## Follow-up: RPG2k3::Scene::Battle, and this compiler's seventh severe bug -- the unfused `TCLASS`/`SCLASS`+`METHOD`+`DEF` opcode sequence for large class bodies
+
+The same round also adds `RPG2k3::Scene::Battle`
+(`mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb`) -- the real subclass
+(`class Battle < RPG2k::Scene::Battle`, a distinct top-level namespace
+from `RPG2k`, not the base UI battle scene itself, which is not a
+compiled owner) adding RPG2003's active-time-battle (ATB) gauge
+behavior. 7 of its own 15 real bytecode-defined methods compile clean,
+needing no new opcode work at all: `#active_atb?`, `#atb_accumulating?`
+(a Hash `#[]` GETIDX read, a MONO self-call into `#active_atb?`, and a
+POLY `Array#include?` send against the frozen `ATB_MENU_PHASES`
+class-constant array literal), `#gauge_battle?`, `#drive_battle_atb`
+(MONO self-calls into `#controllable?`/`#start_gauge_action`),
+`#start_gauge_action`, `#enter_atb_phase` (a MONO self-call into
+`#drive_battle_atb`), and `#controllable?`. The other 8 (`#update`,
+`#drive_battle_command`, `#enter_command_phase`, `#open_battle_options`,
+`#advance_actor`, `#prev_commandable_actor_index`,
+`#finish_round_animation`, `#interrupting_ready_combatant`) each hit a
+bare `super` (`OP_SUPER`) and/or a genuine Ruby block, both
+already-established out-of-scope shapes. Has no `#initialize` of its
+own (inherits the base class's), so there is no non-mandatory-arity gap
+to worry about, but also nothing to embed: confirmed directly against
+the real generated output, this class never appears in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic (it never `SETIV`s
+at all in any of its own methods -- every `@ui`/`@state` access here is
+a Hash `#[]`/`#[]=` read or write, not a direct instance-variable
+assignment).
+
+The round's own dedicated bug-fix pass had a known starting point,
+same as the immediately preceding round: the previous round's own
+bug-fix pass, while fixing the `SCLASS`/empty-class-body registry gaps,
+surfaced a further, related, but explicitly out-of-scope finding it
+deliberately left unfixed: `mrbc`'s own `codegen_def`/`codegen_defs`
+(`mrbgems/mruby-compiler/core/codegen.c`) fall back to an UNFUSED
+`TCLASS`/`SCLASS`+`METHOD`+`DEF` instruction sequence -- instead of the
+single fused `TDEF`/`SDEF` opcode the registry already recognized --
+whenever a class body's own child-irep index exceeds `0xff` (255), i.e.
+once a class/module body already contains more than 255 real
+method/block child ireps. That round confirmed this real, live, in
+already-shipped source: `RPG2k::Scene::Map#toned?` and `def
+self.tone_channel` (a real singleton method) both use this unfused
+shape, invisible to the registry the same way `SDEF` used to be before
+an earlier round fixed the fused case. `RPG2k::Scene::Map` was not a
+compiled owner at the time, so it was confirmed not yet exploitable --
+but real and general, not specific to that one class. This round
+actually fixes it, closing a seventh severe bug.
+
+**Confirmed with real bytecode disassembly**, not just the description
+above: `RPG2k::Scene::Map`'s own real `mrbc -v` disassembly shows,
+for the ordinary instance method (`def toned?`):
+```
+TCLASS  R1
+EXT2
+METHOD  R2      I[380]
+EXT2
+DEF     R1      :toned?   (R2)
+```
+and, for the singleton method (`def self.tone_channel`):
+```
+LOADSELF R1     (R0)
+SCLASS   R1
+EXT2
+METHOD   R2     I[379]
+EXT2
+DEF      R1     :tone_channel  (R2)
+```
+Real mrbc disassembly can interpose an `OP_EXT1`/`EXT2`/`EXT3`
+pseudo-instruction between two instructions `codegen.c` emits
+back-to-back with no logical gap -- each widens the *immediately
+following* real instruction's own operand width, and is guaranteed to
+appear here since the unfused path's own `METHOD` operand (a child-irep
+index > `0xff`, by construction of reaching this path at all) always
+needs one. Every other adjacency-based backward scan in this file had
+gotten away with a plain `idx-1`/`idx-2` check only because none of
+their own real, closed-world instances happened to need one -- this is
+the first fix in this file that genuinely can't.
+
+**The fix**: a new `when 'DEF'` case recognizes the real `METHOD`+`DEF`
+opcode pair (walking back past any number of `EXT1`/`EXT2`/`EXT3`
+pseudo-instructions to find the real opcode underneath, via a new
+`skip_ext_back` helper), verifies the register alignment
+`codegen_def`'s/`codegen_sdef`'s own unfused branch always emits
+(opener at `R<n>`, `METHOD` at `R<n+1>`, `DEF` back at `R<n>`
+referencing `(R<n+1>)`) rather than trusting adjacency alone, and then
+registers the method exactly the way the fused case would have: as an
+ordinary walkable `MethodDef` with a real `irep` for an instance method
+(the `TCLASS` case), or the same `"X.singleton"` pseudo-owner the
+`SDEF` fix already established for a singleton method (the `SCLASS`
+case) -- except this time there IS a real child irep to compile, so
+it's a real entry, not a synthetic placeholder. The receiver-resolution
+backward scan the `SCLASS`-opened-body fix already has, and the
+builtin-private-name visibility special case the `TDEF` case already
+has, were both extracted into small shared helpers
+(`resolve_singleton_receiver`, `resolve_def_visibility`) so this new
+case reuses them exactly rather than duplicating the logic -- a pure
+refactor of the already-shipped code, verified behavior-preserving by a
+direct byte-for-byte diff against the pre-refactor source before this
+round started.
+
+**Verified the fix actually changes the registry, not just in theory**:
+the real diagnostic's own registry dump now shows `:tone_channel` as
+`MONO (1 def: RPG2k::Scene::Map.singleton)` and `:toned?` as `MONO (1
+def: RPG2k::Scene::Map)` -- both real, walkable entries, exactly as
+intended, where before this fix neither appeared in the registry at
+all.
+
+**Full-sweep re-check** (all forty-five now-shipped targets across all
+three compiled gems, rebuilt with both this round's coverage and the
+unfused-`DEF` fix applied): every previously-shipped class's own
+entry-point count matches exactly, `RGSS::Sprite` and every `LCF::*`
+class included, unchanged; new: `Game::Enemy` (3), `RPG2k3::Scene::Battle`
+(7).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape across all three
+generated files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
+`rgss_compiled_gen.cpp`). `nm -C` on the resulting `libmruby.a` shows
+the 3 new `Game__Enemy_*_impl` and 7 new `RPG2k3__Scene__Battle_*_impl`
+entry points present and externally linked, no pseudo-owner
+(`.singleton`-suffixed) symbol ever linked anywhere, and every
+already-shipped class's own symbol count unchanged.
