@@ -21,6 +21,22 @@
 // iv_tbl, exactly matching the interpreter's own behavior and coexisting
 // fine with Sprite's native RData payload (mruby/data.h: an RData carries
 // both a `data` pointer and a normal `iv` table).
+//
+// RGSS::Plane (docs/adr/0139's own follow-up, this gem's second owner)
+// gets the same treatment for its own 6 real bytecode-defined methods
+// (opacity/zoom_x/zoom_y/blend_type/tone/color) -- plain Ruby readers
+// answering RGSS defaults for ivars only Plane's native #initialize
+// (mruby-rgss/src/lib.cxx) ever sets, the exact same shape as Sprite's
+// own identically-named methods above, reusing the same JMPNIL/ternary,
+// `||`, and owner-scope-first GETCONST codegen with zero new bc2cpp.rb
+// work. `attr_reader :bitmap, :ox, :oy, :z, :viewport` stays native/
+// uncompiled, as always. Plane has no #initialize of its own at all (the
+// native one is invisible to bc2cpp, same as every other native method),
+// so bc2cpp's own drop_unsafe_embeddings guard never even considers
+// RGSS::Plane either -- confirmed directly against the real diagnostic:
+// it never appears in bc2cpp's own "classes needing
+// MRB_SET_INSTANCE_TT" listing. Every GETIV/SETIV below stays on the
+// ordinary dynamic iv_tbl, same as Sprite.
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -54,6 +70,16 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, sprite, "src_rect", RGSS__Sprite_src_rect,
                     MRB_ARGS_NONE());
+
+  RClass* plane = mrb_class_get_under(M, rgss, "Plane");
+
+  mrb_define_method(M, plane, "opacity", RGSS__Plane_opacity, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "zoom_x", RGSS__Plane_zoom_x, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "zoom_y", RGSS__Plane_zoom_y, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "blend_type", RGSS__Plane_blend_type,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "tone", RGSS__Plane_tone, MRB_ARGS_NONE());
+  mrb_define_method(M, plane, "color", RGSS__Plane_color, MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {}

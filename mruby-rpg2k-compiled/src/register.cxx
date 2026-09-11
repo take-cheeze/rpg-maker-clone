@@ -883,36 +883,68 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Game::EnemyAction above, #initialize itself is one of them -- it takes
   // zero arguments (`def initialize; @r = @g = ... ; end`, no opts hash, no
   // opcode this compiler doesn't model), so bc2cpp's own
-  // drop_unsafe_embeddings guard does NOT refuse to embed here: 21 of
-  // Screen's own ivars (@frames, @shake_power/@shake_speed/@shake_frames/
-  // @shake_offset, @flash_r/@flash_g/@flash_b/@flash_power/@flash_strength/
-  // @flash_frames/@flash_total, @pan_x/@pan_y/@pan_tx/@pan_ty/@pan_step,
-  // @fade/@fade_target/@fade_frames/@fade_transition -- all provably
-  // Fixnum) are real struct fields on a `Game__Screen_ivars*` RData
-  // payload, per the whole-program `EMBED` diagnostic. That means
-  // #initialize's own compiled body calls mrb_data_init on `self` --
-  // which mruby's own mrb_data_init (mruby/data.h) asserts is already
-  // MRB_TT_DATA (`mrb_assert(mrb_data_p(v))`) -- so the class itself has
-  // to be tagged MRB_TT_DATA *before* any Game::Screen.new can ever run,
-  // exactly the same real requirement mruby-rgss/src/lib.cxx's own natively
-  // -implemented classes (Sprite, Rect, Viewport, ...) already meet via
-  // their own MRB_SET_INSTANCE_TT calls -- the first time a *-compiled gem
-  // needs this (neither mruby-lcf-compiled's nor this gem's own
-  // Picture/EnemyAction blocks above ever embed anything, so neither one
-  // has ever needed it before).
+  // drop_unsafe_embeddings guard does NOT refuse to embed here.
   //
-  // The other 14 real ivars (@r/@g/@b/@sat/@tr/@tg/@tb/@tsat -- their own
+  // Only 10 of Screen's own ivars are real struct fields on a
+  // `Game__Screen_ivars*` RData payload today -- @flash_r/@flash_g/
+  // @flash_b/@flash_power/@flash_strength/@flash_total, @pan_tx/@pan_ty,
+  // @fade/@fade_target -- confirmed directly against both the real
+  // `Game__Screen_ivars` struct definition and the per-field `// @X
+  // embedded (fixnum) -- direct struct field ...` markers bc2cpp emits at
+  // every read/write site in the real regenerated output, not assumed from
+  // #initialize's own source shape. That means #initialize's own compiled
+  // body calls mrb_data_init on `self` -- which mruby's own mrb_data_init
+  // (mruby/data.h) asserts is already MRB_TT_DATA
+  // (`mrb_assert(mrb_data_p(v))`) -- so the class itself has to be tagged
+  // MRB_TT_DATA *before* any Game::Screen.new can ever run, exactly the
+  // same real requirement mruby-rgss/src/lib.cxx's own natively-implemented
+  // classes (Sprite, Rect, Viewport, ...) already meet via their own
+  // MRB_SET_INSTANCE_TT calls -- the first time a *-compiled gem needs this
+  // (neither mruby-lcf-compiled's nor this gem's own Picture/EnemyAction
+  // blocks above ever embed anything, so neither one has ever needed it
+  // before).
+  //
+  // This paragraph used to claim 21 embedded ivars (also listing @frames,
+  // @shake_power/@shake_speed/@shake_frames/@shake_offset, @flash_frames,
+  // @pan_x/@pan_y/@pan_step, @fade_frames/@fade_transition) -- accurate
+  // when this class was first added here (all 21 genuinely looked
+  // Fixnum-only from #initialize's own literal SETIVs alone), but stale
+  // after a same-day, unrelated fix to `IvarLayout.join` (docs/adr/0139's
+  // own Game::Character follow-up, "fix live IvarLayout.join embedding
+  // bug") started correctly poisoning an ivar to UNKNOWN the moment *any*
+  // real write site anywhere else in the class -- not just #initialize --
+  // is not provably Fixnum, and nobody revisited this comment once that
+  // narrowed Screen's own real embedded set down to 10. Confirmed each of
+  // the 11 removed names really does have such a site, not merely assumed
+  // stale: e.g. `@pan_x = approach(@pan_x, @pan_tx, @pan_step)`/
+  // `@pan_y = approach(...)` in #update_pan (a private self-call's opaque
+  // return value -- also explains why @pan_x/@pan_y themselves may sit at
+  // a sub-pixel value mid-pan per that method's own comment, unlike
+  // @pan_tx/@pan_ty, which are only ever literal-`0`- or
+  // `h[:key] || default`-assigned and stay embedded); `@shake_power =
+  // Game.clamp(power, 0, 9)`/`@shake_offset = Game.clamp(newpos, ...)` (a
+  // POLY call's return value, same shape); `@shake_frames = frames`/
+  // `@frames = frames`/`@flash_frames = frames` (an opaque mandatory
+  // argument, never annotated or provably Fixnum at every call site); and
+  // `@fade_transition = style` (same argument shape). This is a
+  // documentation-drift finding only -- the actual embedded set, the
+  // MRB_SET_INSTANCE_TT call, and every GETIV/SETIV site's own choice of
+  // struct-field-vs-iv_tbl were already correct; only this comment's list
+  // of *which* ivars was wrong.
+  //
+  // The remaining real ivars (@r/@g/@b/@sat/@tr/@tg/@tb/@tsat -- their own
   // source is Game.clamp's return value or the NEUTRAL constant, neither
   // traced by bc2cpp's Fixnum-literal-only type inference;
   // @shake_continuous/@flash_continuous/@pan_locked -- booleans, a type
   // this compiler's embedding lattice doesn't model at all; @transition --
-  // a real Game::Transition object reference, never primitive) stay on the
-  // ordinary dynamic iv_tbl, read/written through the interpreter's own
-  // mrb_iv_get/mrb_iv_set exactly as before -- safe to mix with the 21
-  // embedded fields on the very same object: every compiled method's own
-  // GETIV/SETIV already knows, per ivar, whether it's an embedded struct
-  // field or an ordinary iv_tbl entry (bc2cpp's ivar_layout keyed lookup),
-  // so nothing here has to track which is which by hand.
+  // a real Game::Transition object reference, never primitive; plus the 11
+  // now-UNKNOWN ivars named above) stay on the ordinary dynamic iv_tbl,
+  // read/written through the interpreter's own mrb_iv_get/mrb_iv_set
+  // exactly as before -- safe to mix with the 10 embedded fields on the
+  // very same object: every compiled method's own GETIV/SETIV already
+  // knows, per ivar, whether it's an embedded struct field or an ordinary
+  // iv_tbl entry (bc2cpp's ivar_layout keyed lookup), so nothing here has
+  // to track which is which by hand.
   //
   // Only 2 real methods stay interpreted now: #erase/#show both take an
   // optional `frames = nil` argument, the same non-mandatory-arity gap
@@ -1108,18 +1140,37 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //
   // #initialize takes 5 mandatory arguments, no opts -- unlike Game::Picture
   // /RPG2k::Window's own #initialize, it compiles clean, so (like
-  // Game::Screen above) drop_unsafe_embeddings does NOT refuse to embed
-  // here: 5 of Transition's own ivars (@style, @frames, @width, @height,
-  // @frame -- all provably Fixnum, per bc2cpp's whole-program EMBED
-  // diagnostic) are real struct fields on a `Game__Transition_ivars*` RData
-  // payload, needing the same real MRB_SET_INSTANCE_TT(transition,
-  // MRB_TT_DATA) call Game::Screen's own block above already established
-  // the requirement for. The one other real ivar, @erase (a plain boolean
-  // set once in #initialize and read by #black_alpha/#vertical_stripe_rects
-  // /#horizontal_stripe_rects), stays on the ordinary dynamic iv_tbl --
-  // this compiler's embedding lattice models Fixnum/Symbol, not booleans --
-  // mixed safely with the 5 embedded fields on the very same object, same
-  // as Game::Screen's own non-Fixnum ivars.
+  // Game::Screen above) drop_unsafe_embeddings does NOT refuse this class
+  // outright -- but only 2 of Transition's own 5 provably-Fixnum ivars
+  // actually end up embedded: @width and @height are real struct fields on
+  // a `Game__Transition_ivars*` RData payload, needing the real
+  // MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA) call Game::Screen's own
+  // block above already established the requirement for. @style/@frames/
+  // @frame do NOT embed, despite being just as provably Fixnum (confirmed
+  // directly against the real generated output: all three write through a
+  // plain `mrb_iv_set`, with an explicit `// @width embedded (fixnum)`-
+  // style comment appearing only on @width/@height's own lines) -- this
+  // class carries a bare `attr_reader :style, :frames, :frame`
+  // (mruby-rpg2k/mrblib/game.rb, right above #initialize) that collides
+  // with exactly those three names, the same attr_reader/embedded-ivar
+  // shape `natively_exposed?`/`drop_unsafe_embeddings` (this ADR's own
+  // eighth severe bug fix, several rounds after this class was first added
+  // here) exists to catch, correctly vetoing just the three colliding
+  // ivars rather than the whole class. This paragraph originally described
+  // all 5 ivars as embedded because it predates that fix (confirmed by
+  // commit history: this class's own initial compile commit is timestamped
+  // before the `natively_exposed?` commit) -- a documentation-drift finding
+  // from a later adversarial sweep, the same "hand-written comment
+  // describes pre-fix behavior" shape this file's own LCF::MoveCommand
+  // writeup already found once, just against a partial ivar list instead
+  // of a whole stale MRB_SET_INSTANCE_TT call; the MRB_SET_INSTANCE_TT call
+  // itself was never wrong; only this comment's claim about *which* fields
+  // it covers was. The one other real, non-Fixnum ivar, @erase (a plain
+  // boolean set once in #initialize and read by #black_alpha/
+  // #vertical_stripe_rects/#horizontal_stripe_rects), stays on the ordinary
+  // dynamic iv_tbl regardless -- this compiler's embedding lattice models
+  // Fixnum/Symbol, not booleans -- mixed safely with the 2 embedded fields
+  // on the very same object, same as Game::Screen's own non-Fixnum ivars.
   //
   // A real, concrete case where the devirtualization-soundness fix
   // (compiles_clean?, this ADR's own follow-up above) actually matters for
