@@ -2362,8 +2362,26 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // `(0...SCREEN_BLOCKS).each do |b| ... end`-shaped, BLOCK/SENDB);
   // #digits_of uses one (`(n - 1).downto(0) do |i| ... end`); #editor_value
   // uses one (`@editor[:digits].reduce(0) { |a, d| ... }`); and
-  // #open_map_viewer has a real `begin ... rescue StandardError => e
-  // ... end` (RESCUE/RAISEIF/EXCEPT).
+  // #open_map_viewer has TWO independent gaps, one per branch of its own
+  // `if @state.map && ... / ... else ... end` -- a documentation-accuracy
+  // check re-confirming every "rescue" comment in this ADR against its
+  // own real generated #error marker (docs/adr/0139's own follow-up)
+  // caught the previous, incomplete version of this comment naming only
+  // the second: the `else` branch's `map = begin ... rescue
+  // StandardError => e ... end` (RESCUE/RAISEIF/EXCEPT) is real, but the
+  // `if` branch's own `Scene::MapViewer.new(@parent, @state, map:
+  // @state.map)` hits a completely different, unrelated gap first -- a
+  // keyword-argument call site (`#error SEND/SSEND :new has a splat
+  // and/or keyword argument list`, the same shape this ADR's own third-
+  // severe-bug follow-up already named and fixed at the root). Confirmed
+  // directly against the real generated output, not assumed: both
+  // `#error` markers are present, in program order, before either
+  // `RESCUE`/`RAISEIF`/`EXCEPT` marker. Both are already-established,
+  // permanently-out-of-scope shapes on their own; naming only one matters
+  // here because a future round that added real RESCUE/RAISEIF/EXCEPT
+  // opcode support would still find this method blocked by the unrelated
+  // keyword-argument gap in its own untaken branch -- worth knowing
+  // before spending that work expecting this method to unlock.
   //
   // Every method below is `private` in the real interpreted source
   // *except* the first 2 (#update, #dispose -- debug_menu.rb's own single

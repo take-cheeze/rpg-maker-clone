@@ -34,10 +34,12 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   # devirtualization decisions need to see every gem that could define a
   # colliding method name, not just mruby-rpg2k's own mrblib, even though
   # ONLY_OWNERS below narrows what actually gets *emitted* to Game::Picture
-  # alone.
-  closed_world_srcs = Dir["#{dir}/../mruby-rpg2k/mrblib/**/*.rb"] +
-                       Dir["#{dir}/../mruby-lcf/mrblib/*.rb"] +
-                       Dir["#{dir}/../mruby-rgss/mrblib/*.rb"]
+  # alone. Computed by compiled_gems.rb's own closed_world_mrblib_srcs
+  # (required above), the same one mruby-lcf-compiled's/
+  # mruby-rgss-compiled's own mrbgem.rake calls too -- see that helper's
+  # own comment for why this stopped being three separately hand-
+  # maintained literals.
+  closed_world_srcs = closed_world_mrblib_srcs("#{dir}/..")
 
   # RGSS's own C++-implemented methods are invisible to closed_world_srcs
   # above (no .rb source for them) -- see mruby-lcf-compiled/mrbgem.rake's

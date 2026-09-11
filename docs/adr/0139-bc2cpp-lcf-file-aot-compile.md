@@ -1698,8 +1698,11 @@ judged out of this prototype's "narrow mechanical translation" scope
 rather than added speculatively for the one method it would unlock here.
 The other 5 gaps: `#max_id`/`#refresh_switch_or_variable` (two Ruby
 blocks each), `#digits_of` (one), `#editor_value` (one), and
-`#open_map_viewer` (a `rescue StandardError` clause). Neither class's
-`#initialize` compiles, so neither gets any ivar embedded.
+`#open_map_viewer` -- which actually has *two* independent gaps, one per
+branch of its own `if`/`else`, a `rescue StandardError` clause plus an
+unrelated keyword-argument call site; see this ADR's own later follow-up
+for the full correction to this comment. Neither class's `#initialize`
+compiles, so neither gets any ivar embedded.
 
 **A real build-system bug, found integrating this round, not either
 agent's own work.** Both `RPG2k::Scene::SkillMenu` and
@@ -5531,3 +5534,623 @@ symbol set at all, confirming the embedding-none conclusion directly
 rather than assuming it: no `RGSS__Tilemap_ivars` struct, no
 `MRB_SET_INSTANCE_TT` call, and the one compiled method reads/writes
 `@autotiles` through the ordinary dynamic `iv_tbl`.
+
+## Follow-up: a dedicated cross-gem-devirtualization-soundness sweep -- one real drift-risk fix, one documentation-accuracy fix, no new live bug, MRB_SET_INSTANCE_TT re-confirmed clean
+
+A dedicated bug-hunt round, explicitly *not* a coverage round, targeting
+three angles this ADR's own history had never specifically audited:
+whether the two (now three) compiled gems' independent `bc2cpp.rb`
+invocations could disagree about a name's true whole-program MONO/POLY
+status; whether every already-shipped "stays interpreted due to a
+`rescue` clause" comment actually names the real, complete reason; and a
+plain re-diff of the `MRB_SET_INSTANCE_TT` diagnostic against both
+`register.cxx` files now that the owner count has grown to 59 across
+three gems (`mruby-lcf-compiled`, `mruby-rpg2k-compiled`,
+`mruby-rgss-compiled`).
+
+**Angle 1: cross-gem devirtualization soundness.** This ADR's own
+earlier follow-up ("cross-gem devirtualization") built the whole
+mechanism (dropping `_impl`'s own `static`, `OTHER_OWNERS`/
+`OTHER_DECLS_HEADER`, `emit_decls_header`) and verified it end to end,
+but at the time only two gems existed with 2 non-overlapping owners
+total, and it found "no real cross-gem devirtualized call actually
+appears in either shipped target's own output" -- a mechanism verified
+sound with nothing yet to bite into. This round re-ran that same
+question for real against the *current* 59-owner, three-gem program,
+not by re-reading that old conclusion and assuming it still holds.
+
+Structural check first: each of the three `mrbgem.rake` files feeds
+`bc2cpp.rb` an identical whole-program `closed_world_srcs` (every one of
+`mruby-rpg2k`/`mruby-lcf`/`mruby-rgss`'s own `mrblib`, confirmed
+byte-identical across all three files' own literal `Dir[...]`
+expressions before this round touched them) and an identical
+`NATIVE_SRCS` (`mruby-rgss/src/*.cxx` plus `core_native_srcs`). Since
+`build_registry`'s own MONO/POLY resolution is a pure function of that
+input, and all three invocations feed it the exact same input, the
+three gems' own registries are *structurally guaranteed* to reach the
+same MONO/POLY conclusion for any given name -- not merely observed to
+agree today. `ONLY_OWNERS`/`OTHER_OWNERS` (`compile_send`'s own guard,
+`target && @only_owners && !@only_owners.include?(target.owner) ->
+target = nil unless @other_owners&.include?(target.owner)`) then only
+gates *emission*, never registry construction, and a real check
+confirmed the three gems' owner lists (`BC2CPP_COMPILED_GEMS`) are
+disjoint (59 unique owners, zero duplicates) -- so `only_owners ∪
+other_owners` always equals the full 59-owner set from every one of the
+three invocations' own point of view.
+
+**A real, previously-unenforced drift risk, fixed.** Unlike
+`BC2CPP_COMPILED_GEMS` (owners) and `core_native_srcs` (native names),
+both already centralized in `tools/bc2cpp/compiled_gems.rb` specifically
+to remove this class of risk, `closed_world_srcs` was still three
+separate hand-typed `Dir[...] + Dir[...] + Dir[...]` literals, one
+per `mrbgem.rake`. Confirmed byte-identical today, but nothing enforced
+that: a future round adding a fourth mrblib directory to the closed
+world (or reordering/typo'ing one of the three) could edit one or two
+files and miss the third, with **no build error at all** -- Rake has no
+way to notice that gem A's own registry now sees a different whole
+program than gem B's, silently reintroducing exactly the soundness gap
+`OTHER_OWNERS`/`OTHER_DECLS_HEADER` exists to close. Fixed by extracting
+a new `closed_world_mrblib_srcs(gems_root)` into `compiled_gems.rb`
+(mirroring `core_native_srcs`'s own shape) and pointing all three
+`mrbgem.rake` files at it instead of their own inlined literal. Verified
+mechanical, not behavioral: `closed_world_mrblib_srcs("#{dir}/..")`
+returns the exact same array (`==`, checked directly) as the literal it
+replaced, and a real, full `bc2cpp.rb` run for all three gems (their own
+`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS`/`SKIP_UNSUPPORTED=1`
+reproduced exactly, against this worktree's own real `mrblib` source and
+a real host `mrbc`) before and after this refactor produced
+byte-identical generated output in all three files (the only diff being
+the `OUT_DIR`-specific path string inside each run's own scratch
+directory's `#include` line, an artifact of running the same script
+twice into two different output directories, not of the refactor).
+
+**Then the real question: does any live call site actually cross a
+gem boundary today?** Ran all three gems' real `bc2cpp.rb` invocations
+(env reproduced exactly from each `mrbgem.rake`, including the full,
+real `NATIVE_SRCS` -- 545 names, 39 flipped MONO-to-POLY, matching this
+ADR's own established scale, not the ~150/19 a first pass got from an
+freshly-cloned worktree's uninitialized `3rd/mruby` submodule; caught
+and fixed with the same plain `git submodule update --init` this ADR's
+own prior round already established as standard practice before trusting
+any diagnostic number from a fresh worktree) and grepped every `MONO`/
+`TYPED` devirtualization comment in all three generated files for a
+target whose owner isn't that file's own gem. Every single one --
+`Game::*`/`RPG2k::*`/`RPG2k3::Scene::Battle` targets inside
+`rpg2k_compiled_gen.cpp`, `RGSS::Window` inside `rgss_compiled_gen.cpp`,
+none at all inside `lcf_compiled_gen.cpp` -- stays within its own gem's
+owner set. **Zero real cross-gem devirtualized calls exist in the
+current build**, the same "mechanism verified sound, nothing to bite
+into yet" result as the original follow-up, now re-confirmed at nearly
+30x the owner count.
+
+The closest real near-miss, checked directly rather than left to
+inference: `LCF::Array1D` (an `mruby-lcf-compiled` owner) defines
+`#delete`, and three `mruby-rpg2k-compiled` methods call `.delete` on an
+ivar that is plausibly an `Array1D` at runtime -- `Game::Actor
+#forget_skill`'s `@skills.delete(skill_id)` (this tool's own long-
+standing README example), `Game::Battle#cure_state`, and `Game::Party
+#promote_to_leader`. With the full, real `NATIVE_SRCS` in place, `:delete`
+correctly comes back `POLY (2 defs: LCF::Array1D, <native>)` in the
+registry dump (`FLIP :delete` logged) -- colliding with core `Array#
+delete`/`Hash#delete`, the exact same already-fixed gap this ADR's own
+"mruby core native method registry extraction" follow-up named -- so all
+three call sites correctly compile to ordinary `mrb_funcall(M, r, "delete",
+1, ...)` POLY dispatch, confirmed directly in the regenerated
+`rpg2k_compiled_gen.cpp`, not a MONO direct call into `LCF::Array1D`'s
+own `_impl`. (The first, submodule-incomplete pass above did show a
+false-positive `MONO :delete -> LCF::Array1D#delete, direct C++ call` at
+all three sites -- an artifact of that pass's own incomplete `NATIVE_SRCS`
+missing the entire core collision list, not a real bug in this project;
+included here only as the concrete reason this round re-ran the check
+with the submodule properly initialized before trusting the result, the
+same lesson this ADR's own `RGSS::Tilemap` follow-up already logged.)
+
+**Angle 2: does every "stays interpreted due to a `rescue` clause"
+comment name the real, complete reason?** Checked a representative
+sample against each one's own real generated `#error` markers rather
+than trusting the existing prose: `RPG2k::Scene::SaveLoad#load_face_
+bitmap`/`#slot_timestamp`, `RPG2k::Scene::SkillMenu#load_face_bitmap`/
+`#play_skill_sound_effect`, `RPG2k::Scene::ChipsetEditor#save_to_disk`,
+and all four of `RPG2k::Scene::Base`'s own rescue-tagged methods
+(`#make_windowskin`, `#play_system_se`, `#screen_width`,
+`#screen_height`). Every one of these hits exactly the documented
+`EXCEPT`/`RESCUE`/`RAISEIF` triple and nothing else -- the existing
+comments are accurate for all of them.
+
+**One was not: `RPG2k::Scene::DebugMenu#open_map_viewer`.** The existing
+comment (in `docs/adr/0139` itself, `tools/bc2cpp/compiled_gems.rb`, and
+`mruby-rpg2k-compiled/src/register.cxx`, all three) named only "a real
+`begin ... rescue StandardError => e ... end` (RESCUE/RAISEIF/EXCEPT)".
+Real, but incomplete: the method's real source is `if @state.map && ...
+then @parent.push Scene::MapViewer.new(@parent, @state, map:
+@state.map); return else map = begin @parent.load_map(@map_id) rescue
+StandardError => e ... end; ...; end` -- an `if`/`else` with one
+independent gap *per branch*. The `else` branch really does hit `EXCEPT`/
+`RESCUE`/`RAISEIF`, confirmed directly. But the `if` branch's own
+`Scene::MapViewer.new(@parent, @state, map: @state.map)` hits a
+completely different, unrelated gap *first* (earlier in program order,
+in the branch actually taken when the current map is already loaded):
+`#error SEND/SSEND :new has a splat and/or keyword argument list (n=2|
+nk=1)` -- the exact opcode-shape this ADR's own third-severe-bug
+follow-up (the silently-dropped-keyword-argument bug) already named and
+fixed at the root in `compile_send`. Both gaps are independently real
+and independently already-established out-of-scope shapes -- neither is
+new, and nothing about this method was ever silently miscompiled (both
+correctly emit `#error` and the whole method correctly falls back to
+the interpreter under `SKIP_UNSUPPORTED=1`). The only real problem was
+the comment naming just one of the two: read at face value, it implies
+a future round adding real `RESCUE`/`RAISEIF`/`EXCEPT` opcode support
+would unlock this method the way the ADR's own text already speculates
+for `RPG2k::Scene::ItemMenu`/`DebugMenu`/`Menu`'s own shared `SUPER`
+gap -- but it would not, since the `if` branch's own keyword-argument
+call site would still block it. Fixed all three comments to name both
+gaps and their exact branch.
+
+**Angle 3: a fresh `MRB_SET_INSTANCE_TT` re-diff.** Re-ran the real
+whole-program diagnostic (no `ONLY_OWNERS`, full `NATIVE_SRCS`) against
+the current 59-owner closed world. "Classes needing
+`MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)`": `Game::Transition`,
+`Game::Screen`, `Game::Interpreter`, `RPG2k::Scene::VehicleWorld`,
+`RPG2k::Scene::Map::LRUBitmapCache`. Of these, `Game::Interpreter` and
+`RPG2k::Scene::Map::LRUBitmapCache` are not compiled owners at all (no
+entry in `BC2CPP_COMPILED_GEMS`), so correctly have no registration
+anywhere. The other three all have a real `MRB_SET_INSTANCE_TT` call,
+confirmed by grepping both `register.cxx` files directly:
+`mruby-rpg2k-compiled/src/register.cxx` has `MRB_SET_INSTANCE_TT(screen,
+MRB_TT_DATA)`, `MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA)`, and
+`MRB_SET_INSTANCE_TT(vehicle_world, MRB_TT_DATA)`. **Clean -- no drift
+found**, this round's own three added owners (`RGSS::Window`/
+`RGSS::Tilemap` from the parallel RGSS round merged in just before this
+sweep, plus the accumulated 59-owner total) included.
+
+**Net result of this round:** one real, previously-unenforced structural
+drift risk closed (`closed_world_mrblib_srcs`, zero behavioral change,
+confirmed byte-identical generated output before/after across all three
+gems); one real documentation-accuracy fix (`#open_map_viewer`'s own
+two-gap comment, three locations); angle 3 re-confirmed clean. No new
+live miscompilation bug found -- the closest candidate (the submodule-
+incomplete false-positive `:delete` cross-gem MONO) was a defect in this
+round's own first test pass, not in the project, and was caught and
+discarded before being reported as one.
+
+## Follow-up: RGSS::Bitmap, and a genuinely new finding -- an `SDEF` (`def self.x`) singleton method is registered for MONO/POLY soundness but can never itself be a compile target, independent of its own body
+
+Adds `RGSS::Bitmap` (`mruby-rgss/mrblib/lib.rb`, right below
+`RGSS::Window`) as `mruby-rgss-compiled`'s fifth owner. This is a
+noticeably larger and more varied target than any of the gem's first
+four: a nested `LoadError` exception class, a real `#initialize` with an
+optional second argument *and* real `.each`-with-block logic past its own
+arity gate, a `def self.x` singleton method, and a private helper ending
+in `rescue`. Read the real class body directly (lines 611-761) rather
+than trusting a summary of it, per this round's own task framing -- and
+one part of that summary's own premise turned out to be wrong once
+checked against the real diagnostic (below).
+
+Only 2 of `RGSS::Bitmap`'s own real bytecode-defined methods compile
+clean, confirmed directly against the real `== compiled entry points ==`
+listing: `#font` (`@font ||= Font.new`) and `#font=` (`@font = f`).
+`#font`'s own `||=` needs no new opcode work -- the same
+GETIV/JMPIF-guarded-GETCONST+SEND+SETIV lowering already verified for
+Sprite's/Window's own `@tone ||=`/`@cursor_rect ||=`, `Font` resolving at
+the `RGSS` scope exactly like `Tone`/`Color`/`Rect` before it (the first
+protected `bc2cpp_const_try` scope, not the unprotected top-level
+fallback `Array` needed in the `RGSS::Tilemap` follow-up immediately
+above). `#font=` is a plain one-argument `SETIV` setter, confirmed clean
+with zero opcode surprises.
+
+**`#initialize(f, s = nil)`** has one real optional argument, hitting the
+same `pure_mandatory_arity?` gate `RGSS::Window#initialize` already hits
+(`#error RGSS::Bitmap#initialize has non-mandatory arguments
+(optional/rest/keyword/block) -- not in this prototype's supported
+subset`), confirmed directly against the real generated output before
+`SKIP_UNSUPPORTED=1` drops it. Its own real `[GAME_DIR,
+RTP_DIR].each do |d| ... end` block logic past that gate is never even
+reached by codegen -- the non-mandatory-arity `#error` fires first and
+unconditionally, the same "gate fires before the body is ever inspected"
+shape this ADR's own `RGSS::Window`/`alias_method` follow-up already
+established for a different method.
+
+**The private `#init_from_archive(f, s)`** has pure mandatory arity (2
+args) but its own real body hits three distinct unsupported opcodes in
+sequence -- confirmed via its own real markers rather than assumed to be
+simply "the same rescue gap" other classes hit: `Bitmap.extensions.each
+do |ext| ... end` (a real block argument) emits `#error unhandled opcode
+BLOCK` immediately followed by `#error unhandled opcode SENDB` -- both
+*before* codegen ever reaches this method's own trailing `rescue
+StandardError => e ... end`, which separately emits `#error unhandled
+opcode EXCEPT` then `#error unhandled opcode RESCUE`. The `.each` block is
+the actual first gap this method hits, not the rescue clause alone --
+this round's own task explicitly asked for the real marker rather than an
+assumed match to the established rescue/RAISEIF/EXCEPT gap, and the real
+marker turned out to name a second, independent unsupported opcode pair
+ahead of it.
+
+**The nested `RGSS::Bitmap::LoadError#initialize(path, reason)`** has
+pure mandatory arity and its own `"Failed to init bitmap: #{path}
+(#{reason})"` string interpolation compiles clean (`STRING`/`STRCAT`,
+`mrb_ensure_string_type`/`mrb_str_concat`), but the trailing
+`super(...)` call itself hits `#error unhandled opcode SUPER` -- the
+same, already-documented `SUPER` gap every other
+`#initialize`-calling-`super` in this codebase hits (confirmed here via
+this method's own real marker, not assumed identical merely because the
+shape -- a nested exception class formatting a message into `super` --
+looks familiar). One real wrinkle worth naming precisely:
+`RGSS::Bitmap::LoadError`'s own registry owner string is
+`RGSS::Bitmap::LoadError`, distinct from `RGSS::Bitmap` -- nested classes
+get their own, separately-scoped owner name, not their enclosing class's
+-- so with only `RGSS::Bitmap` in `ONLY_OWNERS` (this round's actual
+`owners:` addition) this method is never even emitted, compiled or
+`#error`-marked. The `SUPER` marker quoted above was confirmed by adding
+`RGSS::Bitmap::LoadError` to `ONLY_OWNERS` in a separate, isolated
+diagnostic run, not assumed from the shape alone; `RGSS::Bitmap::
+LoadError` is not added to this round's real `owners:` list, since
+nothing on it compiles either way.
+
+**`self.failure_reason(f)` -- the real finding this round's own task
+asked to verify rather than assume.** The task's own framing suggested
+the established `SDEF` registry fix (this ADR's own `RGSS::Window`
+follow-up, and the earlier fix documented around this file's
+`RGSS::Timeout`/`SCLASS` writeup) "should make it visible to the registry
+as a `.singleton`-owned method" -- true, but visibility to the registry
+and eligibility to actually be compiled turned out to be two different
+things, confirmed directly rather than assumed identical. `def
+self.failure_reason(f)` is written as a bare `def self.x`, *not* nested
+inside a `class << self ... end` block the way `attr_writer :extensions`/
+`def extensions` above it are -- confirmed directly via a real `mrbc -v`
+disassembly of the class body: `failure_reason` compiles to a single
+fused `SDEF R1 :failure_reason I[3]` instruction, while `extensions`
+compiles to an ordinary `TDEF R1 :extensions I[0]` nested inside a real
+`SCLASS`-opened child body. bc2cpp.rb's own `SDEF` case registers its
+`MethodDef` with `irep: nil` *unconditionally*, by explicit design --
+its own comment states "there is no separate body to recurse into" for
+this fused opcode, unlike `SCLASS`'s own body, which the registry walk
+does genuinely recurse into (real `TDEF`s, real irep labels, exactly how
+`self.extensions` gets a real one). `compile_all`'s own leaf worklist is
+built from `@owner_of.keys`, and `@owner_of[d.irep] = d if d.irep` only
+inserts a `MethodDef` that has a real `irep` -- so `self.failure_reason`
+is *never inserted into that worklist at all*, regardless of
+`ONLY_OWNERS`. Confirmed for real, not inferred from the source-level
+argument alone: with `RGSS::Bitmap.singleton` added to `ONLY_OWNERS` in
+an isolated diagnostic run, `failure_reason` appears in the real
+whole-program registry dump (`MONO :failure_reason (1 def:
+RGSS::Bitmap.singleton)`, exactly as the task's own framing expected) but
+in *neither* the "skipped (unsupported)" summary *nor* the generated
+`.cpp` file at all -- zero matches for `failure_reason` anywhere in the
+real generated output, with or without `SKIP_UNSUPPORTED`. This is a
+materially different (and stronger) kind of non-compilation than an
+arity or opcode gap: those still produce a `#error`-marked stub that
+`compile_method` actually attempted and rejected (visible in "skipped"
+under `SKIP_UNSUPPORTED=1`, or as a real `#error` line in the `.cpp`
+without it); `self.failure_reason` is never attempted by `compile_method`
+at all, so its own body's real shape (`if`/early `return`/array `<<`/
+ternary-in-array-push/`.join`/string interpolation -- every one of them
+individually a supported shape elsewhere in this closed world) is never
+even a factor. Confirmed this is not special to `failure_reason`'s own
+body: this is a structural property of every bare `def self.x` in this
+program (also observed for real, same `SDEF`+`irep: nil` shape, on
+`RGSS::Bitmap.singleton#extensions=`'s sibling case below), not a
+one-off quirk.
+
+By contrast, **`self.extensions`** (inside the real `class << self ...
+end` block, the same `SCLASS`-recursed body `attr_writer :extensions`
+lives in) *is* a real, individually compilable leaf -- confirmed: it
+appears in the real generated output as
+`RGSS__Bitmap_singleton_extensions_impl` (a plain `@extensions ||
+EXTENSIONS` reader, the same nil-guarded-`||`-default shape as
+`RGSS::Window#blend_type`/`#stretch`) once `RGSS::Bitmap.singleton` is
+added to `ONLY_OWNERS` in an isolated check. Neither `self.extensions`
+nor `self.failure_reason` is added to this round's real `owners:` list,
+though, since no `owners:` entry in this entire project has ever named a
+`.singleton` pseudo-owner as an actual emission target -- every prior
+follow-up's own full-sweep verification in this file confirms "no
+pseudo-owner (`.singleton`-suffixed) symbol ever linked anywhere" -- and
+this round keeps that precedent rather than being the first exception for
+`RGSS::Bitmap` alone. `attr_writer :extensions`'s own `extensions=` is
+`Module#attr_writer`'s native/C-installed setter (no bytecode `DEF` at
+all, the same as every other `attr_writer`/`attr_accessor`-defined method
+elsewhere in this codebase), invisible to bc2cpp regardless of owner
+scoping either way.
+
+**Embedding: none**, confirmed directly against the real diagnostic --
+`RGSS::Bitmap` never appears in bc2cpp's own "classes needing
+`MRB_SET_INSTANCE_TT`" listing. `drop_unsafe_embeddings`'s own
+class-level gate requires a *compiling* `#initialize` with pure mandatory
+arity before embedding anything on a class at all; `RGSS::Bitmap#initialize`
+doesn't compile (non-mandatory arity, the same gate `RGSS::Window`'s own
+`#initialize` already hits), so nothing on `RGSS::Bitmap` is ever even
+proposed as an embedding candidate. `@font` is a `Font` object reference
+(never `Fixnum`/`Symbol`) and would not be a `FixnumEmbed`/`SymbolEmbed`
+candidate regardless of that gate either way -- confirmed, not merely
+assumed from its type: `@font` never appears in the real "ivar embedding"
+or "known-ivar-class hints" sections at all (it is only ever read/written
+through `||=`/plain assignment, never Fixnum-literal-assigned, so
+`IvarLayout` doesn't even propose it as a `CLASS_HINT` the way
+`RGSS::Window#cursor_rect`'s own `@cursor_rect` does).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` pipeline was
+run end to end in this worktree, hitting the same environment gap this
+ADR's own `RGSS::Tilemap` follow-up (immediately above) already
+documents -- `mruby-rgss`'s real LVGL final-link dependency has no build
+step in this environment -- so this round used that same follow-up's own
+established fallback: `git submodule update --init` for `3rd/mruby` and
+its own real dependencies (`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`,
+`3rd/mruby-stringio`, `3rd/uni-algo`, `3rd/stb`, all uninitialized in this
+fresh worktree, kept out of this round's own diff), then a real host
+`mrbc` built from inside `3rd/mruby` itself (`HOST_CXX=c++`, `HOST_CC`
+left as plain `cc` -- the same two fixes the `RGSS::Tilemap` follow-up's
+own writeup already worked out and re-verified live here rather than
+re-derived from scratch). With a real host `mrbc` (`mruby 4.0.0`) built
+clean, `tools/bc2cpp/bc2cpp.rb` was run directly against it
+(`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` computed programmatically
+from the real, already-edited `compiled_gems.rb` itself -- `BC2CPP_
+COMPILED_GEMS.fetch('mruby-rgss-compiled')[:owners]` and the other two
+gems' own `owners:` flattened for `OTHER_OWNERS` -- not hand-copied, so
+this run reflects exactly what `mruby-rgss-compiled/mrbgem.rake`'s own
+`file` rule would compute) over the whole `mruby-rpg2k`+`mruby-lcf`+
+`mruby-rgss` closed world, `SKIP_UNSUPPORTED=1`. The real `==
+compiled entry points ==`, "skipped (unsupported)", and "classes needing
+`MRB_SET_INSTANCE_TT`" listings quoted above all came from that real run.
+Grepped the real regenerated `rgss_compiled_gen.cpp` for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape: zero matches. Re-ran a
+second time with `RGSS::Bitmap.singleton`/`RGSS::Bitmap::LoadError` added
+to `ONLY_OWNERS` (an isolated diagnostic-only configuration, never the
+real `owners:` this round ships) specifically to get the real markers for
+`self.failure_reason`/`self.extensions`/`LoadError#initialize` quoted
+above, rather than inferring them from the plain-`RGSS::Bitmap` run's own
+silence about them.
+
+`g++ -fsyntax-only -std=gnu++17 -Wall -Wextra -Winfinite-recursion`
+against the real edited `register.cxx` plus that real generated file and
+the real mruby headers (`3rd/mruby/include`, the real generated `mruby/
+presym/id.h` from the plain host `mrbc` build above): **zero errors, zero
+`-Winfinite-recursion` warnings** (only the same pre-existing, harmless
+`-Wunused-but-set-variable` warnings every other compiled method here
+already has, `RGSS::Bitmap#font`/`#font=` included). Compiled
+`register.cxx` to a real object file and confirmed with `nm -C`:
+`RGSS__Bitmap_font_impl`/`RGSS__Bitmap_font__impl` are present and
+externally linked (`T`), their `mrb_get_args` wrappers
+`RGSS__Bitmap_font`/`RGSS__Bitmap_font_` correctly stay local (`t`), and
+`RGSS::Bitmap` appears in no embedding-struct symbol set at all,
+confirming the embedding-none conclusion directly rather than assuming
+it: no `RGSS__Bitmap_ivars` struct, no `MRB_SET_INSTANCE_TT` call, and
+both compiled methods read/write `@font` through the ordinary dynamic
+`iv_tbl`.
+## Follow-up: RGSS::Font investigated, and NOT added -- the `.singleton` pseudo-owner mechanism confirmed sound but structurally incapable of ever emitting a real singleton-method entry point
+
+A parallel round investigated `RGSS::Font` (`mruby-rgss/mrblib/lib.rb`,
+line 768) as `mruby-rgss-compiled`'s fifth owner. Read in full from the
+real source rather than assumed from a summary:
+
+```ruby
+class Font
+  @default_name = "Arial"
+  @default_size = 22
+  @default_bold = false
+  @default_italic = false
+  @default_shadow = false
+  @default_outline = true
+  @default_color = Color.new(255, 255, 255, 255)
+  @default_out_color = Color.new(0, 0, 0, 128)
+  # Font file used when the project ships none. See #default_path below.
+  @default_path = nil
+
+  class << self
+    attr_accessor :default_name, :default_size, :default_bold,
+                  :default_italic, :default_shadow, :default_outline,
+                  :default_color, :default_out_color
+
+    # Path to a font file draw_text falls back to when the project itself
+    # ships none ... (attr_accessor :default_path)
+    attr_accessor :default_path
+
+    def exist?(name)
+      true
+    end
+  end
+
+  attr_accessor :name, :size, :bold, :italic, :outline, :shadow,
+                :color, :out_color
+
+  def initialize(name = Font.default_name, size = Font.default_size)
+    @name = name
+    @size = size
+    @bold = Font.default_bold
+    @italic = Font.default_italic
+    @shadow = Font.default_shadow
+    @outline = Font.default_outline
+    c = Font.default_color
+    @color = Color.new(c.red, c.green, c.blue, c.alpha)
+    oc = Font.default_out_color
+    @out_color = Color.new(oc.red, oc.green, oc.blue, oc.alpha)
+  end
+end
+```
+
+**Conclusion up front: `RGSS::Font` was NOT added to `owners:` in
+`tools/bc2cpp/compiled_gems.rb`.** Every real, bytecode-defined method on
+this class -- `#initialize` and the `class << self`-opened `.exist?` --
+was confirmed, against the real diagnostic rather than assumed, to be
+either out of this prototype's supported subset or structurally
+incapable of ever being *emitted* as a compiled entry point under the
+current `ONLY_OWNERS` mechanism, however this gem's owners list is
+written. `attr_accessor :name, :size, :bold, :italic, :outline, :shadow,
+:color, :out_color` (8 instance-level names) and the `class << self`'s
+own `attr_accessor :default_name, ..., :default_path` (8 more,
+class-level) stay native/uncompiled, as always -- neither is a real
+bytecode-defined method. Adding this class as an owner would add zero
+real compiled coverage while adding a permanent maintenance liability
+(an owners-list entry with nothing behind it), so this round leaves
+`owners: %w[RGSS::Sprite RGSS::Plane RGSS::Tilemap RGSS::Window]`
+unchanged and documents the investigation here instead, per this ADR's
+own explicit guidance for exactly this outcome.
+
+**`#initialize(name = Font.default_name, size = Font.default_size)`
+does not compile**, confirmed directly against the real `#error` marker
+(`SKIP_UNSUPPORTED=0`), not merely inferred from its two optional
+arguments:
+```
+#error RGSS::Font#initialize has non-mandatory arguments (optional/rest/keyword/block) -- not in this prototype's supported subset
+```
+The same `pure_mandatory_arity?` gap every other optional-argument
+`#initialize` in this codebase already hits -- fires unconditionally on
+the signature, before any of the body's own SEND instructions (the four
+`Font.default_*` class-method calls, the two `Color.new` constructor
+calls) are ever inspected. Both default expressions being real calls
+into another class's own singleton accessor (`Font.default_name`,
+`Font.default_size`), rather than literal defaults, makes no difference
+here -- `pure_mandatory_arity?` only ever inspects the `ENTER` opcode's
+own mandatory/optional counts, never the default-value expressions
+themselves, so a non-trivial default drops the method exactly the same
+way a trivial literal default would.
+
+**`.exist?(name)`, the `class << self`-opened singleton method, IS
+correctly visible to the whole-program registry** -- the SCLASS/
+`"X.singleton"` pseudo-owner mechanism this ADR's own `Game::Vehicle`
+follow-up (its sixth severe bug fix, several rounds up) added is
+confirmed live and working here, not just in theory. The real registry
+dump shows:
+```
+MONO  :exist?  (1 def: RGSS::Font.singleton)
+```
+-- `RGSS::Font.exist?` really is the *sole* definition of `:exist?`
+anywhere in the whole closed world (`mruby-rpg2k`+`mruby-lcf`+
+`mruby-rgss`'s own mrblib, plus every native `mrb_define_method`/
+`mrb_define_class_method` site scraped from `NATIVE_SRCS`) -- confirmed
+by grepping the full registry dump for every `:exist?` line, not
+assumed unique: exactly one line, `MONO`, no unrelated `#exist?`/
+`.exist?` definition anywhere else in the program to confuse it with.
+The class-body-level `class << self` `attr_accessor`s register the same
+way: `default_name`/`default_size`/`default_bold`/`default_italic`/
+`default_shadow`/`default_outline`/`default_color`/`default_out_color`/
+`default_path` and their `=` writers all show up as `MONO (1 def:
+RGSS::Font.singleton)` in the real dump too, exactly the synthetic,
+irep-less `MethodDef` shape this ADR's own `attr_accessor`-registration
+mechanism already gives every other native/class-level accessor.
+
+**But `.exist?` can never become a real emitted compiled entry point --
+confirmed empirically, not just from the `"X.singleton"` pseudo-owner
+design comment.** `CodeGen#compile_all`'s own `only_owners` filter
+(`tools/bc2cpp/bc2cpp.rb`) is a plain string-membership check:
+```ruby
+leaves = leaves.select { |l| only_owners.include?(@owner_of.fetch(l).owner) } if only_owners
+```
+Every gem's `mrbgem.rake` (`target_owners = this_gem[:owners]`) passes
+`ONLY_OWNERS` through *exactly* as written in `compiled_gems.rb`'s
+`owners:` array -- a list of real Ruby constant paths, never
+`.singleton`-suffixed, by convention across all three compiled gems in
+this codebase (confirmed by grepping every `owners:` line in
+`compiled_gems.rb` and every `mrb_define_class_method`/
+`mrb_define_singleton_method` call anywhere in `mruby-lcf-compiled/`,
+`mruby-rpg2k-compiled/`, `mruby-rgss-compiled/`'s own `src/register.cxx`
+files -- zero matches for either shape anywhere: no compiled gem has ever
+had, or emitted, a real class-method registration). So `RGSS::Font.
+exist?`'s own registry owner (`"RGSS::Font.singleton"`) can never equal
+a plain `"RGSS::Font"` entry in `owners:`, no matter how that array is
+written -- this is not a bug to fix, it is exactly the isolation the
+pseudo-owner suffix was designed to guarantee (see the `Game::Vehicle`
+follow-up's own comment: "a distinct `"X.singleton"` pseudo-owner ...
+which can never collide with or be selected by `ONLY_OWNERS`"). The
+mechanism exists purely to keep the whole-program MONO/POLY registry
+*sound* for other call sites elsewhere in the program that might call
+`.exist?` on some *other* receiver -- never to make the singleton method
+itself compilable. Every prior instance of this same shape in this
+codebase (`Game::MoveRoute.from_page`/`.same_route?`, `Game::ChipSet.
+lower_index`, `Game::EventGraphic.numpad_direction`, `RPG2k::Scene::Map.
+tone_channel`) has the identical fate: correctly registered, MONO or
+POLY as appropriate, never emitted, regardless of whether the
+*instance*-level class happens to be a compiled owner.
+
+Verified this holds for real, not just from reading the filter code:
+ran `tools/bc2cpp/bc2cpp.rb` directly against a real host `mrbc` (built
+in this worktree specifically for this check -- see Verification below)
+with `ONLY_OWNERS=RGSS::Sprite,RGSS::Plane,RGSS::Tilemap,RGSS::Window,
+RGSS::Font` (i.e. *with* `RGSS::Font` added) over the whole closed
+world. The real `== compiled entry points ==` listing contains **36**
+lines total -- 17 `RGSS::Sprite`, 6 `RGSS::Plane`, 1 `RGSS::Tilemap`, 12
+`RGSS::Window`, **zero** `RGSS::Font`. A second run with `RGSS::Font`
+left out of `ONLY_OWNERS` entirely produces the byte-for-byte identical
+36-line listing (`diff` confirms zero lines differ) -- decisive
+confirmation that adding `RGSS::Font` to this gem's `owners:` would
+contribute exactly zero new compiled coverage, not merely a plausible
+inference from the filter's source. The `== skipped (unsupported, left
+on the interpreter) ==` listing shows `RGSS::Font#initialize` (alongside
+the already-shipped `RGSS::Window#initialize`) -- `.exist?` does not
+even appear there, since it was never a candidate leaf for this
+`ONLY_OWNERS` run in the first place (its owner string never matched).
+
+**Class-body-level ivar assignments are not per-instance ivars, and are
+correctly irrelevant to embedding either way.** The nine assignments at
+the top of the class body (`@default_name = "Arial"`, `@default_size =
+22`, ..., `@default_path = nil`) execute exactly once, at class-
+definition time, directly on the `Font` *class object* itself (`self`
+inside a bare class body is the class being defined) -- they are class
+ivars on `Font`, read back by the `class << self` `attr_accessor`s
+above, and have nothing to do with the *instance*-level `@name`/`@size`/
+`@bold`/`@italic`/`@outline`/`@shadow`/`@color`/`@out_color` ivars
+`#initialize` sets on each `Font.new` object. Conflating the two would
+be a real category error: `IvarLayout`'s own embedding analysis only
+ever looks at ivars set inside compiled *instance* methods, and these
+nine assignments live inside a `CLASS`-opened body's own top-level EXEC,
+never inside any `TDEF`-registered method at all, so they were never
+even candidates for `IvarLayout`/embedding analysis to consider.
+
+**`#initialize` not compiling means the *instance*-level ivars stay
+unembedded, but they are still set correctly at runtime, by the ordinary
+interpreter.** This distinction matters and is stated precisely here:
+"not compiled" and "not set" are different things. This whole compiler
+is a strict opt-in optimization (`RPGMAKER_BC2CPP=1`) with the ordinary
+mruby bytecode interpreter as the unconditional fallback for anything
+unsupported -- `#initialize`'s own `#error ... has non-mandatory
+arguments` marker only ever means bc2cpp.rb declines to *emit a
+compiled C++ replacement* for this one method; the original bytecode
+`irep` is untouched and still runs on the normal interpreter path
+exactly as mrbc compiled it, so every `Font.new` still gets real,
+correct `@name`/`@size`/`@bold`/`@italic`/`@shadow`/`@outline`/`@color`/
+`@out_color` values set on it at runtime, the same as before this class
+was ever investigated. Nothing about "doesn't compile" implies "doesn't
+run" or "runs wrong" anywhere in this prototype -- under-compiling is
+always safe, by design. Confirmed directly against the real embedding
+diagnostic besides: `RGSS::Font` does not appear in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" listing at all (that listing,
+with `RGSS::Font` included in `ONLY_OWNERS`, was `Game::Transition`,
+`Game::Screen`, `Game::Interpreter`, `RPG2k::Scene::VehicleWorld`,
+`RPG2k::Scene::Map::LRUBitmapCache` -- five classes, none of them
+`RGSS::Font`, identical to the baseline run without `RGSS::Font`) --
+`drop_unsafe_embeddings`'s own class-level gate requires a *compiling*
+`#initialize` with pure mandatory arity before embedding anything on a
+class at all, and `#initialize` here fails that gate outright, so none
+of this class's own ivars (including the two Color-typed ones,
+`@color`/`@out_color`, which would need object-typed embedding support
+this prototype doesn't have anyway) was ever even proposed as an
+embedding candidate.
+
+This round leaves `tools/bc2cpp/compiled_gems.rb`'s `mruby-rgss-compiled`
+owners list and `mruby-rgss-compiled/src/register.cxx` both completely
+unchanged -- there is nothing to register. No new opcode work, no new
+live bc2cpp.rb bug found or fixed.
+
+**Verified for real, environment gap noted rather than worked around,
+same shape this ADR's own `RGSS::Tilemap`/`LCF::EventCommand`/
+`Game::Rng` follow-ups already established**: a fresh clone of this
+worktree needed the same six mruby submodules (`3rd/mruby`, `3rd/mruby-
+marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`, `3rd/uni-algo`,
+`3rd/stb`) initialized (`git submodule update --init`) and the same nine
+`patches/*.patch` files applied by hand via `scripts/
+apply_mruby_patch.bash` (a raw `rake -f 3rd/mruby/Rakefile` invocation
+runs no CMake configure step, so none of this happens automatically).
+Built the real host `mrbc` by running `rake` from *inside* `3rd/mruby`
+itself with `HOST_CXX=c++` (the same `Dir.pwd == MRUBY_ROOT` /
+C++-linker-for-C++-exception-runtime reasoning this ADR's own
+`RGSS::Tilemap` follow-up already documents in detail) -- built clean,
+`mruby 4.0.0`. Ran `tools/bc2cpp/bc2cpp.rb` directly against that real
+host `mrbc` (`ONLY_OWNERS`/`NATIVE_SRCS`/`SKIP_UNSUPPORTED` computed
+exactly the way `mruby-rgss-compiled/mrbgem.rake` does) over the whole
+`mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world, both with and
+without `RGSS::Font` in `ONLY_OWNERS` -- every quoted listing and diff
+above came from those two real runs, not simulated. Grepped both real
+regenerated files for the broken empty-name `mrb_funcall(M, <reg>, "",
+` shape: zero matches in either. Did not reach the real `mruby-rgss`/
+LVGL final-link gap this ADR's prior follow-ups already document, since
+there was no edited `register.cxx` needing the `g++ -fsyntax-only`
+fallback this round -- nothing was generated that needed compiling at
+all.
