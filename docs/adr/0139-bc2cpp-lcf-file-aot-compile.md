@@ -3489,3 +3489,202 @@ site in the generated output now reads `// POLY :clamp -- real dynamic
 dispatch, receiver's runtime class decides` / a real `mrb_funcall`,
 confirming the SDEF fix actually changes generated code, not just
 theory.
+
+## Follow-up: Game::Troop, and a checked-but-not-live `&:symbol` block-pass shape
+
+A twenty-ninth, independent round adds `Game::Troop`
+(`mruby-rpg2k/mrblib/game/battle_support.rb`) -- the enemy-party
+container for a battle (a group of `Game::Enemy` instances built from a
+database Troop row). Only 1 of its own 7 real bytecode-defined methods
+compiles clean, needing no new opcode work at all and finding no live
+`bc2cpp.rb` bug: `#member` (`def member(db, m); Enemy.new(db, m.enemy_id,
+m.x, m.y, m.invisible); end`, a plain 4-argument constructor call, no
+arithmetic, no block).
+
+`#initialize` (`db, id, rng = nil`, one optional argument) has the same
+established non-mandatory-arity gap as every other unembedded target
+above, so `drop_unsafe_embeddings` correctly refuses to embed any of this
+class's own four ivars (`@id`/`@name`/`@members`/`@pages`) -- confirmed
+directly against the real generated output, `Game::Troop` does not
+appear in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`"
+diagnostic. `#total_exp`/`#total_gold` (`live_members.reduce(0) { |s, e|
+s + e.exp/e.gold }`) and `#drops` (`live_members.each_with_object([]) do
+|e, out| ... end`) each end in a genuine Ruby block (`BLOCK`/`SENDB`),
+the same established out-of-scope shape every other block-using method
+in this file already documents. `#apply_appear_randomly` ends in two
+more real blocks (`@members.count { |m| ... }`, `@members.each do |m|
+... end`).
+
+`#live_members` (`@members.reject(&:hidden)`) was checked specifically
+for whether the `&:symbol` block-pass shorthand might be a distinct,
+narrower shape this compiler already handles, rather than assumed either
+way: confirmed directly against the real `mrbc -v` disassembly, `&:hidden`
+compiles to a bare `LOADSYM R3 :hidden` feeding `SENDB R2 :reject n=0`,
+with **no** preceding `BLOCK` opcode at all -- no closure needs creating
+for a Symbol-to-proc block-pass, unlike a real `{ }`/`do...end` block
+literal, which always emits `BLOCK` immediately before its own `SENDB`.
+This is still the exact same unmodeled `SENDB` opcode `compile_insn` has
+never had a case for, though, just reached a second, narrower way --
+confirmed against the real generated `#error unhandled opcode SENDB`
+line for this method, not assumed from the disassembly alone. Not a new
+gap, and not something worth adding `compile_insn` support for on its
+own: `SENDB`'s own block argument would still need translating to a real
+call into whatever the block turns out to be (a symbol here, an
+arbitrary closure in the general case), the same underlying
+out-of-scope problem either way.
+
+`#member` is `private` (a bare `private` mid-class-body, in effect
+through the end of the class, also covering `#live_members`/
+`#apply_appear_randomly`), so it needs `mrb_define_private_method`, not
+`mrb_define_method` -- confirmed directly against the real diagnostic's
+own `== compiled entry points ==` listing, which flags it accordingly,
+not assumed from the source alone.
+
+**Verified for real:** the actual `build_config.rb` + `rake` pipeline was
+run end to end in this environment; it reached and fully regenerated
+`rpg2k_compiled_gen.cpp` (confirmed containing `Game__Troop_member_impl`/
+`Game__Troop_member`) before hitting the same pre-existing, out-of-scope
+LVGL gap this ADR's own `Game::Rng` follow-up already documents
+(`mruby-rgss/src/lib.cxx` needs a real, built `lvgl.h`, which a raw `rake
+-f 3rd/mruby/Rakefile` invocation has no step to build). Verified
+correctness the same alternate, still-rigorous way that round used:
+`g++ -fsyntax-only -Wall -Wextra -Winfinite-recursion` against the real
+regenerated `register.cxx` plus its own real generated file and the real
+mruby headers -- **zero errors, zero `-Winfinite-recursion` warnings**
+(only the same pre-existing, unrelated `-Wunused-but-set-variable`/
+`-Wunused-parameter` warnings already present in already-shipped
+classes). Also compiled `register.cxx` to a real object file and
+confirmed with `nm -C`: `Game__Troop_member_impl` is present and
+externally linked (`T`), its `mrb_get_args` wrapper `Game__Troop_member`
+correctly stays local (`t`), and neither appears in any embedding-struct
+symbol set. Grepped the freshly regenerated full-owner
+`rpg2k_compiled_gen.cpp` for the empty-name `mrb_funcall(M, <reg>, "", `
+shape directly: zero matches. Cross-checked the real diagnostic's own
+`== compiled entry points ==` listing for this class one by one (not
+just a summary count) before registering anything -- exactly one line,
+`Game__Troop_member / Game__Troop_member_impl (Game::Troop#member,
+arity 2) [private -- use mrb_define_private_method, not
+mrb_define_method]` -- matching what's actually registered below.
+
+## Follow-up: Game::Vehicle, and this compiler's sixth severe bug -- `class << self` singleton-class bodies (and a stale-registration leak past an empty class body) invisible to the registry
+
+The same round also adds `Game::Vehicle` (`mruby-rpg2k/mrblib/game.rb`)
+-- a boat/ship/airship's saved location (map id, position, facing,
+on-map graphic), plain data rather than a `Game::Character`. 4 of its
+own 5 real bytecode-defined methods compile clean, needing zero
+`bc2cpp.rb` changes: `#placed?` (a plain `@map_id > 0`), `#to_h` (a real
+Hash literal, the same `mrb_hash_new_capa`/`mrb_hash_set` shape
+`Game::Picture`'s/`Game::Timer`'s/`Game::Weather`'s own `#to_h` already
+ship), `#load_h` (a Hash `#[]` GETIDX read plus a `||` default per
+field), and `#load_movable` (the same GETIDX/`||`-default shape as
+`#load_h`, plus one real `EventGraphic.numpad_direction(m[:direction])`
+call). `:numpad_direction` is MONO in the whole-program registry
+(`Game::EventGraphic`'s own real `def self.numpad_direction`, an `SDEF`
+singleton method with owner `"Game::EventGraphic.singleton"`) but
+correctly stays ordinary `mrb_funcall` dispatch regardless: that
+synthetic `.singleton`-suffixed owner name never matches this run's own
+plain-class-name `ONLY_OWNERS`/`OTHER_OWNERS`, so `compile_send`'s
+existing owner-not-emitted guard correctly falls back rather than
+referencing a function this run never emits. `#initialize(type, map_id
+= 0, x = 0, y = 0, direction = 2)` is the one gap -- four optional
+arguments, the established non-mandatory-arity shape -- so
+`drop_unsafe_embeddings` correctly refuses to embed any of this class's
+own four provably-Fixnum ivars despite the raw `IvarLayout` analysis
+reporting all four as EMBED-eligible.
+
+The round's own dedicated bug-fix pass had a known starting point this
+time: the immediately preceding round's own bug-hunt pass had already
+found and confirmed two real structural gaps in `build_registry` but
+deliberately left them unfixed to avoid scope creep on that pass. This
+round actually fixes both, closing a sixth severe, live,
+already-shipped bug.
+
+**Gap A: `class << self ... end` (or `class << SomeConst ... end`)
+bodies are completely invisible to the registry.** A real `def self.foo`
+compiles to the fused `SDEF` opcode (already fixed two rounds ago), but
+`class << self; def foo; ...; end; end` is a different, older shape
+entirely: `SCLASS` opens the receiver's own singleton class as a body of
+its own, containing ordinary `TDEF`s -- exactly like a `CLASS`/`MODULE`
+body, just reached via this distinct opcode, and previously invisible
+because nothing recursed into an `SCLASS`-opened body the way `EXEC`
+already does for a `CLASS`/`MODULE`-opened one. **Confirmed live, not
+hypothetical:** grepping the whole closed world found 8 real instances,
+every one in `mruby-rgss/mrblib/{lib.rb,error_report.rb}` --
+`RGSS::Bitmap.extensions`, several of `RGSS::Font`'s own defaults, over
+twenty of `RGSS::Audio`'s own methods (`bgm_play`, `resolve`, ...),
+several of `RGSS::Graphics`'s own (`resize_screen`, `wait`, ...),
+`RGSS::ErrorReport.lines`/`.last_location`, and `RGSS.asset_archive`.
+Before this fix, a real registry dump showed every one of these names
+completely absent -- not even a synthetic entry, unlike the
+`attr_reader`/`SDEF` fixes' own synthetic-only approach, since an
+`SCLASS` body can hold arbitrarily many real `def`s (`RGSS::Audio`'s
+own alone defines over twenty) and genuinely needs the same real
+recursion `CLASS`/`MODULE` already get, not just a placeholder.
+
+**Gap B: an empty `class`/`module` body can leak stale
+`pending_reg`/`pending_name` tracking into a later, unrelated `EXEC`.**
+`build_registry`'s `CLASS`/`MODULE` (and now `SCLASS`) case sets
+`pending_reg`/`pending_name`, expecting the very next relevant `EXEC` on
+that same register to be the one that opens this construct's own body --
+but a real empty class body (`class Timeout < StandardError; end`,
+`mruby-rgss/mrblib/lib.rb`) emits NO `EXEC` at all for its own (empty)
+body, since mrbc doesn't bother emitting a trivial always-empty
+child-irep call. That left `pending_reg`/`pending_name` sitting stale
+until *whatever* later instruction happened to reuse the same register --
+however far away, however unrelated. **Confirmed live:** the very next
+construct in the real source, `class << self; attr_accessor
+:asset_archive; end`, reuses that same register for its own `SCLASS`,
+so `RGSS.asset_archive`/`asset_archive=` registered under owner
+`RGSS::Timeout` instead of the real receiver, `RGSS`.
+
+**The fix** (one mechanism closes both gaps): `SCLASS` now sets the
+same `pending_reg`/`pending_name` tracking `CLASS`/`MODULE` already use
+-- the receiver is resolved by walking backward to the register's own
+last write, trusting only a bare `LOADSELF` (`class << self`, self at
+that point being the innermost enclosing namespace, the same fact
+`SDEF`'s own fix already relies on) or a `GETCONST` naming a specific
+constant (`class << SomeConst`); anything else is simply not recognized,
+always safe, just a missed case. The registered owner is a distinct
+`"X.singleton"` pseudo-owner (the same suffix `SDEF`'s own fix already
+uses), which can never collide with or be selected by `ONLY_OWNERS`
+(real Ruby constant paths only). Separately, a new `pending_idx` now
+requires the matching `EXEC` to land on the *exact* next instruction
+index, not merely the same register at any later point -- verified this
+adjacency holds for every real `CLASS`/`MODULE`/`SCLASS`+`EXEC` pair in
+the whole closed world's own disassembly, so this closes the leak
+structurally rather than by luck, with no risk of breaking any
+already-correct pairing.
+
+**A further, related, but explicitly out-of-scope finding** was surfaced
+while fixing the above and left undone to avoid scope creep on this
+pass: `codegen_def`/`codegen_defs` fall back to an unfused
+`TCLASS`/`SCLASS`+`METHOD`+`DEF` instruction sequence -- invisible to
+this registry the same way `SDEF` used to be -- once a class body's own
+child-irep index exceeds `0xff`. Confirmed real in already-shipped
+`RPG2k::Scene::Map` (`#toned?`, `def self.tone_channel`); not currently
+exploitable (`RPG2k::Scene::Map` is not yet a compiled owner), but a
+real gap worth closing before that class ever joins one.
+
+**Verification:** a full before/after registry diff across the whole
+closed world shows every change from the fix is either a new
+`"X.singleton"` pseudo-owner entry (never colliding with a real
+`ONLY_OWNERS` class) or the `RGSS::Timeout` → `RGSS.singleton`
+correction -- zero existing real owner's entries changed, so no
+already-shipped class's own compiled entry-point count moves at all.
+
+**Full-sweep re-check** (all forty-three now-shipped targets across all
+three compiled gems, rebuilt with both this round's coverage and the
+`SCLASS`/empty-body fix applied): every previously-shipped class's own
+entry-point count matches exactly, `RGSS::Sprite` included (still 17,
+confirming the registry fix changed zero already-correct entries); new:
+`Game::Vehicle` (4).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape across all three generated
+files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
+`rgss_compiled_gen.cpp`). `nm -C` on the resulting `libmruby.a` shows
+the 4 new `Game__Vehicle_*_impl` entry points present and externally
+linked, no pseudo-owner (`.singleton`-suffixed) symbol ever linked
+anywhere, and every already-shipped class's own symbol count unchanged.

@@ -3587,6 +3587,64 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, weather, "to_h", Game__Weather_to_h, MRB_ARGS_NONE());
   mrb_define_method(M, weather, "load_h", Game__Weather_load_h,
                     MRB_ARGS_REQ(1));
+
+  // Game::Troop (mruby-rpg2k/mrblib/game/battle_support.rb) -- see
+  // compiled_gems.rb's own owners-entry comment for the full writeup.
+  // Only #member (`def member(db, m); Enemy.new(db, m.enemy_id, m.x, m.y,
+  // m.invisible); end`) compiles clean -- a plain 4-argument constructor
+  // call, no arithmetic, no block. #initialize (`rng = nil`, one optional
+  // argument) has the established non-mandatory-arity gap; #total_exp/
+  // #total_gold (`live_members.reduce(0) { |s, e| s + e.<field> }`) and
+  // #drops (`live_members.each_with_object([]) do |e, out| ... end`) each
+  // end in a genuine Ruby block (BLOCK/SENDB); #live_members
+  // (`@members.reject(&:hidden)`) hits the very same SENDB gap through a
+  // different real shape -- `&:symbol` block-pass shorthand compiles to a
+  // bare LOADSYM feeding SENDB directly, no BLOCK opcode at all (confirmed
+  // against the real mrbc -v disassembly), so it is not a distinct opcode
+  // gap, just SENDB reached a second way; #apply_appear_randomly ends in
+  // two more real blocks (`@members.count { |m| ... }`,
+  // `@members.each do |m| ... end`). #initialize never compiling means
+  // drop_unsafe_embeddings correctly refuses to embed any of this class's
+  // own ivars (@id/@name/@members/@pages) -- confirmed directly against
+  // the real generated output: Game::Troop does not appear in bc2cpp's own
+  // "classes needing MRB_SET_INSTANCE_TT" diagnostic, and #member's own
+  // compiled body never touches DATA_PTR(self) at all (it is a pure
+  // function of its two arguments, self is copied to a register and never
+  // read again). #member is `private` (a bare `private` mid-class-body,
+  // in effect through the end of the class, also covering #live_members/
+  // #apply_appear_randomly above), so it needs
+  // mrb_define_private_method, not mrb_define_method.
+  RClass* troop = mrb_class_get_under(M, game, "Troop");
+  mrb_define_private_method(M, troop, "member", Game__Troop_member,
+                            MRB_ARGS_REQ(2));
+
+  // Game::Vehicle (mruby-rpg2k/mrblib/game.rb) -- a boat/ship/airship's
+  // saved location (map id, position, facing, on-map graphic), plain data
+  // rather than a Game::Character. #placed?/#to_h/#load_h/#load_movable
+  // all compile clean; #initialize (type, map_id = 0, x = 0, y = 0,
+  // direction = 2 -- four optional arguments) is NOT registered here --
+  // it stays entirely interpreted, the same established non-mandatory-
+  // arity gap as Game::Picture's/RPG2k::Window's own #initialize above,
+  // and drop_unsafe_embeddings correctly refuses to embed any of this
+  // class's own four provably-Fixnum ivars (@map_id, @x, @y,
+  // @charset_index) as a result -- see this file's own top comment and
+  // compiled_gems.rb's own owners-entry comment for the full writeup.
+  // attr_accessor :map_id, :x, :y, :direction, :charset_name,
+  // :charset_index and attr_reader :type are all native
+  // (Module#attr_reader/attr_accessor), invisible to bc2cpp the same way
+  // every other attr_reader/writer/accessor in this codebase is, so none
+  // of them gets a registration line here either. No bare `private`/
+  // `protected`/`public` anywhere in the real source, so both methods
+  // below are plain `mrb_define_method`. Reuses the `game` RClass*
+  // declared at the top of this function.
+  RClass* vehicle = mrb_class_get_under(M, game, "Vehicle");
+  mrb_define_method(M, vehicle, "placed?", Game__Vehicle_placed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, vehicle, "to_h", Game__Vehicle_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, vehicle, "load_h", Game__Vehicle_load_h,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
