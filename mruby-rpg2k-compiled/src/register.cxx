@@ -3645,6 +3645,48 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
                     MRB_ARGS_REQ(1));
+
+  // Game::Enemy (mruby-rpg2k/mrblib/game/battle_support.rb) -- see
+  // compiled_gems.rb's own owners-entry comment for the full writeup. 3 of
+  // its own 4 real bytecode-defined methods compile clean, needing zero
+  // bc2cpp.rb changes: #attack_hit_rate (`@miss ? 70 : 90`, a plain GETIV
+  // plus JMPIF-based ternary), #dead? (`@hp <= 0`, the fixnum-fastpath LE
+  // this compiler already has), and #reseed_rewards (four plain SETIVs
+  // fed by `into.exp`/`into.gold`/`into.drop_id`/`into.drop_prob`, each a
+  // real POLY send that correctly stays ordinary mrb_funcall dispatch --
+  // confirmed directly against the real generated output, not merely
+  // assumed from the registry's own dump: see this class's own
+  // compiled_gems.rb comment for why the registry's dump is misleadingly
+  // stale for these four particular names, and why that staleness still
+  // resolves safely here regardless). #initialize (`db, id, x = 0, y = 0,
+  // hidden = false`, three optional arguments) is the one gap -- the same
+  // established non-mandatory-arity shape as every other unembedded
+  // target above, so drop_unsafe_embeddings correctly refuses to embed
+  // any of this class's own thirteen provably-Fixnum ivars (@max_hp,
+  // @max_sp, @atk, @def, @spi, @agi, @x, @y, @hp, @sp, @flying_phase,
+  // @crit_chance, @battler_hue) despite the raw IvarLayout analysis
+  // reporting all thirteen as EMBED-eligible -- confirmed directly
+  // against the real generated output: Game::Enemy does not appear in
+  // bc2cpp's own "classes needing MRB_SET_INSTANCE_TT" diagnostic, and
+  // every compiled method here uses plain mrb_iv_get/mrb_iv_set, never
+  // DATA_PTR(self). attr_reader :id, :name, :battler_name, :max_hp,
+  // :max_sp, :atk, :def, :spi, :agi, :exp, :gold, :x, :y, :drop_id,
+  // :drop_prob (one call, 15 names), attr_accessor :hp, :sp, :hidden,
+  // and the smaller attr_reader :actions / :crit_chance,
+  // :attribute_ranks, :state_ranks / :levitate / :transparent /
+  // :battler_hue / attr_accessor :flying_phase are all native
+  // (Module#attr_reader/attr_writer/attr_accessor), invisible to bc2cpp
+  // the same way every other attr_reader/writer/accessor in this codebase
+  // is, so none of them gets a registration line here either. No bare
+  // `private`/`protected`/`public` anywhere in the real source, so all
+  // three methods below are plain `mrb_define_method`. Reuses the `game`
+  // RClass* declared at the top of this function.
+  RClass* enemy = mrb_class_get_under(M, game, "Enemy");
+  mrb_define_method(M, enemy, "attack_hit_rate", Game__Enemy_attack_hit_rate,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, enemy, "dead?", Game__Enemy_dead_, MRB_ARGS_NONE());
+  mrb_define_method(M, enemy, "reseed_rewards", Game__Enemy_reseed_rewards,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

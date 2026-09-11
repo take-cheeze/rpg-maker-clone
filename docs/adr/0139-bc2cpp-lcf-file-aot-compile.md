@@ -3688,3 +3688,131 @@ files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
 the 4 new `Game__Vehicle_*_impl` entry points present and externally
 linked, no pseudo-owner (`.singleton`-suffixed) symbol ever linked
 anywhere, and every already-shipped class's own symbol count unchanged.
+
+## Follow-up: Game::Enemy, and a confirmed-but-not-currently-live splat-encoded attr_reader registry gap
+
+A thirtieth, independent round adds `Game::Enemy`
+(`mruby-rpg2k/mrblib/game/battle_support.rb`) -- a single enemy combatant
+built from a database Troop-member row (`Game::Troop#member`, this ADR's
+own immediately preceding follow-up, constructs one per troop member).
+3 of its own 4 real bytecode-defined methods compile clean, needing zero
+`bc2cpp.rb` changes: `#attack_hit_rate` (`@miss ? 70 : 90`, a plain GETIV
+plus JMPIF-based ternary), `#dead?` (`@hp <= 0`, the fixnum-fastpath LE
+this compiler already has), and `#reseed_rewards` (`@exp = into.exp;
+@gold = into.gold; @drop_id = into.drop_id; @drop_prob = into.drop_prob`,
+four plain SETIVs fed by four real POLY sends that correctly stay
+ordinary `mrb_funcall` dispatch -- confirmed directly against the real
+generated output). `#initialize(db, id, x = 0, y = 0, hidden = false)`
+(three optional arguments) is the one gap -- the same established
+non-mandatory-arity shape as every other unembedded target above, so
+`drop_unsafe_embeddings` correctly refuses to embed any of this class's
+own thirteen provably-Fixnum ivars (`@max_hp`, `@max_sp`, `@atk`, `@def`,
+`@spi`, `@agi`, `@x`, `@y`, `@hp`, `@sp`, `@flying_phase`,
+`@crit_chance`, `@battler_hue`) despite the raw `IvarLayout` analysis
+reporting all thirteen as EMBED-eligible -- confirmed directly against
+the real generated output: `Game::Enemy` does not appear in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic, and every compiled
+method here uses plain `mrb_iv_get`/`mrb_iv_set`, never `DATA_PTR(self)`.
+
+**A real, confirmed-but-not-currently-live registry gap**, found by this
+round's own step 5 discipline -- cross-checking every one of
+`#reseed_rewards`'s own four POLY sends individually against the real
+registry dump before registering anything, rather than trusting the
+summary count. `Game::Enemy`'s own large `attr_reader :id, :name,
+:battler_name, :max_hp, :max_sp, :atk, :def, :spi, :agi, :exp, :gold, :x,
+:y, :drop_id, :drop_prob` (15 Symbol arguments in one call,
+`mrblib/game/battle_support.rb:1043-1044`) compiles to `SSEND R1
+:attr_reader n=*` in the real disassembly -- mrbc's own CALL_MAXARGS
+splat encoding, used once a call's direct-encodable argument-count nibble
+would overflow. Confirmed the exact boundary directly rather than
+guessing: the only other attr_reader call project-wide that comes close
+(`Game::Interpreter#initialize`'s own 14-Symbol `attr_reader :wait_kind,
+...`) encodes fine as a literal `n=14`; Enemy's 15th argument is what
+tips it over into `n=*`. `build_registry`'s own attr_reader/writer/
+accessor fix (two rounds ago, this ADR's own EventResolver/NumberInput
+follow-up) parses this same call site's own argument count with
+`insn.args[/n=(\d+)/, 1].to_i` -- against the literal text `*` (not a
+digit string), the regex match returns `nil`, and `nil.to_i` is `0` in
+Ruby, silently -- so `collect_loadsym_names` (bounded by `n`) collects
+zero names, and none of these 15 real Enemy accessor names ever gets a
+synthetic registry entry for `Game::Enemy` at all, the exact same
+"invisible to the registry" shape the original attr_reader fix closed,
+just reopened for this one wider-than-14-argument call shape it didn't
+anticipate.
+
+Checked every one of the 15 names individually against the real registry
+dump before concluding this is safe today, not assumed safe by analogy:
+`:id`/`:name`/`:max_hp`/`:atk`/`:def`/`:agi`/`:exp`/`:x`/`:y` are all
+already POLY from other real definitions (irrelevant either way -- POLY
+already means ordinary dynamic dispatch); `:max_sp`/`:drop_id`/
+`:drop_prob` have zero other definitions anywhere in the closed world
+(nothing to unsoundly devirtualize into regardless); and the three that
+do show a colliding single ("MONO") definition elsewhere --
+`:battler_name`/`:spi` (`Game::Battle::Combatant`, a `Struct.new` member)
+and `:gold` (`Game::Party`, itself only an `attr_reader`) -- are each
+*also* synthetic (`irep: nil`) on that other side, and
+`monomorphic_target` already refuses to devirtualize into any target
+whose own `irep` is `nil` regardless of `defs.size` (`return nil unless
+defs.first.irep`, this compiler's own long-standing guard for exactly
+this "native/synthetic definition, no real body to call into" case).
+Confirmed directly against the real generated output too: `Game::Enemy#
+reseed_rewards`'s own four sends (`into.exp`/`into.gold`/`into.drop_id`/
+`into.drop_prob`) all correctly emit `// POLY :<name> -- real dynamic
+dispatch...` plus a real `mrb_funcall`, never an unsound direct call.
+So this gap can only ever turn an already-safe call into a
+differently-labeled-but-still-safe one, for every real name this
+specific 15-argument call installs, today. Not fixed in this round to
+avoid scope creep (`Game::Enemy`'s own three target methods above compile
+fully clean without it, and the fix itself -- handling mrbc's splat
+argument-count encoding generally, not just for this one call shape --
+is a real, separate piece of work) -- left as a documented,
+confirmed-safe-for-now structural gap for a future round, the same
+"found, not currently exploitable" bucket as this ADR's own
+unfused-SDEF-at-large-class-body finding two rounds up.
+
+**Full-sweep re-check** (all forty-four now-shipped targets across all
+three compiled gems, with zero `bc2cpp.rb` changes this round): every
+previously-shipped class's own entry-point count matches exactly, and a
+real before/after diff of the whole-program `== compiled entry points ==`
+listing (`ONLY_OWNERS` with and without `Game::Enemy` added, everything
+else identical) shows exactly three added lines and zero changed or
+removed ones -- `Game__Enemy_dead_`/`Game__Enemy_attack_hit_rate`/
+`Game__Enemy_reseed_rewards`, matching what's actually registered below.
+
+**Verified for real:** built the real host `mrbc` from this environment's
+own `3rd/mruby` submodule and ran `tools/bc2cpp/bc2cpp.rb` directly
+(`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` computed exactly the way
+`mruby-rpg2k-compiled/mrbgem.rake` does, `SKIP_UNSUPPORTED=1`) against
+the whole `mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world. Grepped
+the real generated `rpg2k_compiled_gen.cpp` for the broken empty-name
+`mrb_funcall(M, <reg>, "", ` shape: zero matches. `g++ -std=c++17 -Wall
+-Wextra -Winfinite-recursion -fsyntax-only` against the real
+`register.cxx` plus this real generated file and the real mruby headers:
+**zero errors, zero `-Winfinite-recursion` warnings** (only the same
+pre-existing, unrelated `-Wunused-but-set-variable` warnings already
+present in already-shipped classes, `Game::Enemy`'s own three new
+methods included -- each only from the same harmless unread-`self`-copy
+shape every other compiled method here already has). Compiled
+`register.cxx` to a real object file and confirmed with `nm -C`:
+`Game__Enemy_dead__impl`/`Game__Enemy_attack_hit_rate_impl`/
+`Game__Enemy_reseed_rewards_impl` are present and externally linked
+(`T`), their `mrb_get_args` wrapper functions correctly stay local (`t`),
+and `Game::Enemy` appears in no embedding-struct symbol set at all,
+confirming step 6 directly rather than assuming it: no
+`Game__Enemy_ivars` struct, no `MRB_SET_INSTANCE_TT` call, and every
+compiled method reads/writes ivars through the ordinary dynamic
+`iv_tbl`. This environment's own real, opt-in
+`RPGMAKER_BC2CPP=1` + `rake -f 3rd/mruby/Rakefile` pipeline was not run
+end to end this round: the fresh worktree's `3rd/mruby`,
+`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/uni-algo`, and `3rd/stb` submodules were uninitialized (the same
+gap this ADR's own `Game::Rng` follow-up already documents hitting), and
+the shared host disk this session ran on hit a genuine, transient
+0-bytes-free condition partway through initializing them -- recovered on
+its own, but the environment fix was kept out of this round's own diff,
+matching every prior round's own practice, and the real final-link
+`mruby-rgss`/LVGL gap this ADR's own `Game::Rng` and `Game::Troop`
+follow-ups already document was never reached this round either. The
+`g++ -fsyntax-only`-plus-`nm` check above is the same "real, still-
+rigorous" fallback those two rounds already used for the identical
+reason.
