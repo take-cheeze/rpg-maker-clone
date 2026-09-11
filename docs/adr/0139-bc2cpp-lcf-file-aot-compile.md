@@ -1485,3 +1485,95 @@ Every already-shipped target except `Game::Screen` (the 2-method gain
 above) is otherwise unaffected: `LCF::File`'s subclasses,
 `Game::Picture`/`Game::EnemyAction`, `RGSS::Sprite`, and `RPG2k::Window`
 all remain exactly as they were.
+
+## Follow-up: Game::Party, RPG2k::Scene::MapViewer, and a live bug in already-shipped Game::Actor
+
+Two more classes, again developed as independent parallel slices: `Game::Party`
+(party-wide item/skill usability rules, equip/swap logic, skill damage
+formulas, state/status application, battle placement,
+`mruby-rpg2k/mrblib/game.rb` plus a second reopening in `game/
+battle_support.rb`) and `RPG2k::Scene::MapViewer` (the F9 debug-menu map
+overview/editor scene -- pan/zoom camera, a tile-selection cursor, a
+select/edit mode toggle, header/footer HUD text,
+`mruby-rpg2k/mrblib/scene/map_viewer.rb`).
+
+**`Game::Party` needed six new opcodes**, all narrow mechanical
+translations of their own real VM semantics: `NOP` (a real, literal
+"do nothing," a `while` loop's own condition-check jump target);
+`ADDILV`/`SUBILV` (a `while` loop's own `i += 1`/`i -= 1` local-variable
+increment/decrement -- the same fixnum-fastpath-else-`mrb_funcall` shape
+`ADDI`/`SUBI` already have, needing its own real trailing-comment-extraction
+fix distinct from `ADDI`'s, since an `*LV` register is *always* a named
+local by definition, not a rare case); `RANGE_INC`/`RANGE_EXC` (an
+inclusive/exclusive Range literal, `mrb_range_new`); and `RETURN_BLK`
+(looks block-specific by name, but its own real VM semantics fall through
+to a plain `RETURN` whenever the executing proc is `MRB_PROC_STRICT_P` --
+true for every real `def`-compiled method this compiler ever sees, never
+a genuine block/proc irep, confirmed reading `OP_METHOD`'s own lambda-
+creation path). 85 of `Game::Party`'s own 128 real methods compile clean.
+
+**`RPG2k::Scene::MapViewer` needed one new opcode**: `GETIDX0`, mrbc's own
+peephole for a literal `x[0]` index (a separate instruction from `GETIDX`,
+since the common case skips carrying an explicit index register at all).
+34 of its own 42 real methods compile clean.
+
+**A real, live memory-safety bug, found by this round's own full-sweep
+discipline and fixed immediately.** The established practice from two
+follow-ups up -- checking every already-shipped target against the final
+merged opcode set, not just a round's own new classes -- caught something
+worse than a missed method this time: `drop_unsafe_embeddings` (the guard
+deciding whether a class's ivars get embedded into a real RData struct)
+checked only `pure_mandatory_arity?` on `#initialize`, never whether that
+`#initialize` actually *finishes compiling*. `Game::Actor#initialize` has
+pure mandatory arity (2 required arguments) but still ends in a real
+`@equipment.each { ... }` block (`BLOCK`/`SENDB`) -- it was never going to
+compile either way, but the old guard didn't check that, and let 7 real
+Fixnum ivars (`@id`, `@exp`, `@level`, `@class_id`, `@faceset_index`,
+`@face_index`, `@battler_animation_override`) through as "embeddable"
+anyway. The result, confirmed live in the actual already-merged build:
+16 real, already-shipped `Game::Actor` methods (`faceset_index`,
+`set_faceset`, `restore_class`, `gain_exp`, `exp_to_next`, and 11 more)
+were generated with `DATA_PTR(self)` struct-field access, but
+`register.cxx` never calls `MRB_SET_INSTANCE_TT(actor, MRB_TT_DATA)` --
+every real `Game::Actor.new` stays a plain `MRB_TT_OBJECT`, so those 16
+methods dereferenced an `RData` payload that was never allocated: real
+undefined behavior, on every real `Game::Actor` instance, every time one
+of them ran, in code that had already shipped to `master`. Fixed at the
+root: `drop_unsafe_embeddings` now also requires `compiles_clean?` on
+`#initialize` -- the same real `#error`-marker check `compile_send`'s own
+MONO-devirtualization fix already uses, applied to the embedding gate
+instead. Confirmed by direct re-inspection of the regenerated output:
+`Game::Actor` no longer appears in bc2cpp's own "classes needing
+`MRB_SET_INSTANCE_TT`" diagnostic, no `DATA_PTR(self)` access remains
+anywhere in its own compiled methods, and all 76 of its registered entry
+points are otherwise completely unaffected (identical arity, visibility,
+and symbol names) -- only the unsafe struct-field access underneath a
+handful of them changed back to the ordinary, always-safe dynamic
+`iv_tbl`.
+
+**Full-sweep synergy, both directions.** `SUBILV`, added for
+`Game::Party`, also unblocks `Game::Actor#set_exp` (`new_level -= 1
+while ...`) -- Game::Actor is now 76 of its own methods, not 75, even
+though this round's own source changes never touched it. `GETIDX0`,
+added for `RPG2k::Scene::MapViewer`, also unblocks 5 more methods across
+`Game::Battle`/`Game::MoveRoute`/`RPG2k::Scene::{Battle,Map}` -- none of
+them in any already-shipped compiled target's own owner set yet, so no
+further registration needed this round, just a real, confirmed fact
+banked for whichever future round targets those classes. A full sweep of
+every one of the eight now-shipped targets against the final merged
+opcode set found nothing else moved: `Game::Picture` (25),
+`Game::EnemyAction` (6), `Game::Screen` (41), `RPG2k::Window` (32),
+`Game::Transition` (32), `Game::Actor` (76), `Game::Party` (85),
+`RPG2k::Scene::MapViewer` (34) -- all exactly matching each round's own
+independently-verified count.
+
+**Verified for real, independently re-measured:** the real, opt-in
+`RPGMAKER_BC2CPP=1` build succeeds end to end, and `nm -C` on the
+resulting `libmruby.a` shows all 119 new entry points (85
+`Game__Party_*_impl`, 34 `RPG2k__Scene__MapViewer_*_impl`) present and
+externally linked, plus `Game__Actor_set_exp_impl` and the confirmed
+absence of `Game__Actor_ivars` anywhere in the build (the embedding-bug
+fix, directly verified). The full, unrestricted closed-world
+`g++ -fsyntax-only` check still reports **0 errors**. The same run now
+emits **2,708** real `_impl` method bodies across the whole closed world
+(up from 2,618).

@@ -39,12 +39,62 @@
 // Array/Hash read/write; GETGV, a bare global-variable read) that also
 // unlocked 348 more real method bodies across roughly 30 other classes
 // project-wide, confirming the same opcode-reuse payoff the prior round's
-// MUL/AREF work already showed.
+// MUL/AREF work already showed. A fourth round adds Game::Party (party-wide
+// item/skill usability rules, equip/swap logic, skill damage formulas,
+// state/status application, battle placement) -- 85 of its own 128 real
+// bytecode-defined methods, needing six more new opcodes: NOP (a real,
+// literal `do nothing` -- OP_NOP's own real VM semantics, emitted as a
+// `while` loop's own condition-check jump target); ADDILV/SUBILV (a
+// `while` loop's own `i += 1`/`i -= 1`-shaped local-variable increment/
+// decrement, the exact same fixnum-fastpath-else-mrb_funcall shape ADDI/
+// SUBI already have, just addressed differently); RANGE_INC/RANGE_EXC (an
+// inclusive/exclusive Range literal, `mrb_range_new`); and RETURN_BLK (a
+// `return` that isn't a method's own last statement -- looks block-
+// specific by name, but is provably identical to a plain RETURN for every
+// leaf method this compiler ever translates, see bc2cpp.rb's own comment
+// for the real MRB_PROC_STRICT_P proof). This round's own full-sweep
+// re-check (checking every already-shipped target against the final
+// merged opcode set, not just this round's own new class -- the
+// established discipline two rounds up this file's own history already
+// learned the hard way) found one more: Game::Actor#set_exp, unblocked by
+// SUBILV even though Game::Actor was never touched by this round's own
+// source changes (see its own entry below). The same re-check also caught
+// a real, live memory-safety bug already shipping in this exact file's
+// own Game::Actor block, predating this round entirely: bc2cpp's own
+// drop_unsafe_embeddings guard checked only arity shape
+// (pure_mandatory_arity?), not whether #initialize's own body actually
+// finishes compiling -- Game::Actor#initialize has pure mandatory arity
+// (2 required args) but still ends in a real `.each` block (BLOCK/SENDB),
+// so it was never going to compile either way, yet the old guard let 7
+// real Fixnum ivars (@id/@exp/@level/@class_id/@faceset_index/
+// @face_index/@battler_animation_override) through as "embeddable" -- 16
+// real, already-registered Game::Actor methods below (faceset_index,
+// set_faceset, restore_class, ...) were generated with DATA_PTR(self)
+// struct-field GETIV/SETIV codegen for an RData payload that was never
+// actually allocated (no MRB_SET_INSTANCE_TT(actor, ...) call exists
+// anywhere in this file, since nothing here ever suspected embedding was
+// live for this class) -- real undefined behavior on every real
+// Game::Actor instance, every time one of them ran. Fixed in bc2cpp.rb
+// itself (drop_unsafe_embeddings now also requires compiles_clean?, the
+// same real #error-marker check compile_send's own MONO-devirtualization
+// fix already uses two follow-ups up in docs/adr/0139) -- confirmed
+// directly against the regenerated output: Game::Actor no longer appears
+// in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT" diagnostic at
+// all, and no DATA_PTR(self) access remains anywhere in its own compiled
+// methods below; every one of Game::Actor's own 76 registered entry
+// points is completely unaffected (identical arity/visibility/symbol),
+// only the ivar access path underneath a handful of them changed from an
+// unsafe struct-field dereference back to the ordinary, always-safe
+// dynamic iv_tbl. A fifth, parallel round added RPG2k::Scene::MapViewer
+// (34 of its own 42 real methods, the F9 debug-menu map overview/editor
+// scene) alongside Game::Party, needing one more new opcode, GETIDX0
+// (mrbc's own peephole for a literal `x[0]` index), which also unblocked
+// 5 more methods project-wide (none in any already-shipped owner set).
 // mruby-rpg2k (this gem's own add_dependency) has already run its full gem
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all six classes are guaranteed to already exist below.
+// all eight classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -502,19 +552,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, transition, "block_order",
                             Game__Transition_block_order, MRB_ARGS_NONE());
 
-  // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 75
-  // real methods, in mruby-rpg2k/mrblib/game.rb's own definition order
-  // first (the class's main ~2,100-line body), then the 9 more the class
-  // reopening in mruby-rpg2k/mrblib/game/battle_support.rb adds. Every one
-  // below is public in the real interpreted source -- confirmed directly
-  // (not guessed from bc2cpp's own diagnostic): battle_support.rb's own
-  // `class Actor` reopening (lines 14-198) has no `private`/`protected`
-  // anywhere in it, and game.rb's own single `private` for this class
-  // (line 3496) only covers the 5 methods registered via
-  // mrb_define_private_method at the end of this block below (plus
-  // #calc_exp, which doesn't compile -- BLOCK/RANGE_INC/SENDB -- so it
-  // has no entry here at all, still running mruby-rpg2k's own interpreted
-  // body).
+  // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 76
+  // real methods (up from 75 -- see #set_exp's own entry below, added by
+  // this file's Game::Party round's own full-sweep re-check), in
+  // mruby-rpg2k/mrblib/game.rb's own definition order first (the class's
+  // main ~2,100-line body), then the 9 more the class reopening in
+  // mruby-rpg2k/mrblib/game/battle_support.rb adds. Every one below is
+  // public in the real interpreted source -- confirmed directly (not
+  // guessed from bc2cpp's own diagnostic): battle_support.rb's own `class
+  // Actor` reopening (lines 14-198) has no `private`/`protected` anywhere
+  // in it, and game.rb's own single `private` for this class (line 3496)
+  // only covers the 5 methods registered via mrb_define_private_method at
+  // the end of this block below (plus #calc_exp, which still doesn't
+  // compile even after this round's own RANGE_INC addition -- it also
+  // uses a real Ruby block, BLOCK/SENDB, genuinely out of this compiler's
+  // scope -- so it has no entry here at all, still running mruby-rpg2k's
+  // own interpreted body).
   RClass* actor = mrb_class_get_under(M, game, "Actor");
   mrb_define_method(M, actor, "display_max_hp", Game__Actor_display_max_hp,
                     MRB_ARGS_NONE());
@@ -583,6 +636,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "exp_for_level", Game__Actor_exp_for_level,
                     MRB_ARGS_REQ(1));
+  // #set_exp is the one method this round's own full-sweep re-check (see
+  // this file's own top comment -- the Game::Party round, docs/adr/0139)
+  // newly unblocks here: its own `new_level -= 1 while ...` post-condition
+  // loop needed SUBILV, an opcode added for a completely different class
+  // (Game::Party#skill_to_hit). 76 of Game::Actor's own real methods
+  // compile clean now, not 75.
+  mrb_define_method(M, actor, "set_exp", Game__Actor_set_exp, MRB_ARGS_REQ(1));
   mrb_define_method(M, actor, "gain_exp", Game__Actor_gain_exp,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, actor, "next_level_exp", Game__Actor_next_level_exp,
@@ -673,6 +733,346 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, actor, "class_row_for",
                             Game__Actor_class_row_for, MRB_ARGS_REQ(1));
+
+  // Game::Party (docs/adr/0139's own Game::Party follow-up, see this file's
+  // own top comment for the full opcode/bug-fix story) -- party-wide item/
+  // skill usability rules, equip/swap logic, skill damage formulas, state/
+  // status application, battle placement (mruby-rpg2k/mrblib/game.rb's own
+  // ~2,300-line class body, plus a second reopening in mruby-rpg2k/mrblib/
+  // game/battle_support.rb). 85 of its own 128 real bytecode-defined
+  // methods compile clean, in mruby-rpg2k/mrblib/game.rb's own definition
+  // order first, then the 16 the battle_support.rb reopening adds.
+  //
+  // Visibility: exactly one real method here is private --
+  // #swap_equipment_through_bag, via a real retroactive `private
+  // :swap_equipment_through_bag` call right after its own def (game.rb) --
+  // mrb_define_private_method for it, the same real fix this ADR's own
+  // Game::Picture #step/#finish_move bug already established. Every other
+  // real method registered below (including all 16 from the
+  // battle_support.rb reopening, which has no `private`/`protected`
+  // anywhere in its own Party section) is genuinely public in the real
+  // interpreted source -- confirmed directly, not guessed from bc2cpp's
+  // own diagnostic.
+  //
+  // 43 real methods stay interpreted, none of them a further opcode gap
+  // worth chasing: 17 take an optional/rest/keyword/block argument
+  // (#initialize itself among them -- `ids = nil, roster = nil` -- plus
+  // #each, #gain_item, #lose_item, #field_usable?, #field_items,
+  // #equip_candidates, #equip_from_bag, #field_skills, #field_skill?,
+  // #cast_escape_skill, #cast_teleport_skill, #cast_switch_skill,
+  // #skill_effective?, #cast_skill, #use_item, #battle_skill_command),
+  // outside this compiler's pure-mandatory-argument calling convention by
+  // design; 25 use a real Ruby block (BLOCK/SENDB -- #to_h, #load_state,
+  // #each-based helpers, #apply_map_step_damage/#apply_terrain_damage,
+  // #reorder/#toggle_actor_row/#remove_actor, the #use_medicine/#use_seed/
+  // #has_item?/#equipped_item_count/#item_effective?/#item_state_ids/
+  // #skill_state_ids/#weapon_attribute_ready?/#unequip_to_bag/
+  // #insert_item_in_bag family, and the battle_support.rb reopening's own
+  // #hit_modifier/#stat_mode/#do_nothing_restricted?/#skill_helps_troop?/
+  // #battle_skills/#skill_attributes/#skill_stat_mod_keys/#battle_items),
+  // the same genuinely-out-of-scope shape this file's own Game::Transition/
+  // RPG2k::Window blocks already document; and #equip_by_class? alone uses
+  // real exception handling (EXCEPT/RESCUE/RAISEIF), tied to mruby's own
+  // setjmp/longjmp-based catch-handler machinery -- a materially bigger
+  // feature than a mechanical opcode translation, correctly left alone
+  // rather than forced, matching this compiler's own established RESCUE/
+  // RAISEIF/EXCEPT precedent from Game::Actor's own round.
+  RClass* party = mrb_class_get_under(M, game, "Party");
+  mrb_define_method(M, party, "apply_actor_meta", Game__Party_apply_actor_meta,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "size", Game__Party_size, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "leader", Game__Party_leader, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "take_leader_graphic_dirty",
+                    Game__Party_take_leader_graphic_dirty, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "include_actor?", Game__Party_include_actor_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "actor_by_id", Game__Party_actor_by_id,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "any_alive?", Game__Party_any_alive_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, party, "all_dead?", Game__Party_all_dead_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, party, "map_step_damaged?",
+                    Game__Party_map_step_damaged_, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "add_actor", Game__Party_add_actor,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "promote_to_leader",
+                    Game__Party_promote_to_leader, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "item_count", Game__Party_item_count,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "gain_gold", Game__Party_gain_gold,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "db_item", Game__Party_db_item, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "db_enemy_group", Game__Party_db_enemy_group,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "rpg2003?", Game__Party_rpg2003_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, party, "alternate_battle_layout?",
+                    Game__Party_alternate_battle_layout_, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "death_handler?", Game__Party_death_handler_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, party, "death_handler_event",
+                    Game__Party_death_handler_event, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "death_handler_teleport",
+                    Game__Party_death_handler_teleport, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "use_skill_item_usable?",
+                    Game__Party_use_skill_item_usable_, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_field_occasion?",
+                    Game__Party_item_field_occasion_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "item_battle_occasion?",
+                    Game__Party_item_battle_occasion_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "item_field_only?", Game__Party_item_field_only_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "switch_item?", Game__Party_switch_item_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "use_switch_item", Game__Party_use_switch_item,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "item_recovery", Game__Party_item_recovery,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_cured_states",
+                    Game__Party_item_cured_states, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "ko_only_blocked?", Game__Party_ko_only_blocked_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_usable_by?", Game__Party_item_usable_by_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_usable_by_class?",
+                    Game__Party_item_usable_by_class_, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_uses", Game__Party_item_uses,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "consume_item_use", Game__Party_consume_item_use,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "use_special_item", Game__Party_use_special_item,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "use_equip_skill_item",
+                    Game__Party_use_equip_skill_item, MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "use_special_escape_item",
+                    Game__Party_use_special_escape_item, MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "use_special_teleport_item",
+                    Game__Party_use_special_teleport_item, MRB_ARGS_REQ(4));
+  mrb_define_method(M, party, "use_special_switch_item",
+                    Game__Party_use_special_switch_item, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "use_skill_book", Game__Party_use_skill_book,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "seed_boosts", Game__Party_seed_boosts,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "equip_slot_for", Game__Party_equip_slot_for,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "equip_candidate_for?",
+                    Game__Party_equip_candidate_for_, MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, party, "swap_equipment_through_bag",
+                            Game__Party_swap_equipment_through_bag,
+                            MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "equip_item_from_bag",
+                    Game__Party_equip_item_from_bag, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "db_skill", Game__Party_db_skill,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "term", Game__Party_term, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "state_table", Game__Party_state_table,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, party, "skill_cost", Game__Party_skill_cost,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "escape_skill_available?",
+                    Game__Party_escape_skill_available_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "teleport_skill_available?",
+                    Game__Party_teleport_skill_available_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "flying?", Game__Party_flying_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "unsupported_field_skill?",
+                    Game__Party_unsupported_field_skill_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "field_occasion?", Game__Party_field_occasion_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "switch_skill?", Game__Party_switch_skill_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "can_cast?", Game__Party_can_cast_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "attribute_weapon_type?",
+                    Game__Party_attribute_weapon_type_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "adjust_stat", Game__Party_adjust_stat,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "modified_stat", Game__Party_modified_stat,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "effective_atk", Game__Party_effective_atk,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "effective_int", Game__Party_effective_int,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "effective_def", Game__Party_effective_def,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "effective_spi", Game__Party_effective_spi,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "effective_agi", Game__Party_effective_agi,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_effect", Game__Party_skill_effect,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "skill_defence_term",
+                    Game__Party_skill_defence_term, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "skill_ignores_defence?",
+                    Game__Party_skill_ignores_defence_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_targets", Game__Party_skill_targets,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "skill_cured_states",
+                    Game__Party_skill_cured_states, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_inflicted_states",
+                    Game__Party_skill_inflicted_states, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "gauge_battle_layout?",
+                    Game__Party_gauge_battle_layout_, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "automatic_battle_placement?",
+                    Game__Party_automatic_battle_placement_, MRB_ARGS_NONE());
+  mrb_define_method(M, party, "battle_skill?", Game__Party_battle_skill_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "battle_occasion?", Game__Party_battle_occasion_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "battle_skill_target",
+                    Game__Party_battle_skill_target, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_absorbs?", Game__Party_skill_absorbs_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_hit", Game__Party_skill_hit,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "skill_hit_weapon_fallback",
+                    Game__Party_skill_hit_weapon_fallback, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_to_hit", Game__Party_skill_to_hit,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, party, "state_hit_ratio", Game__Party_state_hit_ratio,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_variance", Game__Party_skill_variance,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_attr_shift", Game__Party_skill_attr_shift,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "skill_invoking_item?",
+                    Game__Party_skill_invoking_item_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "battle_usable?", Game__Party_battle_usable_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, party, "battle_item_command",
+                    Game__Party_battle_item_command, MRB_ARGS_REQ(2));
+  mrb_define_method(M, party, "item_all_allies?", Game__Party_item_all_allies_,
+                    MRB_ARGS_REQ(1));
+
+  // RPG2k::Scene::MapViewer (docs/adr/0139's own follow-up,
+  // mruby-rpg2k/mrblib/scene/map_viewer.rb) -- the F9 debug-menu map
+  // overview/editor scene. 34 of its 42 real bytecode-defined methods
+  // compile clean. #initialize (four keyword arguments, all optional --
+  // `map: nil, start_mode: :pan, quit_on_close: false`) stays interpreted,
+  // the same non-mandatory-arity gap as Game::Picture/RPG2k::Window/
+  // Game::Actor's own #initialize above -- so (like those three, and
+  // unlike Game::Screen/Game::Transition) bc2cpp's own drop_unsafe_embeddings
+  // guard refuses to embed any of this class's own provably-typed ivars
+  // (@mode/@brush_layer: Symbol; @brush/@ox/@oy: Fixnum, per the
+  // whole-program EMBED diagnostic) into an RData struct -- every ivar
+  // access below still goes through the ordinary dynamic iv_tbl, no
+  // MRB_SET_INSTANCE_TT call needed here, confirmed directly against the
+  // real generated output the same way as Game::Picture/RPG2k::Window's own
+  // top-of-file comment already documents.
+  //
+  // 7 more stay interpreted for real, narrow, out-of-scope reasons, not
+  // guessed: #build_chipset and #save_to_disk each have a real `rescue
+  // StandardError => e` clause (RESCUE/RAISEIF/EXCEPT, plus RETURN_BLK for
+  // build_chipset's own early `return nil unless @map`-then-rescue shape);
+  // #event_at, #draw_tiles, #draw_tile_row, #draw_events and
+  // #each_event_position all use a real Ruby block (`each_event_position {
+  // |...| ... }`/`(0...n).each do |...| ... end`, BLOCK/S(S)END, and
+  // #draw_tiles/#draw_tile_row's own exclusive Range literals need
+  // RANGE_EXC too) -- the same established out-of-scope shape every other
+  // compiled target's own block-using methods already stay interpreted for
+  // (RPG2k::Window#dispose/#draw_arrow_fallback, Game::Transition's own 6).
+  //
+  // Every method below is `private` in the real interpreted source *except*
+  // the first 2 (#update, #dispose -- map_viewer.rb's own single `private`
+  // sits right before #update_pan, line 164, in effect through the end of
+  // the class body -- confirmed directly against the real source, not
+  // guessed from bc2cpp's own diagnostic) -- mrb_define_private_method for
+  // the other 32, the same real fix this ADR's own Game::Picture
+  // #step/#finish_move bug already needed once.
+  RClass* scene = mrb_module_get_under(M, rpg2k, "Scene");
+  RClass* map_viewer = mrb_class_get_under(M, scene, "MapViewer");
+  mrb_define_method(M, map_viewer, "update", RPG2k__Scene__MapViewer_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, map_viewer, "dispose", RPG2k__Scene__MapViewer_dispose,
+                    MRB_ARGS_NONE());
+
+  mrb_define_private_method(M, map_viewer, "update_pan",
+                            RPG2k__Scene__MapViewer_update_pan,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "update_select",
+                            RPG2k__Scene__MapViewer_update_select,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "update_edit",
+                            RPG2k__Scene__MapViewer_update_edit,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "close",
+                            RPG2k__Scene__MapViewer_close, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "enter_select_mode",
+                            RPG2k__Scene__MapViewer_enter_select_mode,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "enter_edit_mode",
+                            RPG2k__Scene__MapViewer_enter_edit_mode,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "cursor_start",
+                            RPG2k__Scene__MapViewer_cursor_start,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "zoom_in",
+                            RPG2k__Scene__MapViewer_zoom_in, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "zoom_out",
+                            RPG2k__Scene__MapViewer_zoom_out, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "set_zoom",
+                            RPG2k__Scene__MapViewer_set_zoom, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, map_viewer, "recompute_view",
+                            RPG2k__Scene__MapViewer_recompute_view,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "paint_cursor",
+                            RPG2k__Scene__MapViewer_paint_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "pick_brush",
+                            RPG2k__Scene__MapViewer_pick_brush,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "move_cursor",
+                            RPG2k__Scene__MapViewer_move_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "ensure_cursor_visible",
+                            RPG2k__Scene__MapViewer_ensure_cursor_visible,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "scroll_to_fit",
+                            RPG2k__Scene__MapViewer_scroll_to_fit,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, map_viewer, "teleport_to_cursor",
+                            RPG2k__Scene__MapViewer_teleport_to_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "pan", RPG2k__Scene__MapViewer_pan,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "max_ox",
+                            RPG2k__Scene__MapViewer_max_ox, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "max_oy",
+                            RPG2k__Scene__MapViewer_max_oy, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "center_on_player",
+                            RPG2k__Scene__MapViewer_center_on_player,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "clamp",
+                            RPG2k__Scene__MapViewer_clamp, MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, map_viewer, "refresh",
+                            RPG2k__Scene__MapViewer_refresh, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "draw_header",
+                            RPG2k__Scene__MapViewer_draw_header,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "player_header_text",
+                            RPG2k__Scene__MapViewer_player_header_text,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "select_header_text",
+                            RPG2k__Scene__MapViewer_select_header_text,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "edit_header_text",
+                            RPG2k__Scene__MapViewer_edit_header_text,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "draw_footer",
+                            RPG2k__Scene__MapViewer_draw_footer,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "tile_color",
+                            RPG2k__Scene__MapViewer_tile_color,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, map_viewer, "draw_player",
+                            RPG2k__Scene__MapViewer_draw_player,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_viewer, "mark", RPG2k__Scene__MapViewer_mark,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, map_viewer, "draw_cursor",
+                            RPG2k__Scene__MapViewer_draw_cursor,
+                            MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
