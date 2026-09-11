@@ -3616,7 +3616,35 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // mrb_define_private_method, not mrb_define_method.
   RClass* troop = mrb_class_get_under(M, game, "Troop");
   mrb_define_private_method(M, troop, "member", Game__Troop_member,
-                    MRB_ARGS_REQ(2));
+                            MRB_ARGS_REQ(2));
+
+  // Game::Vehicle (mruby-rpg2k/mrblib/game.rb) -- a boat/ship/airship's
+  // saved location (map id, position, facing, on-map graphic), plain data
+  // rather than a Game::Character. #placed?/#to_h/#load_h/#load_movable
+  // all compile clean; #initialize (type, map_id = 0, x = 0, y = 0,
+  // direction = 2 -- four optional arguments) is NOT registered here --
+  // it stays entirely interpreted, the same established non-mandatory-
+  // arity gap as Game::Picture's/RPG2k::Window's own #initialize above,
+  // and drop_unsafe_embeddings correctly refuses to embed any of this
+  // class's own four provably-Fixnum ivars (@map_id, @x, @y,
+  // @charset_index) as a result -- see this file's own top comment and
+  // compiled_gems.rb's own owners-entry comment for the full writeup.
+  // attr_accessor :map_id, :x, :y, :direction, :charset_name,
+  // :charset_index and attr_reader :type are all native
+  // (Module#attr_reader/attr_accessor), invisible to bc2cpp the same way
+  // every other attr_reader/writer/accessor in this codebase is, so none
+  // of them gets a registration line here either. No bare `private`/
+  // `protected`/`public` anywhere in the real source, so both methods
+  // below are plain `mrb_define_method`. Reuses the `game` RClass*
+  // declared at the top of this function.
+  RClass* vehicle = mrb_class_get_under(M, game, "Vehicle");
+  mrb_define_method(M, vehicle, "placed?", Game__Vehicle_placed_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, vehicle, "to_h", Game__Vehicle_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, vehicle, "load_h", Game__Vehicle_load_h,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, vehicle, "load_movable", Game__Vehicle_load_movable,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

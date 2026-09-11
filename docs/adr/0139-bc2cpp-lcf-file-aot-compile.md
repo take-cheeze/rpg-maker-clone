@@ -3565,3 +3565,126 @@ just a summary count) before registering anything -- exactly one line,
 `Game__Troop_member / Game__Troop_member_impl (Game::Troop#member,
 arity 2) [private -- use mrb_define_private_method, not
 mrb_define_method]` -- matching what's actually registered below.
+
+## Follow-up: Game::Vehicle, and this compiler's sixth severe bug -- `class << self` singleton-class bodies (and a stale-registration leak past an empty class body) invisible to the registry
+
+The same round also adds `Game::Vehicle` (`mruby-rpg2k/mrblib/game.rb`)
+-- a boat/ship/airship's saved location (map id, position, facing,
+on-map graphic), plain data rather than a `Game::Character`. 4 of its
+own 5 real bytecode-defined methods compile clean, needing zero
+`bc2cpp.rb` changes: `#placed?` (a plain `@map_id > 0`), `#to_h` (a real
+Hash literal, the same `mrb_hash_new_capa`/`mrb_hash_set` shape
+`Game::Picture`'s/`Game::Timer`'s/`Game::Weather`'s own `#to_h` already
+ship), `#load_h` (a Hash `#[]` GETIDX read plus a `||` default per
+field), and `#load_movable` (the same GETIDX/`||`-default shape as
+`#load_h`, plus one real `EventGraphic.numpad_direction(m[:direction])`
+call). `:numpad_direction` is MONO in the whole-program registry
+(`Game::EventGraphic`'s own real `def self.numpad_direction`, an `SDEF`
+singleton method with owner `"Game::EventGraphic.singleton"`) but
+correctly stays ordinary `mrb_funcall` dispatch regardless: that
+synthetic `.singleton`-suffixed owner name never matches this run's own
+plain-class-name `ONLY_OWNERS`/`OTHER_OWNERS`, so `compile_send`'s
+existing owner-not-emitted guard correctly falls back rather than
+referencing a function this run never emits. `#initialize(type, map_id
+= 0, x = 0, y = 0, direction = 2)` is the one gap -- four optional
+arguments, the established non-mandatory-arity shape -- so
+`drop_unsafe_embeddings` correctly refuses to embed any of this class's
+own four provably-Fixnum ivars despite the raw `IvarLayout` analysis
+reporting all four as EMBED-eligible.
+
+The round's own dedicated bug-fix pass had a known starting point this
+time: the immediately preceding round's own bug-hunt pass had already
+found and confirmed two real structural gaps in `build_registry` but
+deliberately left them unfixed to avoid scope creep on that pass. This
+round actually fixes both, closing a sixth severe, live,
+already-shipped bug.
+
+**Gap A: `class << self ... end` (or `class << SomeConst ... end`)
+bodies are completely invisible to the registry.** A real `def self.foo`
+compiles to the fused `SDEF` opcode (already fixed two rounds ago), but
+`class << self; def foo; ...; end; end` is a different, older shape
+entirely: `SCLASS` opens the receiver's own singleton class as a body of
+its own, containing ordinary `TDEF`s -- exactly like a `CLASS`/`MODULE`
+body, just reached via this distinct opcode, and previously invisible
+because nothing recursed into an `SCLASS`-opened body the way `EXEC`
+already does for a `CLASS`/`MODULE`-opened one. **Confirmed live, not
+hypothetical:** grepping the whole closed world found 8 real instances,
+every one in `mruby-rgss/mrblib/{lib.rb,error_report.rb}` --
+`RGSS::Bitmap.extensions`, several of `RGSS::Font`'s own defaults, over
+twenty of `RGSS::Audio`'s own methods (`bgm_play`, `resolve`, ...),
+several of `RGSS::Graphics`'s own (`resize_screen`, `wait`, ...),
+`RGSS::ErrorReport.lines`/`.last_location`, and `RGSS.asset_archive`.
+Before this fix, a real registry dump showed every one of these names
+completely absent -- not even a synthetic entry, unlike the
+`attr_reader`/`SDEF` fixes' own synthetic-only approach, since an
+`SCLASS` body can hold arbitrarily many real `def`s (`RGSS::Audio`'s
+own alone defines over twenty) and genuinely needs the same real
+recursion `CLASS`/`MODULE` already get, not just a placeholder.
+
+**Gap B: an empty `class`/`module` body can leak stale
+`pending_reg`/`pending_name` tracking into a later, unrelated `EXEC`.**
+`build_registry`'s `CLASS`/`MODULE` (and now `SCLASS`) case sets
+`pending_reg`/`pending_name`, expecting the very next relevant `EXEC` on
+that same register to be the one that opens this construct's own body --
+but a real empty class body (`class Timeout < StandardError; end`,
+`mruby-rgss/mrblib/lib.rb`) emits NO `EXEC` at all for its own (empty)
+body, since mrbc doesn't bother emitting a trivial always-empty
+child-irep call. That left `pending_reg`/`pending_name` sitting stale
+until *whatever* later instruction happened to reuse the same register --
+however far away, however unrelated. **Confirmed live:** the very next
+construct in the real source, `class << self; attr_accessor
+:asset_archive; end`, reuses that same register for its own `SCLASS`,
+so `RGSS.asset_archive`/`asset_archive=` registered under owner
+`RGSS::Timeout` instead of the real receiver, `RGSS`.
+
+**The fix** (one mechanism closes both gaps): `SCLASS` now sets the
+same `pending_reg`/`pending_name` tracking `CLASS`/`MODULE` already use
+-- the receiver is resolved by walking backward to the register's own
+last write, trusting only a bare `LOADSELF` (`class << self`, self at
+that point being the innermost enclosing namespace, the same fact
+`SDEF`'s own fix already relies on) or a `GETCONST` naming a specific
+constant (`class << SomeConst`); anything else is simply not recognized,
+always safe, just a missed case. The registered owner is a distinct
+`"X.singleton"` pseudo-owner (the same suffix `SDEF`'s own fix already
+uses), which can never collide with or be selected by `ONLY_OWNERS`
+(real Ruby constant paths only). Separately, a new `pending_idx` now
+requires the matching `EXEC` to land on the *exact* next instruction
+index, not merely the same register at any later point -- verified this
+adjacency holds for every real `CLASS`/`MODULE`/`SCLASS`+`EXEC` pair in
+the whole closed world's own disassembly, so this closes the leak
+structurally rather than by luck, with no risk of breaking any
+already-correct pairing.
+
+**A further, related, but explicitly out-of-scope finding** was surfaced
+while fixing the above and left undone to avoid scope creep on this
+pass: `codegen_def`/`codegen_defs` fall back to an unfused
+`TCLASS`/`SCLASS`+`METHOD`+`DEF` instruction sequence -- invisible to
+this registry the same way `SDEF` used to be -- once a class body's own
+child-irep index exceeds `0xff`. Confirmed real in already-shipped
+`RPG2k::Scene::Map` (`#toned?`, `def self.tone_channel`); not currently
+exploitable (`RPG2k::Scene::Map` is not yet a compiled owner), but a
+real gap worth closing before that class ever joins one.
+
+**Verification:** a full before/after registry diff across the whole
+closed world shows every change from the fix is either a new
+`"X.singleton"` pseudo-owner entry (never colliding with a real
+`ONLY_OWNERS` class) or the `RGSS::Timeout` → `RGSS.singleton`
+correction -- zero existing real owner's entries changed, so no
+already-shipped class's own compiled entry-point count moves at all.
+
+**Full-sweep re-check** (all forty-three now-shipped targets across all
+three compiled gems, rebuilt with both this round's coverage and the
+`SCLASS`/empty-body fix applied): every previously-shipped class's own
+entry-point count matches exactly, `RGSS::Sprite` included (still 17,
+confirming the registry fix changed zero already-correct entries); new:
+`Game::Vehicle` (4).
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape across all three generated
+files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
+`rgss_compiled_gen.cpp`). `nm -C` on the resulting `libmruby.a` shows
+the 4 new `Game__Vehicle_*_impl` entry points present and externally
+linked, no pseudo-owner (`.singleton`-suffixed) symbol ever linked
+anywhere, and every already-shipped class's own symbol count unchanged.
