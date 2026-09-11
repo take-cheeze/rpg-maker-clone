@@ -8282,3 +8282,427 @@ behavior on the current, larger 61-owner closed world, or a real,
 checked-and-confirmed-not-live structural gap (ivar embedding's own
 inheritance blindness) in the same documented-but-not-fixed bucket
 several of this file's own prior rounds already use.
+
+## Follow-up: `.singleton` owner support -- SDEF irep capture + `mrb_define_class_method` emission
+
+This round revisits the "permanent structural limitation" this ADR's own
+`RGSS::Bitmap`/`RGSS::Font` follow-ups (several rounds up) both concluded:
+a `.singleton`-owned method (a real `def self.x`/`class << self ... end`
+method, registered under the synthetic `"Owner.singleton"` pseudo-owner
+purely for MONO/POLY devirtualization-soundness bookkeeping) could never
+itself become a real, emitted compile target. Re-reading the actual code
+end to end (rather than re-trusting either prior follow-up's own
+conclusion unchecked, per this file's own established discipline) found
+that conclusion was subtly wrong in exactly one place, and right
+everywhere else -- and fixing that one place, plus one previously-latent
+bug it exposed, was enough to make `.singleton`-owned emission real for
+the first time in this project.
+
+### What was actually blocking `.singleton` emission (and what wasn't)
+
+Four candidate blockers were checked individually against the real code,
+not assumed as a bundle:
+
+1. **`CodeGen#compile_all`'s own `only_owners` filter**
+   (`leaves.select { |l| only_owners.include?(@owner_of.fetch(l).owner) }`)
+   -- a plain string-membership check. **Not a blocker at all**: it
+   accepts any string, `.singleton`-suffixed or not, with zero code
+   changes needed. The identical plain-string check in `compile_send`
+   (`@only_owners.include?(target.owner)`, the call-site devirtualization
+   guard) is equally unconditional. Confirmed by reading both call sites
+   directly, not inferred from the filter "feeling" restrictive.
+2. **`compiled_gems.rb`'s own `owners:` convention** -- every `owners:`
+   array in this project has only ever listed real Ruby constant paths.
+   This is a convention, not a code-enforced rule: nothing anywhere
+   validates or rejects a `.singleton`-suffixed string in `owners:`. **Not
+   a blocker either** -- just a precedent nobody had broken yet.
+3. **SDEF's own `irep: nil`** (`build_registry`'s `when 'SDEF'` case) --
+   **the real, structural blocker**, and the only one of the four that
+   needed an actual code fix. A bare `def self.x` (no `class << self`
+   block) compiles to a single fused `SDEF` opcode whose own `I[c]`
+   operand names a real, already-compiled child irep -- mrbc genuinely
+   compiles a real body into it, identical in kind to `TDEF`'s own child
+   irep. The old SDEF case read this operand into a local
+   (`_reg, sname, _irep_ref = insn.args.split(/\s+/, 3)`) and then
+   discarded it, registering `irep: nil` unconditionally "by design," on
+   the theory that MONO/POLY soundness is all this pseudo-owner entry is
+   for. True for soundness, but it meant `@owner_of[d.irep] = d if d.irep`
+   (`compile_all`'s own leaf-worklist builder) never inserted an entry for
+   an SDEF-defined singleton method at all -- invisible to `compile_all`
+   from the start, regardless of what `ONLY_OWNERS` said, structurally
+   incapable of ever being selected. This is exactly what the
+   `RGSS::Bitmap.failure_reason` follow-up found and correctly declined to
+   force.
+4. **No code path emits `mrb_define_class_method`** -- true, but this
+   file never emits *any* `mrb_define_*` call for any owner, singleton or
+   not: `register.cxx` is hand-maintained per compiled gem, and
+   `bc2cpp.rb` only prints a diagnostic listing (`== compiled entry points
+   ==`) with a visibility hint telling a human which `mrb_define_*`
+   variant to write. **Not a structural blocker**, just a missing hint
+   (fixed below) plus, for the one method this round actually ships, a
+   hand-written call in `register.cxx`.
+
+So the real, minimal fix was #3 alone (plus discovering and fixing a
+second, previously-unreachable bug it exposed -- see below). #1 and #2
+needed no code change, only compiled_gems.rb actually choosing to write a
+`.singleton` owner into a real `owners:` list for the first time. #4
+needed only a diagnostic-hint addition and a hand-written registration.
+
+### The SDEF fix (`tools/bc2cpp/bc2cpp.rb`, `build_registry`'s `when 'SDEF'` case)
+
+Mirrors exactly what the already-existing unfused `TCLASS/SCLASS+METHOD+
+DEF` `DEF` case's own singleton branch has done all along (checked
+directly, per this round's own task framing, in case it had the same
+"index doesn't fit a byte" fallback gap `SDEF` had -- it doesn't; that
+branch has registered a real `irep: child_label` for its own singleton
+shape since the day it was added, never `irep: nil`): resolve the fused
+opcode's own `I[c]` operand into a real child-irep label the identical
+way `TDEF` resolves its own `I[c]` two cases up, and register the
+`MethodDef` with that real `irep:` instead of `nil`, still under the same
+`"#{namespace || 'Object'}.singleton"` pseudo-owner string. Nothing else
+about the registration changes: same owner string, same bare method name,
+same `visibility: :public` (this file has never modeled
+`private_class_method`/singleton-method privacy, for either the fused or
+unfused shape, and still doesn't). MONO/POLY resolution is completely
+unaffected -- still exactly one `MethodDef` for this name+owner, same as
+before; only whether that one `MethodDef` carries a real, walkable irep
+changed.
+
+**Checked every place in this file that reads `d.irep`/`d.irep.nil?` for
+an implicit "synthetic/native, no real body" assumption**, per the task's
+own explicit instruction, rather than assuming none exist:
+- `natively_exposed?` (`d.owner == owner && d.irep.nil?`, used only by
+  `drop_unsafe_embeddings` to keep an *instance* ivar off an embedded
+  struct when some native accessor already exposes it under that ivar's
+  own class) -- `owner` here always comes from `ivar_layout`'s own keys,
+  themselves always a real instance-class owner (an `#initialize`'s own
+  class), never a `.singleton`-suffixed string. A `.singleton`-owned
+  MethodDef's `d.owner` can never equal a real instance-class owner
+  string, so this check is structurally unaffected regardless of that
+  MethodDef's own `irep` nil-ness. Confirmed by construction (a
+  `.singleton` suffix cannot occur in `ivar_layout`'s own key set, which
+  only ever comes from `#initialize`'s owner), not just by testing.
+- `monomorphic_target`, `compile_all`'s own leaf-worklist builder,
+  `ArgTypes.analyze`'s own MONO-name filter, and the embedding gate's own
+  `#initialize`-compiles-clean check all already treat "has a real irep"
+  as "is a real, potentially-compilable leaf" -- exactly the correct
+  reading for a real SDEF-captured body too. None of them special-case
+  irep-nil-ness in a way that assumed it meant specifically "SDEF," only
+  "no real body" -- so widening which MethodDefs carry a real irep is
+  safe by these call sites' own existing logic, not something that needed
+  a bespoke carve-out.
+- `@owner_of[d.irep] = d if d.irep` (the leaf-worklist builder itself) --
+  the entire point of the fix; now correctly inserts an entry for an
+  SDEF-defined singleton method, exactly parallel to how it already did
+  for an SCLASS-opened or unfused-DEF-defined one.
+
+**A real, previously-latent second bug this fix exposed and also had to
+fix**: `compile_insn`'s own `GETCONST` case built its owner-scope-first
+constant-lookup chain via `owner_path = owner_def.owner.split('::')`.
+For an ordinary owner ("RGSS::Window") this is exactly the class's own
+real lexical nesting. For a `.singleton`-suffixed owner
+("RGSS::Bitmap.singleton"), splitting on `"::"` produces `["RGSS",
+"Bitmap.singleton"]` -- and the codegen loop then emits a literal
+`mrb_const_get(M, scope_RGSS, mrb_intern_cstr(M, "Bitmap.singleton"))` as
+the **first, UNPROTECTED** segment of the scope chain (only the final
+lookup of the *target* constant name is wrapped in
+`bc2cpp_const_try`/`mrb_protect_error` -- building the scope chain itself
+was never guarded, on the reasonable-until-now assumption that every
+segment of a real owner path is, by construction, a real, already-
+existing constant). `"Bitmap.singleton"` is never a real constant
+anywhere -- this is a guaranteed real `NameError` (`uninitialized
+constant RGSS::Bitmap.singleton`) the very first time such a compiled
+function actually ran, invisible to every static check this compiler has
+(g++ accepts the call as written; `SKIP_UNSUPPORTED`'s own `#error`-marker
+check has no way to know a segment it's about to look up isn't real).
+
+This bug existed the moment `SCLASS`'s own registry fix (several rounds
+up) started giving `.singleton`-owned methods real irep bodies with real
+`GETCONST`s inside them (`self.extensions`'s own `EXTENSIONS` reference)
+-- it was simply unreachable until this round, since no `owners:` list
+had ever named a `.singleton` pseudo-owner before, so `compile_method`
+had never been asked to actually emit either method's body. Caught for
+real, not hypothetically, the first time this project ever compiled
+`RGSS::Bitmap.singleton#extensions`/`#failure_reason` for real (see
+below) -- confirmed directly in the generated output before the fix:
+`mrb_value scope1 = mrb_const_get(M, scope0, mrb_intern_cstr(M,
+"Bitmap.singleton"));` at every one of the 8 real `GETCONST` sites across
+both method bodies (`EXTENSIONS`/`GAME_DIR`/`RTP_DIR`/`RGSS`).
+
+**The fix**: a new `lexical_scope_path(owner)` helper (`owner.sub(/\.
+singleton\z/, '').split('::')`), used by `GETCONST`'s own codegen in
+place of the bare `owner.split('::')`, and by `const_chain_value_expr`
+(the TYPED-path helper) for the same reason, hardened defensively even
+though it is not currently reachable there (`trace_new_target`'s own
+`known_class` never names a `.singleton` pseudo-owner -- confirmed by
+this file's own registry audit, re-checked again this round). A `def
+self.x`/`class << self ... end` method's own real lexical nesting
+(`Module.nesting` in real Ruby, for code textually written inside `class
+Bitmap; def self.foo; end; end`) is exactly its enclosing class/module's
+own nesting -- `[RGSS::Bitmap, RGSS]`, not `[RGSS::Bitmap.singleton,
+RGSS]` -- so stripping the pseudo-owner suffix before splitting recovers
+exactly the right scope chain. Since every real (non-`.singleton`) owner
+already has no such suffix to strip, `sub` is a no-op for every
+already-shipped owner -- confirmed in the full-sweep regression diff
+below (zero change to any already-shipped owner's own `GETCONST`
+codegen).
+
+### `owners:` accepting a `.singleton` entry (`tools/bc2cpp/compiled_gems.rb`)
+
+`mruby-rgss-compiled`'s own `owners:` gains `RGSS::Bitmap.singleton` --
+the first `.singleton`-suffixed entry in any `owners:` list in this
+project. No `mrbgem.rake` change was needed: `target_owners =
+this_gem[:owners]` already passes the array through to `ONLY_OWNERS`
+(`target_owners.join(',')`) exactly as written, with no filtering or
+validation of the string shape anywhere in that pipeline.
+
+### `mrb_define_class_method` emission
+
+Two parts, matching the task's own framing:
+
+- **Diagnostic hint** (`tools/bc2cpp/bc2cpp.rb`'s own `== compiled entry
+  points ==` listing): an owner ending in `.singleton` now gets an
+  unconditional `[class method -- use mrb_define_class_method, not
+  mrb_define_method]` note appended after the existing public/private/
+  protected visibility hint (independent of it -- a `.singleton`-owned
+  MethodDef's own `visibility` is always `:public`, this file never
+  models singleton-method privacy, so the two notes never need to
+  interact). This is the same mechanism this file has always used to tell
+  a human maintaining a hand-written `register.cxx` what to write --
+  `bc2cpp.rb` itself has never emitted a `mrb_define_*` call for any
+  owner.
+- **The real registration** (`mruby-rgss-compiled/src/register.cxx`):
+  ```cpp
+  mrb_define_class_method(M, bitmap, "extensions",
+                           RGSS__Bitmap_singleton_extensions, MRB_ARGS_NONE());
+  mrb_define_class_method(M, bitmap, "failure_reason",
+                           RGSS__Bitmap_singleton_failure_reason,
+                           MRB_ARGS_REQ(1));
+  ```
+  Confirmed `mrb_define_class_method` is a real, already-existing mruby
+  core API (`3rd/mruby/include/mruby.h`: `MRB_API void
+  mrb_define_class_method(mrb_state *mrb, struct RClass *cla, const char
+  *name, mrb_func_t fun, mrb_aspec aspec);`) before relying on it, not
+  assumed from the name alone. Reuses the exact same `bitmap` `RClass*`
+  already declared above (from `mrb_class_get_under(M, rgss, "Bitmap")`)
+  for `#font`/`#font=`'s own instance-level registrations -- no separate
+  `RClass*` needed, since `mrb_define_class_method` resolves the
+  receiver's own singleton class internally. `cpp_name`'s own `sanitize`
+  (`gsub(/[^a-zA-Z0-9_]/, '_')`) already turns `"RGSS::Bitmap.singleton"`
+  into `RGSS__Bitmap_singleton` (both `::` and `.` collapse to `_`),
+  distinct from plain `RGSS::Bitmap`'s own `RGSS__Bitmap` prefix -- no
+  naming collision between the two owners' own generated function/struct
+  names, confirmed directly in the real generated output and via `nm`
+  (below), not merely reasoned about.
+
+### Proof of concept: `RGSS::Bitmap.singleton#extensions` and `#failure_reason`
+
+Both of `RGSS::Bitmap`'s own `.singleton`-owned methods --
+`self.extensions` (an `SCLASS`-opened body, `@extensions || EXTENSIONS`)
+and `self.failure_reason(f)` (a bare `def self.x`, the fused `SDEF` shape
+this round's own fix targets) -- are real, individually compilable leaves
+once `RGSS::Bitmap.singleton` is in `ONLY_OWNERS`, confirmed directly
+against the real `== compiled entry points ==` listing from a real run
+against a real host `mrbc`:
+```
+RGSS__Bitmap_singleton_extensions / RGSS__Bitmap_singleton_extensions_impl  (RGSS::Bitmap.singleton#extensions, arity 0)  [class method -- use mrb_define_class_method, not mrb_define_method]
+RGSS__Bitmap_singleton_failure_reason / RGSS__Bitmap_singleton_failure_reason_impl  (RGSS::Bitmap.singleton#failure_reason, arity 1)  [class method -- use mrb_define_class_method, not mrb_define_method]
+```
+`self.failure_reason` compiling clean was itself not a foregone
+conclusion -- the prior `RGSS::Bitmap` follow-up explicitly left open
+whether its own body (`if`/early `return`/array `<<`/ternary-into-array-
+push/`.join`/string interpolation) would compile once given a real irep,
+having confirmed only that it *had* one. It does compile clean, with zero
+new `bc2cpp.rb` opcode work: every construct in its body was already an
+otherwise-supported shape elsewhere in this closed world.
+
+**A real, live devirtualization proof, not just a registration proof**:
+`self.failure_reason`'s own body calls `extensions` (bare, self-implicit
+-- both methods share the same `.singleton` owner) and `.join("/.")` on
+the result. The real generated code shows this correctly MONO-
+devirtualizing into a direct C++ call, not `mrb_funcall`:
+```cpp
+  // MONO :extensions -> RGSS::Bitmap.singleton#extensions, direct C++ call (no mrb_funcall)
+  r6 = RGSS__Bitmap_singleton_extensions_impl(M, self);
+```
+-- a real call site inside already-compiled code (this same round's own
+new code, since no pre-existing compiled method anywhere in the closed
+world called either of these methods) devirtualizing straight into a
+`.singleton`-owned target for the first time this project has ever done,
+exactly the "verify a real call site devirtualizes" proof the task asked
+for. `RGSS::Font.exist?`'s own only real call site is in the mruby-rgss
+test suite (`mruby-rgss/test/test.rb`), never from other compiled code,
+and `RGSS::Bitmap.failure_reason`'s own real call site
+(`RGSS::Bitmap#initialize`'s `raise LoadError.new(f,
+Bitmap.failure_reason(f))`) sits inside a method that itself never
+compiles (non-mandatory arity) -- so this same-owner self-call is the one
+real, already-compiled devirtualizing call site this closed world
+actually has today.
+
+`nm -C` on a real compiled object confirms both `_impl` functions are
+present and externally linked (`T`), their `mrb_get_args`-marshaling
+entry wrappers correctly stay local (`t`):
+```
+0000000000001486 T RGSS__Bitmap_singleton_extensions_impl(mrb_state*, mrb_value)
+000000000000169d T RGSS__Bitmap_singleton_failure_reason_impl(mrb_state*, mrb_value, mrb_value)
+0000000000001674 t RGSS__Bitmap_singleton_extensions(mrb_state*, mrb_value)
+000000000000289d t RGSS__Bitmap_singleton_failure_reason(mrb_state*, mrb_value)
+```
+Neither appears in any embedding-struct symbol set (`RGSS::Bitmap` still
+has no `MRB_SET_INSTANCE_TT`/`RGSS__Bitmap_ivars` struct at all -- the
+embedding-classes listing is byte-identical before and after this
+round's whole diff, see the regression sweep below).
+
+### Regression-safety verification (the task's own "single most important" step)
+
+The real, opt-in `RPGMAKER_BC2CPP=1` pipeline was run end to end in this
+worktree: `3rd/mruby` and its own real dependencies
+(`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/uni-algo`, `3rd/stb`) were `git submodule update --init`'d (kept out
+of this round's own diff -- a fresh worktree checkout, not a project
+change), and a real host `mrbc` (`mruby 4.0.0`) built from inside
+`3rd/mruby` itself (`HOST_CXX=c++ HOST_CC=cc rake -f Rakefile`, the same
+two fixes prior rounds' own writeups already worked out). The full
+desktop `cmake`/`ninja` engine build could not be completed in this
+environment -- `3rd/lvgl`, `3rd/gflags`, `3rd/ng-log`, `3rd/quickjs`,
+`3rd/effekseer` are deliberately left uninitialized (large, desktop/
+rendering-only submodules, out of scope for this AOT-compiler-only
+change and this session's own disk budget) -- so this round used the
+same established fallback several prior rounds already document: run
+`tools/bc2cpp/bc2cpp.rb` directly against the real host `mrbc`, with
+`ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS`/the closed-world source list
+all computed programmatically from the real, already-edited
+`compiled_gems.rb` (via `BC2CPP_COMPILED_GEMS`, `core_native_srcs`,
+`closed_world_mrblib_srcs`) -- never hand-copied -- for all three
+compiled gems (`mruby-lcf-compiled`, `mruby-rpg2k-compiled`,
+`mruby-rgss-compiled`), `SKIP_UNSUPPORTED=1`, exactly matching what each
+gem's own real `mrbgem.rake` would invoke.
+
+**Before/after `.cpp` diff, all three gems, every existing owner:**
+- `mruby-lcf-compiled_gen.cpp`: **byte-identical**, 0 lines differ.
+- `mruby-rpg2k-compiled_gen.cpp`: **byte-identical**, 0 lines differ.
+- `mruby-rgss-compiled_gen.cpp`: differs **only** by the two brand-new
+  `RGSS::Bitmap.singleton#extensions`/`#failure_reason` method bodies
+  being appended (confirmed by diffing and filtering out every line
+  mentioning "singleton" -- the residual diff is empty); every
+  pre-existing method's own generated code (`RGSS::Sprite`/`Plane`/
+  `Tilemap`/`Window`/`Bitmap#font`/`#font=`) is untouched, byte-for-byte.
+
+**Before/after full diagnostic diff, all three gems:** every diff is
+purely additive (zero lines removed in any of the three files) --
+- 14 new `ARG` (call-site argument-type inference) lines, identical
+  across all three gems' own diagnostics (`ArgTypes.analyze` reads the
+  same whole-closed-world `registry`/`ireps` regardless of which gem's
+  own `ONLY_OWNERS` is active): these are MONO names whose *sole*
+  definition happens to be a `.singleton`-owned SDEF/SCLASS method
+  (`:absorbed`, `:allowed?`, `:drain`, `:flag_of`, ... -- all real,
+  pre-existing MONO names in the whole-program registry, confirmed
+  against the registry dump). `ArgTypes.analyze`'s own MONO-name filter
+  (`next unless defs.first.irep`) previously skipped every one of these
+  because their sole definition had `irep: nil`; now that SDEF gives them
+  a real irep, `ArgTypes` can inspect their own body's `ENTER` arity and
+  scan the whole program for call sites feeding their arguments, exactly
+  the same already-established, already-verified-safe mechanism this
+  file has always used for every other MONO name -- a strictly more
+  precise (never a wrongly precise) widening of an existing analysis
+  pass's own coverage, not a new mechanism. Its own downstream consumer
+  (`IvarLayout.trace_type`, feeding embedding decisions) produced **zero**
+  observable difference in either gem's own generated code or embedding-
+  classes listing -- confirmed by the byte-identical `.cpp` diff above,
+  the authoritative check, not just reasoned about from the mechanism's
+  own "safe under-approximation" invariant.
+- The two new `== compiled entry points ==` lines
+  (`RGSS::Bitmap.singleton#extensions`/`#failure_reason`), `mruby-rgss-
+  compiled` only.
+- **`== classes needing MRB_SET_INSTANCE_TT` diff: empty, all three
+  gems.** No embedding decision for any already-shipped owner changed.
+- Whole-program method registry dump (`MONO`/`POLY` counts and owner
+  lists per name): **2906 entries before, 2906 after**, `mruby-rgss-
+  compiled`'s own run -- identical count, confirming zero MONO/POLY
+  soundness change (the SDEF fix only changes whether an existing
+  MethodDef carries a real irep, never how many MethodDefs exist for any
+  name).
+
+**Entry-point counts, before -> after:** `mruby-lcf-compiled` 33 -> 33
+(unchanged), `mruby-rpg2k-compiled` 995 -> 995 (unchanged),
+`mruby-rgss-compiled` 38 -> 40 (+2, exactly the two new singleton
+methods).
+
+**Real compile verification**: `clang-format -i` then `clang-format
+--dry-run --Werror` on the one `.cxx` file touched
+(`mruby-rgss-compiled/src/register.cxx`) -- clean. `g++ -fsyntax-only
+-std=gnu++17 -Wall -Wextra -Winfinite-recursion` against the real
+regenerated `register.cxx` (including its new `mrb_define_class_method`
+calls) plus the real regenerated `rgss_compiled_gen.cpp` and the real
+mruby headers (`3rd/mruby/include`, the real generated `mruby/presym/
+id.h` from the host `mrbc` build above): **zero errors, zero
+`-Winfinite-recursion` warnings** (94 warnings total, every one an
+already-established, pre-existing `-Wunused-but-set-variable`/
+`-Wunused-parameter` shape this file's own codegen has always produced,
+confirmed by grep, not eyeballed). Compiled to a real object file and
+diffed its full `nm -C` symbol table against an object built the same way
+from the pre-this-round `register.cxx`+generated-`.cpp` pair: the *only*
+symbol-table difference is the four new symbols
+(`RGSS__Bitmap_singleton_extensions`/`_impl`,
+`RGSS__Bitmap_singleton_failure_reason`/`_impl`) plus the new undefined
+references their own bodies pull in (`mrb_ary_new`, `mrb_ensure_
+string_type`, `mrb_str_concat`, `mrb_str_new_cstr`, `mrb_define_
+class_method` -- all real, pre-existing mruby core API, unresolved only
+because this is a syntax/object-only compile with no final link)-- every
+pre-existing symbol (all `RGSS::Sprite`/`Plane`/`Tilemap`/`Window`/
+`Bitmap#font`/`#font=` `_impl`s and entry wrappers, `mrb_mruby_rgss_
+compiled_gem_init`/`_gem_final`) is present, unchanged in name and
+linkage (`T`/`t`), confirming the "not a single already-shipped owner's
+own registration changed" claim with a real linker-level artifact, not
+just source-level reasoning.
+
+### What was deferred, and why
+
+- **The full desktop `cmake`/`ninja` engine build** (the task's own
+  documented `build/` steps) could not be completed in this environment
+  -- `3rd/lvgl`/`3rd/gflags`/`3rd/ng-log`/`3rd/quickjs`/`3rd/effekseer`
+  are large, desktop/rendering-only submodules deliberately left
+  uninitialized (this session's own disk budget, and genuinely out of
+  scope for a change confined to the AOT-compiler prototype and one
+  compiled gem's own `register.cxx`), the same environment gap several
+  prior rounds in this file already document hitting and worked around
+  the same way. The host-`mrbc` + real `bc2cpp.rb` run + `g++
+  -fsyntax-only`/real-object-compile/`nm` methodology above is this
+  project's own already-established fallback for exactly this situation,
+  used identically here.
+- **`RGSS::Font.exist?`** (the other `.singleton`-owned method this ADR's
+  own prior follow-up investigated) was NOT added to any `owners:` list
+  this round. Its own class (`RGSS::Font`) has no other compilable
+  bytecode-defined method (`#initialize` has non-mandatory arity, the
+  same gate `RGSS::Bitmap#initialize` hits) and `RGSS::Font.exist?`'s own
+  only real call site is in the test suite, never from other compiled
+  code -- adding it would prove nothing new the `RGSS::Bitmap.singleton`
+  case above doesn't already prove (an `SCLASS`-opened singleton method
+  compiling and being reachable via `mrb_define_class_method`), while
+  adding a second, otherwise-empty owner. Left as a known-good, still-
+  available future candidate, not attempted this round to keep this
+  round's own diff focused on the structural fix plus one real proof.
+- **`Game::EventGraphic.numpad_direction`, `Game::State`'s own 9
+  `.singleton`-owned methods, and every other `.singleton`-owned MONO
+  name this ADR's own prior rounds identified** were not investigated for
+  `owners:` inclusion this round -- confirming the *mechanism* works (via
+  `RGSS::Bitmap.singleton`) was this round's own scope; auditing every
+  other candidate for whether its own body compiles is exactly the kind
+  of per-class follow-up work this ADR's own established one-class(-ish)-
+  per-round rhythm already handles, not a batch to take on alongside a
+  structural registry change.
+
+**Bottom line**: `.singleton`-owned methods are no longer structurally
+incapable of becoming real, compiled, correctly-devirtualizable entry
+points -- the SDEF-irep gap (this round's own real fix) and the
+`GETCONST`-owner-scope-chain bug it exposed (this round's own second real
+fix, caught only by actually compiling a `.singleton`-owned method's body
+for the first time) are both closed, `owners:` accepting a `.singleton`
+suffix needed no code change at all, and `RGSS::Bitmap.singleton#
+extensions`/`#failure_reason` are real, proven, `nm`-confirmed, correctly
+`mrb_define_class_method`-registered entry points today, with a real
+same-owner devirtualizing call site between them. Every already-shipped
+owner across all three compiled gems is provably unaffected -- byte-
+identical generated code, byte-identical embedding decisions, byte-
+identical MONO/POLY registry entry count, confirmed by diff and by `nm`,
+not by inspection alone.
