@@ -434,6 +434,72 @@
 // reopening in battle_support.rb, which starts its own fresh, default-
 // public visibility scope -- is public.
 //
+// A sixteenth, independent round adds Game::EnemyAi (mruby-rpg2k/mrblib/
+// game/battle_support.rb) -- the outside-world collaborator Game::Battle's
+// own enemy action-pattern logic reads through (skill-table/database
+// lookups, casting-eligibility/effectiveness formulas reused from
+// Game::Party, switch read/write, and the party's own average level),
+// never a database or game-state owner itself. 9 of its own 10 real
+// bytecode-defined methods compile clean, needing no new opcode work at
+// all, including #initialize itself (2 purely mandatory arguments, `db,
+// state`, no super, no block). The one gap, #party_level, ends in a real
+// `actors.each { |a| ... }` block (BLOCK/SENDB), the same established
+// out-of-scope shape every other block-using method in this file already
+// documents -- confirmed directly against the real whole-program
+// diagnostic (SKIP_UNSUPPORTED=1 silently drops it, no generated entry
+// point at all), not assumed from an earlier round's own less careful
+// count.
+//
+// Unlike every other #initialize-compiling target above, though, neither
+// of this class's own two ivars (@db, @state) ever gets embedded: both
+// are opaque object references (a database table and a Game::State
+// instance respectively), never provably Fixnum/Symbol -- #initialize's
+// own real `# bc2cpp: (, Game::State)` class annotation (added several
+// follow-ups up, already present in the real source before this round)
+// confirms @state's real class for devirtualization purposes only;
+// ClassLayout/ClassAnnotations deliberately never feed IvarLayout's own
+// struct-field lattice, which models only Fixnum/Symbol primitives.
+// Confirmed directly against the real generated output: Game::EnemyAi
+// does not appear in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT"
+// diagnostic, so no MRB_SET_INSTANCE_TT call belongs in its own
+// registration block below.
+//
+// Every real construction site in the whole closed world goes through a
+// plain `Game::EnemyAi.new(db, state)` call -- mruby-rpg2k/mrblib/scene/
+// battle.rb's own Scene::Battle#initialize, plus 7 in scripts/
+// rpg2k_logic_check.rb's own CRuby test harness -- confirmed by grepping
+// the whole closed world for `Game::EnemyAi.new`/`.allocate`/a subclass
+// and finding no bypass and no subclass anywhere. Moot for memory safety
+// here specifically, since nothing ends up embedded either way, but
+// checked anyway, the same construction-site discipline every other
+// embedding-candidate target above follows.
+//
+// No bare `private` anywhere in the class body (it opens its own fresh
+// scope inside game/battle_support.rb, the same file Game::EnemyAction/
+// Game::Troop/Game::States each independently reopen with their own
+// visibility state), so every method below is `mrb_define_method` except
+// #initialize itself, forced private by mruby's own interpreter
+// regardless of source, the same always-private special case as every
+// other compiled #initialize in this file.
+//
+// A seventeenth, independent round adds Game::ChipSet (mruby-rpg2k/mrblib/
+// game.rb) -- one loaded chipset's own tile graphic name plus the lower/
+// upper passability tables, terrain table, and water-animation parameters.
+// ALL 9 of its own real bytecode-defined instance methods compile clean,
+// needing no new opcode work at all; see compiled_gems.rb's own comment on
+// this gem's `owners:` entry for the full writeup, including the real
+// bitwise/modulo-operator SEND-name-extraction bug this class's own
+// #passable_tile?/#landable_tile? surfaced in bc2cpp.rb itself -- also live
+// in RPG2k::Scene::ChipsetEditor#toggled_byte/#cell_color_for and 30 other
+// already-shipped methods across a dozen classes, fixed at the root, every
+// affected class's own generated output regenerating correctly with the
+// fix in place. #initialize (`initialize db, id`) compiles clean -- pure
+// mandatory arity, the fifth target after Game::Screen/Game::Transition/
+// Game::State/Game::Map above whose own ivars get real RData struct
+// embedding: @animation_type/@animation_speed, mixed safely with this
+// class's own String/Array-typed (UNKNOWN) ivars on the ordinary dynamic
+// iv_tbl.
+//
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
 // looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
@@ -2827,6 +2893,88 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map, "set_tile", Game__Map_set_tile,
                             MRB_ARGS_REQ(4));
   mrb_define_private_method(M, map, "tile", Game__Map_tile, MRB_ARGS_REQ(4));
+
+  // Game::EnemyAi (mruby-rpg2k/mrblib/game/battle_support.rb) -- see this
+  // file's own top comment for the real construction-site safety check and
+  // why no MRB_SET_INSTANCE_TT call belongs here (both @db/@state are
+  // opaque object references, never Fixnum/Symbol). No bare `private`
+  // anywhere in the real source (confirmed directly, not guessed from
+  // bc2cpp's own diagnostic), so every method below is `mrb_define_method`
+  // except #initialize itself, which mruby's own src/class.c forces
+  // private unconditionally regardless of source, the same always-private
+  // special case as every other compiled #initialize in this file. Reuses
+  // the `game` RClass* declared at the top of this function.
+  RClass* enemy_ai = mrb_class_get_under(M, game, "EnemyAi");
+  mrb_define_private_method(M, enemy_ai, "initialize", Game__EnemyAi_initialize,
+                            MRB_ARGS_REQ(2));
+  mrb_define_method(M, enemy_ai, "skill", Game__EnemyAi_skill, MRB_ARGS_REQ(1));
+  mrb_define_method(M, enemy_ai, "enemy", Game__EnemyAi_enemy, MRB_ARGS_REQ(1));
+  mrb_define_method(M, enemy_ai, "skill_command", Game__EnemyAi_skill_command,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, enemy_ai, "skill_helps_troop?",
+                    Game__EnemyAi_skill_helps_troop_, MRB_ARGS_REQ(3));
+  mrb_define_method(M, enemy_ai, "skill_battle_usable?",
+                    Game__EnemyAi_skill_battle_usable_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, enemy_ai, "skill_ready?", Game__EnemyAi_skill_ready_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, enemy_ai, "switch?", Game__EnemyAi_switch_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, enemy_ai, "set_switch", Game__EnemyAi_set_switch,
+                    MRB_ARGS_REQ(2));
+  // #party_level is NOT registered here -- its own body ends in a real
+  // `actors.each { |a| ... }` block (BLOCK/SENDB), an already-established
+  // out-of-scope shape (see this file's own top comment, corrected: 9 of
+  // this class's own 10 real methods compile clean, not all 10).
+
+  // Game::ChipSet (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
+  // comment (compiled_gems.rb's own comment carries the full writeup) for
+  // the real construction-site check backing the embedding below, and for
+  // the real bitwise/modulo-operator SEND-name-extraction bug this class's
+  // own #passable_tile?/#landable_tile? surfaced in bc2cpp.rb itself (also
+  // live in RPG2k::Scene::ChipsetEditor#toggled_byte/#cell_color_for and
+  // 30 other already-shipped methods, fixed at the root, no hand-edit
+  // needed to any registration block). ALL 9 of its own real
+  // bytecode-defined instance methods compile clean; `.lower_index` is a
+  // real singleton method (`def self.lower_index`), structurally invisible
+  // to bc2cpp's own registry (the same pre-existing gap Game::MoveRoute's
+  // own class methods already documented), so it stays interpreted and
+  // every call into it from a compiled method below correctly falls back
+  // to ordinary dynamic dispatch rather than being (unsoundly)
+  // devirtualized. @animation_type and @animation_speed are real fields on
+  // a new Game__ChipSet_ivars RData struct, mixed safely with the rest of
+  // this class's own (String/Array-typed, UNKNOWN) ivars on the ordinary
+  // dynamic iv_tbl. Reuses the `game` RClass* declared at the top of this
+  // function.
+  RClass* chip_set = mrb_class_get_under(M, game, "ChipSet");
+  MRB_SET_INSTANCE_TT(chip_set, MRB_TT_DATA);
+
+  // #initialize is always private (the same real interpreter special case
+  // as every other compiled #initialize in this file -- mruby's own
+  // src/class.c forces it regardless of source, not a bare `private` call
+  // here).
+  mrb_define_private_method(M, chip_set, "initialize", Game__ChipSet_initialize,
+                            MRB_ARGS_REQ(2));
+  // #upper_flags is `private` via a real, explicit `private :upper_flags`
+  // call right after its own def (not the bare mode-switch form every other
+  // private section in this file uses) -- the same real visibility check
+  // this file's own Game::Picture#step/#finish_move bug (docs/adr/0139)
+  // already established the need for.
+  mrb_define_private_method(M, chip_set, "upper_flags",
+                            Game__ChipSet_upper_flags, MRB_ARGS_REQ(1));
+  mrb_define_method(M, chip_set, "elevated?", Game__ChipSet_elevated_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, chip_set, "passable?", Game__ChipSet_passable_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, chip_set, "landable?", Game__ChipSet_landable_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, chip_set, "counter?", Game__ChipSet_counter_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, chip_set, "passable_tile?", Game__ChipSet_passable_tile_,
+                    MRB_ARGS_REQ(3));
+  mrb_define_method(M, chip_set, "landable_tile?", Game__ChipSet_landable_tile_,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, chip_set, "terrain", Game__ChipSet_terrain,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
