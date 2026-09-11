@@ -158,12 +158,53 @@
 // runs before any embedded field is ever touched. StatusMenu's own
 // #initialize hits a non-mandatory optional argument (plus a `super`
 // call), the same established gap as every other non-embedding target
-// above, so its own one real ivar stays unembedded too.
+// above, so its own one real ivar stays unembedded too. A tenth, parallel
+// round adds Game::MoveRoute (mruby-rpg2k/mrblib/game.rb -- the RPG2000
+// "Set Move Route" event-command engine: a character's programmed queue
+// of move/turn/wait/jump/effect sub-commands, with the repeat/skip-if-
+// blocked flags a route carries), 18 of its own 19 real bytecode-defined
+// methods, and RPG2k::Scene::ChipsetEditor (mruby-rpg2k/mrblib/scene/
+// chipset_editor.rb -- the F9 debug menu's Chipset page: a Lower/Upper
+// tile-passability grid editor), 17 of its own 20. Neither needed any new
+// opcode work. MoveRoute's own #initialize hits the same non-mandatory-
+// arguments gap as every other unembedded target above, this time via
+// real keyword arguments; two more real methods, .from_page and
+// .same_route?, are singleton (`def self.`) methods -- an existing,
+// program-wide structural gap in bc2cpp's own build_registry (its own
+// CLASS/MODULE/TDEF walk never recognizes an SCLASS-opened body), not new
+// here, just the first class whose own singleton methods carry real logic
+// worth naming. ChipsetEditor's own #initialize hits the same SUPER gap
+// as ItemMenu's/DebugMenu's/Menu's own #initialize, this time paired with
+// a `quit_on_close:` keyword argument too; its own #save_to_disk has a
+// real `rescue StandardError` clause, and #draw_grid ends in a genuine
+// Ruby block. This round's own full-sweep re-check (checking every
+// already-shipped target against a real bc2cpp.rb bug fix, not just each
+// round's own new classes -- the established discipline several rounds up
+// this file's own history already learned the hard way) also caught and
+// fixed a real, live correctness bug: extract_native_method_names (the
+// whole-program native-method-name scanner) recognized MRB_SYM/MRB_OPSYM
+// but not mruby core's own MRB_SYM_Q/MRB_SYM_B/MRB_SYM_E sibling macros
+// ("name?"/"name!"/"name="), so ~75 real native predicate/bang/setter
+// names (Array#empty?, Kernel#nil?/#frozen?, Numeric#zero?, Hash#key?,
+// String#chomp!, ...) were invisible to the whole-program registry --
+// surfaced concretely as Game::MoveRoute#empty? (`@commands.empty?`)
+// getting wrongly reported MONO and devirtualized into calling itself,
+// real infinite recursion, caught only because g++'s own
+// -Winfinite-recursion happened to flag a literal self-call; the same
+// collision against any other class's own same-named native method would
+// have compiled clean and silently misresolved instead, invisible to any
+// compiler warning. Fixed in bc2cpp.rb itself (see its own comment);
+// confirmed by diff that every one of the fourteen previously-shipped
+// classes' own generated C++ is byte-for-byte unchanged by the fix -- no
+// live corruption existed in already-shipped code, this bug just hadn't
+// been triggered by a same-named native/compiled collision yet. Neither
+// MoveRoute's nor ChipsetEditor's own #initialize compiles, so neither
+// gets any ivar embedded.
 // mruby-rpg2k (this gem's own add_dependency) has already run its full gem
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all sixteen classes are guaranteed to already exist below.
+// all eighteen classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -2118,6 +2159,135 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, status_menu, "draw_battle_row",
                             RPG2k__Scene__StatusMenu_draw_battle_row,
                             MRB_ARGS_REQ(2));
+
+  // Game::MoveRoute (mruby-rpg2k/mrblib/game.rb) -- the RPG2000 "Set Move
+  // Route" event-command engine. 18 of its own 19 real bytecode-defined
+  // methods (see this file's own top comment for the full gap breakdown:
+  // #initialize's own keyword arguments, and the two singleton `def self.`
+  // methods bc2cpp's build_registry never sees at all). 6 public methods
+  // (#done?/#empty?/#repeat?/#skippable?/#resume_at/#step) are registered
+  // first -- all defined before the source's own `private` line
+  // (mruby-rpg2k/mrblib/game.rb line 6626, in effect through the end of the
+  // class body, no retroactive `public` reopen anywhere after it) -- then
+  // the 12 methods below it are all mrb_define_private_method. #initialize
+  // never compiles, so drop_unsafe_embeddings correctly refuses to embed
+  // @index (the class's one provably-Fixnum embed candidate) -- confirmed
+  // Game::MoveRoute does not appear in bc2cpp's own "classes needing
+  // MRB_SET_INSTANCE_TT" diagnostic, no MRB_SET_INSTANCE_TT call needed
+  // here.
+  RClass* move_route = mrb_class_get_under(M, game, "MoveRoute");
+  mrb_define_method(M, move_route, "done?", Game__MoveRoute_done_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_route, "empty?", Game__MoveRoute_empty_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_route, "repeat?", Game__MoveRoute_repeat_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_route, "skippable?", Game__MoveRoute_skippable_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_route, "resume_at", Game__MoveRoute_resume_at,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, move_route, "step", Game__MoveRoute_step,
+                    MRB_ARGS_REQ(2));
+
+  // Everything from here down is `private` in the real interpreted source
+  // (mruby-rpg2k/mrblib/game.rb line 6626, in effect through the end of the
+  // class body).
+  mrb_define_private_method(M, move_route, "advance_cursor",
+                            Game__MoveRoute_advance_cursor, MRB_ARGS_NONE());
+  mrb_define_private_method(M, move_route, "execute", Game__MoveRoute_execute,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, move_route, "do_move", Game__MoveRoute_do_move,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, move_route, "do_jump", Game__MoveRoute_do_jump,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, move_route, "land_jump",
+                            Game__MoveRoute_land_jump, MRB_ARGS_REQ(5));
+  mrb_define_private_method(M, move_route, "jump_move_direction",
+                            Game__MoveRoute_jump_move_direction,
+                            MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, move_route, "jump_delta",
+                            Game__MoveRoute_jump_delta, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, move_route, "jump_face_direction",
+                            Game__MoveRoute_jump_face_direction,
+                            MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, move_route, "do_diagonal",
+                            Game__MoveRoute_do_diagonal, MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, move_route, "do_diagonal_dir",
+                            Game__MoveRoute_do_diagonal_dir, MRB_ARGS_REQ(4));
+  mrb_define_private_method(M, move_route, "toward_hero",
+                            Game__MoveRoute_toward_hero, MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, move_route, "away_hero",
+                            Game__MoveRoute_away_hero, MRB_ARGS_REQ(2));
+
+  // RPG2k::Scene::ChipsetEditor (mruby-rpg2k/mrblib/scene/
+  // chipset_editor.rb) -- the F9 debug menu's Chipset (passability) page.
+  // 2 public methods (#update/#dispose, both defined before the source's
+  // own `private` line) are registered first, then a single bare
+  // `private` (chipset_editor.rb line 98, in effect through the end of
+  // the class body, no retroactive `public` reopen anywhere after it --
+  // confirmed directly against the real source) makes the other 15
+  // registered below private too. #initialize (a keyword argument plus a
+  // real `super` call), #save_to_disk (a real `rescue StandardError`
+  // clause), and #draw_grid (a genuine Ruby block) never compile, so they
+  // keep running mruby-rpg2k's own interpreted mrblib body unchanged, the
+  // same documented fallback every other unsupported method in this
+  // codebase already gets; drop_unsafe_embeddings correctly refuses to
+  // embed any of ChipsetEditor's own provably-typed ivars as a result, no
+  // MRB_SET_INSTANCE_TT call needed here (see this file's own top
+  // comment for the full breakdown). Reuses the `scene` RClass* every
+  // other RPG2k::Scene block above already looked up.
+  RClass* chipset_editor = mrb_class_get_under(M, scene, "ChipsetEditor");
+  mrb_define_method(M, chipset_editor, "update",
+                    RPG2k__Scene__ChipsetEditor_update, MRB_ARGS_NONE());
+  mrb_define_method(M, chipset_editor, "dispose",
+                    RPG2k__Scene__ChipsetEditor_dispose, MRB_ARGS_NONE());
+
+  // Everything from here down is `private` in the real interpreted
+  // source (mruby-rpg2k/mrblib/scene/chipset_editor.rb line 98, in effect
+  // through the end of the class body).
+  mrb_define_private_method(M, chipset_editor, "close",
+                            RPG2k__Scene__ChipsetEditor_close, MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "switch_tab",
+                            RPG2k__Scene__ChipsetEditor_switch_tab,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "cell_count",
+                            RPG2k__Scene__ChipsetEditor_cell_count,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "rows",
+                            RPG2k__Scene__ChipsetEditor_rows, MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "move_cursor",
+                            RPG2k__Scene__ChipsetEditor_move_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "current_bytes",
+                            RPG2k__Scene__ChipsetEditor_current_bytes,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "toggle_passable",
+                            RPG2k__Scene__ChipsetEditor_toggle_passable,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "toggled_byte",
+                            RPG2k__Scene__ChipsetEditor_toggled_byte,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, chipset_editor, "refresh",
+                            RPG2k__Scene__ChipsetEditor_refresh,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "draw_header",
+                            RPG2k__Scene__ChipsetEditor_draw_header,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "cell_word",
+                            RPG2k__Scene__ChipsetEditor_cell_word,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "draw_footer",
+                            RPG2k__Scene__ChipsetEditor_draw_footer,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, chipset_editor, "cell_color",
+                            RPG2k__Scene__ChipsetEditor_cell_color,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, chipset_editor, "cell_color_for",
+                            RPG2k__Scene__ChipsetEditor_cell_color_for,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, chipset_editor, "draw_cursor",
+                            RPG2k__Scene__ChipsetEditor_draw_cursor,
+                            MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
