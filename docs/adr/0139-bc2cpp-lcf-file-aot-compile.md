@@ -1034,3 +1034,53 @@ receiver's type through an ivar read the way `IvarLayout` already proves
 ivar *primitive* types, or through an argument the way `ArgTypes`
 already proves argument primitive types) could build on -- but, as
 measured today, it has no live payoff on this project's real code.
+
+## Follow-up: Symbol-ivar embedding
+
+`IvarLayout`'s embedding analysis only ever modeled one primitive type,
+Fixnum (`C_TYPE = { fixnum: 'mrb_int' }`) -- a literal Symbol source
+(`@tag = :ok`, mruby's own `LOADSYM` opcode) fell through `trace_type`'s
+generic "some instruction we don't specifically model" fallback straight
+to `UNKNOWN`, same as any genuinely opaque value. Asked directly whether
+mruby's own `Symbol` is garbage-collected -- worth confirming before
+embedding one as a raw field, the same soundness question every other
+embeddable type in this file already answers -- and it's not: read
+directly from `3rd/mruby/include/mruby/value.h` (`typedef uint32_t
+mrb_sym`, a plain integer, never `RBasic`-derived) and
+`3rd/mruby/src/symbol.c`/`state.c` (`mrb_free_symtbl` -- the *only* place
+mruby's own symbol table is ever freed -- is called exactly once, from
+`mrb_close`'s own state-teardown path, never from `gc.c`'s mark-and-sweep).
+An interned symbol lives for the whole `mrb_state`'s lifetime once
+created; there is no per-symbol GC event a struct field embedding one
+could ever race with -- exactly the same guarantee `mrb_int` already
+relies on for Fixnum, just for a different C type.
+
+Extended the same mechanism Fixnum already uses, not a parallel one:
+`IvarLayout.trace_type` gained a `LOADSYM` case (returns `:symbol`,
+mirroring the `LOADI`/`:fixnum` case exactly); `Annotations::TYPES`
+recognizes `symbol`/`Symbol` tokens now too; `CodeGen::C_TYPE` maps
+`:symbol -> 'mrb_sym'`; and the `GETIV`/`SETIV` codegen, previously
+hardcoded to `mrb_fixnum_value`/`mrb_integer_p`/`mrb_integer`, now goes
+through a small `TYPE_OPS` table (`box`/`check`/`unbox`/`err` per type)
+so both primitive types share one code path -- a real Symbol write still
+gets the same guarded, `mrb_raise`-on-mismatch treatment as a Fixnum one,
+just checked with `mrb_symbol_p`/unboxed with `mrb_symbol` instead. This
+also means `ArgTypes` (which reuses `trace_type` unmodified) started
+reporting real `Symbol`-typed call-site argument positions for free, no
+separate change needed.
+
+Verified with a new toy case (`Tagged#@tag`, always a literal Symbol):
+generated a real `mrb_sym tag;` struct field, a `mrb_symbol_p` guard, and
+`mrb_symbol`/`mrb_symbol_value` box/unbox calls exactly as designed;
+built, linked, and ran it through the real toy harness -- `tag`/`tag=`
+round-trip an embedded Symbol correctly (`ok` -> `changed`), byte-
+identical to plain `ruby toy.rb`. Both already-shipped compiled targets
+re-checked byte-identical (neither has a Symbol-typed ivar today). Real
+whole-program payoff: **174 -> 184 EMBED lines**, ten real UI-state mode/
+focus Symbol ivars across `RPG2k::Scene::ChipsetEditor`/`DebugMenu`/
+`EquipMenu`/`ItemMenu`/`MapViewer`/`Menu`/`Order`/`SkillMenu` (e.g.
+`@mode`, `@focus`, `@tab`, `@brush_layer`) -- none of these classes are
+in either shipped compiled gem's own target set, so (same shape as every
+other whole-program-only follow-up in this file) no *live* effect on
+what ships today, but a real, sound, doubly-verified capability the next
+compiled target can draw on for free.
