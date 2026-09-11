@@ -3375,4 +3375,117 @@ target reference is type-correct and consistent with the real,
 already-shipped classes around it -- left for a correctly-configured
 checkout (with `3rd/lvgl` actually built) to confirm the final link and
 runtime diff, the same "real bc2cpp.rb bugs found, if none say so
-plainly" honesty this ADR's own every prior round already holds to.
+plainly" honesty this ADR's own every prior round already holds to. That
+confirmation landed later in the same round, in the merge/integration
+build below.
+
+## Follow-up: Game::Weather, and this compiler's fifth severe bug -- `def self.x` singleton methods completely invisible to the registry
+
+The same round also adds `Game::Weather` (`mruby-rpg2k/mrblib/game.rb`)
+-- the current screen-weather effect state (rain/snow/fog/... type plus
+a 0-10 strength). 4 of its own 5 real bytecode-defined methods compile
+clean, needing no new opcode work at all: `#set` (plain SETIVs),
+`#none?` (`@type == 0`), `#to_h` (a real Hash *literal*, checked
+directly against the generated C++ -- `mrb_hash_new_capa(M, 2)` plus two
+`mrb_hash_set` calls keyed by `mrb_symbol_value`, identical to
+`Game::Picture`'s/`Game::Timer`'s own already-shipped `#to_h`), and
+`#load_h(h)` (a Hash `#[]` GETIDX read plus a `||` default, the same
+shape `Game::Screen`'s/`Game::Timer`'s own `#load_h` already compiles
+clean against). `#initialize(type = 0, strength = 0)` (two optional
+arguments) has the established non-mandatory-arity gap, so
+`drop_unsafe_embeddings` correctly refuses to embed either of this
+class's own two provably-Fixnum ivars (`@type`, `@strength`) --
+confirmed directly against the real generated output, `Game::Weather`
+does not appear in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`"
+diagnostic. `attr_reader :type, :strength` stay native/uncompiled --
+confirmed live in the registry (`:type` shows `POLY`, 2 defs:
+`Game::Weather`, `Game::Vehicle`, proving the `attr_reader` registry fix
+from two rounds ago covers this class too).
+
+The round's own dedicated bug-hunt pass (a third in a row, this time
+finding a bug in a genuinely different mechanism than the previous two)
+found and fixed a fifth severe, live, already-shipped bug in
+`build_registry`: a real `def self.foo` (or `def SomeConst.foo`) never
+compiles to the ordinary `TDEF` opcode this walk switches on at all --
+mrbc's own codegen fuses `SCLASS`+`METHOD`+`DEF` into one distinct
+`SDEF` opcode instead, installing the method onto the receiver's own
+*singleton* class, a real, separate method table from `TDEF`'s own
+target -- completely invisible to a registry that only ever walked
+`TDEF`. The same "invisible to the bytecode-only registry" shape as the
+`attr_reader`/`Struct.new` fixes already close, just for a third,
+distinct installation mechanism (a real bytecode opcode this walk never
+switched on at all, rather than a native method or one installed by
+`Struct.new`).
+
+**Confirmed live, not hypothetical, in already-shipped, already-compiled
+code:** `Game.clamp(v, lo, hi)` (`def self.clamp`, `mruby-rpg2k/mrblib/
+game.rb`) was invisible to the registry, leaving `RPG2k::Scene::MapViewer
+#clamp` (a private 3-arg helper) as the *only* bytecode-visible
+`:clamp` definition anywhere in the whole program. Every one of dozens
+of already-compiled `Game.clamp(...)` call sites (across `Game::Actor`,
+`Game::Screen`, `Game::Party`, `Game::Battle`, `Game::Transition`, and
+others) devirtualized straight into `RPG2k__Scene__MapViewer_clamp_impl`,
+passing the `Game` module object itself as `self`. This was harmless
+*today* only by luck: confirmed directly against the real generated
+`rpg2k_compiled_gen.cpp` that `RPG2k::Scene::MapViewer_clamp_impl`'s own
+`self` parameter is copied into a register and never read again, so
+both real `#clamp` bodies happen to be pure functions of their three
+arguments. A related, unluckier collision was also found: `Game::
+Interpreter#trans_to_opacity`'s own body is literally `Game.
+trans_to_opacity(top_trans)` -- had `Game::Interpreter` ever joined a
+compiled gem's `ONLY_OWNERS`, this would have compiled to a literal
+unconditional self-call, infinite recursion, caught here only because
+that class hasn't joined one yet.
+
+**The fix**: register a synthetic `MethodDef` (`irep: nil`, mirroring
+the existing `attr_reader`/native-method entries) for each `SDEF`, so a
+same-named real `TDEF` elsewhere correctly counts as a second definition
+and flips MONO to POLY -- the same guarantee every other synthetic-
+`MethodDef` fix in this file already carries: this can only ever turn an
+unsound MONO into a correctly cautious POLY, never remove a genuinely
+sound one.
+
+**Other angles investigated this round, no live bug found:** `IvarLayout`
+cross-inheritance soundness (traced every real subclass pair in the
+closed world -- every subclass's own `#initialize` calls `super`, an
+unsupported opcode, so none currently embed; the one base class with
+embeddable-looking ivars, `RPG2k::Scene::Base`, has only opaque object
+references, so it never embeds either -- no live hazard exists today); a
+second `compile_send` codegen bug (re-read end to end, found already
+well-hardened); registry-build ordering (the registry is built once,
+completely, before `ArgTypes`/`IvarLayout`/codegen ever run -- no
+ordering hazard is structurally possible); and diamond-shaped dispatch
+(`monomorphic_target` requires `defs.size == 1` by construction, so it
+cannot "pick one of several POLY candidates").
+
+**Two further structural gaps were found and confirmed NOT currently
+exploitable**, left for a future round rather than fixed here to avoid
+scope creep on this pass: methods defined inside `class << self ... end`
+(`SCLASS`) are also invisible to the registry (e.g. `RGSS::Bitmap.
+extensions`); and an empty `class`/`module` body emits no `EXEC`, so
+`build_registry`'s own `pending_reg`/`pending_name` tracking never
+resets and can leak into a later, unrelated `EXEC` (confirmed causing
+`RGSS.asset_archive`/`asset_archive=` to be mislabeled under owner
+`RGSS::Timeout`). Both observed instances today are `attr_accessor`-
+synthetic entries with `irep: nil`, so neither is currently live, but
+both are real gaps worth closing later.
+
+**Full-sweep re-check** (all thirty-nine now-shipped targets, rebuilt
+with the SDEF fix applied): every previously-shipped class's own
+entry-point count matches exactly -- the same 37 counts this ADR's own
+prior follow-ups already list, unchanged; new: `Game::Rng` (3),
+`Game::Weather` (4).
+
+**Verified for real**, completing the confirmation the `Game::Rng`
+section above left open: the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape. `nm -C` on the resulting
+`libmruby.a` shows all 7 new entry points (3 `Game__Rng_*_impl`, 4
+`Game__Weather_*_impl`) present and externally linked, neither class
+appearing in the embedding-struct symbol set, with every already-shipped
+class's own symbol count unchanged. Every real `Game.clamp(...)` call
+site in the generated output now reads `// POLY :clamp -- real dynamic
+dispatch, receiver's runtime class decides` / a real `mrb_funcall`,
+confirming the SDEF fix actually changes generated code, not just
+theory.

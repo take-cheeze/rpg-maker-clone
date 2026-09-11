@@ -3558,13 +3558,35 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // own interpreter regardless of source, the same always-private special
   // case as every other compiled #initialize in this file.
   RClass* rng = mrb_class_get_under(M, game, "Rng");
-  mrb_define_method(M, rng, "next_int", Game__Rng_next_int,
-                    MRB_ARGS_NONE());
+  mrb_define_method(M, rng, "next_int", Game__Rng_next_int, MRB_ARGS_NONE());
   mrb_define_method(M, rng, "random", Game__Rng_random, MRB_ARGS_REQ(1));
   mrb_define_method(M, rng, "scaled", Game__Rng_scaled, MRB_ARGS_REQ(1));
   // #initialize is NOT registered here -- it takes one optional argument
   // (`seed = 1`), the same established non-mandatory-arity gap as every
   // other unembedded target above.
+
+  // Game::Weather (mruby-rpg2k/mrblib/game.rb) -- the current
+  // screen-weather effect state (rain/snow/fog/... type plus a 0-10
+  // strength). #set/#none?/#to_h/#load_h all compile clean; #initialize
+  // (two optional arguments) is NOT registered here -- it stays entirely
+  // interpreted, the same established non-mandatory-arity gap as
+  // Game::Picture's/RPG2k::Window's own #initialize above, and
+  // drop_unsafe_embeddings correctly refuses to embed either of this
+  // class's own two ivars (@type, @strength) as a result -- see this
+  // file's own top comment and compiled_gems.rb's own owners-entry
+  // comment for the full writeup. attr_reader :type, :strength are both
+  // native (Module#attr_reader), invisible to bc2cpp the same way every
+  // other attr_reader in this codebase is, so neither gets a registration
+  // line here either. No bare `private`/`protected`/`public` anywhere in
+  // the real source, so all four methods below are plain
+  // `mrb_define_method`. Reuses the `game` RClass* declared at the top of
+  // this function.
+  RClass* weather = mrb_class_get_under(M, game, "Weather");
+  mrb_define_method(M, weather, "set", Game__Weather_set, MRB_ARGS_REQ(2));
+  mrb_define_method(M, weather, "none?", Game__Weather_none_, MRB_ARGS_NONE());
+  mrb_define_method(M, weather, "to_h", Game__Weather_to_h, MRB_ARGS_NONE());
+  mrb_define_method(M, weather, "load_h", Game__Weather_load_h,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
