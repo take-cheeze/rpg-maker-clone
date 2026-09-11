@@ -3254,3 +3254,125 @@ files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
 `Game__Actors_*_impl`) present and externally linked, neither class
 appearing in the embedding-struct symbol set, with every already-shipped
 class's own symbol count unchanged.
+
+## Follow-up: Game::Rng
+
+A twenty-seventh, independent round adds `Game::Rng`
+(`mruby-rpg2k/mrblib/game.rb`) -- the engine's own seeded
+linear-congruential PRNG (`@state = (@state * 75 + 74) % PERIOD`, a prime
+modulus), used wherever the original RPG_RT's own randomness needs to
+match byte-for-byte (enemy encounter rolls and the like; `Kernel#rand`
+exists too, via mruby-random, but is unseeded). Pure coverage-expansion
+work: no new opcode support was needed, and the round's own adversarial
+re-check (re-running `report_annotation_candidates`, re-grepping the
+real generated output for the empty-name `mrb_funcall` shape, and
+re-reading `build_registry`'s own MONO/POLY walk against this class's
+specific call shapes) found no new live `bc2cpp.rb` bug.
+
+3 of its own 4 real bytecode-defined methods compile clean: `#next_int`
+(a real `GETCONST` for `PERIOD` plus `MUL`/`ADDI` fastpaths, and a POLY
+`%` send that correctly stays ordinary `mrb_funcall` dispatch -- `%` has
+other real definitions project-wide) and `#random`/`#scaled`, each a
+MONO self-call straight into `Game__Rng_next_int_impl` with no
+`mrb_funcall` at all (`:next_int` has exactly one real bytecode
+definition anywhere in the closed world). `:random` itself is POLY (3
+defs: `Game::Rng`, `RPG2k::Scene::MapWorld`, `RPG2k::Scene::VehicleWorld`,
+confirmed directly against the real registry dump) -- irrelevant to
+registering `Game::Rng`'s own `#random` (POLY only affects whether some
+*other* call site devirtualizes into it, never whether a class's own
+methods can be compiled and registered), but real anyway: it means
+`Game::Rng#random`'s own compiled body is now itself a real
+devirtualization *target*, not just a source. `#scaled`'s own `next_int *
+scale / PERIOD` additionally exercises a real `DIV`, which correctly
+stays ordinary `mrb_funcall` dispatch too, per this compiler's own
+established no-fastpath-for-`DIV` rule (real Ruby integer division floors
+toward negative infinity, not C's truncating `/`). `#initialize`
+(`initialize(seed = 1)`, one optional argument) is the one gap -- the
+same established non-mandatory-arity shape as every other unembedded
+target above, confirmed directly against the real diagnostic's own
+`== skipped (unsupported, left on the interpreter) ==` list, not assumed.
+`drop_unsafe_embeddings` correctly refuses to embed this class's own one
+real ivar (`@state`, provably Fixnum): confirmed directly against the
+real generated output, `Game::Rng` does not appear in bc2cpp's own
+"classes needing `MRB_SET_INSTANCE_TT`" diagnostic, so no
+`MRB_SET_INSTANCE_TT` call belongs in its own registration block, and
+`@state` stays on the ordinary dynamic `iv_tbl` in every compiled method.
+No bare `private`/`protected`/`public` anywhere in the real source, so
+all three compiled methods are plain `mrb_define_method`; `#initialize`
+itself is forced private by mruby's own interpreter regardless of source.
+
+Cross-checked every one of the three registered methods against the real
+diagnostic's own `== compiled entry points ==` listing one by one (not
+just a summary count) before registering anything:
+```
+Game__Rng_next_int / Game__Rng_next_int_impl  (Game::Rng#next_int, arity 0)
+Game__Rng_random / Game__Rng_random_impl  (Game::Rng#random, arity 1)
+Game__Rng_scaled / Game__Rng_scaled_impl  (Game::Rng#scaled, arity 1)
+```
+None carry a `[private]`/`[protected]` annotation, matching the plain
+`mrb_define_method` calls `register.cxx` uses. Grepped the freshly
+generated `rpg2k_compiled_gen.cpp` for the empty-name
+`mrb_funcall(M, <reg>, "", ` shape directly: zero matches, both in a
+`Game::Rng`-only (`ONLY_OWNERS=Game::Rng`) run and in a full run with
+every owner across all three compiled gems.
+
+A real, positive synergy from whole-program devirtualization, found
+while re-checking the full-owner output rather than the narrow
+`Game::Rng`-only one: `RPG2k::Scene::VehicleWorld#random`'s own `@rng.
+random(n)` (already shipped, `@rng` already `CLASS_HINT`-typed to
+`Game::Rng`) now compiles to a real runtime-class-guarded direct call
+into `Game__Rng_random_impl`, falling back to ordinary `mrb_funcall` only
+if the guard fails, in place of the unconditional `mrb_funcall` it
+compiled to before this round (`Game::Rng` was not yet an emitted owner,
+so `compile_send`'s own owner-not-emitted guard kept it on the dynamic
+path). No source or `bc2cpp.rb` change was needed for this -- it falls
+straight out of adding `Game::Rng` to `ONLY_OWNERS`.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build was
+attempted end to end in a fresh worktree and hit several unrelated
+environment-setup gaps before this round's own code was even reached,
+each fixed in the environment (not in this round's diff) to make
+progress: five further mruby submodules the host build actually needs
+(`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`, `3rd/mruby-stringio`,
+`3rd/uni-algo`, `3rd/stb`) were uninitialized in the fresh worktree (a
+bare `git submodule update --init 3rd/mruby` alone is not enough); the
+`cp932_table`/`jis0208_table` env vars `mruby-lcf`'s/`mruby-rgss`'s own
+codegen scripts read are not defaulted anywhere a raw `rake` invocation
+sees (`scripts/native-build-without-nix.bash`'s own values, pointed at
+this environment's pre-staged `.native-build-tables/` directory, unblock
+it). With both fixed, the build reached and fully compiled
+`mruby-lcf-compiled/src/register.cxx`, ran this round's own real
+whole-program `bc2cpp.rb` diagnostic (the `== compiled entry points ==`
+listing quoted above came from that real run, `MRBC` pointed at the
+just-built real host `mrbc`), and printed **zero** compile errors so far
+-- but then hit a genuine, out-of-scope environment gap this round did
+not attempt to repair: `mruby-rgss/src/lib.cxx` needs a real, built
+`lvgl.h`/linked LVGL library (`3rd/lvgl`, a large embedded-GUI submodule
+normally built by this project's own CMake path, per this ADR's own
+earlier note that LVGL is a real link-time dependency of `mruby-rgss`
+even for a plain host build), which a raw `rake -f 3rd/mruby/Rakefile`
+invocation has no step to build at all.
+
+Verified the actual code correctness a different, still-rigorous way
+given that gap: regenerated all three compiled gems' real output
+(`rpg2k_compiled_gen.cpp`/`lcf_compiled_gen.cpp`/`rgss_compiled_gen.cpp`,
+full `ONLY_OWNERS`/`OTHER_OWNERS`/`OTHER_DECLS_HEADER` wiring exactly
+matching each `mrbgem.rake`) with the real host `mrbc`, then
+`g++ -fsyntax-only -Wall -Wextra -Winfinite-recursion` each compiled
+gem's real `register.cxx` against its own real generated file plus the
+real mruby headers (`3rd/mruby/include`, the real generated
+`mruby/presym/id.h`) -- register.cxx itself never includes RGSS/LVGL
+headers directly, only mruby core ones, so this check needs no LVGL at
+all. All three: **zero errors, zero `-Winfinite-recursion` warnings**
+(the only warnings anywhere are pre-existing, unrelated
+`-Wunused-but-set-variable` ones in already-shipped classes, e.g.
+`RPG2k::Scene::SkillMenu`/`StatusMenu`/`Title`, not introduced by this
+round). Re-confirmed the empty-name `mrb_funcall` grep against all three
+full-owner generated files: zero matches. This does not confirm the
+final *link* (blocked on LVGL, as above) but does confirm every
+declaration this round's new code and its cross-gem devirtualization
+target reference is type-correct and consistent with the real,
+already-shipped classes around it -- left for a correctly-configured
+checkout (with `3rd/lvgl` actually built) to confirm the final link and
+runtime diff, the same "real bc2cpp.rb bugs found, if none say so
+plainly" honesty this ADR's own every prior round already holds to.
