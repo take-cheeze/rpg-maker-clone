@@ -1084,3 +1084,133 @@ in either shipped compiled gem's own target set, so (same shape as every
 other whole-program-only follow-up in this file) no *live* effect on
 what ships today, but a real, sound, doubly-verified capability the next
 compiled target can draw on for free.
+
+## Follow-up: guarded class-type devirtualization
+
+The earlier call-site type-based devirtualization follow-up only ever
+traced a receiver back to a fresh, *same-body* `SomeClass.new(...)` --
+found zero real hits, because the actual dominant real pattern turned
+out to be different: an *ivar* holding a known-class object constructed
+or received elsewhere (`@state.foo`), not a local freshly built right
+before use. `profile_annotations.rb` had the real evidence for this the
+whole time -- it already records every profiled argument's real
+observed class, for *every* candidate, not just the ones that turn out
+to be `Integer` -- but `report()` only ever acted on the Integer case,
+silently discarding a `classes.size == 1` result for any other real
+class (e.g. `Game::EnemyAi#initialize, arg 2/2 -> @state: Game::State:
+315 -- not annotatable`, printed and thrown away in an earlier run of
+this same tool).
+
+Two new pieces, both deliberately kept separate from `IvarLayout`'s own
+embedding lattice (a known object class is never a struct-field
+candidate -- still a real `mrb_value` pointing to a real heap object,
+nothing to unbox; letting one reach `C_TYPE.fetch` would be a real
+`KeyError` at codegen time):
+
+- **`ClassAnnotations`**: a second, independent reader of the exact
+  same `# bc2cpp: (...)` comment syntax `Annotations` already uses --
+  `# bc2cpp: (Game::State)` on `#initialize` claims "this mandatory
+  argument position is always exactly this one real class." Each reader
+  silently ignores tokens it doesn't recognize (a class-shaped token
+  already no-ops in `Annotations::TYPES`; a primitive token no-ops
+  here), so one line can freely mix both:
+  `# bc2cpp: (Game::State, fixnum)`.
+- **`ClassLayout`**: the object-reference analogue of `IvarLayout` --
+  a whole-program, fixed-point "this ivar always holds an instance of
+  exactly this real class" analysis. Its own SETIV trace is
+  `trace_new_target` itself, extended with a `GETIV` case (an ivar
+  ClassLayout already knows the class of) and an opaque-argument
+  fallback (a `ClassAnnotations` hint) -- so `@resident = Dog.new` and
+  `@pet = pet` (with `pet` annotated `Game::Dog`) both teach `ClassLayout`
+  the same fact, and either can feed a *later* method's own
+  `@resident.speak`/`@pet.speak`.
+
+`compile_send` uses this whenever name-based devirtualization still
+comes up POLY. Unlike the original same-body `.new` case (a hard Ruby-
+semantics guarantee -- `.new` never allocates a subclass in disguise),
+an ivar's or annotation's class fact is a real whole-program observation,
+not a proof: this compiled run can't see every possible writer (a future
+uncompiled caller, reflection), and a `ClassAnnotations` hint is human-
+asserted. So every hit through this path -- including the original
+same-body `.new` case, extended for free and costing nothing there since
+the check is simply always true -- now emits a real runtime
+`mrb_class_ptr(<chained mrb_const_get>) == mrb_obj_class(M, recv)` guard
+before the direct call, falling back to ordinary `mrb_funcall` if it
+doesn't match. Strictly *safer* than the name-only MONO devirtualization
+above it, which trusts the registry with no runtime check at all.
+
+**Two real bugs caught while building this, both fixed, neither
+previously live** (verified: byte-identical on both already-shipped
+compiled targets before and after each fix):
+
+1. `trace_new_target`'s `GETCONST`/`GETMCNST` cases fired unconditionally
+   -- reachable even when the register's last write was a *bare*
+   constant reference with no `.new` anywhere in sight (`@position =
+   POS_BOTTOM`, a plain Integer). Running the extended analysis against
+   real game source surfaced this immediately as obviously-wrong
+   `CLASS_HINT`s (`Game::MessageConfig#@position (POS_BOTTOM)`,
+   `Game::NumberInput#@digits (MAX_DIGITS)`, ...) -- neither is a class.
+   Fixed with a `resolving_new` flag: `GETCONST`/`GETMCNST` are only
+   ever valid once a `SEND :new` has actually been seen on this same
+   register first.
+2. `GETCONST`'s own name extraction (`a.split(/\s+/, 2)[1]`, in both the
+   real codegen and the new `trace_new_target` case) captured a
+   trailing local-variable-name comment too whenever the destination
+   register is a named local (`GETCONST R3 MAX_DIGITS\t; R3:d`, real
+   disassembly shape) -- a pre-existing bug in the *already-shipped*
+   `GETCONST` codegen, not something this round introduced, caught only
+   because building `ClassLayout` finally exercised it. 16 real
+   occurrences in the whole closed world (none inside either shipped
+   compiled target's own methods, confirmed by owner -- a real, live-
+   but-dormant bug: it would raise a genuine `NameError` at runtime, not
+   caught by any `#error` check, the moment a currently-uncompiled
+   method with this exact shape ever got added to a compiled target).
+   Fixed by extracting `\S+` (stops at the first whitespace/tab) instead
+   of the rest of the line, in both places.
+
+Verified with new toy cases: `Kennel#@resident` (static `.new`-sourced
+ivar) and `Handler#@pet` (a `# bc2cpp: (Dog)`-annotated opaque argument)
+both devirtualize `#wake`/`#greet`'s own `@resident.speak`/`@pet.speak`
+through the new guarded path -- built, linked, and run for real (`Woof`/
+`Woof`, byte-identical to `ruby toy.rb`); a negative case
+(`BadTagUser#@label = BAD_TAG`, a bare Integer constant, exercising bug
+#1 directly) correctly stays ordinary `POLY` dispatch, no bogus
+`CLASS_HINT` at all. Real whole-program payoff: **34 real `TYPED` hits**
+(up from 0) purely from the static `GETIV` extension, spanning
+`Game::Rng#random`, `Game::Interpreter#resume/start/update`,
+`Game::Character#x=/y=`; applying 21 real profiled class annotations to
+actual source (8 recognized by `ClassLayout` as real registry owners,
+the rest -- `Symbol`/`String`/`Hash`/`Array` -- harmless pure
+documentation, since none of those are real owners in this closed world)
+raised it to **35** and grew `CLASS_HINT` from 82 to 92. Both already-
+shipped compiled targets remain byte-identical (or cosmetic-line-number-
+echo-only, mechanically confirmed) throughout; all four real CRuby test
+harnesses still pass. A pre-existing, unrelated gap surfaced while
+syntax-checking the *unrestricted* (no `ONLY_OWNERS`) whole-program
+output for real with `g++ -fsyntax-only` -- 434 undefined-reference
+errors, identical in count with and without this round's changes, from
+MONO devirtualization never checking whether its own target's irep will
+actually be *emitted* (a callee dropped by `SKIP_UNSUPPORTED` for an
+unrelated opcode gap still gets called by name). Confirmed orthogonal
+and pre-existing (reproduces identically against the unmodified tool);
+never live, since the real build always sets `ONLY_OWNERS`. Not fixed
+here -- flagged for whoever next touches `compile_send`'s own MONO path.
+
+Real per-position class annotations applied this round: `Game::EnemyAi#
+initialize`, `Game::Interpreter#initialize`, `RPG2k::Scene::VehicleWorld#
+initialize`, `RPG2k::Scene::Battle#initialize`, `RPG2k::Scene::DebugMenu#
+initialize`, `RPG2k::Scene::ItemMenu#initialize`, `RPG2k::Scene::Menu#
+initialize`, `RPG2k::Scene::Order#initialize` (all `Game::State`/`Game::
+Rng`/`Game::Interpreter`/`RPG2k::Scene::Map`-typed), plus
+`LCF::Array1D/Array2D#initialize`, `RGSS::Bitmap::LoadError#initialize`,
+`Game::Actor#set_charset`, `Game::State#set_parallax/set_system_graphic`,
+`Game::Interpreter#resume_battle`, `RPG2k::Scene::MapWorld#play_sound`,
+`RPG2k::Scene::Battle#enter_battle_result/battle_result_lines`,
+`RPG2k::Scene::Menu#wait_term_for/enter_actor_selection` (documentation-
+only: `String`/`Hash`/`Symbol`/`Array` aren't real registry owners here).
+Three real candidates (`Game::Actor#initialize`, `LCF::EventCommand#
+initialize`, `LCF::MoveCommand#initialize`) were skipped rather than
+applied -- each already carries a real fixnum annotation from an earlier
+round, and merging a class hint into an existing partial signature was
+left alone rather than risk clobbering good data for a low-value case
+(one of the three is a test-fixture class, not even real).

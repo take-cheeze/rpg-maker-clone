@@ -144,6 +144,7 @@ class RPG2k
       STAT_LABEL_COLOR = 1
       DISABLED_COLOR = 3
 
+      # bc2cpp: (, , Symbol)
       def initialize parent, state, mode
         super parent
         @state = state

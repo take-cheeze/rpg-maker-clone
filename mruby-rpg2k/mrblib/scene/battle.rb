@@ -48,6 +48,7 @@ class RPG2k
       # opening one can immediately finish it again -- an empty or all-KO'd
       # party settles to a defeat on the spot -- and that has to be able to
       # reach back through the map.
+      # bc2cpp: (RPG2k::Scene::Map, Hash, Game::Interpreter)
       def initialize(map, req, owner)
         super map.parent
         @map = map
@@ -3003,6 +3004,7 @@ class RPG2k
         end
       end
 
+      # bc2cpp: (Symbol)
       def enter_battle_result(result)
         @ui[:result] = result
         @map.play_victory_bgm if result == :victory
@@ -3441,6 +3443,7 @@ class RPG2k
       # tally; this screen has no per-page window, only one flat line list
       # for the whole result, so they are appended to that list instead, in
       # the same after-the-tally order the real sequence uses.
+      # bc2cpp: (Symbol, )
       def battle_result_lines(result, troop)
         return [term(:escape_success)] if result == :escape
         return [term(:defeat)] unless result == :victory

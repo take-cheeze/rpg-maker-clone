@@ -205,6 +205,7 @@ module Game
     # aborts the process with an "invalid event call" error.
     MAX_CALL_DEPTH = 1000
 
+    # bc2cpp: (Game::State)
     def initialize(state)
       @state = state
       @list = []
@@ -1010,6 +1011,7 @@ module Game
     # event processing" mode abandons the rest of the event; otherwise, when
     # the command carries [Victory] / [Escape] / [Defeat] handler branches,
     # jump into the matching one. A game-over on defeat is the scene's concern.
+    # bc2cpp: (Symbol)
     def resume_battle(result)
       if result == :escape && @battle_escape_aborts
         @index = @list.size
