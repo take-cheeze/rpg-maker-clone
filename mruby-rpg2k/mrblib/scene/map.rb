@@ -199,6 +199,7 @@ class RPG2k
       # simulate a poisoned/missing graphic), so #cached_bitmap itself needed
       # no changes.
       class LRUBitmapCache
+        # bc2cpp: (fixnum)
         def initialize(capacity_bytes)
           @capacity_bytes = capacity_bytes
           @entries = {} # key => value, oldest (least-recently-used) first

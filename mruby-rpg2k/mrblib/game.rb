@@ -1592,6 +1592,7 @@ module Game
     # class id, so this just reads it straight.
     def class_name; @class_row ? @class_row.name.to_s : ''; end
 
+    # bc2cpp: (, fixnum)
     def initialize(db, id)
       @db = db
       @id = id
@@ -5956,6 +5957,7 @@ module Game
     # rewriting tiles must bump it or the change will not reach the screen.
     attr_reader :revision
 
+    # bc2cpp: (fixnum, )
     def initialize(id, unit)
       @revision = 0
       @id = id
@@ -7427,6 +7429,7 @@ module Game
 
     # `erase` says which way the mask runs: true when black is arriving (Erase
     # Screen), false when it is leaving (Show Screen).
+    # bc2cpp: (fixnum, fixnum, fixnum, fixnum, )
     def initialize(style, frames, width, height, erase)
       @style = style
       @frames = frames
@@ -8121,6 +8124,7 @@ module Game
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
+    # bc2cpp: (, , , , fixnum)
     def tint_to(r, g, b, sat, frames)
       @tr = Game.clamp(r, 0, 200)
       @tg = Game.clamp(g, 0, 200)
@@ -8145,6 +8149,7 @@ module Game
     # `current` are each [red, green, blue, sat], `frames` the frames still
     # left. Unlike #tint_to, `current` need not equal `finish` -- a save made
     # mid-transition resumes interpolating from exactly where it left off.
+    # bc2cpp: (, , fixnum)
     def restore_tint(finish, current, frames)
       @tr, @tg, @tb, @tsat = finish
       @r, @g, @b, @sat = current
@@ -8153,6 +8158,7 @@ module Game
 
     # Begin a timed shake of the given power and speed for `frames` frames
     # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
+    # bc2cpp: (, , fixnum)
     def shake(power, speed, frames)
       @shake_power = Game.clamp(power, 0, 9)
       @shake_speed = Game.clamp(speed, 1, 9)
@@ -8198,6 +8204,7 @@ module Game
     # shape) — ported from a reference implementation, NOT
     # independently confirmed against genuine RPG_RT under wine: it always
     # clears any in-progress strobe.
+    # bc2cpp: (fixnum, fixnum, fixnum, fixnum, fixnum)
     def flash(r, g, b, power, frames)
       @flash_continuous = false
       @flash_r = r
@@ -9865,6 +9872,7 @@ module Game
     # 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see #to_lsd/.from_lsd).
     attr_accessor :tile_substitutions
 
+    # bc2cpp: (, fixnum, fixnum, fixnum)
     def initialize(party, map_id, x, y)
       @party = party
       @map_id = map_id

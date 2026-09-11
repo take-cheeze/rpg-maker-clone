@@ -850,6 +850,7 @@ module Game
     # trusts its caller to be resuming the right process rather than validating
     # it. An out-of-range index (a stale save against edited event data) falls
     # back to the top, same as #start alone.
+    # bc2cpp: (, fixnum)
     def start_at(commands, index)
       start(commands)
       @index = index if index && index > 0 && index < @list.size

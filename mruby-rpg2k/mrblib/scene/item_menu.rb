@@ -408,6 +408,7 @@ class RPG2k
       end
 
       # Ask which party member the pending item is used on.
+      # bc2cpp: (fixnum)
       def prompt_item_target(id)
         @pending_item = id
         enter_target_confirm(nil)

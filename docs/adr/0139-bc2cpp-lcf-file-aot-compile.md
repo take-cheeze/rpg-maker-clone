@@ -642,6 +642,77 @@ overlap in practice today, since `#initialize` -- where annotations
 actually matter -- is exactly what `ArgTypes` can't reach), but a natural
 small addition if annotations spread to non-`#initialize` methods too.
 
+### The 26 real annotations, actually applied
+
+Everything above built the mechanism and the profiler that suggests real
+annotations; none had actually been written into real game source yet.
+Applied all 13 methods (26 argument positions)
+`profile_annotations.rb` confidently resolved to `fixnum` from real
+observed evidence: `Game::Actor#initialize`, `Game::Map#initialize`,
+`Game::Transition#initialize`, `Game::State#initialize`,
+`Game::Screen#tint_to`/`#restore_tint`/`#shake`/`#flash`,
+`Game::Interpreter#start_at`, `RPG2k::Scene::Map::LRUBitmapCache#initialize`,
+`RPG2k::Scene::ItemMenu#prompt_item_target`, `LCF::EventCommand#initialize`,
+`LCF::MoveCommand#initialize` -- each with the exact partial signature
+(blank for any position the profiler didn't confirm) `profile_annotations.rb`
+itself printed.
+
+None of these classes are in either shipped compiled gem's own
+`ONLY_OWNERS` (`LCF::File`-family, `Game::Picture`) -- same "real,
+verified, zero *live* effect today" shape as the registry-soundness
+follow-ups above, since `IvarLayout`'s own embedding analysis is a
+whole-program pass regardless of what gets *emitted*. Real payoff
+measured directly in that whole-program analysis, not by what either
+compiled gem outputs: **158 -> 174 EMBED lines** (a true before/after,
+`git stash`-based, not a stale reference) -- 16 real ivars newly
+embeddable, several *not* directly annotated at all (`Game::Actor#@exp`/
+`@level`/`@faceset_index`/..., `Game::Screen#@shake_power`/`@fade`/`@pan_x`/
+...) but unlocked as a side effect of the same fixed-point analysis
+`IvarLayout` already runs: once one opaque-argument ivar in a class
+resolves to `fixnum`, every other ivar in that same class that derives
+from it (an `ADD`/`ADDI` on it, or a `GETIV` read of it feeding another
+`SETIV`) can now resolve too.
+
+Re-verified both already-shipped targets unaffected the same rigorous
+way, with one real, understood wrinkle worth recording: `LCF::File`-
+family's own generated output came out **fully byte-identical** (its
+methods live in `mruby-lcf/mrblib/lcf_file.rb`/`schema.rb`, files this
+round never touched), but `Game::Picture`'s own output showed lines
+differing only in the *source line number* a disassembly-echo comment
+reports (e.g. `// 8686 000 ENTER ...` became `// 8693 000 ENTER ...`) --
+adding 7 real `# bc2cpp:` comment lines earlier in the very same file
+(`game.rb`, where `Game::Picture` is also defined) shifts every real
+source line number after them by exactly that many, and `mrbc`'s own
+disassembly always reports the *real* line a bytecode instruction came
+from. Confirmed mechanically, not by eye, that this is the *entire* diff
+and nothing else changed: stripping every line matching that one comment
+pattern from both sides of the diff left zero remaining differences.
+Real, expected, and inert -- a comment can never itself emit bytecode --
+but it means "byte-identical" isn't quite the right bar for a change
+that (unlike every earlier bc2cpp follow-up) edits real, shipped mrblib
+source directly rather than only `bc2cpp.rb`/`mrbgem.rake`; "identical
+except for line-number echoes in comments, mechanically confirmed" is.
+
+One real process mistake surfaced and corrected while re-deriving these
+numbers, worth recording so it isn't repeated: several of this session's
+own earlier ad hoc verification commands used a bare shell `ls
+mruby-rpg2k/mrblib/**/*.rb` to approximate the real closed-world source
+list. Bash's own `**` glob (without `shopt -s globstar`, not set in this
+environment) only matches *inside* at least one subdirectory -- it
+silently drops any file directly in `mrblib/` itself, which is exactly
+where `game.rb`, `interpreter.rb` and `main.rb` live. The real
+`mrbgem.rake` files were never affected (they use Ruby's own `Dir[]`,
+which has no such restriction, confirmed directly:
+`Dir["mruby-rpg2k/mrblib/**/*.rb"]` correctly includes all three), and
+every number this ADR actually shipped on was always double-checked
+through the real `rake` build path before being trusted -- but a few
+*intermediate*, never-shipped-on diagnostic numbers quoted in
+conversation earlier in this session (a leaf-method/`#error` count in
+particular) were computed against this same incomplete file list by
+hand and are undercounts of the real, complete closed world.
+`profile_annotations.rb` itself was never affected either -- it always
+used `Dir[]`, not a shell glob.
+
 ## Follow-up: cross-gem devirtualization
 
 `compile_send`'s own guard already refused to devirtualize a call whose
