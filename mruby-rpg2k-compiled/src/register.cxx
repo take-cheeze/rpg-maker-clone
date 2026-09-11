@@ -3373,6 +3373,40 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // already-established out-of-scope shape as MapWorld's own identically-
   // shaped #play_sound.
 
+  // RPG2k::Scene::EventResolver (same file, right below MapWorld/
+  // VehicleWorld) -- the small helper that resolves a Call Event's own
+  // command list, by common-event id (#common_event_commands) or by
+  // map-event id/page (#map_event_commands). 2 of its own 3 real
+  // bytecode-defined methods compile clean, needing no new opcode work at
+  // all: #initialize (`initialize common_by_id, map_events`, pure
+  // mandatory arity, no super, no block) and #common_event_commands (a
+  // Hash#[] read/memoizing Hash#[]= write via GETIDX/SETIDX, plus one
+  // real POLY `.event` send -- :event has other real definitions
+  // elsewhere in the closed world, so it correctly stays ordinary
+  // mrb_funcall dispatch, never devirtualized). #map_event_commands is
+  // the one gap -- its own body ends in a real `rescue StandardError`
+  // clause (RESCUE/RAISEIF/EXCEPT), the same already-established
+  // out-of-scope shape as MapWorld's/VehicleWorld's own #play_sound
+  // above. Neither of this class's own two ivars (@common, @map_events)
+  // ever gets embedded: both are real Hashes, a type bc2cpp's embedding
+  // lattice only ever models for Fixnum/Symbol. No bare `private`/
+  // `protected` anywhere in the class body, so #common_event_commands is
+  // `mrb_define_method`; #initialize itself is forced private by mruby's
+  // own interpreter regardless of source, the same always-private
+  // special case as every other compiled #initialize in this file.
+  // Reuses the `scene` RClass* declared at the top of this function.
+  RClass* event_resolver = mrb_class_get_under(M, scene, "EventResolver");
+  mrb_define_private_method(M, event_resolver, "initialize",
+                            RPG2k__Scene__EventResolver_initialize,
+                            MRB_ARGS_REQ(2));
+  mrb_define_method(M, event_resolver, "common_event_commands",
+                    RPG2k__Scene__EventResolver_common_event_commands,
+                    MRB_ARGS_REQ(1));
+  // #map_event_commands is NOT registered here -- its own body ends in a
+  // real `rescue StandardError` clause (RESCUE/RAISEIF/EXCEPT), the same
+  // already-established out-of-scope shape as MapWorld's/VehicleWorld's
+  // own #play_sound (see this file's own top comment).
+
   // Game::TextReveal (mruby-rpg2k/mrblib/game.rb) -- see this file's own
   // top comment for the real gap breakdown (#initialize's/#advance's own
   // non-mandatory arguments; #speed_at/#through_instant/#visible_lines'
@@ -3395,6 +3429,50 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__TextReveal_pending_pause, MRB_ARGS_NONE());
   mrb_define_method(M, text_reveal, "release_pause",
                     Game__TextReveal_release_pause, MRB_ARGS_NONE());
+
+  // Game::NumberInput (mruby-rpg2k/mrblib/game.rb) -- the digit-cursor
+  // input model backing the Input Number event command (a fixed count of
+  // 0..9 digit cells, a movable cursor, per-cell increment/decrement, and
+  // the entered base-10 integer). 6 of its own 7 real bytecode-defined
+  // methods compile clean, needing no new opcode work at all:
+  // #initialize, #digit, #inc, #dec, #left, #right (#digits/#cursor are
+  // attr_reader-generated, native, invisible to bc2cpp the same way
+  // every other attr_reader in this codebase is). #value is the one
+  // gap -- its own body ends in a real `@values.each { |d| v = v * 10 +
+  // d }` block (BLOCK/SENDB), the same established out-of-scope shape
+  // every other block-using method above already documents. Neither of
+  // this class's own two Fixnum-shaped ivars (@digits, @cursor) actually
+  // gets embedded, despite #initialize having pure mandatory arity: both
+  // are clamped/derived through a real conditional (`d = 1 if d < 1; d =
+  // MAX_DIGITS if d > MAX_DIGITS`), and this compiler's ivar-type trace
+  // resolves the last write ahead of each SETIV to the `d = MAX_DIGITS`
+  // branch's own GETCONST (a constant lookup, never traced as a literal
+  // fixnum value) -- both conservatively resolve to UNKNOWN and stay on
+  // the ordinary dynamic iv_tbl. Safe (a missed embedding opportunity,
+  // never an unsound one). @values (a real Array) gets a
+  // devirtualization-only CLASS_HINT, never a struct-field candidate. No
+  // bare `private`/`protected`/`public` anywhere in the real source, so
+  // every method below is `mrb_define_method` except #initialize itself,
+  // forced private by mruby's own interpreter regardless of source, the
+  // same always-private special case as every other compiled #initialize
+  // in this file. Reuses the `game` RClass* declared at the top of this
+  // function.
+  RClass* number_input = mrb_class_get_under(M, game, "NumberInput");
+  mrb_define_private_method(M, number_input, "initialize",
+                            Game__NumberInput_initialize, MRB_ARGS_REQ(1));
+  mrb_define_method(M, number_input, "digit", Game__NumberInput_digit,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, number_input, "inc", Game__NumberInput_inc,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, number_input, "dec", Game__NumberInput_dec,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, number_input, "left", Game__NumberInput_left,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, number_input, "right", Game__NumberInput_right,
+                    MRB_ARGS_NONE());
+  // #value is NOT registered here -- its own body ends in a real
+  // `@values.each { |d| ... }` block (BLOCK/SENDB), an already-established
+  // out-of-scope shape (see this file's own top comment).
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

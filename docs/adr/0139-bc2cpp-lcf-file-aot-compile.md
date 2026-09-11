@@ -2900,3 +2900,223 @@ plus the new `RPG2k::Scene::VehicleWorld_ivars`/`_free`/`_type` symbols
 `type`, and `RPG2k__Scene__VehicleWorld_initialize_impl` really calls
 `mrb_data_init`), with every already-shipped class's own symbol count
 unchanged.
+
+## Follow-up: RPG2k::Scene::EventResolver, Game::NumberInput, and this compiler's third severe bug -- a live, already-shipped devirtualization-soundness gap for attr_reader/attr_writer/attr_accessor
+
+A twenty-fourth, independent round adds two more small coverage targets,
+both needing zero new opcode work, plus a dedicated adversarial bug-hunt
+pass across the whole existing `bc2cpp.rb` (not a coverage round) run in
+parallel with them. That pass found and fixed a real, live, already-shipped
+bug: a third instance of the "compiles and links clean but silently
+generates wrong code" shape, this time in the MONO/POLY devirtualization
+registry itself rather than in code generation, and unlike the two prior
+severe bugs (the keyword/splat argument-count mis-parse, the bitwise/modulo
+operator-name character-class gap), this one could crash a real running
+game, not just misbehave.
+
+**The bug:** `build_registry`'s bytecode walk sees a class's own `private`/
+`protected`/`public` visibility-modifier sends and, before this fix,
+treated every other bare-Symbol-argument send the same way it always had --
+which is to say, it didn't see `attr_reader`/`attr_writer`/`attr_accessor`
+sends as installing new methods at all. `Module#attr_reader` is itself a
+native (C-implemented) method, so the getter it installs never gets a TDEF
+of its own in any class's bytecode -- `build_registry`'s walk has no other
+way to learn that name exists as a method on that class. This is the exact
+same "invisible to a bytecode-only registry" gap `extract_native_method_names`
+already exists to close for `mrb_define_method`-family call sites in
+`NATIVE_SRCS` -- except here the installed name isn't a fixed literal
+anywhere in C source; it's whatever Symbol argument *that specific call
+site* happens to pass, so no amount of scanning `NATIVE_SRCS` could ever
+find it. The result: if some name has exactly one real bytecode `def`
+anywhere in the whole program, `monomorphic_target` calls it MONO and lets
+a compiled caller devirtualize straight into that one class's own `_impl`
+-- even when a *different* class defines the very same name via
+`attr_reader`/`attr_writer`/`attr_accessor`, invisible to the scan that
+declared it MONO in the first place.
+
+**Confirmed live, not hypothetical, in code already shipped to `master` --
+two separate instances, both already-registered compiled methods, not just
+one:**
+
+`Game::Actor#crit_chance` (`mruby-rpg2k/mrblib/game.rb`) is a real bytecode
+`def crit_chance; weapon_crit_chance(weapon_crit_bonus); end` -- the *only*
+bytecode-visible definition of `:crit_chance` anywhere in the closed world.
+`Game::Enemy#crit_chance` (`mruby-rpg2k/mrblib/game/battle_support.rb`) is
+`attr_reader :crit_chance, :attribute_ranks, :state_ranks` -- a second,
+real definition the old scan never saw. `Game::Battle#critical?(b)`
+(`mruby-rpg2k/mrblib/game/battle.rb:3409`, `@rng.random(100) <
+(b.crit_chance || 0)`) is called with `b` a battler that can be *either* a
+`Game::Actor` or a `Game::Enemy` (the source's own surrounding comment says
+so explicitly). `Game::Battle` and `Game::Actor` are both already
+compiled-gem owners, and `Game::Battle#critical?` is already registered
+and shipped (`mruby-rpg2k-compiled/src/register.cxx`). Before this fix, the
+real generated `Game__Battle_critical__impl` devirtualized `b.crit_chance`
+straight into `Game__Actor_crit_chance_impl` -- which calls the
+Actor-only `#weapon_crit_bonus` on `self` -- unconditionally, regardless of
+`b`'s actual runtime class. The moment `b` is really a `Game::Enemy` (which
+has no `#weapon_crit_bonus`), that's a real `NoMethodError`, crashing every
+enemy attack's own critical-hit roll, in a build that compiles and links
+clean with zero warnings.
+
+Independently, `RPG2k::Window#transparent=(v)` (`mruby-rpg2k/mrblib/main.rb`)
+is a real bytecode `def transparent=(v); @transparent = v ? true : false;
+draw_skin; v; end` -- the *only* bytecode-visible definition of
+`:transparent=` anywhere in the closed world. `Game::Actor` only has
+`attr_accessor :transparent` (`mruby-rpg2k/mrblib/game.rb:1515`) -- a
+second, real definition the old scan never saw. `Game::Party
+#apply_actor_meta(actor, m)` (`mruby-rpg2k/mrblib/game.rb:3831`, `actor.
+transparent = m[:transparent] unless m[:transparent].nil?`) is called with
+`actor` a real `Game::Actor` -- never a `Window`. `Game::Party` and
+`Game::Actor` are both already compiled-gem owners, and `#apply_actor_meta`
+is already registered and shipped. Before this fix, the real generated
+`Game__Party_apply_actor_meta_impl` devirtualized `actor.transparent = ...`
+straight into `RPG2k__Window_transparent__impl` -- which calls the
+Window-only `#draw_skin` on `self` -- unconditionally. Since `actor` here
+is never anything but a `Game::Actor`, this one is not merely a
+theoretical risk gated on which subclass happens to reach the call site
+(unlike `#critical?`'s `Game::Actor`-or-`Game::Enemy` case): every real
+call to `#apply_actor_meta` with a `:transparent` override in the saved
+data crashes, meaning restoring actor metadata from a save file carrying a
+transparency override was unconditionally broken under
+`RPGMAKER_BC2CPP=1` before this fix landed.
+
+The same general fix additionally closes, for free, `RPG2k::Scene::
+ItemMenu#items`/`RPG2k::Scene::SkillMenu#skills` (each collides with
+`Game::Party#items`/`Game::Actor#skills`, both real `attr_reader`s) and 13
+further whole-program name collisions (`active`, `party`, `switches`,
+`variables`, `windowskin`, `z`, and others) -- all confirmed to have zero
+live effect today (every real call site either already resolves to the
+correct class by construction, such as a self-call, or the two colliding
+classes happen to share an identically-named and identically-typed backing
+ivar), the same "confirmed sound today, latent risk for tomorrow" shape
+already established elsewhere in this ADR (e.g. the `Game::Interpreter#
+switches` gap the prior follow-up section documents) -- but now closed
+structurally rather than merely by accident.
+
+**The fix** (`tools/bc2cpp/bc2cpp.rb`'s `build_registry`): recognizes
+`attr_reader`/`attr_writer`/`attr_accessor` sends as a third case alongside
+the existing `private`/`protected`/`public` handling, reusing the same
+backward-LOADSYM-argument-collection walk already established for
+`private :a, :b, ...`'s own retroactive-visibility case. For each collected
+name, registers a synthetic `MethodDef` (`irep: nil`, the same shape
+`extract_native_method_names`'s own merge already uses for a native method
+with no bytecode body to devirtualize into) under that class -- for
+`attr_writer`/`attr_accessor`, also registers the `name=` setter. This can
+only ever turn an unsound MONO into a correctly cautious POLY, never remove
+a genuinely sound one: it only adds an entry for a name that really does
+have another real definition somewhere in the closed world, and
+`monomorphic_target` already refuses to devirtualize the moment
+`@registry[name].size != 1`.
+
+**Verified the fix actually changes the generated output**, not just that
+it compiles: before the fix, `Game__Battle_critical__impl`'s `b.crit_chance`
+read compiled straight through to `Game__Actor_crit_chance_impl` with no
+`mrb_funcall` at all; after, the real generated body reads:
+```
+r4 = r1;
+// POLY :crit_chance -- real dynamic dispatch, receiver's runtime class decides
+r4 = mrb_funcall(M, r4, "crit_chance", 0);
+```
+-- correctly falling back to ordinary dynamic dispatch, exactly like
+`:random`'s own call two lines above it in the same method.
+
+**`RPG2k::Scene::EventResolver`** (`mruby-rpg2k/mrblib/scene/base.rb`, same
+file, right below `MapWorld`/`VehicleWorld`) is the small helper that
+resolves a Call Event's own command list, by common-event id
+(`#common_event_commands`) or by map-event id/page
+(`#map_event_commands`). 2 of its own 3 real bytecode-defined methods
+compile clean: `#initialize` (`initialize common_by_id, map_events`, pure
+mandatory arity, no super, no block) and `#common_event_commands` (a Hash
+`#[]` read/memoizing Hash `#[]=` write via GETIDX/SETIDX, plus one real
+POLY `.event` send that correctly stays ordinary `mrb_funcall` dispatch,
+never devirtualized, since `:event` has other real definitions elsewhere
+in the closed world). `#map_event_commands` is the one gap -- its own body
+ends in a real `rescue StandardError` clause (RESCUE/RAISEIF/EXCEPT), the
+same already-established out-of-scope shape as `MapWorld`'s/
+`VehicleWorld`'s own `#play_sound`. Neither of this class's own two ivars
+(`@common`, `@map_events`) ever gets embedded: both are real Hashes, a
+type `IvarLayout`'s embedding lattice only ever models for Fixnum/Symbol --
+confirmed directly against the real generated output, this class does not
+appear in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`" diagnostic.
+
+**`Game::NumberInput`** (`mruby-rpg2k/mrblib/game.rb`) is the digit-cursor
+input model backing the Input Number event command (a fixed count of 0..9
+digit cells, a movable cursor, per-cell increment/decrement, and the
+entered base-10 integer). 6 of its own 7 real bytecode-defined methods
+compile clean: `#initialize`, `#digit`, `#inc`, `#dec`, `#left`, `#right`
+(`#digits`/`#cursor` are `attr_reader`-generated, native, invisible to
+bc2cpp the same way every other `attr_reader` in this codebase is).
+`#value` is the one gap -- its own body ends in a real `@values.each { |d|
+v = v * 10 + d }` block (BLOCK/SENDB), the same established out-of-scope
+shape every other block-using method already documents. Despite
+`#initialize` having pure mandatory arity, neither of this class's own two
+Fixnum-shaped ivars (`@digits`, `@cursor`) actually gets embedded: both are
+clamped/derived through a real conditional (`d = 1 if d < 1; d = MAX_DIGITS
+if d > MAX_DIGITS`), and bc2cpp's own straight-line backward ivar-type scan
+resolves the last write ahead of each SETIV to the `d = MAX_DIGITS`
+branch's own GETCONST -- a constant lookup, never traced as a literal
+fixnum value regardless of what `MAX_DIGITS` actually resolves to -- so
+both conservatively resolve to UNKNOWN and stay on the ordinary dynamic
+`iv_tbl`. Safe (a missed embedding opportunity, never an unsound one).
+`@values` (a real Array) gets a devirtualization-only `CLASS_HINT`, never a
+struct-field candidate.
+
+**The dedicated bug-hunt pass** read all of `bc2cpp.rb` end to end looking
+specifically for a third instance of the "compiles and links clean but
+generates silently wrong code" bug shape (the two most severe bugs found
+across this whole effort -- the keyword/splat argument-count mis-parse and
+the bitwise/modulo operator-name character-class gap -- were both exactly
+this shape). It cross-checked every SEND-name-extracting regex in
+`bc2cpp.rb` against every real method name and call-site target actually
+used project-wide, re-examined `IvarLayout.analyze`/`.join`'s type lattice
+for another poisoning-style bug beyond the already-fixed UNKNOWN one,
+re-examined `ArgTypes.analyze`'s call-site arg-count/type parsing for
+another mis-parse beyond the already-fixed keyword/splat one, checked
+`trace_new_target`'s `.new`-detection heuristic for a case where it could
+resolve to the wrong target class, and checked the MONO/POLY
+devirtualization registry for a category of native method invisible to
+it. That last check is exactly where the `attr_reader`/`attr_writer`/
+`attr_accessor` gap above turned up -- a prior round's own follow-up had
+already found and documented that `attr_reader` is invisible to
+`extract_native_method_names`'s own native-method-table scanner (checked
+then only for `Game::State#switches`, and confirmed not currently
+exploitable through *that* mechanism), but had not checked whether the
+*same* invisibility also reaches `build_registry`'s own bytecode-only
+MONO/POLY walk -- a related but distinct piece of this compiler, and the
+one that turned out to be live. Beyond that, the pass also checked `alias`,
+`define_method`, and module-`include`d methods for the same category of
+gap and found no live instance of either: no `alias`- or
+`define_method`-installed method anywhere in the closed world currently
+collides with a same-named real bytecode `def` on a different class the
+way `attr_reader`/`writer`/`accessor` did, and no `include`d module method
+does either (checked directly against the real source, not assumed).
+Every SEND-name-extracting regex it checked against the real project-wide
+corpus of method names/call-site targets already matches correctly, no
+second `IvarLayout`/`ArgTypes` mis-parse was found, and `trace_new_target`
+was not shown a case where it picks the wrong class.
+
+**Full-sweep re-check** (all thirty-five now-shipped targets, rebuilt with
+the `attr_reader`/`writer`/`accessor` fix applied): every previously-
+shipped class's own entry-point count matches exactly -- the same 33
+counts this ADR's own prior follow-up already lists, unchanged; new:
+`RPG2k::Scene::EventResolver` (2), `Game::NumberInput` (6). The fix only
+ever narrows an existing MONO devirtualization to POLY dynamic dispatch,
+never removes a compiled entry point or changes which methods compile at
+all, so an unchanged entry-point count across every class is exactly the
+expected outcome, not a sign the fix did nothing -- confirmed it did
+something real by reading the actual generated body of
+`Game__Battle_critical__impl` directly (see above): the `b.crit_chance`
+call site itself changed from a direct call into
+`Game__Actor_crit_chance_impl` to a real `mrb_funcall`.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build succeeds
+end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape. `nm -C` on the resulting
+`libmruby.a` shows all 8 new entry points (2
+`RPG2k__Scene__EventResolver_*_impl`, 6 `Game__NumberInput_*_impl`) present
+and externally linked, neither class appearing in the embedding-struct
+symbol set (no `_ivars`/`_free`/`_type` for either), with every
+already-shipped class's own symbol count unchanged (`RPG2k::Scene::
+VehicleWorld` still shows its 14-symbol embedding footprint, `Game::
+TextReveal` still shows its 12-symbol footprint).
