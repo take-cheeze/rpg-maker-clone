@@ -3489,3 +3489,79 @@ site in the generated output now reads `// POLY :clamp -- real dynamic
 dispatch, receiver's runtime class decides` / a real `mrb_funcall`,
 confirming the SDEF fix actually changes generated code, not just
 theory.
+
+## Follow-up: Game::Troop, and a checked-but-not-live `&:symbol` block-pass shape
+
+A twenty-ninth, independent round adds `Game::Troop`
+(`mruby-rpg2k/mrblib/game/battle_support.rb`) -- the enemy-party
+container for a battle (a group of `Game::Enemy` instances built from a
+database Troop row). Only 1 of its own 7 real bytecode-defined methods
+compiles clean, needing no new opcode work at all and finding no live
+`bc2cpp.rb` bug: `#member` (`def member(db, m); Enemy.new(db, m.enemy_id,
+m.x, m.y, m.invisible); end`, a plain 4-argument constructor call, no
+arithmetic, no block).
+
+`#initialize` (`db, id, rng = nil`, one optional argument) has the same
+established non-mandatory-arity gap as every other unembedded target
+above, so `drop_unsafe_embeddings` correctly refuses to embed any of this
+class's own four ivars (`@id`/`@name`/`@members`/`@pages`) -- confirmed
+directly against the real generated output, `Game::Troop` does not
+appear in bc2cpp's own "classes needing `MRB_SET_INSTANCE_TT`"
+diagnostic. `#total_exp`/`#total_gold` (`live_members.reduce(0) { |s, e|
+s + e.exp/e.gold }`) and `#drops` (`live_members.each_with_object([]) do
+|e, out| ... end`) each end in a genuine Ruby block (`BLOCK`/`SENDB`),
+the same established out-of-scope shape every other block-using method
+in this file already documents. `#apply_appear_randomly` ends in two
+more real blocks (`@members.count { |m| ... }`, `@members.each do |m|
+... end`).
+
+`#live_members` (`@members.reject(&:hidden)`) was checked specifically
+for whether the `&:symbol` block-pass shorthand might be a distinct,
+narrower shape this compiler already handles, rather than assumed either
+way: confirmed directly against the real `mrbc -v` disassembly, `&:hidden`
+compiles to a bare `LOADSYM R3 :hidden` feeding `SENDB R2 :reject n=0`,
+with **no** preceding `BLOCK` opcode at all -- no closure needs creating
+for a Symbol-to-proc block-pass, unlike a real `{ }`/`do...end` block
+literal, which always emits `BLOCK` immediately before its own `SENDB`.
+This is still the exact same unmodeled `SENDB` opcode `compile_insn` has
+never had a case for, though, just reached a second, narrower way --
+confirmed against the real generated `#error unhandled opcode SENDB`
+line for this method, not assumed from the disassembly alone. Not a new
+gap, and not something worth adding `compile_insn` support for on its
+own: `SENDB`'s own block argument would still need translating to a real
+call into whatever the block turns out to be (a symbol here, an
+arbitrary closure in the general case), the same underlying
+out-of-scope problem either way.
+
+`#member` is `private` (a bare `private` mid-class-body, in effect
+through the end of the class, also covering `#live_members`/
+`#apply_appear_randomly`), so it needs `mrb_define_private_method`, not
+`mrb_define_method` -- confirmed directly against the real diagnostic's
+own `== compiled entry points ==` listing, which flags it accordingly,
+not assumed from the source alone.
+
+**Verified for real:** the actual `build_config.rb` + `rake` pipeline was
+run end to end in this environment; it reached and fully regenerated
+`rpg2k_compiled_gen.cpp` (confirmed containing `Game__Troop_member_impl`/
+`Game__Troop_member`) before hitting the same pre-existing, out-of-scope
+LVGL gap this ADR's own `Game::Rng` follow-up already documents
+(`mruby-rgss/src/lib.cxx` needs a real, built `lvgl.h`, which a raw `rake
+-f 3rd/mruby/Rakefile` invocation has no step to build). Verified
+correctness the same alternate, still-rigorous way that round used:
+`g++ -fsyntax-only -Wall -Wextra -Winfinite-recursion` against the real
+regenerated `register.cxx` plus its own real generated file and the real
+mruby headers -- **zero errors, zero `-Winfinite-recursion` warnings**
+(only the same pre-existing, unrelated `-Wunused-but-set-variable`/
+`-Wunused-parameter` warnings already present in already-shipped
+classes). Also compiled `register.cxx` to a real object file and
+confirmed with `nm -C`: `Game__Troop_member_impl` is present and
+externally linked (`T`), its `mrb_get_args` wrapper `Game__Troop_member`
+correctly stays local (`t`), and neither appears in any embedding-struct
+symbol set. Grepped the freshly regenerated full-owner
+`rpg2k_compiled_gen.cpp` for the empty-name `mrb_funcall(M, <reg>, "", `
+shape directly: zero matches. Cross-checked the real diagnostic's own
+`== compiled entry points ==` listing for this class one by one (not
+just a summary count) before registering anything -- exactly one line,
+`Game__Troop_member / Game__Troop_member_impl (Game::Troop#member,
+arity 2) [private -- use mrb_define_private_method, not
+mrb_define_method]` -- matching what's actually registered below.
