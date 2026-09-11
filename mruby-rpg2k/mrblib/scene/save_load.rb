@@ -273,6 +273,7 @@ class RPG2k
       # Move the slot cursor by `delta`, clamped at the first/last slot -- see
       # #update's own citation for why this never wraps, on a tap or a held
       # key alike.
+      # bc2cpp: (fixnum)
       def move_selection(delta)
         target = @index + delta
         return if target < 0 || target >= SLOT_COUNT
@@ -359,6 +360,7 @@ class RPG2k
         @down_arrow.y = SCREEN_H - ARROW_H
         refresh_arrows
       end
+      # bc2cpp: (fixnum)
 
       def build_arrow_sprite(src_y)
         sprite = Sprite.new
@@ -432,6 +434,7 @@ class RPG2k
       # two separate draws, not one "File N" string, since the measured
       # number column (see LABEL_W) is not where any space-separated string
       # would put it.
+      # bc2cpp: (, fixnum, )
       def draw_slot_label(c, slot_index, color)
         draw_system_text c, 0, 0, LABEL_W, LINE_H, term(:file), @skin, color
         draw_system_text c, 0, 0, LABEL_W, LINE_H, (slot_index + 1).to_s, @skin, color, 2
@@ -552,6 +555,7 @@ class RPG2k
       # save left empty -- simply leaves that slot empty, matching
       # `#draw_message_face`'s own "blank name -> no face" rule
       # (`Scene::Map#load_face_bitmap`).
+      # bc2cpp: (, fixnum, )
       def draw_slot_faces(c, inner_w, state)
         pairs = state.respond_to?(:preview_faces) ? state.preview_faces : nil
         pairs ||= state.party.actors.first(MAX_SLOT_FACES).map do |actor|

@@ -338,6 +338,7 @@ class RPG2k
       # Move `@selected_index` by `delta` (+1/-1), wrapping around the menu.
       # A grayed-out Continue is still reachable by the cursor -- only the
       # selection key is ignored on it (see #update).
+      # bc2cpp: (fixnum)
       def move_selection(delta)
         @selected_index = (@selected_index + delta) % @menu_items.length
         play_cursor_se

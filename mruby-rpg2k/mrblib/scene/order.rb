@@ -128,6 +128,7 @@ class RPG2k
           pick_current
         end
       end
+      # bc2cpp: (fixnum)
 
       def move_cursor(delta)
         @cursor_index += delta

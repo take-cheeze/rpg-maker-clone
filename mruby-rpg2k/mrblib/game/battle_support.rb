@@ -1351,6 +1351,7 @@ module Game
     # A freshly instantiated Game::Enemy for `id` — what a transformation turns
     # into, read through the same constructor a troop member is built with (so it
     # decodes its stats, ranks and its own action pattern). nil when unknown.
+    # bc2cpp: (fixnum)
     def enemy(id)
       return nil unless @db && @db.respond_to?(:enemy) && id && id > 0
       return nil unless @db.enemy[id]
@@ -1415,6 +1416,7 @@ module Game
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil
       sw ? sw[id] : false
     end
+    # bc2cpp: (fixnum, )
 
     def set_switch(id, on)
       sw = @state && @state.respond_to?(:switches) ? @state.switches : nil

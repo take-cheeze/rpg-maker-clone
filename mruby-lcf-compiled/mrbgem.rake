@@ -50,7 +50,12 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # via NATIVE_SRCS closes that gap -- see bc2cpp.rb's own comment on
   # extract_native_method_names for why this only ever needs the flat set of
   # names, never an owner class or a callable C++ symbol.
-  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"]
+  #
+  # mruby's own core (Array/Hash/String/Kernel/Symbol/...) is the exact
+  # same kind of gap, just against the standard library instead of RGSS --
+  # see compiled_gems.rb's own core_native_srcs comment for the real,
+  # further collisions (:delete, :puts, :resume, ...) this found.
+  native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby")
 
   this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-lcf-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-lcf-compiled' }

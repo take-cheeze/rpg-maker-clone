@@ -698,6 +698,7 @@ module Game
     # Passage byte for an upper-layer tile id, or nil when there is none to
     # read: no table on this chipset, no id given, the id is 0 (RPG2000's "no
     # upper tile here" sentinel), or it falls outside the table.
+    # bc2cpp: (fixnum)
     def upper_flags(upper_tile_id)
       return nil if @passable_upper.nil? || upper_tile_id.nil? || upper_tile_id == 0
       idx = upper_tile_id - ChipsetLayout::BLOCK_F
@@ -1592,6 +1593,7 @@ module Game
     # class id, so this just reads it straight.
     def class_name; @class_row ? @class_row.name.to_s : ''; end
 
+    # bc2cpp: (, fixnum)
     def initialize(db, id)
       @db = db
       @id = id
@@ -1695,6 +1697,7 @@ module Game
     # reference implementation's separate mod field does. #change_class passes `preserve_mod: false`,
     # matching its own explicit mod-zeroing before it reapplies
     # the class's own curve.
+    # bc2cpp: (fixnum)
     def set_level(level, preserve_mod: true)
       mod = preserve_mod && @base_raw ? Array.new(@base_raw.size) { |i| @base_raw[i] - base_stats(@level)[i] } : nil
       @level = level && level >= 1 ? level : 1
@@ -1807,6 +1810,7 @@ module Game
     end
 
     # Whether the actor knows `skill_id`.
+    # bc2cpp: (fixnum)
     def knows_skill?(skill_id)
       return false if skill_id.nil? || skill_id == 0
       @skills.include?(skill_id)
@@ -1831,6 +1835,7 @@ module Game
     # different order than real RPG_RT, drifting every roll for the rest of
     # a seeded fight, and could pick a different skill outright on a
     # near-tie.
+    # bc2cpp: (fixnum)
     def learn_skill(skill_id)
       return if skill_id.nil? || skill_id == 0 || @skills.include?(skill_id)
       @skills.push(skill_id)
@@ -1859,6 +1864,7 @@ module Game
     def dead?; @hp <= 0 || @states.include?(DEATH_STATE); end
 
     # Whether `state_id` is currently afflicting the actor.
+    # bc2cpp: (fixnum)
     def state?(state_id)
       return false if state_id.nil? || state_id == 0
       @states.include?(state_id)
@@ -1928,6 +1934,7 @@ module Game
     # Change Condition -- ported from its
     # source, NOT independently confirmed against genuine RPG_RT under wine
     # -- neither of which this restriction ever applies to.
+    # bc2cpp: (fixnum)
     def add_state(state_id, allow_battle_states: true)
       return if state_id.nil? || state_id == 0 || @states.include?(state_id)
       return if !allow_battle_states && !state_persists_type?(state_id)
@@ -2017,6 +2024,7 @@ module Game
     end
 
     # Whether `item_id` occupies any equipment slot.
+    # bc2cpp: (fixnum)
     def equipped?(item_id)
       return false if item_id.nil? || item_id == 0
       @equipment.include?(item_id)
@@ -2034,6 +2042,7 @@ module Game
     # dual-wield redirect below, `Party#equip_item_from_bag` also passes an
     # explicit shield-slot for a 二刀流 actor's second weapon, the same way
     # the equip menu does.
+    # bc2cpp: (fixnum)
     def equip_item(item_id, slot = nil)
       return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
@@ -2072,6 +2081,7 @@ module Game
     # Returns the item id it displaced, or nil -- the equip menu swaps through
     # the bag, so what the other hand was holding has to go back there rather
     # than vanish.
+    # bc2cpp: (fixnum)
     def free_two_handed_slot(slot)
       return nil unless slot == WEAPON_SLOT || slot == SHIELD_SLOT
       other = slot == WEAPON_SLOT ? SHIELD_SLOT : WEAPON_SLOT
@@ -2085,6 +2095,7 @@ module Game
     # Is `item_id` a two-handed weapon? The flag only means anything on a weapon
     # (type 1): RPG_RT tests the type alongside it, so a shield that happens to
     # carry the bit does not claim the other hand.
+    # bc2cpp: (fixnum)
     def two_handed?(item_id)
       return false if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
       it = @db.item[item_id]
@@ -2097,6 +2108,7 @@ module Game
     # Clear an equipment slot: 0..4 empties that one slot, EQUIP_ORDER.size (5)
     # strips every slot, any other value is a no-op. Drives the Change Equipment
     # command's remove operation.
+    # bc2cpp: (fixnum)
     def unequip(slot)
       if slot == EQUIP_ORDER.size
         old_equipment = @equipment
@@ -2128,6 +2140,7 @@ module Game
     # only offers a single `status` hash (the test fixtures, or a database
     # without a curve) is treated as level-independent. With a class set the
     # class row's curve wins.
+    # bc2cpp: (fixnum)
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
@@ -2222,6 +2235,7 @@ module Game
     # name the same four item types that armor-type test covers, already used
     # elsewhere in this file for the identical distinction (see e.g.
     # #defensive_attribute_ids below).
+    # bc2cpp: (fixnum)
     def cursed_armor_state_ids(item_id)
       return [] unless rpg2003?
       return [] if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
@@ -2780,6 +2794,7 @@ module Game
     # RPG_RT under wine) which does not consult the flag either, so only the
     # equip menu gates on this -- Game
     # ::Party's #equip_from_bag / #unequip_to_bag stay unguarded on purpose.
+    # bc2cpp: (fixnum)
     def slot_cursed?(slot)
       return false unless slot >= 0 && slot < EQUIP_ORDER.size && @db.respond_to?(:item)
       item_id = @equipment[slot]
@@ -2827,6 +2842,7 @@ module Game
     # own curve (#calc_exp) — a direct port of a reference implementation's
     # own EXP-curve calculation for the previous level, NOT independently
     # confirmed against genuine RPG_RT under wine.
+    # bc2cpp: (fixnum)
     def exp_for_level(level)
       return 0 if level <= 1
       calc_exp(level - 1)
@@ -2854,6 +2870,7 @@ module Game
     end
 
     # Add `delta` EXP (negative removes it); the Change EXP command's effect.
+    # bc2cpp: (fixnum)
     def gain_exp(delta)
       set_exp(@exp + delta)
     end
@@ -2882,6 +2899,7 @@ module Game
     # on a level down that leaves EXP at/above the next threshold it drops to the
     # level's base. Current HP/MP are not refilled (set_level only re-clamps
     # them), matching RPG_RT.
+    # bc2cpp: (fixnum)
     def change_level_by(delta)
       new_level = Game.clamp(@level + delta, 1, max_level)
       old = @level
@@ -2904,6 +2922,7 @@ module Game
     # own change-HP routine (NOT independently confirmed against genuine
     # RPG_RT under wine). Returns the
     # new HP.
+    # bc2cpp: (fixnum)
     def change_hp(delta, allow_death = true)
       return @hp if dead?
       floor = allow_death ? 0 : 1
@@ -3020,6 +3039,7 @@ module Game
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
+    # bc2cpp: (fixnum)
     def change_mp(delta)
       @mp = Game.clamp(@mp + delta, 0, @max_mp)
     end
@@ -3093,6 +3113,7 @@ module Game
     # why the two ceilings aren't perfectly split by edition here). `@base`
     # (read by #recompute_stats and everything else) stays the clamped,
     # display/effective value throughout.
+    # bc2cpp: (fixnum, fixnum)
     def change_param(type, delta)
       return unless type >= 0 && type < STAT_NAMES.size
       limit = base_param_limit(type)
@@ -3106,6 +3127,7 @@ module Game
     # RPG2000's clamp ceiling for a base parameter: HP/MP go to 9999, the four
     # battle stats to 999. Shared by #change_param and #restore_base, which
     # both need to re-derive the clamped @base from an unclamped total.
+    # bc2cpp: (fixnum)
     def base_param_limit(type)
       (type == PARAM_MAX_HP || type == PARAM_MAX_MP) ? 9999 : 999
     end
@@ -3163,6 +3185,7 @@ module Game
     # test fixture (or any RPG2000 database, which carries no job table at
     # all) stays quiet -- this only fires for a genuine dangling id in a
     # database that does have one.
+    # bc2cpp: (fixnum, , , )
     def change_class(class_id, new_level, skill_mode, param_mode)
       if class_id > 0 && class_row_for(class_id).nil?
         if @db.respond_to?(:job) && @db.job
@@ -3275,6 +3298,7 @@ module Game
     # 0`, `add` false), which has no table lookup of its own and still
     # clears the list even without one; #do_change_battle_commands now
     # carries the real RPG2k3-commands gate itself instead.
+    # bc2cpp: (, fixnum)
     def change_battle_commands(add, id)
       cmds = battle_commands
       if add
@@ -3336,6 +3360,7 @@ module Game
     # Combatant.from_actor when a fight starts and written by the in-battle
     # Row command / a restored save.
     def battle_row; @row; end
+    # bc2cpp: (fixnum)
     def battle_row=(row); @row = row == ROW_BACK ? ROW_BACK : ROW_FRONT; end
 
     # This actor's RPG2003 active-time (gauge) battle charge (0..
@@ -3601,6 +3626,7 @@ module Game
     # raised, so a game that references a missing actor keeps running. A command
     # in a parallel process can ask every frame, so each bad id is reported once
     # rather than filling the log.
+    # bc2cpp: (fixnum)
     def [](id)
       return nil if id.nil? || id <= 0
       a = @all[id]
@@ -3628,6 +3654,7 @@ module Game
     # as a side effect of asking. Logs and dedupes through the exact same
     # `@missing` table and message #[] uses, so an id already reported by one
     # path doesn't double-report through the other.
+    # bc2cpp: (fixnum)
     def known_invalid?(id)
       return false if id.nil? || id <= 0 || @all[id]
       return false if @db.player[id]
@@ -5956,6 +5983,7 @@ module Game
     # rewriting tiles must bump it or the change will not reach the screen.
     attr_reader :revision
 
+    # bc2cpp: (fixnum, )
     def initialize(id, unit)
       @revision = 0
       @id = id
@@ -5985,6 +6013,7 @@ module Game
       # earlier, uncited pass here got both of these backwards).
       @substitutions = [{}, {}]
     end
+    # bc2cpp: (fixnum, fixnum)
 
     def in_bounds?(x, y)
       x >= 0 && y >= 0 && x < @width && y < @height
@@ -6008,6 +6037,7 @@ module Game
     # (a no-op for most of them) -- reverting a specific earlier
     # substitution means substituting *from* its current (already-rewritten)
     # id, not its original one.
+    # bc2cpp: (fixnum, , )
     def substitute_tile(layer, old_id, new_id)
       idx = layer == 0 ? 0 : 1
       rebuilt = {}
@@ -6064,12 +6094,14 @@ module Game
     def set_upper(x, y, tile_id); set_tile(@upper, x, y, tile_id); end
 
     private
+    # bc2cpp: (, fixnum, , )
 
     def set_tile(layer, x, y, tile_id)
       return unless in_bounds?(x, y)
       layer[y * @width + x] = tile_id
       @revision += 1
     end
+    # bc2cpp: (, , fixnum, )
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)
@@ -7427,6 +7459,7 @@ module Game
 
     # `erase` says which way the mask runs: true when black is arriving (Erase
     # Screen), false when it is leaving (Show Screen).
+    # bc2cpp: (fixnum, fixnum, fixnum, fixnum, )
     def initialize(style, frames, width, height, erase)
       @style = style
       @frames = frames
@@ -7667,6 +7700,7 @@ module Game
     # that slide together (combine, a Show) or apart (division, an Erase).
     # `top_h` / `left_w` is the first piece's share of the axis (integer half,
     # remainder to the second piece so an odd dimension still tiles exactly).
+    # bc2cpp: (fixnum)
     def half(total)
       h = total / 2
       [h, total - h]
@@ -7882,6 +7916,7 @@ module Game
     # formula. A negative `frame`
     # (#new_block_rects asking for the count *before* frame 0) is nothing
     # revealed yet.
+    # bc2cpp: (fixnum)
     def block_count_through(frame)
       return 0 if frame < 0
       total = block_order.size
@@ -8121,6 +8156,7 @@ module Game
 
     # Begin a tint transition to the target channels over `frames` frames
     # (frames <= 0 applies it immediately). Values are clamped to 0..200.
+    # bc2cpp: (, , , , fixnum)
     def tint_to(r, g, b, sat, frames)
       @tr = Game.clamp(r, 0, 200)
       @tg = Game.clamp(g, 0, 200)
@@ -8145,6 +8181,7 @@ module Game
     # `current` are each [red, green, blue, sat], `frames` the frames still
     # left. Unlike #tint_to, `current` need not equal `finish` -- a save made
     # mid-transition resumes interpolating from exactly where it left off.
+    # bc2cpp: (, , fixnum)
     def restore_tint(finish, current, frames)
       @tr, @tg, @tb, @tsat = finish
       @r, @g, @b, @sat = current
@@ -8153,6 +8190,7 @@ module Game
 
     # Begin a timed shake of the given power and speed for `frames` frames
     # (frames <= 0 stops the shake immediately). Power/speed clamp to sane ranges.
+    # bc2cpp: (, , fixnum)
     def shake(power, speed, frames)
       @shake_power = Game.clamp(power, 0, 9)
       @shake_speed = Game.clamp(speed, 1, 9)
@@ -8198,6 +8236,7 @@ module Game
     # shape) — ported from a reference implementation, NOT
     # independently confirmed against genuine RPG_RT under wine: it always
     # clears any in-progress strobe.
+    # bc2cpp: (fixnum, fixnum, fixnum, fixnum, fixnum)
     def flash(r, g, b, power, frames)
       @flash_continuous = false
       @flash_r = r
@@ -8415,6 +8454,7 @@ module Game
     end
 
     # Move `cur` toward `target` by at most `step` (never overshooting).
+    # bc2cpp: (, fixnum, )
     def approach(cur, target, step)
       return target if (target - cur).abs <= step
       cur < target ? cur + step : cur - step
@@ -9865,6 +9905,7 @@ module Game
     # 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see #to_lsd/.from_lsd).
     attr_accessor :tile_substitutions
 
+    # bc2cpp: (, fixnum, fixnum, fixnum)
     def initialize(party, map_id, x, y)
       @party = party
       @map_id = map_id
@@ -10013,6 +10054,7 @@ module Game
     # outside 1..MAX_PICTURE_ID does nothing -- #move_picture/#erase_picture
     # need no matching guard of their own, since neither can ever find such an
     # id shown in the first place.
+    # bc2cpp: (fixnum, )
     def show_picture(id, opts)
       @pictures[id] = Picture.new(id, opts) if id && id > 0 && id <= MAX_PICTURE_ID
     end
@@ -10096,6 +10138,7 @@ module Game
 
     # Change Screen Transitions: set slot `which` (0..5) to transition setting
     # `style`. An out-of-range slot is ignored.
+    # bc2cpp: (fixnum, )
     def set_screen_transition(which, style)
       return unless which >= 0 && which < SCREEN_TRANSITION_SLOTS
       @screen_transitions[which] = style
