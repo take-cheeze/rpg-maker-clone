@@ -204,28 +204,97 @@
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all eighteen classes are guaranteed to already exist below.
+// all twenty classes are guaranteed to already exist below.
 //
-// Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
-// @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
-// provably Fixnum, per bc2cpp's whole-program analysis) are deliberately
-// NOT embedded into an RData struct here: that would need the struct
-// allocated in #initialize (mrb_data_init), and #initialize itself can't
-// be compiled -- bc2cpp's own drop_unsafe_embeddings guard already refuses
-// to emit embedded-struct GETIV/SETIV for exactly this reason (see its own
-// comment), so every ivar access below still goes through the ordinary
-// dynamic iv_tbl (ivar_layout stays a lookup keyed off the *ivar_layout*
-// bc2cpp exports, safe by construction) -- no MRB_SET_INSTANCE_TT call
-// needed here, unlike Game::Screen's own block below. RPG2k::Window is
-// exactly the same shape: 7 real provably-Fixnum ivars (@x, @y, @width,
-// @height, @cursor_frame, @arrow_anim, @anim_frames_left) that bc2cpp's
-// own whole-program analysis reports as embeddable, but its own
-// #initialize can't compile either (four optional arguments), so
-// drop_unsafe_embeddings refuses all of them here too -- confirmed
-// directly against the real generated output: RPG2k::Window does not
-// appear in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT(...,
-// MRB_TT_DATA)" diagnostic, and no DATA_PTR(self) access appears anywhere
-// in its own compiled methods below.
+// An eleventh, parallel round adds RPG2k::Scene::Base (mruby-rpg2k/mrblib/
+// scene/base.rb, reopened by mruby-rpg2k/mrblib/scene/battle_support.rb)
+// -- the common superclass every other RPG2k::Scene::* class in this
+// codebase inherits from. 17 of its own 29 real bytecode-defined methods
+// compile clean, needing no new opcode work. #initialize (`def initialize
+// parent`) compiles clean -- pure mandatory arity, and (being the root of
+// the hierarchy) no `super` call to block it, unlike every subclass built
+// on top of it. Its own 3 ivars (@parent, @db, @map_tree) are all opaque
+// object references, never provably Fixnum, so it does not appear in
+// bc2cpp's own "classes needing MRB_SET_INSTANCE_TT" diagnostic and stays
+// a plain, non-embedding registration. Notably, since RPG2k::Scene::
+// ItemMenu, RPG2k::Scene::DebugMenu and RPG2k::Scene::Menu's own
+// #initialize are each blocked purely by their own `super parent` call
+// into this now-clean-compiling #initialize (no other non-mandatory
+// arguments), real SUPER opcode support could unlock all three in a
+// future round -- out of scope here (whole-program coordination across
+// every already-shipped scene class's own registration block), but
+// flagged for later.
+//
+// The same round also adds Game::Character (mruby-rpg2k/mrblib/game.rb)
+// -- the shared moving-on-map-entity state/movement protocol
+// Game::Vehicle and the player/event drivers build on. 14 of its own 16
+// real bytecode-defined methods compile clean, needing no new opcode
+// work; #initialize (three optional arguments) and #front_tile (one)
+// both stay interpreted via the same established non-mandatory-arity
+// shape as every other non-embedding target above, so this class's own
+// provably-typed ivars stay unembedded too, no MRB_SET_INSTANCE_TT call
+// needed for it below.
+//
+// This same round also found and fixed a real, live bug in bc2cpp.rb's
+// own IvarLayout.join -- the fixed-point per-ivar type-join the whole
+// embedding analysis (and ArgTypes' own call-site argument-type
+// inference, which reuses the identical join) is built on. A SETIV (or
+// call-site argument) site whose own value traced to UNKNOWN used to have
+// that contribution silently discarded whenever some *other*,
+// earlier-processed site for the same ivar name had already joined in a
+// concrete type -- keeping the old concrete type instead of poisoning to
+// UNKNOWN the way a sound fixed-point join has to. Caught for real
+// building Game::Character: #move_diagonal's own `@last_move_direction =
+// [horizontal, vertical]` (a genuine Array literal, correctly traced to
+// UNKNOWN) was getting silently dropped in favor of #initialize's own
+// earlier `@last_move_direction = direction` (:fixnum) -- reported EMBED
+// fixnum for an ivar that can, on a real code path, hold an Array. Not
+// exploitable for Game::Character itself (its own #initialize never
+// compiles at all, so the class-level gate above already refuses to embed
+// anything regardless), but a live, already-shipped bug for classes whose
+// own #initialize *does* compile: a fresh whole-program diagnostic taken
+// before and after the fix shows Game::Screen losing 11 of its own
+// previously-"embeddable" ivars (@frames, @shake_power/@shake_speed/
+// @shake_frames/@shake_offset, @flash_frames, @pan_x/@pan_y/@pan_step,
+// @fade_frames/@fade_transition) and Game::State losing one (@map_id) --
+// both classes still keep several genuinely-sound embedded ivars each, so
+// neither drops out of "classes needing MRB_SET_INSTANCE_TT" entirely,
+// but the pre-fix set of embedded fields for both was real, live,
+// over-permissive RData-struct layout. Every embedded-field SETIV this
+// codegen emits already carries its own runtime `mrb_integer_p` guard
+// (raising a real Ruby TypeError on a non-Integer write, never silently
+// corrupting the struct) -- so this was never the Game::Actor-shaped
+// undefined-behavior class of bug (an allocation that never happened);
+// it was an over-permissive embedding decision that would have turned a
+// legitimate non-Integer assignment (one the plain interpreter handles
+// fine) into a crash the first time a real game session actually hit it.
+// Since `rpg2k_compiled_gen.cpp` is regenerated by mrbgem.rake from
+// bc2cpp.rb on every build (a real Rake prerequisite, not something this
+// file has to duplicate), the very next build after this fix lands
+// regenerates both classes' own generated code with the corrected
+// (smaller, sound) embedded-field set automatically -- no hand-edit to
+// either class's own registration block below was needed or made. See
+// docs/adr/0139's own Game::Character follow-up for the full writeup.
+//
+// Game::Picture's own #initialize can't be compiled (optional arguments
+// via an `opts = {}` keyword-style hash), so even before any ivar is
+// looked at, bc2cpp's own drop_unsafe_embeddings guard already refuses to
+// emit embedded-struct GETIV/SETIV for it -- that would need the struct
+// allocated in #initialize (mrb_data_init) -- so every ivar access below
+// still goes through the ordinary dynamic iv_tbl, no MRB_SET_INSTANCE_TT
+// call needed here, unlike Game::Screen's own block below. (An earlier
+// version of this comment additionally claimed 11 of Picture's own ivars
+// -- @x, @y, @show_x, @show_y, @zoom, @opacity, @red, @green, @blue,
+// @saturation, @frames -- were themselves individually "provably Fixnum";
+// that was never verified against the real per-ivar EMBED diagnostic and
+// this class's own gate makes it moot either way -- see the real fix
+// above.) RPG2k::Window is the same shape: its own #initialize can't
+// compile either (four optional arguments), so drop_unsafe_embeddings
+// refuses to embed anything here too -- confirmed directly against the
+// real generated output: RPG2k::Window does not appear in bc2cpp's own
+// "classes needing MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)" diagnostic, and
+// no DATA_PTR(self) access appears anywhere in its own compiled methods
+// below.
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -2288,6 +2357,120 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, chipset_editor, "draw_cursor",
                             RPG2k__Scene__ChipsetEditor_draw_cursor,
                             MRB_ARGS_NONE());
+
+  // RPG2k::Scene::Base (mruby-rpg2k/mrblib/scene/base.rb, reopened by
+  // mruby-rpg2k/mrblib/scene/battle_support.rb) -- the common superclass
+  // every other RPG2k::Scene::* class in this codebase inherits from
+  // (windowskin loading, the field-menu backdrop, scrolling-list arrow/
+  // blink helpers, system-text/state-colour drawing, system-SFX playback,
+  // UTF-8-vs-byte string walking). 17 of its own 29 real bytecode-defined
+  // methods compile clean, needing no new opcode work at all: the opcode
+  // set nine rounds of this ADR have already built up already covers every
+  // real shape this class's own method bodies use.
+  //
+  // #initialize (`def initialize parent`) compiles clean -- pure
+  // mandatory arity, and (being the root of the RPG2k::Scene hierarchy)
+  // no `super` call to block it, unlike every subclass built on top of
+  // it. Its own 3 ivars (@parent, @db, @map_tree) are all opaque object
+  // references (never a provably-Fixnum value on any real construction
+  // site), so bc2cpp's own whole-program embedding diagnostic does not
+  // propose `MRB_SET_INSTANCE_TT` here at all -- confirmed directly
+  // against the real diagnostic output, not assumed: RPG2k::Scene::Base
+  // does not appear in its "classes needing MRB_SET_INSTANCE_TT" list,
+  // so this stays a plain, non-embedding registration exactly like
+  // RPG2k::Scene::StatusMenu's own block above.
+  //
+  // The 12 methods that stay interpreted are genuinely out of this
+  // prototype's scope, not a missing opcode -- confirmed against the
+  // real generated `#error` markers, not guessed: #make_windowskin,
+  // #play_system_se, #screen_width and #screen_height each have a real
+  // `rescue` clause (RESCUE/RAISEIF/EXCEPT); #build_list_arrow_sprite,
+  // #draw_system_text and #draw_actor_state each have a non-mandatory
+  // argument (a trailing `= ...` default); #draw_list_arrow_fallback,
+  // #clip_text_to_width, #wrap_text_to_width and #draw_wrapped_hint each
+  // call a real Ruby block (`LIST_ARROW_H.times do ... end`/
+  // `text.each_char do ... end`/`text.split(' ').each do ... end`/
+  // `....each_with_index do ... end`, all BLOCK/SENDB); and
+  // #play_animation_se combines a block (`anim.timings.each do |_id, t|
+  // ... end`) with its own `rescue StandardError` clause, the same
+  // combined shape Game::State's own #seed_screen_transitions/
+  // #seed_vehicle_positions already established.
+  //
+  // No bare `private` anywhere in either source file (confirmed directly,
+  // not guessed from bc2cpp's own diagnostic), so every method below is
+  // `mrb_define_method` except #initialize itself, which mruby's own
+  // src/class.c forces private unconditionally regardless of source, the
+  // same always-private special case as every other shipped target's own
+  // #initialize.
+  RClass* base = mrb_class_get_under(M, scene, "Base");
+  mrb_define_private_method(M, base, "initialize",
+                            RPG2k__Scene__Base_initialize, MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "update", RPG2k__Scene__Base_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, base, "dispose", RPG2k__Scene__Base_dispose,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, base, "build_field_background",
+                    RPG2k__Scene__Base_build_field_background, MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "utf8_chars", RPG2k__Scene__Base_utf8_chars,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "utf8_chars_bytewise",
+                    RPG2k__Scene__Base_utf8_chars_bytewise, MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "state_table", RPG2k__Scene__Base_state_table,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, base, "state_display", RPG2k__Scene__Base_state_display,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "value_font_color",
+                    RPG2k__Scene__Base_value_font_color, MRB_ARGS_REQ(3));
+  mrb_define_method(M, base, "draw_stat_segment",
+                    RPG2k__Scene__Base_draw_stat_segment, MRB_ARGS_REQ(10));
+  mrb_define_method(M, base, "normal_status_term",
+                    RPG2k__Scene__Base_normal_status_term, MRB_ARGS_NONE());
+  mrb_define_method(M, base, "term", RPG2k__Scene__Base_term, MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "system_se", RPG2k__Scene__Base_system_se,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "db_system_se", RPG2k__Scene__Base_db_system_se,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "advance_list_arrow_anim",
+                    RPG2k__Scene__Base_advance_list_arrow_anim,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "list_arrow_blink_on?",
+                    RPG2k__Scene__Base_list_arrow_blink_on_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, base, "sticky_list_top",
+                    RPG2k__Scene__Base_sticky_list_top, MRB_ARGS_REQ(4));
+
+  // Game::Character (mruby-rpg2k/mrblib/game.rb) -- see this file's own
+  // top comment for the real gap breakdown (#initialize/#front_tile, both
+  // non-mandatory arity) and why no MRB_SET_INSTANCE_TT call belongs
+  // here. No bare `private` anywhere in the real source (confirmed
+  // directly, not guessed from bc2cpp's own diagnostic), so every method
+  // below is `mrb_define_method`.
+  RClass* character = mrb_class_get_under(M, game, "Character");
+  mrb_define_method(M, character, "x=", Game__Character_x_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, character, "y=", Game__Character_y_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, character, "set_graphic", Game__Character_set_graphic,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, character, "face", Game__Character_face,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, character, "face!", Game__Character_face_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, character, "move", Game__Character_move,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, character, "jump", Game__Character_jump,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, character, "diagonal_facing",
+                    Game__Character_diagonal_facing, MRB_ARGS_REQ(2));
+  mrb_define_method(M, character, "move_diagonal",
+                    Game__Character_move_diagonal, MRB_ARGS_REQ(2));
+  mrb_define_method(M, character, "turn_right", Game__Character_turn_right,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, character, "turn_left", Game__Character_turn_left,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, character, "turn_around", Game__Character_turn_around,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, character, "direction_toward",
+                    Game__Character_direction_toward, MRB_ARGS_REQ(2));
+  mrb_define_method(M, character, "direction_away",
+                    Game__Character_direction_away, MRB_ARGS_REQ(2));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

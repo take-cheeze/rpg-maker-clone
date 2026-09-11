@@ -2012,8 +2012,153 @@ all eighteen now-shipped targets' own entry-point counts --
 succeeds end to end (`EXIT: 0`), and the full build log shows **zero**
 `-Winfinite-recursion` warnings anywhere. `nm -C` on the resulting
 `libmruby.a` shows all 35 new entry points (18
-`Game__MoveRoute_*_impl`, 17 `RPG2k__Scene__ChipsetEditor_*_impl`)
+`Game__MoveRoute_*_impl`, 17 `RPG2k::Scene::ChipsetEditor_*_impl`)
 present and externally linked, with every one of the sixteen
 already-shipped classes' own symbol counts unchanged. The full,
 unrestricted, `NATIVE_SRCS`-aware closed-world `g++ -std=c++17
 -fsyntax-only` check reports **0 errors**.
+
+## Follow-up: RPG2k::Scene::Base, Game::Character, and a real IvarLayout.join embedding bug
+
+Two more independent classes, plus a second real, live bug found by this
+round's own full-sweep discipline -- this time in the embedding
+analysis itself, not the devirtualization registry.
+
+**RPG2k::Scene::Base** (`mruby-rpg2k/mrblib/scene/base.rb`, reopened by
+`mruby-rpg2k/mrblib/scene/battle_support.rb`) is the common superclass
+every other `RPG2k::Scene::*` class in this codebase inherits from --
+windowskin loading, the field-menu backdrop, scrolling-list arrow/blink
+helpers, system-text/state-colour drawing, system-SFX playback, and
+UTF-8-vs-byte string walking. 17 of its own 29 real bytecode-defined
+methods compile clean, needing no new opcode work at all -- the opcode
+set nine rounds of this ADR had already built up already covered every
+real shape this class's own method bodies use. `#initialize` compiles
+clean too (pure mandatory arity, and -- being the root of the
+`RPG2k::Scene` hierarchy -- no `super` call to block it, unlike every
+subclass built on top of it), but its own 3 ivars (`@parent`, `@db`,
+`@map_tree`) are all opaque object references, never provably `Fixnum`
+on any real construction site, so `bc2cpp`'s own whole-program embedding
+diagnostic does not propose `MRB_SET_INSTANCE_TT` for it at all. The 12
+methods that stay interpreted are genuinely out of this prototype's
+scope, not a missing opcode: `#make_windowskin`, `#play_system_se`,
+`#screen_width`, and `#screen_height` each have a real `rescue` clause;
+`#build_list_arrow_sprite`, `#draw_system_text`, and `#draw_actor_state`
+each have a non-mandatory (trailing default) argument;
+`#draw_list_arrow_fallback`, `#clip_text_to_width`,
+`#wrap_text_to_width`, and `#draw_wrapped_hint` each call a real Ruby
+block; and `#play_animation_se` combines a block with its own `rescue
+StandardError` clause.
+
+**A concrete lead for a future round:** `RPG2k::Scene::Base#initialize`
+now compiling clean means `RPG2k::Scene::ItemMenu`, `RPG2k::Scene::
+DebugMenu`, and `RPG2k::Scene::Menu` -- three classes already shipped in
+earlier rounds -- are each blocked from their own `#initialize`
+compiling purely by their own `super parent` call into `Base`, not by
+anything in their own method bodies. A `SUPER` opcode (discussed, not
+yet implemented) would unlock all three at once. Out of scope for this
+round: doing it correctly needs whole-program coordination across every
+already-shipped scene class's own registration block, not a local
+change to one class.
+
+**Game::Character** (`mruby-rpg2k/mrblib/game.rb`) is the shared
+moving-on-map-entity state/movement protocol `Game::Vehicle` and the
+player/event drivers build on. 14 of its own 16 real bytecode-defined
+methods compile clean, needing no new opcode work either. The other 2
+(`#initialize`, `#front_tile`) are both blocked by the same
+non-mandatory-arity shape as every other non-embedding target already
+shipped -- so, like `RPG2k::Scene::Base` above, its own provably-typed
+ivars stay unembedded too.
+
+**A second real, live bug, found by this round's own full-sweep
+discipline, not either background agent's own new-class work.**
+`IvarLayout.join` -- the fixed-point per-ivar type-join the whole
+embedding-safety analysis (and `ArgTypes`' own call-site argument-type
+inference, which reuses the identical join) is built on -- had an
+UNKNOWN-poisoning bug:
+
+```ruby
+# before (buggy)
+def self.join(a, b)
+  return b if a.nil?
+  return a if b == UNKNOWN || b.nil?   # <- kept the OLD concrete type
+  return UNKNOWN if a != b
+  a
+end
+
+# after (fixed)
+def self.join(a, b)
+  return b if a.nil?
+  return UNKNOWN if b == UNKNOWN || b.nil?   # <- correctly poisons
+  return UNKNOWN if a != b
+  a
+end
+```
+
+A `SETIV` (or call-site argument) site whose own value traced to UNKNOWN
+used to have that contribution silently *discarded* whenever some
+other, earlier-processed site for the same ivar name had already joined
+in a concrete type -- directly contradicting this same class's own
+top-of-file comment ("a single unknown-typed source... makes it
+permanently dynamic"). Caught for real building `Game::Character`:
+`#move_diagonal`'s own `@last_move_direction = [horizontal, vertical]`
+(a genuine `Array` literal, correctly traced to UNKNOWN) was getting
+silently dropped in favor of `#initialize`'s own earlier
+`@last_move_direction = direction` (`:fixnum`) -- reported `EMBED
+fixnum` for an ivar that can, on a real code path, hold an `Array`.
+
+**Severity, checked directly against the generated codegen, not
+assumed.** Not exploitable for `Game::Character` itself -- its own
+`#initialize` never compiles at all, so the class-level
+`drop_unsafe_embeddings` gate already refuses to embed anything for it
+regardless of this bug. But a live, already-shipped bug for classes
+whose own `#initialize` *does* compile: a fresh whole-program diagnostic
+taken before and after the fix shows `Game::Screen` losing 11 of its
+own previously-"embeddable" ivars (`@frames`, `@shake_power`,
+`@shake_speed`, `@shake_frames`, `@shake_offset`, `@flash_frames`,
+`@pan_x`, `@pan_y`, `@pan_step`, `@fade_frames`, `@fade_transition`) and
+`Game::State` losing one (`@map_id`) -- confirmed directly against the
+real generated `struct Game__Screen_ivars`/`struct Game__State_ivars`
+field lists, which shrink from 21 to 10 fields and 13 to 12 fields
+respectively. Both classes still keep several genuinely-sound embedded
+ivars each, so neither drops out of "classes needing
+`MRB_SET_INSTANCE_TT`" entirely -- the pre-fix set of embedded fields
+for both was real, live, over-permissive `RData`-struct layout, not a
+class of bug that never allocated the struct at all (the earlier
+`Game::Actor` bug's own shape, true undefined behavior). Checked
+directly against the emitted `SETIV` codegen for an embedded field: it
+already carries a runtime `mrb_integer_p` guard that raises a real Ruby
+`TypeError` on a non-`Integer` write, rather than writing through a
+mismatched union/type punning -- so the pre-fix bug's real failure mode
+was "a previously-working code path (a legitimate `Array` assignment to
+a wrongly-embedded ivar) now raises `TypeError` at runtime", not silent
+memory corruption. Real and worth fixing, but categorically less severe
+than the `Game::Actor` bug.
+
+**Full-sweep re-check** (all twenty now-shipped targets' own
+entry-point counts, `NATIVE_SRCS` set): `Game::Picture` (25),
+`Game::EnemyAction` (6), `Game::Screen` (41), `RPG2k::Window` (32),
+`Game::Transition` (32), `Game::Actor` (76), `Game::Party` (85),
+`RPG2k::Scene::MapViewer` (34), `Game::Battle` (75),
+`RPG2k::Scene::ItemMenu` (41), `RPG2k::Scene::SkillMenu` (39),
+`RPG2k::Scene::DebugMenu` (33), `RPG2k::Scene::EquipMenu` (29),
+`RPG2k::Scene::Menu` (28), `Game::State` (23),
+`RPG2k::Scene::StatusMenu` (13), `Game::MoveRoute` (18),
+`RPG2k::Scene::ChipsetEditor` (17), `RPG2k::Scene::Base` (17),
+`Game::Character` (14) -- all eighteen previously-shipped counts match
+exactly; nothing moved except the two intentional (and now-verified)
+ivar-count drops on `Game::Screen`/`Game::State` from the join() fix.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** `-Winfinite-recursion`
+warnings and **zero** compile errors anywhere in the log. `nm -C` on the
+resulting `libmruby.a` shows all 31 new entry points (17
+`RPG2k::Scene::Base_*_impl`, 14 `Game::Character_*_impl`) present and
+externally linked, with every one of the eighteen already-shipped
+classes' own method-entry-point symbol counts unchanged. Since
+`rpg2k_compiled_gen.cpp` is regenerated from `bc2cpp.rb` by the real
+`mrbgem.rake` prerequisite on every build (not hand-maintained), this
+same real build is also direct, textual confirmation of the join() fix:
+reading the generated `struct Game__Screen_ivars`/`struct
+Game__State_ivars` definitions out of the post-fix build shows exactly
+10 and 12 fields respectively, matching the fix's own predicted impact
+field-for-field.
