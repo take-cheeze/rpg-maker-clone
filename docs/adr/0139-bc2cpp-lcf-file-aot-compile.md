@@ -3120,3 +3120,137 @@ symbol set (no `_ivars`/`_free`/`_type` for either), with every
 already-shipped class's own symbol count unchanged (`RPG2k::Scene::
 VehicleWorld` still shows its 14-symbol embedding footprint, `Game::
 TextReveal` still shows its 12-symbol footprint).
+
+## Follow-up: RPG2k::Scene::GameOver, Game::Actors, and this compiler's fourth severe bug -- Struct.new(...) do...end blocks completely invisible to the registry
+
+A twenty-fifth and twenty-sixth, independent round each add one more small
+coverage target, plus a second dedicated bug-hunt pass run in parallel with
+them. That pass found and fixed a fourth severe, live, already-shipped bug
+-- once again in the MONO/POLY devirtualization registry, the same area
+the immediately preceding follow-up's own fix touched.
+
+**`RPG2k::Scene::GameOver`** (`mruby-rpg2k/mrblib/scene/game_over.rb`) is
+the RPG2000 Game Over screen. Real source has 7 bytecode-defined methods,
+not the 3 a first read of just `#initialize`/`#update`/`#dispose`
+suggests -- `#gameover_bitmap`, `#play_gameover_bgm`,
+`#gameover_bgm_override` and `#database_gameover_bgm` are all real,
+private, bytecode-defined helpers too. 4 of the 7 compile clean, needing
+no new opcode work at all: `#update`, `#dispose`, and the two private
+helpers `#gameover_bgm_override`/`#database_gameover_bgm`. `#initialize`
+(`initialize(parent, state = nil)`, one optional argument) has the
+established non-mandatory-arity gap; `#gameover_bitmap` and
+`#play_gameover_bgm` each end in a real `rescue StandardError => e`
+clause. `#initialize` never compiling means `drop_unsafe_embeddings`
+correctly refuses to embed any of this class's own ivars.
+
+**`Game::Actors`** (`mruby-rpg2k/mrblib/game.rb` -- plural, the
+actor-cache/lookup container, distinct from `Game::Actor` itself, already
+a compiled owner) lazily builds and caches `Game::Actor` instances by
+database id. 3 of its own 6 real bytecode-defined methods compile clean:
+`#initialize(db)`, `#existing(id)` (a ternary plus one Hash `#[]` GETIDX
+read), and `#known_invalid?(id)`. `#[]` ends in a real `rescue
+RuntimeError => e` clause; `#all` ends in a genuine Ruby block
+(`@all.keys.sort.map { |i| ... }`); `#each(&blk)` is a distinct gap from
+either -- an explicit `&blk` block *parameter* (not a `do...end`/`{}`
+block literal at a call site) trips this compiler's own ENTER-arity check
+before the body is looked at at all, the same calling-convention gap
+every non-mandatory-argument target elsewhere in this file already
+documents, just via a block parameter instead of an optional/keyword/rest
+one. None of this class's own three ivars (`@db`, `@all`, `@missing`)
+ever gets embedded -- all three are opaque-reference/Hash-typed, a type
+`IvarLayout`'s embedding lattice only ever models for Fixnum/Symbol.
+
+**The bug:** `build_registry`'s bytecode walk recognizes `CLASS`/`MODULE`
+(a real `class`/`module` body) and, as of the immediately preceding
+follow-up, `attr_reader`/`attr_writer`/`attr_accessor` sends as ways a
+class installs a method -- but `Struct.new(:a, :b, ...) do ... end`, a
+third real, common way, was invisible in *two* distinct respects at once.
+First, `Struct.new` is an ordinary method call (`SENDB`, since it takes a
+block), not a `CLASS`/`MODULE` opcode, so nothing in the walk ever
+recurses into the block's own body -- any real `def` written inside it
+was never registered at all, not even as a same-name collision, simply
+absent. Second, the plain member names Struct.new is given are real
+reader+writer methods `Struct.new` installs natively (mruby's own
+`struct.c`), never a bytecode `TDEF` either -- the same native-accessor
+blind spot the `attr_reader`/`writer`/`accessor` fix closes, just for a
+different installation mechanism entirely invisible to that fix.
+
+**Confirmed live, not hypothetical, in two already-shipped, already-
+registered compiled methods:** `Game::Battle::Combatant`
+(`mruby-rpg2k/mrblib/game/battle.rb`) is `Struct.new(:name, ..., :actor,
+:states, ..., :crit_chance, ...) do ... def state?(id); (states ||
+[]).include?(id); end ... end` -- both `Combatant#state?` (a real `def`
+inside the block) and `Combatant`'s own plain `actor` member reader
+(installed natively by `Struct.new`) were invisible to the registry
+before this fix. `Game::Actor#state?(state_id)` (`mruby-rpg2k/mrblib/
+game.rb`, `return false if state_id.nil? || state_id == 0;
+@states.include?(state_id)`) is the *only* bytecode-visible definition of
+`:state?` anywhere else in the closed world; `RPG2k::Scene::EquipMenu
+#actor` (`mruby-rpg2k/mrblib/scene/equip_menu.rb`) is the only bytecode-
+visible definition of `:actor`. `Game::Battle#cure_state(target, sid)`'s
+own real `return unless target.state?(sid)` (`target` a real `Combatant`
+on every real call site, never a `Game::Actor`) devirtualized straight
+into `Game__Actor_state__impl(M, target, sid)` -- whose own body reads
+`mrb_iv_get(M, self, "@states")`, which returns `nil` on a real `Struct`
+instance (`Struct` stores its members positionally, never via `iv_tbl`),
+so the very next real send in that same body, `nil.include?(state_id)`,
+is a guaranteed `NoMethodError` the moment any state is cured in battle.
+Independently, `Game::Battle#combatant_permanent_states(target)`'s own
+real `target.actor` (19 real call sites, `target` again always a
+`Combatant`) devirtualized straight into `RPG2k__Scene__EquipMenu_actor_
+impl(M, target)`, whose own body reads UI-menu-only ivars that don't
+exist on a `Combatant` either. Both `Game::Battle#cure_state` and
+`#combatant_permanent_states` are already registered and shipped
+(`mruby-rpg2k-compiled/src/register.cxx`) -- meaning every state-cure in
+a real compiled battle was broken before this fix landed, in a build
+that compiled and linked clean with zero warnings.
+
+**The fix** (`tools/bc2cpp/bc2cpp.rb`'s `build_registry`): a new `SENDB`
+case recognizes a bare `Struct.new(...)` call (the receiver register's
+own last write, walked backward, has to be a plain `GETCONST` naming
+`Struct` exactly -- a computed or aliased Struct-like receiver is simply
+not recognized, always safe, just a missed case). It registers each
+member name's reader and writer as synthetic `MethodDef`s (`irep: nil`,
+same shape the `attr_reader`/`writer`/`accessor` fix already uses), reads
+the assigned constant name off a same-register `SETCONST` immediately
+after (falling back to a synthetic placeholder owner name if the result
+isn't immediately named this way, since registry soundness only needs
+*a* distinct owner, not necessarily the *correct* one, to make
+`monomorphic_target`'s own `defs.size == 1` check see more than one real
+definition), and recurses this exact same walk into the block's own
+child irep so a real `def` like `Combatant#state?` is registered as an
+ordinary `MethodDef` with a real `irep`, exactly like any other class
+body. Every check in the new case is a `next unless` guard that bails out
+silently when an assumption doesn't hold, so the fix can only ever add
+registry entries for names a real `Struct.new` call site really does
+install -- never remove a sound entry, never register something under
+the wrong class in a way that could turn a currently-correct
+devirtualization unsound.
+
+**Verified the fix actually changes the generated output** for both real
+instances: `Game__Battle_cure_state_impl`'s `target.state?(sid)` now
+reads `// POLY :state? -- real dynamic dispatch, receiver's runtime class
+decides` / `mrb_funcall(M, r4, "state?", 1, r5)`; `Game__Battle_
+combatant_permanent_states_impl`'s `target.actor` now reads `// POLY
+:actor -- real dynamic dispatch...` / `mrb_funcall(M, r4, "actor", 0)`.
+
+**Full-sweep re-check** (all thirty-seven now-shipped targets, rebuilt
+with the Struct.new fix applied): every previously-shipped class's own
+entry-point count matches exactly -- the same 35 counts this ADR's own
+prior follow-ups already list, unchanged; new: `RPG2k::Scene::GameOver`
+(4), `Game::Actors` (3). Exactly like the `attr_reader`/`writer`/
+`accessor` fix, this one only ever narrows an existing MONO
+devirtualization to POLY dynamic dispatch, never removes a compiled
+entry point or changes which methods compile at all -- an unchanged
+entry-point count across every class is the expected outcome.
+
+**Verified for real:** the real, opt-in `RPGMAKER_BC2CPP=1` build
+succeeds end to end (`EXIT: 0`), with **zero** compile errors, **zero**
+`-Winfinite-recursion` warnings, and **zero** matches for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape across all three generated
+files (`rpg2k_compiled_gen.cpp`, `lcf_compiled_gen.cpp`,
+`rgss_compiled_gen.cpp`). `nm -C` on the resulting `libmruby.a` shows all
+7 new entry points (4 `RPG2k__Scene__GameOver_*_impl`, 3
+`Game__Actors_*_impl`) present and externally linked, neither class
+appearing in the embedding-struct symbol set, with every already-shipped
+class's own symbol count unchanged.
