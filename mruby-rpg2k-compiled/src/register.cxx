@@ -735,6 +735,57 @@
 // "classes needing MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)" diagnostic, and
 // no DATA_PTR(self) access appears anywhere in its own compiled methods
 // below.
+//
+// A real, live, already-shipped bug (docs/adr/0139's own follow-up,
+// found doing the diligence work for a later mruby-lcf-compiled target,
+// LCF::EventCommand, whose own `attr_reader :code, :indent, ...`
+// reproduced the exact same shape small enough to catch): bc2cpp.rb's
+// drop_unsafe_embeddings guard checked only whether #initialize itself
+// compiles clean -- never whether some OTHER, native accessor for the
+// very same ivar name already exists on that class. A plain
+// `attr_reader`/`attr_writer`/`attr_accessor` is exactly that: its real
+// C implementation (3rd/mruby/src/class.c's own `attr_reader`/
+// `attr_writer`) is a bare `mrb_iv_get`/`mrb_iv_set` against the
+// ordinary dynamic `iv_tbl`, with no way to know this class's own SETIV
+// codegen wrote the value into an embedded `RData` struct field instead
+// -- so the native getter always read back `nil` (or the setter's own
+// write was simply invisible to every compiled GETIV reader) regardless
+// of what #initialize did, the moment an embedded ivar's own bare name
+// collided with one of these. Four already-shipped classes below hit
+// this for real, not hypothetically: Game::State's own `attr_accessor
+// :map, :x, :y, :direction` silently broke every compiled instance's
+// real `#x`/`#y`/`#direction` (the hero's own position/facing, read
+// constantly by the movement engine) the moment @x/@y/@direction were
+// embedded; Game::Map's own `attr_reader :id, ..., :revision` did the
+// same to `#id`/`#revision` (the tile-layer cache-invalidation counter
+// Scene::Map#tile_cache_valid? watches); Game::ChipSet's own
+// `attr_reader :name, :graphic, :animation_type, :animation_speed` did
+// the same to `#animation_type`/`#animation_speed`; Game::Switches's own
+// `attr_reader :revision` did the same to `#revision` (the exact counter
+// mruby-rpg2k/mrblib/game.rb's own comment says the map scene watches to
+// know when an event page's conditions might have flipped). All four
+// compiled and linked clean, zero warnings -- confirmed for real with a
+// minimal toy repro (a class embedding one ivar via a compiling
+// #initialize, with a plain `attr_reader` installed for it the ordinary
+// way): `Foo.new(42).x` returns `nil`, not `42`, once embedded, run
+// directly against this project's own real mruby core build. Fixed in
+// bc2cpp.rb itself: drop_unsafe_embeddings now also drops any individual
+// ivar name that collides with a same-owner, same-name synthetic
+// (irep-nil) MethodDef -- the exact registry entry build_registry's own
+// attr_reader/writer/accessor case already installs -- rather than only
+// gating at the whole-owner level. This can only ever remove an embedding
+// that was never safe to begin with; it cannot turn a real embedding
+// unsound the other way. Confirmed directly against the regenerated
+// output: none of these four classes appear in bc2cpp's own "classes
+// needing MRB_SET_INSTANCE_TT" diagnostic anymore, no `Game__State_ivars`/
+// `Game__Map_ivars`/`Game__ChipSet_ivars`/`Game__Switches_ivars` struct is
+// generated for any of them, and every real ivar access in their own
+// compiled methods below (#initialize included) reads/writes the
+// ordinary dynamic iv_tbl via plain `mrb_iv_get`/`mrb_iv_set` -- so the
+// `MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)` calls this file used to make
+// for these four classes are removed below too (each one's own real
+// #initialize is otherwise completely unaffected -- same arity, same
+// visibility, same registered entry points).
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -2573,15 +2624,19 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   // Game::State (mruby-rpg2k/mrblib/game.rb, reopened by mruby-rpg2k/mrblib/
   // game/lsd_io.rb) -- see this file's own top comment for the real gap
-  // breakdown and the embedding this class's own compiling #initialize
-  // unlocks. No bare `private` anywhere in either source file (confirmed
-  // directly, not guessed from bc2cpp's own diagnostic), so every method
-  // below is `mrb_define_method` except #initialize itself, which mruby's
-  // own src/class.c forces private unconditionally regardless of source,
-  // the same always-private special case as every other shipped target's
-  // own #initialize.
+  // breakdown. #initialize does compile clean, but its own @x/@y/
+  // @direction no longer embed into an RData struct -- see this file's
+  // own top comment for the real, already-shipped attr_reader/embedded-
+  // ivar collision bug this class hit (`attr_accessor :map, :x, :y,
+  // :direction` silently missed every compiled #x/#y/#direction while
+  // those three were embedded) and its fix; no MRB_SET_INSTANCE_TT call
+  // belongs here anymore. No bare `private` anywhere in either source
+  // file (confirmed directly, not guessed from bc2cpp's own diagnostic),
+  // so every method below is `mrb_define_method` except #initialize
+  // itself, which mruby's own src/class.c forces private unconditionally
+  // regardless of source, the same always-private special case as every
+  // other shipped target's own #initialize.
   RClass* state = mrb_class_get_under(M, game, "State");
-  MRB_SET_INSTANCE_TT(state, MRB_TT_DATA);
 
   mrb_define_private_method(M, state, "initialize", Game__State_initialize,
                             MRB_ARGS_REQ(4));
@@ -3072,14 +3127,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   // Game::Map (mruby-rpg2k/mrblib/game.rb, reopened by mruby-rpg2k/mrblib/
   // game/battle_support.rb) -- see this file's own top comment for the
-  // real gap breakdown (#substitute_tile's own two BLOCK/SENDB blocks) and
-  // the real construction-site check backing the embedding below. @id and
-  // @revision are real fields on a new Game__Map_ivars RData struct, mixed
-  // safely with the rest of this class's own ivars on the ordinary
-  // dynamic iv_tbl. Reuses the `game` RClass* declared at the top of this
+  // real gap breakdown (#substitute_tile's own two BLOCK/SENDB blocks).
+  // @id and @revision no longer embed into an RData struct -- see this
+  // file's own top comment for the real, already-shipped attr_reader/
+  // embedded-ivar collision bug this class hit (`attr_reader :id, ...,
+  // :revision` silently missed every compiled #id/#revision while those
+  // two were embedded) and its fix; no MRB_SET_INSTANCE_TT call belongs
+  // here anymore. Reuses the `game` RClass* declared at the top of this
   // function.
   RClass* map = mrb_class_get_under(M, game, "Map");
-  MRB_SET_INSTANCE_TT(map, MRB_TT_DATA);
 
   // #initialize is always private (the same real interpreter special case
   // as every other compiled #initialize in this file -- mruby's own
@@ -3156,13 +3212,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // own class methods already documented), so it stays interpreted and
   // every call into it from a compiled method below correctly falls back
   // to ordinary dynamic dispatch rather than being (unsoundly)
-  // devirtualized. @animation_type and @animation_speed are real fields on
-  // a new Game__ChipSet_ivars RData struct, mixed safely with the rest of
-  // this class's own (String/Array-typed, UNKNOWN) ivars on the ordinary
-  // dynamic iv_tbl. Reuses the `game` RClass* declared at the top of this
-  // function.
+  // devirtualized. @animation_type and @animation_speed no longer embed
+  // into an RData struct -- see this file's own top comment for the real,
+  // already-shipped attr_reader/embedded-ivar collision bug this class
+  // hit (`attr_reader :name, :graphic, :animation_type, :animation_speed`
+  // silently missed every compiled #animation_type/#animation_speed while
+  // those two were embedded) and its fix; no MRB_SET_INSTANCE_TT call
+  // belongs here anymore. Reuses the `game` RClass* declared at the top
+  // of this function.
   RClass* chip_set = mrb_class_get_under(M, game, "ChipSet");
-  MRB_SET_INSTANCE_TT(chip_set, MRB_TT_DATA);
 
   // #initialize is always private (the same real interpreter special case
   // as every other compiled #initialize in this file -- mruby's own
@@ -3228,15 +3286,17 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // own real bytecode-defined methods compile clean, needing no new
   // opcode work at all (#revision/#dirty are attr_reader-generated,
   // native, invisible to bc2cpp the same way every other attr_reader/
-  // attr_writer in this codebase is). @revision is a real field on a new
-  // Game__Switches_ivars RData struct, mixed safely with the rest of this
-  // class's own (Hash-typed, UNKNOWN) ivars on the ordinary dynamic
-  // iv_tbl. Checked directly against the exact Game::Actor-shaped
-  // embedding bug several follow-ups up, not assumed safe by analogy:
-  // grepping the whole closed world for `Switches.new`/
-  // `Game::Switches.new`/`.allocate`/a subclass finds exactly two real
-  // construction sites (mruby-rpg2k/mrblib/game.rb's own
-  // Game::State#initialize and this project's own
+  // attr_writer in this codebase is -- which is exactly why @revision no
+  // longer embeds into an RData struct either: see this file's own top
+  // comment for the real, already-shipped attr_reader/embedded-ivar
+  // collision bug this class hit -- `attr_reader :revision` silently
+  // missed every compiled #revision while it was embedded -- and its
+  // fix; no MRB_SET_INSTANCE_TT call belongs here anymore). Checked
+  // directly against the exact Game::Actor-shaped embedding bug several
+  // follow-ups up, not assumed safe by analogy: grepping the whole closed
+  // world for `Switches.new`/`Game::Switches.new`/`.allocate`/a subclass
+  // finds exactly two real construction sites (mruby-rpg2k/mrblib/game.rb's
+  // own Game::State#initialize and this project's own
   // scripts/export_nano7_map.rb harness), both plain zero-argument `.new`
   // calls, no bypass and no subclass anywhere. No bare
   // `private`/`protected`/`public` anywhere in the real source (confirmed
@@ -3246,7 +3306,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // the same always-private special case as every other compiled
   // #initialize in this file.
   RClass* switches = mrb_class_get_under(M, game, "Switches");
-  MRB_SET_INSTANCE_TT(switches, MRB_TT_DATA);
   mrb_define_private_method(M, switches, "initialize",
                             Game__Switches_initialize, MRB_ARGS_NONE());
   mrb_define_method(M, switches, "[]", Game__Switches___, MRB_ARGS_REQ(1));
