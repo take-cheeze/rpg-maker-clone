@@ -20,6 +20,13 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   add_dependency 'mruby-rgss'
 
   bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
+  # BC2CPP_COMPILED_GEMS' own owners list (target_owners below) comes from
+  # this file, required above -- it has to be a real prerequisite of the
+  # `generated` rule too, or Rake has no way to know a changed owners list
+  # alone should invalidate an already-built generated file. See
+  # mruby-rpg2k-compiled/mrbgem.rake's own comment for the real bug this
+  # caught.
+  compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
   # Whole-program closed-world source set -- same reasoning as
   # mruby-lcf-compiled/mrbgem.rake's own comment: bc2cpp's MONO/POLY
   # devirtualization decisions need to see every gem that could define a
@@ -51,7 +58,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
 
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
 
-  file generated => [bc2cpp, *closed_world_srcs, *native_srcs] do |t|
+  file generated => [bc2cpp, compiled_gems_rb, *closed_world_srcs, *native_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
