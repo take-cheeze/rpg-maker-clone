@@ -1,9 +1,9 @@
 // Swaps AOT-compiled C++ bodies in for a hand-picked, provably-safe subset
 // of LCF::File/Database/MapTree/MapUnit/SaveData's own bytecode methods
 // (docs/adr/0139), plus LCF::MoveCommand#initialize,
-// LCF::EventCommand#initialize/#param, LCF::Tree#initialize, and
-// LCF::Sections's own 4 methods (docs/adr/0139's own follow-ups,
-// mruby-lcf/mrblib/lcf.rb). mruby-lcf
+// LCF::EventCommand#initialize/#param, LCF::Tree#initialize,
+// LCF::Sections's own 4 methods, and LCF::Array1D's own 5 methods
+// (docs/adr/0139's own follow-ups, mruby-lcf/mrblib/lcf.rb). mruby-lcf
 // (this gem's own add_dependency) has already run its full gem init --
 // C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
@@ -61,6 +61,30 @@
 // appears in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT"
 // diagnostic, so no MRB_SET_INSTANCE_TT call belongs in this class's own
 // registration block below.
+//
+// LCF::Array1D (mruby-lcf/mrblib/lcf.rb, right above LCF::Array2D) -- the
+// sequential chunk-id -> raw-bytes record every LCF::File-family object
+// actually decodes through. A more complex class than LCF::Tree/
+// LCF::Sections above (11 real bytecode-defined methods, not 1-4), so only
+// 5 of them compile clean and are registered below: #[], #key?,
+// #int16_values, #delete, #[]= -- all public, pure mandatory arity, no
+// super, no block. See tools/bc2cpp/compiled_gems.rb's own LCF::Array1D
+// comment for the full per-method writeup, including exactly why each of
+// the other 6 real methods (#initialize, #to_lcf, #method_missing,
+// #respond_to_missing?, #sym2idx, plus the native `attr_reader :schema`)
+// stays interpreted: #initialize's own `loop do ... end` and #sym2idx's
+// own `LCF.elements_of(@schema).each { |k, e| ... }` are both real
+// BLOCK/S(S)ENDB blocks (loop is an ordinary Kernel#loop method call
+// taking a block, not the already-supported JMP/JMPNOT back-edge shape a
+// plain `while`/`until` keyword loop compiles to -- confirmed directly
+// against the real generated body, not assumed from the source shape);
+// #to_lcf/#respond_to_missing? each have one optional argument; #method_
+// missing has a rest argument. No MRB_SET_INSTANCE_TT call belongs in this
+// class's own registration block below: @data (Array of Strings) and
+// @schema (a Hash, per its own `# bc2cpp: (, Hash)` annotation) are never
+// Fixnum/Symbol, so this class never appears in bc2cpp's own "classes
+// needing MRB_SET_INSTANCE_TT" diagnostic -- confirmed directly, not
+// assumed from the ivar types alone.
 //
 // LCF::EventCommand (mruby-lcf/mrblib/lcf.rb) -- one decoded RPG2000
 // event-page/common-event/move-route command (code, indent, an optional
@@ -207,6 +231,27 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   RClass* move_command = mrb_class_get_under(M, lcf, "MoveCommand");
   mrb_define_private_method(M, move_command, "initialize",
                             LCF__MoveCommand_initialize, MRB_ARGS_REQ(5));
+
+  // LCF::Array1D: 5 of its own 11 real bytecode-defined methods compile
+  // clean and are registered below -- all public, confirmed directly
+  // against the real diagnostic's own `== compiled entry points ==`
+  // listing, none flagged private (unlike every compiled #initialize in
+  // this file, #[]/#key?/#int16_values/#delete/#[]= carry no source-level
+  // `private` and are not mruby's own always-private #initialize special
+  // case). #initialize, #to_lcf, #method_missing, #respond_to_missing?
+  // and #sym2idx stay interpreted -- see this file's own top comment and
+  // tools/bc2cpp/compiled_gems.rb's own LCF::Array1D comment for exactly
+  // why each one does. No MRB_SET_INSTANCE_TT call belongs here: this
+  // class never appears in bc2cpp's own "classes needing
+  // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
+  // Symbol).
+  RClass* array1d = mrb_class_get_under(M, lcf, "Array1D");
+  mrb_define_method(M, array1d, "[]", LCF__Array1D___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "key?", LCF__Array1D_key_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "int16_values", LCF__Array1D_int16_values,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "delete", LCF__Array1D_delete, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "[]=", LCF__Array1D____, MRB_ARGS_REQ(2));
 
   mrb_define_method(M, file, "key?", LCF__File_key_, MRB_ARGS_REQ(1));
   mrb_define_method(M, file, "to_lcf", LCF__File_to_lcf, MRB_ARGS_NONE());
