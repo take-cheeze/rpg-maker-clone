@@ -37,6 +37,7 @@ class RPG2k
       # those steps. The field Item and Skill grids were re-confirmed to do
       # the same thing on the same captures' recipe, which is what they
       # already implemented.
+      # bc2cpp: (, fixnum, fixnum, fixnum)
       def sticky_list_top(top, sel_row, row_count, visible_rows)
         max_top = [row_count - visible_rows, 0].max
         top = 0 if top.nil? || top.negative?

@@ -713,6 +713,62 @@ hand and are undercounts of the real, complete closed world.
 `profile_annotations.rb` itself was never affected either -- it always
 used `Dir[]`, not a shell glob.
 
+### 75 more annotations: readability, not just ivar embedding
+
+The evidence-based approach above had exhausted itself: re-running
+`profile_annotations.rb` found 0 further `SETIV`-derived candidates
+confirmable to `fixnum` (every one of the 43 remaining positions from
+before came back with real, solid evidence of a *different* concrete
+class -- `Game::Party`, `String`, `Symbol`, booleans, `Hash`, ... --
+correctly reported "not annotatable" rather than silently dropped).
+Asked directly to keep annotating "since it helps a lot when I read the
+actual code," not just for `bc2cpp`'s own compiler payoff, which opened
+a real, previously-unused source of evidence: `report_annotation_
+candidates` only ever looked at `SETIV` sites (the one place an
+annotation can change compiled output, via `IvarLayout`), never at an
+opaque mandatory argument consumed directly by a fixnum-fastpath
+arithmetic/comparison op (`ADD`/`SUB`/`EQ`/`LT`/`LE`/`GT`/`GE` and their
+`*I` immediate forms) with no `SETIV` anywhere in sight -- e.g.
+`def battler_z(i); 100 + (... - 1 - i); end`, `i` never once touching an
+ivar. Annotating one of these can never change compiled output
+(`IvarLayout.trace_type`, the only consumer of `arg_types`/`annotations`,
+only ever reaches its "incoming argument" fallback from a `SETIV`
+trace), but it's exactly the kind of real, evidence-backed fact worth
+writing right above a `def` for a human reader -- and it's what a
+`# bc2cpp: (...)` comment already looks like, so no new syntax was
+needed, just a second scan.
+
+`report_annotation_candidates` (`tools/bc2cpp/bc2cpp.rb`) and
+`profile_annotations.rb` were extended to find and profile these too
+(caught and fixed a real bug surfaced along the way: mixing named and
+plain capture groups in one Ruby regex silently makes every plain group
+non-capturing, which had renumbered `owner`/`name`/`pos`/`mand` out from
+under `profile_annotations.rb`'s own parser -- every group is named now).
+148 total candidates (up from 43 -- 105 new arithmetic-derived ones), of
+which the same real-harness profiling run resolved **92 positions across
+75 methods** confidently to `fixnum`, spanning `Game::Actor`/`Actors`/
+`EnemyAi`/`ChipSet`/`Map`/`Transition`/`Screen`/`Interpreter` and
+`RPG2k::Scene::Base`/`Battle`/`Order`/`SaveLoad`/`ItemMenu`/`Title` --
+applied directly to the real source, each comment placed at the exact
+`irep.file`/`enter.lineno` bc2cpp's own registry already names for that
+`def` (no separate lookup or guessing).
+
+Verified the same way as every other real-source change in this file:
+`ruby -c` on all 10 touched files; whole-program `EMBED` count unchanged
+at 174 (expected and correct -- none of these 92 positions ever reaches
+a `SETIV`, so none could newly unlock an embedding, by construction);
+both already-shipped compiled targets re-checked against a true
+`git stash`-based before/after -- `LCF::File`-family byte-identical,
+`Game::Picture` identical except for disassembly-echoed line-number
+comments (the same inert, mechanically-confirmed-only-that shift the
+first annotation round already documented, since these new comments
+also land in `game.rb`); all four real CRuby harnesses
+(`rpg2k_logic_check.rb`: 1201 checks, `rpg2k_scene_check.rb`: 1062 checks,
+`error_report_check.rb`, `rgss_cruby_test_check.rb`) still pass. Purely
+additive to the codebase's own readability -- zero compiled-output
+effect today, by design, same honest framing as every other "real,
+verified, no live payoff yet" finding in this file.
+
 ## Follow-up: cross-gem devirtualization
 
 `compile_send`'s own guard already refused to devirtualize a call whose

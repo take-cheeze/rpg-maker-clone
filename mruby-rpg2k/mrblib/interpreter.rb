@@ -1328,6 +1328,7 @@ module Game
     # this command list — nil when there is none (a common event, a battle page).
     # Every other reference, including the hero and the vehicle slots, passes
     # through untouched for the caller to recognise.
+    # bc2cpp: (fixnum)
     def character_ref(ref)
       return @event_id if ref == 0 || ref == CHAR_THIS_EVENT
       ref
@@ -1336,6 +1337,7 @@ module Game
     # -- flow helpers ---------------------------------------------------------
 
     # Move @index to the first command at `indent` whose code is in `codes`.
+    # bc2cpp: (, fixnum)
     def skip_to(codes, indent)
       while @index < @list.size
         c = @list[@index]
@@ -1493,6 +1495,7 @@ module Game
       @wait_kind = :choice
       @waiting = true
     end
+    # bc2cpp: (fixnum)
 
     def find_choice_option(index)
       i = @index
@@ -1929,6 +1932,7 @@ module Game
     # id at or before `src` only sees it once. A source outside `a..b`
     # entirely skips this split and degenerates to the ordinary single
     # up-front read every other operand type already uses.
+    # bc2cpp: (, fixnum, fixnum, )
     def do_control_vars_range_variable(cmd, a, b, op)
       src = cmd.param(5)
       unless src >= a && src <= b
@@ -2028,6 +2032,7 @@ module Game
     # ridden one's position live every step, and an unridden one simply sits
     # wherever it was last placed), so this needs no scene hook and works the
     # same whether or not the vehicle's own map is the one currently loaded.
+    # bc2cpp: (fixnum, )
     def vehicle_operand(ref, attr)
       v = @state.vehicle(Vehicle::TYPES[ref - CHAR_BOAT])
       return 0 unless v
@@ -2045,6 +2050,7 @@ module Game
     # because it owns the camera. Without that hook (a headless interpreter, or a
     # battle page) there is no view to measure against, so it reads 0. `ref` has
     # already been through #character_ref, so "this event" arrives as a real id.
+    # bc2cpp: (, fixnum)
     def screen_operand(ref, attr)
       if ref.nil?
         $stderr.puts '[RPG2k] Control Variables: "this event" has no map ' \
@@ -2183,6 +2189,7 @@ module Game
       else 0
       end
     end
+    # bc2cpp: (, fixnum, fixnum)
 
     def apply(op, cur, val)
       case op
@@ -2209,10 +2216,12 @@ module Game
     # leaves the value unchanged on a zero divisor; its modulo differs from
     # that -- zeroing the result instead -- so a modulo by zero zeroes the
     # variable instead.
+    # bc2cpp: (fixnum, fixnum)
     def trunc_div(n, d)
       q = n.abs / d.abs
       (n < 0) == (d < 0) ? q : -q
     end
+    # bc2cpp: (fixnum, )
 
     def trunc_mod(n, d)
       n - d * trunc_div(n, d)
@@ -2412,6 +2421,7 @@ module Game
     # scene-level fixtures exercise only the level line, never the skill
     # table) -- `actor.respond_to?(:learn_table)` guards the same stub case
     # for the skill lookup below.
+    # bc2cpp: (, fixnum, fixnum, )
     def queue_level_up_messages(actor, old_level, new_level, before_skills)
       return unless new_level > old_level
       ((old_level + 1)..new_level).each do |lv|
@@ -2612,6 +2622,7 @@ module Game
     # Simulated Attack's own real clamp is `std::max(0, result)`, applied
     # both before and after the variance call, so this can land on a
     # genuine 0 the way #varied's callers never do.
+    # bc2cpp: (, fixnum)
     def simulated_attack_variance(base, var)
       return base unless var && var > 0 && base > 0
       adj = var * base / 10
@@ -3556,6 +3567,7 @@ module Game
 
     # The numpad facing a Teleport's 1-based direction argument names, or 0 for
     # "keep the current facing" (which is what an out-of-range value means too).
+    # bc2cpp: (fixnum)
     def teleport_facing(param)
       return 0 unless param && param >= 1 && param <= FACING_NUMPAD.size
       FACING_NUMPAD[param - 1]

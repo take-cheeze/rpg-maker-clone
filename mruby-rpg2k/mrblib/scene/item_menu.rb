@@ -243,6 +243,7 @@ class RPG2k
       # column for +-1), ignored if that cell is off the grid -- confirmed
       # against genuine RPG_RT under wine, which leaves the cursor put
       # rather than wrapping (see the COLUMN_MAX comment above).
+      # bc2cpp: (fixnum)
       def move_item_cursor(delta)
         return if items.empty?
         target = @item_index + delta
@@ -573,6 +574,7 @@ class RPG2k
       # Move the teleport-target cursor by `delta` grid cells, ignored if that
       # cell is off the grid -- mirrors #move_item_cursor exactly (see its
       # own comment).
+      # bc2cpp: (fixnum)
       def move_teleport_cursor(delta)
         targets = teleport_targets
         return if targets.empty?
