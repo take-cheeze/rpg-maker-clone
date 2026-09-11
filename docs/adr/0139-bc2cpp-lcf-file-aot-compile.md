@@ -1396,3 +1396,92 @@ round's own two new classes. The same run emits **1,922** real `_impl`
 method bodies across the whole closed world (up from 1,514). Both
 already-shipped compiled targets (`LCF::File`'s subclasses, `Game::Picture`/
 `Game::EnemyAction`, `RGSS::Sprite`) remain unaffected.
+
+## Follow-up: Game::Transition, Game::Actor, and the GETIDX/SETIDX/GETGV opcodes
+
+Two more classes, again developed as independent parallel slices and
+merged by hand: `Game::Transition` (RPG2000's ~38 screen transition
+styles -- fades, block-shuffle wipes, zoom, mosaic, wave, scroll-in/out,
+cut, `mruby-rpg2k/mrblib/game.rb`) and `Game::Actor` (real player-character
+stats/equipment/leveling/battle state, the same file plus a second
+reopening in `mruby-rpg2k/mrblib/game/battle_support.rb`) -- the biggest
+real target yet.
+
+**`Game::Transition` needed no new opcode work at all** -- the
+`LOADSELF`/`MUL`/`ARRAY`/`AREF` set the previous round added already
+covers it fully: 32 of its 38 real methods (including `#initialize`
+itself, 5 purely-mandatory arguments) compile clean. It is the *second*
+real target with an embedding `#initialize`, after `Game::Screen`: 5
+provably-Fixnum ivars (`@style`, `@frames`, `@width`, `@height`, `@frame`)
+are real fields on a new `Game__Transition_ivars` RData struct, the one
+other real ivar (`@erase`, a boolean) staying on the ordinary `iv_tbl`.
+The 6 methods that stay interpreted (`block_rects`, `blind_rects`,
+`vertical_stripe_rects`, `horizontal_stripe_rects`, `clip`,
+`compute_block_order`) all use a genuine Ruby block (`BLOCK`/`SENDB`),
+confirmed against the real generated `#error` lines, not guessed --
+matching `RPG2k::Window#dispose`/`#draw_arrow_fallback`'s own established
+out-of-scope shape from the previous round.
+
+A real, concrete case where the devirtualization-soundness fix from two
+follow-ups up actually earns its keep: `Game::Transition#block_order`'s
+own body (`@block_order ||= compute_block_order`) sends a MONO name whose
+one real definition is itself one of the 6 that doesn't compile
+(`BLOCK`/`SENDB`) -- `compiles_clean?` correctly refuses to devirtualize
+that call, so the generated body falls back to ordinary `mrb_funcall`
+instead of referencing a `_impl` this run never emits. Confirmed directly
+against the real generated output.
+
+**Three new opcodes for `Game::Actor`**: `GETIDX`/`SETIDX` (a computed-
+index Array/Hash read/write -- `arr[i]`/`arr[i]=`, via the same real
+`mrb_ary_ref`/`mrb_ary_set`/`mrb_hash_get`/`mrb_hash_set` APIs `AREF`/
+`HASH` already use, falling back to `mrb_funcall(..., "[]"/"[]="  , ...)`
+for anything else) and `GETGV` (a bare global-variable read, `mrb_gv_get`).
+75 of `Game::Actor`'s own real methods compile clean -- 66 with the prior
+round's opcode set, 9 more directly unlocked by these three. Far more
+significant: the same three opcodes unlocked **348 more real method
+bodies project-wide**, across roughly 30 other classes never touched by
+this round (`RPG2k::Scene::Battle` alone gained 82, `RPG2k::Scene::Map`
+62, `Game::Interpreter` 41, `Game::Battle` 15, `Game::Party` 14) --
+the same opcode-reuse payoff the prior round's `MUL`/`AREF` work already
+showed, now at a larger scale. `Game::Actor#initialize` and 4 other real
+methods stay interpreted for the same non-mandatory-arity gap as
+`Game::Picture#initialize`; the remaining 34+ hit `BLOCK`/`SENDB` (the
+same established out-of-scope shape) or narrower gaps (`RESCUE`/
+`RAISEIF`/`EXCEPT`, `RANGE_INC`, `ADDILV`/`SUBILV`/`NOP` for a `while`
+loop) genuinely left alone rather than forced. `Game::Actor`'s own
+provably-Fixnum ivars stay unembedded, same shape as `Game::Picture`/
+`RPG2k::Window` -- `#initialize` itself doesn't compile.
+
+Cross-checked for synergy between `Game::Transition` and `Game::Actor`
+themselves the same way the previous round found three extra
+`Game::Screen` methods from combining opcode sets: re-running both
+classes' own diagnostics against the fully merged `bc2cpp.rb` found no
+additional methods unlocked between the two (`32`/`75` exactly, matching
+each round's own isolated count). But a *wider* sweep -- re-checking
+every already-shipped target, not just this round's own two new classes,
+against the final merged `bc2cpp.rb` -- caught what that narrower check
+missed: `GETIDX` also unblocks two real `Game::Screen` methods from the
+*previous* round, `#load_h` (`h[:pan_x]`, a Hash `#[]` read) and `#pan`
+(`PAN_DELTA[direction]`, same shape) -- both flagged at the time as
+blocked by exactly this gap, closed by an opcode a *different* round
+added for a *different* class entirely. `Game::Screen` is now at **41**
+of its own 43 real methods, not 39. The lesson generalizes: checking
+synergy only between a round's own new targets isn't enough -- every
+opcode addition needs a full sweep across every already-shipped target
+before the round is considered done.
+
+**Verified for real, independently re-measured:** the real, opt-in
+`RPGMAKER_BC2CPP=1` build succeeds end to end, and `nm -C` on the
+resulting `libmruby.a` shows all 109 new entry points (32
+`Game__Transition_*_impl`, 75 `Game__Actor_*_impl`, and the 2 newly-
+unblocked `Game::Screen` methods above) present and externally linked,
+plus the new `Game__Transition_ivars_free` helper. The full, unrestricted
+closed-world `g++ -fsyntax-only` check still reports **0 errors**
+(unchanged from the previous round). The same run now emits **2,618**
+real `_impl` method bodies across the whole closed world (up from
+1,922) -- a 696-body jump, mostly from `GETIDX`/`SETIDX`/`GETGV`
+unlocking methods project-wide rather than from these two classes alone.
+Every already-shipped target except `Game::Screen` (the 2-method gain
+above) is otherwise unaffected: `LCF::File`'s subclasses,
+`Game::Picture`/`Game::EnemyAction`, `RGSS::Sprite`, and `RPG2k::Window`
+all remain exactly as they were.
