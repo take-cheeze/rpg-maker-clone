@@ -897,3 +897,84 @@ stash`-based before/after (not a stale reference) -- neither currently
 calls any of the 27 flipped names from a compiled call site, so this
 is, once again, a real, verified safety fix with zero live effect on
 what ships today.
+
+## Follow-up: call-site type-based devirtualization
+
+Every devirtualization decision up to this point (`monomorphic_target`)
+is purely NAME-based: a method name with exactly one definition anywhere
+in the whole program. A genuinely POLY name (`:speak` on `Animal`/`Dog`/
+`Cat`, say) always falls back to `mrb_funcall`, even at a specific call
+site where the receiver's *exact* runtime class happens to be provable
+from the surrounding code.
+
+`bc2cpp` has no representation of Ruby class inheritance/superclass
+relationships at all -- `build_registry`'s own `CLASS`/`MODULE`/`EXEC`
+walk only tracks flat namespace nesting for fully-qualified naming
+(`Game::Actor`, never "Actor extends Object"). Building real MRO
+(method-resolution-order) modeling to ask "which class might this
+receiver be" is a substantial undertaking on its own. A narrower
+question turns out not to need any of that, though: "is this receiver
+POSITIVELY, EXACTLY one statically known class" -- answerable, in the
+one case where Ruby itself guarantees it, by tracing a `.new` call.
+`SomeClass.new` always allocates the literal receiver class it's sent
+to, never a subclass in disguise, so a call site whose receiver traces
+back to a *fresh* `SomeClass.new(...)` earlier in the same straight-line
+method body can be matched directly against `SomeClass`'s own
+definition -- no superclass walk needed, and never unsound: a method
+`SomeClass` merely *inherits* (rather than defines itself) has no
+matching registry entry and simply stays a safe miss, same as any other
+unresolved call site.
+
+New top-level `trace_new_target(irep, idx, reg)` implements this: walk
+backward from a SEND's own position (same backward-scan idiom as
+`IvarLayout.trace_type`, following `MOVE` chains), and when the last
+write to the receiver register is itself a `SEND0/SEND :new`, keep
+tracing the *same* register one step further for a `GETMCNST*/GETCONST`
+constant-path chain (mirrors `GETMCNST`'s own codegen: it reads a
+constant off of its base register and overwrites it in place, so each
+segment's own base is still findable one step further back) -- e.g.
+`Zoo::Bird.new` compiles to `GETCONST Zoo; GETMCNST (·)::Bird; SEND0
+:new`, and the trace reconstructs `"Zoo::Bird"` by walking that chain
+outside-in. `compile_send` only tries this when name-based resolution
+already failed (still POLY) and the call has an explicit receiver (never
+for `self.foo`/`SSEND` -- a real `Animal` instance could actually *be* a
+`Dog` or `Cat` at runtime, so tracing "what was self assigned from" is
+never sound the way tracing a fresh local is). A hit emits a `TYPED`
+comment (distinct from `MONO`/`POLY`) so it stays visible in output/
+verification, otherwise everything falls through to the exact same
+`pure_mandatory_arity?`/`ONLY_OWNERS`/`OTHER_OWNERS` guards the MONO
+path already uses.
+
+Verified with a new toy case (`docs/adr/0139` toy harness): `Dog.new
+("Rex").speak` and `Zoo::Bird.new.speak` (`:speak` genuinely POLY, 4 real
+definitions across the toy program) both devirtualize to their exact
+class's own `_impl` -- confirmed by a true before/after diff (only those
+two lines change) and by actually running the built C++ harness:
+`Woof`/`Tweet` come back correct (not misdispatched to `Animal#speak`,
+the wrong "first match"), byte-identical to plain `ruby toy.rb`. The
+negative case (`Animal#greet`'s own `self.speak`) was checked too --
+confirmed it stays real `mrb_funcall` dispatch, unchanged.
+
+Run against the whole real closed world (same `mruby-rpg2k`+`mruby-lcf`+
+`mruby-rgss` mrblib set as every other whole-program measurement in this
+file, no `ONLY_OWNERS` restriction -- 721 compiled methods, 940 MONO
+direct calls, 1608 POLY `mrb_funcall` sites): **zero** real `TYPED` hits.
+Both already-shipped targets (`LCF::File`-family, `Game::Picture`) are,
+once again, **byte-identical** through the real Rake build path against
+a true `git stash`-based before/after. Read honestly rather than
+declared a win: the pattern this slice targets -- construct locally,
+immediately call a *genuinely polymorphic* name, all in the same
+straight-line body -- doesn't occur anywhere in this codebase's own
+currently-compilable (opcode-subset) method bodies. A `SomeClass.new.
+method` chain where `method` happens to be POLY is intrinsically rare
+next to a `SomeClass.new.method` chain where it's already MONO (already
+devirtualized, not counted here) or where the constructed value is
+instead stored into an ivar/local and consumed from a *different*
+method (structurally invisible to a same-body backward scan, the same
+boundary `ArgTypes`' own comment already documents for constructor
+arguments). Kept anyway: it's sound, fully verified, zero-regression
+infrastructure that a future whole-program extension (tracing a
+receiver's type through an ivar read the way `IvarLayout` already proves
+ivar *primitive* types, or through an argument the way `ArgTypes`
+already proves argument primitive types) could build on -- but, as
+measured today, it has no live payoff on this project's real code.
