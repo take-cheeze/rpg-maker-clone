@@ -6154,3 +6154,451 @@ LVGL final-link gap this ADR's prior follow-ups already document, since
 there was no edited `register.cxx` needing the `g++ -fsyntax-only`
 fallback this round -- nothing was generated that needed compiling at
 all.
+
+## Follow-up: Game::Actor/Game::Party (battle_support.rb) coverage
+
+A dedicated round was asked to add coverage for `mruby-rpg2k/mrblib/game/
+battle_support.rb`'s own **separate** reopening of both `Game::Actor` and
+`Game::Party` (distinct from `mruby-rpg2k/mrblib/game.rb`'s own ~2,100-
+and ~2,300-line main class bodies for each -- see the `Game::Transition,
+Game::Actor` and `Game::Party, RPG2k::Scene::MapViewer` follow-ups several
+rounds up for those). **Conclusion up front: zero registration changes**
+-- both classes were already fully, correctly covered by an earlier
+round's own work on this exact reopening, confirmed for real against the
+actual diagnostic rather than assumed from `register.cxx`'s own claims.
+What this round found and fixed were two real, confirmed documentation
+gaps in `register.cxx`'s and `tools/bc2cpp/compiled_gems.rb`'s own
+comments, not a missing opcode or a missing registration.
+
+**Environment, built fresh in this round's own worktree** (same shape
+this ADR's own `RGSS::Tilemap`/`Game::Rng`/`RGSS::Font` follow-ups already
+document): `git submodule update --init 3rd/mruby 3rd/mruby-marshal
+3rd/mruby-onig-regexp 3rd/mruby-stringio 3rd/uni-algo 3rd/stb`, the nine
+`patches/*.patch` files applied by hand via `scripts/
+apply_mruby_patch.bash` (a raw `rake -f 3rd/mruby/Rakefile` run performs
+no CMake configure step, so none of this happens automatically), then a
+real host `mrbc` built by running `rake` from *inside* `3rd/mruby` itself
+with `HOST_CXX=c++` (`mruby 4.0.0`, built clean). `tools/bc2cpp/bc2cpp.rb`
+was run directly against that real `mrbc`, with `ONLY_OWNERS`/
+`OTHER_OWNERS`/`OTHER_DECLS_HEADER`/`NATIVE_SRCS`/`SKIP_UNSUPPORTED`
+computed exactly the way `mruby-rpg2k-compiled/mrbgem.rake` (and, for the
+cross-gem-devirtualization angle below, `mruby-lcf-compiled/mrbgem.rake`
+and `mruby-rgss-compiled/mrbgem.rake` too) compute them, over the whole
+`mruby-rpg2k`+`mruby-lcf`+`mruby-rgss` closed world -- both with
+`SKIP_UNSUPPORTED=1` (the real build's own setting, to read the `==
+compiled entry points ==`/`== skipped ==` listings) and with
+`SKIP_UNSUPPORTED=0` (to see each skipped method's own real `#error`
+marker directly, rather than only its name).
+
+**`battle_support.rb`'s own `class Actor` reopening (lines 14-198)
+defines 13 real bytecode-defined methods, not the 9 `register.cxx`'s own
+comment said.** Reading the real source directly (not summarized) found
+`#alive?`, `#states=`, `#prevents_critical?`, `#state_resist_mul`,
+`#attack_animation_id`, `#ignores_evasion?`, `#attack_all?`,
+`#preemptive?`, `#weapon_sp_cost`, `#physical_evasion_up?`, `#atb_gauge=`,
+`#clear_battle_combo`, `#skill_command_name` -- 13 methods. 9 of them
+(every one but `#states=`, `#prevents_critical?`, `#state_resist_mul`,
+`#physical_evasion_up?`) were already registered in `register.cxx`,
+confirmed exactly matching the real `== compiled entry points ==`
+listing's own `Game::Actor#...` lines (74 total, matching `register.cxx`'s
+own `grep -c 'M, actor,'` count exactly, both before and after this
+round's changes). But the comment introducing that block of 9
+registrations said "The 9 methods mruby-rpg2k/mrblib/game/
+battle_support.rb's own `class Actor` reopening adds" -- true only if read
+as "the 9 that compile", never stated, and never naming the other 4 or
+explaining why they're absent. Confirmed directly against each of those
+4's own real `#error` marker (`SKIP_UNSUPPORTED=0`), not merely guessed
+from the Ruby source shape: every one ends in a genuine Ruby block, the
+same already-established `#error unhandled opcode BLOCK`/`SENDB`
+out-of-scope shape this whole file already documents dozens of times over
+--
+
+```
+mrb_value Game__Actor_states__impl(mrb_state* M, mrb_value self, mrb_value ids) {
+  ...
+  #error unhandled opcode BLOCK -- not in this prototype's supported subset
+  #error unhandled opcode SENDB -- not in this prototype's supported subset
+  // POLY :uniq -- real dynamic dispatch, receiver's runtime class decides
+  r3 = mrb_funcall(M, r3, "uniq", 0);
+  ...
+```
+
+-- `#states=(ids)`'s own `(ids || []).reject { |s| s.nil? || s == 0 }.uniq`
+(the `.reject { |s| ... }` call is the block; `.uniq` itself is an
+ordinary POLY send, unaffected); `#prevents_critical?`'s and
+`#physical_evasion_up?`'s own `@equipment.any? do |iid| ... end` (same
+`Array#any?` call site, different block bodies); `#state_resist_mul`'s own
+`@equipment.each do |iid| ... end`. `#states=` is POLY in the
+whole-program registry (2 defs: `Game::Actor`, `Game::Battle::Combatant`);
+`#prevents_critical?`/`#state_resist_mul`/`#physical_evasion_up?` are each
+MONO (1 def: `Game::Actor`) -- confirmed directly, though irrelevant here
+either way, since none of the four ever reaches codegen far enough to
+need a dispatch-mode decision at all. `register.cxx` now names and
+explains all 4 in the same place the 9 registrations live (see that
+file's own comment); no method was ever mis-registered and nothing was
+ever unsafe -- this was a documentation-completeness gap only, the same
+class of finding this ADR's own "second adversarial full-sweep" follow-up
+several rounds up already established a name for.
+
+**`battle_support.rb`'s own `class Party` reopening (lines 199-779)
+was independently re-verified the same way and found fully, correctly
+documented in method membership** -- 24 real bytecode-defined methods
+(`#gauge_battle_layout?`, `#automatic_battle_placement?`,
+`#skill_helps_troop?`, `#battle_skills`, `#battle_skill?`,
+`#battle_occasion?`, `#battle_skill_target`, `#skill_absorbs?`,
+`#skill_hit`, `#skill_hit_weapon_fallback`, `#skill_to_hit`,
+`#do_nothing_restricted?`, `#hit_modifier`, `#state_hit_ratio`,
+`#skill_variance`, `#skill_attributes`, `#skill_attr_shift`,
+`#skill_stat_mod_keys`, `#battle_skill_command`, `#skill_invoking_item?`,
+`#battle_usable?`, `#battle_items`, `#battle_item_command`,
+`#item_all_allies?`), 16 registered and 8 correctly left interpreted,
+matching `register.cxx`'s own "16 the battle_support.rb reopening adds"
+claim and its own "43 real methods stay interpreted" total for the whole
+class (`Game::Party`'s main `game.rb` body plus this reopening) exactly --
+confirmed against the real `== compiled entry points ==` listing (85
+`Game::Party#...` lines, matching `register.cxx`'s own `grep -c 'M,
+party,'` count) and the real `== skipped ==` listing.
+
+**But one real, confirmed misattribution was found and fixed in that same
+Party comment**: it listed "`#hit_modifier`/`#stat_mode`/
+`#do_nothing_restricted?`/..." as methods "the battle_support.rb
+reopening's own" -- `#stat_mode` is not part of that reopening at all. Its
+real definition (`def stat_mode(b, stat_flag)`) is in `mruby-rpg2k/
+mrblib/game.rb` line 5716, inside `class Party`'s own main ~2,300-line
+body (`class Party` opens at game.rb line 3677, well before 5716) -- a
+second, separate `Game::Party#stat_mode` from the one `Game::Battle`
+defines (`POLY :stat_mode (2 defs: Game::Battle, Game::Party)` in the real
+whole-program registry), unrelated to the `battle_support.rb` reopening
+entirely. It does genuinely stay interpreted for the identical reason
+(its own `(b.states || []).each { |sid| ... }` hits the same BLOCK/SENDB
+gap, confirmed directly against its own real generated body), so the
+total "43 real methods stay interpreted" count and the "25 use a real
+Ruby block" sub-count were never wrong -- only which of two lists
+`#stat_mode`'s own name belonged under. `#battle_skill_command` (a real
+`battle_support.rb` reopening method, blocked by its own `free: false`
+keyword argument -- confirmed against its own real `#error
+Game::Party#battle_skill_command has non-mandatory arguments
+(optional/rest/keyword/block)` marker, and never even reaching codegen
+far enough to get a real function body, unlike the BLOCK/SENDB-blocked
+methods above) was already correctly named elsewhere in that same
+comment, in the non-mandatory-arity group its own real error marker
+belongs to -- not a second gap despite superficially looking related to
+the `#stat_mode` fix. `register.cxx`'s own comment is corrected in place;
+`tools/bc2cpp/compiled_gems.rb` gets a new paragraph documenting this
+round's full re-check (both fixes, plus the real verification numbers)
+rather than rewriting its own pre-existing historical "76 of its own real
+bytecode-defined methods" snapshot for `Game::Actor` -- consistent with
+how that file already treats every earlier round's own count as a
+timestamped snapshot rather than a live total to keep editing in place
+(the later `#knock_out!`/`#restore_class` `compile_send`-fix paragraph a
+few rounds up follows the identical convention).
+
+**Verified for real, not just re-derived from reading the two files'
+comments.** Beyond the `#error`-marker checks above: the real `==
+compiled entry points ==` listing's `Game::Actor#...`/`Game::Party#...`
+line counts (74/85) match `register.cxx`'s own `grep -c 'M, actor,'`/
+`grep -c 'M, party,'` counts exactly, both before and after this round's
+edits (which touch only comments, zero `mrb_define_method`/
+`mrb_define_private_method` call sites added, removed, or reordered).
+The real `== classes needing MRB_SET_INSTANCE_TT(..., MRB_TT_DATA) ==`
+listing is unchanged by this round (`Game::Transition`, `Game::Screen`,
+`Game::Interpreter`, `RPG2k::Scene::VehicleWorld`,
+`RPG2k::Scene::Map::LRUBitmapCache` -- neither `Game::Actor` nor
+`Game::Party`, consistent with both classes' own `#initialize` staying
+interpreted, documented several rounds up). Grepped every regenerated
+file (`mruby-lcf-compiled`, `mruby-rpg2k-compiled`, `mruby-rgss-compiled`,
+generated together with real cross-gem `OTHER_DECLS_HEADER` wiring so
+`RGSS::Bitmap`-devirtualizing scene methods resolve) for the broken
+empty-name `mrb_funcall(M, <reg>, "", ` shape: zero matches in all three.
+Compiled the real, edited `mruby-rpg2k-compiled/src/register.cxx` itself
+with `g++ -std=c++17 -c` (not just `-fsyntax-only`) against the real host
+`mrbc`-generated `mrbconf.h`/presym headers and all three gems' real
+generated `.cpp`/`_decls.h` files, mirroring the real build's own
+`#include` structure exactly -- **zero errors**, a real `.o` file
+produced. `nm -C` on that object file confirms every expected symbol
+exists and nothing extra was registered: exactly 74 non-static
+`Game__Actor_..._impl` symbols and 74 matching `static` wrapper symbols
+(`Game__Actor_alive_`, `Game__Actor_attack_animation_id`,
+`Game__Actor_ignores_evasion_`, `Game__Actor_attack_all_`,
+`Game__Actor_preemptive_`, `Game__Actor_weapon_sp_cost`,
+`Game__Actor_atb_gauge_`, `Game__Actor_clear_battle_combo`,
+`Game__Actor_skill_command_name`, ... among them, the 9 confirmed
+present), zero `Game__Actor_states_`/`Game__Actor_prevents_critical_`/
+`Game__Actor_state_resist_mul`/`Game__Actor_physical_evasion_up_` wrapper
+symbols (confirmed absent, matching them staying unregistered); and
+exactly 85 non-static `Game__Party_..._impl` symbols with 85 matching
+wrapper symbols. Did not attempt the full real `build_config.rb` + `rake`
++ CMake/SDL/LVGL end-to-end build this ADR's own original `LCF::File` and
+`Game::Picture` follow-ups ran (a materially heavier lift than this
+round's own comment-only diff justifies) -- the `g++ -c` object-file
+compile plus `nm -C` symbol check above is the real, load-bearing
+verification for a change that touches zero `mrb_define_method`/
+`mrb_define_private_method` call sites, matching the depth this ADR's own
+"RGSS::Font investigated, and NOT added" follow-up already used for a
+comparable investigation-only round.
+
+Both `mruby-rpg2k-compiled/src/register.cxx` and
+`tools/bc2cpp/compiled_gems.rb` were changed (`clang-format -i` then
+`clang-format --dry-run --Werror` run clean on the `.cxx` file
+afterward); no other file needed a change. Zero methods gained or lost
+registration; the only externally-visible effect of this round is that
+`register.cxx`'s and `compiled_gems.rb`'s own comments now correctly and
+completely account for every real method `battle_support.rb`'s reopening
+of `Game::Actor`/`Game::Party` defines.
+
+
+## Follow-up: adversarial bug-hunt sweep (round 27)
+
+A dedicated adversarial bug-hunt round, not a coverage round: read
+`docs/adr/0139-bc2cpp-lcf-file-aot-compile.md` (this file) in full,
+`tools/bc2cpp/bc2cpp.rb`, `tools/bc2cpp/compiled_gems.rb`, and all three
+`register.cxx` files end to end, then verified the real, current
+60-owner, three-gem closed world against the actual tool output rather
+than trusting any prior round's own numbers. Focus: new bugs only, not
+re-litigating anything this file's own 30+ prior follow-ups already
+found and fixed.
+
+**Environment.** This worktree's own `3rd/mruby` (and every other `3rd/*`
+submodule) is uninitialized (a fresh-worktree gap this file already
+documents repeatedly) -- used the same, now-established workaround: the
+main checkout's own separate, already-built `3rd/mruby` tree (for its
+real headers and a real, pre-built host `mrbc 4.0.0`) alongside this
+worktree's own real `mruby-rpg2k`/`mruby-lcf`/`mruby-rgss` sources (the
+actual code under review). Replayed all three `mrbgem.rake` files'
+own exact `bc2cpp.rb` invocations by hand (`MRBC`/`OUT_SYMBOL`/
+`ONLY_OWNERS`/`OTHER_OWNERS`/`OTHER_DECLS_HEADER`/`NATIVE_SRCS`/
+`SKIP_UNSUPPORTED` computed programmatically from the real, current
+`compiled_gems.rb` -- `Dir[]`-based `closed_world_mrblib_srcs`/
+`core_native_srcs`, never hand-copied), plus one whole-program,
+unrestricted (`ONLY_OWNERS` unset) run for the full registry/embedding
+dump. 60 real owners across the three gems today (11 `mruby-lcf-
+compiled`, 44 `mruby-rpg2k-compiled`, 5 `mruby-rgss-compiled`); 545
+native names from `NATIVE_SRCS`, 39 flipped MONO-to-POLY -- both numbers
+matching this file's own most recently recorded figures exactly, no
+drift.
+
+**Checked, confirmed clean (no new bug found):**
+
+- `grep -c 'mrb_funcall(M, [a-z0-9]*, "", '` (the project's own empty-
+  method-name bug detector) against all three real, fully-regenerated
+  `*_gen.cpp` files, and against the unrestricted whole-program dump:
+  **zero** everywhere, as required.
+- `GETMCNST`'s own name-extraction regex (`$`-anchored, the same shape
+  already fixed once for `GETCONST` and re-checked once before against a
+  smaller owner set) -- re-grepped all real `GETMCNST` instructions in
+  the *current*, larger closed-world disassembly for a trailing
+  `; R<n>:name` local-variable comment: still **zero** real occurrences,
+  confirmed fresh rather than trusted from the earlier, smaller-owner-set
+  check.
+- **Exhaustive, not spot-checked, registration cross-diff** for all
+  three `register.cxx` files against the real, freshly regenerated
+  `== compiled entry points ==` listings: wrote a small script comparing
+  every `(owner, method_name)` pair the diagnostic reports against every
+  `mrb_define_(private_)method` call actually present in each
+  `register.cxx` (resolving each call's own `RClass*` variable back to
+  its real owner path through the file's own `mrb_module_get`/
+  `mrb_class_get`/`mrb_module_get_under`/`mrb_class_get_under` chain).
+  **893 total registered methods across all three gems (33 + 822 + 38),
+  zero mismatches in either direction** -- every method the diagnostic
+  says should be registered is, and nothing extra is registered. Also
+  cross-checked every entry's own **arity** (`MRB_ARGS_REQ(n)`/
+  `MRB_ARGS_NONE()` against the diagnostic's own reported arity) and
+  **visibility** (`mrb_define_private_method` used for, and only for,
+  every entry the diagnostic flags `[private -- ...]`, including all
+  355 private entries in `mruby-rpg2k-compiled` alone) the same
+  exhaustive way: zero mismatches on either axis, across all three
+  files. This is a materially more thorough check than any single prior
+  round ran (each prior round's own verification checked its own new
+  classes this way, plus a summary entry-point *count* for every
+  already-shipped class -- this round cross-checked every field of every
+  entry across the whole, current 60-owner program in one pass).
+- The three currently-embedding classes' real generated `struct
+  ..._ivars` field lists (`Game::Transition`: `width`/`height`;
+  `Game::Screen`: `flash_b`/`flash_g`/`flash_r`/`flash_power`/
+  `flash_strength`/`flash_total`/`pan_tx`/`pan_ty`/`fade`/`fade_target`;
+  `RPG2k::Scene::VehicleWorld`: `type`) against the real, current
+  unrestricted diagnostic and against the real `MRB_SET_INSTANCE_TT`
+  calls actually present in `register.cxx` (`screen`, `transition`,
+  `vehicle_world` -- exactly three, matching exactly the three
+  compiled-owner entries in the diagnostic's own five-item "classes
+  needing `MRB_SET_INSTANCE_TT`" list, the other two -- `Game::
+  Interpreter`, `RPG2k::Scene::Map::LRUBitmapCache` -- real candidates
+  that are simply not owners of any gem yet). No drift found -- this
+  file's own two most recent stale-comment findings (`Game::Screen`/
+  `Game::Transition` overstating their own embedded field counts) are
+  still the last real instance of this, not a new one.
+- Re-checked the already-known-and-deliberately-left-open `Enumerable`
+  bytecode-stdlib registry blind spot (`select`/`reduce`/`sort_by`/
+  `min_by`/`max_by`/`group_by`/`partition`/`none?`/`one?`/`each_slice`/
+  `each_cons`/`tally`/`take_while`/`drop_while`/`each_with_object`/
+  `minmax`/`flat_map`/`map`) against the *current*, larger 60-owner
+  closed world specifically (this file's own last check of this angle
+  was against a smaller owner set, several rounds up) -- grepped every
+  `MONO`/`TYPED` devirtualization comment in the real unrestricted
+  generated output for any of these names: **zero matches**, still not
+  live with `RGSS::Bitmap`/`RGSS::Window`/`RGSS::Tilemap`/`Game::Vehicle`/
+  `Game::Enemy`/`RPG2k3::Scene::Battle`/`Game::MessageConfig` and every
+  other recently-added owner now in the program.
+- Re-verified `core_native_srcs`' own hardcoded core-mrbgem list
+  (`array-ext`/`hash-ext`/`enum-ext`/`io`/`dir`/`numeric-ext`/
+  `range-ext`/`fiber`/`exit`/`sprintf`/`kernel-ext`/`random`/`math`/
+  `time`/`bigint`) against `build_config.rb`'s own real `conf.gem core:
+  'mruby-xxx'` calls directly (this file's own comment on that helper
+  flags it as manually-synced, with no automatic enforcement the way
+  `BC2CPP_COMPILED_GEMS`/`closed_world_mrblib_srcs` now have) -- exact
+  match, 15 for 15 (`mruby-bin-mrbc`, the `mrbc` build tool itself, is
+  the one core gem in `build_config.rb` not in this list, correctly
+  irrelevant here: it registers no runtime methods on any interpreter
+  class). Separately noted `mruby-dir` is conditionally excluded for the
+  `wio` target (`conf.gem core: 'mruby-dir' unless conf.name == 'wio'`)
+  while `core_native_srcs` always includes it -- an intentional,
+  harmless over-approximation (NATIVE_SRCS only ever *adds* POLY flips;
+  scanning a gem that happens to be absent from one particular build
+  target can only make the registry more conservative, never unsound),
+  not a bug.
+- All three real, freshly regenerated `register.cxx` files compile
+  clean with `g++ -std=gnu++17 -Wall -Wextra -Winfinite-recursion
+  -fsyntax-only`, with `OTHER_DECLS_HEADER` properly wired so a
+  cross-gem devirtualized call (none currently exist in the live output,
+  confirmed by the same registration cross-diff above) would still
+  resolve if one ever did: **zero errors, zero `-Winfinite-recursion`
+  warnings** in all three, only the same pre-existing, unrelated
+  `-Wunused-but-set-variable` noise this file already documents in many
+  earlier rounds. Compiled all three to real object files (`g++ -c`) and
+  confirmed with `nm -C`: 79 / 1662 / 87 real `T`/`t` symbols
+  respectively, consistent with roughly double each gem's own registered
+  entry-point count (an `_impl` plus an entry wrapper per method, plus
+  embedded-struct helpers for the three embedding classes).
+- Considered, and ruled out as an already-accepted (if inconsistently
+  documented) tradeoff rather than a new bug: `ADD`/`SUB`/`MUL`'s own
+  fixnum-fixnum fastpath codegen does a raw C `+`/`-`/`*` on `mrb_int`
+  with no overflow check, while the real interpreter's own `OP_MATH`
+  macro (`3rd/mruby/src/vm.c`) checks for overflow and promotes to a
+  real bignum via `mrb_bint_*_ii` (this project enables `mruby-bigint`)
+  -- a genuine silent-divergence shape for an input large enough to
+  overflow `mrb_int`. Not new: `ADDI`'s own codegen comment already
+  names and explicitly accepts this exact tradeoff ("C's own wraparound
+  on overflow is no worse a divergence here than ADDI's own plain C +
+  already is... not worth duplicating mruby's own bignum-overflow path
+  for this prototype's scope"), just never restated on `ADD`/`SUB`/`MUL`/
+  `ADDILV`/`SUBILV` individually even though all five opcodes share the
+  identical fixnum-fastpath shape and the identical real `OP_MATH`/
+  `OP_MATHI`/`OP_MATHILV` overflow-promotion semantics underneath
+  (confirmed directly against `3rd/mruby/src/vm.c`, not assumed). Not
+  practically reachable in this codebase's own real game-state values
+  (levels/HP/gold/coordinates, all far below `mrb_int`'s own range) --
+  same severity bar this project's own established `DIV`-rounding
+  writeup already sets for "a real, accepted simplification, not
+  chased further."
+
+**Found and fixed: a real, previously-undocumented registry gap
+(`module_function`), confirmed not currently live.** `build_registry`'s
+bytecode walk recognized `private`/`protected`/`public` and
+`attr_reader`/`attr_writer`/`attr_accessor` sends as ways a class
+installs a method invisibly to a plain `TDEF`/`DEF` walk, but never
+`module_function :a, :b, ...` -- a fourth, distinct instance of the same
+"bare `SEND`, no dedicated opcode" shape, never previously discussed
+anywhere in this file. Real, live use in the current closed world,
+found by grepping the whole `mruby-rpg2k`/`mruby-lcf`/`mruby-rgss`
+mrblib tree for the keyword directly rather than assumed absent:
+`mruby-lcf/mrblib/lcf.rb`'s own `module_function :read_ber, :write_ber,
+:to_rb, :read_section, :parse_event_commands, :encode_event_commands,
+:parse_move_commands, :encode_move_commands, :unpack_int32,
+:unpack_double, :pack_int32, :pack_int16, :pack_double, :encode,
+:binstr, :elements_of` (16 names) and `module_function :var_max,
+:var_min, :level_max, :pc_hp_max, :npc_hp_max, :exp_default` (6 names)
+-- both the retroactive (`n >= 1`) form only; the bare mode-switch form
+has zero real occurrences anywhere in the closed world.
+
+Read `3rd/mruby/src/class.c`'s own `mrb_mod_module_function` directly
+before writing any fix, rather than assumed from CRuby's own (different)
+behavior: unlike CRuby, mruby's own implementation does **not** make the
+original instance method private -- the line that would
+(`mrb_mod_dummy_visibility`) is commented-out dead code right above the
+real loop. It only looks up each already-defined instance method and
+installs a copy of it, marked public, onto the module's own singleton
+class (`prepare_singleton_class` + `mrb_define_method_raw(mrb,
+rclass->c, ...)`). So `LCF.write_ber`/`LCF.binstr`/... (called from
+`LCF::File#to_lcf` and from several lazy schema-default lambdas) are
+real, distinct method definitions this registry never modeled at all --
+this project's own established "invisible to a plain TDEF/DEF bytecode
+walk" gap shape, a fourth instance alongside `attr_reader`/`writer`/
+`accessor`, `Struct.new`, and `SDEF`/`SCLASS`.
+
+**Confirmed NOT currently exploitable**, the same rigor this file's own
+prior "checked but not live" findings (the `NATIVE_SRCS` `'<native>'`-
+owner-scope gap, `alias_method`) already establish: "LCF" (the bare
+module, as distinct from `LCF::File`/`Database`/`MapTree`/`MapUnit`/
+`SaveData`/`MoveCommand`/`EventCommand`/`Tree`/`Sections`/`Array1D`/
+`Array2D`) is never itself a compiled owner in any of the three real
+gems' own `owners:` lists (confirmed directly against
+`BC2CPP_COMPILED_GEMS`), so `compile_send`'s own already-established
+owner-not-emitted guard already falls back to ordinary `mrb_funcall`
+dynamic dispatch for every real `module_function`-installed call site in
+this closed world today, with or without this fix -- confirmed directly
+against the real generated `lcf_compiled_gen.cpp`, whose real
+`LCF::File#to_lcf` body already reads `// POLY :write_ber -- real
+dynamic dispatch...` / `// POLY :binstr -- real dynamic dispatch...`,
+never a direct call, both before and after this fix.
+
+**The fix** (`tools/bc2cpp/bc2cpp.rb`'s `build_registry`): recognizes
+`module_function` as a third case alongside `private`/`protected`/
+`public` and `attr_reader`/`writer`/`accessor`, reusing the same
+`collect_loadsym_names` backward-`LOADSYM`-argument scan both existing
+cases already share. For each named method, registers a synthetic
+`MethodDef` (`irep: nil`) under the distinct `"Owner.singleton"`
+pseudo-owner `SDEF`/`SCLASS` already use elsewhere in this file (can
+never collide with or be selected by `ONLY_OWNERS`, which only ever
+names real Ruby constant paths) -- deliberately does **not** touch the
+already-registered instance-level `MethodDef`'s own visibility, unlike
+`private`'s retroactive-marking case immediately above it, since real
+mruby genuinely does not privatize it. This can only ever turn an
+unsound MONO into a correctly cautious POLY, never remove a genuinely
+sound one, the same one-directional-safety guarantee every other
+synthetic-`MethodDef` fix in this file already carries.
+
+One real, verified limitation the fix inherits rather than
+re-introduces: the 16-name `module_function` call site itself exceeds
+mrbc's own literal argument-count encoding (confirmed directly against
+the real disassembly: `SSEND R1 :module_function n=*`, the same
+`CALL_MAXARGS` splat sentinel this file's own `Game::Enemy`
+15-argument-`attr_reader` finding already documents hitting, versus the
+6-name call site's own plain `n=6`) -- outside `collect_loadsym_names`'
+own `n=(\d+)`-only counting, so this fix silently registers nothing for
+that one call site's own 16 names specifically. Not a new gap this fix
+introduces (the exact same limitation already exists, and was
+explicitly left unfixed as separate scope, for `attr_reader`), and not
+currently exploitable for the same owner-not-emitted reason as the
+6-name call site regardless.
+
+**Verified for real, the same way every other `bc2cpp.rb`-touching round
+in this file is:** re-ran all three gems' real `bc2cpp.rb` invocations
+(`ONLY_OWNERS`/`OTHER_OWNERS`/`OTHER_DECLS_HEADER`/`NATIVE_SRCS`/
+`SKIP_UNSUPPORTED` computed exactly the way each real `mrbgem.rake`
+does) before and after the fix: **all three gems' own generated `.cpp`
+files are byte-identical before and after** (a real diff, not assumed --
+the fix only ever adds new registry entries under a pseudo-owner no
+`ONLY_OWNERS`/`OTHER_OWNERS` list anywhere names, so it cannot change
+what gets emitted), confirming zero live effect on any of the 60
+already-shipped owners, exactly as the "not currently exploitable"
+analysis above predicts. The only diagnostic-listing change anywhere is
+the expected one: `:var_max`/`:var_min`/`:level_max`/`:pc_hp_max`/
+`:npc_hp_max`/`:exp_default` flip from `MONO (1 def: LCF)` to `POLY
+(2 defs: LCF, LCF.singleton)` in the real whole-program registry dump
+(the 16-name call site's own names do not flip, for the `n=*` reason
+above). Re-ran the full exhaustive registration/arity/visibility
+cross-diff and the empty-method-name grep against all three
+freshly-regenerated files after the fix: same result as before the fix
+in every respect -- 893/893 methods matched, zero arity/visibility
+mismatches, zero empty-method-name matches. Re-ran `g++ -fsyntax-only
+-Wall -Wextra -Winfinite-recursion` (with `OTHER_DECLS_HEADER` wired)
+and `g++ -c` against all three real, post-fix `register.cxx` files:
+zero errors, zero `-Winfinite-recursion` warnings, same object-file
+symbol counts as before the fix (79 / 1662 / 87). `ruby -c
+tools/bc2cpp/bc2cpp.rb`: syntax OK. This worktree's own uninitialized
+`3rd/mruby`/`3rd/lvgl` (the same recurring fresh-worktree gap this file
+already documents dozens of times) means the real, full
+`cmake`/`rake`-driven engine build and a Renode/on-device runtime diff
+were not run this round -- left for a correctly-configured checkout, the
+same honest gap every prior round that hit this exact environment
+limitation already records.

@@ -1280,18 +1280,26 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #knock_out!/#restore_class -- see their own registration comments
   // below), in
   // mruby-rpg2k/mrblib/game.rb's own definition order first (the class's
-  // main ~2,100-line body), then the 9 more the class reopening in
-  // mruby-rpg2k/mrblib/game/battle_support.rb adds. Every one below is
-  // public in the real interpreted source -- confirmed directly (not
-  // guessed from bc2cpp's own diagnostic): battle_support.rb's own `class
-  // Actor` reopening (lines 14-198) has no `private`/`protected` anywhere
-  // in it, and game.rb's own single `private` for this class (line 3496)
-  // only covers the 5 methods registered via mrb_define_private_method at
-  // the end of this block below (plus #calc_exp, which still doesn't
-  // compile even after this round's own RANGE_INC addition -- it also
-  // uses a real Ruby block, BLOCK/SENDB, genuinely out of this compiler's
-  // scope -- so it has no entry here at all, still running mruby-rpg2k's
-  // own interpreted body).
+  // main ~2,100-line body), then 9 of the 13 more the class reopening in
+  // mruby-rpg2k/mrblib/game/battle_support.rb adds -- a real, confirmed
+  // documentation gap this round's own re-check of that reopening found
+  // and closed: an earlier version of this comment said "the 9 methods"
+  // as if that reopening (`class Actor` there, lines 14-198) defined only
+  // 9 real methods total, when it actually defines 13 -- the other 4
+  // (#states=, #prevents_critical?, #state_resist_mul,
+  // #physical_evasion_up?) were simply never named as staying
+  // interpreted. See this block's own note just above the 9 registrations
+  // below for the real, re-verified reason each of those 4 still doesn't
+  // compile. Every one of the 9 registered below is public in the real
+  // interpreted source -- confirmed directly (not guessed from bc2cpp's
+  // own diagnostic): battle_support.rb's own `class Actor` reopening has
+  // no `private`/`protected` anywhere in it, and game.rb's own single
+  // `private` for this class (line 3496) only covers the 5 methods
+  // registered via mrb_define_private_method at the end of this block
+  // below (plus #calc_exp, which still doesn't compile even after this
+  // round's own RANGE_INC addition -- it also uses a real Ruby block,
+  // BLOCK/SENDB, genuinely out of this compiler's scope -- so it has no
+  // entry here at all, still running mruby-rpg2k's own interpreted body).
   RClass* actor = mrb_class_get_under(M, game, "Actor");
   mrb_define_method(M, actor, "display_max_hp", Game__Actor_display_max_hp,
                     MRB_ARGS_NONE());
@@ -1430,10 +1438,32 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, actor, "battler_animation_id",
                     Game__Actor_battler_animation_id, MRB_ARGS_NONE());
 
-  // The 9 methods mruby-rpg2k/mrblib/game/battle_support.rb's own
-  // `class Actor` reopening adds (see this block's own intro comment --
-  // no `private` anywhere in that reopening, so all 9 are public here
+  // 9 of the 13 real methods mruby-rpg2k/mrblib/game/battle_support.rb's
+  // own `class Actor` reopening adds (see this block's own intro comment
+  // -- no `private` anywhere in that reopening, so all 9 are public here
   // too).
+  //
+  // The other 4 real methods that reopening defines all stay interpreted,
+  // confirmed directly against each one's own real `#error` marker
+  // (SKIP_UNSUPPORTED=0), not merely guessed from reading the Ruby source:
+  // every one ends in a genuine Ruby block, the same established
+  // BLOCK/SENDB out-of-scope shape every other block-using method in this
+  // file already documents, not a missing opcode --
+  //   - #states=(ids): `(ids || []).reject { |s| s.nil? || s == 0 }.uniq`
+  //     -- the `.reject { |s| ... }` call is the block. POLY in the
+  //     whole-program registry (2 defs: this class, Game::Battle::Combatant
+  //     -- irrelevant here regardless, since the method never reaches
+  //     codegen far enough for MONO/POLY dispatch mode to matter).
+  //   - #prevents_critical?: `@equipment.any? do |iid| ... end`.
+  //   - #state_resist_mul(sid): `@equipment.each do |iid| ... end`.
+  //   - #physical_evasion_up?: `@equipment.any? do |iid| ... end`, the
+  //     identical shape to #prevents_critical? above (a different block
+  //     body, same Array#any? call site).
+  // #prevents_critical?/#state_resist_mul/#physical_evasion_up? are each
+  // MONO (1 def: Game::Actor) in the whole-program registry -- confirmed
+  // directly, not assumed, though (like #states= above) it has no bearing
+  // on any of these four, none of which ever gets far enough into codegen
+  // to need a dispatch-mode decision at all.
   mrb_define_method(M, actor, "alive?", Game__Actor_alive_, MRB_ARGS_NONE());
   mrb_define_method(M, actor, "attack_animation_id",
                     Game__Actor_attack_animation_id, MRB_ARGS_NONE());
@@ -1502,9 +1532,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #reorder/#toggle_actor_row/#remove_actor, the #use_medicine/#use_seed/
   // #has_item?/#equipped_item_count/#item_effective?/#item_state_ids/
   // #skill_state_ids/#weapon_attribute_ready?/#unequip_to_bag/
-  // #insert_item_in_bag family, and the battle_support.rb reopening's own
-  // #hit_modifier/#stat_mode/#do_nothing_restricted?/#skill_helps_troop?/
-  // #battle_skills/#skill_attributes/#skill_stat_mod_keys/#battle_items),
+  // #insert_item_in_bag family, plus #stat_mode -- a real, confirmed fix
+  // to this comment's own prior wording, which mistakenly filed #stat_mode
+  // under "the battle_support.rb reopening's own" methods just below: it
+  // is not part of that reopening at all, it is `Game::Party#stat_mode`
+  // in game.rb's own ~2,300-line main class body (`def stat_mode` at
+  // game.rb line 5716, well before the `class Party` body ends), just
+  // another one of this same "25 use a real Ruby block" group -- and the
+  // battle_support.rb reopening's own #hit_modifier/#do_nothing_restricted?/
+  // #skill_helps_troop?/#battle_skills/#skill_attributes/
+  // #skill_stat_mod_keys/#battle_items),
   // the same genuinely-out-of-scope shape this file's own Game::Transition/
   // RPG2k::Window blocks already document; and #equip_by_class? alone uses
   // real exception handling (EXCEPT/RESCUE/RAISEIF), tied to mruby's own
