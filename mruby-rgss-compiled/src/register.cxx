@@ -73,6 +73,103 @@
 // `width`/`height`/`ox`/`oy`/`z`/`viewport`/`windowskin`/`contents`/
 // `contents_opacity` (`attr_reader`) stay native/uncompiled, as always.
 //
+// RGSS::Bitmap (this gem's fifth owner, mruby-rgss/mrblib/lib.rb) gets 2 of
+// its own real bytecode-defined methods compiled: `#font`
+// (`@font ||= Font.new`, the same `||=` + owner-scope-first-GETCONST
+// memoizing-reader shape Sprite's own `@tone ||=`/`@color ||=` and
+// Window's own `@cursor_rect ||=` already established -- `Font` resolves
+// at the `RGSS` scope, same as `Tone`/`Color`/`Rect`) and `#font=`
+// (`@font = f`, a plain one-argument SETIV setter). Everything else on
+// this class stays uncompiled:
+//
+// `#initialize(f, s = nil)` has one real optional argument, hitting the
+// same `pure_mandatory_arity?` gate as `RGSS::Window#initialize` below
+// (`#error RGSS::Bitmap#initialize has non-mandatory arguments
+// (optional/rest/keyword/block) -- not in this prototype's supported
+// subset`), confirmed directly against the real generated output before
+// `SKIP_UNSUPPORTED=1` drops it.
+//
+// The private `#init_from_archive(f, s)` has pure mandatory arity (2
+// args) but its own real body hits three distinct unsupported opcodes in
+// sequence, confirmed directly rather than assumed identical to some
+// other class's own rescue-clause gap: `Bitmap.extensions.each do |ext|
+// ... end` (a real block argument) emits `#error unhandled opcode BLOCK`
+// immediately followed by `#error unhandled opcode SENDB` -- both fire
+// *before* codegen ever reaches the method's own trailing `rescue
+// StandardError => e ... end`, which separately emits `#error unhandled
+// opcode EXCEPT` then `#error unhandled opcode RESCUE`. The `.each` block
+// is the first real gap this method hits, not the rescue clause alone.
+//
+// The nested `RGSS::Bitmap::LoadError#initialize(path, reason)` has pure
+// mandatory arity (2 args) and its own `#{path}`/`#{reason}` string
+// interpolation compiles clean (STRING/STRCAT), but its trailing
+// `super("Failed to init bitmap: #{path} (#{reason})")` call hits
+// `#error unhandled opcode SUPER` -- the same, already-documented SUPER
+// gap every other `#initialize`-calling-`super` in this codebase hits,
+// confirmed here via this method's own real marker rather than assumed
+// identical merely because the shape (a nested exception class calling
+// `super` with a formatted message) looks familiar. `RGSS::Bitmap::
+// LoadError` is not itself a member of this gem's `owners:` list -- its
+// own owner string is the distinct `RGSS::Bitmap::LoadError`, not
+// `RGSS::Bitmap` -- so with only `RGSS::Bitmap` in `ONLY_OWNERS` this
+// method is never even emitted; confirmed separately by adding
+// `RGSS::Bitmap::LoadError` to `ONLY_OWNERS` in an isolated diagnostic
+// run and reading the real `#error unhandled opcode SUPER` marker it
+// then produces.
+//
+// `class << self; attr_writer :extensions; def extensions; @extensions
+// || EXTENSIONS; end; end` and `def self.failure_reason(f)` both live
+// under the distinct pseudo-owner `RGSS::Bitmap.singleton` (SCLASS/SDEF,
+// this ADR's own established fix), never under `RGSS::Bitmap` itself --
+// neither is reachable with only `RGSS::Bitmap` in `ONLY_OWNERS`, and
+// neither is added here: no `owners:` list in this project has ever
+// named a `.singleton` pseudo-owner (every prior follow-up's own
+// full-sweep verification confirms "no pseudo-owner symbol ever linked
+// anywhere"), so this stays consistent with that precedent. Checked
+// anyway, since verifying `self.failure_reason` against the real
+// diagnostic (rather than assuming the established SDEF registry fix
+// makes it compilable) was explicitly part of this round's own task: it
+// does not compile, for a deeper reason than its own body's opcodes
+// (`if`/early `return`/array `<<`/`.join`/string interpolation are all
+// otherwise-supported shapes) -- `def self.x` outside any `class << self`
+// block always compiles to a single fused `SDEF` instruction (confirmed
+// directly via `mrbc -v` disassembly: `SDEF R1 :failure_reason I[3]`),
+// and bc2cpp.rb's own SDEF case registers that as a synthetic `MethodDef`
+// with `irep: nil` unconditionally, by design ("there is no separate
+// body to recurse into", bc2cpp.rb's own comment) -- so `compile_all`'s
+// `@owner_of` never gains a real entry for it at all. It is therefore not
+// merely left uncompiled the way an arity/opcode gap leaves a method
+// uncompiled (those still leave a `#error`-marked stub, which survives
+// into the "skipped (unsupported)" summary) -- `self.failure_reason` is
+// invisible to `compile_all`'s own leaf worklist from the start: it
+// appears in neither the "skipped" list nor the generated file at all
+// (confirmed: zero matches for `failure_reason` anywhere in the real
+// generated `rgss_compiled_gen.cpp`, with or without
+// `SKIP_UNSUPPORTED`), and would stay that way regardless of what its own
+// body did. `self.extensions` (defined inside the real `class << self
+// ... end` block, an `SCLASS`-opened body that *does* recurse -- this
+// ADR's own established fix for exactly that) is by contrast a real,
+// individually compilable leaf with its own irep (confirmed: it appears
+// in the real generated output, `RGSS__Bitmap_singleton_extensions_impl`,
+// once `RGSS::Bitmap.singleton` is added to `ONLY_OWNERS` in an isolated
+// check), but is left out of this round's `owners:` for the same
+// never-a-`.singleton`-owner precedent `self.failure_reason` is.
+// `attr_writer :extensions`'s own `extensions=` is `Module#attr_writer`'s
+// native/C-installed setter (no bytecode DEF at all, the same as every
+// other `attr_writer`/`attr_accessor`-defined method elsewhere in this
+// codebase), invisible to bc2cpp regardless of owner scoping.
+//
+// Embedding: none, confirmed directly against the real diagnostic --
+// RGSS::Bitmap never appears in bc2cpp's own "classes needing
+// MRB_SET_INSTANCE_TT" listing. drop_unsafe_embeddings's own class-level
+// gate requires a *compiling* #initialize with pure mandatory arity
+// before embedding anything on a class at all; RGSS::Bitmap#initialize
+// doesn't compile (non-mandatory arity, the same gate RGSS::Window's own
+// #initialize hits below), so nothing on this class is ever even
+// proposed as an embedding candidate. @font is a Font object reference
+// (never Fixnum/Symbol) and would not be a FixnumEmbed/SymbolEmbed
+// candidate regardless of that gate either way.
+//
 // RGSS::Window#initialize -- the one method on this class this gem does
 // NOT compile -- has 4 real optional arguments (`x = nil, y = nil,
 // width = nil, height = nil`), hitting bc2cpp's own pure_mandatory_arity?
@@ -186,6 +283,11 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "arrows_visible", RGSS__Window_arrows_visible,
                     MRB_ARGS_NONE());
+
+  RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
+
+  mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
+  mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font_, MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {}

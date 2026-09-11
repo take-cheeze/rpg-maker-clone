@@ -33,7 +33,6 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # mruby-rpg2k-compiled/mrbgem.rake's own comment for the real bug this
   # caught.
   compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
-  lcf_mrblib = "#{dir}/../mruby-lcf/mrblib"
   # The whole-program closed-world source set this run's registry is built
   # from -- NOT just mruby-lcf's own mrblib. Confirmed a real, load-bearing
   # distinction while first wiring this up (docs/adr/0139): analyzed alone,
@@ -43,10 +42,14 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # rpg2k+lcf+rgss mrblib set in (the same three gems build_config.rb
   # always loads together) is what lets bc2cpp's own MONO/POLY resolution
   # come out correct; ONLY_OWNERS below then narrows what actually gets
-  # *emitted* to just the LCF file classes, independently.
-  closed_world_srcs = Dir["#{dir}/../mruby-rpg2k/mrblib/**/*.rb"] +
-                       Dir["#{lcf_mrblib}/*.rb"] +
-                       Dir["#{dir}/../mruby-rgss/mrblib/*.rb"]
+  # *emitted* to just the LCF file classes, independently. Computed by
+  # compiled_gems.rb's own closed_world_mrblib_srcs (required above) --
+  # not inlined here -- so this gem's own registry always sees exactly the
+  # same whole program mruby-rpg2k-compiled's/mruby-rgss-compiled's own
+  # mrbgem.rake feed their own bc2cpp.rb runs, by construction rather than
+  # by three separately hand-maintained literals staying in sync (see that
+  # helper's own comment for the real drift risk this closes).
+  closed_world_srcs = closed_world_mrblib_srcs("#{dir}/..")
 
   # RGSS's own C++-implemented methods (Sprite/Bitmap/Viewport/Window/Rect/
   # ...) are invisible to the closed_world_srcs scan above -- there's no .rb
