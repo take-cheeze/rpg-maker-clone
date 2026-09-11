@@ -841,6 +841,49 @@
 // methods this round newly compiles simply devirtualize into a direct C++
 // call now instead of the ordinary interpreter, the intended payoff of
 // adding a new owner, not a functional change.
+//
+// A round 30 follow-up adds this project's first `.singleton`-owned
+// entries in mruby-rpg2k-compiled -- Game::States.singleton (13 of its 16
+// own real `def self.x` methods, split across mruby-rpg2k/mrblib/game.rb
+// and the same module's own battle_support.rb reopening; #row/#significant/
+// #prune stay interpreted, a real `rescue StandardError` clause and two
+// real Array#each block bodies respectively, this file's own established
+// non-compiling shapes), Game::States::BattleText.singleton (all 13 of its
+// own real methods, mruby-rpg2k/mrblib/game/battle_support.rb -- a module
+// nested two levels deep under Game::States, the first `.singleton` owner
+// this project has shipped whose own lexical nesting is deeper than one
+// level), Game::ChipsetLayout.singleton (10 of its own 14 real methods --
+// #quads/#quads_from_quarters/#water_quads/#terrain_quads stay
+// interpreted, real Ruby-block users), and Game::EventGraphic.singleton
+// (all 9 of its own real methods). None of the four is a class with any
+// instance state of its own (all four are plain Ruby `module`s, `def
+// self.x`/`class << self`-reopened), so none was ever a `MRB_SET_
+// INSTANCE_TT` candidate and none gets any ivar embedding -- confirmed
+// directly against the real diagnostic, byte-identical to the pre-this-
+// round listing. Re-verified per-method compileability with all four
+// `.singleton` owners actually in a real `ONLY_OWNERS` run (not just the
+// unrestricted whole-program diagnostic that first found them): all 45
+// compile identically either way, zero surprises. A real, live
+// devirtualization proof for the two-level-nesting case in particular:
+// RPG2k::Scene::Battle's own already-compiled calls into
+// `Game::States::BattleText.critical`/`.item_start`/`.skill_start`/
+// `.skill_failure`/`.absorbed`/`.dodge`/`.damage`/`.undamaged` all flip
+// from `POLY`/`mrb_funcall` to a direct `MONO` C++ call once this round's
+// four new owners are in `ONLY_OWNERS`, confirmed in the real regenerated
+// output; `Game::States::BattleText.singleton#skill_failure`'s own bare
+// `FAILURE_TERMS` reference correctly resolves through a real
+// `Game -> States -> BattleText` scope chain (never a literal
+// `"BattleText.singleton"` segment), the exact two-level case this
+// follow-up's own task explicitly called out to re-check against the
+// `lexical_scope_path` fix a prior round already shipped. No bare
+// `private`/`private_class_method`/`protected` anywhere near any of the
+// four classes' own real source, so all 45 are plain, public
+// `mrb_define_class_method` registrations. See each class's own
+// registration block at the end of this file for the full per-method
+// breakdown, and tools/bc2cpp/compiled_gems.rb's own owners-entry comment
+// for the real regression-safety numbers (entry-point count, whole-
+// program registry count, and generated-`.cpp` diff, all confirmed purely
+// additive).
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -5695,6 +5738,282 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k__Scene__Map_bush_depth_at, MRB_ARGS_REQ(2));
   mrb_define_method(M, map_scene, "tile_color", RPG2k__Scene__Map_tile_color,
                     MRB_ARGS_REQ(1));
+
+  // Game::States.singleton (docs/adr/0139: round 30's own ".singleton
+  // coverage cluster" follow-up) -- 13 of Game::States's own 16 real
+  // `def self.x` methods (mruby-rpg2k/mrblib/game.rb and the same module's
+  // own mruby-rpg2k/mrblib/game/battle_support.rb reopening), installed
+  // onto `states`'s own singleton class via mrb_define_class_method, the
+  // same reasoning RGSS::Bitmap.singleton's own registration block (see
+  // mruby-rgss-compiled/src/register.cxx) already established: `self`
+  // inside each compiled body is the States module object itself, never
+  // an instance (this module is never instantiated at all), so
+  // mrb_define_method would install onto the wrong method table entirely.
+  // #row/#significant/#prune stay interpreted (a real `rescue
+  // StandardError` and two real Array#each block bodies, respectively --
+  // this file's own established non-compiling shapes), so they get no
+  // entry here; every other real method on this module compiles clean.
+  RClass* states = mrb_module_get_under(M, game, "States");
+
+  mrb_define_class_method(M, states, "name", Game__States_singleton_name,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "animation_pose",
+                          Game__States_singleton_animation_pose,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "inflict_message",
+                          Game__States_singleton_inflict_message,
+                          MRB_ARGS_REQ(4));
+  mrb_define_class_method(M, states, "recovery_message",
+                          Game__States_singleton_recovery_message,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, states, "affected_message",
+                          Game__States_singleton_affected_message,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, states, "already_message",
+                          Game__States_singleton_already_message,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, states, "field", Game__States_singleton_field,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, states, "message", Game__States_singleton_message,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "int_field",
+                          Game__States_singleton_int_field, MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "priority_of",
+                          Game__States_singleton_priority_of, MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "color", Game__States_singleton_color,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, states, "map_step_drain",
+                          Game__States_singleton_map_step_drain,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, states, "drain", Game__States_singleton_drain,
+                          MRB_ARGS_REQ(5));
+
+  // Game::States::BattleText.singleton -- all 13 of its own real methods
+  // (mruby-rpg2k/mrblib/game/battle_support.rb), this project's first
+  // `.singleton` owner nested two levels deep (`Game::States::BattleText`,
+  // not a direct `Game::` child the way every prior `.singleton` case --
+  // RGSS::Bitmap.singleton, and Game::States.singleton just above -- was).
+  // `mrb_module_get_under(M, states, "BattleText")` reaches it the same
+  // ordinary way any nested module/class is looked up here, since it is
+  // still a real constant sitting inside the real `states` RClass* just
+  // declared above (only bc2cpp's own generated `Game__States__BattleText_
+  // singleton_*` code, not this registration code, ever has to reconstruct
+  // that scope chain from the synthetic ".singleton" owner string --
+  // confirmed directly against the real generated output: a bare
+  // `FAILURE_TERMS` reference inside `#skill_failure`'s own body resolves
+  // through a real `Game -> States -> BattleText` `mrb_const_get` chain,
+  // never a literal "BattleText.singleton" segment).
+  RClass* battle_text = mrb_module_get_under(M, states, "BattleText");
+
+  mrb_define_class_method(M, battle_text, "term",
+                          Game__States__BattleText_singleton_term,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, battle_text, "action",
+                          Game__States__BattleText_singleton_action,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, battle_text, "damage",
+                          Game__States__BattleText_singleton_damage,
+                          MRB_ARGS_REQ(4));
+  mrb_define_class_method(M, battle_text, "undamaged",
+                          Game__States__BattleText_singleton_undamaged,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, battle_text, "critical",
+                          Game__States__BattleText_singleton_critical,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, battle_text, "dodge",
+                          Game__States__BattleText_singleton_dodge,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, battle_text, "skill_start",
+                          Game__States__BattleText_singleton_skill_start,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, battle_text, "item_start",
+                          Game__States__BattleText_singleton_item_start,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, battle_text, "recovered",
+                          Game__States__BattleText_singleton_recovered,
+                          MRB_ARGS_REQ(4));
+  mrb_define_class_method(M, battle_text, "absorbed",
+                          Game__States__BattleText_singleton_absorbed,
+                          MRB_ARGS_REQ(5));
+  mrb_define_class_method(M, battle_text, "skill_failure",
+                          Game__States__BattleText_singleton_skill_failure,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, battle_text, "parameter_change",
+                          Game__States__BattleText_singleton_parameter_change,
+                          MRB_ARGS_REQ(4));
+  mrb_define_class_method(M, battle_text, "attribute_shift",
+                          Game__States__BattleText_singleton_attribute_shift,
+                          MRB_ARGS_REQ(4));
+
+  // Game::ChipsetLayout.singleton -- 10 of its own 14 real methods
+  // (mruby-rpg2k/mrblib/game.rb: pure RPG2000 chipset-tile-layout
+  // geometry, no rendering dependency). #quads/#quads_from_quarters/
+  // #water_quads/#terrain_quads stay interpreted, real Ruby-block users
+  // (Array#each/#map shapes), this file's own established non-compiling
+  // gap; every other real method on this module compiles clean.
+  RClass* chipset_layout = mrb_module_get_under(M, game, "ChipsetLayout");
+
+  mrb_define_class_method(M, chipset_layout, "anim_ab",
+                          Game__ChipsetLayout_singleton_anim_ab,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, chipset_layout, "anim_c",
+                          Game__ChipsetLayout_singleton_anim_c,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "block",
+                          Game__ChipsetLayout_singleton_block, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "upper_blank?",
+                          Game__ChipsetLayout_singleton_upper_blank_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "anim_input",
+                          Game__ChipsetLayout_singleton_anim_input,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "uncached_quads",
+                          Game__ChipsetLayout_singleton_uncached_quads,
+                          MRB_ARGS_REQ(4));
+  mrb_define_class_method(M, chipset_layout, "full",
+                          Game__ChipsetLayout_singleton_full, MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, chipset_layout, "lower_quad",
+                          Game__ChipsetLayout_singleton_lower_quad,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "upper_quad",
+                          Game__ChipsetLayout_singleton_upper_quad,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, chipset_layout, "event_tile_rect",
+                          Game__ChipsetLayout_singleton_event_tile_rect,
+                          MRB_ARGS_REQ(1));
+
+  // Game::EventGraphic.singleton -- all 9 of its own real methods
+  // (mruby-rpg2k/mrblib/game.rb: per-frame map-event-graphic
+  // frame/direction selection, no rendering dependency).
+  RClass* event_graphic = mrb_module_get_under(M, game, "EventGraphic");
+
+  mrb_define_class_method(M, event_graphic, "numpad_direction",
+                          Game__EventGraphic_singleton_numpad_direction,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "fixed_direction?",
+                          Game__EventGraphic_singleton_fixed_direction_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "continuous?",
+                          Game__EventGraphic_singleton_continuous_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "animated?",
+                          Game__EventGraphic_singleton_animated_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "pattern_column",
+                          Game__EventGraphic_singleton_pattern_column,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "spin_direction",
+                          Game__EventGraphic_singleton_spin_direction,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, event_graphic, "frame",
+                          Game__EventGraphic_singleton_frame, MRB_ARGS_REQ(6));
+  mrb_define_class_method(M, event_graphic, "frame_dir",
+                          Game__EventGraphic_singleton_frame_dir,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, event_graphic, "frame_col",
+                          Game__EventGraphic_singleton_frame_col,
+                          MRB_ARGS_REQ(4));
+
+  // The cheaper "already-owned class, add its own .singleton half too"
+  // cluster this same round 30 follow-up picked up alongside the four
+  // classes above: each of these 8 classes is already an owner here for
+  // its own *instance* side (its own `RClass*` -- `battle`/`transition`/
+  // `state`/`party`/`picture`/`character`/`chip_set`/`map_scene` --
+  // already declared above), so adding its own `.singleton` entry needs
+  // no new class lookup, just one more `mrb_define_class_method` call per
+  // real `def self.x` method reusing that same variable.
+  //
+  // Game::Battle.singleton -- all 11 of its own real methods
+  // (mruby-rpg2k/mrblib/game/battle.rb: per-battler stat/state lookups a
+  // reference implementation's own battle math reads off either an actor
+  // or an enemy without caring which, via `respond_to?`).
+  mrb_define_class_method(M, battle, "actor_states",
+                          Game__Battle_singleton_actor_states, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "crit_chance_of",
+                          Game__Battle_singleton_crit_chance_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "prevents_crit_of",
+                          Game__Battle_singleton_prevents_crit_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "attr_ranks_of",
+                          Game__Battle_singleton_attr_ranks_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "atk_attrs_of",
+                          Game__Battle_singleton_atk_attrs_of, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "atk_states_of",
+                          Game__Battle_singleton_atk_states_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "hit_rate_of",
+                          Game__Battle_singleton_hit_rate_of, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "state_ranks_of",
+                          Game__Battle_singleton_state_ranks_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "strike_count_of",
+                          Game__Battle_singleton_strike_count_of,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, battle, "flag_of", Game__Battle_singleton_flag_of,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, battle, "attack_damage",
+                          Game__Battle_singleton_attack_damage,
+                          MRB_ARGS_REQ(2));
+
+  // Game::Transition.singleton -- 6 of its own real methods
+  // (mruby-rpg2k/mrblib/game.rb: RPG2000's screen-transition style table).
+  mrb_define_class_method(M, transition, "setting?",
+                          Game__Transition_singleton_setting_, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, transition, "erase_style",
+                          Game__Transition_singleton_erase_style,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, transition, "show_style",
+                          Game__Transition_singleton_show_style,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, transition, "style_for",
+                          Game__Transition_singleton_style_for,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, transition, "default_frames",
+                          Game__Transition_singleton_default_frames,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, transition, "block_grid",
+                          Game__Transition_singleton_block_grid,
+                          MRB_ARGS_REQ(2));
+
+  // Game::State.singleton -- both of its own real methods
+  // (mruby-rpg2k/mrblib/game/lsd_io.rb: save-chunk BGM/SE field decoding).
+  mrb_define_class_method(M, state, "bgm_from_chunk",
+                          Game__State_singleton_bgm_from_chunk,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, state, "se_from_chunk",
+                          Game__State_singleton_se_from_chunk, MRB_ARGS_REQ(1));
+
+  // Game::Party.singleton -- both of its own real methods
+  // (mruby-rpg2k/mrblib/game/battle_support.rb).
+  mrb_define_class_method(M, party, "usable_flag?",
+                          Game__Party_singleton_usable_flag_, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, party, "normal_skill?",
+                          Game__Party_singleton_normal_skill_, MRB_ARGS_REQ(1));
+
+  // Game::Picture.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#from_h`, the save-chunk deserializer).
+  mrb_define_class_method(M, picture, "from_h", Game__Picture_singleton_from_h,
+                          MRB_ARGS_REQ(2));
+
+  // Game::Character.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#step_tile`, a move-route step's destination tile).
+  mrb_define_class_method(M, character, "step_tile",
+                          Game__Character_singleton_step_tile, MRB_ARGS_REQ(3));
+
+  // Game::ChipSet.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#lower_index`, the lower-layer chipset-tile index a raw
+  // saved tile id maps to).
+  mrb_define_class_method(M, chip_set, "lower_index",
+                          Game__ChipSet_singleton_lower_index, MRB_ARGS_REQ(1));
+
+  // RPG2k::Scene::Map.singleton -- its one real method (mruby-rpg2k/
+  // mrblib/scene/map.rb: `#tone_channel`, one screen-tone RGB channel's
+  // 0..255 tint-overlay opacity for a given tone value).
+  mrb_define_class_method(M, map_scene, "tone_channel",
+                          RPG2k__Scene__Map_singleton_tone_channel,
+                          MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
