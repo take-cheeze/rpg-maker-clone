@@ -221,9 +221,14 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # it became RPG2k::Window. Keep maker-specific classes under the maker's own
   # namespace.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rgss"
+  # docs/adr/0139: same opt-in mechanism as mruby-lcf-compiled/
+  # mruby-rpg2k-compiled above, this time for all 17 of RGSS::Sprite's
+  # real bytecode-defined methods.
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled" if ENV['RPGMAKER_BC2CPP']
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   # docs/adr/0139's own follow-up: same opt-in mechanism, this time for 25
-  # of Game::Picture's 26 real methods (everything but #initialize).
+  # of Game::Picture's 26 real methods (everything but #initialize), plus
+  # (docs/adr/0139) all 6 of Game::EnemyAction's own real methods.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if ENV['RPGMAKER_BC2CPP']
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"

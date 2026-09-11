@@ -2,11 +2,15 @@
 // methods (docs/adr/0139's own follow-up) -- everything but #initialize,
 // which takes optional arguments bc2cpp's calling convention doesn't
 // model, so it keeps running mruby-rpg2k's own interpreted mrblib body
-// unchanged. mruby-rpg2k (this gem's own add_dependency) has already run
-// its full gem init -- C hook *and* mrblib -- by the time this gem's own
-// init runs (mrbgems.rake sequences gem_funcs[] in dependency order, each
-// entry running its complete init before the next gem's own init starts),
-// so Game::Picture is guaranteed to already exist below.
+// unchanged -- plus, as of docs/adr/0139 (the JMPNIL/LOADL opcode work),
+// all 6 of Game::EnemyAction's own real bytecode-defined methods (its
+// `attr_reader`-generated accessors are native, invisible to bc2cpp the
+// same way every other attr_reader/attr_writer in this codebase is).
+// mruby-rpg2k (this gem's own add_dependency) has already run its full gem
+// init -- C hook *and* mrblib -- by the time this gem's own init runs
+// (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
+// running its complete init before the next gem's own init starts), so
+// both classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -83,6 +87,33 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_private_method(M, picture, "finish_move",
                             Game__Picture_finish_move, MRB_ARGS_NONE());
+
+  // Game::EnemyAction (docs/adr/0139): all 6 of its real bytecode-defined
+  // methods compile clean -- `int_of`/`bool_of` are `private` in the real
+  // interpreted source (a bare `private` right before their own def, see
+  // mruby-rpg2k/mrblib/game/battle_support.rb), flagged by bc2cpp's own
+  // == compiled entry points == diagnostic exactly like Game::Picture's
+  // #step/#finish_move above -- mrb_define_private_method for both, or a
+  // real, observable behavior change (a private method silently made
+  // externally callable) would ship unnoticed the same way that one did.
+  // #initialize itself is *also* always private -- not from any `private`
+  // call in the source, but a real interpreter special case (mruby's own
+  // src/class.c forces #initialize/#initialize_copy/#respond_to_missing?
+  // private unconditionally at `def`-time); bc2cpp.rb's build_registry now
+  // models this rule directly (docs/adr/0139) and flags it the same way.
+  RClass* enemy_action = mrb_class_get_under(M, game, "EnemyAction");
+  mrb_define_private_method(M, enemy_action, "initialize",
+                            Game__EnemyAction_initialize, MRB_ARGS_REQ(1));
+  mrb_define_method(M, enemy_action, "skill?", Game__EnemyAction_skill_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, enemy_action, "transform?", Game__EnemyAction_transform_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, enemy_action, "basic?", Game__EnemyAction_basic_,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, enemy_action, "int_of", Game__EnemyAction_int_of,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, enemy_action, "bool_of",
+                            Game__EnemyAction_bool_of, MRB_ARGS_REQ(2));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

@@ -1214,3 +1214,81 @@ applied -- each already carries a real fixnum annotation from an earlier
 round, and merging a class hint into an existing partial signature was
 left alone rather than risk clobbering good data for a low-value case
 (one of the three is a test-fixture class, not even real).
+
+## Follow-up: coverage expansion (Game::EnemyAction, RGSS::Sprite)
+
+Two gaps kept whole real classes out of reach regardless of any single
+opcode: `build_registry` treated `#initialize`/`#initialize_copy`/
+`#respond_to_missing?` like any other method, registering them at
+whatever visibility the *source* happens to have around the `def` --
+wrong, because mruby's own `mrb_define_method_raw` (`src/class.c`,
+around line 1044) special-cases exactly these three names, forcing
+`MRB_METHOD_PRIVATE_FL` regardless of the flags passed in, unconditionally,
+for every class in the language, not just this codebase's own. Confirmed
+both by reading that code path and empirically: a toy `Foo#initialize`
+with no `private` anywhere in sight still raises `private method
+'initialize' called for Foo` the moment `f.initialize` is called from
+outside, under the real interpreter. `build_registry` now models this
+rule directly instead of trusting the source's own visibility state for
+these three names.
+
+The second gap was opcode coverage: `JMPNIL` (`OP_JMPNIL`, `src/vm.c` --
+`@ivar.nil? ? default : @ivar`'s own compiled shape, common in plain
+Ruby accessor methods) and `LOADL` (`OP_LOADL` -- a float-pool literal
+too wide for `LOADI`'s immediate operand) had no `compile_insn` case at
+all; `SKIP_UNSUPPORTED` silently dropped every method built from either
+one. Both are narrow, mechanical additions (`JMPNIL` reuses the same
+jump-target bookkeeping as `JMPNOT`/`JMPIF`; `LOADL` only supports a
+float pool entry, `#error`-ing on anything else, mirroring `LOADI8`/
+`LOADI16`'s own established pattern for out-of-range integers).
+
+`GETCONST`'s own codegen (both the real emitted case and
+`trace_new_target`'s copy of it) only ever tried one scope -- `Object`,
+unconditionally -- for a bare constant lookup. That is wrong whenever
+the constant is actually defined on the *enclosing* module rather than
+top-level (`RGSS::Sprite#tone`'s own `Tone.new(...)`: `Tone` lives under
+`RGSS`, not `Object`). Rewritten to walk the owner's own real lexical
+nesting chain, innermost first, via the `bc2cpp_const_try`/
+`mrb_protect_error`-based helper the class-devirtualization follow-up
+above already introduced for this same purpose, falling through to an
+unprotected `Object` lookup only once the whole chain is exhausted (the
+one case genuinely safe to let raise). Folded into the same case is this
+round's own re-discovery that this file's `GETCONST` name-extraction fix
+(the `trace_new_target`-side half, from the follow-up above) had never
+actually been mirrored into the *emitted-code* side of the same opcode
+-- fixed identically, `a[/^R\d+\s+(\S+)/, 1]` in both places again.
+
+**Two new real compiled targets.** `Game::EnemyAction`
+(`mruby-rpg2k/mrblib/game/battle_support.rb`) adds its own six real
+bytecode-defined methods (`#initialize`, `#skill?`, `#transform?`,
+`#basic?`, and the private `#int_of`/`#bool_of` helpers `attr_reader`
+itself doesn't cover) to the existing `mruby-rpg2k-compiled` gem
+alongside `Game::Picture`. `RGSS::Sprite` (`mruby-rgss/mrblib/lib.rb`,
+the plain-Ruby reader methods it reopens the native `Sprite` class with)
+gets a brand new `mruby-rgss-compiled` gem, all 17 of its own real
+bytecode-defined accessors (`opacity`/`zoom_x`/`zoom_y`/`blend_type`/
+`tone`/`color`/`width`/`height`/`x`/`y`/`z`/`ox`/`oy`/`angle`/`mirror`/
+`bush_depth`/`src_rect`) -- the writers and `#initialize` stay native
+C++ (`mruby-rgss/src/lib.cxx`), invisible to `bc2cpp` the same way every
+other native method in this codebase already is. Both targets needed
+the `JMPNIL`/`LOADL`/`GETCONST` work above to compile clean; neither
+embeds any ivar (no compilable `#initialize` to allocate a struct in,
+for either), so both stay on the ordinary dynamic `iv_tbl`, unchanged
+from the interpreter's own behavior.
+
+**Verified for real, independently re-measured (not copied from any
+earlier estimate):** the real, opt-in `RPGMAKER_BC2CPP=1` build
+(`rake .../host/lib/libmruby.a`) succeeds end to end against the actual
+project sources, and `nm -C` on the resulting `libmruby.a` shows all 23
+new entry points (17 `RGSS__Sprite_*_impl`, 6 `Game__EnemyAction_*_impl`)
+present and externally linked. Syntax-checking the full, unrestricted
+(no `ONLY_OWNERS`) closed-world output with `g++ -fsyntax-only` --
+the same check that found the pre-existing 434-error gap two follow-ups
+up -- now reports **421** errors, not 434: a real 13-error reduction from
+this round's own opcode/GETCONST work letting more call sites resolve
+their callee cleanly, not a regression. The same run emits **1,514**
+real `_impl` method bodies across the whole closed world. Both already-
+shipped compiled targets (`LCF::File`'s subclasses, `Game::Picture`)
+remain unaffected; the 434-error gap itself is still exactly as
+described above -- orthogonal, pre-existing, and never live, since the
+real build always sets `ONLY_OWNERS`.
