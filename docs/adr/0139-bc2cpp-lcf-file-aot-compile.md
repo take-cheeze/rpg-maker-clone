@@ -1292,3 +1292,107 @@ shipped compiled targets (`LCF::File`'s subclasses, `Game::Picture`)
 remain unaffected; the 434-error gap itself is still exactly as
 described above -- orthogonal, pre-existing, and never live, since the
 real build always sets `ONLY_OWNERS`.
+
+## Follow-up: Game::Screen, RPG2k::Window, and closing the devirtualization-soundness gap
+
+Two more classes, covered in parallel this round and integrated together:
+`Game::Screen` (screen tint/shake/flash/pan/fade effects,
+`mruby-rpg2k/mrblib/game.rb`) and `RPG2k::Window` (the RPG2000-style UI
+window -- skin/frame/cursor/contents/arrow rendering via four layered
+`Sprite`s in a `Viewport`, `mruby-rpg2k/mrblib/main.rb`). Both landed in
+the existing `mruby-rpg2k-compiled` gem alongside `Game::Picture`/
+`Game::EnemyAction`.
+
+**Four new opcodes**, all narrow and mechanical, same established
+pattern as every prior round: `LOADSELF` (`self.foo = ...`, an explicit-
+receiver self-send mrbc doesn't fold into `SSEND` -- a bare `r<d> =
+self;`, since `r0` is already wired to `self` at the top of every
+generated function); `MUL` (confirmed reading `src/vm.c`: `OP_ADD`/
+`OP_SUB`/`OP_MUL` all expand from the identical `OP_MATH` macro, so this
+is `ADD`/`SUB`'s own fixnum-fastpath-else-`mrb_funcall` shape exactly,
+no new design question); `ARRAY` (a literal array from N consecutive
+already-evaluated registers, real `OP_ARRAY` semantics -- only the
+plain non-splat literal shape is modeled, `ARRAY2`/`ARYCAT`/`ARYPUSH`/
+`ARYSPLAT` left `#error`, matching `LOADL`'s own established narrow-
+scope precedent); `AREF` (`R[a] = R[b][c]`, a plain immediate index --
+the real shape a destructuring multiple-assignment off one call result
+compiles to, e.g. `x, y, w, h = some_call(...)`).
+
+**A real, previously-flagged-but-unfixed bug, finally closed.** Two
+follow-ups up, this file's own text named the gap directly: "MONO
+devirtualization never checking whether its own target's irep will
+actually be emitted... not fixed here -- flagged for whoever next
+touches `compile_send`'s own MONO path." Building `Game::Screen`
+exercised it for real: `#update`'s own devirtualized calls to
+`#update_shake`/`#update_flash` kept referencing their `_impl`
+functions directly even while `MUL` (needed by both bodies) was, for a
+time, still unsupported -- an undefined-reference link failure, not a
+diagnostic nuisance, that the two previously-shipped targets never
+happened to trigger. Fixed with `compiles_clean?`: rather than
+re-deriving `compile_insn`'s own opcode-support list by hand a second
+time (a real drift risk), it memoizes an actual `compile_method(label)`
+call and checks the result for a `#error` marker -- the same test
+`SKIP_UNSUPPORTED` itself uses -- guarded against recursion (a label
+already being probed reports "not yet known clean" rather than looping,
+always the safe direction).
+
+**A second, related bug, caught at the same time:** a call site's own
+argument count was never checked against its devirtualization target's
+real mandatory arity. A bytecode-only registry has no visibility into a
+same-named *native* method (`extract_native_method_names`'s own known
+gap) -- run this tool without `NATIVE_SRCS` (as this project's own
+421-error baseline measurement always has) and `Input.repeat?(key)` (a
+real native 1-arg method on an unrelated class) looks MONO next to
+`Game::MoveRoute#repeat?` (a real 0-arg getter, the only bytecode-
+visible definition of that bare name) -- 120 real call sites devirtualized
+straight into a 0-argument function with 1 argument, a real g++ compile
+error, not a hypothetical. Real gem builds always pass `NATIVE_SRCS`
+(which already flips a true collision like this to POLY), but the
+arg-count check added here (`mandatory_arity`, parsing the same `ENTER`
+field `pure_mandatory_arity?` already reads) is a strictly cheaper,
+always-correct second line of defense needing no `NATIVE_SRCS` input at
+all -- applied to both the MONO and the class-exact TYPED
+devirtualization paths.
+
+**`Game::Screen` is the first shipped target whose ivars actually embed.**
+Unlike `Game::Picture`/`Game::EnemyAction`/`RGSS::Sprite`, `Screen#initialize`
+takes zero arguments and compiles clean -- so `drop_unsafe_embeddings`
+does *not* refuse here: 21 of Screen's own ivars (all provably Fixnum)
+are real struct fields on a new `Game__Screen_ivars` RData payload,
+needing a real `MRB_SET_INSTANCE_TT(screen, MRB_TT_DATA)` call before any
+`Game::Screen.new` can run -- the same requirement `mruby-rgss/src/lib.cxx`'s
+own natively-implemented classes already meet, just needed here for the
+first time. The other 14 real ivars (non-Fixnum: two `Game.clamp`-sourced
+tint arrays, three booleans this compiler's embedding lattice doesn't
+model, one real object reference) stay on the ordinary dynamic `iv_tbl`,
+mixed safely with the embedded 21 on the very same object.
+
+**Real synergy from covering two classes together, not separately:**
+`Game::Screen`'s own isolated diagnostic (opcode work: `ARRAY` only)
+found 36 of 43 methods clean. `RPG2k::Window`'s own isolated diagnostic
+(opcode work: `LOADSELF`/`MUL`/`ARRAY`/`AREF`) found 32 of 35. Merging
+both opcode sets together before the real build unblocked three *more*
+`Game::Screen` methods neither round alone reached: `#restore_tint`
+(destructures two array-literal-shaped arguments -- needs `AREF`, which
+only `RPG2k::Window`'s own round added), `#update_shake`/`#update_flash`
+(each a plain multiplication -- needs `MUL`, same story). Final real
+count: **39 of `Game::Screen`'s 43 methods, 32 of `RPG2k::Window`'s 35**.
+Screen's remaining 4 (`#load_h`, `#erase`, `#show`, `#pan`) and Window's
+remaining 3 (`#initialize`, four optional arguments; `#dispose` and
+`#draw_arrow_fallback`, real block/`yield` usage) are genuinely out of
+this prototype's scope, not a further opcode gap worth chasing here.
+
+**Verified for real, independently re-measured:** the real, opt-in
+`RPGMAKER_BC2CPP=1` build (`rake .../host/lib/libmruby.a`) succeeds end
+to end against the actual project sources, and `nm -C` on the resulting
+`libmruby.a` shows all 71 new entry points (39 `Game__Screen_*_impl`, 32
+`RPG2k__Window_*_impl`) present and externally linked, plus the new
+`Game__Screen_ivars_free` helper. Syntax-checking the full, unrestricted
+(no `ONLY_OWNERS`) closed-world output with `g++ -fsyntax-only` -- the
+same check that found the pre-existing 434→421-error gap the previous
+two follow-ups tracked -- now reports **0 errors**: the devirtualization-
+soundness fix above closes that entire pre-existing gap, not just this
+round's own two new classes. The same run emits **1,922** real `_impl`
+method bodies across the whole closed world (up from 1,514). Both
+already-shipped compiled targets (`LCF::File`'s subclasses, `Game::Picture`/
+`Game::EnemyAction`, `RGSS::Sprite`) remain unaffected.
