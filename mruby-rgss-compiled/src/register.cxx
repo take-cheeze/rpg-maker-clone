@@ -205,6 +205,47 @@
 // diagnostic: RGSS::Window never appears in bc2cpp's own "classes needing
 // MRB_SET_INSTANCE_TT" listing. Every GETIV/SETIV below stays on the
 // ordinary dynamic iv_tbl, same as Sprite/Plane.
+// Follow-up (docs/adr/0139: "RGSS .singleton coverage cluster") -- five more
+// `.singleton`-owned classes join RGSS::Bitmap.singleton above:
+// RGSS.singleton, RGSS::Audio.singleton, RGSS::Input.singleton,
+// RGSS::ErrorReport.singleton, RGSS::Graphics.singleton (compiled_gems.rb's
+// own comment on this gem's `owners:` has the full per-class compiled/
+// skipped breakdown and diagnostic transcript; this comment covers only what
+// changes about *registering* them here). 38 real class methods across the
+// five, all via `mrb_define_class_method` for the same reason
+// RGSS::Bitmap.singleton's own two already are: every compiled body's `self`
+// is the owning module/class object itself, never an instance.
+//
+// RGSS.singleton's own 5 (warn_once/warn_stub/transition_shape_probe/
+// window_probe/tilemap_above_layer_probe) install directly onto `rgss`
+// (already declared above for RGSS::Sprite) -- RGSS itself is both this
+// gem's enclosing module and one of its own `.singleton` owners.
+//
+// RGSS::Audio.singleton (13), RGSS::Input.singleton (11), and
+// RGSS::ErrorReport.singleton (6) each need their own `RClass*`, fetched via
+// `mrb_module_get_under` (all three are real `module X` bodies under RGSS,
+// not classes) -- mruby-rgss's own C hook + mrblib have already fully run by
+// the time this gem's init runs (this file's own top comment), so all three
+// are guaranteed to already exist.
+//
+// RGSS::Graphics.singleton registers only 3 of its own 4 compiled methods
+// (resize_screen/brightness=/freeze): its 4th, `brightness_sprite`, is a
+// real, individually-compiled entry (its own `_impl` ships in
+// rgss_compiled_gen.cpp, and `brightness=`'s own body already calls it
+// directly -- see compiled_gems.rb's own comment for the real generated
+// call site) but is genuinely `private` in the real source (`class << self
+// ... private ... def brightness_sprite; ... end; end`) and mruby's public
+// API has no "private class method" registration entry point at all
+// (`mrb_define_class_method`/`_id` take no visibility flag, and no sibling
+// function exists -- confirmed against the real 3rd/mruby/include/mruby.h
+// and mruby/class.h). Registering it here via plain
+// `mrb_define_class_method` would make `Graphics.brightness_sprite`
+// callable from any script, silently widening this method's real visibility
+// -- exactly what compiled_gems.rb's own comment on this same method
+// explains at length. So it is left out of the calls below entirely: its
+// compiled body still exists and is still reachable (via `brightness=`'s
+// own already-devirtualized direct C++ call), just never through
+// `mrb_define_class_method`.
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -302,6 +343,143 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, bitmap, "failure_reason",
                           RGSS__Bitmap_singleton_failure_reason,
                           MRB_ARGS_REQ(1));
+
+  // RGSS.singleton (docs/adr/0139: "RGSS .singleton coverage cluster") --
+  // installs onto `rgss` itself, declared at the very top of this function:
+  // RGSS is both this gem's enclosing module and, for these 5 methods, a
+  // `.singleton` owner in its own right (see compiled_gems.rb's own comment
+  // for the full compiled/skipped breakdown).
+  mrb_define_class_method(M, rgss, "warn_once", RGSS_singleton_warn_once,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, rgss, "warn_stub", RGSS_singleton_warn_stub,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, rgss, "transition_shape_probe",
+                          RGSS_singleton_transition_shape_probe,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, rgss, "window_probe", RGSS_singleton_window_probe,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, rgss, "tilemap_above_layer_probe",
+                          RGSS_singleton_tilemap_above_layer_probe,
+                          MRB_ARGS_NONE());
+
+  // RGSS::Audio.singleton -- 13 real class methods, every one a plain
+  // delegator into a native `_bgm_stop`-style primitive (mruby-rgss/src/
+  // audio.cxx) or (setup_midi) a same-owner self-implicit call plus a
+  // cross-owner call into RGSS.singleton#warn_once just registered above --
+  // both already MONO-devirtualized into direct C++ calls in the real
+  // generated output, confirmed against rgss_compiled_gen.cpp directly.
+  // `mruby-rgss`'s own C hook already defines the native Audio module by the
+  // time this gem's init runs (this file's own top comment), so
+  // mrb_module_get_under is guaranteed to find it.
+  RClass* audio = mrb_module_get_under(M, rgss, "Audio");
+
+  mrb_define_class_method(M, audio, "bgm_volume",
+                          RGSS__Audio_singleton_bgm_volume, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, audio, "bgm_pan", RGSS__Audio_singleton_bgm_pan,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, audio, "bgm_stop", RGSS__Audio_singleton_bgm_stop,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "bgm_fade", RGSS__Audio_singleton_bgm_fade,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, audio, "bgm_pos", RGSS__Audio_singleton_bgm_pos,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "bgs_stop", RGSS__Audio_singleton_bgs_stop,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "bgs_fade", RGSS__Audio_singleton_bgs_fade,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, audio, "bgs_pos", RGSS__Audio_singleton_bgs_pos,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "me_stop", RGSS__Audio_singleton_me_stop,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "me_fade", RGSS__Audio_singleton_me_fade,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, audio, "se_stop", RGSS__Audio_singleton_se_stop,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "midi_available?",
+                          RGSS__Audio_singleton_midi_available_,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "setup_midi",
+                          RGSS__Audio_singleton_setup_midi, MRB_ARGS_NONE());
+
+  // RGSS::Input.singleton -- 11 real class methods. `key_index` and
+  // `dir4`/`dir8` each carry a real, live GETCONST reference (SYMBOL_KEYS,
+  // and UP/DOWN/LEFT/RIGHT respectively) that resolves correctly at this
+  // same RGSS::Input scope in the real generated output (the
+  // owner-scope-first GETCONST fix this whole `.singleton owner support`
+  // follow-up exists to prove out); dir8 and press/release/press?/trigger?/
+  // repeat? all make same-owner self-implicit calls (to dir4/key_index
+  // respectively) that MONO-devirtualize into direct C++ calls, also
+  // confirmed directly against rgss_compiled_gen.cpp. `update` (the one
+  // method on this class that does not compile -- see compiled_gems.rb's
+  // own comment) stays on the interpreter, unregistered here, as always.
+  RClass* input = mrb_module_get_under(M, rgss, "Input");
+
+  mrb_define_class_method(M, input, "key_index",
+                          RGSS__Input_singleton_key_index, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "press", RGSS__Input_singleton_press,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "release", RGSS__Input_singleton_release,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "trigger?", RGSS__Input_singleton_trigger_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "dir4", RGSS__Input_singleton_dir4,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, input, "dir8", RGSS__Input_singleton_dir8,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, input, "mouse_x", RGSS__Input_singleton_mouse_x,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, input, "mouse_y", RGSS__Input_singleton_mouse_y,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, input, "mouse_pressed?",
+                          RGSS__Input_singleton_mouse_pressed_,
+                          MRB_ARGS_NONE());
+
+  // RGSS::ErrorReport.singleton -- 6 real class methods (mruby-rgss/mrblib/
+  // error_report.rb, not lib.rb). `push` has a real, live GETCONST reference
+  // to MAX_LINE_CHARS that resolves at this same RGSS::ErrorReport scope in
+  // the real generated output; `probe!` makes a same-owner self-implicit
+  // call into `probe_raise`, MONO-devirtualized into a direct C++ call --
+  // both confirmed directly against rgss_compiled_gen.cpp.
+  RClass* error_report = mrb_module_get_under(M, rgss, "ErrorReport");
+
+  mrb_define_class_method(M, error_report, "push",
+                          RGSS__ErrorReport_singleton_push, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, error_report, "installed?",
+                          RGSS__ErrorReport_singleton_installed_,
+                          MRB_ARGS_NONE());
+  mrb_define_class_method(M, error_report, "record",
+                          RGSS__ErrorReport_singleton_record, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, error_report, "clear",
+                          RGSS__ErrorReport_singleton_clear, MRB_ARGS_NONE());
+  mrb_define_class_method(M, error_report, "probe!",
+                          RGSS__ErrorReport_singleton_probe_, MRB_ARGS_NONE());
+  mrb_define_class_method(M, error_report, "probe_raise",
+                          RGSS__ErrorReport_singleton_probe_raise,
+                          MRB_ARGS_NONE());
+
+  // RGSS::Graphics.singleton -- 3 of its own 4 compiled methods register
+  // here (resize_screen/brightness=/freeze); the 4th, the real, private
+  // `brightness_sprite` helper, is deliberately NOT registered -- see this
+  // file's own top comment and compiled_gems.rb's own comment on this same
+  // method for why. `brightness=`'s own body makes a same-owner
+  // self-implicit call into `brightness_sprite` that MONO-devirtualizes
+  // into a direct C++ call regardless of whether brightness_sprite is ever
+  // registered here, confirmed directly against rgss_compiled_gen.cpp --
+  // registration and reachability-via-devirtualization are independent.
+  RClass* graphics = mrb_module_get_under(M, rgss, "Graphics");
+
+  mrb_define_class_method(M, graphics, "resize_screen",
+                          RGSS__Graphics_singleton_resize_screen,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, graphics,
+                          "brightness=", RGSS__Graphics_singleton_brightness_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, graphics, "freeze",
+                          RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {}

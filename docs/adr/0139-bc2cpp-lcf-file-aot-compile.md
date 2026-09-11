@@ -8706,3 +8706,784 @@ owner across all three compiled gems is provably unaffected -- byte-
 identical generated code, byte-identical embedding decisions, byte-
 identical MONO/POLY registry entry count, confirmed by diff and by `nm`,
 not by inspection alone.
+
+
+## Follow-up: RGSS .singleton coverage cluster (round 30)
+
+Real, unrestricted diagnostic run (same technique as every prior round: a
+real host `mrbc` built from `3rd/mruby` + this repo's own patches, run
+directly against the whole closed-world mrblib source with
+`SKIP_UNSUPPORTED=1` and no `ONLY_OWNERS` restriction) confirmed the task's
+own upper bound exactly: five more real `.singleton`-suffixed classes, all
+in `mruby-rgss/mrblib/lib.rb` except `RGSS::ErrorReport.singleton` (its own
+`mrblib/error_report.rb`), have real, individually-compilable class methods
+that were registered nowhere before this round -- `RGSS::Audio.singleton`
+(13), `RGSS::Input.singleton` (11), `RGSS::ErrorReport.singleton` (6),
+`RGSS.singleton` (5), `RGSS::Graphics.singleton` (4), 39 total, none
+overlapping `RGSS::Bitmap.singleton`'s own already-shipped 2. All five were
+added to `mruby-rgss-compiled`'s own `owners:` (`tools/bc2cpp/
+compiled_gems.rb`) and registered in `mruby-rgss-compiled/src/register.cxx`
+via `mrb_define_class_method`, following the exact pattern
+`RGSS::Bitmap.singleton`'s own registration block already established.
+
+**Re-verified per-method, not just from the unrestricted upper bound.** The
+task's own caution -- that an unrestricted diagnostic is a reliable upper
+bound but real per-method compileability needs re-confirming once a class
+actually joins `ONLY_OWNERS` -- was followed literally: after editing
+`owners:`, the real, production-shaped `ONLY_OWNERS`/`OTHER_OWNERS`/
+`NATIVE_SRCS` invocation `mruby-rgss-compiled/mrbgem.rake` itself would run
+was reproduced by hand (same `closed_world_mrblib_srcs`/`core_native_srcs`/
+`external_gem_native_srcs` helpers, not hand-copied lists) and run for real.
+The restricted run's own `== compiled entry points ==` listing agrees with
+the unrestricted run exactly -- the same 39 entries, the same visibility
+tags, the same skipped list -- so nothing about this round's own
+devirtualization assumptions changed once these five owners went from
+"visible to the registry" to "actually emitted."
+
+**Per-class breakdown** (full reasoning, including every skipped method's
+own real gap, lives in `compiled_gems.rb`'s own comment on this gem's
+`owners:` -- not restated in full here):
+
+- `RGSS::Audio.singleton` (`class << self ... private ... end`): 13 compile
+  -- `bgm_volume`/`bgm_pan`/`bgm_stop`/`bgm_fade`/`bgm_pos`,
+  `bgs_stop`/`bgs_fade`/`bgs_pos`, `me_stop`/`me_fade`, `se_stop`,
+  `midi_available?`/`setup_midi` -- all genuinely public (no `private`
+  precedes any of them; diagnostic agrees). `bgm_play`/`bgs_play`/
+  `me_play`/`se_play` and all 8 of this class's own `private` helpers
+  (`play_packed`/`find_encrypted_loose`/`try_encrypted_ext`/
+  `decrypt_mv_asset`/`find_packed`/`resolve`/`search_for`/`exist_with_ext`)
+  hit real block/rescue gaps, confirmed against the diagnostic's own
+  "skipped" listing.
+- `RGSS::Input.singleton` (bare `def self.x`, no `class << self` anywhere
+  in this module): 11 compile -- `key_index`,
+  `press`/`release`/`press?`/`trigger?`/`repeat?`, `dir4`/`dir8`,
+  `mouse_x`/`mouse_y`/`mouse_pressed?` -- all genuinely public. `update`
+  (the only method on this class that doesn't compile) hits the same
+  BLOCK/SENDB gap `RGSS::Bitmap#init_from_archive`'s own `.each do |ext|
+  ... end` already hits (`@triggered.each_index do |i| ... end` /
+  `@pressed.each_index do |i| ... end`).
+- `RGSS::ErrorReport.singleton` (bare `def self.x`, `mrblib/
+  error_report.rb`): 6 compile -- `push`, `installed?`, `record`, `clear`,
+  `probe!`, `probe_raise` -- all genuinely public (no
+  `private_class_method` anywhere in this file). `install`/`puts_text`/
+  `log_tail` hit a global-variable-assignment gap, a block-with-recursive-
+  self-call, and an Array#[] two-argument-plus-`+`-concatenation gap
+  respectively.
+- `RGSS.singleton` (this module's own top-level `def self.x`): 5 compile --
+  `warn_once`/`warn_stub`, `transition_shape_probe`, `window_probe`,
+  `tilemap_above_layer_probe` -- all genuinely public.
+  `frame_mean`/`effect_probe`/`windowskin_rect_probe`/`probe_wav`/
+  `audio_probe`/`wait_for_bgm_pos` all hit real block/rescue gaps in their
+  own pixel-sampling loops or native probe plumbing.
+- `RGSS::Graphics.singleton` (`class << self ... private ... end`): 4
+  compile -- `resize_screen`, `brightness=`, `freeze`, and the class's own
+  `private` `brightness_sprite` helper. `render_fps`/`wait`/`fadeout`/
+  `fadein`/`_transition_map`/`transition` all hit real block/rescue gaps.
+
+**A real, live GETCONST-scope-chain proof across four separate classes, not
+just Bitmap.singleton's original one.** The task's own specific ask --
+confirm a bare constant reference inside a new `.singleton`-owned method's
+body resolves correctly in the real generated code, not just compiles --
+was checked directly against `rgss_compiled_gen.cpp`, and every case
+resolves at the correct *owner* scope (module/class first, then its
+enclosing scope, then `Object`), never merely from `Object`:
+
+```cpp
+// RGSS::Input.singleton#key_index -- Integer resolves at RGSS::Input, then
+// RGSS, then Object; SYMBOL_KEYS (frozen at RGSS::Input itself) resolves on
+// the very first try.
+mrb_value scope0 = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "RGSS"));
+mrb_value scope1 = mrb_const_get(M, scope0, mrb_intern_cstr(M, "Input"));
+mrb_bool ok = FALSE;
+mrb_value r4_tmp = mrb_nil_value();
+if (!ok) r4_tmp = bc2cpp_const_try(M, scope1, mrb_intern_cstr(M, "SYMBOL_KEYS"), &ok);
+if (!ok) r4_tmp = bc2cpp_const_try(M, scope0, mrb_intern_cstr(M, "SYMBOL_KEYS"), &ok);
+if (!ok) r4_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "SYMBOL_KEYS"));
+```
+
+`RGSS::Input.singleton#dir4`/`#dir8` resolve `UP`/`DOWN`/`LEFT`/`RIGHT` the
+identical way (all four at the `RGSS::Input` scope), `RGSS::ErrorReport.
+singleton#push` resolves `MAX_LINE_CHARS` at `RGSS::ErrorReport`, and
+`RGSS::Graphics.singleton#brightness_sprite` resolves `Bitmap`/`Color`/
+`Sprite` at the *enclosing* `RGSS` scope (not at `RGSS::Graphics` itself) --
+the identical owner-scope-first shape `RGSS::Sprite`'s own `tone`/`color`/
+`src_rect` and `RGSS::Bitmap`'s own `font` already established, now proven
+across `.singleton` owners too, not just ordinary instance-method owners.
+
+**Real same-owner MONO devirtualization into and out of a `.singleton`
+owner, including into a `private` singleton method.** `RGSS::Input.
+singleton#dir4`'s own self-implicit `press?(DOWN)`/`press?(LEFT)`/... calls
+devirtualize directly:
+
+```cpp
+// MONO :press? -> RGSS::Input.singleton#press?, direct C++ call (no mrb_funcall)
+r2 = RGSS__Input_singleton_press__impl(M, self, r3);
+```
+
+`RGSS::Audio.singleton#setup_midi` devirtualizes its own bare
+`RGSS.warn_once(...)` call the same way, a *cross-class* `.singleton`-to-
+`.singleton` devirtualization (`RGSS::Audio.singleton` calling into
+`RGSS.singleton`) this project has never had two separate `.singleton`
+owners compiled at once to prove before. Most notably,
+`RGSS::Graphics.singleton#brightness=`'s own bare `brightness_sprite` call
+-- a call into a method the real source marks `private` -- also
+devirtualizes directly:
+
+```cpp
+// MONO :brightness_sprite -> RGSS::Graphics.singleton#brightness_sprite, direct C++ call (no mrb_funcall)
+r4 = RGSS__Graphics_singleton_brightness_sprite_impl(M, self);
+```
+
+confirming devirtualization is independent of whether a method is ever
+registered via `mrb_define_class_method` at all -- exactly the property
+this round's own private-singleton-method handling (below) relies on.
+
+**Visibility: the diagnostic itself distinguishes the two `.singleton`
+codegen shapes correctly, and this round found a real one to act on.** This
+ADR's own ".singleton owner support" follow-up documented that the SDEF-
+fused/unfused-DEF backward-scan case (a bare `def self.x`, or `SomeConst.
+foo` reached by scanning back through `TCLASS`/`SCLASS`+`METHOD`+`DEF`) is
+*unconditionally* `:public`, never modeling `private_class_method` at all.
+That is real and still true (confirmed again this round: `RGSS.singleton`/
+`RGSS::Input.singleton`/`RGSS::ErrorReport.singleton` are all this bare
+`def self.x` shape, and none of them use `private_class_method` in the real
+source anyway, so the gap is moot for all three). But an *SCLASS-opened
+body* (`class << self ... end`) is a structurally different case: its own
+`def`s are walked by this file's ordinary per-body `resolve_def_visibility`
+mechanism -- the same one that already tracks a plain `private`/`protected`
+call inside any ordinary class body -- so it genuinely does track
+visibility correctly. `RGSS::Graphics.singleton#brightness_sprite` (inside
+a real `class << self ... private ... def brightness_sprite; ... end;
+end`) is flagged `[private -- use mrb_define_private_method, not
+mrb_define_method]` in the real diagnostic, confirmed directly, not
+inferred from reading the Ruby source alone.
+
+mruby's own public API has no "private class method" registration entry
+point at all -- confirmed by reading `3rd/mruby/include/mruby.h` and
+`mruby/class.h` in full: `mrb_define_class_method`/`_id` take no visibility
+flag, and no sibling function parallel to `mrb_define_private_method`/`_id`
+exists for the singleton-class method table. So `brightness_sprite` is
+compiled (its own real `_impl` and wrapper both ship in the generated file
+and both appear in a real object's `nm -C` output, `T`/`t` linkage exactly
+matching every other compiled entry) but deliberately left OUT of
+`register.cxx`'s own `mrb_define_class_method` calls -- reachable only via
+`brightness=`'s own already-devirtualized same-owner call above, never as a
+real `Graphics.brightness_sprite` entry point a script could call, which is
+exactly what its own real Ruby-level `private` already promises. Of this
+round's own 39 compiled entries, 38 are registered as real
+`Class.method_name` entry points and 1 (`Graphics.singleton#
+brightness_sprite`) is compiled-but-intentionally-unregistered for this
+reason.
+
+**Regression-safety verification.** The real, restricted `ONLY_OWNERS` run
+above (the updated 11-entry owners list) was diffed function-by-function
+against a second real run using the *original* 6-entry owners list (before
+this round's edit): all 40 pre-existing compiled function bodies
+(`RGSS::Sprite`/`Plane`/`Tilemap`/`Window`/`Bitmap`/`Bitmap.singleton`'s own
+40 methods) are byte-identical, and the new run adds exactly 39 more
+functions with none missing -- confirmed by a real script comparing every
+`_impl` function body between the two generated files, not just eyeballed.
+The `== classes needing MRB_SET_INSTANCE_TT` diagnostic is also
+byte-identical between the two runs (`Game::Screen`, `RPG2k::Scene::
+VehicleWorld` -- both from *other* compiled gems' own owners via
+`OTHER_OWNERS`, neither RGSS-owned) -- no new embedding decision was
+triggered by adding five module-level `.singleton` owners with no
+`#initialize` of their own.
+
+**Real compile verification.** `clang-format -i` then `clang-format
+--dry-run --Werror` on the one `.cxx` file touched
+(`mruby-rgss-compiled/src/register.cxx`) -- clean. `g++ -fsyntax-only
+-std=gnu++17 -Wall -Wextra -Winfinite-recursion` against the real
+regenerated `register.cxx` (including its 38 new `mrb_define_class_method`
+calls across 4 new `RClass*` handles fetched via `mrb_module_get_under`)
+plus the real regenerated `rgss_compiled_gen.cpp` and the real mruby
+headers (`3rd/mruby/include`, the real generated `mruby/presym/id.h` from
+the host `mrbc` build): **zero errors, zero `-Winfinite-recursion`
+warnings** (207 warnings total, every one the already-established
+`-Wunused-but-set-variable` register-scratch shape this codegen has always
+produced, confirmed by grep). Compiled to a real object file: `nm -C`
+confirms all 39 new `RGSS__<Class>_singleton_<method>[_impl]` symbol pairs
+(externally-linked `T` for each `_impl`, locally-linked `t` for each
+`mrb_get_args`-marshaling entry wrapper, including `brightness_sprite`'s
+own pair despite it being unregistered) alongside every pre-existing
+symbol, unchanged. `grep -c 'mrb_funcall(M, [a-z0-9]*, "", '` on the real
+generated `.cpp` is 0, confirming no mis-devirtualized empty-name call site
+anywhere in this gem's own output.
+
+**Real host-`mrbc` build.** The same established fallback several prior
+rounds already document was used again: `3rd/mruby` and its own real
+dependencies (`3rd/mruby-marshal`, `3rd/mruby-onig-regexp`,
+`3rd/mruby-stringio`, `3rd/uni-algo`, `3rd/stb`) were `git submodule update
+--init`'d (kept out of this round's own diff), and a real host `mrbc`
+(`mruby 4.0.0`) was built from inside `3rd/mruby` itself (`HOST_CXX=c++
+HOST_CC=cc rake -f Rakefile`, `PATH=/opt/ruby-3.3.6/bin:$PATH`), then used
+directly against `tools/bc2cpp/bc2cpp.rb` for every diagnostic and
+generated-output check above.
+
+**What was deferred, and why.** The full desktop `cmake`/`ninja` engine
+build (`RPGMAKER_BC2CPP=1 ... ninja mruby/host/lib/libmruby.a`) could not be
+attempted in this environment: `3rd/SDL`, `3rd/SDL_mixer`, `3rd/effekseer`,
+`3rd/gflags`, `3rd/lvgl`, `3rd/ng-log`, `3rd/quickjs` were all
+uninitialized in this fresh worktree, and this round's own disk budget (12
+GB free after initializing the mruby-only submodule set above) was not
+spent speculatively initializing five-plus large, desktop/rendering-only
+submodules genuinely out of scope for a change confined to the AOT-compiler
+prototype and one compiled gem's own `register.cxx` -- the same
+environment gap essentially every prior round in this file already
+documents hitting and worked around identically. The host-`mrbc` + real
+`bc2cpp.rb` run + `g++ -fsyntax-only`/real-object-compile/`nm` methodology
+above is this project's own already-established fallback for exactly this
+situation, used identically here.
+
+**Bottom line.** All 39 of the task's own unrestricted-diagnostic upper
+bound compile for real, individually, once actually placed in
+`ONLY_OWNERS` -- the unrestricted diagnostic's own devirtualization
+assumptions held exactly, with no per-method surprise this round. 38 are
+now real, registered `mrb_define_class_method` entry points across five
+newly-covered `.singleton` owners (`RGSS.singleton`, `RGSS::Audio.
+singleton`, `RGSS::Input.singleton`, `RGSS::ErrorReport.singleton`,
+`RGSS::Graphics.singleton`); the 39th (`Graphics.singleton#
+brightness_sprite`) is compiled and reachable via an already-devirtualized
+same-owner call but deliberately left unregistered because it is genuinely
+`private` in the real source and mruby has no public API to register a
+private class method. GETCONST's owner-scope-first resolution and MONO
+same-owner (and cross-`.singleton`-owner) devirtualization both hold
+correctly across every one of these five classes, confirmed directly
+against the real generated code, and every one of this gem's own
+previously-shipped 40 methods is provably unaffected -- byte-identical
+generated bodies, byte-identical embedding decisions, confirmed by a real
+function-by-function diff and by `nm`, not by inspection alone.
+
+## Follow-up: Game .singleton coverage cluster (round 30)
+
+The prior follow-up's own "what was deferred" section explicitly named
+`Game::EventGraphic.numpad_direction` and `Game::State`'s own 9
+`.singleton`-owned methods as known-good, unexplored candidates once the
+`.singleton` mechanism itself was proven sound. This round audits every
+`.singleton`-owned MONO name a real, unrestricted whole-program diagnostic
+run surfaces across `mruby-rpg2k`'s own `game.rb`/`game/battle_support.rb`/
+`scene/map.rb`, adds every one that compiles clean to `mruby-rpg2k-
+compiled`'s own `owners:`, and registers each via
+`mrb_define_class_method` in `mruby-rpg2k-compiled/src/register.cxx`,
+following `RGSS::Bitmap.singleton`'s own established pattern exactly.
+
+### The real, unrestricted diagnostic (methodology re-verified, not re-derived)
+
+Same fallback every prior round in this file already documents hitting in
+this environment: `3rd/lvgl`/`3rd/gflags`/`3rd/ng-log`/`3rd/quickjs`/
+`3rd/effekseer`/`3rd/SDL`/`3rd/SDL_mixer`/`3rd/inicpp`/`3rd/mgem-list` are
+large, desktop/rendering-only submodules deliberately left uninitialized
+(disk budget -- this session started with 15G free on a shared,
+disk-constrained machine, already down to 11G after `3rd/mruby` and its
+own five real dependencies were initialized and a real host `mrbc`
+(`mruby 4.0.0`) built from it, `HOST_CXX=c++`). `tools/bc2cpp/bc2cpp.rb`
+was run directly against that real host `mrbc`, `SKIP_UNSUPPORTED=1`, no
+`ONLY_OWNERS` restriction, over the real whole `mruby-rpg2k`+`mruby-lcf`+
+`mruby-rgss` closed world (`closed_world_mrblib_srcs`/`core_native_srcs`/
+`external_gem_native_srcs`, all read programmatically from the real,
+unedited `compiled_gems.rb` -- never hand-copied). The real `== compiled
+entry points ==` listing this run produced, grepped for the four target
+classes, matched the task's own stated upper bound exactly, method for
+method:
+
+```
+Game::States.singleton: 13 compiled (name, animation_pose,
+  inflict_message, recovery_message, affected_message, already_message,
+  field, message, int_field, priority_of, color, map_step_drain, drain);
+  3 skipped (row -- a real `rescue StandardError`; significant, prune --
+  real Array#each block bodies)
+Game::States::BattleText.singleton: all 13 compiled (term, action,
+  damage, undamaged, critical, dodge, skill_start, item_start, recovered,
+  absorbed, skill_failure, parameter_change, attribute_shift)
+Game::ChipsetLayout.singleton: 10 compiled (anim_ab, anim_c, block,
+  upper_blank?, anim_input, uncached_quads, full, lower_quad, upper_quad,
+  event_tile_rect); 4 skipped (quads, quads_from_quarters, water_quads,
+  terrain_quads -- real Array#each/#map block bodies)
+Game::EventGraphic.singleton: all 9 compiled (numpad_direction,
+  fixed_direction?, continuous?, animated?, pattern_column,
+  spin_direction, frame, frame_dir, frame_col)
+```
+
+`Game::States` turned out to be split across two real files -- 9 of its
+own real `def self.x` methods live in `mruby-rpg2k/mrblib/game.rb` (the
+state-lookup/priority/prune/slip-damage core), the other 7 in a second,
+later `module States; ... end` reopening in `mruby-rpg2k/mrblib/game/
+battle_support.rb` (the battle-message-composition half, right alongside
+its own nested `module BattleText`) -- both real, both the same
+`Game::States` constant, both captured under the identical
+`"Game::States.singleton"` pseudo-owner string by `build_registry`, which
+walks every irep in the closed world regardless of which file defined it.
+The task's own framing ("all in mruby-rpg2k/mrblib/game.rb") was close but
+not quite exact on this one point; re-checked directly against the real
+source rather than left uncorrected.
+
+Zero `#error` markers and zero empty-name `mrb_funcall(M, <reg>, "", `
+shapes anywhere in the real generated output, both for this diagnostic run
+and for every real per-gem run below.
+
+### Re-verified in a real `ONLY_OWNERS` run, not just the unrestricted diagnostic
+
+Per the task's own explicit caution, all four `.singleton` owners were
+added to `mruby-rpg2k-compiled`'s own real `owners:` list and a second,
+real run (`ONLY_OWNERS`/`OTHER_OWNERS` computed the exact way
+`mruby-rpg2k-compiled/mrbgem.rake`'s own `file` rule would) was made
+before trusting the unrestricted diagnostic's own counts. All 45 methods
+compiled identically either way -- the real per-owner run surfaced zero
+new surprises, zero methods that looked compilable in isolation but hit a
+real gap once actually asked to devirtualize against the narrower real
+`ONLY_OWNERS`/`OTHER_OWNERS` sets a real build uses.
+
+### The two-level-nesting case: `Game::States::BattleText.singleton`
+
+The task's own explicit worry -- every prior `.singleton` case
+(`RGSS::Bitmap.singleton`) was only one level deep, so a
+`Game::States::BattleText.singleton` owner is a genuinely new shape for
+`lexical_scope_path`/`GETCONST`'s own owner-scope-first resolution to
+prove clean against -- was checked directly against the real generated
+code, not just reasoned about. `#skill_failure`'s own bare `FAILURE_TERMS`
+reference (a real constant defined on `BattleText` itself) lowers to:
+
+```cpp
+mrb_value scope0 = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "Game"));
+mrb_value scope1 = mrb_const_get(M, scope0, mrb_intern_cstr(M, "States"));
+mrb_value scope2 = mrb_const_get(M, scope1, mrb_intern_cstr(M, "BattleText"));
+mrb_bool ok = FALSE;
+mrb_value r7_tmp = mrb_nil_value();
+if (!ok) r7_tmp = bc2cpp_const_try(M, scope2, mrb_intern_cstr(M, "FAILURE_TERMS"), &ok);
+if (!ok) r7_tmp = bc2cpp_const_try(M, scope1, mrb_intern_cstr(M, "FAILURE_TERMS"), &ok);
+if (!ok) r7_tmp = bc2cpp_const_try(M, scope0, mrb_intern_cstr(M, "FAILURE_TERMS"), &ok);
+if (!ok) r7_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "FAILURE_TERMS"));
+```
+
+-- a real, correct three-segment `Game -> States -> BattleText` scope
+chain, `lexical_scope_path`'s own `owner.sub(/\.singleton\z/, '').split
+('::')` splitting the two-level-deep owner string exactly the same way it
+already splits a one-level one, with the synthetic `.singleton` suffix
+stripped before the split rather than leaking into any segment (the
+literal `"BattleText.singleton"` constant-name bug the prior round's own
+fix closed). `resolve_singleton_receiver` (the codegen path that resolves
+`self` for the compiled function's own receiver, unrelated to
+`GETCONST`'s own scope chain but re-checked anyway per the task's own
+instruction) needed no change either: it already resolves the receiver
+via the identical `lexical_scope_path` helper, so a two-level-deep owner
+was already exercised by the same fix, never a separate code path that
+could have been missed. No `private`/`private_class_method`/`protected`
+directive appears anywhere near `Game::States`, `Game::States::
+BattleText`, `Game::ChipsetLayout`, or `Game::EventGraphic` in the real
+source -- this file's own established "`.singleton` handling is
+unconditionally `:public`" behavior is exactly correct for all 45 new
+methods, confirmed by grep, not assumed.
+
+### A real, live devirtualization proof richer than the mechanism's own introduction
+
+`RGSS::Bitmap.singleton`'s own introduction had exactly one real
+devirtualizing call site to point to (a same-owner self-call,
+`self.failure_reason` calling `extensions`), because no other compiled
+code anywhere in that closed world called either method. This round's
+four classes are different: they are called from plenty of
+already-compiled code elsewhere in the same gem. The real regenerated
+output shows several already-shipped call sites flip from `POLY`/
+`mrb_funcall` straight to a direct `MONO` C++ call the moment these four
+owners enter `ONLY_OWNERS` -- `RPG2k::Scene::Battle`'s own already-
+compiled body calling `Game::States::BattleText.critical`/`.item_start`/
+`.skill_start`/`.skill_failure`/`.absorbed`/`.dodge`/`.damage`/
+`.undamaged`, and `RPG2k::Scene::Map`'s own body calling
+`Game::EventGraphic.numpad_direction`, `Game::ChipsetLayout.block`/`.full`/
+`.lower_quad`/`.upper_quad`/`.anim_ab`/`.anim_c`/`.anim_input`/
+`.event_tile_rect`, among others -- a real, richer proof that this
+mechanism devirtualizes real, pre-existing call sites across the whole
+closed world, not merely a same-owner self-call invented to exercise it.
+
+### Registration (`mruby-rpg2k-compiled/src/register.cxx`)
+
+All four are plain Ruby `module`s (`module States`/`module BattleText`/
+`module ChipsetLayout`/`module EventGraphic`), never instantiated, so none
+was ever a `MRB_SET_INSTANCE_TT` candidate and none gets any ivar
+embedding -- confirmed directly, byte-identical to the pre-this-round
+listing. `mrb_module_get_under(M, game, "States")`/
+`mrb_module_get_under(M, states, "BattleText")`/
+`mrb_module_get_under(M, game, "ChipsetLayout")`/
+`mrb_module_get_under(M, game, "EventGraphic")` reach each one the
+ordinary way any nested module is looked up in this file -- confirmed
+`mrb_define_class_method`/`mrb_define_singleton_method` work identically
+on a module `RClass*` and a class one before relying on it (`3rd/mruby/
+src/class.c`: `mrb_define_class_method` is a thin wrapper over
+`mrb_define_singleton_method` on the `RClass*` cast to `RObject*`, no
+class-vs-module distinction anywhere in that path). All 45 new
+registrations reuse the exact per-method arity `bc2cpp.rb`'s own
+diagnostic reports (`MRB_ARGS_REQ(n)` -- every one of these 45 methods
+takes purely mandatory arguments, no optional/keyword/splat parameters, so
+none needed the calling-convention gap this file's own `#initialize`
+methods already hit elsewhere).
+
+### The cheaper cluster: 8 already-owned classes' own `.singleton` half
+
+The same unrestricted diagnostic surfaced 8 more `.singleton`-owned
+targets on classes `mruby-rpg2k-compiled` already owns on their *instance*
+side -- `Game::Battle.singleton` (11), `Game::Transition.singleton` (6),
+`Game::State.singleton` (2), `Game::Party.singleton` (2),
+`Game::Picture.singleton` (1), `Game::Character.singleton` (1),
+`Game::ChipSet.singleton` (1), `RPG2k::Scene::Map.singleton` (1) -- 25
+methods total, every one confirmed compiling clean in a second real
+`ONLY_OWNERS` run (all 12 new `.singleton` owners together), matching the
+unrestricted diagnostic's own counts exactly, zero surprises. Cheaper by
+construction: each class's own `RClass*` (`battle`/`transition`/`state`/
+`party`/`picture`/`character`/`chip_set`/`map_scene`) was already declared
+in `register.cxx` for that class's own instance-side registrations, so
+adding its `.singleton` half needed no new class lookup, just one more
+`mrb_define_class_method` call per method reusing that same variable. No
+`private`/`private_class_method`/`protected` directive near any of these
+8 classes' own real source either. A second real devirtualization proof
+here too: `Game::Picture.singleton#from_h`'s own body constructing a
+`Game::Picture` and calling `#move_to` on it flips from `POLY` to a direct
+`MONO` `Game__Picture_move_to_impl` call, and several of `Game::Battle`'s
+own already-compiled callers (`attr_ranks_of`/`crit_chance_of`/
+`flag_of`/`hit_rate_of`/`state_ranks_of`) and `Game::Transition`'s
+(`default_frames`/`erase_style`/`setting?`/`show_style`/`style_for`) do
+the same.
+
+### Regression-safety verification (all three compiled gems, before/after)
+
+Real `.cpp` diffs, not just entry-point counts:
+
+- **`mruby-rpg2k-compiled_gen.cpp`**: every diff hunk between the
+  pre-this-round baseline and the post-primary-four-owners run, and again
+  between that and the post-bonus-eight-owners run, is either a pure
+  addition (`XaY,Z`, the new methods' own forward declarations and
+  bodies) or a `POLY`-to-`MONO` devirtualization flip at an already-
+  compiled call site into one of the new owners (confirmed: every `c`/`d`
+  hunk's own changed lines, grepped, are exactly these two shapes, nothing
+  else). Zero lines removed that were not immediately replaced by the
+  devirtualized form of the identical call.
+- **Entry-point counts**: 1328 (pre-this-round) -> 1373 (+45, the four
+  priority classes) -> 1398 (+25, the eight bonus classes) -- both deltas
+  exactly match the number of methods actually added, confirmed by
+  counting the real `== compiled entry points ==` listing directly, not
+  assumed from the owners list.
+- **Whole-program method registry**: 3018 entries, identical across every
+  stage (pre-this-round, post-primary-four, post-bonus-eight) -- this
+  round only changes which already-registered `.singleton`-owned
+  `MethodDef`s get emitted in `mruby-rpg2k-compiled`'s own output, never
+  how many exist.
+- **`== ivar embedding ==` and `== classes needing MRB_SET_INSTANCE_TT
+  ==`**: byte-identical across every stage. None of the 12 classes this
+  round touches is a `MRB_SET_INSTANCE_TT` candidate (all are modules, or
+  classes whose existing instance-side embedding decision this round
+  never touches), confirmed by diff, not by inspection.
+- **The other two compiled gems** (`mruby-lcf-compiled`, `mruby-rgss-
+  compiled`): re-ran both real invocations with the post-this-round
+  `compiled_gems.rb` (their own `OTHER_OWNERS` now includes all 12 new
+  `.singleton` entries) and diffed against a baseline built from the
+  pre-this-round `compiled_gems.rb` -- both gems' own generated `.cpp` and
+  full diagnostic output are byte-identical, confirming the 12 new owners
+  are never referenced from either gem's own closed-world code and adding
+  them to `OTHER_OWNERS` changes nothing for a gem that never calls into
+  them.
+
+**Real compile verification**: `clang-format -i` then `clang-format
+--dry-run --Werror` on the one `.cxx` file touched
+(`mruby-rpg2k-compiled/src/register.cxx`) -- clean. `g++ -fsyntax-only
+-std=gnu++17 -Wall -Wextra -Winfinite-recursion` against the real edited
+`register.cxx`, the real regenerated `rpg2k_compiled_gen.cpp` (with the
+real `mruby-rgss-compiled`/`mruby-lcf-compiled` own `*_decls.h` headers
+included via `OTHER_DECLS_HEADER`, exactly as `mrbgem.rake` would wire
+them, so the real cross-gem devirtualized calls this gem's own code
+already makes into `RGSS::Bitmap#font`/`RGSS::Sprite#bush_depth`/etc.
+resolve): **zero errors, zero `-Winfinite-recursion` warnings** (every
+warning is the same pre-existing, established `-Wunused-but-set-
+variable`/`-Wunused-parameter` shape this file's own codegen has always
+produced, confirmed by grep). Compiled to a real object file both before
+and after this round's own diff and diffed the full `nm -C` symbol table:
+the *only* differences are the 45 (then 25 more) new `_impl`/entry-wrapper
+symbol pairs plus the newly-pulled-in `mrb_define_class_method` undefined
+reference -- every pre-existing symbol (every other class's own `_impl`s
+and entry wrappers, `mrb_mruby_rpg2k_compiled_gem_init`/`_gem_final`) is
+present, unchanged in name and linkage (`T`/`t`).
+
+### What was deferred, and why
+
+- **The full desktop `cmake`/`ninja` engine build** could not be completed
+  in this environment -- the same large, desktop/rendering-only
+  submodules (`3rd/lvgl`/`3rd/gflags`/`3rd/ng-log`/`3rd/quickjs`/
+  `3rd/effekseer`/`3rd/SDL`/`3rd/SDL_mixer`/`3rd/inicpp`/`3rd/mgem-list`)
+  every prior round in this file already documents leaving uninitialized,
+  genuinely out of scope for a change confined to one compiled gem's own
+  `owners:`/`register.cxx`, and this session's own disk budget (15G free
+  at the start, 11G after the submodules this round's own methodology
+  actually needs). The host-`mrbc` + real `bc2cpp.rb` run (twice: the
+  unrestricted diagnostic, then the real `ONLY_OWNERS` run) + `g++
+  -fsyntax-only`/real-object-compile/`nm` methodology above is this
+  project's own already-established fallback for exactly this situation.
+- **`Game::States`'s own `#row`/`#significant`/`#prune`** and
+  **`Game::ChipsetLayout`'s own `#quads`/`#quads_from_quarters`/
+  `#water_quads`/`#terrain_quads`** stay interpreted -- real `rescue
+  StandardError` and real Array#each/#map block-body shapes respectively,
+  this file's own long-established non-compiling gaps, not new findings.
+- No other `.singleton`-owned MONO name in the whole-program registry was
+  found during this round's own audit beyond the 12 classes covered above
+  (the 4 priority classes plus the 8 cheaper ones) -- the unrestricted
+  diagnostic's own full `== compiled entry points ==` listing was checked
+  end to end for every remaining `.singleton`-suffixed owner string, not
+  just the ones the task named, and none turned up beyond what is already
+  documented here.
+
+**Bottom line**: `mruby-rpg2k-compiled` ships this project's first
+`.singleton`-owned entries outside `mruby-rgss-compiled`, including its
+first two-level-deep nested `.singleton` owner
+(`Game::States::BattleText.singleton`) -- 70 new real, compiled,
+`nm`-confirmed, correctly `mrb_define_class_method`-registered entry
+points across 12 classes (45 from the four priority classes, 25 from the
+eight cheaper already-owned ones), with real devirtualizing call sites
+from already-compiled code across the gem into all four priority classes
+and several of the eight bonus ones. Every already-shipped owner across
+all three compiled gems is provably unaffected -- byte-identical generated
+code, byte-identical embedding decisions, byte-identical MONO/POLY
+registry entry count, confirmed by diff and by `nm`, not by inspection
+alone.
+## Follow-up: adversarial bug-hunt sweep (round 30) -- stress-testing .singleton owner support
+
+A fourth dedicated adversarial round, targeted specifically at the
+`.singleton` owner-support mechanism the immediately preceding follow-up
+introduced, run *after* two sibling rounds had already landed real
+`.singleton`-owned coverage of their own (`RGSS::Audio`/`Input`/
+`Graphics`/`ErrorReport`/`RGSS` itself, and `Game::States`/`BattleText`/
+`ChipsetLayout`/`EventGraphic`) -- so every check below runs against the
+real, current, much larger closed world those rounds left behind, not the
+single-class proof-of-concept the mechanism's own introducing round
+verified against. No bug was found in the `.singleton` mechanism itself;
+one genuinely new, unrelated, checked-and-confirmed-not-live structural
+gap was found in `cpp_name`/`sanitize` while stress-testing it.
+
+### 1. Re-deriving the SDEF fix's own MONO/POLY-soundness claim, by a real diff, not a count match
+
+The introducing round's own comment claims the SDEF irep-capture fix
+"changes nothing about MONO/POLY resolution itself" and backed that with
+a before/after *count* match (2906 -> 2906) on the closed world as it
+stood then. A count match cannot rule out an equal number of names each
+flipping owner in a way that cancels out in the total -- so this round
+extracted the real pre-fix `bc2cpp.rb` (`git show
+5dc59d0:tools/bc2cpp/bc2cpp.rb`, the immediate parent of "bc2cpp: add
+.singleton owner support" in `git log`) and ran it, and the real current
+`bc2cpp.rb`, as two separate subprocesses against the *identical* real
+closed-world source list (`closed_world_mrblib_srcs` +
+`core_native_srcs` + `external_gem_native_srcs` +
+`mruby-rgss/src/*.cxx`, computed programmatically from the current,
+already-merged `compiled_gems.rb` -- the same real inputs
+`mruby-rgss-compiled/mrbgem.rake` itself would compute), each printing
+its own real `== whole-program method registry ==` dump via a real host
+`mrbc` (`mruby 4.0.0`, built fresh in this worktree from `3rd/mruby`).
+`diff <(sort before) <(sort after)`: **zero lines differ**, both dumps
+exactly **3018** entries -- not merely the same count, the identical set
+of names, arities of owners, and MONO/POLY classification for every
+single one of them, on the real *current* closed world (up from the
+introducing round's own 2906, since the two sibling `.singleton`-coverage
+rounds' own real `def self.x`/`class << self` additions are included).
+This is not a vacuous check: the real closed world has **167** real
+`def self.x` sites (`grep -rn '^\s*def self\.'` across all three gems'
+own `mrblib`) for the fix's own SDEF case to actually exercise, and 238
+of the 3018 registry lines carry a `.singleton`-suffixed owner. Confirmed
+directly, not assumed from the file's own comment.
+
+### 2. Re-deriving embedded-ivar safety for a `.singleton`-owned class method, from the real code, not just Ruby semantics
+
+A `def self.x`/`class << self` method's `self` is the class/module object
+itself, never an instance -- so any `@ivar` it touches is a *class* ivar,
+living in a completely different object's `iv_tbl` from any instance's
+own ivars of the same name. This round verified the actual code enforces
+that isolation, rather than trusting the semantic argument alone:
+- `IvarLayout.analyze`'s own `methods_of`/`types` hashes are keyed by
+  `d.owner` verbatim -- a `.singleton`-owned method's SETIV/GETIV sites
+  are bucketed under `"Owner.singleton"`, a string that can never equal
+  the real instance owner `"Owner"` the embedding decision for that class
+  actually keys on (`embed_type(owner_def.owner, ivar)`, always the
+  *compiled method's own* literal owner string). Confirmed live, not
+  hypothetical: the real, current whole-program `== ivar embedding ==`
+  diagnostic (unrestricted run, no `ONLY_OWNERS`) shows exactly one raw,
+  `.singleton`-owned candidate anywhere in the whole closed world --
+  `RGSS::Graphics.singleton#@brightness (fixnum)` -- a real class ivar
+  `IvarLayout.analyze` correctly traces and would in principle embed, if
+  anything downstream let it.
+- Nothing does: `drop_unsafe_embeddings`'s own per-owner gate is `init =
+  @registry['initialize']&.find { |d| d.owner == owner }; next unless
+  init && ...` -- for `owner = "RGSS::Graphics.singleton"` this requires a
+  `.singleton`-owned `#initialize` to exist, which structurally never
+  happens in real Ruby (nobody writes `def self.initialize`) and doesn't
+  happen anywhere in this codebase today, confirmed by grepping the real
+  registry dump for `:initialize` and checking every owner in its
+  `defs` list: **zero** `.singleton`-suffixed owners among any of them.
+  So `RGSS::Graphics.singleton#@brightness` is guaranteed to be dropped
+  before `natively_exposed?`/`every_accessor_compiles?` are ever reached
+  for it -- confirmed directly against the real, current "classes needing
+  `MRB_SET_INSTANCE_TT`" listing (both the isolated `bc2cpp.rb` run and
+  the real full `RPGMAKER_BC2CPP=1` build's own `register.cxx`): still
+  exactly **`Game::Screen`, `RPG2k::Scene::VehicleWorld`**, unchanged, no
+  third or fourth entry, `RGSS::Graphics`/`RGSS::Graphics.singleton`
+  included in neither. This generalizes the introducing round's own
+  narrower `natively_exposed?`-only check (which only showed a
+  `.singleton`-owned `d.owner` can never equal a real instance-class
+  `ivar_layout` key) to the *whole* `drop_unsafe_embeddings` pipeline,
+  confirmed against a real, live raw candidate this round's larger
+  closed world actually produced -- the introducing round's own smaller
+  world never had one to test against.
+
+### 3. Re-deriving `resolve_singleton_receiver`'s backward scan against every real occurrence, not just the ones already targeted
+
+Grepped the whole closed-world source (`mruby-rpg2k`/`mruby-lcf`/
+`mruby-rgss`'s own `mrblib`) for every real `class << `/`def
+[A-Z]\S*\.`-shaped receiver, rather than trusting the introducing round's
+own two example classes: **167** bare `def self.x` sites (zero `def
+SomeConst.method` sites anywhere -- the unfused-DEF case's own GETCONST
+branch and `resolve_singleton_receiver`'s own GETCONST branch are both
+dead code in this real closed world today, still logically sound by
+construction, just never exercised) and **8** `class << ` sites -- 6 real
+`class << self` (one apiece for `RGSS` itself, `RGSS::ErrorReport`,
+`RGSS::Bitmap`, `RGSS::Font`, `RGSS::Audio`, `RGSS::Graphics`, identified
+by reading each one's own real enclosing `module`/`class` directly, not
+assumed from indentation) plus the 2 `class << Graphics` sites already
+identified and confirmed structurally invisible to `build_registry`
+(textually nested inside `RGSS.effect_probe`'s own method body -- see
+below). Cross-checked every one of the 6 real `class << self` sites'
+expected owner against the real registry dump directly: `RGSS.singleton`
+carries exactly the top-level `RGSS`-module methods and probes
+(`effect_probe`, `audio_probe`, `frame_mean`, `asset_archive`,
+`warn_once`, ...), `RGSS::ErrorReport.singleton` carries exactly that
+module's own set (`install`, `installed?`, `puts_text`, `record`,
+`log_tail`, `clear`, `push`, `probe!`, `probe_raise`, `lines`,
+`last_location`), and `RGSS::Bitmap.singleton`/`RGSS::Font.singleton`
+carry exactly their own already-documented sets -- **zero
+cross-contamination** between any two of these six namespaces, including
+the two (`RGSS` and `RGSS::ErrorReport`) sharing the same file and a
+common outer module, the shape most likely to expose a backward-scan
+mistake if `namespace` were ever stale or the wrong enclosing scope. This
+directly re-derives, against real data rather than code inspection alone,
+that `resolve_singleton_receiver`'s `LOADSELF -> namespace || 'Object'`
+branch resolves to the exact correct enclosing namespace every time it
+fires in this program, with no wrong-owner registration anywhere.
+
+**Re-checked round 28's own `RGSS.effect_probe`/`class << Graphics`
+finding specifically, because its own third confirmed-safe leg (`Graphics`
+"is not, and has never been, an owner in any of the three gems' own
+`owners:` lists") is no longer true** -- a sibling round this same round
+added `RGSS::Graphics.singleton` to `mruby-rgss-compiled`'s real
+`owners:`. Re-verified the actual conclusion still holds despite that:
+`:update` (the name `effect_probe`'s own runtime `class << Graphics;
+alias_method :_probe_update, :update; def update; ...; end; end`
+monkey-patches, twice, then restores) is still POLY with **22 real
+definitions** in the current registry dump (`Game::Screen`, ...,
+`RGSS::Input.singleton`, `<native>` -- confirmed by grep, the identical
+count round 28 itself recorded, no 23rd `RGSS::Graphics.singleton` entry
+even now). `monomorphic_target`'s own MONO-only gate means a POLY name is
+never devirtualized to a direct call regardless of which owners are in
+`ONLY_OWNERS`; the other devirtualization path (`trace_new_target`'s own
+`known_class`, TYPED-path) can only ever produce a `.new`/ivar-type-hint/
+class-annotation-derived owner, none of which can name a `.singleton`
+pseudo-owner (re-confirmed directly against `trace_new_target`'s own
+three real sources, none touches a `class`/module receiver at all). So
+`Graphics.update`-shaped calls still only ever reach ordinary dynamic
+dispatch, still correctly observing `effect_probe`'s own runtime
+monkey-patch -- `RGSS::Graphics.singleton` becoming a real owner changed
+nothing about this specific finding's own safety, confirmed fresh rather
+than assumed to still hold from an outdated fact.
+
+### 4. The usual, run against a real, fresh, full closed-world regeneration
+
+Built a real host `mrbc` (`mruby 4.0.0`) from a fresh `3rd/mruby`
+submodule checkout (plus its own real dependencies) with all 9 real
+`patches/*.patch` files applied via `scripts/apply_mruby_patch.bash`, then
+ran the real, full `RPGMAKER_BC2CPP=1` + `cmake ..` + `ninja
+mruby/host/lib/libmruby.a` pipeline end to end in this worktree (a fresh
+`git submodule update --init --recursive` for all 15 top-level `3rd/*`
+submodules first). The only environment gap hit was the same one round 29
+already documents: `mruby-lcf`'s own `cp932_to_unicode.rb`/
+`gen_shinonome_data.rb` need `cp932_table`/`jis0208_table` env vars
+pointing at two real Unicode.org mapping files -- fetched fresh
+(`bestfit932.txt`, `JIS0208.TXT`) and SHA-256-verified against
+`flake.nix`'s own pinned hashes (`nix` `sha256-` SRI decoded to hex):
+both matched exactly. With those two env vars set, the real build
+**succeeded end to end: exit 0, zero `error:` and zero `warning:`
+matches** in the full build log, a real ~97MB `libmruby.a` produced.
+
+- `grep -c 'mrb_funcall(M, [a-z0-9]*, "", '` against all three real,
+  freshly regenerated `*_gen.cpp` files from that real build
+  (`lcf_compiled_gen.cpp`/`rpg2k_compiled_gen.cpp`/
+  `rgss_compiled_gen.cpp`): **zero** in all three.
+- `grep '\.singleton"'` filtered to `mrb_const_get`/`mrb_intern` lines in
+  the real `rgss_compiled_gen.cpp`: **zero** -- the introducing round's
+  own `GETCONST`/`lexical_scope_path` fix has not regressed.
+- `RGSS__Bitmap_singleton_extensions_impl`/`_failure_reason_impl` are
+  present in the real generated file, and the real devirtualizing call
+  site (`r6 = RGSS__Bitmap_singleton_extensions_impl(M, self);`) is still
+  there, unchanged, inside `#failure_reason`'s own real generated body.
+- The real `register.cxx`'s own `MRB_SET_INSTANCE_TT(` call sites: still
+  exactly `screen`, `vehicle_world` (2, `mruby-rpg2k-compiled`) -- no
+  regression in either currently-embedding class.
+- The real `register.cxx`'s own `mrb_define_class_method` call sites:
+  still exactly the introducing round's own 2 (`RGSS::Bitmap.singleton#
+  extensions`/`#failure_reason`) -- the two sibling rounds' own new
+  `.singleton`-owned entry points (`RGSS::Audio`/`Input`/`Graphics`/
+  `ErrorReport`, `Game::States`/etc., all real per the unrestricted
+  registry/entry-point dump above) are not yet wired into any
+  `register.cxx`, which is that other, still-in-flight work's own scope,
+  not a gap this round introduced or needed to close.
+
+### A new, genuinely unrelated finding: `cpp_name`/`sanitize` can map two distinct real methods to the identical C++ identifier -- checked, confirmed not currently live
+
+Stress-testing `cpp_name`/`sanitize` (broadened in reach by `.singleton`
+owners, since a `.singleton`-owned name now can be a real emission
+target) across the *entire* real whole-program registry -- every
+`(owner, name)` pair from the real, current, unrestricted registry dump,
+sanitized the exact same way `cpp_name` does (`gsub(/[^a-zA-Z0-9_]/,
+'_')`) -- found `sanitize` maps both `?` and `=` to the same `_`, so a
+predicate `foo?` and a writer `foo=` on the *same* owner produce the
+identical sanitized identifier (`Owner_foo_`, hence identical `_impl`
+function names too). Three real such pairs exist in the current registry:
+`Game::State#boarded?`/`#boarded=`, `Game::Battle::Combatant#
+half_sp_cost?`/`#half_sp_cost=`, and `#member?`/`#member=`. This is
+**unrelated to `.singleton` owner support** -- a pre-existing property of
+`sanitize` this round happened to notice while giving the naming scheme
+its broadest-ever stress test, not something the singleton mechanism
+introduced or worsened.
+
+**Confirmed not currently live, three independent ways:** (1) every one
+of the three `=`-halves is either a synthetic/native `attr_accessor`
+-installed `MethodDef` (`Game::State#boarded=`, `irep: nil` -- the real
+compiled leaf is `#boarded?` alone, a genuine `def boarded?; end`) or
+belongs to `Game::Battle::Combatant`, a `Struct.new`-generated class that
+has never been, and is not now, an owner in any of the three gems' own
+`owners:` lists (confirmed by grep -- it appears only in this ADR's own
+prose, never in a real `owners:` array); (2) `compile_all`'s own leaf
+worklist (`@owner_of[d.irep] = d if d.irep`) never inserts an entry for
+an irep-nil `MethodDef` at all, so `cpp_name` is structurally never
+invoked on the synthetic half of any of these three pairs regardless of
+`ONLY_OWNERS`; (3) direct, real confirmation: a full, real, unrestricted
+`compile_all` run (no `ONLY_OWNERS` at all -- every real, irep-bearing
+leaf in the *entire* closed world attempted) produced **2320** real
+compiled entry points, and extracting every one of their own real
+generated function names found **zero duplicates** anywhere -- not just
+these three pairs, the whole real program, `.singleton`-owned entries
+included. Documented here, not fixed, matching this ADR's own established
+"real, checked, structural, not-currently-live" bucket (the ivar-
+embedding inheritance blindness, the `NATIVE_SRCS` `'<native>'`-owner-
+scope gap, the `RGSS.effect_probe` runtime-`SCLASS` blind spot) -- worth
+a `sanitize` fix (e.g. mapping `?` to a distinct suffix from `=`) whenever
+a real class in this codebase's future actually defines both a
+bytecode-level predicate and writer of the same base name on one owner,
+not before.
+
+**Bottom line**: the `.singleton` owner-support mechanism itself has no
+new bug -- the SDEF fix's own MONO/POLY-soundness claim holds exactly,
+re-derived by a real name-for-name diff rather than a count match, on a
+closed world nearly a third larger than the one it originally shipped
+against; embedded-ivar safety for a `.singleton`-owned class method is
+sound by construction and reconfirmed against a real, live raw candidate
+(`RGSS::Graphics.singleton#@brightness`) this round's larger world
+actually produced; `resolve_singleton_receiver`'s backward scan resolves
+every real occurrence in the whole closed world to the exact correct
+owner, with zero cross-contamination; and the one previously-conditional
+safety argument that materially changed underneath this round
+(`RGSS::Graphics.singleton` going from never-an-owner to a real owner)
+was re-verified fresh rather than assumed to still hold. The one new
+finding this round surfaced (`sanitize`'s `?`/`=` collision) is real but
+orthogonal to `.singleton` support and confirmed, three independent ways,
+not live today. No code change was needed; no changelog fragment
+accompanies this round.
