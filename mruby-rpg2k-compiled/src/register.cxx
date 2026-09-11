@@ -69,7 +69,7 @@
 // real Fixnum ivars (@id/@exp/@level/@class_id/@faceset_index/
 // @face_index/@battler_animation_override) through as "embeddable" -- 16
 // real, already-registered Game::Actor methods below (faceset_index,
-// set_faceset, restore_class, ...) were generated with DATA_PTR(self)
+// set_faceset, weapon_crit_chance, ...) were generated with DATA_PTR(self)
 // struct-field GETIV/SETIV codegen for an RData payload that was never
 // actually allocated (no MRB_SET_INSTANCE_TT(actor, ...) call exists
 // anywhere in this file, since nothing here ever suspected embedding was
@@ -204,7 +204,7 @@
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all twenty classes are guaranteed to already exist below.
+// all twenty-two classes are guaranteed to already exist below.
 //
 // An eleventh, parallel round adds RPG2k::Scene::Base (mruby-rpg2k/mrblib/
 // scene/base.rb, reopened by mruby-rpg2k/mrblib/scene/battle_support.rb)
@@ -275,6 +275,94 @@
 // (smaller, sound) embedded-field set automatically -- no hand-edit to
 // either class's own registration block below was needed or made. See
 // docs/adr/0139's own Game::Character follow-up for the full writeup.
+//
+// A twelfth, independent round adds RPG2k::Scene::SaveLoad (mruby-rpg2k/
+// mrblib/scene/save_load.rb) -- the file-select screen shared by
+// Scene::Menu's own Save command and Scene::Title's Continue entry. 12 of
+// its own 22 real bytecode-defined methods compile clean, needing no new
+// opcode work at all. #initialize (`initialize parent, state, mode`) does
+// NOT compile -- it opens with its own `super parent` call into
+// RPG2k::Scene::Base (SUPER, matching ItemMenu's/DebugMenu's/Menu's/
+// ChipsetEditor's own gap -- a fourth class this same SUPER-opcode lead
+// would unlock) and also builds @slots via a real `(1..SLOT_COUNT).map {
+// |slot| ... }` block (BLOCK/SENDB). Since #initialize never compiles,
+// its own provably-typed ivars (@mode, Symbol; @arrow_anim, Fixnum) stay
+// unembedded too, confirmed directly against the real generated output:
+// RPG2k::Scene::SaveLoad does not appear in bc2cpp's own "classes needing
+// MRB_SET_INSTANCE_TT" diagnostic. #dispose/#update each have their own
+// `&:symbol`-block-pass call (SENDB); #draw_arrow_fallback,
+// #initial_index, #build_slot_windows, #refresh_slot_windows, and
+// #draw_slot_faces each end in a genuine Ruby block (BLOCK/SENDB); and
+// #load_face_bitmap/#slot_timestamp each have a real `rescue` clause
+// (RESCUE/RAISEIF/EXCEPT), the same established gap as ItemMenu's own
+// #load_face_bitmap/ChipsetEditor's own #save_to_disk. Every method but
+// #initialize/#dispose/#update sits after a bare `private` in the real
+// source, so all 12 registered entries below use
+// mrb_define_private_method.
+//
+// A thirteenth, parallel round adds RPG2k::Scene::Order (mruby-rpg2k/
+// mrblib/scene/order.rb) -- the field Order screen (RPG2003 main menu ->
+// Order): a pick-and-place party reorder UI across a left (remaining) /
+// right (picked) column pair, plus a Confirm/Redo prompt once every
+// member has been picked. 12 of its own 16 real bytecode-defined methods
+// compile clean, needing no new opcode work at all. #initialize (`super
+// parent` as its own first statement) matches DebugMenu's/Menu's/
+// ChipsetEditor's/SaveLoad's own SUPER gap exactly -- a fifth class this
+// same SUPER-opcode lead would unlock. The other 3 gaps are all a genuine
+// Ruby block (BLOCK/SENDB): #build_windows and #refresh_left_window/
+// #refresh_right_window each use a real `each_with_index do |...| ... end`.
+// #initialize never compiles, so drop_unsafe_embeddings correctly refuses
+// to embed any of this class's own provably-typed ivars (@counter/
+// @cursor_index/@confirm_index, all Fixnum; @focus, Symbol) -- confirmed
+// directly against the real generated output: RPG2k::Scene::Order does
+// not appear in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT"
+// diagnostic. 2 public methods (#update/#dispose) are registered first,
+// then a single bare `private` (in effect through the end of the class
+// body) makes the other 10 registered below private too.
+//
+// The same round's own adversarial bug hunt across every already-shipped
+// class (not new-class coverage) found a second real, live bug in
+// bc2cpp.rb's own compile_send: a bare `/n=(\d+)/` regex parsing a SEND/
+// SSEND call site's own disassembled argument count only recognized a
+// plain positional-argument shape ("n=3"), silently misparsing two other
+// real shapes mrbc's own disassembler emits instead of rejecting them --
+// a keyword-argument call site ("n=3|nk=1") had its whole keyword-Hash
+// argument silently dropped, and a splat call site ("n=*") fell through
+// `nil.to_i` to a silently-wrong zero-argument call. Confirmed live, not
+// hypothetical, against six already-shipped, already-compiled methods:
+// `Game::Battle#enemy_basic_action`/`#enemy_fallback_attack`'s own
+// `deal_attack(..., charged: charged)` silently dropped `charged:`, so
+// every charged enemy attack routed through either method called
+// #deal_attack with its own `charged: nil` default instead of the
+// caller's real charged state; `Game::Actor#knock_out!`/`Game::Battle
+// #inflict_state`'s own `Game::States.prune(ids, table, keep:
+// permanent_states)` silently dropped `keep:`, so a real
+// permanently-protected state (e.g. an innate racial trait modeled as a
+// state) could be pruned away as if no exemption list existed at all;
+// `Game::Actor#restore_class`'s own `set_level(@level, preserve_mod:
+// false)` silently called with `preserve_mod: true` instead (a real,
+// load-bearing inversion -- the source's own adjacent comment explains
+// why `false` is deliberate here); and `RPG2k::Scene::DebugMenu
+// #play_animation`'s own call into three real MANDATORY keyword
+// arguments (`RPG2k::Scene::Map#anim_target(tx, ty, height:, index:,
+// flash_target:)`, no defaults at all) used to silently compile a call
+// that would raise a real ArgumentError at runtime the moment it ran, not
+// just pass a wrong value. Unlike the same round's IvarLayout.join fix
+// (a wrong embedding decision caught by a runtime type guard before it
+// could corrupt anything), this bug produced genuinely wrong *behavior*
+// with no safety net at all -- the generated C++ compiled and linked
+// clean either way, so nothing short of noticing the real gameplay
+// symptom would ever have caught it. Fixed at the root in bc2cpp.rb:
+// compile_send now recognizes both the keyword and splat disassembly
+// shapes and refuses to compile either (the established #error-marker
+// fallback every other unmodeled shape here already gets) instead of
+// silently mistranslating them. All six affected methods above are no
+// longer registered below -- see each one's own removal comment at its
+// former call site for the per-method writeup -- and now correctly stay
+// on the interpreter. See docs/adr/0139's own follow-up for the full
+// writeup, including the real build/nm -C verification that each
+// affected class's own entry-point count dropped by exactly the number
+// of methods this fix stopped compiling.
 //
 // Game::Picture's own #initialize can't be compiled (optional arguments
 // via an `opts = {}` keyword-style hash), so even before any ivar is
@@ -731,9 +819,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, transition, "block_order",
                             Game__Transition_block_order, MRB_ARGS_NONE());
 
-  // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 76
-  // real methods (up from 75 -- see #set_exp's own entry below, added by
-  // this file's Game::Party round's own full-sweep re-check), in
+  // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 74
+  // real methods (76 as of the Game::Party round's own full-sweep
+  // re-check, which added #set_exp; down to 74 as of a later round's own
+  // bc2cpp.rb compile_send fix, which correctly stopped compiling
+  // #knock_out!/#restore_class -- see their own registration comments
+  // below), in
   // mruby-rpg2k/mrblib/game.rb's own definition order first (the class's
   // main ~2,100-line body), then the 9 more the class reopening in
   // mruby-rpg2k/mrblib/game/battle_support.rb adds. Every one below is
@@ -835,8 +926,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, actor, "weapon_crit_chance",
                     Game__Actor_weapon_crit_chance, MRB_ARGS_REQ(1));
   mrb_define_method(M, actor, "set_hp", Game__Actor_set_hp, MRB_ARGS_REQ(1));
-  mrb_define_method(M, actor, "knock_out!", Game__Actor_knock_out_,
-                    MRB_ARGS_NONE());
+  // #knock_out! is NOT registered here -- tools/bc2cpp/bc2cpp.rb's own
+  // compile_send fix (see that file's top comment on the real,
+  // already-shipped `Game::States.prune(ids, table, keep: permanent_states)`
+  // bug this caught) now correctly refuses to compile a body containing a
+  // keyword-argument call site instead of silently dropping the keyword
+  // hash, so #knock_out! (its own body calls `prune(..., keep:
+  // permanent_states)`) no longer compiles clean and is no longer emitted
+  // -- it stays on the interpreter, mruby-rpg2k's own mrblib, the same
+  // established fallback every other unsupported shape here already gets.
   mrb_define_method(M, actor, "state_table", Game__Actor_state_table,
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "change_mp", Game__Actor_change_mp,
@@ -849,8 +947,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "battle_command_row",
                     Game__Actor_battle_command_row, MRB_ARGS_REQ(1));
-  mrb_define_method(M, actor, "restore_class", Game__Actor_restore_class,
-                    MRB_ARGS_REQ(1));
+  // #restore_class is NOT registered here for the same reason #knock_out!
+  // above isn't -- its own body calls `set_level(@level, preserve_mod:
+  // false)`, a real keyword-argument call site bc2cpp's own compile_send fix
+  // now correctly refuses to compile rather than silently dropping the
+  // keyword (the dropped default, `preserve_mod: true`, was never what this
+  // real call site actually meant).
   mrb_define_method(M, actor, "class_changed?", Game__Actor_class_changed_,
                     MRB_ARGS_NONE());
   mrb_define_method(M, actor, "battle_row", Game__Actor_battle_row,
@@ -1256,12 +1358,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Game::Battle (docs/adr/0139's own follow-up, mruby-rpg2k/mrblib/
   // game/battle.rb) -- the headless turn-based/gauge combat-resolution
   // engine (turn order, command resolution, hit/damage/state-infliction
-  // formulas, enemy AI action selection). 75 of its own 141 real
-  // bytecode-defined methods compile clean, needing no new opcode work at
-  // all -- see this file's own top comment for the full accounting of the
-  // other 66 (non-mandatory arguments or a genuine Ruby block, plus the
-  // one real #apply_knockout_reset near-miss that still ends in a block
-  // regardless of its own separate SYMBOL-opcode gap).
+  // formulas, enemy AI action selection). 72 of its own 141 real
+  // bytecode-defined methods compile clean (75 as first shipped; down to
+  // 72 as of a later round's own bc2cpp.rb compile_send fix, which
+  // correctly stopped compiling #enemy_basic_action/#enemy_fallback_attack/
+  // #inflict_state -- see their own registration comments below), needing
+  // no new opcode work at all -- see this file's own top comment for the
+  // full accounting of the other gaps (non-mandatory arguments or a
+  // genuine Ruby block, plus the one real #apply_knockout_reset near-miss
+  // that still ends in a block regardless of its own separate SYMBOL-opcode
+  // gap).
   //
   // Visibility: a single bare `private` (battle.rb line 1720) makes
   // everything from #do_nothing_restricted? on private by default, but
@@ -1270,8 +1376,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // :choose_auto_battle_command` / `public :inflict_state, :cure_state,
   // :apply_knockout_reset`) -- confirmed directly against the real
   // source, not guessed from bc2cpp's own diagnostic. Of those three only
-  // #inflict_state/#cure_state actually compile (the other two, and
-  // #apply_knockout_reset, all hit the same BLOCK/SENDB gap), so they are
+  // #cure_state actually compiles (#do_nothing_restricted?/
+  // #choose_auto_battle_command/#apply_knockout_reset all hit the same
+  // BLOCK/SENDB gap; #inflict_state used to compile too, but no longer
+  // does since bc2cpp's own compile_send fix -- see this block's own
+  // #inflict_state registration comment below for why), so it is
   // registered with plain mrb_define_method below despite sitting after
   // the `private` line -- bc2cpp's own visibility tracking (which models
   // exactly this mode-switch-plus-retroactive-reopen shape) confirms it,
@@ -1361,9 +1470,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   // Everything from here down is `private` in the real interpreted source
   // (mruby-rpg2k/mrblib/game/battle.rb line 1720, in effect through the
-  // end of the class body) EXCEPT #inflict_state/#cure_state at the very
-  // end, retroactively reopened public -- see this block's own intro
-  // comment above.
+  // end of the class body) EXCEPT #cure_state at the very end,
+  // retroactively reopened public -- see this block's own intro comment
+  // above.
   mrb_define_private_method(M, battle, "state_def", Game__Battle_state_def,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, battle, "ally?", Game__Battle_ally_,
@@ -1393,8 +1502,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, battle, "apply_action_switches",
                             Game__Battle_apply_action_switches,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, battle, "enemy_basic_action",
-                            Game__Battle_enemy_basic_action, MRB_ARGS_REQ(3));
+  // #enemy_basic_action is NOT registered here -- tools/bc2cpp/bc2cpp.rb's
+  // own compile_send fix (see that file's top comment) now correctly
+  // refuses to compile a body containing a keyword-argument call site
+  // instead of silently dropping the keyword hash. This method's own body
+  // calls `deal_attack(b, target, 0, charged: charged)` three times (a real,
+  // already-shipped bug this fix caught: every charged enemy attack routed
+  // through here used to call #deal_attack with its own `charged: nil`
+  // default instead of the caller's real charged state) -- it no longer
+  // compiles clean and is no longer emitted, staying on the interpreter.
   mrb_define_private_method(M, battle, "skill_command_hash",
                             Game__Battle_skill_command_hash, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, battle, "skill_name_of",
@@ -1402,9 +1518,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, battle, "enemy_transform_action",
                             Game__Battle_enemy_transform_action,
                             MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, battle, "enemy_fallback_attack",
-                            Game__Battle_enemy_fallback_attack,
-                            MRB_ARGS_REQ(2));
+  // #enemy_fallback_attack is NOT registered here for the same reason
+  // #enemy_basic_action above isn't -- its own body also calls
+  // `deal_attack(..., charged: charged)`.
   mrb_define_private_method(M, battle, "auto_battle_heal_rank",
                             Game__Battle_auto_battle_heal_rank,
                             MRB_ARGS_REQ(3));
@@ -1443,8 +1559,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, battle, "combatant_permanent_states",
                             Game__Battle_combatant_permanent_states,
                             MRB_ARGS_REQ(1));
-  mrb_define_method(M, battle, "inflict_state", Game__Battle_inflict_state,
-                    MRB_ARGS_REQ(2));
+  // #inflict_state is NOT registered here for the same reason
+  // #enemy_basic_action/#enemy_fallback_attack above aren't -- its own body
+  // calls `Game::States.prune((target.states || []) + [sid], @states, keep:
+  // combatant_permanent_states(target))`, a real keyword-argument call site
+  // bc2cpp's own compile_send fix now correctly refuses to compile: the
+  // dropped `keep:` argument used to mean a real permanently-protected
+  // state (e.g. an innate racial trait modeled as a state) could be silently
+  // pruned away as if no exemption list existed at all.
   mrb_define_method(M, battle, "cure_state", Game__Battle_cure_state,
                     MRB_ARGS_REQ(2));
 
@@ -1754,9 +1876,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // RPG2k::Scene::DebugMenu (docs/adr/0139's own follow-up,
   // mruby-rpg2k/mrblib/scene/debug_menu.rb) -- the F9 debug menu itself:
   // Switch/Variable block-and-row editing (two genuine RPG_RT pages) plus
-  // this codebase's own Map/Chipset/Animation tool pages. 33 of its 39
-  // real bytecode-defined methods compile clean, needing no new opcode
-  // work.
+  // this codebase's own Map/Chipset/Animation tool pages. 32 of its 39
+  // real bytecode-defined methods compile clean (33 as first shipped; down
+  // to 32 as of a later round's own bc2cpp.rb compile_send fix, which
+  // correctly stopped compiling #play_animation -- see its own
+  // registration comment below), needing no new opcode work.
   //
   // #initialize (`super parent` as its own first statement, then two
   // purely-mandatory arguments) is the first shipped target whose own
@@ -1838,9 +1962,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, debug_menu, "update_map_page",
                             RPG2k__Scene__DebugMenu_update_map_page,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "play_animation",
-                            RPG2k__Scene__DebugMenu_play_animation,
-                            MRB_ARGS_NONE());
+  // #play_animation is NOT registered here for the same reason -- its own
+  // body calls `scene.anim_target(x, y, height: nil, index: nil,
+  // flash_target: nil)`, whose own target (`RPG2k::Scene::Map#anim_target`)
+  // declares all three as real MANDATORY keyword arguments (`height:`, no
+  // default) -- silently dropping them the old way would not just pass a
+  // wrong value, it would raise a real ArgumentError (missing keyword) at
+  // runtime the moment this ran.
   mrb_define_private_method(M, debug_menu, "activate_row",
                             RPG2k__Scene__DebugMenu_activate_row,
                             MRB_ARGS_NONE());
@@ -2471,6 +2599,90 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Character_direction_toward, MRB_ARGS_REQ(2));
   mrb_define_method(M, character, "direction_away",
                     Game__Character_direction_away, MRB_ARGS_REQ(2));
+
+  // RPG2k::Scene::SaveLoad (mruby-rpg2k/mrblib/scene/save_load.rb) -- see
+  // this file's own top comment for the real gap breakdown (#initialize's
+  // own SUPER/BLOCK, plus each of the 9 other interpreted methods' own
+  // real BLOCK/SENDB/RESCUE/RAISEIF/EXCEPT) and why no
+  // MRB_SET_INSTANCE_TT call belongs here. Every method below sits after
+  // a bare `private` in the real source (confirmed directly, not guessed
+  // from bc2cpp's own diagnostic), so all 12 use
+  // mrb_define_private_method.
+  RClass* save_load = mrb_class_get_under(M, scene, "SaveLoad");
+  mrb_define_private_method(M, save_load, "tick_arrows",
+                            RPG2k__Scene__SaveLoad_tick_arrows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, save_load, "refresh_arrows",
+                            RPG2k__Scene__SaveLoad_refresh_arrows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, save_load, "build_arrow_sprites",
+                            RPG2k__Scene__SaveLoad_build_arrow_sprites,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, save_load, "build_arrow_sprite",
+                            RPG2k__Scene__SaveLoad_build_arrow_sprite,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, save_load, "move_selection",
+                            RPG2k__Scene__SaveLoad_move_selection,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, save_load, "confirm_selection",
+                            RPG2k__Scene__SaveLoad_confirm_selection,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, save_load, "build_header_window",
+                            RPG2k__Scene__SaveLoad_build_header_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, save_load, "draw_slot_label",
+                            RPG2k__Scene__SaveLoad_draw_slot_label,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, save_load, "draw_slot_box",
+                            RPG2k__Scene__SaveLoad_draw_slot_box,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, save_load, "draw_level_hp",
+                            RPG2k__Scene__SaveLoad_draw_level_hp,
+                            MRB_ARGS_REQ(5));
+  mrb_define_private_method(M, save_load, "fixed_width_term",
+                            RPG2k__Scene__SaveLoad_fixed_width_term,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, save_load, "build_face_cell",
+                            RPG2k__Scene__SaveLoad_build_face_cell,
+                            MRB_ARGS_REQ(2));
+
+  // RPG2k::Scene::Order (mruby-rpg2k/mrblib/scene/order.rb) -- see this
+  // file's own top comment for the real gap breakdown (#initialize's own
+  // SUPER, plus 3 real BLOCK/SENDB gaps) and why no MRB_SET_INSTANCE_TT
+  // call belongs here. 2 public methods (#update/#dispose, both defined
+  // before the source's own `private` line) are registered first, then a
+  // single bare `private` (order.rb line 107, in effect through the end
+  // of the class body, no retroactive `public` reopen anywhere after it)
+  // makes the other 10 registered below private too.
+  RClass* order = mrb_class_get_under(M, scene, "Order");
+  mrb_define_method(M, order, "update", RPG2k__Scene__Order_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, order, "dispose", RPG2k__Scene__Order_dispose,
+                    MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "update_left",
+                            RPG2k__Scene__Order_update_left, MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "move_cursor",
+                            RPG2k__Scene__Order_move_cursor, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, order, "pick_current",
+                            RPG2k__Scene__Order_pick_current, MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "undo_last_pick",
+                            RPG2k__Scene__Order_undo_last_pick,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "enter_confirm",
+                            RPG2k__Scene__Order_enter_confirm, MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "update_confirm",
+                            RPG2k__Scene__Order_update_confirm,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "confirm_order",
+                            RPG2k__Scene__Order_confirm_order, MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "redo_picks",
+                            RPG2k__Scene__Order_redo_picks, MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "refresh_left_cursor",
+                            RPG2k__Scene__Order_refresh_left_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, order, "refresh_confirm_cursor",
+                            RPG2k__Scene__Order_refresh_confirm_cursor,
+                            MRB_ARGS_NONE());
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
