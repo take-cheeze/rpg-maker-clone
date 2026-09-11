@@ -4,11 +4,12 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # Opt-in AOT-compiled C++ replacements for a hand-picked, provably-safe
 # subset of LCF::File/Database/MapTree/MapUnit/SaveData's own bytecode
 # methods (docs/adr/0139) -- header/schema/terminate_root?/rpg2003?/maker/
-# key?/to_lcf, generated at build time by tools/bc2cpp/bc2cpp.rb, mruby's
+# key?/to_lcf, plus LCF::MoveCommand#initialize (docs/adr/0139's own
+# follow-up) -- generated at build time by tools/bc2cpp/bc2cpp.rb, mruby's
 # bytecode compiler still handles everything else this gem doesn't
-# override (#initialize, #[], #[]=, #method_missing, #respond_to_missing?,
-# #save_to -- see bc2cpp's own SKIP_UNSUPPORTED output for exactly why each
-# one stays interpreted).
+# override (LCF::File#initialize, #[], #[]=, #method_missing,
+# #respond_to_missing?, #save_to -- see bc2cpp's own SKIP_UNSUPPORTED
+# output for exactly why each one stays interpreted).
 #
 # This whole gem only exists in the build when RPGMAKER_BC2CPP is set (see
 # build_config.rb) -- it is never part of the default desktop or wio build.
