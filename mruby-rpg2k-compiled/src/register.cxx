@@ -103,12 +103,26 @@
 // ItemMenu's #initialize hits a real `super parent` call, SUPER, out of
 // this compiler's scope, and its own #choose_item/#play_item_use_se
 // needed RANGE_INC/RANGE_EXC, already landed the round before). Neither
-// class's own #initialize compiles, so neither gets any ivar embedded.
+// class's own #initialize compiles, so neither gets any ivar embedded. A
+// seventh, parallel round adds two more RPG2k::Scene siblings, neither
+// needing any new opcode work either: SkillMenu (mruby-rpg2k/mrblib/
+// scene/skill_menu.rb -- the field/battle skill-use menu), 39 of its own
+// 46 real methods, and DebugMenu (mruby-rpg2k/mrblib/scene/
+// debug_menu.rb -- the F9 debug menu itself: Switch/Variable block-and-
+// row editing plus the Map/Chipset/Animation tool pages), 33 of its own
+// 39. SkillMenu's own #initialize has one non-mandatory optional
+// argument, the same established gap as Picture/Window/Actor/Party/
+// MapViewer above; DebugMenu's own #initialize is the first shipped
+// target blocked by a real `super` call (OP_SUPER) instead -- a genuine
+// class-hierarchy method-dispatch feature, not a narrow single-opcode
+// translation, so out of scope the same way every other interpreted
+// #initialize already is. Neither class's own #initialize compiles, so
+// neither gets any ivar embedded.
 // mruby-rpg2k (this gem's own add_dependency) has already run its full gem
 // init -- C hook *and* mrblib -- by the time this gem's own init runs
 // (mrbgems.rake sequences gem_funcs[] in dependency order, each entry
 // running its complete init before the next gem's own init starts), so
-// all ten classes are guaranteed to already exist below.
+// all twelve classes are guaranteed to already exist below.
 //
 // Game::Picture's own 11 real embeddable ivars (@x, @y, @show_x, @show_y,
 // @zoom, @opacity, @red, @green, @blue, @saturation, @frames -- all
@@ -1431,6 +1445,295 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(3));
   mrb_define_private_method(M, item_menu, "refresh_target_cursor",
                             RPG2k__Scene__ItemMenu_refresh_target_cursor,
+                            MRB_ARGS_NONE());
+
+  // RPG2k::Scene::SkillMenu (mruby-rpg2k/mrblib/scene/skill_menu.rb) -- the
+  // field/battle skill-use menu (skill list scrolling/selection, target
+  // selection -- including the teleport-skill map picker -- and applying a
+  // chosen skill's effect). 39 of its own 46 real bytecode-defined methods
+  // compile clean, needing no new opcode work at all: the opcode set six
+  // rounds of this ADR have already built up already covers every real
+  // shape this class's own method bodies use.
+  //
+  // #initialize (`actor_index = 0`, one optional argument) stays
+  // interpreted, the same non-mandatory-arity gap as Game::Picture/
+  // RPG2k::Window/Game::Actor/Game::Party/RPG2k::Scene::MapViewer's own
+  // #initialize above -- so, like those five, bc2cpp's own
+  // drop_unsafe_embeddings guard refuses to embed any of this class's own
+  // 6 real provably-Fixnum ivars (@caster_index, @skill_index, @top_row,
+  // @arrow_anim, @target_index, @teleport_index) into an RData struct:
+  // every ivar access below still goes through the ordinary dynamic
+  // iv_tbl, no MRB_SET_INSTANCE_TT call needed here -- confirmed directly
+  // against the real generated output, the same way as every other
+  // non-embedding target's own top-of-file comment already documents.
+  //
+  // The 7 methods that stay interpreted are genuinely out of this
+  // prototype's scope, not a missing opcode -- confirmed against the real
+  // generated `#error` markers, not guessed: #load_face_bitmap and
+  // #play_skill_sound_effect each have a real `rescue StandardError => e`
+  // clause (RESCUE/RAISEIF/EXCEPT); #draw_skill_rows, #build_target_window,
+  // #teleport_targets and #build_teleport_window each use a real Ruby block
+  // (`.each { |...| ... }`/`N.times do ... end`, BLOCK/SENDB) -- the same
+  // established out-of-scope shapes every other compiled target's own
+  // rescue/block-using methods already stay interpreted for.
+  //
+  // Every method below is `private` in the real interpreted source except
+  // the first 2 (#update, #dispose -- skill_menu.rb's own single `private`
+  // sits right before #caster, line 173, in effect through the end of the
+  // class body -- confirmed directly against the real source, not guessed
+  // from bc2cpp's own diagnostic) -- mrb_define_private_method for the
+  // other 37, the same real fix this ADR's own Game::Picture
+  // #step/#finish_move bug already needed once.
+  RClass* skill_menu = mrb_class_get_under(M, scene, "SkillMenu");
+  mrb_define_method(M, skill_menu, "update", RPG2k__Scene__SkillMenu_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, skill_menu, "dispose", RPG2k__Scene__SkillMenu_dispose,
+                    MRB_ARGS_NONE());
+
+  mrb_define_private_method(M, skill_menu, "caster",
+                            RPG2k__Scene__SkillMenu_caster, MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "skills",
+                            RPG2k__Scene__SkillMenu_skills, MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "skill_name",
+                            RPG2k__Scene__SkillMenu_skill_name,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "update_skills",
+                            RPG2k__Scene__SkillMenu_update_skills,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "move_skill_cursor",
+                            RPG2k__Scene__SkillMenu_move_skill_cursor,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "skill_unavailable?",
+                            RPG2k__Scene__SkillMenu_skill_unavailable_,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, skill_menu, "choose_skill",
+                            RPG2k__Scene__SkillMenu_choose_skill,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "enter_target_confirm",
+                            RPG2k__Scene__SkillMenu_enter_target_confirm,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "update_target",
+                            RPG2k__Scene__SkillMenu_update_target,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "apply_skill",
+                            RPG2k__Scene__SkillMenu_apply_skill,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, skill_menu, "apply_switch_skill",
+                            RPG2k__Scene__SkillMenu_apply_switch_skill,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "leave_target",
+                            RPG2k__Scene__SkillMenu_leave_target,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "update_teleport_target",
+                            RPG2k__Scene__SkillMenu_update_teleport_target,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "move_teleport_cursor",
+                            RPG2k__Scene__SkillMenu_move_teleport_cursor,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "apply_escape_skill",
+                            RPG2k__Scene__SkillMenu_apply_escape_skill,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "apply_teleport_skill",
+                            RPG2k__Scene__SkillMenu_apply_teleport_skill,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, skill_menu, "queue_teleport",
+                            RPG2k__Scene__SkillMenu_queue_teleport,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "enter_teleport_target",
+                            RPG2k__Scene__SkillMenu_enter_teleport_target,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "leave_teleport_target",
+                            RPG2k__Scene__SkillMenu_leave_teleport_target,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "left_panel_w",
+                            RPG2k__Scene__SkillMenu_left_panel_w,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "build_desc_window",
+                            RPG2k__Scene__SkillMenu_build_desc_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "refresh_desc",
+                            RPG2k__Scene__SkillMenu_refresh_desc,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "build_status_window",
+                            RPG2k__Scene__SkillMenu_build_status_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "draw_stat_pair",
+                            RPG2k__Scene__SkillMenu_draw_stat_pair,
+                            MRB_ARGS_REQ(6));
+  mrb_define_private_method(M, skill_menu, "build_skill_window",
+                            RPG2k__Scene__SkillMenu_build_skill_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "build_mp_cost_window",
+                            RPG2k__Scene__SkillMenu_build_mp_cost_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "refresh_skill_cursor",
+                            RPG2k__Scene__SkillMenu_refresh_skill_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "total_rows",
+                            RPG2k__Scene__SkillMenu_total_rows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "build_arrow_sprites",
+                            RPG2k__Scene__SkillMenu_build_arrow_sprites,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "build_arrow_sprite",
+                            RPG2k__Scene__SkillMenu_build_arrow_sprite,
+                            MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, skill_menu, "tick_arrows",
+                            RPG2k__Scene__SkillMenu_tick_arrows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "refresh_arrows",
+                            RPG2k__Scene__SkillMenu_refresh_arrows,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "draw_target_face",
+                            RPG2k__Scene__SkillMenu_draw_target_face,
+                            MRB_ARGS_REQ(3));
+  mrb_define_private_method(M, skill_menu, "refresh_target_cursor",
+                            RPG2k__Scene__SkillMenu_refresh_target_cursor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "map_display_name",
+                            RPG2k__Scene__SkillMenu_map_display_name,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, skill_menu, "teleport_col_w",
+                            RPG2k__Scene__SkillMenu_teleport_col_w,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, skill_menu, "refresh_teleport_cursor",
+                            RPG2k__Scene__SkillMenu_refresh_teleport_cursor,
+                            MRB_ARGS_NONE());
+
+  // RPG2k::Scene::DebugMenu (docs/adr/0139's own follow-up,
+  // mruby-rpg2k/mrblib/scene/debug_menu.rb) -- the F9 debug menu itself:
+  // Switch/Variable block-and-row editing (two genuine RPG_RT pages) plus
+  // this codebase's own Map/Chipset/Animation tool pages. 33 of its 39
+  // real bytecode-defined methods compile clean, needing no new opcode
+  // work.
+  //
+  // #initialize (`super parent` as its own first statement, then two
+  // purely-mandatory arguments) is the first shipped target whose own
+  // #initialize is blocked by a real `super` call (OP_SUPER) rather than
+  // non-mandatory arity, a Ruby block, or an exception clause -- a
+  // genuine class-hierarchy method-dispatch feature (resolving and
+  // invoking RPG2k::Scene::Base#initialize, not just self's own method
+  // table), not a narrow single-opcode mechanical translation, so it
+  // stays out of scope the same way every other compiled target's own
+  // interpreted #initialize already does. bc2cpp's own
+  // drop_unsafe_embeddings guard (the compiles_clean?-on-#initialize fix
+  // from the Game::Party/RPG2k::Scene::MapViewer follow-up above)
+  // correctly refuses to embed this class's own provably-typed ivars
+  // (@mode/@focus: Symbol; @page/@block/@row/@anim_id/@map_id: Fixnum)
+  // into an RData struct as a result -- confirmed directly against the
+  // real generated output: RPG2k::Scene::DebugMenu does not appear in
+  // bc2cpp's own "classes needing MRB_SET_INSTANCE_TT" diagnostic, so
+  // every ivar access below still goes through the ordinary dynamic
+  // iv_tbl, no MRB_SET_INSTANCE_TT call needed here.
+  //
+  // 5 more stay interpreted for the same established out-of-scope shapes,
+  // confirmed against each one's own real generated #error marker rather
+  // than guessed: #max_id and #refresh_switch_or_variable each use two
+  // real Ruby blocks (`table.each { |id, _| ... }` /
+  // `(0...SCREEN_BLOCKS).each do |b| ... end`-shaped, BLOCK/SENDB);
+  // #digits_of uses one (`(n - 1).downto(0) do |i| ... end`); #editor_value
+  // uses one (`@editor[:digits].reduce(0) { |a, d| ... }`); and
+  // #open_map_viewer has a real `begin ... rescue StandardError => e
+  // ... end` (RESCUE/RAISEIF/EXCEPT).
+  //
+  // Every method below is `private` in the real interpreted source
+  // *except* the first 2 (#update, #dispose -- debug_menu.rb's own single
+  // `private` sits right before #update_switch_or_variable, line 125, in
+  // effect through the end of the class body -- confirmed directly
+  // against the real source, not guessed from bc2cpp's own diagnostic) --
+  // mrb_define_private_method for the other 31, the same real fix this
+  // ADR's own Game::Picture #step/#finish_move bug already needed once.
+  RClass* debug_menu = mrb_class_get_under(M, scene, "DebugMenu");
+  mrb_define_method(M, debug_menu, "update", RPG2k__Scene__DebugMenu_update,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, debug_menu, "dispose", RPG2k__Scene__DebugMenu_dispose,
+                    MRB_ARGS_NONE());
+
+  mrb_define_private_method(M, debug_menu, "refresh",
+                            RPG2k__Scene__DebugMenu_refresh, MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_switch_or_variable",
+                            RPG2k__Scene__DebugMenu_update_switch_or_variable,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_block_focus",
+                            RPG2k__Scene__DebugMenu_update_block_focus,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_row_focus",
+                            RPG2k__Scene__DebugMenu_update_row_focus,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_chipset_page",
+                            RPG2k__Scene__DebugMenu_update_chipset_page,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "cycle_mode",
+                            RPG2k__Scene__DebugMenu_cycle_mode,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "max_page",
+                            RPG2k__Scene__DebugMenu_max_page, MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "move_block",
+                            RPG2k__Scene__DebugMenu_move_block,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "move_row",
+                            RPG2k__Scene__DebugMenu_move_row, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "enter_row_focus",
+                            RPG2k__Scene__DebugMenu_enter_row_focus,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "turn_page",
+                            RPG2k__Scene__DebugMenu_turn_page, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "current_id",
+                            RPG2k__Scene__DebugMenu_current_id,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_animation",
+                            RPG2k__Scene__DebugMenu_update_animation,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_map_page",
+                            RPG2k__Scene__DebugMenu_update_map_page,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "play_animation",
+                            RPG2k__Scene__DebugMenu_play_animation,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "activate_row",
+                            RPG2k__Scene__DebugMenu_activate_row,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "row_name",
+                            RPG2k__Scene__DebugMenu_row_name, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "row_value_text",
+                            RPG2k__Scene__DebugMenu_row_value_text,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "id_label",
+                            RPG2k__Scene__DebugMenu_id_label, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "build_window",
+                            RPG2k__Scene__DebugMenu_build_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "refresh_map_page",
+                            RPG2k__Scene__DebugMenu_refresh_map_page,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "map_name",
+                            RPG2k__Scene__DebugMenu_map_name, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "refresh_chipset_page",
+                            RPG2k__Scene__DebugMenu_refresh_chipset_page,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "refresh_animation_page",
+                            RPG2k__Scene__DebugMenu_refresh_animation_page,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "animation_name",
+                            RPG2k__Scene__DebugMenu_animation_name,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "editor_digits",
+                            RPG2k__Scene__DebugMenu_editor_digits,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "open_editor",
+                            RPG2k__Scene__DebugMenu_open_editor,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, debug_menu, "build_editor_window",
+                            RPG2k__Scene__DebugMenu_build_editor_window,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "refresh_editor",
+                            RPG2k__Scene__DebugMenu_refresh_editor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "update_editor",
+                            RPG2k__Scene__DebugMenu_update_editor,
+                            MRB_ARGS_NONE());
+  mrb_define_private_method(M, debug_menu, "close_editor",
+                            RPG2k__Scene__DebugMenu_close_editor,
                             MRB_ARGS_NONE());
 }
 

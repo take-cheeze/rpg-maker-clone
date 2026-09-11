@@ -1664,3 +1664,89 @@ succeeds end to end (`EXIT: 0`), and `nm -C` on the resulting
 every one of the eight already-shipped classes' own symbol counts
 unchanged. The full, unrestricted closed-world `g++ -fsyntax-only` check
 still reports **0 errors**.
+
+## Follow-up: RPG2k::Scene::SkillMenu, RPG2k::Scene::DebugMenu, and a stale-cache build bug found integrating them
+
+A seventh, parallel round -- again two independent background agents,
+integrated by hand -- adds `RPG2k::Scene::SkillMenu` and
+`RPG2k::Scene::DebugMenu`, two more `RPG2k::Scene::MapViewer` siblings.
+Neither needed any new opcode work: the six rounds of opcode coverage
+already built up cover every real shape both classes' own method bodies
+use.
+
+**`RPG2k::Scene::SkillMenu`** (`mruby-rpg2k/mrblib/scene/skill_menu.rb`)
+is the field/battle skill-use menu (skill list scrolling/selection,
+target selection including the teleport-skill map picker, applying a
+chosen skill's effect). 39 of its own 46 real methods compile clean.
+`#initialize` (`actor_index = 0`, one optional argument) stays
+interpreted, the same non-mandatory-arity gap as `Game::Picture`'s/
+`RPG2k::Window`'s/`Game::Actor`'s/`Game::Party`'s/
+`RPG2k::Scene::MapViewer`'s own `#initialize`. The other 6 gaps are two
+`rescue` clauses (`#load_face_bitmap`, `#play_skill_sound_effect`) and
+four genuine Ruby blocks (`#draw_skill_rows`, `#build_target_window`,
+`#teleport_targets`, `#build_teleport_window`).
+
+**`RPG2k::Scene::DebugMenu`** (`mruby-rpg2k/mrblib/scene/debug_menu.rb`)
+is the F9 debug menu itself: Switch/Variable block-and-row editing plus
+the Map/Chipset/Animation tool pages. 33 of its own 39 real methods
+compile clean. **First shipped target whose `#initialize` is blocked by
+a real `super` call** (`super parent`, `OP_SUPER`) rather than
+non-mandatory arity, a Ruby block, or an exception clause -- a genuine
+class-hierarchy method-dispatch feature (resolving and invoking
+`RPG2k::Scene::Base#initialize`, not just `self`'s own method table),
+judged out of this prototype's "narrow mechanical translation" scope
+rather than added speculatively for the one method it would unlock here.
+The other 5 gaps: `#max_id`/`#refresh_switch_or_variable` (two Ruby
+blocks each), `#digits_of` (one), `#editor_value` (one), and
+`#open_map_viewer` (a `rescue StandardError` clause). Neither class's
+`#initialize` compiles, so neither gets any ivar embedded.
+
+**A real build-system bug, found integrating this round, not either
+agent's own work.** Both `RPG2k::Scene::SkillMenu` and
+`RPG2k::Scene::DebugMenu` compiled and linked cleanly inside each
+agent's own fresh worktree -- but integrating both into this same
+already-built tree (the same directory a prior round's real build had
+already run in) failed with `g++` reporting the new classes'
+`_impl` functions "not declared in this scope". Root cause: each
+compiled gem's own `mrbgem.rake` declares its generated whole-program
+C++ file (`rpg2k_compiled_gen.cpp` and its two siblings) as a Rake `file`
+target depending on `bc2cpp.rb` and the closed-world `.rb` sources --
+but never on `tools/bc2cpp/compiled_gems.rb`, the file that actually
+defines which classes get emitted (`BC2CPP_COMPILED_GEMS[...][:owners]`).
+Editing only `compiled_gems.rb`'s own owners list -- exactly what
+integrating a new round's coverage always does -- left Rake believing
+the already-built generated file was still up to date, so it kept
+serving the prior round's stale content while `register.cxx`'s own
+hand-written call sites for the new classes' methods had nothing to
+link against. Not a new bug in this round's compiled code, and not
+something either background agent could have hit (each built in its own
+fresh worktree with no stale generated file to begin with) -- purely a
+gap in the integration step's own incremental-build assumptions,
+invisible until a second round landed on top of a first. Fixed at the
+root in all three `mrbgem.rake` files (`mruby-rpg2k-compiled`,
+`mruby-lcf-compiled`, `mruby-rgss-compiled`, which all share this exact
+pattern): added `compiled_gems.rb`'s own path as an explicit prerequisite
+of the `generated` file rule. Verified for real, not just reasoned
+about: touched `compiled_gems.rb` with no content change, reran the
+build, and confirmed the generated file's own mtime advanced and the
+build still succeeded -- proving Rake now treats it as a real dependency
+rather than trusting this fix by inspection alone.
+
+**Full-sweep re-check.** Since this round added no new opcodes, no
+already-shipped target could gain anything, and a fresh unrestricted
+diagnostic confirmed exactly that: all twelve now-shipped targets' own
+entry-point counts -- `Game::Picture` (25), `Game::EnemyAction` (6),
+`Game::Screen` (41), `RPG2k::Window` (32), `Game::Transition` (32),
+`Game::Actor` (76), `Game::Party` (85), `RPG2k::Scene::MapViewer` (34),
+`Game::Battle` (75), `RPG2k::Scene::ItemMenu` (41),
+`RPG2k::Scene::SkillMenu` (39), `RPG2k::Scene::DebugMenu` (33) -- match
+exactly; nothing moved.
+
+**Verified for real, after fixing the stale-cache bug above:** the real,
+opt-in `RPGMAKER_BC2CPP=1` build succeeds end to end (`EXIT: 0`), and
+`nm -C` on the resulting `libmruby.a` shows all 72 new entry points (39
+`RPG2k__Scene__SkillMenu_*_impl`, 33 `RPG2k__Scene__DebugMenu_*_impl`)
+present and externally linked, with every one of the ten already-shipped
+classes' own symbol counts unchanged. The full, unrestricted
+closed-world `g++ -std=c++17 -fsyntax-only` check still reports **0
+errors**.

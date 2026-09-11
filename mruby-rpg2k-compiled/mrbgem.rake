@@ -18,6 +18,17 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
   add_dependency 'mruby-rpg2k'
 
   bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
+  # BC2CPP_COMPILED_GEMS' own owners list (target_owners below) comes from
+  # this file, required above -- it has to be a real prerequisite of the
+  # `generated` rule too, or Rake has no way to know a changed owners list
+  # (no bc2cpp.rb/closed_world_srcs/native_srcs edit at all) should
+  # invalidate an already-built generated file: caught for real merging a
+  # round of parallel coverage-expansion work into an already-built tree
+  # (docs/adr/0139's own follow-up) -- `generated` was stale, silently
+  # missing the round's own new owner, and g++ failed on an undeclared
+  # `_impl` symbol only because register.cxx's own hand-written call site
+  # for it happened to still be there.
+  compiled_gems_rb = "#{dir}/../tools/bc2cpp/compiled_gems.rb"
   # Whole-program closed-world source set -- same reasoning as
   # mruby-lcf-compiled/mrbgem.rake's own comment: bc2cpp's MONO/POLY
   # devirtualization decisions need to see every gem that could define a
@@ -49,7 +60,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k-compiled') do |spec|
 
   generated = "#{build_dir}/rpg2k_compiled_gen.cpp"
 
-  file generated => [bc2cpp, *closed_world_srcs, *native_srcs] do |t|
+  file generated => [bc2cpp, compiled_gems_rb, *closed_world_srcs, *native_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
