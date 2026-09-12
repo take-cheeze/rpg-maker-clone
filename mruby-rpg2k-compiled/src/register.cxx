@@ -918,19 +918,41 @@
 // compile_send comment on this same guard's reasoning for the generated
 // call site that reads these.
 //
-// Only two owners, not every #initialize-compiling class this gem also
-// registers below -- three more (Game::Screen, Game::State, and the pair
-// Game::EnemyAi/Game::ChipSet) were seriously considered and ruled out,
-// each for a genuinely different, real reason (a bare same-namespace `.new`
-// reference trace_new_target can't resolve; a real call site nested inside
-// a Ruby block; a real call site nested inside an otherwise-uncompiled
-// method blocked by an unrelated `super`/`rescue`) -- see
-// tools/bc2cpp/bc2cpp.rb's own DIRECT_CONSTRUCT_TARGETS comment for the
+// Originally only two owners here (Game::Transition/Game::Map), not every
+// #initialize-compiling class this gem also registers below -- Game::State
+// and the pair Game::EnemyAi/Game::ChipSet were seriously considered and
+// ruled out, each for a genuinely different, real reason (a real call site
+// nested inside a Ruby block; a real call site nested inside an
+// otherwise-uncompiled method blocked by an unrelated `super`/`rescue`) --
+// see tools/bc2cpp/bc2cpp.rb's own DIRECT_CONSTRUCT_TARGETS comment for the
 // full writeup and the real regenerated-output checks behind each one. No
-// entry for any of those four belongs here as a result.
+// entry for either of those three belongs here as a result.
+//
+// Game::Screen joins Transition/Map here (its own bare-reference gap fixed
+// by a later round's `trace_new_target` GETCONST work; see
+// DIRECT_CONSTRUCT_TARGETS' own comment) -- but Game::Switches/Game::Timer/
+// Game::MessageConfig, added to that SAME bc2cpp.rb table by that fix's own
+// round, are NOT mirrored here: a real gap discovered independently of this
+// round's own work, not something this round introduced or is in scope to
+// fix. DIRECT_CONSTRUCT_TARGETS membership alone is not sufficient for a
+// real, LINKABLE `RPGMAKER_BC2CPP=1` build -- every owner also needs this
+// exact accessor-function wiring (global + `Game__<Owner>_compiled_class`
+// definition + gem-init capture + gem-final reset), by design (see
+// emit_direct_construct_decls' own comment: it only ever emits a forward
+// DECLARATION, deliberately leaving the real definition to this file). That
+// wiring was never added for Switches/Timer/MessageConfig, so a real g++
+// link of this gem today fails with an undefined reference to
+// `Game__Switches_compiled_class`/`Game__Timer_compiled_class`/
+// `Game__MessageConfig_compiled_class` -- invisible to the SKIP_UNSUPPORTED
+// text-generation/wio_registered_methods.rb-TSV verification that fix's own
+// round relied on, since neither ever actually compiles or links this file.
+// Left for a dedicated follow-up (add the same three-line pattern below for
+// each of those three owners); flagged here rather than silently worked
+// around so it isn't lost.
 namespace {
 RClass* g_direct_construct_game_transition_class = nullptr;
 RClass* g_direct_construct_game_map_class = nullptr;
+RClass* g_direct_construct_game_screen_class = nullptr;
 }  // namespace
 
 // Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
@@ -951,6 +973,9 @@ RClass* Game__Transition_compiled_class(void) {
 }
 RClass* Game__Map_compiled_class(void) {
   return g_direct_construct_game_map_class;
+}
+RClass* Game__Screen_compiled_class(void) {
+  return g_direct_construct_game_screen_class;
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
@@ -1117,6 +1142,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #update_shake/#update_flash above.
   RClass* screen = mrb_class_get_under(M, game, "Screen");
   MRB_SET_INSTANCE_TT(screen, MRB_TT_DATA);
+  // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
+  // DIRECT_CONSTRUCT_TARGETS mechanism -- see this file's own top-of-file
+  // comment (right after the generated-file #include) for the accessor
+  // this backs (Game__Screen_compiled_class) and the full reasoning.
+  g_direct_construct_game_screen_class = screen;
 
   // #initialize is always private (the same real interpreter special case
   // as Game::EnemyAction#initialize above -- mruby's own src/class.c forces
@@ -6536,4 +6566,5 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   // generated-file #include) for why these globals exist at all.
   g_direct_construct_game_transition_class = nullptr;
   g_direct_construct_game_map_class = nullptr;
+  g_direct_construct_game_screen_class = nullptr;
 }
