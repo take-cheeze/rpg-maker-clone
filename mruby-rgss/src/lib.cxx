@@ -696,16 +696,28 @@ extern "C" RClass* rgss_native_tone_class(void) {
 // -> direct native construct" path) in place of Class#new's own
 // allocate+initialize dispatch, when a compiled `.new` call site's receiver
 // is provably (GETCONST-traced) exactly one of Rect/Color/Tone -- see
-// NATIVE_CONSTRUCT_TARGETS there for the whole-program side of this. Plain
-// mrb_value arguments (the same boxed values bc2cpp's own registers already
-// hold, not pre-unboxed C++ values) so the generated call site needs no
-// knowledge of Rect/Color/Tone's own field types; each function below does
+// NATIVE_CONSTRUCT_TARGETS there for the whole-program side of this.
+//
+// Unwrapped (native C++ typed) parameters, not mrb_value -- the first step
+// of a deliberately incremental move away from mrb_value at bc2cpp's own
+// generated call sites (starting here, at construction, since these three
+// functions already assumed a fixed, known native type per field long
+// before this change; a broader per-argument type-directed calling
+// convention for ordinary compiled methods is a separate, much larger
+// follow-up, not attempted here). The generated call site itself now does
 // exactly the same mrb_as_int/mrb_as_float unboxing mrb_get_args' own "i"/
-// "f" format specifiers do internally (3rd/mruby/src/class.c), so a
-// devirtualized `Tone.new(x)` observes identical coercion -- and identical
-// TypeError-raising for a bad `x` -- to the ordinary #initialize dispatch it
-// replaces; the caller is still responsible for the runtime class-identity
-// guard (see compile_send's own comment) before ever calling one of these.
+// "f" format specifiers do internally (3rd/mruby/src/class.c) -- see
+// compile_send's own comment -- so a devirtualized `Tone.new(x)` still
+// observes identical coercion, and identical TypeError-raising for a bad
+// `x`, to the ordinary #initialize dispatch it replaces; moving those same
+// mrb_as_int/mrb_as_float calls from here to the call site changes nothing
+// observable (mrb_state* M's own exception handling has no notion of a
+// calling-frame boundary to cross), only which translation unit's own text
+// spells them out. `klass` is `RClass*` for the identical reason: the
+// caller already computed `mrb_class_ptr(recv)` for its own runtime
+// class-identity guard (see compile_send's own comment on why that check
+// exists), so passing that same pointer straight through avoids a second,
+// redundant `mrb_class_ptr` call here for no behavioral difference.
 //
 // Rect has no clamping at all (plain ints, straight through). Color/Tone
 // apply the exact same clamp255/clamp_signed255 calls their own
@@ -713,38 +725,32 @@ extern "C" RClass* rgss_native_tone_class(void) {
 // copy of that logic that could drift, just the same two free functions
 // called again in the same field order.
 extern "C" mrb_value rgss_rect_new_direct(mrb_state* M,
-                                          V klass,
-                                          V x,
-                                          V y,
-                                          V w,
-                                          V h) {
-  return DataType<Rect>::make(M, mrb_class_ptr(klass), mrb_as_int(M, x),
-                              mrb_as_int(M, y), mrb_as_int(M, w),
-                              mrb_as_int(M, h));
+                                          RClass* klass,
+                                          mrb_int x,
+                                          mrb_int y,
+                                          mrb_int w,
+                                          mrb_int h) {
+  return DataType<Rect>::make(M, klass, x, y, w, h);
 }
 
 extern "C" mrb_value rgss_color_new_direct(mrb_state* M,
-                                           V klass,
-                                           V r,
-                                           V g,
-                                           V b,
-                                           V a) {
-  return DataType<Color>::make(
-      M, mrb_class_ptr(klass), clamp255(mrb_as_float(M, r)),
-      clamp255(mrb_as_float(M, g)), clamp255(mrb_as_float(M, b)),
-      clamp255(mrb_as_float(M, a)));
+                                           RClass* klass,
+                                           mrb_float r,
+                                           mrb_float g,
+                                           mrb_float b,
+                                           mrb_float a) {
+  return DataType<Color>::make(M, klass, clamp255(r), clamp255(g), clamp255(b),
+                               clamp255(a));
 }
 
 extern "C" mrb_value rgss_tone_new_direct(mrb_state* M,
-                                          V klass,
-                                          V r,
-                                          V g,
-                                          V b,
-                                          V gray) {
-  return DataType<Tone>::make(
-      M, mrb_class_ptr(klass), clamp_signed255(mrb_as_float(M, r)),
-      clamp_signed255(mrb_as_float(M, g)), clamp_signed255(mrb_as_float(M, b)),
-      clamp255(mrb_as_float(M, gray)));
+                                          RClass* klass,
+                                          mrb_float r,
+                                          mrb_float g,
+                                          mrb_float b,
+                                          mrb_float gray) {
+  return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
+                              clamp_signed255(b), clamp255(gray));
 }
 
 // ---- Table ----------------------------------------------------------------
