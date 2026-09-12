@@ -1034,6 +1034,101 @@ assert "RGSS::Sprite#width/#height mirror the bitmap, 0 with none set" do
   assert_equal 24, sprite.height
 end
 
+# RGSS::Sprite#tone/#color/#src_rect (`@ivar ||= Klass.new(...)` memoizing
+# readers, mruby-rgss/mrblib/lib.rb) are the real, concrete call sites
+# tools/bc2cpp/bc2cpp.rb's own NATIVE_CONSTRUCT_TARGETS devirtualizes: under
+# RPGMAKER_BC2CPP=1 (this build, when set) the compiled #tone/#color/
+# #src_rect bodies skip Class#new's own allocate+initialize dispatch and
+# call straight into mruby-rgss/src/lib.cxx's own rgss_tone_new_direct/
+# rgss_color_new_direct/rgss_rect_new_direct, which build a fresh
+# shared_ptr<T>-backed RData (DataType<T>'s own new representation) --
+# without RPGMAKER_BC2CPP the exact same three lines run interpreted,
+# through the ordinary Class#new dispatch. Either way this test asserts
+# the exact same observable behaviour, so it is a real check of both
+# paths at once, not just whichever one happens to be active in a given
+# build. Like the #width/#height test above, these three readers touch no
+# native canvas, so RGSS::Sprite.allocate (no live display) is enough.
+#
+# Real GC pressure, not just "construct and immediately check": many
+# Sprites are allocated, every one of their #tone/#color/#src_rect is
+# read (each memoizing construction happening at a different point in the
+# heap), a full GC.start runs, and only *then* are the values checked --
+# so a shared_ptr<T> box whose refcount/lifetime was ever wrong would show
+# up as a freed/reused/corrupted object here, not as an already-cached
+# local variable the GC never got a chance to touch.
+assert "RGSS::Sprite#tone/#color/#src_rect survive real GC pressure, independently" do
+  n = 200
+  sprites = Array.new(n) { RGSS::Sprite.allocate }
+
+  # Force every memoizing reader to actually construct its own Tone/Color/
+  # Rect now, before the GC pass below -- not lazily during the assertions
+  # that follow it.
+  sprites.each do |s|
+    s.tone
+    s.color
+    s.src_rect
+  end
+
+  GC.start if Object.const_defined?(:GC)
+
+  sprites.each_with_index do |s, i|
+    tone = s.tone
+    color = s.color
+    rect = s.src_rect
+
+    assert_true tone.is_a?(RGSS::Tone), "sprite #{i}'s #tone must be a real RGSS::Tone after GC"
+    assert_true color.is_a?(RGSS::Color), "sprite #{i}'s #color must be a real RGSS::Color after GC"
+    assert_true rect.is_a?(RGSS::Rect), "sprite #{i}'s #src_rect must be a real RGSS::Rect after GC"
+
+    # RGSS's own documented defaults for the memoized values.
+    assert_equal 0.0, tone.red
+    assert_equal 0.0, tone.green
+    assert_equal 0.0, tone.blue
+    assert_equal 0.0, tone.gray
+    assert_equal 0.0, color.red
+    assert_equal 0.0, color.green
+    assert_equal 0.0, color.blue
+    assert_equal 0.0, color.alpha
+    assert_equal 0, rect.x
+    assert_equal 0, rect.y
+    assert_equal 0, rect.width
+    assert_equal 0, rect.height
+
+    # The memoizing reader must keep returning the *same* object across
+    # calls (that's the whole point of `||=`), not silently rebuild a new
+    # one each time.
+    assert_true tone.equal?(s.tone), "sprite #{i}'s #tone must stay memoized"
+    assert_true color.equal?(s.color), "sprite #{i}'s #color must stay memoized"
+    assert_true rect.equal?(s.src_rect), "sprite #{i}'s #src_rect must stay memoized"
+  end
+
+  # Real Ruby `.new` semantics: every sprite's own Tone/Color/Rect is a
+  # genuinely separate object -- mutating one must never move a sibling
+  # sprite's own value, which a shared_ptr<T> box that accidentally aliased
+  # two RDatas to the same T (rather than the single-owner-per-RData shape
+  # DataType<T> actually keeps, see that struct's own comment) would break.
+  sprites[0].tone.red = 111
+  sprites[0].color.red = 222
+  sprites[0].src_rect.x = 333
+  (1...n).each do |i|
+    assert_equal 0.0, sprites[i].tone.red, "sprite #{i}'s #tone must not alias sprite 0's"
+    assert_equal 0.0, sprites[i].color.red, "sprite #{i}'s #color must not alias sprite 0's"
+    assert_equal 0, sprites[i].src_rect.x, "sprite #{i}'s #src_rect must not alias sprite 0's"
+  end
+  assert_equal 111.0, sprites[0].tone.red
+  assert_equal 222.0, sprites[0].color.red
+  assert_equal 333, sprites[0].src_rect.x
+
+  # One more GC pass with the mutated values and every sprite still
+  # reachable (held by the local `sprites` array) -- confirms the earlier
+  # GC.start pass above was not, say, incidentally keeping everything
+  # alive only via some other still-live reference these objects also
+  # happened to have.
+  GC.start if Object.const_defined?(:GC)
+  assert_equal 111.0, sprites[0].tone.red
+  assert_equal 0.0, sprites[1].tone.red
+end
+
 assert "RGSS::Font defaults" do
   f = RGSS::Font.new
   assert_equal RGSS::Font.default_name, f.name
