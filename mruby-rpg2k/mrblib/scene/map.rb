@@ -10526,18 +10526,44 @@ class RPG2k
         return nil unless v.placed? && v.map_id == @state.map_id
         @state.boarded == type ? player_pixel : [v.x * TILE, v.y * TILE]
       end
-      public :camera_position, :character_screen_position, :char_in_sight?
+      # Split into two statements (round 44, docs/adr/0144's own
+      # wio_strip_bc2cpp_stubs series): the original single
+      # `public :camera_position, :character_screen_position, :char_in_sight?`
+      # named both bc2cpp-registered and non-registered methods together --
+      # strip_wio_bc2cpp_stubs.rb's own companion-statement mechanism (see its
+      # file comment) only ever deletes a `private`/`protected`/`public`
+      # statement whole, and only when EVERY name it lists is being stripped
+      # from the very same invocation, raising rather than guessing at a
+      # mixed stripped/kept argument list. Splitting the original statement
+      # into one all-kept and one all-stripped call is behaviorally identical
+      # (`Module#public` with an explicit name list only ever marks those
+      # names public; calling it twice with disjoint subsets of the same
+      # total name set has the exact same net effect as calling it once with
+      # the union) and turns `#char_in_sight?`'s own companion statement into
+      # the ordinary full-overlap single-name shape this mechanism already
+      # strips cleanly -- no change to strip_wio_bc2cpp_stubs.rb itself
+      # needed, and zero regression risk to any other owner's own already-
+      # shipped companion-statement handling.
+      public :camera_position, :character_screen_position
+      public :char_in_sight?
 
       # The rest of the "services Scene::Battle calls back into" (see the
       # readers next to #dispose): BGM, backdrop, animation-player and
       # debug-menu methods a fight shares with the field map, reached from
       # Scene::Battle with an explicit `@map.` receiver, which -- like any
       # cross-object call -- only reaches a public method.
+      #
+      # Split the same way as #char_in_sight?'s own statement just above
+      # (round 44): the first call lists exactly this owner's own methods
+      # NOT covered by mruby-rpg2k-compiled's own bc2cpp.rb registry, the
+      # second lists exactly the 7 that are -- a mixed list of both would hit
+      # the same strip_wio_bc2cpp_stubs.rb raise the comment above already
+      # explains, for the same reason.
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
-             :terrain_backdrop, :backdrop_for_terrain_id, :map_properties, :perform_game_over,
-              :try_open_debug_menu, :build_animation, :anim_target, :drive_map_animation,
-             :fire_animation_flashes, :frames_from_tenths, :load_face_bitmap,
-             :step_map_animation, :close_battle, :current_map_tone
+             :backdrop_for_terrain_id, :map_properties, :perform_game_over,
+             :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap
+      public :terrain_backdrop, :try_open_debug_menu, :drive_map_animation,
+             :frames_from_tenths, :step_map_animation, :close_battle, :current_map_tone
 
       # Reached from Scene::ChipsetEditor (a debug tool, pushed on top rather
       # than a Scene::Battle callback like the block above) after it edits and
