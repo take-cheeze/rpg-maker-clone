@@ -868,6 +868,176 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # wio-only battle trim stands, not deferred for size the way `Game::
   # Interpreter`/`RPG2k::Scene::Map`/`RPG2k::Scene::Battle` (173/224/110
   # methods, genuinely still too large for one round's own full rigor) are.
+  #
+  # Round 42: `Game::Interpreter` (the RPG2000/2003 event-command
+  # interpreter) -- the smallest of the three remaining round-38-deferred
+  # owners (`RPG2k::Scene::Map`/`RPG2k::Scene::Battle`, 224/110 methods,
+  # still deferred, each genuinely deserving its own dedicated round),
+  # given the SAME full per-owner soundness pass as every prior round, not
+  # a skimmed one.
+  #
+  # Ground truth (a real `wio_registered_methods.rb` run against
+  # `mruby-rpg2k-compiled`, never hand-counted): 173 real registered
+  # methods, confirming both round 38's own forward-looking count and
+  # `tools/bc2cpp/compiled_gems.rb`'s own real emission-owner writeup
+  # exactly ("173 of its own 207 real bytecode-defined methods... compile
+  # clean"). `Game::Interpreter`'s own real class body is defined in
+  # `mrblib/interpreter.rb` (confirmed directly, `grep -rn 'class
+  # Interpreter'` across the whole gem), with a SECOND real reopening in
+  # `game/battle_support.rb` (wio-excluded) -- the same familiar
+  # partial-owner shape round 38's own `Game::Map`/`Game::State`/`Game::
+  # Actor` and round 39's own `Game::Party` already established. That
+  # reopening owns 4 of the 173 real registered methods
+  # (`take_revealed_monsters`, `take_fled_monsters`, `take_monster_kills`,
+  # `take_battle_background`, all public zero-arity drain methods for the
+  # battle scene to poll) -- confirmed directly, a real AST walk of both
+  # files' own `Game::Interpreter` class bodies, not eyeballed. The other
+  # 169 are all in interpreter.rb and strip cleanly for this round.
+  #
+  # Companion-statement hazard check (the same real AST walk every prior
+  # round's own comment describes, re-run against `Game::Interpreter`'s own
+  # real class body in interpreter.rb): 8 `attr_reader`/`attr_accessor`
+  # calls (`wait_kind`/`message_lines`/`choice_labels`/`wait_frames`/
+  # `teleport`/`input_digits`/`key_input_request`/`inn_request`/
+  # `shop_request`/`battle_request`/`name_input_request`/
+  # `battle_animation`/`choice_cancel_type`/`message_followup` via one
+  # `attr_reader`; `resolver`, `triggered_by_decision_key`, `battle`,
+  # `battle_screen`, `battle_source`, `map_info`, `event_id` each their own
+  # `attr_accessor`; `call_frame_event_id` via `attr_reader` -- the full
+  # real list checked directly, not summarized), one bare `private` mode
+  # switch, and exactly two explicit-name visibility statements:
+  # `public :start_random_battle` and `public :start_death_handler`. None
+  # of the 22 attr names collide with any of this round's own 169 in-scope
+  # method names. `start_random_battle` is NOT itself a registered method
+  # (TSV-confirmed absent) -- its own companion statement names an
+  # unrelated, unstripped method and is left completely untouched.
+  # `start_death_handler` IS one of this round's own 169 real registered
+  # methods (TSV-confirmed: arity 0, visibility `public`) -- exactly the
+  # single-name companion-statement case round 38's own
+  # `collect_visibility_calls` mechanism exists to handle, verified for
+  # real on this real case rather than assumed to generalize from the
+  # `Game::ChipSet`/`Game::Party` precedents: a real
+  # `strip_wio_bc2cpp_stubs.rb` run against the real checked-in
+  # interpreter.rb with this round's own owners csv deletes both `def
+  # start_death_handler` and its own `public :start_death_handler` line
+  # together (confirmed by `grep -n start_death_handler` on the real
+  # output: no dangling `def` or `public` statement remains), the rewrite
+  # still parses (`ruby -c`), AND a real CRuby `load` of the rewritten file
+  # raises no `NameError`. As a sanity check on the check itself (not done
+  # by any prior round, added here for extra rigor on this
+  # heavily-used class): a hand-built fixture with only the `def` removed
+  # and `public :start_death_handler` left standing was confirmed to
+  # reproduce the exact real `NameError` ("undefined method
+  # `start_death_handler' for class `Game::Interpreter`") this mechanism
+  # exists to prevent, before confirming the real mechanism's own output
+  # avoids it.
+  #
+  # Gem-init-ordering correctness (the same whole-closed-world
+  # `mrb_funcall`/`mrb_funcall_argv`/`mrb_funcall_id`/
+  # `mrb_funcall_with_block` grep every prior round's own comment
+  # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
+  # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `git submodule update --init`d fresh for this round's own check rather
+  # than assumed already checked out -- re-run against all 173 of this
+  # round's own real registered method names): exactly two real literal
+  # matches, both confirmed unrelated by reading the call site directly.
+  # `src/main.cxx`'s own `mrb_funcall(M, game_obj, "start", 0)` (the game's
+  # top-level boot dispatch) calls `#start` on `game_obj`, an instance of
+  # whichever top-level game class (`RPG2k`/`MZ`/`MV`/`RPGVX`/`RPGXP`/
+  # `WolfRPG`) this session's own `detect_game_kind` picked -- for the
+  # `kRpg2k` case specifically, `game_obj` is a freshly `mrb_obj_new`'d
+  # `RPG2k` instance (confirmed directly at the same call site's own
+  # earlier `case` block), and `RPG2k#start` is a real, different method
+  # defined in `mrblib/main.rb` -- never `Game::Interpreter#start`.
+  # `mruby-rpg2k-compiled/src/register.cxx`'s own `mrb_funcall(M, r5,
+  # "switches", 0)` is, like every prior round's own register.cxx hits,
+  # inside a `//` comment describing GENERATED (not checked-in) code, not
+  # a real call site -- confirmed directly (`cat -A` on the surrounding
+  # lines shows every line `//`-prefixed). That comment itself is worth
+  # noting in full since it is genuinely about this same method name: it
+  # documents a real, independently-tracked MONO/POLY registry-soundness
+  # question (`:switches` has exactly one bytecode-visible definition
+  # anywhere in the closed world, `Game::Interpreter#switches`, which an
+  # unrestricted whole-program diagnostic would report MONO -- but every
+  # real call site actually sends `:switches` to a `Game::State` instance,
+  # whose own real `:switches` is a runtime `attr_reader`, structurally
+  # invisible to bc2cpp.rb's own native-method-name scanner) -- but that
+  # question is about bc2cpp.rb's own `compile_send` devirtualization
+  # decision for a call site compiled from the *original, unstripped*
+  # source, entirely orthogonal to this mechanism: `wio_strip_bc2cpp_stubs`
+  # only ever rewrites the *base* gem's own interpreted-bytecode `mrblib`
+  # copy that ships for wio, and never reaches or perturbs bc2cpp.rb's own,
+  # separate compile of the real, unstripped source (the same
+  # already-established property every prior round's own comment already
+  # relies on) -- so whatever that question's own real answer is today
+  # (a pre-existing bc2cpp.rb question, not this round's to resolve) is
+  # completely unaffected by whether `Game::Interpreter`'s own redundant
+  # Ruby method bodies still exist in interpreter.rb or not. Every other
+  # literal method name at any real (non-comment) `mrb_funcall*` call site
+  # in the whole closed world -- every one every prior round's own comment
+  # already found and ruled out -- was re-checked against this round's own
+  # 173 names too, same zero-hit result.
+  #
+  # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS` (tools/bc2cpp/bc2cpp.rb,
+  # checked directly against both constants' own real contents, not
+  # assumed): `Game::Interpreter` does not appear in
+  # `DIRECT_CONSTRUCT_TARGETS` (`%w[Game::Transition Game::Map]` only) --
+  # simpler than round 38's own `Game::Map`/`Game::Transition` additions,
+  # no `Owner#initialize` devirtualization question at all. It DOES appear
+  # in `NATIVE_ARG_TARGETS`, 9 times (`#character_ref`, `#trunc_div`,
+  # `#skip_to`, `#find_choice_option`, `#do_control_vars_range_variable`,
+  # `#vehicle_operand`, `#screen_operand`, `#queue_level_up_messages`,
+  # `#trunc_mod`) -- of these, 6 (`#character_ref`, `#trunc_div`,
+  # `#trunc_mod`, `#find_choice_option`, `#vehicle_operand`,
+  # `#screen_operand`) are real, registered methods this round strips;
+  # the other 3 (`#skip_to`, `#do_control_vars_range_variable`,
+  # `#queue_level_up_messages`) are NOT in the real registered-method TSV
+  # at all (never compiled clean enough for bc2cpp to register, same
+  # "candidate but not actually registered" shape every prior round's own
+  # comment already documents for other owners) and so are never touched
+  # by this round either way. Confirmed EMPIRICALLY for real on this
+  # class's own six in-scope `NATIVE_ARG_TARGETS` methods, not just
+  # assumed to carry over from round 38's own `Game::Actor`/`Game::Screen`
+  # precedent the task description already named: all six are ordinary
+  # multi-line `def`s (confirmed directly, no one-line-def edge case among
+  # them) that stripped, parsed, and AST-diffed clean exactly like any
+  # other method in this round's own real strip run below -- unsurprising
+  # given `NATIVE_ARG_TARGETS` only ever changes the *C++* calling
+  # convention bc2cpp.rb itself generates for the compiled override, a
+  # decision this mechanism never reaches or perturbs (same "operates
+  # purely off wio_registered_methods.rb's own ground truth" property the
+  # task description already names), but checked directly here rather than
+  # left as an assumption.
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # `strip_wio_bc2cpp_stubs.rb` run against every real wio-relevant
+  # `mrblib` file (14 files -- `game.rb`, `main.rb`, `scene/*.rb` minus the
+  # battle-only ones the wio-only trims above already drop, plus
+  # `interpreter.rb` itself), once with round 39's own already-shipped
+  # owners csv and once with that same csv plus this round's own
+  # `Game::Interpreter`, both raised nothing and both rewrites parse (`ruby
+  # -c`). A real before/after `RubyVM::AbstractSyntaxTree` walk (every real
+  # `DEFN`/`DEFS`/`SCLASS`-nested `DEFN` in `interpreter.rb`, not just this
+  # round's own owner) shows the two outputs differ by EXACTLY this
+  # round's own 169 `Game::Interpreter` methods removed and NOTHING else
+  # added or removed -- cross-checked directly against the missing-4
+  # partial-owner set above (the only 4 of 173 not among the 169 removed
+  # are exactly `take_revealed_monsters`/`take_fled_monsters`/
+  # `take_monster_kills`/`take_battle_background`, confirmed by set
+  # difference, not eyeballed). Every one of the other 13 wio-relevant
+  # files is confirmed byte-for-byte identical whether or not
+  # `Game::Interpreter` is in the owners csv (`Game::Interpreter` has no
+  # `def` in any of them) -- this round's own required regression check,
+  # since this round adds to the SAME shared `owners:` array and reuses
+  # the SAME `strip_wio_bc2cpp_stubs.rb` unmodified (no change to that
+  # script this round).
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on `mrblib/interpreter.rb` alone, before this gem's own
+  # wio_strip_debug_rbfiles/wio_strip_inline_helpers passes run): 78,235 ->
+  # 22,235 bytes, a 56,000-byte (71.6%) reduction from these 169 stripped
+  # method bodies.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
@@ -891,7 +1061,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     Game::CharSet.singleton Game::Backdrop.singleton
                                     RPG2k::Scene.singleton
                                     Game::ChipSet Game::Map Game::Transition Game::State
-                                    Game::Screen Game::Actor Game::Character Game::Party])
+                                    Game::Screen Game::Actor Game::Character Game::Party
+                                    Game::Interpreter])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
