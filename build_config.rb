@@ -1,3 +1,5 @@
+require 'shellwords'
+
 # The uni-algo modules this project never calls, switched off so their Unicode
 # tables are never compiled in. This is the mirror of
 # cmake/uni-algo-trim.cmake's RPG2K_UNI_ALGO_TRIM_DEFINES -- that file applies
@@ -76,6 +78,88 @@ def wio_strip_inline_helpers(spec)
     file out => [src, strip_script] do |t|
       FileUtils.mkdir_p File.dirname(out), verbose: true
       ruby strip_script, src, out
+    end
+    out
+  end
+end
+
+# docs/adr/0144: the generalized version of wio_strip_debug_rbfiles/
+# wio_strip_inline_helpers above, this time for RPGMAKER_BC2CPP=1's own
+# real coverage -- deletes the whole `def ... end` (see
+# strip_wio_bc2cpp_stubs.rb's own file comment for why a stub body isn't
+# needed -- Ruby's own default `method_missing` covers the narrow
+# pre-override window this mechanism already has to verify is unreachable
+# per owner) of every method `compiled_gem`'s own real bc2cpp.rb run
+# registers a C++ override for, restricted to `owners` (a deliberately
+# bounded subset -- see docs/adr/0144 for why this round only ever passes
+# `RGSS::Sprite`, not compiled_gems.rb's own full owners list for
+# `compiled_gem`, as a correctness-bounded proof of the mechanism rather
+# than a full sweep).
+#
+# A no-op unless BOTH `spec.build.name == 'wio'` AND `ENV['RPGMAKER_BC2CPP']`
+# are set: deleting a real method with no RPGMAKER_BC2CPP-installed C++
+# override in place to replace it would be a live correctness regression
+# (every real call would raise NoMethodError), not just a missed flash
+# saving -- this must never fire for a build that does not also carry the
+# `compiled_gem` that makes the deleted method's call sites unreachable
+# in practice.
+#
+# Ordering (the property this whole mechanism depends on for soundness):
+# this only ever rewrites `spec.rbfiles` for the *base* gem's own wio
+# build (mruby-rgss/mruby-lcf/mruby-rpg2k -- never a `*-compiled` gem,
+# which has no mrblib of its own to strip in the first place).
+# `compiled_gem`'s own bc2cpp.rb registry-building pass -- both its real
+# generation step (that gem's own mrbgem.rake) AND the probe this
+# function runs below (wio_registered_methods.rb) -- reads the
+# whole-program closed world via `closed_world_mrblib_srcs`, which
+# Dir-globs the base gem's real, checked-in mrblib directory directly
+# (e.g. `Dir["#{gems_root}/mruby-rgss/mrblib/*.rb"]`, see
+# tools/bc2cpp/compiled_gems.rb) -- NOT `spec.rbfiles` -- so nothing this
+# function does to `spec.rbfiles` can ever reach or perturb bc2cpp's own
+# registry-building input, in either direction: the registry (and every
+# MONO/POLY/embedding decision downstream of it) always sees the real,
+# unstripped source, exactly as required.
+#
+# Call this *before* wio_strip_debug_rbfiles/wio_strip_inline_helpers in a
+# gem's own spec block: all three share the same "last one wins on
+# `spec.rbfiles`'s surviving path for a given entry" convention, and
+# strip_wio_bc2cpp_stubs.rb's own registered.tsv lookups key on method
+# names exactly as bc2cpp.rb's own diagnostic named them -- running this
+# one first, against the real checked-in source, keeps that lookup
+# trivially correct regardless of what either sibling step goes on to do
+# to the same file afterward.
+def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
+  return unless spec.build.name == 'wio' && ENV['RPGMAKER_BC2CPP']
+
+  repo_root = __dir__
+  probe_script = File.expand_path('tools/bc2cpp/wio_registered_methods.rb', __dir__)
+  strip_script = File.expand_path('strip_wio_bc2cpp_stubs.rb', __dir__)
+  compiled_gems_rb = File.expand_path('tools/bc2cpp/compiled_gems.rb', __dir__)
+  bc2cpp = File.expand_path('tools/bc2cpp/bc2cpp.rb', __dir__)
+
+  out_dir = "#{spec.build_dir}/wio_bc2cpp_stubbed"
+  registered_tsv = "#{out_dir}/#{compiled_gem}_registered.tsv"
+
+  # One real bc2cpp.rb run per `compiled_gem`, shared across every base
+  # gem that asks to strip from it -- Rake's own file-task memoization
+  # means a second wio_strip_bc2cpp_stubs call naming the same
+  # `compiled_gem` (from a different base gem's own mrbgem.rake, in the
+  # same build) reuses this exact task rather than re-running bc2cpp.rb
+  # a second time for the same answer.
+  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp] do |t|
+    FileUtils.mkdir_p File.dirname(registered_tsv), verbose: true
+    mrbc = spec.build.mrbcfile.to_s
+    cmd = Shellwords.join([RbConfig.ruby, probe_script, compiled_gem, repo_root, mrbc])
+    sh "#{cmd} > #{registered_tsv.shellescape}"
+  end
+
+  owners_csv = owners.join(',')
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script, registered_tsv] do |t|
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, registered_tsv, owners_csv, src, out
     end
     out
   end
