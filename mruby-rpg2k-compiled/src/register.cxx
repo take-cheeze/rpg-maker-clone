@@ -892,6 +892,67 @@
 // translation unit is compiled).
 #include "rpg2k_compiled_gen.cpp"
 
+// docs/adr/0139's own follow-up ("generalized direct-construct" round):
+// backing storage + accessor functions for tools/bc2cpp/bc2cpp.rb's
+// DIRECT_CONSTRUCT_TARGETS mechanism -- the same generic pattern
+// NATIVE_CONSTRUCT_TARGETS already established for the three hand-written
+// native RGSS classes (mruby-rgss/src/lib.cxx's own g_native_rect_class/
+// rgss_native_rect_class() and friends -- see that file's own comment for
+// the full reasoning this mirrors), just applied here instead, since this
+// is where each of these two owners' own real RClass* already gets
+// computed (`mrb_class_get_under(M, game, "...")`, below), one gem-init
+// call at a time.
+//
+// A plain global per owner, not keyed per-mrb_state: safe here for the
+// identical reason lib.cxx's own comment gives -- every real mrb_open()
+// call site in this project (src/main.cxx, app/psp/main.cxx, app/wio's own
+// SD-card smoke-test binary) opens and uses exactly one mrb_state at a
+// time, never two concurrently. A fresh mrb_mruby_rpg2k_compiled_gem_init
+// call (a fresh VM) simply overwrites these for that VM's own lifetime.
+//
+// Deliberately NOT a second mrb_const_get/mrb_class_get_under lookup
+// inside each accessor below -- that would just observe whatever the
+// constant currently names, exactly what a reassignment (e.g.
+// `Game::Transition = SomeOtherClass`) would already have changed, so it
+// could never actually detect one happened; see bc2cpp.rb's own
+// compile_send comment on this same guard's reasoning for the generated
+// call site that reads these.
+//
+// Only two owners, not every #initialize-compiling class this gem also
+// registers below -- three more (Game::Screen, Game::State, and the pair
+// Game::EnemyAi/Game::ChipSet) were seriously considered and ruled out,
+// each for a genuinely different, real reason (a bare same-namespace `.new`
+// reference trace_new_target can't resolve; a real call site nested inside
+// a Ruby block; a real call site nested inside an otherwise-uncompiled
+// method blocked by an unrelated `super`/`rescue`) -- see
+// tools/bc2cpp/bc2cpp.rb's own DIRECT_CONSTRUCT_TARGETS comment for the
+// full writeup and the real regenerated-output checks behind each one. No
+// entry for any of those four belongs here as a result.
+namespace {
+RClass* g_direct_construct_game_transition_class = nullptr;
+RClass* g_direct_construct_game_map_class = nullptr;
+}  // namespace
+
+// Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
+// (needed there because those real definitions sit inside lib.cxx's own
+// top-level anonymous namespace and are reached from mruby-rpg2k-compiled's
+// own, genuinely different, translation unit -- crossing gems), these two
+// accessors and the generated forward declarations that reference them
+// (tools/bc2cpp/bc2cpp.rb's emit_direct_construct_decls) live in this SAME
+// translation unit: rpg2k_compiled_gen.cpp is #included directly above, so
+// by the time g++ reaches any generated call site that invokes one of
+// these, only a prior DECLARATION has to be in scope (which it is -- see
+// that emit function's own comment for the full [dcl.link] reasoning), not
+// yet this definition. A plain top-level function (not itself inside the
+// anonymous namespace above) matches every other free function already in
+// this file.
+RClass* Game__Transition_compiled_class(void) {
+  return g_direct_construct_game_transition_class;
+}
+RClass* Game__Map_compiled_class(void) {
+  return g_direct_construct_game_map_class;
+}
+
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* game = mrb_module_get(M, "Game");
   RClass* picture = mrb_class_get_under(M, game, "Picture");
@@ -1320,6 +1381,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // mrb_define_private_method for all of them, the same real fix this ADR's
   // own Game::Picture #step/#finish_move bug already needed once.
   RClass* transition = mrb_class_get_under(M, game, "Transition");
+  // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
+  // DIRECT_CONSTRUCT_TARGETS mechanism -- see this file's own top-of-file
+  // comment (right after the generated-file #include) for the accessor
+  // this backs (Game__Transition_compiled_class) and the full reasoning.
+  g_direct_construct_game_transition_class = transition;
 
   // #initialize is always private (the same real interpreter special case
   // as Game::EnemyAction#initialize/Game::Screen#initialize above -- mruby's
@@ -2977,6 +3043,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // clauses, and 2 -- `.bgm_from_chunk`/`.se_from_chunk` -- that would
   // likely compile if this compiler ever gained a way to emit a
   // `.singleton`-owned method at all).
+  // No g_direct_construct_game_state_class here: see this file's own
+  // top-of-file comment (right after the generated-file #include) for why
+  // Game::State is deliberately not one of DIRECT_CONSTRUCT_TARGETS' own
+  // owners.
   RClass* state = mrb_class_get_under(M, game, "State");
 
   mrb_define_private_method(M, state, "initialize", Game__State_initialize,
@@ -3477,6 +3547,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // here anymore. Reuses the `game` RClass* declared at the top of this
   // function.
   RClass* map = mrb_class_get_under(M, game, "Map");
+  // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
+  // DIRECT_CONSTRUCT_TARGETS mechanism -- see this file's own top-of-file
+  // comment (right after the generated-file #include) for the accessor
+  // this backs (Game__Map_compiled_class) and the full reasoning.
+  g_direct_construct_game_map_class = map;
 
   // #initialize is always private (the same real interpreter special case
   // as every other compiled #initialize in this file -- mruby's own
@@ -3517,6 +3592,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // private unconditionally regardless of source, the same always-private
   // special case as every other compiled #initialize in this file. Reuses
   // the `game` RClass* declared at the top of this function.
+  // No g_direct_construct_*_class here: see this file's own top-of-file
+  // comment (right after the generated-file #include) for why Game::EnemyAi
+  // is deliberately not one of DIRECT_CONSTRUCT_TARGETS' own owners (its one
+  // real `.new` call site sits inside RPG2k::Scene::Battle#initialize, which
+  // never compiles at all -- an unrelated `super parent` call, not anything
+  // about EnemyAi itself).
   RClass* enemy_ai = mrb_class_get_under(M, game, "EnemyAi");
   mrb_define_private_method(M, enemy_ai, "initialize", Game__EnemyAi_initialize,
                             MRB_ARGS_REQ(2));
@@ -3561,6 +3642,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // those two were embedded) and its fix; no MRB_SET_INSTANCE_TT call
   // belongs here anymore. Reuses the `game` RClass* declared at the top
   // of this function.
+  // No g_direct_construct_*_class here: see this file's own top-of-file
+  // comment (right after the generated-file #include) for why Game::ChipSet
+  // is deliberately not one of DIRECT_CONSTRUCT_TARGETS' own owners (both of
+  // its own real `.new` call sites are the sole statement of a
+  // `#build_chipset` method whose very next line is `rescue StandardError`,
+  // so neither ever compiles at all).
   RClass* chip_set = mrb_class_get_under(M, game, "ChipSet");
 
   // #initialize is always private (the same real interpreter special case
@@ -6411,4 +6498,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game_singleton_camera_offset, MRB_ARGS_REQ(3));
 }
 
-extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
+extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
+  // Defensive only (mrb_close frees every RClass this VM owns, so these
+  // would-be-dangling pointers are never actually dereferenced by anything
+  // reachable after this point) -- mirrors mruby-rgss/src/lib.cxx's own
+  // g_native_rect_class/etc. reset in mrb_mruby_rgss_gem_final, same
+  // reasoning: see this file's own top-of-file comment (right after the
+  // generated-file #include) for why these globals exist at all.
+  g_direct_construct_game_transition_class = nullptr;
+  g_direct_construct_game_map_class = nullptr;
+}
