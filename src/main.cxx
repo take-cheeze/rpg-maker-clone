@@ -123,6 +123,21 @@ DEFINE_int32(
     "fight then waits for input until the run times out. 0 disables it "
     "(default; troop ids start at 1)");
 DEFINE_bool(
+    rpg2k_battle_play,
+    false,
+    "For RPG Maker 2000/2003: once the fight --rpg2k_battle_troop opens is up, "
+    "play it out -- tap confirm through the Battle/Auto Battle/Escape options "
+    "window, the per-actor Attack command and the enemy-target cursor, relying "
+    "on their default selections (Battle, Attack, the first living foe), until "
+    "the enemy troop's HP falls and the battle hands back to the map -- and "
+    "log "
+    "the outcome as [RPG2k-BTLPLAY]. Reaching the battle scene "
+    "(--rpg2k_battle_troop alone) is a much smaller claim than combat actually "
+    "resolving; this covers what lies between. Requires "
+    "--rpg2k_battle_troop=N to also be set (unlike --rpg2k_battle_troop, this "
+    "does not imply a default troop -- there is no fight to play out without "
+    "one). False disables it (default)");
+DEFINE_bool(
     rpg2k_map_editor,
     false,
     "For RPG Maker 2000/2003: once the title screen appears, auto-select New "
@@ -1245,6 +1260,7 @@ static void disable_non_test_play_flags() {
   reset_bool(FLAGS_rpg2k_continue, "rpg2k_continue");
   reset_int(FLAGS_rpg2k_preview_map, "rpg2k_preview_map");
   reset_int(FLAGS_rpg2k_battle_troop, "rpg2k_battle_troop");
+  reset_bool(FLAGS_rpg2k_battle_play, "rpg2k_battle_play");
   reset_bool(FLAGS_rgss_host_new_game, "rgss_host_new_game");
   reset_bool(FLAGS_rgss_host_move_test, "rgss_host_move_test");
   reset_bool(FLAGS_rgss_host_menu_test, "rgss_host_menu_test");
@@ -1757,6 +1773,13 @@ int main(int argc, char** argv) {
   mrb_const_set(M, mrb_obj_value(M->object_class),
                 mrb_intern_lit(M, "RPG2K_BATTLE_TROOP"),
                 mrb_fixnum_value(FLAGS_rpg2k_battle_troop));
+  // --rpg2k_battle_play: whether RPG2k#maybe_battle_play_test (mruby-rpg2k)
+  // should tap confirm through the fight --rpg2k_battle_troop opened until it
+  // resolves, logging the outcome as [RPG2k-BTLPLAY]. See the flag's own
+  // definition above.
+  mrb_const_set(M, mrb_obj_value(M->object_class),
+                mrb_intern_lit(M, "RPG2K_BATTLE_PLAY"),
+                mrb_bool_value(FLAGS_rpg2k_battle_play));
   // --rpg2k_map_editor / --rpg2k_chipset_editor / --rpg2k_preview_animation:
   // RPG2k#start_new_game opens the named debug tool once the map is up. See
   // each flag's own definition above.

@@ -6963,6 +6963,19 @@ class RPG2k
       end
       public :headless_battle
 
+      # The live Scene::Battle this map is driving through #drive_battle, or
+      # nil while no fight is open. `@battle` itself stays private (nothing
+      # outside this file drives a fight directly -- see #drive_battle/
+      # #close_battle), but --rpg2k_battle_play's own CI driver
+      # (RPG2k#maybe_battle_play_test, mruby-rpg2k/mrblib/main.rb) needs to
+      # read the running fight's live Game::Battle model (ally/enemy HP,
+      # `@ui[:phase]`) from outside this scene, the same way #headless_battle
+      # above reaches in to *start* one.
+      def active_battle
+        @battle
+      end
+      public :active_battle
+
       # The map tree's map_properties table, or nil when this build has no tree
       # (the scene harnesses construct a map directly).
       def map_properties

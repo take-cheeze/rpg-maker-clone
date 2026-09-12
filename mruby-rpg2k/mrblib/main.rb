@@ -911,6 +911,151 @@ class RPG2k
     nil
   end
 
+  # Frames the battle-play probe drives the fight for before giving up. Not
+  # an expected duration -- the probe reports the instant the battle actually
+  # ends (see #maybe_battle_play_test) -- just a give-up bound generous
+  # enough for a multi-round fight against a real project's troop to resolve
+  # even under a slow (headless/software-render) run.
+  BATTLE_PLAY_FRAMES = 3600
+
+  # How often the battle-play probe taps confirm, in frames. Input.trigger?
+  # reports a *trigger* on the key's edge (see RGSS::Input.press/.update in
+  # mruby-rgss/mrblib/lib.rb), so the key has to be released between taps;
+  # and the taps have to be slow enough that a window not yet ready for one
+  # (mid-animation, mid-message) does not simply swallow it. Matches
+  # mruby-mvjs/mrblib/mz.rb's own BATTLE_PLAY_TAP_PERIOD, which picked the
+  # same value for the same reason on rmmz's own Input.
+  BATTLE_PLAY_TAP_PERIOD = 12
+
+  # Whether --rpg2k_battle_play was requested (a launcher constant set by
+  # main.cxx). Meaningless without --rpg2k_battle_troop also set -- there is
+  # no fight to play out otherwise -- but harmless either way, since
+  # #maybe_battle_play_test only ever acts once a fight is actually seen
+  # open.
+  def battle_play_requested?
+    (begin
+      RPG2K_BATTLE_PLAY
+    rescue StandardError
+      false
+    end) == true
+  end
+
+  # When --rpg2k_battle_play is set (CI), once the fight --rpg2k_battle_troop
+  # opened is up, *play* it: tap confirm until the enemy troop's HP falls and
+  # the battle hands back to the map.
+  #
+  # --rpg2k_battle_troop alone only proves combat can be **entered** --
+  # Scene::Battle's own [RPG2k-BATTLE] marker fires the instant its
+  # backdrop/troop/actor sprites and status panel are built (see
+  # Scene::Battle#start), before the party has been asked for a single
+  # command. That is a much smaller claim than combat actually working.
+  # Everything between the two is untested by it: the Battle/Auto
+  # Battle/Escape options window, the per-actor Attack command, the
+  # enemy-target cursor, the damage formula actually reaching a foe's HP, the
+  # round animation, and the victory/defeat screen that hands the scene back
+  # to the map.
+  #
+  # It drives that with real key presses -- RGSS::Input.press/.release, the
+  # same synthetic-input mechanism RGSS::Input.trigger?/.press? already give
+  # any RGSS-based scene (mruby-rgss/mrblib/lib.rb), and available here for
+  # free since `Object.include RGSS` (this file's own first lines) makes the
+  # bare `Input`/`Input::C` scene/battle.rb already calls *be*
+  # RGSS::Input -- rather than by calling Scene::Battle's own methods
+  # directly, unlike #headless_battle above: the command windows *are* what
+  # is being tested here, so reaching past them into Game::Battle would test
+  # only the part that already worked. Confirm is tapped rather than held
+  # because Input.trigger? reports a trigger on the key's edge, so a held key
+  # advances one window and then stalls on the next (see
+  # mruby-mvjs/mrblib/mz.rb's own #maybe_battle_play_test, the MZ precedent
+  # this is ported from).
+  #
+  # It relies on the default selections already landing on a valid action --
+  # the options window's first row (Battle), each actor's first per-actor
+  # command (Attack) and the target cursor's first entry (the first living
+  # foe) -- rather than navigating there, exactly like the MZ precedent
+  # relies on Attack/the default target. A project whose command order puts
+  # something other than Attack first, or that reorders the options window,
+  # would need a real driver, not this one.
+  #
+  # HP/alive are read off the live fight's own Game::Battle model's `enemies`
+  # list (Game::Battle::Combatant#hp/#dead?), not the party's: what this
+  # probe exists to prove is that the player's own attacks actually reduced
+  # the *enemy* troop's HP -- a party that takes no damage from a weak troop
+  # is still a real, working fight -- the same quantity MZ's own counterpart
+  # sums off `$gameTroop.members()`.
+  #
+  # The report is one-shot, and lands the moment the battle actually ends
+  # (Scene::Map#active_battle turns nil again, having been non-nil at least
+  # once) rather than at the frame bound, so a fight that resolves early does
+  # not stall the run.
+  def maybe_battle_play_test
+    return if @btl_play_done
+    return unless battle_play_requested?
+
+    scene = @scenes.last
+    return unless scene.is_a?(Scene::Map)
+
+    battle = scene.respond_to?(:active_battle) ? scene.active_battle : nil
+
+    if battle.nil?
+      # Either the fight has not opened yet -- #headless_battle_troop's
+      # request rides the map's own interpreter and only actually opens on
+      # the map's next #drive_battle call, same as a random encounter would
+      # -- or it already has, and just closed. Only the latter is reportable;
+      # the former is silently one more frame of waiting.
+      return unless @btl_play_started
+
+      @btl_play_done = true
+      RGSS::Input.release(RGSS::Input::C)
+      $stderr.puts "[RPG2k-BTLPLAY] hp_before=#{@btl_play_hp0} " \
+                   "hp_after=#{@btl_play_hp} alive=#{@btl_play_alive} " \
+                   "damaged=#{@btl_play_damaged ? true : false} ended=true " \
+                   "last_phase=#{@btl_play_last_phase.inspect}"
+      return
+    end
+
+    model = battle.ui[:battle]
+    enemies = model.enemies
+    hp = enemies.reduce(0) { |s, e| s + e.hp }
+    alive = enemies.reject(&:dead?).size
+
+    @btl_play_frame ||= 0
+    if @btl_play_frame.zero?
+      @btl_play_started = true
+      @btl_play_hp0 = hp
+      $stderr.puts "[RPG2k] auto battle play: troop hp #{@btl_play_hp0}"
+    end
+    @btl_play_frame += 1
+    @btl_play_damaged ||= !@btl_play_hp0.nil? && @btl_play_hp0 > 0 && hp < @btl_play_hp0
+    @btl_play_hp = hp
+    @btl_play_alive = alive
+
+    # Trace on change rather than on a timer: a fight that is progressing
+    # prints a handful of lines (the phase moves along as each actor/round is
+    # resolved), and one that is wedged prints nothing after the first --
+    # which is the diagnosis (see mz.rb's identical reasoning).
+    phase = battle.ui[:phase]
+    if phase != @btl_play_last_phase
+      @btl_play_last_phase = phase
+      $stderr.puts "[RPG2k-BTLPLAY] phase #{phase}"
+    end
+
+    # Tap confirm: one frame down per period, released the rest of the time.
+    RGSS::Input.release(RGSS::Input::C)
+    RGSS::Input.press(RGSS::Input::C) if (@btl_play_frame % BATTLE_PLAY_TAP_PERIOD).zero?
+
+    return if @btl_play_frame < BATTLE_PLAY_FRAMES
+
+    @btl_play_done = true
+    RGSS::Input.release(RGSS::Input::C)
+    $stderr.puts "[RPG2k-BTLPLAY] hp_before=#{@btl_play_hp0} hp_after=#{@btl_play_hp} " \
+                 "alive=#{@btl_play_alive} damaged=#{@btl_play_damaged ? true : false} " \
+                 "ended=false last_phase=#{@btl_play_last_phase.inspect} " \
+                 "(frame budget exhausted)"
+  rescue StandardError => e
+    $stderr.puts "[RPG2k] battle play error: #{e.message}"
+  end
+
   # --rpg2k_preview_map: the map id to preview, or nil when unset (0, the
   # default -- see src/main.cxx; map ids start at 1). Guarded the same way as
   # #native_test_play?: an undefined RPG2K_PREVIEW_MAP (the CRuby-only host
@@ -1212,6 +1357,16 @@ class RPG2k
         # needs a way to hand over what the hero/map/events looked like when
         # something went wrong.
         dump_bug_report if Input.trigger?(Input::F8)
+        # --rpg2k_battle_play (CI): tap confirm through the fight
+        # --rpg2k_battle_troop opened, before the scene reads this frame's
+        # input -- Input.trigger? needs the press set before #update runs,
+        # not after (mruby-mvjs/mrblib/mz.rb's own driver instead sets it
+        # after its own per-frame pump, because MZ's `Input` is a *copy*
+        # `sync_input` pushes RGSS state into once a frame; rpg2k has no such
+        # translation layer, `Input` here already *is* RGSS::Input, so the
+        # press has to land before this same frame's #update, not the next
+        # one's).
+        maybe_battle_play_test
         @scenes.last.update
       end
       RGSS::Profiler.section("input.update") { Input.update }
