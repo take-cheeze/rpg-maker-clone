@@ -100,12 +100,41 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
     end
   end
 
-  # docs/adr/0144: bounded proof of the generalized bc2cpp-coverage
-  # bytecode-stripping mechanism -- RGSS::Sprite only (all 17 of its real
-  # bc2cpp-registered methods), not mruby-rgss-compiled's own full 14-owner
-  # `owners:` list (tools/bc2cpp/compiled_gems.rb). Scaling this to more
-  # owners is real, tracked follow-up work, not attempted in the same round
-  # that first proved the mechanism -- see the ADR for why.
-  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rgss-compiled', owners: %w[RGSS::Sprite])
+  # docs/adr/0144 (bounded proof, plain-instance-method owners only):
+  # RGSS::Sprite -- all 17 of its real bc2cpp-registered methods.
+  #
+  # docs/adr/0144's own dated follow-up section (this round) scales this to
+  # two more owners, real .singleton coverage included -- not
+  # mruby-rgss-compiled's own full 14-owner `owners:` list
+  # (tools/bc2cpp/compiled_gems.rb), still a deliberately bounded subset:
+  #   - RGSS::Window: a second plain-instance-method owner (12 real
+  #     bc2cpp-registered methods, mruby-rgss/mrblib/lib.rb's `class Window`)
+  #     -- proves nothing regressed in strip_wio_bc2cpp_stubs.rb's existing
+  #     DEFN path once .singleton support was added alongside it.
+  #   - RGSS::Audio.singleton / RGSS::ErrorReport.singleton: the first two
+  #     real `.singleton` owners this mechanism strips -- 13 real methods
+  #     defined as plain `def name; ...; end` inside `RGSS::Audio`'s own
+  #     `class << self ... end` block (mruby-rgss/mrblib/lib.rb), and 6 more
+  #     defined as `def self.name` at `RGSS::ErrorReport`'s own module body
+  #     top level (mruby-rgss/mrblib/error_report.rb) -- deliberately one of
+  #     each real `.singleton` shape (SCLASS-nested DEFN vs. a bare DEFS),
+  #     to exercise strip_wio_bc2cpp_stubs.rb's own new support against both
+  #     rather than just one. Gem-init-ordering correctness (this ADR's own
+  #     required per-owner check) was re-run for all three: grepped every
+  #     mruby-rgss/src/*.cxx for a real `mrb_funcall` back into any of
+  #     Window's 12 / Audio.singleton's 13 / ErrorReport.singleton's 6 real
+  #     method names -- zero matches anywhere in the gem's own native
+  #     sources (not just inside gem_init itself), so no live correctness
+  #     gap found for any of the three. See the ADR follow-up section for
+  #     the full per-owner writeup, including a real (but unrelated to this
+  #     round's own three owners) `mrb_funcall(..., "press"/"release", ...)`
+  #     found into RGSS::Input.singleton from wio_input_bridge.cxx's own
+  #     per-frame poll -- a real *runtime* call path (Graphics.update, long
+  #     after every gem's own init has finished), not a gem-init-time one,
+  #     flagged for whichever future round scales to RGSS::Input.singleton
+  #     rather than re-derived silently by that round.
+  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rgss-compiled',
+                         owners: %w[RGSS::Sprite RGSS::Window RGSS::Audio.singleton
+                                    RGSS::ErrorReport.singleton])
   wio_strip_debug_rbfiles(spec)
 end

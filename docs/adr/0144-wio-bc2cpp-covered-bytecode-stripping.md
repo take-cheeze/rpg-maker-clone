@@ -518,3 +518,318 @@ it.
   but this round did not save both builds' own `gem_init.o` to diff them
   directly, so the explanation is honestly flagged as plausible-but-
   unconfirmed rather than fully traced.
+
+## Follow-up: `.singleton` (DEFS/SCLASS) support, and scaling to `RGSS::Window`/`RGSS::Audio.singleton`/`RGSS::ErrorReport.singleton`
+
+Date: 2026-09-12
+
+Closes the two gaps the "What was not done" section above named as
+blocking this mechanism from reaching more of bc2cpp's own real coverage:
+`.singleton` (DEFS/SCLASS) support in `strip_wio_bc2cpp_stubs.rb`, and the
+per-owner gem-init-ordering correctness check for owners beyond
+`RGSS::Sprite`. Per this ADR series' own "prove it, then scale it in a
+bounded, re-checked step" discipline (the same one 0139 itself used
+across ~31 rounds), this scales to three more owners **already covered by
+`mruby-rgss-compiled`'s own real `owners:` list**
+(`tools/bc2cpp/compiled_gems.rb`) — bc2cpp's own AOT coverage itself is
+unchanged by this round, only how much of bc2cpp's *existing* coverage
+this stripping mechanism can now reach.
+
+### `.singleton` support in `strip_wio_bc2cpp_stubs.rb`
+
+`collect_defs` now also collects two more real AST node shapes, matching
+bc2cpp.rb's own `build_registry`/`resolve_singleton_receiver` "owner
+string ends in `.singleton`" pseudo-owner convention exactly (confirmed by
+reading that function directly, not assumed by analogy):
+
+- **`DEFS`** (`def self.foo` at a class/module body's own top level) — a
+  new `self_receiver?` helper checks the node's own receiver child against
+  the real `:SELF` AST node type (confirmed via a live
+  `RubyVM::AbstractSyntaxTree.parse` dump — see below) before recording it
+  under `"#{enclosing_path}.singleton"`; a non-`self` receiver (`def
+  SomeOtherConst.foo`, a real, different DEFS shape with a `CONST`/`COLON2`
+  receiver node) is never collected as a candidate at all, regardless of
+  what a hand-built TSV might claim about it.
+- **`SCLASS`** (`class << self; ...; end`) — same `self_receiver?` gate on
+  the SCLASS's own receiver; when it passes, the body is walked with a
+  `singleton_owner` override so every ordinary `DEFN` found inside it
+  (`def bar; ...; end`, no `self.` prefix — SCLASS puts the *class itself*
+  in the singleton context, so methods defined inside it need no `self.`
+  marker of their own) is recorded under that same `.singleton` owner
+  string instead of the enclosing non-singleton `stack`. A `class <<
+  SomeOtherReceiver` (non-`self`) is left completely untouched, same as a
+  non-`self` DEFS.
+
+Real line-span behavior was checked directly against a live AST dump
+before trusting it (`ruby -e 'RubyVM::AbstractSyntaxTree.parse(...)'` on a
+small fixture with both shapes), not assumed to match plain `DEFN`'s:
+
+```
+DEFS 3-5 children_types=[:SELF, ":setup_midi", :SCOPE]     # def self.setup_midi / body / end
+SCLASS 7-11 children_types=[:SELF, :SCOPE]
+  DEFN 8-10 children_types=[":bgm_stop", :SCOPE]           # def bgm_stop / body / end, nested inside
+```
+
+Both `DEFS` and an `SCLASS`-nested `DEFN` use the *exact* same
+`first_lineno`/`last_lineno` convention a plain instance-method `DEFN`
+already does — the header's own line through the matching `end`'s own
+line, with the `class << self ... end` wrapper's own (wider) span never
+touched. No quirk was found that `apply_deletion_plan` needed any change
+for — it works on both new shapes completely unmodified. `load_registered`
+no longer blanket-drops every `singleton == '1'` TSV row; instead it
+raises loudly if a `.singleton`-suffixed owner string and the TSV's own
+`singleton` column ever disagree, as a defense against
+`wio_registered_methods.rb`'s own TSV shape drifting silently out from
+under this file's own assumption of what "singleton" means.
+
+**Verified in isolation before touching any real project file**, the same
+way the original design was: a hand-written fixture
+(`module RGSS; module Widget; def self.foo(a, b = 1); ...; end; class <<
+self; def bar; ...; end; end; class Other; end; def Other.foo; ...; end;
+end; end`, plus an unrelated `class Plain; def x; ...; end; def y; ...;
+end; end`) with a hand-built TSV naming `RGSS::Widget.singleton#foo`,
+`RGSS::Widget.singleton#bar`, `RGSS::Widget::Other.singleton#foo` (a
+trap — this owner is *never* collected as a candidate no matter what the
+TSV says, because `Other.foo`'s own receiver is the real constant `Other`,
+not `self`), and `RGSS::Plain#x`. Running the real, updated script against
+it and reading the output directly confirmed: `foo` (DEFS) and `bar`
+(SCLASS-nested DEFN) both gone, `kept_defs`/`kept_sclass` (unregistered)
+both still present, `Other.foo` untouched (proving the `self`-receiver
+gate actually holds even when the TSV names a matching owner), `Plain#x`
+gone and `Plain#y` (unregistered) untouched, and the whole rewritten file
+still parses (`ruby -c`: `Syntax OK`). A second isolation check confirmed
+`load_registered`'s new consistency guard actually fires: a TSV row
+claiming owner `RGSS::Widget.singleton` with its own `singleton` column
+set to `0` raised immediately, before any file was ever rewritten.
+
+### Three owners scaled to, all already in `mruby-rgss-compiled`'s own real `owners:` list
+
+Picked via a real `wio_registered_methods.rb mruby-rgss-compiled . <mrbc>`
+run (not guessed from `compiled_gems.rb`'s candidate list, same discipline
+`wio_registered_methods.rb`'s own file comment already requires) — the
+real per-owner method counts for this gem: `RGSS::Sprite` 17 (already
+shipped), `RGSS::Audio.singleton` 13, `RGSS::Window` 12,
+`RGSS::Input.singleton` 11, `RGSS::Plane` 6, `RGSS::ErrorReport.singleton`
+6, `RGSS.singleton` 5, `RGSS::Graphics.singleton` 4,
+`RGSS::Bitmap`/`RGSS::Bitmap.singleton` 2 each, `RGSS::Tilemap`/
+`RGSS::Font.singleton`/`RGSS::ErrorReport::Tee`/`Array` 1 each. Chose:
+
+- **`RGSS::Window`** (12 methods, `mruby-rgss/mrblib/lib.rb`'s `class
+  Window`) — a second plain-instance-method owner, to prove the existing
+  `DEFN` path still works correctly once `.singleton` support landed
+  alongside it in the same file.
+- **`RGSS::Audio.singleton`** (13 methods: `bgm_volume`, `bgm_pan`,
+  `bgm_stop`, `bgm_fade`, `bgm_pos`, `bgs_stop`, `bgs_fade`, `bgs_pos`,
+  `me_stop`, `me_fade`, `se_stop`, `midi_available?`, `setup_midi`) — real
+  plain `def name; ...; end` methods inside `RGSS::Audio`'s own `class <<
+  self ... end` block (`mruby-rgss/mrblib/lib.rb`), sharing that block with
+  several un-stripped methods (`bgm_play`, `attr_accessor
+  :encryption_key`, ...) — the SCLASS shape.
+- **`RGSS::ErrorReport.singleton`** (6 methods: `push`, `installed?`,
+  `record`, `clear`, `probe!`, `probe_raise`) — real `def self.name`
+  methods at `RGSS::ErrorReport`'s own module body top level
+  (`mruby-rgss/mrblib/error_report.rb`) — the DEFS shape.
+
+Deliberately one of each real `.singleton` shape this codebase actually
+has, plus one more plain-instance owner, rather than three owners of the
+same kind.
+
+### The gem-init-ordering correctness check, re-run per owner (not assumed by analogy)
+
+Same check ADR 0144's original round did for `RGSS::Sprite`: could any of
+`mruby-rgss`'s own native source call back into one of these methods'
+*Ruby* definitions before `mruby-rgss-compiled`'s own `gem_init` installs
+the real C++ override? Grepped every file in `mruby-rgss/src/*.cxx` (all
+15 of them, not just `lib.cxx` and not just inside `gem_init` itself — a
+wider net than the original round's own check) for a real `mrb_funcall`
+back into any of the 31 target method names:
+
+- **`RGSS::Window`**'s 12 names (`opacity`, `cursor_rect`, `active`,
+  `pause`, `back_opacity`, `stretch`, `openness`, `open?`, `close?`,
+  `padding`, `padding_bottom`, `arrows_visible`): zero matches anywhere.
+- **`RGSS::Audio.singleton`**'s 13 names: zero matches in `audio.cxx`
+  (`rgss_audio_define`, the file's own native init function, defines only
+  underscore-prefixed native primitives — `_bgm_volume`, `_bgm_pan`, ... —
+  which the bytecode-defined, non-underscore wrapper methods this round
+  strips call *into*, never the reverse) or anywhere else in the gem.
+- **`RGSS::ErrorReport.singleton`**'s 6 names: zero matches. `lib.cxx`
+  does reference `RGSS::ErrorReport` by name (a comment, and
+  `RGSS.__log_bridge_write` — a native method `ErrorReport.push` itself
+  calls *into*, again the opposite direction), but nothing calls back into
+  `push`/`installed?`/`record`/`clear`/`probe!`/`probe_raise` from native
+  code at all.
+
+**No live correctness gap found for any of the three**, confirmed
+directly rather than assumed from `RGSS::Sprite`'s own prior clean result.
+
+**A real, honestly-flagged aside, found by casting this wider net (not
+this round's own concern, since neither owner was chosen this round, but
+worth recording rather than silently noticing and dropping)**: two calls
+back into *other* real `.singleton` owners' own bytecode methods do exist
+in this gem's native code —
+`RGSS_warn_stub` (`lib.cxx`) does `mrb_funcall(..., "warn_stub", ...)`
+into `RGSS.singleton`, called from several native methods whenever a game
+exercises an unimplemented native code path; and `wio_input_bridge.cxx`'s
+own `send_key` does `mrb_funcall(..., "press"/"release", ...)` into
+`RGSS::Input.singleton`, called from `rgss_wio_poll` once per frame via
+`Graphics.update`. Both are real *runtime* call paths (long after every
+gem's own `gem_init` has finished), not gem-init-time ones, so neither
+looks like it would actually block stripping `RGSS.singleton` or
+`RGSS::Input.singleton` in a future round — but this round did not stop to
+fully confirm that the way it did for its own three chosen owners, so a
+future round scaling to either must still re-run this exact check itself
+rather than cite this paragraph as clearance.
+
+### The real, measured numbers
+
+Same process as the original round: a from-scratch rebuild in the same
+session/container (patches already applied idempotently, host `mrbc`
+already built, `RGSS_WIO_ARDUINO_INCLUDES`/`cp932_table`/`jis0208_table`
+reused unchanged from the environment this ADR's own original round
+already set up), `3rd/mruby/build/wio` and `.pio/build/wio_rgss_boot`
+wiped between "before" (`git stash` of this round's own two changed files,
+restoring `mruby-rgss/mrbgem.rake`'s `owners: %w[RGSS::Sprite]` exactly as
+originally shipped) and "after" (this round's own four-owner
+`wio_strip_bc2cpp_stubs` call), both `RPGMAKER_BC2CPP=1`, both the full
+~31-round/1,573-method coverage scope, unchanged by this round. `.text`/
+`.data`/`.bss`/`.ARM.extab`/`.ARM.exidx` read directly from the real `ld`
+-generated `firmware.map`'s own top-level output-section totals (`grep
+'^\.text '`/`'^\.data '`/etc.) rather than `arm-none-eabi-size` on
+`firmware.elf`, since neither build's link actually succeeds (both still
+overflow `FLASH` by the same pre-existing, unresolved margin every
+bc2cpp measurement ADR before this one also hit) — `ld` still writes a
+complete map with real, final section sizes even when it refuses to write
+the final `.elf`, confirmed by cross-checking the map's own numbers
+against `ld`'s own printed "region `FLASH` overflowed by N bytes" for
+both builds: `2,251,868 - 507,904 = 1,743,964` (before) and `2,249,652 -
+507,904 = 1,741,748` (after), both matching `ld`'s own printed overflow
+exactly.
+
+| | before (`RGSS::Sprite` only) | after (+`RGSS::Window`/`RGSS::Audio.singleton`/`RGSS::ErrorReport.singleton`) | delta |
+| --- | ---: | ---: | ---: |
+| `.text` (flash) | 2,212,072 | 2,209,856 | **-2,216** |
+| `.ARM.extab` | 4,556 | 4,556 | 0 |
+| `.ARM.exidx` | 35,240 | 35,240 | 0 |
+| `.data` (RAM) | 12,832 | 12,704 | **-128** |
+| `.bss` (RAM) | 19,360 | 19,360 | 0 |
+| **Flash needed** | **2,251,868** | **2,249,652** | **-2,216** |
+| **RAM used** | **32,192** | **32,064** | **-128** |
+| real `ld` overflow | 1,743,964 | 1,741,748 | **-2,216** |
+
+**Sanity check against this same ADR's own already-recorded baseline**
+(its "after" number for `RGSS::Sprite` alone: `.text` 2,210,808, flash
+needed 2,250,604, RAM used 32,176): this round's own from-scratch "before"
+(the identical `RGSS::Sprite`-only state, rebuilt fresh in a new session)
+comes in at `.text` 2,212,072 — **+1,264 bytes** (0.057%) — with `.data`
++16 bytes and `.ARM.extab`/`.ARM.exidx`/`.bss` bit-for-bit identical. Not
+reconciled to one specific cause (this round reused the same
+`libuni-algo.a` and `RGSS_WIO_ARDUINO_INCLUDES` the environment already
+had cached, rather than rebuilding either from scratch a third time, so
+the two most likely prior suspects from the original round's own -88-byte
+gap are ruled out here specifically) — most plausibly the same class of
+ordinary toolchain/link-environment noise this ADR's own original round
+already found and precedented (its own comparison against ADR 0143 was
+off by -88 bytes in the same direction, for reasons only partially
+traced), just a larger instance of it. Still small in relative terms
+(0.057%, well inside ADR 0130's own long-established "~5%" real-vs-proxy
+tolerance for this series) and, same as the original round's own
+reasoning, does not undermine the "after" delta above, which is measured
+against this round's *own* "before" in the same environment, not against
+the prior round's numbers directly.
+
+**A real, positive, larger-than-the-original-round result**: -2,216 bytes
+flash and -128 bytes RAM for 31 additional methods across three owners, on
+top of the original round's own -696/-64 for `RGSS::Sprite`'s 17. Per-method
+average recovery here (~71.5 bytes/method) is meaningfully larger than
+`RGSS::Sprite`'s own (~40.9 bytes/method) — consistent with this ADR's own
+prediction that `RGSS::Sprite`'s trivial single-ivar-read accessors were
+close to `mrbc`'s per-method floor already, while `RGSS::Audio.singleton`'s
+methods (each takes real arguments and does real work: volume/pan
+clamping, a native `_bgm_fade`/`_bgm_stop` dispatch) had more bytecode to
+actually remove.
+
+### Per-owner breakdown: a real, whole-file `mrbc` proxy, not three more full board relinks
+
+Confirming each of the three owners contributes positively on its own
+(rather than, say, one owner masking a regression in another at the
+combined link) with a real, board-relink-level measurement for all three
+individually would need three more from-scratch `pio run -e
+wio_rgss_boot` cycles — costly enough that this round used the same
+cheaper, real, whole-file `mrbc -g` proxy the original round's own "Two
+stub designs a real measurement rejected" section already used and
+precedented as directionally trustworthy (matching sign/ranking, not exact
+linked magnitude) instead, for each owner in isolation:
+
+| shape (`mruby-rgss/mrblib/lib.rb`, `mrbc -g`) | size | Δ vs. original |
+| --- | ---: | ---: |
+| original, unmodified | 33,674 | — |
+| `RGSS::Window` alone stripped (12 methods) | 32,529 | **-1,145** |
+| `RGSS::Audio.singleton` alone stripped (13 methods) | 32,464 | **-1,210** |
+| both stripped together | 31,316 | **-2,358** |
+
+| shape (`mruby-rgss/mrblib/error_report.rb`, `mrbc -g`) | size | Δ vs. original |
+| --- | ---: | ---: |
+| original, unmodified | 3,493 | — |
+| `RGSS::ErrorReport.singleton` stripped (6 methods) | 2,508 | **-985** |
+
+All three owners show a real, individual reduction at this proxy level —
+no owner looks like it would regress on its own, unlike the original
+round's own bare-`raise NotImplementedError` stub design, which this same
+kind of whole-file proxy check caught regressing before the real link ever
+confirmed it. `RGSS::Window`'s and `RGSS::Audio.singleton`'s combined
+reduction (-2,358) is close to, but not exactly, the sum of their
+individual reductions (-1,145 + -1,210 = -2,355) — a 3-byte non-additive
+overlap, small enough to be unremarkable next to the ~1,264-byte
+before/before gap already discussed above, and consistent with this ADR's
+own repeated finding that a shared, whole-file symbol table makes
+per-method costs not perfectly additive.
+
+### Consequences
+
+- **A real, further improvement, not a wash and not mixed**: all three
+  newly-scaled owners contribute a real, individually-positive reduction
+  (confirmed both at the whole-file `mrbc` proxy level per owner and at
+  the real, linked, combined level), stacking with `RGSS::Sprite`'s
+  already-shipped -696/-64 for a running total of **-2,912 bytes flash /
+  -192 bytes RAM** across 48 of bc2cpp's 1,573 covered methods, still a
+  small fraction of docs/adr/0143's own +1,067,524-byte full-scope
+  regression but continuing the same direction with a larger
+  per-method yield than the first round found.
+- **`.singleton` support is real and proven on both real shapes this
+  codebase has** (a bare `def self.x` and a `class << self` block), not
+  just designed — closing the largest specific gap the original round's
+  own "What was not done" flagged, since most of `mruby-rpg2k-compiled`'s
+  own 1,457 methods (this project's own dominant bc2cpp flash cost) live
+  on `.singleton` owners.
+- **Scaling further still needs the same two checks, per owner, every
+  time** — this round does not grant blanket clearance to any owner it
+  did not itself check (see the `RGSS.singleton`/`RGSS::Input.singleton`
+  aside above: plausible-looking from this round's own wider grep, but not
+  independently confirmed the way this round's own three owners were).
+- The desktop/host build is unaffected, same as before: nothing in this
+  round changes `wio_strip_bc2cpp_stubs`'s own `spec.build.name ==
+  'wio'`-gated no-op behavior for every other target.
+
+### What was not done (this round)
+
+- Scaling to any of `mruby-rgss-compiled`'s remaining owners
+  (`RGSS::Plane`, `RGSS::Input.singleton`, `RGSS.singleton`,
+  `RGSS::Graphics.singleton`, `RGSS::Bitmap`/`RGSS::Bitmap.singleton`,
+  `RGSS::Tilemap`, `RGSS::Font.singleton`, `RGSS::ErrorReport::Tee`,
+  `Array`) or to any owner in `mruby-lcf-compiled`/`mruby-rpg2k-compiled`
+  at all — each still needs its own real gem-init-ordering check before
+  it can be added, per this ADR's own repeated discipline.
+- One-line `def name; body; end` and multi-line `def` signature support —
+  still not needed by any of this round's own targets either, so still
+  unimplemented, still raises loudly rather than guessing.
+- Tracing the RAM (`.data`) reduction to a specific symbol via
+  `arm-none-eabi-nm` — still not done, same honestly-flagged gap as the
+  original round.
+- Three more full, real `pio run -e wio_rgss_boot` relinks to confirm each
+  of this round's three owners' own *individual* real, linked contribution
+  (only the whole-file `mrbc` proxy was used per-owner; only the combined,
+  three-owner-at-once change got a real link) — the combined real link and
+  the per-owner proxy agree in direction and rough magnitude, which is
+  the same standard of evidence the original round's own stub-design
+  comparisons used, but it is still a proxy, not a fourth and fifth real
+  relink.
