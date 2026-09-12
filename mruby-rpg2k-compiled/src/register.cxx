@@ -5177,11 +5177,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // file for `tone_channel` -- no forward declaration, no #error stub,
   // nothing at all).
   //
-  // 408 real instance bytecode-defined methods on the class itself. 222
-  // compile clean and are registered below; the other 186 stay
-  // interpreted, every one for a real, individually confirmed reason (never
-  // guessed from a shared shape, each checked against its own real #error
-  // marker with SKIP_UNSUPPORTED=0):
+  // 408 real instance bytecode-defined methods on the class itself. 223
+  // compile clean and are registered below (222 plus #active_battle, a
+  // genuine registration gap this round's own real-diagnostic cross-check
+  // found and fixed -- see that registration's own comment below for the
+  // full writeup); the other 185 stay interpreted, every one for a real,
+  // individually confirmed reason (never guessed from a shared shape, each
+  // checked against its own real #error marker with SKIP_UNSUPPORTED=0):
   //
   //   - 84 end in a real Ruby block alone (BLOCK/SENDB, iterating an
   //     events/pictures/troop/vehicle list or similar) -- the same
@@ -5342,6 +5344,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // (`message_window_open?`, `vehicle_char_passable?`,
   // `vehicle_char_can_land?`, `char_passable?`, `char_can_land?`,
   // `terrain_id`, `event_id_at`, `event_position`, `headless_battle`,
+  // `active_battle` (registered below -- see its own comment; the round
+  // that wrote this visibility list missed it, the same oversight that
+  // also left it out of the compile-clean count above),
   // `camera_position`/`character_screen_position`/`char_in_sight?`,
   // `play_battle_bgm`/`play_victory_bgm`/`restore_pre_battle_bgm`/...,
   // `rebuild_chipset`) -- every visibility marking below was cross-checked
@@ -5670,6 +5675,30 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__Map_close_shop, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "close_battle",
                             RPG2k__Scene__Map_close_battle, MRB_ARGS_NONE());
+  // #active_battle (a bare `@battle` reader, public via a retroactive
+  // `public :active_battle` right after its own `def`, mruby-rpg2k/mrblib/
+  // scene/map.rb) was a genuine, previously-missed registration gap this
+  // round's own real-diagnostic cross-check found: 0-arg, no super/block/
+  // rescue, compiles clean (confirmed against the real `==  compiled entry
+  // points ==` listing, no `[private -- ...]` tag), and was never counted
+  // in this file's own top-comment gap breakdown either -- simply absent
+  // from both the "222 compile clean" bucket and every named gap category,
+  // an oversight rather than a deliberate exclusion. Its only real call
+  // site (`scene.active_battle` in mruby-rpg2k/mrblib/main.rb's own
+  // `RPG2k#maybe_battle_play_test`, guarded by a preceding
+  // `scene.respond_to?(:active_battle)` check) was already safe either way
+  // -- `active_battle` is MONO (this class's the only real definition of
+  // that name in the whole closed world), so that call site already
+  // devirtualized straight into `RPG2k__Scene__Map_active_battle_impl`
+  // regardless of whether this entry point was ever registered here (the
+  // `respond_to?` guard, faithfully translated to a real runtime branch,
+  // already ensures `scene` is genuinely a Map by the time that call
+  // executes). This registration only matters for *other*, non-devirtualized
+  // dispatch to `.active_battle` (an uncompiled caller, `#send`, ...), which
+  // stayed on the interpreter until now -- a real, if narrow, coverage
+  // fix rather than a correctness one.
+  mrb_define_method(M, map_scene, "active_battle",
+                    RPG2k__Scene__Map_active_battle, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "apply_map_access",
                             RPG2k__Scene__Map_apply_map_access,
                             MRB_ARGS_NONE());
