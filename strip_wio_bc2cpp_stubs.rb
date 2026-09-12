@@ -71,24 +71,59 @@
 # last_column) spans directly, with real node-type checks (CLASS/MODULE
 # nesting, DEFN) rather than any text search.
 #
+# Follow-up (docs/adr/0144's own "what was not done"): `.singleton` owner
+# support (a real `def self.foo` at a module/class body's own top level --
+# an AST `DEFS` node -- or `class << self; def foo; end; end` -- an AST
+# `SCLASS` node wrapping ordinary `DEFN` nodes) is now real, not out of
+# scope. Both shapes use bc2cpp.rb's own "Owner.singleton" pseudo-owner
+# convention exactly (see bc2cpp.rb's own build_registry /
+# resolve_singleton_receiver): the owner string is the enclosing
+# class/module's own real nesting path (`stack.join('::')`, e.g.
+# "RGSS::Audio") with a literal ".singleton" suffix appended -- never a
+# constant path of its own (there is no real "RGSS::Audio.singleton"
+# constant; it is purely this project's own bookkeeping label, matching
+# bc2cpp.rb's own). Only a `self`-receiver `DEFS`/`SCLASS` counts: a
+# `DEFS`/`SCLASS` node's own receiver child is checked directly against
+# the real `:SELF` node type (confirmed via a real
+# `RubyVM::AbstractSyntaxTree.parse` dump, not assumed) before it is ever
+# treated as a singleton method -- `def SomeOtherConst.foo` (a real,
+# different, non-`self` `DEFS` receiver) or `class << SomeOtherConst`
+# (a real, different, non-`self` `SCLASS` receiver) is never collected as
+# a candidate at all, matching bc2cpp.rb's own resolve_singleton_receiver
+# convention of only ever registering a `self`-receiver singleton def
+# under its enclosing namespace. Also matching bc2cpp.rb's own registry:
+# a `.singleton` owner requires a non-empty enclosing `stack` (there is no
+# real "Object.singleton"-rooted bookkeeping case in this project's own
+# closed-world source, so this file does not manufacture one either).
+#
+# Real line-span behavior, checked directly against a live AST dump rather
+# than assumed to match plain `DEFN`'s: both `DEFS` and an `SCLASS`-nested
+# `DEFN` carry the exact same (first_lineno, last_lineno) convention a
+# plain instance-method `DEFN` does -- first_lineno is the `def` header's
+# own line, last_lineno is the matching `end`'s own line, with no
+# additional line consumed for the `class << self`/`end` wrapper itself
+# (that wrapper's own span is the `SCLASS` node's own first_lineno/
+# last_lineno, a *different*, wider span this file never touches --
+# deleting only the inner `DEFN`'s own narrower span leaves the
+# `class << self ... end` shell itself standing, exactly as intended,
+# since other real methods often share that same shell in this codebase
+# -- e.g. `RGSS::Audio`'s own `class << self` block mixes
+# `attr_accessor :encryption_key` and un-stripped methods alongside the
+# 13 real bc2cpp-registered ones this round strips). No quirk found that
+# the existing `apply_deletion_plan` needed any change for.
+#
 # Current, deliberate limitations -- both fail loudly (raising, never
 # silently skipping or guessing), so a future round that hits either has
 # to look at it rather than silently ship an unsound deletion:
-#   - Only plain instance-method owners (a `class`/`module` nesting path,
-#     e.g. "RGSS::Sprite") are supported. A ".singleton" owner (a real
-#     `def self.foo` or `class << self; def foo; end; end` method --
-#     bc2cpp.rb's own SDEF/SCLASS pseudo-owner) is never even collected
-#     as a candidate (see load_registered below) -- DEFS/SCLASS
-#     span-finding needs its own, separately verified support, out of
-#     scope for this round's bounded proof.
 #   - A `def name(args)` whose own signature does not fit on one physical
 #     source line, or a one-line `def name; body; end` (first_lineno ==
 #     last_lineno), is left completely untouched (raises) rather than
 #     guessed at. Every real target this round's bounded proof strips
-#     (RGSS::Sprite, all 17 real methods) is a plain multi-line `def
-#     name\n ... \nend` with a single-line signature, so this gap has
-#     never actually been hit -- flagged here for whichever future round
-#     first tries to strip a method that needs it.
+#     (RGSS::Sprite's 17 methods, plus this follow-up round's own
+#     `.singleton` targets) is a plain multi-line `def name\n ... \nend`
+#     with a single-line signature, so this gap has never actually been
+#     hit -- flagged here for whichever future round first tries to strip
+#     a method that needs it.
 #
 # Usage: ruby strip_wio_bc2cpp_stubs.rb <registered.tsv> <owners-csv> <input.rb> <output.rb>
 
@@ -99,15 +134,29 @@ require 'set'
 # invocation was asked to strip (owners-csv) -- every other real owner in
 # the TSV (there will be many: the TSV covers a whole *-compiled gem, this
 # script's own caller only ever asks for a bounded subset) is silently
-# ignored, and any ".singleton" owner is never collected at all regardless
-# of whether it was asked for (see the file comment above).
+# ignored. A ".singleton"-suffixed owner in `owners` (e.g.
+# "RGSS::Audio.singleton") is matched exactly like any other owner string
+# now (see the file comment above for the new DEFS/SCLASS support) -- the
+# TSV's own `singleton` column is read only to confirm each collected
+# row's real owner string already carries (or doesn't carry) the
+# ".singleton" suffix consistently with bc2cpp.rb's own convention, purely
+# as a defense against wio_registered_methods.rb's own TSV shape ever
+# drifting silently: a row whose owner string ends in ".singleton" but
+# whose own `singleton` column says '0' (or vice versa) would mean this
+# script's caller and bc2cpp.rb's own diagnostic have started disagreeing
+# about what a "singleton" owner even is, which this script refuses to
+# paper over.
 def load_registered(tsv_path, owners)
   wanted = owners.to_set
   by_owner = Hash.new { |h, k| h[k] = Set.new }
   File.foreach(tsv_path) do |line|
     owner, name, _arity, _visibility, singleton = line.chomp.split("\t")
     next unless owner && wanted.include?(owner)
-    next if singleton == '1'
+
+    is_singleton_owner = owner.end_with?('.singleton')
+    raise "load_registered: #{tsv_path}: #{owner}##{name}: owner string's own \".singleton\" " \
+          "suffix (#{is_singleton_owner}) disagrees with the TSV's own singleton column " \
+          "(#{singleton.inspect})" if is_singleton_owner != (singleton == '1')
 
     by_owner[owner] << name
   end
@@ -133,13 +182,37 @@ def const_path_of(node)
   end
 end
 
+# True only for a real `:SELF` AST node -- the exact and only receiver
+# shape bc2cpp.rb's own resolve_singleton_receiver treats as "this
+# namespace's own singleton class", used below to gate both DEFS and
+# SCLASS handling so a real `def SomeOtherConst.foo` (a DEFS whose own
+# receiver is a real CONST/COLON2 node, not SELF) or `class << SomeOtherConst`
+# (an SCLASS whose own receiver is that same kind of node) is never
+# mistaken for a `.singleton` owner method -- confirmed against a real
+# `RubyVM::AbstractSyntaxTree.parse` dump of both shapes, not assumed from
+# the node type name alone.
+def self_receiver?(node)
+  node.is_a?(RubyVM::AbstractSyntaxTree::Node) && node.type == :SELF
+end
+
 # Walks the real AST, tracking the current class/module nesting path, and
 # appends { owner:, name:, node: } for every real DEFN (instance method
 # def) node found -- `stack` is the list of enclosing CLASS/MODULE names,
-# joined with "::" to become `owner`. SCLASS (`class << self`) bodies and
-# DEFS (`def self.foo`) nodes are deliberately never descended into/
-# recorded (singleton methods are out of scope -- see the file comment).
-def collect_defs(node, stack, out)
+# joined with "::" to become `owner`. Also collects `.singleton`-owned
+# methods (see the file comment for the full convention): a self-receiver
+# DEFS (`def self.foo` at a class/module body's own top level) is recorded
+# directly; a self-receiver SCLASS (`class << self; ...; end`) has its own
+# body walked with `singleton_owner` set, so every DEFN found inside it
+# (however deeply nested in `BEGIN`/`if`/etc. -- ordinary statement
+# wrapper nodes this method's generic fallthrough already recurses through
+# for the plain-instance-method case) is recorded under that same
+# ".singleton" owner rather than the enclosing (non-singleton) `stack`.
+# `singleton_owner` is deliberately NOT threaded into a *nested* CLASS/
+# MODULE encountered while walking a singleton body (those branches always
+# recurse with the default `singleton_owner: nil`): a real class/module
+# reopened inside a `class << self` block would have its own real,
+# unrelated owner path, never this enclosing singleton's.
+def collect_defs(node, stack, out, singleton_owner: nil)
   return unless node.is_a?(RubyVM::AbstractSyntaxTree::Node)
 
   case node.type
@@ -152,15 +225,29 @@ def collect_defs(node, stack, out)
     collect_defs(node.children[1], name ? stack + [name] : stack, out)
     return
   when :SCLASS
+    recv, body = node.children
+    if self_receiver?(recv) && !stack.empty?
+      collect_defs(body, stack, out, singleton_owner: "#{stack.join('::')}.singleton")
+    end
     return
   when :DEFS
+    recv, name, = node.children
+    if self_receiver?(recv) && !stack.empty?
+      out << { owner: "#{stack.join('::')}.singleton", name: name.to_s, node: node }
+    end
     return
   when :DEFN
-    out << { owner: stack.join('::'), name: node.children[0].to_s, node: node } unless stack.empty?
+    if singleton_owner
+      out << { owner: singleton_owner, name: node.children[0].to_s, node: node }
+    elsif !stack.empty?
+      out << { owner: stack.join('::'), name: node.children[0].to_s, node: node }
+    end
     return
   end
 
-  node.children.each { |c| collect_defs(c, stack, out) if c.is_a?(RubyVM::AbstractSyntaxTree::Node) }
+  node.children.each do |c|
+    collect_defs(c, stack, out, singleton_owner: singleton_owner) if c.is_a?(RubyVM::AbstractSyntaxTree::Node)
+  end
 end
 
 def parses?(source)
