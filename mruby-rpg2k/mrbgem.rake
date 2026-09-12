@@ -1044,11 +1044,11 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # 110 methods, still deferred, genuinely deserving its own dedicated
   # round), given the SAME full per-owner soundness pass as every prior
   # round, not a skimmed one, and the largest single owner this whole
-  # series has ever added (224 methods -- bigger than round 38's own six
+  # series has ever added (223 methods -- bigger than round 38's own six
   # owners COMBINED).
   #
   # Ground truth (a real `wio_registered_methods.rb` run against
-  # `mruby-rpg2k-compiled`, never hand-counted): 224 real registered
+  # `mruby-rpg2k-compiled`, never hand-counted): 223 real registered
   # methods, confirming both round 38's own forward-looking count and
   # `tools/bc2cpp/compiled_gems.rb`'s own real emission-owner writeup
   # exactly. Unlike every `Game::*` owner rounds 38-42 covered,
@@ -1058,8 +1058,8 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # a completely different owner in a different namespace, in `game.rb` and
   # the wio-excluded `game/battle_support.rb`) -- confirmed directly, not
   # assumed, and independently reconfirmed by a real AST-collected list of
-  # every one of this owner's own 224 real registered names against every
-  # real `def` in `scene/map.rb`: all 224 present, zero missing (a
+  # every one of this owner's own 223 real registered names against every
+  # real `def` in `scene/map.rb`: all 223 present, zero missing (a
   # `comm -23` set-difference, not eyeballed). `RPG2k::Scene::Map::
   # LRUBitmapCache` (5 of its own real registered methods, `#initialize`
   # among them -- the one `NATIVE_ARG_TARGETS` entry anywhere near this
@@ -1091,14 +1091,14 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # and 13 explicit-name `public :name` statements -- by far the most
   # companion statements any owner in this series has had (`Game::
   # Interpreter`'s own 2 was the previous high). None of the 10 attr names
-  # collide with any of this round's own 224 in-scope method names. Of the
+  # collide with any of this round's own 223 in-scope method names. Of the
   # 13 `public` statements, 11 are single-name (`message_window_open?`,
   # `vehicle_char_passable?`, `vehicle_char_can_land?`, `char_passable?`,
   # `char_can_land?`, `terrain_id`, `event_id_at`, `event_position`,
   # `headless_battle`, `active_battle`, `rebuild_chipset`) -- 6 of those 11
   # (`message_window_open?`, `vehicle_char_passable?`,
   # `vehicle_char_can_land?`, `terrain_id`, `active_battle`,
-  # `rebuild_chipset`) name one of this round's own 224 registered methods
+  # `rebuild_chipset`) name one of this round's own 223 registered methods
   # each (the ordinary full-overlap single-name shape round 38's own
   # `collect_visibility_calls` mechanism already strips cleanly, reconfirmed
   # for real here -- see the strip+parse+AST-diff paragraph below); the
@@ -1165,7 +1165,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # carries zero regression risk to the other 54 already-shipped owners'
   # own companion-statement handling and a script-level fix would.
   #
-  # 7 of this round's own 224 registered methods (`clamp_speed`,
+  # 7 of this round's own 223 registered methods (`clamp_speed`,
   # `walk_slide_step`, `jump_slide_step`, `anim_frame_period`,
   # `anim_continuous_period`, `anim_spin_period`, `shop_gold_term`) are
   # real one-line `def name; body; end`s -- the shape round 35's own
@@ -1183,10 +1183,10 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # external mrbgems `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
   # mruby-onig-regexp`, `git submodule update --init`d fresh for this
   # round's own check rather than assumed already checked out -- re-run
-  # against all 224 of this round's own real registered method names via a
+  # against all 223 of this round's own real registered method names via a
   # small script rather than by hand, given the size): ZERO real literal
   # string-argument matches anywhere in the whole closed world against any
-  # of the 224 names. Every literal method-name argument that DOES appear
+  # of the 223 names. Every literal method-name argument that DOES appear
   # at any real `mrb_funcall*` call site in this closed world (`"press"`/
   # `"release"`/`"main_loop"`/`"width"`/`"height"`/`"name"`/`"color"`/
   # `"bold"`/`"italic"`/`"outline"`/`"shadow"`/`"out_color"`/`"warn_stub"`/
@@ -1219,7 +1219,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # differs, and a real before/after `RubyVM::AbstractSyntaxTree` walk
   # (every real `DEFN`/`DEFS`/`SCLASS`-nested `DEFN` in the whole file, not
   # just this round's own owner) shows the two outputs differ by EXACTLY
-  # this round's own 224 `RPG2k::Scene::Map` methods removed and NOTHING
+  # this round's own 223 `RPG2k::Scene::Map` methods removed and NOTHING
   # else added or removed -- a set-difference against the real registered-
   # method-name ground truth confirms the removed-method set and the
   # registered-method set are IDENTICAL (a real `diff` of the two sorted
@@ -1231,7 +1231,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # set, both runs against identical-length output filenames to cancel the
   # path-length measurement noise every prior round's own comment already
   # documents for this proxy): 196,252 -> 122,052 bytes, a 74,200-byte
-  # (37.8%) reduction from these 224 stripped method bodies -- by far the
+  # (37.8%) reduction from these 223 stripped method bodies -- by far the
   # largest single-file byte reduction this whole series has measured
   # (round 38's own combined `game.rb` total across 7 owners was 37,357
   # bytes; this round's own single owner, in one file, is double that).
