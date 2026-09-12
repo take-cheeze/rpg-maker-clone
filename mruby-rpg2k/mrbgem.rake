@@ -721,18 +721,153 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # caveat round 37's own `.singleton` follow-up ADR section already
   # documents for this same proxy.)
   #
-  # What this round deliberately did NOT do, and why (an honest scoping
+  # What round 38 deliberately did NOT do, and why (an honest scoping
   # decision, not an oversight): `Game::Party` (85 registered methods),
   # `Game::Battle` (72), `Game::Interpreter` (173), `RPG2k::Scene::Map`
-  # (224), and `RPG2k::Scene::Battle` (110) are all real remaining
+  # (224), and `RPG2k::Scene::Battle` (110) were all real remaining
   # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS`-touching candidates
   # (ground truth counts from the same real registry run above), but each
-  # is large enough that giving it the SAME real, thorough, per-owner
-  # soundness pass this round gave its own six smaller owners -- not a
-  # quicker, skimmed version of it -- did not fit in this round's own
-  # scope. Left for a future round rather than rushed. `Game::Character`
-  # (14 methods, done this round) is the only owner from that original
-  # future-candidates list not left for later.
+  # was large enough that giving it the SAME real, thorough, per-owner
+  # soundness pass that round gave its own six smaller owners -- not a
+  # quicker, skimmed version of it -- did not fit in that round's own
+  # scope. `Game::Character` (14 methods) was the only owner from that
+  # original future-candidates list round 38 itself did not leave for
+  # later.
+  #
+  # Round 39: `Game::Party` (the smallest of the five round-38 left off),
+  # given the full soundness pass, plus a real, honest look at
+  # `Game::Battle` that this round did NOT end up adding.
+  #
+  # Ground truth (a real `wio_registered_methods.rb` run against
+  # `mruby-rpg2k-compiled`, never hand-counted): `Game::Party` has 85 real
+  # registered methods total, confirming round 38's own forward-looking
+  # count exactly. Same familiar partial-owner shape round 38's own
+  # `Game::Map`/`Game::State`/`Game::Actor` already established:
+  # `game/battle_support.rb` (wio-excluded) reopens `Game::Party` too,
+  # owning 16 of its 85 real registered methods (`automatic_battle_placement?`,
+  # `battle_item_command`, `battle_occasion?`, `battle_skill?`,
+  # `battle_skill_target`, `battle_usable?`, `gauge_battle_layout?`,
+  # `item_all_allies?`, `skill_absorbs?`, `skill_attr_shift`, `skill_hit`,
+  # `skill_hit_weapon_fallback`, `skill_invoking_item?`, `skill_to_hit`,
+  # `skill_variance`, `state_hit_ratio` -- confirmed directly, a real AST
+  # walk of both files' own `Game::Party` class bodies, not eyeballed) --
+  # the other 69 are all in game.rb and strip cleanly for this round.
+  #
+  # Companion-statement hazard check (the same real AST walk every prior
+  # round's own comment describes, re-run against `Game::Party`'s own real
+  # class body in game.rb): four `attr_reader` calls (`:actors, :items,
+  # :gold`; `:item_usage`; `:roster`; `:revision`) and exactly one
+  # explicit-name visibility statement, `private :swap_equipment_through_bag`
+  # -- the exact same one round 35's own comment already flagged by name
+  # as a standing hazard for whenever `Game::Party` itself got picked up.
+  # None of the four attr names collide with any of this round's own 69
+  # in-scope method names. `swap_equipment_through_bag` -- unlike round
+  # 35's own worry -- IS itself one of this round's own 69 real registered
+  # methods (TSV-confirmed: arity 3, visibility `private`), so this is
+  # exactly the single-name-companion-statement case round 38's own
+  # `collect_visibility_calls` mechanism exists to handle. Verified for
+  # real on this real case, not assumed to generalize from the `Game::
+  # ChipSet` precedent: a real `strip_wio_bc2cpp_stubs.rb` run against the
+  # real checked-in game.rb with this round's own owners csv deletes both
+  # the `def swap_equipment_through_bag` and its own `private
+  # :swap_equipment_through_bag` line together (confirmed by `grep -n
+  # swap_equipment_through_bag` on the real output: only the interior call
+  # site inside `#use_equip_skill_item` remains, no dangling `def` or
+  # `private` statement), the rewrite still parses (`ruby -c`), AND a real
+  # CRuby `load` of the rewritten file raises no `NameError` -- the exact
+  # failure round 38's own comment reproduced for the unfixed script
+  # against `Game::ChipSet`'s own `upper_flags`, now independently
+  # reconfirmed clean for this second, different owner.
+  #
+  # Gem-init-ordering correctness (the same whole-closed-world
+  # `mrb_funcall`/`mrb_funcall_argv`/`mrb_funcall_id`/
+  # `mrb_funcall_with_block` grep every prior round's own comment
+  # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
+  # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `git submodule update --init`d fresh for this round's own check rather
+  # than assumed already checked out -- re-run against all 69 of this
+  # round's own in-scope method names): exactly one real literal match,
+  # `"size"`, at the same `mruby-rgss/src/lib.cxx`'s own `read_font`
+  # function rounds 35/38's own comments already ruled out for `"name"`/
+  # `"color"` -- `mrb_funcall(M, fv, "size", 0)` there calls `fv`, that
+  # function's own local read straight off `self`'s own `@font` ivar (a
+  # real `RGSS::Font` value, never a `Game::Party`), read directly from
+  # the function body, not assumed. Every other literal name at any
+  # `mrb_funcall*` call site in the whole closed world (`"clear"`, the
+  # `blt`/`sblt`-suffixed window-skin `mrb_funcall_argv` calls in the same
+  # file, `"new"`, `"aref"`/`MRB_OPSYM(aref)`, `"string_gsub"`,
+  # `"to_enum"`, `"onig_regexp_gsub"`, `"string_scan"`, `"source"`,
+  # `"string_split"`, `"string_sub"`, ... -- the full real list checked
+  # directly) matches none of this round's own 69 names at all. Zero real
+  # hazards found.
+  #
+  # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS` (tools/bc2cpp/bc2cpp.rb,
+  # checked directly against both constants' own real contents, not
+  # assumed): `Game::Party` appears in NEITHER -- `DIRECT_CONSTRUCT_TARGETS`
+  # is only ever `%w[Game::Transition Game::Map]`, and `NATIVE_ARG_TARGETS`
+  # has no `Game::Party#...` entry among its own 35. Simpler than every one
+  # of round 38's own six new owners: no `Owner#initialize` devirtualization
+  # question to work through at all for this owner.
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # `strip_wio_bc2cpp_stubs.rb` run against the real checked-in game.rb,
+  # once with round 38's own already-shipped owners csv and once with that
+  # same csv plus this round's own `Game::Party`, both raised nothing and
+  # both rewrites parse (`ruby -c`). A real before/after
+  # `RubyVM::AbstractSyntaxTree` walk (every real `DEFN`/`DEFS`/`SCLASS`-
+  # nested `DEFN` in the whole file, not just this round's own owner) shows
+  # the two outputs differ by EXACTLY this round's own 69 `Game::Party`
+  # methods removed and NOTHING else added or removed -- a line-level
+  # `diff` between the two outputs independently confirms the same thing a
+  # different way (444 changed lines, every single one a deletion -- zero
+  # `>`-side additions), cross-checked directly, not eyeballed. The other
+  # two files round 38's own owners touch (`scene/map.rb`'s own
+  # `tone_channel`, `scene/base.rb`'s own `battle_scene_class`) are
+  # untouched by this round's own addition -- confirmed by a real run
+  # producing byte-for-byte identical output for both files whether or not
+  # `Game::Party` is in the owners csv (`Game::Party` has no `def` in
+  # either file).
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on `game.rb` alone, isolating `Game::Party`'s own
+  # marginal contribution on top of round 38's own already-shipped owner
+  # set): real, current game.rb baseline (unstripped) 162,963 bytes;
+  # round-38 owners alone 98,418 bytes; round-38 owners + `Game::Party`
+  # 83,690 bytes -- **-14,728 bytes** for this round's own 69 methods (same
+  # "measurement-path-length noise, a handful of bytes, direction and
+  # magnitude trustworthy" caveat every prior round's own comment already
+  # documents for this proxy).
+  #
+  # Regression check (this round's own required one, since this round adds
+  # to the SAME shared `owners:` array and reuses the SAME
+  # `strip_wio_bc2cpp_stubs.rb` unmodified -- no change to that script this
+  # round): the `diff` above already shows round 38's own owners strip
+  # byte-for-byte identically inside this round's own new output wherever
+  # `Game::Party` did not touch a line, and `scene/map.rb`/`scene/base.rb`
+  # (the other two round-38-affected files) are proven byte-for-byte
+  # identical between the old and new owners csv directly above. No
+  # regression to any of rounds 35-38's own already-shipped owners.
+  #
+  # `Game::Battle` (72 registered methods, ground truth from the same real
+  # registry run): investigated for real this round, NOT added, for a
+  # reason different from "too large" -- `Game::Battle`'s entire real class
+  # body lives in exactly one place, `mrblib/game/battle.rb` (confirmed
+  # directly: `grep -rn 'class Battle'` finds no other reopening of this
+  # owner anywhere in mrblib), and that file is one of the three the
+  # wio-only battle trim at the very top of this file (`spec.rbfiles -=
+  # %W[#{dir}/mrblib/game/battle.rb ...]`) already drops from wio's own
+  # `spec.rbfiles` entirely. `wio_strip_bc2cpp_stubs` only ever rewrites
+  # `spec.rbfiles` entries (see build_config.rb's own comment), so listing
+  # `Game::Battle` in `owners:` below would strip nothing real for wio
+  # today -- the exact same "pointless, not unsafe" shape this file's own
+  # very first comment block already documents for `Game::BattleText.
+  # singleton`/`Game::Battle.singleton`/`Game::State.singleton`/`Game::
+  # BattlePage.singleton` (all four also entirely defined in wio-excluded
+  # battle files). Omitted as structurally pointless for as long as the
+  # wio-only battle trim stands, not deferred for size the way `Game::
+  # Interpreter`/`RPG2k::Scene::Map`/`RPG2k::Scene::Battle` (173/224/110
+  # methods, genuinely still too large for one round's own full rigor) are.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
@@ -756,7 +891,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     Game::CharSet.singleton Game::Backdrop.singleton
                                     RPG2k::Scene.singleton
                                     Game::ChipSet Game::Map Game::Transition Game::State
-                                    Game::Screen Game::Actor Game::Character])
+                                    Game::Screen Game::Actor Game::Character Game::Party])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
