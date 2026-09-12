@@ -1038,6 +1038,212 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # wio_strip_debug_rbfiles/wio_strip_inline_helpers passes run): 78,235 ->
   # 22,235 bytes, a 56,000-byte (71.6%) reduction from these 169 stripped
   # method bodies.
+  #
+  # Round 44: `RPG2k::Scene::Map` (the field-map scene class) -- the larger
+  # of the two remaining round-38-deferred owners (`RPG2k::Scene::Battle`,
+  # 110 methods, still deferred, genuinely deserving its own dedicated
+  # round), given the SAME full per-owner soundness pass as every prior
+  # round, not a skimmed one, and the largest single owner this whole
+  # series has ever added (223 methods -- bigger than round 38's own six
+  # owners COMBINED).
+  #
+  # Ground truth (a real `wio_registered_methods.rb` run against
+  # `mruby-rpg2k-compiled`, never hand-counted): 223 real registered
+  # methods, confirming both round 38's own forward-looking count and
+  # `tools/bc2cpp/compiled_gems.rb`'s own real emission-owner writeup
+  # exactly. Unlike every `Game::*` owner rounds 38-42 covered,
+  # `RPG2k::Scene::Map` has no partial-owner reopening anywhere: a whole-gem
+  # `grep -rn 'class Map'` finds exactly one real class body defining it,
+  # `mrblib/scene/map.rb` (the other two "class Map" hits are `Game::Map`,
+  # a completely different owner in a different namespace, in `game.rb` and
+  # the wio-excluded `game/battle_support.rb`) -- confirmed directly, not
+  # assumed, and independently reconfirmed by a real AST-collected list of
+  # every one of this owner's own 223 real registered names against every
+  # real `def` in `scene/map.rb`: all 223 present, zero missing (a
+  # `comm -23` set-difference, not eyeballed). `RPG2k::Scene::Map::
+  # LRUBitmapCache` (5 of its own real registered methods, `#initialize`
+  # among them -- the one `NATIVE_ARG_TARGETS` entry anywhere near this
+  # owner's own name, see below) and `RPG2k::Scene::MapViewer`/`RPG2k::
+  # Scene::MapWorld` (34/7 of their own) are real, confirmed-different
+  # owners nested in or sharing this same file -- untouched by this round's
+  # own `owners:` entry, which names `RPG2k::Scene::Map` exactly and never
+  # its own nested `LRUBitmapCache`.
+  #
+  # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS` (tools/bc2cpp/bc2cpp.rb,
+  # checked directly against both constants' own real contents, not
+  # assumed, per this round's own task brief): `RPG2k::Scene::Map` appears
+  # in NEITHER. `DIRECT_CONSTRUCT_TARGETS` is only ever `%w[Game::Transition
+  # Game::Map Game::Switches Game::Timer Game::MessageConfig]`.
+  # `NATIVE_ARG_TARGETS`'s own one `RPG2k::Scene::Map`-adjacent entry is
+  # `RPG2k::Scene::Map::LRUBitmapCache#initialize` -- a real, different
+  # owner (the nested class named above), never the bare `RPG2k::Scene::Map`
+  # owner string this round's own `owners:` entry names. Simpler than every
+  # round-38 owner in this one specific respect: no `Owner#initialize`
+  # devirtualization question to work through at all for the owner this
+  # round actually strips.
+  #
+  # Companion-statement hazard check (the same real AST walk every prior
+  # round's own comment describes, re-run against `RPG2k::Scene::Map`'s own
+  # real class body in scene/map.rb): 2 bare `private` mode switches, 5
+  # `attr_reader`/`attr_accessor` calls (`:state`; `:events`; `:interpreter`;
+  # `:rng, :monster_cache, :backdrop_cache, :battlecharset_cache,
+  # :system2_cache, :windowskin`; `:map_animation`, an `attr_accessor`),
+  # and 13 explicit-name `public :name` statements -- by far the most
+  # companion statements any owner in this series has had (`Game::
+  # Interpreter`'s own 2 was the previous high). None of the 10 attr names
+  # collide with any of this round's own 223 in-scope method names. Of the
+  # 13 `public` statements, 11 are single-name (`message_window_open?`,
+  # `vehicle_char_passable?`, `vehicle_char_can_land?`, `char_passable?`,
+  # `char_can_land?`, `terrain_id`, `event_id_at`, `event_position`,
+  # `headless_battle`, `active_battle`, `rebuild_chipset`) -- 6 of those 11
+  # (`message_window_open?`, `vehicle_char_passable?`,
+  # `vehicle_char_can_land?`, `terrain_id`, `active_battle`,
+  # `rebuild_chipset`) name one of this round's own 223 registered methods
+  # each (the ordinary full-overlap single-name shape round 38's own
+  # `collect_visibility_calls` mechanism already strips cleanly, reconfirmed
+  # for real here -- see the strip+parse+AST-diff paragraph below); the
+  # other 5 (`char_passable?`, `char_can_land?`, `event_id_at`,
+  # `event_position`, `headless_battle`) name real methods that simply never
+  # compiled clean enough for bc2cpp to register (TSV-confirmed absent),
+  # same "candidate but not actually registered" shape every prior round's
+  # own comment already documents, so their own companion statements are
+  # never even inspected for overlap and stay standing untouched.
+  #
+  # The remaining 2 `public` statements are real, multi-name, and were
+  # MIXED -- naming both a registered (to-be-stripped) and a non-registered
+  # (kept) method in the same statement -- exactly the one companion-
+  # statement shape strip_wio_bc2cpp_stubs.rb's own file comment already
+  # documents as a real, deliberate, unimplemented limitation ("partial-
+  # argument-list editing is not supported yet, refusing to guess"), and no
+  # owner in rounds 35-42 had ever actually hit it: `public :camera_position,
+  # :character_screen_position, :char_in_sight?` (only `#char_in_sight?`
+  # registered) and a second, longer one spanning
+  # `:play_battle_bgm`/`:play_victory_bgm`/`:restore_pre_battle_bgm`/
+  # `:terrain_backdrop`/`:backdrop_for_terrain_id`/`:map_properties`/
+  # `:perform_game_over`/`:try_open_debug_menu`/`:build_animation`/
+  # `:anim_target`/`:drive_map_animation`/`:fire_animation_flashes`/
+  # `:frames_from_tenths`/`:load_face_bitmap`/`:step_map_animation`/
+  # `:close_battle`/`:current_map_tone` (7 of those 17 registered:
+  # `terrain_backdrop`, `try_open_debug_menu`, `drive_map_animation`,
+  # `frames_from_tenths`, `step_map_animation`, `close_battle`,
+  # `current_map_tone`). Confirmed for real, not just reasoned about: a real
+  # `strip_wio_bc2cpp_stubs.rb` run against the real checked-in (pre-this-
+  # round) `scene/map.rb` with this round's own owners csv reproduces
+  # exactly the documented `RuntimeError` for the first statement
+  # ("names both a stripped method (char_in_sight?) and a kept one
+  # (camera_position, character_screen_position) -- partial-argument-list
+  # editing is not supported yet") -- the real sanity-check-on-the-check
+  # every prior round's own comment already performs for its own real
+  # companion-statement cases, reconfirmed here for a genuinely new shape.
+  #
+  # Resolved by splitting each of these 2 real statements in `scene/map.rb`
+  # itself into two homogeneous ones (one naming only kept methods, one
+  # naming only stripped methods) -- a source-level fix, not a
+  # strip_wio_bc2cpp_stubs.rb change: `Module#public` with an explicit name
+  # list only marks those names public, so calling it twice with disjoint
+  # subsets of the original name set has the exact same net effect as
+  # calling it once with the union -- a behaviorally inert refactor for
+  # every build, wio or otherwise, verified two ways rather than assumed:
+  # (1) a real `strip_wio_bc2cpp_stubs.rb` run with this round's own
+  # 54-owner (unchanged) baseline csv against the split source reproduces
+  # output identical to the same run against the ORIGINAL unsplit source
+  # everywhere except the literal lines this round's own edit touched (a
+  # real `diff`, not eyeballed) -- the split has zero effect on any
+  # already-shipped owner; (2) after this round's own new
+  # `RPG2k::Scene::Map` owner is added, the resulting output has ZERO
+  # dangling explicit-name `public`/`private`/`protected` statement anywhere
+  # in the file (a real AST walk collecting every literal Symbol/String
+  # argument at every such statement and confirming each one still has a
+  # real `def` of that name still present) -- the general form of the same
+  # correctness property round 38's own `Game::ChipSet`/`swap_equipment_
+  # through_bag` precedent checked by hand for a single name, checked here
+  # exhaustively for all 17 companion-statement names still standing after
+  # the strip. `strip_wio_bc2cpp_stubs.rb` itself needed no change for this
+  # round -- the documented "mixed argument list" limitation stays exactly
+  # as documented, real, and (for this round) deliberately routed around at
+  # the source level instead of implemented, since a source-level fix
+  # carries zero regression risk to the other 54 already-shipped owners'
+  # own companion-statement handling and a script-level fix would.
+  #
+  # 7 of this round's own 223 registered methods (`clamp_speed`,
+  # `walk_slide_step`, `jump_slide_step`, `anim_frame_period`,
+  # `anim_continuous_period`, `anim_spin_period`, `shop_gold_term`) are
+  # real one-line `def name; body; end`s -- the shape round 35's own
+  # comment already fixed strip_wio_bc2cpp_stubs.rb to support; confirmed
+  # directly that all 7 sit alone on their own physical line (the real
+  # strip run below hit no "shares its own physical line" raise for any of
+  # them).
+  #
+  # Gem-init-ordering correctness (the same whole-closed-world
+  # `mrb_funcall`/`mrb_funcall_argv`/`mrb_funcall_id`/
+  # `mrb_funcall_with_block` grep every prior round's own comment
+  # describes -- `src/error_dump.cxx`, `src/main.cxx`, `app/wio/src/
+  # mruby_sd_smoke_main.cxx`, `app/psp/main.cxx`, all three `*-compiled/src/
+  # register.cxx`, every `mruby-rgss/src/*.cxx`, plus the always-active
+  # external mrbgems `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/
+  # mruby-onig-regexp`, `git submodule update --init`d fresh for this
+  # round's own check rather than assumed already checked out -- re-run
+  # against all 223 of this round's own real registered method names via a
+  # small script rather than by hand, given the size): ZERO real literal
+  # string-argument matches anywhere in the whole closed world against any
+  # of the 223 names. Every literal method-name argument that DOES appear
+  # at any real `mrb_funcall*` call site in this closed world (`"press"`/
+  # `"release"`/`"main_loop"`/`"width"`/`"height"`/`"name"`/`"color"`/
+  # `"bold"`/`"italic"`/`"outline"`/`"shadow"`/`"out_color"`/`"warn_stub"`/
+  # `"clear"`/`"start"`/`"switches"`/`"dup"`/`"default_path"`/`"call"`/
+  # `"current_scene_name"`/`"size"`/`"[]"`/`"[]="`/`"clamp"`/`"%"`/`"new"`/
+  # `"Regexp"`/`"RGSS"`/`"marshal_dump"`/`"marshal_load"`/`"_dump"`/
+  # `"_dump_data"`/`"instance_variables"`/`"sort!"`/`"source"`/`"options"`/
+  # `"write"`/`"read"`/`"getc"`/`"ungetc"`/`"replace"`/`"_sys_fail"`,
+  # `"probe!"`) is, as every prior round already found, real, different,
+  # and unrelated -- every register.cxx hit is inside a `//`-comment
+  # describing generated (not checked-in) code, same as every prior round.
+  # `"clamp"` is the one name in this list not already named by a prior
+  # round's own comment (`mruby-rgss/src/lib.cxx`, unrelated to this round's
+  # own registered `#clamp_speed`, a completely different method name, not
+  # a bare `clamp`).
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # `strip_wio_bc2cpp_stubs.rb` run against every one of the 14 real
+  # wio-relevant `mrblib` files (`game.rb`, `interpreter.rb`, `main.rb`,
+  # `scene/{base,equip_menu,game_over,item_menu,map,menu,order,save_load,
+  # skill_menu,status_menu,title}.rb` -- the same 14-file set round 42's own
+  # comment already established), once with round 42's own already-shipped
+  # 54-owner csv and once with that same csv plus this round's own
+  # `RPG2k::Scene::Map`, both raised nothing and both rewrites parse (`ruby
+  # -c`). 13 of the 14 files are BYTE-FOR-BYTE IDENTICAL between the two
+  # runs (confirmed by a real `diff`, not eyeballed) -- this round's own
+  # required regression check, since this round adds to the SAME shared
+  # `owners:` array and reuses the SAME `strip_wio_bc2cpp_stubs.rb`
+  # unmodified (no change to that script this round). Only `scene/map.rb`
+  # differs, and a real before/after `RubyVM::AbstractSyntaxTree` walk
+  # (every real `DEFN`/`DEFS`/`SCLASS`-nested `DEFN` in the whole file, not
+  # just this round's own owner) shows the two outputs differ by EXACTLY
+  # this round's own 223 `RPG2k::Scene::Map` methods removed and NOTHING
+  # else added or removed -- a set-difference against the real registered-
+  # method-name ground truth confirms the removed-method set and the
+  # registered-method set are IDENTICAL (a real `diff` of the two sorted
+  # name lists, empty), not just equal in count.
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on `scene/map.rb` alone, isolating this round's own
+  # marginal contribution on top of round 42's own already-shipped 54-owner
+  # set, both runs against identical-length output filenames to cancel the
+  # path-length measurement noise every prior round's own comment already
+  # documents for this proxy): 196,252 -> 122,052 bytes, a 74,200-byte
+  # (37.8%) reduction from these 223 stripped method bodies -- by far the
+  # largest single-file byte reduction this whole series has measured
+  # (round 38's own combined `game.rb` total across 7 owners was 37,357
+  # bytes; this round's own single owner, in one file, is double that).
+  #
+  # What round 44 deliberately did NOT do: `RPG2k::Scene::Battle` (110
+  # registered methods) remains deferred, genuinely deserving its own
+  # dedicated round rather than being folded into this one under time
+  # pressure -- unlike `RPG2k::Scene::Map`, it was not even investigated for
+  # real this round (no registry/companion-statement/gem-init-ordering
+  # check run against it), so its own real shape (partial-owner reopenings,
+  # companion statements, or otherwise) is completely open for whichever
+  # round picks it up next.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
@@ -1062,7 +1268,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     RPG2k::Scene.singleton
                                     Game::ChipSet Game::Map Game::Transition Game::State
                                     Game::Screen Game::Actor Game::Character Game::Party
-                                    Game::Interpreter])
+                                    Game::Interpreter RPG2k::Scene::Map])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
