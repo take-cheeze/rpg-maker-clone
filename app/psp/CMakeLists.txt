@@ -201,6 +201,13 @@ rpg2k_add_mruby(
   mruby-rpgxp
   mruby-rpgvx
   mruby-wolf
+  # Same RPGMAKER_BC2CPP=1-only compiled gems as the root CMakeLists.txt
+  # (build_config.rb gates all three on that one env var, independent of target)
+  # -- see that file's own comment on this same GEMS addition for the real,
+  # confirmed stale-rebuild gap this closes.
+  mruby-lcf-compiled
+  mruby-rpg2k-compiled
+  mruby-rgss-compiled
   MRB_OPTS
   MRUBY_TARGET=psp)
 

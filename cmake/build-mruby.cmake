@@ -75,6 +75,35 @@ function(rpg2k_add_mruby)
     ${mruby_prefix}/include/*.h)
   list(APPEND mrb_files ${mruby_core})
 
+  # Real, confirmed gap found and fixed this round (docs/adr/0139's own bc2cpp
+  # bug-hunt sweep): tools/bc2cpp/bc2cpp.rb and tools/bc2cpp/compiled_gems.rb
+  # live outside every mrbgem directory entirely (this script's own doc comment
+  # above already explains why: this one tool feeds
+  # mruby-lcf-compiled's/mruby-rpg2k-compiled's/ mruby-rgss-compiled's own
+  # mrbgem.rake `file` rules, none of which are in a fixed, single gem's own
+  # src/ or mrblib/ tree), so neither file was ever a member of `mrb_files`
+  # above -- this custom command's own DEPENDS list (below) never named either
+  # one, and Ninja/Make only ever re-runs a custom command when something in its
+  # OWN declared DEPENDS changed, not when a file it has no idea the command
+  # reads changes. Confirmed LIVE, not hypothetical: editing either file and
+  # re-running a plain `cmake --build` (no reconfigure, no `rake` invoked by
+  # hand) produced `ninja: no work to do` -- the previous, now-stale
+  # `*_compiled_gen.cpp`/`*_decls.h` a PRIOR build already generated kept being
+  # linked in unchanged, silently discarding the edit rather than regenerating
+  # it, for every one of the three compiled gems at once
+  # (`rpg2k_compiled_gen.cpp` was still dated from before this round's own
+  # `compiled_gems.rb`/`register.cxx` edits after a real incremental rebuild
+  # reported success). This is exactly the class of "silent miscompile" this
+  # project's own established verification discipline exists to catch -- a
+  # `cmake --build && ctest` that reports green while actually still testing the
+  # PREVIOUS round's own generated code is far worse than a build that fails
+  # loudly, and would have let this round's own `Game.singleton` addition (and
+  # any future one) look verified without ever actually being exercised.
+  # `tools/bc2cpp/mrb_files.rb` doesn't exist -- there's no third file this tool
+  # reads at build time beyond these two.
+  file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb)
+  list(APPEND mrb_files ${bc2cpp_files})
+
   set(mrb_opts
       MRUBY_CONFIG=${ARG_REPO_ROOT}/build_config.rb
       MRUBY_BUILD_DIR=${mruby_build_dir}

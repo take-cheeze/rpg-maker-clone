@@ -474,6 +474,16 @@ rpg2k_add_mruby(
   mruby-rpgvx
   mruby-wolf
   mruby-mvjs
+  # The three opt-in, RPGMAKER_BC2CPP=1-only compiled gems (build_config.rb) --
+  # their own hand-written src/register.cxx (edited every bc2cpp round) was,
+  # until this round's own bc2cpp bug-hunt sweep found and fixed the gap (see
+  # cmake/build-mruby.cmake's own comment on tools/bc2cpp/*.rb, right above
+  # where mrb_files is built), invisible to this custom command's own DEPENDS
+  # list the same way tools/bc2cpp/*.rb was: neither was ever a real rebuild
+  # trigger for a plain incremental `cmake --build`.
+  mruby-lcf-compiled
+  mruby-rpg2k-compiled
+  mruby-rgss-compiled
   MRB_OPTS
   BUILD_DIR=${MRUBY_BUILD_DIR}
   "CXX=${CMAKE_CXX_COMPILER_LAUNCHER} ${CMAKE_CXX_COMPILER}"
