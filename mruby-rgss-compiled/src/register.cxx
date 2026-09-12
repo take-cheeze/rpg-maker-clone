@@ -246,6 +246,47 @@
 // compiled body still exists and is still reachable (via `brightness=`'s
 // own already-devirtualized direct C++ call), just never through
 // `mrb_define_class_method`.
+//
+// Round 31 (".singleton/leftover mop-up") follow-up closes out
+// `RGSS::Font.singleton#exist?` -- the one `.singleton`-owned method this
+// ADR's own "RGSS::Font investigated, and NOT added" follow-up left open
+// as a known-good candidate once `.singleton` emission became real.
+// Installed onto `font`'s own singleton class via
+// `mrb_define_class_method`, the identical reasoning every other
+// `.singleton` owner above already established. `RGSS::Font` itself is
+// still not a plain instance-side owner: `#initialize` still has two real
+// optional arguments (`name = Font.default_name, size =
+// Font.default_size`), the same `pure_mandatory_arity?` gate as ever.
+//
+// Also closes out two tiny leftover instance-method classes:
+// `RGSS::ErrorReport::Tee#initialize` (mruby-rgss/mrblib/error_report.rb)
+// -- a thin IO-like wrapper that mirrors every real write to
+// `RGSS::ErrorReport.record` before forwarding to its own wrapped `@io`;
+// only `#initialize(io)` compiles (`#write`/`#print`'s own `*args` splat
+// and `#puts`'s own call into the already-documented `ErrorReport.
+// puts_text` gap keep the rest interpreted) -- implicitly private, like
+// every `#initialize` in real Ruby, confirmed against the real
+// diagnostic's own tag. `Array#include?` (mruby-rgss/mrblib/
+// array_include.rb) -- not a class this project defines, but one it
+// reopens: a plain index-loop replacement for mruby's own block-
+// allocating `Enumerable#include?` fallback (see this project's own
+// array_include.rb top comment for the full performance rationale).
+// Genuinely POLY in the whole-program registry (`Array`, plus core
+// `Module#include?` colliding only by bare name, 3rd/mruby/src/class.c --
+// a different real method entirely, never this one's own owner), so this
+// stays a plain `mrb_define_method` with no devirtualization claim of its
+// own; other already-compiled call sites elsewhere in this program are
+// free to devirtualize INTO it once traced to a real `Array` receiver
+// (confirmed directly in mruby-rpg2k-compiled's own regenerated output: a
+// `TYPED :include? -> Array#include?` runtime-class-guarded direct call,
+// `trace_new_target`'s own mechanism, with an `mrb_funcall` fallback for
+// any other receiver). Both `RGSS::ErrorReport::Tee` and `Array` install
+// via their own freshly-fetched `RClass*` (`tee`, nested under the
+// already-declared `error_report`, and `array_cls`, a bare top-level core
+// class fetched via `mrb_class_get` the same way `RClass* rpg2k =
+// mrb_class_get(M, "RPG2k")` already does in mruby-rpg2k-compiled/src/
+// register.cxx) -- neither shares an existing variable with anything
+// registered above.
 #include <mruby.h>
 #include <mruby/class.h>
 
@@ -480,6 +521,32 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, graphics, "freeze",
                           RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
+
+  // RGSS::Font.singleton -- its one real method (mruby-rgss/mrblib/lib.rb:
+  // `self.exist?(name)`, a `class << self ... end`-opened bare `true`
+  // stub). RGSS::Font itself carries no other compiled entry point --
+  // #initialize's own two optional arguments still keep it off the
+  // interpreter's own bytecode path, unrelated to this fetch.
+  RClass* font = mrb_class_get_under(M, rgss, "Font");
+
+  mrb_define_class_method(M, font, "exist?", RGSS__Font_singleton_exist_,
+                          MRB_ARGS_REQ(1));
+
+  // RGSS::ErrorReport::Tee#initialize -- its one real method (mruby-rgss/
+  // mrblib/error_report.rb: `@io = io`), implicitly private like every
+  // `#initialize` in real Ruby.
+  RClass* tee = mrb_class_get_under(M, error_report, "Tee");
+
+  mrb_define_private_method(M, tee, "initialize",
+                            RGSS__ErrorReport__Tee_initialize, MRB_ARGS_REQ(1));
+
+  // Array#include? -- a real bytecode reopening of the native, top-level
+  // Array class (mruby-rgss/mrblib/array_include.rb), fetched via
+  // mrb_class_get the same way mruby-rpg2k-compiled/src/register.cxx
+  // already fetches the bare top-level RPG2k module.
+  RClass* array_cls = mrb_class_get(M, "Array");
+
+  mrb_define_method(M, array_cls, "include?", Array_include_, MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {}

@@ -359,6 +359,33 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, save_data, "schema", LCF__SaveData_schema,
                     MRB_ARGS_NONE());
+
+  // StringIO (docs/adr/0139's own round-31 ".singleton/leftover mop-up"
+  // follow-up) -- not a class this gem defines, but one this same file
+  // (mruby-lcf/mrblib/lcf.rb, right above the `module LCF` body above)
+  // reopens with one real bytecode-defined method, `#ungetbyte(substr)`
+  // (an `Integer`-or-`String` argument normalized to a one-character
+  // string, then forwarded to the native `#ungetc`). Public, pure
+  // mandatory arity, no super, no block -- confirmed directly against the
+  // real diagnostic's own `== compiled entry points ==` listing, no
+  // `[private -- ...]` tag. `mruby-stringio` (this project's own separate
+  // `3rd/` submodule) is a real, always-active gem loaded before
+  // `mruby-lcf` in the real build (`mruby-lcf/mrblib/lcf.rb`'s own many
+  // `StringIO.new` call sites throughout already depend on that load
+  // order), and `mruby-lcf-compiled`'s own `add_dependency 'mruby-lcf'`
+  // guarantees `mruby-lcf`'s own C hook + mrblib (this reopening
+  // included) have already fully run by the time this gem's own init
+  // installs the override below -- the identical "already loaded by
+  // dependency order" guarantee this file's own top comment already
+  // relies on for every LCF-owned class, just one level further out (a
+  // core mrbgem this gem doesn't itself depend on, rather than one of
+  // this project's own). No MRB_SET_INSTANCE_TT call belongs here:
+  // `#ungetbyte` touches no ivar at all, and StringIO has no
+  // bytecode-defined `#initialize` of its own for
+  // `drop_unsafe_embeddings` to even consider.
+  RClass* string_io = mrb_class_get(M, "StringIO");
+  mrb_define_method(M, string_io, "ungetbyte", StringIO_ungetbyte,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {}
