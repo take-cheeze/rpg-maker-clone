@@ -335,8 +335,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # 6,451 -> 3,166; title.rb 7,614 -> 5,190; game_over.rb 2,445 -> 1,578 --
   # 114,633 -> 49,824 bytes combined, a 64,809-byte (56.5%) reduction.
   #
-  # Future-round candidates, unchanged from round 35's own list above
-  # except for the 13 owners just added: `Game::ChipSet` still deferred
+  # Future-round candidates, as of round 36: `Game::ChipSet` still deferred
   # (companion-statement support); every `.singleton` owner (20+, see
   # tools/bc2cpp/compiled_gems.rb's own `mruby-rpg2k-compiled` entry); and
   # the larger/`DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS`-touching
@@ -344,6 +343,213 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `Game::Map`, `Game::Screen`, `Game::Transition`, `Game::State`,
   # `Game::Interpreter`, `RPG2k::Scene::Map`, `RPG2k::Scene::Battle`) --
   # each still needs its own dedicated per-owner soundness pass.
+  #
+  # Round 37: this round's own primary target is the `.singleton` owners
+  # just named above -- 21 of the 25 real `.singleton` candidates in
+  # tools/bc2cpp/compiled_gems.rb's own `mruby-rpg2k-compiled` `owners:`
+  # list (`Game.singleton` through `RPG2k::Scene.singleton` in the array
+  # below), the other 4 deliberately omitted as real, confirmed no-ops
+  # (see "4 real no-op omissions" below) rather than silently skipped.
+  #
+  # Real shape confirmation (never assumed): a whole-gem grep of every real
+  # `mrblib/**/*.rb` file for `class << self`/`<<\s*self` finds ZERO
+  # matches anywhere in mruby-rpg2k -- every one of this gem's own
+  # bc2cpp-registered `.singleton` methods (all 25 candidates, not just the
+  # 21 added here) is a plain top-level `def self.foo` (a `DEFS` node),
+  # never an `SCLASS`-nested `DEFN` -- unlike mruby-rgss's own
+  # `RGSS::Audio.singleton`/`RGSS::ErrorReport.singleton` (already
+  # stripped, `class << self`-shaped). strip_wio_bc2cpp_stubs.rb's own
+  # DEFS/SCLASS support (added well before this round -- see that file's
+  # own file comment) already handles this shape; nothing needed changing
+  # there for this round's own owners.
+  #
+  # Also confirmed directly, not assumed from a task description alone:
+  # bc2cpp.rb's own `build_registry` (`case insn.op when 'CLASS',
+  # 'MODULE'`, tools/bc2cpp/bc2cpp.rb) and strip_wio_bc2cpp_stubs.rb's own
+  # `collect_defs` (`case node.type when :CLASS ... when :MODULE`) both
+  # walk a real Ruby `module` identically to a `class` for this purpose --
+  # matters here because most of this round's own 21 owners are real
+  # modules, not classes (`Game`, `Game::States`, `Game::CharSet`,
+  # `Game::Message`, `Game::MessagePalette`, `Game::WindowCursor`,
+  # `Game::ChipsetLayout`, `Game::EventGraphic`, `Game::Parallax`,
+  # `Game::MoveType`, `Game::EventPage`, `Game::Backdrop`, `Game::MapBgm`,
+  # `Game::MapAccess`, `RPG2k::Scene` -- checked directly, `grep -n
+  # '^\s*\(class\|module\)\s\+Name\b'`), the rest real classes
+  # (`Game::ChipSet`, `Game::Party`, `Game::Character`, `Game::Transition`,
+  # `Game::Picture`, `RPG2k::Scene::Map` -- a `class Map < Base`). Both
+  # real code paths agree, so a module singleton strips exactly like a
+  # class singleton -- no exclusion needed on that account.
+  #
+  # Real ground truth (a real wio_registered_methods.rb run against
+  # mruby-rpg2k-compiled's own real bc2cpp.rb registry, never hand-
+  # counted) for all 25 real `.singleton` candidates: Game 5, Game::States
+  # 13, Game::States::BattleText 13, Game::ChipsetLayout 10,
+  # Game::EventGraphic 9, Game::Battle 11, Game::Transition 6, Game::State
+  # 2, Game::Party 2, Game::Picture 1, Game::Character 1, Game::ChipSet 1,
+  # RPG2k::Scene::Map 1, Game::MoveType 4, Game::MapAccess 4,
+  # Game::Parallax 3, Game::MessagePalette 3, Game::MapBgm 2,
+  # Game::BattlePage 2, Game::WindowCursor 1, Game::Message 1,
+  # Game::EventPage 1, Game::CharSet 1, Game::Backdrop 1, RPG2k::Scene 1 --
+  # 99 real registered methods total, every one of them public (checked
+  # directly against the TSV's own visibility column, not assumed).
+  #
+  # 4 real no-op omissions (all of an owner's own registered methods live
+  # entirely in a file wio's own spec.rbfiles already drops -- the same
+  # "pointless, not unsafe" shape round 35's own comment above documents
+  # for `Game::Troop`/`Game::Enemy`/`Game::EnemyAction`/`Game::EnemyAi`),
+  # confirmed directly by an AST walk of every real file in this gem's
+  # mrblib locating each owner's own registered method names, not assumed
+  # from the class name alone:
+  #   - Game::States::BattleText.singleton (13/13 registered methods, all
+  #     defined in game/battle_support.rb)
+  #   - Game::Battle.singleton (11 of 13 real `def self.*` under this
+  #     owner are registered -- `from_actor`/`from_enemy` do not compile --
+  #     all 11 registered ones in game/battle.rb)
+  #   - Game::State.singleton (2 of 10 real `def self.*` under this owner
+  #     are registered -- `bgm_from_chunk`/`se_from_chunk`, both in
+  #     game/lsd_io.rb; the other 8, including `load` in game.rb itself,
+  #     simply never compiled clean enough for bc2cpp to register them)
+  #   - Game::BattlePage.singleton (2 of 4 real `def self.*` under this
+  #     owner are registered -- `check_turns`/`hp_within?`, both in
+  #     game/battle_support.rb)
+  # battle_support.rb/battle.rb/lsd_io.rb are all wio-only exclusions
+  # already in force above this comment; wio_strip_bc2cpp_stubs only ever
+  # rewrites spec.rbfiles entries, so listing any of these four owners in
+  # `owners:` below would strip nothing real for wio today -- omitted as
+  # pointless, exactly like the round 35 precedent, not because of any
+  # correctness problem.
+  #
+  # Partial-owner shape (the same "some of an owner's own registered
+  # methods live in an excluded file, others don't" shape round 36's own
+  # comment already documents for `Base`/`EventResolver`/`MapWorld`/
+  # `VehicleWorld`): `Game::States.singleton` has 13 real registered
+  # methods total, but only 6 (`name`, `priority_of`, `color`,
+  # `map_step_drain`, `drain`, `int_field`) are defined in game.rb (the
+  # in-scope file); the other 7 (`animation_pose`, `inflict_message`,
+  # `recovery_message`, `affected_message`, `already_message`, `field`,
+  # `message`) are defined in game/battle_support.rb, wio-excluded, so
+  # stripping this owner only ever removes the 6 game.rb methods for wio --
+  # correct and intentional, not a gap. Separately, `Game::Message.singleton`,
+  # `Game::EventPage.singleton`, `Game::CharSet.singleton`, and
+  # `Game::Backdrop.singleton` each have MORE real `def self.*` in game.rb
+  # than bc2cpp actually registered (5/1, 3/1, 3/1, 2/1 respectively -- the
+  # un-registered ones, e.g. `Game::Message.scan`, simply didn't compile
+  # clean enough for bc2cpp to cover, same shape as `Game::ChipsetLayout.
+  # singleton`'s own `quads`/`quads_from_quarters`/`water_quads`/
+  # `terrain_quads`, 4 of its 14 real defs) -- every registered one of
+  # them is, itself, in game.rb, so these four are ordinary full (not
+  # partial) owners despite the gap.
+  #
+  # Companion-statement hazard check (this round's own required check,
+  # extended to the singleton-specific companion `private_class_method`/
+  # `public_class_method` alongside the usual `private :name`/
+  # `protected :name`/`public :name`/`alias_method`/`attr_reader`/
+  # `attr_accessor`/`attr_writer`): a whole-gem grep of every real
+  # mrblib/**/*.rb file for all of these finds `private_class_method`/
+  # `public_class_method`/`alias_method`/`singleton_class` NOWHERE in this
+  # gem at all, and the only real explicit-name `private :x`/`public :x`
+  # statements anywhere are `game.rb`'s own `private :upper_flags`
+  # (`Game::ChipSet#upper_flags`, an INSTANCE method, already the reason
+  # the separate non-singleton `Game::ChipSet` owner stays deferred above
+  # -- irrelevant to this round's own `Game::ChipSet.singleton#lower_index`,
+  # a different owner entirely) and `private :swap_equipment_through_bag`
+  # (`Game::Party#`, likewise an instance method unrelated to
+  # `Game::Party.singleton`'s own `usable_flag?`/`normal_skill?`), plus a
+  # handful of `public :x` mode restorers in interpreter.rb/scene/map.rb/
+  # scene/battle.rb/game/battle.rb/main.rb (`start_random_battle`,
+  # `message_window_open?`, `char_passable?`, `terrain_id`, ... -- the full
+  # list checked directly, not summarized) -- none of these names match
+  # any of this round's own 71 real registered method names across the 21
+  # owners below (99 total minus the 28 in the 4 no-op owners just
+  # above). Every one of those 71 is also TSV-confirmed `public`,
+  # consistent with there being no companion statement touching any of
+  # them at all. No `Game::ChipSet`-style exclusion needed for any of this
+  # round's own 21 owners.
+  #
+  # Gem-init-ordering correctness (same methodology as every prior round,
+  # re-run against this round's own 61 unique method names -- `int_field`
+  # is reused by three different owners, `name` by one, `full` by one):
+  # the same whole-tree `grep -rl mrb_funcall` closed-world file list
+  # rounds 35/36 already established (`src/error_dump.cxx`, `src/main.cxx`,
+  # `app/wio/src/mruby_sd_smoke_main.cxx`, `app/psp/main.cxx`, all three
+  # `*-compiled/src/register.cxx`, every `mruby-rgss/src/*.cxx`) re-checked
+  # against these 61 names: two real literal matches, both confirmed
+  # unrelated by reading the call site directly rather than assumed --
+  # `mruby-rgss/src/lib.cxx`'s own `read_font` calls `mrb_funcall(M, fv,
+  # "name", 0)` and `mrb_funcall(M, fv, "color", 0)` (alongside `"size"`/
+  # `"bold"`/`"italic"`/`"outline"`/`"shadow"`/`"out_color"`, already ruled
+  # out by round 35's own comment), but `fv` there is `self`'s own `@font`
+  # ivar -- a real `RGSS::Font` value, never a `Game::States`/anything else
+  # in this round's own owner set -- read directly from the function body,
+  # not assumed. Every other literal method name at any of these call
+  # sites (`"width"`/`"height"`/`"main_loop"`/`"start"`/`"call"`/
+  # `"current_scene_name"`/`"press"`/`"release"`/`"dup"`/`"default_path"`/
+  # `"warn_stub"`/`"clear"`/`"blt"`/`"log_tail"`/`"message"`/`"backtrace"`/
+  # `"install"`/`"probe!"`) is, as every prior round already found, real,
+  # different, and unrelated. The three always-active external mrbgems
+  # (`3rd/mruby-marshal`, `3rd/mruby-stringio`, `3rd/mruby-onig-regexp`)
+  # re-checked too: same real call sites rounds 35/36 already documented
+  # (`"marshal_dump"`, `"_dump"`, `"instance_variables"`, `"sort!"`,
+  # `"source"`, `"options"`, `"_dump_data"`, `"write"`, `"marshal_load"`,
+  # `"new"`, `"getc"`, `"ungetc"`, `"read"`, `"_sys_fail"`, `"replace"`,
+  # `aref`/`"[]"`, `"string_gsub"`, `"to_enum"`, `"onig_regexp_gsub"`,
+  # `"string_scan"`, `"string_split"`, `"string_sub"`), none matching any
+  # of this round's own 61 names either.
+  #
+  # DIRECT_CONSTRUCT_TARGETS/NATIVE_ARG_TARGETS (tools/bc2cpp/bc2cpp.rb):
+  # `Game::Transition.singleton` shares its enclosing class's own bare name
+  # with `DIRECT_CONSTRUCT_TARGETS`'s own `Game::Transition` entry --
+  # checked directly rather than waved through on that account alone: none
+  # of this owner's own 6 registered methods (`setting?`, `erase_style`,
+  # `show_style`, `style_for`, `default_frames`, `block_grid`) is named
+  # `new`/`allocate`, the only two names that gate `DIRECT_CONSTRUCT_TARGETS`'s
+  # own codegen decision, and that decision is made by bc2cpp.rb's own
+  # separate, earlier compile of the real, UNSTRIPPED source in any case
+  # (wio_strip_bc2cpp_stubs's own comment above: "nothing this function
+  # does to spec.rbfiles can ever reach or perturb bc2cpp's own
+  # registry-building input") -- no interaction either way.
+  # `NATIVE_ARG_TARGETS` is keyed entirely on bare `Owner#name` (instance
+  # method) strings; none of this round's `.singleton`-suffixed owner
+  # strings can ever match one.
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # strip_wio_bc2cpp_stubs.rb run against the 3 real checked-in files these
+  # 21 owners' in-scope methods live in (game.rb, scene/map.rb, scene/
+  # base.rb) with exactly this round's own 21-owner csv raised nothing,
+  # every rewritten file still parses (`ruby -c`), and a real before/after
+  # RubyVM::AbstractSyntaxTree walk (every real DEFN/DEFS/SCLASS-DEFN in
+  # each file, not just this round's own owners) shows EXACTLY 64 methods
+  # removed and NOTHING else added or removed -- cross-checked directly
+  # against the per-owner counts above (62 from game.rb, 1 from scene/
+  # map.rb's own `tone_channel`, 1 from scene/base.rb's own
+  # `battle_scene_class`), not eyeballed.
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on the 3 affected files, before this gem's own
+  # wio_strip_debug_rbfiles/wio_strip_inline_helpers passes run): game.rb
+  # 163,046 -> 150,990 bytes (12,056 bytes, 7.4%, from 62 stripped
+  # methods); scene/map.rb 196,496 -> 196,349 bytes (147 bytes, 0.1%, from
+  # its own single `tone_channel`); scene/base.rb 11,199 -> 11,024 bytes
+  # (175 bytes, 1.5%, from its own single `battle_scene_class`) --
+  # 370,741 -> 358,363 bytes combined, a 12,378-byte (3.3%) reduction.
+  # (game.rb's own pre-strip baseline moved slightly since round 35's own
+  # 162,963-byte figure -- unrelated intervening comment/documentation
+  # edits to that file between rounds, not a discrepancy in either round's
+  # own measurement.)
+  #
+  # Future-round candidates, updated: `Game::ChipSet` (the non-singleton
+  # instance-method owner) still deferred (companion-statement support for
+  # `private :upper_flags`); the 4 real no-op `.singleton` owners above
+  # stay omitted unless a future round stops excluding battle_support.rb/
+  # battle.rb/lsd_io.rb for wio; and the larger/`DIRECT_CONSTRUCT_TARGETS`/
+  # `NATIVE_ARG_TARGETS`-touching INSTANCE-method owners (`Game::Actor`,
+  # `Game::Party`, `Game::Battle`, `Game::Character`, `Game::Map`,
+  # `Game::Screen`, `Game::Transition`, `Game::State`, `Game::Interpreter`,
+  # `RPG2k::Scene::Map`, `RPG2k::Scene::Battle`) still each need their own
+  # dedicated per-owner soundness pass -- unchanged from round 36's own
+  # list, since this round only ever added `.singleton` pseudo-owners,
+  # none of which touch that list's own bare-name entries' own instance
+  # methods.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
@@ -354,7 +560,18 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     RPG2k::Scene::Order RPG2k::Scene::Base
                                     RPG2k::Scene::Title RPG2k::Scene::MapWorld
                                     RPG2k::Scene::VehicleWorld RPG2k::Scene::EventResolver
-                                    RPG2k::Scene::GameOver])
+                                    RPG2k::Scene::GameOver
+                                    Game.singleton Game::States.singleton
+                                    Game::ChipsetLayout.singleton Game::EventGraphic.singleton
+                                    Game::Transition.singleton Game::Party.singleton
+                                    Game::Picture.singleton Game::Character.singleton
+                                    Game::ChipSet.singleton RPG2k::Scene::Map.singleton
+                                    Game::MoveType.singleton Game::MapAccess.singleton
+                                    Game::Parallax.singleton Game::MessagePalette.singleton
+                                    Game::MapBgm.singleton Game::WindowCursor.singleton
+                                    Game::Message.singleton Game::EventPage.singleton
+                                    Game::CharSet.singleton Game::Backdrop.singleton
+                                    RPG2k::Scene.singleton])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
