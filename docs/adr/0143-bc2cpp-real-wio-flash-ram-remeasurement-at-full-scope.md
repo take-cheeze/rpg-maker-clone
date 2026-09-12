@@ -276,3 +276,175 @@ current, real, provably-clean ones.
   established; this ADR's comparison remains a controlled A/B on top of
   that shared, still-unfit baseline, not a claim either configuration
   produces working firmware.
+
+## Addendum: which symbols the `RPGMAKER_BC2CPP=1` flash image actually spends its bytes on
+
+A same-session follow-up to the aggregate numbers above, using the same
+process (fresh submodule checkout, all nine patches, verified Unicode
+tables, `RGSS_WIO_ARDUINO_INCLUDES` from a real `pio run -e wio -v`, no
+`-flto`) and re-confirming non-staleness the same way: the real, freshly
+built `mruby-rpg2k-compiled/src/register.o` carries 220
+`RPG2k__Scene__Battle_*` symbols, 196 `*_singleton_*` symbols and 32
+`Battle__Combatant_*` symbols — an exact match to this ADR's own numbers
+above — and each gem's `register.o` real `.text` size
+(`arm-none-eabi-size`) is bit-for-bit identical to the table above (11,309 /
+26,400 / 1,069,716), as is the real link's `.text`/`.ARM.extab`/
+`.ARM.exidx`/`.data`/`.bss` breakdown and its "region FLASH overflowed by
+1743484 bytes" message. This is not a new measurement of a different build;
+it is a per-symbol breakdown of the identical one.
+
+`firmware.map`'s own linker-script memory-map listing gives an exact
+address+size for every input section the link placed into `.text`. Summing
+all 15,897 of them (2,355,092 bytes) overshoots the real linked `.text`
+size (2,211,592) by about 143,500 bytes (~6.5%) — the same *kind* of small,
+unreconciled gross-vs-net gap this ADR's own per-gem table already flagged
+(1,107,425 gross vs. 1,044,296 net, ~40,000 bytes), most plausibly
+`-fmerge-all-constants` (build_config.rb) folding equal-valued string/
+constant sections across translation units at final-link time in a way the
+map's *per-input-section* listing still shows at each contributor's
+pre-fold size. Reported here as gross per-input-section sizes, the same
+precedent this ADR's own per-gem table already set, not chased to a fully
+reconciled link-level accounting.
+
+### Top 30 individual symbols across the whole linked image
+
+| # | bytes | % of `.text` | symbol | category |
+| ---: | ---: | ---: | --- | --- |
+| 1 | 85,253 | 3.85% | `(anonymous namespace)::build_ui(char const*)` [merged string pool] | app/wio boot main |
+| 2 | 66,270 | 3.00% | `str1.1` (merged string-literal pool) | mruby core (`symbol.o`) |
+| 3 | 37,944 | 1.72% | `cp932_reverse_table` | mruby-lcf CP932 codec table |
+| 4 | 37,944 | 1.72% | `cp932_table` | mruby-lcf CP932 codec table |
+| 5 | 34,468 | 1.56% | `mrb_mruby_rpg2k_compiled_gem_init` | bc2cpp: mruby-rpg2k-compiled |
+| 6 | 27,044 | 1.22% | `Game__Interpreter_execute_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 7 | 20,952 | 0.95% | `presym_name_table` | mruby core symbol table |
+| 8 | 18,964 | 0.86% | `mrb_vm_exec` | mruby core VM |
+| 9 | 18,372 | 0.83% | `mrb_mruby_rpg2k_compiled_gem_init.str1.1` | bc2cpp: mruby-rpg2k-compiled |
+| 10 | 18,359 | 0.83% | `.rodata` (whole-object blob) | mruby core gem-init / iseq pool |
+| 11 | 10,476 | 0.47% | `presym_length_table` | mruby core symbol table |
+| 12 | 9,204 | 0.42% | `Game__MoveRoute_execute_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 13 | 8,832 | 0.40% | `glyph_bitmap` | LVGL (`lv_font_montserrat_14`) |
+| 14 | 7,488 | 0.34% | `RPG2k__Scene__Battle_drive_battle_item_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 15 | 7,420 | 0.34% | `RPG2k__Scene__SkillMenu_build_status_window_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 16 | 7,188 | 0.33% | `RPG2k__Scene__DebugMenu_build_window_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 17 | 7,112 | 0.32% | `RPG2k__Scene__Map_handle_name_input_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 18 | 6,584 | 0.30% | `RPG2k__Window_draw_cursor_skin_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 19 | 6,400 | 0.29% | `RPG2k__Scene__Map_handle_kana_name_input_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 20 | 5,396 | 0.24% | `mrb_f_sprintf` | mruby core |
+| 21 | 5,317 | 0.24% | `gem_mrblib_mruby_rpg2k_proc_iseq_68902` | mruby core gem-init / iseq pool |
+| 22 | 5,300 | 0.24% | `RPG2k__Scene__ChipsetEditor_move_cursor_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 23 | 5,272 | 0.24% | `RPG2k__Scene__ItemMenu_choose_item_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 24 | 5,200 | 0.24% | `RPG2k__Scene__ItemMenu_update_teleport_target_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 25 | 5,200 | 0.24% | `RPG2k__Scene__SkillMenu_update_teleport_target_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 26 | 5,152 | 0.23% | `RPG2k__Scene__Battle_drive_battle_skill_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 27 | 5,148 | 0.23% | `RPG2k__Scene__Map_drive_message_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 28 | 5,068 | 0.23% | `RPG2k__Scene__DebugMenu_update_block_focus_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 29 | 4,988 | 0.23% | `RPG2k__Scene__EquipMenu_update_slots_impl` | bc2cpp: mruby-rpg2k-compiled |
+| 30 | 4,944 | 0.22% | `RPG2k__Scene__EquipMenu_update_items_impl` | bc2cpp: mruby-rpg2k-compiled |
+
+(Full top 40 and raw per-input-section data retained in this session's own
+working notes, not reproduced in full here.) Past the first ~10-12 entries
+(genuinely large single tables/blobs — Unicode/CP932 tables, mruby's presym
+symbol tables, a merged UI string pool, one whole-object `.rodata` blob),
+the list is dominated by individual `mruby-rpg2k-compiled` `_impl`
+functions in the 4-9 KB range rather than a few outsized ones: bc2cpp's
+1,457 real compiled methods are many mid-sized functions, not a handful of
+huge ones, so a flat by-symbol ranking naturally fills up with them once the
+handful of genuinely large tables/blobs are past. This is a different
+picture from "one giant symbol dominates" — it is many multi-KB
+contributors adding up, consistent with this ADR's own "front-loaded fixed
+overhead, then a mostly-flat marginal cost per method" finding above.
+
+### Largest individual symbols within each compiled gem's own `register.o`
+
+Same `register.o` files as this ADR's own per-gem table, `arm-none-eabi-nm
+--size-sort -S`, real symbols (not merged/discarded), demangled:
+
+**`mruby-lcf-compiled`** (34 methods, `register.o` `.text` 11,309 bytes; 73
+real text symbols, top 15 sum to 9,898 bytes):
+
+| bytes | symbol |
+| ---: | --- |
+| 1,656 | `LCF__Array1D____impl` |
+| 1,432 | `LCF__Array1D_____impl` |
+| 1,084 | `LCF__File_to_lcf_impl` |
+| 912 | `mrb_mruby_lcf_compiled_gem_init` |
+| 592 | `LCF__Array2D____impl` |
+| 412 | `LCF__Array1D_key__impl` |
+| 320 | `LCF__Sections____impl` |
+| 300 | `LCF__Array1D_delete_impl` |
+| 192 | `LCF__MapTree_schema_impl` |
+| 192 | `LCF__MapUnit_schema_impl` |
+| 192 | `LCF__Database_schema_impl` |
+| 192 | `LCF__SaveData_schema_impl` |
+| 160 | `LCF__Sections_add_impl` |
+| 160 | `LCF__Array1D_int16_values_impl` |
+| 156 | `StringIO_ungetbyte_impl` |
+
+**`mruby-rgss-compiled`** (82 methods, `register.o` `.text` 26,400 bytes;
+168 real text symbols, top 15 sum to 22,110 bytes) — dominated by the
+`.singleton`-owner probe/dispatch methods added in rounds 29-31, not
+`RGSS::Sprite`'s own plain accessors:
+
+| bytes | symbol |
+| ---: | --- |
+| 2,984 | `RGSS_singleton_window_probe_impl` |
+| 1,980 | `mrb_mruby_rgss_compiled_gem_init` |
+| 1,640 | `RGSS__Bitmap_singleton_failure_reason_impl` |
+| 1,400 | `RGSS_singleton_transition_shape_probe_impl` |
+| 1,328 | `RGSS_singleton_tilemap_above_layer_probe_impl` |
+| 1,276 | `RGSS__Input_singleton_dir8_impl` |
+| 1,204 | `RGSS__Graphics_singleton_brightness_sprite_impl` |
+| 1,064 | `RGSS__ErrorReport_singleton_push_impl` |
+| 628 | `RGSS__Input_singleton_dir4_impl` |
+| 628 | `RGSS__Input_singleton_key_index_impl` |
+| 348 | `RGSS_singleton_warn_once_impl` |
+| 344 | `RGSS__Input_singleton_press_impl` |
+| 340 | `RGSS__ErrorReport_singleton_record_impl` |
+| 276 | `RGSS__Graphics_singleton_brightness__impl` |
+| 240 | `RGSS__Input_singleton_release_impl` |
+
+**`mruby-rpg2k-compiled`** (1,457 methods, `register.o` `.text` 1,069,716
+bytes; 2,922 real text symbols — wrapper+`_impl` per method — top 15 sum to
+994,078 bytes, i.e. the top 15 alone are ~93% of this gem's whole real
+`.text`, `mrb_mruby_rpg2k_compiled_gem_init` and `Game__Interpreter_execute_impl`
+together already ~5.7%):
+
+| bytes | symbol |
+| ---: | --- |
+| 34,468 | `mrb_mruby_rpg2k_compiled_gem_init` |
+| 27,044 | `Game__Interpreter_execute_impl` |
+| 9,204 | `Game__MoveRoute_execute_impl` |
+| 7,488 | `RPG2k__Scene__Battle_drive_battle_item_impl` |
+| 7,420 | `RPG2k__Scene__SkillMenu_build_status_window_impl` |
+| 7,188 | `RPG2k__Scene__DebugMenu_build_window_impl` |
+| 7,112 | `RPG2k__Scene__Map_handle_name_input_impl` |
+| 6,584 | `RPG2k__Window_draw_cursor_skin_impl` |
+| 6,400 | `RPG2k__Scene__Map_handle_kana_name_input_impl` |
+| 5,300 | `RPG2k__Scene__ChipsetEditor_move_cursor_impl` |
+| 5,272 | `RPG2k__Scene__ItemMenu_choose_item_impl` |
+| 5,200 | `RPG2k__Scene__ItemMenu_update_teleport_target_impl` |
+| 5,200 | `RPG2k__Scene__SkillMenu_update_teleport_target_impl` |
+| 5,152 | `RPG2k__Scene__Battle_drive_battle_skill_impl` |
+| 5,148 | `RPG2k__Scene__Map_drive_message_impl` |
+
+`Game::Interpreter#execute` and `Game::MoveRoute#execute` (both real
+event-command/move-command dispatch loops with many branches) are, by a
+wide margin, the two largest *individual* compiled methods in the entire
+image — consistent with this ADR's own "Game/RPG2k-namespace methods doing
+more real per-call work on average" explanation for `mruby-rpg2k-compiled`'s
+higher per-method byte cost, rather than a codegen inefficiency. Past those
+two and the gem-init table, the remaining bulk of `mruby-rpg2k-compiled`'s
+size is the long tail this ADR's own body already describes: ~1,450
+further methods averaging a few KB each, not one or two outsized ones.
+
+### Decision / consequences (addendum)
+
+No code change, same as this ADR's own body. This addendum does not revise
+any conclusion above — it only shows, at the individual-symbol level, what
+the aggregate and per-gem-total numbers already implied: outside the first
+dozen or so genuinely large tables/blobs (mostly *not* bc2cpp: Unicode/CP932
+tables, mruby's own presym tables, a UI string pool), the image's size is
+dominated by a very long tail of individually modest `mruby-rpg2k-compiled`
+generated methods, with `Game::Interpreter#execute` and
+`Game::MoveRoute#execute` standing out as the two largest single compiled
+functions in the whole firmware.
