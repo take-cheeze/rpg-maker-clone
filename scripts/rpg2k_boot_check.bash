@@ -142,6 +142,63 @@ else
     echo "skip ${BATTLE_GAME}: no RPG_RT.ldb (run scripts/download-mtf-meido-action.bash first)"
 fi
 
+# --rpg2k_battle_play: the section above only proves the fight can be
+# *entered* ([RPG2k-BATTLE]) -- everything between that and combat actually
+# working (the Battle/Auto Battle/Escape options window, the per-actor Attack
+# command, the enemy-target cursor, the damage formula really reaching a foe's
+# HP, the victory screen handing the scene back to the map) is untested by it.
+# --rpg2k_battle_play taps confirm through all of that and logs the outcome as
+# [RPG2k-BTLPLAY] (see mruby-rpg2k/mrblib/main.rb's own
+# #maybe_battle_play_test) -- the same rung mz_boot_check.bash's own
+# `battle_play` mode covers for MZ, including its own distinction between "the
+# run was cut off" and "the fight genuinely never damaged anyone": a run cut
+# short by --timeout_ms prints no [RPG2k-BTLPLAY] report at all, so that is
+# checked and failed separately from a report that came back without
+# damaged=true/ended=true.
+#
+# Runs against Nepheshel rather than BATTLE_GAME/mtf-meido-action above: the
+# driver's own default-menu-selection assumptions (Attack first, first living
+# foe targeted) were verified against Nepheshel's own troops during
+# development, not against mtf-meido-action's, so this stays on the
+# combination actually exercised rather than guessing a second one is
+# equivalent. Troop 6 is a real multi-round fight (two enemies, several
+# actions each) rather than a one-hit kill, so this exercises more than a
+# single round.
+BATTLE_PLAY_GAME="${RPG2K_BATTLE_PLAY_GAME:-data/Nepheshel206beta/Nepheshel206Rbeta}"
+BATTLE_PLAY_TROOP="${RPG2K_BATTLE_PLAY_TROOP:-6}"
+BATTLE_PLAY_TIMEOUT_MS="${RPG2K_BATTLE_PLAY_TIMEOUT_MS:-30000}"
+if [ -f "${BATTLE_PLAY_GAME}/RPG_RT.ldb" ] ; then
+    checked=$((checked + 1))
+    log="$(mktemp)"
+    echo "== ${BATTLE_PLAY_GAME} (battle play --rpg2k_battle_troop=${BATTLE_PLAY_TROOP})"
+    if ! xvfb-run --server-num="${num}" timeout 180 "${ENGINE}" \
+            --game_dir "${BATTLE_PLAY_GAME}" --test_play \
+            --rpg2k_battle_troop="${BATTLE_PLAY_TROOP}" --rpg2k_battle_play \
+            --timeout_ms="${BATTLE_PLAY_TIMEOUT_MS}" >"${log}" 2>&1 ; then
+        echo "FAILED: ${BATTLE_PLAY_GAME}: the engine exited non-zero" >&2
+        failed=$((failed + 1))
+    elif ! grep -q '\[RPG2k-BTLPLAY\] hp_before=' "${log}" ; then
+        echo "FAILED: ${BATTLE_PLAY_GAME}: the run ended before the fight did --" \
+             "no [RPG2k-BTLPLAY] report (raise RPG2K_BATTLE_PLAY_TIMEOUT_MS)" >&2
+        failed=$((failed + 1))
+    elif ! grep -q '\[RPG2k-BTLPLAY\].*damaged=true' "${log}" ; then
+        echo "FAILED: ${BATTLE_PLAY_GAME}: no attack ever damaged an enemy" \
+             "([RPG2k-BTLPLAY] damaged=true)" >&2
+        failed=$((failed + 1))
+    elif ! grep -q '\[RPG2k-BTLPLAY\].*ended=true' "${log}" ; then
+        echo "FAILED: ${BATTLE_PLAY_GAME}: the battle never finished" \
+             "([RPG2k-BTLPLAY] ended=true)" >&2
+        failed=$((failed + 1))
+    else
+        grep '\[RPG2k-BTLPLAY\]' "${log}"
+    fi
+    grep -v 'ALSA lib\|snd_\|Unknown PCM' "${log}" | tail -40 || true
+    rm -f "${log}"
+    num=$((num + 1))
+else
+    echo "skip ${BATTLE_PLAY_GAME}: no RPG_RT.ldb (run scripts/download-nepheshel.bash first)"
+fi
+
 if [ "${checked}" -eq 0 ] ; then
     echo "FAILED: none of the requested game directories is present, so nothing" \
          "was checked: ${GAMES[*]}" >&2
