@@ -116,14 +116,40 @@
 # silently skipping or guessing), so a future round that hits either has
 # to look at it rather than silently ship an unsound deletion:
 #   - A `def name(args)` whose own signature does not fit on one physical
-#     source line, or a one-line `def name; body; end` (first_lineno ==
-#     last_lineno), is left completely untouched (raises) rather than
-#     guessed at. Every real target this round's bounded proof strips
-#     (RGSS::Sprite's 17 methods, plus this follow-up round's own
-#     `.singleton` targets) is a plain multi-line `def name\n ... \nend`
-#     with a single-line signature, so this gap has never actually been
-#     hit -- flagged here for whichever future round first tries to strip
-#     a method that needs it.
+#     source line is left completely untouched (raises) rather than
+#     guessed at -- this file's own deletion plan is line-granular
+#     (apply_deletion_plan drops whole physical lines), so a header split
+#     across lines would need real column-aware splicing this file does
+#     not do.
+#
+# A round-35 follow-up (bc2cpp.rb coverage scaling to mruby-rpg2k-compiled)
+# is the first to actually hit a real one-line `def name; body; end`
+# (first_lineno == last_lineno) target -- Game::TextReveal#auto_close?/
+# #done?/#next_pause, Game::Switches#initialize, Game::Variables#[],
+# Game::NumberInput#digit, Game::Actors#existing, Game::MoveRoute#done?,
+# Game::Shop#allow_buy?, Game::Weather#none?, Game::Timer#seconds, all
+# plain `def name; ...; end` one-liners in mruby-rpg2k/mrblib/game.rb --
+# 9 of that round's own 12 candidate owners hit at least one, so leaving
+# this unsupported would have blocked most of the round outright. Now
+# supported, but still conservatively: this file's own line-granular
+# deletion plan means dropping a one-liner's whole physical line is only
+# safe when nothing else real shares that line (two one-line defs on the
+# same physical line, `def a; end; def b; end`, would otherwise silently
+# delete both when only one was asked for -- a real hazard the multi-line
+# case never has, since a multi-line def's own header/footer lines being
+# shared with another statement is far less idiomatic and not seen
+# anywhere in this project's real source). apply_deletion_plan checks
+# this directly rather than assuming it: using the DEFN node's own real
+# `first_column`/`last_column` (already available from the same
+# `RubyVM::AbstractSyntaxTree` parse, just unused until now), it confirms
+# every character on the line outside `[first_column, last_column)` is
+# blank (`String#strip.empty?`) before treating the one-liner as safe to
+# drop whole-line -- if anything else non-whitespace shares the line, it
+# raises exactly like the pre-existing checks above, rather than
+# guessing. Confirmed against the real target set above: every one of
+# them sits alone on its own physical line in the real checked-in source
+# (grepped directly, not assumed), so this round's own real strip run hit
+# no such raise.
 #
 # Usage: ruby strip_wio_bc2cpp_stubs.rb <registered.tsv> <owners-csv> <input.rb> <output.rb>
 
@@ -271,15 +297,25 @@ def apply_deletion_plan(lines, wanted_defs, path)
     first0 = node.first_lineno - 1
     last0 = node.last_lineno - 1
 
-    raise "#{path}: #{d[:owner]}##{d[:name]}: one-line `def ...; end` is not supported by " \
-          'strip_wio_bc2cpp_stubs.rb (see its own file comment) -- refusing to guess' if first0 == last0
-
     header = lines[first0]
     raise "#{path}: #{d[:owner]}##{d[:name]}: no source line at #{first0 + 1}" unless header
 
-    raise "#{path}: #{d[:owner]}##{d[:name]}: def signature does not fit on one line " \
-          '(unbalanced parens on its own header line) -- not supported, refusing to guess' \
-      if header.count('(') != header.count(')')
+    if first0 == last0
+      # One-line `def name; body; end` (see the file comment for why this is
+      # only safe once nothing else real shares the physical line): everything
+      # outside the DEFN node's own [first_column, last_column) span must be
+      # blank, or this line's deletion would silently take a second statement
+      # with it.
+      before = header[0...node.first_column] || ''
+      after = header[node.last_column..] || ''
+      raise "#{path}: #{d[:owner]}##{d[:name]}: one-line `def ...; end` shares its own physical " \
+            'line with other real code -- refusing to guess' \
+        unless before.strip.empty? && after.strip.empty?
+    else
+      raise "#{path}: #{d[:owner]}##{d[:name]}: def signature does not fit on one line " \
+            '(unbalanced parens on its own header line) -- not supported, refusing to guess' \
+        if header.count('(') != header.count(')')
+    end
 
     raise "#{path}: #{d[:owner]}##{d[:name]}: two stripped methods claim the same header line " \
           '-- source has drifted since this owner list was captured' if plan.key?(first0)
