@@ -6363,6 +6363,52 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, lru_bitmap_cache, "bitmap_bytes",
                             RPG2k__Scene__Map__LRUBitmapCache_bitmap_bytes,
                             MRB_ARGS_REQ(1));
+
+  // Round 32 follow-up: Game.singleton -- `def self.x` methods defined
+  // directly on the `Game` module itself (mruby-rpg2k/mrblib/game.rb,
+  // right above `class ChipSet`), never `class << self`-wrapped. All 5 of
+  // its own real methods compile clean and register below. Every one was
+  // already a real, registry-visible MONO or POLY-by-name entry going back
+  // to the SDEF fix's own original writeup (`Game.clamp` is that fix's own
+  // motivating live-bug example, build_registry's own SDEF case comment,
+  // tools/bc2cpp/bc2cpp.rb) -- this is simply the first round any
+  // `owners:` list actually names `Game.singleton`, so none of these 5
+  // bodies has ever been emitted before. `#clamp` is POLY by name (a real,
+  // unrelated `RPG2k::Scene::MapViewer#clamp` instance method shares the
+  // bare name) -- confirmed directly against the real generated output
+  // that its own two internal callers (`#trans_to_opacity`/
+  // `#opacity_to_trans`, both self-implicit `clamp(...)` sends) correctly
+  // compile to an ordinary `mrb_funcall(M, self, "clamp", ...)` rather
+  // than a wrong direct call, the same fallback every other POLY
+  // self-implicit send in this codebase already takes. The other 4
+  // (`#round_half_even`/`#trans_to_opacity`/`#opacity_to_trans`/
+  // `#camera_offset`) are MONO, so every one of this gem's own
+  // already-compiled call sites that reference them by bare name now
+  // devirtualizes straight into these `_impl` functions instead of
+  // falling back to `mrb_funcall` -- a real, additive optimization to
+  // already-shipped code, confirmed byte-for-byte against the real
+  // regenerated output (no other class's own compiled body changed shape
+  // beyond that one dispatch-comment swap at each such call site). `Game`
+  // is a bare module, never instantiated, so none of these has any
+  // instance state to embed -- no MRB_SET_INSTANCE_TT call belongs here,
+  // confirmed directly: `Game.singleton` does not appear in the real
+  // "classes needing MRB_SET_INSTANCE_TT" listing. No bare
+  // `private`/`private_class_method`/`protected` anywhere near `Game`'s
+  // own real source, so all 5 are plain, public `mrb_define_class_method`
+  // registrations. Reuses the `game` RClass* declared at the top of this
+  // function (Game.singleton methods live on `Game`'s own singleton
+  // class, not a nested module/class under it, so no new
+  // `mrb_module_get_under`/`mrb_class_get_under` call is needed).
+  mrb_define_class_method(M, game, "clamp", Game_singleton_clamp,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, game, "round_half_even",
+                          Game_singleton_round_half_even, MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, game, "trans_to_opacity",
+                          Game_singleton_trans_to_opacity, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, game, "opacity_to_trans",
+                          Game_singleton_opacity_to_trans, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, game, "camera_offset",
+                          Game_singleton_camera_offset, MRB_ARGS_REQ(3));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}
