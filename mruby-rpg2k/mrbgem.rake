@@ -239,28 +239,122 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # 162,963 -> 147,790 bytes, a 15,173-byte (9.3%) reduction from these 11
   # owners' 74 stripped method bodies (517 of the file's own 10,334 lines).
   #
-  # Future-round candidates (tools/bc2cpp/compiled_gems.rb's own
-  # `mruby-rpg2k-compiled` owners: list has ~60 total): `Game::ChipSet`
-  # above once strip_wio_bc2cpp_stubs.rb grows companion-statement support;
-  # every `.singleton` owner (`Game::Party.singleton`, `Game::State.singleton`,
-  # ... 20+ of them); the `RPG2k::Scene::*` menu/scene classes (already
-  # excluded from wio's own spec.rbfiles for `DebugMenu`/`ChipsetEditor`/
-  # `MapViewer` per the debug-tools trim above, so stripping those three
-  # specifically would be as moot as the battle_support.rb owners above,
-  # but `ItemMenu`/`SkillMenu`/`EquipMenu`/`Menu`/`StatusMenu`/`SaveLoad`/
+  # Round 36: the 13 plain `RPG2k::Scene::*` menu/scene owners the comment
+  # above already named as the next real, uncovered candidates --
+  # `ItemMenu`/`SkillMenu`/`EquipMenu`/`Menu`/`StatusMenu`/`SaveLoad`/
   # `Order`/`Base`/`Title`/`MapWorld`/`VehicleWorld`/`EventResolver`/
-  # `GameOver` all stay in wio's own rbfiles and are real, uncovered
-  # candidates); and the larger/`DIRECT_CONSTRUCT_TARGETS`/
-  # `NATIVE_ARG_TARGETS`-touching owners (`Game::Actor`, `Game::Party`,
-  # `Game::Battle`, `Game::Character`, `Game::Map`, `Game::Screen`,
-  # `Game::Transition`, `Game::State`, `Game::Interpreter`,
-  # `RPG2k::Scene::Map`, `RPG2k::Scene::Battle`) -- each needs its own
-  # dedicated per-owner soundness pass, deliberately not attempted in this
-  # round's own bounded slice.
+  # `GameOver` -- all real classes living in mruby-rpg2k/mrblib/scene/
+  # {item_menu,skill_menu,equip_menu,menu,status_menu,save_load,order,
+  # base,title,game_over}.rb (`MapWorld`/`VehicleWorld`/`EventResolver` are
+  # all three defined inside base.rb, right below `Base` itself -- see that
+  # file directly), none of them `DebugMenu`/`ChipsetEditor`/`MapViewer`
+  # (already excluded from wio's own spec.rbfiles by the debug-tools trim
+  # above, so those three stay untouched -- stripping them would be as
+  # pointless a no-op as the battle_support.rb owners already documented
+  # above). Same profile as round 35's own 11 owners: plain instance
+  # methods only (no `.singleton`), none of them in bc2cpp.rb's own
+  # DIRECT_CONSTRUCT_TARGETS (`Game::Transition`/`Game::Map`) or
+  # NATIVE_ARG_TARGETS (`Game::Actor`/`Game::Map`/`Game::Transition`/
+  # `Game::Screen`/`Game::State`/`Game::Interpreter`/`LCF::EventCommand`/
+  # `LCF::MoveCommand`) allowlists -- confirmed directly against both
+  # constants in tools/bc2cpp/bc2cpp.rb, not assumed from the class names.
+  #
+  # Real ground truth (a real wio_registered_methods.rb run against
+  # mruby-rpg2k-compiled's own real bc2cpp.rb registry, never hand-
+  # counted): ItemMenu 41, SkillMenu 39, EquipMenu 29, Menu 28,
+  # StatusMenu 13, SaveLoad 12, Order 12, Base 17, Title 6, MapWorld 7,
+  # VehicleWorld 6, EventResolver 2, GameOver 4 -- 216 real registered
+  # methods total across these 13 owners. Only 213 of those 216 actually
+  # strip out of wio's own copy of base.rb: `Base`'s own real registered
+  # method list includes 3 (`advance_list_arrow_anim`, `list_arrow_blink_on?`,
+  # `sticky_list_top`) that are not defined in base.rb at all -- a second,
+  # real `class Base` reopening inside `mrblib/scene/battle.rb` adds them
+  # (confirmed directly: `grep -rn` finds all three only in battle.rb/
+  # battle_support.rb), and that file is already dropped from wio's own
+  # spec.rbfiles entirely by the wio-only battle trim below this comment,
+  # so wio_strip_bc2cpp_stubs (which only ever rewrites spec.rbfiles
+  # entries) never sees or touches them -- not a gap in this round's own
+  # `owners:` list, just the same "battle-only reopening wio never ships"
+  # shape `Game::Troop`/`Game::Enemy`/etc. already have in round 35's own
+  # comment above.
+  #
+  # Companion-statement hazard check (the same real AST walk round 35's own
+  # comment above describes, re-run against all 13 of these owners' own
+  # class bodies): every one of the 10 real files uses only a bare
+  # `private` mode switch (`item_menu.rb`, `skill_menu.rb`, `equip_menu.rb`,
+  # `menu.rb`, `status_menu.rb`, `save_load.rb`, `order.rb`, `title.rb`,
+  # `game_over.rb`) or none at all -- no explicit `private :name`/
+  # `protected :name`/`public :name`/`alias_method` call anywhere in any of
+  # them. `base.rb` additionally has one `attr_reader :parent, :db,
+  # :map_tree` at `Base`'s own class-body top level; none of those three
+  # names collide with any of `Base`'s own 17 real registered methods (see
+  # the list above), so it is not a hazard either. No `Game::ChipSet`-style
+  # exclusion needed for any of this round's 13 owners.
+  #
+  # Gem-init-ordering correctness (same methodology and same real closed-
+  # world file list as round 35's own comment above, re-run against all 159
+  # unique method names these 13 owners' 216 real registered methods use):
+  # zero real call sites found. `3rd/mruby-marshal`, `3rd/mruby-stringio`,
+  # `3rd/mruby-onig-regexp` (not checked out in every worktree by default --
+  # `git submodule update --init` them to re-run this yourself) each have
+  # real `mrb_funcall`/`mrb_funcall_id`/`mrb_funcall_argv`/
+  # `mrb_funcall_with_block` call sites, but every literal method-name
+  # argument they use (`"marshal_dump"`, `"_dump"`, `"instance_variables"`,
+  # `"sort!"`, `"source"`, `"options"`, `"_dump_data"`, `"write"`,
+  # `"marshal_load"`, `"new"`, `"getc"`, `"ungetc"`, `"read"`, `"_sys_fail"`,
+  # `"replace"` -- StringIO's own `@string` ivar, the same POLY precedent
+  # round 35's own comment already documents --, `aref`/`"[]"`,
+  # `"string_gsub"`, `"to_enum"`, `"onig_regexp_gsub"`, `"string_scan"`,
+  # `"string_split"`, `"string_sub"`) is real, different, and unrelated to
+  # any of these 159 names. `src/`, `app/`, all three `*-compiled/src/
+  # register.cxx`, and every `mruby-rgss/src/*.cxx` real call site (the
+  # same ones round 35's own comment already lists and rules out --
+  # `"width"`/`"height"`/`"main_loop"`/`"start"`/`"call"`/
+  # `"current_scene_name"`/`"press"`/`"release"`/`"dup"`/`"default_path"`/
+  # `"name"`/`"size"`/`"bold"`/`"italic"`/`"outline"`/`"shadow"`/`"color"`/
+  # `"out_color"`/`"warn_stub"`/`"clear"`/`"blt"`/`"stretch_blt"`/
+  # `"log_tail"`/`"message"`/`"backtrace"`/`"install"`/`"probe!"`) were
+  # re-checked against this round's own 159 names too -- same zero-hit
+  # result.
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # strip_wio_bc2cpp_stubs.rb run against all 10 real checked-in files with
+  # exactly this round's own 13-owner csv raised nothing, every rewritten
+  # file still parses (`ruby -c`), and a real before/after
+  # RubyVM::AbstractSyntaxTree walk (restricted to these 13 owners) shows
+  # EXACTLY the 213 real stripped methods removed and nothing else -- no
+  # unexpected addition or removal, cross-checked directly against the
+  # per-owner counts above, not eyeballed.
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on each of the 10 affected files, before this gem's own
+  # wio_strip_debug_rbfiles/wio_strip_inline_helpers passes run): base.rb
+  # 11,201 -> 6,298; item_menu.rb 18,379 -> 5,302; skill_menu.rb
+  # 19,951 -> 5,914; equip_menu.rb 14,613 -> 5,906; menu.rb 15,836 -> 6,105;
+  # status_menu.rb 8,740 -> 5,208; save_load.rb 9,403 -> 5,157; order.rb
+  # 6,451 -> 3,166; title.rb 7,614 -> 5,190; game_over.rb 2,445 -> 1,578 --
+  # 114,633 -> 49,824 bytes combined, a 64,809-byte (56.5%) reduction.
+  #
+  # Future-round candidates, unchanged from round 35's own list above
+  # except for the 13 owners just added: `Game::ChipSet` still deferred
+  # (companion-statement support); every `.singleton` owner (20+, see
+  # tools/bc2cpp/compiled_gems.rb's own `mruby-rpg2k-compiled` entry); and
+  # the larger/`DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS`-touching
+  # owners (`Game::Actor`, `Game::Party`, `Game::Battle`, `Game::Character`,
+  # `Game::Map`, `Game::Screen`, `Game::Transition`, `Game::State`,
+  # `Game::Interpreter`, `RPG2k::Scene::Map`, `RPG2k::Scene::Battle`) --
+  # each still needs its own dedicated per-owner soundness pass.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
-                                    Game::MoveRoute Game::Shop Game::Weather Game::Timer])
+                                    Game::MoveRoute Game::Shop Game::Weather Game::Timer
+                                    RPG2k::Scene::ItemMenu RPG2k::Scene::SkillMenu
+                                    RPG2k::Scene::EquipMenu RPG2k::Scene::Menu
+                                    RPG2k::Scene::StatusMenu RPG2k::Scene::SaveLoad
+                                    RPG2k::Scene::Order RPG2k::Scene::Base
+                                    RPG2k::Scene::Title RPG2k::Scene::MapWorld
+                                    RPG2k::Scene::VehicleWorld RPG2k::Scene::EventResolver
+                                    RPG2k::Scene::GameOver])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
