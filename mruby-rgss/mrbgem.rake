@@ -100,5 +100,12 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
     end
   end
 
+  # docs/adr/0144: bounded proof of the generalized bc2cpp-coverage
+  # bytecode-stripping mechanism -- RGSS::Sprite only (all 17 of its real
+  # bc2cpp-registered methods), not mruby-rgss-compiled's own full 14-owner
+  # `owners:` list (tools/bc2cpp/compiled_gems.rb). Scaling this to more
+  # owners is real, tracked follow-up work, not attempted in the same round
+  # that first proved the mechanism -- see the ADR for why.
+  wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rgss-compiled', owners: %w[RGSS::Sprite])
   wio_strip_debug_rbfiles(spec)
 end
