@@ -112,15 +112,41 @@
 # 13 real bc2cpp-registered ones this round strips). No quirk found that
 # the existing `apply_deletion_plan` needed any change for.
 #
-# Current, deliberate limitations -- both fail loudly (raising, never
-# silently skipping or guessing), so a future round that hits either has
-# to look at it rather than silently ship an unsound deletion:
+# Round 38: companion `private :name`/`protected :name`/`public :name`
+# statement support (see collect_visibility_calls's and the main block's own
+# comments below for the full mechanism) -- a stripped method's own `def`
+# is not always the last real statement to name it; a class/module body can
+# also mark it private/protected/public *after the fact* via an explicit
+# Symbol (or String) argument, and deleting the `def` while leaving that
+# statement standing raises a real `NameError` the moment mrblib loads
+# (`Module#private`/`#protected`/`#public` with an explicit name argument
+# requires the method to already exist). This was built specifically for
+# `Game::ChipSet#upper_flags` (mruby-rpg2k/mrblib/game.rb's own
+# `private :upper_flags`, round 35's own original motivating case for
+# deferring that owner entirely -- see mruby-rpg2k/mrbgem.rake's own
+# comment). A companion statement naming ONLY methods this invocation is
+# already stripping is deleted outright, right alongside the `def`s
+# themselves; one naming a MIX of a stripped and a kept method (documented
+# below as a real, deliberate limitation) or whose own argument list this
+# script cannot statically resolve (a splat, a variable, ...) raises rather
+# than guesses, exactly this file's existing conservative philosophy for
+# every other unsupported shape.
+#
+# Current, deliberate limitations -- all fail loudly (raising, never
+# silently skipping or guessing), so a future round that hits any of them
+# has to look at it rather than silently ship an unsound deletion:
 #   - A `def name(args)` whose own signature does not fit on one physical
 #     source line is left completely untouched (raises) rather than
 #     guessed at -- this file's own deletion plan is line-granular
 #     (apply_deletion_plan drops whole physical lines), so a header split
 #     across lines would need real column-aware splicing this file does
 #     not do.
+#   - A companion `private :a, :b` (etc.) statement naming BOTH a stripped
+#     method and a kept one raises rather than surgically editing the
+#     argument list down to just the kept name(s) -- no real target this
+#     script has stripped so far has hit this shape (Game::ChipSet's own
+#     `private :upper_flags` is single-name), so this stays unimplemented
+#     until a real owner actually needs it.
 #
 # A round-35 follow-up (bc2cpp.rb coverage scaling to mruby-rpg2k-compiled)
 # is the first to actually hit a real one-line `def name; body; end`
@@ -276,6 +302,112 @@ def collect_defs(node, stack, out, singleton_owner: nil)
   end
 end
 
+# Round 38: companion-statement support (docs/adr/0144's own "future round
+# item", first named in round 35's own mrbgem.rake comment as the reason
+# `Game::ChipSet` stayed deferred). A stripped method's own `def` is not
+# always the only real statement that names it: a class body can also mark
+# it private/protected/public *after the fact* via an explicit-Symbol call
+# (`private :upper_flags`, never a bare `private` mode switch, which
+# `collect_defs`'s own DEFN-tracking already ignores completely since it
+# carries no method name at all). Deleting the `def` while leaving that
+# companion statement standing raises a real `NameError` at mrblib load
+# time -- `Module#private`/`#protected`/`#public` with an explicit Symbol
+# (or String) argument requires the named method to already exist -- strictly
+# BEFORE the compiled override's own gem_init gets a chance to install it a
+# few lines of load order later. See Game::ChipSet's own real
+# `private :upper_flags` (mruby-rpg2k/mrblib/game.rb) for the motivating
+# case this was built for.
+#
+# The literal Symbol/String name(s) an FCALL to `private`/`protected`/
+# `public` names, or nil if this call's own argument list contains anything
+# this script cannot statically resolve to a plain name (a splat, a
+# variable, a method call, a double-splat/kwarg, ...) -- returning nil
+# rather than a partial guess is deliberate: a companion statement this
+# script cannot fully read the argument list of is treated by the caller
+# below as "cannot prove this is safe", not "must be fine since I didn't
+# spot a problem". A bare `private`/`protected`/`public` mode switch (no
+# arguments at all) is a real, different AST shape (`VCALL`, not `FCALL` --
+# confirmed directly against a live `RubyVM::AbstractSyntaxTree.parse` dump,
+# not assumed) and never reaches this function in the first place; see
+# `collect_visibility_calls` below.
+def literal_arg_names(list_node)
+  return nil unless list_node.is_a?(RubyVM::AbstractSyntaxTree::Node) && list_node.type == :LIST
+
+  names = []
+  list_node.children.each do |c|
+    next if c.nil? # LIST's own trailing terminator slot
+
+    return nil unless c.is_a?(RubyVM::AbstractSyntaxTree::Node)
+
+    case c.type
+    when :LIT
+      val = c.children[0]
+      return nil unless val.is_a?(Symbol)
+
+      names << val.to_s
+    when :STR
+      names << c.children[0]
+    else
+      # SPLAT, DSTR (interpolated string), a bare LVAR/method-call argument,
+      # or any other shape this script cannot statically resolve -- refuse
+      # to guess rather than silently under-reading the real argument list.
+      return nil
+    end
+  end
+  names
+end
+
+# Walks the real AST exactly like collect_defs's own CLASS/MODULE/SCLASS/
+# DEFN/DEFS nesting-tracking (kept as a separate, independent pass rather
+# than folded into collect_defs itself, so collect_defs -- and every prior
+# round's already-shipped, already-verified behavior that depends only on
+# it -- is untouched by this round's own change), but collects real
+# receiverless `private(...)`/`protected(...)`/`public(...)` FCALL nodes
+# instead of DEFN/DEFS nodes: { owner:, mid:, names:, node: } for each one
+# found, `names` being `literal_arg_names`'s own result (nil for an
+# unresolvable argument list -- still collected, not dropped, so the caller
+# below can decide whether the unresolved shape actually matters for this
+# invocation's own owners rather than this function silently deciding it
+# doesn't). Never recurses into a DEFN/DEFS/SCLASS body (same reasoning
+# collect_defs's own early `return` already documents: a real `private`/
+# `protected`/`public` call *inside* a method body is an ordinary runtime
+# call this script has no business touching, never a class-body-level mode
+# statement) or into a matched FCALL's own children (a Symbol/String
+# literal argument list has no further CLASS/MODULE/FCALL nesting to find).
+def collect_visibility_calls(node, stack, out, singleton_owner: nil)
+  return unless node.is_a?(RubyVM::AbstractSyntaxTree::Node)
+
+  case node.type
+  when :CLASS
+    name = const_path_of(node.children[0])
+    collect_visibility_calls(node.children[2], name ? stack + [name] : stack, out)
+    return
+  when :MODULE
+    name = const_path_of(node.children[0])
+    collect_visibility_calls(node.children[1], name ? stack + [name] : stack, out)
+    return
+  when :SCLASS
+    recv, body = node.children
+    if self_receiver?(recv) && !stack.empty?
+      collect_visibility_calls(body, stack, out, singleton_owner: "#{stack.join('::')}.singleton")
+    end
+    return
+  when :DEFN, :DEFS
+    return
+  when :FCALL
+    mid, args = node.children
+    if %i[private protected public].include?(mid) && (singleton_owner || !stack.empty?)
+      owner = singleton_owner || stack.join('::')
+      out << { owner: owner, mid: mid, names: literal_arg_names(args), node: node }
+    end
+    return
+  end
+
+  node.children.each do |c|
+    collect_visibility_calls(c, stack, out, singleton_owner: singleton_owner) if c.is_a?(RubyVM::AbstractSyntaxTree::Node)
+  end
+end
+
 def parses?(source)
   RubyVM::AbstractSyntaxTree.parse(source)
   true
@@ -363,7 +495,60 @@ if __FILE__ == $PROGRAM_NAME
     if wanted.empty?
       File.write(out_path, source)
     else
-      rewritten = apply_deletion_plan(source.each_line.to_a, wanted, in_path)
+      # Round 38: also delete any companion `private :name`/`protected :name`/
+      # `public :name` statement that names ONLY methods this invocation is
+      # about to strip out of the same owner -- see collect_visibility_calls's
+      # own comment for why this exists (a stripped method's own leftover
+      # companion statement is a real NameError at mrblib load time, not a
+      # cosmetic loose end). Restricted to owners this invocation's own
+      # `wanted` actually touches; a companion statement on an owner nothing
+      # here strips is never even inspected for overlap.
+      wanted_names_by_owner = wanted.each_with_object(Hash.new { |h, k| h[k] = Set.new }) do |d, h|
+        h[d[:owner]] << d[:name]
+      end
+
+      vis_calls = []
+      collect_visibility_calls(ast, [], vis_calls)
+      companion_targets = vis_calls.filter_map do |vc|
+        stripped_here = wanted_names_by_owner[vc[:owner]]
+        next nil if stripped_here.nil? || stripped_here.empty?
+
+        if vc[:names].nil?
+          # A companion private/protected/public statement on an owner this
+          # invocation IS stripping methods from, whose own argument list this
+          # script cannot statically resolve (a splat, a variable, ...) --
+          # cannot prove it doesn't also name a method being stripped, so this
+          # refuses to guess rather than silently leaving a possible
+          # `NameError` hazard standing.
+          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+                "#{vc[:node].first_lineno}) has an argument list this script cannot " \
+                'statically resolve, and this invocation strips other methods from the ' \
+                'same owner -- refusing to guess whether it names one of them'
+        end
+
+        overlap = vc[:names] & stripped_here.to_a
+        next nil if overlap.empty?
+
+        kept = vc[:names] - overlap
+        unless kept.empty?
+          # Documented limitation (see this file's own file comment): a
+          # companion statement naming BOTH a stripped and a kept method
+          # (`private :a, :b` where only `a` is stripped) needs its own
+          # argument list surgically edited, not whole-statement deletion --
+          # not supported yet, so this raises rather than either silently
+          # dropping the whole statement (which would wrongly un-hide `b`)
+          # or silently leaving it standing (the real NameError hazard for
+          # `a`).
+          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+                "#{vc[:node].first_lineno}) names both a stripped method " \
+                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) -- " \
+                'partial-argument-list editing is not supported yet, refusing to guess'
+        end
+
+        { owner: vc[:owner], name: "#{vc[:mid]}(:#{vc[:names].join(', :')})", node: vc[:node] }
+      end
+
+      rewritten = apply_deletion_plan(source.each_line.to_a, wanted + companion_targets, in_path)
       raise "strip_wio_bc2cpp_stubs: rewrite of #{in_path} does not parse; leaving the original " \
             'untouched' unless parses?(rewritten)
 
