@@ -2189,6 +2189,92 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, battle, "cure_state", Game__Battle_cure_state,
                     MRB_ARGS_REQ(2));
 
+  // Game::Battle::Combatant (docs/adr/0139's own round 31 follow-up,
+  // mruby-rpg2k/mrblib/game/battle.rb) -- `Struct.new(:name, ..., :actor,
+  // :states, ...) do ... end`, the ephemeral per-fight battler snapshot
+  // this class's own methods above operate on (`target.state?`/
+  // `target.actor` are this ADR's own fourth-severe-bug proof: the
+  // `Struct.new(...) do...end` registry fix that first made a real `def`
+  // written inside this exact block visible to bc2cpp's own MONO/POLY
+  // registry at all). All 16 of its own real `def`s inside the block
+  // compile clean, no new opcode work needed -- confirmed in a real
+  // `ONLY_OWNERS` run against a real host `mrbc`, not just the
+  // unrestricted whole-program diagnostic. No bare `private`/`protected`
+  // anywhere in the block, so every one is a plain `mrb_define_method`.
+  //
+  // No ivar embedding, and not merely the usual non-mandatory-`#initialize`
+  // gate (this `Struct` has no bytecode-defined `#initialize` at all --
+  // member construction is native): a `Struct`'s own members are never
+  // backed by `iv_tbl`/`SETIV`/`GETIV` in the first place, so none of
+  // these 16 methods ever reads/writes an ivar (`hp`, `self[:row]`, ... are
+  // all plain self-implicit method calls) -- confirmed directly against
+  // the real diagnostic: zero `Game::Battle::Combatant` lines anywhere in
+  // `== ivar embedding ==`, and the class is absent from the "classes
+  // needing MRB_SET_INSTANCE_TT" listing both before and after this round
+  // (still exactly `Game::Screen`, `RPG2k::Scene::VehicleWorld`). No
+  // `MRB_SET_INSTANCE_TT` call belongs here.
+  //
+  // `#half_sp_cost?`/`#member?` each share their own owner with a
+  // `Struct`-native writer (`half_sp_cost=`/`member=`) that `cpp_name`'s
+  // own `sanitize` (`?` and `=` both collapse to `_`) would collide with
+  // under the identical generated identifier -- the exact class docs/
+  // adr/0139's own round 30 adversarial sweep named as a real, "confirmed
+  // not currently live" instance of this gap. Still not live now that
+  // this class actually ships: both `=`-halves are `Struct`-native
+  // (`irep: nil` synthetic `MethodDef`s), so `compile_all`'s own leaf
+  // worklist never inserts an entry for either and `cpp_name` is never
+  // invoked on them -- confirmed directly against the real generated
+  // `rpg2k_compiled_gen.cpp`: exactly one `Game__Battle__Combatant_half_
+  // sp_cost__impl`/`Game__Battle__Combatant_member__impl` symbol each (the
+  // real `def`s below), no duplicate, no collision.
+  //
+  // `:atk_states`/`:gauge`/`:row` are each POLY with "2 defs:
+  // Game::Battle::Combatant, Game::Battle::Combatant" in the whole-program
+  // registry -- the same owner twice, because `Struct.new`'s own native
+  // reader for that member and this block's own real `def` override (the
+  // one that actually wins at runtime) both register under the identical
+  // owner string. Conservative, not unsound: it only means no call site
+  // anywhere devirtualizes into these three specific methods (ordinary
+  // `mrb_funcall` still runs the correct, real `def` below); real
+  // devirtualization does happen for this class's other names --
+  // `#back_row?`/`#next_battle_turn`/`#out_of_play?`/`#turns_taken` are
+  // each called directly (no `mrb_funcall`) from already-compiled
+  // `Game::Battle` methods above, confirmed in the real regenerated
+  // output.
+  RClass* combatant = mrb_class_get_under(M, battle, "Combatant");
+  mrb_define_method(M, combatant, "atk_states",
+                    Game__Battle__Combatant_atk_states, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "row", Game__Battle__Combatant_row,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "gauge", Game__Battle__Combatant_gauge,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "dead?", Game__Battle__Combatant_dead_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "display_max_hp",
+                    Game__Battle__Combatant_display_max_hp, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "display_max_mp",
+                    Game__Battle__Combatant_display_max_mp, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "strike_count",
+                    Game__Battle__Combatant_strike_count, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "half_sp_cost?",
+                    Game__Battle__Combatant_half_sp_cost_, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "turns_taken",
+                    Game__Battle__Combatant_turns_taken, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "next_battle_turn",
+                    Game__Battle__Combatant_next_battle_turn, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "out_of_play?",
+                    Game__Battle__Combatant_out_of_play_, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "member?", Game__Battle__Combatant_member_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "int", Game__Battle__Combatant_int,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "state?", Game__Battle__Combatant_state_,
+                    MRB_ARGS_REQ(1));
+  mrb_define_method(M, combatant, "back_row?",
+                    Game__Battle__Combatant_back_row_, MRB_ARGS_NONE());
+  mrb_define_method(M, combatant, "gauge_full?",
+                    Game__Battle__Combatant_gauge_full_, MRB_ARGS_NONE());
+
   // RPG2k::Scene::ItemMenu (docs/adr/0139's own RANGE_INC/RANGE_EXC
   // opcode follow-up, mruby-rpg2k/mrblib/scene/item_menu.rb) -- the
   // field/battle item-use menu. 41 of its own 47 real bytecode-defined
@@ -6014,6 +6100,269 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, map_scene, "tone_channel",
                           RPG2k__Scene__Map_singleton_tone_channel,
                           MRB_ARGS_REQ(1));
+
+  // RPG2k (docs/adr/0139's own round 31 follow-up, mruby-rpg2k/mrblib/
+  // main.rb) -- the top-level app/game object itself, not a nested class:
+  // scene-stack push/pop, database/map-tree load, title-or-New-Game boot,
+  // F8 bug-report text. 15 of its own real bytecode-defined methods
+  // compile clean, including `#initialize` itself (one mandatory
+  // argument, no `super`, no block) -- confirmed in a real `ONLY_OWNERS`
+  // run against a real host `mrbc`, not just the unrestricted
+  // whole-program diagnostic: exactly these 15 appear in `== compiled
+  // entry points ==`, arities matching the source exactly.
+  //
+  // `#initialize` is forced private by mruby's own interpreter regardless
+  // of source (`mrb_define_method_raw` special-cases this name
+  // unconditionally for every class in the language, docs/adr/0139's own
+  // coverage-expansion follow-up already established this) -- confirmed
+  // by the real diagnostic's own `[private -- use
+  // mrb_define_private_method, not mrb_define_method]` tag, so it alone
+  // needs `mrb_define_private_method` below. The other 14 carry no such
+  // tag: the one bare `private` anywhere in `main.rb` (line 299) sits
+  // inside the nested `RPG2k::Window` class body above, not this outer
+  // class -- confirmed by reading the real source directly, not inferred
+  // from indentation.
+  //
+  // Embedding safety checked directly, not assumed from `#initialize`'s
+  // own pure-mandatory-arity alone (this ADR's own explicit round 31
+  // instruction, given the live history of classes whose #initialize
+  // compiles but still shouldn't embed): `#initialize` DOES compile clean
+  // with pure mandatory arity, normally `drop_unsafe_embeddings`'s first
+  // gate -- but this class still gets zero real embedded ivars, because
+  // every one of its own ivars (`@test_play`/`@hide_title`: boolean,
+  // `@db`: `LCF::Database`, `@map_tree`: `LCF::MapTree`, `@title`:
+  // `String`, `@scenes`: `Array`) is a type `IvarLayout`'s own embedding
+  // lattice never models (only Fixnum/Symbol are). So `every_accessor_
+  // compiles?` (the round 28 fix requiring every ivar-touching method to
+  // also compile clean, not just `#initialize`) is never even reached for
+  // this class -- there is no raw candidate for it to accept or refuse in
+  // the first place. Confirmed directly against the real diagnostic: the
+  // whole-program `== ivar embedding ==` section has zero `RPG2k#` lines,
+  // and `RPG2k` is absent from the "classes needing MRB_SET_INSTANCE_TT"
+  // listing both before and after this round (still exactly
+  // `Game::Screen`, `RPG2k::Scene::VehicleWorld`). No `MRB_SET_INSTANCE_TT`
+  // call belongs here, and `rpg2k` above is reused as a plain
+  // `MRB_TT_OBJECT` receiver, unchanged.
+  //
+  // Real devirtualization proof, both directions, confirmed directly in
+  // the real regenerated output: `#initialize`'s own self-implicit
+  // `db_path`/`boot_title_or_new_game` calls devirtualize straight into
+  // `RPG2k_db_path_impl`/`RPG2k_boot_title_or_new_game_impl` (no
+  // `mrb_funcall`), and already-shipped `RPG2k::Scene::
+  // ItemMenu#apply_switch_item`'s own `@parent.pop_to_map` (`@parent` a
+  // real `RPG2k` reference) now devirtualizes straight into
+  // `RPG2k_pop_to_map_impl` too -- a genuine cross-class call site, not
+  // merely a self-call. `:hide_title?`/`:pop`/`:push` are each POLY (2-3
+  // defs, including `<native>`/`RPG2k::Scene::Title`/
+  // `RGSS::ErrorReport.singleton`) -- correctly never devirtualized *into*
+  // by any other call site sending those bare names, the same safe
+  // conservative behavior every other POLY name in this codebase already
+  // gets.
+  mrb_define_private_method(M, rpg2k, "initialize", RPG2k_initialize,
+                            MRB_ARGS_REQ(1));
+  mrb_define_method(M, rpg2k, "hide_title?", RPG2k_hide_title_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "current_scene_name", RPG2k_current_scene_name,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "show_title?", RPG2k_show_title_,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "boot_title_or_new_game",
+                    RPG2k_boot_title_or_new_game, MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "push_title_screen", RPG2k_push_title_screen,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "push", RPG2k_push, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rpg2k, "pop", RPG2k_pop, MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "pop_to_map", RPG2k_pop_to_map, MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "map_scene", RPG2k_map_scene, MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "map_path", RPG2k_map_path, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rpg2k, "db_path", RPG2k_db_path, MRB_ARGS_NONE());
+  mrb_define_method(M, rpg2k, "load_map", RPG2k_load_map, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rpg2k, "bug_report_interp_text",
+                    RPG2k_bug_report_interp_text, MRB_ARGS_REQ(1));
+  mrb_define_method(M, rpg2k, "bug_report_stamp", RPG2k_bug_report_stamp,
+                    MRB_ARGS_NONE());
+  // Round 31 (".singleton/leftover mop-up") follow-up: the remaining small
+  // `.singleton` scraps a real, unrestricted diagnostic run found but
+  // round 30's own two `.singleton`-coverage rounds didn't have time for
+  // -- see compiled_gems.rb's own comment on this gem's `owners:` for the
+  // full per-class breakdown. All 12 owners below are plain, never-
+  // instantiated `module`s, so none is a MRB_SET_INSTANCE_TT candidate,
+  // and none has a bare `private`/`private_class_method`/`protected`
+  // anywhere near its own real source, so every method below is a plain,
+  // public `mrb_define_class_method`.
+  //
+  // RPG2k::Scene.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // scene/base.rb: `self.battle_scene_class(db)`, a bare `def self.x`
+  // directly on the RPG2k::Scene module, not `class << self`), resolving
+  // RPG2k3::Scene::Battle vs. the plain RPG2000 Battle scene by edition.
+  // Reuses the `scene` RClass* declared above for RPG2k::Scene::MapViewer.
+  mrb_define_class_method(M, scene, "battle_scene_class",
+                          RPG2k__Scene_singleton_battle_scene_class,
+                          MRB_ARGS_REQ(1));
+
+  // Game::MoveType.singleton -- 4 real methods (mruby-rpg2k/mrblib/
+  // game.rb: the RPG2000 move-route direction-resolution table).
+  RClass* move_type = mrb_module_get_under(M, game, "MoveType");
+
+  mrb_define_class_method(M, move_type, "next_direction",
+                          Game__MoveType_singleton_next_direction,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, move_type, "random_direction",
+                          Game__MoveType_singleton_random_direction,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, move_type, "toward_away_direction",
+                          Game__MoveType_singleton_toward_away_direction,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, move_type, "bounce",
+                          Game__MoveType_singleton_bounce, MRB_ARGS_REQ(3));
+
+  // Game::MapAccess.singleton -- 4 real methods (mruby-rpg2k/mrblib/
+  // game.rb: the current map's own save/teleport/escape restriction
+  // flags).
+  RClass* map_access = mrb_module_get_under(M, game, "MapAccess");
+
+  mrb_define_class_method(M, map_access, "save_allowed?",
+                          Game__MapAccess_singleton_save_allowed_,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, map_access, "teleport_allowed?",
+                          Game__MapAccess_singleton_teleport_allowed_,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, map_access, "escape_allowed?",
+                          Game__MapAccess_singleton_escape_allowed_,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, map_access, "allowed?",
+                          Game__MapAccess_singleton_allowed_, MRB_ARGS_REQ(3));
+
+  // Game::Parallax.singleton -- 3 real methods (mruby-rpg2k/mrblib/
+  // game.rb: parallax-background pixel-offset math).
+  RClass* parallax = mrb_module_get_under(M, game, "Parallax");
+
+  mrb_define_class_method(M, parallax, "autoscroll_px",
+                          Game__Parallax_singleton_autoscroll_px,
+                          MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, parallax, "axis_offset",
+                          Game__Parallax_singleton_axis_offset,
+                          MRB_ARGS_REQ(8));
+  mrb_define_class_method(M, parallax, "anchored_offset",
+                          Game__Parallax_singleton_anchored_offset,
+                          MRB_ARGS_REQ(4));
+
+  // Game::MessagePalette.singleton -- 3 real methods (mruby-rpg2k/mrblib/
+  // game.rb: the message-window text-color palette's own cell geometry in
+  // the system graphic).
+  RClass* message_palette = mrb_module_get_under(M, game, "MessagePalette");
+
+  mrb_define_class_method(M, message_palette, "valid?",
+                          Game__MessagePalette_singleton_valid_,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, message_palette, "cell_origin",
+                          Game__MessagePalette_singleton_cell_origin,
+                          MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, message_palette, "shadow_origin",
+                          Game__MessagePalette_singleton_shadow_origin,
+                          MRB_ARGS_NONE());
+
+  // Game::MapBgm.singleton -- 2 real methods (mruby-rpg2k/mrblib/game.rb:
+  // save-chunk field decoding for a map's own background music state, the
+  // same shape Game::State.singleton's own bgm_from_chunk/se_from_chunk
+  // above already established).
+  RClass* map_bgm = mrb_module_get_under(M, game, "MapBgm");
+
+  mrb_define_class_method(M, map_bgm, "int_field",
+                          Game__MapBgm_singleton_int_field, MRB_ARGS_REQ(2));
+  mrb_define_class_method(M, map_bgm, "chunk_for",
+                          Game__MapBgm_singleton_chunk_for, MRB_ARGS_REQ(2));
+
+  // Game::BattlePage.singleton -- 2 real methods (mruby-rpg2k/mrblib/
+  // game/battle_support.rb, alongside Game::States's own second-half
+  // reopening there): RPG2000 troop-page trigger-condition evaluation.
+  RClass* battle_page = mrb_module_get_under(M, game, "BattlePage");
+
+  mrb_define_class_method(M, battle_page, "check_turns",
+                          Game__BattlePage_singleton_check_turns,
+                          MRB_ARGS_REQ(3));
+  mrb_define_class_method(M, battle_page, "hp_within?",
+                          Game__BattlePage_singleton_hp_within_,
+                          MRB_ARGS_REQ(3));
+
+  // Game::WindowCursor.singleton -- its one real method (mruby-rpg2k/
+  // mrblib/game.rb: `#dest_rect`, the selection cursor's own destination
+  // rectangle for a given cell).
+  RClass* window_cursor = mrb_module_get_under(M, game, "WindowCursor");
+
+  mrb_define_class_method(M, window_cursor, "dest_rect",
+                          Game__WindowCursor_singleton_dest_rect,
+                          MRB_ARGS_REQ(5));
+
+  // Game::Message.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#parse`, message-command escape sequence parsing).
+  RClass* message = mrb_module_get_under(M, game, "Message");
+
+  mrb_define_class_method(M, message, "parse", Game__Message_singleton_parse,
+                          MRB_ARGS_REQ(3));
+
+  // Game::EventPage.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#compare`, event-page priority comparison).
+  RClass* event_page = mrb_module_get_under(M, game, "EventPage");
+
+  mrb_define_class_method(M, event_page, "compare",
+                          Game__EventPage_singleton_compare, MRB_ARGS_REQ(3));
+
+  // Game::CharSet.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#frame_rect`, a charset sprite sheet's own per-frame source
+  // rectangle).
+  RClass* char_set = mrb_module_get_under(M, game, "CharSet");
+
+  mrb_define_class_method(M, char_set, "frame_rect",
+                          Game__CharSet_singleton_frame_rect, MRB_ARGS_REQ(3));
+
+  // Game::Backdrop.singleton -- its one real method (mruby-rpg2k/mrblib/
+  // game.rb: `#int_field`, save-chunk field decoding for the battle
+  // backdrop, the same shape as Game::MapBgm.singleton#int_field above).
+  RClass* backdrop = mrb_module_get_under(M, game, "Backdrop");
+
+  mrb_define_class_method(M, backdrop, "int_field",
+                          Game__Backdrop_singleton_int_field, MRB_ARGS_REQ(2));
+
+  // RPG2k::Scene::Map::LRUBitmapCache (mruby-rpg2k/mrblib/scene/map.rb) --
+  // a small per-category tile-bitmap LRU cache nested inside RPG2k::
+  // Scene::Map, explicitly out of scope when that class was first added
+  // as an owner. 5 of its 6 real methods compile clean and register
+  // below: #initialize (private -- every #initialize is implicitly
+  // private in real Ruby, confirmed against the real diagnostic's own
+  // tag; `@capacity_bytes = capacity_bytes`, pure mandatory arity), #[],
+  // #[]=, #key?, and the private #bitmap_bytes helper. The 6th,
+  // #evict_lru_until_within_budget (also private), stays interpreted -- a
+  // real `@entries.each_key { |k| ... break }` block, the same
+  // already-established BLOCK/SENDB gap as everywhere else in this file;
+  // #[]='s own call into it correctly falls back to ordinary dynamic
+  // dispatch rather than devirtualizing into a nonexistent compiled
+  // target, confirmed directly against the real generated output. No
+  // MRB_SET_INSTANCE_TT call belongs here: @capacity_bytes looks
+  // embeddable in IvarLayout.analyze's own raw pass (backed by this
+  // class's own pre-existing `# bc2cpp: (fixnum)` annotation on
+  // #initialize) but drop_unsafe_embeddings's every_accessor_compiles?
+  // gate correctly refuses it -- @bytes is compared against
+  // @capacity_bytes inside #evict_lru_until_within_budget, which never
+  // compiles -- confirmed directly: this class does not appear in the
+  // real "classes needing MRB_SET_INSTANCE_TT" listing. Reuses the
+  // `map_scene` RClass* declared above.
+  RClass* lru_bitmap_cache =
+      mrb_class_get_under(M, map_scene, "LRUBitmapCache");
+
+  mrb_define_private_method(M, lru_bitmap_cache, "initialize",
+                            RPG2k__Scene__Map__LRUBitmapCache_initialize,
+                            MRB_ARGS_REQ(1));
+  mrb_define_method(M, lru_bitmap_cache, "[]",
+                    RPG2k__Scene__Map__LRUBitmapCache___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, lru_bitmap_cache,
+                    "[]=", RPG2k__Scene__Map__LRUBitmapCache____,
+                    MRB_ARGS_REQ(2));
+  mrb_define_method(M, lru_bitmap_cache, "key?",
+                    RPG2k__Scene__Map__LRUBitmapCache_key_, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, lru_bitmap_cache, "bitmap_bytes",
+                            RPG2k__Scene__Map__LRUBitmapCache_bitmap_bytes,
+                            MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {}

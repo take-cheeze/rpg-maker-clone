@@ -9487,3 +9487,811 @@ finding this round surfaced (`sanitize`'s `?`/`=` collision) is real but
 orthogonal to `.singleton` support and confirmed, three independent ways,
 not live today. No code change was needed; no changelog fragment
 accompanies this round.
+
+## Follow-up: Game::Battle::Combatant + RPG2k coverage (round 31)
+
+Two more real instance-method classes -- neither needing the `.singleton`
+mechanism -- add to `mruby-rpg2k-compiled`'s own `owners:`: `Game::Battle::
+Combatant`, the `Struct.new(...) do...end`-defined ephemeral per-fight
+battler snapshot this ADR's own fourth-severe-bug follow-up first made
+registry-visible (mruby-rpg2k/mrblib/game/battle.rb), and `RPG2k` itself,
+the top-level app/game object `main.cxx` constructs and drives
+(mruby-rpg2k/mrblib/main.rb) -- both real, never-before-owned classes, and
+both flagged in round 30's own adversarial sweep as real candidates worth
+a dedicated round (`Game::Battle::Combatant` by name, as the live instance
+of a `sanitize` `?`/`=` collision risk; `RPG2k` implicitly, as the one
+real top-level class this ADR's own many rounds of `RPG2k::Scene::*`/
+`RPG2k::Window` coverage had never itself touched).
+
+**Environment, built fresh in this round's own worktree.** `git submodule
+update --init --depth 1` for the six `3rd/*` submodules a real host `mrbc`
+needs (`mruby`, `mruby-marshal`, `mruby-onig-regexp`, `mruby-stringio`,
+`uni-algo`, `stb`), all nine `patches/*.patch` files applied cleanly via
+`scripts/apply_mruby_patch.bash` against their real target directories
+(`3rd/mruby` for seven of them, `3rd/mruby-stringio`/`3rd/mruby-marshal`
+one each), then a real host `mrbc` built by running `rake -j4` from
+*inside* `3rd/mruby` itself with `HOST_CXX=c++ HOST_CC=cc
+PATH=/opt/ruby-3.3.6/bin:$PATH` (`mruby 4.0.0`, built clean).
+`tools/bc2cpp/bc2cpp.rb` was run directly against that real `mrbc` via a
+small driver script replicating each real `mrbgem.rake`'s own exact env
+computation (`ONLY_OWNERS`/`OTHER_OWNERS`/`OTHER_DECLS_HEADER`/
+`NATIVE_SRCS`, read programmatically from the real, current
+`tools/bc2cpp/compiled_gems.rb`, never hand-copied), both with
+`SKIP_UNSUPPORTED=1` (the real build's own setting) and an unrestricted
+(`ONLY_OWNERS` unset entirely, not merely empty -- confirmed directly:
+`ENV['ONLY_OWNERS']&.split(',')` on an empty string returns `[]`, which
+`compile_all`'s own `leaves.select { ... } if only_owners` would then
+filter down to *nothing*, silently compiling zero methods rather than
+every method, a real footgun caught and avoided rather than hit) whole-
+closed-world run to read the `== compiled entry points ==`/`== ivar
+embedding ==`/`== classes needing MRB_SET_INSTANCE_TT ==` sections
+directly. This round's own worktree *did* reach the real `build_config.rb`
++ `cmake`/`ninja` pipeline end to end (see "Verified for real" below):
+disk was tight on this shared machine (9.6 GB free at the start of this
+round, dropping to ~8.3 GB by the end, other concurrent sessions' own
+worktrees and `/tmp` scratch visibly consuming space throughout) but
+sufficient, unlike a couple of the several-rounds-back writeups that had
+to fall back to the `g++ -fsyntax-only`-only path -- every remaining
+`3rd/*` submodule the default desktop target needs (`SDL`, `SDL_mixer`,
+`effekseer`, `gflags`, `inicpp`, `lvgl`, `mgem-list`, `ng-log`, `quickjs`)
+was initialized one at a time with `--depth 1` (checking `df -h /` after
+each), and the two `cp932_table`/`jis0208_table` Unicode.org mapping files
+`mruby-lcf`'s own build-time codegen needs were found already cached at
+`/tmp/native-build-tables` and SHA-256-verified against `flake.nix`'s own
+pinned hashes (both matched exactly) rather than re-fetched.
+
+**Confirmed the exact 16/15 method lists and counts the task's own
+analysis named, both in the real unrestricted diagnostic and in a real
+`ONLY_OWNERS` run adding both classes -- not assumed accurate from the
+prior analysis alone.** `Game::Battle::Combatant`: all 16 real `def`s
+inside its own `Struct.new(...) do...end` block compile clean, no new
+opcode work needed -- `#atk_states`, `#row`, `#gauge`, `#dead?`,
+`#display_max_hp`, `#display_max_mp`, `#strike_count`, `#half_sp_cost?`,
+`#turns_taken`, `#next_battle_turn`, `#out_of_play?`, `#member?`, `#int`,
+`#state?` (the only one with a mandatory argument, `arity 1`), `#back_row?`,
+`#gauge_full?` -- exactly the task's own 16, no drift since that analysis.
+`RPG2k`: all 15 real bytecode-defined methods compile clean, including
+`#initialize` itself (one mandatory argument, `arity 1`) -- `#initialize`,
+`#hide_title?`, `#current_scene_name`, `#show_title?`,
+`#boot_title_or_new_game`, `#push_title_screen`, `#push` (arity 1), `#pop`,
+`#pop_to_map`, `#map_scene`, `#map_path` (arity 1), `#db_path`, `#load_map`
+(arity 1), `#bug_report_interp_text` (arity 1), `#bug_report_stamp` --
+again exactly the task's own 15, no drift. Both counts independently
+re-derived, not merely grepped for the expected names: `grep -c
+"(Game::Battle::Combatant#" .../diag.log` -> 16, `grep -c "(RPG2k#"
+.../diag.log` -> 15, in both the unrestricted run and the real
+`ONLY_OWNERS` run with both classes added to the real, edited
+`compiled_gems.rb`'s own `owners:` list -- the two runs' own filtered
+listings are byte-identical.
+
+**Embedding safety, checked directly against the real diagnostic's own
+ivar-embedding section and `MRB_SET_INSTANCE_TT` listing, per this round's
+own explicit instruction not to assume.** `Game::Battle::Combatant` has no
+bytecode-defined `#initialize` at all (`Struct.new` allocates members
+natively) and, more fundamentally, none of its 16 real methods ever
+touches an ivar in the first place -- a `Struct`'s own members are never
+backed by `iv_tbl`/`SETIV`/`GETIV` (mruby's own `mruby-struct` stores them
+positionally), so every method reads a member via a plain self-implicit
+call (`hp`, `self[:row]`, ...) instead. Confirmed directly: the real
+whole-program `== ivar embedding ==` section has zero
+`Game::Battle::Combatant` lines (not even a later-vetoed raw `IvarLayout`
+proposal), and the class is absent from the "classes needing
+`MRB_SET_INSTANCE_TT`" listing both before and after this round (still
+exactly `Game::Screen`, `RPG2k::Scene::VehicleWorld` -- confirmed by a
+real `grep -c 'MRB_SET_INSTANCE_TT('` on `register.cxx`, excluding
+comments, both before and after this round's edit: 2, unchanged).
+
+`RPG2k` is the more interesting case, exactly the one this round's own
+task brief asked to verify rather than assume: `#initialize` DOES compile
+clean with pure mandatory arity (the usual first gate
+`drop_unsafe_embeddings` checks), so the class is not refused outright the
+way every other non-mandatory-`#initialize` target in this file is -- but
+it still gets zero real embedded ivars, because every one of its own six
+ivars (`@test_play`/`@hide_title`: boolean, `@db`: `LCF::Database`,
+`@map_tree`: `LCF::MapTree`, `@title`: `String`, `@scenes`: `Array`) is a
+type `IvarLayout`'s own embedding lattice never models (only Fixnum/Symbol
+are, per this ADR's own "Symbol-ivar embedding" follow-up). So
+`every_accessor_compiles?` (the round 28 fix requiring every ivar-touching
+method, not just `#initialize`, to also compile clean) is never even
+reached for this class in the first place -- there is no raw `IvarLayout`
+candidate for it to accept or refuse. Confirmed directly, not inferred:
+the real whole-program `== ivar embedding ==` section has zero `RPG2k#`
+lines, and `RPG2k` is absent from the "classes needing
+`MRB_SET_INSTANCE_TT`" listing both before and after (unchanged at exactly
+`Game::Screen`, `RPG2k::Scene::VehicleWorld`, re-confirmed against the
+real, freshly built `register.cxx`'s own `grep -c
+'MRB_SET_INSTANCE_TT('`: 2, unchanged, both call sites `screen`/
+`vehicle_world` by name).
+
+**The `sanitize` `?`/`=` collision round 30 flagged by name for this exact
+class, re-checked now that it actually ships, not merely re-cited.**
+`#half_sp_cost?`/`#member?` each share their own owner with a
+`Struct`-native writer (`half_sp_cost=`/`member=`) that `cpp_name`'s own
+`sanitize` (`?` and `=` both collapse to `_`) would collide with under the
+identical generated identifier. Still not live: both `=`-halves are
+`Struct`-native (`irep: nil` synthetic `MethodDef`s, installed by the
+`Struct.new` registry fix, never a real bytecode `def`), so
+`compile_all`'s own leaf worklist (`@owner_of[d.irep] = d if d.irep`)
+never inserts an entry for either and `cpp_name` is never invoked on
+them -- confirmed directly against the real generated
+`rpg2k_compiled_gen.cpp` from the real build: exactly one
+`Game__Battle__Combatant_half_sp_cost__impl`/`Game__Battle__Combatant_
+member__impl` symbol each (`nm -C` on the real object file, both `T`
+external, no duplicate, no collision).
+
+**A second, un-flagged structural subtlety found and confirmed while
+building this round, not merely re-derived from round 30's own writeup:**
+the whole-program registry lists `:atk_states`/`:gauge`/`:row` as POLY
+with "2 defs: Game::Battle::Combatant, Game::Battle::Combatant" -- the
+same owner twice, because `Struct.new`'s own native reader for that member
+*and* this block's own real `def` override (the one that actually wins at
+runtime, Ruby's ordinary last-`def`-wins semantics) both register as
+distinct `MethodDef`s under the identical owner string. Conservative, not
+unsound: it only means no call site anywhere ever devirtualizes into these
+three specific methods (falls back to ordinary `mrb_funcall`, which still
+runs the correct, real `def` below -- confirmed no regression by the fact
+that all three still appear, individually, exactly once each, in the real
+`== compiled entry points ==` listing and the real generated output).
+
+**Real devirtualization proof, both classes, confirmed directly in the
+real regenerated output, not merely reasoned about.** `Game::Battle::
+Combatant`: `#back_row?`/`#next_battle_turn`/`#out_of_play?`/
+`#turns_taken` are each called directly (no `mrb_funcall`) from
+already-compiled `Game::Battle` methods elsewhere in this same gem (e.g.
+`// MONO :out_of_play? -> Game::Battle::Combatant#out_of_play?, direct
+C++ call (no mrb_funcall)` inside an already-shipped `Game::Battle`
+method body). `RPG2k`: `#initialize`'s own self-implicit `db_path`/
+`boot_title_or_new_game` calls devirtualize straight into `RPG2k_db_path_
+impl`/`RPG2k_boot_title_or_new_game_impl`, and already-shipped `RPG2k::
+Scene::ItemMenu#apply_switch_item`'s own `@parent.pop_to_map` (`@parent` a
+real `RPG2k` reference read via `mrb_iv_get`) now devirtualizes straight
+into `RPG2k_pop_to_map_impl` too -- a genuine cross-class call site, not
+merely a self-call, the exact kind of proof this ADR's own discipline
+requires before calling a devirtualization "real." `:hide_title?`/`:pop`/
+`:push` are each correctly POLY (2-3 defs, including `<native>`/
+`RPG2k::Scene::Title`/`RGSS::ErrorReport.singleton`) and never
+devirtualized *into* by any call site sending those bare names, the same
+safe conservative behavior every other POLY name in this codebase already
+gets.
+
+**Regression-safety verified by a real before/after diff, not a count
+match alone.** Ran the real `bc2cpp.rb` generation for `mruby-rpg2k-
+compiled` twice against the identical closed world -- once against the
+pre-this-round `compiled_gems.rb` (`git show HEAD:...`), once against the
+real, edited one -- and diffed the two generated `.cpp` files: every
+difference is either one of the 31 new method bodies (plus their own
+constant-lookup helper code) or an existing already-compiled call site's
+own comment/codegen flipping from `// POLY :name -- real dynamic
+dispatch...` + `mrb_funcall(...)` to `// MONO :name -> ..., direct C++
+call (no mrb_funcall)` + a direct call -- the intended payoff of adding a
+new owner (12 real call sites flipped: 4 into `Game::Battle::Combatant`
+methods, 4 into `RPG2k#pop_to_map` from other already-compiled scenes,
+plus `RPG2k#initialize`'s own two brand-new self-calls, which aren't
+"flips" since `#initialize` never existed as compiled code before). Zero
+other line changed. `mruby-lcf-compiled`'s and `mruby-rgss-compiled`'s own
+generated output is unaffected by this round's `compiled_gems.rb` edit
+(the only diff between a before/after run of either is this round's own
+test-harness omission of `OTHER_DECLS_HEADER` on the "before" side, a
+path-only artifact of the ad hoc comparison script, not a real content
+difference -- confirmed by inspecting the diff directly: two added
+`#include` lines, nothing else).
+
+**Exhaustive registration cross-diff against the real, current
+`register.cxx`, the same discipline every coverage round in this file
+uses.** Every `(owner, method_name)` pair the real diagnostic reports for
+`Game::Battle::Combatant`/`RPG2k` cross-checked against every
+`mrb_define_(private_)method` call actually present in `register.cxx`'s
+two new blocks, arity and visibility included: **31/31 matched, zero
+mismatches on either axis** (`#initialize` alone is `mrb_define_private_
+method`, matching its own real `[private -- ...]` diagnostic tag; the
+other 30 are plain `mrb_define_method`, matching their own lack of one).
+A full `grep -oE 'mrb_define_(private_)?method\(M, [a-z_0-9]+,'` count
+over the whole file, before vs. after this round's edit: every
+pre-existing owner's own registration-call count is byte-identical, the
+only diff being the two new entries (`combatant`: 16, `rpg2k`: 15) --
+confirmed by an actual `diff`, not eyeballed. `mrb_define_class_method`
+call count (70) and `MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)` call count (2,
+`screen`/`vehicle_world`) are both unchanged too.
+
+**Verified for real, against the actual `build_config.rb` + `cmake`/
+`ninja` pipeline, not only the standalone diagnostic:**
+
+- `clang-format -i` then `clang-format --dry-run --Werror` on
+  `mruby-rpg2k-compiled/src/register.cxx` (the only `.cxx`/`.h`/`.hxx`
+  file this round touches): clean. `git diff --stat` on that file shows
+  only pure insertions (167 lines added, 1 removed -- the owners-array
+  closing `]` `compiled_gems.rb` moved, not this file), no reflow of any
+  pre-existing registration block.
+- A real, freshly-regenerated `rpg2k_compiled_gen.cpp` (via a driver
+  script replicating `mrbgem.rake`'s own exact `ONLY_OWNERS`/
+  `OTHER_OWNERS`/`OTHER_DECLS_HEADER`/`NATIVE_SRCS` computation, including
+  real `*_decls.h` files generated by also running `mruby-lcf-compiled`'s
+  and `mruby-rgss-compiled`'s own real `bc2cpp.rb` invocations) plus the
+  real, edited `register.cxx`, compiled with `g++ -std=gnu++17 -Wall
+  -Wextra -Winfinite-recursion`: **zero errors** both `-fsyntax-only` and
+  a real `-c` object-file compile, **zero `-Winfinite-recursion`
+  warnings**, only the same pre-existing, already-established
+  `-Wunused-but-set-variable`/`-Wunused-parameter` noise this file's own
+  codegen has always produced elsewhere (confirmed by grep: every one of
+  the 4159 warnings from this compile matches one of those two patterns).
+- `nm -C` on that real, standalone-compiled object file: 16 external
+  (`T`) `Game__Battle__Combatant_*_impl` symbols and 16 matching local
+  (`t`) entry wrappers; 15 external `RPG2k_*_impl` symbols (distinct from
+  the pre-existing 17 `RPG2k__Window_*_impl` ones, confirming
+  `cpp_name`'s `::`-to-`_`/`.`-to-`_` collapsing keeps `RPG2k` and
+  `RPG2k::Window` from colliding) and 15 matching wrappers -- 31 pairs
+  total, zero missing, zero unexpected extras.
+- The real, opt-in `RPGMAKER_BC2CPP=1` build (`cmake ..` then `ninja
+  mruby/host/lib/libmruby.a`, both invoked with `cp932_table`/
+  `jis0208_table` pointed at the cached, hash-verified tables) succeeded
+  end to end: **exit 0, zero `error:` and zero `warning:` matches**
+  anywhere in the full build log, a real 97,911,850-byte `libmruby.a`
+  produced, the "Build summary" listing `mruby-lcf-compiled`/
+  `mruby-rgss-compiled`/`mruby-rpg2k-compiled` all present in the `host`
+  config's own included-gems list. One real environment hiccup along the
+  way, fixed rather than worked around: an earlier attempt raced two
+  concurrent `ninja mruby/host/lib/libmruby.a` invocations against the
+  same build directory (a stray backgrounded process not properly
+  cleaned up before starting a second one), corrupting the in-flight
+  `mruby-onig-regexp`/onigmo `./configure` run (`conftest.c: No such file
+  or directory`) -- diagnosed as a race, not a real code or disk problem
+  (confirmed no `ENOSPC` in the log, `df -h /` still showed headroom),
+  fixed by killing the stray process, deleting only the corrupted
+  `mruby-onig-regexp` build subdirectory, and rerunning a single clean
+  `ninja` invocation, which then hit and fixed a second, real, separate
+  gap (`cp932_table`/`jis0208_table` need to be set on the `ninja`
+  invocation itself, not only on the earlier `cmake` configure step --
+  `mruby-lcf`'s own build-time `cp932_to_unicode.rb` codegen runs during
+  the `ninja` build, not during configure) before succeeding cleanly.
+- `nm -C` on the real, finished `libmruby.a`: all 16
+  `Game__Battle__Combatant_*_impl` and all 15 `RPG2k_*_impl` symbols
+  (matching the standalone check above) present and externally linked.
+  `grep -c 'mrb_funcall(M, [a-z0-9]*, "", '` (the project's own
+  empty-method-name bug detector) against all three real, freshly
+  regenerated `*_gen.cpp` files produced by this same build (`lcf_
+  compiled_gen.cpp`/`rgss_compiled_gen.cpp`/`rpg2k_compiled_gen.cpp`):
+  **zero** in every one.
+- Every already-shipped owner's own registration-call count in the real,
+  built `register.cxx` unchanged (the exhaustive cross-diff above); no
+  regression in any other owner's own entry-point count.
+
+`changelog.d/bc2cpp-combatant-rpg2k-coverage.added.md` records this
+round's own shipped change.
+
+## Follow-up: `.singleton`/leftover mop-up (round 31), closing `RGSS::Font.singleton`
+
+A dedicated mop-up round, picking off the remaining smaller `.singleton`/
+leftover scraps a real, unrestricted diagnostic run found but the two
+prior `.singleton`-coverage rounds (round 30's own "RGSS .singleton
+coverage cluster" and "Game .singleton coverage cluster") didn't have
+time for. Every target was re-verified individually against a real host
+`mrbc` before registering (`SKIP_UNSUPPORTED=1`, no `ONLY_OWNERS`, the
+same unrestricted-diagnostic technique every prior round uses), then
+re-confirmed compiling clean in a real, per-gem `ONLY_OWNERS` run (the
+exact `ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` shape each gem's own
+real `mrbgem.rake` computes, reproduced by hand against the real,
+already-edited `compiled_gems.rb` -- never hand-copied), per this
+project's own established discipline.
+
+### The 12 small `.singleton` scraps (`mruby-rpg2k-compiled`)
+
+All in `mruby-rpg2k/mrblib/game.rb` except `Game::BattlePage.singleton`
+(`mrblib/game/battle_support.rb`, alongside `Game::States`'s own
+second-half reopening there, the same file round 30 already had to split
+across for `Game::States` itself) and `RPG2k::Scene.singleton`
+(`mrblib/scene/base.rb`, not `main.rb` -- re-derived from the real source
+rather than trusted from the task's own two-file guess). Every one of
+these 12 owners is a plain, never-instantiated `module`, confirmed by
+reading each one's own real `module X` line directly:
+
+- `Game::MoveType.singleton` (4): `next_direction`/`random_direction`/
+  `toward_away_direction`/`bounce` -- the RPG2000 move-route
+  direction-resolution table.
+- `Game::MapAccess.singleton` (4): `save_allowed?`/`teleport_allowed?`/
+  `escape_allowed?`/`allowed?` -- the current map's own save/teleport/
+  escape restriction flags.
+- `Game::Parallax.singleton` (3): `autoscroll_px`/`axis_offset`/
+  `anchored_offset` -- parallax-background pixel-offset math.
+- `Game::MessagePalette.singleton` (3): `valid?`/`cell_origin`/
+  `shadow_origin` -- the message-window text-color palette's own cell
+  geometry in the system graphic.
+- `Game::MapBgm.singleton` (2): `int_field`/`chunk_for` -- save-chunk
+  field decoding for a map's own background music state, the same shape
+  `Game::State.singleton`'s own `bgm_from_chunk`/`se_from_chunk`
+  (round 30) already established.
+- `Game::BattlePage.singleton` (2): `check_turns`/`hp_within?` --
+  RPG2000 troop-page trigger-condition evaluation.
+- `Game::WindowCursor.singleton` (1): `dest_rect`.
+- `Game::Message.singleton` (1): `parse` -- message-command escape
+  sequence parsing.
+- `Game::EventPage.singleton` (1): `compare` -- event-page priority
+  comparison.
+- `Game::CharSet.singleton` (1): `frame_rect`.
+- `Game::Backdrop.singleton` (1): `int_field`, the same shape as
+  `Game::MapBgm.singleton#int_field` above.
+- `RPG2k::Scene.singleton` (1): `battle_scene_class` -- a bare
+  `def self.battle_scene_class(db)` (not `class << self`) directly on the
+  `RPG2k::Scene` module itself, resolving `RPG2k3::Scene::Battle` vs. the
+  plain RPG2000 `Battle` scene by edition.
+
+All 24 methods matched the unrestricted diagnostic's own upper bound
+exactly once actually placed in `ONLY_OWNERS` -- zero surprises, zero
+methods that looked compilable in isolation but hit a real gap once
+asked to devirtualize against the narrower real `OTHER_OWNERS` set a
+real build uses. No bare `private`/`private_class_method`/`protected`
+anywhere near any of these 12 classes' own real source, so all 24 are
+plain, public `mrb_define_class_method` calls. Every real, live GETCONST
+inside these bodies (`RPG2k::Scene.singleton#battle_scene_class`'s own
+`RPG2k3::Scene::Battle`/`Battle` references) resolves at the correct
+owner-scope-first chain in the real generated output, confirmed directly
+rather than assumed from precedent:
+
+```cpp
+mrb_value scope0 = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "RPG2k"));
+mrb_value scope1 = mrb_const_get(M, scope0, mrb_intern_cstr(M, "Scene"));
+...
+if (!ok) r3_tmp = bc2cpp_const_try(M, scope1, mrb_intern_cstr(M, "Battle"), &ok);
+if (!ok) r3_tmp = bc2cpp_const_try(M, scope0, mrb_intern_cstr(M, "Battle"), &ok);
+if (!ok) r3_tmp = mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "Battle"));
+```
+
+-- `lexical_scope_path`'s own `owner.sub(/\.singleton\z/, '').split('::')`
+handles a bare (one-level) `RPG2k::Scene.singleton` owner with zero
+further changes, the identical mechanism round 30's own two-level-deep
+`Game::States::BattleText.singleton` case already proved generalizes.
+
+A real, live devirtualization proof beyond same-owner self-calls: adding
+these 12 owners flips several already-compiled call sites elsewhere in
+`mruby-rpg2k-compiled` from `POLY`/`mrb_funcall` straight to a direct
+`MONO` C++ call, confirmed by a real function-by-function diff against
+the pre-round generated output --
+`RPG2k::Scene::Map::LRUBitmapCache#[]=`'s own `dest_rect` receiver (via
+its caller), `RPG2k::Scene::Map`'s own `save_allowed?`/
+`teleport_allowed?`/`escape_allowed?` map-access checks, and three
+separate `Game::CharSet.frame_rect` call sites, e.g.:
+
+```cpp
+// MONO :frame_rect -> Game::CharSet.singleton#frame_rect, direct C++ call (no mrb_funcall)
+```
+
+replacing the prior `mrb_funcall(M, r14, "frame_rect", 3, ...)` at each
+site.
+
+### Closing `RGSS::Font.singleton#exist?` (`mruby-rgss-compiled`)
+
+The one `.singleton`-owned method this ADR's own "RGSS::Font
+investigated, and NOT added" follow-up (several rounds before
+".singleton owner support" existed at all) explicitly left open as a
+"known-good, still-available future candidate" once the mechanism became
+real -- and the introducing "`.singleton` owner support" round's own
+"what was deferred" section named it again, by name, as exactly this: a
+candidate that would "prove nothing new the `RGSS::Bitmap.singleton` case
+above doesn't already prove," deliberately deferred to keep that round's
+own diff focused.
+
+Re-confirmed against the real, current diagnostic rather than trusted
+from either prior follow-up's own (now several-rounds-old) quote: `self.
+exist?(name)` (a `class << self ... end`-opened bare `true` stub,
+`mruby-rgss/mrblib/lib.rb`) is still the class's only real bytecode-defined
+method, and `#initialize(name = Font.default_name, size =
+Font.default_size)` still has two real optional arguments, hitting the
+same `pure_mandatory_arity?` gate as ever -- nothing about either method's
+own body changed since the original investigation; only whether the
+mechanism could ever *emit* the `.singleton` half did. `RGSS::Font`
+itself (without `.singleton`) is correctly still absent from `owners:`,
+contributing zero real coverage for the same reason as always.
+
+Registered via `mrb_define_class_method` onto a freshly-fetched `font`
+`RClass*`, the identical pattern every other `.singleton` owner in this
+file already uses. No embedding concern (`self.exist?` returns a bare
+literal, touching no ivar of any kind), and even if it did, a
+`.singleton`-owned method's ivars are class ivars on a different object
+than any instance's own `iv_tbl` -- the introducing round's own adversarial
+stress-test already verified that isolation directly against the real
+code, re-confirmed unaffected by this round's own addition (grepping the
+real registry dump for `:initialize` still finds zero `.singleton`-suffixed
+owners among any name's definitions, so `drop_unsafe_embeddings`'s own gate
+still can never even consider a `.singleton`-owned class ivar).
+
+Closing this out is a real, if small, full-circle validation of the
+`.singleton` owner-support mechanism: the exact same class this ADR
+investigated and explicitly declined months of follow-up work ago, for a
+reason ("structurally incapable of ever emitting a real singleton-method
+entry point") that later became false once the mechanism itself was
+fixed, now ships a real, registered, `nm`-confirmed entry point with zero
+new code -- only a new `owners:` line and a new `mrb_define_class_method`
+call.
+
+### Three tiny leftover instance-method classes
+
+- **`RPG2k::Scene::Map::LRUBitmapCache`** (`mruby-rpg2k/mrblib/scene/
+  map.rb`, `mruby-rpg2k-compiled`) -- a small per-category tile-bitmap LRU
+  cache nested inside `RPG2k::Scene::Map`, explicitly called out as out of
+  scope when that class was first added as an owner ("neither is touched
+  here, and neither is counted in the totals below"). 5 of its 6 real
+  methods compile clean and register below: `#initialize` (private --
+  every `#initialize` is implicitly private in real Ruby regardless of a
+  bare `private` marker, confirmed against the real diagnostic's own tag;
+  pure mandatory arity, `@capacity_bytes = capacity_bytes`), `#[]`, `#[]=`,
+  `#key?`, and the private `#bitmap_bytes` helper. `#evict_lru_until_
+  within_budget` (also private) is the one method that stays interpreted
+  -- a real `@entries.each_key { |k| ... break }` block, the same
+  already-established BLOCK/SENDB gap as everywhere else in this file --
+  and `[]=`'s own call into it correctly falls back to ordinary dynamic
+  dispatch rather than devirtualizing into a nonexistent compiled target,
+  confirmed directly against the real generated output:
+  ```cpp
+  // POLY :evict_lru_until_within_budget -- real dynamic dispatch, receiver's runtime class decides
+  r4 = mrb_funcall(M, self, "evict_lru_until_within_budget", 0);
+  ```
+  `@capacity_bytes` looks embeddable in `IvarLayout.analyze`'s own raw
+  pass (`EMBED RPG2k::Scene::Map::LRUBitmapCache#@capacity_bytes
+  (fixnum)`, backed by this class's own pre-existing `# bc2cpp: (fixnum)`
+  annotation on `#initialize`, applied several rounds up) but
+  `drop_unsafe_embeddings`'s `every_accessor_compiles?` gate correctly
+  refuses it anyway: `@bytes` is compared against `@capacity_bytes` inside
+  `#evict_lru_until_within_budget`, which never compiles -- re-confirmed
+  directly against the real "classes needing MRB_SET_INSTANCE_TT" listing
+  (still exactly `Game::Screen`, `RPG2k::Scene::VehicleWorld`, unchanged),
+  not merely assumed from the annotation's presence alone.
+
+- **`RGSS::ErrorReport::Tee#initialize`** (`mruby-rgss/mrblib/
+  error_report.rb`, `mruby-rgss-compiled`) -- a thin `IO`-like wrapper that
+  mirrors every real write to `RGSS::ErrorReport.record` before forwarding
+  to its own wrapped `@io`. Only `#initialize(io)` is a real,
+  individually-compilable bytecode leaf (`@io = io`, pure mandatory
+  arity); `#write`/`#print` (a real `*args` splat) and `#puts` (calls
+  `ErrorReport.puts_text`, an already-documented gap elsewhere in this
+  file) stay interpreted, unchanged from before this round. Implicitly
+  private like every `#initialize` in real Ruby. `@io` is a `StringIO`/
+  `IO`/custom-sink reference (confirmed by this file's own earlier
+  `profile_annotations.rb` follow-up, which observed its real runtime
+  class across actual test runs), never Fixnum/Symbol, so it was never an
+  embedding candidate regardless.
+
+- **`Array#include?`** (`mruby-rgss/mrblib/array_include.rb`,
+  `mruby-rgss-compiled`) -- not a class this project defines, but one it
+  reopens: a plain index-loop replacement for mruby's own
+  block-allocating `Enumerable#include?` fallback (this file's own top
+  comment has the full performance rationale, traced to a real
+  `RGSS::Profiler.stats[:object_types]` pass). The whole-program registry
+  correctly reports it `POLY :include? (2 defs: Array, <native>)` -- the
+  native half is `Module#include?` (`3rd/mruby/src/class.c`), a
+  *different* real method that only collides by bare name (checking
+  whether a module is included, not whether an array contains a value),
+  never this method's own owner, so registering `Array` here changes no
+  MONO/POLY soundness, the same "registry keys by name, not by class"
+  property this whole mechanism relies on everywhere else. This is the
+  first bare, top-level core class (`Array`, fetched via plain
+  `mrb_class_get`, the same way `mruby-rpg2k-compiled/src/register.cxx`
+  already fetches the bare top-level `RPG2k` module) ever named in one of
+  these three gems' own `owners:` -- a real, deliberate first, not an
+  accident: `mruby-rgss`'s own C hook + mrblib (this reopening included)
+  have already fully run by the time `mruby-rgss-compiled`'s own init
+  installs the compiled override (`add_dependency 'mruby-rgss'`), the
+  identical "already loaded by dependency order" guarantee every other
+  native-class override in this project already relies on, just applied
+  to a core mrbgem's own class instead of one this project defines
+  itself. A real, live guarded devirtualization proof from *another*
+  gem's own already-compiled code, not just a same-gem call: once `Array`
+  entered `mruby-rgss-compiled`'s `owners:` (and, via `OTHER_OWNERS`,
+  `mruby-rpg2k-compiled`'s own trust set), one already-compiled call site
+  in `mruby-rpg2k-compiled`'s own generated output -- traced to a fresh
+  `Array.new`-shaped receiver by `trace_new_target`'s existing
+  guarded-class-type mechanism -- flipped from plain `POLY`/`mrb_funcall`
+  to a real, runtime-class-checked direct call with an `mrb_funcall`
+  fallback:
+  ```cpp
+  // TYPED :include? -> Array#include? (receiver traced to Array), runtime-class-checked direct C++ call, mrb_funcall fallback
+  if (mrb_class_ptr(mrb_const_get(M, mrb_obj_value(M->object_class), mrb_intern_cstr(M, "Array"))) == mrb_obj_class(M, r2)) {
+    r2 = Array_include__impl(M, r2, r3);
+  } else {
+    r2 = mrb_funcall(M, r2, "include?", 1, r3);
+  }
+  ```
+  -- a real cross-gem `TYPED` devirtualization into a bare core class,
+  the first of its kind in this project, exercising machinery
+  (`OTHER_DECLS_HEADER`'s cross-TU external linkage, `trace_new_target`'s
+  guarded-class-type codegen) that already existed but had never before
+  had a bare-core-class target to reach. Other `:include?` call sites
+  elsewhere in the same file correctly remain plain `POLY`/`mrb_funcall`
+  (their own receiver never traces to a fresh `Array.new`), confirmed by
+  the same real diff.
+
+- **`StringIO#ungetbyte`** (`mruby-lcf/mrblib/lcf.rb`, right above the
+  `module LCF` body every other `mruby-lcf-compiled` owner already lives
+  in, `mruby-lcf-compiled`) -- the same "reopens a core class" shape as
+  `Array#include?` above, one level further out: `StringIO` is not even a
+  core mrbgem's own class, but this project's own separate `3rd/
+  mruby-stringio` submodule, loaded before `mruby-lcf` in the real build
+  (`mruby-lcf/mrblib/lcf.rb`'s own many `StringIO.new` call sites
+  throughout already depend on that load order working today).
+  `#ungetbyte(substr)` normalizes an `Integer`-or-`String` argument to a
+  one-character string, then forwards to the native `#ungetc`; genuinely
+  `POLY :ungetbyte (2 defs: StringIO, <native>)` in the whole-program
+  registry, the native half being `mruby-io`'s own core `IO#ungetbyte`
+  (the exact collision the "mruby core native method registry
+  extraction" follow-up, several rounds up, already found and flagged --
+  `:ungetbyte (StringIO vs. core IO)` -- but never acted on until this
+  round gave `StringIO` a real emission owner at all). This project's
+  first cross-`3rd/`-submodule compiled override: `mruby-lcf-compiled`'s
+  own `add_dependency 'mruby-lcf'` guarantees `mruby-lcf`'s own C hook +
+  mrblib (this reopening included) have already fully run by the time
+  this gem's own init installs the override, exactly the guarantee this
+  file's own top comment already documents for every LCF-owned class,
+  just one level further out. No ivar embedding concern: `#ungetbyte`
+  touches no ivar at all, and `StringIO` has no bytecode-defined
+  `#initialize` of its own for `drop_unsafe_embeddings` to even consider.
+
+### Regression-safety verification
+
+Real, per-gem `ONLY_OWNERS`/`OTHER_OWNERS`/`NATIVE_SRCS` runs against a
+real host `mrbc` (`mruby 4.0.0`, built from a fresh `3rd/mruby` submodule
+checkout plus its five real dependencies, all nine `patches/*.patch`
+files applied via `scripts/apply_mruby_patch.bash`), reproducing exactly
+what each gem's own real `mrbgem.rake` would invoke (`closed_world_
+mrblib_srcs`/`core_native_srcs`/`external_gem_native_srcs`, all read
+programmatically from the real, already-edited `compiled_gems.rb` --
+never hand-copied), before and after this round's own `owners:` edit,
+for all three compiled gems:
+
+- **Real `.cpp` diffs**: `mruby-lcf-compiled_gen.cpp` differs only by one
+  new method (`StringIO_ungetbyte`/`_impl`); `mruby-rgss-compiled_gen.cpp`
+  differs only by three new methods (`RGSS__Font_singleton_exist_`,
+  `RGSS__ErrorReport__Tee_initialize`, `Array_include_`, each with its own
+  `_impl`); `mruby-rpg2k-compiled_gen.cpp`'s diff is either a pure
+  addition (the 29 new methods' own forward declarations and bodies) or a
+  `POLY`-to-`MONO`/`TYPED` devirtualization flip at an already-compiled
+  call site into one of the new owners -- zero lines removed anywhere
+  that weren't immediately replaced by the devirtualized form of the
+  identical call, confirmed by grep, not eyeballed.
+- **`#error`/empty-`mrb_funcall` sweep**: `grep -c '#error'` and
+  `grep -c 'mrb_funcall(M, [a-z0-9]*, "", '` both `0` across all three
+  real regenerated files.
+- **`== ivar embedding ==` and `== classes needing MRB_SET_INSTANCE_TT
+  ==`**: byte-identical across all three gems, before and after --
+  confirmed by `diff`, not inspection. None of this round's own 16 new
+  owners triggers any new embedding decision.
+- **Entry-point counts**: `mruby-lcf-compiled` 11 -> 12 owners (+1
+  method), `mruby-rgss-compiled` 11 -> 14 owners (+3 methods),
+  `mruby-rpg2k-compiled` 59 -> 72 owners (+29 methods) -- every delta
+  matches the number of methods actually added, confirmed by counting the
+  real `== compiled entry points ==` listing directly.
+
+**Real compile verification, all three touched `.cxx` files.**
+`clang-format -i` then `clang-format --dry-run --Werror` -- clean, zero
+diffs beyond this round's own edits. `g++ -fsyntax-only -std=gnu++17
+-Wall -Wextra -Winfinite-recursion` against each real, edited
+`register.cxx` together with its own real regenerated `*_gen.cpp` and the
+real `OTHER_DECLS_HEADER` cross-gem declaration headers each `mrbgem.rake`
+would actually wire in (so the real cross-gem devirtualized calls this
+round's own `Array#include?` TYPED call site and every pre-existing
+cross-gem call already make both resolve correctly): **zero errors, zero
+`-Winfinite-recursion` warnings** across all three files -- every
+remaining warning (90/215/4152 respectively) is the same already-
+established `-Wunused-but-set-variable`/`-Wunused-parameter` shape this
+codegen has always produced, confirmed by grep, not eyeballed. Compiled
+each to a real object file both before and after this round's own diff
+and diffed the full `nm -C` symbol table: the *only* differences are this
+round's own new `_impl`/entry-wrapper symbol pairs (3 for `mruby-lcf-
+compiled`, 8 for `mruby-rgss-compiled` -- 6 method symbols plus 2 newly
+pulled-in undefined references, `mrb_class_get`/`mrb_define_private_
+method`, neither previously called in that translation unit -- and 59
+for `mruby-rpg2k-compiled` -- 58 method symbols plus one new undefined
+reference, `Array_include__impl`, pulled in by the new cross-gem `TYPED`
+call site above); every pre-existing symbol in all three files is
+present, unchanged in name and linkage (`T`/`t`).
+
+**Real full `RPGMAKER_BC2CPP=1` build.** Unlike several prior rounds in
+this file, this round's own environment had enough disk budget (started
+at 15G free, initializing every top-level `3rd/*` submodule this build
+actually needs -- `lvgl`/`SDL`/`SDL_mixer`/`effekseer`/`gflags`/`ng-log`/
+`quickjs`/`inicpp`/`mgem-list`, each shallow-cloned at depth 1 -- left 9G
+free) to run the real, full `build/` pipeline end to end rather than
+falling back to the host-`mrbc`-only methodology every prior round
+documents: `cp932_table`/`jis0208_table` fetched fresh
+(`bestfit932.txt`/`JIS0208.TXT` from unicode.org) and SHA-256-verified
+against `flake.nix`'s own pinned hashes (both matched exactly, the same
+check round 29 already established), then `RPGMAKER_BC2CPP=1
+PATH="/opt/ruby-3.3.6/bin:$PATH" cmake ..` followed by
+`RPGMAKER_BC2CPP=1 PATH="/opt/ruby-3.3.6/bin:$PATH" ninja
+mruby/host/lib/libmruby.a` from a fresh `build/` directory: **succeeded
+end to end, exit 0, zero `error:` and zero `warning:` matches** in the
+full build log, a real ~98MB `libmruby.a` produced, with all three
+`-compiled` gems present in the build's own real gem listing
+(`mruby-lcf-compiled`/`mruby-rgss-compiled`/`mruby-rpg2k-compiled`,
+alongside every other real gem). The real, build-produced
+`lcf_compiled_gen.cpp`/`rgss_compiled_gen.cpp`/`rpg2k_compiled_gen.cpp`
+each have the exact same number of compiled `_impl` functions (68/164/
+2852 respectively) as the equivalent standalone host-`mrbc` run above --
+confirmed by a direct count, not merely assumed identical because both
+came from the same `bc2cpp.rb` -- and the same `#error`/empty-`mrb_funcall`
+sweep against these real, build-produced files (not the standalone
+scratch copies) is again `0`/`0` across all three. `nm -C` on the real,
+final linked `libmruby.a` confirms every one of this round's own 33 new
+methods' `_impl` (`T`, external linkage) and entry-wrapper (`t`, local
+linkage) symbol pairs are present in the shipped archive -- all 29
+`mruby-rpg2k-compiled` methods, all 3 `mruby-rgss-compiled` methods, and
+`StringIO_ungetbyte`/`_impl`. Counting each real `register.cxx`'s own
+`mrb_define_method(`/`mrb_define_private_method(`/
+`mrb_define_class_method(` call sites directly (not the entry-point
+diagnostic, a second, independent count) confirms the exact expected
+delta with zero regression: `mruby-lcf-compiled` 33 -> 34 (+1),
+`mruby-rgss-compiled` 78 -> 81 (+3), `mruby-rpg2k-compiled` 1397 -> 1426
+(+29) -- every other gem's own pre-existing registration count completely
+unchanged.
+
+### What was NOT registered, and why
+
+Nothing named by the task's own upper bound was skipped: all 12 small
+`.singleton` scraps, `RGSS::Font.singleton#exist?`, and all three tiny
+leftover instance-method classes/reopenings compiled clean and are
+registered. The task's own explicit caveats about `StringIO`/`Array`
+possibly not being cleanly registerable ("StringIO/Array might be core
+mruby classes this project doesn't 'own' the way it owns its own gems'
+classes") turned out not to block registration at all -- this project's
+existing native-method-collision-registry-soundness machinery
+(`NATIVE_SRCS`, `core_native_srcs`, `external_gem_native_srcs`, all
+already covering exactly these two collisions as `POLY`) and the already-
+established "gem dependency order guarantees the reopening has already
+loaded" reasoning both generalize cleanly to a bare core/`3rd/`-submodule
+class, needing zero new `bc2cpp.rb` mechanism -- only a precedent nobody
+had exercised yet for *emitting* into one.
+
+## Follow-up: adversarial bug-hunt sweep (round 31)
+
+A fresh adversarial sweep, explicitly *not* re-litigating round 30's own
+deep `.singleton` stress-test (re-read first; its own conclusion -- the
+mechanism is sound -- is taken as given, not re-derived from scratch).
+This round instead re-ran the whole closed-world generation for all three
+gems from a clean worktree and built a set of small, throwaway, hand-
+verified cross-checking scripts (kept only in scratch, not the repo) to
+attack the specific angles the task called out. **No new bug found** --
+every angle below came back clean, verified against real tool output, not
+just re-reasoned about from the source.
+
+**Setup**: the worktree started two commits behind
+`claude/wio-image-shrink-rpg2k-697b1a` (missing the `.singleton`-owner-
+support round and the RGSS/`Game`-singleton coverage-cluster round) --
+`git merge --no-ff` (a plain `--ff-only` refused; the local branch had its
+own wrapping merge commits) picked those up cleanly, diff-verified
+against `origin/claude/wio-image-shrink-rpg2k-697b1a` directly (2336
+insertions across 8 files, exactly the two rounds' own diff, nothing
+missing or extra). `3rd/*` submodules were uninitialized in this fresh
+worktree (`git submodule status` showing every one `-`-prefixed) --
+`git submodule update --init` populated every one from the shared
+`.git/modules` object store already holding them (no network reclone
+needed). `cp932_table`/`jis0208_table` (the two Unicode mapping tables
+the Nix flake normally supplies, read directly by `mruby-lcf`'s own
+`cp932_to_unicode.rb` build step) were unset in this plain-worktree
+environment; pointed at this machine's already-cached copies
+(`.native-build-tables/{bestfit932.txt,JIS0208.TXT}`, sha256-matching the
+ones `scripts/native-build-without-nix.bash` itself fetches) rather than
+re-downloading. With both fixed, `rm -f mruby/host/lib/libmruby.a &&
+RPGMAKER_BC2CPP=1 cmake .. && RPGMAKER_BC2CPP=1 ninja
+mruby/host/lib/libmruby.a` succeeded end-to-end, zero `error:`/`warning:`
+lines in the full ninja log (grepped directly, not eyeballed) -- the
+baseline this round's own checks below build on.
+
+**1. Empty-method-name detector, all three gems.** Re-ran
+`tools/bc2cpp/bc2cpp.rb` standalone for each gem (same `ONLY_OWNERS`/
+`OTHER_OWNERS`/`NATIVE_SRCS`/`SKIP_UNSUPPORTED=1` env each gem's own real
+`mrbgem.rake` computes, replicated in a scratch driver script rather than
+re-deriving the owner lists by hand) and grepped each gem's own real
+generated `_gen.cpp` for `mrb_funcall(M, [a-z0-9]*, "", ` (the exact
+already-documented broken-charset shape). **0 occurrences in all three
+gems** (`mruby-lcf-compiled`, `mruby-rpg2k-compiled`, `mruby-rgss-
+compiled`) -- confirmed by direct `grep -c`, not assumed from the
+absence of a recent charset change.
+
+**2. Entry-point counts.** `mruby-lcf-compiled`: 33 real (non-`#error`)
+compiled entry points; `mruby-rpg2k-compiled`: 1397; `mruby-rgss-
+compiled`: 78 (79 raw diagnostic lines, one -- `RGSS::Graphics.singleton
+#brightness_sprite` -- deliberately never registered, see #4 below). No
+prior round's own count to diff against was captured verbatim in this
+file for a byte-for-byte comparison, so these are recorded here as this
+round's own baseline rather than claimed as a regression check.
+
+**3. Full registration/arity/visibility cross-diff, every owner, every
+method, all three gems** (the round's main new-tooling contribution --
+prior rounds' own diffs, re-read in this file, were mostly targeted at
+one class or one bug shape at a time; this one mechanically checks
+literally every entry at once). A small Ruby script parsed each gem's own
+`== compiled entry points ==` diagnostic listing (owner, name, arity,
+visibility, `.singleton`-class-method flag) and cross-referenced it
+against that same gem's real `register.cxx`: every entry has to be
+registered exactly once, via the correct `mrb_define_*` call
+(`mrb_define_private_method` for a private entry, `mrb_define_class_method`
+for a `.singleton` one, plain `mrb_define_method` otherwise -- flagging
+any mismatch as `WRONG-KIND`), with a matching `MRB_ARGS_REQ(n)` arity
+(flagging `ARITY`), plus the reverse direction (`register.cxx` registering
+a function name absent from this gem's own diagnostic -- `STALE-
+REGISTRATION`, which would mean a hand-written call site pointing at a
+symbol nothing generates, a real link error already, but checked as a
+second line of defense against a working-by-coincidence collision).
+**Result: `mruby-lcf-compiled` (33/33) and `mruby-rpg2k-compiled`
+(1397/1397) are perfectly clean -- zero problems of any kind.**
+`mruby-rgss-compiled` (78/79 diag entries registered) surfaced exactly
+one `UNREGISTERED` hit, `RGSS::Graphics.singleton#brightness_sprite` --
+re-read against `register.cxx`'s own comment at that exact line (lines
+231-248) and confirmed **not a bug**: it is `private`, mruby's own C API
+has no "private class method" registration entry point at all (confirmed
+against the real `mruby.h`/`class.h` headers, as that comment itself
+documents), so it is deliberately left unregistered and reached only via
+`Graphics.brightness=`'s own already-devirtualized direct call into it --
+exactly the documented, intentional shape, not a fresh finding.
+
+**4. Cross-gem devirtualization soundness, checked both structurally and
+by live instrumentation** (the task's own specific worry: a missed
+cross-gem declaration silently falling back to `mrb_funcall`, uncaught by
+any `#error`/empty-name check). Structurally: all three `mrbgem.rake`
+files compute `OTHER_OWNERS` identically --
+`other_gems.values.flat_map { |g| g[:owners] }`, a plain flat union of
+every *other* gem's own `owners:` array from `compiled_gems.rb` -- so a
+`.singleton` pseudo-owner added to any one gem's `owners:` list flows
+into the other two gems' own `OTHER_OWNERS` automatically, by
+construction, with no per-mechanism wiring that could omit it (confirmed
+reading all three `mrbgem.rake` files side by side -- byte-identical
+logic, not just similar). Checked the two structural preconditions that
+same genericity depends on: no owner string is duplicated across gems
+(`BC2CPP_COMPILED_GEMS.values.flat_map(&...).uniq` -- 81 owners in, 81
+out) and no two owner strings mangle to the same `cpp_name`/`sanitize`
+output (same 81-owner set, grouped by `sanitize`d form -- no group of
+size > 1), either of which would silently corrupt cross-gem linkage in a
+way no single gem's own build would catch alone. Then, rather than
+stopping at "this can't happen by construction", empirically instrumented
+`compile_send`'s own exact silent-fallback branch (`target = nil unless
+@other_owners&.include?(target.owner)`, `bc2cpp.rb`'s own line ~3376) in
+a scratch copy to print every time it actually fires, and re-ran all
+three gems' real generation against it. It fired 9/59/0 times
+(`mruby-lcf-compiled`/`mruby-rpg2k-compiled`/`mruby-rgss-compiled`) for
+12 distinct target owners total (`Array`, `Game.singleton`, `Game::Battle
+::Combatant`, `Game::BattlePage.singleton`, `Game::CharSet.singleton`,
+`Game::MapAccess.singleton`, `Game::MapBgm.singleton`,
+`Game::MessagePalette.singleton`, `Game::Parallax.singleton`,
+`Game::WindowCursor.singleton`, `LCF`, `RPG2k`) -- cross-checked every one
+against the real, full 81-entry `BC2CPP_COMPILED_GEMS` owner set: **zero
+overlap**. Every actual fallback is to a class that genuinely isn't a
+compiled owner in *any* of the three gems (correct, expected dynamic
+dispatch), never to one that some other gem does compile but this run's
+own `OTHER_OWNERS` failed to name -- the specific "silent, uncaught
+regression" shape the task asked to rule out is empirically absent, not
+just structurally implausible.
+
+**5. POLY bookkeeping for a `.singleton`-owned name colliding with a
+same-named instance method on a *different* class.** Found several real,
+live instances in the whole-program registry dump rather than a
+constructed example: `:clamp` (`Game.singleton` vs.
+`RPG2k::Scene::MapViewer`, the exact pair the SDEF fix's own comment
+already names as its original motivating bug -- confirmed still correctly
+2-def POLY, not re-collapsed to MONO by anything this round touched),
+`:frame` (`Game::EventGraphic.singleton`, `Game::Transition`, and a
+native definition -- 3 defs), `:active?` (`Game::BattlePage.singleton`
+vs. `Game::EventPage.singleton`, two distinct `.singleton` owners rather
+than a singleton/instance pair), and several more (`:color`, `:height`,
+`:load`, `:message`, ...). Traced `Game::Transition`'s own `:frame`
+specifically: it is `attr_reader :style, :frames, :frame` (mruby-rpg2k/
+mrblib/game.rb), a synthetic `irep: nil` registry entry, never a
+`compile_all` leaf candidate at all -- so `Game::EventGraphic.singleton
+#frame`'s own real compiled entry and `Game::Transition`'s synthetic
+attr-reader entry are two entirely distinct `MethodDef`s (different
+owner, different `irep`, one real one synthetic) sharing only the bare
+name `:frame` in the registry `Hash`, with no code path anywhere that
+conflates them: `@owner_of` keys by irep label (never by name), so a
+leaf's own true owner can never be mistaken for another leaf's, and
+`monomorphic_target`'s `defs.size == 1` check correctly sees 3 real
+entries under `:frame` and refuses to devirtualize by name at all
+(ordinary `mrb_funcall`, the always-safe fallback) regardless of which of
+the three a given call site's receiver actually is at runtime. No
+confusion found in the registry's own bookkeeping for this shape, live or
+synthetic.
+
+**Bottom line**: no new bug this round. The cross-gem `OTHER_OWNERS`/
+`OTHER_DECLS_HEADER` mechanism was checked two ways past round 30's own
+scope (a full mechanical registration/arity/visibility cross-diff across
+every owner in all three gems at once, and live instrumentation of the
+one silent-fallback branch the task specifically flagged as uncatchable
+by any existing `#error` check) and came back clean both times, against
+real generated output and a real, successful, zero-warning
+`RPGMAKER_BC2CPP=1` build -- not just re-read from source. No code change
+was needed; no changelog fragment accompanies this round.
