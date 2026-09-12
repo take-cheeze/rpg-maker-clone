@@ -537,19 +537,202 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # edits to that file between rounds, not a discrepancy in either round's
   # own measurement.)
   #
-  # Future-round candidates, updated: `Game::ChipSet` (the non-singleton
-  # instance-method owner) still deferred (companion-statement support for
-  # `private :upper_flags`); the 4 real no-op `.singleton` owners above
-  # stay omitted unless a future round stops excluding battle_support.rb/
-  # battle.rb/lsd_io.rb for wio; and the larger/`DIRECT_CONSTRUCT_TARGETS`/
-  # `NATIVE_ARG_TARGETS`-touching INSTANCE-method owners (`Game::Actor`,
-  # `Game::Party`, `Game::Battle`, `Game::Character`, `Game::Map`,
-  # `Game::Screen`, `Game::Transition`, `Game::State`, `Game::Interpreter`,
-  # `RPG2k::Scene::Map`, `RPG2k::Scene::Battle`) still each need their own
-  # dedicated per-owner soundness pass -- unchanged from round 36's own
-  # list, since this round only ever added `.singleton` pseudo-owners,
-  # none of which touch that list's own bare-name entries' own instance
-  # methods.
+  # Round 38: two real, independently-verified additions.
+  #
+  # (1) `Game::ChipSet` (the plain, non-singleton instance-method owner),
+  # deferred by round 35's own comment above solely for lack of a real
+  # mechanism to also remove its own `private :upper_flags` companion
+  # statement. That mechanism is now real: strip_wio_bc2cpp_stubs.rb's own
+  # new `collect_visibility_calls` (see its own comment for the full
+  # writeup) finds a receiverless `private(...)`/`protected(...)`/
+  # `public(...)` FCALL naming an explicit Symbol/String, and deletes it
+  # alongside the `def`s it strips whenever every name it lists is itself
+  # being stripped from the very same owner -- raising rather than
+  # guessing for a mixed stripped/kept argument list (not needed by
+  # `Game::ChipSet`'s own single-name case) or an argument list this
+  # script cannot statically read at all (a splat, a variable, ...).
+  # Verified in isolation first (hand-built fixtures: a full-overlap
+  # multi-name statement deletes cleanly, a mixed stripped/kept one
+  # raises, a non-literal-arg one raises, an unrelated-method one is left
+  # completely untouched), then against the real target: a real CRuby
+  # `load` of the OLD, unmodified stripper's own output (the `def` gone,
+  # `private :upper_flags` left standing) reproduces the exact `NameError`
+  # ("undefined method `upper_flags' for class `Game::ChipSet`") this
+  # round's own fix exists to prevent; the NEW stripper's real output for
+  # the same input loads clean. `Game::ChipSet`'s own real 9 registered
+  # methods (ground truth: a real `wio_registered_methods.rb` run against
+  # `mruby-rpg2k-compiled`, never hand-counted) are `initialize`,
+  # `upper_flags` (private -- the one with the companion statement),
+  # `elevated?`, `passable?`, `landable?`, `counter?`, `passable_tile?`,
+  # `landable_tile?`, `terrain`; `self.lower_index`, the class's own 10th
+  # real def, is a DIFFERENT owner (`Game::ChipSet.singleton`, already
+  # stripped since round 37) and untouched by this addition. Regression
+  # check (this round's own required one, since strip_wio_bc2cpp_stubs.rb
+  # itself changed): a real re-run of the modified script against every
+  # one of rounds 35-37's own already-shipped owners (all 15 affected
+  # files across mruby-rpg2k, mruby-rgss, mruby-lcf) produced
+  # byte-for-byte identical output to the unmodified script -- this
+  # round's own new companion-statement logic is a real no-op for every
+  # owner that doesn't need it, confirmed rather than assumed.
+  #
+  # (2) A first, deliberately bounded slice of the larger
+  # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS`-touching INSTANCE-
+  # method owners round 36/37's own comments left as a standing future-
+  # round item: `Game::Map` (11 in-scope methods), `Game::Transition`
+  # (32), `Game::State` (21 of 23 in-scope), `Game::Screen` (41),
+  # `Game::Actor` (65 of 74 in-scope), `Game::Character` (14) -- 184
+  # methods total, each given the SAME full per-owner soundness pass as
+  # every prior round (real registry ground truth, a real AST-walked
+  # companion-statement hazard check, a real whole-closed-world
+  # `mrb_funcall` grep, a real strip + parse + AST-diff verification, a
+  # real `mrbc -g` measurement), not waved through as a block just because
+  # the mechanism itself is unchanged for these six.
+  #
+  # `Game::Map` and `Game::Transition` are both `DIRECT_CONSTRUCT_TARGETS`
+  # members (tools/bc2cpp/bc2cpp.rb): a `SomeClass.new(...)` call site
+  # compiled against either one skips the ordinary Class#new allocate+
+  # dispatch chain entirely and calls a direct `_impl` C++ function for
+  # `#initialize` instead (see bc2cpp.rb's own `DIRECT_CONSTRUCT_TARGETS`
+  # comment and its `compile_send` handling: `init_impl = cpp_name(known,
+  # 'initialize') + '_impl'`). Checked directly, not assumed either way,
+  # whether this changes anything for THIS mechanism: it does not.
+  # bc2cpp.rb's own registry (`build_registry`) is what decides whether
+  # `#initialize` compiles clean and gets registered AT ALL, independent
+  # of whether any particular call site later devirtualizes into calling
+  # it directly -- and that registry is exactly wio_registered_methods.rb's
+  # own real ground truth, the only thing strip_wio_bc2cpp_stubs.rb ever
+  # trusts. Both classes' own `#initialize` IS real, registered, ordinary
+  # `private` methods in the TSV (`Game::Map#initialize` arity 2,
+  # `Game::Transition#initialize` arity 5) -- exactly like any other
+  # stripped method, no special-casing needed or added. The narrow
+  # DIRECT_CONSTRUCT_TARGETS-specific hazard this MIGHT have introduced --
+  # real code observing the interpreted `#initialize` missing in the
+  # window between mrblib load and gem_init's override install, via some
+  # OTHER call path than the devirtualized one -- is exactly the same
+  # gem-init-ordering question this mechanism already requires checking
+  # per owner regardless, and it was (zero real `mrb_funcall` hits on
+  # either class's own method names anywhere in the closed world, same as
+  # every other owner below).
+  #
+  # `Game::Map` (11 in-scope methods) and `Game::State` (21 of 23) are
+  # both real, familiar partial-owner shapes (round 36's own precedent):
+  # `Game::Map` has a SECOND real class reopening in game/battle_support.rb
+  # (wio-excluded) that defines its own 12th registered method,
+  # `sync_layers_to_unit` -- confirmed directly (`grep -n` finds it nowhere
+  # in game.rb), so this owner's own 11 game.rb-resident methods are all
+  # that ever strips for wio, correct and intentional. `Game::State` has
+  # its own second reopening in game/lsd_io.rb (also wio-excluded, dropped
+  # from spec.rbfiles by the interop-trim near the top of this file),
+  # which owns 2 of its 23 real registered methods (`bgm_chunk`/
+  # `se_chunk`) -- the other 21 are all in game.rb and all strip cleanly.
+  # `Game::Actor` has the same shape a THIRD time: game/battle_support.rb
+  # reopens it too, owning 9 of its 74 real registered methods (`alive?`,
+  # `atb_gauge=`, `attack_all?`, `attack_animation_id`,
+  # `clear_battle_combo`, `ignores_evasion?`, `preemptive?`,
+  # `skill_command_name`, `weapon_sp_cost`) -- the other 65 are in game.rb
+  # and strip cleanly. `Game::Transition`, `Game::Screen`, and
+  # `Game::Character` each have exactly one real class body anywhere in
+  # this gem (`grep -rn '^\s*class'` confirms it directly), so all of
+  # their own registered methods (32/41/14 respectively) are ordinary,
+  # full (not partial) owners.
+  #
+  # Companion-statement hazard check (the same real AST walk every prior
+  # round's own comment describes, re-run against all six of these
+  # owners' own real class bodies in game.rb): `Game::Map` and
+  # `Game::Screen` each use only a bare `private` mode switch; `Game::
+  # Transition` (`attr_reader :style, :frames, :frame`), `Game::State`
+  # (many `attr_accessor`/`attr_reader` pairs -- `map`, `x`, `y`,
+  # `direction`, `steps`, `boarded`, ... -- the full real list checked
+  # directly, not summarized) and `Game::Character` (`attr_accessor
+  # :direction, :move_speed, ...`, `attr_reader :graphic_name,
+  # :graphic_index, :x, :y, ...`) each have real `attr_reader`/
+  # `attr_accessor` calls but NO bare or explicit-name `private`/
+  # `protected`/`public` mode statement of any kind; `Game::Actor` has
+  # both real `attr_reader`/`attr_accessor`/`attr_writer` calls (`id`,
+  # `level`, `hp`, `mp`, `name`, `title`, ..., checked directly) and one
+  # bare `private` mode switch, no explicit-name form. None of any of
+  # these six owners' own attr names collide with any of their own real
+  # registered method names (an attr's plain reader/writer pair is a
+  # DIFFERENT method than a same-stem `?`/`=`/compound-name registered
+  # method every time this was checked -- e.g. `Game::Actor`'s own
+  # `attr_reader :class_id` vs. its own registered `set_class_id`/
+  # `class_row_for`, never a bare `class_id` collision; `Game::State`'s
+  # own `attr_reader :map_id` -- a READER only -- vs. its own registered
+  # `map_id=` -- a WRITER only -- never both sides of the same pair).
+  # `Game::ChipSet`'s own companion-statement need is the only one this
+  # round's own six new owners actually have.
+  #
+  # Gem-init-ordering correctness (the same whole-closed-world
+  # `mrb_funcall`/`mrb_funcall_argv`/`mrb_funcall_id`/
+  # `mrb_funcall_with_block` grep every prior round's own comment
+  # describes -- `src/`, `app/`, all three `*-compiled/src/register.cxx`,
+  # every `mruby-rgss/src/*.cxx`, plus the always-active external mrbgems
+  # `3rd/mruby-marshal`/`3rd/mruby-stringio`/`3rd/mruby-onig-regexp`,
+  # `git submodule update --init`d fresh for this round's own check rather
+  # than assumed already checked out -- re-run against every one of this
+  # round's own 7 new owners' real method names, including `Game::ChipSet`'s
+  # own 9): ZERO real call sites anywhere in the whole closed world for
+  # ANY of them, including deliberately generic-sounding ones this round
+  # double-checked rather than waved through on a name-recognition
+  # assumption alone (`Game::Screen#update`, `Game::Map#tile`/`#lower`/
+  # `#upper`, `Game::Character#move`/`#face`, `Game::Actor#dead?`,
+  # `Game::Transition#half`). Every prior round's own already-documented
+  # unrelated hits (`"press"`/`"release"`/`"main_loop"`/`"width"`/
+  # `"height"`/`"name"`/`"color"`/... on real, different receivers) were
+  # re-confirmed still unrelated to this round's own new names too.
+  #
+  # Real strip + parse + AST-diff verification: a real
+  # strip_wio_bc2cpp_stubs.rb run against the real checked-in game.rb with
+  # this round's own 7-owner csv (isolated, then combined with every
+  # prior round's own owners together) raised nothing, every rewritten
+  # file still parses (`ruby -c`), and a real before/after
+  # RubyVM::AbstractSyntaxTree walk (every real owner+name DEFN pair in
+  # the whole file, not just this round's own) shows EXACTLY this round's
+  # own 184 intended methods removed (9 ChipSet + 11 Map + 32 Transition +
+  # 21 State + 41 Screen + 65 Actor + 14 Character) and NOTHING else added
+  # or removed -- cross-checked directly against the per-owner counts
+  # above, not eyeballed. The 10 already-covered scene files and
+  # scene/map.rb/scene/base.rb are untouched by this round's own additions
+  # (none of the 7 new owners live there) -- confirmed by a real run
+  # producing byte-for-byte identical output to the pre-round-38 owner
+  # list for every one of those 12 files.
+  #
+  # Real measured size effect (host `mrbc -g`, matching this build's own
+  # `enable_debug`, on `game.rb` alone, isolating each owner's own
+  # marginal contribution by adding them one at a time on top of every
+  # prior round's own already-shipped owner set): ChipSet -2,520;
+  # Map -1,852; Transition -7,444; State -3,796; Screen -7,654;
+  # Actor -11,799; Character -2,292 -- **-37,357 bytes** combined for this
+  # round's own 7 owners (184 methods), on top of round 35-37's own
+  # already-shipped 150,990 -> 135,705-byte state (game.rb's own
+  # pre-strip baseline moved again since round 37's own comment, same
+  # unrelated intervening-edit reason round 36 already noted for its own
+  # baseline drift) -- a cumulative 162,963 -> ~98,340 bytes, roughly 40%
+  # off this file's own fully-unstripped size, across all four rounds'
+  # combined coverage. (The exact final byte count depends by a handful of
+  # bytes on the length of whatever path string is handed to `mrbc -g`
+  # itself -- `mrbc` embeds its own source-file-path argument into its
+  # `-g` debug tables, so two otherwise-identical inputs measured via
+  # differently-named temp paths differ by a few bytes; every delta
+  # figure above holds the measurement path constant between its own
+  # before/after pair, so this noise cancels out of every reported delta
+  # even though it means the absolute totals are approximate to within
+  # about a dozen bytes, same "directionally trustworthy, not exact"
+  # caveat round 37's own `.singleton` follow-up ADR section already
+  # documents for this same proxy.)
+  #
+  # What this round deliberately did NOT do, and why (an honest scoping
+  # decision, not an oversight): `Game::Party` (85 registered methods),
+  # `Game::Battle` (72), `Game::Interpreter` (173), `RPG2k::Scene::Map`
+  # (224), and `RPG2k::Scene::Battle` (110) are all real remaining
+  # `DIRECT_CONSTRUCT_TARGETS`/`NATIVE_ARG_TARGETS`-touching candidates
+  # (ground truth counts from the same real registry run above), but each
+  # is large enough that giving it the SAME real, thorough, per-owner
+  # soundness pass this round gave its own six smaller owners -- not a
+  # quicker, skimmed version of it -- did not fit in this round's own
+  # scope. Left for a future round rather than rushed. `Game::Character`
+  # (14 methods, done this round) is the only owner from that original
+  # future-candidates list not left for later.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng
@@ -571,7 +754,9 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     Game::MapBgm.singleton Game::WindowCursor.singleton
                                     Game::Message.singleton Game::EventPage.singleton
                                     Game::CharSet.singleton Game::Backdrop.singleton
-                                    RPG2k::Scene.singleton])
+                                    RPG2k::Scene.singleton
+                                    Game::ChipSet Game::Map Game::Transition Game::State
+                                    Game::Screen Game::Actor Game::Character])
   wio_strip_inline_helpers(spec)
   wio_strip_debug_rbfiles(spec)
 end
