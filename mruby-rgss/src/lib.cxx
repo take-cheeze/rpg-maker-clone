@@ -358,25 +358,90 @@ extern "C" size_t rgss_bitmap_bytes_blank(void) {
   return g_bitmap_bytes_blank;
 }
 
+// Every DataType<T>-wrapped Ruby object is backed by a std::shared_ptr<T>
+// rather than a bare T* -- but every real call site in this codebase today
+// (alloc_obj/make below, all of them) is, and stays, single-owner: exactly
+// one RData ever holds the one shared_ptr for a given T instance, so its
+// use-count drops to zero and the T is destroyed the moment that RData is
+// GC'd, identical to the old bare-pointer-in-RData behavior. Checked before
+// concluding that: grepped this whole file (and, project-wide, everywhere
+// else DataType<T> is used -- nowhere else) for anything that would alias
+// two RDatas to one T -- Bitmap#clone/Rect#set/Color#set/Tone#set/Table's
+// own dup path all *copy* the pointee's *value* into an already-separately-
+// owned T (operator=/field-by-field
+// copy), never share the pointer itself; `_load`'s own Marshal path always
+// builds a brand-new T via `make`, never re-wraps an existing one. So this
+// is unique_ptr-with-extra-steps for now, not real multi-owner sharing --
+// shared_ptr is the vehicle here only because it's the one smart pointer
+// that can be built from an already-in-place-constructed T* with a custom
+// (mrb_malloc/mrb_free-based) deleter *and* trivially handed to a second
+// owner later without this struct's own API changing, if a genuinely
+// sharing call site (e.g. a future non-escaping bc2cpp optimization, or
+// some real aliasing use this project doesn't have yet) ever needs one.
+//
+// RData's own `data` field is a bare void*, so the shared_ptr itself has to
+// live in a separate heap box: `data` points at a `new
+// std::shared_ptr<T>(...)` (the box), and free_obj's `delete`s it -- that
+// only ever drops *this* RData's own reference (immediately destroying the
+// underlying T via make_owned's own custom deleter, below, exactly when
+// this was the last reference, which today is always, per the above). The T
+// object's own storage is still mrb_malloc'd/mrb_freed exactly as before
+// (via a shared_ptr custom deleter, not shared_ptr's own make_shared, since
+// several T's -- Bitmap in particular -- are neither copyable nor movable,
+// so the T has to be placement-new'd directly into its final storage, never
+// passed through shared_ptr's own by-value constructor API); only the
+// small, fixed-size box and the shared_ptr's own control block use plain
+// `new`/`delete` (this project's mruby-rgss always compiles as C++ with
+// exceptions enabled -- see docs/adr/0120 -- so an OOM there throwing
+// std::bad_alloc is no different from the std::vector allocations Bitmap's
+// own pixel buffer already relies on).
 template <class T>
 struct DataType {
   static void free_obj(mrb_state* M, void* p) {
+    (void)M;
     if (!p)
       return;
 
-    std::destroy_at(reinterpret_cast<T*>(p));
-    mrb_free(M, p);
+    delete static_cast<std::shared_ptr<T>*>(p);
   }
 
   static mrb_data_type data_type;
 
+  // Construct a T in place (mrb_malloc'd storage, exactly like every
+  // DataType<T> object always has been) and wrap it in a freshly-owning
+  // shared_ptr, freed via mrb_free/destroy_at through a custom deleter --
+  // never make_shared, which would require T to be copy/move-constructible
+  // from a temporary (Bitmap is neither, see this struct's own top comment).
+  template <class... Args>
+  static std::shared_ptr<T> make_owned(mrb_state* M, Args... args) {
+    void* mem_ptr = mrb_malloc(M, sizeof(T));
+    T* ptr = new (mem_ptr) T{args...};
+    return std::shared_ptr<T>(ptr, [M](T* p) {
+      std::destroy_at(p);
+      mrb_free(M, p);
+    });
+  }
+
+  // Wrap an already-constructed shared_ptr<T> into a brand new RData under
+  // class `c`. The vehicle bc2cpp's own devirtualized `Owner.new(...)`
+  // construction codegen calls into (tools/bc2cpp/bc2cpp.rb's compile_send,
+  // the "MONO :new -> direct native construct" path, and this file's own
+  // rgss_*_new_direct entry points below) -- going straight from a compiled
+  // method's own already-known argument values to a constructed T and a
+  // wrapped RData, instead of dispatching through Class#new/#allocate/
+  // #initialize.
+  static V make_direct(mrb_state* M, RClass* c, std::shared_ptr<T> ptr) {
+    return mrb_obj_value(mrb_data_object_alloc(
+        M, c, new std::shared_ptr<T>(std::move(ptr)), &data_type));
+  }
+
   template <class... Args>
   static T& alloc_obj(mrb_state* M, V self, Args... args) {
     mrb_assert(!DATA_PTR(self));
-    void* mem_ptr = mrb_malloc(M, sizeof(T));
-    T* ptr = new (mem_ptr) T{args...};
-    mrb_data_init(self, ptr, &data_type);
-    return *ptr;
+    std::shared_ptr<T> owned = make_owned(M, args...);
+    T& ref = *owned;
+    mrb_data_init(self, new std::shared_ptr<T>(std::move(owned)), &data_type);
+    return ref;
   }
 
   // Allocate a brand new instance of class `c` wrapping a freshly constructed
@@ -384,13 +449,12 @@ struct DataType {
   // must return a populated object.
   template <class... Args>
   static V make(mrb_state* M, RClass* c, Args... args) {
-    void* mem_ptr = mrb_malloc(M, sizeof(T));
-    T* ptr = new (mem_ptr) T{args...};
-    return mrb_obj_value(mrb_data_object_alloc(M, c, ptr, &data_type));
+    return make_direct(M, c, make_owned(M, args...));
   }
 
   static T& get(mrb_state* M, V self) {
-    return *reinterpret_cast<T*>(mrb_data_get_ptr(M, self, &data_type));
+    return **reinterpret_cast<std::shared_ptr<T>*>(
+        mrb_data_get_ptr(M, self, &data_type));
   }
 };
 
@@ -574,6 +638,113 @@ mrb_value tone_load(mrb_state* M, V self) {
   t.blue = d[2];
   t.gray = d[3];
   return obj;
+}
+
+// ---- bc2cpp devirtualized-construction entry points ------------------------
+
+namespace {
+// Captured once, at gem-init time (mrb_mruby_rgss_gem_init/define_rect
+// below, right after each RClass* is actually created), for bc2cpp's own
+// devirtualized `.new` construction guard (tools/bc2cpp/bc2cpp.rb's
+// compile_send, NATIVE_CONSTRUCT_TARGETS). Deliberately NOT a second
+// mrb_const_get/mrb_class_get_under lookup of "RGSS::Rect"/"Color"/"Tone"
+// -- that would just observe whatever the constant currently names,
+// exactly what a reassignment (`RGSS::Tone = SomeOtherClass`) would
+// already have changed, so it could never actually detect one happened.
+// This is the real RClass* this gem's own gem_init created, independent
+// of whatever the constant table says right now.
+//
+// A plain global (not keyed per-mrb_state) is safe here: every real
+// mrb_open() call site in this project (src/main.cxx, app/psp/main.cxx,
+// app/wio's own SD-card smoke-test binary) opens and uses exactly one
+// mrb_state at a time, never two concurrently -- confirmed by grepping
+// every mrb_open() call site in this project. A fresh
+// mrb_mruby_rgss_gem_init call (a fresh VM) simply overwrites these for
+// that VM's own lifetime, same as this file's own g_bitmap_bytes_decoded/
+// _blank pair already does for a different fact.
+RClass* g_native_rect_class = nullptr;
+RClass* g_native_color_class = nullptr;
+RClass* g_native_tone_class = nullptr;
+}  // namespace
+
+// extern "C" here isn't about C compatibility (nothing here is called from
+// C) -- it's the escape hatch this file already established
+// (rgss_bitmap_bytes_decoded/rgss_set_display, above) for a function that
+// has to be genuinely visible to a *different* translation unit despite
+// being textually inside this file's own top-level anonymous namespace:
+// per [namespace.unnamed], a name declared `extern "C"` inside an unnamed
+// namespace gets real external linkage (not the internal linkage every
+// other member of that namespace gets), which is exactly what's needed
+// for bc2cpp's own generated register.cxx (a different .cxx file, in a
+// different mrbgem) to call these by name. The plain forward declarations
+// tools/bc2cpp/bc2cpp.rb emits for these (emit_native_construct_decls)
+// must stay `extern "C"` too, in sync with this -- a plain C++-linkage
+// redeclaration would silently look for a different (mangled) symbol name
+// and fail to link, the same failure mode this comment is here to head
+// off for a future edit of either side alone.
+extern "C" RClass* rgss_native_rect_class(void) {
+  return g_native_rect_class;
+}
+extern "C" RClass* rgss_native_color_class(void) {
+  return g_native_color_class;
+}
+extern "C" RClass* rgss_native_tone_class(void) {
+  return g_native_tone_class;
+}
+
+// Called directly by bc2cpp's own generated code (compile_send's "MONO :new
+// -> direct native construct" path) in place of Class#new's own
+// allocate+initialize dispatch, when a compiled `.new` call site's receiver
+// is provably (GETCONST-traced) exactly one of Rect/Color/Tone -- see
+// NATIVE_CONSTRUCT_TARGETS there for the whole-program side of this. Plain
+// mrb_value arguments (the same boxed values bc2cpp's own registers already
+// hold, not pre-unboxed C++ values) so the generated call site needs no
+// knowledge of Rect/Color/Tone's own field types; each function below does
+// exactly the same mrb_as_int/mrb_as_float unboxing mrb_get_args' own "i"/
+// "f" format specifiers do internally (3rd/mruby/src/class.c), so a
+// devirtualized `Tone.new(x)` observes identical coercion -- and identical
+// TypeError-raising for a bad `x` -- to the ordinary #initialize dispatch it
+// replaces; the caller is still responsible for the runtime class-identity
+// guard (see compile_send's own comment) before ever calling one of these.
+//
+// Rect has no clamping at all (plain ints, straight through). Color/Tone
+// apply the exact same clamp255/clamp_signed255 calls their own
+// #initialize (color_init/tone_init above) already does -- not a second
+// copy of that logic that could drift, just the same two free functions
+// called again in the same field order.
+extern "C" mrb_value rgss_rect_new_direct(mrb_state* M,
+                                          V klass,
+                                          V x,
+                                          V y,
+                                          V w,
+                                          V h) {
+  return DataType<Rect>::make(M, mrb_class_ptr(klass), mrb_as_int(M, x),
+                              mrb_as_int(M, y), mrb_as_int(M, w),
+                              mrb_as_int(M, h));
+}
+
+extern "C" mrb_value rgss_color_new_direct(mrb_state* M,
+                                           V klass,
+                                           V r,
+                                           V g,
+                                           V b,
+                                           V a) {
+  return DataType<Color>::make(
+      M, mrb_class_ptr(klass), clamp255(mrb_as_float(M, r)),
+      clamp255(mrb_as_float(M, g)), clamp255(mrb_as_float(M, b)),
+      clamp255(mrb_as_float(M, a)));
+}
+
+extern "C" mrb_value rgss_tone_new_direct(mrb_state* M,
+                                          V klass,
+                                          V r,
+                                          V g,
+                                          V b,
+                                          V gray) {
+  return DataType<Tone>::make(
+      M, mrb_class_ptr(klass), clamp_signed255(mrb_as_float(M, r)),
+      clamp_signed255(mrb_as_float(M, g)), clamp_signed255(mrb_as_float(M, b)),
+      clamp255(mrb_as_float(M, gray)));
 }
 
 // ---- Table ----------------------------------------------------------------
@@ -1545,15 +1716,26 @@ Bitmap& bmp_self(mrb_state* M, V self) {
 // Bitmap#dispose nulls the data pointer but leaves the mruby wrapper object
 // alive and non-nil (see obj_dispose), so mrb_get_args's "d" specifier -- which
 // only raises on a type mismatch, not a null payload -- happily hands back a
-// NULL Bitmap* for an already-disposed source. Blt-style methods used to
-// dereference that pointer directly and segfault the whole process; this
-// turns it into a catchable RGSSError instead, matching real RGSS.
-Bitmap& bmp_require(mrb_state* M, Bitmap* p) {
+// NULL RData-data-field value for an already-disposed source. Blt-style
+// methods used to dereference that pointer directly and segfault the whole
+// process; this turns it into a catchable RGSSError instead, matching real
+// RGSS.
+//
+// `p` is whatever mrb_get_args' own "d" format specifier hands back --
+// literally the RData's own `data` field (mrb_data_get_ptr's return value),
+// which for a DataType<Bitmap>-backed object is now the shared_ptr<Bitmap>
+// *box* (see DataType<T>'s own comment), not a Bitmap* directly. Every
+// bmp_blt/bmp_blt_quads/bmp_copy_blt/bmp_stretch_blt call site below passes
+// this straight through from its own "...d...", &DataType<Bitmap>::data_type
+// mrb_get_args call -- fixed here in one place rather than at each of those
+// four, so a future blt-style method reusing this same "d"-spec pattern
+// inherits the right unwrapping for free.
+Bitmap& bmp_require(mrb_state* M, void* p) {
   if (!p) {
     RClass* mod = mrb_module_get(M, "RGSS");
     mrb_raise(M, mrb_class_get_under(M, mod, "RGSSError"), "disposed Bitmap");
   }
-  return *p;
+  return **reinterpret_cast<std::shared_ptr<Bitmap>*>(p);
 }
 
 // Write an RGBA color into the bitmap at (x, y). LVGL stores ARGB8888 as
@@ -2103,7 +2285,7 @@ static void blt_pixels(Bitmap& dst,
 
 mrb_value bmp_blt(mrb_state* M, V self) {
   mrb_int x, y;
-  Bitmap* src;
+  void* src;
   V srect;
   mrb_int opacity = 255;
   mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
@@ -2134,7 +2316,7 @@ mrb_value bmp_blt(mrb_state* M, V self) {
 // the spike back into the per-pixel work itself.
 mrb_value bmp_blt_quads(mrb_state* M, V self) {
   mrb_int x, y;
-  Bitmap* src;
+  void* src;
   V quads_v;
   // "A" both fetches the batch and enforces that it is an Array.
   mrb_get_args(M, "iidA", &x, &y, &src, &DataType<Bitmap>::data_type, &quads_v);
@@ -2193,7 +2375,7 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
 // budget spent blending pixels onto transparency. Row-wise, it is a memcpy.
 mrb_value bmp_copy_blt(mrb_state* M, V self) {
   mrb_int x, y;
-  Bitmap* src;
+  void* src;
   V srect;
   mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
   Bitmap& dst = bmp_self(M, self);
@@ -2264,7 +2446,7 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
 // an arbitrarily sized window.
 mrb_value bmp_stretch_blt(mrb_state* M, V self) {
   V drect_v, srect_v;
-  Bitmap* src;
+  void* src;
   mrb_int opacity = 255;
   mrb_get_args(M, "odo|i", &drect_v, &src, &DataType<Bitmap>::data_type,
                &srect_v, &opacity);
@@ -3206,7 +3388,7 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   mrb_int x, y, w, h, len, sx, sy, sw, sh;
   mrb_int align = 0;
   const char* s;
-  Bitmap* src;
+  void* src;
   mrb_get_args(M, "iiiisdiiii|i", &x, &y, &w, &h, &s, &len, &src,
                &DataType<Bitmap>::data_type, &sx, &sy, &sw, &sh, &align);
   Bitmap& src_bmp = bmp_require(M, src);
@@ -3515,7 +3697,16 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
         const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
         if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
           continue;
-        Bitmap* b = reinterpret_cast<Bitmap*>(DATA_PTR(bmpv));
+        // DATA_PTR(bmpv) is the shared_ptr<Bitmap> *box* DataType<Bitmap>
+        // now stores (see DataType<T>'s own comment), not a Bitmap* --
+        // already null-checked just above, so dereferencing through it
+        // here (rather than the slightly heavier DataType<Bitmap>::get,
+        // which re-does a type check this hot per-frame loop doesn't
+        // need) is exactly the same access DataType<Bitmap>::get itself
+        // does, just spelled out inline to match this file's own existing
+        // direct-DATA_PTR style at this call site.
+        Bitmap* b =
+            reinterpret_cast<std::shared_ptr<Bitmap>*>(DATA_PTR(bmpv))->get();
         if (b->dirty)
           lv_obj_invalidate(obj);
       }
@@ -3528,7 +3719,9 @@ mrb_value gfx_update(mrb_state* M, mrb_value self) {
         const mrb_value bmpv = mrb_iv_get(M, v, bitmap_sym);
         if (mrb_nil_p(bmpv) || !DATA_PTR(bmpv))
           continue;
-        reinterpret_cast<Bitmap*>(DATA_PTR(bmpv))->dirty = false;
+        reinterpret_cast<std::shared_ptr<Bitmap>*>(DATA_PTR(bmpv))
+            ->get()
+            ->dirty = false;
       }
     }
 
@@ -6758,6 +6951,7 @@ mrb_value vp_update(mrb_state* M, mrb_value self) {
 void define_rect(mrb_state* M, RClass* m) {
   RClass* rect = mrb_define_class_under(M, m, "Rect", M->object_class);
   MRB_SET_INSTANCE_TT(rect, MRB_TT_DATA);
+  g_native_rect_class = rect;
   mrb_define_method(
       M, rect, "initialize",
       [](mrb_state* M, V self) -> V {
@@ -6912,7 +7106,10 @@ uint8_t* bitmap_pixels(mrb_state* M, mrb_value v, int* w, int* h) {
   void* p = mrb_data_check_get_ptr(M, v, &DataType<Bitmap>::data_type);
   if (!p)
     return nullptr;
-  Bitmap* b = reinterpret_cast<Bitmap*>(p);
+  // `p` is the shared_ptr<Bitmap> box DataType<Bitmap> now stores (see that
+  // struct's own comment), not a Bitmap* -- same double-indirection
+  // DataType<Bitmap>::get itself does.
+  Bitmap* b = reinterpret_cast<std::shared_ptr<Bitmap>*>(p)->get();
   if (w)
     *w = b->width;
   if (h)
@@ -6925,7 +7122,7 @@ void bitmap_mark_dirty(mrb_state* M, mrb_value v) {
     return;
   void* p = mrb_data_check_get_ptr(M, v, &DataType<Bitmap>::data_type);
   if (p)
-    reinterpret_cast<Bitmap*>(p)->dirty = true;
+    reinterpret_cast<std::shared_ptr<Bitmap>*>(p)->get()->dirty = true;
 }
 
 }  // namespace rgss
@@ -7309,6 +7506,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* color = mrb_define_class_under(M, m, "Color", M->object_class);
   MRB_SET_INSTANCE_TT(color, MRB_TT_DATA);
+  g_native_color_class = color;
   mrb_define_method(M, color, "initialize", color_init, MRB_ARGS_OPT(4));
   // #clone / #dup, which a game's scripts use on these constantly -- checked
   // against wio's own Ruby specifically: no real .dup/.clone target is ever
@@ -7345,6 +7543,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* tone = mrb_define_class_under(M, m, "Tone", M->object_class);
   MRB_SET_INSTANCE_TT(tone, MRB_TT_DATA);
+  g_native_tone_class = tone;
   mrb_define_method(M, tone, "initialize", tone_init, MRB_ARGS_OPT(4));
 #if !defined(WIO_TERMINAL)  // Tone#dup/#clone: unused on wio (docs/adr/0132)
   mrb_define_method(M, tone, "initialize_copy", data_init_copy<Tone>,
@@ -7448,4 +7647,10 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   // Flush and close a Chrome trace still open at shutdown (native path; the
   // Emscripten loop never returns, but the format tolerates the missing close).
   profiler_trace_stop();
+  // Defensive only (mrb_close frees every RClass this VM owns, so these
+  // would-be-dangling pointers are never actually dereferenced by anything
+  // reachable after this point) -- see g_native_*_class's own comment.
+  g_native_rect_class = nullptr;
+  g_native_color_class = nullptr;
+  g_native_tone_class = nullptr;
 }
