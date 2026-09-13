@@ -45,6 +45,11 @@ UNIALGO_DIR="$OUT_DIR/unialgo"
 
 cd "$REPO_ROOT"
 
+# Disk is the one resource this build can plausibly run out of on a CI runner
+# (two mruby cross-build trees plus PlatformIO), and a full disk surfaces as an
+# opaque tool failure -- print the headroom up front and after each link.
+df -h "$OUT_DIR" "$REPO_ROOT" 2>/dev/null || true
+
 if ! command -v pio >/dev/null 2>&1; then
   echo "error: 'pio' not found on PATH -- install PlatformIO" >&2
   exit 1
@@ -191,6 +196,7 @@ export RGSS_WIO_ARDUINO_INCLUDES
 run_rake() {
   local label="$1" bc2cpp="$2"
   local mruby_dir="$OUT_DIR/mruby-$label"
+  local dir="$OUT_DIR/$label"
   # A CI cache hit restores a previously built pair; the cache key hashes every
   # input that feeds libmruby.a, so a hit is provably current (see the job
   # comment in .github/workflows/build.yml). The link below still runs fresh.
@@ -203,7 +209,7 @@ run_rake() {
   mkdir -p "$mruby_dir/repos/host" "$mruby_dir/repos/wio"
   ln -sfn "$REPO_ROOT/3rd/mgem-list" "$mruby_dir/repos/host/mgem-list"
   ln -sfn "$REPO_ROOT/3rd/mgem-list" "$mruby_dir/repos/wio/mgem-list"
-  mkdir -p "$OUT_DIR/$label"
+  mkdir -p "$dir"
   # -u first so an RPGMAKER_BC2CPP inherited from the caller can never leak
   # into the baseline build; the bc2cpp run re-sets it after.
   local env_args=(-u RPGMAKER_BC2CPP
@@ -214,8 +220,23 @@ run_rake() {
   if [ "$bc2cpp" = 1 ]; then
     env_args+=(RPGMAKER_BC2CPP=1)
   fi
-  ( cd "$REPO_ROOT/3rd/mruby" && env "${env_args[@]}" rake ) \
-    2>&1 | tee "$OUT_DIR/$label/rake.log"
+  # Deliberately NOT streamed to the job log. mruby's generated gem_init.c makes
+  # the compiler emit diagnostics that contain NUL bytes, and GitHub Actions
+  # truncates a step's log at the first NUL -- so streaming would hide the real
+  # error (and everything after it). Keep the complete output on disk and print
+  # a tail of it only if rake fails; on success the job summary is the report.
+  local rc=0
+  ( cd "$REPO_ROOT/3rd/mruby" && env "${env_args[@]}" rake ) >"$dir/rake.log" 2>&1 || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "error: rake ($label) exited $rc -- last 60 lines of $dir/rake.log:" >&2
+    tail -60 "$dir/rake.log" >&2
+    return 1
+  fi
+  echo "== rake ($label) done"
+  # host/ (the bootstrap mrbc and its gems) was only needed to produce this
+  # variant's libmruby.a, which stays for the link and the cache; dropping it
+  # halves the peak footprint of having two variants on disk.
+  rm -rf "$mruby_dir/host"
 }
 
 # Both links are expected to overflow; the map is still written and is what the
@@ -230,20 +251,24 @@ run_link() {
   echo "== pio run -e wio_rgss_boot ($label)"
   rm -rf .pio/build/wio_rgss_boot
   local rc=0
+  # tr -d '\000' before tee for the same reason the rake output is not streamed
+  # at all: a NUL byte would truncate this step's log in GitHub Actions.
   WIO_MRUBY_BUILD_DIR="$mruby_dir/wio" \
   WIO_UNIALGO_LIB_DIR="$UNIALGO_DIR" \
-    pio run -e wio_rgss_boot 2>&1 | tee "$dir/build.log" || rc=$?
+    pio run -e wio_rgss_boot 2>&1 | tr -d '\000' | tee "$dir/build.log" || rc=$?
   if [ -f .pio/build/wio_rgss_boot/firmware.map ]; then
     cp .pio/build/wio_rgss_boot/firmware.map "$dir/firmware.map"
   fi
   if [ "$rc" -ne 0 ] && ! grep -qE "$OVERFLOW_RE" "$dir/build.log"; then
-    echo "error: $label link failed without a FLASH/RAM overflow" >&2
-    echo "       see $dir/build.log" >&2
+    echo "error: $label link failed without a FLASH/RAM overflow -- last 60" >&2
+    echo "       lines of $dir/build.log:" >&2
+    tail -60 "$dir/build.log" >&2
     return 1
   fi
   if [ "$rc" -eq 0 ]; then
     echo "note: $label link fit the board (no overflow) -- unexpected but not fatal"
   fi
+  df -h "$dir" 2>/dev/null || true
 }
 
 run_rake baseline 0
