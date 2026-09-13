@@ -402,6 +402,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, rgss, "tilemap_above_layer_probe",
                           RGSS_singleton_tilemap_above_layer_probe,
                           MRB_ARGS_NONE());
+  mrb_define_class_method(M, rgss, "_comparison_sign",
+                          RGSS_singleton__comparison_sign, MRB_ARGS_REQ(1));
 
   // RGSS::Audio.singleton -- 13 real class methods, every one a plain
   // delegator into a native `_bgm_stop`-style primitive (mruby-rgss/src/
@@ -521,6 +523,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, graphics, "freeze",
                           RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
+  mrb_define_class_method(M, graphics, "render_fps",
+                          RGSS__Graphics_singleton_render_fps, MRB_ARGS_NONE());
 
   // RGSS::Font.singleton -- its one real method (mruby-rgss/mrblib/lib.rb:
   // `self.exist?(name)`, a `class << self ... end`-opened bare `true`
