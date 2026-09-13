@@ -289,6 +289,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "delete", LCF__Array1D_delete, MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "[]=", LCF__Array1D____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, array1d, "method_missing", LCF__Array1D_method_missing,
+                    MRB_ARGS_REQ(1) | MRB_ARGS_REST());
 
   // LCF::Array2D: only 2 of its own 6 real bytecode-defined methods
   // compile clean and are registered below -- both public, confirmed

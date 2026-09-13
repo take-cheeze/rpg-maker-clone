@@ -10564,11 +10564,10 @@ class RPG2k
       # second lists exactly the ones that are -- a mixed list of both
       # would hit strip_wio_bc2cpp_stubs.rb's own documented
       # partial-argument-list raise, for the same reason.
-      public :perform_game_over,
-             :build_animation, :anim_target, :fire_animation_flashes,
-             :try_open_debug_menu
       public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
-             :backdrop_for_terrain_id, :map_properties, :load_face_bitmap
+             :backdrop_for_terrain_id, :map_properties, :perform_game_over,
+             :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap,
+             :try_open_debug_menu
       public :terrain_backdrop, :drive_map_animation,
              :frames_from_tenths, :step_map_animation, :close_battle, :current_map_tone
 

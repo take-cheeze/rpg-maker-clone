@@ -358,6 +358,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "arrows_visible", RGSS__Window_arrows_visible,
                     MRB_ARGS_NONE());
+  mrb_define_private_method(M, window, "initialize", RGSS__Window_initialize,
+                            MRB_ARGS_OPT(4));
 
   RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
 
@@ -404,6 +406,12 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, rgss, "_comparison_sign",
                           RGSS_singleton__comparison_sign, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, rgss, "frame_mean", RGSS_singleton_frame_mean,
+                          MRB_ARGS_OPT(4));
+  mrb_define_class_method(M, rgss, "probe_wav", RGSS_singleton_probe_wav,
+                          MRB_ARGS_OPT(1));
+  mrb_define_class_method(M, rgss, "wait_for_bgm_pos",
+                          RGSS_singleton_wait_for_bgm_pos, MRB_ARGS_OPT(1));
 
   // RGSS::Audio.singleton -- 13 real class methods, every one a plain
   // delegator into a native `_bgm_stop`-style primitive (mruby-rgss/src/
@@ -443,6 +451,17 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, audio, "setup_midi",
                           RGSS__Audio_singleton_setup_midi, MRB_ARGS_NONE());
+  mrb_define_class_method(M, audio, "bgm_play", RGSS__Audio_singleton_bgm_play,
+                          MRB_ARGS_REQ(1) | MRB_ARGS_OPT(4));
+  mrb_define_class_method(M, audio, "bgs_play", RGSS__Audio_singleton_bgs_play,
+                          MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_class_method(M, audio, "me_play", RGSS__Audio_singleton_me_play,
+                          MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_class_method(M, audio, "se_play", RGSS__Audio_singleton_se_play,
+                          MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
+  mrb_define_class_method(M, audio, "play_packed",
+                          RGSS__Audio_singleton_play_packed,
+                          MRB_ARGS_REQ(4) | MRB_ARGS_OPT(3));
 
   // RGSS::Input.singleton -- 11 real class methods. `key_index` and
   // `dir4`/`dir8` each carry a real, live GETCONST reference (SYMBOL_KEYS,
@@ -503,6 +522,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, error_report, "probe_raise",
                           RGSS__ErrorReport_singleton_probe_raise,
                           MRB_ARGS_NONE());
+  mrb_define_class_method(M, error_report, "log_tail",
+                          RGSS__ErrorReport_singleton_log_tail,
+                          MRB_ARGS_OPT(1));
 
   // RGSS::Graphics.singleton -- 3 of its own 4 compiled methods register
   // here (resize_screen/brightness=/freeze); the 4th, the real, private
@@ -525,6 +547,12 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
   mrb_define_class_method(M, graphics, "render_fps",
                           RGSS__Graphics_singleton_render_fps, MRB_ARGS_NONE());
+  mrb_define_class_method(M, graphics, "transition",
+                          RGSS__Graphics_singleton_transition, MRB_ARGS_OPT(3));
+  mrb_define_class_method(M, graphics, "fadeout",
+                          RGSS__Graphics_singleton_fadeout, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, graphics, "fadein",
+                          RGSS__Graphics_singleton_fadein, MRB_ARGS_REQ(1));
 
   // RGSS::Font.singleton -- its one real method (mruby-rgss/mrblib/lib.rb:
   // `self.exist?(name)`, a `class << self ... end`-opened bare `true`
@@ -543,6 +571,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
 
   mrb_define_private_method(M, tee, "initialize",
                             RGSS__ErrorReport__Tee_initialize, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, tee, "respond_to_missing?",
+                            RGSS__ErrorReport__Tee_respond_to_missing_,
+                            MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
 
   // Array#include? -- a real bytecode reopening of the native, top-level
   // Array class (mruby-rgss/mrblib/array_include.rb), fetched via
