@@ -140,6 +140,20 @@ RENODE_BIN=/tmp/wio-renode-build/renode-src/renode \
   scripts/wio_renode_boot.bash .pio/build/wio_sd_upload/firmware.elf
 ```
 
+`platformio.ini`'s `[env:wio_sim]` folds the last two lines into PlatformIO's
+own flash gesture: `pio run -e wio_sim -t upload` builds the `wio` firmware
+and boots its ELF (`$BUILD_DIR/firmware.elf`) through
+`scripts/wio_renode_boot.bash` instead of writing it over USB. It `extends`
+`env:wio`, so there is only one place that defines how that firmware is
+built; the env's `upload_command` is the boot script, and
+`upload_protocol = custom` is load-bearing — under the board's real `sam-ba`
+protocol the atmelsam platform runs its upload-port autodetection
+(`BeforeUpload`) before the command and fails with no board attached, while
+`custom`'s action list is the upload command alone. It still needs `RENODE_BIN`
+(the env does not set it) or `renode` on PATH, and it runs the same fixed
+virtual-time boot, so it prints the same `=== REACHED ...` lines as the manual
+invocation above.
+
 Prints `=== REACHED setup() ===` / `=== REACHED loop() ===` when the
 firmware's own symbols of those names are hit, and the CPU's PC after the
 requested amount of *virtual* time. A genuine unstubbed spin loop (an
