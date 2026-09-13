@@ -58,6 +58,14 @@ for sub in 3rd/mruby 3rd/uni-algo 3rd/lvgl 3rd/mruby-marshal \
   fi
 done
 
+# Build env:wio first. Two reasons: it installs the pinned arm-none-eabi
+# toolchain this script and build_config.rb's cross build resolve from
+# ~/.platformio/packages/toolchain-gccarmnoneeabi (a fresh runner has no such
+# package until something asks PlatformIO for it), and with -t compiledb it
+# also writes the compile_commands.json the include extraction below reads.
+echo "== pio run -e wio -t compiledb (installs the pinned arm-none-eabi toolchain)"
+pio run -e wio -t compiledb >/dev/null 2>&1
+
 # Prefer PlatformIO's own bundled toolchain, exactly as build_config.rb's wio
 # cross build does: its arm-none-eabi 14.2.1 is the compiler the final
 # PlatformIO link uses, and mixing it with a distro compiler silently disagrees
@@ -146,12 +154,10 @@ build_unialgo
 
 # The include set that makes the mruby cross build's wio.cxx HAL ABI-compatible
 # with PlatformIO's own framework objects (build_config.rb's own comment on
-# RGSS_WIO_ARDUINO_INCLUDES). Extract it from a real env:wio compile rather
-# than hardcoding the PlatformIO package cache paths, which are host- and
-# version-specific. This also installs the pinned arm-none-eabi toolchain the
-# cross build above resolves.
+# RGSS_WIO_ARDUINO_INCLUDES). Extract it from the compile_commands.json the
+# env:wio build above wrote, rather than hardcoding the PlatformIO package
+# cache paths, which are host- and version-specific.
 echo "== extracting RGSS_WIO_ARDUINO_INCLUDES from a real env:wio compile"
-pio run -e wio -t compiledb >/dev/null 2>&1
 RGSS_WIO_ARDUINO_INCLUDES="$(python3 - "$REPO_ROOT/compile_commands.json" "$REPO_ROOT" <<'PY'
 import json, os, shlex, sys
 db = json.load(open(sys.argv[1]))
