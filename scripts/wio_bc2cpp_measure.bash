@@ -245,7 +245,11 @@ run_rake() {
 # it is copied out before the next link can overwrite it.
 OVERFLOW_RE="region \`(FLASH|RAM)' overflowed by [0-9]+ bytes"
 run_link() {
-  local label="$1" mruby_dir="$OUT_DIR/mruby-$label"
+  # Separate `local` statements on purpose: bash expands every word of a single
+  # `local a=1 b=$a` before assigning any of them, so $label there is the outer
+  # (unset) variable -- an unbound-variable error under `set -u`.
+  local label="$1"
+  local mruby_dir="$OUT_DIR/mruby-$label"
   local dir="$OUT_DIR/$label"
   mkdir -p "$dir"
   echo "== pio run -e wio_rgss_boot ($label)"
