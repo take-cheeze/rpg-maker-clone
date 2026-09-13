@@ -2937,6 +2937,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, debug_menu, "initialize",
                             RPG2k__Scene__DebugMenu_initialize,
                             MRB_ARGS_REQ(2));
+  mrb_define_private_method(M, debug_menu, "play_animation",
+                            RPG2k__Scene__DebugMenu_play_animation,
+                            MRB_ARGS_NONE());
 
   // RPG2k::Scene::EquipMenu (docs/adr/0139's own follow-up, mruby-rpg2k/
   // mrblib/scene/equip_menu.rb) -- the field equip screen. 29 of its own 36
@@ -4733,6 +4736,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k__Scene__Battle_battle_skill_body, MRB_ARGS_REQ(1));
   mrb_define_method(M, battle_base, "battle_item_body",
                     RPG2k__Scene__Battle_battle_item_body, MRB_ARGS_REQ(1));
+  mrb_define_method(M, battle_base, "apply_pending_item",
+                    RPG2k__Scene__Battle_apply_pending_item, MRB_ARGS_REQ(1));
+  mrb_define_method(M, battle_base, "apply_pending_switch_item",
+                    RPG2k__Scene__Battle_apply_pending_switch_item,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, battle_base, "start_battle_animation",
+                    RPG2k__Scene__Battle_start_battle_animation,
+                    MRB_ARGS_REQ(1));
 
   // RPG2k3::Scene::Battle (mruby-rpg2k/mrblib/scene/battle_rpg2k3.rb) -- the
   // real subclass (`class Battle < RPG2k::Scene::Battle`, a distinct
@@ -6396,6 +6407,18 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "event_bush_depth",
                             RPG2k__Scene__Map_event_bush_depth,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+  mrb_define_private_method(M, map_scene, "check_random_encounter",
+                            RPG2k__Scene__Map_check_random_encounter,
+                            MRB_ARGS_NONE());
+  mrb_define_method(M, map_scene, "headless_battle",
+                    RPG2k__Scene__Map_headless_battle, MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, map_scene, "start_map_animation",
+                            RPG2k__Scene__Map_start_map_animation,
+                            MRB_ARGS_REQ(1));
+  mrb_define_private_method(M, map_scene, "step_events",
+                            RPG2k__Scene__Map_step_events, MRB_ARGS_NONE());
+  mrb_define_private_method(M, map_scene, "step_event",
+                            RPG2k__Scene__Map_step_event, MRB_ARGS_REQ(1));
 
   // Game::States.singleton (docs/adr/0139: round 30's own ".singleton
   // coverage cluster" follow-up) -- 13 of Game::States's own 16 real
@@ -6777,6 +6800,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k_preview_animation_id, MRB_ARGS_NONE());
   mrb_define_method(M, rpg2k, "save_path", RPG2k_save_path, MRB_ARGS_OPT(1));
   mrb_define_method(M, rpg2k, "lsd_path", RPG2k_lsd_path, MRB_ARGS_OPT(1));
+  mrb_define_method(M, rpg2k, "fire_preview_animation",
+                    RPG2k_fire_preview_animation, MRB_ARGS_REQ(1));
   // Round 31 (".singleton/leftover mop-up") follow-up: the remaining small
   // `.singleton` scraps a real, unrestricted diagnostic run found but
   // round 30's own two `.singleton`-coverage rounds didn't have time for
