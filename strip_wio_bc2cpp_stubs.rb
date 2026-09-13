@@ -329,7 +329,11 @@ end
 # arguments at all) is a real, different AST shape (`VCALL`, not `FCALL` --
 # confirmed directly against a live `RubyVM::AbstractSyntaxTree.parse` dump,
 # not assumed) and never reaches this function in the first place; see
-# `collect_visibility_calls` below.
+# `collect_visibility_calls` below. A Symbol argument parses as a bare
+# `:SYM` node on CRuby 3.4 (Prism-backed `RubyVM::AbstractSyntaxTree`) and
+# as a `:LIT`-wrapping-Symbol on older versions -- both shapes are handled
+# below, confirmed directly against live dumps on this machine rather than
+# assumed from one version's docs.
 def literal_arg_names(list_node)
   return nil unless list_node.is_a?(RubyVM::AbstractSyntaxTree::Node) && list_node.type == :LIST
 
@@ -345,6 +349,8 @@ def literal_arg_names(list_node)
       return nil unless val.is_a?(Symbol)
 
       names << val.to_s
+    when :SYM
+      names << c.children[0].to_s
     when :STR
       names << c.children[0]
     else

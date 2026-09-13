@@ -10554,17 +10554,21 @@ class RPG2k
       # cross-object call -- only reaches a public method.
       #
       # Split the same way as #char_in_sight?'s own statement just above
-      # (round 44): the first call lists exactly this owner's own methods
-      # NOT covered by mruby-rpg2k-compiled's own bc2cpp.rb registry
-      # (try_open_debug_menu included -- confirmed directly against a real
-      # wio_registered_methods.rb run, not assumed), the second lists
-      # exactly the 6 that are -- a mixed list of both would hit the same
-      # strip_wio_bc2cpp_stubs.rb raise the comment above already explains,
-      # for the same reason.
-      public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
-             :backdrop_for_terrain_id, :map_properties, :perform_game_over,
-             :build_animation, :anim_target, :fire_animation_flashes, :load_face_bitmap,
+      # (round 44): calling `public` twice with disjoint subsets of the
+      # same name set has the exact same net effect as calling it once
+      # with the union -- a behaviorally inert refactor for every build,
+      # wio or otherwise. The first call lists exactly this owner's own
+      # methods NOT covered by mruby-rpg2k-compiled's own bc2cpp.rb
+      # registry (try_open_debug_menu included -- confirmed directly
+      # against a real wio_registered_methods.rb run, not assumed), the
+      # second lists exactly the ones that are -- a mixed list of both
+      # would hit strip_wio_bc2cpp_stubs.rb's own documented
+      # partial-argument-list raise, for the same reason.
+      public :perform_game_over,
+             :build_animation, :anim_target, :fire_animation_flashes,
              :try_open_debug_menu
+      public :play_battle_bgm, :play_victory_bgm, :restore_pre_battle_bgm,
+             :backdrop_for_terrain_id, :map_properties, :load_face_bitmap
       public :terrain_backdrop, :drive_map_animation,
              :frames_from_tenths, :step_map_animation, :close_battle, :current_map_tone
 
