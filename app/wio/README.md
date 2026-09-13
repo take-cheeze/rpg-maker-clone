@@ -35,6 +35,10 @@ What runs today:
 ```sh
 pio run -e wio            # compile the bring-up firmware
 pio run -e wio -t upload  # flash a connected Wio Terminal
+pio run -e wio_sim -t upload  # ...or boot it in the Renode emulator instead
+                              # (docs/adr/0094; needs a Renode built by
+                              # scripts/wio_renode_build.bash -- see
+                              # app/wio/renode/README.md)
 ```
 
 ## The other environment: `wio_walk`, a map you can walk today
