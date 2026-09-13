@@ -181,6 +181,16 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # uni-algo is C++-only, so only the C++ compiler needs these.
   conf.cxx.defines += UNI_ALGO_TRIM_DEFINES
 
+  # A cross build's bootstrap host build exists only to produce `mrbc`, and the
+  # AOT-compiled gems below are target-only. Compiling ~1,500 generated methods
+  # for the host as well is wasted work -- and on the host GCC some CI runners
+  # ship, the generated C++ is a hard compile error (`could not convert '1'
+  # from 'int' to 'mrb_value'`), which blocks the whole cross build. Unset by
+  # default: the desktop/wasm builds still compile them (they are the thing
+  # under test there), and the cross target itself is never skipped.
+  bc2cpp = ENV['RPGMAKER_BC2CPP'] &&
+           !(ENV['MRUBY_BC2CPP_SKIP_HOST'] && conf.name == 'host')
+
   conf.gem core: 'mruby-array-ext'
   conf.gem core: 'mruby-hash-ext'
   # Enumerable#sort_by / min_by / max_by / group_by etc. mruby-array-ext does not
@@ -297,7 +307,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # above) as the unconditional fallback for everything this doesn't
   # override. Never part of the default build for any target -- this whole
   # gem doesn't even exist in the gem list unless the env var is set.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if ENV['RPGMAKER_BC2CPP']
+  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a
   # class one of them defines under RGSS replaces mruby-rgss's for the whole
@@ -308,12 +318,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # docs/adr/0139: same opt-in mechanism as mruby-lcf-compiled/
   # mruby-rpg2k-compiled above, this time for all 17 of RGSS::Sprite's
   # real bytecode-defined methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled" if ENV['RPGMAKER_BC2CPP']
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled" if bc2cpp
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   # docs/adr/0139's own follow-up: same opt-in mechanism, this time for 25
   # of Game::Picture's 26 real methods (everything but #initialize), plus
   # (docs/adr/0139) all 6 of Game::EnemyAction's own real methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if ENV['RPGMAKER_BC2CPP']
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if bc2cpp
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"

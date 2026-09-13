@@ -212,7 +212,12 @@ run_rake() {
   mkdir -p "$dir"
   # -u first so an RPGMAKER_BC2CPP inherited from the caller can never leak
   # into the baseline build; the bc2cpp run re-sets it after.
+  # MRUBY_BC2CPP_SKIP_HOST: the cross build's bootstrap host only makes mrbc,
+  # and the CI host GCC rejects the AOT-generated C++ the compiled gems emit
+  # (see build_config.rb's own comment). Only the wio libmruby is measured, so
+  # skip them there; the target build still compiles them.
   local env_args=(-u RPGMAKER_BC2CPP
+                  MRUBY_BC2CPP_SKIP_HOST=1
                   MRUBY_CONFIG="$REPO_ROOT/build_config.rb"
                   MRUBY_BUILD_DIR="$mruby_dir"
                   MRUBY_TARGET=wio

@@ -62,6 +62,17 @@ Add a `wio-bc2cpp` CI job, plus the two scripts it drives:
   against a hand-built map, so the report is tested without a multi-minute
   cross-build; it joins the `ruby-checks` job.
 
+- **The cross build's bootstrap host skips the AOT gems.**
+  `build_config.rb`'s `MRUBY_BC2CPP_SKIP_HOST` (set by the measure script)
+  leaves the compiled gems out of the `mrbc`-only host build. That build exists
+  solely to produce the bytecode compiler, so compiling ~1,500 generated
+  methods for it is wasted work — and on the host GCC the CI runners ship, the
+  generated C++ is a hard compile error (``could not convert '1' from 'int' to
+  'mrb_value'``), which blocked the whole cross build before the gem list was
+  narrowed. Only the wio `libmruby.a` is measured; the **target** build still
+  compiles the gems, and unset (the default) the desktop/wasm builds still
+  compile them too, which is where they are actually exercised.
+
 Two deliberate shape decisions:
 
 - **Advisory, not a gate.** The overflow is expected and currently unfixable at
