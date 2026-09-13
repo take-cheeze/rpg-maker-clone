@@ -1473,6 +1473,24 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # `mruby-rpg2k`'s own wio bc2cpp stub-stripping coverage is complete
   # modulo the battle-file exclusions themselves, the same "100%" state
   # `mruby-rgss`/`mruby-lcf`'s own `owners:` lists have already reached.
+  #
+  # Round 46: docs/adr/0147 (`.times`-block inlining) and 0148/0149/0150
+  # (optional/keyword/rest-argument support) unlocked 87 more real
+  # registered methods on owners this file already strips -- no `owners:`
+  # change, only `mruby-rpg2k-compiled/src/register.cxx` gains entries
+  # (ground truth: a real `wio_registered_methods.rb` run, never
+  # hand-counted). Registration arg specs follow each wrapper's own real
+  # `mrb_get_args` format string (`MRB_ARGS_OPT`/`MRB_ARGS_KEY` where the
+  # wrapper takes them, confirmed against the regenerated output rather
+  # than the Ruby source shape alone). 12 of the 87 (`Game::Battle`'s 9,
+  # `Scene::Battle`'s 2, `BattlePage.singleton#active?`) live in
+  # wio-excluded battle files and strip nothing today -- registered
+  # anyway for the non-wio BC2CPP build, the same "register regardless,
+  # strip what ships" split every prior round already uses.
+  # `strip_wio_bc2cpp_stubs.rb` gained surgical mixed-list shrinking
+  # (mixed stripped/kept companion statements shrink to the kept names)
+  # plus a `:SYM`-node Symbol-arg case, both exercised for real by
+  # `RPG2k::Scene::Map`'s own newly-mixed `public` lists this round.
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rpg2k-compiled',
                          owners: %w[Game::TextReveal Game::MessageConfig Game::Switches
                                     Game::Variables Game::NumberInput Game::Actors Game::Rng

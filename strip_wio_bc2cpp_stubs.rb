@@ -142,11 +142,10 @@
 #     across lines would need real column-aware splicing this file does
 #     not do.
 #   - A companion `private :a, :b` (etc.) statement naming BOTH a stripped
-#     method and a kept one raises rather than surgically editing the
-#     argument list down to just the kept name(s) -- no real target this
-#     script has stripped so far has hit this shape (Game::ChipSet's own
-#     `private :upper_flags` is single-name), so this stays unimplemented
-#     until a real owner actually needs it.
+#     method and a kept one is surgically shrunk to just the kept name(s)
+#     (same-line or multi-line span, verified to hold nothing but names,
+#     commas and whitespace) -- implemented once a real owner actually
+#     needed it (RPG2k::Scene::Map's own mixed `public` lists).
 #
 # A round-35 follow-up (bc2cpp.rb coverage scaling to mruby-rpg2k-compiled)
 # is the first to actually hit a real one-line `def name; body; end`
@@ -338,6 +337,7 @@ def literal_arg_names(list_node)
   return nil unless list_node.is_a?(RubyVM::AbstractSyntaxTree::Node) && list_node.type == :LIST
 
   names = []
+  spans = []
   list_node.children.each do |c|
     next if c.nil? # LIST's own trailing terminator slot
 
@@ -359,8 +359,9 @@ def literal_arg_names(list_node)
       # to guess rather than silently under-reading the real argument list.
       return nil
     end
+    spans << [c.first_lineno, c.first_column, c.last_lineno, c.last_column]
   end
-  names
+  [names, spans]
 end
 
 # Walks the real AST exactly like collect_defs's own CLASS/MODULE/SCLASS/
@@ -369,17 +370,18 @@ end
 # round's already-shipped, already-verified behavior that depends only on
 # it -- is untouched by this round's own change), but collects real
 # receiverless `private(...)`/`protected(...)`/`public(...)` FCALL nodes
-# instead of DEFN/DEFS nodes: { owner:, mid:, names:, node: } for each one
-# found, `names` being `literal_arg_names`'s own result (nil for an
-# unresolvable argument list -- still collected, not dropped, so the caller
-# below can decide whether the unresolved shape actually matters for this
-# invocation's own owners rather than this function silently deciding it
-# doesn't). Never recurses into a DEFN/DEFS/SCLASS body (same reasoning
-# collect_defs's own early `return` already documents: a real `private`/
-# `protected`/`public` call *inside* a method body is an ordinary runtime
-# call this script has no business touching, never a class-body-level mode
-# statement) or into a matched FCALL's own children (a Symbol/String
-# literal argument list has no further CLASS/MODULE/FCALL nesting to find).
+# instead of DEFN/DEFS nodes: { owner:, mid:, names:, spans:, node: } for
+# each one found, `names`/`spans` being `literal_arg_names`'s own result
+# ([names, spans] pair, or nil for an unresolvable argument list -- still
+# collected, not dropped, so the caller below can decide whether the
+# unresolved shape actually matters for this invocation's own owners
+# rather than this function silently deciding it doesn't). Never recurses
+# into a DEFN/DEFS/SCLASS body (same reasoning collect_defs's own early
+# `return` already documents: a real `private`/`protected`/`public` call
+# *inside* a method body is an ordinary runtime call this script has no
+# business touching, never a class-body-level mode statement) or into a
+# matched FCALL's own children (a Symbol/String literal argument list has
+# no further CLASS/MODULE/FCALL nesting to find).
 def collect_visibility_calls(node, stack, out, singleton_owner: nil)
   return unless node.is_a?(RubyVM::AbstractSyntaxTree::Node)
 
@@ -404,7 +406,8 @@ def collect_visibility_calls(node, stack, out, singleton_owner: nil)
     mid, args = node.children
     if %i[private protected public].include?(mid) && (singleton_owner || !stack.empty?)
       owner = singleton_owner || stack.join('::')
-      out << { owner: owner, mid: mid, names: literal_arg_names(args), node: node }
+      parsed = literal_arg_names(args)
+      out << { owner: owner, mid: mid, names: parsed&.first, spans: parsed&.last, node: node }
     end
     return
   end
@@ -428,7 +431,14 @@ end
 # from a stripped method's own header through its own `end` is dropped
 # entirely, no replacement text inserted at all (see the file comment for
 # why a stub body is unnecessary here).
-def apply_deletion_plan(lines, wanted_defs, path)
+#
+# `edits` optionally carries surgical companion-statement rewrites
+# ({ line0:, last0:, first_col:, last_col:, text:, before: }): lines
+# line0..last0 collapse into `before + text + <rest of last line from
+# last_col>`, applied before any deletion. Callers guarantee no deletion
+# touches those lines (a companion statement never shares a line with a
+# stripped `def`).
+def apply_deletion_plan(lines, wanted_defs, path, edits = [])
   plan = {}
   wanted_defs.each do |d|
     node = d[:node]
@@ -463,9 +473,16 @@ def apply_deletion_plan(lines, wanted_defs, path)
 
   out = []
   i = 0
+  edits_by_line = edits.each_with_object({}) { |e, h| h[e[:line0]] = e }
   while i < lines.length
     if plan.key?(i)
       i = plan[i] + 1
+    elsif (e = edits_by_line[i])
+      (e[:line0]..e[:last0]).each do |ln|
+        raise "#{path}: surgical edit overlaps a deleted line #{ln + 1} -- refusing to guess" if plan.key?(ln)
+      end
+      out << "#{e[:before]}#{e[:text]}#{lines[e[:last0]][e[:last_col]..]}"
+      i = e[:last0] + 1
     else
       out << lines[i]
       i += 1
@@ -515,9 +532,12 @@ if __FILE__ == $PROGRAM_NAME
 
       vis_calls = []
       collect_visibility_calls(ast, [], vis_calls)
-      companion_targets = vis_calls.filter_map do |vc|
+      companion_targets = []
+      companion_edits = []
+      lines_for_spans = source.each_line.to_a
+      vis_calls.each do |vc|
         stripped_here = wanted_names_by_owner[vc[:owner]]
-        next nil if stripped_here.nil? || stripped_here.empty?
+        next if stripped_here.nil? || stripped_here.empty?
 
         if vc[:names].nil?
           # A companion private/protected/public statement on an owner this
@@ -533,28 +553,56 @@ if __FILE__ == $PROGRAM_NAME
         end
 
         overlap = vc[:names] & stripped_here.to_a
-        next nil if overlap.empty?
+        next if overlap.empty?
 
         kept = vc[:names] - overlap
-        unless kept.empty?
-          # Documented limitation (see this file's own file comment): a
-          # companion statement naming BOTH a stripped and a kept method
-          # (`private :a, :b` where only `a` is stripped) needs its own
-          # argument list surgically edited, not whole-statement deletion --
-          # not supported yet, so this raises rather than either silently
-          # dropping the whole statement (which would wrongly un-hide `b`)
-          # or silently leaving it standing (the real NameError hazard for
-          # `a`).
-          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
-                "#{vc[:node].first_lineno}) names both a stripped method " \
-                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) -- " \
-                'partial-argument-list editing is not supported yet, refusing to guess'
+        if kept.empty?
+          companion_targets << { owner: vc[:owner], name: "#{vc[:mid]}(:#{vc[:names].join(', :')})", node: vc[:node] }
+          next
         end
 
-        { owner: vc[:owner], name: "#{vc[:mid]}(:#{vc[:names].join(', :')})", node: vc[:node] }
+        # Mixed stripped/kept argument list: shrink the statement to just
+        # the kept names rather than deleting or keeping it whole. The
+        # whole argument span (first kept arg's start through last kept
+        # arg's end) is replaced with the kept names joined by `, ` -- safe
+        # whenever that span holds nothing but `:` names, commas and
+        # whitespace (a `#` comment or anything else in there raises
+        # rather than guessing).
+        first_ln = vc[:node].first_lineno
+        kept_idx = vc[:names].each_index.select { |i| kept.include?(vc[:names][i]) }
+        first_span = vc[:spans][kept_idx.first]
+        last_span = vc[:spans][kept_idx.last]
+        f0, fc0 = first_span[0] - 1, first_span[1]
+        l0, lc1 = last_span[2] - 1, last_span[3]
+        stmt_first0 = vc[:node].first_lineno - 1
+        arg_lines = lines_for_spans[stmt_first0..l0]
+        stmt_line = arg_lines.first
+        mid = vc[:mid].to_s
+        mid_at = stmt_line.index(mid)
+        if mid_at.nil?
+          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+                "#{first_ln}) names both a stripped method " \
+                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
+                'but the statement keyword is not on its first line -- partial-argument-list ' \
+                'editing is not supported yet, refusing to guess'
+        end
+        prefix_len = mid_at + mid.length
+        before = stmt_line[0...prefix_len] + ' '
+        arg_start_col = prefix_len + 1
+        region = arg_lines.first[arg_start_col..] + arg_lines[1...-1].to_a.join + (arg_lines.size > 1 ? arg_lines.last[0...lc1] : '')
+        region = arg_lines.first[arg_start_col...lc1] if arg_lines.size == 1
+        unless region.match?(/\A[\s,:A-Za-z0-9_?!'"]+\z/) && !region.include?('#')
+          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+                "#{first_ln}) names both a stripped method " \
+                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
+                'with non-trivial text between the kept arguments -- partial-argument-list ' \
+                'editing is not supported yet, refusing to guess'
+        end
+        kept_src = kept_idx.map { |i| ":#{vc[:names][i]}" }.join(', ')
+        companion_edits << { line0: stmt_first0, last0: l0, last_col: lc1, text: kept_src, before: before }
       end
 
-      rewritten = apply_deletion_plan(source.each_line.to_a, wanted + companion_targets, in_path)
+      rewritten = apply_deletion_plan(source.each_line.to_a, wanted + companion_targets, in_path, companion_edits)
       raise "strip_wio_bc2cpp_stubs: rewrite of #{in_path} does not parse; leaving the original " \
             'untouched' unless parses?(rewritten)
 
