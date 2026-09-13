@@ -100,6 +100,28 @@ pio run -e wio_walk -t upload   # reflash the firmware you actually want running
 
 See `app/wio/src/sd_upload_main.cxx` for the (tiny) serial protocol.
 
+## Measuring the `wio_rgss_boot` flash overflow (with or without bc2cpp)
+
+`env:wio_rgss_boot` is the firmware that actually links mruby, and both with
+and without `RPGMAKER_BC2CPP=1` it exceeds the board's 507,904-byte FLASH
+region — which is why no default `pio run` builds it (it needs the two ARM
+cross-builds the environment's own comment in `platformio.ini` describes).
+`scripts/wio_bc2cpp_measure.bash` produces both configurations and
+`scripts/wio_overflow_report.rb` turns their linker maps into the A/B overflow
+statistics (`ld` writes a complete `firmware.map` even when it refuses to emit
+the ELF):
+
+```sh
+scripts/wio_bc2cpp_measure.bash /tmp/wio-bc2cpp
+ruby scripts/wio_overflow_report.rb \
+  baseline:/tmp/wio-bc2cpp/baseline/firmware.map \
+  bc2cpp:/tmp/wio-bc2cpp/bc2cpp/firmware.map
+```
+
+CI's `wio-bc2cpp` job runs that on every push and posts the table to the job
+summary — advisory, since the overflow is expected, not a gate. See
+`docs/adr/0152`.
+
 ## Not yet wired (later slices)
 
 The pieces below are scaffolded/checked in but **not** part of the bring-up

@@ -956,6 +956,14 @@ jobs:
           - name: mruby bare-hash-push check
             run: ruby scripts/mruby_bare_hash_push_check.rb
 
+          # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
+          # (scripts/wio_overflow_report.rb, ADR 0152) against a hand-built map
+          # with known numbers -- the real `wio-bc2cpp` job exercises it too,
+          # but only after a multi-minute ARM cross-build, so this pins the
+          # arithmetic without one.
+          - name: wio overflow report check
+            run: ruby scripts/wio_overflow_report_check.rb
+
           - name: RPG2k game-logic checks
             run: |
               ruby scripts/rpg2k_logic_check.rb
@@ -1534,6 +1542,89 @@ jobs:
           scripts/wio_renode_sdcard.bash /tmp/wio_renode_sdcard_check \
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
+
+  wio-bc2cpp:
+    # The `wio_rgss_boot` firmware is the only build that exercises
+    # RPGMAKER_BC2CPP=1 (build_config.rb) and, baseline and bc2cpp alike, the
+    # only one that overflows the real 507904-byte FLASH region -- which is why
+    # it has never been built in CI: it needs a from-scratch MRUBY_TARGET=wio
+    # cross-build plus a standalone ARM uni-algo (platformio.ini's own comment
+    # on the env). scripts/wio_bc2cpp_measure.bash produces both configurations'
+    # links, and scripts/wio_overflow_report.rb turns their linker maps -- `ld`
+    # writes a complete firmware.map even when it refuses to emit the ELF -- into
+    # the A/B overflow statistics the ADR 0104-0144 series has so far recorded by
+    # hand. See docs/adr/0152.
+    #
+    # Advisory: overflowing is the expected, currently-unfixable outcome, so the
+    # report runs under `if: always()` and never fails the job on the number. The
+    # job fails only if the cross-build itself breaks (a patch that stops
+    # applying, a toolchain change) or the report tooling breaks.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    # Two ARM cross-builds on a cache miss; well under the 360-minute runner
+    # default the other jobs rely on, but enough to not cut a real build short.
+    timeout-minutes: 180
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # The wio mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/lvgl,
+          # 3rd/mruby-marshal, 3rd/mruby-stringio, 3rd/mruby-onig-regexp and
+          # 3rd/mgem-list.
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Install ruby/rake/gperf/bison
+        # The mruby cross-build is driven by rake; gperf and bison regenerate
+        # mruby-compiler's lexer/grammar when a patch touches either source
+        # (patches/mruby-defined-keyword.patch does), the same reason the psp
+        # job installs them -- both were confirmed missing by a real run there.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ruby rake gperf bison
+
+      - name: Cache PlatformIO
+        # This is also what installs the pinned arm-none-eabi 14.2.1 toolchain
+        # build_config.rb's wio cross build prefers (~/.platformio/packages/
+        # toolchain-gccarmnoneeabi), so the mruby objects and the firmware link
+        # use the same compiler.
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Cache the wio cross-build
+        # A hit is provably current: the key hashes every input that feeds the
+        # generated libmruby.a, so any change produces a different key and a
+        # clean rebuild. That is deliberately the guard against the stale-build
+        # failure mode docs/adr/0142/0143 document -- scripts/wio_bc2cpp_measure.bash
+        # also wipes each variant's build dir before building it -- and the two
+        # links always re-run, so the maps reflect the current app/LVGL too.
+        uses: actions/cache@v6
+        with:
+          path: /tmp/wio-bc2cpp
+          key: wio-bc2cpp-${{ runner.os }}-${{ hashFiles('build_config.rb', 'tools/bc2cpp/**', 'mruby-lcf-compiled/**', 'mruby-rgss-compiled/**', 'mruby-rpg2k-compiled/**', 'mruby-rgss/**', 'mruby-lcf/**', 'mruby-rpg2k/**', 'hal-wio-io/**', 'patches/**', 'platformio.ini', '3rd/mruby/**', '3rd/mgem-list/**') }}
+
+      - name: Build baseline + bc2cpp wio_rgss_boot
+        run: scripts/wio_bc2cpp_measure.bash /tmp/wio-bc2cpp
+
+      - name: wio bc2cpp flash overflow report
+        if: always()
+        run: |
+          ruby scripts/wio_overflow_report.rb \
+            baseline:/tmp/wio-bc2cpp/baseline/firmware.map \
+            bc2cpp:/tmp/wio-bc2cpp/bc2cpp/firmware.map
 
   nano7-qemu:
     # A real ARM Cortex-A8 instruction stream for the iPod nano 7G walk app
