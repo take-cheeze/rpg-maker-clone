@@ -77,6 +77,28 @@ Dir.mktmpdir('wio-overflow-report-check-empty') do |dir|
   assert(failures, summary.include?('nothing to report'), 'empty-map summary missing note')
 end
 
+# A variant whose build failed leaves no map but a rake-failed.txt next to
+# where the map would be; the report must still exit 0 and say why.
+Dir.mktmpdir('wio-overflow-report-check-fail') do |dir|
+  File.write(File.join(dir, 'firmware.map'), MAP)
+  failed = File.join(dir, 'bc2cpp')
+  Dir.mkdir(failed)
+  File.write(File.join(failed, 'rake-failed.txt'), "rpg2k_compiled_gen.cpp:1: could not convert '1'\n")
+  summary = File.join(dir, 'summary.md')
+  out, _err, status = Open3.capture3(
+    { 'GITHUB_STEP_SUMMARY' => summary },
+    'ruby', SCRIPT, "baseline:#{File.join(dir, 'firmware.map')}",
+    "bc2cpp:#{File.join(failed, 'firmware.map')}"
+  )
+
+  assert(failures, status.exitstatus.zero?, "build-failure run exited #{status.exitstatus}")
+  assert(failures, out.include?('512,768') || out.include?('not found'),
+         "build-failure stdout unexpected:\n#{out}")
+  body = File.exist?(summary) ? File.read(summary) : ''
+  assert(failures, body.include?('### Build failures'), 'summary missing build-failure section')
+  assert(failures, body.include?("could not convert '1'"), 'summary missing the build error text')
+end
+
 if failures.empty?
   puts 'wio overflow report check: OK'
 else

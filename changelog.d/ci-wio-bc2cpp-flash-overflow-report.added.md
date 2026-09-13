@@ -6,9 +6,11 @@
   and posts `scripts/wio_overflow_report.rb`'s A/B table — section sizes, flash
   needed, the real overflow, % of the 507,904-byte budget, the `ld`
   cross-check and the delta, plus a per-object/archive breakdown — to the job
-  summary. Advisory: the link overflowing is expected, so the job fails only if
-  the cross-build or report tooling breaks. The cross build's `mrbc`-only host
+  summary. Advisory: the link overflowing is expected, so the baseline build is
+  the only fatal part — a bc2cpp build failure is reported in the summary
+  instead (bc2cpp's generated code currently fails to compile on the CI runners,
+  a separate codegen bug). The cross build's `mrbc`-only host
   build now skips the AOT-compiled gems (`MRUBY_BC2CPP_SKIP_HOST`, set by the
-  measure script): compiling them there is wasted work, and the host GCC some
-  CI runners ship rejects the generated C++ — the wio target still compiles
-  them, and unset the desktop/wasm builds do too. See `docs/adr/0152`.
+  measure script): compiling ~1,500 generated methods for a build that only
+  exists to produce `mrbc` is wasted work, and unset (the default) the
+  desktop/wasm builds still compile them. See `docs/adr/0152`.

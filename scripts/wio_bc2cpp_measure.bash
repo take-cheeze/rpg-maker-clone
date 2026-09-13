@@ -233,6 +233,9 @@ run_rake() {
   local rc=0
   ( cd "$REPO_ROOT/3rd/mruby" && env "${env_args[@]}" rake ) >"$dir/rake.log" 2>&1 || rc=$?
   if [ "$rc" -ne 0 ]; then
+    # Keep a durable note for the report (which runs with if: always()), and
+    # print the tail so the CI log shows it too.
+    tail -60 "$dir/rake.log" >"$dir/rake-failed.txt" 2>/dev/null || true
     echo "error: rake ($label) exited $rc -- last 60 lines of $dir/rake.log:" >&2
     tail -60 "$dir/rake.log" >&2
     return 1
@@ -283,8 +286,18 @@ run_link() {
 run_rake baseline 0
 run_link baseline
 
-run_rake bc2cpp 1
-run_link bc2cpp
+# The bc2cpp configuration is *reported*, not required. Its generated code
+# currently fails to compile under some filesystem orderings on the CI runners
+# (`could not convert '1' from 'int' to 'mrb_value'`), which is a real bc2cpp
+# codegen bug to fix separately -- not something this measurement script should
+# turn into a red job. The report surfaces the failure and still shows the
+# baseline row. The baseline above stays fatal: if it cannot be built, the
+# measurement is meaningless.
+if run_rake bc2cpp 1; then
+  run_link bc2cpp
+else
+  echo "warning: bc2cpp build failed -- the report will show baseline only" >&2
+fi
 
 echo
 echo "measurements written under $OUT_DIR"

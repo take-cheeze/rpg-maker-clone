@@ -193,8 +193,14 @@ Usage = Struct.new(:label, :map, :sections, :objects, :log) do
 end
 
 rows = []
+build_failures = {}
 entries.each do |label, path|
   unless File.exist?(path)
+    # A variant whose build failed leaves no map; scripts/wio_bc2cpp_measure.bash
+    # drops the compiler error beside where the map would be, so the report can
+    # say *why* instead of silently omitting the row.
+    note = File.join(File.dirname(path), 'rake-failed.txt')
+    build_failures[label] = File.read(note, encoding: 'UTF-8', invalid: :replace, undef: :replace) if File.exist?(note)
     puts "wio_overflow_report: #{path} not found -- skipping #{label}"
     next
   end
@@ -202,10 +208,34 @@ entries.each do |label, path|
   rows << Usage.new(label, path, sections, objects, parse_log(File.join(File.dirname(path), 'build.log')))
 end
 
+def failure_section(io, build_failures)
+  return if build_failures.empty?
+
+  io.puts
+  io.puts '### Build failures'
+  build_failures.each do |label, note|
+    io.puts
+    io.puts "`#{label}` did not build, so it has no map to measure (last lines of the compiler/linker output):"
+    io.puts
+    io.puts '```'
+    note.strip.lines.last(20).each { |l| io.puts l.chomp }
+    io.puts '```'
+  end
+end
+
 if rows.empty? || rows.none?(&:complete?)
   detail = rows.map { |r| "`#{r.map}`" }.join(', ')
   puts "wio_overflow_report: no complete section totals found (#{detail}) -- nothing to report"
-  write_no_data_summary('No linker map with `.text`/`.ARM.extab`/`.ARM.exidx`/`.data`/`.bss` totals found -- nothing to report.')
+  if build_failures.empty?
+    write_no_data_summary('No linker map with `.text`/`.ARM.extab`/`.ARM.exidx`/`.data`/`.bss` totals found -- nothing to report.')
+  elsif (summary_path = ENV['GITHUB_STEP_SUMMARY']) && !summary_path.empty?
+    File.open(summary_path, 'a') do |io|
+      io.puts '## Wio Terminal flash overflow (bc2cpp)'
+      io.puts
+      io.puts 'No linker map to measure.'
+      failure_section(io, build_failures)
+    end
+  end
   exit 0
 end
 
@@ -289,5 +319,7 @@ if (summary_path = ENV['GITHUB_STEP_SUMMARY']) && !summary_path.empty?
       io.puts
       io.puts '</details>'
     end
+
+    failure_section(io, build_failures)
   end
 end

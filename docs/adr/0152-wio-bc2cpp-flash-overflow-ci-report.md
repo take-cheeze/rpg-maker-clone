@@ -64,20 +64,27 @@ Add a `wio-bc2cpp` CI job, plus the two scripts it drives:
 
 - **The cross build's bootstrap host skips the AOT gems.**
   `build_config.rb`'s `MRUBY_BC2CPP_SKIP_HOST` (set by the measure script)
-  leaves the compiled gems out of the `mrbc`-only host build. That build exists
-  solely to produce the bytecode compiler, so compiling ~1,500 generated
-  methods for it is wasted work — and on the host GCC the CI runners ship, the
-  generated C++ is a hard compile error (``could not convert '1' from 'int' to
-  'mrb_value'``), which blocked the whole cross build before the gem list was
-  narrowed. Only the wio `libmruby.a` is measured; the **target** build still
-  compiles the gems, and unset (the default) the desktop/wasm builds still
-  compile them too, which is where they are actually exercised.
+  leaves the compiled gems out of the `mrbc`-only host build, which exists
+  solely to produce the bytecode compiler — compiling ~1,500 generated methods
+  there is pure waste. Only the wio `libmruby.a` is measured; unset (the
+  default) the desktop/wasm builds still compile the gems, which is where they
+  are actually exercised. This also sidesteps the generated-code compile error
+  in the host, but does not address it in the target — that is the advisory
+  bullet above.
 
 Two deliberate shape decisions:
 
-- **Advisory, not a gate.** The overflow is expected and currently unfixable at
-  every coverage scope measured, so the report step runs under `if: always()`
-  and the job fails only when the cross-build or the report tooling breaks.
+- **Advisory, not a gate on the measured configuration.** The overflow is
+  expected and currently unfixable at every coverage scope measured, so the
+  report step runs under `if: always()`. The **baseline** build stays fatal —
+  without it there is no measurement — but a **bc2cpp** build failure is
+  reported rather than fatal: bc2cpp's generated C++ currently fails to compile
+  on the CI runners (``could not convert '1' from 'int' to 'mrb_value'``, a
+  real, separate codegen bug whose occurrence depends on the filesystem
+  ordering bc2cpp sees), and the job should surface that in the summary rather
+  than block the baseline number behind it. `scripts/wio_overflow_report.rb`
+  reads the `rake-failed.txt` the measure script leaves and prints the compiler
+  error; once the codegen bug is fixed the variant can be made fatal.
 - **The build is cached on a content hash, and only that way.** The cache key
   hashes every input that feeds the generated `libmruby.a`
   (`build_config.rb`, `tools/bc2cpp/**`, the `*-compiled` and source gems,
