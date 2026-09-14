@@ -1,13 +1,11 @@
-# Low-speed GPIO stub for the Maix Amigo Renode boot (see amigo.repl.template).
+# Low-speed GPIO stub for the Maix Amigo Renode LCD capture (see
+# amigo.repl.template and app/maix/README.md "LCD capture").
 #
-# The LCD driver (Maixduino's st7789.c) routes a control pin, sets its drive
-# mode to output, then drives it -- but gpio_set_pin asserts dir == 1 while a
-# plain sysbus Tag drops the direction write gpio_set_drive_mode just made,
-# so the pin reads back as input forever. Same remember-and-answer shape as
-# fpioa.py (separate file because each Python peripheral instance needs its
-# own globals): read-modify-write traffic stays coherent, and nothing here
-# polls a status bit, so constant-zero Tag behaviour would be fine for every
-# other GPIO register -- except direction, which this file carries.
+# gpio_set_pin asserts dir == 1, but plain Tags drop the direction write
+# gpio_set_drive_mode just made -- remembering every register keeps the
+# assert passing, and lets the DMA hook sample the live DC bit
+# (data-output, low-speed GPIO 7, SIPEED_ST7789_DCX_GPIONUM) straight off
+# this model.
 if request.IsInit:
     gpio_regs = {}
 elif request.IsRead:

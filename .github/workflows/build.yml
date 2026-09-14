@@ -1526,15 +1526,15 @@ jobs:
           if-no-files-found: error
 
   maix-smoke:
-    # Headless run check for the Maix Amigo firmware: boot the mruby-linking
+    # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
     # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
     # description -- dual RV64, UARTHS, CLINT, PLIC -- so no from-source
     # emulator build the way `wio-renode` needs) and look for the bring-up
     # markers: REACHED setup()/loop() hooks plus the mrb_open/eval lines the
-    # firmware's mruby probe prints over its Serial. Asserts all of them --
-    # this is the "does the interpreter run" answer to the `maix` job's
-    # "does it link". (The P0 maix_amigo firmware stays build-only: this
-    # environment subsumes its Serial/setup/loop proof.)
+    # firmware's mruby probe prints over its Serial. Then boot the P0
+    # maix_amigo firmware the same way with LCD capture on, and replay its
+    # ST7789 stream into a framebuffer pixel check (see app/maix/README.md
+    # "LCD capture"). Asserts all of it.
     needs: maix
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
@@ -1603,6 +1603,33 @@ jobs:
           echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
+
+      - name: Download P0 firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: maix-amigo-firmware
+          path: firmware-p0
+
+      - name: Capture LCD frame under Renode
+        # Option C (see app/maix/README.md "LCD capture"): the DMA hook
+        # replays each LCD transfer into $MAIX_SPI_LOG with its live DC bit
+        # while the P0 firmware (which actually inits the panel, unlike the
+        # mruby boot above) runs, then the decoder below replays the ST7789
+        # stream into a framebuffer and checks it pixel by pixel.
+        run: |
+          elf="$(find firmware-p0 -name firmware.elf | head -n 1)"
+          test -n "$elf" || { echo "::error::no P0 firmware.elf in artifact:"; find firmware-p0; exit 1; }
+          RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode \
+          MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi.log" \
+            scripts/maix_renode_boot.bash "$elf" 00:00:08
+
+      - name: Decode LCD capture
+        # Exits nonzero (failing the job) when the frame is not a blue
+        # 320x240 screen carrying white text: the MAIX-LCD line it prints
+        # is the human-readable record.
+        run: |
+          python3 scripts/maix_lcd_decode.py maix-spi.log maix-frame.ppm \
+            --min-blue 0.45 --min-colors 3 --expect-size 320x240
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode
