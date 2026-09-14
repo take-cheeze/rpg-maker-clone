@@ -1473,9 +1473,6 @@ jobs:
         # does not already say.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
-      - name: Build firmware
-        run: pio run -e maix_amigo
-
       - name: Build maix mruby cross lib + uni-algo
         # The interpreter and Unicode tables the maix_rgss_boot firmware
         # links below (platformio.ini's MAIX_MRUBY_BUILD_DIR /
@@ -1486,14 +1483,16 @@ jobs:
           scripts/maix_mruby_build.bash
           scripts/maix_unialgo_build.bash
 
-      - name: Build mruby-linking firmware
-        # Links libmruby.a + libuni-algo.a + LVGL and boots the interpreter
-        # (see app/maix/README.md) -- the link itself is the measurement:
-        # pio prints the RAM/flash use, and the map below carries symbols.
+      - name: Build firmware
+        # Both environments in ONE pio invocation: separate `pio run -e`
+        # calls prune each other's build directory (confirmed by a real CI
+        # run -- the first env's firmware.bin was gone at artifact time),
+        # while one call builds both side by side. The cross libs above
+        # must come first: maix_rgss_boot links them.
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
-        run: pio run -e maix_rgss_boot
+        run: pio run -e maix_amigo -e maix_rgss_boot
 
       - name: Upload firmware
         # The binaries: flash a .bin with kflash (or boot/GDB an .elf) --
