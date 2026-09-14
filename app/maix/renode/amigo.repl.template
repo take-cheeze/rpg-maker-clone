@@ -40,3 +40,13 @@ gpio: Python.PythonPeripheral @ sysbus 0x50200000
     size: 0x1000
     initable: true
     filename: "@MAIX_RENODE_DIR@/gpio.py"
+
+dmac: Python.PythonPeripheral @ sysbus 0x50000000
+    size: 0x1000
+    initable: true
+    filename: "@MAIX_RENODE_DIR@/dmac.py"
+
+spi0: Python.PythonPeripheral @ sysbus 0x52000000
+    size: 0x1000
+    initable: true
+    filename: "@MAIX_RENODE_DIR@/spi.py"

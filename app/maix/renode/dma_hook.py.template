@@ -1,0 +1,73 @@
+# DMA copy hook for the Maix Amigo Renode LCD capture (see amigo.repl.template
+# and app/maix/README.md "LCD capture").
+#
+# Loaded with `include` from boot.resc: at module scope `self` is the
+# monitor, so the machine comes from self.Machine. The hook is registered
+# with the function OBJECT (not by name -- hook strings run in a scope that
+# cannot see this file's globals, confirmed the confusing way), which
+# carries its own globals along, so everything below runs with full
+# machine/file access.
+#
+# What the hook may and may not do (each confirmed by a real probe run --
+# Renode's scopes bind `self` differently everywhere, and bus writes from
+# hooks never reach Python peripherals, also confirmed the confusing way):
+# bus READS (machine.SystemBus.*) work, file appends work, PC skip works;
+# bus WRITES do not reach Python peripherals. So instead of replaying the
+# transfer onto the bus, the hook replays it into the capture file: per
+# channel-enable call it reads SAR/DAR/BLOCK_TS/CTL, bulk-reads the source
+# bytes, samples DC live from the GPIO data-output register, and appends
+# one `D <dc> <hex32>` line per 32-bit unit -- the same granularity the
+# driver's own DR writes would have had. The body is then skipped, so chen
+# is never set and dmac_wait_idle passes on zeros.
+#
+# This is a template, not loadable as-is: @DMA_ADDR@ is
+# dmac_channel_enable's address, filled in by scripts/maix_renode_boot.bash;
+# 0x0 when the ELF never uses DMA, an address PC never reaches, so the hook
+# is inert. Only the LCD path's shape is implemented (single-block MEM2PRF);
+# anything else is logged and skipped, and the body is still skipped so the
+# wait cannot hang on it. Non-incrementing sources (the driver's fill path,
+# CTL bit 4) replay their single word; reading them as incrementing walks
+# into zeros and heap garbage past it, confirmed the confusing way.
+machine = self.Machine
+
+capture_log = None
+
+
+def dma_copy(cpu, addr):
+    global capture_log
+    if capture_log is None:
+        import os
+        capture_log = open(os.environ.get("MAIX_SPI_LOG", "/tmp/maix-spi.log"), "a")
+    ch = int(str(cpu.GetRegister(10)), 0)
+    base = 0x50000100 + ch * 0x100
+    sar = machine.SystemBus.ReadDoubleWord(base)
+    dar = machine.SystemBus.ReadDoubleWord(base + 8)
+    count = machine.SystemBus.ReadDoubleWord(base + 16) + 1
+    ctl = machine.SystemBus.ReadDoubleWord(base + 24)
+    src_w = [1, 2, 4, 8, 16, 32, 64][(ctl >> 8) & 0x7]
+    dst_w = [1, 2, 4, 8, 16, 32, 64][(ctl >> 11) & 0x7]
+    # CTL bit 4 set means the source does NOT increment (the driver's fill
+    # path sends one word over and over): reading count successive words
+    # would walk into zeros and heap garbage past the single real one, so
+    # read one unit and replay it.
+    src_noinc = ((ctl >> 4) & 1) == 1
+    # Only SPI0-DR transfers are LCD bytes; anything else is some other
+    # peripheral's DMA (none expected in these firmwares). The body is
+    # skipped either way so no wait can hang -- but only SPI traffic is
+    # captured.
+    if sar == 0 or dar == 0 or src_w not in (1, 2, 4) or dst_w not in (1, 2, 4) or dar != 0x52000060:
+        machine.InfoLog("dmac: skipping ch%d sar 0x%x dar 0x%x" % (ch, sar, dar))
+    else:
+        dc = (machine.SystemBus.ReadDoubleWord(0x50200000) >> 7) & 1
+        data = machine.SystemBus.ReadBytes(sar, src_w if src_noinc else count * src_w)
+        out = []
+        for i in range(count):
+            unit = data[0:src_w] if src_noinc else data[i * src_w:(i + 1) * src_w]
+            v = unit[0] | (unit[1] << 8 if len(unit) > 1 else 0) | (unit[2] << 16 if len(unit) > 2 else 0) | (unit[3] << 24 if len(unit) > 3 else 0)
+            out.append("D %d %08x\n" % (dc, v & 0xFFFFFFFF))
+        capture_log.write("".join(out))
+        capture_log.flush()
+    cpu.PC = cpu.RA.RawValue
+
+
+machine["sysbus.cpu1"].AddHook(@DMA_ADDR@, dma_copy)
