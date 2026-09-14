@@ -13,7 +13,7 @@ to GitHub (see [Syncing](#syncing) below).
 | Group | Meaning | Values |
 | --- | --- | --- |
 | `engine:` | The RPG Maker edition whose games or runtime behaviour is at stake | `rpg2k`, `rpg2k3`, `xp`, `vx`, `vxace`, `mv`, `mz`, `wolf` |
-| `platform:` | The build target it is specific to | `wasm`, `terminal`, `linux`, `windows`, `psp`, `wio`, `other` |
+| `platform:` | The build target it is specific to | `wasm`, `terminal`, `linux`, `windows`, `psp`, `wio`, `maix`, `other` |
 | `component:` | The part of the engine it lives in | `graphics`, `audio`, `input`, `runtime-mruby`, `runtime-js`, `data`, `save`, `events`, `scenes`, `battle`, `build`, `ci`, `docs`, `tooling` |
 | `type:` | The kind of work | `bug`, `feature`, `parity`, `refactor`, `chore`, `question` |
 | `status:` | Why it is not moving | `blocked`, `needs-info` |
