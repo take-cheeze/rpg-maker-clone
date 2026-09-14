@@ -1418,6 +1418,44 @@ jobs:
         if: always()
         run: ruby scripts/wio_size_report.rb wio-build.log
 
+  maix:
+    # Build the Maix Amigo (Kendryte K210) P0 hello-world + LCD firmware with
+    # PlatformIO (see app/maix/README.md). Plain checkout, no submodules:
+    # unlike the Wio Terminal firmware this links nothing vendored (no LVGL),
+    # so there is nothing to fetch recursively. Booting the binary under an
+    # emulator (Renode ships a stock kendryte_k210 repl) is a follow-up, not
+    # part of this job.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        # -q keeps pip to warnings and errors: the resolver's per-package
+        # "Collecting/Downloading/Installing" chatter says nothing a green step
+        # does not already say.
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        run: pio run -e maix_amigo
+
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode
     # (docs/adr/0094-wio-terminal-renode-emulator.md), far enough to prove

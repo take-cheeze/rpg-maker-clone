@@ -149,6 +149,15 @@
           # change to this platform too.
           - "app/shared/rpg2k_walk/**"
 
+"platform:maix":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/maix/**"
+          - "boards/sipeed-maix-amigo.json"
+          # platformio.ini is shared with the Wio Terminal environments (one
+          # project-wide src_dir), so the labeler also tags platform:wio on
+          # mixed diffs -- both labels on such a PR is correct.
+
 # --- component -------------------------------------------------------------
 
 "component:graphics":
