@@ -31,10 +31,17 @@
 # command phase at all; SPI_USER2.SPI_USR_COMMAND_BITLEN only matters once
 # that phase is enabled.
 #
-# Needs: git, meson, ninja, pkg-config, and glib2/pixman dev headers --
-# `apt-get install -y git meson ninja-build pkg-config libglib2.0-dev
-# libpixman-1-dev` -- none of them repo dependencies, same as Renode's own
-# native-core toolchain requirement for the Wio port.
+# Needs: git, meson, ninja, pkg-config, glib2/pixman dev headers, and
+# libgcrypt dev headers -- `apt-get install -y git meson ninja-build
+# pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev`. The last one is
+# easy to miss locally if it just happens to already be installed (as it was
+# the first time this script was written and tested): upstream
+# hw/misc/esp32_flash_enc.c (unrelated to this patch, and unconditionally
+# compiled for any xtensa-softmmu build of this fork) includes <gcrypt.h>
+# with no CONFIG_GCRYPT guard, so it is a hard build dependency of this
+# fork's ESP32 target, not an optional one meson's own `gcrypt` feature
+# option would suggest. None of these are repo dependencies, same as
+# Renode's own native-core toolchain requirement for the Wio port.
 #
 # Usage:
 #   scripts/m5stack_qemu_build.bash [output-dir, default /tmp/m5stack-qemu-build]
