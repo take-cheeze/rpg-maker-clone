@@ -1476,28 +1476,54 @@ jobs:
       - name: Build firmware
         run: pio run -e maix_amigo
 
+      - name: Build maix mruby cross lib + uni-algo
+        # The interpreter and Unicode tables the maix_rgss_boot firmware
+        # links below (platformio.ini's MAIX_MRUBY_BUILD_DIR /
+        # MAIX_UNIALGO_LIB_DIR pair). Same shape as the `psp` job's EBOOT
+        # driving its own cross-build: a patch/gem that stops
+        # cross-compiling breaks this job, not just the emulator one.
+        run: |
+          scripts/maix_mruby_build.bash
+          scripts/maix_unialgo_build.bash
+
+      - name: Build mruby-linking firmware
+        # Links libmruby.a + libuni-algo.a + LVGL and boots the interpreter
+        # (see app/maix/README.md) -- the link itself is the measurement:
+        # pio prints the RAM/flash use, and the map below carries symbols.
+        env:
+          MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
+          MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
+        run: pio run -e maix_rgss_boot
+
       - name: Upload firmware
-        # The binaries: flash firmware.bin with kflash (or the ELF for
-        # Renode/GDB) -- the PSP pipeline's EBOOT artifact, same idea.
-        uses: actions/upload-artifact@v7
+        # The binaries: flash a .bin with kflash (or boot/GDB an .elf) --
+        # the PSP pipeline's EBOOT artifact, same idea. Both environments:
+        # the P0 LCD bring-up and the mruby-linking boot. Renamed on the
+        # way in: both PlatformIO environments emit firmware.{bin,elf},
+        # which would collide as artifact entries.
+        run: |
+          mkdir -p maix-artifacts
+          cp .pio/build/maix_amigo/firmware.bin maix-artifacts/maix-amigo.bin
+          cp .pio/build/maix_amigo/firmware.elf maix-artifacts/maix-amigo.elf
+          cp .pio/build/maix_rgss_boot/firmware.bin maix-artifacts/maix-rgss-boot.bin
+          cp .pio/build/maix_rgss_boot/firmware.elf maix-artifacts/maix-rgss-boot.elf
+          cp .pio/build/maix_rgss_boot/firmware.map maix-artifacts/maix-rgss-boot.map
+      - uses: actions/upload-artifact@v7
         with:
           name: maix-firmware
-          path: |
-            .pio/build/maix_amigo/firmware.bin
-            .pio/build/maix_amigo/firmware.elf
+          path: maix-artifacts/
           if-no-files-found: error
 
-      - name: Build maix mruby cross lib
-        run: scripts/maix_mruby_build.bash
-
   maix-smoke:
-    # Headless run check for the Maix Amigo firmware: boot it under stock
-    # Renode (which ships the K210 SoC description -- dual RV64, UARTHS,
-    # CLINT, PLIC -- so no from-source emulator build the way `wio-renode`
-    # needs) and look for the bring-up markers: REACHED setup()/loop() hooks
-    # plus the "maix-amigo hello" and heartbeat lines the firmware writes
-    # over its Serial. Asserts all of them -- this is the "does it run"
-    # answer to the `maix` job's "does it compile".
+    # Headless run check for the Maix Amigo firmware: boot the mruby-linking
+    # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
+    # description -- dual RV64, UARTHS, CLINT, PLIC -- so no from-source
+    # emulator build the way `wio-renode` needs) and look for the bring-up
+    # markers: REACHED setup()/loop() hooks plus the mrb_open/eval lines the
+    # firmware's mruby probe prints over its Serial. Asserts all of them --
+    # this is the "does the interpreter run" answer to the `maix` job's
+    # "does it link". (The P0 maix_amigo firmware stays build-only: this
+    # environment subsumes its Serial/setup/loop proof.)
     needs: maix
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
@@ -1514,24 +1540,23 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Cache PlatformIO
-        uses: actions/cache@v6
+      - name: Download firmware
+        # The maix_rgss_boot ELF the `maix` job linked (plus its map) --
+        # PSP-smoke's EBOOT download, same idea. No PlatformIO or rebuild
+        # here: the boot script only needs setup/loop symbol addresses,
+        # which come from riscv64-unknown-elf-nm below.
+        uses: actions/download-artifact@v8
         with:
-          path: |
-            ~/.platformio
-            ~/.cache/pip
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
+          name: maix-firmware
+          path: firmware
 
-      - name: Install PlatformIO
-        run: pip install -q --disable-pip-version-check --upgrade platformio
-
-      - name: Build firmware
-        # Rebuilt rather than downloaded from the `maix` job's artifact: the
-        # shared PIO cache above makes this incremental-warm, and the boot
-        # script resolves setup/loop addresses plus the riscv nm through the
-        # same toolchain this build just installed -- no cross-job plumbing.
-        run: pio run -e maix_amigo
+      - name: Install riscv nm
+        # scripts/maix_renode_boot.bash resolves setup()/loop() addresses
+        # with riscv64-unknown-elf-nm (PATH first, PlatformIO's toolchain
+        # as fallback -- absent in this job by design, so PATH must hit).
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q binutils-riscv64-unknown-elf
 
       - name: Cache Renode
         uses: actions/cache@v6
@@ -1559,12 +1584,12 @@ jobs:
 
       - name: Boot firmware under Renode
         run: |
-          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash .pio/build/maix_amigo/firmware.elf)"
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash firmware/maix-rgss-boot.elf)"
           echo "$out"
           echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
           echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
-          echo "$out" | grep -q "maix-amigo hello" || { echo "::error::no Serial hello"; exit 1; }
-          echo "$out" | grep -q "maix-amigo heartbeat" || { echo "::error::no heartbeat"; exit 1; }
+          echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
+          echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode

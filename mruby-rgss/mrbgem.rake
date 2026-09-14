@@ -35,15 +35,16 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   cxx.include_paths <<
     "#{dir}/../3rd/uni-algo/include" <<
     "#{dir}/../3rd/lvgl"
-  # PSP and wio each want their own lv_conf.h (LV_USE_LOG 0, and for PSP its
-  # own LVGL pool sized for the PSP's ~24 MB) ahead of the shared repo-root
-  # one below: LVGL's lv_conf_internal.h auto-includes whichever lv_conf.h
-  # __has_include finds first on the search path, and this rake-driven
-  # compile of mruby-rgss (which calls into LVGL -- lib.cxx's
+  # PSP, wio and maix each want their own lv_conf.h ahead of the shared
+  # repo-root one below (LOG off and trimmed widgets on the size-driven
+  # ports; PSP's own LVGL pool sized for its ~24 MB -- each file documents
+  # its own choices): LVGL's lv_conf_internal.h auto-includes whichever
+  # lv_conf.h __has_include finds first on the search path, and this
+  # rake-driven compile of mruby-rgss (which calls into LVGL -- lib.cxx's
   # vp_refresh_overlay/gfx_snap_to_bitmap) needs to see the same config the
   # real firmware's own LVGL build uses (app/psp/CMakeLists.txt's
   # add_subdirectory, or PlatformIO's own `lib_deps = symlink://3rd/lvgl`
-  # for wio's platformio.ini environments), or the two disagree on what LVGL
+  # for the wio/maix platformio.ini environments), or the two disagree on what LVGL
   # actually compiled in (LV_USE_LOG/LV_USE_SNAPSHOT) and the final link
   # fails with undefined references (lv_log_add, lv_snapshot_take) that only
   # the *other* config's LVGL build would have provided -- confirmed for
@@ -51,6 +52,7 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # this line existed for wio.
   cxx.include_paths << "#{dir}/../app/psp" if build.name == 'psp'
   cxx.include_paths << "#{dir}/../app/wio" if build.name == 'wio'
+  cxx.include_paths << "#{dir}/../app/maix" if build.name == 'maix'
   cxx.include_paths <<
     "#{dir}/../include" <<
     "#{dir}/../3rd/stb" <<
