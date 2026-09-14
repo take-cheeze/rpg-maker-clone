@@ -1777,6 +1777,98 @@ jobs:
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
 
+  m5stack:
+    # Build the M5Stack Core (ESP32) P1 HAL bring-up firmware with
+    # PlatformIO (see app/m5stack/README.md, docs/adr/0157). Unlike Wio/Maix,
+    # espressif32 ships this board natively, so there is no custom
+    # boards/*.json step here -- the same reason this job has no counterpart
+    # to maix's own "add_amigo_variant.py" step. app/m5stack is its own
+    # standalone PlatformIO project (not another environment in the repo
+    # root's platformio.ini -- see that directory's own platformio.ini for
+    # why: it builds Arduino as an ESP-IDF component, which takes over the
+    # project root's CMakeLists.txt and cannot honor build_src_filter,
+    # both fatal to sharing the root project the way Wio/Maix do), so every
+    # `pio` command here runs with app/m5stack as its working directory.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the firmware.
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-m5stack-${{ runner.os }}-${{ hashFiles('app/m5stack/platformio.ini', 'app/m5stack/sdkconfig.defaults') }}
+          restore-keys: pio-m5stack-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        working-directory: app/m5stack
+        run: pio run -e m5stack
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5stack-firmware
+          path: |
+            app/m5stack/.pio/build/m5stack/firmware.bin
+            app/m5stack/.pio/build/m5stack/firmware.elf
+            app/m5stack/.pio/build/m5stack/bootloader.bin
+            app/m5stack/.pio/build/m5stack/partitions.bin
+
+  m5stack-qemu:
+    # Boots the m5stack firmware the job above compiles under Espressif's own
+    # QEMU fork (docs/adr/0157-m5stack-core-qemu-emulator.md), the same
+    # "does this run in CI" question wio-renode answers for the Wio Terminal.
+    # Asserts the real bar: the firmware's own setup() actually ran (LVGL +
+    # TFT_eSPI + button HAL init) and loop() scanned the buttons --
+    # scripts/m5stack_qemu_boot.bash greps the real "m5stack: setup
+    # complete" and "Keys: ..." lines out of the QEMU serial log, not just a
+    # boot banner. Getting here needed app/m5stack's own platformio.ini to
+    # build Arduino as an ESP-IDF component rather than PlatformIO's default
+    # precompiled-libs mode -- see the ADR's "Status, revised" section.
+    needs: m5stack
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: m5stack-firmware
+          path: app/m5stack/.pio/build/m5stack
+
+      - name: Install esptool, QEMU's runtime deps
+        run: |
+          pip install -q --disable-pip-version-check esptool
+          sudo apt-get update -q && sudo apt-get install -y -q libsdl2-2.0-0 libslirp0
+
+      - name: Cache the QEMU download
+        uses: actions/cache@v6
+        with:
+          path: /tmp/m5stack-qemu/qemu
+          key: m5stack-qemu-${{ runner.os }}-${{ hashFiles('scripts/m5stack_qemu_boot.bash') }}
+
+      - name: Boot under QEMU
+        run: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+
   wio-bc2cpp:
     # The `wio_rgss_boot` firmware is the only build that exercises
     # RPGMAKER_BC2CPP=1 (build_config.rb) and, baseline and bc2cpp alike, the
