@@ -86,3 +86,18 @@ void loop(void) {
   lv_timer_handler();
   delay(5);
 }
+
+// env:m5stack builds Arduino as an ESP-IDF component (`framework = arduino,
+// espidf`), not plain `framework = arduino` -- see docs/adr/0157's own
+// follow-up: the precompiled Arduino static libs that plain mode links
+// against fail a real assert in their own SPI flash re-probe under QEMU
+// (do_core_init), while the exact same ESP-IDF version built from source as
+// a component does not, isolating the bug to the precompiled libs
+// specifically. Plain `framework = arduino` auto-generates this app_main()
+// glue; the ESP-IDF component build does not, so it is written out here.
+extern "C" void app_main(void) {
+  initArduino();
+  setup();
+  while (true)
+    loop();
+}

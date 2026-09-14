@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Boots the M5Stack Core firmware (env:m5stack) under Espressif's own QEMU
-# fork (docs/adr/0157-m5stack-core-qemu-emulator.md) -- a real ESP32 machine,
-# not a from-scratch model, unlike Renode (which ships no ESP32/Xtensa
-# platform at all -- see that ADR's feasibility section).
+# Boots the M5Stack Core firmware (app/m5stack, env:m5stack) under
+# Espressif's own QEMU fork (docs/adr/0157-m5stack-core-qemu-emulator.md) --
+# a real ESP32 machine, not a from-scratch model, unlike Renode (which ships
+# no ESP32/Xtensa platform at all -- see that ADR's feasibility section).
 #
 # Unlike the Wio Terminal's Renode setup (scripts/wio_renode_build.bash),
 # this does not build anything from source: Espressif publishes a prebuilt
@@ -16,46 +16,38 @@
 # Renode for the Wio/Maix ports.
 #
 # Usage:
-#   scripts/m5stack_qemu_boot.bash .pio/build/m5stack [timeout-seconds, default 15]
+#   scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack [timeout-seconds, default 15]
 #
-# $1 must be the PlatformIO build directory for env:m5stack (or m5stack_qemu,
+# $1 must be a PlatformIO build directory for env:m5stack (or m5stack_qemu,
 # which extends it) -- bootloader.bin/partitions.bin/firmware.bin all come
 # from there, the same three files `pio run -t upload` would normally hand to
 # esptool.py write_flash for a real board.
 #
-# Exit status: 0 once the real Xtensa CPU has fetched and is executing this
-# project's own compiled second-stage bootloader (the "load:0x...,len:..."
-# lines ROM prints while loading it, then its own "entry 0x..." jump) --
-# proof the exact firmware just built actually runs under QEMU, not just
-# that it links.
+# Exit status: 0 once the real Xtensa CPU has run all the way through this
+# project's own setup() (m5stack.cxx's LVGL display + button HAL init) and
+# printed its "m5stack: setup complete" marker (app/m5stack/src/main.cxx) --
+# not just booted, the actual firmware doing actual HAL work: the GPIO log
+# lines from m5stack_input_init() configuring pins 39/38/37, then at least
+# one "Keys: ..." line from loop() scanning them.
 #
-# **This is not "setup complete".** Every firmware reaching that point hits a
-# real assert during the app's own SPI flash re-probe (`do_core_init`,
-# `esp_flash_init_default_chip() != ESP_OK`) before Serial.begin() ever runs,
-# so the marker main.cxx's setup() prints is not yet a reachable checkpoint.
-# This has been isolated to a real, external cause, not a bug in this
-# project's own firmware/HAL code and not a QEMU limitation in general:
+# Getting here needed `app/m5stack`'s own env:m5stack to build Arduino as an
+# ESP-IDF component (`framework = arduino, espidf`), not plain
+# `framework = arduino`: the precompiled Arduino static libs plain mode
+# links hit a real assert in their own SPI flash re-probe under this exact
+# QEMU release (`do_core_init`, `esp_flash_init_default_chip() != ESP_OK`)
+# before Serial.begin() ever runs, while the exact same ESP-IDF version
+# (4.4.7) built from source as a component does not -- see docs/adr/0157's
+# "Status" section for the full isolation (a controlled comparison against a
+# plain ESP-IDF "hello world" ruled out this script's own QEMU/merge_bin/
+# eFuse setup, then a second comparison against the from-source component
+# build ruled out the IDF version itself, narrowing the fault to the
+# precompiled libs specifically).
 #
-#   - A plain ESP-IDF "hello world" (`platform = espressif32, framework =
-#     espidf`, no Arduino) built against ESP-IDF 6.1.0 boots this exact QEMU
-#     setup cleanly all the way through `app_main()`, printing on the real
-#     UART -- proof the QEMU invocation, efuse image and merge_bin flash
-#     layout below are all correct.
-#   - `framework-arduinoespressif32` (checked directly:
-#     ~/.platformio/packages/framework-arduinoespressif32/tools/sdk/versions.txt),
-#     even at the latest version PlatformIO's espressif32 platform installs,
-#     still vendors **ESP-IDF v4.4.7** -- a fixed, precompiled `libspi_flash.a`
-#     this project cannot change from platformio.ini. Something in that much
-#     older SPI flash generic-chip driver does not get along with this QEMU
-#     release's simulated flash chip; asserting on the exact same code
-#     (`do_core_init`) against a current IDF works, so the fix is upstream
-#     (either PlatformIO packaging a newer Arduino-ESP32 core, or an IDF
-#     backport), not something to patch around here. See docs/adr/0157's
-#     own "Status" section for the full isolation.
-#
-# This script still exits non-zero if even the bootloader-load banner is
-# missing -- that would mean something upstream of the known gap regressed
-# (a bad ELF, a merge_bin/efuse mismatch, QEMU itself not starting).
+# What's still not observable this way: no SPI TFT panel or GPIO-injection
+# device exists upstream in `espressif/qemu` (checked directly against
+# hw/display, hw/ssi, hw/gpio), so a rendered frame or a real button press
+# stay out of reach -- see app/m5stack/README.md's own "What the emulator
+# can and cannot show".
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -141,13 +133,13 @@ set -e
 
 cat "$log"
 
-# See the file header comment: this is the current, honest bar (the CPU is
-# really executing this build's own second-stage bootloader), not
-# "setup complete" -- the known do_core_init gap sits just past it.
-if grep -q "SPI_FAST_FLASH_BOOT" "$log" && grep -q "entry 0x" "$log"; then
-  echo "m5stack_qemu_boot: reached second-stage bootloader entry (known gap past this point: do_core_init flash probe, see docs/adr/0157)"
+# See the file header comment: this is the real bar now (setup() actually
+# ran, including the display/button HAL init), not just "the CPU is
+# running something".
+if grep -q "m5stack: setup complete" "$log" && grep -q "^Keys:" "$log"; then
+  echo "m5stack_qemu_boot: reached setup() and loop(), buttons scanned"
   exit 0
 fi
 
-echo "m5stack_qemu_boot: did not even reach the bootloader entry point -- see $log" >&2
+echo "m5stack_qemu_boot: did not reach 'm5stack: setup complete' -- see $log" >&2
 exit 1

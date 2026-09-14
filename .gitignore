@@ -11,6 +11,22 @@
 # build output and toolchains, the same rationale as /build above.
 /.pio
 
+# The M5Stack Core port (app/m5stack) is its own standalone PlatformIO
+# project (see its own platformio.ini for why), so its build tree and
+# ESP-IDF/CMake-generated files sit under that directory rather than the
+# repo root -- not covered by the anchored /.pio rule above. CMakeLists.txt
+# (both the project-root one PlatformIO's espidf builder writes and the one
+# it writes into src/ as the "main" component wrapper) and sdkconfig.<env>
+# are auto-(re)generated from platformio.ini/sdkconfig.defaults -- confirmed:
+# deleting them and running `pio run -e m5stack` again recreates them with
+# no other input -- so there is nothing to commit by keeping them.
+/app/m5stack/.pio
+/app/m5stack/CMakeLists.txt
+/app/m5stack/src/CMakeLists.txt
+/app/m5stack/sdkconfig.m5stack
+/app/m5stack/sdkconfig.m5stack_qemu
+/app/m5stack/sdkconfig
+
 # Android (app/android): Gradle/AGP build output, the CMake/ninja tree AGP's
 # externalNativeBuild drives underneath it, Gradle's own local cache, and the
 # machine-local SDK path Gradle writes on first configure -- none of it is
