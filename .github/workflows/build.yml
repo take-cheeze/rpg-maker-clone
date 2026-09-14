@@ -1473,6 +1473,28 @@ jobs:
         # does not already say.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
+      - name: Build P0 firmware
+        # Installs the Kendryte platform + toolchain the cross-build below
+        # resolves from ~/.platformio (build_config.rb prefers it), and
+        # proves the bare toolchain produces a binary on its own.
+        run: pio run -e maix_amigo
+
+      - name: Upload P0 firmware
+        # Uploaded immediately, before any later `pio run` below: separate
+        # invocations prune each other's build directories (confirmed by a
+        # real CI run -- the first env's firmware.bin was gone at artifact
+        # time), so each env's outputs go safe the moment they exist, under
+        # their own artifact name. The binaries: flash a .bin with kflash
+        # (or boot/GDB an .elf) -- the PSP pipeline's EBOOT artifact, same
+        # idea.
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-amigo-firmware
+          path: |
+            .pio/build/maix_amigo/firmware.bin
+            .pio/build/maix_amigo/firmware.elf
+          if-no-files-found: error
+
       - name: Build maix mruby cross lib + uni-algo
         # The interpreter and Unicode tables the maix_rgss_boot firmware
         # links below (platformio.ini's MAIX_MRUBY_BUILD_DIR /
@@ -1483,34 +1505,24 @@ jobs:
           scripts/maix_mruby_build.bash
           scripts/maix_unialgo_build.bash
 
-      - name: Build firmware
-        # Both environments in ONE pio invocation: separate `pio run -e`
-        # calls prune each other's build directory (confirmed by a real CI
-        # run -- the first env's firmware.bin was gone at artifact time),
-        # while one call builds both side by side. The cross libs above
-        # must come first: maix_rgss_boot links them.
+      - name: Build mruby-linking firmware
+        # Links libmruby.a + libuni-algo.a + LVGL and boots the interpreter
+        # (see app/maix/README.md) -- the link itself is the measurement:
+        # pio prints the RAM/flash use, and the map below carries symbols.
         env:
           MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
-        run: pio run -e maix_amigo -e maix_rgss_boot
+        run: pio run -e maix_rgss_boot
 
-      - name: Upload firmware
-        # The binaries: flash a .bin with kflash (or boot/GDB an .elf) --
-        # the PSP pipeline's EBOOT artifact, same idea. Both environments:
-        # the P0 LCD bring-up and the mruby-linking boot. Renamed on the
-        # way in: both PlatformIO environments emit firmware.{bin,elf},
-        # which would collide as artifact entries.
-        run: |
-          mkdir -p maix-artifacts
-          cp .pio/build/maix_amigo/firmware.bin maix-artifacts/maix-amigo.bin
-          cp .pio/build/maix_amigo/firmware.elf maix-artifacts/maix-amigo.elf
-          cp .pio/build/maix_rgss_boot/firmware.bin maix-artifacts/maix-rgss-boot.bin
-          cp .pio/build/maix_rgss_boot/firmware.elf maix-artifacts/maix-rgss-boot.elf
-          cp .pio/build/maix_rgss_boot/firmware.map maix-artifacts/maix-rgss-boot.map
-      - uses: actions/upload-artifact@v7
+      - name: Upload mruby-linking firmware
+        # Same prune-proofing as the P0 upload above: safe immediately.
+        uses: actions/upload-artifact@v7
         with:
-          name: maix-firmware
-          path: maix-artifacts/
+          name: maix-rgss-boot-firmware
+          path: |
+            .pio/build/maix_rgss_boot/firmware.bin
+            .pio/build/maix_rgss_boot/firmware.elf
+            .pio/build/maix_rgss_boot/firmware.map
           if-no-files-found: error
 
   maix-smoke:
@@ -1546,7 +1558,7 @@ jobs:
         # which come from riscv64-unknown-elf-nm below.
         uses: actions/download-artifact@v8
         with:
-          name: maix-firmware
+          name: maix-rgss-boot-firmware
           path: firmware
 
       - name: Install riscv nm
@@ -1583,7 +1595,9 @@ jobs:
 
       - name: Boot firmware under Renode
         run: |
-          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash firmware/maix-rgss-boot.elf)"
+          elf="$(find firmware -name firmware.elf | head -n 1)"
+          test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash "$elf")"
           echo "$out"
           echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
           echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
