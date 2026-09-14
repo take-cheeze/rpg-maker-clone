@@ -10,8 +10,8 @@
 # stdlib only (zlib-free PPM output), so CI needs nothing installed.
 #
 # Usage:
-#   scripts/maix_lcd_decode.py capture.log frame.ppm [--min-blue 0.9]
-#       [--min-colors 2] [--expect-size 320x240]
+#   scripts/maix_lcd_decode.py capture.log frame.ppm [--expect-color 001f]
+#       [--min-fraction 0.45] [--min-colors 3] [--expect-size 320x240]
 # Prints a `MAIX-LCD ...` stats line and exits nonzero when an expectation
 # fails -- the line is what CI greps, the exit code is what gates it.
 import struct
@@ -32,11 +32,14 @@ def main():
               file=sys.stderr)
         return 2
     cap_path, ppm_path = args[0], args[1]
-    min_blue, min_colors, expect_size = 0.0, 0, None
+    expect_color, min_fraction, min_colors, expect_size = 0x001F, 0.0, 0, None
     i = 2
     while i < len(args):
-        if args[i] == "--min-blue":
-            min_blue = float(args[i + 1])
+        if args[i] == "--expect-color":
+            expect_color = int(args[i + 1], 16)
+            i += 2
+        elif args[i] == "--min-fraction":
+            min_fraction = float(args[i + 1])
             i += 2
         elif args[i] == "--min-colors":
             min_colors = int(args[i + 1])
@@ -100,7 +103,7 @@ def main():
     for p in fb:
         colors[p] = colors.get(p, 0) + 1
     total = fb_w * fb_h
-    blue = colors.get(0x001F, 0) / total
+    match = colors.get(expect_color, 0) / total
 
     with open(ppm_path, "wb") as f:
         f.write(b"P6\n%d %d\n255\n" % (fb_w, fb_h))
@@ -109,17 +112,17 @@ def main():
 
     ok = True
     reasons = []
-    if blue < min_blue:
+    if match < min_fraction:
         ok = False
-        reasons.append("blue %.3f < %.3f" % (blue, min_blue))
+        reasons.append("color %04x %.3f < %.3f" % (expect_color, match, min_fraction))
     if len(colors) < min_colors:
         ok = False
         reasons.append("colors %d < %d" % (len(colors), min_colors))
     if expect_size is not None and (max_x + 1, max_y + 1) != expect_size:
         ok = False
         reasons.append("extent %dx%d != %dx%d" % (max_x + 1, max_y + 1, *expect_size))
-    print("MAIX-LCD pixels=%d blue=%.3f distinct=%d extent=%dx%d %s" % (
-        n_pixels, blue, len(colors), max_x + 1, max_y + 1,
+    print("MAIX-LCD pixels=%d match=%.3f distinct=%d extent=%dx%d %s" % (
+        n_pixels, match, len(colors), max_x + 1, max_y + 1,
         "OK" if ok else "FAIL " + "; ".join(reasons)))
     return 0 if ok else 1
 

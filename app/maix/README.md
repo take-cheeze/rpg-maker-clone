@@ -25,8 +25,10 @@ pio run -e maix_amigo -t upload  # flash a connected Maix Amigo (kflash)
 `MAIX_UNIALGO_LIB_DIR` pointing at the two cross-build outputs below) links
 the `maix` cross `libmruby.a` plus LVGL into a firmware whose `setup()`
 opens the interpreter (the full RPG2k+LCF+RGSS gem init), evaluates
-`"maix-ruby-alive"`, and reports it over Serial. No display HAL or game
-scene yet. The link itself is the measurement:
+`"maix-ruby-alive"`, and reports it over Serial. The boot firmware now also
+paints solid red through a real LVGL display (see "Display HAL" below) and
+polls input into RGSS::Input every frame (see "Input"). No game scene yet.
+The link itself is the measurement:
 
 ```
 RAM:   110,924 bytes from 6,291,456 bytes (1.8%)
@@ -48,6 +50,54 @@ MAIX_MRUBY_BUILD_DIR=$PWD/build-maix-mruby/maix \
 MAIX_UNIALGO_LIB_DIR=$PWD/build-maix-unialgo \
   pio run -e maix_rgss_boot
 ```
+
+## Display HAL (PlatformIO side)
+
+`app/wio/src/maix_display.cxx` (selected by `platformio.ini`'s
+`maix_rgss_boot` filter; declared in `include/maix.hxx`) stands up the LVGL
+display over the panel through the same Sipeed_ST7789 driver the P0
+firmware uses: a full-frame RGB565 buffer from the newlib heap, flushed
+per dirty rectangle with the driver's own `drawImage`. Deliberately
+PIO-side rather than in `libmruby.a` like Wio's `wio.cxx`: it needs
+Arduino/SPI/LCD headers the rake cross-build never sees, and the firmware
+links LVGL itself, so nothing pays the Arduino-include escape-hatch price.
+The mruby side needs no counterpart -- `lib.cxx` already reaches an
+injected display through `rgss_set_display`.
+
+Two gotchas, both confirmed against the capture rig: the display is
+320x240 (the largest window the driver was ever observed to address -- the
+panel's nominal 320x480 vs rotation is a real-hardware follow-up, and LVGL
+must render in driver space either way), and a screen needs an explicit
+opaque background style -- with no theme the default is transparent and
+renders as white. The boot firmware paints solid red through LVGL itself;
+the wire shows it byte-swapped (`00F8`, the driver's `SWAP_16`), which is
+what the decoder asserts -- on-panel color truth still needs eyes on real
+hardware.
+
+## Input (PlatformIO side)
+
+`app/wio/src/maix_input.cxx`: a minimal FT6X36 capacitive-touch reader
+(I2C1 via `Wire1`, five registers, no vendor library -- Maixduino ships
+none for this chip) scanned into a bitmask, plus `rgss_maix_poll`, which
+diffs it against the previous frame into `RGSS::Input.press`/`release`
+(the SDL bridge's shape). A tap is Confirm; directions (touch regions)
+belong to the menu work that needs them. `lib.cxx` calls the poll from
+`input_poll` under `MAIX_BUILD`, so the real game loop drains it for free;
+firmwares without one call it directly. With no panel attached (Renode
+included) every read is zero -- exactly the idle state, never a hang
+(the I2C status/FIFO Tags in `boot.resc` are what guarantee that).
+
+## SD layer (opt-in)
+
+`app/wio/src/maix_sd_syscalls.cxx` routes newlib `_open`/`_read`/`_write`/
+`_lseek`/`_fstat`/`_unlink` (plus stdout/stderr to Serial) to Maixduino's
+SD library over SPI0's TF slot (chip-select 26), with the same
+`/sd/<game>` `GAME_DIR` convention Wio uses. Compiled only with
+`MAIX_WITH_SD` (CI builds it once that way as a compile proof, via
+`PLATFORMIO_BUILD_FLAGS`); call `maix_sd_init()` from `setup()` before
+opening anything. Runtime proof needs a physical card -- Renode models no
+SD controller -- but the shape of it is known: an SD image attached under
+Renode with game data on it, the way `wio_renode_sdcard.bash` does.
 
 ## The mruby cross-build (PSP-style)
 
