@@ -19,6 +19,36 @@ pio run -e maix_amigo            # compile the bring-up firmware
 pio run -e maix_amigo -t upload  # flash a connected Maix Amigo (kflash)
 ```
 
+## Status: P1 — libmruby links and boots
+
+`pio run -e maix_rgss_boot` (with `MAIX_MRUBY_BUILD_DIR` /
+`MAIX_UNIALGO_LIB_DIR` pointing at the two cross-build outputs below) links
+the `maix` cross `libmruby.a` plus LVGL into a firmware whose `setup()`
+opens the interpreter (the full RPG2k+LCF+RGSS gem init), evaluates
+`"maix-ruby-alive"`, and reports it over Serial. No display HAL or game
+scene yet. The link itself is the measurement:
+
+```
+RAM:   110,924 bytes from 6,291,456 bytes (1.8%)
+Flash: 3,122,555 bytes from 8,388,608 bytes (37.2%)
+```
+
+Three link findings, each confirmed by a real link failure first: the rake
+build of mruby-rgss must see this port's own `lv_conf.h`
+(`mruby-rgss/mrbgem.rake`, same mismatch Wio hit and documents);
+`LV_USE_LOG` stays on here (untrimmed `lib.cxx` reaches `lv_log_add`
+through LVGL's own inlines); and the smoke's runtime string eval needs
+`mruby-compiler` in the gem set (production loading uses precompiled
+bytecode, so it can go again later).
+
+```sh
+scripts/maix_mruby_build.bash      # ./build-maix-mruby (libmruby.a)
+scripts/maix_unialgo_build.bash    # ./build-maix-unialgo (libuni-algo.a)
+MAIX_MRUBY_BUILD_DIR=$PWD/build-maix-mruby/maix \
+MAIX_UNIALGO_LIB_DIR=$PWD/build-maix-unialgo \
+  pio run -e maix_rgss_boot
+```
+
 ## The mruby cross-build (PSP-style)
 
 `scripts/maix_mruby_build.bash` builds `build_config.rb`'s `maix`
@@ -43,17 +73,19 @@ tables are fetched with the same pins/hashes the `psp` CI job uses.
 
 ## Emulation (Renode)
 
-`scripts/maix_renode_boot.bash` boots the firmware ELF under **stock**
+`scripts/maix_renode_boot.bash` boots a firmware ELF under **stock**
 Renode -- no from-source build the way `wio-renode` needs: Renode ships the
 K210 SoC description (dual RV64, UARTHS, CLINT, PLIC) since 1.9, with only
 two tiny Python stubs in `app/maix/renode/` on top (a remembering FPIOA and
 GPIO -- the SDK asserts when pin routing reads back empty -- plus Tags for
-the clock tree and a constant SPI status). The UARTHS analyzer is the check:
-`REACHED setup()`, `maix-amigo hello`, `REACHED loop()`, then the heartbeat.
+the clock tree and a constant SPI status). CI's `maix-smoke` job boots the
+`maix_rgss_boot` ELF (pinned to Renode 1.17.0) and asserts `REACHED
+setup()`, `mrb_open ok`, `eval -> maix-ruby-alive`, `REACHED loop()`
+(the P0 firmware stays build-only: this subsumes its proof).
 
 ```sh
 RENODE_BIN=/path/to/renode scripts/maix_renode_boot.bash \
-  .pio/build/maix_amigo/firmware.elf
+  .pio/build/maix_rgss_boot/firmware.elf
 ```
 
 CI's `maix-smoke` job (pinned to Renode 1.17.0) asserts all four markers.
