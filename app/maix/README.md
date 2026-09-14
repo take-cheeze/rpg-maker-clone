@@ -76,17 +76,49 @@ tables are fetched with the same pins/hashes the `psp` CI job uses.
 `scripts/maix_renode_boot.bash` boots a firmware ELF under **stock**
 Renode -- no from-source build the way `wio-renode` needs: Renode ships the
 K210 SoC description (dual RV64, UARTHS, CLINT, PLIC) since 1.9, with only
-two tiny Python stubs in `app/maix/renode/` on top (a remembering FPIOA and
-GPIO -- the SDK asserts when pin routing reads back empty -- plus Tags for
-the clock tree and a constant SPI status). CI's `maix-smoke` job boots the
-`maix_rgss_boot` ELF (pinned to Renode 1.17.0) and asserts `REACHED
-setup()`, `mrb_open ok`, `eval -> maix-ruby-alive`, `REACHED loop()`
-(the P0 firmware stays build-only: this subsumes its proof).
+small Python stubs in `app/maix/renode/` on top. CI's `maix-smoke` job
+boots the `maix_rgss_boot` ELF (pinned to Renode 1.17.0) and asserts
+`REACHED setup()`, `mrb_open ok`, `eval -> maix-ruby-alive`,
+`REACHED loop()`.
 
 ```sh
 RENODE_BIN=/path/to/renode scripts/maix_renode_boot.bash \
   .pio/build/maix_rgss_boot/firmware.elf
 ```
+
+## LCD capture (Renode + host decode)
+
+The panel cannot render inside the emulator, but every byte headed for it
+can be caught: the LCD driver moves each command/pixel block with the AXI
+DMAC into SPI0's data register, so `app/maix/renode/` carries a small AXI
+model (remembers SAR/DAR/BLOCK_TS/CTL per channel -- a plain Tag cannot
+even do that) plus a copy hook on `dmac_channel_enable` that replays each
+transfer into `$MAIX_SPI_LOG` as `D <dc> <hex32>` lines, sampling DC live
+from GPIO 7 (the driver's fixed DC line). The non-incrementing-source
+(`sinc`) fill transfers are replayed from their single word -- reading
+them as incrementing walks into zeros and heap garbage, confirmed the
+confusing way. `scripts/maix_lcd_decode.py` (stdlib only) replays the
+ST7789 stream (CASET/RASET/RAMWR, RGB565) into a PPM and checks it:
+currently a blue 320x240 screen with two white text lines at the firmware's
+own cursor rows, asserted as blue ≥ 0.45, ≥ 3 colors, 320x240 extent.
+
+```sh
+RENODE_BIN=/path/to/renode \
+MAIX_SPI_LOG=/tmp/maix-spi.log \
+  scripts/maix_renode_boot.bash .pio/build/maix_amigo/firmware.elf 00:00:08
+python3 scripts/maix_lcd_decode.py /tmp/maix-spi.log /tmp/maix-frame.ppm \
+  --min-blue 0.45 --min-colors 3 --expect-size 320x240
+```
+
+Renode-scope notes, each confirmed by a real probe run and worth knowing
+before touching this: peripheral request handlers cannot touch the bus
+(only the CPU hooks can, via the `machine` variable -- `self` is the CPU
+there and something else again in `include`d files); bus *writes* from
+hooks never reach Python peripherals (reads do), so the hook appends to
+the capture file itself instead of replaying onto the bus; hook strings
+cannot see `include`d files' globals (register with the function object,
+not by name); `.repl` takes no `#` comments; and `logLevel 3` quiets the
+UART analyzer into total silence (info-level logging is load-bearing).
 
 CI's `maix-smoke` job (pinned to Renode 1.17.0) asserts all four markers.
 Note the `boot.resc` gotcha its own comment records: info-level logging is

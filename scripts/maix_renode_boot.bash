@@ -58,18 +58,34 @@ if [[ "$setup_addr" == "0x" || "$loop_addr" == "0x" ]]; then
   exit 1
 fi
 
-# amigo.repl.template is not loadable as-is: a .repl cannot take -e "set"
-# variables the way boot.resc does, so the Python stub paths are filled in
-# here (see the template's own comment). Fixed location, not mktemp: a failed
-# boot is debugged by re-running Renode on exactly this file.
+# Address of the DMA copy hook (boot.resc): 0x0 when the ELF has
+# no such symbol (a firmware that never uses DMA) -- an address PC never
+# reaches, so the hook is inert rather than failing the boot.
+dma_enable_addr="0x$("$nm" "$elf" | awk '$3 == "dmac_channel_enable" {print $1}')"
+[[ "$dma_enable_addr" == "0x" ]] && dma_enable_addr="0x0"
+
+# The capture stream (the DMA hook's `D` lines) lands here when set (else
+# /tmp/maix-spi.log). Truncated up front so a rerun never appends to a stale
+# capture.
+export MAIX_SPI_LOG="${MAIX_SPI_LOG:-${TMPDIR:-/tmp}/maix-spi.log}"
+rm -f "$MAIX_SPI_LOG"
+
+# amigo.repl.template and dma_hook.py.template are not loadable as-is: a
+# .repl cannot take -e "set" variables the way boot.resc does, so the Python
+# stub paths and the hook address are filled in here (see the templates' own
+# comments). Fixed location, not mktemp: a failed boot is debugged by
+# re-running Renode on exactly these files.
 repl_out="${TMPDIR:-/tmp}/maix-renode-amigo.repl"
+hook_out="${TMPDIR:-/tmp}/maix-dma-hook.py"
 sed "s|@MAIX_RENODE_DIR@|$renode_dir|" "$renode_dir/amigo.repl.template" > "$repl_out"
+sed "s|@DMA_ADDR@|$dma_enable_addr|" "$renode_dir/dma_hook.py.template" > "$hook_out"
 
 exec "$renode" --disable-gui --console --plain \
   -e "set repl_path @$repl_out" \
   -e "set elf_path @$elf" \
   -e "set setup_addr $setup_addr" \
   -e "set loop_addr $loop_addr" \
+  -e "set dma_hook_path @$hook_out" \
   -e "set duration \"$duration\"" \
   -e "include @$renode_dir/boot.resc" \
   -e "quit"
