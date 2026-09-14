@@ -1867,7 +1867,7 @@ jobs:
         run: |
           pip install -q --disable-pip-version-check esptool
           sudo apt-get update -q && sudo apt-get install -y -q \
-            ninja-build meson pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev
+            ninja-build meson pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev libslirp-dev
 
       - name: Cache the QEMU build
         id: qemu-cache

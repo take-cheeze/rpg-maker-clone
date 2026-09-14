@@ -32,16 +32,32 @@
 # that phase is enabled.
 #
 # Needs: git, meson, ninja, pkg-config, glib2/pixman dev headers, and
-# libgcrypt dev headers -- `apt-get install -y git meson ninja-build
-# pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev`. The last one is
-# easy to miss locally if it just happens to already be installed (as it was
-# the first time this script was written and tested): upstream
-# hw/misc/esp32_flash_enc.c (unrelated to this patch, and unconditionally
-# compiled for any xtensa-softmmu build of this fork) includes <gcrypt.h>
-# with no CONFIG_GCRYPT guard, so it is a hard build dependency of this
-# fork's ESP32 target, not an optional one meson's own `gcrypt` feature
-# option would suggest. None of these are repo dependencies, same as
-# Renode's own native-core toolchain requirement for the Wio port.
+# libgcrypt/libslirp dev headers -- `apt-get install -y git meson
+# ninja-build pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev
+# libslirp-dev`. The last two are easy to miss locally if they just happen
+# to already be installed (as they were the first time this script was
+# written and tested):
+# - hw/misc/esp32_flash_enc.c (unrelated to this patch, and unconditionally
+#   compiled for any xtensa-softmmu build of this fork) includes
+#   <gcrypt.h> with no CONFIG_GCRYPT guard, so it is a hard build
+#   dependency of this fork's ESP32 target -- `--disable-gcrypt` would not
+#   help even if this build had a use for it.
+# - net/slirp.c *is* properly gated behind meson's own `slirp` feature
+#   (net/meson.build's `when: slirp`), but `--disable-slirp` does not
+#   actually skip it in this exact meson.build: its slirp-detection block
+#   (around meson.build's own `slirp = not_found` / `if not
+#   get_option('slirp').auto() or have_system`) unconditionally
+#   `declare_dependency()`-wraps the pkg-config lookup result even when
+#   that lookup was itself skipped for a disabled feature, and a
+#   `declare_dependency()`-wrapped dependency reports found() regardless
+#   -- confirmed directly: `--disable-slirp` still left the meson summary
+#   reporting "slirp support: YES" and net/slirp.c still in the build,
+#   still failing the same missing-header compile it would without the
+#   flag at all. Installing libslirp-dev sidesteps the bug entirely by
+#   making the pkg-config lookup genuinely succeed instead of needing it
+#   to genuinely fail.
+# None of these are repo dependencies, same as Renode's own native-core
+# toolchain requirement for the Wio port.
 #
 # Usage:
 #   scripts/m5stack_qemu_build.bash [output-dir, default /tmp/m5stack-qemu-build]
@@ -82,8 +98,21 @@ cd "$BUILD_DIR"
 # xtensa-softmmu alone (not the default all-target-list build) is what
 # keeps this to a single machine model's worth of compilation -- the same
 # reasoning as wio_renode_build.bash trimming Renode's CORES list down to
-# arm-m.le.
-"$SRC_DIR/configure" --target-list=xtensa-softmmu --disable-docs
+# arm-m.le. The --disable-* flags drop optional features this headless,
+# -nographic-only use has no need for (curses/VNC UI, PNG loading,
+# qemu-nbd's SELinux support, DMG/bzip2 image support) -- meson's own
+# "auto" default for each would otherwise silently pull in whichever of
+# their dev packages happen to already be installed on whatever machine
+# runs this script, the same failure mode libgcrypt20-dev's own comment
+# above just described, except here the fix is "don't need it at all"
+# rather than "install it": unlike gcrypt and slirp (both genuinely
+# required regardless, per that comment), curses/vnc/png/selinux/bzip2 are
+# all properly gated behind their own meson `when:` conditions and
+# actually do drop out cleanly when disabled -- confirmed directly, unlike
+# --disable-slirp.
+"$SRC_DIR/configure" --target-list=xtensa-softmmu --disable-docs \
+  --disable-curses --disable-vnc --disable-png \
+  --disable-selinux --disable-bzip2
 ninja qemu-system-xtensa
 
 echo "Built: $BUILD_DIR/qemu-system-xtensa"
