@@ -1419,18 +1419,94 @@ jobs:
         run: ruby scripts/wio_size_report.rb wio-build.log
 
   maix:
-    # Build the Maix Amigo (Kendryte K210) P0 hello-world + LCD firmware with
-    # PlatformIO (see app/maix/README.md). Plain checkout, no submodules:
-    # unlike the Wio Terminal firmware this links nothing vendored (no LVGL),
-    # so there is nothing to fetch recursively. Booting the binary under an
-    # emulator (Renode ships a stock kendryte_k210 repl) is a follow-up, not
-    # part of this job.
+    # Build the Maix Amigo (Kendryte K210) port, PSP-pipeline style: the P0
+    # hello-world + LCD firmware with PlatformIO (see app/maix/README.md),
+    # plus the `maix` mruby cross-build (build_config.rb, driven by
+    # scripts/maix_mruby_build.bash) -- the interpreter the firmware links
+    # in a later slice, built here so a patch or gem that stops
+    # cross-compiling breaks CI the way the `psp` job does for its EBOOT.
+    # The `maix-smoke` job below boots the firmware under Renode.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # The mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/stb,
+          # 3rd/lvgl, 3rd/quickjs, 3rd/mruby-marshal, 3rd/mruby-stringio,
+          # 3rd/mruby-onig-regexp (the host half configures it) and
+          # 3rd/mgem-list -- same reason the `wio-bc2cpp` job is recursive.
+          submodules: recursive
+          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Install ruby/rake/gperf/bison
+        # The mruby cross-build is driven by rake; gperf and bison regenerate
+        # mruby-compiler's lexer/grammar when a patch touches either source
+        # (patches/mruby-defined-keyword.patch does) -- same reason the `psp`
+        # job installs them.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ruby rake gperf bison
+
+      - name: Cache PlatformIO
+        # This is also what installs the Kendryte riscv64 toolchain
+        # build_config.rb's maix cross build prefers
+        # (~/.platformio/packages/toolchain-kendryte210), so the mruby
+        # objects and the firmware link use the same compiler.
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        # -q keeps pip to warnings and errors: the resolver's per-package
+        # "Collecting/Downloading/Installing" chatter says nothing a green step
+        # does not already say.
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        run: pio run -e maix_amigo
+
+      - name: Upload firmware
+        # The binaries: flash firmware.bin with kflash (or the ELF for
+        # Renode/GDB) -- the PSP pipeline's EBOOT artifact, same idea.
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-firmware
+          path: |
+            .pio/build/maix_amigo/firmware.bin
+            .pio/build/maix_amigo/firmware.elf
+          if-no-files-found: error
+
+      - name: Build maix mruby cross lib
+        run: scripts/maix_mruby_build.bash
+
+  maix-smoke:
+    # Headless run check for the Maix Amigo firmware: boot it under stock
+    # Renode (which ships the K210 SoC description -- dual RV64, UARTHS,
+    # CLINT, PLIC -- so no from-source emulator build the way `wio-renode`
+    # needs) and look for the bring-up markers: REACHED setup()/loop() hooks
+    # plus the "maix-amigo hello" and heartbeat lines the firmware writes
+    # over its Serial. Asserts all of them -- this is the "does it run"
+    # answer to the `maix` job's "does it compile".
+    needs: maix
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          # Quiet fetch + no post-job credential unset walk; see the `build` job.
+          # Only scripts/ + app/maix/renode/ are read here (the firmware is
+          # rebuilt below, the emulator is downloaded) -- nothing from 3rd/.
+          submodules: false
           show-progress: false
           persist-credentials: false
 
@@ -1448,13 +1524,47 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
 
       - name: Install PlatformIO
-        # -q keeps pip to warnings and errors: the resolver's per-package
-        # "Collecting/Downloading/Installing" chatter says nothing a green step
-        # does not already say.
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
       - name: Build firmware
+        # Rebuilt rather than downloaded from the `maix` job's artifact: the
+        # shared PIO cache above makes this incremental-warm, and the boot
+        # script resolves setup/loop addresses plus the riscv nm through the
+        # same toolchain this build just installed -- no cross-job plumbing.
         run: pio run -e maix_amigo
+
+      - name: Cache Renode
+        uses: actions/cache@v6
+        with:
+          # Keep in sync with the download below (single place stating the
+          # pinned release); the key also hashes the boot inputs, so a
+          # script/repl/model change re-runs against a fresh extract.
+          path: /tmp/maix-renode
+          key: renode-maix-${{ runner.os }}-1.17.0-${{ hashFiles('app/maix/renode/**', 'scripts/maix_renode_boot.bash') }}
+
+      - name: Download Renode
+        # Stock release binary (linux-portable needs no .NET install); the
+        # K210 platform description it carries is what gets booted, so unlike
+        # `wio-renode` nothing is compiled here. The tree stays whole: the
+        # `renode` binary only runs next to its own platforms/scripts/dlls.
+        # (Version duplicated from the cache key above -- keep them in sync.)
+        run: |
+          if [ ! -x /tmp/maix-renode/renode_1.17.0-portable/renode ]; then
+            mkdir -p /tmp/maix-renode
+            curl -fsSL -o /tmp/maix-renode/renode.tar.gz \
+              https://github.com/renode/renode/releases/download/v1.17.0/renode-1.17.0.linux-portable.tar.gz
+            tar xzf /tmp/maix-renode/renode.tar.gz -C /tmp/maix-renode
+          fi
+          /tmp/maix-renode/renode_1.17.0-portable/renode --version
+
+      - name: Boot firmware under Renode
+        run: |
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash .pio/build/maix_amigo/firmware.elf)"
+          echo "$out"
+          echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
+          echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
+          echo "$out" | grep -q "maix-amigo hello" || { echo "::error::no Serial hello"; exit 1; }
+          echo "$out" | grep -q "maix-amigo heartbeat" || { echo "::error::no heartbeat"; exit 1; }
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode

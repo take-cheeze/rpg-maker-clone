@@ -19,6 +19,47 @@ pio run -e maix_amigo            # compile the bring-up firmware
 pio run -e maix_amigo -t upload  # flash a connected Maix Amigo (kflash)
 ```
 
+## The mruby cross-build (PSP-style)
+
+`scripts/maix_mruby_build.bash` builds `build_config.rb`'s `maix`
+`MRuby::CrossBuild`: a native host mruby first (for `mrbc`), then the
+riscv64 cross `libmruby.a` (RV64IMACFD, `medany/lp64f/rv64imafc` to match the
+firmware half) the firmware links in a later slice -- the PSP EBOOT pipeline's
+exact analog. Single-format RPG2k-only, like the PSP/Wio builds (no
+XP/VX/Wolf/MV, no onigmo). Two Kendryte-toolchain findings, both verified by
+building, are documented in the stanza: bare newlib's hard `#error` on
+`<dirent.h>` (shared `hal-wio-io`, plus `MAIX_BUILD` gates for the dirent
+paths) and its libstdc++ missing C99 stdio/TR1 (`_GLIBCXX_USE_C99_STDIO=1`,
+`::lround` at the kept call sites).
+
+```sh
+scripts/maix_mruby_build.bash            # ./build-maix-mruby/maix/lib/libmruby.a
+scripts/maix_mruby_build.bash /tmp/maix  # ...or wherever
+```
+
+Needs `ruby`, `rake`, `bison`, `gperf` and the Kendryte toolchain (present
+after any `pio run -e maix_amigo`, which the stanza prefers); the Unicode
+tables are fetched with the same pins/hashes the `psp` CI job uses.
+
+## Emulation (Renode)
+
+`scripts/maix_renode_boot.bash` boots the firmware ELF under **stock**
+Renode -- no from-source build the way `wio-renode` needs: Renode ships the
+K210 SoC description (dual RV64, UARTHS, CLINT, PLIC) since 1.9, with only
+two tiny Python stubs in `app/maix/renode/` on top (a remembering FPIOA and
+GPIO -- the SDK asserts when pin routing reads back empty -- plus Tags for
+the clock tree and a constant SPI status). The UARTHS analyzer is the check:
+`REACHED setup()`, `maix-amigo hello`, `REACHED loop()`, then the heartbeat.
+
+```sh
+RENODE_BIN=/path/to/renode scripts/maix_renode_boot.bash \
+  .pio/build/maix_amigo/firmware.elf
+```
+
+CI's `maix-smoke` job (pinned to Renode 1.17.0) asserts all four markers.
+Note the `boot.resc` gotcha its own comment records: info-level logging is
+load-bearing -- `logLevel 3` quiets the UART analyzer into silence.
+
 ## Why a custom board JSON (and a vendored variant)
 
 The K210 PlatformIO platform (`sipeed/platform-kendryte210` v1.3.0) ships

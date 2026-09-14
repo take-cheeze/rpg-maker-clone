@@ -1,6 +1,7 @@
 /build
 /build-psp
 /build-psp-docker
+/build-maix-mruby
 /wasm-build
 /emsdk
 

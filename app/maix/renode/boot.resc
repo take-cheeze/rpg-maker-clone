@@ -1,0 +1,69 @@
+# Maix Amigo Renode boot (docs: app/maix/README.md "Emulation").
+#
+# Boots the maix_amigo P0 firmware ELF under stock Renode far enough to prove
+# the CPU actually runs -- reaches its own setup()/loop() symbols and prints
+# "maix-amigo hello" plus the per-second heartbeat over the emulated UARTHS --
+# rather than checking it only compiles, which is all the `maix` CI job does.
+#
+# Usage: pass -e "set elf_path @/path/to/firmware.elf" before including this,
+# plus repl_path (@/path/to/amigo.repl -- scripts/maix_renode_boot.bash
+# generates it from amigo.repl.template with the model paths filled in, since
+# a .repl cannot take variables) and setup_addr/loop_addr -- that ELF's own
+# setup/loop symbol addresses (riscv64-unknown-elf-nm firmware.elf, grep -w
+# setup and loop). scripts/maix_renode_boot.bash wraps all of this.
+#
+# What the template models for real: dual RV64 cores, SiFive UARTHS (the
+# firmware's Serial), CLINT, PLIC -- stock Renode's own kendryte_k210
+# description, unchanged. Everything else is Tags below, except:
+#
+# - fpioa (a Python stub): fpioa_get_io_by_function scans io[].ch_sel and
+#   asserts when nothing is routed; a plain Tag (reads zero) hangs Arduino
+#   pinMode on its first call. The stub remembers routed functions so the
+#   scan finds them (see fpioa.py).
+# - gpio (a Python stub): gpio_set_pin asserts dir == 1, but Tags drop the
+#   direction write gpio_set_drive_mode just made. Same remember-and-answer
+#   shape (see gpio.py).
+# - spi0_sr (the Tag below, not a model): constant 0x06 satisfies the LCD
+#   driver's ((sr & 0x05) != 0x04) spin; the transfer's bytes go nowhere, and
+#   that is fine -- the smoke test asserts the Serial markers, not pixels.
+#
+# Info-level logging is load-bearing, not noise: the UARTHS analyzer's own
+# "[INFO] uart:" lines are how the hello/heartbeat markers surface, so unlike
+# app/wio/renode/boot.resc this script must NOT set logLevel 3 (that quiets
+# the analyzer into showing nothing at all -- confirmed the confusing way).
+
+mach create "maix_amigo"
+machine LoadPlatformDescription $repl_path
+sysbus LoadELF $elf_path
+
+# Clock tree: not modeled; ignore writes, fake PLL lock like stock Renode's
+# own kendryte_k210 demo does (pll_lock reads all-ones, so sysctl_pll_is_lock
+# and sysctl_pll_clear_slip both pass immediately).
+sysbus Tag <0x50440000 0x10000> "SYSCTL"
+sysbus Tag <0x50440018 0x4> "pll_lock" 0xFFFFFFFF
+
+# GPIO/FPIOA/SPI/DMA/GPIOHS: the fpioa/gpio Python models (see their own file
+# comments) shadow these Tags where they overlap; the Tags cover the rest.
+sysbus Tag <0x50201000 0xAF000> "APB0"
+sysbus Tag <0x502C0000 0x40000> "APB0HI"
+sysbus Tag <0x38001000 0x1000> "GPIOHS"
+sysbus Tag <0x52000000 0x100000> "SPI"
+# SPI0 status: the LCD driver's DMA send path spins on
+# ((sr & 0x05) != 0x04) (busy clear, TX FIFO not full), which plain-zero
+# Tags never satisfy -- a constant 0x06 does.
+sysbus Tag <0x52000028 0x4> "spi0_sr" 0x06
+sysbus Tag <0x50000000 0x100000> "DMAC"
+
+# Each hook removes itself (cpu.PC is its own trigger address, since a hook
+# fires before the instruction there executes) after firing once: loop() in
+# particular gets called on every pass through the firmware's main loop, so
+# a hook that just kept printing would flood the log.
+cpu1 AddHook $setup_addr "print(\"=== REACHED setup() ===\"); cpu.RemoveHooksAt(cpu.PC)"
+cpu1 AddHook $loop_addr "print(\"=== REACHED loop() ===\"); cpu.RemoveHooksAt(cpu.PC)"
+
+showAnalyzer uart
+
+$duration?="00:00:05"
+emulation RunFor $duration
+echo "PC after that much virtual time:"
+cpu1 PC

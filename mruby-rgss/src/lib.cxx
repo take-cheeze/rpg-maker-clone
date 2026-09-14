@@ -36,13 +36,14 @@
 #include <utility>
 #include <vector>
 
-// The Wio Terminal's bare arm-none-eabi newlib has no dirent implementation
-// at all (a hard #error in <dirent.h>, unlike PSP's own pspsdk newlib) --
-// find_font_path below (its only caller here) degrades to "no custom Fonts/
-// folder on this board" rather than a build that cannot compile at all; a
-// bundled default font (default_font.cxx, gated the same way) still resolves
-// through its own fixed-path fallback.
-#ifdef WIO_TERMINAL
+// The Wio Terminal's bare arm-none-eabi newlib -- and the Maix Amigo's bare
+// riscv64-unknown-elf newlib just the same (a hard #error in <dirent.h> on
+// both, unlike PSP's own pspsdk newlib) -- has no dirent implementation at
+// all -- find_font_path below (its only caller here) degrades to "no custom
+// Fonts/ folder on this board" rather than a build that cannot compile at
+// all; a bundled default font (default_font.cxx, gated the same way) still
+// resolves through its own fixed-path fallback.
+#if defined(WIO_TERMINAL) || defined(MAIX_BUILD)
 typedef void DIR;
 static inline DIR* opendir(const char*) {
   return nullptr;
@@ -2059,8 +2060,8 @@ mrb_value bmp_radial_blur(mrb_state* M, V self) {
         const double th = span * t;
         const double s = std::sin(th), c = std::cos(th);
         const double dx = x - cx, dy = y - cy;
-        const int32_t sx = (int32_t)std::lround(cx + dx * c - dy * s);
-        const int32_t sy = (int32_t)std::lround(cy + dx * s + dy * c);
+        const int32_t sx = (int32_t)::lround(cx + dx * c - dy * s);
+        const int32_t sy = (int32_t)::lround(cy + dx * s + dy * c);
         if (sx < 0 || sy < 0 || sx >= b.width || sy >= b.height)
           continue;
         int r, g, bl, a;
@@ -2969,8 +2970,8 @@ void measure_text_ttf(TtfFont& f,
     w += scale * adv;
     prev = static_cast<int>(c);
   }
-  width = static_cast<int>(std::lround(w));
-  height = static_cast<int>(std::lround(scale * (asc - desc)));
+  width = static_cast<int>(::lround(w));
+  height = static_cast<int>(::lround(scale * (asc - desc)));
 }
 
 // Blend a glyph coverage bitmap (`cov`, gw x gh, 8-bit alpha) into `bmp` in
@@ -2996,7 +2997,7 @@ void blit_glyph_cov(Bitmap& bmp,
     if (ty < 0 || ty >= bmp.height)
       continue;
     const int shear =
-        slant != 0.0 ? static_cast<int>(std::lround(slant * (baseline_y - ty)))
+        slant != 0.0 ? static_cast<int>(::lround(slant * (baseline_y - ty)))
                      : 0;
     for (int i = -dilate; i < gw + dilate; ++i) {
       int m = 0;
@@ -3062,12 +3063,12 @@ void blit_glyph_tex(Bitmap& bmp,
     if (ty < 0 || ty >= bmp.height)
       continue;
     const int shear =
-        slant != 0.0 ? static_cast<int>(std::lround(slant * (baseline_y - ty)))
+        slant != 0.0 ? static_cast<int>(::lround(slant * (baseline_y - ty)))
                      : 0;
     int srow = sy;
     if (sh > 1 && tline_h > 0.0) {
-      int r = static_cast<int>(std::lround(
-          (static_cast<double>(ty) - tline_top) * (sh - 1) / tline_h));
+      int r = static_cast<int>(
+          ::lround((static_cast<double>(ty) - tline_top) * (sh - 1) / tline_h));
       srow = sy + std::clamp(r, 0, sh - 1);
     }
     int sr = 255, sg = 255, sb = 255, sa = 255;
@@ -3135,8 +3136,8 @@ void draw_text_ttf(Bitmap& bmp,
     uint8_t* g = stbtt_GetCodepointBitmap(
         &f.info, scale, scale, static_cast<int>(c), &gw, &gh, &gx, &gy);
     if (g) {
-      const int by = static_cast<int>(std::lround(baseY));
-      const int ox = static_cast<int>(std::lround(penX)) + gx;
+      const int by = static_cast<int>(::lround(baseY));
+      const int ox = static_cast<int>(::lround(penX)) + gx;
       const int oy = by + gy;
       if (fa.shadow)
         blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy + 1, by, fa.out_color[0],
@@ -3206,8 +3207,8 @@ void draw_text_tex_ttf(Bitmap& bmp,
     uint8_t* g = stbtt_GetCodepointBitmap(
         &f.info, scale, scale, static_cast<int>(c), &gw, &gh, &gx, &gy);
     if (g) {
-      const int by = static_cast<int>(std::lround(baseY));
-      const int ox = static_cast<int>(std::lround(penX)) + gx;
+      const int by = static_cast<int>(::lround(baseY));
+      const int ox = static_cast<int>(::lround(penX)) + gx;
       const int oy = by + gy;
       if (fa.shadow)
         blit_glyph_cov(bmp, g, gw, gh, ox + 1, oy + 1, by, fa.out_color[0],
@@ -3424,11 +3425,10 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
       // down the text; a flat swatch reads as a single colour.
       int srow = static_cast<int>(sy);
       if (sh > 1 && c.HEIGHT > 1)
-        srow =
-            static_cast<int>(sy) +
-            std::clamp(static_cast<int>(std::lround(static_cast<double>(i) *
+        srow = static_cast<int>(sy) +
+               std::clamp(static_cast<int>(::lround(static_cast<double>(i) *
                                                     (sh - 1) / (c.HEIGHT - 1))),
-                       0, static_cast<int>(sh) - 1);
+                          0, static_cast<int>(sh) - 1);
       int sr = 255, sg = 255, sb = 255, sa = 255;
       if (scol >= 0 && srow >= 0 && scol < src_bmp.width &&
           srow < src_bmp.height)
@@ -4243,7 +4243,7 @@ mrb_value spr_set_angle(mrb_state* M, mrb_value self) {
   mrb_float deg;
   mrb_get_args(M, "f", &deg);
   lv_obj_t* obj = obj_require(M, self);
-  long tenths = std::lround(-deg * 10.0) % 3600;
+  long tenths = ::lround(-deg * 10.0) % 3600;
   if (tenths < 0)
     tenths += 3600;
   const mrb_value ox = mrb_iv_get(M, self, mrb_intern_lit(M, "@ox"));
