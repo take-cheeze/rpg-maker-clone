@@ -1841,6 +1841,14 @@ jobs:
     # boot banner. Getting here needed app/m5stack's own platformio.ini to
     # build Arduino as an ESP-IDF component rather than PlatformIO's default
     # precompiled-libs mode -- see the ADR's "Status, revised" section.
+    #
+    # Also builds QEMU from source with app/m5stack/qemu/patches/
+    # m5stack-display.patch (scripts/m5stack_qemu_build.bash) -- Espressif's
+    # own prebuilt release cannot carry the new ILI9341 display device the
+    # patch adds -- and checks the actual rendered framebuffer, not just
+    # that the firmware ran: this is the real "does the display render"
+    # question, the same way wio-renode's own ILI9341 pixel checks answer it
+    # for the Wio Terminal.
     needs: m5stack
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
@@ -1855,19 +1863,75 @@ jobs:
           name: m5stack-firmware
           path: app/m5stack/.pio/build/m5stack
 
-      - name: Install esptool, QEMU's runtime deps
+      - name: Install esptool, QEMU's build deps
         run: |
           pip install -q --disable-pip-version-check esptool
-          sudo apt-get update -q && sudo apt-get install -y -q libsdl2-2.0-0 libslirp0
+          sudo apt-get update -q && sudo apt-get install -y -q \
+            ninja-build meson pkg-config libglib2.0-dev libpixman-1-dev
 
-      - name: Cache the QEMU download
+      - name: Cache the QEMU build
+        id: qemu-cache
         uses: actions/cache@v6
         with:
-          path: /tmp/m5stack-qemu/qemu
-          key: m5stack-qemu-${{ runner.os }}-${{ hashFiles('scripts/m5stack_qemu_boot.bash') }}
+          path: /tmp/m5stack-qemu-build
+          # Keyed on the pinned tag scripts/m5stack_qemu_build.bash checks
+          # out and on the patch it applies -- either changing invalidates
+          # the cache; nothing else does, so this is a cache hit on almost
+          # every run (mirrors wio-renode's own Renode build cache).
+          key: m5stack-qemu-build-${{ runner.os }}-${{ hashFiles('scripts/m5stack_qemu_build.bash', 'app/m5stack/qemu/patches/**') }}
+
+      - name: Build QEMU with M5Stack display support
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        run: scripts/m5stack_qemu_build.bash /tmp/m5stack-qemu-build
 
       - name: Boot under QEMU
+        env:
+          M5STACK_QEMU_BIN: /tmp/m5stack-qemu-build/build/qemu-system-xtensa
+          M5STACK_DISPLAY_DUMP: /tmp/m5stack_display.ppm
         run: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+
+      - name: Verify the display actually rendered
+        # A plain "the dump file exists" check (scripts/m5stack_qemu_boot.bash's
+        # own bar) only proves the device was reachable, not that real pixels
+        # landed in it -- an all-white (or otherwise uniform) framebuffer would
+        # still pass that bar. This additionally confirms the firmware's own
+        # LVGL "Keys: A B C" label actually drew: a majority-white background
+        # (LVGL's default screen bg) plus a real second color for the label
+        # text itself.
+        run: |
+          python3 - <<'EOF'
+          import collections
+
+          path = "/tmp/m5stack_display.ppm"
+          with open(path, "rb") as f:
+              magic = f.readline().strip()
+              dims = f.readline().split()
+              maxval = f.readline().strip()
+              assert magic == b"P6", f"unexpected PPM magic {magic!r}"
+              width, height = (int(x) for x in dims)
+              assert maxval == b"255"
+              data = f.read()
+
+          assert len(data) == width * height * 3, (
+              f"short read: {len(data)} bytes for a {width}x{height} frame"
+          )
+
+          counts = collections.Counter(
+              data[i:i + 3] for i in range(0, len(data), 3)
+          )
+          total = width * height
+          white = counts[b"\xff\xff\xff"]
+          non_white = total - white
+
+          print(f"{path}: {width}x{height}, {len(counts)} distinct colors, "
+                f"{white} white / {non_white} non-white pixels")
+
+          assert len(counts) > 1, "framebuffer is a single uniform color"
+          assert white > total * 0.5, (
+              f"expected a majority-white LVGL background, got {white}/{total}"
+          )
+          assert non_white > 0, "no non-background (label text) pixels found"
+          EOF
 
   wio-bc2cpp:
     # The `wio_rgss_boot` firmware is the only build that exercises

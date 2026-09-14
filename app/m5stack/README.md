@@ -77,6 +77,17 @@ cd .. && ../../scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
 # (from the repo root: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack)
 ```
 
+For a rendered display frame, build a display-capable QEMU first
+(`scripts/m5stack_qemu_build.bash`, see "Emulation: display support" below)
+and point the boot script at it:
+
+```sh
+scripts/m5stack_qemu_build.bash /tmp/m5stack-qemu-build   # one-time, a few minutes
+M5STACK_QEMU_BIN=/tmp/m5stack-qemu-build/build/qemu-system-xtensa \
+M5STACK_DISPLAY_DUMP=/tmp/m5stack_display.ppm \
+  scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+```
+
 **Reaches `setup()` and `loop()` for real** -- verified by grepping the real
 `m5stack: setup complete` and `Keys: A B C` lines out of the QEMU serial
 log, not just a boot banner. Getting there needed one real fix, not just a
@@ -90,15 +101,46 @@ not -- see the ADR's "Status, revised" section for the full, initially-wrong
 -then-corrected investigation (it first looked like an ESP-IDF version gap;
 it wasn't -- both paths use the same 4.4.7).
 
-## What the emulator can and cannot show
+## Emulation: display support
 
-QEMU's ESP32 machine models no SPI TFT panel and no button GPIO injection --
-genuinely missing upstream (checked against `hw/display`, `hw/ssi`,
-`hw/gpio` in `espressif/qemu`), not a shortcut this project took.
-`main.cxx`'s status screen is echoed over Serial for exactly this reason
-(see its own comment): a QEMU boot verifies the firmware reaches `loop()`
-and reacts to input (all three buttons read "pressed" under QEMU, since
-their GPIOs are simply unconnected rather than driven -- an accurate
-reflection of nothing being wired to them, not a bug), but not a rendered
-frame or a real button press. The same "UART only" bar the Wio Terminal
-Renode platform's own P1 phase set (`docs/adr/0094`), for the same reason.
+Upstream `espressif/qemu` models no SPI TFT panel at all (checked directly
+against `hw/display`) -- so this fork carries its own downstream addition,
+`app/m5stack/qemu/patches/m5stack-display.patch`
+(`scripts/m5stack_qemu_build.bash` builds a QEMU binary with it applied; see
+that script's own header comment for the full rationale). It adds a new
+`hw/display/esp32_ili9341.c` device modelled on this repo's own Renode
+peripheral (`app/wio/renode/peripherals/Video/ILI9341_SPI.cs`), wired onto
+the ESP32 machine's VSPI (SPI3) CS0 with D/C on GPIO27 -- matching
+`env:m5stack`'s own TFT_eSPI `build_flags`. Getting a real (non-garbled)
+frame out of it needed one further, more interesting fix: a genuine
+upstream bug in `hw/ssi/esp32_spi.c`, where a stale post-reset register
+default caused a phantom extra byte to be silently prepended to every SPI
+transaction whenever a driver (TFT_eSPI's ESP32 driver among them) never
+uses the SPI controller's own command phase -- see the patch's own comment
+for the full trace that pinned it down (a raw-byte capture, then a
+standalone `fillScreen()`/`fillRect()` test firmware whose output was a
+checkerboard of correct and byte-swapped colors until the fix landed).
+
+`M5STACK_DISPLAY_DUMP=<path> scripts/m5stack_qemu_boot.bash ...` (with a
+`M5STACK_QEMU_BIN` built as above) writes the ILI9341 framebuffer out as a
+PPM on exit -- QEMU's own `screendump`/monitor commands cannot reach this
+device (it lives inside the ESP32 SoC's own private bus, never attached to
+the real default sysbus; see `esp32_ili9341.c`'s own comment in the patch),
+so this is a plain `atexit()` hook instead. The bring-up firmware's actual
+LVGL "Keys: A B C" label renders correctly this way: a majority-white
+background with real anti-aliased text pixels, not a blank or garbled
+frame -- exactly what `.github/workflows/build.yml`'s `m5stack-qemu` job
+checks on every run.
+
+## What the emulator still cannot show
+
+Button *input* injection: QEMU's ESP32 machine models no GPIO-injection
+device (checked directly against `hw/gpio` in `espressif/qemu`; this fork's
+own patch only extends the existing GPIO model's *output* side, needed for
+the display's D/C line, not input), so a real button press stays out of
+reach -- all three buttons read "pressed" under QEMU, since their GPIOs are
+simply unconnected rather than driven, an accurate reflection of nothing
+being wired to them rather than a bug. `main.cxx`'s status screen is
+echoed over Serial for the same underlying reason display support used to
+apply to: a QEMU boot verifies the firmware reaches `loop()` and reacts to
+input, independently of whatever the display shows.
