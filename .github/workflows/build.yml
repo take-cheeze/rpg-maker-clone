@@ -1756,6 +1756,91 @@ jobs:
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
 
+  m5stack:
+    # Build the M5Stack Core (ESP32) P1 HAL bring-up firmware with
+    # PlatformIO (see app/m5stack/README.md, docs/adr/0157). Unlike Wio/Maix,
+    # espressif32 ships this board natively, so there is no custom
+    # boards/*.json step here -- the same reason this job has no counterpart
+    # to maix's own "add_amigo_variant.py" step.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the firmware.
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        run: pio run -e m5stack
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5stack-firmware
+          path: |
+            .pio/build/m5stack/firmware.bin
+            .pio/build/m5stack/firmware.elf
+            .pio/build/m5stack/bootloader.bin
+            .pio/build/m5stack/partitions.bin
+
+  m5stack-qemu:
+    # Boots the m5stack firmware the job above compiles under Espressif's own
+    # QEMU fork (docs/adr/0157-m5stack-core-qemu-emulator.md), the same
+    # "does this run in CI" question wio-renode answers for the Wio Terminal.
+    # This only asserts the currently-true checkpoint (the real CPU executing
+    # this build's own second-stage bootloader) -- not "setup complete", a
+    # real, isolated, currently-open gap in framework-arduinoespressif32's
+    # own vendored ESP-IDF v4.4.7 the ADR documents in full. If a future
+    # PlatformIO/Arduino-ESP32 update closes that gap, this job's own log
+    # will show the do_core_init assert disappearing, and
+    # scripts/m5stack_qemu_boot.bash's bar should be raised to match.
+    needs: m5stack
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: m5stack-firmware
+          path: .pio/build/m5stack
+
+      - name: Install esptool, QEMU's runtime deps
+        run: |
+          pip install -q --disable-pip-version-check esptool
+          sudo apt-get update -q && sudo apt-get install -y -q libsdl2-2.0-0 libslirp0
+
+      - name: Cache the QEMU download
+        uses: actions/cache@v6
+        with:
+          path: /tmp/m5stack-qemu/qemu
+          key: m5stack-qemu-${{ runner.os }}-${{ hashFiles('scripts/m5stack_qemu_boot.bash') }}
+
+      - name: Boot under QEMU
+        run: scripts/m5stack_qemu_boot.bash .pio/build/m5stack
+
   wio-bc2cpp:
     # The `wio_rgss_boot` firmware is the only build that exercises
     # RPGMAKER_BC2CPP=1 (build_config.rb) and, baseline and bc2cpp alike, the

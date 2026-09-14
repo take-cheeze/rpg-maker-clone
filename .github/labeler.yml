@@ -158,6 +158,18 @@
           # project-wide src_dir), so the labeler also tags platform:wio on
           # mixed diffs -- both labels on such a PR is correct.
 
+"platform:m5stack":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "app/m5stack/**"
+          - "mruby-rgss/src/m5stack.cxx"
+          - "include/m5stack.hxx"
+          - "scripts/m5stack_qemu_*.bash"
+          # Its firmware sources live under app/wio/src/ (one project-wide
+          # src_dir, same reason platform:maix's own comment gives) and
+          # platformio.ini is shared, so the labeler also tags platform:wio
+          # on mixed diffs -- both labels on such a PR is correct.
+
 # --- component -------------------------------------------------------------
 
 "component:graphics":
