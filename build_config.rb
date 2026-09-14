@@ -210,15 +210,16 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # uninitialized constant Dir" the moment mruby-rpgxp's rgss_library.rb --
   # which patches Dir.glob over it -- loaded. Declare it for real.
   #
-  # wio is the one exception: its bare arm-none-eabi newlib has no dirent
-  # implementation at all (a hard #error in <dirent.h>, unlike PSP's own
-  # pspsdk newlib), which is exactly what hal-posix-dir needs -- and nothing
+  # wio/maix are the exceptions: their bare arm-none-eabi/riscv64-unknown-elf
+  # newlibs have no dirent implementation at all (a hard #error in
+  # <dirent.h>, unlike PSP's own pspsdk newlib -- confirmed for real on the
+  # Kendryte riscv64-unknown-elf toolchain, same as wio's arm-none-eabi),
   # reachable there needs Dir at all in the first place: mruby-rpgxp is the
   # only real caller (rgss_library.rb's Dir.glob patch) and it is already
-  # excluded from wio's own single_format_only gem set below, so unlike the
+  # excluded from wio's/maix's own single_format_only gem set below, so unlike the
   # desktop/android history above, there is no live NameError risk to guard
   # against by keeping it.
-  conf.gem core: 'mruby-dir' unless conf.name == 'wio'
+  conf.gem core: 'mruby-dir' unless %w[wio maix].include?(conf.name)
   conf.gem core: 'mruby-numeric-ext'
   # Range#cover? lives here, not in core Range. Five call sites in mruby-rpg2k
   # (Game::Shop#equip?, the special-item checks in game.rb / item_menu.rb)
@@ -276,7 +277,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   conf.gem "#{MRUBY_ROOT}/../mruby-stringio"
   conf.gem "#{MRUBY_ROOT}/../mruby-marshal"
 
-  # psp/wio ship one RPG Maker format only, RPG2000/2003 (ADR 0061/0091/0097)
+  # psp/wio/maix ship one RPG Maker format only, RPG2000/2003 (ADR 0061/0091/0097)
   # -- unlike desktop/wasm/android, which run whichever format a game
   # directory on disk turns out to be (rpg_maker_gem_dispatch below picks the
   # matching one at runtime). mruby-rpgxp (RPG Maker XP), mruby-rpgvx (VX/VX
@@ -292,7 +293,7 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # shape tags, mruby-rpgxp's Dir.glob fallback, mruby-mvjs's JSON/HTML
   # scanning), so nothing left needs it once they're gone. See docs/adr/
   # 0098-rpg2k-single-format-trim.md.
-  single_format_only = %w[psp wio].include?(conf.name)
+  single_format_only = %w[psp wio maix].include?(conf.name)
 
   conf.gem "#{MRUBY_ROOT}/../mruby-onig-regexp" do
     bundle_onigmo
@@ -360,7 +361,7 @@ end
 # which function calls which of them. See src/main.cxx's "Deferred per-maker
 # gem init" section for the call side.
 def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
-  # single_format_only (psp/wio, see rpg_maker_gems) compiles mruby-rpg2k
+  # single_format_only (psp/wio/maix, see rpg_maker_gems) compiles mruby-rpg2k
   # alone -- the closure/dispatch machinery below still runs, generating a
   # trivial rpg_maker_init_rpg2k_gem with nothing to dispatch *between*, so
   # the two builds keep exactly one code path instead of a parallel
@@ -513,9 +514,10 @@ end
 # the cross build.
 emscripten = ENV['MRUBY_TARGET'] == 'emscripten'
 wio = ENV['MRUBY_TARGET'] == 'wio'
+maix = ENV['MRUBY_TARGET'] == 'maix'
 psp = ENV['MRUBY_TARGET'] == 'psp'
 android = ENV['MRUBY_TARGET'] == 'android'
-cross = emscripten || wio || psp || android
+cross = emscripten || wio || maix || psp || android
 
 if wio
   # docs/adr/0112: wio's own RAM/flash margin (ADR 107/111) is tight enough
@@ -913,6 +915,138 @@ if wio
     # -fno-exceptions fails to even compile mruby's own core
     # ("'e' was not declared in this scope" inside MRB_CATCH's own
     # expansion). Not attempted further.
+  end
+end
+
+if maix
+  # Cross build for the Sipeed Maix Amigo (Kendryte K210, RV64IMACFD).
+  # Produces a libmruby.a that the PlatformIO firmware (app/maix,
+  # platformio.ini env:maix_amigo) links; the host build above supplies mrbc.
+  #
+  # NOTE: like the PSP/Wio builds this is the starting point for the port
+  # (see app/maix/README.md), not a finished, linked build. The bring-up
+  # firmware links neither libmruby nor any input bridge yet; this cross
+  # target exists so the interpreter can be layered on in the next slice.
+  # It is only built when MRUBY_TARGET=maix, so it never affects the desktop
+  # or wasm builds.
+  MRuby::CrossBuild.new('maix') do |conf|
+    toolchain :gcc
+
+    # Same two-compiler problem the wio stanza above documents: prefer
+    # PlatformIO's own Kendryte toolchain (GCC 8.2.0, the exact compiler the
+    # final firmware link uses) so the object files this rake build produces
+    # agree with it; fall back to plain PATH resolution (e.g. a hand-
+    # installed Kendryte toolchain) where PlatformIO never ran.
+    pio_gcc_bin = "#{ENV['HOME']}/.platformio/packages/toolchain-kendryte210/bin"
+    gcc_prefix = Dir.exist?(pio_gcc_bin) ? "#{pio_gcc_bin}/" : ''
+    conf.cc.command = "#{gcc_prefix}riscv64-unknown-elf-gcc"
+    conf.cxx.command = "#{gcc_prefix}riscv64-unknown-elf-g++"
+    conf.linker.command = "#{gcc_prefix}riscv64-unknown-elf-gcc"
+    conf.archiver.command = "#{gcc_prefix}riscv64-unknown-elf-ar"
+
+    # A triplet mruby's own build (and mruby-io's HAL selection) accepts for
+    # a bare-metal cross; the real compiler is still riscv64-unknown-elf-gcc.
+    conf.host_target = 'riscv64-unknown-elf'
+
+    enable_debug
+
+    # Strip mrbc's own `-g` (Ruby-level line-number tables baked into the
+    # bytecode, parsed into live heap at boot) the same way the psp/wio
+    # stanzas do -- see the wio stanza's own comment for the measurement.
+    conf.mrbc.compile_options =
+      conf.mrbc.compile_options.split(' ').reject { |o| o == '-g' }.join(' ')
+
+    # Drop the local-variable name arrays out of cdump'd sources the same way
+    # (same mechanism and reasoning -- see the wio stanza's own comment).
+    conf.mrbc.define_singleton_method(:run) do |out, *args, **kwargs|
+      method(:run).super_method.call(out, *args, **kwargs)
+      path = out.path
+      src = File.read(path)
+      src.gsub!(/^mrb_DEFINE_SYMS_VAR\(\w+_lv_\d+, .*\);\n/, '')
+      src.gsub!(/^(  )(\w+_lv_\d+),\n/, "\\1NULL,\t\t\t\t\t/* lv */\n")
+      File.write(path, src)
+    end
+
+    # K210 ABI. Must be identical on the compile and link lines so the mruby
+    # objects match the firmware's ABI -- mirrors platform-kendryte210's own
+    # machine_flags (builder/frameworks/_bare.py), the flags the firmware
+    # half already builds with.
+    cpu_flags = %w[-mcmodel=medany -mabi=lp64f -march=rv64imafc]
+
+    [conf.cc, conf.cxx].each do |t|
+      t.flags = t.flags.flatten.delete_if { |v| v == '-O0' }
+      t.flags += cpu_flags
+      # -Os like the firmware half (the platform's own _bare.py builds -Os
+      # too); with 8 MB of flash this is hygiene rather than the Wio
+      # Terminal's survival, but it costs nothing.
+      t.flags << '-Os'
+      # Free: drops the per-object GCC-version comment string.
+      t.flags << '-fno-ident'
+      # Deduplicates equal-valued constants across translation units; see
+      # the wio stanza's own comment for the (inapplicable here) caveat.
+      t.flags << '-fmerge-all-constants'
+      # Single-threaded Arduino firmware has no thread pointer for the
+      # thread-safe-static-local fast path to read; the wio stanza's own
+      # comment covers the failure mode. Preemptive here rather than
+      # verified: no maix firmware links libmruby.a yet, so the first real
+      # link re-checks this line.
+      t.flags << '-fno-threadsafe-statics'
+      # mruby-lcf and mruby-rgss both need C++17 (uni-algo's conv.h hard-
+      # errors below it); the platform's bundled GCC 8.2.0 defaults to
+      # gnu++14, and the firmware half already passes -std=gnu++17 itself
+      # (the platform's own _bare.py CXXFLAGS).
+      t.flags << '-std=gnu++17'
+      # One section per function/global so the firmware link's own
+      # -Wl,--gc-sections (already in the platform's LINKFLAGS) can prune
+      # at that granularity -- same reasoning as the wio stanza.
+      t.flags << '-ffunction-sections' << '-fdata-sections'
+      # Bare-metal newlib falls through mruby's string.c to a 1 MiB default
+      # cap; game data loaded as strings can exceed that many times over, so
+      # disable the cap outright (0 = unlimited), matching the wio/psp
+      # builds. Actual RAM fit is a later slice's concern.
+      t.defines << 'MRB_STR_LENGTH_MAX=0'
+      # Gates the maix HAL (once it exists) in the mruby-rgss gem on and the
+      # desktop-only sixel/iTerm2 terminal.cxx backend off (that file's own
+      # guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL) &&
+      # !defined(MAIX_BUILD)`). Like WIO_TERMINAL for the wio build, this
+      # rake-driven libmruby.a needs its own copy since it never sees the
+      # firmware build's flags.
+      t.defines << 'MAIX_BUILD'
+      # This toolchain's libstdc++ was configured without C99 stdio, so
+      # std::snprintf/vsnprintf/fprintf (used across mruby-rgss) are
+      # undeclared even though newlib provides them underneath -- confirmed
+      # by compiling, not just reasoned about. Re-enabling the declarations
+      # is safe exactly because the functions exist; whether the final
+      # firmware link's own newlib stubs satisfy them is re-checked when a
+      # firmware first links this archive (same caveat as
+      # -fno-threadsafe-statics above). The sibling gap, std::lround
+      # (TR1-gated, and the TR1 macro itself cannot go on: newlib genuinely
+      # lacks the long-double companions), is handled at the call sites
+      # instead: the kept code spells it ::lround, identical everywhere.
+      t.defines << '_GLIBCXX_USE_C99_STDIO=1'
+      # The same micro-controller knobs as the wio/psp builds above (see the
+      # wio stanza's comment): a 256-object GC heap page and 16-entry
+      # initial khash buckets, pure footprint wins with no behaviour change.
+      t.defines << 'MRB_HEAP_PAGE_SIZE=256'
+      t.defines << 'KHASH_INITIAL_SIZE=16'
+    end
+    conf.linker.flags += cpu_flags
+
+    # Own HAL for mruby-io: same situation as the wio build above (see its
+    # comment) -- this board's bare newlib is close enough to POSIX for
+    # plain file I/O (open/read/write/lseek/fstat/unlink all compile) but
+    # has none of hal-posix-io's wider surface (st_atim, lstat -- confirmed
+    # for real on the Kendryte toolchain, same as wio's arm-none-eabi), and
+    # none of that surface is reachable from a real RPG2000/2003 game
+    # anyway. hal-wio-io is shared as-is despite the name: it is already
+    # board-agnostic code (plain newlib syscalls only, plus ENOSYS stubs
+    # whose init symbols derive from its directory name), so renaming it
+    # would churn the wio build for no behavioural gain. Added before
+    # rpg_maker_gems (which pulls in mruby-io itself) so mruby-io's own
+    # "no HAL specified" auto-selection never fires here.
+    conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
+
+    rpg_maker_gems(conf)
   end
 end
 

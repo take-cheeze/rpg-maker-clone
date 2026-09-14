@@ -2,13 +2,14 @@
 
 #include "terminal.hxx"
 
-// Wio Terminal: everything below WIO_TERMINAL's own #else branch (near the
+// Wio Terminal (and the Maix Amigo, same story): everything below
+// WIO_TERMINAL's own #else branch (near the
 // bottom of this file) is a from-scratch, minimal stand-in for the real
 // profiler -- it needs none of these headers (mruby.h's own declarations are
 // already forward-declared by profiler.hxx, "to avoid pulling <mruby.h> into
 // every includer", the same reasoning applies to LVGL/STL here). See that
 // #else branch's own comment for why, and docs/adr/0125.
-#ifndef WIO_TERMINAL
+#if !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 #include <mruby.h>
 #include <mruby/gc.h>
 #include <mruby/hash.h>
@@ -746,7 +747,7 @@ void profiler_init(mrb_state* M) {
                              MRB_ARGS_NONE());
 }
 
-#else  // WIO_TERMINAL
+#else  // WIO_TERMINAL || MAIX_BUILD
 
 // The real profiler above is dev-only tooling (Chrome-trace JSON export,
 // memory/allocator stats, the RGSS::Profiler Ruby module) with no call site
@@ -828,4 +829,4 @@ bool profiler_tracing() {
 
 void profiler_init(mrb_state*) {}
 
-#endif  // WIO_TERMINAL
+#endif  // WIO_TERMINAL || MAIX_BUILD

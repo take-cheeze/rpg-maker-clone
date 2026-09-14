@@ -10,7 +10,7 @@
 // nothing else in this build needs a compressor.
 #include "iterm.hxx"
 
-#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)
+#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL) && !defined(MAIX_BUILD)
 
 #include <cstdint>
 #include <string>
@@ -132,10 +132,10 @@ lv_display_t* iterm_display_create(int32_t hor_res,
   return terminal_display_create(hor_res, ver_res, scale, iterm_encode_frame);
 }
 
-#else  // PSP_BUILD || WIO_TERMINAL
+#else  // PSP_BUILD || WIO_TERMINAL || MAIX_BUILD
 
 lv_display_t* iterm_display_create(int32_t, int32_t, int) {
   return nullptr;
 }
 
-#endif  // !PSP_BUILD && !WIO_TERMINAL
+#endif  // !PSP_BUILD && !WIO_TERMINAL && !MAIX_BUILD
