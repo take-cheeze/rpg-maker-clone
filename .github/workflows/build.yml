@@ -1525,6 +1525,18 @@ jobs:
             .pio/build/maix_rgss_boot/firmware.map
           if-no-files-found: error
 
+      - name: Compile SD syscall layer
+        # maix_sd_syscalls.cxx is gate-off by default (see the file), so this
+        # rebuilds the boot env once with MAIX_WITH_SD to prove the real code
+        # compiles -- runtime proof needs a physical card (Renode models no
+        # SD controller). Placed after the uploads: like every other second
+        # invocation, it may prune the build dirs it does not need.
+        env:
+          MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
+          MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
+          PLATFORMIO_BUILD_FLAGS: -DMAIX_WITH_SD
+        run: pio run -e maix_rgss_boot
+
   maix-smoke:
     # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
     # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
@@ -1597,12 +1609,21 @@ jobs:
         run: |
           elf="$(find firmware -name firmware.elf | head -n 1)"
           test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
-          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash "$elf")"
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-rgss.log" scripts/maix_renode_boot.bash "$elf")"
           echo "$out"
           echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
           echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
+
+      - name: Check red framebuffer
+        # The boot firmware paints solid red through LVGL itself before the
+        # pumps above return (see app/maix/README.md): the capture from that
+        # same run must decode to a red 320x240 screen. Red arrives
+        # byte-swapped (the driver's SWAP_16), hence 00f8, not f800.
+        run: |
+          python3 scripts/maix_lcd_decode.py maix-spi-rgss.log maix-frame-rgss.ppm \
+            --expect-color 00f8 --min-fraction 0.45 --min-colors 2 --expect-size 320x240
 
       - name: Download P0 firmware
         uses: actions/download-artifact@v8
@@ -1629,7 +1650,7 @@ jobs:
         # is the human-readable record.
         run: |
           python3 scripts/maix_lcd_decode.py maix-spi.log maix-frame.ppm \
-            --min-blue 0.45 --min-colors 3 --expect-size 320x240
+            --expect-color 001f --min-fraction 0.45 --min-colors 3 --expect-size 320x240
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode

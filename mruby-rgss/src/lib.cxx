@@ -176,6 +176,16 @@ extern "C" void rgss_wio_poll(mrb_state* M);
 extern "C" void rgss_psp_poll(mrb_state* M);
 #endif
 
+#if defined(MAIX_BUILD)
+// Defined platform-side (app/wio/src/maix_input.cxx); scans the Amigo touch
+// panel and forwards press/release edges to RGSS::Input. Guarded so the
+// desktop/wasm builds, which do not compile the Maix backend, need no such
+// symbol. Unlike the Wio bridge above, this lives outside libmruby.a
+// entirely (nothing Arduino-touching is compiled at rake time), so there is
+// no mruby-side counterpart file -- just this declaration.
+extern "C" void rgss_maix_poll(mrb_state* M);
+#endif
+
 namespace {
 // RGSS.default_font_path -> the bundled default UI font, or nil when none is
 // installed (it is downloaded, not committed -- see assets/fonts/README.md).
@@ -3555,6 +3565,9 @@ mrb_value input_poll(mrb_state* M, mrb_value self) {
 #endif
 #if defined(PSP_BUILD)
   rgss_psp_poll(M);
+#endif
+#if defined(MAIX_BUILD)
+  rgss_maix_poll(M);
 #endif
   return mrb_nil_value();
 }
