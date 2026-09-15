@@ -10,49 +10,6 @@
 # documented, matching the pre-existing :int16_array convention.
 module LCF
   module Schema
-    # One field/section descriptor -- what used to be a bare Hash literal
-    # (`{name: :foo, type: :int, default: 0}`) throughout this file, now a
-    # concrete, fixed-shape type instead of an opaque, arbitrarily-keyed
-    # container. `keyword_init: true` keeps every one of this file's ~930
-    # call sites looking almost identical to the Hash literal it replaces
-    # (just `FieldSchema.new(...)` instead of `{...}`); real mruby's own
-    # Struct (3rd/mruby/mrbgems/mruby-struct) supports both `keyword_init:`
-    # and `#[]`/`#[]=` with a Symbol key exactly like Hash's own bracket
-    # access (`struct_aref_sym`/`struct_aset`, 3rd/mruby/mrbgems/
-    # mruby-struct/src/struct.c), so every real consumer (lcf.rb/
-    # lcf_file.rb's own `s[:type]`/`elem[:name]`/`schema[:elements] = ...`)
-    # keeps working completely unchanged -- confirmed against the real
-    # source, not assumed. Every real key this file's own entries actually
-    # use, confirmed by parsing this file with RubyVM::AbstractSyntaxTree
-    # and unioning every Hash-literal key set that included `:name` (not
-    # guessed from reading a sample): `name`/`type` (932 entries each),
-    # `default` (688), `elements` (115), `order` (3), `enums` (1) -- six
-    # members total, in roughly descending frequency order below (member
-    # order only matters for POSITIONAL `.new(...)` calls, which this file
-    # never uses with `keyword_init: true`, but keeping it frequency-
-    # ordered costs nothing and reads naturally).
-    #
-    # `enums:`/`order:` values stay ordinary Hash/Array literals (an
-    # int->Symbol lookup table, a fixed field-name ordering) -- genuine
-    # small maps/lists, not fixed-schema records themselves, so they were
-    # never in scope for this same conversion.
-    #
-    # `sym2idx` is a SEVENTH member, never set by any literal entry in this
-    # file (schema.rb itself never assigns it) -- it exists purely because
-    # `LCF::Array1D#sym2idx` (mruby-lcf/mrblib/lcf.rb) memoizes a computed
-    # name->chunk-id lookup table directly onto the schema entry object it
-    # was handed, `@schema[:sym2idx] = @sym2idx`, the exact same "cache
-    # onto the shared, persistent schema entry" trick `elements:` laziness
-    # already relies on (see the `lazy` comment below). A plain Hash
-    # tolerates an arbitrary extra key for free; a Struct does not (real,
-    # confirmed behavior: `Struct#[]=` with an unknown member name raises
-    # `NameError: no member 'x' in struct`, not a silent no-op) -- a real
-    # crash this conversion would have introduced were this member left
-    # out, caught by actually grepping every `\w+\[:\w+\]\s*=` bracket-
-    # assignment site across this gem's own source, not just this file's
-    # own literal key vocabulary.
-    FieldSchema = Struct.new(:name, :type, :default, :elements, :order, :enums, :sym2idx, keyword_init: true)
-
     # Wraps a hash-literal block as lazily-built and self-memoizing: unlike
     # DATABASE's own per-entry `elements:` lambdas (LCF.elements_of in
     # lcf.rb caches the resolved Hash back onto the shared, persistent
@@ -71,49 +28,49 @@ module LCF
     end
 
     COMMON_EVENT = {
-      1 => FieldSchema.new(
+      1 => {
         name: :name, type: :string, default: ''
-      ),
-      11 => FieldSchema.new(
+      },
+      11 => {
         name: :start_term, type: :int, default: 5, enums: {
           3 => :auto_start,
           4 => :parallel,
           5 => :called,
         }
-      ),
-      12 => FieldSchema.new(
+      },
+      12 => {
         name: :need_flag, type: :bool, default: false
-      ),
-      13 => FieldSchema.new(
+      },
+      13 => {
         name: :switch_id, type: :int, default: 1
-      ),
-      21 => FieldSchema.new(
+      },
+      21 => {
         name: :event_size, type: :int
-      ),
-      22 => FieldSchema.new(
+      },
+      22 => {
         name: :event, type: :event
-      ),
+      },
     }
 
     BGM = {
-      1 => FieldSchema.new( name: :file, type: :string ),
-      2 => FieldSchema.new( name: :fade_in, type: :int, default: 0 ),
-      3 => FieldSchema.new( name: :volume, type: :int, default: 100 ),
-      4 => FieldSchema.new( name: :pitch, type: :int, default: 100 ),
-      5 => FieldSchema.new( name: :balance, type: :int, default: 50 ),
+      1 => { name: :file, type: :string },
+      2 => { name: :fade_in, type: :int, default: 0 },
+      3 => { name: :volume, type: :int, default: 100 },
+      4 => { name: :pitch, type: :int, default: 100 },
+      5 => { name: :balance, type: :int, default: 50 },
     }
 
     SE = {
-      1 => FieldSchema.new( name: :file, type: :string ),
-      3 => FieldSchema.new( name: :volume, type: :int, default: 100 ),
-      4 => FieldSchema.new( name: :pitch, type: :int, default: 100 ),
-      5 => FieldSchema.new( name: :balance, type: :int, default: 50 ),
+      1 => { name: :file, type: :string },
+      3 => { name: :volume, type: :int, default: 100 },
+      4 => { name: :pitch, type: :int, default: 100 },
+      5 => { name: :balance, type: :int, default: 50 },
     }
 
     # A single "skill learned at level" entry (used by actors and classes).
     LEARNING = {
-      1 => FieldSchema.new( name: :level, type: :int, default: 1 ),
-      2 => FieldSchema.new( name: :skill_id, type: :int, default: 1 ),
+      1 => { name: :level, type: :int, default: 1 },
+      2 => { name: :skill_id, type: :int, default: 1 },
     }
 
     # Battler-animation attachment (使用時アニメ) shared by skills and items.
@@ -121,130 +78,130 @@ module LCF
     # object; this is their union. The weapon/movement fields (3, 4, 7-9, 12,
     # 13) are from the item page, the basic-CBA field (14) from the skill page.
     BATTLER_ANIMATION = {
-      3 => FieldSchema.new( name: :weapon_cba, type: :int, default: 0 ),        # 武器CBAの選択 (2003)
-      4 => FieldSchema.new( name: :weapon, type: :int, default: 0 ),            # 武器 (2003)
-      5 => FieldSchema.new( name: :movement, type: :int, default: 0 ),          # 移動の選択
-      6 => FieldSchema.new( name: :after_image, type: :bool, default: false ),  # 残像の選択
-      7 => FieldSchema.new( name: :attack_times, type: :int, default: 0 ),      # 攻撃の回数 (2003)
-      8 => FieldSchema.new( name: :ranged_weapon, type: :bool, default: false ),# 遠距離武器/使う (2003)
-      9 => FieldSchema.new( name: :flying_animation, type: :int, default: 0 ),  # 飛行中のアニメの選択 (2003)
-      12 => FieldSchema.new( name: :speed, type: :int, default: 0 ),            # 速度 (2003)
-      13 => FieldSchema.new( name: :extension, type: :int, default: 1 ),        # 拡張 (2003)
-      14 => FieldSchema.new( name: :battle_animation_id, type: :int, default: 3 ), # 基本CBAの選択
+      3 => { name: :weapon_cba, type: :int, default: 0 },        # 武器CBAの選択 (2003)
+      4 => { name: :weapon, type: :int, default: 0 },            # 武器 (2003)
+      5 => { name: :movement, type: :int, default: 0 },          # 移動の選択
+      6 => { name: :after_image, type: :bool, default: false },  # 残像の選択
+      7 => { name: :attack_times, type: :int, default: 0 },      # 攻撃の回数 (2003)
+      8 => { name: :ranged_weapon, type: :bool, default: false },# 遠距離武器/使う (2003)
+      9 => { name: :flying_animation, type: :int, default: 0 },  # 飛行中のアニメの選択 (2003)
+      12 => { name: :speed, type: :int, default: 0 },            # 速度 (2003)
+      13 => { name: :extension, type: :int, default: 1 },        # 拡張 (2003)
+      14 => { name: :battle_animation_id, type: :int, default: 3 }, # 基本CBAの選択
     }
 
-    DATABASE = FieldSchema.new(
+    DATABASE = {
       name: :DataBase, type: :Array1D,
       elements: {
-        11 => FieldSchema.new(
+        11 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E4%B8%BB%E4%BA%BA%E5%85%AC
           name: :player, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :title, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :charset_name, type: :string, default: '' ),
-            4 => FieldSchema.new( name: :charset_index, type: :int, default: 0 ),
-            5 => FieldSchema.new( name: :semi_transparent, type: :bool, default: false ),
-            7 => FieldSchema.new( name: :initial_level, type: :int, default: 1 ),
-            8 => FieldSchema.new( name: :max_level, type: :int, default: -> { LCF.level_max } ),
-            9 => FieldSchema.new( name: :has_critical_rate, type: :bool, default: true ),
-            10 => FieldSchema.new( name: :critical_rate, type: :int, default: 30 ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :title, type: :string, default: '' },
+            3 => { name: :charset_name, type: :string, default: '' },
+            4 => { name: :charset_index, type: :int, default: 0 },
+            5 => { name: :semi_transparent, type: :bool, default: false },
+            7 => { name: :initial_level, type: :int, default: 1 },
+            8 => { name: :max_level, type: :int, default: -> { LCF.level_max } },
+            9 => { name: :has_critical_rate, type: :bool, default: true },
+            10 => { name: :critical_rate, type: :int, default: 30 },
 
-            15 => FieldSchema.new( name: :faceset_name, type: :string, default: '' ),
-            16 => FieldSchema.new( name: :faceset_index, type: :int, default: 0 ),
+            15 => { name: :faceset_name, type: :string, default: '' },
+            16 => { name: :faceset_index, type: :int, default: 0 },
 
-            21 => FieldSchema.new( name: :double_hand, type: :bool, default: false ),       # 二刀流
-            22 => FieldSchema.new( name: :equipment_fixed, type: :bool, default: false ),   # 装備固定
-            23 => FieldSchema.new( name: :force_ai, type: :bool, default: false ),          # 強制AI
-            24 => FieldSchema.new( name: :strong_defence, type: :bool, default: false ),    # 強力防御
+            21 => { name: :double_hand, type: :bool, default: false },       # 二刀流
+            22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
+            23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
+            24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
 
             # `order:` names only the first six raw shorts -- a level-1-only
             # view real code never actually reads for a multi-level curve
             # (see Game::Actor#base_stats's own comment): the full raw array
             # is stat-major (six max_level-sized blocks, one per stat here),
             # confirmed against a genuine RPG_RT.exe, not row-major.
-            31 => FieldSchema.new( name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] ),
+            31 => { name: :status, type: :int16_array, order: [:max_hp, :max_mp, :atk, :def, :int, :agi] },
 
-            41 => FieldSchema.new( name: :exp_basic, type: :int, default: -> { LCF.exp_default } ),
-            42 => FieldSchema.new( name: :exp_increase, type: :int, default: -> { LCF.exp_default } ),
-            43 => FieldSchema.new( name: :exp_correction, type: :int, default: -> { LCF.exp_default } ),
+            41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
+            42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
+            43 => { name: :exp_correction, type: :int, default: -> { LCF.exp_default } },
 
-            51 => FieldSchema.new( name: :initial_equipment, type: :int16_array, order: [:weapon, :shield, :armor, :helmet, :accessory] ),
+            51 => { name: :initial_equipment, type: :int16_array, order: [:weapon, :shield, :armor, :helmet, :accessory] },
 
-            56 => FieldSchema.new( name: :unarmed_animation, type: :int, default: 0 ),      # 素手戦闘アニメID
-            57 => FieldSchema.new( name: :class_id, type: :int, default: 0 ),               # 職業ID (2003)
-            59 => FieldSchema.new( name: :battle_x, type: :int, default: 0 ),               # 手動配置X (2003)
-            60 => FieldSchema.new( name: :battle_y, type: :int, default: 0 ),               # 手動配置Y (2003)
-            62 => FieldSchema.new( name: :battler_animation, type: :int, default: 0 ),      # id into chunk 32's battleranimations (2003)
-            63 => FieldSchema.new( name: :skills, type: :Array2D, elements: LEARNING ),     # 習得する特殊技能
-            66 => FieldSchema.new( name: :custom_battle_command, type: :bool, default: false ), # 独自戦闘コマンド有効 (2000)
-            67 => FieldSchema.new( name: :custom_battle_command_name, type: :string ),      # 独自戦闘コマンド名称 (2000)
+            56 => { name: :unarmed_animation, type: :int, default: 0 },      # 素手戦闘アニメID
+            57 => { name: :class_id, type: :int, default: 0 },               # 職業ID (2003)
+            59 => { name: :battle_x, type: :int, default: 0 },               # 手動配置X (2003)
+            60 => { name: :battle_y, type: :int, default: 0 },               # 手動配置Y (2003)
+            62 => { name: :battler_animation, type: :int, default: 0 },      # id into chunk 32's battleranimations (2003)
+            63 => { name: :skills, type: :Array2D, elements: LEARNING },     # 習得する特殊技能
+            66 => { name: :custom_battle_command, type: :bool, default: false }, # 独自戦闘コマンド有効 (2000)
+            67 => { name: :custom_battle_command_name, type: :string },      # 独自戦闘コマンド名称 (2000)
 
-            71 => FieldSchema.new( name: :state_ranks_size, type: :int, default: 0 ),       # 状態有効度データ数
-            72 => FieldSchema.new( name: :state_ranks, type: :int8_array ),                 # 状態有効度 (byte[])
-            73 => FieldSchema.new( name: :attribute_ranks_size, type: :int, default: 0 ),   # 属性有効度データ数
-            74 => FieldSchema.new( name: :attribute_ranks, type: :int8_array ),             # 属性有効度 (byte[])
+            71 => { name: :state_ranks_size, type: :int, default: 0 },       # 状態有効度データ数
+            72 => { name: :state_ranks, type: :int8_array },                 # 状態有効度 (byte[])
+            73 => { name: :attribute_ranks_size, type: :int, default: 0 },   # 属性有効度データ数
+            74 => { name: :attribute_ranks, type: :int8_array },             # 属性有効度 (byte[])
 
-            80 => FieldSchema.new( name: :battle_commands, type: :int32_array ),            # 戦闘コマンド (int[7], 2003)
+            80 => { name: :battle_commands, type: :int32_array },            # 戦闘コマンド (int[7], 2003)
           } }
-        ),
-        12 => FieldSchema.new(
+        },
+        12 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%89%B9%E6%AE%8A%E6%8A%80%E8%83%BD
           name: :skill, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :description, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :using_message1, type: :string, default: '' ),
-            4 => FieldSchema.new( name: :using_message2, type: :string, default: '' ),
-            7 => FieldSchema.new( name: :failure_message, type: :int, default: 0 ),
-            8 => FieldSchema.new( name: :type, type: :int, default: 0 ),
-            9 => FieldSchema.new( name: :sp_type, type: :int, default: 0 ),
-            10 => FieldSchema.new( name: :sp_percent, type: :int, default: 1 ),
-            11 => FieldSchema.new( name: :sp_cost, type: :int, default: 0 ),
-            12 => FieldSchema.new( name: :scope, type: :int, default: 0 ),
-            13 => FieldSchema.new( name: :switch_id, type: :int, default: 1 ),              # ONにするスイッチ (種別: スイッチ)
-            14 => FieldSchema.new( name: :animation_id, type: :int, default: 1 ),
-            16 => FieldSchema.new( name: :sound_effect, type: :Array1D, elements: SE ),     # 効果音 (種別: テレポート/エスケープ/スイッチ)
-            18 => FieldSchema.new( name: :occasion_field, type: :bool, default: true ),     # 使用可能な場面/フィールド
-            19 => FieldSchema.new( name: :occasion_battle, type: :bool, default: false ),   # 使用可能な場面/バトル
-            20 => FieldSchema.new( name: :reverse_state_effect, type: :bool, default: false ),
-            21 => FieldSchema.new( name: :physical_rate, type: :int, default: 0 ),
-            22 => FieldSchema.new( name: :magical_rate, type: :int, default: 3 ),
-            23 => FieldSchema.new( name: :variance, type: :int, default: 4 ),
-            24 => FieldSchema.new( name: :power, type: :int, default: 0 ),
-            25 => FieldSchema.new( name: :hit, type: :int, default: 100 ),
-            31 => FieldSchema.new( name: :affect_hp, type: :bool, default: false ),
-            32 => FieldSchema.new( name: :affect_sp, type: :bool, default: false ),
-            33 => FieldSchema.new( name: :affect_attack, type: :bool, default: false ),
-            34 => FieldSchema.new( name: :affect_defense, type: :bool, default: false ),
-            35 => FieldSchema.new( name: :affect_spirit, type: :bool, default: false ),
-            36 => FieldSchema.new( name: :affect_agility, type: :bool, default: false ),
-            37 => FieldSchema.new( name: :absorb_damage, type: :bool, default: false ),
-            38 => FieldSchema.new( name: :ignore_defense, type: :bool, default: false ),
-            41 => FieldSchema.new( name: :state_effects_size, type: :int, default: 0 ),
-            42 => FieldSchema.new( name: :state_effects, type: :int8_array ),              # bool[]
-            43 => FieldSchema.new( name: :attribute_effects_size, type: :int, default: 0 ),
-            44 => FieldSchema.new( name: :attribute_effects, type: :int8_array ),          # bool[]
-            45 => FieldSchema.new( name: :affect_attr_defence, type: :bool, default: false ),
-            49 => FieldSchema.new( name: :battler_animation_data_size, type: :int, default: 0 ),
-            50 => FieldSchema.new( name: :battler_animation_data, type: :Array2D, elements: BATTLER_ANIMATION ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :description, type: :string, default: '' },
+            3 => { name: :using_message1, type: :string, default: '' },
+            4 => { name: :using_message2, type: :string, default: '' },
+            7 => { name: :failure_message, type: :int, default: 0 },
+            8 => { name: :type, type: :int, default: 0 },
+            9 => { name: :sp_type, type: :int, default: 0 },
+            10 => { name: :sp_percent, type: :int, default: 1 },
+            11 => { name: :sp_cost, type: :int, default: 0 },
+            12 => { name: :scope, type: :int, default: 0 },
+            13 => { name: :switch_id, type: :int, default: 1 },              # ONにするスイッチ (種別: スイッチ)
+            14 => { name: :animation_id, type: :int, default: 1 },
+            16 => { name: :sound_effect, type: :Array1D, elements: SE },     # 効果音 (種別: テレポート/エスケープ/スイッチ)
+            18 => { name: :occasion_field, type: :bool, default: true },     # 使用可能な場面/フィールド
+            19 => { name: :occasion_battle, type: :bool, default: false },   # 使用可能な場面/バトル
+            20 => { name: :reverse_state_effect, type: :bool, default: false },
+            21 => { name: :physical_rate, type: :int, default: 0 },
+            22 => { name: :magical_rate, type: :int, default: 3 },
+            23 => { name: :variance, type: :int, default: 4 },
+            24 => { name: :power, type: :int, default: 0 },
+            25 => { name: :hit, type: :int, default: 100 },
+            31 => { name: :affect_hp, type: :bool, default: false },
+            32 => { name: :affect_sp, type: :bool, default: false },
+            33 => { name: :affect_attack, type: :bool, default: false },
+            34 => { name: :affect_defense, type: :bool, default: false },
+            35 => { name: :affect_spirit, type: :bool, default: false },
+            36 => { name: :affect_agility, type: :bool, default: false },
+            37 => { name: :absorb_damage, type: :bool, default: false },
+            38 => { name: :ignore_defense, type: :bool, default: false },
+            41 => { name: :state_effects_size, type: :int, default: 0 },
+            42 => { name: :state_effects, type: :int8_array },              # bool[]
+            43 => { name: :attribute_effects_size, type: :int, default: 0 },
+            44 => { name: :attribute_effects, type: :int8_array },          # bool[]
+            45 => { name: :affect_attr_defence, type: :bool, default: false },
+            49 => { name: :battler_animation_data_size, type: :int, default: 0 },
+            50 => { name: :battler_animation_data, type: :Array2D, elements: BATTLER_ANIMATION },
           } }
-        ),
-        13 => FieldSchema.new(
+        },
+        13 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%A2%E3%82%A4%E3%83%86%E3%83%A0
           name: :item, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :description, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :type, type: :int, default: 0 ),
-            5 => FieldSchema.new( name: :price, type: :int, default: 0 ),
-            6 => FieldSchema.new( name: :uses, type: :int, default: 1 ),
-            11 => FieldSchema.new( name: :atk_points1, type: :int, default: 0 ),
-            12 => FieldSchema.new( name: :def_points1, type: :int, default: 0 ),
-            13 => FieldSchema.new( name: :spi_points1, type: :int, default: 0 ),
-            14 => FieldSchema.new( name: :agi_points1, type: :int, default: 0 ),
-            15 => FieldSchema.new( name: :two_handed, type: :int, default: 0 ),
-            16 => FieldSchema.new( name: :sp_cost, type: :int, default: 0 ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :description, type: :string, default: '' },
+            3 => { name: :type, type: :int, default: 0 },
+            5 => { name: :price, type: :int, default: 0 },
+            6 => { name: :uses, type: :int, default: 1 },
+            11 => { name: :atk_points1, type: :int, default: 0 },
+            12 => { name: :def_points1, type: :int, default: 0 },
+            13 => { name: :spi_points1, type: :int, default: 0 },
+            14 => { name: :agi_points1, type: :int, default: 0 },
+            15 => { name: :two_handed, type: :int, default: 0 },
+            16 => { name: :sp_cost, type: :int, default: 0 },
             # The analysis notes list 0 as the omitted-value default (matching
             # their blanket assumption for most `ber` fields), but real
             # Nepheshel data contradicts it: 76 of its 104 weapons -- the
@@ -256,585 +213,585 @@ module LCF
             # baseline hit rate, already used as the unarmed/no-weapon
             # fallback (Actor#attack_hit_rate) and the default enemy rate --
             # is what an unedited weapon actually carries.
-            17 => FieldSchema.new( name: :hit, type: :int, default: 90 ),
-            18 => FieldSchema.new( name: :critical_hit, type: :int, default: 0 ),
-            20 => FieldSchema.new( name: :animation_id, type: :int, default: 1 ),
-            21 => FieldSchema.new( name: :preemptive, type: :bool, default: false ),
-            22 => FieldSchema.new( name: :dual_attack, type: :bool, default: false ),
-            23 => FieldSchema.new( name: :attack_all, type: :bool, default: false ),
-            24 => FieldSchema.new( name: :ignore_evasion, type: :bool, default: false ),
-            25 => FieldSchema.new( name: :prevent_critical, type: :bool, default: false ),  # 必殺(痛恨の一撃)防止 (盾/鎧/兜/装飾品)
-            26 => FieldSchema.new( name: :raise_evasion, type: :bool, default: false ),     # 物理攻撃の回避率アップ
-            27 => FieldSchema.new( name: :half_sp_cost, type: :bool, default: false ),      # MP消費量半分
-            28 => FieldSchema.new( name: :no_terrain_damage, type: :bool, default: false ), # 地形ダメージ無効
-            29 => FieldSchema.new( name: :cursed, type: :bool, default: false ),
-            31 => FieldSchema.new( name: :scope, type: :int, default: 0 ),
-            32 => FieldSchema.new( name: :recover_hp_rate, type: :int, default: 0 ),
-            33 => FieldSchema.new( name: :recover_hp, type: :int, default: 0 ),
-            34 => FieldSchema.new( name: :recover_sp_rate, type: :int, default: 0 ),
-            35 => FieldSchema.new( name: :recover_sp, type: :int, default: 0 ),
-            37 => FieldSchema.new( name: :occasion_field1, type: :bool, default: false ),
-            38 => FieldSchema.new( name: :ko_only, type: :bool, default: false ),
-            41 => FieldSchema.new( name: :max_hp_points, type: :int, default: 0 ),
-            42 => FieldSchema.new( name: :max_sp_points, type: :int, default: 0 ),
-            43 => FieldSchema.new( name: :atk_points2, type: :int, default: 0 ),
-            44 => FieldSchema.new( name: :def_points2, type: :int, default: 0 ),
-            45 => FieldSchema.new( name: :spi_points2, type: :int, default: 0 ),
-            46 => FieldSchema.new( name: :agi_points2, type: :int, default: 0 ),
-            51 => FieldSchema.new( name: :using_message, type: :int, default: 0 ),
-            53 => FieldSchema.new( name: :skill_id, type: :int, default: 1 ),
-            55 => FieldSchema.new( name: :switch_id, type: :int, default: 1 ),
-            57 => FieldSchema.new( name: :occasion_field2, type: :bool, default: true ),
-            58 => FieldSchema.new( name: :occasion_battle, type: :bool, default: false ),
-            61 => FieldSchema.new( name: :actor_set_size, type: :int, default: 0 ),
-            62 => FieldSchema.new( name: :actor_set, type: :int8_array ),                  # bool[]
-            63 => FieldSchema.new( name: :state_set_size, type: :int, default: 0 ),
-            64 => FieldSchema.new( name: :state_set, type: :int8_array ),                  # bool[]
-            65 => FieldSchema.new( name: :attribute_set_size, type: :int, default: 0 ),
-            66 => FieldSchema.new( name: :attribute_set, type: :int8_array ),              # bool[]
-            67 => FieldSchema.new( name: :state_chance, type: :int, default: 0 ),
-            68 => FieldSchema.new( name: :reverse_state_effect, type: :bool, default: false ),
-            69 => FieldSchema.new( name: :animation_data_size, type: :int, default: 0 ),
-            70 => FieldSchema.new( name: :animation_data, type: :Array2D, elements: BATTLER_ANIMATION ),
-            71 => FieldSchema.new( name: :use_skill, type: :bool, default: false ),
-            72 => FieldSchema.new( name: :class_set_size, type: :int, default: 0 ),
-            73 => FieldSchema.new( name: :class_set, type: :int8_array ),                  # bool[]
+            17 => { name: :hit, type: :int, default: 90 },
+            18 => { name: :critical_hit, type: :int, default: 0 },
+            20 => { name: :animation_id, type: :int, default: 1 },
+            21 => { name: :preemptive, type: :bool, default: false },
+            22 => { name: :dual_attack, type: :bool, default: false },
+            23 => { name: :attack_all, type: :bool, default: false },
+            24 => { name: :ignore_evasion, type: :bool, default: false },
+            25 => { name: :prevent_critical, type: :bool, default: false },  # 必殺(痛恨の一撃)防止 (盾/鎧/兜/装飾品)
+            26 => { name: :raise_evasion, type: :bool, default: false },     # 物理攻撃の回避率アップ
+            27 => { name: :half_sp_cost, type: :bool, default: false },      # MP消費量半分
+            28 => { name: :no_terrain_damage, type: :bool, default: false }, # 地形ダメージ無効
+            29 => { name: :cursed, type: :bool, default: false },
+            31 => { name: :scope, type: :int, default: 0 },
+            32 => { name: :recover_hp_rate, type: :int, default: 0 },
+            33 => { name: :recover_hp, type: :int, default: 0 },
+            34 => { name: :recover_sp_rate, type: :int, default: 0 },
+            35 => { name: :recover_sp, type: :int, default: 0 },
+            37 => { name: :occasion_field1, type: :bool, default: false },
+            38 => { name: :ko_only, type: :bool, default: false },
+            41 => { name: :max_hp_points, type: :int, default: 0 },
+            42 => { name: :max_sp_points, type: :int, default: 0 },
+            43 => { name: :atk_points2, type: :int, default: 0 },
+            44 => { name: :def_points2, type: :int, default: 0 },
+            45 => { name: :spi_points2, type: :int, default: 0 },
+            46 => { name: :agi_points2, type: :int, default: 0 },
+            51 => { name: :using_message, type: :int, default: 0 },
+            53 => { name: :skill_id, type: :int, default: 1 },
+            55 => { name: :switch_id, type: :int, default: 1 },
+            57 => { name: :occasion_field2, type: :bool, default: true },
+            58 => { name: :occasion_battle, type: :bool, default: false },
+            61 => { name: :actor_set_size, type: :int, default: 0 },
+            62 => { name: :actor_set, type: :int8_array },                  # bool[]
+            63 => { name: :state_set_size, type: :int, default: 0 },
+            64 => { name: :state_set, type: :int8_array },                  # bool[]
+            65 => { name: :attribute_set_size, type: :int, default: 0 },
+            66 => { name: :attribute_set, type: :int8_array },              # bool[]
+            67 => { name: :state_chance, type: :int, default: 0 },
+            68 => { name: :reverse_state_effect, type: :bool, default: false },
+            69 => { name: :animation_data_size, type: :int, default: 0 },
+            70 => { name: :animation_data, type: :Array2D, elements: BATTLER_ANIMATION },
+            71 => { name: :use_skill, type: :bool, default: false },
+            72 => { name: :class_set_size, type: :int, default: 0 },
+            73 => { name: :class_set, type: :int8_array },                  # bool[]
           } }
-        ),
-        14 => FieldSchema.new(
+        },
+        14 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%AD%E3%83%A3%E3%83%A9
           name: :enemy, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :battler_name, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :battler_hue, type: :int, default: 0 ),
-            4 => FieldSchema.new( name: :max_hp, type: :int, default: 10 ),
-            5 => FieldSchema.new( name: :max_sp, type: :int, default: 10 ),
-            6 => FieldSchema.new( name: :attack, type: :int, default: 10 ),
-            7 => FieldSchema.new( name: :defense, type: :int, default: 10 ),
-            8 => FieldSchema.new( name: :spirit, type: :int, default: 10 ),
-            9 => FieldSchema.new( name: :agility, type: :int, default: 10 ),
-            10 => FieldSchema.new( name: :transparent, type: :bool, default: false ),
-            11 => FieldSchema.new( name: :exp, type: :int, default: 0 ),
-            12 => FieldSchema.new( name: :gold, type: :int, default: 0 ),
-            13 => FieldSchema.new( name: :drop_id, type: :int, default: 0 ),
-            14 => FieldSchema.new( name: :drop_prob, type: :int, default: 100 ),
-            21 => FieldSchema.new( name: :critical_hit, type: :bool, default: false ),
-            22 => FieldSchema.new( name: :critical_hit_chance, type: :int, default: 30 ),
-            26 => FieldSchema.new( name: :miss, type: :bool, default: false ),
-            28 => FieldSchema.new( name: :levitate, type: :bool, default: false ),
-            31 => FieldSchema.new( name: :state_ranks_size, type: :int, default: 0 ),
-            32 => FieldSchema.new( name: :state_ranks, type: :int8_array ),               # byte[]
-            33 => FieldSchema.new( name: :attribute_ranks_size, type: :int, default: 0 ),
-            34 => FieldSchema.new( name: :attribute_ranks, type: :int8_array ),           # byte[]
-            42 => FieldSchema.new(
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :battler_name, type: :string, default: '' },
+            3 => { name: :battler_hue, type: :int, default: 0 },
+            4 => { name: :max_hp, type: :int, default: 10 },
+            5 => { name: :max_sp, type: :int, default: 10 },
+            6 => { name: :attack, type: :int, default: 10 },
+            7 => { name: :defense, type: :int, default: 10 },
+            8 => { name: :spirit, type: :int, default: 10 },
+            9 => { name: :agility, type: :int, default: 10 },
+            10 => { name: :transparent, type: :bool, default: false },
+            11 => { name: :exp, type: :int, default: 0 },
+            12 => { name: :gold, type: :int, default: 0 },
+            13 => { name: :drop_id, type: :int, default: 0 },
+            14 => { name: :drop_prob, type: :int, default: 100 },
+            21 => { name: :critical_hit, type: :bool, default: false },
+            22 => { name: :critical_hit_chance, type: :int, default: 30 },
+            26 => { name: :miss, type: :bool, default: false },
+            28 => { name: :levitate, type: :bool, default: false },
+            31 => { name: :state_ranks_size, type: :int, default: 0 },
+            32 => { name: :state_ranks, type: :int8_array },               # byte[]
+            33 => { name: :attribute_ranks_size, type: :int, default: 0 },
+            34 => { name: :attribute_ranks, type: :int8_array },           # byte[]
+            42 => {
               name: :actions, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :kind, type: :int, default: 0 ),
-                2 => FieldSchema.new( name: :basic, type: :int, default: 0 ),
-                3 => FieldSchema.new( name: :skill_id, type: :int, default: 1 ),
-                4 => FieldSchema.new( name: :enemy_id, type: :int, default: 1 ),
-                5 => FieldSchema.new( name: :condition_type, type: :int, default: 0 ),
-                6 => FieldSchema.new( name: :condition_param1, type: :int, default: 0 ),
-                7 => FieldSchema.new( name: :condition_param2, type: :int, default: 0 ),
-                8 => FieldSchema.new( name: :switch_id, type: :int, default: 1 ),
-                9 => FieldSchema.new( name: :switch_on, type: :bool, default: false ),
-                10 => FieldSchema.new( name: :switch_on_id, type: :int, default: 1 ),
-                11 => FieldSchema.new( name: :switch_off, type: :bool, default: false ),
-                12 => FieldSchema.new( name: :switch_off_id, type: :int, default: 1 ),
-                13 => FieldSchema.new( name: :rating, type: :int, default: 50 ),
+                1 => { name: :kind, type: :int, default: 0 },
+                2 => { name: :basic, type: :int, default: 0 },
+                3 => { name: :skill_id, type: :int, default: 1 },
+                4 => { name: :enemy_id, type: :int, default: 1 },
+                5 => { name: :condition_type, type: :int, default: 0 },
+                6 => { name: :condition_param1, type: :int, default: 0 },
+                7 => { name: :condition_param2, type: :int, default: 0 },
+                8 => { name: :switch_id, type: :int, default: 1 },
+                9 => { name: :switch_on, type: :bool, default: false },
+                10 => { name: :switch_on_id, type: :int, default: 1 },
+                11 => { name: :switch_off, type: :bool, default: false },
+                12 => { name: :switch_off_id, type: :int, default: 1 },
+                13 => { name: :rating, type: :int, default: 50 },
               }
-            ),
+            },
           } }
-        ),
-        15 => FieldSchema.new(
+        },
+        15 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%95%B5%E3%82%B0%E3%83%AB%E3%83%BC%E3%83%97
           name: :enemy_group, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new(
+            1 => { name: :name, type: :string, default: '' },
+            2 => {
               name: :members, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :enemy_id, type: :int, default: 1 ),
-                2 => FieldSchema.new( name: :x, type: :int, default: 0 ),
-                3 => FieldSchema.new( name: :y, type: :int, default: 0 ),
-                4 => FieldSchema.new( name: :invisible, type: :bool, default: false ),
+                1 => { name: :enemy_id, type: :int, default: 1 },
+                2 => { name: :x, type: :int, default: 0 },
+                3 => { name: :y, type: :int, default: 0 },
+                4 => { name: :invisible, type: :bool, default: false },
               }
-            ),
-            4 => FieldSchema.new( name: :terrain_data_size, type: :int, default: 0 ),
-            5 => FieldSchema.new( name: :terrain_set, type: :int8_array ),                # bool[]
+            },
+            4 => { name: :terrain_data_size, type: :int, default: 0 },
+            5 => { name: :terrain_set, type: :int8_array },                # bool[]
             # ランダムに出現 (Appear Randomly): rolled once at battle start,
             # see Game::Troop#apply_appear_randomly (mruby-rpg2k/mrblib/game.rb).
-            6 => FieldSchema.new( name: :appear_randomly, type: :bool, default: false ),
-            11 => FieldSchema.new(
+            6 => { name: :appear_randomly, type: :bool, default: false },
+            11 => {
               name: :pages, type: :Array2D,
               elements: {
-                2 => FieldSchema.new(
+                2 => {
                   name: :condition, type: :Array1D,
                   elements: {
-                    1 => FieldSchema.new( name: :flags, type: :int, default: 0 ),
-                    2 => FieldSchema.new( name: :switch_a_id, type: :int, default: 1 ),
-                    3 => FieldSchema.new( name: :switch_b_id, type: :int, default: 1 ),
-                    4 => FieldSchema.new( name: :variable_id, type: :int, default: 1 ),
-                    5 => FieldSchema.new( name: :variable_value, type: :int, default: 0 ),
-                    6 => FieldSchema.new( name: :turn_a, type: :int, default: 0 ),
-                    7 => FieldSchema.new( name: :turn_b, type: :int, default: 0 ),
-                    8 => FieldSchema.new( name: :fatigue_min, type: :int, default: 0 ),
-                    9 => FieldSchema.new( name: :fatigue_max, type: :int, default: 100 ),
-                    10 => FieldSchema.new( name: :enemy_id, type: :int, default: 0 ),
-                    11 => FieldSchema.new( name: :enemy_hp_min, type: :int, default: 0 ),
-                    12 => FieldSchema.new( name: :enemy_hp_max, type: :int, default: 100 ),
-                    13 => FieldSchema.new( name: :actor_id, type: :int, default: 1 ),
-                    14 => FieldSchema.new( name: :actor_hp_min, type: :int, default: 0 ),
-                    15 => FieldSchema.new( name: :actor_hp_max, type: :int, default: 100 ),
-                    16 => FieldSchema.new( name: :turn_enemy_id, type: :int, default: 0 ),
-                    17 => FieldSchema.new( name: :turn_enemy_a, type: :int, default: 0 ),
-                    18 => FieldSchema.new( name: :turn_enemy_b, type: :int, default: 0 ),
-                    19 => FieldSchema.new( name: :turn_actor_id, type: :int, default: 1 ),
-                    20 => FieldSchema.new( name: :turn_actor_a, type: :int, default: 0 ),
-                    21 => FieldSchema.new( name: :turn_actor_b, type: :int, default: 0 ),
-                    22 => FieldSchema.new( name: :command_actor_id, type: :int, default: 1 ),
-                    23 => FieldSchema.new( name: :command_id, type: :int, default: 1 ),
+                    1 => { name: :flags, type: :int, default: 0 },
+                    2 => { name: :switch_a_id, type: :int, default: 1 },
+                    3 => { name: :switch_b_id, type: :int, default: 1 },
+                    4 => { name: :variable_id, type: :int, default: 1 },
+                    5 => { name: :variable_value, type: :int, default: 0 },
+                    6 => { name: :turn_a, type: :int, default: 0 },
+                    7 => { name: :turn_b, type: :int, default: 0 },
+                    8 => { name: :fatigue_min, type: :int, default: 0 },
+                    9 => { name: :fatigue_max, type: :int, default: 100 },
+                    10 => { name: :enemy_id, type: :int, default: 0 },
+                    11 => { name: :enemy_hp_min, type: :int, default: 0 },
+                    12 => { name: :enemy_hp_max, type: :int, default: 100 },
+                    13 => { name: :actor_id, type: :int, default: 1 },
+                    14 => { name: :actor_hp_min, type: :int, default: 0 },
+                    15 => { name: :actor_hp_max, type: :int, default: 100 },
+                    16 => { name: :turn_enemy_id, type: :int, default: 0 },
+                    17 => { name: :turn_enemy_a, type: :int, default: 0 },
+                    18 => { name: :turn_enemy_b, type: :int, default: 0 },
+                    19 => { name: :turn_actor_id, type: :int, default: 1 },
+                    20 => { name: :turn_actor_a, type: :int, default: 0 },
+                    21 => { name: :turn_actor_b, type: :int, default: 0 },
+                    22 => { name: :command_actor_id, type: :int, default: 1 },
+                    23 => { name: :command_id, type: :int, default: 1 },
                   }
-                ),
-                11 => FieldSchema.new( name: :event_size, type: :int, default: 4 ),
-                12 => FieldSchema.new( name: :event, type: :event ),
+                },
+                11 => { name: :event_size, type: :int, default: 4 },
+                12 => { name: :event, type: :event },
               }
-            ),
+            },
           } }
-        ),
-        16 => FieldSchema.new(
+        },
+        16 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%9C%B0%E5%BD%A2
           name: :terrain, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :damage, type: :int, default: 0 ),
-            3 => FieldSchema.new( name: :encounter_rate, type: :int, default: 100 ),
-            4 => FieldSchema.new( name: :background_name, type: :string, default: '' ),
-            5 => FieldSchema.new( name: :boat_pass, type: :bool, default: false ),
-            6 => FieldSchema.new( name: :ship_pass, type: :bool, default: false ),
-            7 => FieldSchema.new( name: :airship_pass, type: :bool, default: true ),
-            9 => FieldSchema.new( name: :airship_land, type: :bool, default: true ),
-            11 => FieldSchema.new( name: :bush_depth, type: :int, default: 0 ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :damage, type: :int, default: 0 },
+            3 => { name: :encounter_rate, type: :int, default: 100 },
+            4 => { name: :background_name, type: :string, default: '' },
+            5 => { name: :boat_pass, type: :bool, default: false },
+            6 => { name: :ship_pass, type: :bool, default: false },
+            7 => { name: :airship_pass, type: :bool, default: true },
+            9 => { name: :airship_land, type: :bool, default: true },
+            11 => { name: :bush_depth, type: :int, default: 0 },
             # RPG2003 field 0x0F is a full `Sound` struct (filename + volume +
             # tempo + balance, liblcf's own `generator/csv/fields.csv`:
             # `Terrain,footstep,f,Sound,0x0F,...`), not a bare filename --
             # the same shape every other Sound-typed database field here
             # already uses (see `SE` above).
-            15 => FieldSchema.new( name: :footstep, type: :Array1D, elements: SE ),
-            16 => FieldSchema.new( name: :on_damage_se, type: :bool, default: false ),
-            17 => FieldSchema.new( name: :background_type, type: :int, default: 0 ),
-            21 => FieldSchema.new( name: :background_a_name, type: :string, default: '' ),
-            22 => FieldSchema.new( name: :background_a_scrollh, type: :bool, default: false ),
-            23 => FieldSchema.new( name: :background_a_scrollv, type: :bool, default: false ),
-            24 => FieldSchema.new( name: :background_a_scrollh_speed, type: :int, default: 0 ),
-            25 => FieldSchema.new( name: :background_a_scrollv_speed, type: :int, default: 0 ),
-            30 => FieldSchema.new( name: :background_b, type: :bool, default: false ),
-            31 => FieldSchema.new( name: :background_b_name, type: :string, default: '' ),
-            32 => FieldSchema.new( name: :background_b_scrollh, type: :bool, default: false ),
-            33 => FieldSchema.new( name: :background_b_scrollv, type: :bool, default: false ),
-            34 => FieldSchema.new( name: :background_b_scrollh_speed, type: :int, default: 0 ),
-            35 => FieldSchema.new( name: :background_b_scrollv_speed, type: :int, default: 0 ),
-            40 => FieldSchema.new( name: :special_flags, type: :int, default: 0 ),
-            41 => FieldSchema.new( name: :special_back_party, type: :int, default: 15 ),
-            42 => FieldSchema.new( name: :special_back_enemies, type: :int, default: 10 ),
-            43 => FieldSchema.new( name: :special_lateral_party, type: :int, default: 10 ),
-            44 => FieldSchema.new( name: :special_lateral_enemies, type: :int, default: 5 ),
-            45 => FieldSchema.new( name: :grid_location, type: :int, default: 0 ),
-            46 => FieldSchema.new( name: :grid_top_y, type: :int, default: 0 ),
-            47 => FieldSchema.new( name: :grid_elongation, type: :int, default: 375 ),
-            48 => FieldSchema.new( name: :grid_inclination, type: :int, default: 16400 ),
+            15 => { name: :footstep, type: :Array1D, elements: SE },
+            16 => { name: :on_damage_se, type: :bool, default: false },
+            17 => { name: :background_type, type: :int, default: 0 },
+            21 => { name: :background_a_name, type: :string, default: '' },
+            22 => { name: :background_a_scrollh, type: :bool, default: false },
+            23 => { name: :background_a_scrollv, type: :bool, default: false },
+            24 => { name: :background_a_scrollh_speed, type: :int, default: 0 },
+            25 => { name: :background_a_scrollv_speed, type: :int, default: 0 },
+            30 => { name: :background_b, type: :bool, default: false },
+            31 => { name: :background_b_name, type: :string, default: '' },
+            32 => { name: :background_b_scrollh, type: :bool, default: false },
+            33 => { name: :background_b_scrollv, type: :bool, default: false },
+            34 => { name: :background_b_scrollh_speed, type: :int, default: 0 },
+            35 => { name: :background_b_scrollv_speed, type: :int, default: 0 },
+            40 => { name: :special_flags, type: :int, default: 0 },
+            41 => { name: :special_back_party, type: :int, default: 15 },
+            42 => { name: :special_back_enemies, type: :int, default: 10 },
+            43 => { name: :special_lateral_party, type: :int, default: 10 },
+            44 => { name: :special_lateral_enemies, type: :int, default: 5 },
+            45 => { name: :grid_location, type: :int, default: 0 },
+            46 => { name: :grid_top_y, type: :int, default: 0 },
+            47 => { name: :grid_elongation, type: :int, default: 375 },
+            48 => { name: :grid_inclination, type: :int, default: 16400 },
           } }
-        ),
-        17 => FieldSchema.new(
+        },
+        17 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E5%B1%9E%E6%80%A7
           name: :property, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :type, type: :int, default: 0 ),      # 0: weapon, 1: magic
-            11 => FieldSchema.new( name: :a_rate, type: :int, default: 300 ),
-            12 => FieldSchema.new( name: :b_rate, type: :int, default: 200 ),
-            13 => FieldSchema.new( name: :c_rate, type: :int, default: 100 ),
-            14 => FieldSchema.new( name: :d_rate, type: :int, default: 50 ),
-            15 => FieldSchema.new( name: :e_rate, type: :int, default: 0 ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :type, type: :int, default: 0 },      # 0: weapon, 1: magic
+            11 => { name: :a_rate, type: :int, default: 300 },
+            12 => { name: :b_rate, type: :int, default: 200 },
+            13 => { name: :c_rate, type: :int, default: 100 },
+            14 => { name: :d_rate, type: :int, default: 50 },
+            15 => { name: :e_rate, type: :int, default: 0 },
           } }
-        ),
-        18 => FieldSchema.new(
+        },
+        18 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%8A%B6%E6%85%8B
           name: :situation, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :type, type: :int, default: 0 ),      # 0: battle only, 1: also on map
-            3 => FieldSchema.new( name: :color, type: :int, default: 6 ),
-            4 => FieldSchema.new( name: :priority, type: :int, default: 50 ),
-            5 => FieldSchema.new( name: :restriction, type: :int, default: 0 ),
-            11 => FieldSchema.new( name: :a_rate, type: :int, default: 100 ),
-            12 => FieldSchema.new( name: :b_rate, type: :int, default: 80 ),
-            13 => FieldSchema.new( name: :c_rate, type: :int, default: 60 ),
-            14 => FieldSchema.new( name: :d_rate, type: :int, default: 30 ),
-            15 => FieldSchema.new( name: :e_rate, type: :int, default: 0 ),
-            21 => FieldSchema.new( name: :hold_turn, type: :int, default: 0 ),
-            22 => FieldSchema.new( name: :auto_release_prob, type: :int, default: 0 ),
-            23 => FieldSchema.new( name: :release_by_attack, type: :int, default: 0 ),
-            30 => FieldSchema.new( name: :affect_type, type: :int, default: 2 ),   # 0 halve/1 double/2 no change
-            31 => FieldSchema.new( name: :affect_attack, type: :bool, default: false ),
-            32 => FieldSchema.new( name: :affect_defense, type: :bool, default: false ),
-            33 => FieldSchema.new( name: :affect_spirit, type: :bool, default: false ),
-            34 => FieldSchema.new( name: :affect_agility, type: :bool, default: false ),
-            35 => FieldSchema.new( name: :reduce_hit_ratio, type: :int, default: 100 ),
-            36 => FieldSchema.new( name: :avoid_attacks, type: :bool, default: false ),      # 2003
-            37 => FieldSchema.new( name: :reflect_magic, type: :bool, default: false ),      # 2003
-            38 => FieldSchema.new( name: :cursed, type: :bool, default: false ),             # 2003
-            39 => FieldSchema.new( name: :battler_animation_id, type: :int, default: 6 ),    # 2003
-            41 => FieldSchema.new( name: :restrict_skill, type: :bool, default: false ),
-            42 => FieldSchema.new( name: :restrict_skill_level, type: :int, default: 0 ),
-            43 => FieldSchema.new( name: :restrict_magic, type: :bool, default: false ),
-            44 => FieldSchema.new( name: :restrict_magic_level, type: :int, default: 0 ),
-            45 => FieldSchema.new( name: :hp_change_type, type: :int, default: 0 ),          # 2003
-            46 => FieldSchema.new( name: :sp_change_type, type: :int, default: 0 ),          # 2003
-            51 => FieldSchema.new( name: :message_actor, type: :string, default: '' ),       # 2000
-            52 => FieldSchema.new( name: :message_enemy, type: :string, default: '' ),       # 2000
-            53 => FieldSchema.new( name: :message_already, type: :string, default: '' ),     # 2000
-            54 => FieldSchema.new( name: :message_affected, type: :string, default: '' ),    # 2000
-            55 => FieldSchema.new( name: :message_recovery, type: :string, default: '' ),    # 2000
-            61 => FieldSchema.new( name: :hp_change_max, type: :int, default: 0 ),
-            62 => FieldSchema.new( name: :hp_change_val, type: :int, default: 0 ),
-            63 => FieldSchema.new( name: :hp_change_map_steps, type: :int, default: 0 ),
-            64 => FieldSchema.new( name: :hp_change_map_val, type: :int, default: 0 ),
-            65 => FieldSchema.new( name: :sp_change_max, type: :int, default: 0 ),
-            66 => FieldSchema.new( name: :sp_change_val, type: :int, default: 0 ),
-            67 => FieldSchema.new( name: :sp_change_map_steps, type: :int, default: 0 ),
-            68 => FieldSchema.new( name: :sp_change_map_val, type: :int, default: 0 ),
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :type, type: :int, default: 0 },      # 0: battle only, 1: also on map
+            3 => { name: :color, type: :int, default: 6 },
+            4 => { name: :priority, type: :int, default: 50 },
+            5 => { name: :restriction, type: :int, default: 0 },
+            11 => { name: :a_rate, type: :int, default: 100 },
+            12 => { name: :b_rate, type: :int, default: 80 },
+            13 => { name: :c_rate, type: :int, default: 60 },
+            14 => { name: :d_rate, type: :int, default: 30 },
+            15 => { name: :e_rate, type: :int, default: 0 },
+            21 => { name: :hold_turn, type: :int, default: 0 },
+            22 => { name: :auto_release_prob, type: :int, default: 0 },
+            23 => { name: :release_by_attack, type: :int, default: 0 },
+            30 => { name: :affect_type, type: :int, default: 2 },   # 0 halve/1 double/2 no change
+            31 => { name: :affect_attack, type: :bool, default: false },
+            32 => { name: :affect_defense, type: :bool, default: false },
+            33 => { name: :affect_spirit, type: :bool, default: false },
+            34 => { name: :affect_agility, type: :bool, default: false },
+            35 => { name: :reduce_hit_ratio, type: :int, default: 100 },
+            36 => { name: :avoid_attacks, type: :bool, default: false },      # 2003
+            37 => { name: :reflect_magic, type: :bool, default: false },      # 2003
+            38 => { name: :cursed, type: :bool, default: false },             # 2003
+            39 => { name: :battler_animation_id, type: :int, default: 6 },    # 2003
+            41 => { name: :restrict_skill, type: :bool, default: false },
+            42 => { name: :restrict_skill_level, type: :int, default: 0 },
+            43 => { name: :restrict_magic, type: :bool, default: false },
+            44 => { name: :restrict_magic_level, type: :int, default: 0 },
+            45 => { name: :hp_change_type, type: :int, default: 0 },          # 2003
+            46 => { name: :sp_change_type, type: :int, default: 0 },          # 2003
+            51 => { name: :message_actor, type: :string, default: '' },       # 2000
+            52 => { name: :message_enemy, type: :string, default: '' },       # 2000
+            53 => { name: :message_already, type: :string, default: '' },     # 2000
+            54 => { name: :message_affected, type: :string, default: '' },    # 2000
+            55 => { name: :message_recovery, type: :string, default: '' },    # 2000
+            61 => { name: :hp_change_max, type: :int, default: 0 },
+            62 => { name: :hp_change_val, type: :int, default: 0 },
+            63 => { name: :hp_change_map_steps, type: :int, default: 0 },
+            64 => { name: :hp_change_map_val, type: :int, default: 0 },
+            65 => { name: :sp_change_max, type: :int, default: 0 },
+            66 => { name: :sp_change_val, type: :int, default: 0 },
+            67 => { name: :sp_change_map_steps, type: :int, default: 0 },
+            68 => { name: :sp_change_map_val, type: :int, default: 0 },
           } }
-        ),
-        19 => FieldSchema.new(
+        },
+        19 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1
           name: :battle_anime, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :animation_name, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :large, type: :int, default: 0 ),     # 2003; 0: 480x480, 1: 640x640
-            6 => FieldSchema.new(
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :animation_name, type: :string, default: '' },
+            3 => { name: :large, type: :int, default: 0 },     # 2003; 0: 480x480, 1: 640x640
+            6 => {
               name: :timings, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :frame, type: :int, default: 0 ),
-                2 => FieldSchema.new( name: :se, type: :Array1D, elements: SE ),
-                3 => FieldSchema.new( name: :flash_scope, type: :int, default: 0 ),   # 0 none/1 target/2 screen
-                4 => FieldSchema.new( name: :flash_red, type: :int, default: 31 ),
-                5 => FieldSchema.new( name: :flash_green, type: :int, default: 31 ),
-                6 => FieldSchema.new( name: :flash_blue, type: :int, default: 31 ),
-                7 => FieldSchema.new( name: :flash_power, type: :int, default: 0 ),
-                8 => FieldSchema.new( name: :screen_shaking, type: :int, default: 0 ), # 2003
+                1 => { name: :frame, type: :int, default: 0 },
+                2 => { name: :se, type: :Array1D, elements: SE },
+                3 => { name: :flash_scope, type: :int, default: 0 },   # 0 none/1 target/2 screen
+                4 => { name: :flash_red, type: :int, default: 31 },
+                5 => { name: :flash_green, type: :int, default: 31 },
+                6 => { name: :flash_blue, type: :int, default: 31 },
+                7 => { name: :flash_power, type: :int, default: 0 },
+                8 => { name: :screen_shaking, type: :int, default: 0 }, # 2003
               }
-            ),
-            9 => FieldSchema.new( name: :scope, type: :int, default: 0 ),     # 0: single, 1: all
-            10 => FieldSchema.new( name: :position, type: :int, default: 1 ), # 0 head/1 center/2 feet
-            11 => FieldSchema.new( name: :grid, type: :bool, default: true ),
-            12 => FieldSchema.new(
+            },
+            9 => { name: :scope, type: :int, default: 0 },     # 0: single, 1: all
+            10 => { name: :position, type: :int, default: 1 }, # 0 head/1 center/2 feet
+            11 => { name: :grid, type: :bool, default: true },
+            12 => {
               name: :frames, type: :Array2D,
               elements: {
-                1 => FieldSchema.new(
+                1 => {
                   name: :cells, type: :Array2D,
                   elements: {
-                    1 => FieldSchema.new( name: :visible, type: :bool, default: true ),
-                    2 => FieldSchema.new( name: :cell_id, type: :int, default: 0 ),
-                    3 => FieldSchema.new( name: :x, type: :int, default: 0 ),
-                    4 => FieldSchema.new( name: :y, type: :int, default: 0 ),
-                    5 => FieldSchema.new( name: :zoom, type: :int, default: 100 ),
-                    6 => FieldSchema.new( name: :tone_red, type: :int, default: 100 ),
-                    7 => FieldSchema.new( name: :tone_green, type: :int, default: 100 ),
-                    8 => FieldSchema.new( name: :tone_blue, type: :int, default: 100 ),
-                    9 => FieldSchema.new( name: :tone_gray, type: :int, default: 100 ),
-                    10 => FieldSchema.new( name: :transparency, type: :int, default: 0 ),
+                    1 => { name: :visible, type: :bool, default: true },
+                    2 => { name: :cell_id, type: :int, default: 0 },
+                    3 => { name: :x, type: :int, default: 0 },
+                    4 => { name: :y, type: :int, default: 0 },
+                    5 => { name: :zoom, type: :int, default: 100 },
+                    6 => { name: :tone_red, type: :int, default: 100 },
+                    7 => { name: :tone_green, type: :int, default: 100 },
+                    8 => { name: :tone_blue, type: :int, default: 100 },
+                    9 => { name: :tone_gray, type: :int, default: 100 },
+                    10 => { name: :transparency, type: :int, default: 0 },
                   }
-                ),
+                },
               }
-            ),
+            },
           } }
-        ),
-        20 => FieldSchema.new(
+        },
+        20 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%83%81%E3%83%83%E3%83%97%E3%82%BB%E3%83%83%E3%83%88
           name: :chipset, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :chipset_name, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :terrain_data, type: :int16_array ),        # 地形ID (short[162])
-            4 => FieldSchema.new( name: :passable_data_lower, type: :int8_array ),  # 下層通行 (byte[162])
-            5 => FieldSchema.new( name: :passable_data_upper, type: :int8_array ),  # 上層通行 (byte[144])
-            11 => FieldSchema.new( name: :animation_type, type: :int, default: 0 ), # 水アニメパターン
-            12 => FieldSchema.new( name: :animation_speed, type: :int, default: 0 ), # 水アニメ速度
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :chipset_name, type: :string, default: '' },
+            3 => { name: :terrain_data, type: :int16_array },        # 地形ID (short[162])
+            4 => { name: :passable_data_lower, type: :int8_array },  # 下層通行 (byte[162])
+            5 => { name: :passable_data_upper, type: :int8_array },  # 上層通行 (byte[144])
+            11 => { name: :animation_type, type: :int, default: 0 }, # 水アニメパターン
+            12 => { name: :animation_speed, type: :int, default: 0 }, # 水アニメ速度
           } }
-        ),
-        21 => FieldSchema.new(
+        },
+        21 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E7%94%A8%E8%AA%9E
           name: :term, type: :Array1D,
           elements: -> { {
             # Battle messages
-            1 => FieldSchema.new( name: :encounter, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :special_combat, type: :string, default: '' ),
-            3 => FieldSchema.new( name: :escape_success, type: :string, default: '' ),
-            4 => FieldSchema.new( name: :escape_failure, type: :string, default: '' ),
-            5 => FieldSchema.new( name: :victory, type: :string, default: '' ),
-            6 => FieldSchema.new( name: :defeat, type: :string, default: '' ),
-            7 => FieldSchema.new( name: :exp_received, type: :string, default: '' ),
-            8 => FieldSchema.new( name: :gold_received_a, type: :string, default: '' ),
-            9 => FieldSchema.new( name: :gold_received_b, type: :string, default: '' ),
-            10 => FieldSchema.new( name: :item_received, type: :string, default: '' ),
-            11 => FieldSchema.new( name: :attacking, type: :string, default: '' ),
-            12 => FieldSchema.new( name: :actor_critical, type: :string, default: '' ),
-            13 => FieldSchema.new( name: :enemy_critical, type: :string, default: '' ),
-            14 => FieldSchema.new( name: :defending, type: :string, default: '' ),
-            15 => FieldSchema.new( name: :observing, type: :string, default: '' ),
-            16 => FieldSchema.new( name: :focus, type: :string, default: '' ),
-            17 => FieldSchema.new( name: :autodestruction, type: :string, default: '' ),
-            18 => FieldSchema.new( name: :enemy_escape, type: :string, default: '' ),
-            19 => FieldSchema.new( name: :enemy_transform, type: :string, default: '' ),
-            20 => FieldSchema.new( name: :enemy_damaged, type: :string, default: '' ),
-            21 => FieldSchema.new( name: :enemy_undamaged, type: :string, default: '' ),
-            22 => FieldSchema.new( name: :actor_damaged, type: :string, default: '' ),
-            23 => FieldSchema.new( name: :actor_undamaged, type: :string, default: '' ),
-            24 => FieldSchema.new( name: :skill_failure_a, type: :string, default: '' ),
-            25 => FieldSchema.new( name: :skill_failure_b, type: :string, default: '' ),
-            26 => FieldSchema.new( name: :skill_failure_c, type: :string, default: '' ),
-            27 => FieldSchema.new( name: :dodge, type: :string, default: '' ),
-            28 => FieldSchema.new( name: :use_item, type: :string, default: '' ),
-            29 => FieldSchema.new( name: :hp_recovery, type: :string, default: '' ),
-            30 => FieldSchema.new( name: :parameter_increase, type: :string, default: '' ),
-            31 => FieldSchema.new( name: :parameter_decrease, type: :string, default: '' ),
-            32 => FieldSchema.new( name: :enemy_hp_absorbed, type: :string, default: '' ),
-            33 => FieldSchema.new( name: :actor_hp_absorbed, type: :string, default: '' ),
-            34 => FieldSchema.new( name: :resistance_increase, type: :string, default: '' ),
-            35 => FieldSchema.new( name: :resistance_decrease, type: :string, default: '' ),
-            36 => FieldSchema.new( name: :level_up, type: :string, default: '' ),
-            37 => FieldSchema.new( name: :skill_learned, type: :string, default: '' ),
-            38 => FieldSchema.new( name: :battle_start, type: :string, default: '' ),  # 2003
-            39 => FieldSchema.new( name: :miss, type: :string, default: '' ),          # 2003
+            1 => { name: :encounter, type: :string, default: '' },
+            2 => { name: :special_combat, type: :string, default: '' },
+            3 => { name: :escape_success, type: :string, default: '' },
+            4 => { name: :escape_failure, type: :string, default: '' },
+            5 => { name: :victory, type: :string, default: '' },
+            6 => { name: :defeat, type: :string, default: '' },
+            7 => { name: :exp_received, type: :string, default: '' },
+            8 => { name: :gold_received_a, type: :string, default: '' },
+            9 => { name: :gold_received_b, type: :string, default: '' },
+            10 => { name: :item_received, type: :string, default: '' },
+            11 => { name: :attacking, type: :string, default: '' },
+            12 => { name: :actor_critical, type: :string, default: '' },
+            13 => { name: :enemy_critical, type: :string, default: '' },
+            14 => { name: :defending, type: :string, default: '' },
+            15 => { name: :observing, type: :string, default: '' },
+            16 => { name: :focus, type: :string, default: '' },
+            17 => { name: :autodestruction, type: :string, default: '' },
+            18 => { name: :enemy_escape, type: :string, default: '' },
+            19 => { name: :enemy_transform, type: :string, default: '' },
+            20 => { name: :enemy_damaged, type: :string, default: '' },
+            21 => { name: :enemy_undamaged, type: :string, default: '' },
+            22 => { name: :actor_damaged, type: :string, default: '' },
+            23 => { name: :actor_undamaged, type: :string, default: '' },
+            24 => { name: :skill_failure_a, type: :string, default: '' },
+            25 => { name: :skill_failure_b, type: :string, default: '' },
+            26 => { name: :skill_failure_c, type: :string, default: '' },
+            27 => { name: :dodge, type: :string, default: '' },
+            28 => { name: :use_item, type: :string, default: '' },
+            29 => { name: :hp_recovery, type: :string, default: '' },
+            30 => { name: :parameter_increase, type: :string, default: '' },
+            31 => { name: :parameter_decrease, type: :string, default: '' },
+            32 => { name: :enemy_hp_absorbed, type: :string, default: '' },
+            33 => { name: :actor_hp_absorbed, type: :string, default: '' },
+            34 => { name: :resistance_increase, type: :string, default: '' },
+            35 => { name: :resistance_decrease, type: :string, default: '' },
+            36 => { name: :level_up, type: :string, default: '' },
+            37 => { name: :skill_learned, type: :string, default: '' },
+            38 => { name: :battle_start, type: :string, default: '' },  # 2003
+            39 => { name: :miss, type: :string, default: '' },          # 2003
 
             # Shop A
-            41 => FieldSchema.new( name: :shop_greeting1, type: :string, default: '' ),
-            42 => FieldSchema.new( name: :shop_regreeting1, type: :string, default: '' ),
-            43 => FieldSchema.new( name: :shop_buy1, type: :string, default: '' ),
-            44 => FieldSchema.new( name: :shop_sell1, type: :string, default: '' ),
-            45 => FieldSchema.new( name: :shop_leave1, type: :string, default: '' ),
-            46 => FieldSchema.new( name: :shop_buy_select1, type: :string, default: '' ),
-            47 => FieldSchema.new( name: :shop_buy_number1, type: :string, default: '' ),
-            48 => FieldSchema.new( name: :shop_purchased1, type: :string, default: '' ),
-            49 => FieldSchema.new( name: :shop_sell_select1, type: :string, default: '' ),
-            50 => FieldSchema.new( name: :shop_sell_number1, type: :string, default: '' ),
-            51 => FieldSchema.new( name: :shop_sold1, type: :string, default: '' ),
+            41 => { name: :shop_greeting1, type: :string, default: '' },
+            42 => { name: :shop_regreeting1, type: :string, default: '' },
+            43 => { name: :shop_buy1, type: :string, default: '' },
+            44 => { name: :shop_sell1, type: :string, default: '' },
+            45 => { name: :shop_leave1, type: :string, default: '' },
+            46 => { name: :shop_buy_select1, type: :string, default: '' },
+            47 => { name: :shop_buy_number1, type: :string, default: '' },
+            48 => { name: :shop_purchased1, type: :string, default: '' },
+            49 => { name: :shop_sell_select1, type: :string, default: '' },
+            50 => { name: :shop_sell_number1, type: :string, default: '' },
+            51 => { name: :shop_sold1, type: :string, default: '' },
 
             # Shop B
-            54 => FieldSchema.new( name: :shop_greeting2, type: :string, default: '' ),
-            55 => FieldSchema.new( name: :shop_regreeting2, type: :string, default: '' ),
-            56 => FieldSchema.new( name: :shop_buy2, type: :string, default: '' ),
-            57 => FieldSchema.new( name: :shop_sell2, type: :string, default: '' ),
-            58 => FieldSchema.new( name: :shop_leave2, type: :string, default: '' ),
-            59 => FieldSchema.new( name: :shop_buy_select2, type: :string, default: '' ),
-            60 => FieldSchema.new( name: :shop_buy_number2, type: :string, default: '' ),
-            61 => FieldSchema.new( name: :shop_purchased2, type: :string, default: '' ),
-            62 => FieldSchema.new( name: :shop_sell_select2, type: :string, default: '' ),
-            63 => FieldSchema.new( name: :shop_sell_number2, type: :string, default: '' ),
-            64 => FieldSchema.new( name: :shop_sold2, type: :string, default: '' ),
+            54 => { name: :shop_greeting2, type: :string, default: '' },
+            55 => { name: :shop_regreeting2, type: :string, default: '' },
+            56 => { name: :shop_buy2, type: :string, default: '' },
+            57 => { name: :shop_sell2, type: :string, default: '' },
+            58 => { name: :shop_leave2, type: :string, default: '' },
+            59 => { name: :shop_buy_select2, type: :string, default: '' },
+            60 => { name: :shop_buy_number2, type: :string, default: '' },
+            61 => { name: :shop_purchased2, type: :string, default: '' },
+            62 => { name: :shop_sell_select2, type: :string, default: '' },
+            63 => { name: :shop_sell_number2, type: :string, default: '' },
+            64 => { name: :shop_sold2, type: :string, default: '' },
 
             # Shop C
-            67 => FieldSchema.new( name: :shop_greeting3, type: :string, default: '' ),
-            68 => FieldSchema.new( name: :shop_regreeting3, type: :string, default: '' ),
-            69 => FieldSchema.new( name: :shop_buy3, type: :string, default: '' ),
-            70 => FieldSchema.new( name: :shop_sell3, type: :string, default: '' ),
-            71 => FieldSchema.new( name: :shop_leave3, type: :string, default: '' ),
-            72 => FieldSchema.new( name: :shop_buy_select3, type: :string, default: '' ),
-            73 => FieldSchema.new( name: :shop_buy_number3, type: :string, default: '' ),
-            74 => FieldSchema.new( name: :shop_purchased3, type: :string, default: '' ),
-            75 => FieldSchema.new( name: :shop_sell_select3, type: :string, default: '' ),
-            76 => FieldSchema.new( name: :shop_sell_number3, type: :string, default: '' ),
-            77 => FieldSchema.new( name: :shop_sold3, type: :string, default: '' ),
+            67 => { name: :shop_greeting3, type: :string, default: '' },
+            68 => { name: :shop_regreeting3, type: :string, default: '' },
+            69 => { name: :shop_buy3, type: :string, default: '' },
+            70 => { name: :shop_sell3, type: :string, default: '' },
+            71 => { name: :shop_leave3, type: :string, default: '' },
+            72 => { name: :shop_buy_select3, type: :string, default: '' },
+            73 => { name: :shop_buy_number3, type: :string, default: '' },
+            74 => { name: :shop_purchased3, type: :string, default: '' },
+            75 => { name: :shop_sell_select3, type: :string, default: '' },
+            76 => { name: :shop_sell_number3, type: :string, default: '' },
+            77 => { name: :shop_sold3, type: :string, default: '' },
 
             # Inn A
-            80 => FieldSchema.new( name: :inn_a_greeting_1, type: :string, default: '' ),
-            81 => FieldSchema.new( name: :inn_a_greeting_2, type: :string, default: '' ),
-            82 => FieldSchema.new( name: :inn_a_greeting_3, type: :string, default: '' ),
-            83 => FieldSchema.new( name: :inn_a_accept, type: :string, default: '' ),
-            84 => FieldSchema.new( name: :inn_a_cancel, type: :string, default: '' ),
+            80 => { name: :inn_a_greeting_1, type: :string, default: '' },
+            81 => { name: :inn_a_greeting_2, type: :string, default: '' },
+            82 => { name: :inn_a_greeting_3, type: :string, default: '' },
+            83 => { name: :inn_a_accept, type: :string, default: '' },
+            84 => { name: :inn_a_cancel, type: :string, default: '' },
 
             # Inn B
-            85 => FieldSchema.new( name: :inn_b_greeting_1, type: :string, default: '' ),
-            86 => FieldSchema.new( name: :inn_b_greeting_2, type: :string, default: '' ),
-            87 => FieldSchema.new( name: :inn_b_greeting_3, type: :string, default: '' ),
-            88 => FieldSchema.new( name: :inn_b_accept, type: :string, default: '' ),
-            89 => FieldSchema.new( name: :inn_b_cancel, type: :string, default: '' ),
+            85 => { name: :inn_b_greeting_1, type: :string, default: '' },
+            86 => { name: :inn_b_greeting_2, type: :string, default: '' },
+            87 => { name: :inn_b_greeting_3, type: :string, default: '' },
+            88 => { name: :inn_b_accept, type: :string, default: '' },
+            89 => { name: :inn_b_cancel, type: :string, default: '' },
 
             # Item / currency labels
-            92 => FieldSchema.new( name: :possessed_items, type: :string, default: '' ),
-            93 => FieldSchema.new( name: :equipped_items, type: :string, default: '' ),
-            95 => FieldSchema.new( name: :gold, type: :string, default: '' ),
+            92 => { name: :possessed_items, type: :string, default: '' },
+            93 => { name: :equipped_items, type: :string, default: '' },
+            95 => { name: :gold, type: :string, default: '' },
 
             # Battle command menu
-            101 => FieldSchema.new( name: :battle_fight, type: :string, default: '' ),
-            102 => FieldSchema.new( name: :battle_auto, type: :string, default: '' ),
-            103 => FieldSchema.new( name: :battle_escape, type: :string, default: '' ),
-            104 => FieldSchema.new( name: :battle_attack, type: :string, default: '' ),
-            105 => FieldSchema.new( name: :battle_defend, type: :string, default: '' ),
-            106 => FieldSchema.new( name: :battle_item, type: :string, default: '' ),
-            107 => FieldSchema.new( name: :battle_skill, type: :string, default: '' ),
-            108 => FieldSchema.new( name: :battle_equipment, type: :string, default: '' ),
-            110 => FieldSchema.new( name: :battle_save, type: :string, default: '' ),
-            112 => FieldSchema.new( name: :battle_end_game, type: :string, default: '' ),
+            101 => { name: :battle_fight, type: :string, default: '' },
+            102 => { name: :battle_auto, type: :string, default: '' },
+            103 => { name: :battle_escape, type: :string, default: '' },
+            104 => { name: :battle_attack, type: :string, default: '' },
+            105 => { name: :battle_defend, type: :string, default: '' },
+            106 => { name: :battle_item, type: :string, default: '' },
+            107 => { name: :battle_skill, type: :string, default: '' },
+            108 => { name: :battle_equipment, type: :string, default: '' },
+            110 => { name: :battle_save, type: :string, default: '' },
+            112 => { name: :battle_end_game, type: :string, default: '' },
 
             # Title menu
-            114 => FieldSchema.new( name: :new_game, type: :string, default: '' ),
-            115 => FieldSchema.new( name: :continue, type: :string, default: '' ),
-            117 => FieldSchema.new( name: :shutdown, type: :string, default: '' ),
+            114 => { name: :new_game, type: :string, default: '' },
+            115 => { name: :continue, type: :string, default: '' },
+            117 => { name: :shutdown, type: :string, default: '' },
 
             # Main menu (2003)
-            118 => FieldSchema.new( name: :status, type: :string, default: '' ),
-            119 => FieldSchema.new( name: :row, type: :string, default: '' ),
-            120 => FieldSchema.new( name: :order, type: :string, default: '' ),
-            121 => FieldSchema.new( name: :wait_on, type: :string, default: '' ),
-            122 => FieldSchema.new( name: :wait_off, type: :string, default: '' ),
+            118 => { name: :status, type: :string, default: '' },
+            119 => { name: :row, type: :string, default: '' },
+            120 => { name: :order, type: :string, default: '' },
+            121 => { name: :wait_on, type: :string, default: '' },
+            122 => { name: :wait_off, type: :string, default: '' },
 
             # Status terms
-            123 => FieldSchema.new( name: :level, type: :string, default: '' ),
-            124 => FieldSchema.new( name: :hp, type: :string, default: '' ),
-            125 => FieldSchema.new( name: :mp, type: :string, default: '' ),
-            126 => FieldSchema.new( name: :normal_status, type: :string, default: '' ),
-            127 => FieldSchema.new( name: :exp_short, type: :string, default: '' ),
-            128 => FieldSchema.new( name: :level_short, type: :string, default: '' ),
-            129 => FieldSchema.new( name: :hp_short, type: :string, default: '' ),
-            130 => FieldSchema.new( name: :mp_short, type: :string, default: '' ),
-            131 => FieldSchema.new( name: :mp_cost, type: :string, default: '' ),
-            132 => FieldSchema.new( name: :attack, type: :string, default: '' ),
-            133 => FieldSchema.new( name: :defense, type: :string, default: '' ),
-            134 => FieldSchema.new( name: :mind, type: :string, default: '' ),
-            135 => FieldSchema.new( name: :agility, type: :string, default: '' ),
-            136 => FieldSchema.new( name: :weapon, type: :string, default: '' ),
-            137 => FieldSchema.new( name: :shield, type: :string, default: '' ),
-            138 => FieldSchema.new( name: :armor, type: :string, default: '' ),
-            139 => FieldSchema.new( name: :helmet, type: :string, default: '' ),
-            140 => FieldSchema.new( name: :accessory, type: :string, default: '' ),
+            123 => { name: :level, type: :string, default: '' },
+            124 => { name: :hp, type: :string, default: '' },
+            125 => { name: :mp, type: :string, default: '' },
+            126 => { name: :normal_status, type: :string, default: '' },
+            127 => { name: :exp_short, type: :string, default: '' },
+            128 => { name: :level_short, type: :string, default: '' },
+            129 => { name: :hp_short, type: :string, default: '' },
+            130 => { name: :mp_short, type: :string, default: '' },
+            131 => { name: :mp_cost, type: :string, default: '' },
+            132 => { name: :attack, type: :string, default: '' },
+            133 => { name: :defense, type: :string, default: '' },
+            134 => { name: :mind, type: :string, default: '' },
+            135 => { name: :agility, type: :string, default: '' },
+            136 => { name: :weapon, type: :string, default: '' },
+            137 => { name: :shield, type: :string, default: '' },
+            138 => { name: :armor, type: :string, default: '' },
+            139 => { name: :helmet, type: :string, default: '' },
+            140 => { name: :accessory, type: :string, default: '' },
 
             # Save / load
-            146 => FieldSchema.new( name: :save_file_select, type: :string, default: '' ),
-            147 => FieldSchema.new( name: :load_file_select, type: :string, default: '' ),
-            148 => FieldSchema.new( name: :file, type: :string, default: '' ),
-            151 => FieldSchema.new( name: :end_game_confirm, type: :string, default: '' ),
-            152 => FieldSchema.new( name: :yes, type: :string, default: '' ),
-            153 => FieldSchema.new( name: :no, type: :string, default: '' ),
+            146 => { name: :save_file_select, type: :string, default: '' },
+            147 => { name: :load_file_select, type: :string, default: '' },
+            148 => { name: :file, type: :string, default: '' },
+            151 => { name: :end_game_confirm, type: :string, default: '' },
+            152 => { name: :yes, type: :string, default: '' },
+            153 => { name: :no, type: :string, default: '' },
           } }
-        ),
-        22 => FieldSchema.new(
+        },
+        22 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B7%E3%82%B9%E3%83%86%E3%83%A0
           name: :system, type: :Array1D,
           elements: -> { {
-            10 => FieldSchema.new( name: :maker_version, type: :int ),                    # 使用ツクールバージョン
-            11 => FieldSchema.new( name: :boat_name, type: :string, default: '' ),
-            12 => FieldSchema.new( name: :ship_name, type: :string, default: '' ),
-            13 => FieldSchema.new( name: :airship_name, type: :string, default: '' ),
-            14 => FieldSchema.new( name: :boat_index, type: :int, default: 0 ),
-            15 => FieldSchema.new( name: :ship_index, type: :int, default: 0 ),
-            16 => FieldSchema.new( name: :airship_index, type: :int, default: 0 ),
-            17 => FieldSchema.new( name: :title, type: :string, default: '' ),            # タイトルグラフィック
-            18 => FieldSchema.new( name: :gameover_name, type: :string, default: '' ),
+            10 => { name: :maker_version, type: :int },                    # 使用ツクールバージョン
+            11 => { name: :boat_name, type: :string, default: '' },
+            12 => { name: :ship_name, type: :string, default: '' },
+            13 => { name: :airship_name, type: :string, default: '' },
+            14 => { name: :boat_index, type: :int, default: 0 },
+            15 => { name: :ship_index, type: :int, default: 0 },
+            16 => { name: :airship_index, type: :int, default: 0 },
+            17 => { name: :title, type: :string, default: '' },            # タイトルグラフィック
+            18 => { name: :gameover_name, type: :string, default: '' },
             # System graphic that supplies the window skin (background, frame
             # border and selection cursor).
-            19 => FieldSchema.new( name: :system_graphic, type: :string ),                # システムグラフィック
-            20 => FieldSchema.new( name: :system2_name, type: :string, default: '' ),     # 2003
-            21 => FieldSchema.new( name: :party_size, type: :int, default: 0 ),
-            22 => FieldSchema.new( name: :party, type: :int16_array ),                    # 初期パーティ (short[])
-            26 => FieldSchema.new( name: :menu_commands_size, type: :int, default: 0 ),   # 2003
-            27 => FieldSchema.new( name: :menu_commands, type: :int16_array ),            # 2003
+            19 => { name: :system_graphic, type: :string },                # システムグラフィック
+            20 => { name: :system2_name, type: :string, default: '' },     # 2003
+            21 => { name: :party_size, type: :int, default: 0 },
+            22 => { name: :party, type: :int16_array },                    # 初期パーティ (short[])
+            26 => { name: :menu_commands_size, type: :int, default: 0 },   # 2003
+            27 => { name: :menu_commands, type: :int16_array },            # 2003
 
             # BGM
-            31 => FieldSchema.new( name: :title_music, type: :Array1D, elements: BGM ),
-            32 => FieldSchema.new( name: :battle_music, type: :Array1D, elements: BGM ),
-            33 => FieldSchema.new( name: :battle_end_music, type: :Array1D, elements: BGM ),
-            34 => FieldSchema.new( name: :inn_music, type: :Array1D, elements: BGM ),
-            35 => FieldSchema.new( name: :boat_music, type: :Array1D, elements: BGM ),
-            36 => FieldSchema.new( name: :ship_music, type: :Array1D, elements: BGM ),
-            37 => FieldSchema.new( name: :airship_music, type: :Array1D, elements: BGM ),
-            38 => FieldSchema.new( name: :gameover_music, type: :Array1D, elements: BGM ),
+            31 => { name: :title_music, type: :Array1D, elements: BGM },
+            32 => { name: :battle_music, type: :Array1D, elements: BGM },
+            33 => { name: :battle_end_music, type: :Array1D, elements: BGM },
+            34 => { name: :inn_music, type: :Array1D, elements: BGM },
+            35 => { name: :boat_music, type: :Array1D, elements: BGM },
+            36 => { name: :ship_music, type: :Array1D, elements: BGM },
+            37 => { name: :airship_music, type: :Array1D, elements: BGM },
+            38 => { name: :gameover_music, type: :Array1D, elements: BGM },
 
             # Sound effects
-            41 => FieldSchema.new( name: :cursor_se, type: :Array1D, elements: SE ),
-            42 => FieldSchema.new( name: :decision_se, type: :Array1D, elements: SE ),
-            43 => FieldSchema.new( name: :cancel_se, type: :Array1D, elements: SE ),
-            44 => FieldSchema.new( name: :buzzer_se, type: :Array1D, elements: SE ),
-            45 => FieldSchema.new( name: :battle_se, type: :Array1D, elements: SE ),
-            46 => FieldSchema.new( name: :escape_se, type: :Array1D, elements: SE ),
-            47 => FieldSchema.new( name: :enemy_attack_se, type: :Array1D, elements: SE ),
-            48 => FieldSchema.new( name: :enemy_damaged_se, type: :Array1D, elements: SE ),
-            49 => FieldSchema.new( name: :actor_damaged_se, type: :Array1D, elements: SE ),
-            50 => FieldSchema.new( name: :dodge_se, type: :Array1D, elements: SE ),
-            51 => FieldSchema.new( name: :enemy_death_se, type: :Array1D, elements: SE ),
-            52 => FieldSchema.new( name: :item_se, type: :Array1D, elements: SE ),
+            41 => { name: :cursor_se, type: :Array1D, elements: SE },
+            42 => { name: :decision_se, type: :Array1D, elements: SE },
+            43 => { name: :cancel_se, type: :Array1D, elements: SE },
+            44 => { name: :buzzer_se, type: :Array1D, elements: SE },
+            45 => { name: :battle_se, type: :Array1D, elements: SE },
+            46 => { name: :escape_se, type: :Array1D, elements: SE },
+            47 => { name: :enemy_attack_se, type: :Array1D, elements: SE },
+            48 => { name: :enemy_damaged_se, type: :Array1D, elements: SE },
+            49 => { name: :actor_damaged_se, type: :Array1D, elements: SE },
+            50 => { name: :dodge_se, type: :Array1D, elements: SE },
+            51 => { name: :enemy_death_se, type: :Array1D, elements: SE },
+            52 => { name: :item_se, type: :Array1D, elements: SE },
 
             # Transitions
-            61 => FieldSchema.new( name: :transition_out, type: :int, default: 0 ),
-            62 => FieldSchema.new( name: :transition_in, type: :int, default: 0 ),
-            63 => FieldSchema.new( name: :battle_start_fadeout, type: :int, default: 0 ),
-            64 => FieldSchema.new( name: :battle_start_fadein, type: :int, default: 0 ),
-            65 => FieldSchema.new( name: :battle_end_fadeout, type: :int, default: 0 ),
-            66 => FieldSchema.new( name: :battle_end_fadein, type: :int, default: 0 ),
+            61 => { name: :transition_out, type: :int, default: 0 },
+            62 => { name: :transition_in, type: :int, default: 0 },
+            63 => { name: :battle_start_fadeout, type: :int, default: 0 },
+            64 => { name: :battle_start_fadein, type: :int, default: 0 },
+            65 => { name: :battle_end_fadeout, type: :int, default: 0 },
+            66 => { name: :battle_end_fadein, type: :int, default: 0 },
 
             # System graphic settings
-            71 => FieldSchema.new( name: :message_stretch, type: :int, default: 0 ),
-            72 => FieldSchema.new( name: :font_id, type: :int, default: 0 ),
+            71 => { name: :message_stretch, type: :int, default: 0 },
+            72 => { name: :font_id, type: :int, default: 0 },
 
             # Battle animation editor leftovers
-            81 => FieldSchema.new( name: :selected_condition, type: :int, default: 1 ),
-            82 => FieldSchema.new( name: :selected_hero, type: :int, default: 1 ),
+            81 => { name: :selected_condition, type: :int, default: 1 },
+            82 => { name: :selected_hero, type: :int, default: 1 },
 
             # Battle test
-            84 => FieldSchema.new( name: :battle_test_background, type: :string, default: '' ),
-            85 => FieldSchema.new(
+            84 => { name: :battle_test_background, type: :string, default: '' },
+            85 => {
               name: :battle_test_data, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :actor_id, type: :int, default: 1 ),
-                2 => FieldSchema.new( name: :level, type: :int, default: 1 ),
-                11 => FieldSchema.new( name: :weapon_id, type: :int, default: 0 ),
-                12 => FieldSchema.new( name: :shield_id, type: :int, default: 0 ),
-                13 => FieldSchema.new( name: :armor_id, type: :int, default: 0 ),
-                14 => FieldSchema.new( name: :helmet_id, type: :int, default: 0 ),
-                15 => FieldSchema.new( name: :accessory_id, type: :int, default: 0 ),
+                1 => { name: :actor_id, type: :int, default: 1 },
+                2 => { name: :level, type: :int, default: 1 },
+                11 => { name: :weapon_id, type: :int, default: 0 },
+                12 => { name: :shield_id, type: :int, default: 0 },
+                13 => { name: :armor_id, type: :int, default: 0 },
+                14 => { name: :helmet_id, type: :int, default: 0 },
+                15 => { name: :accessory_id, type: :int, default: 0 },
               }
-            ),
+            },
 
-            91 => FieldSchema.new( name: :saved_times, type: :int, default: 0 ),
+            91 => { name: :saved_times, type: :int, default: 0 },
 
             # Battle test position (2003)
-            94 => FieldSchema.new( name: :battle_test_terrain, type: :int, default: 0 ),
-            95 => FieldSchema.new( name: :battle_test_formation, type: :int, default: 0 ),
-            96 => FieldSchema.new( name: :battle_test_condition, type: :int, default: 0 ),
+            94 => { name: :battle_test_terrain, type: :int, default: 0 },
+            95 => { name: :battle_test_formation, type: :int, default: 0 },
+            96 => { name: :battle_test_condition, type: :int, default: 0 },
 
             # Whether 使用可能キャラ item/equipment restriction is decided per
             # Actor (0, the default) or per Class (1) -- a single global
             # RPG2003 toggle (Game::Party#item_usable_by?'s own source).
-            97 => FieldSchema.new( name: :equipment_setting, type: :int, default: 0 ),
+            97 => { name: :equipment_setting, type: :int, default: 0 },
 
             # Decorative window (2003)
-            99 => FieldSchema.new( name: :show_frame, type: :bool, default: false ),
-            100 => FieldSchema.new( name: :frame_name, type: :string, default: '' ),
-            101 => FieldSchema.new( name: :invert_animations, type: :bool, default: false ),
+            99 => { name: :show_frame, type: :bool, default: false },
+            100 => { name: :frame_name, type: :string, default: '' },
+            101 => { name: :invert_animations, type: :bool, default: false },
 
-            111 => FieldSchema.new( name: :show_title, type: :bool, default: true ),
+            111 => { name: :show_title, type: :bool, default: true },
           } }
-        ),
-        23 => FieldSchema.new(
+        },
+        23 => {
           name: :switch, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
+            1 => { name: :name, type: :string, default: '' },
           } }
-        ),
-        24 => FieldSchema.new(
+        },
+        24 => {
           name: :variable, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
+            1 => { name: :name, type: :string, default: '' },
           } }
-        ),
-         25 => FieldSchema.new(
+        },
+         25 => {
            # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E3%82%B3%E3%83%A2%E3%83%B3%E3%82%A4%E3%83%99%E3%83%B3%E3%83%88
            name: :common_event, type: :Array2D,
            elements: COMMON_EVENT
-         ),
+         },
          # RPG2003-only database sections (chunks 26/27/28 sit between the 2000
          # common-events table and the 2003 battle-commands list; 31 sits between
          # the 2003 Classes table and the Battler-Animation table). They are
@@ -844,10 +801,10 @@ module LCF
          # record table, so this is structurally correct and preserves any real
          # bytes that a non-empty project writes, while making the sections
          # nameable instead of raising on access.
-         26 => FieldSchema.new( name: :section_26, type: :Array2D, elements: {} ),
-         27 => FieldSchema.new( name: :section_27, type: :Array2D, elements: {} ),
-         28 => FieldSchema.new( name: :section_28, type: :Array2D, elements: {} ),
-         29 => FieldSchema.new(
+         26 => { name: :section_26, type: :Array2D, elements: {} },
+         27 => { name: :section_27, type: :Array2D, elements: {} },
+         28 => { name: :section_28, type: :Array2D, elements: {} },
+         29 => {
           # RPG2003's database-wide "Battle Commands" list (0x1D on liblcf's
           # own rpg::Database, not on the VIPRPG 200X wiki this file otherwise
           # transcribes -- confirmed against liblcf's generator/csv/fields.csv
@@ -869,27 +826,27 @@ module LCF
             # confirmed against genuine RPG_RT under wine). Confirmed against
             # liblcf's own generator/csv/fields.csv (0x02) and enums.csv, not
             # guessed.
-            2 => FieldSchema.new( name: :placement, type: :int, default: 0 ),
+            2 => { name: :placement, type: :int, default: 0 },
             # RPG2003's battle-screen presentation choice (BattleType in
             # liblcf): 0 traditional (RPG2000-style status window only), 1
             # alternative (actor sprites), 2 gauge (actor sprites + HP/SP
             # gauges). RPG2000's editor has no such option, so an RPG2000
             # database never sets this and correctly reads back as 0.
-            7 => FieldSchema.new( name: :battle_type, type: :int, default: 0 ),
+            7 => { name: :battle_type, type: :int, default: 0 },
             # RPG2003-only BattleCommands field (chunk 9). A single byte (0 in the
             # mtf-meido-action test bed); the RPG_RT semantic is not yet
             # transcribed from the specification, so it is declared as a plain int
             # to keep the value round-tripping and nameable rather than guessed.
-            9 => FieldSchema.new( name: :section_flags_9, type: :int, default: 0 ),
-            10 => FieldSchema.new(
+            9 => { name: :section_flags_9, type: :int, default: 0 },
+            10 => {
               name: :commands, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :name, type: :string, default: '' ),
+                1 => { name: :name, type: :string, default: '' },
                 # 0 attack, 1 skill, 2 subskill (a single named skill used as
                 # its own shortcut), 3 defense, 4 item, 5 escape, 6 special.
-                2 => FieldSchema.new( name: :type, type: :int, default: 0 ),
+                2 => { name: :type, type: :int, default: 0 },
               }
-            ),
+            },
             # RPG2003's "Death Handler": when set, a wandering-monster
             # encounter's party wipe runs common event `death_event` and/or
             # teleports the party instead of the ordinary Game Over screen --
@@ -902,59 +859,59 @@ module LCF
             # same way every other RPG2003-only flag in this codebase is --
             # this whole gating behavior is NOT independently confirmed
             # against genuine RPG_RT under wine.
-            15 => FieldSchema.new( name: :death_handler, type: :bool, default: false ),
-            16 => FieldSchema.new( name: :death_event, type: :int, default: 1 ),
+            15 => { name: :death_handler, type: :bool, default: false },
+            16 => { name: :death_event, type: :int, default: 1 },
             # RPG2003-only BattleCommands field (chunk 24). A single byte (1 in the
             # mtf-meido-action test bed); the RPG_RT semantic is not yet
             # transcribed from the specification, so it is declared as a plain int
             # to keep the value round-tripping and nameable rather than guessed.
-            24 => FieldSchema.new( name: :section_flags_24, type: :int, default: 0 ),
+            24 => { name: :section_flags_24, type: :int, default: 0 },
             # `death_teleport_face` follows the same 1-based up/right/down/
             # left-with-0-meaning-"keep the current facing" layout as the
             # Teleport event command's own facing parameter (liblcf's
             # `BattleCommands_Facing` enum, generator/csv/enums.csv: 0
             # retain, 1 up, 2 right, 3 down, 4 left) -- see Interpreter
             # #teleport_facing, reused as-is for this field.
-            25 => FieldSchema.new( name: :death_teleport, type: :bool, default: false ),
-            26 => FieldSchema.new( name: :death_teleport_id, type: :int, default: 1 ),
-            27 => FieldSchema.new( name: :death_teleport_x, type: :int, default: 0 ),
-            28 => FieldSchema.new( name: :death_teleport_y, type: :int, default: 0 ),
-            29 => FieldSchema.new( name: :death_teleport_face, type: :int, default: 0 ),
+            25 => { name: :death_teleport, type: :bool, default: false },
+            26 => { name: :death_teleport_id, type: :int, default: 1 },
+            27 => { name: :death_teleport_x, type: :int, default: 0 },
+            28 => { name: :death_teleport_y, type: :int, default: 0 },
+            29 => { name: :death_teleport_face, type: :int, default: 0 },
           } }
-        ),
-        30 => FieldSchema.new(
+        },
+        30 => {
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E8%81%B7%E6%A5%AD
           name: :job, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            21 => FieldSchema.new( name: :double_hand, type: :bool, default: false ),       # 二刀流
-            22 => FieldSchema.new( name: :equipment_fixed, type: :bool, default: false ),   # 装備固定
-            23 => FieldSchema.new( name: :force_ai, type: :bool, default: false ),          # 強制AI
-            24 => FieldSchema.new( name: :strong_defence, type: :bool, default: false ),    # 強力防御
+            1 => { name: :name, type: :string, default: '' },
+            21 => { name: :double_hand, type: :bool, default: false },       # 二刀流
+            22 => { name: :equipment_fixed, type: :bool, default: false },   # 装備固定
+            23 => { name: :force_ai, type: :bool, default: false },          # 強制AI
+            24 => { name: :strong_defence, type: :bool, default: false },    # 強力防御
             # 能力値 -- stat-major: six max_level-sized blocks (max_hp, max_mp,
             # atk, def, int, agi), read the same way as the actor row's own
             # field 31 above (Game::Actor#base_stats/#curve_row), confirmed
             # against a genuine RPG_RT.exe.
-            31 => FieldSchema.new( name: :parameters, type: :int16_array ),
-            41 => FieldSchema.new( name: :exp_basic, type: :int, default: -> { LCF.exp_default } ),
-            42 => FieldSchema.new( name: :exp_increase, type: :int, default: -> { LCF.exp_default } ),
-            43 => FieldSchema.new( name: :exp_correction, type: :int, default: 0 ),
-            62 => FieldSchema.new( name: :battler_animation, type: :int, default: 1 ),      # id into chunk 32's battleranimations
-            63 => FieldSchema.new( name: :skills, type: :Array2D, elements: LEARNING ),
-            71 => FieldSchema.new( name: :state_ranks_size, type: :int, default: 0 ),
-            72 => FieldSchema.new( name: :state_ranks, type: :int8_array ),
-            73 => FieldSchema.new( name: :attribute_ranks_size, type: :int, default: 0 ),
-            74 => FieldSchema.new( name: :attribute_ranks, type: :int8_array ),
-             80 => FieldSchema.new( name: :battle_commands, type: :int32_array ),
+            31 => { name: :parameters, type: :int16_array },
+            41 => { name: :exp_basic, type: :int, default: -> { LCF.exp_default } },
+            42 => { name: :exp_increase, type: :int, default: -> { LCF.exp_default } },
+            43 => { name: :exp_correction, type: :int, default: 0 },
+            62 => { name: :battler_animation, type: :int, default: 1 },      # id into chunk 32's battleranimations
+            63 => { name: :skills, type: :Array2D, elements: LEARNING },
+            71 => { name: :state_ranks_size, type: :int, default: 0 },
+            72 => { name: :state_ranks, type: :int8_array },
+            73 => { name: :attribute_ranks_size, type: :int, default: 0 },
+            74 => { name: :attribute_ranks, type: :int8_array },
+             80 => { name: :battle_commands, type: :int32_array },
            } }
-         ),
+         },
          # RPG2003-only database section (chunk 31) between the 2003 Classes
          # table and the Battler-Animation table. Present-but-empty in the only
          # 2003 test bed (mtf-meido-action); declared as a bare Array2D table --
          # structurally correct and preserves any real bytes a non-empty project
          # writes, matching the 26/27/28 sections above.
-         31 => FieldSchema.new( name: :section_31, type: :Array2D, elements: {} ),
-         32 => FieldSchema.new(
+         31 => { name: :section_31, type: :Array2D, elements: {} },
+         32 => {
           # RPG2003's database-wide "Battler Animation" table (0x20 on
           # liblcf's ChunkDatabase, `rpg::BattlerAnimation`) -- a named set of
           # up to 12 poses an actor's battle sprite can show, one entry per
@@ -975,90 +932,90 @@ module LCF
           # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%87%E3%83%BC%E3%82%BF%E3%83%99%E3%83%BC%E3%82%B9/%E6%88%A6%E9%97%98%E3%82%A2%E3%83%8B%E3%83%A1%EF%BC%92
           name: :battleranimations, type: :Array2D,
           elements: -> { {
-            1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-            2 => FieldSchema.new( name: :speed, type: :int, default: 20 ),
-            10 => FieldSchema.new(
+            1 => { name: :name, type: :string, default: '' },
+            2 => { name: :speed, type: :int, default: 20 },
+            10 => {
               # Id-keyed by Pose (see above), not a densely-packed list -- a
               # given entry may define anywhere from 0 to 12 of the 12 poses.
               name: :poses, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-                2 => FieldSchema.new( name: :battler_name, type: :string, default: '' ),   # 戦闘(武器)グラフィック
-                3 => FieldSchema.new( name: :battler_index, type: :int, default: 0 ),      # グラフィック/位置
+                1 => { name: :name, type: :string, default: '' },
+                2 => { name: :battler_name, type: :string, default: '' },   # 戦闘(武器)グラフィック
+                3 => { name: :battler_index, type: :int, default: 0 },      # グラフィック/位置
                 # 0 character (a normal 4-direction charset sheet), 1 battle
                 # (a CBA-style battle sheet).
-                4 => FieldSchema.new( name: :animation_type, type: :int, default: 0 ),
-                5 => FieldSchema.new( name: :battle_animation_id, type: :int, default: 1 ),
+                4 => { name: :animation_type, type: :int, default: 0 },
+                5 => { name: :battle_animation_id, type: :int, default: 1 },
               }
-            ),
-            11 => FieldSchema.new(
+            },
+            11 => {
               # Per-weapon pose overrides -- out of scope for now, not needed
               # for base pose rendering; left as originally transcribed.
               name: :weapon_data, type: :Array2D,
               elements: {
-                1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-                2 => FieldSchema.new( name: :battler_name, type: :string, default: '' ),   # 戦闘(武器)グラフィック
-                3 => FieldSchema.new( name: :battler_position, type: :int, default: 0 ),   # グラフィック/位置
+                1 => { name: :name, type: :string, default: '' },
+                2 => { name: :battler_name, type: :string, default: '' },   # 戦闘(武器)グラフィック
+                3 => { name: :battler_position, type: :int, default: 0 },   # グラフィック/位置
               }
-            ),
+            },
           } }
-        ),
+        },
       },
-    )
+    }
 
     MAP_TREE = [
-      FieldSchema.new(
+      {
         name: :map_properties, type: :Array2D,
         elements: {
-          1 => FieldSchema.new( name: :name, type: :string ),
-          2 => FieldSchema.new( name: :parent_map_id, type: :int ),
+          1 => { name: :name, type: :string },
+          2 => { name: :parent_map_id, type: :int },
           # Editor-only node depth / management data.
-          3 => FieldSchema.new( name: :indentation, type: :int ),
+          3 => { name: :indentation, type: :int },
           # 0 = root, 1 = normal map, 2 = area.
-          4 => FieldSchema.new( name: :type, type: :int, default: 1 ),
+          4 => { name: :type, type: :int, default: 1 },
           # Editor-only scrollbar positions (RPG Maker's map-editor viewport),
           # stored as signed ints — not booleans.
-          5 => FieldSchema.new( name: :scrollbar_x, type: :int, default: 0 ),
-          6 => FieldSchema.new( name: :scrollbar_y, type: :int, default: 0 ),
-          7 => FieldSchema.new( name: :node_extracted, type: :bool, default: false ),
-          11 => FieldSchema.new( name: :bgm_type, type: :int, default: 0 ),
-          12 => FieldSchema.new( name: :bgm, type: :Array1D, elements: BGM ),
-          21 => FieldSchema.new( name: :backdrop_type, type: :int, default: 0 ),
-          22 => FieldSchema.new( name: :backdrop_file, type: :string ),
-          31 => FieldSchema.new( name: :teleport, type: :int, default: 1 ),
-          32 => FieldSchema.new( name: :escape, type: :int, default: 1 ),
-          33 => FieldSchema.new( name: :save, type: :int, default: 1 ),
-          41 => FieldSchema.new( name: :enemy_groups, type: :Array2D, elements: {1 => FieldSchema.new( name: :enemy_group_id, type: :int, default: 1 )}),
-          44 => FieldSchema.new( name: :encount_steps, type: :int, default: 25 ),
+          5 => { name: :scrollbar_x, type: :int, default: 0 },
+          6 => { name: :scrollbar_y, type: :int, default: 0 },
+          7 => { name: :node_extracted, type: :bool, default: false },
+          11 => { name: :bgm_type, type: :int, default: 0 },
+          12 => { name: :bgm, type: :Array1D, elements: BGM },
+          21 => { name: :backdrop_type, type: :int, default: 0 },
+          22 => { name: :backdrop_file, type: :string },
+          31 => { name: :teleport, type: :int, default: 1 },
+          32 => { name: :escape, type: :int, default: 1 },
+          33 => { name: :save, type: :int, default: 1 },
+          41 => { name: :enemy_groups, type: :Array2D, elements: {1 => { name: :enemy_group_id, type: :int, default: 1 }}},
+          44 => { name: :encount_steps, type: :int, default: 25 },
           # Area bounds, only used by area nodes (type == 2): [X1, Y1, X2 + 1, Y2 + 1].
-          51 => FieldSchema.new( name: :area, type: :int16_array, order: [:left, :top, :right, :bottom] ),
+          51 => { name: :area, type: :int16_array, order: [:left, :top, :right, :bottom] },
         }
-      ),
-      FieldSchema.new(
+      },
+      {
         name: :tree,
         type: :Tree,
-      ),
-      FieldSchema.new(
+      },
+      {
         name: :initial,
         type: :Array1D,
         elements: {
-          1 => FieldSchema.new( name: :initial_map_id, type: :int ),
-          2 => FieldSchema.new( name: :initial_x, type: :int ),
-          3 => FieldSchema.new( name: :initial_y, type: :int ),
+          1 => { name: :initial_map_id, type: :int },
+          2 => { name: :initial_x, type: :int },
+          3 => { name: :initial_y, type: :int },
 
-          11 => FieldSchema.new( name: :boat_map_id, type: :int ),
-          12 => FieldSchema.new( name: :boat_x, type: :int ),
-          13 => FieldSchema.new( name: :boat_y, type: :int ),
+          11 => { name: :boat_map_id, type: :int },
+          12 => { name: :boat_x, type: :int },
+          13 => { name: :boat_y, type: :int },
 
-          21 => FieldSchema.new( name: :ship_map_id, type: :int ),
-          22 => FieldSchema.new( name: :ship_x, type: :int ),
-          23 => FieldSchema.new( name: :ship_y, type: :int ),
+          21 => { name: :ship_map_id, type: :int },
+          22 => { name: :ship_x, type: :int },
+          23 => { name: :ship_y, type: :int },
 
-          31 => FieldSchema.new( name: :airship_map_id, type: :int ),
-          32 => FieldSchema.new( name: :airship_x, type: :int ),
-          33 => FieldSchema.new( name: :airship_y, type: :int ),
+          31 => { name: :airship_map_id, type: :int },
+          32 => { name: :airship_x, type: :int },
+          33 => { name: :airship_y, type: :int },
         },
-      ),
+      },
     ]
 
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%83%9E%E3%83%83%E3%83%97
@@ -1066,23 +1023,23 @@ module LCF
     # Conditions that must hold for an event page to be active.
     MAP_EVENT_PAGE_CONDITION = lazy { {
       # Bit flags selecting which of the conditions below are enabled.
-      1 => FieldSchema.new( name: :flags, type: :int, default: 0 ),
-      2 => FieldSchema.new( name: :switch_a_id, type: :int, default: 1 ),
-      3 => FieldSchema.new( name: :switch_b_id, type: :int, default: 1 ),
-      4 => FieldSchema.new( name: :variable_id, type: :int, default: 1 ),
-      5 => FieldSchema.new( name: :variable_value, type: :int, default: 0 ),
-      6 => FieldSchema.new( name: :item_id, type: :int, default: 1 ),
-      7 => FieldSchema.new( name: :actor_id, type: :int, default: 1 ),
+      1 => { name: :flags, type: :int, default: 0 },
+      2 => { name: :switch_a_id, type: :int, default: 1 },
+      3 => { name: :switch_b_id, type: :int, default: 1 },
+      4 => { name: :variable_id, type: :int, default: 1 },
+      5 => { name: :variable_value, type: :int, default: 0 },
+      6 => { name: :item_id, type: :int, default: 1 },
+      7 => { name: :actor_id, type: :int, default: 1 },
       # Genuine RPG2000 condition (flags bit 0x20): the page is active once
       # Timer1 has counted down to timer_sec seconds or below -- see
       # Game::EventPage::TIMER.
-      8 => FieldSchema.new( name: :timer_sec, type: :int, default: 0 ),
+      8 => { name: :timer_sec, type: :int, default: 0 },
       # RPG2003-only: a second timer condition (flags bit 0x40, gated on an
       # RPG2003 command check ported from a reference implementation, NOT
       # independently confirmed against genuine RPG_RT under wine) and the
       # variable comparison operator, both now read by Game::EventPage -- see its own
       # TIMER2 / compare_operator handling there.
-      9 => FieldSchema.new( name: :timer2_sec, type: :int, default: 0 ),
+      9 => { name: :timer2_sec, type: :int, default: 0 },
       # 0 == 1 >= 2 <= 3 > 4 < 5 != (liblcf's EventPageCondition::Comparison
       # enum). Default 1 (>=), not 0 (==): liblcf's generated
       # eventpagecondition.h declares `int32_t compare_operator = 1;`, and an
@@ -1091,34 +1048,34 @@ module LCF
       # page whose editor dropdown was left at its own default both need the
       # ordinary ">=" reading, not "==", once EventPage actually consults
       # this field.
-      10 => FieldSchema.new( name: :compare_operator, type: :int, default: 1 ),
+      10 => { name: :compare_operator, type: :int, default: 1 },
     } }
 
     MOVE_ROUTE = {
-      11 => FieldSchema.new( name: :command_size, type: :int, default: 0 ),
-      12 => FieldSchema.new( name: :commands, type: :move_commands, default: [] ),
-      21 => FieldSchema.new( name: :repeat, type: :bool, default: true ),
-      22 => FieldSchema.new( name: :skippable, type: :bool, default: false ),
+      11 => { name: :command_size, type: :int, default: 0 },
+      12 => { name: :commands, type: :move_commands, default: [] },
+      21 => { name: :repeat, type: :bool, default: true },
+      22 => { name: :skippable, type: :bool, default: false },
     }
 
     MAP_EVENT_PAGE = lazy { {
-      2 => FieldSchema.new( name: :condition, type: :Array1D, elements: MAP_EVENT_PAGE_CONDITION ),
-      21 => FieldSchema.new( name: :charset_name, type: :string, default: '' ),
-      22 => FieldSchema.new( name: :charset_index, type: :int, default: 0 ),
+      2 => { name: :condition, type: :Array1D, elements: MAP_EVENT_PAGE_CONDITION },
+      21 => { name: :charset_name, type: :string, default: '' },
+      22 => { name: :charset_index, type: :int, default: 0 },
       # 2 = down, 4 = left, 6 = right, 8 = up.
-      23 => FieldSchema.new( name: :direction, type: :int, default: 2 ),
-      24 => FieldSchema.new( name: :pattern, type: :int, default: 1 ),
-      25 => FieldSchema.new( name: :translucent, type: :bool, default: false ),
-      31 => FieldSchema.new( name: :move_type, type: :int, default: 0 ),
-      32 => FieldSchema.new( name: :move_frequency, type: :int, default: 3 ),
+      23 => { name: :direction, type: :int, default: 2 },
+      24 => { name: :pattern, type: :int, default: 1 },
+      25 => { name: :translucent, type: :bool, default: false },
+      31 => { name: :move_type, type: :int, default: 0 },
+      32 => { name: :move_frequency, type: :int, default: 3 },
       # Start condition: 0 = action key, 1 = touch by player, ...
-      33 => FieldSchema.new( name: :trigger, type: :int, default: 0 ),
+      33 => { name: :trigger, type: :int, default: 0 },
       # Layer / priority: 0 = below, 1 = same, 2 = above the player.
-      34 => FieldSchema.new( name: :layer, type: :int, default: 0 ),
-      35 => FieldSchema.new( name: :overlap_forbidden, type: :bool, default: false ),
-      36 => FieldSchema.new( name: :animation_type, type: :int, default: 0 ),
-      37 => FieldSchema.new( name: :move_speed, type: :int, default: 3 ),
-      41 => FieldSchema.new( name: :move_route, type: :Array1D, elements: MOVE_ROUTE ),
+      34 => { name: :layer, type: :int, default: 0 },
+      35 => { name: :overlap_forbidden, type: :bool, default: false },
+      36 => { name: :animation_type, type: :int, default: 0 },
+      37 => { name: :move_speed, type: :int, default: 3 },
+      41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
       # Mirrors field 52's own encoded byte length exactly (confirmed
       # empirically: a genuine file's own field 51 == `LCF.encode_event_
       # commands(page.event_commands).bytesize` for every page checked) --
@@ -1134,15 +1091,15 @@ module LCF
       # fixed it; any future single-parameter splice onto an event command
       # list (per cycles #137-139/#176/#178/#180/#181's own discipline) must
       # do the same.
-      51 => FieldSchema.new( name: :event_command_size, type: :int, default: 0 ),
-      52 => FieldSchema.new( name: :event_commands, type: :event ),
+      51 => { name: :event_command_size, type: :int, default: 0 },
+      52 => { name: :event_commands, type: :event },
     } }
 
     MAP_EVENT = {
-      1 => FieldSchema.new( name: :name, type: :string, default: '' ),
-      2 => FieldSchema.new( name: :x, type: :int, default: 0 ),
-      3 => FieldSchema.new( name: :y, type: :int, default: 0 ),
-      5 => FieldSchema.new( name: :pages, type: :Array2D, elements: MAP_EVENT_PAGE ),
+      1 => { name: :name, type: :string, default: '' },
+      2 => { name: :x, type: :int, default: 0 },
+      3 => { name: :y, type: :int, default: 0 },
+      5 => { name: :pages, type: :Array2D, elements: MAP_EVENT_PAGE },
     }
 
     # Used directly as a `.lmu` file's own root schema (LCF::MapUnit#schema
@@ -1150,22 +1107,22 @@ module LCF
     # outer Hash itself must stay eager (File#initialize reads `schema[:type]`
     # off it directly, never through LCF.elements_of); only the `elements:`
     # value, one map's worth of live fields, is lazy.
-    MAP_UNIT = FieldSchema.new(
+    MAP_UNIT = {
       name: :Map, type: :Array1D,
       elements: -> { {
-        1 => FieldSchema.new( name: :chipset_id, type: :int, default: 1 ),
-        2 => FieldSchema.new( name: :width, type: :int, default: 20 ),
-        3 => FieldSchema.new( name: :height, type: :int, default: 15 ),
+        1 => { name: :chipset_id, type: :int, default: 1 },
+        2 => { name: :width, type: :int, default: 20 },
+        3 => { name: :height, type: :int, default: 15 },
         # 0 = none, 1 = vertical, 2 = horizontal, 3 = both.
-        11 => FieldSchema.new( name: :scroll_type, type: :int, default: 0 ),
-        31 => FieldSchema.new( name: :parallax_flag, type: :bool, default: false ),
-        32 => FieldSchema.new( name: :parallax_name, type: :string, default: '' ),
-        33 => FieldSchema.new( name: :parallax_loop_x, type: :bool, default: false ),
-        34 => FieldSchema.new( name: :parallax_loop_y, type: :bool, default: false ),
-        35 => FieldSchema.new( name: :parallax_autoloop_x, type: :bool, default: false ),
-        36 => FieldSchema.new( name: :parallax_sx, type: :int, default: 0 ),
-        37 => FieldSchema.new( name: :parallax_autoloop_y, type: :bool, default: false ),
-        38 => FieldSchema.new( name: :parallax_sy, type: :int, default: 0 ),
+        11 => { name: :scroll_type, type: :int, default: 0 },
+        31 => { name: :parallax_flag, type: :bool, default: false },
+        32 => { name: :parallax_name, type: :string, default: '' },
+        33 => { name: :parallax_loop_x, type: :bool, default: false },
+        34 => { name: :parallax_loop_y, type: :bool, default: false },
+        35 => { name: :parallax_autoloop_x, type: :bool, default: false },
+        36 => { name: :parallax_sx, type: :int, default: 0 },
+        37 => { name: :parallax_autoloop_y, type: :bool, default: false },
+        38 => { name: :parallax_sy, type: :int, default: 0 },
         # --- RPG2003 random dungeon generator (マップ生成) -------------------
         #
         # Editor-only: the settings the "generate dungeon" tool was last run
@@ -1181,46 +1138,46 @@ module LCF
         # it leaves out are exactly the ones already at their liblcf default
         # (generator_width 4, the six `true` flags), which is what an eliding
         # writer produces and is a good check that these defaults are right.
-        40 => FieldSchema.new( name: :generator_flag, type: :bool, default: false ),
-        41 => FieldSchema.new( name: :generator_mode, type: :int, default: 0 ),
-        42 => FieldSchema.new( name: :top_level, type: :bool, default: false ),
-        48 => FieldSchema.new( name: :generator_tiles, type: :int, default: 0 ),
-        49 => FieldSchema.new( name: :generator_width, type: :int, default: 4 ),
-        50 => FieldSchema.new( name: :generator_height, type: :int, default: 1 ),
-        51 => FieldSchema.new( name: :generator_surround, type: :bool, default: true ),
-        52 => FieldSchema.new( name: :generator_upper_wall, type: :bool, default: true ),
-        53 => FieldSchema.new( name: :generator_floor_b, type: :bool, default: true ),
-        54 => FieldSchema.new( name: :generator_floor_c, type: :bool, default: true ),
-        55 => FieldSchema.new( name: :generator_extra_b, type: :bool, default: true ),
-        56 => FieldSchema.new( name: :generator_extra_c, type: :bool, default: true ),
+        40 => { name: :generator_flag, type: :bool, default: false },
+        41 => { name: :generator_mode, type: :int, default: 0 },
+        42 => { name: :top_level, type: :bool, default: false },
+        48 => { name: :generator_tiles, type: :int, default: 0 },
+        49 => { name: :generator_width, type: :int, default: 4 },
+        50 => { name: :generator_height, type: :int, default: 1 },
+        51 => { name: :generator_surround, type: :bool, default: true },
+        52 => { name: :generator_upper_wall, type: :bool, default: true },
+        53 => { name: :generator_floor_b, type: :bool, default: true },
+        54 => { name: :generator_floor_c, type: :bool, default: true },
+        55 => { name: :generator_extra_b, type: :bool, default: true },
+        56 => { name: :generator_extra_c, type: :bool, default: true },
         # Nine room slots. x/y are liblcf `uint32_t` vectors, read here as
         # signed 32-bit — the values are map coordinates, so the two readings
         # only differ above 2^31, which no map reaches. The tile ids are
         # shorts: reading chunk 62 as int16 yields real RPG2000 tile ids
         # (49 lower-layer, 10000/10001/10006/10007 upper-layer) where an int32
         # reading gives nonsense, which is what pins the width down.
-        60 => FieldSchema.new( name: :generator_x, type: :int32_array ),
-        61 => FieldSchema.new( name: :generator_y, type: :int32_array ),
-        62 => FieldSchema.new( name: :generator_tile_ids, type: :int16_array ),
+        60 => { name: :generator_x, type: :int32_array },
+        61 => { name: :generator_y, type: :int32_array },
+        62 => { name: :generator_tile_ids, type: :int16_array },
         # width * height signed shorts, one tile id per cell.
-        71 => FieldSchema.new( name: :lower_layer, type: :int16_array ),
-        72 => FieldSchema.new( name: :upper_layer, type: :int16_array ),
-        81 => FieldSchema.new( name: :events, type: :Array2D, elements: MAP_EVENT ),
+        71 => { name: :lower_layer, type: :int16_array },
+        72 => { name: :upper_layer, type: :int16_array },
+        81 => { name: :events, type: :Array2D, elements: MAP_EVENT },
         # The 2k3e ("RPG2003 English release") save counter, a second counter
         # beside the ordinary one below. BER-encoded like every other int —
         # mtf-meido-action's first map holds 593.
-        90 => FieldSchema.new( name: :save_count_2k3e, type: :int, default: 0 ),
-        91 => FieldSchema.new( name: :save_count, type: :int, default: 0 ),
+        90 => { name: :save_count_2k3e, type: :int, default: 0 },
+        91 => { name: :save_count, type: :int, default: 0 },
       } }
-    )
+    }
 
     # https://wikiwiki.jp/viprpg-dev/200X%E5%85%B1%E9%80%9A/%E8%A7%A3%E6%9E%90%E3%81%BE%E3%81%A8%E3%82%81/%E3%82%BB%E3%83%BC%E3%83%96%E3%83%87%E3%83%BC%E3%82%BF
     #
     # Snapshot of a hero or vehicle on the map. Vehicles reuse the same layout.
     SAVE_MOVABLE = lazy { {
-      11 => FieldSchema.new( name: :map_id, type: :int ),
-      12 => FieldSchema.new( name: :x, type: :int ),
-      13 => FieldSchema.new( name: :y, type: :int ),
+      11 => { name: :map_id, type: :int },
+      12 => { name: :x, type: :int },
+      13 => { name: :y, type: :int },
       # liblcf's `SaveMapEventBase.facing` (generator/csv/fields.csv, 0x16 ==
       # 22) -- *not* this runtime's numpad convention (2/4/6/8) the database-
       # side event-page facing field (MAP_EVENT_PAGE field 23) uses directly.
@@ -1241,7 +1198,7 @@ module LCF
       # see `scripts/gen-rpg2k-save.rb`'s own header) rather than to this
       # field's meaning being wrong. Left open: repeat this probe against a
       # save whose leader is an ordinary, non-placeholder actor.
-      22 => FieldSchema.new( name: :direction, type: :int ),
+      22 => { name: :direction, type: :int },
       # liblcf's own generator/csv/fields.csv names field 0x15/21 `direction`
       # ("Sprite direction") and field 0x16/22 (just above) `facing` -- the
       # reverse of the names already established here, kept as-is rather
@@ -1254,7 +1211,7 @@ module LCF
       # separate concept of. Not otherwise investigated -- left as a
       # write-only mirror, the same shape as chunk 104's own 73/74
       # (`charset_name`/`charset_index`) sprite mirror.
-      21 => FieldSchema.new( name: :sprite_direction, type: :int ),
+      21 => { name: :sprite_direction, type: :int },
       # liblcf's own `layer` (generator/csv/fields.csv, 0x21 == 33): confirmed
       # present as the constant 1 ("same as characters") on a genuine kk1.12
       # save under wine, on the hero's own record and every vehicle's alike
@@ -1262,7 +1219,7 @@ module LCF
       # command (only a map *event* page can be pinned below/above
       # characters), so this codebase's own `#to_lsd` writes it as a true
       # constant rather than tracking any live state for it.
-      33 => FieldSchema.new( name: :layer, type: :int ),
+      33 => { name: :layer, type: :int },
       # liblcf's `SaveMapEventBase.transparency` (generator/csv/fields.csv,
       # 0x18 == 24): "0 or 3 - Transparency level of the current event page".
       # On the *hero's* own record (chunk 104) this is Set Transparent Flag's
@@ -1280,16 +1237,16 @@ module LCF
       # so this field is otherwise new to them too -- vehicles have no
       # runtime "hidden" state to persist, so their own #load_movable simply
       # never reads it.
-      24 => FieldSchema.new( name: :transparency, type: :int, default: 0 ),
+      24 => { name: :transparency, type: :int, default: 0 },
       # liblcf's own generator/csv/fields.csv (0x20 == 32, default 2): the
       # move-frequency a forced move route (Set Move Route) runs its target
       # at -- see Game::State#player_route's own citation in game.rb for why
       # this lives on the hero's own record specifically (Scene::Map's
       # transient @player_char mirror, not tracked anywhere else). Not
       # independently confirmed against genuine RPG_RT under wine.
-      32 => FieldSchema.new( name: :move_frequency, type: :int, default: 2 ),
-      35 => FieldSchema.new( name: :animation_type, type: :int ),
-      37 => FieldSchema.new( name: :move_speed, type: :int ),
+      32 => { name: :move_frequency, type: :int, default: 2 },
+      35 => { name: :animation_type, type: :int },
+      37 => { name: :move_speed, type: :int },
       # liblcf's own `SaveMapEventBase.move_route` (generator/csv/fields.csv,
       # 0x29 == 41), the same `MOVE_ROUTE` struct (11/12 move_commands,
       # 21 repeat, 22 skippable) MAP_EVENT_PAGE's own field 41 already uses
@@ -1303,7 +1260,7 @@ module LCF
       # #player_route's own citation in game.rb. Confirmed present with
       # real command data on a genuine kk1.12 save under wine (the hero had
       # a live custom route recorded in that capture).
-      41 => FieldSchema.new( name: :move_route, type: :Array1D, elements: MOVE_ROUTE ),
+      41 => { name: :move_route, type: :Array1D, elements: MOVE_ROUTE },
       # SaveMapEventBase's own move-route cursor: how far into a page's
       # move_type CUSTOM route this event had gotten (Game::MoveRoute#index),
       # ported from a reference implementation's schema field layout, not
@@ -1317,7 +1274,7 @@ module LCF
       # turns/steps counters), so an absent field reads back as nil rather
       # than 0 -- Game::State.from_lsd tells "no saved cursor, restart the
       # route from the top" from "explicitly at command 0" the same way.
-      43 => FieldSchema.new( name: :move_route_index, type: :int ),
+      43 => { name: :move_route_index, type: :int },
       # liblcf's own `through` (generator/csv/fields.csv, 0x33 == 51,
       # default false): "Walk Everywhere On/Off" (36/37), a Set Move Route
       # command that ignores map collision for its target until turned back
@@ -1325,7 +1282,7 @@ module LCF
       # own transient @player_through mirror -- see Game::State
       # #player_route's own citation in game.rb. Not independently confirmed
       # against genuine RPG_RT under wine.
-      51 => FieldSchema.new( name: :through, type: :bool, default: false ),
+      51 => { name: :through, type: :bool, default: false },
       # liblcf's `SaveMapEventBase` (generator/csv/fields.csv): `sprite_name`
       # 0x49 == 73, `sprite_id` 0x4A == 74. Field 75 (0x4B) is `processed`, an
       # unrelated per-frame flag ("has this event already taken its movement
@@ -1339,8 +1296,8 @@ module LCF
       # plausible `processed` value) while 73/74 are both absent -- exactly
       # what "no sprite override, mid-frame" looks like, not what a genuine
       # sprite_id co-occurring without its paired sprite_name ever would.
-      73 => FieldSchema.new( name: :charset_name, type: :string ),
-      74 => FieldSchema.new( name: :charset_index, type: :int ),
+      73 => { name: :charset_name, type: :string },
+      74 => { name: :charset_index, type: :int },
       # liblcf's own generator/csv/fields.csv (0x51-0x55 == 81-85): an
       # in-flight Flash Sprite (11320), or a map-triggered battle-animation
       # flash reusing the same mechanism (see Game::State#player_flash's own
@@ -1359,11 +1316,11 @@ module LCF
       # *flashing* case's exact byte values (in particular whether
       # `flash_current_level`'s own decay curve matches this codebase's
       # linear one) has not been confirmed against genuine RPG_RT.
-      81 => FieldSchema.new( name: :flash_red, type: :int ),
-      82 => FieldSchema.new( name: :flash_green, type: :int ),
-      83 => FieldSchema.new( name: :flash_blue, type: :int ),
-      84 => FieldSchema.new( name: :flash_current_level, type: :double ),
-      85 => FieldSchema.new( name: :flash_time_left, type: :int ),
+      81 => { name: :flash_red, type: :int },
+      82 => { name: :flash_green, type: :int },
+      83 => { name: :flash_blue, type: :int },
+      84 => { name: :flash_current_level, type: :double },
+      85 => { name: :flash_time_left, type: :int },
       # liblcf's own `SaveVehicleLocation` struct (generator/csv/fields.csv,
       # 0x65 == 101, name `vehicle`) -- a boat/ship/airship-only field this
       # shared SAVE_MOVABLE table otherwise has no equivalent for (the hero's
@@ -1372,7 +1329,7 @@ module LCF
       # (boat/ship/airship), on all three vehicle chunks, none of which had
       # ever been boarded that session -- see SAVE_DATA's own 105-107
       # comment for the larger discovery this field was found alongside.
-      101 => FieldSchema.new( name: :vehicle, type: :int ),
+      101 => { name: :vehicle, type: :int },
       # Field 108 (0x6C, liblcf's own `SaveMapEvent.parallel_event_execstate`,
       # generator/csv/fields.csv) -- a map event's OWN Parallel Process's full
       # call-stack snapshot, the identical SAVE_EVENT_EXEC_STATE struct chunk
@@ -1418,7 +1375,7 @@ module LCF
       # cycle alongside SAVE_MOVABLE's own already-catalogued larger gaps (see
       # that table's own comment on the hero's unmodelled move-route chunk/
       # `through`/movement timers).
-      108 => FieldSchema.new( name: :parallel_event_execstate, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE ),
+      108 => { name: :parallel_event_execstate, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     } }
 
     # A genuine kk1.12 save's own chunk 104 (the hero's SAVE_MOVABLE record)
@@ -1481,7 +1438,7 @@ module LCF
     # round-tripping it through Save/Continue is not established either way
     # -- see docs/TODO.md.
     SAVE_PICTURE = lazy { {
-      1 => FieldSchema.new( name: :name, type: :string ),              # ピクチャグラフィックのファイル名
+      1 => { name: :name, type: :string },              # ピクチャグラフィックのファイル名
       # Show Picture's own "fixed to map position" checkbox (param4 in
       # `Interpreter#do_show_picture`, which pins the picture to scroll with
       # the camera instead of the screen). Confirmed against genuine
@@ -1506,9 +1463,9 @@ module LCF
       # rather than modelling the split feature itself, left as a future
       # extension the same way `docs/TODO.md` already tracks other unmodelled
       # save fields.
-      6 => FieldSchema.new( name: :fixed_to_map, type: :bool, default: false ),
-      2 => FieldSchema.new( name: :show_x, type: :double, default: 0.0 ),
-      3 => FieldSchema.new( name: :show_y, type: :double, default: 0.0 ),
+      6 => { name: :fixed_to_map, type: :bool, default: false },
+      2 => { name: :show_x, type: :double, default: 0.0 },
+      3 => { name: :show_y, type: :double, default: 0.0 },
       # The picture's genuinely live position/zoom/transparency/tone -- see
       # this table's own comment above for how 4/5 were told apart from
       # 31/32. Confirmed unconditional (present whenever a picture is shown
@@ -1520,18 +1477,18 @@ module LCF
       # while Game::Picture#moving?). Defaults match a fresh Game::Picture so
       # an old save written before these fields existed restores identically
       # to before.
-      4 => FieldSchema.new( name: :current_x, type: :double, default: 0.0 ),
-      5 => FieldSchema.new( name: :current_y, type: :double, default: 0.0 ),
-      7 => FieldSchema.new( name: :current_zoom, type: :double, default: 100.0 ),
-      8 => FieldSchema.new( name: :current_transparency, type: :double, default: 0.0 ),
+      4 => { name: :current_x, type: :double, default: 0.0 },
+      5 => { name: :current_y, type: :double, default: 0.0 },
+      7 => { name: :current_zoom, type: :double, default: 100.0 },
+      8 => { name: :current_transparency, type: :double, default: 0.0 },
       # RPG2003-only bottom-half transparency (`current_bot_trans`) -- see
       # field 8's own comment above. Written as a plain mirror of field 8
       # (top == bottom), never independently.
-      18 => FieldSchema.new( name: :current_bot_transparency, type: :double, default: 0.0 ),
-      11 => FieldSchema.new( name: :current_tone_red, type: :double, default: 100.0 ),
-      12 => FieldSchema.new( name: :current_tone_green, type: :double, default: 100.0 ),
-      13 => FieldSchema.new( name: :current_tone_blue, type: :double, default: 100.0 ),
-      14 => FieldSchema.new( name: :current_tone_saturation, type: :double, default: 100.0 ),
+      18 => { name: :current_bot_transparency, type: :double, default: 0.0 },
+      11 => { name: :current_tone_red, type: :double, default: 100.0 },
+      12 => { name: :current_tone_green, type: :double, default: 100.0 },
+      13 => { name: :current_tone_blue, type: :double, default: 100.0 },
+      14 => { name: :current_tone_saturation, type: :double, default: 100.0 },
       # Show Picture's "not affected by transparent color" checkbox (param7
       # in `Interpreter#do_show_picture`, `use_transparent_color`) -- NOT
       # "visible", as a prior version of this comment guessed purely from
@@ -1550,11 +1507,11 @@ module LCF
       # present simultaneously, each independently -- ruling out any
       # bit-packing between the two and confirming both really are their
       # own elided-at-default boolean fields.
-      9 => FieldSchema.new( name: :use_transparent_color, type: :bool, default: false ),
+      9 => { name: :use_transparent_color, type: :bool, default: false },
       # The picture's resting/target position -- see this table's own
       # comment above for why these are named finish_*, not current_*.
-      31 => FieldSchema.new( name: :finish_x, type: :double, default: 0.0 ), # 表示位置Ｘ (中心)
-      32 => FieldSchema.new( name: :finish_y, type: :double, default: 0.0 ), # 表示位置Ｙ (中心)
+      31 => { name: :finish_x, type: :double, default: 0.0 }, # 表示位置Ｘ (中心)
+      32 => { name: :finish_y, type: :double, default: 0.0 }, # 表示位置Ｙ (中心)
       # Zoom/transparency/tone (both the current_* set above and this
       # finish_* set) are each elided independently at their own default --
       # confirmed by cycle #155's own controlled pair of genuine RPG_RT.exe
@@ -1571,21 +1528,21 @@ module LCF
       # elision, the same convention already established for SAVE_SCREEN's
       # own tint fields (cycle #154) and SAVE_SYSTEM's message-config
       # cluster (cycle #152/#153).
-      33 => FieldSchema.new( name: :zoom, type: :int, default: 100 ),        # 拡大率
-      34 => FieldSchema.new( name: :transparency, type: :int, default: 0 ),  # 透明度
+      33 => { name: :zoom, type: :int, default: 100 },        # 拡大率
+      34 => { name: :transparency, type: :int, default: 0 },  # 透明度
       # RPG2003-only bottom-half finish transparency (`finish_bot_trans`) --
       # see field 8's own comment above for the top/bottom split this table
       # doesn't model; written as a plain mirror of field 34, never
       # independently.
-      35 => FieldSchema.new( name: :bot_transparency, type: :int, default: 0 ),
-      41 => FieldSchema.new( name: :tone_red, type: :int, default: 100 ),        # 色調：赤(R)
-      42 => FieldSchema.new( name: :tone_green, type: :int, default: 100 ),      # 色調：緑(G)
-      43 => FieldSchema.new( name: :tone_blue, type: :int, default: 100 ),       # 色調：青(B)
-      44 => FieldSchema.new( name: :tone_saturation, type: :int, default: 100 ), # 色調：彩度(S)
+      35 => { name: :bot_transparency, type: :int, default: 0 },
+      41 => { name: :tone_red, type: :int, default: 100 },        # 色調：赤(R)
+      42 => { name: :tone_green, type: :int, default: 100 },      # 色調：緑(G)
+      43 => { name: :tone_blue, type: :int, default: 100 },       # 色調：青(B)
+      44 => { name: :tone_saturation, type: :int, default: 100 }, # 色調：彩度(S)
       # How many frames remain in an in-flight Move Picture; 0 (the default,
       # covering both a still picture and an old save missing this field
       # entirely) means #restore_pictures does not start a fresh move on load.
-      51 => FieldSchema.new( name: :time_left, type: :int, default: 0 ),
+      51 => { name: :time_left, type: :int, default: 0 },
     } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/40.html
@@ -1619,8 +1576,8 @@ module LCF
     # (`0x22`→34) — unconfirmed stat modifiers, not the title — which is why
     # they stay undecoded here.
     SAVE_PARTY_ACTOR = lazy { {
-      1 => FieldSchema.new( name: :actor_name, type: :string ),            # 名前
-      2 => FieldSchema.new( name: :title, type: :string ),                 # 二つ名 (Change Actor Title)
+      1 => { name: :actor_name, type: :string },            # 名前
+      2 => { name: :title, type: :string },                 # 二つ名 (Change Actor Title)
       # A live Change Sprite Association (10630) override, confirmed against
       # genuine RPG_RT.exe under wine (cycle #170) -- NOT liblcf's own field
       # table (no network access to `generator/csv/fields.csv` this cycle),
@@ -1646,16 +1603,16 @@ module LCF
       # from; this directly explains cycle #169's own negative finding that
       # patching only chunk 104's fields 73/74 in a real save never changed
       # what Continue drew.
-      11 => FieldSchema.new( name: :sprite_name, type: :string ),
-      12 => FieldSchema.new( name: :sprite_id, type: :int ),
-      13 => FieldSchema.new( name: :sprite_transparent, type: :int, default: 0 ),
-      31 => FieldSchema.new( name: :level, type: :int, default: 1 ),      # レベル
-      32 => FieldSchema.new( name: :exp, type: :int, default: 0 ),        # 経験値
-      51 => FieldSchema.new( name: :skill_size, type: :int, default: 0 ), # 『特技』情報のデータ数
-      52 => FieldSchema.new( name: :skills, type: :int16_array ),         # 習得特技 (uint16[])
-      61 => FieldSchema.new( name: :equipment, type: :int16_array ),      # 装備 [武器,盾,鎧,兜,装飾]
-      71 => FieldSchema.new( name: :hp, type: :int ),                     # 現在ＨＰ
-      72 => FieldSchema.new( name: :mp, type: :int ),                     # 現在ＭＰ
+      11 => { name: :sprite_name, type: :string },
+      12 => { name: :sprite_id, type: :int },
+      13 => { name: :sprite_transparent, type: :int, default: 0 },
+      31 => { name: :level, type: :int, default: 1 },      # レベル
+      32 => { name: :exp, type: :int, default: 0 },        # 経験値
+      51 => { name: :skill_size, type: :int, default: 0 }, # 『特技』情報のデータ数
+      52 => { name: :skills, type: :int16_array },         # 習得特技 (uint16[])
+      61 => { name: :equipment, type: :int16_array },      # 装備 [武器,盾,鎧,兜,装飾]
+      71 => { name: :hp, type: :int },                     # 現在ＨＰ
+      72 => { name: :mp, type: :int },                     # 現在ＭＰ
       # A dense array, one slot per database state id (index `state_id - 1`,
       # length `state_size`), NOT a sparse list of only the afflicted ones --
       # confirmed against a genuine kk1.12 (RPG2003) save under wine: field
@@ -1667,23 +1624,23 @@ module LCF
       # `1` there. The exact "collect `state_id - 1` wherever the slot is
       # nonzero" reconstruction is first-principles reasoning from that dense
       # shape, NOT independently confirmed against genuine RPG_RT under wine.
-      81 => FieldSchema.new( name: :state_size, type: :int, default: 0 ), # 『状態』情報のデータ数
-      82 => FieldSchema.new( name: :states, type: :int16_array ),         # 『状態』情報 (uint16[])
+      81 => { name: :state_size, type: :int, default: 0 }, # 『状態』情報のデータ数
+      82 => { name: :states, type: :int16_array },         # 『状態』情報 (uint16[])
 
       # RPG2003 Change Battle Commands (Game::Actor#battle_commands=):
       # `changed_battle_commands` (83) gates whether `battle_commands` (80)
       # overrides the database/class default at all, or is simply the
       # not-yet-touched default -- mirroring `#battle_commands`'s own
       # nil-means-"still deferring to the class/database" convention.
-      80 => FieldSchema.new( name: :battle_commands, type: :int32_array, default: [] ),
-      83 => FieldSchema.new( name: :changed_battle_commands, type: :bool, default: false ),
+      80 => { name: :battle_commands, type: :int32_array, default: [] },
+      83 => { name: :changed_battle_commands, type: :bool, default: false },
 
       # RPG2003 Change Class (Game::Actor#change_class / #restore_class):
       # -1, liblcf's own default, means "never changed -- still whatever the
       # actor's own database row declares", not class id 0 ("no class" is a
       # legitimate Change Class target in its own right, distinct from
       # "unset").
-      90 => FieldSchema.new( name: :class_id, type: :int, default: -1 ), # 職業ID (Change Class)
+      90 => { name: :class_id, type: :int, default: -1 }, # 職業ID (Change Class)
 
       # RPG2003 battle front/back row (Game::Actor#battle_row), toggled by the
       # in-battle Row command (ADR 0053's row mechanic). liblcf's own
@@ -1692,7 +1649,7 @@ module LCF
       # auto_battle/super_guard/battler_animation fields below -- 0
       # (RowType_front) is both liblcf's own default and the only row
       # RPG2000 ever writes.
-      91 => FieldSchema.new( name: :row, type: :int, default: 0 ), # 隊列 (2003)
+      91 => { name: :row, type: :int, default: 0 }, # 隊列 (2003)
       # liblcf's own generator/csv/fields.csv (0x5C-0x5F): a live mirror of
       # the actor's own current class/database-derived combat toggles
       # (Game::Actor#double_hand?/#equipment_fixed?/#force_ai?/
@@ -1702,10 +1659,10 @@ module LCF
       # row -- #to_lsd writes it for byte parity, but `.from_lsd` has
       # nothing to restore *to* (there is no separate "was this overridden"
       # concept for these four, unlike class_id/battle_commands above).
-      92 => FieldSchema.new( name: :two_weapon, type: :bool, default: false ),
-      93 => FieldSchema.new( name: :lock_equipment, type: :bool, default: false ),
-      94 => FieldSchema.new( name: :auto_battle, type: :bool, default: false ),
-      95 => FieldSchema.new( name: :super_guard, type: :bool, default: false ),
+      92 => { name: :two_weapon, type: :bool, default: false },
+      93 => { name: :lock_equipment, type: :bool, default: false },
+      94 => { name: :auto_battle, type: :bool, default: false },
+      95 => { name: :super_guard, type: :bool, default: false },
 
       # The live Change Parameters shadow (Game::Actor#change_param's
       # @base_raw, isolated from the level curve) -- confirmed against a
@@ -1721,12 +1678,12 @@ module LCF
       # default is kept here to read a genuine third-party save's own
       # "never touched" sentinel the same way liblcf itself does, rather
       # than misreading it as a real -1 HP modifier.
-      33 => FieldSchema.new( name: :hp_mod, type: :int, default: -1 ),
-      34 => FieldSchema.new( name: :sp_mod, type: :int, default: -1 ),
-      41 => FieldSchema.new( name: :attack_mod, type: :int, default: 0 ),
-      42 => FieldSchema.new( name: :defense_mod, type: :int, default: 0 ),
-      43 => FieldSchema.new( name: :spirit_mod, type: :int, default: 0 ),
-      44 => FieldSchema.new( name: :agility_mod, type: :int, default: 0 ),
+      33 => { name: :hp_mod, type: :int, default: -1 },
+      34 => { name: :sp_mod, type: :int, default: -1 },
+      41 => { name: :attack_mod, type: :int, default: 0 },
+      42 => { name: :defense_mod, type: :int, default: 0 },
+      43 => { name: :spirit_mod, type: :int, default: 0 },
+      44 => { name: :agility_mod, type: :int, default: 0 },
     } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/37.html
@@ -1734,12 +1691,12 @@ module LCF
     # Remembered teleport/escape destination (chunk 110), indexed by map id.
     # Index 0 is reserved for the escape target.
     SAVE_TARGET = lazy { {
-      1 => FieldSchema.new( name: :map_id, type: :int ),
-      2 => FieldSchema.new( name: :x, type: :int, default: 0 ),
-      3 => FieldSchema.new( name: :y, type: :int, default: 0 ),
+      1 => { name: :map_id, type: :int },
+      2 => { name: :x, type: :int, default: 0 },
+      3 => { name: :y, type: :int, default: 0 },
       # Turn the switch on after teleporting.
-      4 => FieldSchema.new( name: :switch_on, type: :bool, default: false ),
-      5 => FieldSchema.new( name: :switch_id, type: :int, default: 1 ),
+      4 => { name: :switch_on, type: :bool, default: false },
+      5 => { name: :switch_id, type: :int, default: 1 },
     } }
 
     # https://w.atwiki.jp/rpg2kpsp/pages/27.html
@@ -1773,15 +1730,15 @@ module LCF
     # 307200 pixels, the residual being one animated coastline autotile. That is
     # what pins the unit: 5120/16 = 320.
     SAVE_MAP_EVENT = lazy { {
-      1 => FieldSchema.new( name: :scroll_x, type: :int, default: 0 ), # 1/16 px
-      2 => FieldSchema.new( name: :scroll_y, type: :int, default: 0 ), # 1/16 px
+      1 => { name: :scroll_x, type: :int, default: 0 }, # 1/16 px
+      2 => { name: :scroll_y, type: :int, default: 0 }, # 1/16 px
       # A live Change Encounter Rate (11740) override, or -1/absent for "no
       # override, use the map's own encounter rate" -- confirmed against
       # liblcf's own generator table (`generator/csv/fields.csv`):
       # `SaveMapInfo,encounter_steps,f,Int32,0x03,-1,...`. The "-1/absent
       # means use the map's own rate instead" semantics are NOT independently
       # confirmed against genuine RPG_RT under wine.
-      3 => FieldSchema.new( name: :encounter_steps, type: :int, default: -1 ),
+      3 => { name: :encounter_steps, type: :int, default: -1 },
       # A live Change Parallax Background (11720) override, or an absent/
       # blank name for "no override, use the map's own panorama" --
       # confirmed against liblcf's own generator table
@@ -1790,16 +1747,16 @@ module LCF
       # fields in this exact order. The "absent/blank means use the map's own
       # panorama" semantics are NOT independently confirmed against genuine
       # RPG_RT under wine.
-      32 => FieldSchema.new( name: :parallax_name, type: :string, default: '' ),
-      33 => FieldSchema.new( name: :parallax_horz, type: :bool, default: false ),
-      34 => FieldSchema.new( name: :parallax_vert, type: :bool, default: false ),
-      35 => FieldSchema.new( name: :parallax_horz_auto, type: :bool, default: false ),
-      36 => FieldSchema.new( name: :parallax_horz_speed, type: :int, default: 0 ),
-      37 => FieldSchema.new( name: :parallax_vert_auto, type: :bool, default: false ),
-      38 => FieldSchema.new( name: :parallax_vert_speed, type: :int, default: 0 ),
-      11 => FieldSchema.new( name: :events, type: :Array2D, elements: SAVE_MOVABLE ),
-      21 => FieldSchema.new( name: :chip_replacement_lower, type: :int8_array ), # uint8[144]
-      22 => FieldSchema.new( name: :chip_replacement_upper, type: :int8_array ), # uint8[144]
+      32 => { name: :parallax_name, type: :string, default: '' },
+      33 => { name: :parallax_horz, type: :bool, default: false },
+      34 => { name: :parallax_vert, type: :bool, default: false },
+      35 => { name: :parallax_horz_auto, type: :bool, default: false },
+      36 => { name: :parallax_horz_speed, type: :int, default: 0 },
+      37 => { name: :parallax_vert_auto, type: :bool, default: false },
+      38 => { name: :parallax_vert_speed, type: :int, default: 0 },
+      11 => { name: :events, type: :Array2D, elements: SAVE_MOVABLE },
+      21 => { name: :chip_replacement_lower, type: :int8_array }, # uint8[144]
+      22 => { name: :chip_replacement_upper, type: :int8_array }, # uint8[144]
     } }
 
     # Camera scroll fields of SAVE_MAP_EVENT are stored in 1/16 pixel.
@@ -1833,25 +1790,25 @@ module LCF
     # without diagnosing). `#to_lsd`/`#from_lsd` (mruby-rpg2k/mrblib/game.rb)
     # updated to match.
     SAVE_INVENTORY = lazy { {
-      1 => FieldSchema.new( name: :party_count, type: :int, default: 0 ),
-      2 => FieldSchema.new( name: :party, type: :int16_array ),
-      11 => FieldSchema.new( name: :item_count, type: :int, default: 0 ),
-      12 => FieldSchema.new( name: :item_ids, type: :int16_array ),
-      13 => FieldSchema.new( name: :item_counts, type: :int8_array ),
-      14 => FieldSchema.new( name: :item_usage, type: :int8_array ),
-      21 => FieldSchema.new( name: :gold, type: :int, default: 0 ),
+      1 => { name: :party_count, type: :int, default: 0 },
+      2 => { name: :party, type: :int16_array },
+      11 => { name: :item_count, type: :int, default: 0 },
+      12 => { name: :item_ids, type: :int16_array },
+      13 => { name: :item_counts, type: :int8_array },
+      14 => { name: :item_usage, type: :int8_array },
+      21 => { name: :gold, type: :int, default: 0 },
       # No `default:` on these eight (matching e.g. SAVE_SYSTEM's
       # teleport_allowed) so an absent field reads back as nil rather than a
       # concrete value -- #from_lsd tells "not in this save" from "explicitly
       # false/zero" the same way it already does for the access flags.
-      23 => FieldSchema.new( name: :timer1_frames, type: :int ),
-      24 => FieldSchema.new( name: :timer1_active, type: :bool ),
-      25 => FieldSchema.new( name: :timer1_visible, type: :bool ),
-      26 => FieldSchema.new( name: :timer1_battle, type: :bool ),
-      27 => FieldSchema.new( name: :timer2_frames, type: :int ),
-      28 => FieldSchema.new( name: :timer2_active, type: :bool ),
-      29 => FieldSchema.new( name: :timer2_visible, type: :bool ),
-      30 => FieldSchema.new( name: :timer2_battle, type: :bool ),
+      23 => { name: :timer1_frames, type: :int },
+      24 => { name: :timer1_active, type: :bool },
+      25 => { name: :timer1_visible, type: :bool },
+      26 => { name: :timer1_battle, type: :bool },
+      27 => { name: :timer2_frames, type: :int },
+      28 => { name: :timer2_active, type: :bool },
+      29 => { name: :timer2_visible, type: :bool },
+      30 => { name: :timer2_battle, type: :bool },
       # Battle tallies, the "turns passed in latest battle" counter and the
       # field step counter, likewise undefaulted -- confirmed against
       # liblcf's SaveInventory struct (all plain int32_t, like gold). Field
@@ -1859,12 +1816,12 @@ module LCF
       # counter), captured onto `Game::State#last_battle_turns` by
       # `Scene::Map#finish_battle` right before the fought `Battle` object is
       # discarded.
-      32 => FieldSchema.new( name: :battles, type: :int ),
-      33 => FieldSchema.new( name: :defeats, type: :int ),
-      34 => FieldSchema.new( name: :escapes, type: :int ),
-      35 => FieldSchema.new( name: :victories, type: :int ),
-      41 => FieldSchema.new( name: :turns, type: :int ),
-      42 => FieldSchema.new( name: :steps, type: :int ),
+      32 => { name: :battles, type: :int },
+      33 => { name: :defeats, type: :int },
+      34 => { name: :escapes, type: :int },
+      35 => { name: :victories, type: :int },
+      41 => { name: :turns, type: :int },
+      42 => { name: :steps, type: :int },
     } }
 
     # One stack frame of an interpreter's own call stack (liblcf's
@@ -1925,13 +1882,13 @@ module LCF
     # Show Choices prompt would need this field decoded to resume the exact
     # same way genuine RPG_RT would.
     SAVE_EVENT_EXEC_FRAME = lazy { {
-      1  => FieldSchema.new( name: :command_size, type: :int, default: 0 ),
-      2  => FieldSchema.new( name: :commands, type: :event, default: [] ),
-      11 => FieldSchema.new( name: :current_command, type: :int, default: 0 ),
-      12 => FieldSchema.new( name: :event_id, type: :int, default: 0 ),
-      13 => FieldSchema.new( name: :triggered_by_decision_key, type: :bool, default: false ),
-      21 => FieldSchema.new( name: :subcommand_path_size, type: :int, default: 0 ),
-      22 => FieldSchema.new( name: :subcommand_path, type: :int8_array, default: [] ),
+      1  => { name: :command_size, type: :int, default: 0 },
+      2  => { name: :commands, type: :event, default: [] },
+      11 => { name: :current_command, type: :int, default: 0 },
+      12 => { name: :event_id, type: :int, default: 0 },
+      13 => { name: :triggered_by_decision_key, type: :bool, default: false },
+      21 => { name: :subcommand_path_size, type: :int, default: 0 },
+      22 => { name: :subcommand_path, type: :int8_array, default: [] },
     } }
 
     # An interpreter's full execution state (liblcf's `SaveEventExecState`):
@@ -1961,28 +1918,28 @@ module LCF
     # preserve today -- the call-stack position survives, the UI-facing wait
     # itself does not.
     SAVE_EVENT_EXEC_STATE = lazy { {
-      1  => FieldSchema.new( name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME ),
-      4  => FieldSchema.new( name: :show_message, type: :bool, default: false ),
-      11 => FieldSchema.new( name: :abort_on_escape, type: :bool, default: false ),
-      13 => FieldSchema.new( name: :wait_movement, type: :bool, default: false ),
-      21 => FieldSchema.new( name: :keyinput_wait, type: :bool, default: false ),
-      22 => FieldSchema.new( name: :keyinput_variable, type: :uint8, default: 0 ),
-      23 => FieldSchema.new( name: :keyinput_all_directions, type: :bool, default: false ),
-      24 => FieldSchema.new( name: :keyinput_decision, type: :int, default: 0 ),
-      25 => FieldSchema.new( name: :keyinput_cancel, type: :int, default: 0 ),
-      26 => FieldSchema.new( name: :keyinput_2kshift_2k3numbers, type: :int, default: 0 ),
-      27 => FieldSchema.new( name: :keyinput_2kdown_2k3operators, type: :int, default: 0 ),
-      28 => FieldSchema.new( name: :keyinput_2kleft_2k3shift, type: :int, default: 0 ),
-      29 => FieldSchema.new( name: :keyinput_2kright, type: :int, default: 0 ),
-      30 => FieldSchema.new( name: :keyinput_2kup, type: :int, default: 0 ),
-      31 => FieldSchema.new( name: :wait_time, type: :int, default: 0 ),
-      32 => FieldSchema.new( name: :keyinput_time_variable, type: :int, default: 0 ),
-      35 => FieldSchema.new( name: :keyinput_2k3down, type: :int, default: 0 ),
-      36 => FieldSchema.new( name: :keyinput_2k3left, type: :int, default: 0 ),
-      37 => FieldSchema.new( name: :keyinput_2k3right, type: :int, default: 0 ),
-      38 => FieldSchema.new( name: :keyinput_2k3up, type: :int, default: 0 ),
-      41 => FieldSchema.new( name: :keyinput_timed, type: :bool, default: false ),
-      42 => FieldSchema.new( name: :wait_key_enter, type: :bool, default: false ),
+      1  => { name: :stack, type: :Array2D, elements: SAVE_EVENT_EXEC_FRAME },
+      4  => { name: :show_message, type: :bool, default: false },
+      11 => { name: :abort_on_escape, type: :bool, default: false },
+      13 => { name: :wait_movement, type: :bool, default: false },
+      21 => { name: :keyinput_wait, type: :bool, default: false },
+      22 => { name: :keyinput_variable, type: :uint8, default: 0 },
+      23 => { name: :keyinput_all_directions, type: :bool, default: false },
+      24 => { name: :keyinput_decision, type: :int, default: 0 },
+      25 => { name: :keyinput_cancel, type: :int, default: 0 },
+      26 => { name: :keyinput_2kshift_2k3numbers, type: :int, default: 0 },
+      27 => { name: :keyinput_2kdown_2k3operators, type: :int, default: 0 },
+      28 => { name: :keyinput_2kleft_2k3shift, type: :int, default: 0 },
+      29 => { name: :keyinput_2kright, type: :int, default: 0 },
+      30 => { name: :keyinput_2kup, type: :int, default: 0 },
+      31 => { name: :wait_time, type: :int, default: 0 },
+      32 => { name: :keyinput_time_variable, type: :int, default: 0 },
+      35 => { name: :keyinput_2k3down, type: :int, default: 0 },
+      36 => { name: :keyinput_2k3left, type: :int, default: 0 },
+      37 => { name: :keyinput_2k3right, type: :int, default: 0 },
+      38 => { name: :keyinput_2k3up, type: :int, default: 0 },
+      41 => { name: :keyinput_timed, type: :bool, default: false },
+      42 => { name: :wait_key_enter, type: :bool, default: false },
     } }
 
     # Saved common-event execution state (chunk 114): an Array2D indexed by
@@ -2004,7 +1961,7 @@ module LCF
     # mid-Parallel-Process `.lsd`, since none was available to compare
     # byte-for-byte against.
     SAVE_COMMON_EVENT = lazy { {
-      1 => FieldSchema.new( name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE ),
+      1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     } }
 
     # Foreground (map / parallel) event interpreter state (chunk 113): the
@@ -2027,14 +1984,14 @@ module LCF
     # interpreter on a `:save_menu` wait rather than stopping it -- see
     # `Game::State#foreground_event_exec`'s own comment.
     SAVE_FOREGROUND_EVENT = {
-      1 => FieldSchema.new( name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE ),
+      1 => { name: :execution_state, type: :Array1D, elements: SAVE_EVENT_EXEC_STATE },
     }
 
     SAVE_SYSTEM = lazy { {
       # 0 map, 1 menu, 2 battle, 3 shop, 4 name input, 5 save/load,
       # 6 title, 7 game over, 8 F9 debug menu.
-      1 => FieldSchema.new( name: :scene, type: :int, default: 0 ),
-      11 => FieldSchema.new( name: :frame_count, type: :int ),
+      1 => { name: :scene, type: :int, default: 0 },
+      11 => { name: :frame_count, type: :int },
       # liblcf's `SaveSystem` (generator/csv/fields.csv): `graphics_name`
       # 0x15 == 21, `message_stretch` 0x16 == 22, `font_id` 0x17 == 23 --
       # these three were declared at their raw hex *digits* (15/16/17)
@@ -2045,13 +2002,13 @@ module LCF
       # never caught it -- only a genuine RPG_RT save using Change System
       # Graphics (10680), or this engine's own export opened in real
       # RPG_RT, would ever disagree.
-      21 => FieldSchema.new( name: :system_graphic, type: :string ),
-      22 => FieldSchema.new( name: :wallpaper_type, type: :int ),
-      23 => FieldSchema.new( name: :font, type: :int ),
-      31 => FieldSchema.new( name: :switch_size, type: :int, default: 0 ),
-      32 => FieldSchema.new( name: :switches, type: :bool_array ),
-      33 => FieldSchema.new( name: :variable_size, type: :int, default: 0 ),
-      34 => FieldSchema.new( name: :variables, type: :int32_array ),
+      21 => { name: :system_graphic, type: :string },
+      22 => { name: :wallpaper_type, type: :int },
+      23 => { name: :font, type: :int },
+      31 => { name: :switch_size, type: :int, default: 0 },
+      32 => { name: :switches, type: :bool_array },
+      33 => { name: :variable_size, type: :int, default: 0 },
+      34 => { name: :variables, type: :int32_array },
       # 0 = normal, 1 = transparent. Confirmed against a genuine RPG_RT.exe
       # save under wine (cycle #153): fields 41-44, all set together by
       # Change Message Options (10120), are each written only when they
@@ -2065,11 +2022,11 @@ module LCF
       # ever-touched flag -- the same convention already confirmed for field
       # 61 (`bgm_stopping`, see that field's own comment below), now spot
       # checked across this whole cluster too rather than field 41 alone.
-      41 => FieldSchema.new( name: :message_transparent, type: :int, default: 0 ),
+      41 => { name: :message_transparent, type: :int, default: 0 },
       # 0 = top, 1 = middle, 2 = bottom.
-      42 => FieldSchema.new( name: :message_position, type: :int, default: 2 ),
-      43 => FieldSchema.new( name: :message_prevent_overlap, type: :bool, default: true ),
-      44 => FieldSchema.new( name: :message_continue_events, type: :bool, default: false ),
+      42 => { name: :message_position, type: :int, default: 2 },
+      43 => { name: :message_prevent_overlap, type: :bool, default: true },
+      44 => { name: :message_continue_events, type: :bool, default: false },
       # Change Face Graphic (10130) state. Confirmed against a genuine
       # RPG_RT.exe save under wine (cycle #160): each field is written only
       # when it differs from its own declared default here, independently of
@@ -2079,10 +2036,10 @@ module LCF
       # further down (see that cluster's own comment for cycle #161/#162's
       # correction there). See `Game::State#to_lsd`'s own comment in game.rb
       # for the exact capture shapes tried.
-      51 => FieldSchema.new( name: :face_name, type: :string, default: '' ),
-      52 => FieldSchema.new( name: :face_index, type: :int, default: 0 ),
-      53 => FieldSchema.new( name: :face_right_position, type: :int, default: 0 ),
-      54 => FieldSchema.new( name: :face_flip, type: :bool, default: false ),
+      51 => { name: :face_name, type: :string, default: '' },
+      52 => { name: :face_index, type: :int, default: 0 },
+      53 => { name: :face_right_position, type: :int, default: 0 },
+      54 => { name: :face_flip, type: :bool, default: false },
       # NOT field 55: that is liblcf's own `event_message_active`
       # (ShowMessage/ShowChoices/ShowNumberInput bookkeeping, unrelated to
       # transparency), not a player-visibility override -- see SAVE_MOVABLE's
@@ -2103,14 +2060,14 @@ module LCF
       # convention field 41 (`message_transparent`) already follows here,
       # and the 121-124 access cluster further down uses too (with true, not
       # false, as its own "absent" default).
-      61 => FieldSchema.new( name: :bgm_stopping, type: :bool, default: false ),
+      61 => { name: :bgm_stopping, type: :bool, default: false },
       # Overridden BGM/SE playback state. An empty file name means "use the
       # database value".
-      71 => FieldSchema.new( name: :title_bgm, type: :Array1D, elements: BGM ),
-      72 => FieldSchema.new( name: :battle_bgm, type: :Array1D, elements: BGM ),
-      73 => FieldSchema.new( name: :battle_end_bgm, type: :Array1D, elements: BGM ),
-      74 => FieldSchema.new( name: :inn_bgm, type: :Array1D, elements: BGM ),
-      75 => FieldSchema.new( name: :current_bgm, type: :Array1D, elements: BGM ),
+      71 => { name: :title_bgm, type: :Array1D, elements: BGM },
+      72 => { name: :battle_bgm, type: :Array1D, elements: BGM },
+      73 => { name: :battle_end_bgm, type: :Array1D, elements: BGM },
+      74 => { name: :inn_bgm, type: :Array1D, elements: BGM },
+      75 => { name: :current_bgm, type: :Array1D, elements: BGM },
       # liblcf's own generator/csv/fields.csv: `before_vehicle_music`
       # (0x4C == 76) and `before_battle_music` (0x4D == 77), the track RPG_RT
       # restores on disembark/after the fight -- the two gaps in this
@@ -2124,34 +2081,34 @@ module LCF
       # `@pre_vehicle_bgm`/`@pre_battle_bgm` instance variables (see that
       # class's own citation in game.rb) so the restore point survives a
       # genuine Save/Continue too, not just the current visit.
-      76 => FieldSchema.new( name: :before_vehicle_music, type: :Array1D, elements: BGM ),
-      77 => FieldSchema.new( name: :before_battle_music, type: :Array1D, elements: BGM ),
-      78 => FieldSchema.new( name: :stored_bgm, type: :Array1D, elements: BGM ),
-      79 => FieldSchema.new( name: :boat_bgm, type: :Array1D, elements: BGM ),
-      80 => FieldSchema.new( name: :ship_bgm, type: :Array1D, elements: BGM ),
-      81 => FieldSchema.new( name: :airship_bgm, type: :Array1D, elements: BGM ),
-      82 => FieldSchema.new( name: :gameover_bgm, type: :Array1D, elements: BGM ),
-      91 => FieldSchema.new( name: :cursor_se, type: :Array1D, elements: SE ),
-      92 => FieldSchema.new( name: :decision_se, type: :Array1D, elements: SE ),
-      93 => FieldSchema.new( name: :cancel_se, type: :Array1D, elements: SE ),
-      94 => FieldSchema.new( name: :buzzer_se, type: :Array1D, elements: SE ),
-      95 => FieldSchema.new( name: :battle_start_se, type: :Array1D, elements: SE ),
-      96 => FieldSchema.new( name: :escape_se, type: :Array1D, elements: SE ),
-      97 => FieldSchema.new( name: :enemy_attack_se, type: :Array1D, elements: SE ),
-      98 => FieldSchema.new( name: :enemy_damaged_se, type: :Array1D, elements: SE ),
-      99 => FieldSchema.new( name: :ally_damaged_se, type: :Array1D, elements: SE ),
-      100 => FieldSchema.new( name: :evasion_se, type: :Array1D, elements: SE ),
-      101 => FieldSchema.new( name: :enemy_death_se, type: :Array1D, elements: SE ),
-      102 => FieldSchema.new( name: :item_se, type: :Array1D, elements: SE ),
+      76 => { name: :before_vehicle_music, type: :Array1D, elements: BGM },
+      77 => { name: :before_battle_music, type: :Array1D, elements: BGM },
+      78 => { name: :stored_bgm, type: :Array1D, elements: BGM },
+      79 => { name: :boat_bgm, type: :Array1D, elements: BGM },
+      80 => { name: :ship_bgm, type: :Array1D, elements: BGM },
+      81 => { name: :airship_bgm, type: :Array1D, elements: BGM },
+      82 => { name: :gameover_bgm, type: :Array1D, elements: BGM },
+      91 => { name: :cursor_se, type: :Array1D, elements: SE },
+      92 => { name: :decision_se, type: :Array1D, elements: SE },
+      93 => { name: :cancel_se, type: :Array1D, elements: SE },
+      94 => { name: :buzzer_se, type: :Array1D, elements: SE },
+      95 => { name: :battle_start_se, type: :Array1D, elements: SE },
+      96 => { name: :escape_se, type: :Array1D, elements: SE },
+      97 => { name: :enemy_attack_se, type: :Array1D, elements: SE },
+      98 => { name: :enemy_damaged_se, type: :Array1D, elements: SE },
+      99 => { name: :ally_damaged_se, type: :Array1D, elements: SE },
+      100 => { name: :evasion_se, type: :Array1D, elements: SE },
+      101 => { name: :enemy_death_se, type: :Array1D, elements: SE },
+      102 => { name: :item_se, type: :Array1D, elements: SE },
       # Transition effects, each a single raw byte (not a BER integer). A value
       # of 0xff means "use the database value"; a real Save<N>.lsd stores 0xff
       # here, which is invalid BER, confirming these are :uint8 rather than :int.
-      111 => FieldSchema.new( name: :teleport_erase_transition, type: :uint8 ),
-      112 => FieldSchema.new( name: :teleport_show_transition, type: :uint8 ),
-      113 => FieldSchema.new( name: :battle_start_erase_transition, type: :uint8 ),
-      114 => FieldSchema.new( name: :battle_start_show_transition, type: :uint8 ),
-      115 => FieldSchema.new( name: :battle_end_erase_transition, type: :uint8 ),
-      116 => FieldSchema.new( name: :battle_end_show_transition, type: :uint8 ),
+      111 => { name: :teleport_erase_transition, type: :uint8 },
+      112 => { name: :teleport_show_transition, type: :uint8 },
+      113 => { name: :battle_start_erase_transition, type: :uint8 },
+      114 => { name: :battle_start_show_transition, type: :uint8 },
+      115 => { name: :battle_end_erase_transition, type: :uint8 },
+      116 => { name: :battle_end_show_transition, type: :uint8 },
       # Control Teleport/Escape/Save/Menu Access (11820/11840/11930/11960).
       # All four turn out to be ONE uniform "omit at true default" cluster --
       # confirmed against genuine RPG_RT.exe under wine, probing each with a
@@ -2182,10 +2139,10 @@ module LCF
       # timer/tally fields, which already cites this exact field as its
       # template). #to_lsd's own comment in game.rb records the write-side
       # "omit at true" gating this cluster uses.
-      121 => FieldSchema.new( name: :teleport_allowed, type: :bool ),
-      122 => FieldSchema.new( name: :escape_allowed, type: :bool ),
-      123 => FieldSchema.new( name: :save_allowed, type: :bool ),
-      124 => FieldSchema.new( name: :menu_allowed, type: :bool ),
+      121 => { name: :teleport_allowed, type: :bool },
+      122 => { name: :escape_allowed, type: :bool },
+      123 => { name: :save_allowed, type: :bool },
+      124 => { name: :menu_allowed, type: :bool },
       # Cycle #165 surfaced this field as declared but completely unplumbed
       # (`Game::State#to_lsd`/`.from_lsd` never read or wrote it) and cycle
       # #166 confirmed the underlying command it names -- Change Battle
@@ -2254,8 +2211,8 @@ module LCF
       # scene-layer dependency was needed after all. Not accounted for: a
       # live Change Map Tileset override (`Scene::Map`'s own `@tileset_id`),
       # which this codebase does not persist anywhere yet.
-      125 => FieldSchema.new( name: :battle_background, type: :string ),
-       131 => FieldSchema.new( name: :save_count, type: :int ),
+      125 => { name: :battle_background, type: :string },
+       131 => { name: :save_count, type: :int },
       # The file slot this save was written to. Confirmed against genuine
       # RPG_RT.exe under wine (cycle #161): saving to File 1 omits this field
       # entirely (matching the `default: 1` below), while saving to File 2 /
@@ -2264,7 +2221,7 @@ module LCF
       # `Game::State#to_lsd`'s own comment in game.rb for the exact capture
       # shapes tried; this codebase's own `#to_lsd` used to hardcode this
       # field to 1 unconditionally regardless of the real destination slot.
-       132 => FieldSchema.new( name: :save_slot, type: :int, default: 1 ),
+       132 => { name: :save_slot, type: :int, default: 1 },
       # liblcf's `SaveSystem.atb_mode` (0x8C == 140): the RPG2003 wait/active
       # toggle. 0 = wait (the command menu pauses the fight), 1 = active
       # (gauges keep filling while a menu is open and a ready non-controllable
@@ -2273,24 +2230,24 @@ module LCF
       # field at all, correcting the premise ADR 0054 recorded -- and it is
       # what the field menu's Wait command (id 8) flips. RPG2000 saves never
       # carry it (the chunk is 2003-only), so an absent chunk reads 0 (wait).
-      140 => FieldSchema.new( name: :atb_mode, type: :int, default: 0 ),
+      140 => { name: :atb_mode, type: :int, default: 0 },
     } }
 
     # Fields shown on the file-select screen (chunk 100 of the save file). The
     # wiki lists them inline at the top of the save-data page.
     SAVE_TITLE = lazy { {
-      1 => FieldSchema.new( name: :timestamp, type: :double ),
-      11 => FieldSchema.new( name: :hero_name, type: :string ),
-      12 => FieldSchema.new( name: :hero_level, type: :int ),
-      13 => FieldSchema.new( name: :hero_hp, type: :int ),
-      21 => FieldSchema.new( name: :face1_name, type: :string ),
-      22 => FieldSchema.new( name: :face1_index, type: :int, default: 0 ),
-      23 => FieldSchema.new( name: :face2_name, type: :string ),
-      24 => FieldSchema.new( name: :face2_index, type: :int, default: 0 ),
-      25 => FieldSchema.new( name: :face3_name, type: :string ),
-      26 => FieldSchema.new( name: :face3_index, type: :int, default: 0 ),
-      27 => FieldSchema.new( name: :face4_name, type: :string ),
-      28 => FieldSchema.new( name: :face4_index, type: :int, default: 0 ),
+      1 => { name: :timestamp, type: :double },
+      11 => { name: :hero_name, type: :string },
+      12 => { name: :hero_level, type: :int },
+      13 => { name: :hero_hp, type: :int },
+      21 => { name: :face1_name, type: :string },
+      22 => { name: :face1_index, type: :int, default: 0 },
+      23 => { name: :face2_name, type: :string },
+      24 => { name: :face2_index, type: :int, default: 0 },
+      25 => { name: :face3_name, type: :string },
+      26 => { name: :face3_index, type: :int, default: 0 },
+      27 => { name: :face4_name, type: :string },
+      28 => { name: :face4_index, type: :int, default: 0 },
     } }
 
     # liblcf's SaveScreen (generator/csv/fields.csv), the screen-tint subset
@@ -2298,23 +2255,23 @@ module LCF
     # save-state surface this codebase does not yet model at all in
     # Game::Screen, and are left out here too.
     SAVE_SCREEN = lazy { {
-      1 => FieldSchema.new( name: :tint_finish_red, type: :int, default: 100 ),
-      2 => FieldSchema.new( name: :tint_finish_green, type: :int, default: 100 ),
-      3 => FieldSchema.new( name: :tint_finish_blue, type: :int, default: 100 ),
-      4 => FieldSchema.new( name: :tint_finish_sat, type: :int, default: 100 ),
-      11 => FieldSchema.new( name: :tint_current_red, type: :double, default: 100.0 ),
-      12 => FieldSchema.new( name: :tint_current_green, type: :double, default: 100.0 ),
-      13 => FieldSchema.new( name: :tint_current_blue, type: :double, default: 100.0 ),
-      14 => FieldSchema.new( name: :tint_current_sat, type: :double, default: 100.0 ),
-      15 => FieldSchema.new( name: :tint_time_left, type: :int, default: 0 ),
+      1 => { name: :tint_finish_red, type: :int, default: 100 },
+      2 => { name: :tint_finish_green, type: :int, default: 100 },
+      3 => { name: :tint_finish_blue, type: :int, default: 100 },
+      4 => { name: :tint_finish_sat, type: :int, default: 100 },
+      11 => { name: :tint_current_red, type: :double, default: 100.0 },
+      12 => { name: :tint_current_green, type: :double, default: 100.0 },
+      13 => { name: :tint_current_blue, type: :double, default: 100.0 },
+      14 => { name: :tint_current_sat, type: :double, default: 100.0 },
+      15 => { name: :tint_time_left, type: :int, default: 0 },
       # liblcf's own generator/csv/fields.csv (SaveScreen): the live Pan
       # Screen offset, confirmed present on a genuine kk1.12 save under
       # wine (field 42/pan_y nonzero, field 41/pan_x absent -- elided at
       # its own default 0, a vertical-only pan). `Game::Screen` already
       # tracks this (`#pan_offset`) for the Marshal save format; only the
       # `.lsd` write was missing.
-      41 => FieldSchema.new( name: :pan_x, type: :int, default: 0 ),
-      42 => FieldSchema.new( name: :pan_y, type: :int, default: 0 ),
+      41 => { name: :pan_x, type: :int, default: 0 },
+      42 => { name: :pan_y, type: :int, default: 0 },
       # liblcf's own fields 0x2B-0x2F (43-47): the last (or currently
       # playing) battle animation's id/target/frame/active/global-scope --
       # confirmed present (id/target/frame, all nonzero) on the same
@@ -2344,24 +2301,24 @@ module LCF
     # chunk for chunk: 112 present but the same empty one-byte terminator,
     # 200 present at the identical 5 bytes -- the same shape from an
     # unrelated, much larger database, not merely a kk1.12 coincidence.
-    SAVE_DATA = FieldSchema.new(
+    SAVE_DATA = {
       name: :Save, type: :Array1D,
       elements: {
-        100 => FieldSchema.new( name: :title, type: :Array1D, elements: SAVE_TITLE ),
-        101 => FieldSchema.new( name: :system, type: :Array1D, elements: SAVE_SYSTEM ),
-        102 => FieldSchema.new( name: :screen, type: :Array1D, elements: SAVE_SCREEN ),
-        103 => FieldSchema.new( name: :pictures, type: :Array2D, elements: SAVE_PICTURE ),
-        104 => FieldSchema.new( name: :hero, type: :Array1D, elements: SAVE_MOVABLE ),
-        105 => FieldSchema.new( name: :boat, type: :Array1D, elements: SAVE_MOVABLE ),
-        106 => FieldSchema.new( name: :ship, type: :Array1D, elements: SAVE_MOVABLE ),
-        107 => FieldSchema.new( name: :airship, type: :Array1D, elements: SAVE_MOVABLE ),
-        108 => FieldSchema.new( name: :actors, type: :Array2D, elements: SAVE_PARTY_ACTOR ),
-        109 => FieldSchema.new( name: :inventory, type: :Array1D, elements: SAVE_INVENTORY ),
-        110 => FieldSchema.new( name: :targets, type: :Array2D, elements: SAVE_TARGET ),
-        111 => FieldSchema.new( name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT ),
-        113 => FieldSchema.new( name: :foreground_event, type: :Array1D, elements: SAVE_FOREGROUND_EVENT ),
-        114 => FieldSchema.new( name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT ),
+        100 => { name: :title, type: :Array1D, elements: SAVE_TITLE },
+        101 => { name: :system, type: :Array1D, elements: SAVE_SYSTEM },
+        102 => { name: :screen, type: :Array1D, elements: SAVE_SCREEN },
+        103 => { name: :pictures, type: :Array2D, elements: SAVE_PICTURE },
+        104 => { name: :hero, type: :Array1D, elements: SAVE_MOVABLE },
+        105 => { name: :boat, type: :Array1D, elements: SAVE_MOVABLE },
+        106 => { name: :ship, type: :Array1D, elements: SAVE_MOVABLE },
+        107 => { name: :airship, type: :Array1D, elements: SAVE_MOVABLE },
+        108 => { name: :actors, type: :Array2D, elements: SAVE_PARTY_ACTOR },
+        109 => { name: :inventory, type: :Array1D, elements: SAVE_INVENTORY },
+        110 => { name: :targets, type: :Array2D, elements: SAVE_TARGET },
+        111 => { name: :map_events, type: :Array1D, elements: SAVE_MAP_EVENT },
+        113 => { name: :foreground_event, type: :Array1D, elements: SAVE_FOREGROUND_EVENT },
+        114 => { name: :common_events, type: :Array2D, elements: SAVE_COMMON_EVENT },
       }
-    )
+    }
   end
 end
