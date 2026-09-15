@@ -203,7 +203,21 @@ uint64_t m5stack_input_scan(void) {
 }
 
 bool m5stack_audio_init(void) {
-  g_sd_available = SD.begin(kSdCsPin);
+  // SDFS::begin() (sd_diskio.cpp) unconditionally calls spi.begin() on
+  // whatever SPIClass it's handed -- regardless of whether a card is even
+  // present -- and SPIClass::begin() only no-ops if *that exact C++
+  // object* was already started. TFT_eSPI keeps its own private SPIClass
+  // instance rather than using the Arduino-global SPI object, so passing
+  // that default global here would hand SD a second, not-yet-started
+  // SPIClass bound to the same physical VSPI hardware peripheral --
+  // spiStartBus() would then genuinely reset that peripheral's registers
+  // out from under TFT_eSPI, corrupting every display write from then on
+  // (confirmed directly: without this, a QEMU display dump comes back
+  // mostly garbled colors instead of the intended black background -- see
+  // docs/adr/0157-m5stack-core-qemu-emulator.md's "Status, audio support").
+  // getSPIinstance() hands SD.begin() TFT_eSPI's own already-started
+  // object, so its spi.begin() call is the no-op it should be.
+  g_sd_available = SD.begin(kSdCsPin, g_tft.getSPIinstance());
   return g_sd_available;
 }
 

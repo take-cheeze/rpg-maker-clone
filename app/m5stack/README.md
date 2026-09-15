@@ -189,12 +189,15 @@ job checks on every run.
 ## Audio
 
 The Core's built-in speaker plays WAV files off the microSD slot:
-`m5stack_audio_init()` (called once from `setup()`) mounts the card, and
-`m5stack_audio_play_wav(path)` opens, parses and plays one file, blocking
-until it finishes. `src/main.cxx`'s demo triggers this on a fresh press of
-a FACES Gamepad Face's Start button (see "Gamepad Face" above) -- deliberately
-not one of the Core's own front buttons, which read "held" for the entire
-run under the QEMU smoke test and would fire this on every single boot.
+`m5stack_audio_init()` mounts the card, and `m5stack_audio_play_wav(path)`
+opens, parses and plays one file, blocking until it finishes. `src/main.cxx`'s
+demo triggers both on a fresh press of a FACES Gamepad Face's Start button
+(see "Gamepad Face" above) -- deliberately not one of the Core's own front
+buttons, which read "held" for the entire run under the QEMU smoke test and
+would fire this on every single boot -- and deliberately lazily (on that
+first press, not unconditionally from `setup()`): see `m5stack_audio_init()`'s
+own doc comment in `include/m5stack.hxx` for why (a real shared-VSPI-bus
+hazard on top of a QEMU-only display-model gap, both below).
 
 Both the SD slot and the speaker's wiring were checked directly, not
 assumed from a generic ESP32 pinout: the microSD slot shares the display's
@@ -226,11 +229,57 @@ test (no board or emulator involved) -- signed-16 min/max/zero-crossing
 cases and 8-bit passthrough/averaging all land exactly where the math says
 they should. The firmware itself builds for real hardware and boots safely
 under QEMU with no SD card attached at all (`SD.begin()` fails cleanly, no
-hang, `setup()` still completes). What is **not** verified: real analog
-output, which needs actual hardware and a way to capture it that does not
-exist yet (unlike the display, no downstream QEMU device models the DAC or
-LEDC-PWM path this speaker could plausibly also use); and real SD-over-SPI
-file access under QEMU -- tried directly and it does not work, not just
+hang, `setup()` still completes) -- but two more QEMU-specific gaps turned
+up chasing that down to a real display-dump comparison, not just a
+"still boots" glance, both worth stating plainly rather than glossing over:
+
+- `SD.begin()` unconditionally calls the Arduino `SPIClass`'s own
+  `spi.begin()`, which only no-ops if *that exact C++ object* was already
+  started; TFT_eSPI keeps its own private `SPIClass` bound to the same
+  physical VSPI peripheral the display uses, so the naive `SD.begin(4)`
+  handed it a second, fresh `SPIClass` and genuinely reset that peripheral's
+  hardware registers out from under TFT_eSPI -- confirmed directly against
+  a QEMU display dump (mostly garbled colors instead of the intended black
+  background). Fixed by passing `g_tft.getSPIinstance()` to `SD.begin()`
+  instead of the implicit default.
+- Even with that fix, a QEMU-only display-model gap remains: this fork's
+  emulated ILI9341 does not gate on the real `TFT_CS` pin the way real
+  silicon does, so *any* SPI traffic on the shared bus -- including a plain
+  SD card probe addressed to its own, different CS line -- still reaches
+  the display model and corrupts it. Confirmed by testing with `SD.begin()`
+  called both from `setup()` (before the demo ever draws anything -- no
+  corruption observed) and later, from `loop()` gated behind a button press
+  (corruption observed) -- isolating this to the display model's own CS
+  handling, not this PR's parsing or downmix code. This is *why*
+  `m5stack_audio_init()` is called lazily rather than unconditionally at
+  boot: the plain QEMU smoke test never presses Start, so it never touches
+  SD at all, sidestepping this gap entirely (a real design improvement in
+  its own right -- don't spin up a peripheral nothing has asked for -- not
+  just a workaround).
+
+A third, separate finding surfaced only in the *lazily-triggered* path and
+is being disclosed rather than quietly worked around: pressing Start under
+QEMU with a Gamepad Face attached (`M5STACK_GAMEPAD_STATE`) still reliably
+reaches this firmware's own `"Keys: ... Start"` line -- the CI check this
+repo actually runs -- but the SD mount failure that follows (no SD-over-SPI
+device exists under QEMU at all, see below) then trips a FreeRTOS assertion
+inside the Arduino SD library's own mount-failure cleanup path
+(`assert failed: xQueueGenericSend`, inside `SPIClass::endTransaction()`),
+rebooting the guest. Reproduces with the *default* global `SPI` object too
+(not just `getSPIinstance()`), and with or without a Gamepad Face attached
+-- calling `SD.begin()` from `setup()`, before anything else has run, never
+triggers it; calling the identical function later, from `loop()`, does.
+That "works early, breaks later" shape, on a call path (a global
+`SPIClass`'s own mutex, created at C++ static-init time) that countless
+real ESP32 Arduino sketches exercise this exact way without incident,
+points at a QEMU-specific FreeRTOS/heap-timing artifact rather than a bug
+in this PR's own code -- but it is *not independently confirmed* on real
+hardware, unlike the two findings above, so it is flagged as suspected
+QEMU-only, not proven. What is **not** verified: real analog output, which
+needs actual hardware and a way to capture it that does not exist yet
+(unlike the display, no downstream QEMU device models the DAC or LEDC-PWM
+path this speaker could plausibly also use); and real SD-over-SPI file
+access under QEMU -- tried directly and it does not work, not just
 untried: `espressif/qemu`'s own SD card support (`esp32_machine_init_sd`,
 already in the fork, no new patch needed) wires its `TYPE_SD_CARD` to the
 ESP32's dedicated SDMMC peripheral, a genuinely different piece of hardware

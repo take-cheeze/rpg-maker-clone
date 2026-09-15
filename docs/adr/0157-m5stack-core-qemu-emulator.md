@@ -460,7 +460,19 @@ on -- confirmed empirically too: initializing SD before the display left
 the display uninitialized, matching a real M5Stack community report of
 this exact shared-bus ordering hazard, which is why
 `m5stack_audio_init()`'s own doc comment requires it be called after
-`m5stack_display_create()`. The speaker amplifier is wired to GPIO25, one
+`m5stack_display_create()`. Ordering alone was not enough, though: even
+called after the display, `SD.begin(4)`'s own unconditional `spi.begin()`
+call (Arduino's SD library does this regardless of whether a card is
+present) genuinely reset the shared VSPI peripheral's hardware registers
+out from under `TFT_eSPI`, because `TFT_eSPI` keeps its own private
+`SPIClass` bound to that peripheral rather than using the Arduino-global
+`SPI` object, so `SPIClass::begin()`'s own "already started, no-op" guard
+never triggered against a plain default `SD.begin()` call -- confirmed
+directly against a QEMU display dump (mostly garbled colors instead of the
+intended black background) before this was understood, not assumed from
+reading the library source alone. Fixed by handing `SD.begin()`
+`g_tft.getSPIinstance()` (a real TFT_eSPI API, built for exactly this
+shared-bus case) instead of the implicit default. The speaker amplifier is wired to GPIO25, one
 of the ESP32's two internal 8-bit DAC channels; `m5stack_audio_play_wav()`
 downmixes whatever the file declares (8 or 16-bit, mono or stereo PCM) to
 8-bit unsigned mono and writes it with `dacWrite()`, paced by
@@ -501,6 +513,51 @@ otherwise: unlike the display, no downstream QEMU device models the DAC
 (or the LEDC-PWM path a smoother implementation might use instead) to
 capture anything against.
 
+**Two more QEMU-specific gaps, found chasing the display-dump regression
+above to ground rather than stopping at "the getSPIinstance() fix worked":**
+
+1. Even with that fix, this fork's emulated ILI9341 display device does not
+   gate on the real `TFT_CS` pin the way real silicon does -- confirmed by
+   testing `SD.begin()` called both from `setup()` (before the demo draws
+   anything: no display corruption) and later, from `loop()` gated behind a
+   button press (corruption observed) -- isolating the remaining
+   corruption to the display model's own chip-select handling, not this
+   PR's own code, since nothing else differs between those two calls other
+   than *when* the SD probe's SPI traffic hits the shared bus relative to
+   the display having already drawn something. `main.cxx`'s demo calls
+   `m5stack_audio_init()` lazily (on the first Start press) rather than
+   unconditionally at boot specifically to sidestep this: the plain QEMU
+   smoke test never presses Start, so it never touches SD, and the
+   display-dump check this repo's own CI runs passes exactly as it did
+   before this PR. Fixing the display model itself (real CS gating) is
+   real, plausible future work but is new QEMU device work, out of scope
+   here the same way the SD-over-SPI bridge above is.
+2. A separate finding, disclosed rather than quietly avoided: pressing
+   Start under QEMU with a Gamepad Face attached still reliably reaches
+   this firmware's own `"Keys: ... Start"` line -- the actual assertion
+   `.github/workflows/build.yml`'s `m5stack-qemu` job checks -- but the SD
+   mount failure that follows (no SD-over-SPI device exists under QEMU at
+   all, see above) then trips a FreeRTOS assertion inside the Arduino SD
+   library's own mount-failure cleanup path (`assert failed:
+   xQueueGenericSend`, inside `SPIClass::endTransaction()`), rebooting the
+   guest. Reproduces with the *default* global `SPI` object too, not just
+   `getSPIinstance()`, and with or without a Gamepad Face attached --
+   isolating it to *when* `SD.begin()` first runs (early in `setup()`:
+   never triggers it; later, from `loop()`: does), not to this PR's own
+   choice of `SPIClass` instance or to the gamepad device. That "works
+   early, breaks later" shape, on a call path (a global `SPIClass`'s own
+   FreeRTOS mutex, created at C++ static-init time, a pattern countless
+   real ESP32 Arduino sketches exercise this exact way without incident)
+   points at a QEMU-specific FreeRTOS/heap-timing artifact rather than a
+   bug in this PR's own code -- but that is a hypothesis, not an
+   independently confirmed fact the way the SDMMC-vs-SPI mismatch above
+   is, so it is flagged here as suspected QEMU-only rather than proven.
+   It does not currently break CI (the required log lines print before the
+   crash, and the boot script's own exit code and the Keys-line grep both
+   still pass), so it was not chased further this pass; a real fix, if this
+   hypothesis holds, would live in QEMU's own FreeRTOS/tick emulation, not
+   in this port.
+
 ## Consequences
 
 - A regression that breaks the firmware anywhere from bootloader through
@@ -516,6 +573,15 @@ capture anything against.
   QEMU to cover this (an `ssi-sd`-style device for the SD side; no known
   path yet for the DAC/analog side) is real future work, named in "Status,
   audio support" above rather than left undocumented.
+- The same section names two more QEMU-only gaps this pass's own testing
+  surfaced: the emulated display doesn't gate on its real CS pin (worked
+  around by initializing SD lazily rather than at boot, not by patching the
+  display model), and calling `SD.begin()` well after boot (as opposed to
+  from `setup()`) trips a FreeRTOS assertion crash+reboot suspected --
+  though not proven -- to be QEMU-specific. Neither currently fails CI, but
+  both are real gaps in what this port's QEMU emulation can be trusted to
+  reflect about real-hardware SD behavior, beyond the already-named
+  SD-over-SPI-vs-SDMMC mismatch.
 - Display rendering verification is now reachable via a downstream QEMU
   patch (see "Status, display support" above) -- the SPI-TFT device this
   bullet originally proposed as future work, now written. Button *input*

@@ -91,11 +91,10 @@ void setup(void) {
   lv_init();
   m5stack_display_create(320, 240);
   m5stack_input_init();
-  // SD/DAC bring-up: does not gate "setup complete" below on a card being
-  // present at all -- the microSD slot is exactly as optional as the FACES
-  // Gamepad Face, and m5stack_audio_play_wav() already fails gracefully with
-  // none mounted (see its own doc comment in m5stack.hxx).
-  Serial.println(m5stack_audio_init() ? "SD: mounted" : "SD: not present");
+  // Deliberately not bringing up the SD/DAC here: m5stack_audio_init() is
+  // called lazily, on the first Start press below, not unconditionally at
+  // boot -- see its own doc comment in m5stack.hxx for why (a real
+  // shared-VSPI-bus hazard on top of a QEMU-only display-model gap).
   build_ui();
   // The one fixed marker scripts/m5stack_qemu_boot.bash waits for -- printed
   // once setup() has run every HAL init call above without hanging.
@@ -115,9 +114,14 @@ void loop(void) {
   // own downstream QEMU Gamepad Face device with a simulated press -- is
   // actually present, making this a real edge trigger under both.
   static uint64_t last_mask = 0;
+  static bool sd_initialized = false;
   const bool start_pressed_now = (mask & (1ull << M5_INPUT_N1)) != 0;
   const bool start_pressed_before = (last_mask & (1ull << M5_INPUT_N1)) != 0;
   if (start_pressed_now && !start_pressed_before) {
+    if (!sd_initialized) {
+      sd_initialized = true;
+      Serial.println(m5stack_audio_init() ? "SD: mounted" : "SD: not present");
+    }
     const bool played = m5stack_audio_play_wav("/bgm.wav");
     Serial.println(played ? "Audio: played /bgm.wav" : "Audio: play failed");
   }

@@ -112,18 +112,39 @@ void m5stack_input_init(void);
 // pressed from the Face this frame" rather than logging or asserting.
 uint64_t m5stack_input_scan(void);
 
-// Starts the Core's microSD slot and configures the built-in speaker's DAC
-// pin. Call once from setup(), after m5stack_display_create() -- the SD
-// card shares the display's own SPI bus (CS=GPIO4, SCK=GPIO18, MISO=GPIO19,
-// MOSI=GPIO23 -- the same SCK/MISO/MOSI TFT_eSPI's own build_flags already
-// configure the LCD on, just a different CS line), and TFT_eSPI's own
-// g_tft.begin() must be the one to first bring that bus up (confirmed
-// directly: initializing SD first left the display uninitialized, matching
-// a real-world caveat the M5Stack community has hit on this same shared-bus
-// wiring). Returns whether the card mounted; false is not fatal to the rest
-// of the HAL -- m5stack_audio_play_wav() below just fails gracefully with no
-// card present, the same "optional peripheral, not there" shape as the
-// FACES Gamepad Face above.
+// Starts the Core's microSD slot. Call after m5stack_display_create() --
+// the SD card shares the display's own SPI bus (CS=GPIO4, SCK=GPIO18,
+// MISO=GPIO19, MOSI=GPIO23 -- the same SCK/MISO/MOSI TFT_eSPI's own
+// build_flags already configure the LCD on, just a different CS line), and
+// TFT_eSPI's own g_tft.begin() must be the one to first bring that bus up
+// (confirmed directly: initializing SD first left the display uninitialized,
+// matching a real-world caveat the M5Stack community has hit on this same
+// shared-bus wiring). Passes TFT_eSPI's own already-started SPIClass
+// instance (g_tft.getSPIinstance()) to SD.begin() rather than the default
+// (unstarted) Arduino-global one -- Arduino's SD library calls spi.begin()
+// unconditionally, and SPIClass::begin() only no-ops on a SPIClass object
+// that was already started; handing it a second, fresh SPIClass bound to
+// the same physical VSPI peripheral would let it genuinely reset that
+// peripheral's hardware registers out from under TFT_eSPI, corrupting every
+// display write from then on (confirmed directly against a QEMU display
+// dump before this fix was in place).
+//
+// Deliberately not called from setup(): call it lazily, right before the
+// first m5stack_audio_play_wav() (see app/m5stack/src/main.cxx's own demo).
+// Two independent reasons, not just one: it avoids spinning up a peripheral
+// nothing has asked for yet (the same "don't touch it until needed" shape
+// as everything else optional on this board), and it sidesteps a separate,
+// QEMU-only limitation -- this fork's emulated ILI9341 device does not
+// gate on the real TFT_CS pin the way real silicon does, so *any* SPI
+// traffic on the shared bus (including a plain SD card probe addressed to
+// its own, different CS line) still reaches the display model and
+// corrupts it, a QEMU display-model gap unrelated to the getSPIinstance()
+// fix above and out of scope to patch here (see
+// docs/adr/0157-m5stack-core-qemu-emulator.md's "Status, audio support").
+// Returns whether the card mounted; false is not fatal to the rest of the
+// HAL -- m5stack_audio_play_wav() below just fails gracefully with no card
+// present, the same "optional peripheral, not there" shape as the FACES
+// Gamepad Face above.
 bool m5stack_audio_init(void);
 
 // Plays one WAV file from the SD card (Arduino SD library path, e.g.
