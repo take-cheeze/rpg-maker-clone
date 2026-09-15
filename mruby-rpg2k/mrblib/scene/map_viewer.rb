@@ -112,6 +112,7 @@ class RPG2k
       # the run. Left false (the default) for every other caller, including
       # F9's own Map page, where popping back to the debug menu underneath is
       # exactly the wanted behaviour.
+      # bc2cpp: (, Game::State)
       def initialize(parent, state, map: nil, start_mode: :pan, quit_on_close: false)
         super parent
         @state = state

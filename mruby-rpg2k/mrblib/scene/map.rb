@@ -393,6 +393,7 @@ class RPG2k
         base
       end
 
+      # bc2cpp: (, Game::State)
       def initialize parent, state, apply_access: true
         super parent
         @state = state
