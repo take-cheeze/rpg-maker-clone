@@ -1338,7 +1338,16 @@ module Game
   # partial source so the check harnesses can hand in a stub (or nothing at all,
   # in which case the enemies fall back to plain attacking as before).
   class EnemyAi
-    # bc2cpp: (, Game::State)
+    # `db` filled in alongside the already-proven `state` hint: the one
+    # `Game::EnemyAi.new` site in the closed world is Scene::Battle's own
+    # `Game::EnemyAi.new(db, @state)` (mruby-rpg2k/mrblib/scene/battle.rb),
+    # where `db` is `Scene::Base`'s own `attr_reader :db` -- the single
+    # `LCF::Database` every scene copies off `RPG2k#db` (see
+    # `Game::Actor#initialize`'s own comment in mruby-rpg2k/mrblib/game.rb
+    # for the full trace). The "check harnesses hand in a stub" note above
+    # is about the CRuby-only scripts/, which are outside
+    # `closed_world_mrblib_srcs` and never execute compiled code.
+    # bc2cpp: (LCF::Database, Game::State)
     def initialize(db, state)
       @db = db
       @state = state
