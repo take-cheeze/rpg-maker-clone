@@ -17,16 +17,22 @@ Usage:
     scripts/maix_sd_upload.py [--port /dev/ttyUSB1] LOCAL:REMOTE [LOCAL:REMOTE ...]
 
 Example (game data for the maix_game firmware, which reads GAME_DIR
-/sd/maixhello):
+/sd/maixgame):
     ruby scripts/gen-maix-hello-game.rb /tmp/maixhello
     scripts/maix_sd_upload.py \\
-        /tmp/maixhello/RPG_RT.ldb:/sd/maixhello/RPG_RT.ldb \\
-        /tmp/maixhello/RPG_RT.lmt:/sd/maixhello/RPG_RT.lmt \\
-        /tmp/maixhello/Title/maix.png:/sd/maixhello/Title/maix.png
+        /tmp/maixhello/RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb \\
+        /tmp/maixhello/RPG_RT.lmt:/sd/maixgame/RPG_RT.lmt \\
+        /tmp/maixhello/Title/maix.png:/sd/maixgame/Title/maix.png
+
+Remote paths must be 8.3: the bundled sdfat has no long-filename support
+(SdFile::make83Name rejects anything past 8 chars before the dot), so a
+remote like /sd/maixhello/... can never be created -- keep every path
+component short.
 """
 
 import argparse
 import sys
+import time
 
 import serial
 
@@ -42,12 +48,23 @@ def put_file(ser, local_path, remote_path):
     with open(local_path, "rb") as f:
         data = f.read()
 
+    # Hex-encoded on the wire (two lowercase chars per byte): the
+    # framework's UARTHS receive ISR drops 0x00 bytes outright, so raw
+    # binary can never arrive intact. <size> stays the decoded count.
+    hexdata = data.hex().encode("ascii")
+
     ser.write(f"PUT {remote_path} {len(data)}\n".encode("ascii"))
     reply = read_line(ser)
     if reply != "OK":
         raise RuntimeError(f"PUT {remote_path} rejected: {reply}")
 
-    ser.write(data)
+    # Paced in small chunks with gaps: the UARTHS receive ISR reads a
+    # single byte per interrupt, so a long uninterrupted burst overruns
+    # the hardware FIFO (observed past ~64 bytes). The firmware reads
+    # each chunk before the next arrives and tolerates the gaps.
+    for i in range(0, len(hexdata), 128):
+        ser.write(hexdata[i : i + 128])
+        time.sleep(0.05)
 
     reply = read_line(ser)
     if not reply.startswith("DONE"):
@@ -65,7 +82,7 @@ def main():
     parser.add_argument("--port", default="/dev/ttyUSB1")
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument(
-        "files", nargs="+", metavar="LOCAL:REMOTE", help="e.g. RPG_RT.ldb:/sd/maixhello/RPG_RT.ldb"
+        "files", nargs="+", metavar="LOCAL:REMOTE", help="e.g. RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb"
     )
     args = parser.parse_args()
 
@@ -77,6 +94,11 @@ def main():
         pairs.append((local, remote))
 
     with serial.Serial(args.port, args.baud, timeout=10) as ser:
+        # Opening the port resets the K210; give the loader time to boot
+        # and drop any bytes the reset shook loose, or the first PING can
+        # arrive garbled mid-boot and come back "ERR unknown command".
+        time.sleep(3)
+        ser.reset_input_buffer()
         ser.write(b"PING\n")
         reply = read_line(ser)
         if reply != "PONG SD_OK":

@@ -110,10 +110,14 @@ PING/PUT protocol as the Wio loader, driven by
 ```sh
 pio run -e maix_sd_upload -t upload --upload-port /dev/ttyUSB1
 scripts/maix_sd_upload.py \
-  /tmp/maixhello/RPG_RT.ldb:/sd/maixhello/RPG_RT.ldb \
-  /tmp/maixhello/Title/maix.png:/sd/maixhello/Title/maix.png
+  /tmp/maixhello/RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb \
+  /tmp/maixhello/Title/maix.png:/sd/maixgame/Title/maix.png
 pio run -e maix_game -t upload --upload-port /dev/ttyUSB1  # reflash real fw
 ```
+
+Remote paths must stay 8.3 -- the bundled sdfat has no long-filename
+support, so a remote like `/sd/maixhello/...` (9 chars) can never be
+created; that is why the example uses `/sd/maixgame/`.
 
 Port notes, confirmed against real hardware: the Amigo exposes two UARTs
 and only the second (`/dev/ttyUSB1` here) answers kflash; the console lives
