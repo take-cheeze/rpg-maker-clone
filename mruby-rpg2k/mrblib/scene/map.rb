@@ -17,6 +17,86 @@ class RPG2k
       # Visible tiles plus a one-tile margin so partially scrolled edges show.
       COLS = SCREEN_W / TILE + 1
       ROWS = SCREEN_H / TILE + 1
+
+      # One live map event's full per-frame state: identity/paging fields set
+      # once by #build_event, plus render/movement fields updated every real
+      # frame (#animate_event/#step_event/#walk_slide_step/...). Used to be a
+      # bare Hash literal (`{id: ..., char: ..., ...}`) -- a concrete, fixed-
+      # shape type instead, the same "opaque arbitrarily-keyed container ->
+      # named record" conversion mruby-lcf/mrblib/schema.rb's own FieldSchema
+      # already got. `keyword_init: true` keeps #build_event's own
+      # construction site looking almost identical to the Hash literal it
+      # replaces; real mruby's own Struct supports `#[]`/`#[]=` with a Symbol
+      # key exactly like Hash's own bracket access (confirmed against
+      # 3rd/mruby/mrbgems/mruby-struct/src/struct.c, the same fact
+      # FieldSchema's own comment already established), so every real
+      # consumer (`e[:id]`, `ev[:flash] = flash`, ...) throughout this file
+      # keeps working unchanged.
+      #
+      # 24 members set by #build_event's own literal, confirmed by parsing
+      # this file with RubyVM::AbstractSyntaxTree and reading off that one
+      # Hash literal's own key list (not guessed): id, char, page,
+      # page_number, trigger, commands, guarded, move_type, route,
+      # move_timer, layer, overlap_forbidden, translucent, anim_type,
+      # base_dir, base_pattern, anim_phase, anim_count, moving, disp_x,
+      # disp_y, move_count, slide_frac, jumping. Plus four more members this
+      # file sets only later, dynamically, never in the literal itself --
+      # found by grepping every `e[:name] =`/`ev[:name] =` site in this file,
+      # not assumed from the literal alone (the same real gap LCF::
+      # Array1D#sym2idx's own comment describes for FieldSchema): `flash`
+      # (#apply_sprite_flash), `forced_route`/`forced_freq`
+      # (#force_event_move_route), `crossed_hero_this_frame`
+      # (#step_event's own touch-trigger edge tracking).
+      MapEventState = Struct.new(
+        :id, :char, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
+        :move_timer, :layer, :overlap_forbidden, :translucent, :anim_type, :base_dir, :base_pattern,
+        :anim_phase, :anim_count, :moving, :disp_x, :disp_y, :move_count, :slide_frac, :jumping,
+        :flash, :forced_route, :forced_freq, :crossed_hero_this_frame,
+        keyword_init: true
+      )
+
+      # A live Show Message/Show Choices window's full state (#open_message):
+      # 19 members set by its own literal (confirmed by parsing this file
+      # with RubyVM::AbstractSyntaxTree and reading off that Hash literal's
+      # key list directly, not guessed) -- window, choice, count,
+      # choice_start, reveal, contents, inner_w, seg_lines, interp, page,
+      # pages, auto_close, face, face_x, face_y, text_x, text_w, gold_window,
+      # trailing_color. Plus four more members this file sets only later,
+      # dynamically, never in the literal itself (found the same way
+      # MapEventState's own four late members were, by grepping every
+      # `@message[:name] =` site in this file): awaiting_followup,
+      # followup_resumed, pause_frames, pending_choice.
+      MessageState = Struct.new(
+        :window, :choice, :count, :choice_start, :reveal, :contents, :inner_w,
+        :seg_lines, :interp, :page, :pages, :auto_close, :face, :face_x, :face_y,
+        :text_x, :text_w, :gold_window, :trailing_color,
+        :awaiting_followup, :followup_resumed, :pause_frames, :pending_choice,
+        keyword_init: true
+      )
+
+      # A live shop's full UI state (#open_shop): 15 members set by its own
+      # literal -- model, has_menu, screen, index, scroll, cmd_index, window,
+      # gold, status, party, desc, prompt, terms, browsed, interp. Plus
+      # `confirm_timer`, set only later by #drive_shop_quantity once a
+      # transaction commits (found by the same `@shop[:name] =` grep as
+      # MapEventState/MessageState's own late members). `quantity` holds a
+      # genuinely distinct nested record while the quantity counter is open
+      # (see ShopQuantity below), not a scalar field, so it is listed here
+      # too but is never Hash-literal-initialized.
+      ShopState = Struct.new(
+        :model, :has_menu, :screen, :index, :scroll, :cmd_index, :window, :gold,
+        :status, :party, :desc, :prompt, :terms, :browsed, :interp,
+        :confirm_timer, :quantity,
+        keyword_init: true
+      )
+
+      # The quantity counter's own sub-record, live only while `@shop[:screen]
+      # == :quantity` (and briefly after, through the purchased/sold
+      # confirmation -- see #drive_shop_quantity's own comment): which item
+      # (`id`), how many (`count`, 1..`max`), and whether this is a buy or a
+      # sell (`mode`, read back by #shop_quantity_move and
+      # #close_shop_quantity to know which screen to return to).
+      ShopQuantity = Struct.new(:id, :count, :max, :mode, keyword_init: true)
       # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
       # the per-frame slide advance for a character of internal move_speed `s`
       # (real RPG_RT's own 1-indexed Move Speed minus 1; see #page_move_speed
@@ -1530,23 +1610,62 @@ class RPG2k
         # 1-based slot in the event's own page list (Game::EventPage.select's
         # first return value) -- diagnostics-only (RPG2k#bug_report_text),
         # nothing here reads it back.
-        { id: id, char: ch, page: page, page_number: page_number,
-          trigger: page_trigger(page),
-          commands: page_commands(page), guarded: page_guarded(page),
-          move_type: move_type, route: route,
-          move_timer: EVENT_MOVE_DELAY[ch.move_frequency] || 40,
-          # Rendering state: the page's static graphic fields, a live walk
-          # animation phase / counter, a mid-step "moving" flag, and the pixel
-          # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
-          # the sprite between tiles. move_count == TILE means "at rest".
-          # `jumping` marks that slide as a hop, which is lifted along an arc
-          # and is the one kind that slides across more than a single tile.
-          layer: layer, overlap_forbidden: overlap_forbidden,
-          translucent: page_translucent(page),
-          anim_type: anim_type, base_dir: dir,
-          base_pattern: page_pattern(page), anim_phase: 0, anim_count: 0,
-          moving: false, disp_x: x, disp_y: y, move_count: TILE, slide_frac: 0,
-          jumping: false }
+        #
+        # Built via a bare `MapEventState.new` plus individual setters, not
+        # the single `MapEventState.new(id: id, char: ch, ...)` keyword call
+        # this originally shipped as: real, measured tools/bc2cpp/bc2cpp.rb
+        # regression, caught comparing its own real `== compiled entry
+        # points ==` diagnostic before/after -- a keyword call site (`nk >
+        # 0`) can only devirtualize into a callee's own compiled `_impl`
+        # (mruby's own `mrb_funcall*` family cannot express keywords at
+        # all, see compile_keyword_send's own comment), and `MapEventState`'s
+        # `#initialize` is Struct's own NATIVE implementation (no bytecode
+        # body to devirtualize into, ever) -- so the keyword-call form had
+        # no sound translation at all and silently dropped this ENTIRE
+        # method (not just this one call) out of AOT compilation, back onto
+        # the ordinary bytecode interpreter, the same "loud gap" fallback
+        # `#error`/SKIP_UNSUPPORTED already uses everywhere else, just for
+        # a real 159-call-site-per-frame method. Each setter below is an
+        # ordinary one-argument send (`nk = 0`), which carries no such
+        # restriction -- confirmed for real: `build_event` compiles clean
+        # again with this shape, and `MapEventState.new` (Struct's own
+        # zero-arg default, keyword_init: true's own empty-keyword-hash
+        # path, 3rd/mruby/mrbgems/mruby-struct/src/struct.c's own
+        # mrb_struct_initialize) fills every member nil first, matching
+        # this constructor's own real invariant of writing all of them
+        # unconditionally before returning.
+        event = MapEventState.new
+        event.id = id
+        event.char = ch
+        event.page = page
+        event.page_number = page_number
+        event.trigger = page_trigger(page)
+        event.commands = page_commands(page)
+        event.guarded = page_guarded(page)
+        event.move_type = move_type
+        event.route = route
+        event.move_timer = EVENT_MOVE_DELAY[ch.move_frequency] || 40
+        # Rendering state: the page's static graphic fields, a live walk
+        # animation phase / counter, a mid-step "moving" flag, and the pixel
+        # slide (display origin disp_x/disp_y + move_count 0..TILE) that eases
+        # the sprite between tiles. move_count == TILE means "at rest".
+        # `jumping` marks that slide as a hop, which is lifted along an arc
+        # and is the one kind that slides across more than a single tile.
+        event.layer = layer
+        event.overlap_forbidden = overlap_forbidden
+        event.translucent = page_translucent(page)
+        event.anim_type = anim_type
+        event.base_dir = dir
+        event.base_pattern = page_pattern(page)
+        event.anim_phase = 0
+        event.anim_count = 0
+        event.moving = false
+        event.disp_x = x
+        event.disp_y = y
+        event.move_count = TILE
+        event.slide_frac = 0
+        event.jumping = false
+        event
       end
 
       # Snapshot every live map event's current tile position and facing onto
@@ -6091,11 +6210,23 @@ class RPG2k
                                req[:allow_buy], req[:allow_sell])
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
-        @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  scroll: 0, cmd_index: 0, window: nil, gold: build_shop_gold_window,
-                  status: nil, party: nil, desc: nil, prompt: nil,
-                  terms: shop_terms(req[:type]), browsed: false,
-                  interp: it }
+        shop = ShopState.new
+        shop.model = model
+        shop.has_menu = has_menu
+        shop.screen = screen
+        shop.index = 0
+        shop.scroll = 0
+        shop.cmd_index = 0
+        shop.window = nil
+        shop.gold = build_shop_gold_window
+        shop.status = nil
+        shop.party = nil
+        shop.desc = nil
+        shop.prompt = nil
+        shop.terms = shop_terms(req[:type])
+        shop.browsed = false
+        shop.interp = it
+        @shop = shop
         draw_shop
       end
 
@@ -6758,7 +6889,12 @@ class RPG2k
         model = @shop[:model]
         max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
         return false if max < 1
-        @shop[:quantity] = { id: id, count: 1, max: max, mode: @shop[:screen] }
+        q = ShopQuantity.new
+        q.id = id
+        q.count = 1
+        q.max = max
+        q.mode = @shop[:screen]
+        @shop[:quantity] = q
         @shop[:screen] = :quantity
         draw_shop
         true
@@ -9171,20 +9307,32 @@ class RPG2k
           gold_window = build_inn_gold_window(db.term.gold.to_s)
           gold_window.open_animation(open_frames)
         end
-        @message = { window: win, choice: choice, count: plain.length,
-                     choice_start: 0, reveal: reveal, contents: contents,
-                     inner_w: inner_w, seg_lines: seg_lines, interp: interp,
-                     page: 0, pages: pages, auto_close: auto_close,
-                     face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
-                     face_x: face_right ? inner_w - FACE_INSET - FACE_SIZE : FACE_INSET,
-                     face_y: FACE_INSET,
-                     text_x: text_x, text_w: text_w, gold_window: gold_window,
-                     # The colour still in effect once this text ends -- a Show
-                     # Choices later merged onto this same window (see
-                     # #append_choice_lines) inherits it rather than starting
-                     # back at the default (yado.tk: an explicit `\c[0]` is
-                     # needed in the text to stop the choices inheriting it).
-                     trailing_color: scans.empty? ? 0 : scans.last[:end_color] }
+        message = MessageState.new
+        message.window = win
+        message.choice = choice
+        message.count = plain.length
+        message.choice_start = 0
+        message.reveal = reveal
+        message.contents = contents
+        message.inner_w = inner_w
+        message.seg_lines = seg_lines
+        message.interp = interp
+        message.page = 0
+        message.pages = pages
+        message.auto_close = auto_close
+        message.face = build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped)
+        message.face_x = face_right ? inner_w - FACE_INSET - FACE_SIZE : FACE_INSET
+        message.face_y = FACE_INSET
+        message.text_x = text_x
+        message.text_w = text_w
+        message.gold_window = gold_window
+        # The colour still in effect once this text ends -- a Show
+        # Choices later merged onto this same window (see
+        # #append_choice_lines) inherits it rather than starting
+        # back at the default (yado.tk: an explicit `\c[0]` is
+        # needed in the text to stop the choices inheriting it).
+        message.trailing_color = scans.empty? ? 0 : scans.last[:end_color]
+        @message = message
         speak_message(plain)
         draw_message_contents
         win.contents = contents

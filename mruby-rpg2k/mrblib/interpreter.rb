@@ -205,6 +205,58 @@ module Game
     # aborts the process with an "invalid event call" error.
     MAX_CALL_DEPTH = 1000
 
+    # The wait-request records below used to be bare Hash literals -- the same
+    # "opaque arbitrarily-keyed container -> named record" conversion
+    # Scene::Map's own MapEventState/ShopState/MessageState already got (see
+    # that file's own comment on MapEventState for the full rationale).
+    # `keyword_init: true` keeps each construction site looking almost
+    # identical to the Hash literal it replaces, and every real consumer
+    # (`req[:actor_id]`, ...) throughout this codebase keeps working
+    # unchanged, real mruby's own Struct supporting `#[]`/`#[]=` with a
+    # Symbol key exactly like Hash's own bracket access.
+
+    # #do_name_input's own request: which actor is being renamed, which
+    # character set the entry widget draws from, and the seed name (the
+    # actor's current name, or blank) to start the widget with.
+    NameInputRequest = Struct.new(:actor_id, :charset, :seed, keyword_init: true)
+
+    # #do_show_inn's own request.
+    InnRequest = Struct.new(:type, :price, :can_afford, :prompt, keyword_init: true)
+
+    # #do_open_shop's own request.
+    ShopRequest = Struct.new(:mode, :allow_buy, :allow_sell, :type, :goods, keyword_init: true)
+
+    # #do_enemy_encounter's / #start_random_battle's shared request shape --
+    # the two construction sites set different subsets of these members (see
+    # each site's own comment): `background`/`terrain_id` are set only later,
+    # dynamically, by #do_enemy_encounter (never in its own literal); `random`/
+    # `headless` are set only by #start_random_battle's own literal, never by
+    # #do_enemy_encounter's.
+    BattleRequest = Struct.new(
+      :troop_id, :allow_escape, :first_strike, :defeat_game_over,
+      :background, :terrain_id, :random, :headless,
+      keyword_init: true
+    )
+
+    # #do_key_input's own request (Key Input Processing, 11610): `wait`
+    # mirrors the command's own no-timeout flag, `accepted` the set of keys
+    # (see KeyInputAccepted below) #resolve_key_input should sample.
+    KeyInputRequest = Struct.new(:wait, :accepted, keyword_init: true)
+
+    # #do_key_input's own per-button accept-flag record -- one flag per
+    # KEY_INPUT_BUTTONS entry (decision/cancel/shift/down/left/right/up),
+    # plus `numbers`/`operators` (RPG2003's own whole-group flags -- see
+    # KEY_INPUT_GROUPS's own comment for why individual digit/operator keys
+    # never get their own member here).
+    KeyInputAccepted = Struct.new(
+      :decision, :cancel, :shift, :down, :left, :right, :up, :numbers, :operators,
+      keyword_init: true
+    )
+
+    # #diagnostic_position's own return shape (see that method's own
+    # comment).
+    DiagnosticPosition = Struct.new(:index, :size, :call_depth, keyword_init: true)
+
     # bc2cpp: (Game::State)
     def initialize(state)
       @state = state
@@ -688,7 +740,11 @@ module Game
     # command list at all.
     def diagnostic_position
       return nil if @list.empty? && @call_stack.empty?
-      { index: @index, size: @list.size, call_depth: @call_stack.size }
+      pos = DiagnosticPosition.new
+      pos.index = @index
+      pos.size = @list.size
+      pos.call_depth = @call_stack.size
+      pos
     end
 
     # Full call-stack snapshot, suitable for a genuine `.lsd`'s
@@ -1573,9 +1629,16 @@ module Game
       variables[var_id] = 0 if wait && var_id && var_id > 0
       return if block_pending_key_input_command(wait)
       size = cmd.parameters.size
-      accepted = { decision: cmd.param(3) != 0, cancel: cmd.param(4) != 0,
-                   shift: false, down: false, left: false, right: false,
-                   up: false, numbers: false, operators: false }
+      accepted = KeyInputAccepted.new
+      accepted.decision = cmd.param(3) != 0
+      accepted.cancel = cmd.param(4) != 0
+      accepted.shift = false
+      accepted.down = false
+      accepted.left = false
+      accepted.right = false
+      accepted.up = false
+      accepted.numbers = false
+      accepted.operators = false
       if @state.party.rpg2003? && size != 10
         # RPG2003's Numbers/Operators layout: still a single flag for the
         # whole D-pad, not the individual Shift/arrows RPG2000 1.50+ offers.
@@ -1600,7 +1663,10 @@ module Game
         accepted[:up]    = cmd.param(9) != 0
       end
       @input_variable = var_id
-      @key_input_request = { wait: wait, accepted: accepted }
+      req = KeyInputRequest.new
+      req.wait = wait
+      req.accepted = accepted
+      @key_input_request = req
       @wait_kind = :key_input
       @waiting = true
     end
@@ -1632,10 +1698,11 @@ module Game
     def do_name_input(cmd)
       actor = identity_target(cmd)
       return unless actor
-      @name_input_request = {
-        actor_id: cmd.param(0), charset: cmd.param(1),
-        seed: cmd.param(2) != 0 ? actor.name : ''
-      }
+      req = NameInputRequest.new
+      req.actor_id = cmd.param(0)
+      req.charset = cmd.param(1)
+      req.seed = cmd.param(2) != 0 ? actor.name : ''
+      @name_input_request = req
       @wait_kind = :name_input
       @waiting = true
     end
@@ -1649,8 +1716,12 @@ module Game
       nxt = @list[@index]
       @inn_has_handlers =
         !nxt.nil? && nxt.code == Cmd::INN_STAY && nxt.indent == cmd.indent
-      @inn_request = { type: cmd.param(0), price: price,
-                       can_afford: party.gold >= price, prompt: price > 0 }
+      req = InnRequest.new
+      req.type = cmd.param(0)
+      req.price = price
+      req.can_afford = party.gold >= price
+      req.prompt = price > 0
+      @inn_request = req
       @wait_kind = :inn
       @waiting = true
     end
@@ -1669,11 +1740,13 @@ module Game
       nxt = @list[@index]
       @shop_has_handlers =
         !nxt.nil? && nxt.code == Cmd::SHOP_TRANSACTION && nxt.indent == cmd.indent
-      @shop_request = {
-        mode: mode, allow_buy: mode == 0 || mode == 1,
-        allow_sell: mode == 0 || mode == 2, type: cmd.param(1),
-        goods: cmd.parameters[4..-1] || []
-      }
+      req = ShopRequest.new
+      req.mode = mode
+      req.allow_buy = mode == 0 || mode == 1
+      req.allow_sell = mode == 0 || mode == 2
+      req.type = cmd.param(1)
+      req.goods = cmd.parameters[4..-1] || []
+      @shop_request = req
       @wait_kind = :shop
       @waiting = true
     end
@@ -1714,11 +1787,12 @@ module Game
       @battle_has_handlers =
         !nxt.nil? && nxt.code == Cmd::VICTORY_HANDLER && nxt.indent == cmd.indent
       return skip_invalid_troop(troop_id) unless party.db_enemy_group(troop_id)
-      @battle_request = {
-        troop_id: troop_id,
-        allow_escape: escape_mode != 0, first_strike: cmd.param(5) != 0,
-        defeat_game_over: cmd.param(4) == 0
-      }
+      req = BattleRequest.new
+      req.troop_id = troop_id
+      req.allow_escape = escape_mode != 0
+      req.first_strike = cmd.param(5) != 0
+      req.defeat_game_over = cmd.param(4) == 0
+      @battle_request = req
       case cmd.param(2)
       when 1 then @battle_request[:background] = cmd.string.to_s
       when 2 then @battle_request[:terrain_id] = cmd.param(8)
@@ -1789,10 +1863,14 @@ module Game
       end
       @battle_has_handlers = false
       @battle_escape_aborts = false
-      @battle_request = { troop_id: troop_id, allow_escape: true,
-                          first_strike: first_strike,
-                          defeat_game_over: !party.death_handler?, random: true,
-                          headless: headless ? true : false }
+      req = BattleRequest.new
+      req.troop_id = troop_id
+      req.allow_escape = true
+      req.first_strike = first_strike
+      req.defeat_game_over = !party.death_handler?
+      req.random = true
+      req.headless = headless ? true : false
+      @battle_request = req
       @wait_kind = :battle
       @waiting = true
     end

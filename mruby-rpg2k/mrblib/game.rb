@@ -7258,6 +7258,22 @@ module Game
     AUTO_START = 3
     PARALLEL   = 4
 
+    # One common event's loaded record -- the same "opaque arbitrarily-keyed
+    # container -> named record" conversion Scene::Map's own MapEventState
+    # already got (see that Struct's own comment for the full rationale).
+    # `guarded` is never actually set by #load below (unlike MapEventState's
+    # own same-named member, which #build_event does set from the page) --
+    # it is here only because Scene::Map#start_autostart/#build_parallels
+    # read `c[:guarded]` off a common event record too (mirroring the map-
+    # event auto-start gate), and a Hash silently answers that missing key
+    # with nil where a Struct would raise NameError for a member that was
+    # never declared at all. Carrying it as a real (always-nil) member keeps
+    # that read exactly as safe as it always was.
+    CommonEventRecord = Struct.new(
+      :id, :trigger, :need_flag, :switch_id, :chunk, :commands, :guarded,
+      keyword_init: true
+    )
+
     # Load the common events from the database into plain hashes.
     #
     # `:commands` is decoded eagerly only for AUTO_START/PARALLEL common
@@ -7279,9 +7295,14 @@ module Game
       ce.each do |id, c|
         trigger = c.start_term
         eager = trigger == AUTO_START || trigger == PARALLEL
-        list.push({ id: id, trigger: trigger, need_flag: c.need_flag,
-                    switch_id: c.switch_id, chunk: c,
-                    commands: (eager ? c.event : nil) })
+        rec = CommonEventRecord.new
+        rec.id = id
+        rec.trigger = trigger
+        rec.need_flag = c.need_flag
+        rec.switch_id = c.switch_id
+        rec.chunk = c
+        rec.commands = eager ? c.event : nil
+        list.push(rec)
       end
       list
     rescue StandardError => e

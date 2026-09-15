@@ -460,10 +460,10 @@ REWRITES = {
 ',
         new: '          when :key_input then (resolve_key_input(@interpreter))
 ' }, # drive_key_input
-      { old: '                  scroll: 0, cmd_index: 0, window: nil, gold: build_shop_gold_window,
+      { old: '        shop.gold = build_shop_gold_window
 ',
-        new: '                  scroll: 0, cmd_index: 0, window: nil, gold: (gw = SHOP_STATUS_W; win = Window.new(SCREEN_W - gw - 6, SHOP_GOLD_Y,
-                         gw, SHOP_LINE_H + Window::BORDER * 2); win.z = 300; win.windowskin = @windowskin; win),
+        new: '        shop.gold = (gw = SHOP_STATUS_W; win = Window.new(SCREEN_W - gw - 6, SHOP_GOLD_Y,
+                         gw, SHOP_LINE_H + Window::BORDER * 2); win.z = 300; win.windowskin = @windowskin; win)
 ' }, # build_shop_gold_window
       { old: '        inner_h = [inner_h, shop_list_min_inner_h].max
 ',

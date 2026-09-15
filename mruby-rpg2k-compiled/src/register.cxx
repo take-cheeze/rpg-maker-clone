@@ -920,13 +920,13 @@
 //
 // Originally only two owners here (Game::Transition/Game::Map), not every
 // #initialize-compiling class this gem also registers below -- Game::State
-// and the pair Game::EnemyAi/Game::ChipSet were seriously considered and
-// ruled out, each for a genuinely different, real reason (a real call site
-// nested inside a Ruby block; a real call site nested inside an
-// otherwise-uncompiled method blocked by an unrelated `super`/`rescue`) --
-// see tools/bc2cpp/bc2cpp.rb's own DIRECT_CONSTRUCT_TARGETS comment for the
-// full writeup and the real regenerated-output checks behind each one. No
-// entry for either of those three belongs here as a result.
+// and Game::EnemyAi were seriously considered and ruled out, each for a
+// genuinely different, real reason (a real call site nested inside a Ruby
+// block; a real call site nested inside an otherwise-uncompiled method
+// blocked by an unrelated `super`/`rescue`) -- see tools/bc2cpp/bc2cpp.rb's
+// own DIRECT_CONSTRUCT_TARGETS comment for the full writeup and the real
+// regenerated-output checks behind each one. No entry for either of those
+// two belongs here as a result.
 //
 // Game::Screen joins Transition/Map here (its own bare-reference gap fixed
 // by a later round's `trace_new_target` GETCONST work; see
@@ -949,6 +949,25 @@
 // resulting object files showing every `Game__*_compiled_class` accessor
 // referenced by generated code is now defined exactly once, none left
 // undefined).
+//
+// Game::ChipSet joins the table this round too -- NOT a reversal of the
+// "ruled out" note above (Game::EnemyAi still isn't here): that earlier
+// round's own real, uncompiled-method rejection reason still holds for
+// ChipSet's own `mruby-rpg2k/mrblib/game/lsd_io.rb:444` call site
+// (`ChipSet.new(db, self.map.chipset_id)`, inside a `begin...rescue`
+// block that still doesn't compile today -- confirmed directly: it does
+// not appear anywhere in the real regenerated output, MONO or POLY,
+// because its own containing method is never reached by codegen at all).
+// But two OTHER real `Game::ChipSet.new` call sites --
+// `mruby-rpg2k/mrblib/scene/map_viewer.rb:356` and `mruby-rpg2k/mrblib/
+// scene/map.rb:1368`, each inside its own real, currently-COMPILED method
+// -- confirmed clean against the current DIRECT_CONSTRUCT_TARGETS 4-part
+// gate and converted for real in a fresh regenerated-output diff (this
+// round's own `bc2cpp.rb` change), with zero effect on the still-
+// uncompiled `lsd_io.rb` site. `Game::Interpreter` and `Game::NumberInput`
+// are new entries this round too (arity-1 `#initialize`s, real call sites
+// at `mruby-rpg2k/mrblib/scene/map.rb:379` and `mruby-rpg2k/mrblib/scene/
+// map.rb:9863`) -- neither was part of any prior round's consideration.
 namespace {
 RClass* g_direct_construct_game_transition_class = nullptr;
 RClass* g_direct_construct_game_map_class = nullptr;
@@ -956,6 +975,9 @@ RClass* g_direct_construct_game_screen_class = nullptr;
 RClass* g_direct_construct_game_switches_class = nullptr;
 RClass* g_direct_construct_game_timer_class = nullptr;
 RClass* g_direct_construct_game_message_config_class = nullptr;
+RClass* g_direct_construct_game_chip_set_class = nullptr;
+RClass* g_direct_construct_game_interpreter_class = nullptr;
+RClass* g_direct_construct_game_number_input_class = nullptr;
 }  // namespace
 
 // Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
@@ -988,6 +1010,15 @@ RClass* Game__Timer_compiled_class(void) {
 }
 RClass* Game__MessageConfig_compiled_class(void) {
   return g_direct_construct_game_message_config_class;
+}
+RClass* Game__ChipSet_compiled_class(void) {
+  return g_direct_construct_game_chip_set_class;
+}
+RClass* Game__Interpreter_compiled_class(void) {
+  return g_direct_construct_game_interpreter_class;
+}
+RClass* Game__NumberInput_compiled_class(void) {
+  return g_direct_construct_game_number_input_class;
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
@@ -3847,6 +3878,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // `#build_chipset` method whose very next line is `rescue StandardError`,
   // so neither ever compiles at all).
   RClass* chip_set = mrb_class_get_under(M, game, "ChipSet");
+  // Captured for bc2cpp's own generalized DIRECT_CONSTRUCT_TARGETS
+  // mechanism -- see this file's own top-of-file comment (right after the
+  // generated-file #include) for the accessor this backs
+  // (Game__ChipSet_compiled_class) and the full reasoning, including why
+  // this is a real, currently-used unlock despite an earlier round's own
+  // "ruled out" note for this same class (that note is about a different,
+  // still-uncompiled call site; unaffected by this).
+  g_direct_construct_game_chip_set_class = chip_set;
 
   // #initialize is always private (the same real interpreter special case
   // as every other compiled #initialize in this file -- mruby's own
@@ -4190,6 +4229,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // in this file. Reuses the `game` RClass* declared at the top of this
   // function.
   RClass* number_input = mrb_class_get_under(M, game, "NumberInput");
+  // Captured for bc2cpp's own generalized DIRECT_CONSTRUCT_TARGETS
+  // mechanism -- see this file's own top-of-file comment (right after the
+  // generated-file #include) for the accessor this backs
+  // (Game__NumberInput_compiled_class) and the full reasoning.
+  g_direct_construct_game_number_input_class = number_input;
   mrb_define_private_method(M, number_input, "initialize",
                             Game__NumberInput_initialize, MRB_ARGS_REQ(1));
   mrb_define_method(M, number_input, "digit", Game__NumberInput_digit,
@@ -5017,6 +5061,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //
   // Reuses the `game` RClass* declared at the top of this function.
   RClass* interpreter = mrb_class_get_under(M, game, "Interpreter");
+  // Captured for bc2cpp's own generalized DIRECT_CONSTRUCT_TARGETS
+  // mechanism -- see this file's own top-of-file comment (right after the
+  // generated-file #include) for the accessor this backs
+  // (Game__Interpreter_compiled_class) and the full reasoning.
+  g_direct_construct_game_interpreter_class = interpreter;
   mrb_define_private_method(M, interpreter, "initialize",
                             Game__Interpreter_initialize, MRB_ARGS_REQ(1));
   mrb_define_method(M, interpreter, "finished?", Game__Interpreter_finished_,
@@ -7062,4 +7111,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   g_direct_construct_game_switches_class = nullptr;
   g_direct_construct_game_timer_class = nullptr;
   g_direct_construct_game_message_config_class = nullptr;
+  g_direct_construct_game_chip_set_class = nullptr;
+  g_direct_construct_game_interpreter_class = nullptr;
+  g_direct_construct_game_number_input_class = nullptr;
 }
