@@ -1468,6 +1468,7 @@ module Game
     # care is needed in that method). Returns the `{atk:, def:, spi:, agi:}`
     # deltas actually applied -- possibly smaller than `amount` once clamped,
     # or absent for a stat already pinned at its cap -- for the log entry.
+    # bc2cpp: (, Array)
     def apply_stat_mods(target, keys, amount)
       return {} unless keys && !keys.empty? && amount != 0
       applied = {}
