@@ -3935,8 +3935,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #animation_type/#animation_speed -- see this block's own top comment.
   mrb_define_method(M, chip_set, "animation_type", Game__ChipSet_animation_type,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, chip_set, "animation_speed", Game__ChipSet_animation_speed,
-                    MRB_ARGS_NONE());
+  mrb_define_method(M, chip_set, "animation_speed",
+                    Game__ChipSet_animation_speed, MRB_ARGS_NONE());
   mrb_define_method(M, chip_set, "elevated?", Game__ChipSet_elevated_,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, chip_set, "passable?", Game__ChipSet_passable_,

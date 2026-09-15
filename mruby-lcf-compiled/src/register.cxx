@@ -270,12 +270,12 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // block's own top comment.
   mrb_define_method(M, move_command, "command_id", LCF__MoveCommand_command_id,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, move_command, "parameter_a", LCF__MoveCommand_parameter_a,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, move_command, "parameter_b", LCF__MoveCommand_parameter_b,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, move_command, "parameter_c", LCF__MoveCommand_parameter_c,
-                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_a",
+                    LCF__MoveCommand_parameter_a, MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_b",
+                    LCF__MoveCommand_parameter_b, MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_c",
+                    LCF__MoveCommand_parameter_c, MRB_ARGS_NONE());
 
   // LCF::Array1D: 5 of its own 11 real bytecode-defined methods compile
   // clean and are registered below -- all public, confirmed directly
