@@ -38,6 +38,21 @@
 # instanced inside the ESP32 SoC's own private bus (see
 # hw/display/esp32_ili9341.c's own header comment in the patch for why).
 #
+# Set M5STACK_GAMEPAD_STATE to a 2-hex-digit byte (e.g. "7e") to simulate a
+# FACES kit Gamepad Face reporting that exact button combination for the
+# whole boot (needs a M5STACK_QEMU_BIN built with
+# app/m5stack/qemu/patches/m5stack-gamepad.patch applied, see
+# scripts/m5stack_qemu_build.bash) -- active low, one bit per button, same
+# convention as the real hardware and this fork's downstream QEMU device
+# (hw/i2c/esp32_faces_gamepad.c's own header comment has the full bit
+# layout). Without a gamepad-capable binary this env var is simply inert
+# (the guest's own I2C probe just gets NACKed, same as no Face attached at
+# all). This script only passes the byte through and asserts the ordinary
+# boot bar below; checking that a specific button actually shows up in the
+# firmware's own "Keys: ..." line is a caller/CI-level check against this
+# script's own serial log ($M5STACK_QEMU_CACHE_DIR/serial.log, or just this
+# script's own stdout).
+#
 # Exit status: 0 once the real Xtensa CPU has run all the way through this
 # project's own setup() (m5stack.cxx's LVGL display + button HAL init) and
 # printed its "m5stack: setup complete" marker (app/m5stack/src/main.cxx) --
@@ -62,9 +77,13 @@
 # precompiled libs specifically).
 #
 # What's still not observable this way: no GPIO-injection device exists
-# upstream in `espressif/qemu` (checked directly against hw/gpio) for the
-# *input* direction, so a real button press stays out of reach -- see
-# app/m5stack/README.md's own "What the emulator can and cannot show".
+# upstream in `espressif/qemu` (checked directly against hw/gpio), so the
+# Core's own front A/B/C buttons (plain GPIOs, m5stack.cxx's kPins) stay
+# unpressable -- they always read "held" here, since their GPIOs are simply
+# unconnected rather than driven. M5STACK_GAMEPAD_STATE above closes this
+# gap for a FACES Gamepad Face's own buttons specifically (a downstream
+# QEMU I2C device, not a GPIO one) -- see app/m5stack/README.md's own "What
+# the emulator can and cannot show" for the current, narrower boundary.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -160,6 +179,12 @@ log="$cache_dir/serial.log"
 if [[ -n "${M5STACK_DISPLAY_DUMP:-}" ]]; then
   rm -f "$M5STACK_DISPLAY_DUMP"
   export ESP32_ILI9341_DUMP_PATH="$M5STACK_DISPLAY_DUMP"
+fi
+
+if [[ -n "${M5STACK_GAMEPAD_STATE:-}" ]]; then
+  gamepad_state_img="$cache_dir/gamepad_state.bin"
+  printf '%b' "\\x${M5STACK_GAMEPAD_STATE}" > "$gamepad_state_img"
+  export ESP32_FACES_GAMEPAD_STATE_PATH="$gamepad_state_img"
 fi
 
 set +e

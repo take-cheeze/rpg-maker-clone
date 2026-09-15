@@ -34,11 +34,13 @@ bitmask. `src/main.cxx` draws a small status screen and echoes pressed keys
 over Serial.
 
 The Core has no built-in D-pad the way the Wio Terminal's 5-way switch is
-one, so `include/m5stack.hxx`'s `M5Key` enum only ever sets the A/B/C bits;
-Up/Down/Left/Right stay reserved and unbound (see that header's own comment).
-Mapping three buttons onto a usable RPG movement scheme is a real product
-design question for a later slice, not something this HAL-only bring-up
-firmware answers.
+one, so `include/m5stack.hxx`'s `M5Key` enum only ever sets the A/B/C bits
+from the Core's own front buttons; Up/Down/Left/Right depend entirely on
+an attached M5Stack FACES kit Gamepad Face -- see "Gamepad Face (FACES
+kit)" below -- and stay unset with none attached, the same way this HAL
+leaves them (see that header's own comment). Mapping buttons onto a usable
+RPG movement scheme is a real product design question for a later slice,
+not something this HAL-only bring-up firmware answers.
 
 ```sh
 cd app/m5stack
@@ -132,15 +134,67 @@ background with real anti-aliased text pixels, not a blank or garbled
 frame -- exactly what `.github/workflows/build.yml`'s `m5stack-qemu` job
 checks on every run.
 
+## Gamepad Face (FACES kit)
+
+The M5Stack FACES kit's Gamepad Face ("Game Face", MEGA328-based, one of
+the kit's interchangeable bottom modules alongside the QWERTY keyboard and
+calculator faces) is an I2C device at address 0x08 on the Core's internal
+I2C bus (`Wire`, SDA=GPIO21/SCL=GPIO22) -- a real, optional add-on this HAL
+now supports, not a fixed part of the Core itself. Protocol verified
+directly against the module's own real firmware
+(github.com/m5stack/FACES-Firmware, `GameBoy.ino`, read from source, not
+assumed from marketing copy): every I2C read returns one byte, the AVR's
+live `PORTB` snapshot, active low, one bit per button (Up/Down/Left/Right/
+A/B/Select/Start). `m5stack_input_init()` probes address 0x08 once at
+boot; with no Face attached, the probe just NACKs and every subsequent
+scan skips it entirely -- see `m5stack_input_scan()`'s own doc comment in
+`include/m5stack.hxx` for the full bit layout and how it folds into the
+existing bitmask (the Face's own D-pad and A/B feed the same bits the
+Core's own buttons do; Select/Start, having no RGSS button of their own,
+land on the spare `M5_INPUT_N0`/`N1` ids -- the same convention
+`include/psp.hxx`'s own comment documents for the PSP port's spare
+buttons).
+
+Emulated the same way the display is: `espressif/qemu` has a real,
+register-accurate ESP32 I2C controller (`hw/i2c/esp32_i2c.c`) already
+wired to a `tmp105` sensor for this exact machine
+(`esp32_machine_init_i2c()`), so `app/m5stack/qemu/patches/
+m5stack-gamepad.patch` (also applied by `scripts/m5stack_qemu_build.bash`)
+just attaches one more device to that same bus:
+`hw/i2c/esp32_faces_gamepad.c` models the Gamepad Face's own protocol
+above. Unlike the display (an *output* observability problem, solved with
+an `atexit()` dump), simulating a button press is an *input* problem: this
+device re-reads a single raw byte from `ESP32_FACES_GAMEPAD_STATE_PATH`
+(env var) on every I2C read, if set, so state can change while QEMU runs.
+`scripts/m5stack_qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` env var
+wraps this for one fixed combination held for a whole boot:
+
+```sh
+M5STACK_QEMU_BIN=/tmp/m5stack-qemu-build/build/qemu-system-xtensa \
+M5STACK_GAMEPAD_STATE=7e \
+  scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+# 0x7e = Up + Start held (active low, bit0 and bit7 clear)
+```
+
+The firmware's own `Keys: ...` line shows `Up` and `Start` alongside the
+Core's own always-"held" `A B C` this way -- verified end to end (real I2C
+probe, real read, real bit decode, real RGSS-key mask, real status line),
+not just that the emulated device itself returns the right byte in
+isolation -- exactly what `.github/workflows/build.yml`'s `m5stack-qemu`
+job checks on every run.
+
 ## What the emulator still cannot show
 
-Button *input* injection: QEMU's ESP32 machine models no GPIO-injection
-device (checked directly against `hw/gpio` in `espressif/qemu`; this fork's
-own patch only extends the existing GPIO model's *output* side, needed for
-the display's D/C line, not input), so a real button press stays out of
-reach -- all three buttons read "pressed" under QEMU, since their GPIOs are
-simply unconnected rather than driven, an accurate reflection of nothing
-being wired to them rather than a bug. `main.cxx`'s status screen is
-echoed over Serial for the same underlying reason display support used to
-apply to: a QEMU boot verifies the firmware reaches `loop()` and reacts to
-input, independently of whatever the display shows.
+The Core's own front A/B/C buttons stay unpressable: QEMU's ESP32 machine
+models no GPIO-injection device (checked directly against `hw/gpio` in
+`espressif/qemu`; this fork's own display patch only extends the existing
+GPIO model's *output* side, needed for the display's D/C line, not input),
+so those three -- plain GPIOs, not I2C -- always read "pressed" under
+QEMU, since their GPIOs are simply unconnected rather than driven, an
+accurate reflection of nothing being wired to them rather than a bug. A
+Gamepad Face's own buttons do not have this limitation (see above), since
+they arrive over I2C, a bus this fork's downstream QEMU device can
+actually inject into. `main.cxx`'s status screen is echoed over Serial for
+the same underlying reason display support used to apply to: a QEMU boot
+verifies the firmware reaches `loop()` and reacts to input, independently
+of whatever the display shows.
