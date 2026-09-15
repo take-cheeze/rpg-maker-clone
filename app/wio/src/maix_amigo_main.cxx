@@ -20,6 +20,9 @@
 #include <SPI.h>
 #include <Sipeed_ST7789.h>
 
+// lcd_set_direction (the driver's C core, lcd.h, extern "C" itself).
+#include <lcd.h>
+
 namespace {
 
 // MUST be SPI0 for the Maix series on-board LCD (per the driver's own
@@ -43,6 +46,11 @@ void setup(void) {
 
   g_lcd.begin(15000000, COLOR_BLUE);
   g_lcd.setRotation(0);
+  // Un-mirror: the driver installs DIR_YX_RLDU (MADCTL 0xA0), which renders
+  // mirrored left-right on this panel (confirmed on hardware). DIR_YX_LRDU
+  // (0xE0) keeps MY/MV and flips only the column order bit MX. Must come
+  // after setRotation, which re-sends the direction itself.
+  lcd_set_direction(DIR_YX_LRDU);
   g_lcd.setTextSize(2);
   g_lcd.setTextColor(COLOR_WHITE);
   g_lcd.setCursor(20, 40);

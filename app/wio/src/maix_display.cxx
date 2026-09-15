@@ -29,6 +29,10 @@
 #include <SPI.h>
 #include <Sipeed_ST7789.h>
 
+// lcd_set_direction (the driver's C core, lcd.h, extern "C" itself) to
+// override the direction begin() installs -- see maix_display_create.
+#include <lcd.h>
+
 namespace {
 
 // MUST be SPI0 for the Maix series on-board LCD (per the driver's own
@@ -64,6 +68,12 @@ uint16_t* g_maix_framebuffer = nullptr;
 
 lv_display_t* maix_display_create(int32_t hor_res, int32_t ver_res) {
   g_lcd.begin();
+  // Un-mirror: begin() installs DIR_YX_RLDU (MADCTL 0xA0), which renders
+  // mirrored left-right on this panel (confirmed on hardware). DIR_YX_LRDU
+  // (0xE0) keeps MY/MV -- same orientation and dimensions -- and flips only
+  // the column order bit MX. Verified against the real Amigo TFT; revisit
+  // if a panel revision shows otherwise.
+  lcd_set_direction(DIR_YX_LRDU);
   lv_tick_set_cb(tick_cb);
   lv_delay_set_cb(delay_cb);
 
