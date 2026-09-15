@@ -1537,6 +1537,21 @@ jobs:
           PLATFORMIO_BUILD_FLAGS: -DMAIX_WITH_SD
         run: pio run -e maix_rgss_boot
 
+      - name: Build SD uploader
+        # Throwaway serial-to-SD loader (see app/maix/README.md): no LVGL,
+        # no mruby, just Maixduino SD over SPI0. Uploaded immediately like
+        # every other env, for the same prune-proofing reason.
+        run: pio run -e maix_sd_upload
+
+      - name: Upload SD uploader
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-sd-upload-firmware
+          path: |
+            .pio/build/maix_sd_upload/firmware.bin
+            .pio/build/maix_sd_upload/firmware.elf
+          if-no-files-found: error
+
   maix-smoke:
     # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
     # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
