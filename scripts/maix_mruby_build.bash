@@ -78,6 +78,11 @@ apply_patch "$root/3rd/mruby-marshal" "$root/patches/mruby-marshal-psp-wio-onigm
 
 export cp932_table="$tables/bestfit932.txt"
 export jis0208_table="$tables/JIS0208.TXT"
+# Keep mruby's own core off the real-C++-exception path (see build_config.rb's
+# maix stanza): the Kendryte link drops every .eh_frame section, so a
+# throw/catch-based MRB_TRY cannot unwind and the first rescued Ruby
+# exception kills the firmware. setjmp/longjmp needs no unwind tables.
+export MRUBY_FORCE_NO_CXX_EXCEPTION=1
 cd "$root/3rd/mruby"
 MRUBY_CONFIG="$root/build_config.rb" \
   MRUBY_BUILD_DIR="$build_dir" \

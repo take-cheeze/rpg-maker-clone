@@ -38,12 +38,13 @@
 /app/android/.gradle
 /app/android/local.properties
 # Downloaded test-bed games live under data/ and are not committed, except the
-# hand-authored MV and MZ samples (data/mv-sample, data/mz-sample), which each
-# have their own .gitignore for the engine files they fetch. Ignore data/
-# contents but re-include those two.
+# hand-authored MV, MZ and Maix-hello samples (data/mv-sample, data/mz-sample,
+# data/maix-hello), which each have their own .gitignore for the engine files
+# they fetch. Ignore data/ contents but re-include those three.
 /data/*
 !/data/mv-sample
 !/data/mz-sample
+!/data/maix-hello
 /ss
 
 # The MIDI instrument patches (~32 MiB of GUS samples) are fetched by

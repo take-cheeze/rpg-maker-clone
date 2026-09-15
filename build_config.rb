@@ -590,6 +590,15 @@ MRuby::Build.new do |conf|
 
     conf.gem core: 'mruby-bin-mrbc'
     rpg_maker_gems(conf)
+    # MRUBY_FORCE_NO_CXX_EXCEPTION (set by scripts/maix_mruby_build.bash for
+    # the maix cross target) also stops load_gems.rb from enabling C++
+    # exceptions in THIS host build -- which then compiles the same .cxx gem
+    # sources exception-free-or-not per its own flags below. Without the flag
+    # they keep referencing the C++ runtime (__cxa_throw and friends) while
+    # the host link stays plain gcc, and mrbc fails to link. Our sources use
+    # no try/catch/throw (same verification as the cross half), so compiling
+    # them exception-free here changes nothing but the link.
+    conf.cxx.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
     # mruby 4.0 always enables presym (MRB_NO_PRESYM / disable_presym were
     # removed) and serializes bytecode symbols by name, so the host mrbc and the
     # cross targets (emscripten, wio) stay compatible even though their presym
@@ -995,10 +1004,22 @@ if maix
       t.flags << '-fmerge-all-constants'
       # Single-threaded Arduino firmware has no thread pointer for the
       # thread-safe-static-local fast path to read; the wio stanza's own
-      # comment covers the failure mode. Preemptive here rather than
-      # verified: no maix firmware links libmruby.a yet, so the first real
-      # link re-checks this line.
+      # comment covers the failure mode. Verified by every real maix
+      # firmware link since (the failure it guards is a link error, so a
+      # successful link is the check).
       t.flags << '-fno-threadsafe-statics'
+      # The Kendryte link drops every .eh_frame section (its linker script
+      # has no output section for them), so mruby's C++-exception control
+      # flow (MRB_TRY/MRB_CATCH as real throw/catch) cannot unwind at all --
+      # the first rescued Ruby exception kills the firmware, confirmed by
+      # actually raising one on-device. Keep load_gems.rb from ever enabling
+      # it (see its MRUBY_FORCE_NO_CXX_EXCEPTION escape hatch, which
+      # scripts/maix_mruby_build.bash sets) and compile without exceptions
+      # instead: setjmp/longjmp, mruby's own portable fallback, needs no
+      # unwind tables. Our own .cxx sources use no try/catch/throw (same
+      # verification the wio stanza's own "Tried and reverted" comment
+      # records), so nothing here misses them.
+      t.flags << '-fno-exceptions' if ENV['MRUBY_FORCE_NO_CXX_EXCEPTION']
       # mruby-lcf and mruby-rgss both need C++17 (uni-algo's conv.h hard-
       # errors below it); the platform's bundled GCC 8.2.0 defaults to
       # gnu++14, and the firmware half already passes -std=gnu++17 itself

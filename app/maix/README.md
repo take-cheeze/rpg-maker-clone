@@ -51,6 +51,27 @@ MAIX_UNIALGO_LIB_DIR=$PWD/build-maix-unialgo \
   pio run -e maix_rgss_boot
 ```
 
+## Status: P2 — a real game boots to title
+
+`pio run -e maix_game` boots `data/maix-hello` -- a synthetic 3-file game
+authored by `scripts/gen-maix-hello-game.rb` (56-byte database, 23-byte
+map tree, generated title picture; nothing vendored) -- to its RPG2k title
+screen: display, input, interpreter, flash-resident game behind
+`GAME_DIR=/game` (baked in at build time by `app/maix/embed_game.py`,
+served by `maix_embed.cxx`), one `main_loop` per Arduino `loop()`.
+`maix-smoke` asserts the `RPG2k::Scene::Title` marker and replays the
+captured frame (teal background, white border and menu text, window
+shades) through the same LCD check.
+
+Two load-bearing findings from bringing this up, both firsts for the
+embedded ports: the Kendryte link drops every `.eh_frame` section, so
+mruby's C++-exception control flow cannot unwind -- `MRUBY_FORCE_NO_CXX_EXCEPTION`
+(setjmp/longjmp, mruby's portable fallback) is on for this target, and the
+first rescued `NoMethodError` on-device is what proved it; and the stub
+`RGSS::Profiler` must still define the `frame`/`section` yield-through
+methods, because the real game loop (unlike any bring-up) calls them every
+frame.
+
 ## Display HAL (PlatformIO side)
 
 `app/wio/src/maix_display.cxx` (selected by `platformio.ini`'s

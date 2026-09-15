@@ -1525,6 +1525,35 @@ jobs:
             .pio/build/maix_rgss_boot/firmware.map
           if-no-files-found: error
 
+      - name: Check game data matches its generator
+        # data/maix-hello is committed (CI has no business regenerating
+        # test data with unpinned tools); this fails if the generator and
+        # the data drift apart, pointing at the one to re-run. README.md is
+        # hand-authored, not generated, so it is excluded from the diff.
+        run: |
+          ruby scripts/gen-maix-hello-game.rb /tmp/maixhello-check
+          diff -r -x README.md /tmp/maixhello-check data/maix-hello && echo "maix-hello in sync"
+
+      - name: Build game firmware
+        # Boots data/maix-hello to its title screen (see app/maix/README.md):
+        # display, input, interpreter, flash-resident game, one main_loop
+        # per Arduino loop() iteration.
+        env:
+          MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
+          MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
+        run: pio run -e maix_game
+
+      - name: Upload game firmware
+        # Same prune-proofing as the uploads above: safe immediately.
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-game-firmware
+          path: |
+            .pio/build/maix_game/firmware.bin
+            .pio/build/maix_game/firmware.elf
+            .pio/build/maix_game/firmware.map
+          if-no-files-found: error
+
       - name: Compile SD syscall layer
         # maix_sd_syscalls.cxx is gate-off by default (see the file), so this
         # rebuilds the boot env once with MAIX_WITH_SD to prove the real code
@@ -1666,6 +1695,33 @@ jobs:
         run: |
           python3 scripts/maix_lcd_decode.py maix-spi.log maix-frame.ppm \
             --expect-color 001f --min-fraction 0.45 --min-colors 3 --expect-size 320x240
+
+      - name: Download game firmware
+        uses: actions/download-artifact@v8
+        with:
+          name: maix-game-firmware
+          path: firmware-game
+
+      - name: Boot game to title under Renode
+        # The payoff slice: a real (if tiny) game boots to its title screen
+        # -- scene marker on Serial plus the title pixels below. The game
+        # lives in flash (app/maix/embed_game.py), so no SD card is needed,
+        # which is also why this works at all under Renode.
+        run: |
+          elf="$(find firmware-game -name firmware.elf | head -n 1)"
+          test -n "$elf" || { echo "::error::no game firmware.elf in artifact:"; find firmware-game; exit 1; }
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-game.log" scripts/maix_renode_boot.bash "$elf" 00:00:10)"
+          echo "$out"
+          echo "$out" | grep -q "maix-game: boot ok" || { echo "::error::game did not boot"; exit 1; }
+          echo "$out" | grep -q "scene: RPG2k::Scene::Title" || { echo "::error::never reached title"; exit 1; }
+
+      - name: Check title framebuffer
+        # Teal background (byte-swapped on the wire, hence 1004), white
+        # border and menu text, window shades: at least four distinct
+        # colors or the title UI did not really draw.
+        run: |
+          python3 scripts/maix_lcd_decode.py maix-spi-game.log maix-frame-game.ppm \
+            --expect-color 1004 --min-fraction 0.40 --min-colors 4 --expect-size 320x240
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode
