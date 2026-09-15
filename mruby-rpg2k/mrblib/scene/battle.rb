@@ -994,8 +994,8 @@ class RPG2k
       # #battle_background` for the full capture recipe and for why the
       # value is dropped on a map change.
       def encounter_backdrop
-        return @req[:background].to_s if @req.key?(:background)
-        return @map.backdrop_for_terrain_id(@req[:terrain_id]) if @req.key?(:terrain_id)
+        return @req[:background].to_s unless @req[:background].nil?
+        return @map.backdrop_for_terrain_id(@req[:terrain_id]) unless @req[:terrain_id].nil?
         carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
         return carried unless carried.nil?
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
