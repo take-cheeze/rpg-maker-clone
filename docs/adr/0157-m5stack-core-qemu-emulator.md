@@ -27,6 +27,13 @@ modelling that module's own real MEGA328 firmware, and the real-hardware
 HAL (`mruby-rgss/src/m5stack.cxx`) now polls it over `Wire` -- see "Status,
 gamepad support" below.
 
+The Core's built-in speaker plays WAV files off the microSD slot on real
+hardware -- real-hardware-only this time, deliberately, not extended to
+QEMU: the parsing/decoding logic is verified with standalone host-side
+tests, but the SD-over-SPI and DAC output paths themselves are not
+reachable under this fork's existing emulation, for reasons run down in
+full rather than assumed -- see "Status, audio support" below.
+
 ## Context
 
 ADR 94 built a Renode emulator for the Wio Terminal (SAMD51) port, and Maix
@@ -410,12 +417,105 @@ greps the resulting `Keys: ...` line for both -- verifying the entire
 chain (I2C probe, read, bit decode, RGSS key mask, status line), not the
 emulated device in isolation.
 
+### Status, audio support: WAV playback via the DAC, real hardware only
+
+A follow-up session added audio: the Core's built-in speaker can now play
+a WAV file off the microSD slot. Scoped down deliberately, in two steps,
+both driven by the user rather than assumed:
+
+1. The user asked to scope out audio at all first. Two real facts settled
+   what "scope" even meant, both checked rather than assumed:
+   `mruby-rgss/src/audio.cxx`'s own header comment documents a clean,
+   already-existing `RgssAudioBackend` function-table seam (the same
+   pattern `sdl_audio.cxx` installs into for the desktop build) -- but
+   M5Stack has no mruby linked at all yet (still P1 HAL-only, same status
+   the gamepad and display work found it in), so there is no RGSS::Audio
+   for a backend to serve; any Phase 1 has to be a HAL-level primitive
+   `main.cxx`'s demo calls directly, the same shape as
+   `m5stack_display_create()`/`m5stack_input_scan()`, not a real
+   `RgssAudioBackend` implementation. Separately, `docs/adr/0006`'s own
+   context section records that real RPG Maker BGM assets are WAV, OGG,
+   MP3 and MIDI -- none of which this tree has an embeddable decoder for
+   (checked directly: `3rd/` has none, and the obvious Arduino-ecosystem
+   choice, ESP8266Audio, decodes Opus-in-Ogg but not Ogg Vorbis, which is
+   what RPG Maker VX/VX Ace's own RTP assets actually are). Given that, the
+   user picked the cheapest real slice: real hardware only (no QEMU), plain
+   PCM WAV only (no new codec dependency).
+2. Implementing that slice surfaced a second, smaller scoping question:
+   there was nowhere to load a WAV *from*. The M5Stack port has never had
+   a filesystem -- checked directly (grepped the whole port for
+   SD/SPIFFS/LittleFS/fopen and found nothing of its own, only vendored
+   library internals) -- so "play a WAV" could not yet mean "load one from
+   storage." Given a straight choice between embedding one WAV in the
+   firmware binary (zero new capability, cheapest) and standing up real SD
+   card support first (a separate, sizable feature in its own right), the
+   user chose the second, larger option -- so this pass adds real
+   `SD.begin()`-backed WAV loading, not a baked-in test tone.
+
+**Hardware, checked directly against M5Stack's own community
+documentation, not a generic ESP32 pinout guess:** the Core's microSD slot
+shares the display's own SPI bus -- CS=GPIO4, alongside the SCK=18/
+MISO=19/MOSI=23 `TFT_eSPI`'s own `build_flags` already configure the LCD
+on -- confirmed empirically too: initializing SD before the display left
+the display uninitialized, matching a real M5Stack community report of
+this exact shared-bus ordering hazard, which is why
+`m5stack_audio_init()`'s own doc comment requires it be called after
+`m5stack_display_create()`. The speaker amplifier is wired to GPIO25, one
+of the ESP32's two internal 8-bit DAC channels; `m5stack_audio_play_wav()`
+downmixes whatever the file declares (8 or 16-bit, mono or stereo PCM) to
+8-bit unsigned mono and writes it with `dacWrite()`, paced by
+`delayMicroseconds()` against the file's own sample rate -- a blocking,
+timer-free player, not I2S/DMA-driven, so it stalls LVGL and button
+scanning for the file's whole duration. That limitation is accepted and
+documented (`app/m5stack/README.md`'s own "Audio" section), not hidden;
+a non-blocking version is future work.
+
+**Verification, and its real boundary.** Two pieces of genuinely
+hand-written logic -- the RIFF chunk walk (which has to skip chunks like
+`LIST` that can appear before `data`, and correctly reject a non-WAV file)
+and the 16-bit-signed-to-8-bit-unsigned/stereo-downmix math -- are each
+covered by a standalone host-side test (plain `g++`, no board or emulator)
+against known values: signed-16 min/max/zero-crossing cases for the math,
+and a real generated WAV plus a synthetic one with an inserted `LIST`
+chunk for the parser. Both passed outright. What those tests cannot reach
+-- the actual SD-over-SPI transaction and DAC analog output -- was tried
+against QEMU rather than assumed out of reach: `espressif/qemu` already
+has SD card support in this exact machine (`esp32_machine_init_sd()`,
+predating any of this fork's own patches), so a real FAT-formatted disk
+image with a real WAV file was attached and the real firmware booted
+against it. It genuinely does not work, and the reason is a real hardware
+mismatch, not a bug in this session's own code: `esp32_machine_init_sd()`
+wires its `TYPE_SD_CARD` to the SoC's own dedicated SDMMC peripheral
+(`ss->sdmmc`), a different piece of hardware from the SPI bus this board's
+real SD slot -- and Arduino's `SD` library, which talks SD-over-SPI, not
+SDMMC -- actually uses. The ESP-IDF SD driver's own log confirms this
+precisely: `sdSelectCard(): Select Failed`, the driver failing to even
+begin talking to a card that is there but on the wrong bus entirely.
+Bridging that (attaching a `TYPE_SD_CARD` to the SPI3 bus the display
+already lives on, the way QEMU's own generic `hw/sd/ssi-sd.c` bridges SD-
+over-SPI to an SSI bus elsewhere in stock QEMU) is real, plausible future
+work -- but it is new QEMU device work, which the user explicitly scoped
+out of this pass, so it was named here rather than attempted. Real analog
+DAC output has no verification path at all yet, on real hardware or
+otherwise: unlike the display, no downstream QEMU device models the DAC
+(or the LEDC-PWM path a smoother implementation might use instead) to
+capture anything against.
+
 ## Consequences
 
 - A regression that breaks the firmware anywhere from bootloader through
   `m5stack.cxx`'s HAL init and the first button scan is now catchable in CI
   without hardware -- not just a link-level check the way the pre-Renode
   `wio` job originally was.
+- Audio playback (WAV via the DAC) is real-hardware-only for now, unlike
+  display and gamepad support -- CI cannot exercise the SD-over-SPI or DAC
+  paths at all, only the parsing/decoding math (via a standalone host-side
+  test, not CI-wired yet either). A regression that breaks
+  `m5stack_audio_play_wav()`'s file/DAC I/O specifically, as opposed to its
+  parsing logic, would currently only be caught on real hardware. Extending
+  QEMU to cover this (an `ssi-sd`-style device for the SD side; no known
+  path yet for the DAC/analog side) is real future work, named in "Status,
+  audio support" above rather than left undocumented.
 - Display rendering verification is now reachable via a downstream QEMU
   patch (see "Status, display support" above) -- the SPI-TFT device this
   bullet originally proposed as future work, now written. Button *input*

@@ -3,16 +3,20 @@
 // Mirrors app/wio/src/main.cxx's own P1 slice: proves the HAL compiles and
 // runs on the board without the mruby interpreter. It stands up the LVGL
 // display (m5stack_display_create), scans the three A/B/C buttons plus
-// whatever an attached FACES Gamepad Face adds (m5stack_input_scan), and
-// draws a small status screen that echoes the pressed keys -- plus a Serial
-// println per state change, since the QEMU smoke test
-// (scripts/m5stack_qemu_boot.bash) has no display to read (see
-// app/m5stack/README.md, "What the emulator can and cannot show"). Arduino
-// owns the event loop, so loop() pumps LVGL once per iteration.
+// whatever an attached FACES Gamepad Face adds (m5stack_input_scan), draws a
+// small status screen that echoes the pressed keys, and -- on a fresh press
+// of the Face's Start button specifically (see below for why that one) --
+// tries to play a WAV file off the microSD card. All of it is echoed over
+// Serial too, since the QEMU smoke test (scripts/m5stack_qemu_boot.bash) has
+// no display to read (see app/m5stack/README.md, "What the emulator can and
+// cannot show"). Arduino owns the event loop, so loop() pumps LVGL once per
+// iteration.
 //
-// The mruby interpreter, SD-backed asset loading, and the real RPG2k scene
-// tree are later slices (see app/m5stack/README.md); this build intentionally
-// links neither libmruby nor the mruby input bridge.
+// The mruby interpreter and the real RPG2k scene tree are later slices (see
+// app/m5stack/README.md); this build intentionally links neither libmruby
+// nor the mruby input bridge, so this WAV playback is a HAL-level demo of
+// m5stack_audio_play_wav(), not RGSS::Audio (which needs the interpreter to
+// even exist as an API surface).
 
 #include <Arduino.h>
 #include <lvgl.h>
@@ -87,6 +91,11 @@ void setup(void) {
   lv_init();
   m5stack_display_create(320, 240);
   m5stack_input_init();
+  // SD/DAC bring-up: does not gate "setup complete" below on a card being
+  // present at all -- the microSD slot is exactly as optional as the FACES
+  // Gamepad Face, and m5stack_audio_play_wav() already fails gracefully with
+  // none mounted (see its own doc comment in m5stack.hxx).
+  Serial.println(m5stack_audio_init() ? "SD: mounted" : "SD: not present");
   build_ui();
   // The one fixed marker scripts/m5stack_qemu_boot.bash waits for -- printed
   // once setup() has run every HAL init call above without hanging.
@@ -94,7 +103,26 @@ void setup(void) {
 }
 
 void loop(void) {
-  show_keys(m5stack_input_scan());
+  const uint64_t mask = m5stack_input_scan();
+  show_keys(mask);
+
+  // Play a WAV file on a fresh press of the Gamepad Face's Start button
+  // specifically, not any of the Core's own front buttons: those read
+  // "held" for the whole run under the QEMU smoke test (no GPIO-injection
+  // device exists there -- see app/m5stack/README.md), so triggering
+  // playback off one of them would fire this exact block on literally every
+  // boot; Start (M5_INPUT_N1) is unset unless a real Face -- or this repo's
+  // own downstream QEMU Gamepad Face device with a simulated press -- is
+  // actually present, making this a real edge trigger under both.
+  static uint64_t last_mask = 0;
+  const bool start_pressed_now = (mask & (1ull << M5_INPUT_N1)) != 0;
+  const bool start_pressed_before = (last_mask & (1ull << M5_INPUT_N1)) != 0;
+  if (start_pressed_now && !start_pressed_before) {
+    const bool played = m5stack_audio_play_wav("/bgm.wav");
+    Serial.println(played ? "Audio: played /bgm.wav" : "Audio: play failed");
+  }
+  last_mask = mask;
+
   lv_timer_handler();
   delay(5);
 }

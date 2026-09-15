@@ -9,6 +9,10 @@
 #include <TFT_eSPI.h>  // configured for the Core's ILI9341 via build_flags
 #include <Wire.h>  // FACES Gamepad Face, see m5stack_input_scan() in m5stack.hxx
 
+#include <SD.h>  // microSD-backed WAV playback, see m5stack_audio_play_wav()
+
+#include <cstring>
+
 namespace {
 
 // The board's LCD driver. Pins/driver are supplied entirely through
@@ -94,6 +98,58 @@ const GamepadBitMap kGamepadBits[] = {
     {7, M5_INPUT_N1},  // Start
 };
 
+// The Core's microSD slot, on the same VSPI bus as the display (see
+// m5stack_audio_init()'s own doc comment in m5stack.hxx) -- just its own CS
+// line. GPIO25 is one of the ESP32's two internal 8-bit DAC channels, and
+// the pin the Core's built-in speaker amplifier is wired to.
+constexpr uint8_t kSdCsPin = 4;
+constexpr uint8_t kSpeakerDacPin = 25;
+
+bool g_sd_available = false;
+
+uint32_t read_u32le(File& f) {
+  uint8_t b[4];
+  if (f.read(b, 4) != 4)
+    return 0;
+  return static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
+         (static_cast<uint32_t>(b[2]) << 16) |
+         (static_cast<uint32_t>(b[3]) << 24);
+}
+
+uint16_t read_u16le(File& f) {
+  uint8_t b[2];
+  if (f.read(b, 2) != 2)
+    return 0;
+  return static_cast<uint16_t>(b[0]) |
+         static_cast<uint16_t>(static_cast<uint16_t>(b[1]) << 8);
+}
+
+// One frame (all channels of one sample instant) downmixed to mono and
+// rescaled to the DAC's native 8-bit unsigned range. `frame` points at
+// channels * (bits_per_sample / 8) raw bytes.
+uint8_t downmix_frame(const uint8_t* frame,
+                      uint16_t channels,
+                      uint16_t bits_per_sample) {
+  if (bits_per_sample == 8) {
+    if (channels == 1)
+      return frame[0];
+    return static_cast<uint8_t>((static_cast<uint16_t>(frame[0]) + frame[1]) /
+                                2);
+  }
+  // 16-bit signed PCM, little-endian.
+  const int16_t left =
+      static_cast<int16_t>(frame[0] | (static_cast<uint16_t>(frame[1]) << 8));
+  int32_t mono16 = left;
+  if (channels == 2) {
+    const int16_t right =
+        static_cast<int16_t>(frame[2] | (static_cast<uint16_t>(frame[3]) << 8));
+    mono16 = (static_cast<int32_t>(left) + right) / 2;
+  }
+  // Signed 16-bit -> unsigned 8-bit: shift the zero point up by half the
+  // range, then keep the high byte.
+  return static_cast<uint8_t>((mono16 + 32768) >> 8);
+}
+
 }  // namespace
 
 lv_display_t* m5stack_display_create(int32_t hor_res, int32_t ver_res) {
@@ -144,6 +200,101 @@ uint64_t m5stack_input_scan(void) {
   }
 
   return mask;
+}
+
+bool m5stack_audio_init(void) {
+  g_sd_available = SD.begin(kSdCsPin);
+  return g_sd_available;
+}
+
+bool m5stack_audio_play_wav(const char* path) {
+  if (!g_sd_available)
+    return false;
+
+  File f = SD.open(path, FILE_READ);
+  if (!f)
+    return false;
+
+  char tag[4];
+  if (f.read(reinterpret_cast<uint8_t*>(tag), 4) != 4 ||
+      std::memcmp(tag, "RIFF", 4) != 0) {
+    f.close();
+    return false;
+  }
+  read_u32le(f);  // overall RIFF size, unused
+  if (f.read(reinterpret_cast<uint8_t*>(tag), 4) != 4 ||
+      std::memcmp(tag, "WAVE", 4) != 0) {
+    f.close();
+    return false;
+  }
+
+  bool have_fmt = false, have_data = false;
+  uint16_t audio_format = 0, channels = 0, bits_per_sample = 0;
+  uint32_t sample_rate = 0, data_size = 0;
+
+  // Chunks after "WAVE" can appear in any order and some (LIST, fact, ...)
+  // are neither "fmt " nor "data" -- skip anything else rather than assuming
+  // a fixed layout, the same defensive shape most real WAV writers expect a
+  // reader to have.
+  while (!have_data && f.available() >= 8) {
+    if (f.read(reinterpret_cast<uint8_t*>(tag), 4) != 4)
+      break;
+    const uint32_t chunk_size = read_u32le(f);
+
+    if (std::memcmp(tag, "fmt ", 4) == 0 && chunk_size >= 16) {
+      audio_format = read_u16le(f);
+      channels = read_u16le(f);
+      sample_rate = read_u32le(f);
+      read_u32le(f);  // byte rate, recomputed rather than trusted
+      read_u16le(f);  // block align, likewise
+      bits_per_sample = read_u16le(f);
+      have_fmt = true;
+      const uint32_t remaining = chunk_size - 16;
+      if (remaining > 0)
+        f.seek(f.position() + remaining);
+    } else if (std::memcmp(tag, "data", 4) == 0) {
+      data_size = chunk_size;
+      have_data = true;  // raw samples start right here; stop scanning
+    } else {
+      // RIFF chunks are word-aligned: an odd-sized chunk has one pad byte
+      // after it that is not part of the next chunk's own header.
+      f.seek(f.position() + chunk_size + (chunk_size & 1));
+    }
+  }
+
+  const bool supported = have_fmt && have_data && audio_format == 1 /* PCM */ &&
+                         (bits_per_sample == 8 || bits_per_sample == 16) &&
+                         (channels == 1 || channels == 2) && sample_rate > 0;
+  if (!supported) {
+    f.close();
+    return false;
+  }
+
+  const uint32_t bytes_per_frame = channels * (bits_per_sample / 8);
+  const uint32_t frame_count = data_size / bytes_per_frame;
+  const uint32_t interval_us = 1000000u / sample_rate;
+
+  uint8_t buf[256];
+  const uint32_t frames_per_read = sizeof(buf) / bytes_per_frame;
+  uint32_t frames_left = frame_count;
+
+  while (frames_left > 0) {
+    const uint32_t frames_this_read =
+        frames_left < frames_per_read ? frames_left : frames_per_read;
+    const size_t bytes_to_read = frames_this_read * bytes_per_frame;
+    if (f.read(buf, bytes_to_read) != bytes_to_read)
+      break;  // truncated file -- stop rather than play whatever is left
+
+    for (uint32_t i = 0; i < frames_this_read; ++i) {
+      dacWrite(kSpeakerDacPin, downmix_frame(buf + i * bytes_per_frame,
+                                             channels, bits_per_sample));
+      delayMicroseconds(interval_us);
+    }
+    frames_left -= frames_this_read;
+  }
+
+  f.close();
+  return true;
 }
 
 #endif  // M5STACK_CORE
