@@ -1,0 +1,595 @@
+diff --git a/hw/display/Kconfig b/hw/display/Kconfig
+index 4078a29..c73482d 100644
+--- a/hw/display/Kconfig
++++ b/hw/display/Kconfig
+@@ -143,3 +143,7 @@ config DM163
+ 
+ config ESP_RGB
+     bool
++
++config ESP32_ILI9341
++    bool
++    select SSI
+diff --git a/hw/display/esp32_ili9341.c b/hw/display/esp32_ili9341.c
+new file mode 100644
+index 0000000..bb9b9f7
+--- /dev/null
++++ b/hw/display/esp32_ili9341.c
+@@ -0,0 +1,327 @@
++/*
++ * ILI9341 4-wire SPI TFT panel, wired onto the ESP32 machine's VSPI
++ * (SPI3) controller for the M5Stack Core (docs/adr/0157 in
++ * take-cheeze/rpg-maker-clone, this fork's downstream user).
++ *
++ * Scope is deliberately narrow, mirroring that repo's own Renode
++ * peripheral (app/wio/renode/peripherals/Video/ILI9341_SPI.cs) rather than
++ * modelling the full ILI9341 command set: only CASET/PASET/RAMWR (and
++ * MADCTL, whose parameter byte is consumed without acting on it -- the
++ * firmware sizes its own CASET/PASET window for the rotation it wants) are
++ * interpreted. Every other command byte just resets "waiting for
++ * parameters" state with no effect.
++ *
++ * D/C (data/command select) is a separate GPIO line, not part of the SPI
++ * byte stream -- real ILI9341 hardware. This device exposes one GPIO input
++ * for it (see esp32_machine_init_m5stack_display in hw/xtensa/esp32.c for
++ * the wiring).
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 or
++ * (at your option) any later version.
++ */
++
++#include "qemu/osdep.h"
++#include "hw/ssi/ssi.h"
++#include "hw/qdev-core.h"
++#include "migration/vmstate.h"
++#include "qemu/module.h"
++#include "ui/console.h"
++#include "qom/object.h"
++
++/* This deliberately models the *logical* (post-rotation) frame this
++ * firmware always draws in, not the panel's native 240x320 portrait
++ * memory layout. MADCTL's row/column-exchange (MV) bit is what makes real
++ * ILI9341 hardware accept CASET as the logical-X axis and PASET as the
++ * logical-Y axis in landscape rotations -- exactly the M5Stack Core
++ * firmware's own fixed `setRotation(1)` (m5stack.cxx) -- but this model
++ * does not interpret MADCTL at all (see its own comment below), so it
++ * hardcodes the one rotation this firmware ever uses rather than getting
++ * every write rejected by a WIDTH/HEIGHT bounds check sized for the wrong
++ * axis. Confirmed the hard way: sized 240x320 first, and the resulting
++ * dump was uniformly unwritten black -- CASET's own 0-319 range never
++ * passed a `cursor_x < 240` check. */
++#define ILI9341_WIDTH  320
++#define ILI9341_HEIGHT 240
++
++#define ILI9341_CMD_CASET 0x2a
++#define ILI9341_CMD_PASET 0x2b
++#define ILI9341_CMD_RAMWR 0x2c
++
++struct Esp32Ili9341State {
++    SSIPeripheral ssidev;
++    QemuConsole *con;
++
++    bool dc_is_data;
++    int current_command; /* -1: none yet since the last command byte */
++    uint8_t window_bytes[4]; /* rolling shift register, see the CASET/PASET
++                              * note on esp32_ili9341_handle_window_byte */
++    int pixel_high_byte; /* -1: waiting for the high byte of the next pixel */
++
++    uint16_t window_x0, window_x1, window_y0, window_y1;
++    uint16_t cursor_x, cursor_y;
++
++    /* Raw RGB565, exactly as received -- converted to the console
++     * surface's own pixel format in esp32_ili9341_update_display(),
++     * mirroring hw/display/ssd0323.c's per-update conversion. */
++    uint16_t framebuffer[ILI9341_WIDTH * ILI9341_HEIGHT];
++};
++
++#define TYPE_ESP32_ILI9341 "esp32.ili9341"
++OBJECT_DECLARE_SIMPLE_TYPE(Esp32Ili9341State, ESP32_ILI9341)
++
++/* CI/scripted verification has no reliable way to reach this device via the
++ * generic screendump machinery: it (correctly) lives on the SSI bus under
++ * the ESP32 SoC's own private periph_bus, which -- unlike a SysBusDevice --
++ * is never attached to sysbus_get_default(), and every monitor/QMP path to
++ * a console by device id (qemu_console_lookup_by_device_name ->
++ * qdev_find_recursive) walks only from there (confirmed directly: `info
++ * qtree` itself only ever lists the handful of devices realized straight
++ * onto the real default sysbus, e.g. the create_unimplemented_device()
++ * stubs -- never this device, its SPI bus, or even the CPUs). Restructuring
++ * the SoC's bus topology to fix that generically is out of scope here (a
++ * large, invasive change to a big existing upstream file for a downstream-
++ * only need). Instead this keeps a plain libc atexit() hook: when
++ * ESP32_ILI9341_DUMP_PATH is set in the environment this process inherits,
++ * the current framebuffer is written there as a PPM on exit -- exactly the
++ * "flash it and see it run" moment scripts/m5stack_qemu_boot.bash's own
++ * timeout-then-SIGTERM shutdown already produces (QEMU's own shutdown path
++ * calls exit(), which still runs libc atexit hooks normally). One instance
++ * is all this machine ever creates, so a single static pointer is enough. */
++static Esp32Ili9341State *s_esp32_ili9341_singleton;
++
++static void esp32_ili9341_dump_atexit(void)
++{
++    Esp32Ili9341State *s = s_esp32_ili9341_singleton;
++    const char *path = getenv("ESP32_ILI9341_DUMP_PATH");
++    if (!s || !path) {
++        return;
++    }
++
++    FILE *f = fopen(path, "wb");
++    if (!f) {
++        return;
++    }
++    fprintf(f, "P6\n%d %d\n255\n", ILI9341_WIDTH, ILI9341_HEIGHT);
++    for (int i = 0; i < ILI9341_WIDTH * ILI9341_HEIGHT; i++) {
++        uint16_t word = s->framebuffer[i];
++        uint8_t rgb[3] = {
++            ((word >> 11) & 0x1f) * 255 / 31,
++            ((word >> 5) & 0x3f) * 255 / 63,
++            (word & 0x1f) * 255 / 31,
++        };
++        fwrite(rgb, 1, 3, f);
++    }
++    fclose(f);
++}
++
++static void esp32_ili9341_handle_window_byte(Esp32Ili9341State *s, uint8_t data,
++                                              uint16_t *start, uint16_t *end)
++{
++    /* CASET/PASET: 4 parameter bytes, (start_hi, start_lo, end_hi, end_lo)
++     * -- but not necessarily only 4: confirmed directly (raw byte trace
++     * against a real TFT_eSPI ESP32 build under this same QEMU device) that
++     * the ESP32 SPI peripheral's "address phase" -- what TFT_eSPI's ESP32
++     * driver actually uses for these two commands' parameters, unlike
++     * RAMWR's plain data-phase pixels -- delivers one extra leading byte
++     * ahead of the real 4 (always seen as 0x00 in practice; e.g. CASET
++     * arrived as 00 00 00 01 3f, the real params being the trailing 00 00
++     * 01 3f = [0..319], and PASET similarly resolved to [0..239] --
++     * exactly this firmware's own real 320x240 landscape resolution, which
++     * is what confirmed the fix rather than a guess). A rolling 4-byte
++     * shift register sidesteps needing to know exactly how many leading
++     * bytes to discard: whatever arrives first gets pushed out again once
++     * the real 4 bytes have all come through, so the decoded window is
++     * simply "the last 4 bytes seen" whenever CS eventually drops. */
++    s->window_bytes[0] = s->window_bytes[1];
++    s->window_bytes[1] = s->window_bytes[2];
++    s->window_bytes[2] = s->window_bytes[3];
++    s->window_bytes[3] = data;
++
++    *start = (uint16_t)((s->window_bytes[0] << 8) | s->window_bytes[1]);
++    *end = (uint16_t)((s->window_bytes[2] << 8) | s->window_bytes[3]);
++    s->cursor_x = s->window_x0;
++    s->cursor_y = s->window_y0;
++}
++
++static void esp32_ili9341_handle_pixel_byte(Esp32Ili9341State *s, uint8_t data)
++{
++    if (s->pixel_high_byte < 0) {
++        s->pixel_high_byte = data;
++        return;
++    }
++
++    /* Standard MSB-first RGB565, the wire format every ILI9341 datasheet
++     * documents. */
++    uint16_t word = (uint16_t)((s->pixel_high_byte << 8) | data);
++    s->pixel_high_byte = -1;
++
++    if (s->cursor_x <= s->window_x1 && s->cursor_y <= s->window_y1 &&
++        s->cursor_x < ILI9341_WIDTH && s->cursor_y < ILI9341_HEIGHT) {
++        s->framebuffer[s->cursor_y * ILI9341_WIDTH + s->cursor_x] = word;
++    }
++
++    /* RAMWR auto-increment: sweep the CASET/PASET window left to right,
++     * top to bottom, exactly like real ILI9341 addressing -- this is what
++     * lets a single RAMWR command precede many pixels across many
++     * separate SPI bursts (CS can pulse between them; command/parameter
++     * state is only reset by a new command byte, not by CS). */
++    s->cursor_x++;
++    if (s->cursor_x > s->window_x1) {
++        s->cursor_x = s->window_x0;
++        s->cursor_y++;
++        if (s->cursor_y > s->window_y1) {
++            s->cursor_y = s->window_y0;
++        }
++    }
++}
++
++static uint32_t esp32_ili9341_transfer(SSIPeripheral *dev, uint32_t data)
++{
++    Esp32Ili9341State *s = ESP32_ILI9341(dev);
++
++    if (!s->dc_is_data) {
++        /* A new command byte always resets in-flight parameter state,
++         * regardless of how the previous command's byte count compares to
++         * what we expected -- robust to a command this model does not
++         * track parameters for. */
++        s->current_command = data;
++        memset(s->window_bytes, 0, sizeof(s->window_bytes));
++        s->pixel_high_byte = -1;
++        return 0;
++    }
++
++    switch (s->current_command) {
++    case ILI9341_CMD_CASET:
++        esp32_ili9341_handle_window_byte(s, data, &s->window_x0, &s->window_x1);
++        break;
++    case ILI9341_CMD_PASET:
++        esp32_ili9341_handle_window_byte(s, data, &s->window_y0, &s->window_y1);
++        break;
++    case ILI9341_CMD_RAMWR:
++        esp32_ili9341_handle_pixel_byte(s, data);
++        break;
++    default:
++        /* Init-sequence and other commands this model does not act on --
++         * consume the byte, no framebuffer effect. */
++        break;
++    }
++    return 0;
++}
++
++static void esp32_ili9341_dc(void *opaque, int line, int level)
++{
++    Esp32Ili9341State *s = ESP32_ILI9341(opaque);
++    s->dc_is_data = level != 0;
++}
++
++static void esp32_ili9341_update_display(void *opaque)
++{
++    Esp32Ili9341State *s = (Esp32Ili9341State *)opaque;
++    DisplaySurface *surface = qemu_console_surface(s->con);
++    uint8_t *dest = surface_data(surface);
++    int dest_stride = surface_stride(surface);
++
++    for (int y = 0; y < ILI9341_HEIGHT; y++) {
++        uint8_t *row = dest + y * dest_stride;
++        for (int x = 0; x < ILI9341_WIDTH; x++) {
++            uint16_t word = s->framebuffer[y * ILI9341_WIDTH + x];
++            uint8_t r8 = ((word >> 11) & 0x1f) * 255 / 31;
++            uint8_t g8 = ((word >> 5) & 0x3f) * 255 / 63;
++            uint8_t b8 = (word & 0x1f) * 255 / 31;
++
++            switch (surface_bits_per_pixel(surface)) {
++            case 32:
++                ((uint32_t *)row)[x] = (0xffu << 24) | (r8 << 16) | (g8 << 8) | b8;
++                break;
++            case 16:
++                ((uint16_t *)row)[x] = word;
++                break;
++            default:
++                /* Not reached in practice -- every host UI backend this
++                 * device has been exercised under (including headless
++                 * "-display none", which still allocates a real surface
++                 * for `screendump`) uses 32bpp. */
++                break;
++            }
++        }
++    }
++    dpy_gfx_update_full(s->con);
++}
++
++static void esp32_ili9341_invalidate_display(void *opaque)
++{
++    esp32_ili9341_update_display(opaque);
++}
++
++static const GraphicHwOps esp32_ili9341_ops = {
++    .invalidate = esp32_ili9341_invalidate_display,
++    .gfx_update = esp32_ili9341_update_display,
++};
++
++static void esp32_ili9341_realize(SSIPeripheral *d, Error **errp)
++{
++    DeviceState *dev = DEVICE(d);
++    Esp32Ili9341State *s = ESP32_ILI9341(d);
++
++    s->window_x1 = ILI9341_WIDTH - 1;
++    s->window_y1 = ILI9341_HEIGHT - 1;
++    s->current_command = -1;
++    s->pixel_high_byte = -1;
++
++    s->con = graphic_console_init(dev, 0, &esp32_ili9341_ops, s);
++    qemu_console_resize(s->con, ILI9341_WIDTH, ILI9341_HEIGHT);
++
++    qdev_init_gpio_in_named(dev, esp32_ili9341_dc, "dc", 1);
++
++    s_esp32_ili9341_singleton = s;
++    atexit(esp32_ili9341_dump_atexit);
++}
++
++static const VMStateDescription vmstate_esp32_ili9341 = {
++    .name = "esp32_ili9341",
++    .version_id = 1,
++    .minimum_version_id = 1,
++    .fields = (const VMStateField[]) {
++        VMSTATE_BOOL(dc_is_data, Esp32Ili9341State),
++        VMSTATE_INT32(current_command, Esp32Ili9341State),
++        VMSTATE_UINT8_ARRAY(window_bytes, Esp32Ili9341State, 4),
++        VMSTATE_INT32(pixel_high_byte, Esp32Ili9341State),
++        VMSTATE_UINT16(window_x0, Esp32Ili9341State),
++        VMSTATE_UINT16(window_x1, Esp32Ili9341State),
++        VMSTATE_UINT16(window_y0, Esp32Ili9341State),
++        VMSTATE_UINT16(window_y1, Esp32Ili9341State),
++        VMSTATE_UINT16(cursor_x, Esp32Ili9341State),
++        VMSTATE_UINT16(cursor_y, Esp32Ili9341State),
++        VMSTATE_UINT16_ARRAY(framebuffer, Esp32Ili9341State,
++                              ILI9341_WIDTH * ILI9341_HEIGHT),
++        VMSTATE_SSI_PERIPHERAL(ssidev, Esp32Ili9341State),
++        VMSTATE_END_OF_LIST()
++    }
++};
++
++static void esp32_ili9341_class_init(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
++
++    k->realize = esp32_ili9341_realize;
++    k->transfer = esp32_ili9341_transfer;
++    k->cs_polarity = SSI_CS_LOW;
++    dc->vmsd = &vmstate_esp32_ili9341;
++    set_bit(DEVICE_CATEGORY_DISPLAY, dc->categories);
++}
++
++static const TypeInfo esp32_ili9341_info = {
++    .name          = TYPE_ESP32_ILI9341,
++    .parent        = TYPE_SSI_PERIPHERAL,
++    .instance_size = sizeof(Esp32Ili9341State),
++    .class_init    = esp32_ili9341_class_init,
++};
++
++static void esp32_ili9341_register_types(void)
++{
++    type_register_static(&esp32_ili9341_info);
++}
++
++type_init(esp32_ili9341_register_types)
+diff --git a/hw/display/meson.build b/hw/display/meson.build
+index 36a9ace..1778073 100644
+--- a/hw/display/meson.build
++++ b/hw/display/meson.build
+@@ -14,6 +14,7 @@ system_ss.add(when: 'CONFIG_PL110', if_true: files('pl110.c'))
+ system_ss.add(when: 'CONFIG_SII9022', if_true: files('sii9022.c'))
+ system_ss.add(when: 'CONFIG_SSD0303', if_true: files('ssd0303.c'))
+ system_ss.add(when: 'CONFIG_SSD0323', if_true: files('ssd0323.c'))
++system_ss.add(when: 'CONFIG_ESP32_ILI9341', if_true: files('esp32_ili9341.c'))
+ system_ss.add(when: 'CONFIG_XEN_BUS', if_true: files('xenfb.c'))
+ 
+ system_ss.add(when: 'CONFIG_VGA_PCI', if_true: files('vga-pci.c'))
+diff --git a/hw/gpio/esp32_gpio.c b/hw/gpio/esp32_gpio.c
+index 4fea1f5..d83e288 100644
+--- a/hw/gpio/esp32_gpio.c
++++ b/hw/gpio/esp32_gpio.c
+@@ -11,6 +11,7 @@
+ #include "qemu/osdep.h"
+ #include "qemu/log.h"
+ #include "qemu/error-report.h"
++#include "qemu/host-utils.h"
+ #include "qapi/error.h"
+ #include "hw/hw.h"
+ #include "hw/sysbus.h"
+@@ -21,11 +22,34 @@
+ 
+ 
+ 
++/* Fire s->output[pin] for every bit that differs between old_val and
++ * new_val, pin = base_pin + bit index -- shared by the OUT and OUT1
++ * register groups below. */
++static void esp32_gpio_update_outputs(Esp32GpioState *s, int base_pin,
++                                       uint32_t old_val, uint32_t new_val)
++{
++    uint32_t changed = old_val ^ new_val;
++    while (changed) {
++        int bit = ctz32(changed);
++        int pin = base_pin + bit;
++        if (pin < ESP32_GPIO_PIN_COUNT) {
++            qemu_set_irq(s->output[pin], (new_val >> bit) & 1);
++        }
++        changed &= ~(1u << bit);
++    }
++}
++
+ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
+ {
+     Esp32GpioState *s = ESP32_GPIO(opaque);
+     uint64_t r = 0;
+     switch (addr) {
++    case A_GPIO_OUT:
++        r = s->out_reg;
++        break;
++    case A_GPIO_OUT1:
++        r = s->out1_reg;
++        break;
+     case A_GPIO_STRAP:
+         r = s->strap_mode;
+         break;
+@@ -39,6 +63,43 @@ static uint64_t esp32_gpio_read(void *opaque, hwaddr addr, unsigned int size)
+ static void esp32_gpio_write(void *opaque, hwaddr addr,
+                        uint64_t value, unsigned int size)
+ {
++    Esp32GpioState *s = ESP32_GPIO(opaque);
++    uint32_t new_val;
++    switch (addr) {
++    case A_GPIO_OUT:
++        new_val = value;
++        esp32_gpio_update_outputs(s, 0, s->out_reg, new_val);
++        s->out_reg = new_val;
++        break;
++    case A_GPIO_OUT_W1TS:
++        new_val = s->out_reg | value;
++        esp32_gpio_update_outputs(s, 0, s->out_reg, new_val);
++        s->out_reg = new_val;
++        break;
++    case A_GPIO_OUT_W1TC:
++        new_val = s->out_reg & ~value;
++        esp32_gpio_update_outputs(s, 0, s->out_reg, new_val);
++        s->out_reg = new_val;
++        break;
++    case A_GPIO_OUT1:
++        new_val = value;
++        esp32_gpio_update_outputs(s, 32, s->out1_reg, new_val);
++        s->out1_reg = new_val;
++        break;
++    case A_GPIO_OUT1_W1TS:
++        new_val = s->out1_reg | value;
++        esp32_gpio_update_outputs(s, 32, s->out1_reg, new_val);
++        s->out1_reg = new_val;
++        break;
++    case A_GPIO_OUT1_W1TC:
++        new_val = s->out1_reg & ~value;
++        esp32_gpio_update_outputs(s, 32, s->out1_reg, new_val);
++        s->out1_reg = new_val;
++        break;
++
++    default:
++        break;
++    }
+ }
+ 
+ static const MemoryRegionOps uart_ops = {
+@@ -49,6 +110,11 @@ static const MemoryRegionOps uart_ops = {
+ 
+ static void esp32_gpio_reset_hold(Object *obj, ResetType type)
+ {
++    Esp32GpioState *s = ESP32_GPIO(obj);
++    esp32_gpio_update_outputs(s, 0, s->out_reg, 0);
++    esp32_gpio_update_outputs(s, 32, s->out1_reg, 0);
++    s->out_reg = 0;
++    s->out1_reg = 0;
+ }
+ 
+ static void esp32_gpio_realize(DeviceState *dev, Error **errp)
+@@ -67,6 +133,7 @@ static void esp32_gpio_init(Object *obj)
+                           TYPE_ESP32_GPIO, 0x1000);
+     sysbus_init_mmio(sbd, &s->iomem);
+     sysbus_init_irq(sbd, &s->irq);
++    qdev_init_gpio_out(DEVICE(obj), s->output, ESP32_GPIO_PIN_COUNT);
+ }
+ 
+ static Property esp32_gpio_properties[] = {
+diff --git a/hw/ssi/esp32_spi.c b/hw/ssi/esp32_spi.c
+index f47bfca..df1fa71 100644
+--- a/hw/ssi/esp32_spi.c
++++ b/hw/ssi/esp32_spi.c
+@@ -157,11 +157,11 @@ static void esp32_spi_txrx_buffer(Esp32SpiState *s, void *buf, int tx_bytes, int
+     uint8_t *c_buf = (uint8_t*) buf;
+     for (int i = 0; i < bytes; ++i) {
+         uint8_t byte = 0;
+-        if (byte < tx_bytes) {
++        if (i < tx_bytes) {
+             memcpy(&byte, c_buf + i, 1);
+         }
+         uint32_t res = ssi_transfer(s->spi, byte);
+-        if (byte < rx_bytes) {
++        if (i < rx_bytes) {
+             memcpy(c_buf + i, &res, 1);
+         }
+     }
+@@ -275,7 +275,18 @@ static void esp32_spi_do_command(Esp32SpiState* s, uint32_t cmd_reg)
+ 
+     case R_SPI_CMD_USR_MASK:
+         maybe_encrypt_data(s);
+-        if (FIELD_EX32(s->user_reg, SPI_USER, COMMAND) || FIELD_EX32(s->user2_reg, SPI_USER2, COMMAND_BITLEN)) {
++        /* Per the ESP32 TRM, SPI_USER.SPI_USR_COMMAND is what enables the
++         * command phase at all; SPI_USER2.SPI_USR_COMMAND_BITLEN only
++         * matters once that phase is enabled. Gating on BITLEN too (as an
++         * `||`) means any driver that leaves the command phase disabled
++         * but never happens to zero the register's own post-reset default
++         * of 4 (esp32_spi_reset_hold) still gets a phantom one-byte
++         * command phase prepended to every USR transaction -- confirmed
++         * directly against a real TFT_eSPI ESP32 SPI trace, whose 8-bit
++         * raw-byte writes (D/C-driven, no command phase enabled) each
++         * arrived here as an extra leading 0x00 byte followed by the real
++         * byte. */
++        if (FIELD_EX32(s->user_reg, SPI_USER, COMMAND)) {
+             t.cmd = FIELD_EX32(s->user2_reg, SPI_USER2, COMMAND_VALUE);
+             t.cmd_bytes = bitlen_to_bytes(FIELD_EX32(s->user2_reg, SPI_USER2, COMMAND_BITLEN));
+         } else {
+diff --git a/hw/xtensa/Kconfig b/hw/xtensa/Kconfig
+index 5866207..1ad674d 100644
+--- a/hw/xtensa/Kconfig
++++ b/hw/xtensa/Kconfig
+@@ -32,6 +32,7 @@ config XTENSA_ESP32
+     select TMP105
+     select LED
+     select ESP_RGB
++    select ESP32_ILI9341
+ 
+ config XTENSA_ESP32S3
+     bool
+diff --git a/hw/xtensa/esp32.c b/hw/xtensa/esp32.c
+index e000470..841b021 100644
+--- a/hw/xtensa/esp32.c
++++ b/hw/xtensa/esp32.c
+@@ -739,6 +739,26 @@ static void esp32_machine_init_psram(Esp32SocState *ss, uint32_t size_mbytes)
+                                 qdev_get_gpio_in_named(psram, SSI_GPIO_CS, 0));
+ }
+ 
++/* M5Stack Core's ILI9341 TFT, on VSPI (SPI3) CS0, D/C on GPIO27 -- this
++ * chip-generic machine models no board wiring at all otherwise (there is
++ * no per-board file the way most QEMU SoCs get one), so this is this
++ * fork's own downstream addition rather than anything upstream
++ * espressif/qemu carries. Purely additive: nothing here changes SPI3's
++ * behaviour for a firmware that never talks to it. See
++ * hw/display/esp32_ili9341.c and, in the consuming repo,
++ * docs/adr/0157-m5stack-core-qemu-emulator.md. */
++static void esp32_machine_init_m5stack_display(Esp32SocState *ss)
++{
++    DeviceState *spi_master = DEVICE(&ss->spi[3]);
++    BusState *spi_bus = qdev_get_child_bus(spi_master, "spi");
++    DeviceState *lcd = qdev_new("esp32.ili9341");
++    qdev_realize_and_unref(lcd, spi_bus, &error_fatal);
++    qdev_connect_gpio_out_named(spi_master, SSI_GPIO_CS, 0,
++                                qdev_get_gpio_in_named(lcd, SSI_GPIO_CS, 0));
++    qdev_connect_gpio_out(DEVICE(&ss->gpio), 27,
++                          qdev_get_gpio_in_named(lcd, "dc", 0));
++}
++
+ static void esp32_machine_init_i2c(Esp32SocState *s)
+ {
+     /* It should be possible to create an I2C device from the command line,
+@@ -828,6 +848,8 @@ static void esp32_machine_init(MachineState *machine)
+ 
+     esp32_machine_init_i2c(ss);
+ 
++    esp32_machine_init_m5stack_display(ss);
++
+     esp32_machine_init_openeth(ss);
+ 
+     esp32_machine_init_sd(ss);
+diff --git a/include/hw/gpio/esp32_gpio.h b/include/hw/gpio/esp32_gpio.h
+index 163b41a..8dc6d5c 100644
+--- a/include/hw/gpio/esp32_gpio.h
++++ b/include/hw/gpio/esp32_gpio.h
+@@ -9,17 +9,32 @@
+ #define ESP32_GPIO_GET_CLASS(obj)   OBJECT_GET_CLASS(Esp32GpioClass, obj, TYPE_ESP32_GPIO)
+ #define ESP32_GPIO_CLASS(klass)     OBJECT_CLASS_CHECK(Esp32GpioClass, klass, TYPE_ESP32_GPIO)
+ 
++REG32(GPIO_OUT, 0x0004)
++REG32(GPIO_OUT_W1TS, 0x0008)
++REG32(GPIO_OUT_W1TC, 0x000c)
++REG32(GPIO_OUT1, 0x0010)
++REG32(GPIO_OUT1_W1TS, 0x0014)
++REG32(GPIO_OUT1_W1TC, 0x0018)
+ REG32(GPIO_STRAP, 0x0038)
+ 
+ #define ESP32_STRAP_MODE_FLASH_BOOT 0x12
+ #define ESP32_STRAP_MODE_UART_BOOT  0x0f
+ 
++/* Pins 0-31 live in GPIO_OUT*, pins 32-39 in GPIO_OUT1* -- ESP32 TRM 4.11.
++ * Only output-pin tracking is modelled (no direction/pull/matrix state);
++ * that is all a board's own external wiring (e.g. a display's D/C line)
++ * needs to observe. */
++#define ESP32_GPIO_PIN_COUNT 40
++
+ typedef struct Esp32GpioState {
+     SysBusDevice parent_obj;
+ 
+     MemoryRegion iomem;
+     qemu_irq irq;
++    qemu_irq output[ESP32_GPIO_PIN_COUNT];
+     uint32_t strap_mode;
++    uint32_t out_reg;
++    uint32_t out1_reg;
+ } Esp32GpioState;
+ 
+ typedef struct Esp32GpioClass {

@@ -13,6 +13,13 @@ Arduino as an ESP-IDF component rather than PlatformIO's default
 precompiled-Arduino mode -- see "Status, revised" below for the full,
 initially-wrong-then-corrected investigation.
 
+A rendered display frame is also now reachable, not just the UART log: a
+downstream QEMU patch (`app/m5stack/qemu/patches/m5stack-display.patch`,
+built by `scripts/m5stack_qemu_build.bash`) adds the ILI9341 device
+upstream `espressif/qemu` lacks and fixes a real upstream SPI-controller bug
+that otherwise corrupted every frame -- see "Status, display support"
+below.
+
 ## Context
 
 ADR 94 built a Renode emulator for the Wio Terminal (SAMD51) port, and Maix
@@ -180,21 +187,129 @@ once the log contains both `m5stack: setup complete` and a `Keys: ...` line
 -- the firmware's own display+button HAL actually ran, not just "the CPU is
 doing something."
 
+### Status, display support: a real QEMU device and a real upstream bug
+
+The original version of this ADR (and `app/m5stack/README.md`'s own "What
+the emulator can and cannot show" section) documented display rendering as
+out of reach: `espressif/qemu` genuinely models no SPI TFT panel (checked
+directly against `hw/display`). A follow-up session closed that gap with a
+downstream QEMU patch rather than accepting the gap as permanent --
+`app/m5stack/qemu/patches/m5stack-display.patch`, built into a real binary
+by `scripts/m5stack_qemu_build.bash` the same way
+`scripts/wio_renode_build.bash` builds Renode from source with this repo's
+two new peripherals. The patch:
+
+1. Adds `hw/display/esp32_ili9341.c`, a new SSI-peripheral device modelled
+   directly on this repo's own Renode peripheral
+   (`app/wio/renode/peripherals/Video/ILI9341_SPI.cs`): it interprets only
+   CASET/PASET/RAMWR (everything else is consumed with no effect, same
+   scope decision the Renode model made) and renders into a QEMU
+   `QemuConsole`.
+2. Extends `hw/gpio/esp32_gpio.c`, previously a near-stub that only ever
+   implemented reading back the `GPIO_STRAP` register, to actually track
+   and drive its output pins (`GPIO_OUT`/`GPIO_OUT_W1TS`/`GPIO_OUT_W1TC`
+   and the pins-32-39 `GPIO_OUT1` family) -- needed for the display's D/C
+   (data/command) line, which real ILI9341 hardware drives from a plain
+   GPIO rather than the SPI byte stream itself.
+3. Wires the new device onto the ESP32 machine's VSPI (SPI3) controller at
+   CS0, with D/C on GPIO27 -- matching `env:m5stack`'s own TFT_eSPI
+   `build_flags` in `platformio.ini` exactly, not a value picked to make
+   the emulator convenient.
+
+**Verifying any of this needed solving an observability problem before a
+correctness one.** QEMU's `screendump`/monitor device-lookup path
+(`qemu_console_lookup_by_device_name` -> `qdev_find_recursive`) only walks
+buses reachable from the real default sysbus, and `TYPE_ESP32_SOC` is a
+plain `TYPE_DEVICE` realized directly (`qdev_realize(DEVICE(ss), NULL,
+&error_fatal)`, never attached to `sysbus_get_default()`) -- confirmed
+directly: `info qtree` under this machine only ever lists a handful of
+`create_unimplemented_device()` stubs and `open_eth`, never the CPUs, the
+SPI buses, or (once added) this display. Restructuring the SoC's whole bus
+topology to fix that generically was judged out of scope for a downstream
+addition, so `esp32_ili9341.c` instead registers a plain libc `atexit()`
+hook: when `ESP32_ILI9341_DUMP_PATH` is set, the framebuffer is written out
+as a PPM on process exit, which QEMU's own timeout-then-SIGTERM shutdown
+(exactly what `scripts/m5stack_qemu_boot.bash` already does) still runs
+normally. `scripts/m5stack_qemu_boot.bash`'s own `M5STACK_DISPLAY_DUMP` env
+var wraps this.
+
+**The first real frame this produced was uniformly black**, tracked down
+through two distinct bugs, both confirmed rather than guessed at:
+
+1. `ILI9341_WIDTH`/`ILI9341_HEIGHT` were initially set to the panel's native
+   240x320 portrait memory layout. But this device does not interpret
+   MADCTL (the same narrow-scope decision as the Renode peripheral), so it
+   needs to hardcode the *logical*, post-rotation frame the firmware always
+   draws in instead -- the M5Stack HAL's fixed `setRotation(1)`
+   (`mruby-rgss/src/m5stack.cxx`). Swapped to 320x240 landscape; every
+   CASET/PASET write had been failing a bounds check sized for the wrong
+   axis until then.
+2. Even after that fix, a standalone `fillScreen(RED)` +
+   `fillRect(..., GREEN)` test firmware (built to isolate this from LVGL)
+   still rendered as a checkerboard of correct and byte-swapped colors, not
+   solid black -- progress, but still wrong. A raw SPI byte trace (a
+   temporary debug build of `esp32_ili9341_transfer()`) showed the real
+   cause was one level down the stack, not in this device at all: **every
+   single byte of every SPI transaction -- command bytes, CASET/PASET
+   parameters, RAMWR pixel data alike -- arrived with one extra `0x00` byte
+   prepended.** Root-caused in `hw/ssi/esp32_spi.c`'s
+   `esp32_spi_do_command()`: its `R_SPI_CMD_USR_MASK` case gated the SPI
+   command phase on `SPI_USER.SPI_USR_COMMAND ||
+   SPI_USER2.SPI_USR_COMMAND_BITLEN`, but `esp32_spi_reset_hold()` leaves
+   `SPI_USER2.SPI_USR_COMMAND_BITLEN` at a nonzero post-reset default (4) --
+   so any driver that addresses its device entirely through a GPIO D/C line
+   and never uses the command phase at all (TFT_eSPI's ESP32 driver among
+   them) still got a phantom one-byte command phase silently prepended to
+   every transaction, because the stale register default alone satisfied
+   the `||`. Per the ESP32 TRM, the enable bit is what should gate this,
+   not the leftover bit-length field. Fixing the condition to check only
+   `SPI_USER.SPI_USR_COMMAND` made both the standalone test firmware (exact
+   pixel-for-pixel red/green match against the expected fill) and the real
+   M5Stack HAL firmware (a correctly anti-aliased "Keys: A B C" LVGL label
+   on a white background) render exactly right. This explains the earlier
+   apparent "CASET/PASET deliver one extra leading byte" observation from
+   this same investigation: it was never a CASET/PASET-specific quirk,
+   just this same one-phantom-byte-per-transaction bug showing up on the
+   4-byte address-phase writes those two commands happen to use.
+   `esp32_ili9341_handle_window_byte()` keeps its rolling 4-byte shift
+   register regardless (decoding "the last 4 bytes seen" rather than
+   assuming exactly 4), since it costs nothing and stays correct even if a
+   future SPI fix or a different driver's phase usage reintroduces extra
+   leading bytes.
+3. While in `esp32_spi.c`, `esp32_spi_txrx_buffer()`'s per-byte tx/rx-bound
+   checks (`if (byte < tx_bytes)`) compared against `byte` -- always `0` at
+   that point in the loop, not the loop index `i` -- rather than `if (i <
+   tx_bytes)`. Fixed alongside the phantom-byte bug since it is in the same
+   function and the same kind of latent correctness issue, though it does
+   not affect any transaction shape this device or the existing flash-boot
+   path actually uses (every call site here always has one of tx/rx at
+   zero, so the wrong bound never changes behavior in practice).
+
+`.github/workflows/build.yml`'s `m5stack-qemu` job now builds this patched
+QEMU (cached the same way `wio-renode` caches its own from-source Renode
+build) and checks the actual rendered framebuffer -- a majority-white
+background plus real non-background (label text) pixels -- not just that a
+dump file was produced.
+
 ## Consequences
 
 - A regression that breaks the firmware anywhere from bootloader through
   `m5stack.cxx`'s HAL init and the first button scan is now catchable in CI
   without hardware -- not just a link-level check the way the pre-Renode
   `wio` job originally was.
-- Display and button *rendering* verification remain out of reach under
-  this emulator regardless (no SPI TFT panel or GPIO-injection device
-  upstream in `espressif/qemu`) -- `app/m5stack/README.md`'s own "What the
-  emulator can and cannot show" section documents this so a future session
-  does not re-discover it from scratch. A UART-text checkpoint (mirroring
-  `docs/adr/0094`'s own P1 "no peripherals beyond UART" bar) is the ceiling
-  here, unless a future session decides writing an SPI-TFT QEMU device
-  (analogous to `app/wio/renode/peripherals/Video/ILI9341_SPI.cs`, but as a
-  QEMU C device model rather than a Renode C# one) is worth the effort.
+- Display rendering verification is now reachable via a downstream QEMU
+  patch (see "Status, display support" above) -- the SPI-TFT device this
+  bullet originally proposed as future work, now written. Button *input*
+  injection remains out of reach: `espressif/qemu` still models no
+  GPIO-injection device (checked directly against `hw/gpio`; this fork's
+  own patch only extends the existing GPIO model's output side, needed for
+  the display's D/C line, not input), and `app/m5stack/README.md`'s "What
+  the emulator still cannot show" section documents this so a future
+  session does not re-discover it from scratch. All three buttons still
+  read "pressed" under QEMU (their GPIOs are simply unconnected rather than
+  driven, an accurate reflection of nothing being wired to them) -- a UART
+  checkpoint remains the way `main.cxx`'s status screen content itself gets
+  verified, independent of whatever the display shows.
 - `app/m5stack` being a second, standalone PlatformIO project (rather than
   another environment in the repo root's `platformio.ini`) is a new shape
   for this repo's embedded ports. A future port that also needs
