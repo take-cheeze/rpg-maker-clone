@@ -3671,7 +3671,19 @@ module Game
     # raised, so a game that references a missing actor keeps running. A command
     # in a parallel process can ask every frame, so each bad id is reported once
     # rather than filling the log.
-    # bc2cpp: (fixnum)
+    #
+    # The `-> Game::Actor` half is bc2cpp's own ELEMENT_CLASS_SUPPORT
+    # return-class claim, and it is exactly true under that mechanism's
+    # own definition ("every value that is not nil is exactly this
+    # class"): the three returns below are nil (bad id), `@all[id]` (put
+    # there by this same method), and `Actor.new(@db, id)`, plus a nil
+    # from the rescue. It is what lets the sweep read
+    # `Game::Party#@actors` -- built as `ids.map { |i| @roster[i] }` --
+    # as an Array of Game::Actor. Deliberately annotated here rather than
+    # inferred: `#[]` cannot return a fresh `.new` on every path (the
+    # cache hit and the nil miss are both real), so no inference rule in
+    # bc2cpp.rb could establish this honestly.
+    # bc2cpp: (fixnum) -> Game::Actor
     def [](id)
       return nil if id.nil? || id <= 0
       a = @all[id]
@@ -4162,6 +4174,17 @@ module Game
     # grew an extra member. Used by State.from_lsd when a save's party list
     # disagrees with the title chunk's cached leader (see the comment
     # there). A no-op if +actor+ is nil or already leading.
+    #
+    # bc2cpp's own ELEMENT_CLASS_SUPPORT sweep needs this one: `actor` is
+    # an opaque incoming argument that gets written straight into
+    # `@actors` (both via #push and via the slot-0 assignment below), so
+    # without naming its class the whole `Game::Party#@actors` element
+    # fact poisons to unknown. The only caller in the closed world is
+    # `Game::State.from_lsd`'s own title-chunk leader fixup
+    # (mruby-rpg2k/mrblib/game/lsd_io.rb), which passes
+    # `party.roster.all.find { |a| a.name == nm }` -- an element of
+    # `Game::Actors#all`, i.e. a real Game::Actor.
+    # bc2cpp: (Game::Actor)
     def promote_to_leader(actor)
       return unless actor && @actors.first != actor
       @actors.delete(actor)

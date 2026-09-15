@@ -2584,7 +2584,20 @@ module Game
     # party-only silently dropped the lot whenever that actor was away. With
     # actors persisting (ADR 0030) such a miss is permanent: the skill is never
     # learned rather than being re-granted on the next rebuild.
-    # bc2cpp: () -> Array
+    # The `<Game::Actor>` half is bc2cpp's own ELEMENT_CLASS_SUPPORT
+    # element claim, and it narrows the long-standing `-> Array` above
+    # without changing it (bc2cpp reads the same token both ways). True on
+    # every path here: `party.actors` is a proven Array<Game::Actor> (see
+    # the `== known-array-element-class hints ==` diagnostic --
+    # `Game::Party#@actors`, derived by bc2cpp's own whole-program sweep
+    # from all five of its real populating sites), `[party.roster[...]].
+    # compact` is a one-element array of a `Game::Actors#[]` result with
+    # the nil miss compacted away, and `[]` is empty. It is what lets
+    # every `stat_targets(cmd).each { |a| ... }` caller below
+    # (#do_change_exp, #do_change_level, #do_change_hp,
+    # #do_simulated_attack, #do_change_equipment,
+    # #do_change_battle_commands) devirtualize its per-actor calls.
+    # bc2cpp: () -> Array<Game::Actor>
     def stat_targets(cmd)
       case cmd.param(0)
       when 0 then party.actors
