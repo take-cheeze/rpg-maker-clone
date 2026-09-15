@@ -1,6 +1,21 @@
 class RPG2k
   module Scene
     class Base
+      # `parent` is always the one real `RPG2k` runtime object -- checked
+      # against every `Scene::*.new` site in the whole closed world, not
+      # assumed from the name: mruby-rpg2k/mrblib/main.rb passes a bare
+      # `self` (`Scene::Title.new self`, `Scene::GameOver.new(self, state)`,
+      # `Scene::Map.new(self, state)`, `Scene::MapViewer.new(self, state,
+      # ...)`, `Scene::ChipsetEditor.new(self, state, ...)`) from inside
+      # `class RPG2k`'s own body, and every other site (scene/menu.rb,
+      # scene/map.rb, scene/debug_menu.rb, scene/title.rb) forwards the
+      # `@parent`/`parent` it was handed, so the same object just travels
+      # one level further down. `RPG2k` itself is never subclassed anywhere
+      # (grepped) and is only ever instantiated natively, by name, from
+      # src/main.cxx's own two `mrb_obj_new(M, mrb_class_get(M, "RPG2k"),
+      # ...)` boot paths -- so `mrb_obj_class(parent) == RPG2k` really is
+      # exact, not merely "kind_of".
+      # bc2cpp: (RPG2k)
       def initialize parent
         @parent = parent
         @db = parent.db
@@ -456,6 +471,14 @@ class RPG2k
     # — passability, hero position, switch and sound side effects, randomness —
     # onto the owning Scene::Map and its Game::State.
     class MapWorld
+      # Same two proven argument classes as VehicleWorld's own annotation
+      # below, and for the same reason: the only construction site in the
+      # whole closed world is Scene::Map#transition's own
+      # `MapWorld.new(self, @rng)` (mruby-rpg2k/mrblib/scene/map.rb), three
+      # lines below the `@rng = Game::Rng.new(0x2000)` that produces the
+      # second argument, with `self` inside `class RPG2k; module Scene;
+      # class Map` -- which nothing in this codebase subclasses (grepped).
+      # bc2cpp: (RPG2k::Scene::Map, Game::Rng)
       def initialize(scene, rng)
         @scene = scene
         @rng = rng

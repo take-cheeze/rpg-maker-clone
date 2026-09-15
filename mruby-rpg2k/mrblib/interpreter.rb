@@ -2301,7 +2301,13 @@ module Game
       q = n.abs / d.abs
       (n < 0) == (d < 0) ? q : -q
     end
-    # bc2cpp: (fixnum, )
+    # `d` filled in to match #trunc_div right above, which already carries
+    # the complete `(fixnum, fixnum)` pair: both are called from exactly one
+    # place, #apply's own `trunc_div(cur, val)` / `trunc_mod(cur, val)` arms,
+    # and #apply's own annotation already certifies `cur` and `val` as
+    # Fixnum. The missing second token here was an oversight, not a real
+    # difference between the two siblings.
+    # bc2cpp: (fixnum, fixnum)
 
     def trunc_mod(n, d)
       n - d * trunc_div(n, d)
@@ -2578,7 +2584,20 @@ module Game
     # party-only silently dropped the lot whenever that actor was away. With
     # actors persisting (ADR 0030) such a miss is permanent: the skill is never
     # learned rather than being re-granted on the next rebuild.
-    # bc2cpp: () -> Array
+    # The `<Game::Actor>` half is bc2cpp's own ELEMENT_CLASS_SUPPORT
+    # element claim, and it narrows the long-standing `-> Array` above
+    # without changing it (bc2cpp reads the same token both ways). True on
+    # every path here: `party.actors` is a proven Array<Game::Actor> (see
+    # the `== known-array-element-class hints ==` diagnostic --
+    # `Game::Party#@actors`, derived by bc2cpp's own whole-program sweep
+    # from all five of its real populating sites), `[party.roster[...]].
+    # compact` is a one-element array of a `Game::Actors#[]` result with
+    # the nil miss compacted away, and `[]` is empty. It is what lets
+    # every `stat_targets(cmd).each { |a| ... }` caller below
+    # (#do_change_exp, #do_change_level, #do_change_hp,
+    # #do_simulated_attack, #do_change_equipment,
+    # #do_change_battle_commands) devirtualize its per-actor calls.
+    # bc2cpp: () -> Array<Game::Actor>
     def stat_targets(cmd)
       case cmd.param(0)
       when 0 then party.actors
@@ -3568,6 +3587,15 @@ module Game
       end
     end
 
+    # Both operands and the comparison selector are always Fixnum: the only
+    # two call sites (#eval_condition's own `when 1` variable branch and
+    # #eval_battle_condition's identical one) each pass
+    # `variables[cmd.param(1)]` for `a`, `cmd.param(3)` or
+    # `variables[cmd.param(3)]` for `b`, and `cmd.param(4)` for `op`.
+    # `LCF::EventCommand#param` is `@parameters[i] || 0` over a decoded
+    # integer list, and `Game::Variables#[]` is `@data[id] || 0` over a
+    # min/max-clamped integer store, so neither can hand back anything else.
+    # bc2cpp: (fixnum, fixnum, fixnum)
     def compare(a, b, op)
       case op
       when 0 then a == b

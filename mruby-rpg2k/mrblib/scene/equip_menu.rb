@@ -148,6 +148,7 @@ class RPG2k
       # own equip-selection update does (unlike its skill-scene
       # counterpart); ported from its source, NOT independently confirmed
       # against genuine RPG_RT under wine.
+      # bc2cpp: (, Game::State)
       def initialize parent, state, actor_index = 0
         super parent
         @state = state

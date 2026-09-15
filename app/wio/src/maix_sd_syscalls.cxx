@@ -3,8 +3,9 @@
 // mruby-io and the bitmap loaders open game assets by path (File.open, fopen),
 // which bottom out in newlib's _open/_read/_close/_lseek/_fstat. On the board
 // those must be backed by storage; this routes them to Maixduino's SD library
-// (sdfat over SPI0's TF slot, chip-select 26 per the variant pins). Paths
-// under GAME_DIR (e.g. "/sd/<game>") are served from the card, the same
+// (sdfat over the TF slot -- SPI0, chip-select 26 -- via maix_tf_sd.h, NOT
+// the library's global `SD`, which is bound to SPI1 with the wrong pins).
+// Paths under GAME_DIR (e.g. "/sd/<game>") are served from the card, the same
 // convention app/wio/src/sd_syscalls.cxx uses.
 //
 // Compiled only when MAIX_WITH_SD is defined (mirroring WIO_WITH_SD): the
@@ -21,7 +22,10 @@
 #include <cstring>
 
 #include <Arduino.h>
-#include <SD.h>
+
+#include "maix_tf_sd.h"  // before <fcntl.h>: sdfat's O_* consts collide with
+                         // newlib's O_* macros (see sd_open_mode below)
+
 #include <fcntl.h>
 #include <sys/stat.h>
 
@@ -52,11 +56,11 @@ const char* to_sd_path(const char* path) {
 }  // extern "C"
 
 bool maix_sd_init(void) {
-  // TF slot chip-select: SPI0_CS0, pin 26 (see the sipeed_maix_amigo variant
-  // pins). Returns false with no card present -- callers treat every later
-  // open as ENOENT rather than hanging here. C++ linkage (declared so in
-  // maix.hxx): only the newlib hooks below need C linkage.
-  return SD.begin(26);
+  // TF slot chip-select: SPI0_CS0, pin 26 (see maix_tf_sd.h). Returns false
+  // with no card present -- callers treat every later open as ENOENT rather
+  // than hanging here. C++ linkage (declared so in maix.hxx): only the
+  // newlib hooks below need C linkage.
+  return maix_tf_sd().begin(26);
 }
 
 extern "C" {
@@ -93,7 +97,7 @@ int _open(const char* path, int flags, ...) {
     return -1;
   }
 
-  File f = SD.open(to_sd_path(path), sd_open_mode(flags));
+  File f = maix_tf_sd().open(to_sd_path(path), sd_open_mode(flags));
   if (!f) {
     errno = ENOENT;
     return -1;
@@ -171,7 +175,7 @@ int _fstat(int fd, struct stat* st) {
 // no open file descriptor involved. Shared verbatim semantics with the wio
 // layer: the only reachable caller deletes wave-cache files.
 int _unlink(const char* path) {
-  if (!SD.remove(to_sd_path(path))) {
+  if (!maix_tf_sd().remove(to_sd_path(path))) {
     errno = ENOENT;
     return -1;
   }

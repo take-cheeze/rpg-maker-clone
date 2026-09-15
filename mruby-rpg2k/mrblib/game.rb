@@ -1593,7 +1593,24 @@ module Game
     # class id, so this just reads it straight.
     def class_name; @class_row ? @class_row.name.to_s : ''; end
 
-    # bc2cpp: (, fixnum)
+    # `db` is always the one real `LCF::Database` this process ever builds.
+    # Traced end to end rather than assumed from the name: `RPG2k#initialize`
+    # (mruby-rpg2k/mrblib/main.rb) has the only `@db = LCF::Database.new ...`
+    # assignment in the whole closed world, `Scene::Base#initialize` copies
+    # that same object into every scene (`@db = parent.db`), and the only
+    # `Actor.new` site anywhere is `Actors#[]`'s own `Actor.new(@db, id)`,
+    # whose `@db` comes from `Actors.new(db)` in `Party#initialize`, whose
+    # own `db` in turn comes from `Game::Party.new(@db)` (main.rb) or from
+    # the two save-restore entry points (`State.load` / `State.from_lsd`),
+    # both of which `RPG2k` only ever calls as `Game::State.load(@db, ...)` /
+    # `Game::State.from_lsd(@db, ...)`. `LCF::Database` is a `LCF::File`
+    # subclass and is not itself subclassed (grepped). The CRuby-only check
+    # harnesses (scripts/rpg2k_logic_check.rb's own `FakeActorDB`) hand in a
+    # stub instead, but they are not part of `closed_world_mrblib_srcs` and
+    # never run compiled code at all -- and compile_send guards every
+    # annotation-derived direct call with a real `mrb_obj_class` check that
+    # falls back to `mrb_funcall` regardless.
+    # bc2cpp: (LCF::Database, fixnum)
     def initialize(db, id)
       @db = db
       @id = id
@@ -3636,6 +3653,10 @@ module Game
   # not one per current member, so a roster is what that table serialises.
   # See ADR 0030.
   class Actors
+    # Same single-object `LCF::Database` chain as `Actor#initialize` above --
+    # see its own comment for the full trace. The only `Actors.new` site in
+    # the closed world is `Party#initialize`'s own `Actors.new(db)`.
+    # bc2cpp: (LCF::Database)
     def initialize(db)
       @db = db
       @all = {}
@@ -3650,7 +3671,19 @@ module Game
     # raised, so a game that references a missing actor keeps running. A command
     # in a parallel process can ask every frame, so each bad id is reported once
     # rather than filling the log.
-    # bc2cpp: (fixnum)
+    #
+    # The `-> Game::Actor` half is bc2cpp's own ELEMENT_CLASS_SUPPORT
+    # return-class claim, and it is exactly true under that mechanism's
+    # own definition ("every value that is not nil is exactly this
+    # class"): the three returns below are nil (bad id), `@all[id]` (put
+    # there by this same method), and `Actor.new(@db, id)`, plus a nil
+    # from the rescue. It is what lets the sweep read
+    # `Game::Party#@actors` -- built as `ids.map { |i| @roster[i] }` --
+    # as an Array of Game::Actor. Deliberately annotated here rather than
+    # inferred: `#[]` cannot return a fresh `.new` on every path (the
+    # cache hit and the nil miss are both real), so no inference rule in
+    # bc2cpp.rb could establish this honestly.
+    # bc2cpp: (fixnum) -> Game::Actor
     def [](id)
       return nil if id.nil? || id <= 0
       a = @all[id]
@@ -4141,6 +4174,17 @@ module Game
     # grew an extra member. Used by State.from_lsd when a save's party list
     # disagrees with the title chunk's cached leader (see the comment
     # there). A no-op if +actor+ is nil or already leading.
+    #
+    # bc2cpp's own ELEMENT_CLASS_SUPPORT sweep needs this one: `actor` is
+    # an opaque incoming argument that gets written straight into
+    # `@actors` (both via #push and via the slot-0 assignment below), so
+    # without naming its class the whole `Game::Party#@actors` element
+    # fact poisons to unknown. The only caller in the closed world is
+    # `Game::State.from_lsd`'s own title-chunk leader fixup
+    # (mruby-rpg2k/mrblib/game/lsd_io.rb), which passes
+    # `party.roster.all.find { |a| a.name == nm }` -- an element of
+    # `Game::Actors#all`, i.e. a real Game::Actor.
+    # bc2cpp: (Game::Actor)
     def promote_to_leader(actor)
       return unless actor && @actors.first != actor
       @actors.delete(actor)
@@ -6007,7 +6051,13 @@ module Game
     # rewriting tiles must bump it or the change will not reach the screen.
     attr_reader :revision
 
-    # bc2cpp: (fixnum, )
+    # `unit` is always a real `LCF::MapUnit`: `RPG2k#load_map`
+    # (mruby-rpg2k/mrblib/main.rb) is the one and only `Game::Map.new` site
+    # in the whole closed world, and it passes a literal
+    # `LCF::MapUnit.new(File.open(map_path(id)))`. `LCF::MapUnit` is a
+    # `LCF::File` subclass but is not itself subclassed by anything
+    # (grepped), so the class-exact `mrb_obj_class` guard holds.
+    # bc2cpp: (fixnum, LCF::MapUnit)
     def initialize(id, unit)
       @revision = 0
       @id = id
@@ -6118,14 +6168,30 @@ module Game
     def set_upper(x, y, tile_id); set_tile(@upper, x, y, tile_id); end
 
     private
-    # bc2cpp: (, fixnum, , )
+    # `y` filled in alongside the `x` an earlier round already certified:
+    # both only ever arrive as one coordinate *pair*, from the very same
+    # call site -- `#set_lower`/`#set_upper` forward their own `(x, y)`
+    # unchanged, and the only callers of those two are
+    # Scene::MapViewer#paint_brush's own `@map.set_lower(@cx, @cy, @brush)` /
+    # `@map.set_upper(@cx, @cy, @brush)` (integer cursor cells). `#in_bounds?`
+    # right above compares both against 0/@width/@height unconditionally, so
+    # a nil or non-numeric `y` could never have reached the MUL below in the
+    # first place.
+    # bc2cpp: (, fixnum, fixnum, )
 
     def set_tile(layer, x, y, tile_id)
       return unless in_bounds?(x, y)
       layer[y * @width + x] = tile_id
       @revision += 1
     end
-    # bc2cpp: (, , fixnum, )
+    # Same coordinate-pair argument as #set_tile just above: `#lower`/
+    # `#upper` forward their own `(x, y)` straight through, and every caller
+    # of those two anywhere in the closed world passes a matched integer tile
+    # pair (`@cx/@cy`, `x/y`, `character.x/character.y`, `nx/ny`,
+    # `@state.x/@state.y`, `tx/ty`, `@x/@y` -- grepped, all of them), so the
+    # `y` that reaches the MUL below is a Fixnum wherever the already-
+    # annotated `x` is.
+    # bc2cpp: (, , fixnum, fixnum)
 
     def tile(layer, index, x, y)
       return nil unless in_bounds?(x, y)
@@ -7979,6 +8045,11 @@ module Game
     # in use.
     BLOCK_SHUFFLE_STRIDE = 2749
 
+    # Both arguments come from #compute_block_order's own single call shape
+    # (three `block_shuffle_rank(i, total)` sites in one `case`): `total` is
+    # `cols * (@height / BLOCK_SIZE)` and `i` walks `(0...total).to_a`, so
+    # both are Fixnum by construction, with no other caller anywhere.
+    # bc2cpp: (fixnum, fixnum)
     def block_shuffle_rank(index, total)
       (index * BLOCK_SHUFFLE_STRIDE) % total
     end
@@ -8338,6 +8409,15 @@ module Game
 
     # Pan (scroll) the view `distance` tiles in `direction` at `speed`, adding
     # onto the current pan target — RPG2000's Pan Screen "pan" operation.
+    # All three arrive straight off one event command, from the single
+    # `screen.pan(cmd.param(1), cmd.param(2), cmd.param(3))` call site in
+    # Interpreter's own Pan Screen handler -- `LCF::EventCommand#param` is
+    # `@parameters[i] || 0` over a decoded integer list, so all three are
+    # Fixnum. (`Game::Screen#approach`, three methods below, deliberately
+    # carries NO fixnum hint for `cur`/`step`: `@pan_step` comes from
+    # `pan_step_for`, whose `(2 << ...) / 16.0` makes it a Float, and
+    # `@pan_x`/`@pan_y` inherit that -- hence #pan_offset's own `.round`.)
+    # bc2cpp: (fixnum, fixnum, fixnum)
     def pan(direction, distance, speed)
       dx, dy = PAN_DELTA[direction] || [0, 0]
       d = distance * Game::TILE
@@ -8788,6 +8868,18 @@ module Game
   class Shop
     attr_reader :goods, :did_transaction
 
+    # The one and only `Game::Shop.new` site in the closed world is
+    # `Scene::Map#open_shop`'s own `Game::Shop.new(db, @state.party, ...)`
+    # (mruby-rpg2k/mrblib/scene/map.rb): `db` is `Scene::Base`'s own
+    # `attr_reader :db` (the single `LCF::Database` -- see
+    # `Actor#initialize`'s own comment for the full trace) and
+    # `@state.party` is `Game::State`'s own `attr_reader :party`, which
+    # `State#initialize` only ever receives as a real `Game::Party` (see its
+    # own annotation). Positions 3/4/5 stay blank on purpose: `goods` is an
+    # Array (an `Array` token in *argument* position is a codegen landmine,
+    # see Annotations' own comment) and `allow_buy`/`allow_sell` are plain
+    # booleans, which have no registry class to name.
+    # bc2cpp: (LCF::Database, Game::Party, , , )
     def initialize(db, party, goods, allow_buy, allow_sell)
       @db = db
       @party = party
@@ -9448,6 +9540,12 @@ module Game
     # unbounded single-glyph index would. See `Scene::Map#draw_timer_digits`
     # (`mruby-rpg2k/mrblib/scene/map.rb`) for the actual, empirically
     # characterized overflow behavior.
+    # The one and only caller in the closed world is Interpreter's own Timer
+    # Operation "set" arm, `t.set(cmd.param(1) == 0 ? cmd.param(2) :
+    # variables[cmd.param(2)])` -- both sides of that ternary are Fixnum
+    # (`LCF::EventCommand#param` is `@parameters[i] || 0`, `Game::Variables#[]`
+    # is `@data[id] || 0`), so `seconds` never arrives as anything else.
+    # bc2cpp: (fixnum)
     def set(seconds)
       @frames = seconds * FPS + (FPS - 1)
     end
@@ -9554,6 +9652,14 @@ module Game
 
     # Changing map drops the carried battle background (see above): the value
     # only ever described the map it was resolved on.
+    # `Scene::Map#perform_teleport`'s own `@state.map_id = map_id` is the one
+    # and only site that writes this setter in the whole closed world (the
+    # other `.map_id =` hits all target a `Game::Vehicle`, a different class):
+    # `map_id` there is `t[0]` of a teleport tuple, and every tuple producer
+    # supplies a Fixnum -- `Interpreter`'s own `[cmd.param(0), ...]` /
+    # `[variables[cmd.param(0)], ...]`, Scene::MapViewer's `[@map.id, ...]`,
+    # and the Teleport-skill menus' `[target[:map_id], ...]`.
+    # bc2cpp: (fixnum)
     def map_id=(id)
       @battle_background = nil if id != @map_id
       @map_id = id
@@ -9950,7 +10056,16 @@ module Game
     # 111, LCF::Schema::SAVE_MAP_EVENT fields 21/22 -- see #to_lsd/.from_lsd).
     attr_accessor :tile_substitutions
 
-    # bc2cpp: (, fixnum, fixnum, fixnum)
+    # `party` is always a real `Game::Party` -- every construction site in
+    # the closed world checked, not assumed: `RPG2k#start_new_game`
+    # (mruby-rpg2k/mrblib/main.rb) passes a literal `Game::Party.new(@db)`,
+    # and the two save-restore paths (`State.load`, this file, and
+    # `State.from_lsd`, mruby-rpg2k/mrblib/game/lsd_io.rb) each build their
+    # own `Party.new(db, ...)` immediately above their `new(party, ...)`.
+    # `Game::Party` is never subclassed anywhere (grepped), so the
+    # `mrb_obj_class` guard compile_send emits around every resulting
+    # direct call is exact rather than "kind_of".
+    # bc2cpp: (Game::Party, fixnum, fixnum, fixnum)
     def initialize(party, map_id, x, y)
       @party = party
       @map_id = map_id

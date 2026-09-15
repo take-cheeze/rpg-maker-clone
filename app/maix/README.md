@@ -120,6 +120,30 @@ opening anything. Runtime proof needs a physical card -- Renode models no
 SD controller -- but the shape of it is known: an SD image attached under
 Renode with game data on it, the way `wio_renode_sdcard.bash` does.
 
+## Pushing files without a card reader
+
+`pio run -e maix_sd_upload` builds a throwaway loader that writes files to
+the microSD card over the same USB serial used for flashing -- for a dev
+machine that cannot pull the card out and mount it directly. Same
+PING/PUT protocol as the Wio loader, driven by
+`scripts/maix_sd_upload.py`:
+
+```sh
+pio run -e maix_sd_upload -t upload --upload-port /dev/ttyUSB1
+scripts/maix_sd_upload.py \
+  /tmp/maixhello/RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb \
+  /tmp/maixhello/Title/maix.png:/sd/maixgame/Title/maix.png
+pio run -e maix_game -t upload --upload-port /dev/ttyUSB1  # reflash real fw
+```
+
+Remote paths must stay 8.3 -- the bundled sdfat has no long-filename
+support, so a remote like `/sd/maixhello/...` (9 chars) can never be
+created; that is why the example uses `/sd/maixgame/`.
+
+Port notes, confirmed against real hardware: the Amigo exposes two UARTs
+and only the second (`/dev/ttyUSB1` here) answers kflash; the console lives
+on that same port.
+
 ## The mruby cross-build (PSP-style)
 
 `scripts/maix_mruby_build.bash` builds `build_config.rb`'s `maix`
