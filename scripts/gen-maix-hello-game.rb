@@ -45,11 +45,17 @@ load File.join(mrblib, 'lcf_file.rb')
 OUT = ARGV[0] || File.expand_path('../data/maix-hello', __dir__)
 FileUtils.mkdir_p(File.join(OUT, 'Title'))
 
-# RPG_RT.ldb: System (22) + Terms (21) sections only.
+# RPG_RT.ldb: System (22) + Terms (21) sections only. The party field stays
+# empty (no actors ship): rpg2k_testbed_logic_check.rb scans every game dir
+# including this one, and an absent party must read back as [] (not nil),
+# or Game::Party falls back to `db.system`, which only resolves under mruby
+# (under CRuby it hits Kernel#system -- see AGENTS.md).
 db = LCF::Database.new
-sys = LCF::Array1D.new('', LCF::Schema::DATABASE[:elements][22])
+sys_schema = LCF::Schema::DATABASE[:elements][22]
+sys = LCF::Array1D.new('', sys_schema)
 sys[:title] = 'maix'
 sys[:system_graphic] = ''
+sys[:party] = []
 db[22] = sys
 terms = LCF::Array1D.new('', LCF::Schema::DATABASE[:elements][21])
 terms[:new_game] = 'New Game'

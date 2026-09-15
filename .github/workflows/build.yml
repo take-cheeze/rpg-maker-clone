@@ -1528,10 +1528,11 @@ jobs:
       - name: Check game data matches its generator
         # data/maix-hello is committed (CI has no business regenerating
         # test data with unpinned tools); this fails if the generator and
-        # the data drift apart, pointing at the one to re-run.
+        # the data drift apart, pointing at the one to re-run. README.md is
+        # hand-authored, not generated, so it is excluded from the diff.
         run: |
           ruby scripts/gen-maix-hello-game.rb /tmp/maixhello-check
-          diff -r /tmp/maixhello-check data/maix-hello && echo "maix-hello in sync"
+          diff -r -x README.md /tmp/maixhello-check data/maix-hello && echo "maix-hello in sync"
 
       - name: Build game firmware
         # Boots data/maix-hello to its title screen (see app/maix/README.md):
@@ -1564,6 +1565,21 @@ jobs:
           MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
           PLATFORMIO_BUILD_FLAGS: -DMAIX_WITH_SD
         run: pio run -e maix_rgss_boot
+
+      - name: Build SD uploader
+        # Throwaway serial-to-SD loader (see app/maix/README.md): no LVGL,
+        # no mruby, just Maixduino SD over SPI0. Uploaded immediately like
+        # every other env, for the same prune-proofing reason.
+        run: pio run -e maix_sd_upload
+
+      - name: Upload SD uploader
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-sd-upload-firmware
+          path: |
+            .pio/build/maix_sd_upload/firmware.bin
+            .pio/build/maix_sd_upload/firmware.elf
+          if-no-files-found: error
 
   maix-smoke:
     # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
