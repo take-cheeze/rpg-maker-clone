@@ -57,6 +57,7 @@ class RPG2k
       # playable field map instead of ending the run. Left false (the
       # default) for F9's own Chipset page, where popping back to the debug
       # menu underneath is exactly the wanted behaviour.
+      # bc2cpp: (, Game::State)
       def initialize(parent, state, quit_on_close: false)
         super parent
         @state = state

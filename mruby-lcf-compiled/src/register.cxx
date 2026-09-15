@@ -207,67 +207,75 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, sections, "key?", LCF__Sections_key_, MRB_ARGS_REQ(1));
   mrb_define_method(M, sections, "[]", LCF__Sections___, MRB_ARGS_REQ(1));
 
+  // @code/@indent (`# bc2cpp: (fixnum, fixnum, , )` above #initialize)
+  // embed into a real RData struct again -- ATTR_STRUCT_DEVIRT
+  // (bc2cpp.rb's own drop_unsafe_embeddings/emit_ivar_accessor_pair) now
+  // hand-builds a real compiled #code/#indent pair that reads the SAME
+  // struct field GETIV/SETIV already use, registered below in place of
+  // `attr_reader :code, :indent, :string, :parameters`'s own plain
+  // native accessor for exactly these two names (:string/:parameters
+  // stay native -- String/Array, never proposed for embedding). This is
+  // what actually closes the collision this file's own top comment
+  // documents (the original bug this exact class caught), not just
+  // avoiding it by leaving @code/@indent unembedded.
   RClass* event_command = mrb_class_get_under(M, lcf, "EventCommand");
+  MRB_SET_INSTANCE_TT(event_command, MRB_TT_DATA);
 
   // #initialize is always private (mruby's own src/class.c forces this
   // regardless of source, not a bare `private` call in the real
   // interpreted source -- the same always-private special case every
   // other compiled #initialize in this project already documents).
   // #param is public; no bare `private`/`protected`/`public` anywhere in
-  // this class's own real source. See this file's own top comment for
-  // why no MRB_SET_INSTANCE_TT call belongs here.
+  // this class's own real source.
   mrb_define_private_method(M, event_command, "initialize",
                             LCF__EventCommand_initialize, MRB_ARGS_REQ(4));
+  // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
+  // #code/#indent -- see this block's own top comment.
+  mrb_define_method(M, event_command, "code", LCF__EventCommand_code,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, event_command, "indent", LCF__EventCommand_indent,
+                    MRB_ARGS_NONE());
   mrb_define_method(M, event_command, "param", LCF__EventCommand_param,
                     MRB_ARGS_REQ(1));
 
   // LCF::MoveCommand (docs/adr/0139's own follow-up): one decoded RPG2000
   // move-route command (a command id plus optional string/integer
-  // parameters), mruby-lcf/mrblib/lcf.rb. Its own #initialize is the ONLY
-  // real bytecode-defined method on this class at all (attr_reader
-  // :command_id, :parameter_string, :parameter_a, :parameter_b,
-  // :parameter_c stays native/uncompiled, as always), and it compiles
+  // parameters), mruby-lcf/mrblib/lcf.rb. Its own #initialize compiles
   // clean: 5 purely mandatory arguments, no super, no block.
   //
-  // Stale as of the natively_exposed?/drop_unsafe_embeddings fix a few
-  // rounds up (docs/adr/0139's own eighth-severe-bug follow-up, the same
-  // one that stopped Game::State/Map/ChipSet/Switches and this gem's own
-  // LCF::EventCommand from embedding): this class's own bare
-  // `attr_reader :command_id, ..., :parameter_a, :parameter_b,
-  // :parameter_c` is the EXACT same shape that fix exists to catch, and a
-  // re-run of the real whole-program diagnostic against the *current*
-  // bc2cpp.rb (this round's own dedicated follow-up sweep) confirms
-  // LCF::MoveCommand no longer appears in bc2cpp's own "classes needing
-  // MRB_SET_INSTANCE_TT" diagnostic at all -- the comment this replaced
-  // (claiming a real LCF__MoveCommand_ivars RData struct and a
-  // mrb_data_init call) described an earlier bc2cpp.rb, before that fix
-  // landed, and was simply never re-checked against it even though the
-  // fix's own round touched this very file. The regenerated
-  // #initialize body now writes @command_id/@parameter_a/@parameter_b/
-  // @parameter_c/@parameter_string via plain mrb_iv_set, exactly like
-  // every other (non-embedding) compiled #initialize in this gem --
-  // confirmed directly against the real generated lcf_compiled_gen.cpp,
-  // not assumed. So no MRB_SET_INSTANCE_TT call belongs in this class's
-  // own registration block below (removed here): leaving the stale call
-  // in place tagged every real LCF::MoveCommand instance MRB_TT_DATA/
-  // MRB_TT_CDATA with no compiled code ever allocating or reading its
-  // RData payload (data/type always NULL) -- confirmed harmless at the
-  // mruby-core level (mrb_iv_get/mrb_iv_set, #dup/#clone's mrb_iv_copy,
-  // and the GC's own mark/free paths all treat MRB_TT_CDATA the same as
-  // MRB_TT_OBJECT for ivars, and free-side checks `type &&
-  // type->dfree` before ever touching it), so this was drift, not a
-  // second live embedding bug -- but drift this project's own established
-  // discipline (see this file's own EventCommand comment above, and
-  // mruby-rpg2k-compiled/src/register.cxx's top comment) always corrects
-  // rather than leaves for the next reader to trust blindly. #initialize
-  // is forced private by mruby's own interpreter regardless of source
+  // @command_id/@parameter_a/@parameter_b/@parameter_c (`attr_reader
+  // :command_id, :parameter_string, :parameter_a, :parameter_b,
+  // :parameter_c` -- :parameter_string is a String, never proposed for
+  // embedding) embed into a real RData struct again -- ATTR_STRUCT_DEVIRT
+  // (bc2cpp.rb's own drop_unsafe_embeddings/emit_ivar_accessor_pair) now
+  // hand-builds real compiled readers for exactly these four names that
+  // read the SAME struct fields GETIV/SETIV already use, registered
+  // below in place of `attr_reader`'s own plain native accessors for
+  // them -- this is what actually closes the collision this class's own
+  // history already documents (a prior round found and fixed this same
+  // class colliding on this same shape, leaving it deliberately
+  // unembedded rather than overriding the accessor; this round finally
+  // closes it, the same way as LCF::EventCommand above). #initialize is
+  // forced private by mruby's own interpreter regardless of source
   // (mrb_define_method_raw's own special case for the name), so this
   // still uses mrb_define_private_method, not mrb_define_method --
   // confirmed directly against the real diagnostic's own `== compiled
   // entry points ==` listing, which flags it accordingly.
   RClass* move_command = mrb_class_get_under(M, lcf, "MoveCommand");
+  MRB_SET_INSTANCE_TT(move_command, MRB_TT_DATA);
   mrb_define_private_method(M, move_command, "initialize",
                             LCF__MoveCommand_initialize, MRB_ARGS_REQ(5));
+  // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
+  // #command_id/#parameter_a/#parameter_b/#parameter_c -- see this
+  // block's own top comment.
+  mrb_define_method(M, move_command, "command_id", LCF__MoveCommand_command_id,
+                    MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_a",
+                    LCF__MoveCommand_parameter_a, MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_b",
+                    LCF__MoveCommand_parameter_b, MRB_ARGS_NONE());
+  mrb_define_method(M, move_command, "parameter_c",
+                    LCF__MoveCommand_parameter_c, MRB_ARGS_NONE());
 
   // LCF::Array1D: 5 of its own 11 real bytecode-defined methods compile
   // clean and are registered below -- all public, confirmed directly

@@ -112,6 +112,7 @@ class RPG2k
       # from there once inside, confirmed under wine: RIGHT walked
       # ユーティル -> とんま and LEFT wrapped back past the leader to
       # エマワトソン, each redrawing the whole screen for the new actor.
+      # bc2cpp: (, Game::State)
       def initialize parent, state, actor_index = 0
         super parent
         @state = state
@@ -342,6 +343,7 @@ class RPG2k
         @equip_window.contents = c
       end
 
+      # bc2cpp: () -> Array
       def slot_labels(a)
         second = if a.respond_to?(:double_hand?) && a.double_hand?
                    term(:weapon)

@@ -123,6 +123,7 @@ class RPG2k
       UP_ARROW_Y = LIST_Y
       DOWN_ARROW_Y = SCREEN_H - ARROW_H
 
+      # bc2cpp: (, Game::State)
       def initialize parent, state, actor_index = 0
         super parent
         @state = state
