@@ -54,6 +54,49 @@ class RPG2k
         :flash, :forced_route, :forced_freq, :crossed_hero_this_frame,
         keyword_init: true
       )
+
+      # A live Show Message/Show Choices window's full state (#open_message):
+      # 19 members set by its own literal (confirmed by parsing this file
+      # with RubyVM::AbstractSyntaxTree and reading off that Hash literal's
+      # key list directly, not guessed) -- window, choice, count,
+      # choice_start, reveal, contents, inner_w, seg_lines, interp, page,
+      # pages, auto_close, face, face_x, face_y, text_x, text_w, gold_window,
+      # trailing_color. Plus four more members this file sets only later,
+      # dynamically, never in the literal itself (found the same way
+      # MapEventState's own four late members were, by grepping every
+      # `@message[:name] =` site in this file): awaiting_followup,
+      # followup_resumed, pause_frames, pending_choice.
+      MessageState = Struct.new(
+        :window, :choice, :count, :choice_start, :reveal, :contents, :inner_w,
+        :seg_lines, :interp, :page, :pages, :auto_close, :face, :face_x, :face_y,
+        :text_x, :text_w, :gold_window, :trailing_color,
+        :awaiting_followup, :followup_resumed, :pause_frames, :pending_choice,
+        keyword_init: true
+      )
+
+      # A live shop's full UI state (#open_shop): 15 members set by its own
+      # literal -- model, has_menu, screen, index, scroll, cmd_index, window,
+      # gold, status, party, desc, prompt, terms, browsed, interp. Plus
+      # `confirm_timer`, set only later by #drive_shop_quantity once a
+      # transaction commits (found by the same `@shop[:name] =` grep as
+      # MapEventState/MessageState's own late members). `quantity` holds a
+      # genuinely distinct nested record while the quantity counter is open
+      # (see ShopQuantity below), not a scalar field, so it is listed here
+      # too but is never Hash-literal-initialized.
+      ShopState = Struct.new(
+        :model, :has_menu, :screen, :index, :scroll, :cmd_index, :window, :gold,
+        :status, :party, :desc, :prompt, :terms, :browsed, :interp,
+        :confirm_timer, :quantity,
+        keyword_init: true
+      )
+
+      # The quantity counter's own sub-record, live only while `@shop[:screen]
+      # == :quantity` (and briefly after, through the purchased/sold
+      # confirmation -- see #drive_shop_quantity's own comment): which item
+      # (`id`), how many (`count`, 1..`max`), and whether this is a buy or a
+      # sell (`mode`, read back by #shop_quantity_move and
+      # #close_shop_quantity to know which screen to return to).
+      ShopQuantity = Struct.new(:id, :count, :max, :mode, keyword_init: true)
       # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
       # the per-frame slide advance for a character of internal move_speed `s`
       # (real RPG_RT's own 1-indexed Move Speed minus 1; see #page_move_speed
@@ -6167,11 +6210,23 @@ class RPG2k
                                req[:allow_buy], req[:allow_sell])
         has_menu = req[:allow_buy] && req[:allow_sell]
         screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
-        @shop = { model: model, has_menu: has_menu, screen: screen, index: 0,
-                  scroll: 0, cmd_index: 0, window: nil, gold: build_shop_gold_window,
-                  status: nil, party: nil, desc: nil, prompt: nil,
-                  terms: shop_terms(req[:type]), browsed: false,
-                  interp: it }
+        shop = ShopState.new
+        shop.model = model
+        shop.has_menu = has_menu
+        shop.screen = screen
+        shop.index = 0
+        shop.scroll = 0
+        shop.cmd_index = 0
+        shop.window = nil
+        shop.gold = build_shop_gold_window
+        shop.status = nil
+        shop.party = nil
+        shop.desc = nil
+        shop.prompt = nil
+        shop.terms = shop_terms(req[:type])
+        shop.browsed = false
+        shop.interp = it
+        @shop = shop
         draw_shop
       end
 
@@ -6834,7 +6889,12 @@ class RPG2k
         model = @shop[:model]
         max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
         return false if max < 1
-        @shop[:quantity] = { id: id, count: 1, max: max, mode: @shop[:screen] }
+        q = ShopQuantity.new
+        q.id = id
+        q.count = 1
+        q.max = max
+        q.mode = @shop[:screen]
+        @shop[:quantity] = q
         @shop[:screen] = :quantity
         draw_shop
         true
@@ -9247,20 +9307,32 @@ class RPG2k
           gold_window = build_inn_gold_window(db.term.gold.to_s)
           gold_window.open_animation(open_frames)
         end
-        @message = { window: win, choice: choice, count: plain.length,
-                     choice_start: 0, reveal: reveal, contents: contents,
-                     inner_w: inner_w, seg_lines: seg_lines, interp: interp,
-                     page: 0, pages: pages, auto_close: auto_close,
-                     face: build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped),
-                     face_x: face_right ? inner_w - FACE_INSET - FACE_SIZE : FACE_INSET,
-                     face_y: FACE_INSET,
-                     text_x: text_x, text_w: text_w, gold_window: gold_window,
-                     # The colour still in effect once this text ends -- a Show
-                     # Choices later merged onto this same window (see
-                     # #append_choice_lines) inherits it rather than starting
-                     # back at the default (yado.tk: an explicit `\c[0]` is
-                     # needed in the text to stop the choices inheriting it).
-                     trailing_color: scans.empty? ? 0 : scans.last[:end_color] }
+        message = MessageState.new
+        message.window = win
+        message.choice = choice
+        message.count = plain.length
+        message.choice_start = 0
+        message.reveal = reveal
+        message.contents = contents
+        message.inner_w = inner_w
+        message.seg_lines = seg_lines
+        message.interp = interp
+        message.page = 0
+        message.pages = pages
+        message.auto_close = auto_close
+        message.face = build_face_cell(face_sheet, cfg.face_index, cfg.face_flipped)
+        message.face_x = face_right ? inner_w - FACE_INSET - FACE_SIZE : FACE_INSET
+        message.face_y = FACE_INSET
+        message.text_x = text_x
+        message.text_w = text_w
+        message.gold_window = gold_window
+        # The colour still in effect once this text ends -- a Show
+        # Choices later merged onto this same window (see
+        # #append_choice_lines) inherits it rather than starting
+        # back at the default (yado.tk: an explicit `\c[0]` is
+        # needed in the text to stop the choices inheriting it).
+        message.trailing_color = scans.empty? ? 0 : scans.last[:end_color]
+        @message = message
         speak_message(plain)
         draw_message_contents
         win.contents = contents
