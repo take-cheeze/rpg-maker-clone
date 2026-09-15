@@ -3044,6 +3044,12 @@ class RPG2k
       # in place of the ordinary "resume the event that opened this" a
       # scripted encounter's own [Defeat] handler would get -- a random
       # encounter has no such event to resume into.
+      # `result` is always a Symbol: the three call sites pass either a
+      # literal `:abort` (#drive_battle_escape here, and Scene::Map's own
+      # `@battle.finish_battle(:abort)`) or `@ui[:result]`, which nothing
+      # but #enter_battle_result ever writes -- and that method's own
+      # `# bc2cpp: (Symbol)` annotation already certifies its argument.
+      # bc2cpp: (Symbol)
       def finish_battle(result)
         # Persist the party's post-battle HP (and any knock-outs) before leaving
         # the fight, so damage taken sticks and a downed member stays down.
@@ -3791,6 +3797,11 @@ class RPG2k
       # fixtures that carry no gauge model at all. NOTE the panel is only
       # rebuilt on `#refresh_battle_status`, not per frame, so unlike the real
       # runtime this bar steps rather than sweeps (left open, see docs/TODO.md).
+      # `i` is the card's column index, and the only caller is
+      # #draw_battle_gauge_panel's own
+      # `allies.each_with_index { |ally, i| draw_battle_gauge_card(...) }`,
+      # so it is always a Fixnum.
+      # bc2cpp: (, , , fixnum)
       def draw_battle_gauge_card(c, system2, ally, i)
         draw_battle_gauge_face(c, ally.actor, i)
         x = 32 + i * 80
@@ -3823,6 +3834,10 @@ class RPG2k
       # other optional actor field this screen reads (`battler_animation_id`,
       # `battle_x`/`battle_y`), `#respond_to?`-guarded so a bare test fixture
       # actor with no faceset fields at all still draws the rest of the card.
+      # `i` is #draw_battle_gauge_card's own already-Fixnum column index,
+      # forwarded unchanged from its single `draw_battle_gauge_face(c,
+      # ally.actor, i)` call -- the only caller this method has.
+      # bc2cpp: (, , fixnum)
       def draw_battle_gauge_face(c, actor, i)
         return unless actor && actor.respond_to?(:faceset_name)
         face = @map.load_face_bitmap(actor.faceset_name)

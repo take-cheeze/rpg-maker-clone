@@ -852,6 +852,9 @@ class RPG2k
       end
 
       # Content x of column `col`'s cell -- 0 and 160 (measured).
+      # Both callers (#draw_item_rows, #update_item_cursor) pass an
+      # `... % COLUMN_MAX`, so `col` is always a Fixnum.
+      # bc2cpp: (fixnum)
       def item_col_x(col)
         col * (item_col_w + COLUMN_GAP)
       end

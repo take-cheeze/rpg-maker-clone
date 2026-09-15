@@ -2301,7 +2301,13 @@ module Game
       q = n.abs / d.abs
       (n < 0) == (d < 0) ? q : -q
     end
-    # bc2cpp: (fixnum, )
+    # `d` filled in to match #trunc_div right above, which already carries
+    # the complete `(fixnum, fixnum)` pair: both are called from exactly one
+    # place, #apply's own `trunc_div(cur, val)` / `trunc_mod(cur, val)` arms,
+    # and #apply's own annotation already certifies `cur` and `val` as
+    # Fixnum. The missing second token here was an oversight, not a real
+    # difference between the two siblings.
+    # bc2cpp: (fixnum, fixnum)
 
     def trunc_mod(n, d)
       n - d * trunc_div(n, d)
@@ -3568,6 +3574,15 @@ module Game
       end
     end
 
+    # Both operands and the comparison selector are always Fixnum: the only
+    # two call sites (#eval_condition's own `when 1` variable branch and
+    # #eval_battle_condition's identical one) each pass
+    # `variables[cmd.param(1)]` for `a`, `cmd.param(3)` or
+    # `variables[cmd.param(3)]` for `b`, and `cmd.param(4)` for `op`.
+    # `LCF::EventCommand#param` is `@parameters[i] || 0` over a decoded
+    # integer list, and `Game::Variables#[]` is `@data[id] || 0` over a
+    # min/max-clamped integer store, so neither can hand back anything else.
+    # bc2cpp: (fixnum, fixnum, fixnum)
     def compare(a, b, op)
       case op
       when 0 then a == b
