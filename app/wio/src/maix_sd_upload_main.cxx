@@ -21,7 +21,8 @@
 // project-wide `src_dir` (see maix_amigo_main.cxx's own comment for why).
 
 #include <Arduino.h>
-#include <SD.h>
+
+#include "maix_tf_sd.h"
 
 namespace {
 
@@ -59,8 +60,8 @@ void ensure_parent_dir(const String& path) {
   if (slash <= 0)
     return;
   const String dir = path.substring(0, slash);
-  if (!SD.exists(dir))
-    SD.mkdir(dir);
+  if (!maix_tf_sd().exists(dir))
+    maix_tf_sd().mkdir(dir);
 }
 
 void handle_put(const String& rest) {
@@ -76,7 +77,7 @@ void handle_put(const String& rest) {
   }
 
   ensure_parent_dir(path);
-  File f = SD.open(path.c_str(), FILE_WRITE);
+  File f = maix_tf_sd().open(path.c_str(), FILE_WRITE);
   if (!f) {
     Serial.println("ERR open failed");
     return;
@@ -108,9 +109,9 @@ void handle_put(const String& rest) {
 void setup(void) {
   Serial.begin(115200);
   Serial.setTimeout(5000);
-  // TF slot chip-select: SPI0_CS0, pin 26 (see the sipeed_maix_amigo variant
-  // pins and maix_sd_syscalls.cxx, which mounts the same card the same way).
-  g_sd_ok = SD.begin(26);
+  // TF slot: SPI0 on pins 11/6/10, chip-select 26 -- see maix_tf_sd.h for
+  // why the library's global `SD` (SPI1, wrong pins) cannot be used here.
+  g_sd_ok = maix_tf_sd().begin(26);
 }
 
 void loop(void) {
