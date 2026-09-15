@@ -55,6 +55,15 @@ sysbus Tag <0x38001000 0x1000> "GPIOHS"
 sysbus Tag <0x52001000 0xFF000> "SPIHI"
 sysbus Tag <0x50001000 0xFF000> "DMACHI"
 
+# I2C1 (the touch panel's bus): Maixduino's TwoWire spins on the status and
+# FIFO level registers, which plain zeros never satisfy -- status reads
+# TX-EMPTY with no activity, and the RX FIFO always reports a full 8-deep
+# read's worth of (zero) bytes, so requestFrom completes in one iteration
+# with a zero touch count: exactly the idle state. The bytes it "reads" are
+# zeros, which is what no-touch looks like on the wire too.
+sysbus Tag <0x50290070 0x4> "i2c1_status" 0x04
+sysbus Tag <0x50290078 0x4> "i2c1_rxflr" 0x08
+
 # Each hook removes itself (cpu.PC is its own trigger address, since a hook
 # fires before the instruction there executes) after firing once: loop() in
 # particular gets called on every pass through the firmware's main loop, so

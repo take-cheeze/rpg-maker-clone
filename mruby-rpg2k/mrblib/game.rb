@@ -2304,9 +2304,26 @@ module Game
     # Condition event command all fail to cure a state a worn cursed item
     # is still actively forcing -- only taking the armor off actually
     # clears it.
+    # bc2cpp stopgap (docs/adr/0157): index loops, not block calls, so
+    # #full_heal compiles even before `permanent_states`' own flat_map
+    # callee is wired into register.cxx (capability rounds ship the
+    # compiler; coverage rounds wire later). Semantics identical to the
+    # block forms: same order, same side effects.
     def permanent_states
       return [] unless rpg2003?
-      @equipment.flat_map { |id| cursed_armor_state_ids(id) }.uniq
+      out = []
+      eq = @equipment
+      i = 0
+      while i < eq.size
+        ids = cursed_armor_state_ids(eq[i])
+        j = 0
+        while j < ids.size
+          out << ids[j]
+          j += 1
+        end
+        i += 1
+      end
+      out.uniq
     end
 
     # The effective max HP ceiling #recompute_stats clamps against --
@@ -3068,7 +3085,13 @@ module Game
       @hp = @max_hp
       @mp = @max_mp
       clear_states
-      permanent_states.each { |id| add_state(id) }
+      # bc2cpp stopgap (docs/adr/0157): index loop, see permanent_states.
+      ids = permanent_states
+      i = 0
+      while i < ids.size
+        add_state(ids[i])
+        i += 1
+      end
     end
 
     # Change Parameters base-stat types (the RPG2000 command's parameter field).

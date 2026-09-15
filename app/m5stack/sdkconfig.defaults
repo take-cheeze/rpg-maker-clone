@@ -1,0 +1,19 @@
+# ESP-IDF defaults for this directory's own platformio.ini, which builds
+# Arduino as an ESP-IDF component (`framework = arduino, espidf`) rather
+# than the precompiled-libs `framework = arduino` the Wio/Maix ports use --
+# see this directory's platformio.ini and README.md for why this port is a
+# separate, standalone PlatformIO project instead of another environment in
+# the repo root's platformio.ini. See docs/adr/0157 for why each option here
+# is required, not just preferred.
+
+# framework-arduinoespressif32's own CMakeLists.txt hard-errors
+# ("esp32-arduino requires CONFIG_FREERTOS_HZ=1000") if this is left at the
+# espidf framework's own default of 100.
+CONFIG_FREERTOS_HZ=1000
+
+# The espidf framework's own default (2 MB) does not match the
+# m5stack-core-esp32 board's real 4 MB flash, which the toolchain otherwise
+# warns about (and scripts/m5stack_qemu_boot.bash's own merge_bin step
+# assumes 4 MB throughout).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"

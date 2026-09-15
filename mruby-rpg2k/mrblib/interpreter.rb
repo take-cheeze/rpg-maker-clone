@@ -2578,6 +2578,7 @@ module Game
     # party-only silently dropped the lot whenever that actor was away. With
     # actors persisting (ADR 0030) such a miss is permanent: the skill is never
     # learned rather than being re-granted on the next rebuild.
+    # bc2cpp: () -> Array
     def stat_targets(cmd)
       case cmd.param(0)
       when 0 then party.actors

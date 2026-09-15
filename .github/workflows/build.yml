@@ -1525,6 +1525,18 @@ jobs:
             .pio/build/maix_rgss_boot/firmware.map
           if-no-files-found: error
 
+      - name: Compile SD syscall layer
+        # maix_sd_syscalls.cxx is gate-off by default (see the file), so this
+        # rebuilds the boot env once with MAIX_WITH_SD to prove the real code
+        # compiles -- runtime proof needs a physical card (Renode models no
+        # SD controller). Placed after the uploads: like every other second
+        # invocation, it may prune the build dirs it does not need.
+        env:
+          MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
+          MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
+          PLATFORMIO_BUILD_FLAGS: -DMAIX_WITH_SD
+        run: pio run -e maix_rgss_boot
+
   maix-smoke:
     # Headless run checks for the Maix Amigo firmwares: boot the mruby-linking
     # maix_rgss_boot firmware under stock Renode (which ships the K210 SoC
@@ -1597,12 +1609,21 @@ jobs:
         run: |
           elf="$(find firmware -name firmware.elf | head -n 1)"
           test -n "$elf" || { echo "::error::no firmware.elf in artifact:"; find firmware; exit 1; }
-          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode scripts/maix_renode_boot.bash "$elf")"
+          out="$(RENODE_BIN=/tmp/maix-renode/renode_1.17.0-portable/renode MAIX_SPI_LOG="$GITHUB_WORKSPACE/maix-spi-rgss.log" scripts/maix_renode_boot.bash "$elf")"
           echo "$out"
           echo "$out" | grep -q "REACHED setup()" || { echo "::error::did not reach setup()"; exit 1; }
           echo "$out" | grep -q "REACHED loop()" || { echo "::error::did not reach loop()"; exit 1; }
           echo "$out" | grep -q "mrb_open ok" || { echo "::error::mruby did not open"; exit 1; }
           echo "$out" | grep -q "eval -> maix-ruby-alive" || { echo "::error::mruby eval failed"; exit 1; }
+
+      - name: Check red framebuffer
+        # The boot firmware paints solid red through LVGL itself before the
+        # pumps above return (see app/maix/README.md): the capture from that
+        # same run must decode to a red 320x240 screen. Red arrives
+        # byte-swapped (the driver's SWAP_16), hence 00f8, not f800.
+        run: |
+          python3 scripts/maix_lcd_decode.py maix-spi-rgss.log maix-frame-rgss.ppm \
+            --expect-color 00f8 --min-fraction 0.45 --min-colors 2 --expect-size 320x240
 
       - name: Download P0 firmware
         uses: actions/download-artifact@v8
@@ -1629,7 +1650,7 @@ jobs:
         # is the human-readable record.
         run: |
           python3 scripts/maix_lcd_decode.py maix-spi.log maix-frame.ppm \
-            --min-blue 0.45 --min-colors 3 --expect-size 320x240
+            --expect-color 001f --min-fraction 0.45 --min-colors 3 --expect-size 320x240
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode
@@ -1755,6 +1776,193 @@ jobs:
           scripts/wio_renode_sdcard.bash /tmp/wio_renode_sdcard_check \
             /tmp/wio_renode_sdcard_check_input.txt:/RPG2kWalk/test.txt
           mdir -i /tmp/wio_renode_sdcard_check/sdcard.img ::/RPG2kWalk | grep -q test
+
+  m5stack:
+    # Build the M5Stack Core (ESP32) P1 HAL bring-up firmware with
+    # PlatformIO (see app/m5stack/README.md, docs/adr/0157). Unlike Wio/Maix,
+    # espressif32 ships this board natively, so there is no custom
+    # boards/*.json step here -- the same reason this job has no counterpart
+    # to maix's own "add_amigo_variant.py" step. app/m5stack is its own
+    # standalone PlatformIO project (not another environment in the repo
+    # root's platformio.ini -- see that directory's own platformio.ini for
+    # why: it builds Arduino as an ESP-IDF component, which takes over the
+    # project root's CMakeLists.txt and cannot honor build_src_filter,
+    # both fatal to sharing the root project the way Wio/Maix do), so every
+    # `pio` command here runs with app/m5stack as its working directory.
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # LVGL is vendored as a submodule and linked into the firmware.
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-m5stack-${{ runner.os }}-${{ hashFiles('app/m5stack/platformio.ini', 'app/m5stack/sdkconfig.defaults') }}
+          restore-keys: pio-m5stack-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install -q --disable-pip-version-check --upgrade platformio
+
+      - name: Build firmware
+        working-directory: app/m5stack
+        run: pio run -e m5stack
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: m5stack-firmware
+          path: |
+            app/m5stack/.pio/build/m5stack/firmware.bin
+            app/m5stack/.pio/build/m5stack/firmware.elf
+            app/m5stack/.pio/build/m5stack/bootloader.bin
+            app/m5stack/.pio/build/m5stack/partitions.bin
+
+  m5stack-qemu:
+    # Boots the m5stack firmware the job above compiles under Espressif's own
+    # QEMU fork (docs/adr/0157-m5stack-core-qemu-emulator.md), the same
+    # "does this run in CI" question wio-renode answers for the Wio Terminal.
+    # Asserts the real bar: the firmware's own setup() actually ran (LVGL +
+    # TFT_eSPI + button HAL init) and loop() scanned the buttons --
+    # scripts/m5stack_qemu_boot.bash greps the real "m5stack: setup
+    # complete" and "Keys: ..." lines out of the QEMU serial log, not just a
+    # boot banner. Getting here needed app/m5stack's own platformio.ini to
+    # build Arduino as an ESP-IDF component rather than PlatformIO's default
+    # precompiled-libs mode -- see the ADR's "Status, revised" section.
+    #
+    # Also builds QEMU from source with app/m5stack/qemu/patches/
+    # (scripts/m5stack_qemu_build.bash) -- Espressif's own prebuilt release
+    # cannot carry either of this fork's new downstream devices -- and
+    # checks two things beyond "the firmware ran": the actual rendered
+    # ILI9341 framebuffer (m5stack-display.patch), the same way wio-renode's
+    # own ILI9341 pixel checks answer it for the Wio Terminal; and a FACES
+    # kit Gamepad Face's buttons actually reaching RGSS::Input's bitmask
+    # through a simulated I2C device (m5stack-gamepad.patch).
+    needs: m5stack
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          show-progress: false
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: m5stack-firmware
+          path: app/m5stack/.pio/build/m5stack
+
+      - name: Install esptool, QEMU's build deps
+        run: |
+          pip install -q --disable-pip-version-check esptool
+          sudo apt-get update -q && sudo apt-get install -y -q \
+            ninja-build meson pkg-config libglib2.0-dev libpixman-1-dev libgcrypt20-dev libslirp-dev
+
+      - name: Cache the QEMU build
+        id: qemu-cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/m5stack-qemu-build
+          # Keyed on the pinned tag scripts/m5stack_qemu_build.bash checks
+          # out and on the patch it applies -- either changing invalidates
+          # the cache; nothing else does, so this is a cache hit on almost
+          # every run (mirrors wio-renode's own Renode build cache).
+          key: m5stack-qemu-build-${{ runner.os }}-${{ hashFiles('scripts/m5stack_qemu_build.bash', 'app/m5stack/qemu/patches/**') }}
+
+      - name: Build QEMU with M5Stack display support
+        if: steps.qemu-cache.outputs.cache-hit != 'true'
+        run: scripts/m5stack_qemu_build.bash /tmp/m5stack-qemu-build
+
+      - name: Boot under QEMU
+        env:
+          M5STACK_QEMU_BIN: /tmp/m5stack-qemu-build/build/qemu-system-xtensa
+          M5STACK_DISPLAY_DUMP: /tmp/m5stack_display.ppm
+        run: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+
+      - name: Verify the display actually rendered
+        # A plain "the dump file exists" check (scripts/m5stack_qemu_boot.bash's
+        # own bar) only proves the device was reachable, not that real pixels
+        # landed in it -- an all-white (or otherwise uniform) framebuffer would
+        # still pass that bar. This additionally confirms the firmware's own
+        # LVGL "Keys: A B C" label actually drew: a majority-white background
+        # (LVGL's default screen bg) plus a real second color for the label
+        # text itself.
+        run: |
+          python3 - <<'EOF'
+          import collections
+
+          path = "/tmp/m5stack_display.ppm"
+          with open(path, "rb") as f:
+              magic = f.readline().strip()
+              dims = f.readline().split()
+              maxval = f.readline().strip()
+              assert magic == b"P6", f"unexpected PPM magic {magic!r}"
+              width, height = (int(x) for x in dims)
+              assert maxval == b"255"
+              data = f.read()
+
+          assert len(data) == width * height * 3, (
+              f"short read: {len(data)} bytes for a {width}x{height} frame"
+          )
+
+          counts = collections.Counter(
+              data[i:i + 3] for i in range(0, len(data), 3)
+          )
+          total = width * height
+          white = counts[b"\xff\xff\xff"]
+          non_white = total - white
+
+          print(f"{path}: {width}x{height}, {len(counts)} distinct colors, "
+                f"{white} white / {non_white} non-white pixels")
+
+          assert len(counts) > 1, "framebuffer is a single uniform color"
+          assert white > total * 0.5, (
+              f"expected a majority-white LVGL background, got {white}/{total}"
+          )
+          assert non_white > 0, "no non-background (label text) pixels found"
+          EOF
+
+      - name: Boot under QEMU with a Gamepad Face attached
+        # A second boot, not folded into the one above: M5STACK_GAMEPAD_STATE
+        # simulates a FACES kit Gamepad Face reporting Up+Start held for the
+        # whole run (0x7e -- active low, bit0 and bit7 clear; see
+        # hw/i2c/esp32_faces_gamepad.c's own header comment in
+        # app/m5stack/qemu/patches/m5stack-gamepad.patch for the bit layout)
+        # via this fork's own downstream I2C device, exercised through the
+        # real HAL's real I2C probe+read (mruby-rgss/src/m5stack.cxx), not a
+        # unit test of the device in isolation.
+        env:
+          M5STACK_QEMU_BIN: /tmp/m5stack-qemu-build/build/qemu-system-xtensa
+          M5STACK_GAMEPAD_STATE: "7e"
+          M5STACK_QEMU_CACHE_DIR: /tmp/m5stack-qemu-gamepad
+        run: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+
+      - name: Verify the Gamepad Face input was actually read
+        # scripts/m5stack_qemu_boot.bash's own exit code only proves the
+        # firmware reached loop() -- not that the specific buttons this step
+        # injected made it all the way through I2C probe -> read -> bit
+        # decode -> RGSS key mask -> the "Keys: ..." status line. Check the
+        # real serial log for exactly that, the same "does it actually show
+        # up" bar the display check above holds itself to.
+        run: |
+          log=/tmp/m5stack-qemu-gamepad/serial.log
+          keys_line="$(grep '^Keys:' "$log" | tail -1)"
+          echo "$keys_line"
+          [ -n "$keys_line" ] || { echo "::error::no Keys: line in $log"; exit 1; }
+          echo "$keys_line" | grep -qw "Up" || { echo "::error::Up not reported (Gamepad Face D-pad not read)"; exit 1; }
+          echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
   wio-bc2cpp:
     # The `wio_rgss_boot` firmware is the only build that exercises
