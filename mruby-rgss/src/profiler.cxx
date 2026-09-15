@@ -749,6 +749,8 @@ void profiler_init(mrb_state* M) {
 
 #else  // WIO_TERMINAL || MAIX_BUILD
 
+#include <mruby.h>
+
 // The real profiler above is dev-only tooling (Chrome-trace JSON export,
 // memory/allocator stats, the RGSS::Profiler Ruby module) with no call site
 // anywhere on this board: app/wio's own main.cxx/wio_rgss_boot_main.cxx never
@@ -827,6 +829,27 @@ bool profiler_tracing() {
   return false;
 }
 
-void profiler_init(mrb_state*) {}
+// The game loop reaches RGSS::Profiler directly (main_loop wraps every
+// frame in Profiler.frame and every stage in Profiler.section), so the
+// module must exist with those two entry points even where the real
+// profiler above is compiled out -- unlike wio, which never runs a game
+// loop at all. Both are plain yields, exactly what the real ones do with
+// profiling off.
+mrb_value prof_stub_yield(mrb_state* M, mrb_value) {
+  mrb_value name, blk;
+  mrb_get_args(M, "|S&", &name, &blk);
+  if (mrb_nil_p(blk))
+    return mrb_nil_value();
+  return mrb_yield_argv(M, blk, 0, nullptr);
+}
+
+void profiler_init(mrb_state* M) {
+  RClass* rgss = mrb_module_get(M, "RGSS");
+  RClass* prof = mrb_define_module_under(M, rgss, "Profiler");
+  mrb_define_module_function(M, prof, "frame", prof_stub_yield,
+                             MRB_ARGS_BLOCK());
+  mrb_define_module_function(M, prof, "section", prof_stub_yield,
+                             MRB_ARGS_REQ(1) | MRB_ARGS_BLOCK());
+}
 
 #endif  // WIO_TERMINAL || MAIX_BUILD
