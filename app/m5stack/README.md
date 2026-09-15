@@ -48,9 +48,12 @@ pio run -e m5stack            # compile the bring-up firmware
 pio run -e m5stack -t upload  # flash a connected M5Stack Core
 ```
 
-No mruby interpreter, SD-backed asset loading, or RGSS scene tree yet --
-those are later slices, the same progression the Wio/Maix ports followed
-(HAL bring-up first, then link `libmruby.a`, then real assets).
+No mruby interpreter or RGSS scene tree yet -- those are later slices, the
+same progression the Wio/Maix ports followed (HAL bring-up first, then link
+`libmruby.a`, then real assets). The microSD slot itself is up (see
+"Audio" below), but only for this one HAL-level WAV-playback primitive --
+a general SD-backed game-asset pipeline (`RGSS::Audio`, `Bitmap` image
+loading, the RGSSAD archive reader) is a separate, later piece of work.
 
 ## Emulation (QEMU, not Renode)
 
@@ -182,6 +185,112 @@ probe, real read, real bit decode, real RGSS-key mask, real status line),
 not just that the emulated device itself returns the right byte in
 isolation -- exactly what `.github/workflows/build.yml`'s `m5stack-qemu`
 job checks on every run.
+
+## Audio
+
+The Core's built-in speaker plays WAV files off the microSD slot:
+`m5stack_audio_init()` mounts the card, and `m5stack_audio_play_wav(path)`
+opens, parses and plays one file, blocking until it finishes. `src/main.cxx`'s
+demo triggers both on a fresh press of a FACES Gamepad Face's Start button
+(see "Gamepad Face" above) -- deliberately not one of the Core's own front
+buttons, which read "held" for the entire run under the QEMU smoke test and
+would fire this on every single boot -- and deliberately lazily (on that
+first press, not unconditionally from `setup()`): see `m5stack_audio_init()`'s
+own doc comment in `include/m5stack.hxx` for why (a real shared-VSPI-bus
+hazard on top of a QEMU-only display-model gap, both below).
+
+Both the SD slot and the speaker's wiring were checked directly, not
+assumed from a generic ESP32 pinout: the microSD slot shares the display's
+own SPI bus (`SD.begin(4)` -- CS=GPIO4, the same SCK=18/MISO=19/MOSI=23
+TFT_eSPI's own `build_flags` already configure the LCD on) rather than a
+separate bus, confirmed against M5Stack's own community documentation of
+the Basic/Gray board; the speaker amplifier is wired to GPIO25, one of the
+ESP32's two internal 8-bit DAC channels, which `m5stack_audio_play_wav()`
+drives directly with `dacWrite()` -- no I2S DMA yet, so this is a **blocking,
+timer-free** player (`delayMicroseconds()` paced against the file's own
+declared sample rate), not something a real game loop could call without
+stalling LVGL and button scanning for the file's whole duration. A
+non-blocking, I2S-driven version is future work, not part of this first cut.
+
+Understands uncompressed PCM WAV only (8 or 16-bit, mono or stereo, any
+declared sample rate) -- downmixed to mono and rescaled to 8-bit unsigned
+for the DAC. RPG Maker's other BGM formats (OGG, MP3, MIDI) need a real
+decoder library this tree does not currently vendor (checked directly:
+`3rd/` has none, and the obvious Arduino-ecosystem choice,
+[ESP8266Audio](https://github.com/earlephilhower/ESP8266Audio), decodes
+Opus-in-Ogg but not Ogg Vorbis, which is what RPG Maker VX/VX Ace's own RTP
+BGM assets actually are) -- out of scope here.
+
+**Verification boundary, stated plainly rather than overclaimed:** the WAV
+chunk-parsing (including skipping an unrecognised chunk like `LIST` before
+`data`, and rejecting a non-WAV file) and the 16-bit-to-8-bit/stereo-downmix
+math are verified correct against known values in a standalone host-side
+test (no board or emulator involved) -- signed-16 min/max/zero-crossing
+cases and 8-bit passthrough/averaging all land exactly where the math says
+they should. The firmware itself builds for real hardware and boots safely
+under QEMU with no SD card attached at all (`SD.begin()` fails cleanly, no
+hang, `setup()` still completes) -- but two more QEMU-specific gaps turned
+up chasing that down to a real display-dump comparison, not just a
+"still boots" glance, both worth stating plainly rather than glossing over:
+
+- `SD.begin()` unconditionally calls the Arduino `SPIClass`'s own
+  `spi.begin()`, which only no-ops if *that exact C++ object* was already
+  started; TFT_eSPI keeps its own private `SPIClass` bound to the same
+  physical VSPI peripheral the display uses, so the naive `SD.begin(4)`
+  handed it a second, fresh `SPIClass` and genuinely reset that peripheral's
+  hardware registers out from under TFT_eSPI -- confirmed directly against
+  a QEMU display dump (mostly garbled colors instead of the intended black
+  background). Fixed by passing `g_tft.getSPIinstance()` to `SD.begin()`
+  instead of the implicit default.
+- Even with that fix, a QEMU-only display-model gap remains: this fork's
+  emulated ILI9341 does not gate on the real `TFT_CS` pin the way real
+  silicon does, so *any* SPI traffic on the shared bus -- including a plain
+  SD card probe addressed to its own, different CS line -- still reaches
+  the display model and corrupts it. Confirmed by testing with `SD.begin()`
+  called both from `setup()` (before the demo ever draws anything -- no
+  corruption observed) and later, from `loop()` gated behind a button press
+  (corruption observed) -- isolating this to the display model's own CS
+  handling, not this PR's parsing or downmix code. This is *why*
+  `m5stack_audio_init()` is called lazily rather than unconditionally at
+  boot: the plain QEMU smoke test never presses Start, so it never touches
+  SD at all, sidestepping this gap entirely (a real design improvement in
+  its own right -- don't spin up a peripheral nothing has asked for -- not
+  just a workaround).
+
+A third, separate finding surfaced only in the *lazily-triggered* path and
+is being disclosed rather than quietly worked around: pressing Start under
+QEMU with a Gamepad Face attached (`M5STACK_GAMEPAD_STATE`) still reliably
+reaches this firmware's own `"Keys: ... Start"` line -- the CI check this
+repo actually runs -- but the SD mount failure that follows (no SD-over-SPI
+device exists under QEMU at all, see below) then trips a FreeRTOS assertion
+inside the Arduino SD library's own mount-failure cleanup path
+(`assert failed: xQueueGenericSend`, inside `SPIClass::endTransaction()`),
+rebooting the guest. Reproduces with the *default* global `SPI` object too
+(not just `getSPIinstance()`), and with or without a Gamepad Face attached
+-- calling `SD.begin()` from `setup()`, before anything else has run, never
+triggers it; calling the identical function later, from `loop()`, does.
+That "works early, breaks later" shape, on a call path (a global
+`SPIClass`'s own mutex, created at C++ static-init time) that countless
+real ESP32 Arduino sketches exercise this exact way without incident,
+points at a QEMU-specific FreeRTOS/heap-timing artifact rather than a bug
+in this PR's own code -- but it is *not independently confirmed* on real
+hardware, unlike the two findings above, so it is flagged as suspected
+QEMU-only, not proven. What is **not** verified: real analog output, which
+needs actual hardware and a way to capture it that does not exist yet
+(unlike the display, no downstream QEMU device models the DAC or LEDC-PWM
+path this speaker could plausibly also use); and real SD-over-SPI file
+access under QEMU -- tried directly and it does not work, not just
+untried: `espressif/qemu`'s own SD card support (`esp32_machine_init_sd`,
+already in the fork, no new patch needed) wires its `TYPE_SD_CARD` to the
+ESP32's dedicated SDMMC peripheral, a genuinely different piece of hardware
+from the SPI bus this board's real SD slot (and Arduino's `SD` library)
+actually uses -- confirmed by attaching a real FAT-formatted SD image and
+watching the ESP-IDF SD driver itself fail to select the card
+(`sdSelectCard(): Select Failed`) even though the file/filesystem side was
+correct. Bridging that gap (a `ssi-sd`-style SPI-mode SD device, the way
+QEMU's own generic boards do it) is possible but is new QEMU work, out of
+scope for this pass -- see `docs/adr/0157-m5stack-core-qemu-emulator.md`'s
+own "Status, audio support" section.
 
 ## What the emulator still cannot show
 
