@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Builds a QEMU binary with this repo's ILI9341 display support
-# (app/m5stack/qemu/patches/m5stack-display.patch) for the M5Stack Core
-# platform (docs/adr/0157). Espressif's own qemu-xtensa release binaries are
-# precompiled and cannot pick up new C device models, so -- exactly like
+# Builds a QEMU binary with this repo's downstream device patches
+# (app/m5stack/qemu/patches/*.patch) for the M5Stack Core platform
+# (docs/adr/0157): ILI9341 display support and FACES kit Gamepad Face
+# support. Espressif's own qemu-xtensa release binaries are precompiled and
+# cannot pick up new C device models, so -- exactly like
 # scripts/wio_renode_build.bash does for Renode's two new peripherals --
-# this clones espressif/qemu's source, applies the patch, and builds with
-# meson/ninja.
+# this clones espressif/qemu's source, applies both patches in sequence,
+# and builds with meson/ninja.
 #
 # The patch adds hw/display/esp32_ili9341.c (a new ILI9341 SPI TFT device,
 # modelled on this repo's own Renode peripheral,
@@ -59,6 +60,14 @@
 # None of these are repo dependencies, same as Renode's own native-core
 # toolchain requirement for the Wio port.
 #
+# m5stack-gamepad.patch adds hw/i2c/esp32_faces_gamepad.c, an I2C slave
+# device modelling the FACES kit Gamepad Face's own real MEGA328 firmware
+# (github.com/m5stack/FACES-Firmware, GameBoy.ino) on the ESP32 machine's
+# internal I2C0 bus at address 0x08 -- see that new file's own header
+# comment for the full protocol and for ESP32_FACES_GAMEPAD_STATE_PATH, the
+# env var a test/CI script sets to simulate a held button combination (see
+# scripts/m5stack_qemu_boot.bash's own M5STACK_GAMEPAD_STATE wrapper).
+#
 # Usage:
 #   scripts/m5stack_qemu_build.bash [output-dir, default /tmp/m5stack-qemu-build]
 # Then: M5STACK_QEMU_BIN=<output-dir>/build/qemu-system-xtensa \
@@ -84,13 +93,15 @@ if [[ ! -d "$SRC_DIR" ]]; then
 fi
 
 git -C "$SRC_DIR" checkout "$QEMU_REF"
-# In case an earlier run of this script left the patch applied (or partially
-# applied) in a cached $SRC_DIR -- always start from a clean checkout of
-# $QEMU_REF, same as wio_renode_build.bash's submodule update --force.
-git -C "$SRC_DIR" clean -fdx hw/display hw/gpio hw/ssi hw/xtensa include/hw/gpio
-git -C "$SRC_DIR" checkout -- hw/display hw/gpio hw/ssi hw/xtensa include/hw/gpio
+# In case an earlier run of this script left the patches applied (or
+# partially applied) in a cached $SRC_DIR -- always start from a clean
+# checkout of $QEMU_REF, same as wio_renode_build.bash's submodule update
+# --force.
+git -C "$SRC_DIR" clean -fdx hw/display hw/gpio hw/i2c hw/ssi hw/xtensa include/hw/gpio
+git -C "$SRC_DIR" checkout -- hw/display hw/gpio hw/i2c hw/ssi hw/xtensa include/hw/gpio
 
 git -C "$SRC_DIR" apply "$REPO_ROOT/app/m5stack/qemu/patches/m5stack-display.patch"
+git -C "$SRC_DIR" apply "$REPO_ROOT/app/m5stack/qemu/patches/m5stack-gamepad.patch"
 
 BUILD_DIR="$OUT_DIR/build"
 mkdir -p "$BUILD_DIR"

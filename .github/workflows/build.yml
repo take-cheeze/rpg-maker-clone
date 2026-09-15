@@ -1843,12 +1843,13 @@ jobs:
     # precompiled-libs mode -- see the ADR's "Status, revised" section.
     #
     # Also builds QEMU from source with app/m5stack/qemu/patches/
-    # m5stack-display.patch (scripts/m5stack_qemu_build.bash) -- Espressif's
-    # own prebuilt release cannot carry the new ILI9341 display device the
-    # patch adds -- and checks the actual rendered framebuffer, not just
-    # that the firmware ran: this is the real "does the display render"
-    # question, the same way wio-renode's own ILI9341 pixel checks answer it
-    # for the Wio Terminal.
+    # (scripts/m5stack_qemu_build.bash) -- Espressif's own prebuilt release
+    # cannot carry either of this fork's new downstream devices -- and
+    # checks two things beyond "the firmware ran": the actual rendered
+    # ILI9341 framebuffer (m5stack-display.patch), the same way wio-renode's
+    # own ILI9341 pixel checks answer it for the Wio Terminal; and a FACES
+    # kit Gamepad Face's buttons actually reaching RGSS::Input's bitmask
+    # through a simulated I2C device (m5stack-gamepad.patch).
     needs: m5stack
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
@@ -1932,6 +1933,36 @@ jobs:
           )
           assert non_white > 0, "no non-background (label text) pixels found"
           EOF
+
+      - name: Boot under QEMU with a Gamepad Face attached
+        # A second boot, not folded into the one above: M5STACK_GAMEPAD_STATE
+        # simulates a FACES kit Gamepad Face reporting Up+Start held for the
+        # whole run (0x7e -- active low, bit0 and bit7 clear; see
+        # hw/i2c/esp32_faces_gamepad.c's own header comment in
+        # app/m5stack/qemu/patches/m5stack-gamepad.patch for the bit layout)
+        # via this fork's own downstream I2C device, exercised through the
+        # real HAL's real I2C probe+read (mruby-rgss/src/m5stack.cxx), not a
+        # unit test of the device in isolation.
+        env:
+          M5STACK_QEMU_BIN: /tmp/m5stack-qemu-build/build/qemu-system-xtensa
+          M5STACK_GAMEPAD_STATE: "7e"
+          M5STACK_QEMU_CACHE_DIR: /tmp/m5stack-qemu-gamepad
+        run: scripts/m5stack_qemu_boot.bash app/m5stack/.pio/build/m5stack
+
+      - name: Verify the Gamepad Face input was actually read
+        # scripts/m5stack_qemu_boot.bash's own exit code only proves the
+        # firmware reached loop() -- not that the specific buttons this step
+        # injected made it all the way through I2C probe -> read -> bit
+        # decode -> RGSS key mask -> the "Keys: ..." status line. Check the
+        # real serial log for exactly that, the same "does it actually show
+        # up" bar the display check above holds itself to.
+        run: |
+          log=/tmp/m5stack-qemu-gamepad/serial.log
+          keys_line="$(grep '^Keys:' "$log" | tail -1)"
+          echo "$keys_line"
+          [ -n "$keys_line" ] || { echo "::error::no Keys: line in $log"; exit 1; }
+          echo "$keys_line" | grep -qw "Up" || { echo "::error::Up not reported (Gamepad Face D-pad not read)"; exit 1; }
+          echo "$keys_line" | grep -qw "Start" || { echo "::error::Start not reported (Gamepad Face Select/Start not read)"; exit 1; }
 
   wio-bc2cpp:
     # The `wio_rgss_boot` firmware is the only build that exercises

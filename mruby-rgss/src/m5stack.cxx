@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <TFT_eSPI.h>  // configured for the Core's ILI9341 via build_flags
+#include <Wire.h>  // FACES Gamepad Face, see m5stack_input_scan() in m5stack.hxx
 
 namespace {
 
@@ -67,6 +68,32 @@ const PinMap kPins[] = {
     {kButtonCPin, M5_INPUT_C},
 };
 
+// M5Stack Core's internal I2C ("Port A") bus, the same one the FACES bus
+// connector carries through to a Gamepad Face -- see m5stack_input_scan()'s
+// own doc comment in m5stack.hxx for the full protocol this decodes.
+constexpr uint8_t kFacesGamepadI2cAddr = 0x08;
+constexpr uint8_t kI2cSdaPin = 21;
+constexpr uint8_t kI2cSclPin = 22;
+
+bool g_gamepad_face_present = false;
+
+// Bit -> M5Key for the Face's own D-pad and A/B, decoded from the byte
+// m5stack_input_scan() reads at kFacesGamepadI2cAddr. A/B intentionally
+// share the Core's own front-button ids (see that comment); Select/Start
+// have no bits of their own in kPins above since nothing else on this board
+// can press them.
+struct GamepadBitMap {
+  uint8_t bit;
+  uint8_t key;
+};
+
+const GamepadBitMap kGamepadBits[] = {
+    {0, M5_INPUT_UP},    {1, M5_INPUT_DOWN}, {2, M5_INPUT_LEFT},
+    {3, M5_INPUT_RIGHT}, {4, M5_INPUT_A},    {5, M5_INPUT_B},
+    {6, M5_INPUT_N0},  // Select
+    {7, M5_INPUT_N1},  // Start
+};
+
 }  // namespace
 
 lv_display_t* m5stack_display_create(int32_t hor_res, int32_t ver_res) {
@@ -94,6 +121,10 @@ lv_display_t* m5stack_display_create(int32_t hor_res, int32_t ver_res) {
 void m5stack_input_init(void) {
   for (const PinMap& p : kPins)
     pinMode(p.pin, INPUT);
+
+  Wire.begin(kI2cSdaPin, kI2cSclPin);
+  Wire.beginTransmission(kFacesGamepadI2cAddr);
+  g_gamepad_face_present = (Wire.endTransmission() == 0);
 }
 
 uint64_t m5stack_input_scan(void) {
@@ -102,6 +133,16 @@ uint64_t m5stack_input_scan(void) {
     if (digitalRead(p.pin) == LOW)  // active low
       mask |= (1ull << p.key);
   }
+
+  if (g_gamepad_face_present &&
+      Wire.requestFrom(kFacesGamepadI2cAddr, static_cast<uint8_t>(1)) == 1) {
+    const uint8_t state = Wire.read();
+    for (const GamepadBitMap& b : kGamepadBits) {
+      if (!(state & (1u << b.bit)))  // active low
+        mask |= (1ull << b.key);
+    }
+  }
+
   return mask;
 }
 

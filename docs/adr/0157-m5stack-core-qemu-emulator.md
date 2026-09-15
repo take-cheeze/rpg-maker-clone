@@ -20,6 +20,13 @@ upstream `espressif/qemu` lacks and fixes a real upstream SPI-controller bug
 that otherwise corrupted every frame -- see "Status, display support"
 below.
 
+The M5Stack FACES kit's optional Gamepad Face is supported too, on both
+real hardware and under QEMU: a second downstream patch
+(`app/m5stack/qemu/patches/m5stack-gamepad.patch`) adds an I2C device
+modelling that module's own real MEGA328 firmware, and the real-hardware
+HAL (`mruby-rgss/src/m5stack.cxx`) now polls it over `Wire` -- see "Status,
+gamepad support" below.
+
 ## Context
 
 ADR 94 built a Renode emulator for the Wio Terminal (SAMD51) port, and Maix
@@ -291,6 +298,118 @@ build) and checks the actual rendered framebuffer -- a majority-white
 background plus real non-background (label text) pixels -- not just that a
 dump file was produced.
 
+### Status, gamepad support: the M5Stack FACES kit's Gamepad Face
+
+A follow-up session added support for the FACES kit's Gamepad Face
+("Game Face"), a MEGA328-based interchangeable bottom module with a D-pad
+and A/B/Select/Start buttons -- on real hardware and, again, under QEMU.
+
+**The real hardware protocol was not assumed** -- `docs.m5stack.com` was
+unreachable from this session's egress proxy, and the GitHub repo most
+searches surface (`m5stack/M5Faces`, and the `M5Faces.cpp`/`.h` in
+`m5stack/M5Stack`) turned out to be the *Keyboard* Face's own driver, an
+ASCII-getch()-style protocol that would have been the wrong thing to copy
+for a D-pad/buttons device with nothing to typewriter-echo. The real
+answer came from `m5stack/FACES-Firmware`'s `GameBoy.ino` -- the actual
+firmware Espressif's own MEGA328 module runs, fetched and read directly --
+which settled the protocol beyond doubt: `Wire.begin(FACES_KEYBOARD_I2C_ADDR)`
+(0x08, the same address the Keyboard Face uses, on the same I2C bus real
+M5Stack Core hardware routes through GPIO21/22) with `Wire.onRequest()`
+always replying `Wire.write(PINB)` -- the AVR's live, active-low, one-
+bit-per-button GPIO snapshot, no register addressing, no write support
+(the firmware never calls `Wire.onReceive()`). The file's own commented-
+out (dead, but accurate -- it names bits of the very same `PINB` the live
+code returns unmodified) per-value switch statement is what pins down the
+exact bit assignment: bit0 Up, bit1 Down, bit2 Left, bit3 Right, bit4 A,
+bit5 B, bit6 Select, bit7 Start. A separate IRQ line (GPIO5 on the host)
+exists but is optional -- a plain poll at any time already returns the
+live state regardless of it -- so `mruby-rgss/src/m5stack.cxx`'s own HAL
+only polls, never wires it.
+
+**Real-hardware HAL** (`mruby-rgss/src/m5stack.cxx`,
+`include/m5stack.hxx`): `m5stack_input_init()` now also starts `Wire`
+(SDA=21/SCL=22) and probes 0x08 once, exactly the way the old M5Faces
+Arduino library's own `canControlFaces()` probes before ever reading --
+recording whether a Face is attached rather than re-probing (and
+re-failing) every scan. `m5stack_input_scan()` ORs the Face's Up/Down/
+Left/Right into the previously-always-unset UP/DOWN/LEFT/RIGHT bits, ORs
+its A/B into the same bits the Core's own front buttons already set
+(either source presses the same logical button), and -- since Select/Start
+have no RGSS button id of their own -- lands them on the first two
+otherwise-unbound RPG2003 Numbers ids, `M5_INPUT_N0`/`N1`, mirroring the
+PSP backend's own established convention for its spare buttons
+(`include/psp.hxx`'s own comment, `mruby-rgss/src/psp.cxx`).
+
+**Fixing `app/m5stack/src/main.cxx`'s demo to show the new buttons
+surfaced two of its own pre-existing, previously-dormant bugs**, the same
+way earlier sessions' work here kept surfacing latent bugs elsewhere in
+this stack (the `exclude_lvgl_asm.py` CWD bug, the QEMU SPI phantom-byte
+bug):
+
+1. `kKeyNames[M5_INPUT_KEY_COUNT]` was only ever given 7 initializers for
+   a 36-element array; every unlisted slot default-initialized to a null
+   `const char*`. Completely dormant before this change, since nothing
+   could ever set a bit past `C` (index 6) -- the Core alone has no
+   D-pad, and RPG2003's Numbers/Operators ids (21-35) had no source
+   either. The Gamepad Face's own Select/Start (`M5_INPUT_N0`/`N1` =
+   21/22) are exactly such a bit, and `show_keys()`'s `"%s"` on a null
+   pointer is undefined behavior. Fixed by spelling out the full
+   36-entry table with `""` placeholders for the still-unbound slots --
+   mirroring `app/psp/main.cxx`'s own `kKeyNames`, which already does
+   this for the identical reason -- and skipping `""` entries the same
+   way that file's own loop does (`kKeyNames[k][0] == '\0'`).
+2. `show_keys()` took a `uint32_t mask` and shifted with `1u << k` across
+   a loop up to `M5_INPUT_KEY_COUNT` (36) -- `1u << k` for `k >= 32` is
+   undefined behavior (shifting a 32-bit value by 32 or more), unlike
+   `app/psp/main.cxx`'s own `show_keys(uint64_t mask)` /
+   `1ull << k`, which this file should have matched from the start.
+   Confirmed directly, not just reasoned about: injecting Up+Start
+   (`0x7e`) produced a spurious extra `-` (`M5_INPUT_MINUS`, index 32)
+   in the printed line on this exact toolchain's actual UB behavior
+   (shift-amount truncation aliased `1u << 32` back to `1u << 0`, the
+   Up bit this test had just turned on) before the fix, and exactly
+   `Up A B C Start` with no alias after switching to `uint64_t`/`1ull`.
+   Dormant before this change for the same reason as bug 1: nothing
+   could set a low bit *and* rely on the loop reaching index 32+ in a
+   way that mattered, since Up/Down/Left/Right themselves were always
+   unset.
+
+**Emulation**: `espressif/qemu`'s ESP32 machine already has a real,
+register-accurate I2C controller (`hw/i2c/esp32_i2c.c`) with a genuine
+`I2CBus`, and `esp32_machine_init_i2c()` already attaches a `tmp105`
+sensor to it at 0x48 -- unlike the display's SPI/GPIO work, no new
+machine-level plumbing was needed, just one more device on an
+already-exposed bus. `app/m5stack/qemu/patches/m5stack-gamepad.patch`
+adds `hw/i2c/esp32_faces_gamepad.c` (a plain `TYPE_I2C_SLAVE`, modelled
+directly on `hw/gpio/pca9554.c`'s shape but far simpler, since the real
+device has no register addressing to emulate) at address 0x08 on that
+same bus, and leaves `.send` unset -- confirmed directly that
+`hw/i2c/core.c`'s `i2c_send()` already NACKs a write whenever a slave's
+`.send` is null, which is exactly what real hardware does too (the AVR
+firmware never enables receiving).
+
+Simulating a button *press* is the mirror image of the display's own
+observability problem: that device solved reading a rendered frame back
+out (`ESP32_ILI9341_DUMP_PATH`, an `atexit()` hook, since the device is
+unreachable by monitor/QMP -- it lives inside the ESP32 SoC's own private
+i2c bus, itself inside the SoC's own private bus); this one needs
+injecting state *in*, while QEMU runs. `esp32_faces_gamepad_recv()`
+re-reads a single raw byte from `ESP32_FACES_GAMEPAD_STATE_PATH` (env
+var) on every I2C read if it's set, keeping the last successfully-read
+value otherwise (default `0xff`, nothing pressed, matching real
+hardware's own all-pulled-up reset state) -- confirmed directly, not just
+by construction, that a file rewritten after QEMU has already started
+boots takes effect on the very next read, not just at device-reset time.
+`scripts/m5stack_qemu_boot.bash`'s own `M5STACK_GAMEPAD_STATE` (a 2-hex-
+digit byte) wraps this for the common "hold this combination for the
+whole boot" case a CI check needs.
+
+`.github/workflows/build.yml`'s `m5stack-qemu` job now also boots the real
+firmware a second time with `M5STACK_GAMEPAD_STATE=7e` (Up+Start) and
+greps the resulting `Keys: ...` line for both -- verifying the entire
+chain (I2C probe, read, bit decode, RGSS key mask, status line), not the
+emulated device in isolation.
+
 ## Consequences
 
 - A regression that breaks the firmware anywhere from bootloader through
@@ -300,16 +419,29 @@ dump file was produced.
 - Display rendering verification is now reachable via a downstream QEMU
   patch (see "Status, display support" above) -- the SPI-TFT device this
   bullet originally proposed as future work, now written. Button *input*
-  injection remains out of reach: `espressif/qemu` still models no
+  injection is now reachable too, but only over I2C: a FACES Gamepad
+  Face's own buttons can be simulated (see "Status, gamepad support"
+  above), because that path goes through a real QEMU `I2CBus` this fork
+  can attach a device to, not a GPIO one. The Core's own front A/B/C
+  buttons remain genuinely out of reach: `espressif/qemu` still models no
   GPIO-injection device (checked directly against `hw/gpio`; this fork's
-  own patch only extends the existing GPIO model's output side, needed for
-  the display's D/C line, not input), and `app/m5stack/README.md`'s "What
-  the emulator still cannot show" section documents this so a future
-  session does not re-discover it from scratch. All three buttons still
+  own display patch only extends the existing GPIO model's output side,
+  needed for the display's D/C line, not input), and
+  `app/m5stack/README.md`'s "What the emulator still cannot show" section
+  documents this narrower remaining gap so a future session does not
+  re-discover it from scratch. All three of the Core's own buttons still
   read "pressed" under QEMU (their GPIOs are simply unconnected rather than
   driven, an accurate reflection of nothing being wired to them) -- a UART
   checkpoint remains the way `main.cxx`'s status screen content itself gets
   verified, independent of whatever the display shows.
+- Fixing `app/m5stack/src/main.cxx`'s demo to show the Gamepad Face's new
+  buttons surfaced two of that file's own pre-existing, previously-dormant
+  bugs (a too-short `kKeyNames` table, and a `uint32_t`/`1u` mask/shift
+  pair that is undefined behavior past bit 31) -- see "Status, gamepad
+  support" above for both. Neither could have been observed before this
+  session, since nothing could ever set the specific bits that exposed
+  them; worth remembering that a HAL surface with unreachable bits is not
+  the same as a HAL surface that has been exercised.
 - `app/m5stack` being a second, standalone PlatformIO project (rather than
   another environment in the repo root's `platformio.ini`) is a new shape
   for this repo's embedded ports. A future port that also needs

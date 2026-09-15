@@ -2,10 +2,11 @@
 //
 // Mirrors app/wio/src/main.cxx's own P1 slice: proves the HAL compiles and
 // runs on the board without the mruby interpreter. It stands up the LVGL
-// display (m5stack_display_create), scans the three A/B/C buttons
-// (m5stack_input_scan), and draws a small status screen that echoes the
-// pressed keys -- plus a Serial println per state change, since the QEMU
-// smoke test (scripts/m5stack_qemu_boot.bash) has no display to read (see
+// display (m5stack_display_create), scans the three A/B/C buttons plus
+// whatever an attached FACES Gamepad Face adds (m5stack_input_scan), and
+// draws a small status screen that echoes the pressed keys -- plus a Serial
+// println per state change, since the QEMU smoke test
+// (scripts/m5stack_qemu_boot.bash) has no display to read (see
 // app/m5stack/README.md, "What the emulator can and cannot show"). Arduino
 // owns the event loop, so loop() pumps LVGL once per iteration.
 //
@@ -22,9 +23,20 @@ namespace {
 
 lv_obj_t* g_status_label = nullptr;
 
-// Names for the RGSS key ids, indexed by M5Key, for the on-screen/serial echo.
+// Names for the RGSS key ids, indexed by M5Key, for the on-screen/serial
+// echo -- the full 36-entry table (mirroring app/psp/main.cxx's own
+// kKeyNames), not just the 7 this board's own front buttons use, since
+// M5_INPUT_N0/N1 are now reachable too (the FACES Gamepad Face's
+// Select/Start, see m5stack_input_scan()'s doc comment) and an empty ""
+// entry -- not a missing one -- is what show_keys() below skips; leaving
+// the array short like the Core-only 7-button version used to would mean
+// indexing a default-initialized nullptr for any bit beyond C's, which
+// %s does not handle safely.
 const char* const kKeyNames[M5_INPUT_KEY_COUNT] = {
-    "Up", "Down", "Left", "Right", "A", "B", "C"};
+    "Up", "Down", "Left", "Right",  "A",     "B",  "C",  "",   "",
+    "",   "",     "",     "",       "",      "",   "",   "",   "",
+    "",   "",     "",     "Select", "Start", "N2", "N3", "N4", "N5",
+    "N6", "N7",   "N8",   "N9",     "+",     "-",  "*",  "/",  "."};
 
 void build_ui(void) {
   lv_obj_t* scr = lv_screen_active();
@@ -45,8 +57,8 @@ void build_ui(void) {
 // Rebuild the "Keys:" line from the current button bitmask, and echo the same
 // text over Serial -- the only observable this firmware has under the QEMU
 // smoke test, which boots the real ESP32 core but models no SPI display.
-void show_keys(uint32_t mask) {
-  static uint32_t last = 0xffffffffu;
+void show_keys(uint64_t mask) {
+  static uint64_t last = 0xffffffffffffffffull;
   if (mask == last)
     return;
   last = mask;
@@ -57,7 +69,7 @@ void show_keys(uint32_t mask) {
   bool any = false;
   for (int k = 0; k < M5_INPUT_KEY_COUNT && n < static_cast<int>(sizeof(buf));
        ++k) {
-    if (mask & (1u << k)) {
+    if ((mask & (1ull << k)) && kKeyNames[k][0] != '\0') {
       n += snprintf(buf + n, sizeof(buf) - n, " %s", kKeyNames[k]);
       any = true;
     }
