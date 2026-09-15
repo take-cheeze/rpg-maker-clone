@@ -2,21 +2,30 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points: 2305
-  mruby-lcf-compiled: 55
-  mruby-rgss-compiled: 122
-  mruby-rpg2k-compiled: 2128
+compiled entry points (real build output -- clean, zero #error): 1948
+  from bytecode: 1936
+  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 12
+  mruby-lcf-compiled: 43
+  mruby-rgss-compiled: 99
+  mruby-rpg2k-compiled: 1806
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 11
 
+-- method-level coverage (every bytecode method compile_method attempted) --
+methods attempted: 2293
+  compiled clean: 1936
+  left on the interpreter (>=1 #error): 357
+  coverage: 84.4%
+
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 160
+  poisoned to unknown (real evidence, but disagreeing/untraceable): 643
 known-array-element-class hints (ELEM_HINT): 8
+  poisoned to unknown (proven Array, element class unresolved): 33
 ivar embedding (EMBED): 109
 magic-comment return annotations (ANNOTATED): 134
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
 magic-comment element annotations (ELEM_ANNOTATED): 2
-array-element candidates (proven Array, element class unknown): 33
 annotation candidates (opaque argument, unresolved): 48
 
 -- #error markers by reason (whole program) --
