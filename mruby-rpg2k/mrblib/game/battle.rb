@@ -476,6 +476,7 @@ module Game
     # that builds `allies` once and hands it to .new directly), @allies is
     # exactly what the constructor was given and never changes membership on
     # its own, unchanged from before this parameter existed.
+    # bc2cpp: (Array, Array)
     def initialize(allies, enemies, rng = nil, states = nil, variance = false,
                    criticals = false, accuracy = false, first_strike = false,
                    attributes = nil, ai = nil, rpg2003: false, party: nil,
@@ -1467,6 +1468,7 @@ module Game
     # care is needed in that method). Returns the `{atk:, def:, spi:, agi:}`
     # deltas actually applied -- possibly smaller than `amount` once clamped,
     # or absent for a stat already pinned at its cap -- for the log entry.
+    # bc2cpp: (, Array)
     def apply_stat_mods(target, keys, amount)
       return {} unless keys && !keys.empty? && amount != 0
       applied = {}
