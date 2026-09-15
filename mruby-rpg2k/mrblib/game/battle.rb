@@ -1211,6 +1211,7 @@ module Game
     end
 
     # Every combatant in the fight (allies then enemies), for gauge bookkeeping.
+    # bc2cpp: () -> Array
     def all_combatants
       (@allies || []) + (@enemies || [])
     end
