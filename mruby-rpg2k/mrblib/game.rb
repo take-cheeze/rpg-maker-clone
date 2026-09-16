@@ -71,6 +71,33 @@ module Game
   # surfaced by #scan for the scene to act on.
   # `names` may be a Hash or any object responding to `[]`.
   module Message
+    # #scan/#parse's own record shapes -- used to be bare Hash literals;
+    # concrete Structs instead so tools/bc2cpp/bc2cpp.rb can prove each ivar/
+    # local that holds one is a single fixed shape (the same "opaque
+    # arbitrarily-keyed container -> named record" conversion already done
+    # for MapEventState/ShopState/MessageState/ShopQuantity, see fbfe068/
+    # a0fa9e5's own comments). `keyword_init: true` for consistency with
+    # those -- never actually invoked with keywords: every construction
+    # site below uses a bare `.new` plus individual setters instead (see
+    # SCAN_STRUCT_CONSTRUCTION below for why).
+    #
+    # `Segment` (#parse/#scan's own :segments entries, also #visible_
+    # segments' own truncated-copy shape): one coloured text run.
+    Segment = Struct.new(:text, :color, keyword_init: true)
+    # `SpeedMarker` (#scan's own :speeds entries, TextReveal#speed_at's own
+    # array): a `\s[n]` speed change in revealed-character coordinates.
+    SpeedMarker = Struct.new(:at, :speed, keyword_init: true)
+    # `PauseMarker` (#scan's own :pauses entries, plus the synthetic :page
+    # ones Scene::Map#message_page_layout injects; TextReveal's own array):
+    # a pacing-stop marker in revealed-character coordinates. `kind` is one
+    # of :quarter, :full, :key, :page.
+    PauseMarker = Struct.new(:at, :kind, keyword_init: true)
+    # `ScanResult`: #scan's own full return shape -- see #scan's own doc
+    # comment below for each member's meaning.
+    ScanResult = Struct.new(:segments, :pauses, :auto_close, :instants,
+                             :show_gold, :speeds, :length, :end_color,
+                             keyword_init: true)
+
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
     def self.expand(text, variables, names)
@@ -158,7 +185,22 @@ module Game
           when "\\"     then cur << "\\"; count += 1
           when '_'      then cur << ' '; count += 1 # half-width space
           when 'c', 'C' # colour change: close the current run, switch colour
-            segs << { text: cur, color: color } unless cur.empty?
+            # Built via a bare `Segment.new` plus individual setters, not a
+            # single `Segment.new(text: cur, color: color)` keyword call --
+            # the same real tools/bc2cpp/bc2cpp.rb regression fbfe068/
+            # a0fa9e5 already found and fixed: a keyword call site can only
+            # devirtualize into a callee's own compiled bytecode body, and
+            # Struct's own #initialize is always native, so a keyword-call
+            # construction silently drops the whole containing method (here,
+            # all of #scan) out of AOT compilation with no visible #error.
+            # See SCAN_STRUCT_CONSTRUCTION below for the rest of this
+            # method's own construction sites, all following the same shape.
+            unless cur.empty?
+              seg = Segment.new
+              seg.text = cur
+              seg.color = color
+              segs << seg
+            end
             cur = ''
             # An out-of-range index (>19, the highest real palette colour)
             # resets to colour 0 rather than staying out of range (believed
@@ -185,15 +227,35 @@ module Game
             # RPG_RT under wine). `#parse_bracket_value`, not a bare `arg.to_i`, for the
             # same `\S[\V[n]]` reason as `\C[]` just above. No bracket at all
             # defaults to full speed (1), matching the pre-existing default.
+            # SCAN_STRUCT_CONSTRUCTION: same bare-`.new`-plus-setters shape
+            # as Segment above, for the same reason.
             if text[i] == '['
               v, i = parse_bracket_value(text, i, variables)
-              speeds << { at: count, speed: Game.clamp(v, 1, 20) }
+              sp = SpeedMarker.new
+              sp.at = count
+              sp.speed = Game.clamp(v, 1, 20)
+              speeds << sp
             else
-              speeds << { at: count, speed: 1 }
+              sp = SpeedMarker.new
+              sp.at = count
+              sp.speed = 1
+              speeds << sp
             end
-          when '.'      then pauses << { at: count, kind: :quarter }
-          when '|'      then pauses << { at: count, kind: :full }
-          when '!'      then pauses << { at: count, kind: :key }
+          when '.'
+            pa = PauseMarker.new
+            pa.at = count
+            pa.kind = :quarter
+            pauses << pa
+          when '|'
+            pa = PauseMarker.new
+            pa.at = count
+            pa.kind = :full
+            pauses << pa
+          when '!'
+            pa = PauseMarker.new
+            pa.at = count
+            pa.kind = :key
+            pauses << pa
           # `\^`, `\$` and the closing `\<` render nothing but still burn one
           # tick of display time, same as a revealed character would (yado.tk);
           # `\>` (span open) stays free, as does `\c[]`/`\s[]`.
@@ -213,11 +275,23 @@ module Game
           i += 1
         end
       end
-      segs << { text: cur, color: color } unless cur.empty?
+      unless cur.empty?
+        seg = Segment.new
+        seg.text = cur
+        seg.color = color
+        segs << seg
+      end
       instants << [instant_start, count] if instant_start # unclosed `\>` runs to EOL
-      { segments: segs, pauses: pauses, auto_close: auto_close,
-        instants: instants, show_gold: show_gold, speeds: speeds, length: count,
-        end_color: color }
+      result = ScanResult.new
+      result.segments = segs
+      result.pauses = pauses
+      result.auto_close = auto_close
+      result.instants = instants
+      result.show_gold = show_gold
+      result.speeds = speeds
+      result.length = count
+      result.end_color = color
+      result
     end
 
     # Truncate per-line colour segments to the first `revealed` characters
@@ -237,7 +311,12 @@ module Game
             remaining -= t.length
             out << seg
           else
-            out << { text: t[0, remaining], color: seg[:color] }
+            # Bare `.new` plus setters, same SCAN_STRUCT_CONSTRUCTION reason
+            # as #scan's own Segment sites above.
+            truncated = Segment.new
+            truncated.text = t[0, remaining]
+            truncated.color = seg[:color]
+            out << truncated
             remaining = 0
           end
         end
