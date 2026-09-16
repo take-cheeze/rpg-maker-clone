@@ -211,6 +211,23 @@ error_reasons.sort_by { |reason, n| [-n, reason] }.each do |reason, n|
   report << format("  %5d  %s\n", n, reason)
 end
 report << format("  %5d  total\n", total_errors)
+report << "\n"
+
+# BLOCK_CFUNC_FALLBACK_SUPPORT: a previously-#error'd BLOCK/SENDB/SSENDB
+# call site that now compiles clean via emit_block_fallback_glue's own
+# `// BLOCK_FALLBACK :name -- ...` marker comment -- these already count
+# toward "compiled clean" above, same as any other method, but are
+# deliberately ALSO broken out here: every one still dispatches
+# dynamically (mrb_funcall_with_block, never MONO/POLY/TYPED), so
+# whole-program devirtualization coverage is not actually done for them
+# the way an ordinary compiled-clean method's own call sites are. Counted
+# straight off @stdout (the marker text itself), the same source every
+# #error count above already reads from.
+block_fallback_count = @stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :/).size
+report << "block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): " \
+          "#{block_fallback_count}\n"
+report << "  still dynamic dispatch only -- MONO/POLY/TYPED devirtualization " \
+          "not yet attempted for these\n"
 
 File.write(REPORT_PATH, report)
 puts "wrote #{REPORT_PATH}"

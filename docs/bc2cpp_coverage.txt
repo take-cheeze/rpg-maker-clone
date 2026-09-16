@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 1988
-  from bytecode: 1972
+compiled entry points (real build output -- clean, zero #error): 2004
+  from bytecode: 1988
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 16
   mruby-lcf-compiled: 44
   mruby-rgss-compiled: 100
-  mruby-rpg2k-compiled: 1844
+  mruby-rpg2k-compiled: 1860
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 15
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 1972
-  left on the interpreter (>=1 #error): 321
-  coverage: 86.0%
+  compiled clean: 1988
+  left on the interpreter (>=1 #error): 305
+  coverage: 86.7%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -39,8 +39,8 @@ magic-comment element annotations (ELEM_ANNOTATED): 3
 annotation candidates (opaque argument, unresolved): 43
 
 -- #error markers by reason (whole program) --
-    342  unhandled opcode BLOCK
-    319  unhandled opcode SENDB
+    306  unhandled opcode BLOCK
+    283  unhandled opcode SENDB
      44  SEND/SSEND has a splat and/or keyword argument list (n=...)
      36  unhandled opcode SSENDB
       8  unhandled opcode ARYCAT
@@ -67,4 +67,7 @@ annotation candidates (opaque argument, unresolved): 43
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    811  total
+    739  total
+
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 36
+  still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
