@@ -54,6 +54,7 @@ module LCF
   end
 
   class Tree
+    # bc2cpp: (fixnum)
     def initialize(selected_id, maps)
       @selected_id = selected_id
       @maps = maps
