@@ -250,7 +250,7 @@ jobs:
       # against the committed file, exactly like "Check the Emscripten
       # probe cache" does for cmake/emscripten-probe-cache.cmake below.
       - name: Check bc2cpp coverage report freshness
-        run: ./scripts/bc2cpp_coverage_check.bash build/mruby/host/bin/mrbc
+        run: ./scripts/bc2cpp_coverage_check.bash build/mruby
 
       - name: sccache stats
         if: always()

@@ -30,13 +30,32 @@ set -euo pipefail
 # CMakeLists.txt's own "the native host build only produces mrbc" comment),
 # so this runs right after it and points at that.
 #
-# Usage: scripts/bc2cpp_coverage_check.bash path/to/host/mrbc
+# Usage: scripts/bc2cpp_coverage_check.bash path/to/mruby/build/dir
+#
+# Takes the mruby build tree's own root (CMake's MRUBY_BUILD_DIR, e.g.
+# build/mruby), not an exact mrbc path: mruby's own build system does not
+# always place it at "$build_dir/host/bin/mrbc" -- a host build whose own
+# compile flags a plain bootstrap compiler can't share (this project's own
+# C++-exceptions-enabled host build included) gets its mrbc from a nested
+# sub-build instead (confirmed for real against a CI run: "Config Name:
+# host/mrbc", "Output Directory: ../../build/mruby/host/mrbc", i.e.
+# "$build_dir/host/mrbc/bin/mrbc", not "$build_dir/host/bin/mrbc" -- that
+# nesting is mruby/lib/mruby/build.rb's own `mrbcfile`/`build_mrbc_exec`
+# internal bootstrap logic, not anything this project's build_config.rb
+# controls, so hardcoding either exact path is a real drift risk this
+# search sidesteps entirely).
 
 cd "$(dirname "$0")/.."
 
-mrbc="${1:-}"
-if [ -z "$mrbc" ] || [ ! -x "$mrbc" ]; then
-  echo "usage: $0 path/to/host/mrbc" >&2
+build_dir="${1:-}"
+if [ -z "$build_dir" ] || [ ! -d "$build_dir" ]; then
+  echo "usage: $0 path/to/mruby/build/dir" >&2
+  exit 1
+fi
+
+mrbc="$(find "$build_dir" -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+if [ -z "$mrbc" ]; then
+  echo "error: no executable bin/mrbc found under $build_dir" >&2
   exit 1
 fi
 
