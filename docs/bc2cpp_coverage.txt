@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2022
-  from bytecode: 2006
-  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 16
+compiled entry points (real build output -- clean, zero #error): 2027
+  from bytecode: 2009
+  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 18
   mruby-lcf-compiled: 45
-  mruby-rgss-compiled: 102
-  mruby-rpg2k-compiled: 1875
+  mruby-rgss-compiled: 104
+  mruby-rpg2k-compiled: 1878
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
-classes needing MRB_SET_INSTANCE_TT: 15
+classes needing MRB_SET_INSTANCE_TT: 16
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2006
-  left on the interpreter (>=1 #error): 287
-  coverage: 87.5%
+  compiled clean: 2009
+  left on the interpreter (>=1 #error): 284
+  coverage: 87.6%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -43,7 +43,6 @@ annotation candidates (opaque argument, unresolved): 43
     256  unhandled opcode SENDB
      44  SEND/SSEND has a splat and/or keyword argument list (n=...)
      34  unhandled opcode SSENDB
-      8  unhandled opcode ARYCAT
       8  unhandled opcode EXCEPT
       7  unhandled opcode JMPUW
       7  unhandled opcode SUPER
@@ -52,11 +51,8 @@ annotation candidates (opaque argument, unresolved): 43
       3  unhandled opcode BLKCALL
       3  unhandled opcode BLKPUSH
       3  unhandled opcode LAMBDA
-      3  unhandled opcode RETSELF
-      2  unhandled opcode ARYPUSH
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
-      2  unhandled opcode SETGV
       1  Array#sort has non-mandatory arguments (optional/rest/keyword/block)
       1  Array#sort! has non-mandatory arguments (optional/rest/keyword/block)
       1  Game::Actors#each has non-mandatory arguments (optional/rest/keyword/block)
@@ -67,7 +63,7 @@ annotation candidates (opaque argument, unresolved): 43
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    681  total
+    666  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 65
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
