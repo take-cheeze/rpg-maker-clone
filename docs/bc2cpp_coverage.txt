@@ -20,8 +20,15 @@ methods attempted: 2293
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
   poisoned to unknown (real evidence, but disagreeing/untraceable): 520
+  split: ANY (proven heterogeneous, not fixable): 0
+  split: OPAQUE (unresolved, may be fixable): 520
 known-array-element-class hints (ELEM_HINT): 9
-  poisoned to unknown (proven Array, element class unresolved): 42
+  primitive-only hints (never embedded): 6
+  poisoned to unknown (proven Array, element class unresolved): 35
+    split: ANY (proven heterogeneous, not fixable): 0
+    split: OPAQUE (unresolved, may be fixable): 35
+known-hash-element-class hints (HASH_ELEM_HINT): 8
+  poisoned to unknown (proven Hash, value class unresolved): 38
 ivar embedding (EMBED): 110
 magic-comment return annotations (ANNOTATED): 156
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
