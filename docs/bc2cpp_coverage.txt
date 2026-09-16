@@ -18,10 +18,10 @@ methods attempted: 2293
   coverage: 84.7%
 
 -- ivar/return/argument facts proven --
-known-ivar-class hints (CLASS_HINT): 160
-  poisoned to unknown (real evidence, but disagreeing/untraceable): 643
+known-ivar-class hints (CLASS_HINT): 194
+  poisoned to unknown (real evidence, but disagreeing/untraceable): 581
 known-array-element-class hints (ELEM_HINT): 8
-  poisoned to unknown (proven Array, element class unresolved): 33
+  poisoned to unknown (proven Array, element class unresolved): 39
 ivar embedding (EMBED): 109
 magic-comment return annotations (ANNOTATED): 134
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
