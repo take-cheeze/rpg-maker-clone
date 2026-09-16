@@ -72,6 +72,38 @@ first rescued `NoMethodError` on-device is what proved it; and the stub
 methods, because the real game loop (unlike any bring-up) calls them every
 frame.
 
+The panel itself needed two more real-hardware fixes on top: the driver's
+default `MADCTL` (`DIR_YX_RLDU`) renders mirrored left-to-right --
+`DIR_YX_LRDU` fixes it, same orientation and dimensions, only the column
+order flips back -- and this panel variant powers up BGR *and* inverted
+relative to what the driver assumes (a white paint reads back black, blue
+reads back cyan); `INVERSION_DISPALY_OFF` alongside the `DIR_YX_LRDU`
+change is the combination the hardware color probe found true. The flush
+itself is banded (four quarter-frame `tft_write_half` transfers instead of
+one `drawImage` call) and byte-swapped per pixel -- a single giant DMA
+truncates and many small ones alternate-drop on real silicon, confirmed by
+probing, so the band count is not arbitrary.
+
+## Status: SD-card game boot -- blocked
+
+`pio run -e maix_game_sd` is the same firmware as `maix_game`, but reads
+its data from the microSD card (`GAME_DIR=/sd/maixgame`, pushed with
+`scripts/maix_sd_upload.py`) instead of the flash-embedded copy, over the
+SD layer described below. It compiles and mounts the card, but does not
+boot: on real hardware it hangs solid partway through the interpreter's
+first data-cluster read. Isolated with a raw `fopen`/`fread` bypassing
+mruby entirely -- `fopen` succeeds (the directory-area reads that resolve
+it all work, including a fresh re-upload, ruling out stale data), but the
+first `fread()` on the file's own data cluster never returns. Reproduces
+identically regardless of which K210 SPI peripheral drives the card
+(SPI0 or SPI1, see "SD layer" below) and independent of clock speed (4 MHz
+or 400 kHz) -- so it is neither a bus-sharing nor a signal-rate issue, at
+least not one clock-speed alone fixes. Not a Renode target either way (no
+SD controller modeled), so CI only compile-proves it. See
+`app/wio/src/maix_game_main.cxx`'s `KNOWN ISSUE` comment for the full
+trail; next step is likely a scope/logic analyzer on the SPI lines, or a
+different SD card to rule out a media-specific fault.
+
 ## Display HAL (PlatformIO side)
 
 `app/wio/src/maix_display.cxx` (selected by `platformio.ini`'s
@@ -87,13 +119,15 @@ injected display through `rgss_set_display`.
 
 Two gotchas, both confirmed against the capture rig: the display is
 320x240 (the largest window the driver was ever observed to address -- the
-panel's nominal 320x480 vs rotation is a real-hardware follow-up, and LVGL
+panel's nominal 320x480 vs rotation is still a real-hardware follow-up:
+nothing has attempted the other 240 rows on real hardware yet, and LVGL
 must render in driver space either way), and a screen needs an explicit
 opaque background style -- with no theme the default is transparent and
 renders as white. The boot firmware paints solid red through LVGL itself;
 the wire shows it byte-swapped (`00F8`, the driver's `SWAP_16`), which is
-what the decoder asserts -- on-panel color truth still needs eyes on real
-hardware.
+what the decoder asserts. On-panel color truth (not just the wire bytes)
+is confirmed against real hardware -- see the color-fix paragraph under
+"Status: P2" above.
 
 ## Input (PlatformIO side)
 
@@ -101,24 +135,46 @@ hardware.
 (I2C1 via `Wire1`, five registers, no vendor library -- Maixduino ships
 none for this chip) scanned into a bitmask, plus `rgss_maix_poll`, which
 diffs it against the previous frame into `RGSS::Input.press`/`release`
-(the SDL bridge's shape). A tap is Confirm; directions (touch regions)
-belong to the menu work that needs them. `lib.cxx` calls the poll from
-`input_poll` under `MAIX_BUILD`, so the real game loop drains it for free;
-firmwares without one call it directly. With no panel attached (Renode
-included) every read is zero -- exactly the idle state, never a hang
-(the I2C status/FIFO Tags in `boot.resc` are what guarantee that).
+(the SDL bridge's shape). `lib.cxx` calls the poll from `input_poll` under
+`MAIX_BUILD`, so the real game loop drains it for free; firmwares without
+one call it directly. With no panel attached (Renode included) every read
+is zero -- exactly the idle state, never a hang (the I2C status/FIFO Tags
+in `boot.resc` are what guarantee that).
+
+A raw touch has no direction on its own, so `app/wio/src/maix_gamepad.cxx`
+draws a virtual D-pad plus Confirm (C) and Cancel (B) buttons (grep finds
+no `Input::A` reference anywhere in mruby-rpg2k's scenes, so that is all
+the screen space is spent on) as translucent LVGL outlines on top of
+whatever the current RPG2k scene rendered, and `maix_input.cxx` hit-tests
+raw touch against the identical geometry
+(`app/wio/src/maix_gamepad_layout.h`) to pick a key. Outline-only, no
+fill, on purpose -- a translucent fill over the D-pad's own footprint was
+enough to drop `maix-smoke`'s title-screen color check below its own
+threshold, confirmed by actually measuring it under Renode. The raw
+touch -> screen-space transform is derived from the display's own MADCTL
+rotation bits, not independently confirmed against a real touch on real
+hardware (see that function's own comment); `rgss_maix_poll` prints
+`maix-gamepad: touch raw=(x,y) -> KEY` on every press specifically so that
+can be checked without a camera on the device.
 
 ## SD layer (opt-in)
 
 `app/wio/src/maix_sd_syscalls.cxx` routes newlib `_open`/`_read`/`_write`/
 `_lseek`/`_fstat`/`_unlink` (plus stdout/stderr to Serial) to Maixduino's
-SD library over SPI0's TF slot (chip-select 26), with the same
-`/sd/<game>` `GAME_DIR` convention Wio uses. Compiled only with
+SD library over SPI1's TF slot (SCK 11 / MISO 6 / MOSI 10, chip-select
+26), with the same `/sd/<game>` `GAME_DIR` convention Wio uses. SPI1, not
+SPI0, confirmed against the official schematic (every TF-slot net is
+literally named `SPI1_*` on the real PCB) -- an earlier revision used
+SPI0 with the right pins but the wrong peripheral, which meant fighting
+the LCD (also SPI0, see "Display HAL" above) over the one sysctl mux bit
+that picks whether SPI0's data lines answer to the SPI controller or the
+DVP camera interface. SPI1 has no such sharing, so the LCD and the SD
+card are now genuinely independent buses. Compiled only with
 `MAIX_WITH_SD` (CI builds it once that way as a compile proof, via
 `PLATFORMIO_BUILD_FLAGS`); call `maix_sd_init()` from `setup()` before
 opening anything. Runtime proof needs a physical card -- Renode models no
-SD controller -- but the shape of it is known: an SD image attached under
-Renode with game data on it, the way `wio_renode_sdcard.bash` does.
+SD controller -- and on real hardware it currently hangs past the first
+data-cluster read; see "Status: SD-card game boot" above.
 
 ## Pushing files without a card reader
 
@@ -188,14 +244,21 @@ can be caught: the LCD driver moves each command/pixel block with the AXI
 DMAC into SPI0's data register, so `app/maix/renode/` carries a small AXI
 model (remembers SAR/DAR/BLOCK_TS/CTL per channel -- a plain Tag cannot
 even do that) plus a copy hook on `dmac_channel_enable` that replays each
-transfer into `$MAIX_SPI_LOG` as `D <dc> <hex32>` lines, sampling DC live
-from GPIO 7 (the driver's fixed DC line). The non-incrementing-source
-(`sinc`) fill transfers are replayed from their single word -- reading
-them as incrementing walks into zeros and heap garbage, confirmed the
-confusing way. `scripts/maix_lcd_decode.py` (stdlib only) replays the
-ST7789 stream (CASET/RASET/RAMWR, RGB565) into a PPM and checks it:
-currently a blue 320x240 screen with two white text lines at the firmware's
-own cursor rows, asserted as blue ≥ 0.45, ≥ 3 colors, 320x240 extent.
+transfer into `$MAIX_SPI_LOG` as `D <dc> <hex32> <frame_bytes>` lines,
+sampling DC live from GPIO 7 (the driver's fixed DC line). `frame_bytes`
+comes from SPI0's own `ctrlr0` frame-size register, not the DMAC's
+memory-access width: `tft_write_half` (the banded flush's 16-bit-frame
+transfer) still gets DMA'd in 32-bit-padded memory units regardless, so
+the DMAC's own width tag cannot tell a real second pixel from that
+padding -- confirmed the hard way when it silently halved every real
+pixel in the capture. The non-incrementing-source (`sinc`) fill transfers
+are replayed from their single word -- reading them as incrementing walks
+into zeros and heap garbage, confirmed the confusing way.
+`scripts/maix_lcd_decode.py` (stdlib only) replays the ST7789 stream
+(CASET/RASET/RAMWR, RGB565, `frame_bytes // 2` pixels per capture line)
+into a PPM and checks it: currently a blue 320x240 screen with two white
+text lines at the firmware's own cursor rows, asserted as blue ≥ 0.45,
+≥ 3 colors, 320x240 extent.
 
 ```sh
 RENODE_BIN=/path/to/renode \
@@ -259,7 +322,19 @@ port lives here under `app/maix/`.
 
 ## Not yet wired (later slices)
 
-- LCD controller check: Amigo shipped as TFT and IPS panel revisions; if the
-  `Sipeed_ST7789` init mis-drives one revision, Serial stays the proof while
-  the LCD is revisited.
-- Touch input (FT6X36), SD-backed assets, LVGL display HAL, mruby cross-build.
+- **SD-card game boot**: still hangs on real hardware -- see "Status:
+  SD-card game boot" above. Blocks everything past a flash-embedded test
+  game (no real RTP-using game has been tried, no saves).
+- **Full 320x480 panel / rotation**: only the 320x240 window has ever been
+  driven on real hardware; whether the other 240 rows are addressable, and
+  whether that is the whole physical panel or needs a rotation, is
+  unresolved.
+- **Gamepad touch calibration**: the virtual D-pad/Confirm/Cancel overlay's
+  raw-touch-to-screen-space transform (see "Input" above) is derived from
+  the display's rotation bits, not confirmed against a real finger on
+  real hardware -- unlike the display's own direction/color fixes, this
+  one still needs that pass before it can be trusted.
+- **LCD controller check**: Amigo shipped as TFT and IPS panel revisions
+  (two different schematics, `Maix_Amigo_2960`/`Maix_Amigo_2970`); the
+  color/orientation fixes above were verified against one physical unit,
+  not both revisions.

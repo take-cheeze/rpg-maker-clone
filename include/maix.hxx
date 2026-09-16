@@ -28,9 +28,11 @@
 
 // Bit positions in the maix_input_scan() bitmask. They match the RGSS::Input
 // key ids (mruby-rgss/mrblib/lib.rb): bit (1ull << id) is set while that key
-// is held. Only what the board can actually produce is bound: a capacitive
-// touch tap is Confirm, anything else is a follow-up once the menu work
-// needs directions (touch regions) -- see app/maix/README.md.
+// is held. Driven by the touch panel through the virtual gamepad overlay
+// (maix_gamepad_create, maix_gamepad_layout.h) -- UP/DOWN/LEFT/RIGHT plus
+// Confirm (C) and Cancel (B), the only keys any mruby-rpg2k scene actually
+// reads. MAIX_INPUT_A exists for parity with RGSS::Input's own id space but
+// nothing binds a touch region to it.
 enum MaixKey {
   MAIX_INPUT_UP = 0,
   MAIX_INPUT_DOWN = 1,
@@ -62,7 +64,17 @@ void maix_input_init(void);
 // means the key is currently held.
 uint32_t maix_input_scan(void);
 
-// Initialise the SD card (Maixduino SD over SPI0, TF slot). Returns true on
+// Draws the virtual D-pad + Confirm/Cancel button overlay (maix_gamepad.cxx)
+// on top of the current LVGL screen. Call once from setup(), after
+// maix_display_create() -- it needs a live display to attach to.
+void maix_gamepad_create(void);
+
+// Re-raises the gamepad overlay above whatever the current RPG2k scene most
+// recently drew (each scene creates its own sprites/windows as new LVGL
+// objects, which would otherwise end up on top of it). Call once per frame.
+void maix_gamepad_foreground(void);
+
+// Initialise the SD card (Maixduino SD over SPI1, TF slot). Returns true on
 // success. Call once from setup() before any game file is opened; without
 // it (or without a card) the maix_sd_syscalls.cxx layer answers ENOENT.
 // Only defined when MAIX_WITH_SD is set (see that file).

@@ -1,17 +1,19 @@
 // Maix Amigo firmware: boot the maix-hello game to its title screen.
 //
 // setup() brings up Serial, mounts the SD card (env:maix_game_sd only --
-// see the MAIX_WITH_SD block below), the LVGL display, touch input and the
-// interpreter (same stack as maix_rgss_boot_main.cxx), then -- instead of
-// evaluating a probe string -- boots a real game the way src/main.cxx's
-// desktop build does: inject the display, set GAME_DIR (flash-resident by
-// default, served by maix_embed.cxx; SD-resident under MAIX_WITH_SD) and
-// RTP_DIR (empty: self-contained), construct RPG2k with no CLI args, and
-// pin it against the GC. loop() runs one main_loop iteration per pass (the
-// Emscripten frame-loop ownership pattern: Arduino owns the loop, Ruby owns
-// the frame), pumps LVGL and input, prints the active scene name every 60
-// frames for the log, and reports a Ruby exception once instead of
-// spamming it.
+// see the MAIX_WITH_SD block below), the LVGL display, touch input, the
+// virtual gamepad overlay (maix_gamepad.cxx -- the board has no physical
+// buttons) and the interpreter (same stack as maix_rgss_boot_main.cxx),
+// then -- instead of evaluating a probe string -- boots a real game the
+// way src/main.cxx's desktop build does: inject the display, set GAME_DIR
+// (flash-resident by default, served by maix_embed.cxx; SD-resident under
+// MAIX_WITH_SD) and RTP_DIR (empty: self-contained), construct RPG2k with
+// no CLI args, and pin it against the GC. loop() runs one main_loop
+// iteration per pass (the Emscripten frame-loop ownership pattern: Arduino
+// owns the loop, Ruby owns the frame), pumps LVGL and input, re-raises the
+// gamepad overlay above whatever the scene just drew, prints the active
+// scene name every 60 frames for the log, and reports a Ruby exception
+// once instead of spamming it.
 //
 // Lives under app/wio/src/ only because platformio.ini sets a single,
 // project-wide `src_dir` (see maix_amigo_main.cxx's own comment for why).
@@ -102,6 +104,8 @@ void setup(void) {
   Serial.println("maix-game: display ok");
   maix_input_init();
   Serial.println("maix-game: input ok");
+  maix_gamepad_create();
+  Serial.println("maix-game: gamepad ok");
 
   g_mrb = mrb_open();
   if (g_mrb == nullptr) {
@@ -168,6 +172,10 @@ void loop(void) {
   }
   if (g_mrb)
     rgss_maix_poll(g_mrb);
+  // After main_loop, not before: the scene just drew (or redrew) its own
+  // sprites/windows as new LVGL objects, which would otherwise land on top
+  // of the gamepad overlay.
+  maix_gamepad_foreground();
   lv_timer_handler();
   delay(5);
 }
