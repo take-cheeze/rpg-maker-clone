@@ -178,8 +178,22 @@ report << "\n"
 report << "-- ivar/return/argument facts proven --\n"
 report << "known-ivar-class hints (CLASS_HINT): #{count(err, 'known-ivar-class hints (devirtualization only, never embedded)', placeholder: '(none)')}\n"
 report << "  poisoned to unknown (real evidence, but disagreeing/untraceable): #{count(err, 'ivar-class candidates (real SETIV evidence found, but poisoned to unknown)', placeholder: '(none)')}\n"
+# ANY_OPAQUE_SUPPORT: the same poisoned-ivar-class count above, split by
+# WHY -- :any (two real sites proven to genuinely disagree, unfixable) vs.
+# :opaque (at least one site untraceable, a real candidate for a future
+# annotation round). See ClassLayout.analyze's own `poison_reason` header.
+report << "  split: ANY (proven heterogeneous, not fixable): #{count(err, 'ivar-class candidates split: ANY (proven heterogeneous, not fixable)', placeholder: '(none)')}\n"
+report << "  split: OPAQUE (unresolved, may be fixable): #{count(err, 'ivar-class candidates split: OPAQUE (unresolved, may be fixable)', placeholder: '(none)')}\n"
 report << "known-array-element-class hints (ELEM_HINT): #{count(err, 'known-array-element-class hints (guarded devirtualization only)', placeholder: '(none)')}\n"
+# PRIMITIVE_ELEMENT_SUPPORT: element facts that resolved to a primitive
+# scalar (Integer/Hash/String/Symbol) rather than a real registry class --
+# never fed to CodeGen (see ArrayElementLayout.primitives' own comment),
+# reported here purely so a resolved-but-inert primitive fact isn't
+# invisible to the coverage trend.
+report << "  primitive-only hints (never embedded): #{count(err, 'known-array-element PRIMITIVE hints (informational only, never embedded)', placeholder: '(none)')}\n"
 report << "  poisoned to unknown (proven Array, element class unresolved): #{count(err, 'array-element candidates (proven-Array ivar, element class poisoned to unknown)', placeholder: '(none)')}\n"
+report << "    split: ANY (proven heterogeneous, not fixable): #{count(err, 'array-element candidates split: ANY (proven heterogeneous, not fixable)', placeholder: '(none)')}\n"
+report << "    split: OPAQUE (unresolved, may be fixable): #{count(err, 'array-element candidates split: OPAQUE (unresolved, may be fixable)', placeholder: '(none)')}\n"
 report << "known-hash-element-class hints (HASH_ELEM_HINT): #{count(err, 'known-hash-element-class hints (guarded devirtualization only)', placeholder: '(none)')}\n"
 report << "  poisoned to unknown (proven Hash, value class unresolved): #{count(err, 'hash-element candidates (proven-Hash ivar, value class poisoned to unknown)', placeholder: '(none)')}\n"
 report << "ivar embedding (EMBED): #{count(err, 'ivar embedding', placeholder: '(none embeddable)')}\n"
