@@ -752,6 +752,7 @@ module Game
     # trace. `has_table` guards the diagnostic the same way `db_item` /
     # `db_enemy_group` do, so a bare test fixture with no chipset table at all
     # (rather than a real dangling id) stays quiet.
+    # bc2cpp: (, fixnum)
     def initialize(db, id)
       has_table = db.respond_to?(:chipset)
       c = has_table ? db.chipset[id] : nil
@@ -1828,7 +1829,7 @@ module Game
     # while restoring a saved override (Game::State.from_lsd) -- both are a
     # real, persisted "changed" event, not the actor's own untouched database
     # default set at #initialize -- see @sprite_changed's own comment there.
-    # bc2cpp: (String, )
+    # bc2cpp: (String, fixnum)
     def set_charset(name, index)
       @charset_name = name
       @charset_index = index
@@ -3079,6 +3080,7 @@ module Game
     # weapon bonus as a parameter rather than always `#weapon_crit_bonus`'s
     # merged max -- shared with `#weapon_roll_data`, which needs the same
     # composition for one specific weapon's own `critical_hit` bonus.
+    # bc2cpp: (fixnum)
     def weapon_crit_chance(bonus)
       pct = bonus
       if @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
@@ -3706,6 +3708,7 @@ module Game
     # Point the actor at class `id` (0 = none), resolving its database row. A
     # database with no class table (every RPG2000 game) or an unknown id leaves
     # the actor class-less, so the actor row keeps supplying the curves.
+    # bc2cpp: (fixnum)
     def set_class_id(id)
       @class_id = id && id > 0 ? id : 0
       @class_row = @class_id > 0 ? class_row_for(@class_id) : nil
