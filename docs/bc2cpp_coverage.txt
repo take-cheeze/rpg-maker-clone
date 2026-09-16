@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 1982
-  from bytecode: 1966
+compiled entry points (real build output -- clean, zero #error): 1985
+  from bytecode: 1969
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 16
   mruby-lcf-compiled: 44
   mruby-rgss-compiled: 100
-  mruby-rpg2k-compiled: 1838
+  mruby-rpg2k-compiled: 1841
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 15
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 1966
-  left on the interpreter (>=1 #error): 327
-  coverage: 85.7%
+  compiled clean: 1969
+  left on the interpreter (>=1 #error): 324
+  coverage: 85.9%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -23,14 +23,14 @@ known-ivar-class hints (CLASS_HINT): 255
 known-array-element-class hints (ELEM_HINT): 8
   poisoned to unknown (proven Array, element class unresolved): 43
 ivar embedding (EMBED): 110
-magic-comment return annotations (ANNOTATED): 141
+magic-comment return annotations (ANNOTATED): 156
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
 magic-comment element annotations (ELEM_ANNOTATED): 2
 annotation candidates (opaque argument, unresolved): 43
 
 -- #error markers by reason (whole program) --
-    347  unhandled opcode BLOCK
-    324  unhandled opcode SENDB
+    342  unhandled opcode BLOCK
+    319  unhandled opcode SENDB
      49  SEND/SSEND has a splat and/or keyword argument list (n=...)
      36  unhandled opcode SSENDB
       8  unhandled opcode ARYCAT
@@ -57,4 +57,4 @@ annotation candidates (opaque argument, unresolved): 43
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    826  total
+    816  total
