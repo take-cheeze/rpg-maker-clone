@@ -3,6 +3,7 @@
   compiles and mounts the card, but does not boot yet: on real hardware it
   hangs solid partway through the interpreter's first data-cluster read,
   isolated to below the vendor SD library's own read timeout (likely the
-  K210 SPI HAL's untimed FIFO wait) -- not a Renode target (no SD
+  K210 SPI HAL's untimed FIFO wait), reproduced identically on both SPI0
+  and SPI1 and at both 4 MHz and 400 kHz -- not a Renode target (no SD
   controller modeled), so this is compile-proof only in CI for now. See
   `app/wio/src/maix_game_main.cxx`'s KNOWN ISSUE comment for the trail.

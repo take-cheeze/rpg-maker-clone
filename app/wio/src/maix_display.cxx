@@ -32,11 +32,8 @@
 // lcd_set_direction (the driver's C core, lcd.h, extern "C" itself) to
 // override the direction begin() installs -- see maix_display_create.
 #include <lcd.h>
-// Raw panel command + area/window primitives for the banded flush below,
-// plus the SPI bus helpers shared with the SD layer.
+// Raw panel command + area/window primitives for the banded flush below.
 #include <st7789.h>
-
-#include "maix_tf_sd.h"
 
 // Byte-swap a pixel for the panel's big-endian 16-bit frames (same as the
 // driver's own lcd_draw_picture does per pixel).
@@ -53,17 +50,13 @@
 // Scratch for one quarter band max (320x60 px RGB565).
 static uint16_t s_flush_band[320 * 60];
 
-// First-flush LCD bus latch (see maix_tf_sd.h): the SD layer owns the SPI0
-// pins from maix_sd_init until the first frame renders; claim them back
-// for the panel here, once, then leave them (post-title SD reads need
-// full per-op arbitration -- not yet implemented, see the header).
-static bool s_lcd_claimed = false;
-
 namespace {
 
 // MUST be SPI0 for the Maix series on-board LCD (per the driver's own
 // basic_display example); the LCD pins (CS 36 / RST 37 / DC 38) match the
-// driver's defaults, same as app/wio/src/maix_amigo_main.cxx.
+// driver's defaults, same as app/wio/src/maix_amigo_main.cxx. The TF card
+// (maix_tf_sd.h) is on the independent SPI1, per the official schematic --
+// no bus sharing with the LCD to arbitrate.
 SPIClass g_spi(SPI0);
 Sipeed_ST7789 g_lcd(320, 480, g_spi);
 
@@ -78,10 +71,6 @@ void delay_cb(uint32_t ms) {
 void flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map) {
   const int32_t w = area->x2 - area->x1 + 1;
   const int32_t h = area->y2 - area->y1 + 1;
-  if (!s_lcd_claimed) {
-    s_lcd_claimed = true;
-    maix_spi_take_lcd();
-  }
   const uint16_t* src = reinterpret_cast<uint16_t*>(px_map);
   if (((uint32_t)(w * h) & 1u) != 0u) {
     // Odd pixel count: the pair-wise copy below can't cover the tail --

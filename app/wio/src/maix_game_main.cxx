@@ -83,14 +83,9 @@ void setup(void) {
   Serial.println("maix-game: setup");
 
 #ifdef MAIX_WITH_SD
-  // Mounted ahead of lv_init/maix_display_create on purpose: an earlier
-  // ordering (SD after display) raised the question of whether LCD SPI0
-  // activity before the mount could leave the bus in a state the card
-  // read chokes on. It doesn't -- see the KNOWN ISSUE note on the
-  // RPG2k.new call below, which reproduces identically either way -- but
-  // mounting first is still the more conservative order (no reason to let
-  // the LCD touch the shared bus before the card claims its own pins),
-  // so it stays.
+  // Mounted ahead of lv_init/maix_display_create: the SD card (SPI1) and
+  // the LCD (SPI0, see maix_display.cxx) are independent buses with
+  // nothing to arbitrate, so ordering is only a matter of taste here.
   Serial.println("maix-game: sd mounting...");
   const bool sd_ok = maix_sd_init();
   Serial.print("maix-game: sd ");
@@ -135,18 +130,22 @@ void setup(void) {
   // entirely: fopen("/sd/maixgame/RPG_RT.ldb") succeeds (the directory-area
   // reads that resolve it all work, including a fresh re-upload -- ruled
   // out stale/corrupt data), but the first fread() on the file's own data
-  // cluster never returns, even 15+s later. A one-off local patch to the
-  // vendor SdFile::read() (not part of the repo) dumped the target block:
-  // 39424 (cluster 234), one 32 KB cluster past the "maixgame" directory's
-  // own block (39360), which had just been read successfully seconds
-  // earlier in the same boot -- so not an out-of-range or misaddressed
-  // block, and the card is a correctly-detected 32 GB SDHC card. The hang
-  // is below Sd2Card::waitStartBlock's own millis()-based timeout, so most
-  // likely inside the K210 SPI HAL's untimed FIFO busy-wait
-  // (sipeed_spi_transfer_data_standard, framework-maixduino's
-  // Maix_SPI.cpp). Needs a scope/logic analyzer on the SPI0 lines, or a
-  // different SD card to rule out a media-specific fault -- env:maix_game
-  // (flash-embedded data) is unaffected and boots to the title screen.
+  // cluster never returns, even 15+s later, on a correctly-detected 32 GB
+  // SDHC card. The hang is below Sd2Card::waitStartBlock's own
+  // millis()-based timeout, so most likely inside the K210 SPI HAL's
+  // untimed FIFO busy-wait (sipeed_spi_transfer_data_standard,
+  // framework-maixduino's Maix_SPI.cpp).
+  //
+  // Originally found on SPI0 (see maix_tf_sd.h's own history) with a
+  // hand-rolled DVP-mux dance shared with the LCD; moving the TF card to
+  // SPI1 (the peripheral the official schematic actually specifies, no
+  // sharing with anything) reproduces the identical hang, confirmed on
+  // hardware -- so SPI0/DVP contention was a real correctness bug worth
+  // fixing on its own, but not the cause of this one. Also confirmed
+  // clock-speed-independent (400 kHz reproduces it too). Needs a
+  // scope/logic analyzer on the SPI1 lines, or a different SD card to rule
+  // out a media-specific fault -- env:maix_game (flash-embedded data) is
+  // unaffected and boots to the title screen.
   Serial.println("maix-game: RPG2k.new...");
   g_game = mrb_obj_new(g_mrb, mrb_class_get(g_mrb, "RPG2k"), 1, &args);
   if (g_mrb->exc) {
