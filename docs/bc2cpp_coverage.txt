@@ -45,8 +45,8 @@ annotation candidates (opaque argument, unresolved): 43
      34  unhandled opcode SSENDB
       8  unhandled opcode EXCEPT
       7  unhandled opcode JMPUW
-      7  unhandled opcode SUPER
       6  unhandled opcode SYMBOL
+      5  unhandled opcode SUPER
       4  unhandled opcode ARGARY
       3  unhandled opcode BLKCALL
       3  unhandled opcode BLKPUSH
@@ -63,7 +63,7 @@ annotation candidates (opaque argument, unresolved): 43
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    666  total
+    664  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 65
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
