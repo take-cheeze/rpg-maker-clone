@@ -348,6 +348,7 @@ class RPG2k
       # project's own term content, not something RPG_RT synthesizes, but the
       # *selection* (which whole term string shows for which raw atb_mode
       # value) matches this method exactly in both directions.
+      # bc2cpp: () -> Array
       def build_commands
         keys = if db.rpg2003?
                  ids = db.system.menu_commands || []
