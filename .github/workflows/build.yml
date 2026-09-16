@@ -238,6 +238,20 @@ jobs:
         run: |
           cmake --build build 2>&1 | tee build.log
 
+      # docs/bc2cpp_coverage.txt (scripts/bc2cpp_coverage_report.rb) is a
+      # stats-only snapshot of tools/bc2cpp/bc2cpp.rb's own whole-program
+      # diagnostic, tracked in git so a coverage/devirtualization change
+      # shows up as a real, reviewable diff -- but nothing enforced that it
+      # actually stayed in sync with the bc2cpp.rb/mrblib state that
+      # produced it. This regenerates it for real (against the host mrbc
+      # `build` just produced -- every mruby build, cross or native,
+      # bootstraps one first, see root CMakeLists.txt's own "the native
+      # host build only produces mrbc" comment) and diffs the result
+      # against the committed file, exactly like "Check the Emscripten
+      # probe cache" does for cmake/emscripten-probe-cache.cmake below.
+      - name: Check bc2cpp coverage report freshness
+        run: ./scripts/bc2cpp_coverage_check.bash build/mruby
+
       - name: sccache stats
         if: always()
         run: |

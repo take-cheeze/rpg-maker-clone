@@ -42,7 +42,10 @@ require_relative '../tools/bc2cpp/compiled_gems'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
-REPORT_PATH = File.join(ROOT, 'docs/bc2cpp_coverage.txt')
+# Overridable so scripts/bc2cpp_coverage_check.bash can regenerate into a
+# throwaway path and diff it against the real committed file, instead of
+# overwriting that file as a side effect of merely checking it.
+REPORT_PATH = ENV['BC2CPP_COVERAGE_REPORT_PATH'] || File.join(ROOT, 'docs/bc2cpp_coverage.txt')
 
 srcs = closed_world_mrblib_srcs(ROOT)
 native_srcs = Dir["#{ROOT}/mruby-rgss/src/*.cxx"] + core_native_srcs("#{ROOT}/3rd/mruby") +
