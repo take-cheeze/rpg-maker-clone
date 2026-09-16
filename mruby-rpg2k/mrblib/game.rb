@@ -1816,6 +1816,12 @@ module Game
     # The database learn table as [skill_id, level] pairs (empty for a row that
     # exposes no learn table, e.g. the test fixtures). Read from the class row
     # when the actor has one (see #class_id).
+    #
+    # Self-called bare at #learn_level_skills' own `learn_table.each { ... }`
+    # (mruby-rpg2k/mrblib/game.rb) -- both real paths here return an Array
+    # literal (`[]` on the one early-out, a freshly-built `out` otherwise,
+    # never nil), so the claim is a plain read of the body, not an inference.
+    # bc2cpp: () -> Array
     def learn_table
       a = curve_row
       return [] unless a.respond_to?(:skills) && a.skills
@@ -2333,7 +2339,13 @@ module Game
     # name the same four item types that armor-type test covers, already used
     # elsewhere in this file for the identical distinction (see e.g.
     # #defensive_attribute_ids below).
-    # bc2cpp: (fixnum)
+    #
+    # Self-called bare at #adjust_equipment_states' own `cursed_armor_state_
+    # ids(item_id).each { ... }` and #permanent_states' own `ids =
+    # cursed_armor_state_ids(eq[i])` (both mruby-rpg2k/mrblib/game.rb) --
+    # every one of the five early-outs returns the `[]` literal and the one
+    # remaining path returns a freshly-built `ids` Array, never nil.
+    # bc2cpp: (fixnum) -> Array
     def cursed_armor_state_ids(item_id)
       return [] unless rpg2003?
       return [] if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
@@ -2406,6 +2418,12 @@ module Game
     # callee is wired into register.cxx (capability rounds ship the
     # compiler; coverage rounds wire later). Semantics identical to the
     # block forms: same order, same side effects.
+    #
+    # Self-called bare at #remove_state/#clear_states/#adjust_equipment_
+    # states/#knock_out!/#full_heal (all mruby-rpg2k/mrblib/game.rb) -- the
+    # one early-out returns `[]`, the remaining path returns `out.uniq`
+    # (Array#uniq's own fresh-Array result), never nil.
+    # bc2cpp: () -> Array
     def permanent_states
       return [] unless rpg2003?
       out = []
@@ -2480,6 +2498,12 @@ module Game
     # weapon) flags in its own `attribute_set` -- the defensive counterpart of
     # #weapon_attributes, which reads the same field off the weapon slot only,
     # for the opposite (offensive) purpose.
+    #
+    # Self-called bare at #attribute_ranks' own `defensive_attribute_ids.
+    # each { ... }` (mruby-rpg2k/mrblib/game.rb) -- both the early `return
+    # ids` (still the `[]` this same local was just assigned) and the
+    # trailing `ids.uniq` are Arrays, never nil.
+    # bc2cpp: () -> Array
     def defensive_attribute_ids
       ids = []
       return ids unless @db.respond_to?(:item)
@@ -2512,6 +2536,12 @@ module Game
     # `attribute_set` bool array (field 66), a flag per attribute — used to scale
     # a basic attack's damage by the target's resistance. No item table (a
     # fixture) or an unarmed actor carries none.
+    #
+    # No bare self-call in this class (`Game::Battle#weapon_attribute_ready?`
+    # reads it through a receiver, `caster.weapon_attributes`), but the body
+    # still returns Array on every real path -- `[]` on the one early-out,
+    # `ids.uniq` otherwise, never nil -- so the claim holds regardless.
+    # bc2cpp: () -> Array
     def weapon_attributes
       return [] unless @db.respond_to?(:item)
       ids = []
@@ -4735,6 +4765,11 @@ module Game
 
     # The states item `it` names in its `state_set` (a 0/1 byte per state, index
     # i -> state id i+1). Shared by #item_cured_states, mirroring #skill_state_ids.
+    #
+    # Self-called bare at #item_cured_states' own `item_state_ids(it)`
+    # (mruby-rpg2k/mrblib/game.rb) -- the one early-out returns `[]`, the
+    # remaining path returns a freshly-built `out` Array, never nil.
+    # bc2cpp: () -> Array
     def item_state_ids(it)
       set = it.state_set
       return [] unless set
@@ -5974,6 +6009,13 @@ module Game
 
     # The actors a field skill affects: the caster (scope 2), a chosen single ally
     # (scope 3), or the whole party (scope 4).
+    #
+    # Self-called bare at #skill_effective?/#cast_skill's own
+    # `skill_targets(sk, caster, target).any?`/`.each` (mruby-rpg2k/mrblib/
+    # game.rb) -- every branch is an Array: `@actors` (Party's own roster,
+    # always an Array per #initialize's `.reject.map.compact` chain),
+    # `[caster]`, or `[target].compact`, never nil.
+    # bc2cpp: () -> Array
     def skill_targets(sk, caster, target)
       case sk.scope
       when 4 then @actors
@@ -5990,6 +6032,12 @@ module Game
     # cleared (the default) the skill *cures* those states, with it set it
     # *inflicts* them -- the opposite polarity to items, where the reverse flag
     # marks the cure.
+    #
+    # Self-called bare at #skill_cured_states/#skill_inflicted_states' own
+    # `skill_state_ids(sk)` (mruby-rpg2k/mrblib/game.rb) -- the one
+    # early-out returns `[]`, the remaining path returns a freshly-built
+    # `out` Array, never nil.
+    # bc2cpp: () -> Array
     def skill_state_ids(sk)
       set = sk.respond_to?(:state_effects) ? sk.state_effects : nil
       return [] unless set
