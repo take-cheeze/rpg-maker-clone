@@ -135,12 +135,27 @@ is confirmed against real hardware -- see the color-fix paragraph under
 (I2C1 via `Wire1`, five registers, no vendor library -- Maixduino ships
 none for this chip) scanned into a bitmask, plus `rgss_maix_poll`, which
 diffs it against the previous frame into `RGSS::Input.press`/`release`
-(the SDL bridge's shape). A tap is Confirm; directions (touch regions)
-belong to the menu work that needs them. `lib.cxx` calls the poll from
-`input_poll` under `MAIX_BUILD`, so the real game loop drains it for free;
-firmwares without one call it directly. With no panel attached (Renode
-included) every read is zero -- exactly the idle state, never a hang
-(the I2C status/FIFO Tags in `boot.resc` are what guarantee that).
+(the SDL bridge's shape). `lib.cxx` calls the poll from `input_poll` under
+`MAIX_BUILD`, so the real game loop drains it for free; firmwares without
+one call it directly. With no panel attached (Renode included) every read
+is zero -- exactly the idle state, never a hang (the I2C status/FIFO Tags
+in `boot.resc` are what guarantee that).
+
+A raw touch has no direction on its own, so `app/wio/src/maix_gamepad.cxx`
+draws a virtual D-pad plus Confirm (C) and Cancel (B) buttons (grep finds
+no `Input::A` reference anywhere in mruby-rpg2k's scenes, so that is all
+the screen space is spent on) as translucent LVGL outlines on top of
+whatever the current RPG2k scene rendered, and `maix_input.cxx` hit-tests
+raw touch against the identical geometry
+(`app/wio/src/maix_gamepad_layout.h`) to pick a key. Outline-only, no
+fill, on purpose -- a translucent fill over the D-pad's own footprint was
+enough to drop `maix-smoke`'s title-screen color check below its own
+threshold, confirmed by actually measuring it under Renode. The raw
+touch -> screen-space transform is derived from the display's own MADCTL
+rotation bits, not independently confirmed against a real touch on real
+hardware (see that function's own comment); `rgss_maix_poll` prints
+`maix-gamepad: touch raw=(x,y) -> KEY` on every press specifically so that
+can be checked without a camera on the device.
 
 ## SD layer (opt-in)
 
@@ -314,9 +329,11 @@ port lives here under `app/maix/`.
   driven on real hardware; whether the other 240 rows are addressable, and
   whether that is the whole physical panel or needs a rotation, is
   unresolved.
-- **Menu-navigable input**: touch only maps a tap to Confirm; there is no
-  directional input, so nothing past the title screen is actually
-  playable yet.
+- **Gamepad touch calibration**: the virtual D-pad/Confirm/Cancel overlay's
+  raw-touch-to-screen-space transform (see "Input" above) is derived from
+  the display's rotation bits, not confirmed against a real finger on
+  real hardware -- unlike the display's own direction/color fixes, this
+  one still needs that pass before it can be trusted.
 - **LCD controller check**: Amigo shipped as TFT and IPS panel revisions
   (two different schematics, `Maix_Amigo_2960`/`Maix_Amigo_2970`); the
   color/orientation fixes above were verified against one physical unit,
