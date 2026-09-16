@@ -194,6 +194,8 @@ report << "  primitive-only hints (never embedded): #{count(err, 'known-array-el
 report << "  poisoned to unknown (proven Array, element class unresolved): #{count(err, 'array-element candidates (proven-Array ivar, element class poisoned to unknown)', placeholder: '(none)')}\n"
 report << "    split: ANY (proven heterogeneous, not fixable): #{count(err, 'array-element candidates split: ANY (proven heterogeneous, not fixable)', placeholder: '(none)')}\n"
 report << "    split: OPAQUE (unresolved, may be fixable): #{count(err, 'array-element candidates split: OPAQUE (unresolved, may be fixable)', placeholder: '(none)')}\n"
+report << "known-hash-element-class hints (HASH_ELEM_HINT): #{count(err, 'known-hash-element-class hints (guarded devirtualization only)', placeholder: '(none)')}\n"
+report << "  poisoned to unknown (proven Hash, value class unresolved): #{count(err, 'hash-element candidates (proven-Hash ivar, value class poisoned to unknown)', placeholder: '(none)')}\n"
 report << "ivar embedding (EMBED): #{count(err, 'ivar embedding', placeholder: '(none embeddable)')}\n"
 report << "magic-comment return annotations (ANNOTATED): #{count(err, 'magic-comment annotations (# bc2cpp: (T, ...) -> T)', placeholder: '(none found)')}\n"
 report << "magic-comment class-argument annotations (CLASS_ANNOTATED): #{count(err, 'magic-comment class annotations (# bc2cpp: (ClassName, ...))', placeholder: '(none found)')}\n"
