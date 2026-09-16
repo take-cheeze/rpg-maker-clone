@@ -56,10 +56,12 @@ const char* to_sd_path(const char* path) {
 }  // extern "C"
 
 bool maix_sd_init(void) {
-  // TF slot chip-select: SPI0_CS0, pin 26 (see maix_tf_sd.h). Returns false
-  // with no card present -- callers treat every later open as ENOENT rather
-  // than hanging here. C++ linkage (declared so in maix.hxx): only the
-  // newlib hooks below need C linkage.
+  // TF slot chip-select: SPI0_CS0, pin 26 (see maix_tf_sd.h). Takes the
+  // SPI0 pins for the card first (the LCD owns them after display init).
+  // Returns false with no card present -- callers treat every later open
+  // as ENOENT rather than hanging here. C++ linkage (declared so in
+  // maix.hxx): only the newlib hooks below need C linkage.
+  maix_spi_take_tf();
   return maix_tf_sd().begin(26);
 }
 

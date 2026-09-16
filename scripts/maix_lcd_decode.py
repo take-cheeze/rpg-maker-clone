@@ -1,12 +1,19 @@
 #!/usr/bin/env python3
-# Decode a Maix Amigo Renode LCD capture ($MAIX_SPI_LOG: `D <dc> <hex32>`
-# lines from app/maix/renode's DMA hook + GPIO pairing) into a framebuffer.
+# Decode a Maix Amigo Renode LCD capture ($MAIX_SPI_LOG: `D <dc> <hex32>
+# <frame_bytes>` lines from app/maix/renode's DMA hook + GPIO pairing) into
+# a framebuffer.
 #
 # The driver's traffic is plain ST7789 in the driver's own coordinate space:
 # `2A` (CASET: 4 param bytes xs_hi xs_lo xe_hi xe_lo), `2B` (RASET, same for
-# rows), `2C` (RAMWR: pixel data follows, one RGB565 pixel per 16 bits, two
-# per 32-bit bus unit, row-major), everything else ignored. Command params
-# arrive one byte per bus unit (low 8 bits); pixels arrive two per unit.
+# rows), `2C` (RAMWR: pixel data follows, one RGB565 pixel per 16 bits),
+# everything else ignored. Command params arrive one byte per bus unit (low
+# 8 bits); pixels arrive `frame_bytes // 2` per unit -- two per 32-bit SPI
+# frame (the original drawImage() path) or one per 16-bit frame
+# (maix_display.cxx's banded tft_write_half() flush, whose DMA unit is
+# zero-padded to 32 bits in memory despite the 16-bit wire frame, so the
+# byte count has to come from the SPI controller's own frame-size register,
+# not the DMA transfer width -- see the hook). `frame_bytes` defaults to 4
+# (the older, pre-width-tagged capture format) when a line omits it.
 # stdlib only (zlib-free PPM output), so CI needs nothing installed.
 #
 # Usage:
@@ -75,9 +82,10 @@ def main():
 
     for line in open(cap_path):
         parts = line.split()
-        if len(parts) != 3 or parts[0] != "D":
+        if len(parts) not in (3, 4) or parts[0] != "D":
             continue
         dc, word = int(parts[1]), int(parts[2], 16)
+        frame_bytes = int(parts[3]) if len(parts) == 4 else 4
         if dc == 0:
             flush_pixels()
             px = []
@@ -93,8 +101,8 @@ def main():
             cmd, params = word & 0xFF, []
         else:
             if cmd == 0x2C:
-                px.append(word & 0xFFFF)
-                px.append((word >> 16) & 0xFFFF)
+                for k in range(max(1, frame_bytes // 2)):
+                    px.append((word >> (16 * k)) & 0xFFFF)
             elif cmd in (0x2A, 0x2B):
                 params.append(word & 0xFF)
     flush_pixels()

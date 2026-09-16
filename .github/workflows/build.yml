@@ -1568,6 +1568,28 @@ jobs:
             .pio/build/maix_game/firmware.map
           if-no-files-found: error
 
+      - name: Build SD-boot game firmware
+        # Same game firmware but reading game data from the microSD card
+        # (/sd/maixgame) instead of the flash-embedded copy (see the
+        # maix_game_sd environment): proves the SD-backed newlib layer and
+        # the GAME_DIR switch compile -- runtime proof needs a physical
+        # card (Renode models no SD controller).
+        env:
+          MAIX_MRUBY_BUILD_DIR: ${{ github.workspace }}/build-maix-mruby/maix
+          MAIX_UNIALGO_LIB_DIR: ${{ github.workspace }}/build-maix-unialgo
+        run: pio run -e maix_game_sd
+
+      - name: Upload SD-boot game firmware
+        # Same prune-proofing as the uploads above: safe immediately.
+        uses: actions/upload-artifact@v7
+        with:
+          name: maix-game-sd-firmware
+          path: |
+            .pio/build/maix_game_sd/firmware.bin
+            .pio/build/maix_game_sd/firmware.elf
+            .pio/build/maix_game_sd/firmware.map
+          if-no-files-found: error
+
       - name: Compile SD syscall layer
         # maix_sd_syscalls.cxx is gate-off by default (see the file), so this
         # rebuilds the boot env once with MAIX_WITH_SD to prove the real code
