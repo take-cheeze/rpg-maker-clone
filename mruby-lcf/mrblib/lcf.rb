@@ -297,6 +297,11 @@ module LCF
   end
 
   # Decode a packed sequence of little-endian signed 32bit integers.
+  #
+  # Self-called bare at #to_rb's own `:int32_array` arm, `unpack_int32(d)`
+  # (mruby-lcf/mrblib/lcf.rb) -- the loop always returns `out`, a freshly
+  # built Array, never nil.
+  # bc2cpp: () -> Array
   def unpack_int32 d
     bytes = d.bytes
     out = []

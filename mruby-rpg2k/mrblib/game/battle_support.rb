@@ -290,6 +290,13 @@ module Game
     # ordinary skill with a scope the battle menu can aim, or are a **switch**
     # skill (no target — Nepheshel's 突撃準備 / 呪文詠唱 charge-ups are these).
     # `caster` is the battle snapshot the SP cost is figured from.
+    #
+    # No bare self-call in this class (`RPG2k::Scene::Battle#open_battle_
+    # skill` reads it through a receiver, `@state.party.battle_skills
+    # (actor, current_actor)`), but the body still returns Array on every
+    # real path -- `[]` on the one early-out, a `select.map` chain
+    # otherwise (both Array-producing), never nil.
+    # bc2cpp: () -> Array
     def battle_skills(actor, caster)
       return [] unless actor && caster
       actor.skills.sort.select { |sid| battle_skill?(db_skill(sid)) }
@@ -736,6 +743,12 @@ module Game
     # stays, the same defensible corner case #field_items keeps.
     # Stored bag order, not an id sort -- see #field_items' own citation for
     # the wine measurement (cycle #252); the in-battle list shares it.
+    #
+    # No bare self-call in this class (`RPG2k::Scene::Battle`'s own UI setup
+    # reads it through a receiver, `@state.party.battle_items`), but the
+    # body still returns Array on every real path -- a `select.map` chain,
+    # never nil.
+    # bc2cpp: () -> Array
     def battle_items
       @items.keys.select do |id|
         it = db_item(id)
@@ -1277,6 +1290,12 @@ module Game
     # rolls its `drop_prob` percentage against `rng` (0..99 < prob, a reference
     # implementation's percent-chance roll), so a 100% drop is certain, a 0% never lands, and the
     # same item can drop from several members. Returns the ids in member order.
+    #
+    # Body is `live_members.each_with_object([]) { ... }`: Enumerable#each_
+    # with_object always returns its own memo argument, so this is `[]` (a
+    # fresh Array) on every real path, never nil -- MONO-safe (this and the
+    # `#drops` below are each the whole program's own single def).
+    # bc2cpp: () -> Array
     def drops(rng)
       live_members.each_with_object([]) do |e, out|
         next unless e.drop_id && e.drop_id > 0
@@ -1289,6 +1308,11 @@ module Game
     # Members that actually took part and fell -- see the comment on
     # #total_exp/#total_gold/#drops above for why `hidden` is the right (and
     # only available) proxy for "dead" at this call site.
+    #
+    # Self-called bare at #total_exp/#total_gold/#drops' own `live_members`
+    # (all just above, mruby-rpg2k/mrblib/game/battle_support.rb) --
+    # `Array#reject` always returns a fresh Array, never nil.
+    # bc2cpp: () -> Array
     def live_members; @members.reject(&:hidden) end
 
     def member(db, m)
@@ -1708,6 +1732,14 @@ module Game
     # Drain the Show Hidden Monster (13150) troop-member indices queued since the
     # last call. The scene polls this and builds the sprites for the revealed
     # members. Non-blocking.
+    #
+    # No bare self-call in this class (`RPG2k::Scene::Battle` drains it
+    # through a receiver, `it.take_revealed_monsters.each { ... }`,
+    # mruby-rpg2k/mrblib/scene/battle.rb), but `@revealed_monsters` is only
+    # ever initialized to `[]` (interpreter.rb's own #initialize/#start_at)
+    # or `push`ed onto (never reassigned to anything else), so the returned
+    # value is always Array, never nil.
+    # bc2cpp: () -> Array
     def take_revealed_monsters
       ids = @revealed_monsters
       @revealed_monsters = []
@@ -1717,6 +1749,11 @@ module Game
     # Drain the Force Flee (1006) troop-member indices queued since the last
     # call — the members that just ran from the fight. The scene polls this and
     # drops their sprites. Non-blocking.
+    #
+    # Same shape and same evidence as #take_revealed_monsters above:
+    # `@fled_monsters` is only ever `[]`, `push`ed, or `concat`ed, never
+    # reassigned to anything else.
+    # bc2cpp: () -> Array
     def take_fled_monsters
       ids = @fled_monsters
       @fled_monsters = []
@@ -1732,6 +1769,11 @@ module Game
     # `entry` hash for the scene's own #play_battle_action_se to read, so
     # this queue is this command's only way to tell the scene a kill just
     # happened. Non-blocking.
+    #
+    # Same shape and same evidence as #take_revealed_monsters above:
+    # `@monster_kills` is only ever `[]` or `push`ed, never reassigned to
+    # anything else.
+    # bc2cpp: () -> Array
     def take_monster_kills
       ids = @monster_kills
       @monster_kills = []
