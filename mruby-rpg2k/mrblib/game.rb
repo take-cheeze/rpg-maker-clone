@@ -2238,7 +2238,7 @@ module Game
     # only offers a single `status` hash (the test fixtures, or a database
     # without a curve) is treated as level-independent. With a class set the
     # class row's curve wins.
-    # bc2cpp: (fixnum)
+    # bc2cpp: (fixnum) -> Array
     def base_stats(level)
       a = curve_row
       curve = a.respond_to?(:int16_values) ? a.int16_values(31) : nil
@@ -2920,6 +2920,7 @@ module Game
 
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
     # five-slot array of integer item ids.
+    # bc2cpp: () -> Array
     def normalize_equipment(spec)
       ids =
         if spec.is_a?(Hash) then EQUIP_ORDER.map { |k| spec[k] }
@@ -3628,6 +3629,7 @@ module Game
     # is copied in from the class row only inside its change-class routine,
     # from the actor's own database row at plain construction and every other
     # time (NOT independently confirmed against genuine RPG_RT under wine).
+    # bc2cpp: () -> Array
     def class_battle_commands
       row = @class_changed && @class_id > 0 && @class_row ? @class_row : @db_row
       list = row.respond_to?(:battle_commands) ? row.battle_commands : nil
