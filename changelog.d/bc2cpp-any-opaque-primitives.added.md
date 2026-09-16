@@ -69,13 +69,17 @@
   no entry at all, its only non-nil write site reaching an empty-literal
   origin through a MOVE-aliased register the existing scan already
   couldn't see past, an unrelated pre-existing precision gap, not a
-  regression). `docs/bc2cpp_coverage.txt` also incidentally regenerates
-  fresh against an **unrelated, pre-existing** staleness already present
-  on `master` before this round touched anything (confirmed via the same
-  stash-isolated check with bc2cpp.rb reverted alone: compiled entry
-  points 1985 -> 1986, `unhandled opcode EXCEPT` 8 -> 7, #error total
-  816 -> 815) -- not caused by this change, just carried along by the
-  same regen. `bash scripts/bc2cpp_coverage_check.bash`: fresh.
+  regression). Against `origin/master`'s own committed
+  `docs/bc2cpp_coverage.txt`, this round's real diff is exactly these
+  `ELEM_HINT`/`ELEM_CANDIDATE`/ANY-OPAQUE lines and nothing else --
+  confirmed after re-verifying with a correctly-built host `mrbc`
+  (this session's earlier local build was missing this project's own
+  required mruby patches -- `patches/mruby-*.patch`, applied via
+  `scripts/apply_mruby_patch.bash` in the real CMake build
+  (`cmake/build-mruby.cmake`) -- so an earlier verification pass off that
+  unpatched binary wrongly attributed a `1985->1986`/`EXCEPT 8->7` drift
+  to a "pre-existing master staleness"; master's own committed doc was
+  correct all along). `bash scripts/bc2cpp_coverage_check.bash`: fresh.
   `scripts/rpg2k_logic_check.rb` (1201 checks), `scripts/
   rpg2k_scene_check.rb` (1062 checks), `scripts/lcf_testbed_check.rb` all
   still pass. Independently verified with a real `g++ -std=c++17
