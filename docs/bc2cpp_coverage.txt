@@ -27,8 +27,11 @@ known-array-element-class hints (ELEM_HINT): 9
   poisoned to unknown (proven Array, element class unresolved): 35
     split: ANY (proven heterogeneous, not fixable): 0
     split: OPAQUE (unresolved, may be fixable): 35
-known-hash-element-class hints (HASH_ELEM_HINT): 8
-  poisoned to unknown (proven Hash, value class unresolved): 38
+known-hash-element-class hints (HASH_ELEM_HINT): 10
+  primitive-only hints (never embedded): 0
+  poisoned to unknown (proven Hash, value class unresolved): 36
+    split: ANY (proven heterogeneous, not fixable): 0
+    split: OPAQUE (unresolved, may be fixable): 36
 ivar embedding (EMBED): 110
 magic-comment return annotations (ANNOTATED): 156
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
