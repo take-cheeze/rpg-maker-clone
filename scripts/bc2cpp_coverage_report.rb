@@ -229,5 +229,20 @@ report << "block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): " \
 report << "  still dynamic dispatch only -- MONO/POLY/TYPED devirtualization " \
           "not yet attempted for these\n"
 
+# LAMBDA_FALLBACK_SUPPORT: the LAMBDA-opcode sibling of BLOCK_CFUNC_
+# FALLBACK_SUPPORT immediately above -- a previously-#error'd LAMBDA
+# instruction that now compiles clean via emit_lambda_fallback_glue's own
+# `// LAMBDA_FALLBACK -- ...` marker comment. Counted the same way, but
+# deliberately NOT captioned "dynamic dispatch": a LAMBDA never calls
+# anything itself (it only BUILDS a value), so there is no dispatch
+# decision to make at the LAMBDA site at all -- whatever devirtualization
+# coverage applies to a LATER `.call`/`.()` on the resulting value is
+# already whatever compile_send's own MONO/POLY/TYPED logic decides for
+# that separate call site (an opaque-Proc receiver, so POLY/dynamic in
+# practice today, same as any other not-statically-known receiver).
+lambda_fallback_count = @stdout.scan(/^\s*\/\/ LAMBDA_FALLBACK --/).size
+report << "lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): " \
+          "#{lambda_fallback_count}\n"
+
 File.write(REPORT_PATH, report)
 puts "wrote #{REPORT_PATH}"

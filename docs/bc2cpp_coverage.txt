@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2032
-  from bytecode: 2014
+compiled entry points (real build output -- clean, zero #error): 2033
+  from bytecode: 2015
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 18
   mruby-lcf-compiled: 45
   mruby-rgss-compiled: 104
-  mruby-rpg2k-compiled: 1883
+  mruby-rpg2k-compiled: 1884
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 16
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2014
-  left on the interpreter (>=1 #error): 279
-  coverage: 87.8%
+  compiled clean: 2015
+  left on the interpreter (>=1 #error): 278
+  coverage: 87.9%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -48,7 +48,6 @@ annotation candidates (opaque argument, unresolved): 43
       5  unhandled opcode SUPER
       4  unhandled opcode ARGARY
       3  unhandled opcode BLKPUSH
-      3  unhandled opcode LAMBDA
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
       1  Array#sort has non-mandatory arguments (optional/rest/keyword/block)
@@ -59,9 +58,11 @@ annotation candidates (opaque argument, unresolved): 43
       1  Game::Party#each has non-mandatory arguments (optional/rest/keyword/block)
       1  RGSS::ErrorReport::Tee#method_missing has non-mandatory arguments (optional/rest/keyword/block)
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
+      1  unhandled opcode LAMBDA
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    650  total
+    648  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 65
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
+lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
