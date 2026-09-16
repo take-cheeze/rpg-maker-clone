@@ -16,9 +16,20 @@
 # transfer onto the bus, the hook replays it into the capture file: per
 # channel-enable call it reads SAR/DAR/BLOCK_TS/CTL, bulk-reads the source
 # bytes, samples DC live from the GPIO data-output register, and appends
-# one `D <dc> <hex32>` line per 32-bit unit -- the same granularity the
-# driver's own DR writes would have had. The body is then skipped, so chen
-# is never set and dmac_wait_idle passes on zeros.
+# one `D <dc> <hex32> <frame_bytes>` line per DMA unit. The body is then
+# skipped, so chen is never set and dmac_wait_idle passes on zeros.
+#
+# `frame_bytes` is NOT the DMAC's own src_w: the K210 SPI driver's
+# SPI_TRANS_SHORT path (tft_write_half, framework-maixduino's st7789.c)
+# always programs the DMAC for 32-bit memory units regardless of the real
+# wire width -- each 16-bit pixel gets malloc'd into its own zero-extended
+# uint32_t before the transfer (spi_send_data_normal_dma's `buf[i] =
+# ((uint16_t*)tx_buff)[i]`), so src_w alone reads back 4 for both the
+# 16-bit-frame and 32-bit-frame paths and can't tell a real second pixel
+# from that zero padding. The SPI0 controller's own ctrlr0 DFS field (what
+# actually gets shifted onto the wire, one frame at a time) is the
+# authoritative source: read it directly and derive frame_bytes from that
+# instead of trusting the DMAC's memory-access width.
 #
 # This is a template, not loadable as-is: @DMA_ADDR@ is
 # dmac_channel_enable's address, filled in by scripts/maix_renode_boot.bash;
@@ -59,12 +70,24 @@ def dma_copy(cpu, addr):
         machine.InfoLog("dmac: skipping ch%d sar 0x%x dar 0x%x" % (ch, sar, dar))
     else:
         dc = (machine.SystemBus.ReadDoubleWord(0x50200000) >> 7) & 1
+        # SPI0's own ctrlr0.dfs (bits 16-20 for SPI0/1, per the driver's own
+        # dfs_offset table): the register value is frame_bits - 1, matching
+        # the driver's sipeed_spi_get_frame_size thresholds.
+        ctrlr0 = machine.SystemBus.ReadDoubleWord(0x52000000)
+        frame_bits = ((ctrlr0 >> 16) & 0x1F) + 1
+        frame_bytes = 1 if frame_bits <= 8 else (2 if frame_bits <= 16 else 4)
         data = machine.SystemBus.ReadBytes(sar, src_w if src_noinc else count * src_w)
         out = []
         for i in range(count):
             unit = data[0:src_w] if src_noinc else data[i * src_w:(i + 1) * src_w]
             v = unit[0] | (unit[1] << 8 if len(unit) > 1 else 0) | (unit[2] << 16 if len(unit) > 2 else 0) | (unit[3] << 24 if len(unit) > 3 else 0)
-            out.append("D %d %08x\n" % (dc, v & 0xFFFFFFFF))
+            # frame_bytes tags the line with how many real (wire) bytes it
+            # carries: a 16-bit SPI frame (tft_write_half) sends ONE pixel
+            # per line despite the 32-bit-padded DMA unit above, and the
+            # decoder needs to tell that apart from a real two-pixels-per-
+            # unit 32-bit-frame transfer -- the raw hex32 alone can't (a
+            # legitimate all-zero second pixel looks identical to padding).
+            out.append("D %d %08x %d\n" % (dc, v & 0xFFFFFFFF, frame_bytes))
         capture_log.write("".join(out))
         capture_log.flush()
     cpu.PC = cpu.RA.RawValue
