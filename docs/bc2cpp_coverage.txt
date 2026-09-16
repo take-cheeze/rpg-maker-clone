@@ -22,6 +22,8 @@ known-ivar-class hints (CLASS_HINT): 254
   poisoned to unknown (real evidence, but disagreeing/untraceable): 521
 known-array-element-class hints (ELEM_HINT): 8
   poisoned to unknown (proven Array, element class unresolved): 42
+known-hash-element-class hints (HASH_ELEM_HINT): 8
+  poisoned to unknown (proven Hash, value class unresolved): 38
 ivar embedding (EMBED): 110
 magic-comment return annotations (ANNOTATED): 155
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25

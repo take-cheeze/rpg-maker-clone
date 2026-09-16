@@ -180,6 +180,8 @@ report << "known-ivar-class hints (CLASS_HINT): #{count(err, 'known-ivar-class h
 report << "  poisoned to unknown (real evidence, but disagreeing/untraceable): #{count(err, 'ivar-class candidates (real SETIV evidence found, but poisoned to unknown)', placeholder: '(none)')}\n"
 report << "known-array-element-class hints (ELEM_HINT): #{count(err, 'known-array-element-class hints (guarded devirtualization only)', placeholder: '(none)')}\n"
 report << "  poisoned to unknown (proven Array, element class unresolved): #{count(err, 'array-element candidates (proven-Array ivar, element class poisoned to unknown)', placeholder: '(none)')}\n"
+report << "known-hash-element-class hints (HASH_ELEM_HINT): #{count(err, 'known-hash-element-class hints (guarded devirtualization only)', placeholder: '(none)')}\n"
+report << "  poisoned to unknown (proven Hash, value class unresolved): #{count(err, 'hash-element candidates (proven-Hash ivar, value class poisoned to unknown)', placeholder: '(none)')}\n"
 report << "ivar embedding (EMBED): #{count(err, 'ivar embedding', placeholder: '(none embeddable)')}\n"
 report << "magic-comment return annotations (ANNOTATED): #{count(err, 'magic-comment annotations (# bc2cpp: (T, ...) -> T)', placeholder: '(none found)')}\n"
 report << "magic-comment class-argument annotations (CLASS_ANNOTATED): #{count(err, 'magic-comment class annotations (# bc2cpp: (ClassName, ...))', placeholder: '(none found)')}\n"
