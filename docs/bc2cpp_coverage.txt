@@ -22,11 +22,11 @@ known-ivar-class hints (CLASS_HINT): 255
   poisoned to unknown (real evidence, but disagreeing/untraceable): 520
   split: ANY (proven heterogeneous, not fixable): 0
   split: OPAQUE (unresolved, may be fixable): 520
-known-array-element-class hints (ELEM_HINT): 8
+known-array-element-class hints (ELEM_HINT): 9
   primitive-only hints (never embedded): 6
-  poisoned to unknown (proven Array, element class unresolved): 36
+  poisoned to unknown (proven Array, element class unresolved): 35
     split: ANY (proven heterogeneous, not fixable): 0
-    split: OPAQUE (unresolved, may be fixable): 36
+    split: OPAQUE (unresolved, may be fixable): 35
 known-hash-element-class hints (HASH_ELEM_HINT): 10
   primitive-only hints (never embedded): 0
   poisoned to unknown (proven Hash, value class unresolved): 36
@@ -35,7 +35,7 @@ known-hash-element-class hints (HASH_ELEM_HINT): 10
 ivar embedding (EMBED): 110
 magic-comment return annotations (ANNOTATED): 156
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
-magic-comment element annotations (ELEM_ANNOTATED): 2
+magic-comment element annotations (ELEM_ANNOTATED): 3
 annotation candidates (opaque argument, unresolved): 43
 
 -- #error markers by reason (whole program) --
