@@ -87,6 +87,18 @@ def ok(cond, msg = 'expected truthy')
   raise msg unless cond
 end
 
+# Game::Message.scan/#parse/#visible_segments return Game::Message::Segment/
+# PauseMarker/SpeedMarker/ScanResult Structs now (mruby-rpg2k's own Hash-to-
+# Struct conversion, matching MapEventState/ShopState/MessageState/...):
+# Struct#== never equals a same-shaped Hash, only a same-class Struct, so the
+# checks below build their own expected values with these instead of bare
+# `{ text:, color: }`/etc. Hash literals. A plain positional/keyword call is
+# fine here -- unlike the real game-logic sources tools/bc2cpp/bc2cpp.rb
+# actually compiles, this test file only ever runs under plain CRuby.
+def seg(text, color); Game::Message::Segment.new(text: text, color: color); end
+def speed_marker(at, speed); Game::Message::SpeedMarker.new(at: at, speed: speed); end
+def pause_marker(at, kind); Game::Message::PauseMarker.new(at: at, kind: kind); end
+
 # Runs the block with $stderr redirected to a StringIO and returns everything
 # written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
 def capture_stderr
@@ -1024,12 +1036,12 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   names = ->(_i) { 'X' }
   s = Game::Message.scan('ab\.cd\|e\!f\^', vars, names)
   eq 7, s[:length], '"abcdef" = 6 visible characters + 1 tick for the trailing \\^'
-  eq [{ at: 2, kind: :quarter }, { at: 4, kind: :full }, { at: 5, kind: :key }],
+  eq [pause_marker(2, :quarter), pause_marker(4, :full), pause_marker(5, :key)],
      s[:pauses]
   ok s[:auto_close], '\\^ sets auto_close'
   # Pause offsets count the expanded length of \v / \n, not the code text.
   s2 = Game::Message.scan('\v[3]\!x', vars, names)
-  eq [{ at: 2, kind: :key }], s2[:pauses], '42 is two chars, so \\! sits at 2'
+  eq [pause_marker(2, :key)], s2[:pauses], '42 is two chars, so \\! sits at 2'
 end
 
 check 'Message.scan threads a starting/ending colour for a caller to chain across calls' do
@@ -1045,7 +1057,7 @@ check 'Message.scan threads a starting/ending colour for a caller to chain acros
   eq 2, s[:end_color], 'and it is still in effect at the end of the line'
   # An explicit \c[] overrides it for the rest of the line.
   s2 = Game::Message.scan('ab\c[5]cd', vars, names, 2)
-  eq [{ text: 'ab', color: 2 }, { text: 'cd', color: 5 }], s2[:segments]
+  eq [seg('ab', 2), seg('cd', 5)], s2[:segments]
   eq 5, s2[:end_color], 'end_color reflects the last colour set, not the seed'
   # Defaults to 0 when omitted, matching every existing call site.
   eq 0, Game::Message.scan('x', vars, names)[:end_color]
@@ -1055,8 +1067,8 @@ check 'Message.scan clamps an out-of-range \c[n] colour back to 0, matching RPG_
   vars = Game::Variables.new
   names = {}
   s = Game::Message.scan('a\c[19]b\c[20]c\c[999]d', vars, names)
-  eq [{ text: 'a', color: 0 }, { text: 'b', color: 19 }, { text: 'c', color: 0 },
-      { text: 'd', color: 0 }], s[:segments],
+  eq [seg('a', 0), seg('b', 19), seg('c', 0),
+      seg('d', 0)], s[:segments],
      '19 is still the highest valid palette index; 20 and anything beyond ' \
      'resets to colour 0 (ported from a reference implementation\'s source: `text_color = ' \
      'pres.value > 19 ? 0 : pres.value`; NOT independently confirmed against ' \
@@ -1071,9 +1083,9 @@ check 'Message.scan resolves a nested \V[] argument inside \c[]/\s[] too ' \
   vars[3] = 12  # \s[\V[3]] should set speed 12
   names = {}
   s = Game::Message.scan('a\c[\V[1]]b\c[\V[2]]c', vars, names)
-  eq [{ text: 'a', color: 0 }, { text: 'b', color: 5 }, { text: 'c', color: 0 }], s[:segments]
+  eq [seg('a', 0), seg('b', 5), seg('c', 0)], s[:segments]
   s2 = Game::Message.scan('a\s[\V[3]]b', vars, names)
-  eq [{ at: 1, speed: 12 }], s2[:speeds]
+  eq [speed_marker(1, 12)], s2[:speeds]
 end
 
 check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
@@ -1140,14 +1152,14 @@ check 'Message.scan records \s[n] speed changes, clamped to RPG_RT\'s 1..20' do
   def vars.[](_i); 0; end
   names = ->(_i) { '' }
   s = Game::Message.scan('ab\s[3]cd\s[99]ef', vars, names)
-  eq [{ at: 2, speed: 3 }, { at: 4, speed: 20 }], s[:speeds],
+  eq [speed_marker(2, 3), speed_marker(4, 20)], s[:speeds],
      '\s[99] clamps down to RPG_RT\'s max of 20 (ported from a reference implementation ' \
      'Player\'s source: Utils::Clamp(pres.value, 1, 20); NOT independently ' \
      'confirmed against genuine RPG_RT under wine)'
   eq 6, s[:length], '\s[] produces no characters and burns no tick, like \c[]'
   # An empty or missing bracket falls back to full speed (1), the same
   # nil/empty-string handling \c[]'s own default colour uses.
-  eq [{ at: 1, speed: 1 }], Game::Message.scan('a\s[]b', vars, names)[:speeds]
+  eq [speed_marker(1, 1)], Game::Message.scan('a\s[]b', vars, names)[:speeds]
 end
 
 check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
@@ -1157,13 +1169,13 @@ check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
   # A \! pause right after each code should land one position later than it
   # would with no code there at all, since the code itself burns a tick.
   baseline = Game::Message.scan('ab\!cd', vars, names)
-  eq [{ at: 2, kind: :key }], baseline[:pauses]
+  eq [pause_marker(2, :key)], baseline[:pauses]
   after_close = Game::Message.scan('ab\^\!cd', vars, names)
-  eq [{ at: 3, kind: :key }], after_close[:pauses], '\\^ pushes the pause one tick later'
+  eq [pause_marker(3, :key)], after_close[:pauses], '\\^ pushes the pause one tick later'
   after_gold = Game::Message.scan('ab\$\!cd', vars, names)
-  eq [{ at: 3, kind: :key }], after_gold[:pauses], '\\$ pushes the pause one tick later'
+  eq [pause_marker(3, :key)], after_gold[:pauses], '\\$ pushes the pause one tick later'
   after_span = Game::Message.scan('ab\>x\<\!cd', vars, names)
-  eq [{ at: 4, kind: :key }], after_span[:pauses],
+  eq [pause_marker(4, :key)], after_span[:pauses],
      'the closing \\< pushes the pause one tick later (span "x" itself is unaffected)'
   eq [[2, 3]], after_span[:instants], 'the instant span itself still only covers "x"'
 end
@@ -1542,11 +1554,11 @@ check 'Message.parse splits colour runs and expands codes within them' do
   vars[3] = 7
   names = { 5 => 'Aria' }
   segs = Game::Message.parse('Hi \c[2]\n[5]\c[0]!', vars, names)
-  eq [{ text: 'Hi ', color: 0 },
-      { text: 'Aria', color: 2 },
-      { text: '!', color: 0 }], segs
+  eq [seg('Hi ', 0),
+      seg('Aria', 2),
+      seg('!', 0)], segs
   # A variable inside a coloured run keeps that run's colour.
-  eq [{ text: 'HP:', color: 0 }, { text: '7', color: 1 }],
+  eq [seg('HP:', 0), seg('7', 1)],
      Game::Message.parse('HP:\c[1]\v[3]', vars, names)
 end
 
@@ -1554,7 +1566,7 @@ check 'Message.parse omits empty runs and matches expand when joined' do
   vars = Game::Variables.new
   names = {}
   # A leading colour change produces no empty run.
-  eq [{ text: 'x', color: 4 }], Game::Message.parse('\c[4]x', vars, names)
+  eq [seg('x', 4)], Game::Message.parse('\c[4]x', vars, names)
   eq [], Game::Message.parse('\c[3]', vars, names) # nothing visible
   src = 'a\c[1]b\c[0]c'
   joined = Game::Message.parse(src, vars, names).map { |s| s[:text] }.join
@@ -1562,17 +1574,25 @@ check 'Message.parse omits empty runs and matches expand when joined' do
 end
 
 check 'Message.visible_segments truncates colour runs to the revealed count' do
-  sl = [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }],
-        [{ text: 'ef', color: 1 }]]
+  # Segment structs, not Hash literals: real callers only ever pass #scan's
+  # own :segments (already Segment structs, see this file's own seg/
+  # speed_marker/pause_marker comment above) -- a segment #visible_segments
+  # passes through unchanged keeps whatever type it was handed, so a Hash
+  # fixture here would make the pass-through elements Hash while the newly
+  # truncated ones (built via Segment.new, see game.rb's own #visible_
+  # segments) come back as Segment, an inconsistency no real call site ever
+  # sees.
+  sl = [[seg('ab', 0), seg('cd', 2)],
+        [seg('ef', 1)]]
   eq [[], []], Game::Message.visible_segments(sl, 0)
   # 3 chars: first run whole, one char of the second run; nothing on line 2.
-  eq [[{ text: 'ab', color: 0 }, { text: 'c', color: 2 }], []],
+  eq [[seg('ab', 0), seg('c', 2)], []],
      Game::Message.visible_segments(sl, 3)
-  eq [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }], []],
+  eq [[seg('ab', 0), seg('cd', 2)], []],
      Game::Message.visible_segments(sl, 4)
   # Line 1 full (4), then one char of line 2.
-  eq [[{ text: 'ab', color: 0 }, { text: 'cd', color: 2 }],
-      [{ text: 'e', color: 1 }]],
+  eq [[seg('ab', 0), seg('cd', 2)],
+      [seg('e', 1)]],
      Game::Message.visible_segments(sl, 5)
   eq sl, Game::Message.visible_segments(sl, 99) # capped: everything shows
 end

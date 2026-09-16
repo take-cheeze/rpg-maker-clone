@@ -9202,7 +9202,16 @@ class RPG2k
         plain.each_with_index do |line, i|
           off += line.to_s.length
           if (i + 1) % MSG_LINES_PER_PAGE == 0 && i + 1 < plain.length
-            pauses << { at: off, kind: :page }
+            # Bare `.new` plus setters, not a keyword `Game::Message::
+            # PauseMarker.new(at: off, kind: :page)` call -- the same real
+            # tools/bc2cpp/bc2cpp.rb regression fbfe068/a0fa9e5 already
+            # found and fixed for Struct construction (a keyword call can
+            # only devirtualize into a compiled bytecode body, and Struct's
+            # own #initialize is always native).
+            pa = Game::Message::PauseMarker.new
+            pa.at = off
+            pa.kind = :page
+            pauses << pa
           end
         end
         pages = (plain.length + MSG_LINES_PER_PAGE - 1) / MSG_LINES_PER_PAGE
@@ -9249,9 +9258,22 @@ class RPG2k
         show_gold = false
         offset = 0
         scans.each_with_index do |s, li|
-          s[:pauses].each { |p| pauses << { at: offset + p[:at], kind: p[:kind] } }
+          # Bare `.new` plus setters throughout this loop, not a keyword
+          # call -- same reason as #message_page_layout's own PauseMarker
+          # construction above.
+          s[:pauses].each do |p|
+            pa = Game::Message::PauseMarker.new
+            pa.at = offset + p[:at]
+            pa.kind = p[:kind]
+            pauses << pa
+          end
           (s[:instants] || []).each { |a, b| instants << [offset + a, offset + b] }
-          (s[:speeds] || []).each { |sp| speeds << { at: offset + sp[:at], speed: sp[:speed] } }
+          (s[:speeds] || []).each do |sp0|
+            sp = Game::Message::SpeedMarker.new
+            sp.at = offset + sp0[:at]
+            sp.speed = sp0[:speed]
+            speeds << sp
+          end
           auto_close ||= s[:auto_close]
           show_gold ||= s[:show_gold]
           offset += plain[li].length
