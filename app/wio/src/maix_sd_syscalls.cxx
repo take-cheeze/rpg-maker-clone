@@ -3,10 +3,10 @@
 // mruby-io and the bitmap loaders open game assets by path (File.open, fopen),
 // which bottom out in newlib's _open/_read/_close/_lseek/_fstat. On the board
 // those must be backed by storage; this routes them to Maixduino's SD library
-// (sdfat over the TF slot -- SPI0, chip-select 26 -- via maix_tf_sd.h, NOT
-// the library's global `SD`, which is bound to SPI1 with the wrong pins).
-// Paths under GAME_DIR (e.g. "/sd/<game>") are served from the card, the same
-// convention app/wio/src/sd_syscalls.cxx uses.
+// (sdfat over the TF slot -- SPI1, chip-select 26 -- via maix_tf_sd.h, NOT
+// the library's global `SD`, which defaults to the right bus but the wrong
+// pins). Paths under GAME_DIR (e.g. "/sd/<game>") are served from the card,
+// the same convention app/wio/src/sd_syscalls.cxx uses.
 //
 // Compiled only when MAIX_WITH_SD is defined (mirroring WIO_WITH_SD): the
 // bring-up environments leave it off, and CI compiles it once with the flag
@@ -56,12 +56,10 @@ const char* to_sd_path(const char* path) {
 }  // extern "C"
 
 bool maix_sd_init(void) {
-  // TF slot chip-select: SPI0_CS0, pin 26 (see maix_tf_sd.h). Takes the
-  // SPI0 pins for the card first (the LCD owns them after display init).
-  // Returns false with no card present -- callers treat every later open
-  // as ENOENT rather than hanging here. C++ linkage (declared so in
-  // maix.hxx): only the newlib hooks below need C linkage.
-  maix_spi_take_tf();
+  // TF slot chip-select: pin 26 (see maix_tf_sd.h). Returns false with no
+  // card present -- callers treat every later open as ENOENT rather than
+  // hanging here. C++ linkage (declared so in maix.hxx): only the newlib
+  // hooks below need C linkage.
   return maix_tf_sd().begin(26);
 }
 
