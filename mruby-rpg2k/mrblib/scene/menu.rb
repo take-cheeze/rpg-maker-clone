@@ -348,7 +348,16 @@ class RPG2k
       # project's own term content, not something RPG_RT synthesizes, but the
       # *selection* (which whole term string shows for which raw atb_mode
       # value) matches this method exactly in both directions.
-      # bc2cpp: () -> Array
+      # `<Array>` narrows the existing `-> Array` return claim above with
+      # bc2cpp's own array-element fact: every entry `#build_commands`
+      # produces is itself a fresh 2-element `[key, label]` array (the
+      # `keys.map { |key, term_name| [key, ...] }` literal below, and
+      # `#select_command`'s own `@commands[@index] = [:wait, wait_label]`
+      # SETIDX rewrite of the live Wait row -- both real, both plain array
+      # literals, never anything else). This is what lets
+      # `@commands.each_with_index { |(key, label), i| ... }` devirtualize
+      # its own per-row element access.
+      # bc2cpp: () -> Array<Array>
       def build_commands
         keys = if db.rpg2003?
                  ids = db.system.menu_commands || []
