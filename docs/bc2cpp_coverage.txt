@@ -2,19 +2,19 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2247
-  from bytecode: 2222
+compiled entry points (real build output -- clean, zero #error): 2248
+  from bytecode: 2223
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 50
-  mruby-rgss-compiled: 113
+  mruby-rgss-compiled: 114
   mruby-rpg2k-compiled: 2084
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 19
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2222
-  left on the interpreter (>=1 #error): 71
+  compiled clean: 2223
+  left on the interpreter (>=1 #error): 70
   coverage: 96.9%
 
 -- ivar/return/argument facts proven --
@@ -48,20 +48,19 @@ annotation candidates (opaque argument, unresolved): 43
       4  unhandled opcode ARGARY
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
-      1  RGSS::ErrorReport::Tee#method_missing has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode LAMBDA
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    126  total
+    125  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 330
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14137
+total mrb_funcall/mrb_funcall_with_block call sites: 14138
   POLY-marked (receiver's runtime class genuinely decides): 5902
-  everything else (not yet attempted or failed MONO/TYPED): 8235
+  everything else (not yet attempted or failed MONO/TYPED): 8236
 distinct dynamically-dispatched method names: 1024
 top 30 dynamically-dispatched method names:
    1.  1726  :[]
