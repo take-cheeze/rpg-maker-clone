@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2241
-  from bytecode: 2216
+compiled entry points (real build output -- clean, zero #error): 2245
+  from bytecode: 2220
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 50
-  mruby-rgss-compiled: 111
-  mruby-rpg2k-compiled: 2080
+  mruby-rgss-compiled: 113
+  mruby-rpg2k-compiled: 2082
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 19
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2216
-  left on the interpreter (>=1 #error): 77
-  coverage: 96.6%
+  compiled clean: 2220
+  left on the interpreter (>=1 #error): 73
+  coverage: 96.8%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -48,28 +48,24 @@ annotation candidates (opaque argument, unresolved): 43
       4  unhandled opcode ARGARY
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
-      1  Array#sort has non-mandatory arguments (optional/rest/keyword/block)
-      1  Array#sort! has non-mandatory arguments (optional/rest/keyword/block)
-      1  Game::Actors#each has non-mandatory arguments (optional/rest/keyword/block)
       1  Game::Battle#deal_attack has non-mandatory arguments (optional/rest/keyword/block)
       1  Game::Battle#initialize has non-mandatory arguments (optional/rest/keyword/block)
-      1  Game::Party#each has non-mandatory arguments (optional/rest/keyword/block)
       1  RGSS::ErrorReport::Tee#method_missing has non-mandatory arguments (optional/rest/keyword/block)
       1  RPG2k::Scene::Map#build_animation has non-mandatory arguments (optional/rest/keyword/block)
       1  unhandled opcode LAMBDA
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    132  total
+    128  total
 
-block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 328
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 330
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14199
-  POLY-marked (receiver's runtime class genuinely decides): 5887
-  everything else (not yet attempted or failed MONO/TYPED): 8312
-distinct dynamically-dispatched method names: 1020
+total mrb_funcall/mrb_funcall_with_block call sites: 14207
+  POLY-marked (receiver's runtime class genuinely decides): 5891
+  everything else (not yet attempted or failed MONO/TYPED): 8316
+distinct dynamically-dispatched method names: 1023
 top 30 dynamically-dispatched method names:
    1.  1736  :[]
    2.   718  :+
