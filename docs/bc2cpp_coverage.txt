@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2033
-  from bytecode: 2015
-  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 18
-  mruby-lcf-compiled: 45
-  mruby-rgss-compiled: 104
-  mruby-rpg2k-compiled: 1884
+compiled entry points (real build output -- clean, zero #error): 2126
+  from bytecode: 2106
+  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 20
+  mruby-lcf-compiled: 47
+  mruby-rgss-compiled: 105
+  mruby-rpg2k-compiled: 1974
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
-classes needing MRB_SET_INSTANCE_TT: 16
+classes needing MRB_SET_INSTANCE_TT: 17
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2015
-  left on the interpreter (>=1 #error): 278
-  coverage: 87.9%
+  compiled clean: 2106
+  left on the interpreter (>=1 #error): 187
+  coverage: 91.8%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -39,10 +39,10 @@ magic-comment element annotations (ELEM_ANNOTATED): 3
 annotation candidates (opaque argument, unresolved): 43
 
 -- #error markers by reason (whole program) --
-    277  unhandled opcode BLOCK
-    256  unhandled opcode SENDB
-     39  SEND/SSEND has a splat and/or keyword argument list (n=...)
-     34  unhandled opcode SSENDB
+    165  unhandled opcode BLOCK
+    145  unhandled opcode SENDB
+     35  SEND/SSEND has a splat and/or keyword argument list (n=...)
+     33  unhandled opcode SSENDB
       8  unhandled opcode EXCEPT
       7  unhandled opcode JMPUW
       5  unhandled opcode SUPER
@@ -61,45 +61,45 @@ annotation candidates (opaque argument, unresolved): 43
       1  unhandled opcode LAMBDA
       1  unhandled opcode OCLASS
       1  unhandled opcode SDEF
-    648  total
+    420  total
 
-block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 65
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 177
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 12280
-  POLY-marked (receiver's runtime class genuinely decides): 4946
-  everything else (not yet attempted or failed MONO/TYPED): 7334
-distinct dynamically-dispatched method names: 1033
+total mrb_funcall/mrb_funcall_with_block call sites: 13806
+  POLY-marked (receiver's runtime class genuinely decides): 5448
+  everything else (not yet attempted or failed MONO/TYPED): 8358
+distinct dynamically-dispatched method names: 1028
 top 30 dynamically-dispatched method names:
-   1.  1715  :[]
-   2.   609  :+
-   3.   551  :-
-   4.   551  :==
-   5.   514  :*
-   6.   504  :===
-   7.   445  :new
-   8.   406  :[]=
-   9.   382  :respond_to?
-  10.   294  :/
-  11.   229  :>
-  12.   214  :<
-  13.   161  :empty?
-  14.   156  :size
-  15.   144  :party
-  16.   136  :>=
-  17.   134  :dispose
-  18.   122  :<=
-  19.   120  :puts
-  20.   117  :%
-  21.   114  :to_s
-  22.    98  :width
+   1.  2028  :[]
+   2.   698  :+
+   3.   612  :-
+   4.   602  :==
+   5.   595  :*
+   6.   511  :===
+   7.   494  :new
+   8.   468  :[]=
+   9.   419  :respond_to?
+  10.   329  :/
+  11.   264  :>
+  12.   230  :<
+  13.   178  :empty?
+  14.   169  :party
+  15.   164  :size
+  16.   144  :>=
+  17.   143  :dispose
+  18.   128  :%
+  19.   128  :<=
+  20.   124  :to_s
+  21.   121  :puts
+  22.   104  :width
   23.    97  :repeat?
-  24.    86  :term
-  25.    86  :to_i
-  26.    83  :y
-  27.    80  :x
-  28.    75  :message
-  29.    74  :z=
-  30.    72  :db
+  24.    96  :term
+  25.    95  :y
+  26.    93  :x
+  27.    90  :to_i
+  28.    86  :z=
+  29.    83  :<<
+  30.    80  :db
