@@ -50,6 +50,12 @@ REPORT_PATH = ENV['BC2CPP_COVERAGE_REPORT_PATH'] || File.join(ROOT, 'docs/bc2cpp
 srcs = closed_world_mrblib_srcs(ROOT)
 native_srcs = Dir["#{ROOT}/mruby-rgss/src/*.cxx"] + core_native_srcs("#{ROOT}/3rd/mruby") +
               external_gem_native_srcs(ROOT)
+# INTEGER_CONSTANT_PROOF's own out-of-closed-world poison source -- see
+# foreign_mrblib_srcs (compiled_gems.rb) and bc2cpp.rb's own IntegerConstants
+# header. Passed here for the same reason NATIVE_SRCS is: this report must
+# measure what a real gem build actually produces, and bc2cpp skips the whole
+# analysis unless BOTH inputs are present.
+foreign_ruby_srcs = foreign_mrblib_srcs(ROOT)
 all_owners = BC2CPP_COMPILED_GEMS.values.flat_map { |g| g[:owners] }
 # owner name -> gem short name, for the per-gem breakdown below.
 gem_of_owner = {}
@@ -60,6 +66,7 @@ env = {
   'OUT_SYMBOL' => 'coverage_report',
   'ONLY_OWNERS' => all_owners.join(','),
   'NATIVE_SRCS' => Shellwords.join(native_srcs),
+  'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
 }
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
 Dir.mktmpdir do |dir|
@@ -222,6 +229,15 @@ report << "magic-comment return annotations (ANNOTATED): #{count(err, 'magic-com
 report << "magic-comment class-argument annotations (CLASS_ANNOTATED): #{count(err, 'magic-comment class annotations (# bc2cpp: (ClassName, ...))', placeholder: '(none found)')}\n"
 report << "magic-comment element annotations (ELEM_ANNOTATED): #{count(err, 'magic-comment element annotations (# bc2cpp: ... -> Array<Klass> / -> Klass)', placeholder: '(none found)')}\n"
 report << "annotation candidates (opaque argument, unresolved): #{count(err, 'annotation candidates (opaque incoming argument, unresolved)', placeholder: '(none)')}\n"
+# INTEGER_CONSTANT_PROOF: bare constant names every definition in the whole
+# program agrees is an integer literal -- FIXNUM_OPERAND_PROOF's own fifth
+# proof source. Reported here for the same reason every other proven fact
+# above is: it is a real, whole-program fact whose count moves when the Ruby
+# sources change (a new `FOO = 3` adds one; reassigning an existing constant
+# to a non-literal silently REMOVES one, along with every devirtualization it
+# was feeding), so a drift in it is exactly the kind of thing this file's own
+# git diff exists to make visible.
+report << "integer-valued constants proven (INTEGER_CONSTANT_PROOF): #{count(err, 'integer-valued constants proven (INTEGER_CONSTANT_PROOF)', placeholder: '(none)')}\n"
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
