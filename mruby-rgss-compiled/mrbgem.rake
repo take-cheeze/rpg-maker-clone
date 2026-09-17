@@ -54,6 +54,14 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   native_srcs = Dir["#{dir}/../mruby-rgss/src/*.cxx"] + core_native_srcs("#{dir}/../3rd/mruby") +
                 external_gem_native_srcs("#{dir}/..")
 
+  # INTEGER_CONSTANT_PROOF: the Ruby-side twin of native_srcs above --
+  # every Ruby source compiled into this same VM but outside bc2cpp's own
+  # closed world, scanned for constant-assignment names only. See
+  # foreign_mrblib_srcs (compiled_gems.rb) and bc2cpp.rb's own
+  # IntegerConstants header for the real Enumerable::NONE collision it
+  # exists to poison.
+  foreign_ruby_srcs = foreign_mrblib_srcs("#{dir}/..")
+
   this_gem = BC2CPP_COMPILED_GEMS.fetch('mruby-rgss-compiled')
   other_gems = BC2CPP_COMPILED_GEMS.reject { |name, _| name == 'mruby-rgss-compiled' }
   target_owners = this_gem[:owners]
@@ -66,7 +74,8 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
 
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
 
-  file generated => [bc2cpp, compiled_gems_rb, *closed_world_srcs, *native_srcs] do |t|
+  file generated => [bc2cpp, compiled_gems_rb, *closed_world_srcs, *native_srcs,
+                     *foreign_ruby_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
@@ -76,6 +85,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
       'OTHER_OWNERS' => other_owners.join(','),
       'OTHER_DECLS_HEADER' => Shellwords.join(other_decls_headers),
       'NATIVE_SRCS' => Shellwords.join(native_srcs),
+      'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
       'SKIP_UNSUPPORTED' => '1',
     }
     cmd = "#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
