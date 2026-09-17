@@ -37,6 +37,7 @@ magic-comment return annotations (ANNOTATED): 156
 magic-comment class-argument annotations (CLASS_ANNOTATED): 25
 magic-comment element annotations (ELEM_ANNOTATED): 3
 annotation candidates (opaque argument, unresolved): 43
+integer-valued constants proven (INTEGER_CONSTANT_PROOF): 669
 
 -- #error markers by reason (whole program) --
      35  unhandled opcode BLOCK
@@ -56,29 +57,29 @@ block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 330
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14280
+total mrb_funcall/mrb_funcall_with_block call sites: 13993
   POLY-marked (receiver's runtime class genuinely decides): 5908
-  everything else (not yet attempted or failed MONO/TYPED): 8372
+  everything else (not yet attempted or failed MONO/TYPED): 8085
 distinct dynamically-dispatched method names: 1020
 top 30 dynamically-dispatched method names:
    1.  1742  :[]
-   2.   717  :+
-   3.   642  :==
-   4.   628  :-
-   5.   605  :*
-   6.   537  :new
-   7.   531  :===
+   2.   681  :+
+   3.   617  :==
+   4.   567  :-
+   5.   537  :new
+   6.   531  :===
+   7.   463  :*
    8.   455  :respond_to?
-   9.   332  :/
+   9.   319  :/
   10.   296  :[]=
-  11.   284  :>
-  12.   248  :<
+  11.   281  :>
+  12.   245  :<
   13.   216  :empty?
   14.   197  :size
   15.   178  :party
   16.   164  :puts
   17.   148  :dispose
-  18.   145  :>=
+  18.   141  :>=
   19.   132  :to_s
   20.   131  :%
   21.   129  :<=
