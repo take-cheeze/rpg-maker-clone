@@ -5,18 +5,19 @@
 // data with scripts/maix_sd_upload.py, then reflash maix_game (or whatever
 // firmware you actually want running).
 //
-// Same line protocol as app/wio/src/sd_upload_main.cxx (deliberately: the
-// host scripts speak identically, only defaults differ), one request at a
-// time:
+// Same top-level shape as app/wio/src/sd_upload_main.cxx (PING/PUT), but
+// PUT's data phase is this board's own protocol -- see handle_put's
+// comment for why (a K210-specific UARTHS quirk the Wio's UART doesn't
+// have) -- so the two are not wire-compatible for that part:
 //   PING\n                 -> "PONG SD_OK\n" or "PONG SD_FAIL\n"
-//   PUT <path> <size>\n    -> "OK\n", then reads exactly <size> decoded
-//                             bytes as 2*<size> lowercase hex chars (raw
-//                             binary cannot go over the wire: the
-//                             framework's UARTHS ISR drops 0x00) and writes
-//                             them to <path> (parent dirs made if missing,
-//                             any partial retry truncated), then
-//                             "DONE <written>\n" or an "ERR <reason>\n" if
-//                             the SD write failed partway.
+//   PUT <path> <size>\n    -> "OK\n", then <size> decoded bytes in
+//                             kChunk-sized pieces, each as 2*n lowercase
+//                             hex chars immediately followed by a
+//                             "CHUNK_OK\n" the host must wait for before
+//                             sending the next piece (see handle_put),
+//                             then "DONE <written>\n" or an
+//                             "ERR <reason>\n" if the SD write failed
+//                             partway.
 //
 // <path> has no spaces, so a single space-split is enough; there is no
 // wildcard/recursive anything here.
@@ -118,29 +119,56 @@ void handle_put(const String& rest) {
   // arrive intact. Hex keeps every wire byte printable and non-zero; the
   // nibble math stays inline below (see ensure_parent_dir's note about
   // keeping this TU's shape).
-  uint8_t wire[128];
-  uint8_t dec[64];
+  //
+  // Two nested chunk sizes, for two different reasons:
+  //  - kSubChunk (64 decoded bytes, 128 hex chars): the biggest single
+  //    Serial.readBytes() this UART's RX path can be trusted with.
+  //    RingBuffer.h's RING_BUFFER_SIZE is 64, and Serial.readBytes()
+  //    itself polls continuously while it fills that one call's target
+  //    length, so this is about *this* call finishing before anything
+  //    outside the read loop (i.e. the f.write() below) stops draining
+  //    the ring buffer -- unrelated to kChunk's size.
+  //  - kChunk (2048 decoded bytes): how much accumulates in `accum`
+  //    across repeated kSubChunk reads -- during which the ring buffer
+  //    keeps draining continuously, no stall -- before one f.write()
+  //    call, which *does* stop draining for as long as the SD card
+  //    takes. A CHUNK_OK the host waits for after every kChunk paces the
+  //    transfer around exactly that stall, instead of a host-side sleep
+  //    guessed to outlast it (the previous version of this loop, one
+  //    f.write() per kSubChunk with a blind 50ms host-side sleep after
+  //    each -- correct, but the dominant cost of any transfer of
+  //    meaningful size: ~50ms x size/64, hours for a real game).
+  constexpr uint32_t kSubChunk = 64;
+  constexpr uint32_t kChunk = 2048;
+  uint8_t wire[kSubChunk * 2];
+  uint8_t accum[kChunk];
   uint32_t remaining = size;
   uint32_t written = 0;
-  while (remaining > 0) {
-    // Small wire bulks, decoded then written in one go: the UARTHS
-    // receive ISR reads a single byte per interrupt, so a long
-    // uninterrupted burst overruns the hardware FIFO (observed past
-    // ~64 bytes); the host paces its chunks and this side never stalls
-    // mid-bulk on an SD write.
-    const uint32_t want = remaining > 64 ? 64 : remaining;
-    const size_t got = Serial.readBytes((char*)wire, want * 2);
-    if (got < want * 2)
-      break;  // host went quiet past the serial timeout -- give up
-    for (uint32_t i = 0; i < want; ++i) {
-      const uint8_t hi =
-          wire[2 * i] <= '9' ? wire[2 * i] - '0' : wire[2 * i] - 'a' + 10;
-      const uint8_t lo = wire[2 * i + 1] <= '9' ? wire[2 * i + 1] - '0'
-                                                : wire[2 * i + 1] - 'a' + 10;
-      dec[i] = (uint8_t)((hi << 4) | lo);
+  bool timed_out = false;
+  while (remaining > 0 && !timed_out) {
+    uint32_t chunk_got = 0;
+    while (chunk_got < kChunk && remaining > 0) {
+      const uint32_t want = remaining > kSubChunk ? kSubChunk : remaining;
+      const size_t got = Serial.readBytes((char*)wire, want * 2);
+      if (got < want * 2) {
+        timed_out = true;  // host went quiet past the serial timeout
+        break;
+      }
+      for (uint32_t i = 0; i < want; ++i) {
+        const uint8_t hi =
+            wire[2 * i] <= '9' ? wire[2 * i] - '0' : wire[2 * i] - 'a' + 10;
+        const uint8_t lo = wire[2 * i + 1] <= '9' ? wire[2 * i + 1] - '0'
+                                                  : wire[2 * i + 1] - 'a' + 10;
+        accum[chunk_got + i] = (uint8_t)((hi << 4) | lo);
+      }
+      chunk_got += want;
+      remaining -= want;
     }
-    written += f.write(dec, want);
-    remaining -= want;
+    if (chunk_got == 0)
+      break;
+    written += f.write(accum, chunk_got);
+    if (remaining > 0 && !timed_out)
+      Serial.println("CHUNK_OK");
   }
   f.close();
 
@@ -153,7 +181,17 @@ void handle_put(const String& rest) {
 }  // namespace
 
 void setup(void) {
-  Serial.begin(115200);
+  // Higher than the console/game firmwares' 115200: this loader's only
+  // job is bulk transfer (PUT bodies are hex-encoded raw bytes -- see the
+  // file header comment -- so wire time already doubles the real
+  // payload size), and UARTHSClass::begin() programs the K210's UARTHS
+  // divider directly from whatever rate is passed (uarths_config in the
+  // Kendryte SDK), not a fixed table -- kflash's own upload already runs
+  // well above 115200 on this same USB-serial bridge (its "Programming
+  // BIN" throughput implies a comparable rate), so this is a proven-safe
+  // rate for this specific hardware, not a guess. Pair with a matching
+  // --baud on the host side (scripts/maix_sd_upload.py's default).
+  Serial.begin(1500000);
   Serial.setTimeout(5000);
   // TF slot: SPI0 on pins 11/6/10, chip-select 26 -- see maix_tf_sd.h for
   // why the library's global `SD` (SPI1, wrong pins) cannot be used here.

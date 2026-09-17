@@ -338,3 +338,20 @@ port lives here under `app/maix/`.
   (two different schematics, `Maix_Amigo_2960`/`Maix_Amigo_2970`); the
   color/orientation fixes above were verified against one physical unit,
   not both revisions.
+- **Physical Gamepad module (case D-pad/A/B/X/Y/Select/Start)**: this is
+  Sipeed's separate I2C Gamepad module (GD32F150G, address `0x4A` on the
+  same I2C1 bus as touch --
+  en.wiki.sipeed.com/hardware/en/modules/Gamepad.html has the protocol),
+  confirmed physically attached to at least one test unit, and
+  `maix_input.cxx`'s `gamepad_scan` implements it -- but it is not wired
+  into `maix_input_scan`. On real hardware the module never once acked a
+  read, and polling it (at any rate tried, even a single one-off read)
+  dragged touch's own I2C1 transactions into the same multi-hundred-ms
+  slowdown, with no working button to show for it.
+  `app/maix/patch_wire_i2c_timeout.py` patches `framework-maixduino`'s
+  `Wire.cpp` (its I2C wait loops had no timeout at all -- an address that
+  can't cleanly NACK spun forever, confirmed to wedge the board solid,
+  sometimes badly enough that even a full CPU reset couldn't clear it,
+  only cutting power to the board could) so this can no longer hang, but
+  that alone didn't make the module usable. See `maix_input.cxx`'s own
+  comment for the full trail before touching this again.

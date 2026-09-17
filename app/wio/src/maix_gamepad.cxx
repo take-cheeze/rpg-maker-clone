@@ -1,15 +1,22 @@
 // Virtual D-pad + Confirm/Cancel button overlay for the Maix Amigo's touch
 // panel (PlatformIO side).
 //
-// The board has no physical buttons; this draws six translucent LVGL
-// shapes (maix_gamepad_layout.h's Up/Down/Left/Right rects and Confirm/
-// Cancel circles) as the last children of the active screen, on top of
-// whatever the current RPG2k scene rendered, and maix_input.cxx hit-tests
-// raw touch against the identical geometry to drive RGSS::Input. Low
-// opacity is deliberate: RPG2k's own message window usually sits in the
-// bottom third of the screen, the same real estate the D-pad and buttons
-// need, so the controls stay legible as an outline rather than blocking
-// text underneath.
+// The board has no physical buttons; this draws six white outline shapes
+// (maix_gamepad_layout.h's Up/Down/Left/Right rects and Confirm/Cancel
+// circles) directly to the panel's left/right margins via maix_panel_blit
+// (see maix_display.cxx), bypassing LVGL entirely -- unlike an LVGL
+// overlay, which is bounded by RPG2k's own 320x240 canvas, this lives
+// outside it, in panel space, so it never covers a single pixel of the
+// game's own screen and needs no per-frame re-raising: LVGL's flush_cb
+// never touches the margins, so nothing the game draws can land on top of
+// this. maix_input.cxx hit-tests raw touch (converted to the same panel
+// space, maix_gamepad_layout.h::TouchToPanel) against the identical
+// geometry to drive RGSS::Input.
+//
+// No text labels (no font renderer at this level -- LVGL's label widget
+// isn't available outside its own canvas): Confirm is the lower-right
+// circle, Cancel the upper-right one, consistent enough to learn by
+// position alone.
 //
 // Deliberately its own translation unit rather than folded into
 // maix_display.cxx: this is a UI/input concern layered on top of display
@@ -19,72 +26,51 @@
 #include "maix.hxx"
 #include "maix_gamepad_layout.h"
 
-#include <lvgl.h>
-
 namespace {
 
-lv_obj_t* g_root = nullptr;
+// Sized for the larger of a D-pad cell (25x25) and a button's bounding
+// box (up to 57x57 for the r=28 Confirm circle).
+uint16_t s_buf[60 * 60];
 
-// Outline only, no fill: a translucent fill over the D-pad's ~5,200 px^2
-// footprint was enough to drop the title screen's own solid-color fraction
-// below maix-smoke's own threshold (0.459 -> 0.400, confirmed under
-// Renode) -- confirmed the same way the display flush's own band count
-// was confirmed, by actually measuring it, not guessing. An outline reads
-// fine as a button boundary and touches only a handful of border pixels.
-void style_outline(lv_obj_t* obj, lv_opa_t border_opa) {
-  lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_color(obj, lv_color_white(), 0);
-  lv_obj_set_style_border_width(obj, 2, 0);
-  lv_obj_set_style_border_opa(obj, border_opa, 0);
+void draw_rect_outline(const maix_gamepad::Rect& r, int16_t thickness) {
+  const int32_t w = r.x1 - r.x0;
+  const int32_t h = r.y1 - r.y0;
+  for (int32_t y = 0; y < h; ++y) {
+    for (int32_t x = 0; x < w; ++x) {
+      const bool edge = x < thickness || y < thickness || x >= w - thickness ||
+                        y >= h - thickness;
+      s_buf[y * w + x] = edge ? 0xFFFF : 0x0000;
+    }
+  }
+  maix_panel_blit(r.x0, r.y0, w, h, s_buf);
 }
 
-void make_rect(lv_obj_t* parent, const maix_gamepad::Rect& r) {
-  lv_obj_t* o = lv_obj_create(parent);
-  lv_obj_remove_style_all(o);
-  lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_pos(o, r.x0, r.y0);
-  lv_obj_set_size(o, r.x1 - r.x0, r.y1 - r.y0);
-  style_outline(o, LV_OPA_70);
-}
-
-void make_circle(lv_obj_t* parent,
-                 const maix_gamepad::Circle& c,
-                 const char* label) {
-  lv_obj_t* o = lv_obj_create(parent);
-  lv_obj_remove_style_all(o);
-  lv_obj_clear_flag(o, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_pos(o, c.cx - c.r, c.cy - c.r);
-  lv_obj_set_size(o, c.r * 2, c.r * 2);
-  lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
-  style_outline(o, LV_OPA_80);
-
-  lv_obj_t* txt = lv_label_create(o);
-  lv_label_set_text(txt, label);
-  lv_obj_set_style_text_color(txt, lv_color_white(), 0);
-  lv_obj_center(txt);
+void draw_circle_outline(const maix_gamepad::Circle& c, int16_t thickness) {
+  const int32_t d = c.r * 2 + 1;
+  const int32_t rOuter2 = static_cast<int32_t>(c.r) * c.r;
+  const int32_t rInner = c.r - thickness;
+  const int32_t rInner2 = rInner > 0 ? rInner * rInner : 0;
+  for (int32_t y = 0; y < d; ++y) {
+    for (int32_t x = 0; x < d; ++x) {
+      const int32_t dx = x - c.r;
+      const int32_t dy = y - c.r;
+      const int32_t dist2 = dx * dx + dy * dy;
+      const bool ring = dist2 <= rOuter2 && dist2 >= rInner2;
+      s_buf[y * d + x] = ring ? 0xFFFF : 0x0000;
+    }
+  }
+  maix_panel_blit(c.cx - c.r, c.cy - c.r, d, d, s_buf);
 }
 
 }  // namespace
 
 void maix_gamepad_create(void) {
-  g_root = lv_obj_create(lv_screen_active());
-  lv_obj_remove_style_all(g_root);
-  lv_obj_clear_flag(g_root, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(g_root, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_pos(g_root, 0, 0);
-  lv_obj_set_size(g_root, 320, 240);
-
-  make_rect(g_root, maix_gamepad::kUp);
-  make_rect(g_root, maix_gamepad::kDown);
-  make_rect(g_root, maix_gamepad::kLeft);
-  make_rect(g_root, maix_gamepad::kRight);
-  make_circle(g_root, maix_gamepad::kConfirm, "C");
-  make_circle(g_root, maix_gamepad::kCancel, "B");
-}
-
-void maix_gamepad_foreground(void) {
-  if (g_root)
-    lv_obj_move_foreground(g_root);
+  using namespace maix_gamepad;
+  constexpr int16_t kThickness = 2;
+  draw_rect_outline(kUp, kThickness);
+  draw_rect_outline(kDown, kThickness);
+  draw_rect_outline(kLeft, kThickness);
+  draw_rect_outline(kRight, kThickness);
+  draw_circle_outline(kConfirm, kThickness);
+  draw_circle_outline(kCancel, kThickness);
 }

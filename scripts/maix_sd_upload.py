@@ -9,9 +9,14 @@ environment first (`pio run -e maix_sd_upload -t upload --upload-port
 /dev/ttyUSB1`), run this, then reflash whichever real firmware
 (`maix_game` or `maix_amigo`) you actually want running.
 
-The wire protocol is byte-identical to scripts/wio_sd_upload.py's
-(PING/PUT, see app/wio/src/sd_upload_main.cxx); only the defaults differ
-for this board (K210 download/console port, 115200 baud).
+PING is byte-identical to scripts/wio_sd_upload.py's (see
+app/wio/src/sd_upload_main.cxx), but PUT's data phase is this board's own
+protocol (see app/wio/src/maix_sd_upload_main.cxx's own header comment
+for why -- a K210 UARTHS quirk the Wio's UART doesn't have) -- so the two
+scripts are not wire-compatible for that part. This board's defaults also
+differ: K210 download/console port, 1500000 baud (see
+maix_sd_upload_main.cxx's own setup() comment for why that rate is safe
+here despite being well above the console/game firmwares' 115200).
 
 Usage:
     scripts/maix_sd_upload.py [--port /dev/ttyUSB1] LOCAL:REMOTE [LOCAL:REMOTE ...]
@@ -44,27 +49,41 @@ def read_line(ser):
     return line.decode("ascii", "replace").strip()
 
 
+#  Must match app/wio/src/maix_sd_upload_main.cxx's own kChunk exactly:
+# that firmware only buffers one CHUNK_SIZE-decoded-byte accumulation
+# before an SD write, and only sends "CHUNK_OK" (this side's cue to send
+# the next piece) after that write completes -- sending more than it
+# expects per piece would overrun its RX ring buffer during that write.
+CHUNK_SIZE = 2048
+
+
 def put_file(ser, local_path, remote_path):
     with open(local_path, "rb") as f:
         data = f.read()
-
-    # Hex-encoded on the wire (two lowercase chars per byte): the
-    # framework's UARTHS receive ISR drops 0x00 bytes outright, so raw
-    # binary can never arrive intact. <size> stays the decoded count.
-    hexdata = data.hex().encode("ascii")
 
     ser.write(f"PUT {remote_path} {len(data)}\n".encode("ascii"))
     reply = read_line(ser)
     if reply != "OK":
         raise RuntimeError(f"PUT {remote_path} rejected: {reply}")
 
-    # Paced in small chunks with gaps: the UARTHS receive ISR reads a
-    # single byte per interrupt, so a long uninterrupted burst overruns
-    # the hardware FIFO (observed past ~64 bytes). The firmware reads
-    # each chunk before the next arrives and tolerates the gaps.
-    for i in range(0, len(hexdata), 128):
-        ser.write(hexdata[i : i + 128])
-        time.sleep(0.05)
+    # Hex-encoded on the wire (two lowercase chars per byte): the
+    # framework's UARTHS receive ISR drops 0x00 bytes outright, so raw
+    # binary can never arrive intact. One CHUNK_SIZE-worth of hex per
+    # write, each followed by waiting for the firmware's "CHUNK_OK" --
+    # self-paced around its SD-write stall instead of a guessed sleep
+    # (see maix_sd_upload_main.cxx's own comment on why that used to
+    # dominate transfer time). The final chunk gets no CHUNK_OK -- the
+    # firmware goes straight to DONE once nothing remains.
+    total = len(data)
+    for i in range(0, total, CHUNK_SIZE):
+        chunk = data[i : i + CHUNK_SIZE]
+        ser.write(chunk.hex().encode("ascii"))
+        if i + CHUNK_SIZE < total:
+            reply = read_line(ser)
+            if reply != "CHUNK_OK":
+                raise RuntimeError(
+                    f"PUT {remote_path}: expected CHUNK_OK, got {reply!r}"
+                )
 
     reply = read_line(ser)
     if not reply.startswith("DONE"):
@@ -80,7 +99,7 @@ def put_file(ser, local_path, remote_path):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", default="/dev/ttyUSB1")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=1500000)
     parser.add_argument(
         "files", nargs="+", metavar="LOCAL:REMOTE", help="e.g. RPG_RT.ldb:/sd/maixgame/RPG_RT.ldb"
     )
