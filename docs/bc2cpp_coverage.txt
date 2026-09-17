@@ -2,19 +2,19 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2286
-  from bytecode: 2261
+compiled entry points (real build output -- clean, zero #error): 2287
+  from bytecode: 2262
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 51
   mruby-rgss-compiled: 119
-  mruby-rpg2k-compiled: 2116
+  mruby-rpg2k-compiled: 2117
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 20
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2261
-  left on the interpreter (>=1 #error): 32
+  compiled clean: 2262
+  left on the interpreter (>=1 #error): 31
   coverage: 98.6%
 
 -- ivar/return/argument facts proven --
@@ -42,35 +42,35 @@ methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 28
 
 -- #error markers by reason (whole program) --
      20  SEND/SSEND has a splat and/or keyword argument list (n=...)
-      5  unhandled opcode BLOCK
       5  unhandled opcode EXCEPT
-      5  unhandled opcode SENDB
       5  unhandled opcode SUPER
       4  unhandled opcode ARGARY
+      4  unhandled opcode BLOCK
+      4  unhandled opcode SENDB
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
       1  unhandled opcode LAMBDA
       1  unhandled opcode SDEF
-     50  total
+     48  total
 
-block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 394
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 396
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14895
-  POLY-marked (receiver's runtime class genuinely decides): 6246
-  everything else (not yet attempted or failed MONO/TYPED): 8649
+total mrb_funcall/mrb_funcall_with_block call sites: 14904
+  POLY-marked (receiver's runtime class genuinely decides): 6245
+  everything else (not yet attempted or failed MONO/TYPED): 8659
 distinct dynamically-dispatched method names: 1033
 top 30 dynamically-dispatched method names:
    1.  1923  :[]
-   2.   721  :+
+   2.   725  :+
    3.   639  :==
    4.   585  :new
    5.   531  :===
    6.   510  :[]=
-   7.   504  :-
-   8.   483  :*
+   7.   506  :-
+   8.   485  :*
    9.   471  :respond_to?
   10.   297  :/
   11.   285  :>
