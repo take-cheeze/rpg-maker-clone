@@ -57,6 +57,15 @@ lv_display_t* maix_display_create(int32_t hor_res, int32_t ver_res);
 // brought up. Null when creation failed.
 extern uint16_t* g_maix_framebuffer;
 
+// Blits a small RGB565 buffer straight to panel coordinates, bypassing
+// LVGL -- see maix_display.cxx's own comment. Used by maix_gamepad.cxx to
+// draw in the panel's margins, outside the LVGL canvas entirely.
+void maix_panel_blit(int32_t x,
+                     int32_t y,
+                     int32_t w,
+                     int32_t h,
+                     const uint16_t* pixels);
+
 // Start the touch controller. Call once from setup() before scanning.
 void maix_input_init(void);
 
@@ -64,15 +73,13 @@ void maix_input_init(void);
 // means the key is currently held.
 uint32_t maix_input_scan(void);
 
-// Draws the virtual D-pad + Confirm/Cancel button overlay (maix_gamepad.cxx)
-// on top of the current LVGL screen. Call once from setup(), after
-// maix_display_create() -- it needs a live display to attach to.
+// Draws the virtual D-pad + Confirm/Cancel buttons in the panel's margins
+// (maix_gamepad.cxx), outside RPG2k's own 320x240 canvas entirely -- see
+// maix_gamepad_layout.h for exactly where. Call once from setup(), after
+// maix_display_create() (needs the panel already initialized). Drawn with
+// maix_panel_blit, not as LVGL objects, so nothing the game itself ever
+// draws can land on top of it -- no per-frame re-raising needed.
 void maix_gamepad_create(void);
-
-// Re-raises the gamepad overlay above whatever the current RPG2k scene most
-// recently drew (each scene creates its own sprites/windows as new LVGL
-// objects, which would otherwise end up on top of it). Call once per frame.
-void maix_gamepad_foreground(void);
 
 // Initialise the SD card (Maixduino SD over SPI1, TF slot). Returns true on
 // success. Call once from setup() before any game file is opened; without
