@@ -38,6 +38,7 @@ magic-comment class-argument annotations (CLASS_ANNOTATED): 25
 magic-comment element annotations (ELEM_ANNOTATED): 3
 annotation candidates (opaque argument, unresolved): 43
 integer-valued constants proven (INTEGER_CONSTANT_PROOF): 693
+methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 28
 
 -- #error markers by reason (whole program) --
      20  SEND/SSEND has a splat and/or keyword argument list (n=...)
@@ -57,22 +58,22 @@ block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 396
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14942
+total mrb_funcall/mrb_funcall_with_block call sites: 14904
   POLY-marked (receiver's runtime class genuinely decides): 6245
-  everything else (not yet attempted or failed MONO/TYPED): 8697
+  everything else (not yet attempted or failed MONO/TYPED): 8659
 distinct dynamically-dispatched method names: 1033
 top 30 dynamically-dispatched method names:
    1.  1923  :[]
    2.   725  :+
-   3.   666  :==
+   3.   639  :==
    4.   585  :new
    5.   531  :===
    6.   510  :[]=
-   7.   508  :-
+   7.   506  :-
    8.   485  :*
    9.   471  :respond_to?
   10.   297  :/
-  11.   287  :>
+  11.   285  :>
   12.   253  :<
   13.   243  :empty?
   14.   206  :size
@@ -82,7 +83,7 @@ top 30 dynamically-dispatched method names:
   18.   149  :>=
   19.   141  :to_s
   20.   137  :%
-  21.   134  :<=
+  21.   127  :<=
   22.   125  :each
   23.   112  :width
   24.   111  :<<

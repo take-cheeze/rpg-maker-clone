@@ -238,6 +238,14 @@ report << "annotation candidates (opaque argument, unresolved): #{count(err, 'an
 # was feeding), so a drift in it is exactly the kind of thing this file's own
 # git diff exists to make visible.
 report << "integer-valued constants proven (INTEGER_CONSTANT_PROOF): #{count(err, 'integer-valued constants proven (INTEGER_CONSTANT_PROOF)', placeholder: '(none)')}\n"
+# FIXNUM_RETURN_PROOF: bare method names whose one closed-world definition
+# provably returns a Fixnum on every return path -- FIXNUM_OPERAND_PROOF's
+# own sixth proof source. Tracked here for exactly the reason the constant
+# count above is: it is a whole-program fact that moves silently when the
+# Ruby sources change. Adding a `return nil` guard to one of these methods,
+# or a second definition of its bare name anywhere (including in mruby's own
+# mrblib), removes the name and with it every devirtualization it fed.
+report << "methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): #{count(err, 'methods proven Fixnum-returning (FIXNUM_RETURN_PROOF)', placeholder: '(none)')}\n"
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
