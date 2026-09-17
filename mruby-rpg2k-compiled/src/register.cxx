@@ -5105,6 +5105,54 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //
   // Reuses the `game` RClass* declared at the top of this function.
   RClass* interpreter = mrb_class_get_under(M, game, "Interpreter");
+  // JMPUW follow-up: this class newly enters bc2cpp's own "classes needing
+  // MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)" diagnostic, so this call is now
+  // REQUIRED -- exactly one ivar, `@frame_steps` (fixnum), became embeddable
+  // when #update stopped being an `#error unhandled opcode JMPUW` stub, and
+  // the regenerated `Game__Interpreter_initialize_impl` now really does open
+  // with `mrb_calloc` + `mrb_data_init(self, embedded,
+  // &Game__Interpreter_ivars_type)`. Without this line that `mrb_data_init`
+  // would run against an object mruby still allocates as MRB_TT_OBJECT --
+  // the exact undefined-behavior shape this file's own Game::Actor and
+  // Game::Transition blocks above document as two separate, already-shipped
+  // LIVE memory-safety bugs. Confirmed against the real regenerated output,
+  // not assumed: `Game__Interpreter_ivars` goes from 0 references before the
+  // change to 10 after (the struct, its free function, its mrb_data_type,
+  // the #initialize allocation pair, and 5 real DATA_PTR(self) field
+  // accesses).
+  //
+  // Safe here, checked against every hazard condition those two prior bugs
+  // established rather than trusting bc2cpp's own guard alone:
+  //   * `@frame_steps` is touched by exactly 3 methods in the whole closed
+  //     world (mruby-rpg2k/mrblib/interpreter.rb: #initialize, line 309;
+  //     #reset_frame_steps, line 613; #update, lines 637/641) and all three
+  //     now compile clean as real entry points -- so no interpreted body is
+  //     left reading a permanently-nil `@frame_steps` off the dynamic
+  //     iv_tbl while a compiled #initialize writes the struct field, which
+  //     is precisely how the Game::Transition @width/@height bug presented.
+  //     (bc2cpp's own `every_accessor_compiles?` already enforces this; the
+  //     point of re-checking by hand is that that guard was itself added
+  //     only *after* shipping the bug.)
+  //   * No native C++ anywhere in this project constructs, allocates or
+  //     type-checks a Game::Interpreter -- the only occurrence of the name
+  //     outside mrblib is one unrelated comment in src/main.cxx.
+  //   * Game::Interpreter has no subclass anywhere in the closed world, so
+  //     no other class silently inherits MRB_TT_DATA from it.
+  //   * The Interpreter object is never Marshal'd or ivar-enumerated: the
+  //     save path serializes Game::State through its own explicit #to_h/
+  //     .load field list (mruby-rpg2k/mrblib/game/lsd_io.rb), never a
+  //     generic instance_variables dump of a live interpreter.
+  //   * Every OTHER Game::Interpreter ivar (@state/@list/@index/@running/
+  //     ...) stays on the ordinary dynamic iv_tbl, which `struct RData`
+  //     carries in its own right (3rd/mruby/include/mruby/data.h) entirely
+  //     separately from the `data` pointer the embedded struct lives
+  //     behind -- so every one of this class's many still-interpreted
+  //     methods keeps working unchanged.
+  //   * The DIRECT_CONSTRUCT_TARGETS path below needs no matching edit:
+  //     bc2cpp's own `bc2cpp_direct_alloc` allocates with
+  //     `mrb_obj_alloc(M, MRB_INSTANCE_TT(c), c)`, so it picks up this very
+  //     call rather than hardcoding a type.
+  MRB_SET_INSTANCE_TT(interpreter, MRB_TT_DATA);
   // Captured for bc2cpp's own generalized DIRECT_CONSTRUCT_TARGETS
   // mechanism -- see this file's own top-of-file comment (right after the
   // generated-file #include) for the accessor this backs
