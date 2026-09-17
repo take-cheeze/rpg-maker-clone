@@ -68,6 +68,24 @@ Dir.mktmpdir do |dir|
   raise "bc2cpp.rb failed (exit #{status.exitstatus}):\n#{@stderr[-4000..]}" unless status.success?
 end
 
+# DYNAMIC_DISPATCH_STATS_SUPPORT: a second, SEPARATE run with SKIP_
+# UNSUPPORTED=1 -- the real flag every actual gem build sets, dropping
+# every method that still has a `#error` anywhere in its own body (see
+# compile_all's own SKIP_UNSUPPORTED comment). The FIRST run above
+# deliberately doesn't set it (this report's own #error-by-reason
+# breakdown needs the real #error TEXT, which SKIP_UNSUPPORTED=1 strips
+# out entirely) -- so counting `mrb_funcall`/`mrb_funcall_with_block`
+# call sites straight off that first run's own @stdout would overcount:
+# it would include real dispatch lines sitting inside a method that
+# never actually ships, alongside its own unrelated #error. A second,
+# real "what does the shipped build actually contain" run is the only
+# way to get a true whole-program dynamic-dispatch count.
+Dir.mktmpdir do |dir|
+  shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir)
+  @shipped_stdout, shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
+  raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{shipped_stderr[-4000..]}" unless shipped_status.success?
+end
+
 # ---------------------------------------------------------------------------
 # Section counts, straight off bc2cpp.rb's own `== header ==` diagnostic --
 # see that file's own `warn '== ... =='` call sites for the exact section
@@ -243,6 +261,39 @@ report << "  still dynamic dispatch only -- MONO/POLY/TYPED devirtualization " \
 lambda_fallback_count = @stdout.scan(/^\s*\/\/ LAMBDA_FALLBACK --/).size
 report << "lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): " \
           "#{lambda_fallback_count}\n"
+report << "\n"
+
+# DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site
+# left in the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1
+# -- see its own capture comment above), by the exact two real mruby API
+# call shapes this file ever emits one through: `mrb_funcall(M, recv,
+# "name", ...)` (dynamic_dispatch_line's own plain fallback, compile_
+# splat_send's own positional-splat fallback) and `mrb_funcall_with_
+# block(M, recv, mrb_intern_cstr(M, "name"), ...)` (emit_block_fallback_
+# glue's own call-site glue). A `POLY`-marked one (compile_send's own `//
+# POLY :name -- real dynamic dispatch, receiver's runtime class decides`
+# comment, emitted immediately before its own dispatch line whenever
+# multiple real definitions of `name` exist program-wide) is a genuinely
+# unavoidable dispatch -- the receiver's real class isn't known even in
+# principle without more type inference than this compiler does today;
+# every other one is a name this compiler simply never attempted (or
+# failed) to resolve MONO/TYPED, a real opportunity this count exists to
+# track over time.
+dispatch_counts = Hash.new(0)
+@shipped_stdout.scan(/mrb_funcall\(M,\s*[^,]+,\s*"((?:[^"\\]|\\.)*)"/) { |m| dispatch_counts[m[0]] += 1 }
+@shipped_stdout.scan(/mrb_funcall_with_block\(M,\s*[^,]+,\s*mrb_intern_cstr\(M,\s*"((?:[^"\\]|\\.)*)"\)/) { |m| dispatch_counts[m[0]] += 1 }
+total_dispatch = dispatch_counts.values.sum
+shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
+
+report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
+report << "total mrb_funcall/mrb_funcall_with_block call sites: #{total_dispatch}\n"
+report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  everything else (not yet attempted or failed MONO/TYPED): #{total_dispatch - shipped_poly}\n"
+report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
+report << "top 30 dynamically-dispatched method names:\n"
+dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
+  report << format("  %2d. %5d  :%s\n", i + 1, n, name)
+end
 
 File.write(REPORT_PATH, report)
 puts "wrote #{REPORT_PATH}"

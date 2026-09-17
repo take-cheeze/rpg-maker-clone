@@ -460,9 +460,35 @@ def apply_deletion_plan(lines, wanted_defs, path, edits = [])
             'line with other real code -- refusing to guess' \
         unless before.strip.empty? && after.strip.empty?
     else
-      raise "#{path}: #{d[:owner]}##{d[:name]}: def signature does not fit on one line " \
-            '(unbalanced parens on its own header line) -- not supported, refusing to guess' \
-        if header.count('(') != header.count(')')
+      # MULTILINE_DEF_SUPPORT: a real `def` whose own parameter list spans
+      # more than one physical source line (a long keyword-argument list,
+      # e.g. `Game::Battle#command_skill`'s own 5-line signature) -- ADR
+      # 0144's own "what was not done" section explicitly deferred this as
+      # real, anticipated follow-up work ("(2) real coverage of the two
+      # deliberately-unsupported shapes... if the next owner's methods need
+      # either"), not a shape this script was ever meant to reject forever.
+      # `first0`/`last0` already come straight from the real AST parse
+      # (`node.first_lineno`/`last_lineno`), which spans exactly `def`
+      # through its own matching `end` regardless of how many lines the
+      # signature itself takes -- the deletion below (`plan[first0] =
+      # last0`, unconditionally dropping every line in that range) never
+      # actually depended on the header's own parens being balanced; only
+      # the SAME real hazard the one-line case above already guards
+      # (something else sharing a physical line with this DEFN) matters
+      # here too, checked the identical way: `header`'s own portion before
+      # `def` (its indentation) must be blank, matching this DEFN's own
+      # `first_column`. There is no equivalent "after" check on the FINAL
+      # line (`end`) here or in the one-line case's own sibling multi-line
+      # shape that already worked before this round (a signature closing
+      # on line 1, body starting line 2) -- a bare `end` closing a `def`
+      # never legitimately shares its own line with following code in this
+      # codebase's own style, and this script's own `two stripped methods
+      # claim the same header line` check just below already catches the
+      # one adjacent-DEFN hazard that could otherwise slip through.
+      before = header[0...node.first_column] || ''
+      raise "#{path}: #{d[:owner]}##{d[:name]}: a multi-line def signature's own header line " \
+            'shares its own physical line with other real code -- refusing to guess' \
+        unless before.strip.empty?
     end
 
     raise "#{path}: #{d[:owner]}##{d[:name]}: two stripped methods claim the same header line " \
