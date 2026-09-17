@@ -59,32 +59,32 @@ block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 330
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 14219
+total mrb_funcall/mrb_funcall_with_block call sites: 14149
   POLY-marked (receiver's runtime class genuinely decides): 5902
-  everything else (not yet attempted or failed MONO/TYPED): 8317
+  everything else (not yet attempted or failed MONO/TYPED): 8247
 distinct dynamically-dispatched method names: 1024
 top 30 dynamically-dispatched method names:
    1.  1736  :[]
-   2.   718  :+
-   3.   633  :-
-   4.   633  :==
-   5.   603  :*
+   2.   700  :+
+   3.   628  :==
+   4.   625  :-
+   5.   602  :*
    6.   535  :new
    7.   531  :===
    8.   454  :respond_to?
-   9.   341  :/
+   9.   332  :/
   10.   296  :[]=
-  11.   292  :>
-  12.   242  :<
+  11.   280  :>
+  12.   238  :<
   13.   215  :empty?
   14.   188  :size
   15.   176  :party
   16.   161  :puts
-  17.   149  :>=
-  18.   147  :dispose
-  19.   133  :<=
-  20.   132  :to_s
-  21.   131  :%
+  17.   147  :dispose
+  18.   141  :>=
+  19.   132  :to_s
+  20.   131  :%
+  21.   128  :<=
   22.   108  :width
   23.   104  :message
   24.   102  :y
