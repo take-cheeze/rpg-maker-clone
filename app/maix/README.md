@@ -84,25 +84,49 @@ one `drawImage` call) and byte-swapped per pixel -- a single giant DMA
 truncates and many small ones alternate-drop on real silicon, confirmed by
 probing, so the band count is not arbitrary.
 
-## Status: SD-card game boot -- blocked
+## Status: SD-card game boot -- works
 
 `pio run -e maix_game_sd` is the same firmware as `maix_game`, but reads
 its data from the microSD card (`GAME_DIR=/sd/maixgame`, pushed with
 `scripts/maix_sd_upload.py`) instead of the flash-embedded copy, over the
-SD layer described below. It compiles and mounts the card, but does not
-boot: on real hardware it hangs solid partway through the interpreter's
-first data-cluster read. Isolated with a raw `fopen`/`fread` bypassing
-mruby entirely -- `fopen` succeeds (the directory-area reads that resolve
-it all work, including a fresh re-upload, ruling out stale data), but the
-first `fread()` on the file's own data cluster never returns. Reproduces
-identically regardless of which K210 SPI peripheral drives the card
-(SPI0 or SPI1, see "SD layer" below) and independent of clock speed (4 MHz
-or 400 kHz) -- so it is neither a bus-sharing nor a signal-rate issue, at
-least not one clock-speed alone fixes. Not a Renode target either way (no
-SD controller modeled), so CI only compile-proves it. See
-`app/wio/src/maix_game_main.cxx`'s `KNOWN ISSUE` comment for the full
-trail; next step is likely a scope/logic analyzer on the SPI lines, or a
-different SD card to rule out a media-specific fault.
+SD layer described below. Confirmed on real hardware booting a real
+commercial RPG2k title (not just the tiny synthetic `data/maix-hello`)
+all the way to its title screen.
+
+This took a while to actually pin down: on real hardware it used to hang
+solid, silently, always at a specific point that depended on how much
+game data there was -- the tiny synthetic test game never triggered it
+at all, which is why this went unnoticed for a long time. The bug is in
+`framework-maixduino`'s `libraries/SD/src/File.cpp`:
+`File::read(void* buf, uint32_t nbyte)` loops `while (bytesToRead)`,
+calling the real (bounded, EOF-safe) `SdFile::read()` underneath and
+only breaking on that call's own `0xffff` error sentinel -- not on a
+legitimate `0`-byte return at genuine end of file, which isn't an error.
+`app/wio/src/maix_sd_syscalls.cxx`'s `_read()` used to call exactly this
+overload with the interpreter's own read length; a real game's fixed
+4096-byte read loop (the standard C "read until 0" idiom) reads cleanly
+right up to the file's last chunk and then spins forever re-requesting
+data the file can never again supply. `_read()` now calls
+`File::read(void*, uint16_t)` instead -- the sibling overload that talks
+to `SdFile::read()` directly, which does clamp to the file's own size and
+returns a true, POSIX-correct short count (down to 0) exactly once,
+letting the caller's loop terminate normally.
+
+Two hypotheses this investigation ruled out with real measurements
+before finding the actual bug, both worth remembering given how long a
+fixed-point silent hang can look like something else entirely:
+- **Not memory exhaustion.** Free heap does drop steadily while reading
+  a real game's larger database, and extending usable RAM by 2MB (see
+  `app/maix/patch_kendryte_ram_size.py`) was tried first -- it didn't
+  change where the hang happened at all.
+- **Not GC-collectible garbage, and not a raw SPI/SD driver hang either.**
+  Every wait loop in `Sd2Card.cpp`/`Maix_SPI.cpp` was instrumented
+  directly; none of them were ever actually spinning. The block reads
+  themselves were always completing instantly -- the loop calling them
+  was the thing that never stopped.
+
+Not a Renode target either way (no SD controller modeled), so CI only
+compile-proves it.
 
 ## Display HAL (PlatformIO side)
 
@@ -172,9 +196,8 @@ DVP camera interface. SPI1 has no such sharing, so the LCD and the SD
 card are now genuinely independent buses. Compiled only with
 `MAIX_WITH_SD` (CI builds it once that way as a compile proof, via
 `PLATFORMIO_BUILD_FLAGS`); call `maix_sd_init()` from `setup()` before
-opening anything. Runtime proof needs a physical card -- Renode models no
-SD controller -- and on real hardware it currently hangs past the first
-data-cluster read; see "Status: SD-card game boot" above.
+opening anything. Runtime proof needs a physical card -- Renode models no SD controller;
+see "Status: SD-card game boot" above for how it fares on real hardware.
 
 ## Pushing files without a card reader
 
@@ -322,9 +345,6 @@ port lives here under `app/maix/`.
 
 ## Not yet wired (later slices)
 
-- **SD-card game boot**: still hangs on real hardware -- see "Status:
-  SD-card game boot" above. Blocks everything past a flash-embedded test
-  game (no real RTP-using game has been tried, no saves).
 - **Full 320x480 panel / rotation**: only the 320x240 window has ever been
   driven on real hardware; whether the other 240 rows are addressable, and
   whether that is the whole physical panel or needs a rotation, is
