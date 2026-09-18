@@ -41,7 +41,7 @@ UNI_ALGO_TRIM_DEFINES = %w[
 def wio_strip_debug_rbfiles(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('strip_wio_debug_output.rb', __dir__)
+  strip_script = File.expand_path('scripts/strip_wio_debug_output.rb', __dir__)
   out_dir = "#{spec.build_dir}/wio_debug_stripped"
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
@@ -70,7 +70,7 @@ end
 def wio_strip_inline_helpers(spec)
   return unless spec.build.name == 'wio'
 
-  strip_script = File.expand_path('strip_wio_inline_helpers.rb', __dir__)
+  strip_script = File.expand_path('scripts/strip_wio_inline_helpers.rb', __dir__)
   out_dir = "#{spec.build_dir}/wio_inline_helpers"
   spec.rbfiles = spec.rbfiles.map do |src|
     rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '')
@@ -133,7 +133,7 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
 
   repo_root = __dir__
   probe_script = File.expand_path('tools/bc2cpp/wio_registered_methods.rb', __dir__)
-  strip_script = File.expand_path('strip_wio_bc2cpp_stubs.rb', __dir__)
+  strip_script = File.expand_path('scripts/strip_wio_bc2cpp_stubs.rb', __dir__)
   compiled_gems_rb = File.expand_path('tools/bc2cpp/compiled_gems.rb', __dir__)
   bc2cpp = File.expand_path('tools/bc2cpp/bc2cpp.rb', __dir__)
 
