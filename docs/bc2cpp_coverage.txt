@@ -18,15 +18,15 @@ methods attempted: 2293
   coverage: 100.0%
 
 -- ivar/return/argument facts proven --
-known-ivar-class hints (CLASS_HINT): 255
-  poisoned to unknown (real evidence, but disagreeing/untraceable): 520
+known-ivar-class hints (CLASS_HINT): 258
+  poisoned to unknown (real evidence, but disagreeing/untraceable): 517
   split: ANY (proven heterogeneous, not fixable): 0
-  split: OPAQUE (unresolved, may be fixable): 520
+  split: OPAQUE (unresolved, may be fixable): 517
 known-array-element-class hints (ELEM_HINT): 9
   primitive-only hints (never embedded): 6
-  poisoned to unknown (proven Array, element class unresolved): 35
+  poisoned to unknown (proven Array, element class unresolved): 38
     split: ANY (proven heterogeneous, not fixable): 0
-    split: OPAQUE (unresolved, may be fixable): 35
+    split: OPAQUE (unresolved, may be fixable): 38
 known-hash-element-class hints (HASH_ELEM_HINT): 10
   primitive-only hints (never embedded): 0
   poisoned to unknown (proven Hash, value class unresolved): 36
@@ -44,14 +44,14 @@ methods proven Array-returning (ARRAY_RETURN_PROOF): 114
 -- #error markers by reason (whole program) --
       0  total
 
-block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 362
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 359
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 3
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 15557
+total mrb_funcall/mrb_funcall_with_block call sites: 15554
   POLY-marked (receiver's runtime class genuinely decides): 6503
-  everything else (not yet attempted or failed MONO/TYPED): 9054
+  everything else (not yet attempted or failed MONO/TYPED): 9051
 distinct dynamically-dispatched method names: 1040
 top 30 dynamically-dispatched method names:
    1.  2228  :[]
@@ -75,8 +75,8 @@ top 30 dynamically-dispatched method names:
   19.   145  :to_s
   20.   137  :%
   21.   126  :<=
-  22.   117  :each
-  23.   116  :message
+  22.   116  :message
+  23.   115  :each
   24.   114  :width
   25.   113  :<<
   26.   109  :y
