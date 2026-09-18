@@ -246,6 +246,15 @@ report << "integer-valued constants proven (INTEGER_CONSTANT_PROOF): #{count(err
 # or a second definition of its bare name anywhere (including in mruby's own
 # mrblib), removes the name and with it every devirtualization it fed.
 report << "methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): #{count(err, 'methods proven Fixnum-returning (FIXNUM_RETURN_PROOF)', placeholder: '(none)')}\n"
+# ARRAY_RETURN_PROOF: the Array analogue of the line just above -- bare
+# method names whose one closed-world definition provably returns an Array
+# on every return path, consumed by the block recognizers' own receiver gate
+# (proven_array_source). Tracked here for the identical reason: it is a
+# whole-program fact that moves silently when the Ruby sources change. An
+# added `return nil` guard, a new conditional landing on a method's own
+# RETURN, or a second definition of its bare name anywhere (including in
+# mruby's own mrblib) removes the name and with it every loop it unblocked.
+report << "methods proven Array-returning (ARRAY_RETURN_PROOF): #{count(err, 'methods proven Array-returning (ARRAY_RETURN_PROOF)', placeholder: '(none)')}\n"
 report << "\n"
 
 report << "-- #error markers by reason (whole program) --\n"
