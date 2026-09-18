@@ -1,0 +1,63 @@
+mrbc bug: `mrbc -v`'s own parse-tree dump (mrb_parser_dump, parse.y) prints
+garbage for a `$&`/`` $` ``/`$'`/`$+` (NODE_BACK_REF) or `$1`/`$2`/...
+(NODE_NTH_REF) node instead of the real character/number, and can emit an
+invalid UTF-8 byte sequence doing it -- a real, reproducible crash for any
+tool (this project's own tools/bc2cpp/bc2cpp.rb among them) that reads that
+disassembly as text.
+
+Root cause: `node_to_int(x)` is `#define node_to_int(x) ((int)(intptr_t)(x))`
+(node.h) -- correct only for the small set of AST nodes that stuff a plain
+integer directly into a `node*` slot (mruby's own comment on that macro's
+other call sites). NODE_BACK_REF/NODE_NTH_REF are not that: `new_back_ref`/
+`new_nth_ref` (parse.y) allocate a real `struct mrb_ast_back_ref_node`/
+`struct mrb_ast_nth_ref_node` and store the real value in that struct's own
+`.type`/`.nth` field. `node_to_int(tree)` on one of these instead casts the
+struct's own heap POINTER to an int and prints that -- effectively a
+pointer's low byte, never the real stored value, and never deterministic
+(depends on wherever the allocator happened to put it). `back_ref_node(tree)
+->type` / `nth_ref_node(tree)->nth` (both existing accessor macros, node.h)
+read the real field.
+
+Reproduced directly: `lib/optcarrot/opt.rb:74` (3rd/optcarrot) has `body =
+"if " + $1 + indent(2, $') + "end\n" if body =~ /\Areturn unless (.*)/` --
+run any file containing that line through `mrbc -v -o /dev/null FILE`.
+Unpatched, the `$'` case prints a raw non-UTF8 byte, and Ruby's own
+`String#each_line`/`valid_encoding?` on that output raises `ArgumentError:
+invalid byte sequence in UTF-8` (exactly bc2cpp.rb's own crash mode,
+tools/bc2cpp/bc2cpp.rb:235's `each_line`). Patched, both `$1` and `$'`
+print their real value and the output is valid UTF-8.
+
+Debug-dump-only: `mrb_parser_dump` is never called from the actual
+compiler/codegen path (dump_node's own case list under `mrb_parser_dump`,
+called only from mrbc's own `-v`/debug tooling) -- this changes no compiled
+bytecode, only what `mrbc -v`'s own text output shows for these two node
+kinds. Verified against mruby's own full bundled mrbtest suite: identical
+1874 OK / 0 KO before and after (same as patches/mruby-module-function-
+scope.patch's own verification; see that patch's preamble for the one
+environment-only "Crash" both runs share, unrelated to either patch).
+
+Found scoping tools/optcarrot_probe (see its own README.md) against
+optcarrot's real upstream source -- lib/optcarrot/opt.rb's own `$1 evens
+$'` use (a `sub`/backreference idiom, unrelated to the `--opt` codegen
+feature it lives inside) is what first hit this. Same patch-in-place
+treatment as this project's other mruby-*.patch files, for the same reason
+(no fork of upstream mruby/mruby this project controls).
+
+diff --git a/mrbgems/mruby-compiler/core/parse.y b/mrbgems/mruby-compiler/core/parse.y
+index 74727fe..fde3e21 100644
+--- a/mrbgems/mruby-compiler/core/parse.y
++++ b/mrbgems/mruby-compiler/core/parse.y
+@@ -8633,11 +8633,11 @@ dump_node(mrb_state *mrb, node *tree, int offset)
+     break;
+
+   case NODE_BACK_REF:
+-    printf("NODE_BACK_REF: $%c\n", node_to_int(tree));
++    printf("NODE_BACK_REF: $%c\n", back_ref_node(tree)->type);
+     break;
+
+   case NODE_NTH_REF:
+-    printf("NODE_NTH_REF: $%d\n", node_to_int(tree));
++    printf("NODE_NTH_REF: $%d\n", nth_ref_node(tree)->nth);
+     break;
+
+   case NODE_BLOCK_ARG:
