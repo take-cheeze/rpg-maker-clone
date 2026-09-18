@@ -998,6 +998,39 @@ RClass* g_direct_construct_game_number_input_class = nullptr;
 // Game::MoveRoute.new sites in RPG2k::Scene::Map), so unlike a speculative
 // table entry it is live wiring, not dead weight.
 RClass* g_direct_construct_game_move_route_class = nullptr;
+// LEXICAL_NEW_TARGET_RESOLUTION: the six RPG2k::Scene::* entries.
+//
+// Three of them (Menu, DebugMenu, ItemMenu) have been in bc2cpp.rb's
+// DIRECT_CONSTRUCT_TARGETS for several rounds but never had this wiring --
+// and, it turns out, never needed it, because they were DEAD TABLE ENTRIES:
+// every real `.new` site for them is written `Scene::Menu.new(...)` inside
+// `module RPG2k`, and trace_new_target resolved that to the lexically-
+// written "Scene::Menu", which never matched the table's fully-qualified
+// "RPG2k::Scene::Menu" key. So the direct-construct path never fired for
+// them and the generated output never referenced their accessors. Measured,
+// not assumed: a real SKIP_UNSUPPORTED=1 whole-program regeneration from
+// master's own bc2cpp.rb references ONLY `Game__*_compiled_class` -- not one
+// `RPG2k__Scene__*` accessor.
+//
+// bc2cpp.rb's new lexical-nesting resolution (lexically_resolve_construct_
+// target) is exactly what makes those three live for the first time, and
+// adds Map/MapViewer/ChipsetEditor alongside them. That flips all six from
+// "declared but never called" to real, referenced call sites -- so all six
+// need the four-part wiring now, for precisely the reason this file's own
+// accessor-block comment above already records at length: DIRECT_CONSTRUCT_
+// TARGETS membership alone is NOT sufficient for a LINKABLE
+// RPGMAKER_BC2CPP=1 build, and a missing definition is an undefined
+// reference that neither the SKIP_UNSUPPORTED text-generation check nor
+// `g++ -fsyntax-only` of the generated file can ever catch (a forward
+// declaration satisfies both). Only a real compile-and-link of THIS file
+// does -- verified that way here (`g++ -c` of all three `*-compiled` gems'
+// register.cxx, then `nm -C` showing each accessor defined as `T`).
+RClass* g_direct_construct_rpg2k_scene_map_class = nullptr;
+RClass* g_direct_construct_rpg2k_scene_map_viewer_class = nullptr;
+RClass* g_direct_construct_rpg2k_scene_chipset_editor_class = nullptr;
+RClass* g_direct_construct_rpg2k_scene_menu_class = nullptr;
+RClass* g_direct_construct_rpg2k_scene_debug_menu_class = nullptr;
+RClass* g_direct_construct_rpg2k_scene_item_menu_class = nullptr;
 }  // namespace
 
 // Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
@@ -1045,6 +1078,28 @@ RClass* Game__NumberInput_compiled_class(void) {
 // own mechanical `sanitize(owner) + "_compiled_class"`.
 RClass* Game__MoveRoute_compiled_class(void) {
   return g_direct_construct_game_move_route_class;
+}
+// LEXICAL_NEW_TARGET_RESOLUTION's own -- same plain-C++-linkage shape as
+// every accessor above; names are bc2cpp's own mechanical
+// `sanitize(owner) + "_compiled_class"`, so "RPG2k::Scene::MapViewer"
+// becomes RPG2k__Scene__MapViewer_compiled_class.
+RClass* RPG2k__Scene__Map_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_map_class;
+}
+RClass* RPG2k__Scene__MapViewer_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_map_viewer_class;
+}
+RClass* RPG2k__Scene__ChipsetEditor_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_chipset_editor_class;
+}
+RClass* RPG2k__Scene__Menu_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_menu_class;
+}
+RClass* RPG2k__Scene__DebugMenu_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_debug_menu_class;
+}
+RClass* RPG2k__Scene__ItemMenu_compiled_class(void) {
+  return g_direct_construct_rpg2k_scene_item_menu_class;
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
@@ -2113,6 +2168,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // #step/#finish_move bug already needed once.
   RClass* scene = mrb_module_get_under(M, rpg2k, "Scene");
   RClass* map_viewer = mrb_class_get_under(M, scene, "MapViewer");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_map_viewer_class = map_viewer;
   mrb_define_method(M, map_viewer, "update", RPG2k__Scene__MapViewer_update,
                     MRB_ARGS_NONE());
   mrb_define_method(M, map_viewer, "dispose", RPG2k__Scene__MapViewer_dispose,
@@ -2566,6 +2624,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // RPG2k::Scene::MapViewer block above already looked up -- both live
   // under the same RPG2k::Scene module.
   RClass* item_menu = mrb_class_get_under(M, scene, "ItemMenu");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_item_menu_class = item_menu;
   mrb_define_method(M, item_menu, "dispose", RPG2k__Scene__ItemMenu_dispose,
                     MRB_ARGS_NONE());
   mrb_define_method(M, item_menu, "update", RPG2k__Scene__ItemMenu_update,
@@ -2912,6 +2973,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // mrb_define_private_method for the other 31, the same real fix this
   // ADR's own Game::Picture #step/#finish_move bug already needed once.
   RClass* debug_menu = mrb_class_get_under(M, scene, "DebugMenu");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_debug_menu_class = debug_menu;
   mrb_define_method(M, debug_menu, "update", RPG2k__Scene__DebugMenu_update,
                     MRB_ARGS_NONE());
   mrb_define_method(M, debug_menu, "dispose", RPG2k__Scene__DebugMenu_dispose,
@@ -3144,6 +3208,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT call needed here. Reuses the `scene` RClass* the
   // RPG2k::Scene::MapViewer/ItemMenu blocks above already looked up.
   RClass* menu = mrb_class_get_under(M, scene, "Menu");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_menu_class = menu;
   mrb_define_method(M, menu, "dispose", RPG2k__Scene__Menu_dispose,
                     MRB_ARGS_NONE());
   mrb_define_method(M, menu, "suspend", RPG2k__Scene__Menu_suspend,
@@ -3483,6 +3550,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // comment for the full breakdown). Reuses the `scene` RClass* every
   // other RPG2k::Scene block above already looked up.
   RClass* chipset_editor = mrb_class_get_under(M, scene, "ChipsetEditor");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_chipset_editor_class = chipset_editor;
   mrb_define_method(M, chipset_editor, "update",
                     RPG2k__Scene__ChipsetEditor_update, MRB_ARGS_NONE());
   mrb_define_method(M, chipset_editor, "dispose",
@@ -5846,6 +5916,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Reuses the `scene` RClass* declared above (RPG2k::Scene::MapViewer's
   // own registration block).
   RClass* map_scene = mrb_class_get_under(M, scene, "Map");
+  // LEXICAL_NEW_TARGET_RESOLUTION -- see this file's own top-of-file
+  // accessor block for why this capture is required for a linkable build.
+  g_direct_construct_rpg2k_scene_map_class = map_scene;
   mrb_define_method(M, map_scene, "clamp_speed", RPG2k__Scene__Map_clamp_speed,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, map_scene, "walk_slide_step",
@@ -7237,4 +7310,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   g_direct_construct_game_number_input_class = nullptr;
   // KEYWORD_DIRECT_CONSTRUCT_SUPPORT's own, same reasoning.
   g_direct_construct_game_move_route_class = nullptr;
+  // LEXICAL_NEW_TARGET_RESOLUTION's own, same reasoning.
+  g_direct_construct_rpg2k_scene_map_class = nullptr;
+  g_direct_construct_rpg2k_scene_map_viewer_class = nullptr;
+  g_direct_construct_rpg2k_scene_chipset_editor_class = nullptr;
+  g_direct_construct_rpg2k_scene_menu_class = nullptr;
+  g_direct_construct_rpg2k_scene_debug_menu_class = nullptr;
+  g_direct_construct_rpg2k_scene_item_menu_class = nullptr;
 }
