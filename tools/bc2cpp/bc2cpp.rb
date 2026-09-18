@@ -11318,6 +11318,194 @@ class CodeGen
     true
   end
 
+  # ---------------------------------------------------------------------------
+  # JOIN_REACHING_DEFS: the extension REGION_DOMINANCE's own single-nearest-write
+  # rule cannot express -- a use whose register was written by BOTH arms of an
+  # `if`/`else`, so no ONE write dominates it, yet every write that can reach it
+  # is individually a valid Fixnum proof source.
+  #
+  # The shape, from a real `mrbc -v` disassembly of
+  # `if cond; x = 5; else; x = 7; end; y = x + 1` (mruby 4.0.0, this repo's own
+  # 3rd/mruby host mrbc), verbatim:
+  #
+  #     004 MOVE    R5 R1       ; R1:cond
+  #     007 JMPNOT  R5 016
+  #     011 LOADI_5 R3 (5)      ; R3:x      -- then-arm write
+  #     013 JMP     018
+  #     016 LOADI_7 R3 (7)      ; R3:x      -- else-arm write
+  #     018 MOVE    R5 R3       ; R3:x      -- the join label, and the use
+  #     021 ADDI    R5 1
+  #
+  # REGION_DOMINANCE refuses this, and refuses it CORRECTLY under its own rule:
+  # the backward walk from the `ADDI`'s operand renames through the `MOVE` at
+  # 018 and finds `LOADI_7` at 016 as the nearest write, making the region
+  # `[016, 021]`; the join label 018 lies inside it and its one in-edge is the
+  # `JMP` at 013, which is BELOW `lo` -- a real path that reaches the use
+  # without executing the write at 016. The write does not dominate. What the
+  # rule cannot say is that the path which skips 016 ran `LOADI_5` at 011
+  # instead, which is just as good a proof.
+  #
+  # Measured before being written, by the same refusal-instrumentation
+  # methodology FIXNUM_RETURN_PROOF used: tagging every refusal inside
+  # proven_fixnum_operand? with its exact cause across a whole-program run and
+  # counting only the COSTLY ones (a refusal only costs a real `mrb_funcall`
+  # call site when the OTHER operand of the pair already proves) put this join
+  # geometry at 770 costly refusals -- the largest STRUCTURAL cause by a wide
+  # margin, behind only "the write was a SEND result" (1304), and ahead of
+  # GETIV (524), GETIDX (428) and DIV (396). The deliberately separated
+  # back-edge geometry (a source ABOVE the region, i.e. a loop rewriting the
+  # register after the use) is a different and much smaller 62, and is NOT
+  # addressed by a smarter dominance rule -- it is handled here only because
+  # the CFG walk below follows back-edges as real edges like any other.
+  #
+  # THE REPLACEMENT is real reaching-definitions dataflow rather than a
+  # cleverer dominance predicate, because the property actually needed is a
+  # reaching-definitions property: a use is provably Fixnum iff EVERY
+  # definition of that register reaching it along ANY real path is itself a
+  # proof source. Dominance is merely the special case where that set has one
+  # element.
+  #
+  # The walk is backward over the real CFG, with state `(k, reg)` meaning "find
+  # every definition of `reg` that reaches the program point just BEFORE
+  # instruction index `k`". Processing a state enumerates that point's
+  # PREDECESSOR instructions and classifies each one:
+  #
+  #   - the fall-through predecessor `k - 1`; plus
+  #   - if `addr(k)` is a control-flow entry at all, every instruction that
+  #     branches to it, via the SAME `fixnum_proof_edge_sources` map
+  #     REGION_DOMINANCE already built and already verified complete against
+  #     3rd/mruby's own `ops.h` (exactly `JMP`/`JMPUW`/`JMPIF`/`JMPNOT`/
+  #     `JMPNIL` move `pc` within a frame). Nothing new is trusted about
+  #     control flow here; this reuses that edge list rather than inventing a
+  #     second CFG.
+  #
+  # A predecessor that WRITES the register terminates that path -- the write
+  # executes on every path through it, so it kills everything before it, which
+  # is exactly why a branch target that is itself a write needs no predecessor
+  # enumeration. It must then satisfy the existing `fixnum_proof_source?`
+  # (recursively, same bounded depth, same six sources -- a `MOVE` renames the
+  # traced register and keeps walking, exactly as the linear scan does). A
+  # predecessor that does NOT write it continues the walk from there. Falling
+  # off the top (`k - 1 < 0`) is method entry and defers to the unchanged
+  # `fixnum_proof_entry_arg?`.
+  #
+  # NO PARTIAL CREDIT: the walk returns true only when it drains its worklist
+  # with every single terminal definition proven. Any one unprovable reaching
+  # definition, any unmodelled edge, any catch-handler target (reached by a
+  # raise, which has no source instruction to enumerate), any address inside a
+  # protected range, any opcode outside FIXNUM_PROOF_STEP_OVER_OPS, and any
+  # `SETUPVAR`-written register refuses the whole query -- the identical
+  # refusal set the linear scan applies, checked at every step here too.
+  #
+  # Why this SUBSUMES rather than contradicts REGION_DOMINANCE: where exactly
+  # one write reaches, this walk finds exactly that write and asks the same
+  # question of it. It is wired in only as a FALLBACK at the two points where
+  # `fixnum_proof_region_ok?` refuses, so it can never turn a currently-proven
+  # operand into an unproven one -- it only ever examines queries that are
+  # already refusals today.
+  #
+  # Loops are handled by the edge map rather than by special-casing: a use
+  # inside a loop body reaches its head label, whose in-edges include the real
+  # back-edge, so the walk continues backward THROUGH the loop body and finds a
+  # conditional rewrite there if one exists (the "second and later iteration"
+  # reaching definition that a purely textual backward scan would miss). The
+  # `seen` set on `(k, reg)` pairs is what makes that terminate.
+  # ---------------------------------------------------------------------------
+
+  # Bound on states explored by one join query. A real if/else join needs a
+  # handful; this exists so a pathological body with dense branching cannot
+  # turn a linear codegen pass superlinear. Exceeding it refuses, never
+  # accepts.
+  FIXNUM_JOIN_MAX_STATES = 96
+
+  # Address -> instruction index, memoized per irep. The edge map is keyed by
+  # source ADDRESS (what the disassembly prints); the walk needs indices.
+  def fixnum_proof_addr_index(irep)
+    @fixnum_addr_index ||= {}
+    @fixnum_addr_index[irep.label] ||=
+      irep.instructions.each_with_index.each_with_object({}) { |(insn, i), h| h[insn.addr] = i }
+  end
+
+  # JOIN_REACHING_DEFS' own entry point -- see the header above. Returns true
+  # only when EVERY definition reaching `reg` at `idx` is a proven Fixnum
+  # source.
+  def proven_fixnum_join?(irep, idx, reg, owner_def, depth)
+    ctx = fixnum_proof_ctx(irep)
+    return false unless ctx
+
+    use_insn = irep.instructions[idx]
+    return false unless use_insn
+    # Same barrier the linear scan applies at the use itself: inside a real
+    # catch handler's protected range RESCUE_SUPPORT has already extracted this
+    # address into a separate function with re-initialized registers.
+    return false if ctx[:protected].include?(use_insn.addr)
+
+    amap = fixnum_proof_addr_index(irep)
+    seen = Set.new
+    work = [[idx, reg.to_s]]
+    states = 0
+
+    until work.empty?
+      k, cur = work.pop
+      next unless seen.add?([k, cur])
+
+      states += 1
+      return false if states > FIXNUM_JOIN_MAX_STATES
+      return false if ctx[:upvars].include?(cur)
+
+      # Predecessors of the point just before instruction `k`: the fall-through,
+      # plus every real branch into `addr(k)`.
+      preds = [k - 1]
+      addr = irep.instructions[k].addr
+      if ctx[:entries].include?(addr)
+        return false if ctx[:catch_targets].include?(addr)
+
+        srcs = ctx[:edge_sources][addr]
+        return false if srcs.nil? || srcs.empty?
+
+        srcs.each do |s|
+          si = amap[s]
+          return false if si.nil?
+
+          preds << si
+        end
+      end
+
+      preds.each do |m|
+        if m.negative?
+          # Method entry: the register still holds what compile_method's own
+          # preamble put there.
+          return false unless fixnum_proof_entry_arg?(irep, cur, owner_def)
+
+          next
+        end
+
+        insn = irep.instructions[m]
+        return false unless insn
+        return false if ctx[:protected].include?(insn.addr)
+        return false unless FIXNUM_PROOF_STEP_OVER_OPS.include?(insn.op) || insn.op.start_with?('LOADI')
+
+        if insn.args =~ /\AR#{cur}\b/
+          if insn.op == 'MOVE'
+            src = insn.args.scan(/R(\d+)/).flatten[1]
+            return false unless src
+            return false if ctx[:upvars].include?(src)
+
+            work << [m, src]
+          else
+            # A real reaching definition. It executes on every path through
+            # `m`, so it kills everything before it -- but it has to prove.
+            return false unless fixnum_proof_source?(irep, m, insn, cur, owner_def, depth)
+          end
+        else
+          work << [m, cur]
+        end
+      end
+    end
+
+    true
+  end
+
   # Every register any `SETUPVAR` in this irep's whole child subtree names as
   # its destination (operand B), as a Set of decimal strings. The level operand
   # is deliberately ignored: a depth-1 `SETUPVAR` inside a grandchild names a
@@ -11383,7 +11571,19 @@ class CodeGen
           # REGION_DOMINANCE: `j` is the write this use depends on, so the
           # region is finally known -- check that control cannot enter it
           # anywhere but at `j` itself before trusting the write.
-          return false unless fixnum_proof_region_ok?(irep, ctx, j, idx)
+          #
+          # JOIN_REACHING_DEFS: if control CAN enter it elsewhere, `j` is not
+          # the only definition reaching this use, so the single-write question
+          # was simply the wrong one -- fall back to the full reaching-
+          # definitions walk, which re-derives every reaching definition
+          # (including `j`) from the original register and proves them all or
+          # refuses. Deliberately restarted from `reg`/`idx` rather than the
+          # partially-renamed `cur`/`j`: the walk redoes the MOVE renaming
+          # itself, per path, which is the whole point -- different arms can
+          # reach the join through different registers.
+          unless fixnum_proof_region_ok?(irep, ctx, j, idx)
+            return proven_fixnum_join?(irep, idx, reg, owner_def, depth)
+          end
 
           return fixnum_proof_source?(irep, j, insn, cur, owner_def, depth)
         end
@@ -11398,7 +11598,14 @@ class CodeGen
     # the method preamble's own write dominates by construction, but a
     # back-edge from BELOW the use would still let later code clobber the
     # register and loop back, so the same containment test still has to run.
-    return false unless fixnum_proof_region_ok?(irep, ctx, -1, idx)
+    #
+    # JOIN_REACHING_DEFS: same fallback as the found-a-write case above. A
+    # label between method entry and this use whose in-edges are not all
+    # contained means some path reached the use without coming straight down
+    # from the preamble -- so enumerate what those paths actually wrote.
+    unless fixnum_proof_region_ok?(irep, ctx, -1, idx)
+      return proven_fixnum_join?(irep, idx, reg, owner_def, depth)
+    end
 
     fixnum_proof_entry_arg?(irep, cur, owner_def)
   end
