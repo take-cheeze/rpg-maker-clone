@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2303
-  from bytecode: 2278
+compiled entry points (real build output -- clean, zero #error): 2304
+  from bytecode: 2279
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 52
   mruby-rgss-compiled: 119
-  mruby-rpg2k-compiled: 2132
+  mruby-rpg2k-compiled: 2133
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 20
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2278
-  left on the interpreter (>=1 #error): 15
-  coverage: 99.3%
+  compiled clean: 2279
+  left on the interpreter (>=1 #error): 14
+  coverage: 99.4%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -42,14 +42,14 @@ methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 53
 
 -- #error markers by reason (whole program) --
       6  SEND/SSEND has a splat and/or keyword argument list (n=...)
-      5  unhandled opcode EXCEPT
       4  unhandled opcode ARGARY
+      4  unhandled opcode EXCEPT
       4  unhandled opcode SUPER
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
       1  unhandled opcode LAMBDA
       1  unhandled opcode SDEF
-     25  total
+     24  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 400
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
@@ -57,14 +57,14 @@ lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
 total mrb_funcall/mrb_funcall_with_block call sites: 15344
-  POLY-marked (receiver's runtime class genuinely decides): 6359
-  everything else (not yet attempted or failed MONO/TYPED): 8985
-distinct dynamically-dispatched method names: 1039
+  POLY-marked (receiver's runtime class genuinely decides): 6358
+  everything else (not yet attempted or failed MONO/TYPED): 8986
+distinct dynamically-dispatched method names: 1038
 top 30 dynamically-dispatched method names:
    1.  2196  :[]
    2.   713  :+
    3.   640  :==
-   4.   596  :new
+   4.   597  :new
    5.   537  :===
    6.   526  :[]=
    7.   496  :-
