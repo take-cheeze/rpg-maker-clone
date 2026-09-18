@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2314
-  from bytecode: 2289
+compiled entry points (real build output -- clean, zero #error): 2316
+  from bytecode: 2291
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 56
   mruby-rgss-compiled: 122
-  mruby-rpg2k-compiled: 2136
+  mruby-rpg2k-compiled: 2138
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 20
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2289
-  left on the interpreter (>=1 #error): 4
-  coverage: 99.8%
+  compiled clean: 2291
+  left on the interpreter (>=1 #error): 2
+  coverage: 99.9%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -41,25 +41,25 @@ integer-valued constants proven (INTEGER_CONSTANT_PROOF): 693
 methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 53
 
 -- #error markers by reason (whole program) --
-      6  SEND/SSEND has a splat and/or keyword argument list (n=...)
-      6  total
+      2  SEND/SSEND has a splat and/or keyword argument list (n=...)
+      2  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 400
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 3
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 15528
-  POLY-marked (receiver's runtime class genuinely decides): 6464
-  everything else (not yet attempted or failed MONO/TYPED): 9064
-distinct dynamically-dispatched method names: 1042
+total mrb_funcall/mrb_funcall_with_block call sites: 15540
+  POLY-marked (receiver's runtime class genuinely decides): 6467
+  everything else (not yet attempted or failed MONO/TYPED): 9073
+distinct dynamically-dispatched method names: 1040
 top 30 dynamically-dispatched method names:
    1.  2225  :[]
    2.   717  :+
    3.   640  :==
    4.   607  :new
-   5.   537  :===
-   6.   526  :[]=
+   5.   544  :===
+   6.   527  :[]=
    7.   509  :-
    8.   479  :*
    9.   477  :respond_to?
