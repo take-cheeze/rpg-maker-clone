@@ -90,19 +90,42 @@ probing, so the band count is not arbitrary.
 its data from the microSD card (`GAME_DIR=/sd/maixgame`, pushed with
 `scripts/maix_sd_upload.py`) instead of the flash-embedded copy, over the
 SD layer described below. It compiles and mounts the card, but does not
-boot: on real hardware it hangs solid partway through the interpreter's
-first data-cluster read. Isolated with a raw `fopen`/`fread` bypassing
-mruby entirely -- `fopen` succeeds (the directory-area reads that resolve
-it all work, including a fresh re-upload, ruling out stale data), but the
-first `fread()` on the file's own data cluster never returns. Reproduces
-identically regardless of which K210 SPI peripheral drives the card
-(SPI0 or SPI1, see "SD layer" below) and independent of clock speed (4 MHz
-or 400 kHz) -- so it is neither a bus-sharing nor a signal-rate issue, at
-least not one clock-speed alone fixes. Not a Renode target either way (no
-SD controller modeled), so CI only compile-proves it. See
-`app/wio/src/maix_game_main.cxx`'s `KNOWN ISSUE` comment for the full
-trail; next step is likely a scope/logic analyzer on the SPI lines, or a
-different SD card to rule out a media-specific fault.
+boot to completion with a real, data-heavy game (tested with a real
+commercial RPG2k title, ~850 ASCII-safe files after excluding non-8.3
+and non-ASCII filenames the SD library's 8.3-only support can't
+represent -- see `scripts/maix_sd_upload.py`'s own docstring): on real
+hardware it reads a very large number of 512-byte blocks successfully
+(tens of thousands, confirmed via direct instrumentation of every wait
+loop in `Sd2Card.cpp`/`Maix_SPI.cpp` -- none of them ever spin, each
+individual block read completes on its first polling iteration) and then
+goes completely silent -- no crash, no timeout, nothing -- always at the
+same fixed physical SD block number across repeated runs. A CPU reset
+revives the board; the hang itself needs a fresh boot to reproduce.
+
+Two hypotheses this session ruled out with real measurements, not just
+reasoning:
+- **Not memory exhaustion.** Free heap does drop steadily while reading
+  (confirmed via direct heap instrumentation in `sys_brk`/`readData`) and
+  the RPG_RT.ldb-sized read volume happened to correlate with roughly
+  when it used to stall -- but extending usable RAM by 2MB (see
+  `app/maix/patch_kendryte_ram_size.py`) left the stall at the exact same
+  block number, just with ~2.7MB free instead of a few hundred KB.
+  Whatever's wrong isn't about running out of memory.
+- **Not GC-collectible garbage.** Tuning mruby's GC to collect
+  aggressively (`GC.interval_ratio = 100`, `GC.generational_mode = false`)
+  produced byte-for-byte identical free-heap numbers at every checkpoint
+  -- confirming the heap drop is live, referenced data, not garbage the
+  GC could have reclaimed sooner.
+
+What's left unexplained: a hang at a fixed physical SD block, independent
+of available memory, with every low-level SPI/SD wait loop confirmed not
+to be spinning. Next step is likely a different SD card (to rule out a
+media-specific fault at that address) or checking what's actually stored
+at that block (a specific file, a FAT structure, a cluster-chain
+boundary). Not a Renode target either way (no SD controller modeled), so
+CI only compile-proves it. See `app/wio/src/maix_game_main.cxx`'s `KNOWN
+ISSUE` comment and `Sd2Card.cpp`'s diagnostic instrumentation (not
+shipped -- see this port's own git history) for the full trail.
 
 ## Display HAL (PlatformIO side)
 
