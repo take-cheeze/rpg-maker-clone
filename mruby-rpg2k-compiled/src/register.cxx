@@ -978,6 +978,26 @@ RClass* g_direct_construct_game_message_config_class = nullptr;
 RClass* g_direct_construct_game_chip_set_class = nullptr;
 RClass* g_direct_construct_game_interpreter_class = nullptr;
 RClass* g_direct_construct_game_number_input_class = nullptr;
+// KEYWORD_DIRECT_CONSTRUCT_SUPPORT: Game::MoveRoute joins
+// DIRECT_CONSTRUCT_TARGETS for bc2cpp's own NEW keyword-aware construct path
+// (compile_keyword_direct_construct) -- a `Foo.new(a, k: v)` call site whose
+// target class's own #initialize really does declare the keyword parameters
+// the site supplies, matched by NAME against its real KEY_P/KARG table.
+// It is invisible to the pre-existing non-keyword construct path by
+// construction (`pure_mandatory_arity?` refuses any keyword-declaring
+// #initialize outright), so adding it changes no already-compiled `.new`
+// site -- but it needs exactly the same four-part accessor wiring every
+// other entry does (global + accessor + gem-init capture + gem-final reset),
+// for exactly the reason this file's own comment above records:
+// DIRECT_CONSTRUCT_TARGETS membership alone is NOT sufficient for a real,
+// LINKABLE RPGMAKER_BC2CPP=1 build, and a missing definition here is an
+// undefined reference that no SKIP_UNSUPPORTED text-generation check and no
+// `g++ -fsyntax-only` of the generated file can ever catch (only a real
+// compile-and-link of THIS file does). Verified the other way too: this
+// accessor really IS referenced by the regenerated output (two real
+// Game::MoveRoute.new sites in RPG2k::Scene::Map), so unlike a speculative
+// table entry it is live wiring, not dead weight.
+RClass* g_direct_construct_game_move_route_class = nullptr;
 }  // namespace
 
 // Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
@@ -1019,6 +1039,12 @@ RClass* Game__Interpreter_compiled_class(void) {
 }
 RClass* Game__NumberInput_compiled_class(void) {
   return g_direct_construct_game_number_input_class;
+}
+// KEYWORD_DIRECT_CONSTRUCT_SUPPORT's own -- same plain-C++-linkage shape as
+// every accessor above (see that block's own comment); the name is bc2cpp's
+// own mechanical `sanitize(owner) + "_compiled_class"`.
+RClass* Game__MoveRoute_compiled_class(void) {
+  return g_direct_construct_game_move_route_class;
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
@@ -3390,6 +3416,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT" diagnostic, no MRB_SET_INSTANCE_TT call needed
   // here.
   RClass* move_route = mrb_class_get_under(M, game, "MoveRoute");
+  // KEYWORD_DIRECT_CONSTRUCT_SUPPORT -- backs Game__MoveRoute_compiled_class;
+  // see this file's own top-of-file accessor block for the full reasoning.
+  g_direct_construct_game_move_route_class = move_route;
   mrb_define_method(M, move_route, "done?", Game__MoveRoute_done_,
                     MRB_ARGS_NONE());
   mrb_define_method(M, move_route, "empty?", Game__MoveRoute_empty_,
@@ -7206,4 +7235,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   g_direct_construct_game_chip_set_class = nullptr;
   g_direct_construct_game_interpreter_class = nullptr;
   g_direct_construct_game_number_input_class = nullptr;
+  // KEYWORD_DIRECT_CONSTRUCT_SUPPORT's own, same reasoning.
+  g_direct_construct_game_move_route_class = nullptr;
 }
