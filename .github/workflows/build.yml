@@ -1699,11 +1699,19 @@ jobs:
       - name: Check red framebuffer
         # The boot firmware paints solid red through LVGL itself before the
         # pumps above return (see app/maix/README.md): the capture from that
-        # same run must decode to a red 320x240 screen. Red arrives
-        # byte-swapped (the driver's SWAP_16), hence 00f8, not f800.
+        # same run must decode to a red screen. Red arrives byte-swapped
+        # (the driver's SWAP_16), hence 00f8, not f800. 480x320 (not
+        # 320x240) and a lower fraction since app/maix/maix_display.cxx's
+        # panel-centering fix (PR #1747): the LVGL canvas is still 320x240,
+        # now legitimately centered in the full 480x320 panel with a
+        # cleared margin around it, diluting the red fraction of the whole
+        # captured frame. Measured directly under this same Renode setup
+        # (scripts/maix_renode_boot.bash) after that fix: match=0.375,
+        # distinct=2 -- both thresholds below with headroom, not at the
+        # exact measured value.
         run: |
           python3 scripts/maix_lcd_decode.py maix-spi-rgss.log maix-frame-rgss.ppm \
-            --expect-color 00f8 --min-fraction 0.45 --min-colors 2 --expect-size 320x240
+            --expect-color 00f8 --min-fraction 0.35 --min-colors 2 --expect-size 480x320
 
       - name: Download P0 firmware
         uses: actions/download-artifact@v8
@@ -1754,10 +1762,13 @@ jobs:
       - name: Check title framebuffer
         # Teal background (byte-swapped on the wire, hence 1004), white
         # border and menu text, window shades: at least four distinct
-        # colors or the title UI did not really draw.
+        # colors or the title UI did not really draw. 480x320 (not
+        # 320x240) and a lower fraction for the same panel-centering
+        # reason as the "Check red framebuffer" step above -- measured
+        # directly under this same Renode setup: match=0.339, distinct=8.
         run: |
           python3 scripts/maix_lcd_decode.py maix-spi-game.log maix-frame-game.ppm \
-            --expect-color 1004 --min-fraction 0.40 --min-colors 4 --expect-size 320x240
+            --expect-color 1004 --min-fraction 0.30 --min-colors 4 --expect-size 480x320
 
   wio-renode:
     # Boots the three firmwares the `wio` job above compiles under Renode

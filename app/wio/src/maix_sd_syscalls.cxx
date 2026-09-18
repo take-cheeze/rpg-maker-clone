@@ -124,7 +124,27 @@ int _read(int fd, char* buf, int len) {
     errno = EBADF;
     return -1;
   }
-  return g_files[slot].read(buf, static_cast<uint32_t>(len));
+  // Deliberately the uint16_t overload (SD.h/File.cpp), not the uint32_t
+  // one: that one's own internal loop only exits once it has satisfied
+  // the *entire* requested length, checking only for its "device error"
+  // sentinel (0xffff) -- a real, correct-per-SdFile::read() 0-byte return
+  // at genuine EOF isn't an error, so that loop just keeps re-requesting
+  // an amount the file can never again satisfy, forever. Confirmed on
+  // real hardware: a real (large) game reading its database in fixed
+  // 4096-byte _read() calls -- the standard "loop until 0" C idiom --
+  // read cleanly through the last 4096-byte chunk and then hung solid,
+  // never returning, on the read exactly at EOF. The uint16_t overload
+  // calls SdFile::read() directly, which does clamp to fileSize_ and
+  // returns a true short count (down to 0) right there -- exactly what a
+  // POSIX _read() is supposed to do, and what lets a caller's "loop until
+  // 0" pattern actually terminate. Clamped to uint16_t's own range (64KB)
+  // since the request from _read()'s int len could technically exceed
+  // it; every real caller here (mruby-lcf's read loops) request far
+  // less, and a short read here is exactly as valid a POSIX read()
+  // result as a short read at EOF -- the caller already has to handle it.
+  const uint16_t want =
+      len > 0xFFFF ? uint16_t{0xFFFF} : static_cast<uint16_t>(len);
+  return g_files[slot].read(buf, want);
 }
 
 int _write(int fd, const char* buf, int len) {
