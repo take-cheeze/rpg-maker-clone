@@ -158,47 +158,45 @@ function(rpg2k_add_mruby)
   set(mruby_defined_keyword_patch
       "${ARG_REPO_ROOT}/patches/mruby-defined-keyword.patch")
 
-  # Vendored mruby never implemented bare `module_function` (the "every
-  # method def'd from here on in this module body becomes a module
-  # function" scope form, called with no arguments) -- a literal no-op stub
-  # in src/class.c's own mrb_mod_module_function: `if (argc == 0) { /* set
-  # MODFUNC SCOPE if implemented */ return mod; }`. `ruby -e 'module Foo;
-  # module_function; def bar(x); x*2; end; end; p Foo.bar(3)'` returns 6 in
-  # CRuby; the same script raised `NoMethodError: undefined method 'bar'
-  # for Module` under unpatched vendored mruby (patches/mruby-
-  # module-function-scope.patch's own preamble has the full trail,
-  # including why the fix reuses -- rather than replaces -- the existing
-  # bare private/protected/public scope-tracking machinery, and the two
-  # previously-unused/ZERO-documented flag bits it spends to do it).
-  # Verified against mruby's own full bundled mrbtest suite: identical
-  # 1874 OK / 0 KO before and after (the one environment-only "Crash" is a
-  # sandboxed-container UDPSocket permission gap, reproduces unpatched
-  # too, unrelated to this patch). Found scoping tools/optcarrot_probe
-  # (see its own README.md) against optcarrot's real upstream source,
-  # which uses exactly this idiom in lib/optcarrot/driver.rb and
-  # lib/optcarrot/palette.rb. Same patch-in-place treatment as the other
-  # mruby patches above, for the same reason (no fork of upstream
-  # mruby/mruby this project controls).
+  # Vendored mruby never implemented bare `module_function` (the "every method
+  # def'd from here on in this module body becomes a module function" scope
+  # form, called with no arguments) -- a literal no-op stub in src/class.c's own
+  # mrb_mod_module_function: `if (argc == 0) { /* set MODFUNC SCOPE if
+  # implemented */ return mod; }`. `ruby -e 'module Foo; module_function; def
+  # bar(x); x*2; end; end; p Foo.bar(3)'` returns 6 in CRuby; the same script
+  # raised `NoMethodError: undefined method 'bar' for Module` under unpatched
+  # vendored mruby (patches/mruby- module-function-scope.patch's own preamble
+  # has the full trail, including why the fix reuses -- rather than replaces --
+  # the existing bare private/protected/public scope-tracking machinery, and the
+  # two previously-unused/ZERO-documented flag bits it spends to do it).
+  # Verified against mruby's own full bundled mrbtest suite: identical 1874 OK /
+  # 0 KO before and after (the one environment-only "Crash" is a
+  # sandboxed-container UDPSocket permission gap, reproduces unpatched too,
+  # unrelated to this patch). Found scoping tools/optcarrot_probe (see its own
+  # README.md) against optcarrot's real upstream source, which uses exactly this
+  # idiom in lib/optcarrot/driver.rb and lib/optcarrot/palette.rb. Same
+  # patch-in-place treatment as the other mruby patches above, for the same
+  # reason (no fork of upstream mruby/mruby this project controls).
   set(mruby_module_function_scope_patch
       "${ARG_REPO_ROOT}/patches/mruby-module-function-scope.patch")
 
-  # `mrbc -v`'s own parse-tree dump (mrb_parser_dump, parse.y) prints
-  # garbage -- and can emit an invalid UTF-8 byte sequence doing it -- for a
-  # `$&`/`` $` ``/`$'`/`$+` or `$1`/`$2`/... node, because its NODE_BACK_REF/
-  # NODE_NTH_REF cases read `node_to_int(tree)` (a raw heap pointer cast to
-  # int) instead of that node's own real stored `.type`/`.nth` field
-  # (patches/mruby-parser-dump-back-nth-ref.patch's own preamble has the
-  # full trail and a real repro). Debug-dump-only: mrb_parser_dump is never
-  # called from the actual compiler/codegen path, so this changes no
-  # compiled bytecode, only what `-v`'s own text output shows for these two
-  # node kinds -- but tools/bc2cpp/bc2cpp.rb reads exactly that text, and
-  # crashes outright on the invalid byte sequence. Verified against mruby's
-  # own full bundled mrbtest suite, same as the module-function-scope patch
-  # above: identical 1874 OK / 0 KO before and after. Found scoping
-  # tools/optcarrot_probe (see its own README.md) -- optcarrot's own
-  # lib/optcarrot/opt.rb:74 has the real `$1`/`$'` use that hit this. Same
-  # patch-in-place treatment as the other mruby patches above, for the same
-  # reason (no fork of upstream mruby/mruby this project controls).
+  # `mrbc -v`'s own parse-tree dump (mrb_parser_dump, parse.y) prints garbage --
+  # and can emit an invalid UTF-8 byte sequence doing it -- for a `$&`/`` $`
+  # ``/`$'`/`$+` or `$1`/`$2`/... node, because its NODE_BACK_REF/ NODE_NTH_REF
+  # cases read `node_to_int(tree)` (a raw heap pointer cast to int) instead of
+  # that node's own real stored `.type`/`.nth` field
+  # (patches/mruby-parser-dump-back-nth-ref.patch's own preamble has the full
+  # trail and a real repro). Debug-dump-only: mrb_parser_dump is never called
+  # from the actual compiler/codegen path, so this changes no compiled bytecode,
+  # only what `-v`'s own text output shows for these two node kinds -- but
+  # tools/bc2cpp/bc2cpp.rb reads exactly that text, and crashes outright on the
+  # invalid byte sequence. Verified against mruby's own full bundled mrbtest
+  # suite, same as the module-function-scope patch above: identical 1874 OK / 0
+  # KO before and after. Found scoping tools/optcarrot_probe (see its own
+  # README.md) -- optcarrot's own lib/optcarrot/opt.rb:74 has the real `$1`/`$'`
+  # use that hit this. Same patch-in-place treatment as the other mruby patches
+  # above, for the same reason (no fork of upstream mruby/mruby this project
+  # controls).
   set(mruby_parser_dump_back_nth_ref_patch
       "${ARG_REPO_ROOT}/patches/mruby-parser-dump-back-nth-ref.patch")
 
