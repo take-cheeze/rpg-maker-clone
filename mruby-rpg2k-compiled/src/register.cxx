@@ -1031,6 +1031,24 @@ RClass* g_direct_construct_rpg2k_scene_chipset_editor_class = nullptr;
 RClass* g_direct_construct_rpg2k_scene_menu_class = nullptr;
 RClass* g_direct_construct_rpg2k_scene_debug_menu_class = nullptr;
 RClass* g_direct_construct_rpg2k_scene_item_menu_class = nullptr;
+// KEYWORD_CONSTRUCT_OPTIONAL_POSITIONAL_SUPPORT: Game::Battle, the first
+// DIRECT_CONSTRUCT_TARGETS entry whose #initialize declares OPTIONAL
+// POSITIONALS alongside its keywords (`ENTER 2:8:0:0:3:0:0:0`) rather than
+// keywords alone. That distinction is entirely a bc2cpp.rb codegen concern
+// (it decides how many `mrb_nil_value()` padding arguments and what
+// `bc2cpp_given_opt` count get spliced into the emitted _impl call) and
+// makes no difference at all to the wiring HERE, which is the same
+// four-part shape every entry above needs: global + accessor + gem-init
+// capture + gem-final reset. Live, not speculative: the one real
+// `Game::Battle.new` site (RPG2k::Scene::Battle#start, mruby-rpg2k/mrblib/
+// scene/battle.rb:178) really does reference Game__Battle_compiled_class in
+// the regenerated output -- and, per this file's own accessor-block comment
+// above, a missing definition here would be an undefined reference that
+// neither the SKIP_UNSUPPORTED text-generation check nor `g++
+// -fsyntax-only` of the generated file can catch, only a real
+// compile-and-link of THIS file (verified that way: `g++ -c` then `nm -C`
+// showing the accessor defined as `T`).
+RClass* g_direct_construct_game_battle_class = nullptr;
 }  // namespace
 
 // Plain C++ linkage (not `extern "C"`): unlike lib.cxx's own accessors
@@ -1100,6 +1118,12 @@ RClass* RPG2k__Scene__DebugMenu_compiled_class(void) {
 }
 RClass* RPG2k__Scene__ItemMenu_compiled_class(void) {
   return g_direct_construct_rpg2k_scene_item_menu_class;
+}
+// KEYWORD_CONSTRUCT_OPTIONAL_POSITIONAL_SUPPORT's own -- same
+// plain-C++-linkage shape as every accessor above; the name is bc2cpp's own
+// mechanical `sanitize(owner) + "_compiled_class"`.
+RClass* Game__Battle_compiled_class(void) {
+  return g_direct_construct_game_battle_class;
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
@@ -2311,6 +2335,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // does not appear in bc2cpp's own "classes needing
   // MRB_SET_INSTANCE_TT(..., MRB_TT_DATA)" diagnostic).
   RClass* battle = mrb_class_get_under(M, game, "Battle");
+  // KEYWORD_CONSTRUCT_OPTIONAL_POSITIONAL_SUPPORT -- backs
+  // Game__Battle_compiled_class; see this file's own top-of-file accessor
+  // block for the full reasoning. Note the comment just above (about
+  // #initialize's optional-plus-keyword arguments keeping it interpreted)
+  // now describes only the IVAR-EMBEDDING consequence: #initialize itself
+  // compiles clean and has a real Game__Battle_initialize_impl, which is
+  // exactly what this direct-construct wiring calls.
+  g_direct_construct_game_battle_class = battle;
   mrb_define_method(M, battle, "damage_cap", Game__Battle_damage_cap,
                     MRB_ARGS_NONE());
   mrb_define_method(M, battle, "recover_cap", Game__Battle_recover_cap,
@@ -7317,4 +7349,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   g_direct_construct_rpg2k_scene_menu_class = nullptr;
   g_direct_construct_rpg2k_scene_debug_menu_class = nullptr;
   g_direct_construct_rpg2k_scene_item_menu_class = nullptr;
+  // KEYWORD_CONSTRUCT_OPTIONAL_POSITIONAL_SUPPORT's own, same reasoning.
+  g_direct_construct_game_battle_class = nullptr;
 }
