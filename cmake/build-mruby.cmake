@@ -182,6 +182,26 @@ function(rpg2k_add_mruby)
   set(mruby_module_function_scope_patch
       "${ARG_REPO_ROOT}/patches/mruby-module-function-scope.patch")
 
+  # `mrbc -v`'s own parse-tree dump (mrb_parser_dump, parse.y) prints
+  # garbage -- and can emit an invalid UTF-8 byte sequence doing it -- for a
+  # `$&`/`` $` ``/`$'`/`$+` or `$1`/`$2`/... node, because its NODE_BACK_REF/
+  # NODE_NTH_REF cases read `node_to_int(tree)` (a raw heap pointer cast to
+  # int) instead of that node's own real stored `.type`/`.nth` field
+  # (patches/mruby-parser-dump-back-nth-ref.patch's own preamble has the
+  # full trail and a real repro). Debug-dump-only: mrb_parser_dump is never
+  # called from the actual compiler/codegen path, so this changes no
+  # compiled bytecode, only what `-v`'s own text output shows for these two
+  # node kinds -- but tools/bc2cpp/bc2cpp.rb reads exactly that text, and
+  # crashes outright on the invalid byte sequence. Verified against mruby's
+  # own full bundled mrbtest suite, same as the module-function-scope patch
+  # above: identical 1874 OK / 0 KO before and after. Found scoping
+  # tools/optcarrot_probe (see its own README.md) -- optcarrot's own
+  # lib/optcarrot/opt.rb:74 has the real `$1`/`$'` use that hit this. Same
+  # patch-in-place treatment as the other mruby patches above, for the same
+  # reason (no fork of upstream mruby/mruby this project controls).
+  set(mruby_parser_dump_back_nth_ref_patch
+      "${ARG_REPO_ROOT}/patches/mruby-parser-dump-back-nth-ref.patch")
+
   # Vendored mruby's own out-of-memory recovery has two real gaps
   # (patches/mruby-nomemoryerror-reentrant-alloc.patch's own preamble has the
   # full trail, including a host-native repro harness built against this
@@ -312,6 +332,8 @@ function(rpg2k_add_mruby)
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_module_function_scope_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_parser_dump_back_nth_ref_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_nomem_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_gc_type_counts_patch}"
@@ -336,6 +358,7 @@ function(rpg2k_add_mruby)
             "${mruby_dollar_bang_patch}"
             "${mruby_defined_keyword_patch}"
             "${mruby_module_function_scope_patch}"
+            "${mruby_parser_dump_back_nth_ref_patch}"
             "${mruby_nomem_patch}"
             "${mruby_gc_type_counts_patch}"
             "${mruby_io_maxpathlen_patch}"
