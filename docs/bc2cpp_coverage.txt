@@ -2,20 +2,20 @@ bc2cpp coverage report
 (scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled
  gems' owners combined -- see that script's own header)
 
-compiled entry points (real build output -- clean, zero #error): 2307
-  from bytecode: 2282
+compiled entry points (real build output -- clean, zero #error): 2308
+  from bytecode: 2283
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 25
   mruby-lcf-compiled: 52
   mruby-rgss-compiled: 120
-  mruby-rpg2k-compiled: 2135
+  mruby-rpg2k-compiled: 2136
 never called (zero evidence in bytecode or NATIVE_SRCS): 61
 classes needing MRB_SET_INSTANCE_TT: 20
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 2293
-  compiled clean: 2282
-  left on the interpreter (>=1 #error): 11
-  coverage: 99.5%
+  compiled clean: 2283
+  left on the interpreter (>=1 #error): 10
+  coverage: 99.6%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 255
@@ -46,28 +46,27 @@ methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 53
       4  unhandled opcode SUPER
       2  unhandled opcode EXEC
       2  unhandled opcode SCLASS
-      1  unhandled opcode LAMBDA
       1  unhandled opcode SDEF
-     20  total
+     19  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 400
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
-lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 2
+lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 3
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 15368
-  POLY-marked (receiver's runtime class genuinely decides): 6377
-  everything else (not yet attempted or failed MONO/TYPED): 8991
-distinct dynamically-dispatched method names: 1039
+total mrb_funcall/mrb_funcall_with_block call sites: 15385
+  POLY-marked (receiver's runtime class genuinely decides): 6381
+  everything else (not yet attempted or failed MONO/TYPED): 9004
+distinct dynamically-dispatched method names: 1038
 top 30 dynamically-dispatched method names:
    1.  2200  :[]
-   2.   713  :+
+   2.   714  :+
    3.   640  :==
    4.   598  :new
    5.   537  :===
    6.   526  :[]=
-   7.   496  :-
-   8.   478  :*
+   7.   500  :-
+   8.   479  :*
    9.   476  :respond_to?
   10.   284  :/
   11.   282  :>
@@ -78,15 +77,15 @@ top 30 dynamically-dispatched method names:
   16.   178  :puts
   17.   152  :dispose
   18.   150  :>=
-  19.   143  :to_s
+  19.   145  :to_s
   20.   137  :%
   21.   134  :each
   22.   126  :<=
   23.   116  :message
   24.   113  :<<
-  25.   112  :width
+  25.   113  :width
   26.   109  :y
   27.   108  :x
-  28.   102  :to_i
-  29.    99  :term
+  28.   102  :term
+  29.   102  :to_i
   30.    97  :repeat?
