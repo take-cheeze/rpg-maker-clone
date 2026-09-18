@@ -158,6 +158,30 @@ function(rpg2k_add_mruby)
   set(mruby_defined_keyword_patch
       "${ARG_REPO_ROOT}/patches/mruby-defined-keyword.patch")
 
+  # Vendored mruby never implemented bare `module_function` (the "every
+  # method def'd from here on in this module body becomes a module
+  # function" scope form, called with no arguments) -- a literal no-op stub
+  # in src/class.c's own mrb_mod_module_function: `if (argc == 0) { /* set
+  # MODFUNC SCOPE if implemented */ return mod; }`. `ruby -e 'module Foo;
+  # module_function; def bar(x); x*2; end; end; p Foo.bar(3)'` returns 6 in
+  # CRuby; the same script raised `NoMethodError: undefined method 'bar'
+  # for Module` under unpatched vendored mruby (patches/mruby-
+  # module-function-scope.patch's own preamble has the full trail,
+  # including why the fix reuses -- rather than replaces -- the existing
+  # bare private/protected/public scope-tracking machinery, and the two
+  # previously-unused/ZERO-documented flag bits it spends to do it).
+  # Verified against mruby's own full bundled mrbtest suite: identical
+  # 1874 OK / 0 KO before and after (the one environment-only "Crash" is a
+  # sandboxed-container UDPSocket permission gap, reproduces unpatched
+  # too, unrelated to this patch). Found scoping tools/optcarrot_probe
+  # (see its own README.md) against optcarrot's real upstream source,
+  # which uses exactly this idiom in lib/optcarrot/driver.rb and
+  # lib/optcarrot/palette.rb. Same patch-in-place treatment as the other
+  # mruby patches above, for the same reason (no fork of upstream
+  # mruby/mruby this project controls).
+  set(mruby_module_function_scope_patch
+      "${ARG_REPO_ROOT}/patches/mruby-module-function-scope.patch")
+
   # Vendored mruby's own out-of-memory recovery has two real gaps
   # (patches/mruby-nomemoryerror-reentrant-alloc.patch's own preamble has the
   # full trail, including a host-native repro harness built against this
@@ -286,6 +310,8 @@ function(rpg2k_add_mruby)
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_defined_keyword_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_module_function_scope_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_nomem_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_gc_type_counts_patch}"
@@ -309,6 +335,7 @@ function(rpg2k_add_mruby)
             "${mruby_colon3_patch}"
             "${mruby_dollar_bang_patch}"
             "${mruby_defined_keyword_patch}"
+            "${mruby_module_function_scope_patch}"
             "${mruby_nomem_patch}"
             "${mruby_gc_type_counts_patch}"
             "${mruby_io_maxpathlen_patch}"
