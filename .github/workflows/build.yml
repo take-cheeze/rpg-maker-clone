@@ -1800,7 +1800,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           # Building Renode from source (below) needs the SDK; the portable
           # release binary this repo's own dev docs point at for P1/P2-only
@@ -1939,7 +1939,7 @@ jobs:
         run: pio run -e m5stack
 
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: m5stack-firmware
           path: |
@@ -1977,7 +1977,7 @@ jobs:
           show-progress: false
           persist-credentials: false
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: m5stack-firmware
           path: app/m5stack/.pio/build/m5stack
@@ -2659,7 +2659,7 @@ jobs:
       # runners ship bison but not gperf.
       - run: sudo apt-get update -q && sudo apt-get install -y -q gperf
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
