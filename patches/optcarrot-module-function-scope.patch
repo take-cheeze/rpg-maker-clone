@@ -1,0 +1,88 @@
+mruby gap: bare `module_function` (the "every method defined from here on
+in this module body becomes a module function" scope form, called with no
+arguments) is a literal no-op in vendored mruby -- src/class.c's own
+mrb_mod_module_function: `if (argc == 0) { /* set MODFUNC SCOPE if
+implemented */ return mod; }`, explicitly unimplemented upstream. The
+explicit form (`module_function :name, ...`, naming methods already
+defined above it) works fine and is what this patch switches to.
+
+`ruby -e 'module Foo; module_function; def bar(x); x*2; end; end; p
+Foo.bar(3)'` returns 6 in CRuby; the same script under vendored mruby
+raises `NoMethodError: undefined method 'bar' for Module`.
+
+optcarrot (see tools/optcarrot_probe/README.md) uses the bare form in
+three files -- lib/optcarrot/driver.rb, lib/optcarrot/palette.rb, and
+lib/optcarrot/driver/misc.rb -- each moved here to the explicit
+end-of-module form, naming exactly the methods each module already
+defines above it. No behavioral difference in CRuby (verified via
+optcarrot's own checksum output matching unpatched CRuby exactly), and
+this is optcarrot's own upstream source being patched (not vendored
+mruby, which this project does not control the compiler-bug/gap fixes
+for the way patches/mruby-*.patch do) -- so this patch lives on the
+3rd/optcarrot submodule checkout instead, applied the same way and with
+the same script (scripts/apply_mruby_patch.bash) as those.
+
+diff --git a/lib/optcarrot/driver.rb b/lib/optcarrot/driver.rb
+index d174831..a8fbc50 100644
+--- a/lib/optcarrot/driver.rb
++++ b/lib/optcarrot/driver.rb
+@@ -27,8 +27,6 @@ module Optcarrot
+       }
+     }
+ 
+-    module_function
+-
+     def load(conf)
+       video = load_each(conf, :video, conf.video).new(conf)
+       audio = load_each(conf, :audio, conf.audio).new(conf)
+@@ -56,6 +54,8 @@ module Optcarrot
+         selected
+       end
+     end
++
++    module_function :load, :load_each
+   end
+ 
+   # A base class of video output driver
+diff --git a/lib/optcarrot/driver/misc.rb b/lib/optcarrot/driver/misc.rb
+index 3f7e66b..2f112cd 100644
+--- a/lib/optcarrot/driver/misc.rb
++++ b/lib/optcarrot/driver/misc.rb
+@@ -1,8 +1,6 @@
+ module Optcarrot
+   # some helper methods for drivers
+   module Driver
+-    module_function
+-
+     def quantize_colors(colors, limit = 256)
+       # median-cut
+       @cubes = [colors.uniq]
+@@ -119,5 +117,7 @@ module Optcarrot
+ 
+       return width, height, pixels.write_bytes(dat.pack("V*"))
+     end
++
++    module_function :quantize_colors, :cutoff_overscan, :show_fps, :icon_data
+   end
+ end
+diff --git a/lib/optcarrot/palette.rb b/lib/optcarrot/palette.rb
+index 2de54d9..41c7bdf 100644
+--- a/lib/optcarrot/palette.rb
++++ b/lib/optcarrot/palette.rb
+@@ -1,8 +1,6 @@
+ module Optcarrot
+   # NES palette generators
+   module Palette
+-    module_function
+-
+     # I don't know where this palette definition came from, but many emulators are using this palette
+     def defacto_palette
+       [
+@@ -61,5 +59,7 @@ module Optcarrot
+         end
+       end
+     end
++
++    module_function :defacto_palette, :nestopia_palette
+   end
+ end

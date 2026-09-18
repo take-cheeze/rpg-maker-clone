@@ -44,3 +44,6 @@
 [submodule "3rd/SDL_mixer"]
 	path = 3rd/SDL_mixer
 	url = https://github.com/libsdl-org/SDL_mixer.git
+[submodule "3rd/optcarrot"]
+	path = 3rd/optcarrot
+	url = https://github.com/mame/optcarrot.git
