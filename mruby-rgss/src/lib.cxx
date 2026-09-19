@@ -676,6 +676,7 @@ namespace {
 RClass* g_native_rect_class = nullptr;
 RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
+RClass* g_native_sprite_class = nullptr;
 }  // namespace
 
 // extern "C" here isn't about C compatibility (nothing here is called from
@@ -701,6 +702,9 @@ extern "C" RClass* rgss_native_color_class(void) {
 }
 extern "C" RClass* rgss_native_tone_class(void) {
   return g_native_tone_class;
+}
+extern "C" RClass* rgss_native_sprite_class(void) {
+  return g_native_sprite_class;
 }
 
 // Called directly by bc2cpp's own generated code (compile_send's "MONO :new
@@ -763,6 +767,22 @@ extern "C" mrb_value rgss_tone_new_direct(mrb_state* M,
   return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
                               clamp_signed255(b), clamp255(gray));
 }
+
+// Called directly by bc2cpp's own generated code (compile_send's "MONO :new
+// -> direct native construct" path) for `Sprite.new` / `Sprite.new(viewport)`
+// -- see NATIVE_CONSTRUCT_TARGETS there. Delegates to `spr_init` itself
+// (defined further below in this same file) rather than duplicating its
+// body: the viewport comes pre-resolved as a real `mrb_value` (no
+// `mrb_get_args` re-read -- "|o" never coerces or raises for any input, so
+// there is no TypeError behavior to preserve by keeping the read inside),
+// and `klass` is the guarded `mrb_class_ptr(recv)` the call site already
+// computed, same as every other `*_new_direct` here. Declared here (not
+// after `spr_init`'s own definition) because NATIVE_CONSTRUCT_TARGETS'
+// `fn` entries all live in this one block by that table's own convention;
+// C++ resolves the call at link time, so textual order is irrelevant.
+extern "C" mrb_value rgss_sprite_new_direct(mrb_state* M,
+                                            RClass* klass,
+                                            mrb_value viewport);
 
 // ---- Table ----------------------------------------------------------------
 
@@ -3990,6 +4010,24 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   register_zobj(M, self);
   // Keep the viewport alive as long as the sprite refers to it.
   mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), vp);
+  return self;
+}
+
+// bc2cpp's own direct-construct entry point for `Sprite.new` /
+// `Sprite.new(viewport)` (see NATIVE_CONSTRUCT_TARGETS there and the
+// forward declaration next to the other `*_new_direct` functions above):
+// the same body as `spr_init`, but the viewport arrives pre-resolved
+// (the generated call site passes it straight through) and the object
+// itself is allocated here (Class#new's own `self.allocate` step, which
+// the direct path bypasses along with the dispatch).
+extern "C" mrb_value rgss_sprite_new_direct(mrb_state* M,
+                                            RClass* klass,
+                                            mrb_value viewport) {
+  mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
+  lv_obj_t* p = lv_canvas_create(parent_object(M, viewport));
+  wrap_lv_obj(M, self, p);
+  register_zobj(M, self);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), viewport);
   return self;
 }
 
@@ -7343,6 +7381,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* spr = mrb_define_class_under(M, m, "Sprite", M->object_class);
   MRB_SET_INSTANCE_TT(spr, MRB_TT_DATA);
+  g_native_sprite_class = spr;
   mrb_define_method(M, spr, "initialize", spr_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, spr, "bitmap=", spr_set_bmp, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "dispose", obj_dispose, MRB_ARGS_NONE());
@@ -7672,4 +7711,5 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_rect_class = nullptr;
   g_native_color_class = nullptr;
   g_native_tone_class = nullptr;
+  g_native_sprite_class = nullptr;
 }
