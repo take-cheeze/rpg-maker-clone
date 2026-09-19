@@ -17,6 +17,13 @@
 # shape (self-implicit, transitive, prepend, and an unresolvable explicit
 # receiver flagged as unknown).
 #
+# It also drives ZSUPER_GENERAL_SUPPORT (CodeGen#zsuper_forward_plan +
+# compile_zsuper_forward, docs/adr/0159): the general bare-`super`-forwards-own-
+# args-to-a-compiled-superclass plan, asserting it fires for the clean shape
+# (and agrees from either half of the ARGARY/SUPER pair) and declines on a
+# block-param method and on an owner the mixin guard refuses -- the recognition
+# the optcarrot APU `#initialize`/`#poke_*` sites exercise end-to-end.
+#
 # Usage: MRBC=path/to/host/mrbc ruby scripts/bc2cpp_include_ancestor_check.rb
 
 require 'tmpdir'
@@ -62,6 +69,30 @@ SRC = <<~'RUBY'
   class UnknownMixin < Base
     String.include Mfoo
     def foo; super; end
+  end
+  # ZSUPER_GENERAL_SUPPORT shapes (the general zsuper-forward plan):
+  class ZBase
+    def initialize(a, b)
+      @a = a
+      @b = b
+    end
+  end
+  class ZClean < ZBase
+    def initialize(p, q)
+      super
+      @c = 1
+    end
+  end
+  class ZBlock < ZBase
+    def initialize(p, q, &blk)
+      super
+    end
+  end
+  class ZInclude < ZBase
+    include Mbar
+    def initialize(p, q)
+      super
+    end
   end
 RUBY
 
@@ -116,11 +147,33 @@ Dir.mktmpdir do |dir|
   check.call('Prepended: prepend never intervenes -> reaches Base', reaches.call('Prepended'), true)
   check.call('PlainSuper: no includes -> reaches Base', reaches.call('PlainSuper'), true)
   check.call('UnknownMixin: unresolvable include -> decline', reaches.call('UnknownMixin'), false)
+
+  # -- ZSUPER_GENERAL_SUPPORT: the general zsuper-forward plan + emitted call --
+  zsuper_plan = lambda do |owner, meth|
+    def_ = registry[meth].find { |d| d.owner == owner }
+    raise "no #{owner}##{meth} in registry" unless def_
+
+    ir = ireps[def_.irep]
+    sup = ir.instructions.index { |i| i.op == 'SUPER' }
+    ary = ir.instructions.index { |i| i.op == 'ARGARY' }
+    # `idx` may name either half of the pair -- assert BOTH agree.
+    [gen.zsuper_forward_plan(def_, ir, sup), gen.zsuper_forward_plan(def_, ir, ary)]
+  end
+  clean = zsuper_plan.call('ZClean', 'initialize')
+  check.call('ZClean: general zsuper plan (m=2 -> ZBase#initialize)',
+             clean[0] && [clean[0][:m], clean[0][:target_def].owner, clean[0][:target_def].name],
+             [2, 'ZBase', 'initialize'])
+  check.call('ZClean: plan agrees from the ARGARY and the SUPER index', clean[0], clean[1])
+  check.call('ZBlock: block-param method -> no plan', zsuper_plan.call('ZBlock', 'initialize')[0], nil)
+  check.call('ZInclude: include guard -> no plan', zsuper_plan.call('ZInclude', 'initialize')[0], nil)
+  target = registry['initialize'].find { |d| d.owner == 'ZBase' }
+  check.call('compile_zsuper_forward forwards self + r1, r2 into the superclass _impl',
+             !!gen.compile_zsuper_forward(target, 4, 2)[/=\s*\w+_impl\(M, self, r1, r2\);/], true)
 end
 
 if failures.empty?
-  puts 'bc2cpp include/prepend ancestor scan check: PASS'
+  puts 'bc2cpp include/prepend ancestor + general zsuper check: PASS'
 else
-  warn "bc2cpp include/prepend ancestor scan check: #{failures.size} failure(s)"
+  warn "bc2cpp include/prepend ancestor + general zsuper check: #{failures.size} failure(s)"
   exit 1
 end
