@@ -4605,15 +4605,16 @@ end
 # for a bad argument, mrb_state* M has no notion of a calling-frame
 # boundary to cross), only which side of the call spells them out.
 NATIVE_CONSTRUCT_TARGETS = {
-  'Tone' => { fn: 'rgss_tone_new_direct', class_fn: 'rgss_native_tone_class', arity: 4, arg_type: :float },
-  'Color' => { fn: 'rgss_color_new_direct', class_fn: 'rgss_native_color_class', arity: 4, arg_type: :float },
-  'Rect' => { fn: 'rgss_rect_new_direct', class_fn: 'rgss_native_rect_class', arity: 4, arg_type: :int },
+  'Tone' => { fn: 'rgss::tone_new_direct', class_fn: 'rgss::native_tone_class', arity: 4, arg_type: :float },
+  'Color' => { fn: 'rgss::color_new_direct', class_fn: 'rgss::native_color_class', arity: 4, arg_type: :float },
+  'Rect' => { fn: 'rgss::rect_new_direct', class_fn: 'rgss::native_rect_class', arity: 4, arg_type: :int },
   # Sprite (31 real `Sprite.new` sites): `spr_init` (mruby-rgss/src/
   # lib.cxx) is `mrb_get_args(M, "|o", &vp)` -- zero or one argument, the
   # viewport (or nil for none) -- then a fixed four-step body
   # (`lv_canvas_create(parent_object(M, vp))`, `wrap_lv_obj`,
-  # `register_zobj`, `@viewport` ivar store). `rgss_sprite_new_direct`
-  # (added alongside this entry) reproduces exactly that body with the
+  # `register_zobj`, `@viewport` ivar store). `rgss::sprite_new_direct`
+  # (namespace `rgss` at file scope in lib.cxx, declared in include/
+  # rgss_construct.hxx) reproduces exactly that body with the
   # already-unboxed viewport value; `mrb_get_args`' own "|o" never
   # coerces or raises for any input, so no TypeError behavior exists to
   # preserve. Both real shapes (`Sprite.new` and `Sprite.new(viewport)`)
@@ -4621,7 +4622,7 @@ NATIVE_CONSTRUCT_TARGETS = {
   # counts. The runtime class-identity guard is the same one every other
   # entry already carries (a reassigned `Sprite` constant falls back to
   # ordinary `mrb_funcall`).
-  'Sprite' => { fn: 'rgss_sprite_new_direct', class_fn: 'rgss_native_sprite_class', arity: [0, 1],
+  'Sprite' => { fn: 'rgss::sprite_new_direct', class_fn: 'rgss::native_sprite_class', arity: [0, 1],
                 arg_type: :object },
 }.freeze
 
@@ -10459,20 +10460,28 @@ class CodeGen
   # `_impl` declarations -- this only ever declares them, never defines
   # them; the definitions reach this translation unit at link time the
   # same way any other cross-file C++ call in this project's native gems
-  # already does. `extern "C"`, matching lib.cxx's own definitions exactly
-  # (see that file's own comment on why: each one sits inside lib.cxx's
-  # top-level anonymous namespace, and only an `extern "C"` declaration
-  # escapes that namespace's own internal linkage) -- a plain C++-linkage
-  # declaration here would silently mangle a different symbol name than
-  # the real (extern "C") one lib.cxx defines and fail to link; caught
-  # exactly this way building the very first real caller (RGSS::Sprite's
-  # own #tone/#color/#src_rect).
+  # already does. (This comment used to mandate `extern "C"` decls to
+  # match lib.cxx's own anonymous-namespace definitions -- that whole
+  # arrangement is gone: the entry points now live in namespace `rgss`
+  # at file scope, declared once in include/rgss_construct.hxx, and this
+  # emitter just includes that header. Kept as a warning for anyone
+  # tempted to re-spell the signatures here instead: don't -- the
+  # header is the single source of truth.)
   #
   # Parameter types have to match lib.cxx's own real (native, not
   # mrb_value) signature exactly, one real C++ overload-resolution/linkage
   # concern, not just documentation -- see that file's own comment on
   # these three functions for why `klass` is `RClass*` and every other
   # parameter is `arg_type`'s own native C++ type (`mrb_int`/`mrb_float`).
+  #
+  # The declarations come from include/rgss_construct.hxx itself (one
+  # `#include`, never re-spelled here): the header is the single source
+  # of truth for these signatures, so a future entry only touches the
+  # header, lib.cxx, and NATIVE_CONSTRUCT_TARGETS -- never this emitter.
+  # The three `*-compiled` mrbgem.rake files each add repo `include/` to
+  # `cxx.include_paths` (the same wiring mruby-mvjs already uses for
+  # rgss_bitmap.hxx) so the generated TU, #included into register.cxx,
+  # resolves it.
   def emit_native_construct_decls
     return '' unless @native_construct_used.any?
 
@@ -10482,31 +10491,11 @@ class CodeGen
     out << "// directly in place of Class#new's own allocate+initialize\n"
     out << "// dispatch when a `.new` call site's receiver is provably one of\n"
     out << "// these native DataType<T>-backed classes (compile_send's own\n"
-    out << "// \"MONO :new -> direct native construct\" path).\n"
-    out << "extern \"C\" {\n"
-    @native_construct_used.sort.each do |known|
-      native = NATIVE_CONSTRUCT_TARGETS.fetch(known)
-      out << "RClass* #{native[:class_fn]}(void);\n"
-      # `:object` (Sprite) takes a plain `mrb_value` per argument -- the
-      # same `else argv` shape compile_send's own unboxing already uses,
-      # shared here so the declaration can never disagree with the call.
-      native_type = case native[:arg_type]
-                    when :int then 'mrb_int'
-                    when :float then 'mrb_float'
-                    else 'mrb_value'
-                    end
-      # `arity` may be an Array (Sprite's `[0, 1]`) -- the declaration
-      # needs one concrete count, so it uses the max: every admitted call
-      # site passes exactly one of the listed counts, and a site passing
-      # fewer arguments than declared simply leaves the trailing
-      # parameters unused, the same way C callers already treat
-      # `mrb_get_args`-style optional parameters. (All three pre-existing
-      # entries carry a scalar arity and take this path unchanged.)
-      decl_arity = native[:arity].is_a?(Array) ? native[:arity].max : native[:arity]
-      params = (['mrb_state*', 'RClass*'] + [native_type] * decl_arity).join(', ')
-      out << "mrb_value #{native[:fn]}(#{params});\n"
-    end
-    out << "}\n"
+    out << "// \"MONO :new -> direct native construct\" path). Declared in\n"
+    out << "// include/rgss_construct.hxx, defined in namespace `rgss` at\n"
+    out << "// file scope in lib.cxx -- plain C++ linkage both sides, no\n"
+    out << "// `extern \"C\"` anywhere.\n"
+    out << "#include \"rgss_construct.hxx\"\n"
     out << "\n"
     out
   end
@@ -21934,12 +21923,17 @@ class CodeGen
         # TypeError-raising for a bad argument), it only changes which
         # side of the call spells them out. `:object` (Sprite) needs no
         # unboxing at all -- the viewport value passes through as a plain
-        # `mrb_value`, exactly as `spr_init`'s own "|o" receives it.
+        # `mrb_value`, exactly as `spr_init`'s own "|o" receives it. A
+        # 0-argument call site passes nothing at all (not even nil) -- the
+        # callee fills `mrb_nil_value()` itself for the missing viewport,
+        # matching what the ordinary `mrb_get_args(M, "|o", &vp)` dispatch
+        # produces for the same call (`vp` stays its own nil initializer).
         unboxed_argv = case native[:arg_type]
                        when :int then argv.map { |a| "mrb_as_int(M, #{a})" }
                        when :float then argv.map { |a| "mrb_as_float(M, #{a})" }
                        else argv
                        end
+        call_argv = unboxed_argv.empty? ? ['mrb_nil_value()'] : unboxed_argv
         # `:object` (Sprite) takes no unboxing, so the note's own
         # "unboxes each argument" sentence only applies to :int/:float.
         unbox_phrase = case native[:arg_type]
@@ -21961,7 +21955,7 @@ class CodeGen
                "mrb_class_ptr call needed).\n"
         return "#{note}" \
                "  if (mrb_class_ptr(#{recv}) == #{native[:class_fn]}()) {\n" \
-               "    r#{d} = #{native[:fn]}(M, mrb_class_ptr(#{recv}), #{unboxed_argv.join(', ')});\n" \
+               "    r#{d} = #{native[:fn]}(M, mrb_class_ptr(#{recv}), #{call_argv.join(', ')});\n" \
                "  } else {\n" \
                "    #{dynamic_dispatch_line(d, recv, name, argv)}" \
                "  }\n"
