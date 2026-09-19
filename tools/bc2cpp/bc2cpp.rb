@@ -4354,7 +4354,10 @@ end
 # modeled here), so a call site passing a different argument count (e.g.
 # a bare `Tone.new` relying on all-default 0s) just misses this path and
 # falls back to ordinary dynamic dispatch, same as any other unmodeled
-# shape in this file.
+# shape in this file. An Array here (e.g. Sprite's `[0, 1]`) lists every
+# real fixed-arity shape separately -- the emission gate matches any one
+# of them exactly, same rule, just several accepted counts instead of
+# one (see compile_send's own comment at the gate).
 #
 # `arg_type` (:int/:float, uniform across all of one class's own arguments
 # -- Rect's own fields are all mrb_int, Color/Tone's own are all mrb_float,
@@ -4374,6 +4377,21 @@ NATIVE_CONSTRUCT_TARGETS = {
   'Tone' => { fn: 'rgss_tone_new_direct', class_fn: 'rgss_native_tone_class', arity: 4, arg_type: :float },
   'Color' => { fn: 'rgss_color_new_direct', class_fn: 'rgss_native_color_class', arity: 4, arg_type: :float },
   'Rect' => { fn: 'rgss_rect_new_direct', class_fn: 'rgss_native_rect_class', arity: 4, arg_type: :int },
+  # Sprite (31 real `Sprite.new` sites): `spr_init` (mruby-rgss/src/
+  # lib.cxx) is `mrb_get_args(M, "|o", &vp)` -- zero or one argument, the
+  # viewport (or nil for none) -- then a fixed four-step body
+  # (`lv_canvas_create(parent_object(M, vp))`, `wrap_lv_obj`,
+  # `register_zobj`, `@viewport` ivar store). `rgss_sprite_new_direct`
+  # (added alongside this entry) reproduces exactly that body with the
+  # already-unboxed viewport value; `mrb_get_args`' own "|o" never
+  # coerces or raises for any input, so no TypeError behavior exists to
+  # preserve. Both real shapes (`Sprite.new` and `Sprite.new(viewport)`)
+  # are admitted -- same rule as every other entry, just two accepted
+  # counts. The runtime class-identity guard is the same one every other
+  # entry already carries (a reassigned `Sprite` constant falls back to
+  # ordinary `mrb_funcall`).
+  'Sprite' => { fn: 'rgss_sprite_new_direct', class_fn: 'rgss_native_sprite_class', arity: [0, 1],
+                arg_type: :object },
 }.freeze
 
 # Generalizes NATIVE_CONSTRUCT_TARGETS' own "MONO :new -> direct native
@@ -10018,8 +10036,23 @@ class CodeGen
     @native_construct_used.sort.each do |known|
       native = NATIVE_CONSTRUCT_TARGETS.fetch(known)
       out << "RClass* #{native[:class_fn]}(void);\n"
-      native_type = native[:arg_type] == :int ? 'mrb_int' : 'mrb_float'
-      params = (['mrb_state*', 'RClass*'] + [native_type] * native[:arity]).join(', ')
+      # `:object` (Sprite) takes a plain `mrb_value` per argument -- the
+      # same `else argv` shape compile_send's own unboxing already uses,
+      # shared here so the declaration can never disagree with the call.
+      native_type = case native[:arg_type]
+                    when :int then 'mrb_int'
+                    when :float then 'mrb_float'
+                    else 'mrb_value'
+                    end
+      # `arity` may be an Array (Sprite's `[0, 1]`) -- the declaration
+      # needs one concrete count, so it uses the max: every admitted call
+      # site passes exactly one of the listed counts, and a site passing
+      # fewer arguments than declared simply leaves the trailing
+      # parameters unused, the same way C callers already treat
+      # `mrb_get_args`-style optional parameters. (All three pre-existing
+      # entries carry a scalar arity and take this path unchanged.)
+      decl_arity = native[:arity].is_a?(Array) ? native[:arity].max : native[:arity]
+      params = (['mrb_state*', 'RClass*'] + [native_type] * decl_arity).join(', ')
       out << "mrb_value #{native[:fn]}(#{params});\n"
     end
     out << "}\n"
@@ -21423,8 +21456,11 @@ class CodeGen
       # Exact-arity-only (see NATIVE_CONSTRUCT_TARGETS' own comment) -- a
       # call site passing a different argument count just isn't this
       # shape, falls through to ordinary POLY dynamic dispatch below like
-      # any other unmodeled variant.
-      if native && n == native[:arity]
+      # any other unmodeled variant. `arity` may also be an Array, for a
+      # native #initialize with several real fixed-arity shapes (each
+      # element an exact count, matched the same way -- see that table's
+      # own comment).
+      if native && (native[:arity] == n || (native[:arity].is_a?(Array) && native[:arity].include?(n)))
         @native_construct_used << known
         # `fn`'s own real C++ signature takes native mrb_int/mrb_float
         # parameters, not mrb_value (mruby-rgss/src/lib.cxx's own comment
@@ -21433,9 +21469,21 @@ class CodeGen
         # mrb_as_float calls that function used to make internally before
         # this change; moving them here changes nothing observable (same
         # TypeError-raising for a bad argument), it only changes which
-        # side of the call spells them out.
-        unbox = native[:arg_type] == :int ? 'mrb_as_int' : 'mrb_as_float'
-        unboxed_argv = argv.map { |a| "#{unbox}(M, #{a})" }
+        # side of the call spells them out. `:object` (Sprite) needs no
+        # unboxing at all -- the viewport value passes through as a plain
+        # `mrb_value`, exactly as `spr_init`'s own "|o" receives it.
+        unboxed_argv = case native[:arg_type]
+                       when :int then argv.map { |a| "mrb_as_int(M, #{a})" }
+                       when :float then argv.map { |a| "mrb_as_float(M, #{a})" }
+                       else argv
+                       end
+        # `:object` (Sprite) takes no unboxing, so the note's own
+        # "unboxes each argument" sentence only applies to :int/:float.
+        unbox_phrase = case native[:arg_type]
+                       when :int then 'unboxes each argument register with the same mrb_as_int that function used to call internally'
+                       when :float then 'unboxes each argument register with the same mrb_as_float that function used to call internally'
+                       else 'passes each argument register straight through as mrb_value'
+                       end
         note = "  // MONO :new -> #{known}, direct native construct (mruby-rgss/src/lib.cxx's own " \
                "#{native[:fn]}) -- skips Class#new's own allocate+initialize dispatch chain entirely.\n" \
                "  // Runtime-guarded: #{known} could have been reassigned at the constant level (e.g. " \
@@ -21444,8 +21492,8 @@ class CodeGen
                "produced, so a reassignment there is already reflected in it; falls back to ordinary " \
                "mrb_funcall (whatever #{recv} now actually is) rather than misconstruct if it doesn't " \
                "match the real native class. #{native[:fn]}'s own parameters are native mrb_int/" \
-               "mrb_float, not mrb_value, so this call site unboxes each argument register with the " \
-               "same #{unbox} that function used to call internally, and passes mrb_class_ptr(#{recv}) " \
+               "mrb_float, not mrb_value (except :object, passed straight through), so this call site #{unbox_phrase}, " \
+               "and passes mrb_class_ptr(#{recv}) " \
                "straight through (already computed for the guard just above -- no second, redundant " \
                "mrb_class_ptr call needed).\n"
         return "#{note}" \
