@@ -252,6 +252,15 @@ jobs:
       - name: Check bc2cpp coverage report freshness
         run: ./scripts/bc2cpp_coverage_check.bash build/mruby
 
+      # ANCESTOR_MIXINS_SUPPORT (docs/adr/0158): drives the real build_registry
+      # + super-soundness guard over a synthetic closed world through the same
+      # host mrbc the coverage-freshness step above just used.
+      - name: Check bc2cpp include/prepend ancestor scan
+        run: |
+          mrbc="$(find build/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+
       - name: sccache stats
         if: always()
         run: |
