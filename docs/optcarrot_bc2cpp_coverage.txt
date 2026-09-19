@@ -4,17 +4,17 @@ optcarrot bc2cpp coverage report
  entirely separate from the real project's mruby-lcf/rgss/rpg2k registry
  docs/bc2cpp_coverage.txt measures. See tools/optcarrot_probe/README.md.)
 
-compiled entry points (clean, zero #error): 364
-  from bytecode: 362
+compiled entry points (clean, zero #error): 371
+  from bytecode: 369
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 2
 never called (zero evidence in bytecode or NATIVE_SRCS): 8
-classes needing MRB_SET_INSTANCE_TT: 6
+classes needing MRB_SET_INSTANCE_TT: 8
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 383
-  compiled clean: 362
-  left on the interpreter (>=1 #error): 21
-  coverage: 94.5%
+  compiled clean: 369
+  left on the interpreter (>=1 #error): 14
+  coverage: 96.3%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 33
@@ -42,49 +42,47 @@ methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 13
 -- #error markers by reason (whole program) --
      12  unhandled opcode BLOCK
      12  unhandled opcode SENDB
-      7  unhandled opcode ARGARY
-      7  unhandled opcode SUPER
       4  SEND/SSEND has a splat and/or keyword argument list (n=...)
       1  unhandled opcode EXCEPT
-     43  total
+     29  total
 
-block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 50
+block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 49
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 0
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 1939
-  POLY-marked (receiver's runtime class genuinely decides): 880
-  everything else (not yet attempted or failed MONO/TYPED): 1059
+total mrb_funcall/mrb_funcall_with_block call sites: 1944
+  POLY-marked (receiver's runtime class genuinely decides): 888
+  everything else (not yet attempted or failed MONO/TYPED): 1056
 distinct dynamically-dispatched method names: 171
 top 30 dynamically-dispatched method names:
-   1.   232  :+
-   2.   231  :[]
-   3.   217  :&
-   4.   107  :==
-   5.    92  :*
+   1.   233  :[]
+   2.   230  :+
+   3.   219  :&
+   4.   108  :==
+   5.    91  :*
    6.    88  :|
    7.    70  :-
    8.    69  :method
    9.    57  :<<
   10.    57  :[]=
-  11.    53  :>>
+  11.    54  :>>
   12.    47  :<
   13.    31  :/
-  14.    28  :>=
-  15.    24  :puts
-  16.    22  :<=
-  17.    22  :new
+  14.    27  :new
+  15.    25  :>=
+  16.    24  :puts
+  17.    22  :<=
   18.    18  :>
   19.    18  :send
   20.    17  :^
   21.    16  :reset
   22.    15  :%
-  23.    15  :each
-  24.    15  :size
+  23.    15  :size
+  24.    14  :each
   25.    14  :raise
   26.    13  :map
-  27.    12  :step
-  28.    12  :update
+  27.    13  :update
+  28.    12  :step
   29.    10  :===
   30.    10  :indent
