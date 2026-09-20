@@ -244,6 +244,11 @@ jobs:
       - name: Report bc2cpp coverage
         run: ./scripts/bc2cpp_coverage_check.bash build/mruby
 
+      # Keep the standalone optcarrot scoping report beside the real-project
+      # report in the job summary, without checking generated counts into git.
+      - name: Report optcarrot bc2cpp coverage
+        run: ./scripts/optcarrot_bc2cpp_coverage_check.bash build/mruby
+
       # ANCESTOR_MIXINS_SUPPORT (docs/adr/0158): drives the real build_registry
       # + super-soundness guard over a synthetic closed world through the same
       # host mrbc the coverage-report step above just used.
