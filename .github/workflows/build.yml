@@ -266,6 +266,7 @@ jobs:
           test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
 
       - name: sccache stats
         if: always()
