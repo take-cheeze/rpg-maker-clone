@@ -249,6 +249,15 @@ jobs:
       - name: Report optcarrot bc2cpp coverage
         run: ./scripts/optcarrot_bc2cpp_coverage_check.bash build/mruby
 
+      # Compare the same 180-frame checksum workload on CRuby, mruby, and the
+      # bc2cpp-enabled mruby build. Timings are informational; checksums must
+      # agree or this step fails.
+      - name: Optcarrot runtime benchmark
+        run: |
+          mrbc="$(find build/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
+          MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+
       # ANCESTOR_MIXINS_SUPPORT (docs/adr/0158): drives the real build_registry
       # + super-soundness guard over a synthetic closed world through the same
       # host mrbc the coverage-report step above just used.
