@@ -1,2 +1,2 @@
 - Compile optcarrot PPU methods outside the Fiber lifecycle while leaving
-  `initialize`, the main loop, and yield points interpreted.
+  Fiber creation, resume bridges, the main loop, and yield points interpreted.
