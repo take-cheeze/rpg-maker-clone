@@ -3814,6 +3814,8 @@ module Game
     # The actor for `id` only if it has already been instantiated, without
     # creating one. Read paths (a `\N[n]` message code) use this so merely
     # naming an actor does not enrol them in the roster the save writes out.
+    # The non-nil result is always an actor already constructed by #[].
+    # bc2cpp: (fixnum) -> Game::Actor
     def existing(id); id.nil? ? nil : @all[id]; end
 
     # Whether `id` is a genuinely dangling reference -- a positive id with no
