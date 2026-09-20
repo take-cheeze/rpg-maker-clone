@@ -12,5 +12,5 @@
   turned every attempt to add guest-side diagnostics into a core dump. Fixed by
   rejecting null up front in the four functions that dereference it, returning
   `SCE_KERNEL_ERROR_ERRNO_INVALID_ARGUMENT` —
-  `nix/patches/ppsspp-sceio-null-path-validate.patch`. `sceIoUnassign` uses the
+  `patches/ppsspp-sceio-null-path-validate.patch`. `sceIoUnassign` uses the
   same wrapper but never dereferences, so it is left alone. Not yet upstreamed.

@@ -912,7 +912,7 @@ if wio
     # RPG2000/2003 game running through this exporter's own file access
     # anyway. Added before rpg_maker_gems (which pulls in mruby-io itself) so
     # mruby-io's own "no HAL specified" auto-selection never fires here.
-    conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
+    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
 
@@ -1073,7 +1073,7 @@ if maix
     # would churn the wio build for no behavioural gain. Added before
     # rpg_maker_gems (which pulls in mruby-io itself) so mruby-io's own
     # "no HAL specified" auto-selection never fires here.
-    conf.gem "#{MRUBY_ROOT}/../../hal-wio-io"
+    conf.gem "#{MRUBY_ROOT}/../../app/wio/hal-wio-io"
 
     rpg_maker_gems(conf)
   end

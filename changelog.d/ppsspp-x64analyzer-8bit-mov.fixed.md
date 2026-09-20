@@ -12,7 +12,7 @@
   unrecoverable and halts the whole emulated process — even though
   `bIgnoreBadMemAccess` would otherwise have skipped the instruction and
   continued exactly as it already does for every other access width.
-  `nix/patches/ppsspp-x64analyzer-8bit-mov.patch` (not yet upstreamed to
+  `patches/ppsspp-x64analyzer-8bit-mov.patch` (not yet upstreamed to
   `hrydgard/ppsspp`) adds both missing opcodes.
 
   Found chasing [ADR 0047](docs/adr/0047-psp-memory-budget.md)'s P1 bug 8

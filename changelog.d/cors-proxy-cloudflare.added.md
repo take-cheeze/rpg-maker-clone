@@ -1,5 +1,5 @@
 - Self-hostable **CORS proxy** for the web loader: a ready-to-deploy Cloudflare
-  Worker in `cors-proxy/` (`worker.js` + `wrangler.toml`) that the loader's *CORS
+  Worker in `scripts/cors-proxy/` (`worker.js` + `wrangler.toml`) that the loader's *CORS
   proxy prefix* field can point at, so GitHub repos and arbitrary `.zip` URLs
   load without depending on a public proxy service. The Worker accepts both
   prefix styles the loader builds (`?url=<encoded>` and `/<raw url>`), handles

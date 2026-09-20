@@ -305,7 +305,7 @@ the interpreter-linking slice, in this order:
      `ppsspp-headless` process (confirmed with `gdb` against a core dump,
      same crash address across independent runs). Not yet upstreamed to
      `hrydgard/ppsspp`; `flake.nix`'s `ppsspp` package output carries the
-     fix as a local patch (`nix/patches/
+     fix as a local patch (`patches/
      ppsspp-lwmutex-workarea-validate.patch`).
   3. **Real bug, confirmed present in pspsdk, but no longer reachable on
      this boot path — not fixed, and no longer blocking anything by
@@ -337,7 +337,7 @@ the interpreter-linking slice, in this order:
      used to guard its own non-reentrant C-runtime state (the `pte_os*`/
      newlib glue in `src/libpthreadglue/osal.c`) without syscall overhead;
      with them doing nothing, those critical sections gave no real
-     protection under PPSSPP. Not yet upstreamed; `nix/patches/
+     protection under PPSSPP. Not yet upstreamed; `patches/
      ppsspp-mfic-mtic-interrupt-mask.patch` applies it locally alongside
      the LwMutex patch.
   5. **Fixed, this repo's build config.** `app/psp/CMakeLists.txt` linked
@@ -515,7 +515,7 @@ the interpreter-linking slice, in this order:
   `SysclibForKernel` HLE table, matching the existing entries'
   established style (`Memory::IsValid*`-guarded, `hleLogVerbose`-wrapped
   host calls into the real libc function) —
-  `nix/patches/ppsspp-sysclibforkernel-missing-functions.patch`. Not
+  `patches/ppsspp-sysclibforkernel-missing-functions.patch`. Not
   upstreamed to `hrydgard/ppsspp` yet, but a strong upstream candidate:
   nothing about this gap is specific to this project, and PPSSPP's own
   choice to implement twelve of the sixteen `SysclibForKernel` NIDs
@@ -624,7 +624,7 @@ the interpreter-linking slice, in this order:
   Fixed by adding `destAddr`/`dst` as the returned value in both
   functions, matching their sibling `sysclib_memcpy`/`sysclib_strcat`
   and the real C `memset()`/`memmove()` contract —
-  `nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch`. Not
+  `patches/ppsspp-sysclib-memset-memmove-return-value.patch`. Not
   upstreamed to `hrydgard/ppsspp` yet, but — like bugs 4 and 8 before it
   — a strong candidate: nothing about this gap is project-specific, and
   any guest code compiled with a GCC that performs this same idiom

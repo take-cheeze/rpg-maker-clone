@@ -109,7 +109,7 @@ plain `dup()`/`waitpid()` directly (`IO#dup`'s `symdup`, and
 `IO` object can exist, since `mrb_hal_io_spawn_process` always fails), but
 newlib declares both without ever defining them for this target, so the link
 still needs *something*. Both gained `ENOSYS`-stub definitions in
-`hal-wio-io/src/io_hal.c`.
+`app/wio/hal-wio-io/src/io_hal.c`.
 
 **`mruby-rgss/mrbgem.rake` was missing `app/wio` on its own `lv_conf.h`
 search path**, unlike its existing PSP entry — this gem's own `lib.cxx`

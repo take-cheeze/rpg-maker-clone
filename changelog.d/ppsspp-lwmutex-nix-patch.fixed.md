@@ -8,7 +8,7 @@
   against a core dump, same crash address across independent runs). Found
   while trying to read the PSP EBOOT's own boot log under PPSSPP-headless
   (see `docs/adr/0047-psp-memory-budget.md` and `app/psp/README.md`). Not yet
-  upstreamed to `hrydgard/ppsspp`, so `nix/patches/
+  upstreamed to `hrydgard/ppsspp`, so `patches/
   ppsspp-lwmutex-workarea-validate.patch` applies it locally via
   `pkgs.ppsspp.overrideAttrs` — both CI's `psp-smoke` job and a local
   `nix build '.#ppsspp'` now build PPSSPP from source with the fix rather

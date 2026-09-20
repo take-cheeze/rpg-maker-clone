@@ -69,7 +69,7 @@ tool; see that script and app/psp/README.md for how it's wired into the
 https://github.com/pspdev/pspsdk -- worth reporting there, since nothing
 about this fix is specific to this project's binary, but applied locally
 here in the meantime the same way this repo's own PPSSPP patches are
-(nix/patches/).
+(patches/).
 
 Update: the original version of this patch repointed only `jal`. MIPS has a
 second direct jump, `j`, and the compiler emits it for a *tail call* -- any

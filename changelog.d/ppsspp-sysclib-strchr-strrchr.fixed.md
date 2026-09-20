@@ -11,6 +11,6 @@
   fallback that rebuilt the full `ms0:` path another way. Fixed by calling the
   character overload, and by handling `c == 0` explicitly since C's
   `strchr`/`strrchr` match the terminating NUL that `std::string` does not
-  contain — `nix/patches/ppsspp-sysclib-strchr-strrchr.patch`. Verified: the
+  contain — `patches/ppsspp-sysclib-strchr-strrchr.patch`. Verified: the
   EBOOT's `NOCWD` path errors go from 17 to 0. Not yet upstreamed; it affects
   any PSP binary whose libc routes these through `SysclibForKernel`.

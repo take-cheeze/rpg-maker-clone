@@ -253,7 +253,7 @@
           # under PPSSPP-headless (see docs/adr/0047-psp-memory-budget.md and
           # app/psp/README.md); none are upstreamed to hrydgard/ppsspp yet,
           # so all of them are applied here so this flake's own `ppsspp`/
-          # `ppsspp-headless` survive past them. nix/patches/ has the full
+          # `ppsspp-headless` survive past them. patches/ has the full
           # patches and each one's own note on when it is safe to drop.
           #
           #   - sceKernelCreateLwMutex (Core/HLE/sceKernelMutex.cpp)
@@ -301,13 +301,13 @@
           #     host process -- the same class as the LwMutex bug above.
           ppsspp = pkgs.ppsspp.overrideAttrs (old: {
             patches = (old.patches or [ ]) ++ [
-              ./nix/patches/ppsspp-lwmutex-workarea-validate.patch
-              ./nix/patches/ppsspp-mfic-mtic-interrupt-mask.patch
-              ./nix/patches/ppsspp-x64analyzer-8bit-mov.patch
-              ./nix/patches/ppsspp-sysclibforkernel-missing-functions.patch
-              ./nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch
-              ./nix/patches/ppsspp-sysclib-strchr-strrchr.patch
-              ./nix/patches/ppsspp-sceio-null-path-validate.patch
+              ./patches/ppsspp-lwmutex-workarea-validate.patch
+              ./patches/ppsspp-mfic-mtic-interrupt-mask.patch
+              ./patches/ppsspp-x64analyzer-8bit-mov.patch
+              ./patches/ppsspp-sysclibforkernel-missing-functions.patch
+              ./patches/ppsspp-sysclib-memset-memmove-return-value.patch
+              ./patches/ppsspp-sysclib-strchr-strrchr.patch
+              ./patches/ppsspp-sceio-null-path-validate.patch
             ];
           });
 

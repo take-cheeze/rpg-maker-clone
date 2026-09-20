@@ -24,4 +24,4 @@ Then paste the printed `*.workers.dev` URL into the loader's **CORS proxy
 prefix** field (append `/?url=`).
 
 Full walkthrough, verification, and lock-down steps:
-[`../docs/cors-proxy.md`](../docs/cors-proxy.md).
+[`../../docs/cors-proxy.md`](../../docs/cors-proxy.md).

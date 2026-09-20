@@ -12,7 +12,7 @@
   mruby, before a verbose trace through `psp-fixup-imports`'s own import
   grouping proved those symbol-address cross-references had been reading
   *stale* addresses and pointed at the real cause instead).
-  `nix/patches/ppsspp-sysclibforkernel-missing-functions.patch` adds all
+  `patches/ppsspp-sysclibforkernel-missing-functions.patch` adds all
   four, matching the existing entries' style (`Memory::IsValid*`-guarded,
   `hleLogVerbose`-wrapped calls into the real host libc function). Not
   yet upstreamed to `hrydgard/ppsspp`. With this fixed, the PSP EBOOT's
