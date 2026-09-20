@@ -23,15 +23,19 @@ arity, avoid native argument conversions, and be emitted by this bc2cpp run or
 an explicitly trusted companion run. Every class without a matching candidate
 continues through ordinary `mrb_funcall`.
 
+A single eligible target is useful when the other definitions are native-only,
+unclean, or outside the current emitted owner set: the exact class guard selects
+the compiled target and all other classes retain normal dynamic dispatch.
+
 The 16-owner limit covers the observed `dispose` family. The 21-owner `update`
 family remains on dynamic dispatch, keeping generated code bounded where a
 long chain of class comparisons is less attractive than mruby's method lookup.
 
 ## Consequences
 
-- Polymorphic calls with 6–16 eligible compiled targets can now emit guarded
+- Polymorphic calls with 1–16 eligible compiled targets can now emit guarded
   direct calls.
-- Calls with fewer than two or more than 16 eligible targets keep their prior
+- Calls with no eligible target or more than 16 eligible targets keep their prior
   dynamic-dispatch path.
 - The generated code grows with the number of eligible targets. The fallback
   preserves behavior for unlisted classes, singleton methods, and targets
