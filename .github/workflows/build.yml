@@ -258,14 +258,14 @@ jobs:
           test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
           MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
 
-      # ANCESTOR_MIXINS_SUPPORT (docs/adr/0158): drives the real build_registry
-      # + super-soundness guard over a synthetic closed world through the same
-      # host mrbc the coverage-report step above just used.
-      - name: Check bc2cpp include/prepend ancestor scan
+      # Exercise bc2cpp's mixin/super guard and annotated return-class tracing
+      # over synthetic closed worlds through the same host mrbc used above.
+      - name: Check bc2cpp static devirtualization analyses
         run: |
           mrbc="$(find build/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
           test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
 
       - name: sccache stats
         if: always()
