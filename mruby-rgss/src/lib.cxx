@@ -676,6 +676,7 @@ namespace {
 RClass* g_native_rect_class = nullptr;
 RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
+RClass* g_native_bitmap_class = nullptr;
 }  // namespace
 
 // extern "C" here isn't about C compatibility (nothing here is called from
@@ -701,6 +702,9 @@ extern "C" RClass* rgss_native_color_class(void) {
 }
 extern "C" RClass* rgss_native_tone_class(void) {
   return g_native_tone_class;
+}
+extern "C" RClass* rgss_native_bitmap_class(void) {
+  return g_native_bitmap_class;
 }
 
 // Called directly by bc2cpp's own generated code (compile_send's "MONO :new
@@ -762,6 +766,27 @@ extern "C" mrb_value rgss_tone_new_direct(mrb_state* M,
                                           mrb_float gray) {
   return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
                               clamp_signed255(b), clamp255(gray));
+}
+
+// Bitmap's own entry: only the 2-Integer-arg size shape
+// (`Bitmap.new(w, h)`, ~105 real sites) -- the (`String`, ...) file-load
+// shapes keep ordinary dispatch (see NATIVE_CONSTRUCT_TARGETS' own
+// `type_guard` comment for how the call site picks). Reproduces
+// `bmp_init_size`'s own body exactly (`mrb_get_args(M, "ii", ...)` then
+// `alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888)`), parameterized
+// on the already-checked dimensions the same way the other three
+// entries parameterize on their own unboxed arguments. The Ruby-level
+// `Bitmap#initialize(f, s)` dispatches to `_init_size` exactly when its
+// first argument is not a String -- both Integer-tagged arguments prove
+// that branch, so the direct call observes identical behavior including
+// for negative/huge dimensions (whatever `alloc_obj` does with them,
+// both paths do equally). `_begin_load`'s own global diagnostics are a
+// String-branch-only affair, never touched here.
+extern "C" mrb_value rgss_bitmap_new_direct(mrb_state* M,
+                                            RClass* klass,
+                                            mrb_int w,
+                                            mrb_int h) {
+  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
 }
 
 // ---- Table ----------------------------------------------------------------
@@ -7457,6 +7482,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* bmp = mrb_define_class_under(M, m, "Bitmap", M->object_class);
   MRB_SET_INSTANCE_TT(bmp, MRB_TT_DATA);
+  g_native_bitmap_class = bmp;
   mrb_define_method(M, bmp, "_init_size", bmp_init_size, MRB_ARGS_REQ(2));
   // Decode from bytes already in hand — how an asset packed into an encrypted
   // RGSSAD archive is loaded (mrblib/lib.rb's Bitmap#initialize falls back to
@@ -7672,4 +7698,5 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_rect_class = nullptr;
   g_native_color_class = nullptr;
   g_native_tone_class = nullptr;
+  g_native_bitmap_class = nullptr;
 }
