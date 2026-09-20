@@ -9,12 +9,16 @@ require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 
 SRC = <<~'RUBY'
+  class Array
+    def bc2cpp_test_array_owner; end
+  end
   module Game
     class Actor
       def name; :actor; end
     end
     class Other
       def name; :other; end
+      def alive?; true; end
     end
     class OtherActors
       def [](id); nil; end
@@ -23,9 +27,17 @@ SRC = <<~'RUBY'
       # bc2cpp: (fixnum) -> Game::Actor
       def [](id); nil; end
     end
+    class Battle
+      Combatant = Struct.new(:hp) do
+        def alive?; hp > 0; end
+      end
+    end
     class Party
+      # bc2cpp: (Array<Game::Battle::Combatant>)
+      def initialize(combatants); @combatants = combatants; end
       def fetch(id); @roster[id].name; end
       def first; @roster[0].name; end
+      def combatant_alive; @combatants.each { |combatant| combatant.alive? }; end
     end
   end
 RUBY
@@ -51,8 +63,18 @@ Dir.mktmpdir do |dir|
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
-  class_layout = { 'Game::Party' => { 'roster' => 'Actors' } }
-  gen = CodeGen.new(ireps, registry, {}, class_layout, {}, {}, {}, {}, annotations, {}, {}, Set.new)
+  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'combatants' => 'Array' } }
+  class_annotations = ClassAnnotations.extract(ireps, registry, owners)
+  party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
+  check.call('Array<Klass> argument keeps the Array receiver type',
+             class_annotations.fetch(party_init.irep).args.first == 'Array', true)
+  check.call('Array<Klass> argument records its element class',
+             annotations.fetch(party_init.irep).arg_elements.first == 'Game::Battle::Combatant', true)
+  element_layout = ArrayElementLayout.known(
+    ArrayElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations)
+  )
+  gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, element_layout, annotations, {},
+                    {}, Set.new)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -82,11 +104,18 @@ Dir.mktmpdir do |dir|
                code.include?('TYPED :name -> Game::Actor#name') &&
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
+
+  method = registry['combatant_alive'].find { |md| md.owner == 'Game::Party' }
+  code = gen.compile_method(method.irep)
+  code = code.fetch(:code)
+  check.call('typed array argument devirtualizes a Struct element with guard/fallback',
+             code.include?('ELEMENT :alive? -> Game::Battle::Combatant#alive?') &&
+               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
 end
 
 if failures.empty?
-  puts 'bc2cpp annotated return-class devirtualization check: PASS'
+  puts 'bc2cpp annotated return/array-argument devirtualization check: PASS'
 else
-  warn "bc2cpp annotated return-class devirtualization check: #{failures.size} failure(s)"
+  warn "bc2cpp annotated return/array-argument devirtualization check: #{failures.size} failure(s)"
   exit 1
 end
