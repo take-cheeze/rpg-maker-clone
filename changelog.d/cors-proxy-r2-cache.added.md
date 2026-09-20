@@ -1,4 +1,4 @@
-- **CORS proxy R2 cache** (optional): the Cloudflare Worker in `cors-proxy/`
+- **CORS proxy R2 cache** (optional): the Cloudflare Worker in `scripts/cors-proxy/`
   can now bind an R2 bucket (`ARCHIVE_CACHE`) to cache fetched game archives,
   so a repeat load — by anyone, from any browser — is served from Cloudflare's
   edge instead of re-fetching from the origin host. Off by default; entries

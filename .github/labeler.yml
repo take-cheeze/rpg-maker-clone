@@ -97,7 +97,7 @@
       - any-glob-to-any-file:
           - "src/shell.html"
           - "src/wasm_keypad.cxx"
-          - "cors-proxy/**"
+          - "scripts/cors-proxy/**"
           - "cmake/emscripten-probe-cache.cmake"
           - "scripts/*emscripten*"
           - "scripts/serve.py"

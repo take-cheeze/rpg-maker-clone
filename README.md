@@ -1131,7 +1131,7 @@
   and most arbitrary `.zip` URLs need a **CORS proxy**: enter its prefix in the
   loader's optional field, or simply download the zip and use the local-file
   path, which needs no network. You can self-host the proxy as a free Cloudflare
-  Worker (code in [`cors-proxy/`](cors-proxy/)) — see
+  Worker (code in [`scripts/cors-proxy/`](scripts/cors-proxy/)) — see
   [`docs/cors-proxy.md`](docs/cors-proxy.md) for the one-command deploy.
 - Downloaded archives are **cached** (via the Cache Storage API, keyed by the
   resolved URL), so re-loading the same URL or repo skips the network. Tick

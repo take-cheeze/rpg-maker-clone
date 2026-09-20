@@ -42,10 +42,10 @@ Options considered for hosting the proxy:
 
 ## Decision
 
-Ship a ready-to-deploy Cloudflare Worker in `cors-proxy/` and document it in
+Ship a ready-to-deploy Cloudflare Worker in `scripts/cors-proxy/` and document it in
 `docs/cors-proxy.md`.
 
-- `cors-proxy/worker.js` — an ES-module Worker that:
+- `scripts/cors-proxy/worker.js` — an ES-module Worker that:
   - accepts **both** loader prefix styles: it reads the target from `?url=` when
     present, else from the raw path (`/<url>`), reconstructing any query the
     target carried;
@@ -62,7 +62,7 @@ Ship a ready-to-deploy Cloudflare Worker in `cors-proxy/` and document it in
     match), `AUTH_KEY` (a shared secret required as `?key=`, the real "only me"
     lock, with the CORS preflight exempted), and `ALLOWED_ORIGINS` (which
     web-page origins may call it, scoping the CORS header to the caller).
-- `cors-proxy/wrangler.toml` — the deploy config, with a commented `ALLOWED_HOSTS`
+- `scripts/cors-proxy/wrangler.toml` — the deploy config, with a commented `ALLOWED_HOSTS`
   example.
 - `docs/cors-proxy.md` — the walkthrough (`wrangler login` → `wrangler deploy` →
   paste the URL into the loader), verification with `curl`, and the lock-down
@@ -76,7 +76,7 @@ local files.
 
 - Users can self-host a reliable proxy in minutes and stop depending on a public
   service; the loader is unchanged (it already builds the right request).
-- No new build or CI dependency — `cors-proxy/` is standalone JS deployed with
+- No new build or CI dependency — `scripts/cors-proxy/` is standalone JS deployed with
   `npx wrangler`, so nothing in the CMake/Emscripten/nix path is touched.
 - **Open-proxy caveat.** Left unconfigured the Worker proxies any http(s) host
   for anyone, which is convenient but abusable if the URL is shared; the three

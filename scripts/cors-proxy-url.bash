@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Rewrite a URL to go through the optional CI CORS proxy, so a download that
-# lands in its R2 cache (cors-proxy/worker.js, docs/cors-proxy.md) is served
+# lands in its R2 cache (scripts/cors-proxy/worker.js, docs/cors-proxy.md) is served
 # from Cloudflare's edge on a repeat run instead of re-hitting the origin host.
 #
 # Source this and call `proxied_url <url>`.
