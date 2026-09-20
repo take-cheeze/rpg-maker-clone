@@ -42,3 +42,11 @@ mrb_value tone_new_direct(mrb_state* M,
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
 
 }  // namespace rgss
+
+// Bitmap's integer-size constructor keeps C linkage because its generated
+// call site uses the C entry points defined in mruby-rgss/src/lib.cxx.
+extern "C" RClass* rgss_native_bitmap_class(void);
+extern "C" mrb_value rgss_bitmap_new_direct(mrb_state* M,
+                                            RClass* klass,
+                                            mrb_int w,
+                                            mrb_int h);
