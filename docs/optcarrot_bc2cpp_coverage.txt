@@ -2,7 +2,7 @@ optcarrot bc2cpp coverage report
 (tools/optcarrot_probe/optcarrot_bc2cpp_coverage_report.rb; optcarrot's
  own real source as its own standalone closed world -- a scoping probe,
  entirely separate from the real project's mruby-lcf/rgss/rpg2k registry
- docs/bc2cpp_coverage.txt measures. See tools/optcarrot_probe/README.md.)
+ the CI job summary reports for the real project. See tools/optcarrot_probe/README.md.)
 
 compiled entry points (clean, zero #error): 385
   from bytecode: 383

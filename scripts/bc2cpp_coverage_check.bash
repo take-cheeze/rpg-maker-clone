@@ -2,18 +2,14 @@
 
 set -euo pipefail
 
-# Prove docs/bc2cpp_coverage.txt still matches what tools/bc2cpp/bc2cpp.rb's
-# own whole-program diagnostic reports right now.
+# Publish tools/bc2cpp/bc2cpp.rb's current whole-program diagnostic in the
+# CI job summary. The generated report is intentionally not tracked in git:
+# every bc2cpp change alters aggregate dispatch counts and would make parallel
+# bc2cpp pull requests conflict on the same generated file.
 #
-# scripts/bc2cpp_coverage_report.rb only regenerates the file when someone
-# remembers to run it -- nothing enforced that a bc2cpp.rb call-site/codegen
-# change, a compiled-gem source edit, or an mrblib change the whole-program
-# registry sees actually got its stats-file update committed alongside it
-# (confirmed missing: no CI step regenerated-and-diffed this file before this
-# one, so a PR could freely drift the real coverage numbers with no visible
-# signal). This regenerates the report against a real, already-built host
-# mrbc and diffs the result against the committed file. Any drift at all is
-# a hard failure with the regeneration command in the message.
+# This regenerates the report against the real, already-built host mrbc and
+# appends it to GITHUB_STEP_SUMMARY. It also prints to stdout when run outside
+# GitHub Actions, so the report remains available to local callers.
 #
 # Needs a host mrbc already built -- the same prerequisite
 # scripts/bc2cpp_coverage_report.rb's own header documents. Deliberately does
@@ -59,26 +55,17 @@ if [ -z "$mrbc" ]; then
   exit 1
 fi
 
-report_file="docs/bc2cpp_coverage.txt"
-expected="$(mktemp)"
-trap 'rm -f "$expected"' EXIT
-
-echo "regenerating $report_file against $mrbc ..."
-MRBC="$mrbc" BC2CPP_COVERAGE_REPORT_PATH="$expected" ruby scripts/bc2cpp_coverage_report.rb >/dev/null
-
-if diff -u "$report_file" "$expected"; then
-  echo "ok: $report_file matches the real whole-program bc2cpp diagnostic"
-  exit 0
+summary_file="${GITHUB_STEP_SUMMARY:-}"
+if [ -n "$summary_file" ]; then
+  {
+    echo '## bc2cpp coverage report'
+    echo
+    echo 'Generated from the current whole-program bc2cpp diagnostic.'
+    echo
+    echo '```text'
+  } >> "$summary_file"
+  MRBC="$mrbc" ruby scripts/bc2cpp_coverage_report.rb | tee -a "$summary_file"
+  echo '```' >> "$summary_file"
+else
+  MRBC="$mrbc" ruby scripts/bc2cpp_coverage_report.rb
 fi
-
-echo "::error::$report_file is stale -- it no longer matches what bc2cpp.rb's" \
-  "own whole-program diagnostic reports." >&2
-cat >&2 <<EOF
-
-Regenerate it and commit the result alongside whatever change produced this
-drift:
-
-  MRBC=path/to/host/mrbc ruby scripts/bc2cpp_coverage_report.rb
-
-EOF
-exit 1
