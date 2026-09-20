@@ -2149,17 +2149,44 @@ jobs:
       - name: Install PlatformIO
         run: pip install -q --disable-pip-version-check --upgrade platformio
 
+      - name: Compute wio cross-build cache key
+        id: wio-cache-key
+        run: |
+          {
+            for path in \
+              build_config.rb \
+              tools/bc2cpp \
+              mruby-lcf-compiled \
+              mruby-rgss-compiled \
+              mruby-rpg2k-compiled \
+              mruby-rgss \
+              mruby-lcf \
+              mruby-rpg2k \
+              app/wio/hal-wio-io \
+              patches \
+              platformio.ini \
+              3rd/mruby \
+              3rd/mgem-list; do
+              if git rev-parse --verify "HEAD:$path" >/dev/null 2>&1; then
+                printf '%s ' "$path"
+                git rev-parse "HEAD:$path"
+              fi
+            done
+          } | sha256sum | awk '{print "digest=" $1}' >> "$GITHUB_OUTPUT"
+
       - name: Cache the wio cross-build
-        # A hit is provably current: the key hashes every input that feeds the
-        # generated libmruby.a, so any change produces a different key and a
-        # clean rebuild. That is deliberately the guard against the stale-build
-        # failure mode docs/adr/0142/0143 document -- scripts/wio_bc2cpp_measure.bash
+        # A hit is provably current: the key hashes Git tree IDs for every input
+        # that feeds the generated libmruby.a, so any change produces a different
+        # key and a clean rebuild. Computing it before the cache action avoids
+        # hashFiles failing when the cache action evaluates its post-job key.
+        # That is deliberately the guard against the stale-build failure mode
+        # docs/adr/0142/0143 document -- scripts/wio_bc2cpp_measure.bash
         # also wipes each variant's build dir before building it -- and the two
         # links always re-run, so the maps reflect the current app/LVGL too.
         uses: actions/cache@v6
         with:
           path: /tmp/wio-bc2cpp
-          key: wio-bc2cpp-${{ runner.os }}-${{ hashFiles('build_config.rb', 'tools/bc2cpp/**', 'mruby-lcf-compiled/**', 'mruby-rgss-compiled/**', 'mruby-rpg2k-compiled/**', 'mruby-rgss/**', 'mruby-lcf/**', 'mruby-rpg2k/**', 'app/wio/hal-wio-io/**', 'patches/**', 'platformio.ini', '3rd/mruby/**', '3rd/mgem-list/**') }}
+          key: wio-bc2cpp-${{ runner.os }}-${{ steps.wio-cache-key.outputs.digest }}
 
       - name: Build baseline + bc2cpp wio_rgss_boot
         run: scripts/wio_bc2cpp_measure.bash /tmp/wio-bc2cpp
