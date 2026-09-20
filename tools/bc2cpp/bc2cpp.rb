@@ -21924,10 +21924,14 @@ class CodeGen
         # side of the call spells them out. `:object` (Sprite) needs no
         # unboxing at all -- the viewport value passes through as a plain
         # `mrb_value`, exactly as `spr_init`'s own "|o" receives it. A
-        # 0-argument call site passes nothing at all (not even nil) -- the
-        # callee fills `mrb_nil_value()` itself for the missing viewport,
-        # matching what the ordinary `mrb_get_args(M, "|o", &vp)` dispatch
-        # produces for the same call (`vp` stays its own nil initializer).
+        # 0-argument call site passes an explicit `mrb_nil_value()` for the
+        # missing viewport -- matching what the ordinary `mrb_get_args(M,
+        # "|o", &vp)` dispatch produces for the same call (`vp` stays its
+        # own nil initializer) -- because the callee's own C++ signature
+        # always takes the full max-arity parameter list (see
+        # emit_native_construct_decls' own `decl_arity` comment): a call
+        # with fewer arguments than parameters would be a hard g++
+        # arity-mismatch error, never a silent default-fill.
         unboxed_argv = case native[:arg_type]
                        when :int then argv.map { |a| "mrb_as_int(M, #{a})" }
                        when :float then argv.map { |a| "mrb_as_float(M, #{a})" }
