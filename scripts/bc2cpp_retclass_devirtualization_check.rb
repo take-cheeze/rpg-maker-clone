@@ -22,10 +22,13 @@ SRC = <<~'RUBY'
     class Actors
       # bc2cpp: (fixnum) -> Game::Actor
       def [](id); nil; end
+      # bc2cpp: (fixnum) -> Game::Actor
+      def existing(id); nil; end
     end
     class Party
       def fetch(id); @roster[id].name; end
       def first; @roster[0].name; end
+      def existing_name; @roster.existing(1).name; end
     end
   end
 RUBY
@@ -52,7 +55,8 @@ Dir.mktmpdir do |dir|
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
   class_layout = { 'Game::Party' => { 'roster' => 'Actors' } }
-  gen = CodeGen.new(ireps, registry, {}, class_layout, {}, {}, {}, {}, annotations, {}, {}, Set.new)
+  class_annotations = ClassAnnotations.extract(ireps, registry, owners)
+  gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, {}, annotations, {}, {}, Set.new)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -82,6 +86,12 @@ Dir.mktmpdir do |dir|
                code.include?('TYPED :name -> Game::Actor#name') &&
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
+
+  method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
+  code = gen.compile_method(method.irep).fetch(:code)
+  check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
+             code.include?('TYPED :name -> Game::Actor#name') &&
+               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
 end
 
 if failures.empty?
