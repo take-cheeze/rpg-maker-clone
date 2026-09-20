@@ -141,4 +141,8 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # neither gem's own codegen step waits on the other's.
   file "#{dir}/src/register.cxx" => [generated, *other_generated]
   cxx.include_paths << build_dir
+  # include/rgss_construct.hxx for bc2cpp's own emitted
+  # `#include "rgss_construct.hxx"` (NATIVE_CONSTRUCT_TARGETS decls) --
+  # the same wiring mruby-mvjs already uses for rgss_bitmap.hxx.
+  cxx.include_paths << "#{dir}/../include"
 end
