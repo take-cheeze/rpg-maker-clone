@@ -8,7 +8,7 @@ Accepted
 
 ## Context
 
-The CORS proxy (`cors-proxy/worker.js`, [ADR 10](0010-cors-proxy-cloudflare-worker.md))
+The CORS proxy (`scripts/cors-proxy/worker.js`, [ADR 10](0010-cors-proxy-cloudflare-worker.md))
 fetches a game archive from GitHub (or any `.zip` host) on every single load and
 streams it straight through — there is no server-side reuse. The loader already
 caches the *decoded* bytes in the browser's Cache API (`src/shell.html`,

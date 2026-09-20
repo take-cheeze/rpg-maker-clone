@@ -14,7 +14,7 @@
   call into one returning PPSSPP's wrong `0` instead of the real
   pointer — despite the underlying allocation always succeeding —
   producing a GC heap corrupted from the very first page it ever
-  created. `nix/patches/ppsspp-sysclib-memset-memmove-return-value.patch`
+  created. `patches/ppsspp-sysclib-memset-memmove-return-value.patch`
   (not yet upstreamed to `hrydgard/ppsspp`) fixes both functions.
   Verified: the identical EBOOT now boots past `mrb_open` (`RPG2K_PSP_
   MRUBY_OPEN ok`) and into the idle `RPG2K_PSP_BRINGUP` heartbeat loop,

@@ -12,6 +12,6 @@
   atomic. Found on the same PSP-boot investigation as the LwMutex patch (see
   `docs/adr/0047-psp-memory-budget.md`'s P1 section) — a real, independent
   correctness gap, though not by itself enough to get the EBOOT booting. Not
-  yet upstreamed to `hrydgard/ppsspp`; `nix/patches/
+  yet upstreamed to `hrydgard/ppsspp`; `patches/
   ppsspp-mfic-mtic-interrupt-mask.patch` applies it locally, same as the
   LwMutex one.

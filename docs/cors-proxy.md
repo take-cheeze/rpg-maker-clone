@@ -8,7 +8,7 @@ server-side (where the same-origin policy doesn't apply) and re-serves the bytes
 with `Access-Control-Allow-Origin: *`.
 
 This guide deploys that proxy as a **Cloudflare Worker** using the code in
-[`cors-proxy/worker.js`](../cors-proxy/worker.js). Cloudflare's free plan is
+[`scripts/cors-proxy/worker.js`](../scripts/cors-proxy/worker.js). Cloudflare's free plan is
 plenty for personal use (100k requests/day).
 
 ## What you need
@@ -21,10 +21,10 @@ No credit card and no custom domain are required — the Worker gets a free
 
 ## Deploy in 4 steps
 
-Everything runs from the `cors-proxy/` directory:
+Everything runs from the `scripts/cors-proxy/` directory:
 
 ```sh
-cd cors-proxy
+cd scripts/cors-proxy
 
 # 1. Log in to Cloudflare (opens a browser to authorize wrangler).
 npx wrangler login
@@ -78,7 +78,7 @@ Set a **secret key** plus a **host allowlist**. The key is the lock; the host
 list limits the blast radius if the key ever leaks.
 
 ```sh
-cd cors-proxy
+cd scripts/cors-proxy
 
 # 1. Store the secret (encrypted; prompts for the value). Pick a long random string.
 npx wrangler secret put AUTH_KEY
@@ -127,7 +127,7 @@ Comma-separated; a leading dot matches subdomains (`.github.com` matches
 `codeload.github.com` and can redirect to `objects.githubusercontent.com`, so
 include both; add any other zip hosts you use. You can also set these vars by
 uncommenting the `[vars]` block in
-[`wrangler.toml`](../cors-proxy/wrangler.toml) instead of passing `--var`.
+[`wrangler.toml`](../scripts/cors-proxy/wrangler.toml) instead of passing `--var`.
 
 ## Caching archives in R2 (optional)
 
@@ -141,14 +141,14 @@ above — rationale in
 [`docs/adr/0042-cors-proxy-r2-cache.md`](adr/0042-cors-proxy-r2-cache.md).
 
 ```sh
-cd cors-proxy
+cd scripts/cors-proxy
 
 # 1. Create the bucket (one-time; free tier covers 10 GB storage).
 npx wrangler r2 bucket create rpg-maker-cors-proxy-cache
 ```
 
 Then uncomment the `[[r2_buckets]]` block in
-[`wrangler.toml`](../cors-proxy/wrangler.toml) and deploy again:
+[`wrangler.toml`](../scripts/cors-proxy/wrangler.toml) and deploy again:
 
 ```sh
 npx wrangler deploy
@@ -205,7 +205,7 @@ are the controls compatible with CI use.
 
 ## Updating
 
-Edit [`cors-proxy/worker.js`](../cors-proxy/worker.js) and run
+Edit [`scripts/cors-proxy/worker.js`](../scripts/cors-proxy/worker.js) and run
 `npx wrangler deploy` again — same URL, new code. Roll back from **Workers &
 Pages → your Worker → Deployments** in the Cloudflare dashboard.
 

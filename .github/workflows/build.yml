@@ -44,7 +44,7 @@ jobs:
         ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
             && 'READ_WRITE' || 'READ_ONLY' }}
       # Optional: routes the game-archive/asset downloads below through the
-      # CORS proxy's R2 cache (cors-proxy/, docs/cors-proxy.md) instead of the
+      # CORS proxy's R2 cache (scripts/cors-proxy/, docs/cors-proxy.md) instead of the
       # origin host, as a fallback for when the "cache test game" step below
       # misses. Unset in forks and by default — scripts/cors-proxy-url.bash
       # passes URLs through unchanged when this is empty. May carry a
@@ -2162,7 +2162,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/wio-bc2cpp
-          key: wio-bc2cpp-${{ runner.os }}-${{ hashFiles('build_config.rb', 'tools/bc2cpp/**', 'mruby-lcf-compiled/**', 'mruby-rgss-compiled/**', 'mruby-rpg2k-compiled/**', 'mruby-rgss/**', 'mruby-lcf/**', 'mruby-rpg2k/**', 'hal-wio-io/**', 'patches/**', 'platformio.ini', '3rd/mruby/**', '3rd/mgem-list/**') }}
+          key: wio-bc2cpp-${{ runner.os }}-${{ hashFiles('build_config.rb', 'tools/bc2cpp/**', 'mruby-lcf-compiled/**', 'mruby-rgss-compiled/**', 'mruby-rpg2k-compiled/**', 'mruby-rgss/**', 'mruby-lcf/**', 'mruby-rpg2k/**', 'app/wio/hal-wio-io/**', 'patches/**', 'platformio.ini', '3rd/mruby/**', '3rd/mgem-list/**') }}
 
       - name: Build baseline + bc2cpp wio_rgss_boot
         run: scripts/wio_bc2cpp_measure.bash /tmp/wio-bc2cpp
@@ -2360,7 +2360,7 @@ jobs:
     # resolved to firmware stubs), which the EBOOT's markers lean on, making
     # capture flaky even when the EBOOT itself booted fine. The ten-bug trail
     # in app/psp/README.md (five of them PPSSPP HLE/interpreter bugs, patched
-    # in nix/patches/ and applied via this flake's own `packages.ppsspp`) fixed
+    # in patches/ and applied via this flake's own `packages.ppsspp`) fixed
     # that, and the frame loop now runs for the whole timeout window (thousands
     # of BRINGUP heartbeats per run), so the job asserts both markers and
     # gates the build alongside `psp`.
@@ -2395,7 +2395,7 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'nix/patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'patches/ppsspp-lwmutex-workarea-validate.patch') }}
           restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
 
       - name: Fetch PPSSPP
@@ -2529,7 +2529,7 @@ jobs:
       - name: Restore and cache Nix store
         uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'nix/patches/ppsspp-lwmutex-workarea-validate.patch') }}
+          primary-key: nix-ppsspp-${{ runner.os }}-${{ hashFiles('flake.*', 'patches/ppsspp-lwmutex-workarea-validate.patch') }}
           restore-prefixes-first-match: nix-ppsspp-${{ runner.os }}-
 
       - name: Fetch PPSSPP

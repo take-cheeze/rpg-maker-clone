@@ -4,17 +4,17 @@ optcarrot bc2cpp coverage report
  entirely separate from the real project's mruby-lcf/rgss/rpg2k registry
  docs/bc2cpp_coverage.txt measures. See tools/optcarrot_probe/README.md.)
 
-compiled entry points (clean, zero #error): 384
-  from bytecode: 382
+compiled entry points (clean, zero #error): 385
+  from bytecode: 383
   synthesized accessor overrides (ATTR_STRUCT_DEVIRT): 2
 never called (zero evidence in bytecode or NATIVE_SRCS): 8
 classes needing MRB_SET_INSTANCE_TT: 9
 
 -- method-level coverage (every bytecode method compile_method attempted) --
 methods attempted: 383
-  compiled clean: 382
-  left on the interpreter (>=1 #error): 1
-  coverage: 99.7%
+  compiled clean: 383
+  left on the interpreter (>=1 #error): 0
+  coverage: 100.0%
 
 -- ivar/return/argument facts proven --
 known-ivar-class hints (CLASS_HINT): 33
@@ -40,23 +40,22 @@ integer-valued constants proven (INTEGER_CONSTANT_PROOF): 40
 methods proven Fixnum-returning (FIXNUM_RETURN_PROOF): 13
 
 -- #error markers by reason (whole program) --
-      1  SEND/SSEND has a splat and/or keyword argument list (n=...)
-      1  total
+      0  total
 
 block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): 72
   still dynamic dispatch only -- MONO/POLY/TYPED devirtualization not yet attempted for these
 lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): 0
 
 -- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --
-total mrb_funcall/mrb_funcall_with_block call sites: 2080
-  POLY-marked (receiver's runtime class genuinely decides): 935
-  everything else (not yet attempted or failed MONO/TYPED): 1145
-distinct dynamically-dispatched method names: 170
+total mrb_funcall/mrb_funcall_with_block call sites: 2092
+  POLY-marked (receiver's runtime class genuinely decides): 1506
+  everything else (not yet attempted or failed MONO/TYPED): 586
+distinct dynamically-dispatched method names: 175
 top 30 dynamically-dispatched method names:
    1.   244  :[]
    2.   242  :+
    3.   219  :&
-   4.   107  :==
+   4.   108  :==
    5.   101  :*
    6.    88  :|
    7.    72  :-
