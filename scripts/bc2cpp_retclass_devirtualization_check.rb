@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 # Exercise annotated return-class tracing through mrbc's dedicated GETIDX
-# and GETIDX0 opcodes, then assert the ordinary TYPED codegen emits its
-# runtime-class guard and dynamic fallback.
+# and GETIDX0 opcodes. Assert the index operation and a following call both
+# use guarded TYPED codegen, with the indexed fallback retaining builtin
+# container fast paths.
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
@@ -14,6 +15,9 @@ SRC = <<~'RUBY'
     end
     class Other
       def name; :other; end
+    end
+    class OtherActors
+      def [](id); nil; end
     end
     class Actors
       # bc2cpp: (fixnum) -> Game::Actor
@@ -53,6 +57,22 @@ Dir.mktmpdir do |dir|
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
     irep = ireps.fetch(method.irep)
+    getidx_idx = irep.instructions.index { |insn| insn.op == 'GETIDX' }
+    raise "#{method_name}: no GETIDX instruction found" unless getidx_idx
+
+    index_insn = if method_name == 'first'
+                   receiver = irep.instructions[getidx_idx].args[/^R(\d+)/, 1]
+                   Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver}[0]", raw: '')
+                 else
+                   irep.instructions[getidx_idx]
+                 end
+    index_op = index_insn.op
+    index_code = gen.compile_insn(index_insn, irep, method, getidx_idx)
+    check.call("#{method_name}: #{index_op} devirtualizes annotated [] with guard/fallback",
+               index_code.include?('TYPED :[] -> Game::Actors#[]') &&
+                 index_code.include?('mrb_obj_class(M, r') && index_code.include?('mrb_array_p(r') &&
+                 index_code.include?('mrb_funcall(M,'), true)
+
     idx = irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':name') }
     raise "#{method_name}: no #name send found" unless idx
 
