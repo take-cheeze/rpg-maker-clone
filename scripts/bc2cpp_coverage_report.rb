@@ -4,8 +4,8 @@
 # bc2cpp coverage report: regenerates tools/bc2cpp/bc2cpp.rb's whole-program
 # diagnostic (every owner across all three compiled gems -- mruby-rpg2k-
 # compiled/mruby-lcf-compiled/mruby-rgss-compiled -- combined, the same
-# closed-world registry each real gem build feeds it) and writes a small,
-# stats-only summary to docs/bc2cpp_coverage.txt: compiled-entry-point and
+# closed-world registry each real gem build feeds it) and prints a small,
+# stats-only summary: compiled-entry-point and
 # #error counts, a method-level coverage percentage (attempted vs. actually
 # compiled clean), and both the resolved AND the poisoned-to-unknown side of
 # every ivar/return/argument fact the diagnostic proves -- an "unknown"
@@ -20,17 +20,16 @@
 # tracking that in git would make every commit's diff unreviewable and put
 # any two concurrent bc2cpp-touching PRs into a guaranteed merge conflict in
 # a file neither of them meaningfully changed. This report is the cheaper
-# alternative: aggregate counts only, so `git diff docs/bc2cpp_coverage.txt`
-# shows a real, measured coverage change (more/fewer compiled entry points,
-# a shrinking #error total, a new class of proven ivar-class hint), not
-# codegen noise. Contains no timestamp or other run-specific content, so
-# regenerating with no real source change produces an empty diff.
+# alternative: aggregate counts only, so the report can be published in the
+# CI job summary and copied into a PR description without adding a generated
+# file that conflicts whenever two concurrent bc2cpp changes land together.
+# Contains no timestamp or other run-specific content.
 #
 # Usage: MRBC=path/to/host/mrbc ruby scripts/bc2cpp_coverage_report.rb
 # Requires a host mrbc already built (3rd/mruby/build/host, the same
 # prerequisite every real mruby-*-compiled/mrbgem.rake Rake task already
-# has). Writes docs/bc2cpp_coverage.txt in place -- review the diff and
-# commit it alongside whatever bc2cpp.rb/mrblib change produced it.
+# has). Writes to stdout. Set BC2CPP_COVERAGE_REPORT_PATH to write a file
+# instead (used by callers that need to capture the report).
 
 require 'shellwords'
 require 'open3'
@@ -42,10 +41,8 @@ require_relative '../tools/bc2cpp/compiled_gems'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
-# Overridable so scripts/bc2cpp_coverage_check.bash can regenerate into a
-# throwaway path and diff it against the real committed file, instead of
-# overwriting that file as a side effect of merely checking it.
-REPORT_PATH = ENV['BC2CPP_COVERAGE_REPORT_PATH'] || File.join(ROOT, 'docs/bc2cpp_coverage.txt')
+# Optional output path for callers that need to capture the report.
+REPORT_PATH = ENV['BC2CPP_COVERAGE_REPORT_PATH']
 
 srcs = closed_world_mrblib_srcs(ROOT)
 native_srcs = Dir["#{ROOT}/mruby-rgss/src/*.cxx"] + core_native_srcs("#{ROOT}/3rd/mruby") +
@@ -328,5 +325,8 @@ dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(
   report << format("  %2d. %5d  :%s\n", i + 1, n, name)
 end
 
-File.write(REPORT_PATH, report)
-puts "wrote #{REPORT_PATH}"
+if REPORT_PATH
+  File.write(REPORT_PATH, report)
+else
+  puts report
+end
