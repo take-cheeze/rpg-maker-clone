@@ -1,3 +1,2 @@
-- Compile optcarrot CPU methods and PPU methods outside its Fiber loop while
-  keeping the emulator entry path, Fiber creation, resume bridges, main loop,
-  and Fiber-called PPU helpers interpreted.
+- Keep optcarrot's Fiber callers and PPU methods interpreted for mruby safety,
+  while compiling CPU methods outside that Fiber call chain.
