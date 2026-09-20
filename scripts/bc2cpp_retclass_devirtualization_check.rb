@@ -26,6 +26,8 @@ SRC = <<~'RUBY'
     class Actors
       # bc2cpp: (fixnum) -> Game::Actor
       def [](id); nil; end
+      # bc2cpp: (fixnum) -> Game::Actor
+      def existing(id); nil; end
     end
     class Battle
       Combatant = Struct.new(:hp) do
@@ -37,6 +39,7 @@ SRC = <<~'RUBY'
       def initialize(combatants); @combatants = combatants; end
       def fetch(id); @roster[id].name; end
       def first; @roster[0].name; end
+      def existing_name; @roster.existing(1).name; end
       def combatant_alive; @combatants.each { |combatant| combatant.alive? }; end
     end
   end
@@ -105,9 +108,14 @@ Dir.mktmpdir do |dir|
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
 
+  method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
+  code = gen.compile_method(method.irep).fetch(:code)
+  check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
+             code.include?('TYPED :name -> Game::Actor#name') &&
+               code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+
   method = registry['combatant_alive'].find { |md| md.owner == 'Game::Party' }
-  code = gen.compile_method(method.irep)
-  code = code.fetch(:code)
+  code = gen.compile_method(method.irep).fetch(:code)
   check.call('typed array argument devirtualizes a Struct element with guard/fallback',
              code.include?('ELEMENT :alive? -> Game::Battle::Combatant#alive?') &&
                code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
