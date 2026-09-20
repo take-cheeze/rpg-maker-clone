@@ -39,6 +39,10 @@ SRC = <<~'RUBY'
       def initialize(combatants); @combatants = combatants; end
       def fetch(id); @roster[id].name; end
       def first; @roster[0].name; end
+      # bc2cpp: () -> Array<Game::Actor>
+      def targets; @actors; end
+      def target_names_each; targets.each { |actor| actor.name }; end
+      def target_names_any; targets.any? { |actor| actor.name }; end
       def existing_name; @roster.existing(1).name; end
       def combatant_alive; @combatants.each { |combatant| combatant.alive? }; end
     end
@@ -66,7 +70,7 @@ Dir.mktmpdir do |dir|
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
-  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'combatants' => 'Array' } }
+  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'combatants' => 'Array' } }
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
   check.call('Array<Klass> argument keeps the Array receiver type',
@@ -105,6 +109,14 @@ Dir.mktmpdir do |dir|
                             owner_def: method)
     check.call("#{method_name}: annotated indexed result devirtualizes with guard/fallback",
                code.include?('TYPED :name -> Game::Actor#name') &&
+                 code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+  end
+  %w[target_names_each target_names_any].each do |method_name|
+    method = registry[method_name].find { |md| md.owner == 'Game::Party' }
+    irep = ireps.fetch(method.irep)
+    code = gen.compile_method(method.irep).fetch(:code)
+    check.call("#{method_name}: typed array return devirtualizes block element with guard/fallback",
+               code.include?('ELEMENT :name -> Game::Actor#name') &&
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
 
