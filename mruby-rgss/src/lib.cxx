@@ -676,41 +676,27 @@ namespace {
 RClass* g_native_rect_class = nullptr;
 RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
+RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
 }  // namespace
 
-// extern "C" here isn't about C compatibility (nothing here is called from
-// C) -- it's the escape hatch this file already established
-// (rgss_bitmap_bytes_decoded/rgss_set_display, above) for a function that
-// has to be genuinely visible to a *different* translation unit despite
-// being textually inside this file's own top-level anonymous namespace:
-// per [namespace.unnamed], a name declared `extern "C"` inside an unnamed
-// namespace gets real external linkage (not the internal linkage every
-// other member of that namespace gets), which is exactly what's needed
-// for bc2cpp's own generated register.cxx (a different .cxx file, in a
-// different mrbgem) to call these by name. The plain forward declarations
-// tools/bc2cpp/bc2cpp.rb emits for these (emit_native_construct_decls)
-// must stay `extern "C"` too, in sync with this -- a plain C++-linkage
-// redeclaration would silently look for a different (mangled) symbol name
-// and fail to link, the same failure mode this comment is here to head
-// off for a future edit of either side alone.
-extern "C" RClass* rgss_native_rect_class(void) {
-  return g_native_rect_class;
-}
-extern "C" RClass* rgss_native_color_class(void) {
-  return g_native_color_class;
-}
-extern "C" RClass* rgss_native_tone_class(void) {
-  return g_native_tone_class;
-}
-extern "C" RClass* rgss_native_bitmap_class(void) {
-  return g_native_bitmap_class;
-}
+// The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
+// bitmap_new_direct + rgss::native_*_class, declared in include/
+// rgss_construct.hxx) live in namespace `rgss` at file scope, next to
+// `bitmap_pixels` below -- plain C++ linkage reaches every translation
+// unit that includes the header, so no `extern "C"` escape hatch is
+// needed (that was only ever required because these used to sit inside
+// this file's own top-level anonymous namespace). The RClass* globals
+// above stay TU-local: only lib.cxx itself ever writes them. The
+// definitions need file-scope helpers (DataType<T>, clamp255,
+// spr_init/parent_object/wrap_lv_obj/register_zobj), all visible at file
+// scope within this same translation unit.
 
 // Called directly by bc2cpp's own generated code (compile_send's "MONO :new
 // -> direct native construct" path) in place of Class#new's own
 // allocate+initialize dispatch, when a compiled `.new` call site's receiver
-// is provably (GETCONST-traced) exactly one of Rect/Color/Tone -- see
+// is provably (GETCONST-traced) exactly one of Rect/Color/Tone/Sprite/
+// Bitmap -- see
 // NATIVE_CONSTRUCT_TARGETS there for the whole-program side of this.
 //
 // Unwrapped (native C++ typed) parameters, not mrb_value -- the first step
@@ -738,56 +724,12 @@ extern "C" RClass* rgss_native_bitmap_class(void) {
 // apply the exact same clamp255/clamp_signed255 calls their own
 // #initialize (color_init/tone_init above) already does -- not a second
 // copy of that logic that could drift, just the same two free functions
-// called again in the same field order.
-extern "C" mrb_value rgss_rect_new_direct(mrb_state* M,
-                                          RClass* klass,
-                                          mrb_int x,
-                                          mrb_int y,
-                                          mrb_int w,
-                                          mrb_int h) {
-  return DataType<Rect>::make(M, klass, x, y, w, h);
-}
+// called again in the same field order. (Bodies live in namespace `rgss`
+// at file scope, below, declared in include/rgss_construct.hxx.)
 
-extern "C" mrb_value rgss_color_new_direct(mrb_state* M,
-                                           RClass* klass,
-                                           mrb_float r,
-                                           mrb_float g,
-                                           mrb_float b,
-                                           mrb_float a) {
-  return DataType<Color>::make(M, klass, clamp255(r), clamp255(g), clamp255(b),
-                               clamp255(a));
-}
-
-extern "C" mrb_value rgss_tone_new_direct(mrb_state* M,
-                                          RClass* klass,
-                                          mrb_float r,
-                                          mrb_float g,
-                                          mrb_float b,
-                                          mrb_float gray) {
-  return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
-                              clamp_signed255(b), clamp255(gray));
-}
-
-// Bitmap's own entry: only the 2-Integer-arg size shape
-// (`Bitmap.new(w, h)`, ~105 real sites) -- the (`String`, ...) file-load
-// shapes keep ordinary dispatch (see NATIVE_CONSTRUCT_TARGETS' own
-// `type_guard` comment for how the call site picks). Reproduces
-// `bmp_init_size`'s own body exactly (`mrb_get_args(M, "ii", ...)` then
-// `alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888)`), parameterized
-// on the already-checked dimensions the same way the other three
-// entries parameterize on their own unboxed arguments. The Ruby-level
-// `Bitmap#initialize(f, s)` dispatches to `_init_size` exactly when its
-// first argument is not a String -- both Integer-tagged arguments prove
-// that branch, so the direct call observes identical behavior including
-// for negative/huge dimensions (whatever `alloc_obj` does with them,
-// both paths do equally). `_begin_load`'s own global diagnostics are a
-// String-branch-only affair, never touched here.
-extern "C" mrb_value rgss_bitmap_new_direct(mrb_state* M,
-                                            RClass* klass,
-                                            mrb_int w,
-                                            mrb_int h) {
-  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
-}
+// Sprite's own forward declaration lived here too (it delegated to
+// `spr_init`, defined further below) -- moved down there with it, same
+// reason, one home for all four.
 
 // ---- Table ----------------------------------------------------------------
 
@@ -4018,6 +3960,17 @@ mrb_value spr_init(mrb_state* M, mrb_value self) {
   return self;
 }
 
+// bc2cpp's own direct-construct entry point for `Sprite.new` /
+// `Sprite.new(viewport)` (see NATIVE_CONSTRUCT_TARGETS there and
+// include/rgss_construct.hxx): the same body as `spr_init`, but the
+// viewport arrives pre-resolved (the generated call site passes it
+// straight through) and the object itself is allocated here (Class#new's
+// own `self.allocate` step, which the direct path bypasses along with
+// the dispatch). Defined in namespace `rgss` at file scope below, next
+// to the other three constructors -- C++ resolves the call at link
+// time, so textual order is irrelevant.
+mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
+
 // Point the sprite's canvas at the bitmap it should display: the assigned
 // bitmap directly, or — when the sprite is mirrored — a horizontally-flipped
 // scratch copy (LVGL's lv_image has no flip, so mirroring is a software pass).
@@ -7169,6 +7122,103 @@ void bitmap_mark_dirty(mrb_state* M, mrb_value v) {
     reinterpret_cast<std::shared_ptr<Bitmap>*>(p)->get()->dirty = true;
 }
 
+// bc2cpp's own direct-construct entry points (see include/
+// rgss_construct.hxx and tools/bc2cpp/bc2cpp.rb's NATIVE_CONSTRUCT_
+// TARGETS). Called directly in place of Class#new's own allocate+
+// initialize dispatch when a compiled `.new` call site's receiver is
+// provably one of these classes -- the runtime class-identity guard lives
+// at the call site, against the matching `native_*_class` accessor
+// below (a gem-init-captured RClass*, independent of whatever the
+// constant table says right now, so a reassigned constant falls back to
+// ordinary `mrb_funcall` rather than misconstructing).
+//
+// Unwrapped (native C++ typed) parameters, not mrb_value -- the
+// generated call site does the same mrb_as_int/mrb_as_float unboxing
+// mrb_get_args' own "i"/"f" format specifiers do internally (see
+// compile_send's own comment), so a devirtualized `Tone.new(x)` still
+// observes identical coercion and identical TypeError-raising to the
+// ordinary #initialize dispatch it replaces. `klass` is the guarded
+// `mrb_class_ptr(recv)` the call site already computed, passed straight
+// through. (`:object`, Sprite's viewport, passes through as a plain
+// `mrb_value` -- `spr_init`'s own "|o" never coerces or raises.)
+//
+// Rect has no clamping at all (plain ints, straight through).
+// Color/Tone apply the exact same clamp255/clamp_signed255 calls their
+// own #initialize (color_init/tone_init) already does -- not a second
+// copy of that logic that could drift, just the same two free functions
+// called again in the same field order.
+mrb_value rect_new_direct(mrb_state* M,
+                          RClass* klass,
+                          mrb_int x,
+                          mrb_int y,
+                          mrb_int w,
+                          mrb_int h) {
+  return DataType<Rect>::make(M, klass, x, y, w, h);
+}
+
+mrb_value color_new_direct(mrb_state* M,
+                           RClass* klass,
+                           mrb_float r,
+                           mrb_float g,
+                           mrb_float b,
+                           mrb_float a) {
+  return DataType<Color>::make(M, klass, clamp255(r), clamp255(g), clamp255(b),
+                               clamp255(a));
+}
+
+mrb_value tone_new_direct(mrb_state* M,
+                          RClass* klass,
+                          mrb_float r,
+                          mrb_float g,
+                          mrb_float b,
+                          mrb_float gray) {
+  return DataType<Tone>::make(M, klass, clamp_signed255(r), clamp_signed255(g),
+                              clamp_signed255(b), clamp255(gray));
+}
+
+RClass* native_rect_class(void) {
+  return g_native_rect_class;
+}
+RClass* native_color_class(void) {
+  return g_native_color_class;
+}
+RClass* native_tone_class(void) {
+  return g_native_tone_class;
+}
+RClass* native_sprite_class(void) {
+  return g_native_sprite_class;
+}
+RClass* native_bitmap_class(void) {
+  return g_native_bitmap_class;
+}
+
+mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
+  mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
+  lv_obj_t* p = lv_canvas_create(parent_object(M, viewport));
+  wrap_lv_obj(M, self, p);
+  register_zobj(M, self);
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@viewport"), viewport);
+  return self;
+}
+
+// Bitmap's own entry: only the 2-Integer-arg size shape
+// (`Bitmap.new(w, h)`, ~105 real sites) -- the (`String`, ...) file-load
+// shapes keep ordinary dispatch (see NATIVE_CONSTRUCT_TARGETS' own
+// `type_guard` comment for how the call site picks). Reproduces
+// `bmp_init_size`'s own body exactly (`mrb_get_args(M, "ii", ...)` then
+// `alloc_obj(M, self, w, h, LV_COLOR_FORMAT_ARGB8888)`), parameterized
+// on the already-checked dimensions the same way the other entries
+// parameterize on their own unboxed arguments. The Ruby-level
+// `Bitmap#initialize(f, s)` dispatches to `_init_size` exactly when its
+// first argument is not a String -- both Integer-tagged arguments prove
+// that branch, so the direct call observes identical behavior including
+// for negative/huge dimensions (whatever `alloc_obj` does with them,
+// both paths do equally). `_begin_load`'s own global diagnostics are a
+// String-branch-only affair, never touched here.
+mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
+  return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
+}
+
 }  // namespace rgss
 
 extern "C" void rgss_set_display(mrb_state* M, lv_display_t* display) {
@@ -7368,6 +7418,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* spr = mrb_define_class_under(M, m, "Sprite", M->object_class);
   MRB_SET_INSTANCE_TT(spr, MRB_TT_DATA);
+  g_native_sprite_class = spr;
   mrb_define_method(M, spr, "initialize", spr_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, spr, "bitmap=", spr_set_bmp, MRB_ARGS_REQ(1));
   mrb_define_method(M, spr, "dispose", obj_dispose, MRB_ARGS_NONE());
@@ -7698,5 +7749,6 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_rect_class = nullptr;
   g_native_color_class = nullptr;
   g_native_tone_class = nullptr;
+  g_native_sprite_class = nullptr;
   g_native_bitmap_class = nullptr;
 }
