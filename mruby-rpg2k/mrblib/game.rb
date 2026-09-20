@@ -6019,7 +6019,9 @@ module Game
     # game.rb) -- every branch is an Array: `@actors` (Party's own roster,
     # always an Array per #initialize's `.reject.map.compact` chain),
     # `[caster]`, or `[target].compact`, never nil.
-    # bc2cpp: () -> Array
+    # Real field-skill callers pass Game::Actor values for caster and target;
+    # bc2cpp still guards each element and keeps Ruby dispatch as fallback.
+    # bc2cpp: () -> Array<Game::Actor>
     def skill_targets(sk, caster, target)
       case sk.scope
       when 4 then @actors

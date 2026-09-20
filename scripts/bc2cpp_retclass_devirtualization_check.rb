@@ -9,6 +9,9 @@ require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 
 SRC = <<~'RUBY'
+  class Array
+    def bc2cpp_test_array_owner; end
+  end
   module Game
     class Actor
       def name; :actor; end
@@ -26,6 +29,10 @@ SRC = <<~'RUBY'
     class Party
       def fetch(id); @roster[id].name; end
       def first; @roster[0].name; end
+      # bc2cpp: () -> Array<Game::Actor>
+      def targets; @actors; end
+      def target_names_each; targets.each { |actor| actor.name }; end
+      def target_names_any; targets.any? { |actor| actor.name }; end
     end
   end
 RUBY
@@ -51,8 +58,12 @@ Dir.mktmpdir do |dir|
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
-  class_layout = { 'Game::Party' => { 'roster' => 'Actors' } }
-  gen = CodeGen.new(ireps, registry, {}, class_layout, {}, {}, {}, {}, annotations, {}, {}, Set.new)
+  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array' } }
+  class_annotations = ClassAnnotations.extract(ireps, registry, owners)
+  element_layout = ArrayElementLayout.known(
+    ArrayElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations)
+  )
+  gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, element_layout, annotations, {}, {}, Set.new)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -80,6 +91,15 @@ Dir.mktmpdir do |dir|
                             owner_def: method)
     check.call("#{method_name}: annotated indexed result devirtualizes with guard/fallback",
                code.include?('TYPED :name -> Game::Actor#name') &&
+                 code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+  end
+
+  %w[target_names_each target_names_any].each do |method_name|
+    method = registry[method_name].find { |md| md.owner == 'Game::Party' }
+    irep = ireps.fetch(method.irep)
+    code = gen.compile_method(method.irep).fetch(:code)
+    check.call("#{method_name}: typed array return devirtualizes block element with guard/fallback",
+               code.include?('ELEMENT :name -> Game::Actor#name') &&
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
 end
