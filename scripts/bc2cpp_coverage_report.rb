@@ -267,7 +267,7 @@ report << "\n"
 # toward "compiled clean" above, same as any other method, but are
 # deliberately ALSO broken out here because the call carrying the block
 # still dispatches dynamically (`mrb_funcall_with_block`). The standalone
-# cfunc body can now specialize calls on proven Array#each elements, so
+# cfunc body can now specialize calls on proven Array/Hash iterator elements, so
 # count those separately from the dynamic block-carrying call site.
 block_fallback_count = @stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :/).size
 report << "block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): " \
@@ -286,7 +286,7 @@ current_fallback = nil
 end
 fallback_element_functions = fallback_element_sends.count { |_name, sends| sends.positive? }
 fallback_element_send_count = fallback_element_sends.values.sum
-report << "  fallback cfuncs with guarded Array iterator element sends: " \
+report << "  fallback cfuncs with guarded Array/Hash iterator element sends: " \
           "#{fallback_element_functions} function(s), #{fallback_element_send_count} send(s)\n"
 
 # LAMBDA_FALLBACK_SUPPORT: the LAMBDA-opcode sibling of BLOCK_CFUNC_

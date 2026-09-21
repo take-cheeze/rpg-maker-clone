@@ -12,9 +12,18 @@ SRC = <<~'RUBY'
   class Array
     def bc2cpp_test_array_owner; end
   end
+  class Hash
+    def bc2cpp_test_hash_owner; end
+  end
   module Game
     class Actor
       def name; :actor; end
+    end
+    class Picture
+      def picture_only; :picture; end
+    end
+    class OtherPicture
+      def picture_only; :other_picture; end
     end
     class Other
       def name; :other; end
@@ -54,6 +63,39 @@ SRC = <<~'RUBY'
     end
     class NativeValuesCaller
       def values_for(hash); hash.values; end
+    end
+    class HashValueOwner
+      def initialize
+        @sprites = {}
+        @sprites[1] = Game::Actor.new
+        @unknown = {}
+      end
+      def sprite_names_fallback
+        @sprites.each_value do |sprite|
+          sprite.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
+      def unknown_names_fallback
+        @unknown.each_value do |sprite|
+          sprite.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
+    end
+    class HashPictureOwner
+      # bc2cpp: (Hash<Game::Picture>, fixnum, fixnum)
+      def picture_name(pictures, id, unused); pictures[id].picture_only; end
+      # An untyped hash must retain dynamic result dispatch.
+      def unknown_picture_name(pictures, id); pictures[id].picture_only; end
     end
     class Party
       # bc2cpp: (Array<Game::Battle::Combatant>)
@@ -154,18 +196,44 @@ Dir.mktmpdir do |dir|
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
   class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'untyped' => 'Array',
-                                     'combatants' => 'Array' } }
+                                     'combatants' => 'Array' },
+                  'Game::HashValueOwner' => { 'sprites' => 'Hash', 'unknown' => 'Hash' } }
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
   check.call('Array<Klass> argument keeps the Array receiver type',
              class_annotations.fetch(party_init.irep).args.first == 'Array', true)
   check.call('Array<Klass> argument records its element class',
              annotations.fetch(party_init.irep).arg_elements.first == 'Game::Battle::Combatant', true)
+  picture_method = registry['picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
+  check.call('Hash<Klass> argument records exact Hash/value types',
+             class_annotations.fetch(picture_method.irep).args.first == 'Hash' &&
+             annotations.fetch(picture_method.irep).arg_elements.first == 'Game::Picture' &&
+               annotations.fetch(picture_method.irep).arg_containers.first == 'Hash', true)
   element_layout = ArrayElementLayout.known(
     ArrayElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations)
   )
+  hash_element_layout = HashElementLayout.known(
+    HashElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations, element_layout)
+  )
   gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, element_layout, annotations, {},
-                    {}, Set.new)
+                    hash_element_layout, Set.new)
+
+  picture_irep = ireps.fetch(picture_method.irep)
+  picture_send_idx = picture_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
+  picture_code = gen.compile_send(picture_irep.instructions[picture_send_idx].args, self_implicit: false,
+                                  irep: picture_irep, idx: picture_send_idx, owner_def: picture_method)
+  check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
+             picture_code.include?('TYPED :picture_only -> Game::Picture') &&
+               picture_code.include?('mrb_obj_class(M, r') && picture_code.include?('mrb_funcall(M,'), true)
+
+  unknown_method = registry['unknown_picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
+  unknown_irep = ireps.fetch(unknown_method.irep)
+  unknown_send_idx = unknown_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
+  unknown_code = gen.compile_send(unknown_irep.instructions[unknown_send_idx].args, self_implicit: false,
+                                  irep: unknown_irep, idx: unknown_send_idx, owner_def: unknown_method)
+  check.call('untyped Hash indexed values retain ordinary dispatch',
+             !unknown_code.include?('TYPED :picture_only -> Game::Picture#picture_only') &&
+               unknown_code.include?('mrb_funcall(M,'), true)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -266,6 +334,20 @@ Dir.mktmpdir do |dir|
              values_code.include?('mrb_hash_values(M,') && values_code.include?('mrb_hash_p(r') &&
                values_code.include?('M->hash_class') && values_code.include?('mrb_funcall(M,'), true)
 
+  hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
+  hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
+  check.call('fallback Hash#each_value devirtualizes proven values with guard/fallback',
+             hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
+               hash_values_code.include?('ELEMENT :name -> Game::Actor#name') &&
+               hash_values_code.include?('mrb_obj_class(M, r') &&
+               hash_values_code.include?('mrb_funcall(M,'), true)
+
+  unknown_hash_values = registry['unknown_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
+  unknown_hash_values_code = gen.compile_method(unknown_hash_values.irep).fetch(:code)
+  check.call('fallback Hash#each_value leaves unknown values dynamic',
+             unknown_hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
+               !unknown_hash_values_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
   check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
@@ -280,8 +362,8 @@ Dir.mktmpdir do |dir|
 end
 
 if failures.empty?
-  puts 'bc2cpp annotated return/array-argument devirtualization check: PASS'
+  puts 'bc2cpp annotated return/container-argument devirtualization check: PASS'
 else
-  warn "bc2cpp annotated return/array-argument devirtualization check: #{failures.size} failure(s)"
+  warn "bc2cpp annotated return/container-argument devirtualization check: #{failures.size} failure(s)"
   exit 1
 end
