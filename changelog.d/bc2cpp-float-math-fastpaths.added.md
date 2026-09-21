@@ -1,0 +1,1 @@
+- bc2cpp now lowers mruby's direct Float/Integer OP_ADD, OP_SUB, and OP_MUL cases to guarded native arithmetic while retaining dynamic dispatch for other operand types.
