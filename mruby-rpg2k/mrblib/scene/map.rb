@@ -11104,6 +11104,7 @@ class RPG2k
       end
 
       # Whether a picture asks for any tint at all.
+      # bc2cpp: (Game::Picture)
       def toned?(pic)
         pic.red != 100 || pic.green != 100 || pic.blue != 100 ||
           pic.saturation != 100
@@ -11119,6 +11120,7 @@ class RPG2k
       # into the shared picture bitmap, which is mutated in place. It is not the
       # per-frame `Sprite#bitmap=` swap that the map-layer tint attempt found
       # does not reach the display (see the screen-effects note in docs/TODO.md).
+      # bc2cpp: (Game::Picture)
       def toned_picture_src(pic, src)
         key = [pic.name, pic.use_transparent_color,
                pic.red, pic.green, pic.blue, pic.saturation]
@@ -11148,6 +11150,7 @@ class RPG2k
       # How many toned picture variants to keep before evicting the oldest.
       PICTURE_TONE_CACHE_MAX = 16
 
+      # bc2cpp: (Game::Picture, fixnum, fixnum)
       def draw_picture(pic, cam_x, cam_y)
         src = picture_src(pic.name, pic.use_transparent_color)
         return unless src
