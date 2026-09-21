@@ -10387,7 +10387,9 @@ module Game
     def erase_all_pictures; @pictures = {}; end
 
     # Advance every shown picture's in-flight move one frame.
-    def update_pictures; @pictures.each_value(&:update); end
+    def update_pictures
+      @pictures.each_value { |picture| picture.update }
+    end
 
     # Whether any picture is still interpolating a move (for the Move Picture
     # "wait until done" flag).
