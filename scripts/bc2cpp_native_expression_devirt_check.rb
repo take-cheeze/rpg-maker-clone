@@ -61,6 +61,11 @@ check.call('Hash key predicates are generated with the call-site argument and pu
              NativeExpressionDevirt.exact_class_return_expression(
                'return mrb_bool_value(mrb_hash_key_p(mrb, self, mrb_get_arg1(mrb)));', 'mrb', 'self'
              ).nil?)
+check.call('Array#at is generated from mruby-array-ext using public integer and element accessors',
+           exact_class_expressions['at']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Array', 1]] &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_ary_entry(recv,') &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_as_int(M,') &&
+             exact_class_expressions['at'].first[:expression].include?('BC2CPP_ARG0'))
 check.call('Hash#__delete preserves the core call-info side effect and public deletion helper',
            exact_class_expressions['__delete']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
              [['Hash', 1, '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))']] &&
@@ -165,6 +170,13 @@ check.call('Hash#key? substitutes the original call argument behind an exact Has
            hash_key_code.include?('M->hash_class') &&
              hash_key_code.include?('mrb_hash_key_p(M, r3, (r4))') &&
              hash_key_code.include?('mrb_funcall(M, r3, "key?", 1, r4)'))
+array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
+                                                                 visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                  native_registered_expressions: exact_class_expressions)
+array_at_code = array_at_generator.compile_native_primitive_send('at', 1, 'r3', ['r4'])
+check.call('generated Array#at uses exact Array identity and keeps fallback dispatch',
+           array_at_code.include?('M->array_class') && array_at_code.include?('mrb_ary_entry(r3,') &&
+             array_at_code.include?('mrb_as_int(M,') && array_at_code.include?('mrb_funcall(M, r3, "at", 1, r4)'))
 hash_delete_generator = CodeGen.new({}, { '__delete' => [MethodDef.new(name: '__delete', owner: '<native>', irep: nil,
                                                                         visibility: :private)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                     native_registered_expressions: exact_class_expressions)
