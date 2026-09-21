@@ -1,3 +1,4 @@
-- **bc2cpp** lowers guarded exact-Array pushes, clears and Fixnum
-  arithmetic/comparison sends in the Optcarrot closed-world compilation probe,
-  and compiles ROM loading plus PPU frame setup at its pre-Fiber boundary.
+- **bc2cpp** lowers guarded exact-Array pushes and clears, reuses the Optcarrot
+  PPU frame buffer's backing storage, and lowers Fixnum arithmetic/comparison
+  sends in the closed-world probe. ROM loading and PPU frame setup compile at
+  their pre-Fiber boundaries.
