@@ -106,6 +106,36 @@ SRC = <<~'RUBY'
       # An untyped hash must retain dynamic result dispatch.
       def unknown_picture_name(pictures, id); pictures[id].picture_only; end
     end
+    class FilterMapOwner
+      def initialize
+        @filtered = []
+        @heterogeneous = []
+      end
+      # bc2cpp: (Array<Game::Picture>)
+      def store_filtered_picture(pictures)
+        @filtered = pictures.filter_map do |picture|
+          next picture if picture.picture_only
+          nil
+        end
+      end
+      # bc2cpp: (Array<Game::Picture>)
+      def filtered_picture_call
+        @filtered.each { |picture| picture.picture_only }
+      end
+      # bc2cpp: (Array<Game::Picture>)
+      def store_heterogeneous_filter_map(pictures)
+        @heterogeneous = pictures.filter_map do |picture|
+          if picture.picture_only
+            next picture
+          else
+            next Game::OtherPicture.new
+          end
+        end
+      end
+      def heterogeneous_filter_map_call
+        @heterogeneous.each { |picture| picture.picture_only }
+      end
+    end
     class Party
       # bc2cpp: (Array<Game::Battle::Combatant>)
       def initialize(combatants); @combatants = combatants; end
@@ -206,7 +236,8 @@ Dir.mktmpdir do |dir|
   annotations = ElementAnnotations.extract(ireps, registry, owners)
   class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'untyped' => 'Array',
                                      'combatants' => 'Array' },
-                  'Game::HashValueOwner' => { 'sprites' => 'Hash', 'unknown' => 'Hash' } }
+                  'Game::HashValueOwner' => { 'sprites' => 'Hash', 'unknown' => 'Hash' },
+                  'Game::FilterMapOwner' => { 'filtered' => 'Array', 'heterogeneous' => 'Array' } }
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
   check.call('Array<Klass> argument keeps the Array receiver type',
@@ -261,6 +292,18 @@ Dir.mktmpdir do |dir|
   check.call('untyped Hash indexed values retain ordinary dispatch',
              !unknown_code.include?('TYPED :picture_only -> Game::Picture#picture_only') &&
                unknown_code.include?('mrb_funcall(M,'), true)
+
+  filtered_call = registry['filtered_picture_call'].find { |md| md.owner == 'Game::FilterMapOwner' }
+  filtered_code = gen.compile_method(filtered_call.irep).fetch(:code)
+  check.call('filter_map preserves filtered element class through a subsequent each block',
+             filtered_code.include?('ELEMENT :picture_only -> Game::Picture') &&
+               filtered_code.include?('mrb_obj_class(M, r') && filtered_code.include?('mrb_funcall(M,'), true)
+
+  heterogeneous = registry['heterogeneous_filter_map_call'].find { |md| md.owner == 'Game::FilterMapOwner' }
+  heterogeneous_code = gen.compile_method(heterogeneous.irep).fetch(:code)
+  check.call('heterogeneous filter_map results retain dynamic dispatch',
+             !heterogeneous_code.include?('TYPED :picture_only -> Game::Picture') &&
+               heterogeneous_code.include?('mrb_funcall(M,'), true)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
