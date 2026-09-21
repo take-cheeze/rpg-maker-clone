@@ -118,6 +118,7 @@ module NativeExpressionDevirt
     implementations = Hash.new { |hash, function| hash[function] = [] }
     opaque_owners = Hash.new { |hash, name| hash[name] = [] }
     target_classes = %w[Array Hash String].to_set
+    target_methods = %w[size empty? to_hash].to_set
 
     Array(paths).each do |path|
       next unless File.file?(path)
@@ -158,7 +159,7 @@ module NativeExpressionDevirt
       rom_entries(source).each do |table, arguments|
         function, symbol, aspec = arguments
         name = symbol_name(symbol)
-        next unless %w[size empty?].include?(name)
+        next unless target_methods.include?(name)
 
         owners = Array(table_owners[table]).uniq
         owner = owners.one? ? owners.first : nil
@@ -172,7 +173,7 @@ module NativeExpressionDevirt
           next unless arguments.length == 5
 
           name = symbol_name(arguments[2])
-          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if %w[size empty?].include?(name)
+          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if target_methods.include?(name)
         end
       end
       %w[mrb_define_method mrb_define_private_method mrb_define_class_method
@@ -181,7 +182,7 @@ module NativeExpressionDevirt
           next unless arguments.length == 5 && arguments[2].start_with?('"')
 
           name = unescape_c_string(arguments[2][1...-1])
-          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if %w[size empty?].include?(name)
+          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if target_methods.include?(name)
         end
       end
       %w[mrb_define_method_raw mrb_define_alias_id].each do |macro|
@@ -189,14 +190,14 @@ module NativeExpressionDevirt
           next unless arguments.length == 4
 
           name = symbol_name(arguments[2])
-          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if %w[size empty?].include?(name)
+          opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if target_methods.include?(name)
         end
       end
       macro_calls(source, 'mrb_define_alias').each do |arguments|
         next unless arguments.length == 4 && arguments[2].start_with?('"')
 
         name = unescape_c_string(arguments[2][1...-1])
-        opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if %w[size empty?].include?(name)
+        opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if target_methods.include?(name)
       end
 
       function_pattern = /(?:static\s+|MRB_API\s+)?mrb_value\s+(\w+)\s*\(\s*mrb_state\s*\*\s*(\w+)\s*,\s*mrb_value\s+(\w+)\s*\)\s*\{/
@@ -210,7 +211,7 @@ module NativeExpressionDevirt
       end
     end
 
-    names = registrations.keys & %w[size empty?]
+    names = registrations.keys & target_methods.to_a
     names.each_with_object({}) do |name, result|
       entries = registrations[name]
       next if entries.empty?
@@ -219,7 +220,8 @@ module NativeExpressionDevirt
         next
       end
 
-      relevant = entries.select { |entry| target_classes.include?(entry[:owner][:class_name]) }
+      method_classes = name == 'to_hash' ? %w[Hash] : target_classes
+      relevant = entries.select { |entry| method_classes.include?(entry[:owner][:class_name]) }
       generated = relevant.group_by { |entry| entry[:owner][:class_name] }.filter_map do |_class_name, class_entries|
         next unless class_entries.all? do |entry|
           entry[:no_args] && entry[:owner][:field] && entry[:owner][:tag] &&

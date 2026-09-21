@@ -9519,6 +9519,8 @@ class CodeGen
       compile_native_container_expression(name, d, recv, argv)
     when 'empty?'
       compile_native_container_expression(name, d, recv, argv)
+    when 'to_hash'
+      compile_native_container_expression(name, d, recv, argv)
     when '!'
       expression = @native_expression_devirt[name]
       if expression
@@ -23322,6 +23324,10 @@ class CodeGen
     end
 
     if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash String])
+      return compile_native_primitive_send(name, d, recv, argv)
+    end
+
+    if name == 'to_hash' && n.zero? && builtin_class_send_safe?(name, %w[Hash])
       return compile_native_primitive_send(name, d, recv, argv)
     end
 

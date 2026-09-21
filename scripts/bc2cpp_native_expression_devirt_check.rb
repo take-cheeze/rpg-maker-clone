@@ -25,6 +25,9 @@ check.call('Array and Hash size bodies are generated; String size is declined',
              containers['size'].none? { |entry| entry[:expression].include?('RSTRING_CHAR_LEN') })
 check.call('Array, Hash, and String empty? bodies are generated from their C implementations',
            containers['empty?']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash String])
+check.call('Hash#to_hash is generated as an exact-class identity conversion',
+           containers['to_hash']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['Hash', 'recv']])
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -75,6 +78,11 @@ container_code = generator.compile_native_primitive_send('size', 1, 'r3', [])
 check.call('container output uses generated C expressions and falls back for other receiver classes',
            container_code.include?('M->array_class') && container_code.include?('M->hash_class') &&
              container_code.include?('mrb_funcall(M, r3, "size", 0)'))
+hash_to_hash_code = generator.compile_native_primitive_send('to_hash', 1, 'r3', [])
+check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic fallback',
+           hash_to_hash_code.include?('M->hash_class') &&
+             hash_to_hash_code.include?('r1 = r3;') &&
+             hash_to_hash_code.include?('mrb_funcall(M, r3, "to_hash", 0)'))
 override_registry = {
   'size' => [
     MethodDef.new(name: 'size', owner: '<native>', irep: nil, visibility: :public),
