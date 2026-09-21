@@ -22,6 +22,31 @@ on:
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
+  # Path-based gate for the `psp`/`psp-smoke`/`psp-smoke-game` pipeline below:
+  # those three jobs (a pspdev container cross-build plus two PPSSPP headless
+  # smokes) are among the slowest in this workflow, and touch nothing but
+  # app/psp, so a change with no bearing on the PSP port no longer pays for
+  # them. `workflow_dispatch` bypasses this filter entirely -- see those
+  # jobs' own `if:` -- so a manual run always builds everything.
+  changes:
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      psp: ${{ steps.filter.outputs.psp }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          show-progress: false
+          persist-credentials: false
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            psp:
+              - 'app/psp/**'
+              - '.github/workflows/build.yml'
+
   # This workflow contains a single job called "build"
   build:
     # `/preview` comments only ever want the wasm page; skip the rest of CI.
@@ -870,6 +895,19 @@ jobs:
 
       - name: Build host mruby with bc2cpp
         timeout-minutes: 45
+        # mruby core (including the three RPGMAKER_BC2CPP-only compiled gems)
+        # is built by `rake`, invoked from a CMake custom command
+        # (cmake/build-mruby.cmake) rather than through CMake's own compile
+        # rules -- so the dev shell's CMAKE_C_COMPILER_LAUNCHER/
+        # CMAKE_CXX_COMPILER_LAUNCHER (flake.nix) never reaches it, and every
+        # compile in this job ran uncached. mruby's own toolchain :gcc reads
+        # CC/CXX directly (build_config.rb), so wrap them here instead of at
+        # job level -- scoped to this one step so the "Configure host build"
+        # step above keeps CMake's own compiler detection, which does not
+        # handle a multi-word CC/CXX the way a shelled-out `rake` command does.
+        env:
+          CC: sccache gcc
+          CXX: sccache g++
         run: cmake --build build-bc2cpp --target mruby_build --parallel 2
 
       - name: Report bc2cpp coverage
@@ -2037,7 +2075,10 @@ jobs:
     # project root's CMakeLists.txt and cannot honor build_src_filter,
     # both fatal to sharing the root project the way Wio/Maix do), so every
     # `pio` command here runs with app/m5stack as its working directory.
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Disabled: this job (and `m5stack-qemu` below, which needs its firmware
+    # artifact) does not currently run in CI.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -2106,7 +2147,8 @@ jobs:
     # kit Gamepad Face's buttons actually reaching RGSS::Input's bitmask
     # through a simulated I2C device (m5stack-gamepad.patch).
     needs: m5stack
-    if: ${{ github.event_name != 'issue_comment' }}
+    # Disabled along with `m5stack` above.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -2412,7 +2454,14 @@ jobs:
     # input HAL and the entry-point sketch into EBOOT.PBP; the mruby interpreter
     # is layered on in a later slice (see app/psp/README.md and
     # docs/adr/0010-psp-port.md).
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Gated on the `changes` job above: this build (and the two smoke jobs
+    # below that need its EBOOT) only runs when app/psp itself changed, or on
+    # a manual `workflow_dispatch` run, which always builds everything.
+    needs: changes
+    if: >-
+      ${{ github.event_name != 'issue_comment' &&
+          (github.event_name == 'workflow_dispatch' || needs.changes.outputs.psp == 'true') }}
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
