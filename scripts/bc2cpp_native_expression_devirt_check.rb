@@ -61,6 +61,17 @@ check.call('Hash key predicates are generated with the call-site argument and pu
              NativeExpressionDevirt.exact_class_return_expression(
                'return mrb_bool_value(mrb_hash_key_p(mrb, self, mrb_get_arg1(mrb)));', 'mrb', 'self'
              ).nil?)
+check.call('Hash#__delete preserves the core call-info side effect and public deletion helper',
+           exact_class_expressions['__delete']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
+             [['Hash', 1, '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))']] &&
+             NativeExpressionDevirt.exact_class_return_expression(
+               'mrb_value key = mrb_get_arg1(mrb); mrb->c->ci->mid = 0; return mrb_hash_delete_key(mrb, self, key);',
+               'mrb', 'self', arity: 1
+             ) == '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))' &&
+             NativeExpressionDevirt.exact_class_return_expression(
+               'mrb->c->ci->mid = 0; return mrb_hash_delete_key(mrb, self, mrb_get_arg1(mrb));',
+               'mrb', 'self'
+             ).nil?)
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -128,6 +139,14 @@ check.call('Hash#key? substitutes the original call argument behind an exact Has
            hash_key_code.include?('M->hash_class') &&
              hash_key_code.include?('mrb_hash_key_p(M, r3, (r4))') &&
              hash_key_code.include?('mrb_funcall(M, r3, "key?", 1, r4)'))
+hash_delete_generator = CodeGen.new({}, { '__delete' => [MethodDef.new(name: '__delete', owner: '<native>', irep: nil,
+                                                                        visibility: :private)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                    native_registered_expressions: exact_class_expressions)
+hash_delete_code = hash_delete_generator.compile_native_primitive_send('__delete', 1, 'r3', ['r4'])
+check.call('Hash#__delete emits its generated mutation behind the exact Hash guard with dynamic fallback',
+           hash_delete_code.include?('M->hash_class') && hash_delete_code.include?('M->c->ci->mid = 0') &&
+             hash_delete_code.include?('mrb_hash_delete_key(M, r3, (r4))') &&
+             hash_delete_code.include?('mrb_funcall(M, r3, "__delete", 1, r4)'))
 begin_code = generator.compile_native_primitive_send('begin', 1, 'r3', [])
 end_code = generator.compile_native_primitive_send('end', 1, 'r3', [])
 check.call('Range accessors use an exact Range class guard and dynamic fallback',

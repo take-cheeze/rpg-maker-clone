@@ -15,7 +15,7 @@ module NativeExpressionDevirt
     '!' => 'mrb_bool_value(!mrb_test(recv))',
   }.freeze
   CLASS_EXPRESSION_CALLS = %w[
-    mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p mrb_hash_key_p
+    mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p mrb_hash_key_p mrb_hash_delete_key
     mrb_str_ptr mrb_range_beg mrb_range_end mrb_float mrb_float_value isfinite isnan signbit
   ].freeze
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
@@ -306,7 +306,15 @@ module NativeExpressionDevirt
 
     statements = match[1].split(';').map(&:strip).reject(&:empty?)
     locals = {}
+    side_effects = []
     statements.each do |statement|
+      if statement.match?(/\A#{Regexp.escape(state_arg)}->c->ci->mid\s*=\s*0\z/)
+        return unless arity == 1 && side_effects.empty? && locals.values.compact.all? { |value| value == 'BC2CPP_ARG0' }
+
+        side_effects << 'M->c->ci->mid = 0'
+        next
+      end
+
       declaration = statement.match(/\A(?:struct\s+\w+|mrb_int|mrb_float|mrb_value|mrb_bool)\s*\*?\s*(\w+)(?:\s*=\s*(.+))?\z/m)
       if declaration
         local, initializer = declaration.captures
@@ -325,7 +333,7 @@ module NativeExpressionDevirt
         return unless locals[local]
       end
     end
-    if conditional
+    expression = if conditional
       condition = substitute_expression(match[2], state_arg, self_arg, locals)
       when_true = substitute_expression(match[3], state_arg, self_arg, locals)
       when_false = substitute_expression(match[4], state_arg, self_arg, locals)
@@ -335,6 +343,10 @@ module NativeExpressionDevirt
     else
       substitute_expression(match[2], state_arg, self_arg, locals)
     end
+    return unless expression
+    return expression if side_effects.empty?
+
+    "(#{(side_effects + [expression]).join(', ')})"
   end
 
   def substitute_expression(expression, state_arg, self_arg, locals)
