@@ -79,6 +79,13 @@ SRC = <<~'RUBY'
         end
       end
     end
+    class EmptyRoute
+      def empty?; false; end
+    end
+    class EmptyRouteCaller
+      def fresh_route_empty?; Game::EmptyRoute.new.empty?; end
+      def unknown_empty?(value); value.empty?; end
+    end
     class Party
       # bc2cpp: (Array<Game::Battle::Combatant>)
       def initialize(combatants); @combatants = combatants; end
@@ -295,6 +302,26 @@ Dir.mktmpdir do |dir|
   check.call('fallback Hash#each_value leaves unknown values dynamic',
              unknown_hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
                !unknown_hash_values_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+
+  # The real build's mruby core registry contributes this native marker.
+  # Keep it local to these checks so the known receiver exercises the same
+  # empty? intrinsic ordering as a shipped build.
+  empty_registry = registry.transform_values(&:dup)
+  (empty_registry['empty?'] ||= []) << MethodDef.new(name: 'empty?', owner: '<native>', irep: nil,
+                                                      visibility: :public)
+  empty_gen = CodeGen.new(ireps, empty_registry, {}, class_layout, class_annotations, {}, {}, element_layout,
+                          annotations, {}, hash_element_layout, Set.new)
+  fresh_empty = empty_registry['fresh_route_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
+  fresh_empty_code = empty_gen.compile_method(fresh_empty.irep).fetch(:code)
+  check.call('typed Ruby empty? target takes priority over built-in container intrinsic',
+             fresh_empty_code.include?('TYPED :empty? -> Game::EmptyRoute#empty?') &&
+               fresh_empty_code.include?('mrb_obj_class(M, r') && fresh_empty_code.include?('mrb_funcall(M,'), true)
+
+  unknown_empty = empty_registry['unknown_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
+  unknown_empty_code = empty_gen.compile_method(unknown_empty.irep).fetch(:code)
+  check.call('unknown empty? receiver retains built-in container intrinsic and fallback',
+             unknown_empty_code.include?('empty? -- exact built-in containers only') &&
+               unknown_empty_code.include?('mrb_funcall(M,'), true)
 
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
