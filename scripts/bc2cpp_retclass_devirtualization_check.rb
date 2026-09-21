@@ -61,6 +61,13 @@ SRC = <<~'RUBY'
         def alive?; hp > 0; end
       end
     end
+    class EmptyRoute
+      def empty?; false; end
+    end
+    class EmptyRouteCaller
+      def fresh_route_empty?; Game::EmptyRoute.new.empty?; end
+      def unknown_empty?(value); value.empty?; end
+    end
     class NativeValuesCaller
       def values_for(hash); hash.values; end
     end
@@ -342,6 +349,25 @@ Dir.mktmpdir do |dir|
   check.call('fallback Array#each_with_object leaves unknown elements dynamic',
              untyped_each_with_object_code.include?('BLOCK_FALLBACK :each_with_object') &&
              !untyped_each_with_object_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+  # The real build's mruby core registry contributes this native marker.
+  # Keep it local to these checks so the known receiver exercises the same
+  # empty? intrinsic ordering as a shipped build.
+  empty_registry = registry.transform_values(&:dup)
+  (empty_registry['empty?'] ||= []) << MethodDef.new(name: 'empty?', owner: '<native>', irep: nil,
+                                                      visibility: :public)
+  empty_gen = CodeGen.new(ireps, empty_registry, {}, class_layout, class_annotations, {}, {}, element_layout,
+                          annotations, {}, {}, Set.new)
+  fresh_empty = empty_registry['fresh_route_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
+  fresh_empty_code = empty_gen.compile_method(fresh_empty.irep).fetch(:code)
+  check.call('typed Ruby empty? target takes priority over built-in container intrinsic',
+             fresh_empty_code.include?('TYPED :empty? -> Game::EmptyRoute#empty?') &&
+               fresh_empty_code.include?('mrb_obj_class(M, r') && fresh_empty_code.include?('mrb_funcall(M,'), true)
+
+  unknown_empty = empty_registry['unknown_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
+  unknown_empty_code = empty_gen.compile_method(unknown_empty.irep).fetch(:code)
+  check.call('unknown empty? receiver retains built-in container intrinsic and fallback',
+             unknown_empty_code.include?('empty? -- exact built-in containers only') &&
+               unknown_empty_code.include?('mrb_funcall(M,'), true)
 
   values_registry = registry.transform_values(&:dup)
   (values_registry['values'] ||= []) << MethodDef.new(name: 'values', owner: '<native>', irep: nil,
@@ -353,7 +379,6 @@ Dir.mktmpdir do |dir|
   check.call('Hash#values uses guarded native implementation with Ruby fallback',
              values_code.include?('mrb_hash_values(M,') && values_code.include?('mrb_hash_p(r') &&
                values_code.include?('M->hash_class') && values_code.include?('mrb_funcall(M,'), true)
-
   hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
   hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
   check.call('fallback Hash#each_value devirtualizes proven values with guard/fallback',
