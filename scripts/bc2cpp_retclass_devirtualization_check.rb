@@ -74,6 +74,13 @@ SRC = <<~'RUBY'
     class NativeHashKeyCaller
       def hash_key?(hash, key); hash.key?(key); end
     end
+    class NumericCompareCaller
+      def equal?(left, right); left == right; end
+      def less?(left, right); left < right; end
+      def less_equal?(left, right); left <= right; end
+      def greater?(left, right); left > right; end
+      def greater_equal?(left, right); left >= right; end
+    end
     class HashKeySubclass < Hash
       def key?(key); :subclass_override; end
     end
@@ -451,6 +458,23 @@ Dir.mktmpdir do |dir|
   check.call('Hash#key? uses guarded native implementation with Ruby fallback',
              key_code.include?('mrb_hash_key_p(M,') && key_code.include?('mrb_hash_p(r') &&
                key_code.include?('M->hash_class') && key_code.include?('mrb_funcall(M,'), true)
+
+  compare_methods = {
+    'equal?' => '==', 'less?' => '<', 'less_equal?' => '<=', 'greater?' => '>',
+    'greater_equal?' => '>='
+  }
+  compare_methods.each do |method_name, operator|
+    method = registry.fetch(method_name).find { |md| md.owner == 'Game::NumericCompareCaller' }
+    code = gen.compile_method(method.irep).fetch(:code)
+    check.call("OP_CMP #{operator} mirrors Integer/Float tags and keeps dynamic fallback",
+               code.include?('MRB_TT_INTEGER') && code.include?('MRB_TT_FLOAT') &&
+                 code.include?('mrb_integer(r') && code.include?('mrb_float(r') &&
+                 code.include?('mrb_funcall(M,'), true)
+    if operator == '=='
+      check.call('OP_EQ preserves identity before numeric comparison',
+                 code.index('mrb_obj_eq(M,') < code.index('MRB_TT_INTEGER'), true)
+    end
+  end
 
   overridden_key_registry = key_registry.transform_values(&:dup)
   overridden_key_registry['key?'] << MethodDef.new(name: 'key?', owner: 'Hash', irep: nil,
