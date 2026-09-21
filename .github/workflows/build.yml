@@ -894,6 +894,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_array_push_fastpath_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
 
       - name: sccache stats
