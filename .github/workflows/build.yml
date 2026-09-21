@@ -1483,7 +1483,10 @@ jobs:
     # of the shared walk engine has no CI toolchain at all, so this job is the
     # only place any of the three firmwares is compiled -- the `wio-renode`
     # job below additionally boots them (docs/adr/0094).
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (along with `wio-renode` and `wio-bc2cpp` below)
+    # until the bc2cpp cross-build path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -1901,7 +1904,10 @@ jobs:
     # (Adafruit_ZeroDMA), which this platform does not model yet (P2's
     # DMAC gap, app/wio/renode/README.md) -- a real, understood, separate
     # piece of work, not a performance concern like the two bugs below were.
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (see `wio` job above) until the bc2cpp cross-build
+    # path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
@@ -2227,7 +2233,10 @@ jobs:
     # report runs under `if: always()` and never fails the job on the number. The
     # job fails only if the cross-build itself breaks (a patch that stops
     # applying, a toolchain change) or the report tooling breaks.
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (see `wio` job above) until the bc2cpp cross-build
+    # path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     # Two ARM cross-builds on a cache miss; well under the 360-minute runner
     # default the other jobs rely on, but enough to not cut a real build short.
