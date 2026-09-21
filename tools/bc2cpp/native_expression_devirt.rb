@@ -15,7 +15,7 @@ module NativeExpressionDevirt
   }.freeze
   CLASS_EXPRESSION_CALLS = %w[
     mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p
-    mrb_str_ptr mrb_range_beg mrb_range_end
+    mrb_str_ptr mrb_range_beg mrb_range_end mrb_float isfinite isnan
   ].freeze
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
   # private to string.c (and calls a private UTF-8 helper), so generated C++

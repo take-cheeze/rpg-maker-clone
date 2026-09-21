@@ -36,6 +36,11 @@ check.call('Float#to_f and Symbol#to_sym are generated from the shared C identit
              [['Float', 'recv']] &&
              exact_class_expressions['to_sym']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
                [['Symbol', 'recv']])
+check.call('Float#finite? and Float#nan? are generated from their C predicates',
+           exact_class_expressions['finite?']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['Float', 'mrb_bool_value(isfinite(mrb_float(recv)))']] &&
+             exact_class_expressions['nan?']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+               [['Float', 'mrb_bool_value(isnan(mrb_float(recv)))']])
 check.call('Range#begin and Range#end are generated through public Range accessors',
            exact_class_expressions['begin']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Range', 'mrb_range_beg(M, recv)']] &&
@@ -115,6 +120,13 @@ check.call('immediate Float and Symbol fast paths use type tags without object-p
              float_to_f_code.include?('mrb_funcall(M, r3, "to_f", 0)') &&
              symbol_to_sym_code.include?('mrb_funcall(M, r3, "to_sym", 0)') &&
              !float_to_f_code.include?('mrb_obj_ptr(r3)') && !symbol_to_sym_code.include?('mrb_obj_ptr(r3)'))
+finite_code = generator.compile_native_primitive_send('finite?', 1, 'r3', [])
+nan_code = generator.compile_native_primitive_send('nan?', 1, 'r3', [])
+check.call('Float predicates use their source expressions behind immediate type-tag guards',
+           finite_code.include?('case MRB_TT_FLOAT:') && finite_code.include?('isfinite(mrb_float(r3))') &&
+             nan_code.include?('case MRB_TT_FLOAT:') && nan_code.include?('isnan(mrb_float(r3))') &&
+             finite_code.include?('mrb_funcall(M, r3, "finite?", 0)') &&
+             nan_code.include?('mrb_funcall(M, r3, "nan?", 0)'))
 override_registry = {
   'size' => [
     MethodDef.new(name: 'size', owner: '<native>', irep: nil, visibility: :public),
