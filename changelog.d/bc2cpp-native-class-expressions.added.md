@@ -9,3 +9,5 @@
   predicates with immediate type-tag guards.
 - Float#abs is generated from mruby's conditional C body while preserving the
   original Float value on its unchanged return path.
+- String#bytesize is generated from mruby's public RSTRING_LEN macro behind an
+  exact String class guard.

@@ -20,7 +20,7 @@ module NativeExpressionDevirt
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
   # private to string.c (and calls a private UTF-8 helper), so generated C++
   # must leave String#size on ordinary dispatch.
-  CLASS_EXPRESSION_MACROS = %w[ARY_LEN RSTR_LEN].freeze
+  CLASS_EXPRESSION_MACROS = %w[ARY_LEN RSTR_LEN RSTRING_LEN].freeze
   module_function
 
   def analyze(paths)

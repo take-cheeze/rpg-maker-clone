@@ -22,7 +22,8 @@ implementations. It extracts zero-argument, single-return bodies made from a
 small allowlist of pure mruby value helpers. It links ROM tables to their
 runtime class fields and instance tags, then generates exact-class paths for
 Array/Hash `size` and `length`, Array/Hash/String `empty?`, and Hash
-`to_hash`; it also generates Float `to_f` and Symbol `to_sym` from their
+`to_hash`, plus String `bytesize` from its public byte-length macro; it also
+generates Float `to_f` and Symbol `to_sym` from their
 shared identity body, using immediate type tags rather than object-pointer
 guards. It also generates the receiver-wide `!` expression from BasicObject's
 implementation. Range `begin` and `end` use mruby's public Range accessors

@@ -28,6 +28,9 @@ check.call('Array and Hash length bodies are generated while String length is de
              exact_class_expressions['length'].none? { |entry| entry[:owner][:class_name] == 'String' })
 check.call('Array, Hash, and String empty? bodies are generated from their C implementations',
            exact_class_expressions['empty?']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash String])
+check.call('String#bytesize is generated from its public byte-length macro',
+           exact_class_expressions['bytesize']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['String', 'mrb_int_value(M, RSTRING_LEN(recv))']])
 check.call('Hash#to_hash is generated as an exact-class identity conversion',
            exact_class_expressions['to_hash']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Hash', 'recv']])
@@ -106,6 +109,11 @@ length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
 check.call('Array/Hash length is generated from the same C expressions as size',
            length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
              length_code.include?('mrb_funcall(M, r3, "length", 0)'))
+bytesize_code = generator.compile_native_primitive_send('bytesize', 1, 'r3', [])
+check.call('String#bytesize uses an exact String class guard and dynamic fallback',
+           bytesize_code.include?('M->string_class') &&
+             bytesize_code.include?('mrb_int_value(M, RSTRING_LEN(r3))') &&
+             bytesize_code.include?('mrb_funcall(M, r3, "bytesize", 0)'))
 begin_code = generator.compile_native_primitive_send('begin', 1, 'r3', [])
 end_code = generator.compile_native_primitive_send('end', 1, 'r3', [])
 check.call('Range accessors use an exact Range class guard and dynamic fallback',
