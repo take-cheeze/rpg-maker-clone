@@ -43,6 +43,26 @@ SRC = <<~'RUBY'
       def targets; @actors; end
       def target_names_each; targets.each { |actor| actor.name }; end
       def target_names_any; targets.any? { |actor| actor.name }; end
+      def target_names_fallback
+        targets.each do |actor|
+          actor.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
+      def untyped_names_fallback
+        @untyped.each do |actor|
+          actor.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
       def existing_name; @roster.existing(1).name; end
       def combatant_alive; @combatants.each { |combatant| combatant.alive? }; end
     end
@@ -70,7 +90,8 @@ Dir.mktmpdir do |dir|
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
-  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'combatants' => 'Array' } }
+  class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'untyped' => 'Array',
+                                     'combatants' => 'Array' } }
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
   check.call('Array<Klass> argument keeps the Array receiver type',
@@ -119,6 +140,19 @@ Dir.mktmpdir do |dir|
                code.include?('ELEMENT :name -> Game::Actor#name') &&
                  code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
   end
+
+  fallback = registry['target_names_fallback'].find { |md| md.owner == 'Game::Party' }
+  fallback_code = gen.compile_method(fallback.irep).fetch(:code)
+  check.call('fallback Array#each devirtualizes typed elements with guard/fallback',
+             fallback_code.include?('BLOCK_FALLBACK :each') &&
+               fallback_code.include?('ELEMENT :name -> Game::Actor#name') &&
+               fallback_code.include?('mrb_obj_class(M, r') && fallback_code.include?('mrb_funcall(M,'), true)
+
+  untyped = registry['untyped_names_fallback'].find { |md| md.owner == 'Game::Party' }
+  untyped_code = gen.compile_method(untyped.irep).fetch(:code)
+  check.call('fallback Array#each leaves unknown elements dynamic',
+             untyped_code.include?('BLOCK_FALLBACK :each') &&
+               !untyped_code.include?('ELEMENT :name -> Game::Actor#name'), true)
 
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
