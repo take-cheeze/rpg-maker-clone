@@ -61,6 +61,12 @@ check.call('Hash key predicates are generated with the call-site argument and pu
              NativeExpressionDevirt.exact_class_return_expression(
                'return mrb_bool_value(mrb_hash_key_p(mrb, self, mrb_get_arg1(mrb)));', 'mrb', 'self'
              ).nil?)
+check.call('Hash#[] is generated from its C wrapper through public mrb_hash_get',
+           exact_class_expressions['[]']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
+             [['Hash', 1, 'mrb_hash_get(M, recv, (BC2CPP_ARG0))']] &&
+             NativeExpressionDevirt.exact_class_return_expression(
+               'mrb_value key = mrb_get_arg1(mrb); return mrb_hash_get(mrb, self, key);', 'mrb', 'self', arity: 1
+             ) == 'mrb_hash_get(M, recv, (BC2CPP_ARG0))')
 check.call('Hash#__delete preserves the core call-info side effect and public deletion helper',
            exact_class_expressions['__delete']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
              [['Hash', 1, '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))']] &&
@@ -165,6 +171,13 @@ check.call('Hash#key? substitutes the original call argument behind an exact Has
            hash_key_code.include?('M->hash_class') &&
              hash_key_code.include?('mrb_hash_key_p(M, r3, (r4))') &&
              hash_key_code.include?('mrb_funcall(M, r3, "key?", 1, r4)'))
+hash_aref_generator = CodeGen.new({}, { '[]' => [MethodDef.new(name: '[]', owner: '<native>', irep: nil,
+                                                                 visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                  native_registered_expressions: exact_class_expressions)
+hash_aref_code = hash_aref_generator.compile_native_primitive_send('[]', 1, 'r3', ['r4'])
+check.call('generated Hash#[] calls the public lookup helper behind an exact Hash guard and keeps fallback',
+           hash_aref_code.include?('M->hash_class') && hash_aref_code.include?('mrb_hash_get(M, r3, (r4))') &&
+             hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
 hash_delete_generator = CodeGen.new({}, { '__delete' => [MethodDef.new(name: '__delete', owner: '<native>', irep: nil,
                                                                         visibility: :private)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                     native_registered_expressions: exact_class_expressions)
