@@ -168,6 +168,8 @@
 #include "lcf_compiled_gen.cpp"
 
 extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
+  // INSTANCE_TT_SETUP: every embedding class this build's ivar analysis lists.
+  bc2cpp_set_instance_tts(M);
   RClass* lcf = mrb_module_get(M, "LCF");
   RClass* file = mrb_class_get_under(M, lcf, "File");
   RClass* database = mrb_class_get_under(M, lcf, "Database");

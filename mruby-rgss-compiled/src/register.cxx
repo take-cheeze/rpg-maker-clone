@@ -296,6 +296,8 @@
 #include "rgss_compiled_gen.cpp"
 
 extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
+  // INSTANCE_TT_SETUP: every embedding class this build's ivar analysis lists.
+  bc2cpp_set_instance_tts(M);
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* sprite = mrb_class_get_under(M, rgss, "Sprite");
 
