@@ -52,6 +52,33 @@ SRC = <<~'RUBY'
         def alive?; hp > 0; end
       end
     end
+    class HashValueOwner
+      def initialize
+        @sprites = {}
+        @sprites[1] = Game::Actor.new
+        @unknown = {}
+      end
+      def sprite_names_fallback
+        @sprites.each_value do |sprite|
+          sprite.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
+      def unknown_names_fallback
+        @unknown.each_value do |sprite|
+          sprite.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            nil
+          end
+        end
+      end
+    end
     class Party
       # bc2cpp: (Array<Game::Battle::Combatant>)
       def initialize(combatants); @combatants = combatants; end
@@ -151,7 +178,8 @@ Dir.mktmpdir do |dir|
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
   class_layout = { 'Game::Party' => { 'roster' => 'Actors', 'actors' => 'Array', 'untyped' => 'Array',
-                                     'combatants' => 'Array' } }
+                                     'combatants' => 'Array' },
+                  'Game::HashValueOwner' => { 'sprites' => 'Hash', 'unknown' => 'Hash' } }
   class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   party_init = registry['initialize'].find { |md| md.owner == 'Game::Party' }
   check.call('Array<Klass> argument keeps the Array receiver type',
@@ -161,8 +189,11 @@ Dir.mktmpdir do |dir|
   element_layout = ArrayElementLayout.known(
     ArrayElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations)
   )
+  hash_element_layout = HashElementLayout.known(
+    HashElementLayout.analyze(ireps, registry, class_layout, class_annotations, annotations, element_layout)
+  )
   gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, element_layout, annotations, {},
-                    {}, Set.new)
+                    hash_element_layout, Set.new)
 
   %w[fetch first].each do |method_name|
     method = registry[method_name].find { |md| md.owner == 'Game::Party' }
@@ -251,6 +282,20 @@ Dir.mktmpdir do |dir|
   check.call('fallback Array#each_with_object leaves unknown elements dynamic',
              untyped_each_with_object_code.include?('BLOCK_FALLBACK :each_with_object') &&
              !untyped_each_with_object_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+  hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
+  hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
+  check.call('fallback Hash#each_value devirtualizes proven values with guard/fallback',
+             hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
+               hash_values_code.include?('ELEMENT :name -> Game::Actor#name') &&
+               hash_values_code.include?('mrb_obj_class(M, r') &&
+               hash_values_code.include?('mrb_funcall(M,'), true)
+
+  unknown_hash_values = registry['unknown_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
+  unknown_hash_values_code = gen.compile_method(unknown_hash_values.irep).fetch(:code)
+  check.call('fallback Hash#each_value leaves unknown values dynamic',
+             unknown_hash_values_code.include?('BLOCK_FALLBACK :each_value') &&
+               !unknown_hash_values_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
   check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
