@@ -22,7 +22,9 @@ implementations. It extracts zero-argument, single-return bodies made from a
 small allowlist of pure mruby value helpers. It links ROM tables to their
 runtime class fields and instance tags, then generates exact-class paths for
 Array/Hash `size`, Array/Hash/String `empty?`, and Hash `to_hash`; it also
-generates the receiver-wide `!` expression from BasicObject's implementation.
+generates Float `to_f` and Symbol `to_sym` from their shared identity body,
+using immediate type tags rather than object-pointer guards. It also generates
+the receiver-wide `!` expression from BasicObject's implementation.
 Existing whole-program name, arity, override, prepend, and runtime class
 checks remain in force.
 Frame-reading methods, conflicting registrations, and unsupported bodies
@@ -32,7 +34,9 @@ keep ordinary Ruby dispatch.
 
 New source-derived fast paths can be added without copying their behavior into
 bc2cpp. Hash#to_hash is emitted only for an exact base Hash, preserving
-subclass overrides through normal dispatch. String#size remains dynamic
+subclass overrides through normal dispatch. Float#to_f and Symbol#to_sym use
+their unambiguous immediate type tags; neither path treats an immediate value
+as an object pointer. String#size remains dynamic
 because `RSTRING_CHAR_LEN` is private to string.c and calls a private UTF-8
 helper. The accepted C subset is intentionally small; methods with branches,
 complex locals, argument extraction, allocations, or frame-dependent helpers

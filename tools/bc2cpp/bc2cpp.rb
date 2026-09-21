@@ -8544,7 +8544,7 @@ class CodeGen
                  foreign_method_names = nil, outside_tokens = nil,
                   native_name_sources = nil, included_modules = {}, prepended_modules = {},
                   unknown_mixins = Set.new, analysis_only: false, native_expression_devirt: {},
-                  native_container_devirt: {})
+                  native_registered_expressions: {})
     @ireps = ireps
     # ENTRY_ARG_CALLSITE_PROOF: every identifier-shaped token appearing
     # anywhere in NATIVE_SRCS or FOREIGN_RUBY_SRCS (outside_world_tokens,
@@ -8574,7 +8574,7 @@ class CodeGen
     @native_expression_devirt = native_expression_devirt
     # NATIVE_CONTAINER_DEVIRT: class-specific expressions generated from
     # mruby's ROM registration owner, instance tag, and simple C method body.
-    @native_container_devirt = native_container_devirt
+    @native_registered_expressions = native_registered_expressions
     # INTEGER_CONSTANT_PROOF: the set of bare constant names every definition
     # in this whole program agrees is an integer literal (IntegerConstants.
     # analyze, above). Read only by fixnum_proof_source?'s own GETCONST/
@@ -9505,8 +9505,8 @@ class CodeGen
   end
 
   # Emits the guarded direct C++ implementation for one
-  # NATIVE_PRIMITIVE_SEND_ARITY name or the specialized container `empty?`/
-  # `size` paths -- see compile_send's own call site
+  # NATIVE_PRIMITIVE_SEND_ARITY name or an exact-class expression generated
+  # from registered native C methods -- see compile_send's own call site
   # (right above `target = monomorphic_target(name)`) for the full
   # per-method soundness citations against the real 3rd/mruby source;
   # kept here, rather than inlined at that call site, purely to keep
@@ -9514,13 +9514,9 @@ class CodeGen
   # nested branch for what is otherwise a small, self-contained C++
   # snippet per name.
   def compile_native_primitive_send(name, d, recv, argv)
+    return compile_native_registered_expression(name, d, recv, argv) if @native_registered_expressions.key?(name)
+
     case name
-    when 'size'
-      compile_native_container_expression(name, d, recv, argv)
-    when 'empty?'
-      compile_native_container_expression(name, d, recv, argv)
-    when 'to_hash'
-      compile_native_container_expression(name, d, recv, argv)
     when '!'
       expression = @native_expression_devirt[name]
       if expression
@@ -10009,20 +10005,30 @@ class CodeGen
     end
   end
 
-  def compile_native_container_expression(name, d, recv, argv)
-    entries = @native_container_devirt[name]
+  # Emit a generated native expression behind a runtime type-tag guard. Heap
+  # objects also require their exact built-in class pointer; Float and Symbol
+  # are immediate values and use only their unambiguous type tags.
+  def compile_native_registered_expression(name, d, recv, argv)
+    entries = @native_registered_expressions[name]
     fallback = dynamic_dispatch_line(d, recv, name, argv)
     return fallback unless entries && !entries.empty?
 
     cases = entries.map do |entry|
       owner = entry[:owner]
+      class_check = if %w[Float Symbol].include?(owner[:class_name])
+                      "r#{d} = #{entry[:expression].gsub('recv', recv)};"
+                    else
+                      <<~CPP.chomp
+                        if (mrb_obj_ptr(#{recv})->c == M->#{owner[:field]}) {
+                          r#{d} = #{entry[:expression].gsub('recv', recv)};
+                        } else {
+                          #{fallback.chomp}
+                        }
+                      CPP
+                    end
       <<~CPP
         case #{owner[:tag]}:
-          if (mrb_obj_ptr(#{recv})->c == M->#{owner[:field]}) {
-            r#{d} = #{entry[:expression].gsub('recv', recv)};
-          } else {
-            #{fallback.chomp}
-          }
+          #{class_check.gsub("\n", "\n  ")}
           break;
       CPP
     end.join
@@ -23323,14 +23329,6 @@ class CodeGen
       CPP
     end
 
-    if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash String])
-      return compile_native_primitive_send(name, d, recv, argv)
-    end
-
-    if name == 'to_hash' && n.zero? && builtin_class_send_safe?(name, %w[Hash])
-      return compile_native_primitive_send(name, d, recv, argv)
-    end
-
     if name == '[]=' && n == 3 && builtin_class_send_safe?(name, %w[Array])
       # Array slice writes occur in optcarrot's mapper when PRG/CHR banks
       # change. The public mrb_ary_splice API implements the native body for
@@ -23557,12 +23555,13 @@ class CodeGen
       return compile_native_primitive_send(name, d, recv, argv)
     end
 
-    # Try the call site's existing TYPED receiver proof before lowering
-    # empty? through the built-in container switch. When no compiled Ruby
-    # target is proven, the final fallback below still uses this intrinsic,
-    # preserving exact Array/Hash/String fast paths.
-    builtin_empty_send = name == 'empty?' && n.zero? &&
-                         builtin_class_send_safe?(name, %w[Array Hash String])
+    # Resolve compiled MONO/TYPED Ruby targets first. Only the final POLY
+    # fallback below uses the exact-class expressions generated from native
+    # C registrations and implementations.
+    native_expression_entries = @native_registered_expressions[name]
+    native_expression_owners = native_expression_entries&.map { |entry| entry[:owner][:class_name] }&.uniq
+    builtin_native_expression_send = n.zero? && native_expression_entries &&
+                                     builtin_class_send_safe?(name, native_expression_owners)
 
     if (expected_n = NATIVE_PRIMITIVE_SEND_ARITY[name]) && n == expected_n && native_only_mono?(name)
       return compile_native_primitive_send(name, d, recv, argv)
@@ -23943,7 +23942,7 @@ class CodeGen
           "  }\n"
       end
     else
-      return compile_native_primitive_send(name, d, recv, argv) if builtin_empty_send
+      return compile_native_primitive_send(name, d, recv, argv) if builtin_native_expression_send
 
       poly_small_n = compile_poly_small_n(name, d, recv, argv, n)
       return poly_small_n if poly_small_n
@@ -24017,14 +24016,14 @@ if $PROGRAM_NAME == __FILE__
   # respect to that native gem, same as before this existed.
   native_name_sources = nil
   native_expression_devirt = {}
-  native_container_devirt = {}
+  native_registered_expressions = {}
   if ENV['NATIVE_SRCS']
     native_paths = Shellwords.split(ENV['NATIVE_SRCS'])
     native_expression_devirt = NativeExpressionDevirt.analyze(native_paths)
-    native_container_devirt = NativeExpressionDevirt.analyze_containers(native_paths)
+    native_registered_expressions = NativeExpressionDevirt.analyze_exact_class_expressions(native_paths)
     warn "== generated native C-expression devirtualizations (#{native_expression_devirt.size}) =="
     native_expression_devirt.sort.each { |name, expression| warn "  C_EXPR :#{name}  (#{expression})" }
-    native_container_devirt.sort.each do |name, entries|
+    native_registered_expressions.sort.each do |name, entries|
       entries.each do |entry|
         owner = entry[:owner]
         warn "  C_EXPR :#{name}  (#{owner[:class_name]}##{name}: #{entry[:expression]})"
@@ -24227,7 +24226,7 @@ if $PROGRAM_NAME == __FILE__
                                    Set.new, foreign_methods, nil, nil,
                                    analysis_only: true,
                                    native_expression_devirt: native_expression_devirt,
-                                   native_container_devirt: native_container_devirt).array_return_names
+                                   native_registered_expressions: native_registered_expressions).array_return_names
   class_poison_reason = {}
   class_layout_raw = ClassLayout.analyze(ireps, registry, class_annotations, container_constants,
                                          annotated_array_return, poison_reason: class_poison_reason,
@@ -24480,7 +24479,7 @@ if $PROGRAM_NAME == __FILE__
                     integer_constants, foreign_methods, outside_tokens, native_name_sources,
                     included_modules, prepended_modules, unknown_mixins,
                     native_expression_devirt: native_expression_devirt,
-                    native_container_devirt: native_container_devirt)
+                    native_registered_expressions: native_registered_expressions)
   warn '== methods proven Fixnum-returning (FIXNUM_RETURN_PROOF) =='
   if gen.fixnum_return_names.empty?
     warn '  (none)'

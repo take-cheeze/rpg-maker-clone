@@ -428,10 +428,10 @@ Dir.mktmpdir do |dir|
     File.expand_path('../3rd/mruby/src/**/*.{c,cxx}', __dir__),
     File.expand_path('../3rd/mruby/mrbgems/**/src/**/*.{c,cxx}', __dir__)
   ]
-  native_containers = NativeExpressionDevirt.analyze_containers(native_sources)
+  native_exact_class_expressions = NativeExpressionDevirt.analyze_exact_class_expressions(native_sources)
   empty_gen = CodeGen.new(ireps, empty_registry, {}, class_layout, class_annotations, {}, {}, element_layout,
                           annotations, {}, {}, Set.new,
-                          native_container_devirt: native_containers)
+                          native_registered_expressions: native_exact_class_expressions)
   fresh_empty = empty_registry['fresh_route_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
   fresh_empty_code = empty_gen.compile_method(fresh_empty.irep).fetch(:code)
   check.call('typed Ruby empty? target takes priority over built-in container intrinsic',

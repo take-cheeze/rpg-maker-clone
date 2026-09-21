@@ -13,14 +13,14 @@ module NativeExpressionDevirt
   WHOLE_RECEIVER_EXPRESSIONS = {
     '!' => 'mrb_bool_value(!mrb_test(recv))',
   }.freeze
-  CONTAINER_CALLS = %w[
+  CLASS_EXPRESSION_CALLS = %w[
     mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p
     mrb_str_ptr
   ].freeze
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
   # private to string.c (and calls a private UTF-8 helper), so generated C++
   # must leave String#size on ordinary dispatch.
-  CONTAINER_MACROS = %w[ARY_LEN RSTR_LEN].freeze
+  CLASS_EXPRESSION_MACROS = %w[ARY_LEN RSTR_LEN].freeze
   module_function
 
   def analyze(paths)
@@ -113,18 +113,17 @@ module NativeExpressionDevirt
   # registration table is linked to the runtime class field through
   # MRB_MT_INIT_ROM, and the class's instance tag comes from
   # MRB_SET_INSTANCE_TT. Both are needed to emit a guarded call-site path.
-  def analyze_containers(paths)
+  def analyze_exact_class_expressions(paths)
     registrations = Hash.new { |hash, name| hash[name] = [] }
     implementations = Hash.new { |hash, function| hash[function] = [] }
     opaque_owners = Hash.new { |hash, name| hash[name] = [] }
-    target_classes = %w[Array Hash String].to_set
-    target_methods = %w[size empty? to_hash].to_set
+    target_classes = %w[Array Hash String Float Symbol].to_set
+    target_methods = %w[size empty? to_hash to_f to_sym].to_set
 
     Array(paths).each do |path|
       next unless File.file?(path)
 
       source = File.read(path, encoding: 'UTF-8')
-      needed_functions = Set.new
       class_variables = {}
       source.scan(/(?:mrb->(\w+)\s*=\s*)?(\w+)\s*=\s*mrb_define_(?:class|module)_id\s*\(\s*\w+\s*,\s*MRB_SYM\((\w+)\)/) do |field, variable, class_name|
         class_variables[variable] = { field: field, class_name: class_name }
@@ -134,6 +133,10 @@ module NativeExpressionDevirt
       end
       source.scan(/(\w+)\s*=\s*mrb->(\w+_class)\b/) do |variable, field|
         class_variables[variable] ||= { field: field, class_name: field.sub(/_class\z/, '').capitalize }
+      end
+      source.scan(/\bmrb->(\w+_class)\b/) do |field|
+        field = field.first
+        class_variables["mrb->#{field}"] ||= { field: field, class_name: field.sub(/_class\z/, '').capitalize }
       end
       source.scan(/(\w+)\s*=\s*mrb_define_(?:class|module)\s*\(\s*\w+\s*,\s*"([^"]+)"/) do |variable, class_name|
         class_variables[variable] ||= { field: nil, class_name: class_name }
@@ -164,7 +167,6 @@ module NativeExpressionDevirt
         owners = Array(table_owners[table]).uniq
         owner = owners.one? ? owners.first : nil
         registrations[name] << { function: function.strip, no_args: no_args?(aspec), owner: owner }
-        needed_functions << function.strip
       end
 
       %w[mrb_define_method_id mrb_define_private_method_id mrb_define_class_method_id
@@ -200,14 +202,21 @@ module NativeExpressionDevirt
         opaque_owners[name] << class_variables.dig(arguments[1], :class_name) if target_methods.include?(name)
       end
 
-      function_pattern = /(?:static\s+|MRB_API\s+)?mrb_value\s+(\w+)\s*\(\s*mrb_state\s*\*\s*(\w+)\s*,\s*mrb_value\s+(\w+)\s*\)\s*\{/
+    end
+
+    needed_functions = registrations.values.flat_map { |entries| entries.map { |entry| entry[:function] } }.to_set
+    function_pattern = /(?:static\s+|MRB_API\s+)?mrb_value\s+(\w+)\s*\(\s*mrb_state\s*\*\s*(\w+)\s*,\s*mrb_value\s+(\w+)\s*\)\s*\{/
+    Array(paths).each do |path|
+      next unless File.file?(path)
+
+      source = File.read(path, encoding: 'UTF-8')
       source.to_enum(:scan, function_pattern).each do
         function, state_arg, self_arg = Regexp.last_match.captures
         next unless needed_functions.include?(function)
 
         opening = Regexp.last_match.end(0) - 1
         body, = brace_body(source, opening)
-        implementations[function] << (body && container_return_expression(body, state_arg, self_arg))
+        implementations[function] << (body && exact_class_return_expression(body, state_arg, self_arg))
       end
     end
 
@@ -220,7 +229,12 @@ module NativeExpressionDevirt
         next
       end
 
-      method_classes = name == 'to_hash' ? %w[Hash] : target_classes
+      method_classes = case name
+                       when 'to_hash' then %w[Hash]
+                       when 'to_f' then %w[Float]
+                       when 'to_sym' then %w[Symbol]
+                       else target_classes
+                       end
       relevant = entries.select { |entry| method_classes.include?(entry[:owner][:class_name]) }
       generated = relevant.group_by { |entry| entry[:owner][:class_name] }.filter_map do |_class_name, class_entries|
         next unless class_entries.all? do |entry|
@@ -267,7 +281,7 @@ module NativeExpressionDevirt
     entries
   end
 
-  def container_return_expression(body, state_arg, self_arg)
+  def exact_class_return_expression(body, state_arg, self_arg)
     body = body.gsub(%r{/\*.*?\*/|//[^\n]*}, ' ').strip
     match = body.match(/\A(.*?)return\s+(.+?)\s*;\s*\z/m)
     return unless match
@@ -294,11 +308,11 @@ module NativeExpressionDevirt
     tokens = expression.scan(/[A-Za-z_]\w*|\d+|&&|\|\||==|!=|<=|>=|\S/)
     return if tokens.empty?
     return unless expression.gsub(/[A-Za-z_]\w*|\d+|\s+|&&|\|\||==|!=|<=|>=|[!~(),+\-*\/%<>&|^]/, '').empty?
-    allowed = %w[M recv] + CONTAINER_CALLS + CONTAINER_MACROS
+    allowed = %w[M recv] + CLASS_EXPRESSION_CALLS + CLASS_EXPRESSION_MACROS
     return if tokens.each_with_index.any? do |token, index|
       next false unless token.match?(/\A[A-Za-z_]/)
 
-      allowed.include?(token) ? (CONTAINER_CALLS.include?(token) || CONTAINER_MACROS.include?(token) ? tokens[index + 1] != '(' : false) : true
+      allowed.include?(token) ? (CLASS_EXPRESSION_CALLS.include?(token) || CLASS_EXPRESSION_MACROS.include?(token) ? tokens[index + 1] != '(' : false) : true
     end
 
     expression.strip
