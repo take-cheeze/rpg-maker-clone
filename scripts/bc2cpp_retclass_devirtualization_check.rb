@@ -19,9 +19,27 @@ SRC = <<~'RUBY'
     class Other
       def name; :other; end
       def alive?; true; end
+      def drop_id; 0; end
+      def drop_prob; 0; end
     end
     class OtherActors
       def [](id); nil; end
+    end
+    class Enemy
+      def drop_id; 1; end
+      def drop_prob; 100; end
+    end
+    class Troop
+      # bc2cpp: (Array<Game::Enemy>)
+      def initialize(members); @members = members; end
+      # bc2cpp: () -> Array<Game::Enemy>
+      def live_members; @members; end
+      def drops(rng)
+        live_members.each_with_object([]) do |enemy, out|
+          next unless enemy.drop_id && enemy.drop_id > 0
+          out << enemy.drop_id if rng.random(100) < enemy.drop_prob
+        end
+      end
     end
     class Actors
       # bc2cpp: (fixnum) -> Game::Actor
@@ -53,6 +71,17 @@ SRC = <<~'RUBY'
           end
         end
       end
+      def target_names_each_with_object_fallback
+        targets.each_with_object([]) do |actor, out|
+          actor.name
+          out.size
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            out
+          end
+        end
+      end
       def untyped_names_fallback
         @untyped.each do |actor|
           actor.name
@@ -80,6 +109,17 @@ SRC = <<~'RUBY'
             1 / 0
           rescue ZeroDivisionError
             index
+          end
+        end
+      end
+      def untyped_each_with_object_fallback
+        @untyped.each_with_object([]) do |actor, out|
+          actor.name
+          out.size
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            out
           end
         end
       end
@@ -188,8 +228,29 @@ Dir.mktmpdir do |dir|
   untyped_indexed_fallback_code = gen.compile_method(untyped_indexed_fallback.irep).fetch(:code)
   check.call('fallback Array#each_with_index leaves unknown elements dynamic',
              untyped_indexed_fallback_code.include?('BLOCK_FALLBACK :each_with_index') &&
-               !untyped_indexed_fallback_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+             !untyped_indexed_fallback_code.include?('ELEMENT :name -> Game::Actor#name'), true)
 
+  each_with_object = registry['target_names_each_with_object_fallback'].find { |md| md.owner == 'Game::Party' }
+  each_with_object_code = gen.compile_method(each_with_object.irep).fetch(:code)
+  check.call('fallback Array#each_with_object devirtualizes typed elements only',
+             each_with_object_code.include?('BLOCK_FALLBACK :each_with_object') &&
+               each_with_object_code.include?('ELEMENT :name -> Game::Actor#name') &&
+               each_with_object_code.include?('mrb_obj_class(M, r') &&
+               each_with_object_code.include?('mrb_funcall(M,'), true)
+
+  drops = registry['drops'].find { |md| md.owner == 'Game::Troop' }
+  drops_code = gen.compile_method(drops.irep).fetch(:code)
+  check.call('fallback each_with_object resolves a bare annotated Array return',
+             drops_code.include?('BLOCK_FALLBACK :each_with_object') &&
+               drops_code.include?('ELEMENT :drop_id -> Game::Enemy#drop_id') &&
+               drops_code.include?('ELEMENT :drop_prob -> Game::Enemy#drop_prob') &&
+               drops_code.include?('mrb_obj_class(M, r') && drops_code.include?('mrb_funcall(M,'), true)
+
+  untyped_each_with_object = registry['untyped_each_with_object_fallback'].find { |md| md.owner == 'Game::Party' }
+  untyped_each_with_object_code = gen.compile_method(untyped_each_with_object.irep).fetch(:code)
+  check.call('fallback Array#each_with_object leaves unknown elements dynamic',
+             untyped_each_with_object_code.include?('BLOCK_FALLBACK :each_with_object') &&
+             !untyped_each_with_object_code.include?('ELEMENT :name -> Game::Actor#name'), true)
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
   check.call('annotated cached lookup devirtualizes subsequent Actor dispatch',
