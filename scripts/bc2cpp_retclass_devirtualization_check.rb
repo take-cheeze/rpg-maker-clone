@@ -63,6 +63,26 @@ SRC = <<~'RUBY'
           end
         end
       end
+      def target_names_each_with_index_fallback
+        targets.each_with_index do |actor, index|
+          actor.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            index
+          end
+        end
+      end
+      def untyped_names_each_with_index_fallback
+        @untyped.each_with_index do |actor, index|
+          actor.name
+          begin
+            1 / 0
+          rescue ZeroDivisionError
+            index
+          end
+        end
+      end
       def existing_name; @roster.existing(1).name; end
       def combatant_alive; @combatants.each { |combatant| combatant.alive? }; end
     end
@@ -153,6 +173,22 @@ Dir.mktmpdir do |dir|
   check.call('fallback Array#each leaves unknown elements dynamic',
              untyped_code.include?('BLOCK_FALLBACK :each') &&
                !untyped_code.include?('ELEMENT :name -> Game::Actor#name'), true)
+
+  indexed_fallback = registry['target_names_each_with_index_fallback'].find { |md| md.owner == 'Game::Party' }
+  indexed_fallback_code = gen.compile_method(indexed_fallback.irep).fetch(:code)
+  check.call('fallback Array#each_with_index devirtualizes typed elements with guard/fallback',
+             indexed_fallback_code.include?('BLOCK_FALLBACK :each_with_index') &&
+               indexed_fallback_code.include?('ELEMENT :name -> Game::Actor#name') &&
+               indexed_fallback_code.include?('mrb_obj_class(M, r') &&
+               indexed_fallback_code.include?('mrb_funcall(M,'), true)
+
+  untyped_indexed_fallback = registry['untyped_names_each_with_index_fallback'].find do |md|
+    md.owner == 'Game::Party'
+  end
+  untyped_indexed_fallback_code = gen.compile_method(untyped_indexed_fallback.irep).fetch(:code)
+  check.call('fallback Array#each_with_index leaves unknown elements dynamic',
+             untyped_indexed_fallback_code.include?('BLOCK_FALLBACK :each_with_index') &&
+               !untyped_indexed_fallback_code.include?('ELEMENT :name -> Game::Actor#name'), true)
 
   method = registry['existing_name'].find { |md| md.owner == 'Game::Party' }
   code = gen.compile_method(method.irep).fetch(:code)
