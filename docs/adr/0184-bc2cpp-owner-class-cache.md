@@ -1,4 +1,4 @@
-# 0183. Cache exact-class guard pointers in generated bc2cpp code
+# 0184. Cache exact-class guard pointers in generated bc2cpp code
 
 Date: 2026-09-21
 
