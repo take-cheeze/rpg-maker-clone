@@ -266,10 +266,38 @@ respond_to_generator = CodeGen.new({}, respond_to_registry, {}, {}, {}, {}, {}, 
 respond_to_code = respond_to_generator.compile_native_primitive_send('respond_to?', 1, 'r3', ['r4'])
 check.call('respond_to? answers native hits directly and keeps the missing-hook fallback',
            respond_to_code.include?('mrb_obj_to_sym(M, r4)') &&
-             respond_to_code.include?('mrb_respond_to(M, r3, bc2cpp_respond_to_id1)') &&
+             respond_to_code.include?('mrb_respond_to(M, r3, bc2cpp_respond_to_id)') &&
              respond_to_code.include?('mrb_funcall(M, r3, "respond_to?", 1, r4)') &&
              CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
              respond_to_generator.native_only_mono?('respond_to?'))
+# Two respond_to? sends that reuse one register with a goto across the first
+# must still compile: the temporary symbol is block-scoped, so it neither
+# redeclares nor sits between the jump and its label.
+if system('g++', '--version', out: File::NULL, err: File::NULL)
+  Dir.mktmpdir do |dir|
+    source = File.join(dir, 'respond_to_scope.cpp')
+    File.write(source, <<~CPP)
+      struct mrb_state;
+      typedef unsigned mrb_sym;
+      struct mrb_value { long w; };
+      mrb_sym mrb_obj_to_sym(mrb_state*, mrb_value);
+      bool mrb_respond_to(mrb_state*, mrb_value, mrb_sym);
+      bool mrb_test(mrb_value);
+      mrb_value mrb_true_value();
+      mrb_value mrb_funcall(mrb_state*, mrb_value, const char*, int, ...);
+      mrb_value probe(mrb_state *M, mrb_value r3, mrb_value r4, mrb_value r5) {
+        mrb_value r1;
+        if (!mrb_test(r5)) goto L1;
+      #{respond_to_code}
+      L1:;
+      #{respond_to_code}
+        return r4;
+      }
+    CPP
+    compiled = system('g++', '-fsyntax-only', source)
+    check.call('respond_to? temporaries are block-scoped so repeated sends and gotos compile', compiled)
+  end
+end
 respond_to_override_registry = {
   'respond_to?' => respond_to_registry['respond_to?'] +
     [MethodDef.new(name: 'respond_to?', owner: 'Example', irep: 'Example#respond_to?', visibility: :public)]
