@@ -71,6 +71,12 @@ SRC = <<~'RUBY'
     class NativeValuesCaller
       def values_for(hash); hash.values; end
     end
+    class NativeHashKeyCaller
+      def hash_key?(hash, key); hash.key?(key); end
+    end
+    class HashKeySubclass < Hash
+      def key?(key); :subclass_override; end
+    end
     class HashValueOwner
       def initialize
         @sprites = {}
@@ -435,6 +441,30 @@ Dir.mktmpdir do |dir|
   check.call('Hash#values uses guarded native implementation with Ruby fallback',
              values_code.include?('mrb_hash_values(M,') && values_code.include?('mrb_hash_p(r') &&
                values_code.include?('M->hash_class') && values_code.include?('mrb_funcall(M,'), true)
+
+  key_registry = registry.transform_values(&:dup)
+  (key_registry['key?'] ||= []) << MethodDef.new(name: 'key?', owner: '<native>', irep: nil,
+                                                  visibility: :public)
+  key_gen = CodeGen.new(ireps, key_registry, {}, class_layout, class_annotations, {}, {}, {}, {}, {}, {}, Set.new)
+  key_method = key_registry.fetch('hash_key?').find { |md| md.owner == 'Game::NativeHashKeyCaller' }
+  key_code = key_gen.compile_method(key_method.irep).fetch(:code)
+  check.call('Hash#key? uses guarded native implementation with Ruby fallback',
+             key_code.include?('mrb_hash_key_p(M,') && key_code.include?('mrb_hash_p(r') &&
+               key_code.include?('M->hash_class') && key_code.include?('mrb_funcall(M,'), true)
+
+  overridden_key_registry = key_registry.transform_values(&:dup)
+  overridden_key_registry['key?'] << MethodDef.new(name: 'key?', owner: 'Hash', irep: nil,
+                                                     visibility: :public)
+  overridden_key_gen = CodeGen.new(ireps, overridden_key_registry, {}, class_layout, class_annotations, {}, {},
+                                   {}, {}, {}, {}, Set.new)
+  overridden_key_method = overridden_key_registry.fetch('hash_key?').find do |md|
+    md.owner == 'Game::NativeHashKeyCaller'
+  end
+  overridden_key_code = overridden_key_gen.compile_method(overridden_key_method.irep).fetch(:code)
+  check.call('Hash#key? keeps dynamic lookup when Hash defines a Ruby override',
+             !overridden_key_code.include?('mrb_hash_key_p(M,') && overridden_key_code.include?('mrb_funcall(M,'),
+             true)
+
   hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
   hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
   check.call('fallback Hash#each_value devirtualizes proven values with guard/fallback',
