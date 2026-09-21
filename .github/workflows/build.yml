@@ -238,17 +238,6 @@ jobs:
         run: |
           cmake --build build 2>&1 | tee build.log
 
-      # Exercise bc2cpp's mixin/super guard and annotated return-class tracing
-      # over synthetic closed worlds through the same host mrbc used above.
-      - name: Check bc2cpp static devirtualization analyses
-        run: |
-          mrbc="$(find build/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
-          test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
-
       - name: sccache stats
         if: always()
         run: |
@@ -335,26 +324,6 @@ jobs:
       # claims a slot as soon as the barrier above opens and finishes
       # overlapped with everything else instead of after it.
       - parallel:
-          # Publish current whole-program bc2cpp stats to this run's summary
-          # alongside the independent post-build checks. Keep the generated
-          # report out of git so parallel bc2cpp PRs do not conflict over
-          # aggregate counts.
-          - name: Report bc2cpp coverage
-            run: ./scripts/bc2cpp_coverage_check.bash build/mruby
-
-          # Run the standalone Optcarrot report and checksum benchmark with the
-          # independent post-build checks below. Keep them in one step so the
-          # coverage reporter's mruby parser patch and summary append finish
-          # before the benchmark starts its isolated mruby build. The benchmark
-          # checksum must still match the interpreted and CRuby runs. Listed
-          # early so its build and frame loop overlap the long smoke tests.
-          - name: Optcarrot coverage and runtime benchmark
-            run: |
-              ./scripts/optcarrot_bc2cpp_coverage_check.bash build/mruby
-              mrbc="$(find build/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
-              test -n "$mrbc" || { echo "no host bin/mrbc found under build/mruby" >&2; exit 1; }
-              MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-
           - name: MZ battle smoke test
             continue-on-error: true
             env:
@@ -831,6 +800,75 @@ jobs:
             ss/mz_save.png
             ss/mz_battle.png
           if-no-files-found: warn
+
+  # The bc2cpp job builds the host mruby library with RPGMAKER_BC2CPP=1 on its
+  # own, then runs the compiler-specific analyses, coverage reports and the
+  # Optcarrot checksum benchmark. Keeping this separate from the normal game
+  # build makes failures attributable to bc2cpp and ensures the generated
+  # compiled gems are actually compiled into libmruby.a.
+  bc2cpp:
+    if: ${{ github.event_name != 'issue_comment' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      RPGMAKER_BC2CPP: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
+      SCCACHE_GHA_RW_MODE: >-
+        ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
+            && 'READ_WRITE' || 'READ_ONLY' }}
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          show-progress: false
+          persist-credentials: false
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix-develop-export-env.bash
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Configure host build
+        run: cmake -S . -B build-bc2cpp -GNinja
+
+      - name: Build host mruby with bc2cpp
+        timeout-minutes: 45
+        run: cmake --build build-bc2cpp --target mruby_build --parallel 2
+
+      - name: Report bc2cpp coverage
+        run: ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+
+      - name: Optcarrot coverage and runtime benchmark
+        run: |
+          ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
+          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+
+      - name: Check bc2cpp static devirtualization analyses
+        run: |
+          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
+
+      - name: sccache stats
+        if: always()
+        run: sccache --show-stats
 
   # Ruby-only checks split out of `build`: none of the nine steps below ever
   # touches the compiled engine binary (they load the mruby-*/mrblib sources
