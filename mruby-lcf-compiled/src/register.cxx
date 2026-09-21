@@ -398,4 +398,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
 }
 
-extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {}
+extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {
+  // OWNER_CLASS_CACHE: drop the guard class pointers cached for this VM.
+  bc2cpp_reset_owner_classes();
+}
