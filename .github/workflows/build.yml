@@ -238,12 +238,6 @@ jobs:
         run: |
           cmake --build build 2>&1 | tee build.log
 
-      # Publish current whole-program bc2cpp stats to this run's summary.
-      # Keep the generated report out of git so parallel bc2cpp PRs do not
-      # conflict over aggregate counts.
-      - name: Report bc2cpp coverage
-        run: ./scripts/bc2cpp_coverage_check.bash build/mruby
-
       # Exercise bc2cpp's mixin/super guard and annotated return-class tracing
       # over synthetic closed worlds through the same host mrbc used above.
       - name: Check bc2cpp static devirtualization analyses
@@ -341,6 +335,13 @@ jobs:
       # claims a slot as soon as the barrier above opens and finishes
       # overlapped with everything else instead of after it.
       - parallel:
+          # Publish current whole-program bc2cpp stats to this run's summary
+          # alongside the independent post-build checks. Keep the generated
+          # report out of git so parallel bc2cpp PRs do not conflict over
+          # aggregate counts.
+          - name: Report bc2cpp coverage
+            run: ./scripts/bc2cpp_coverage_check.bash build/mruby
+
           # Run the standalone Optcarrot report and checksum benchmark with the
           # independent post-build checks below. Keep them in one step so the
           # coverage reporter's mruby parser patch and summary append finish
