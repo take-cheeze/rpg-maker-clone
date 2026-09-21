@@ -1013,15 +1013,17 @@
   guarded native call paths from recognized mruby core C methods. It uses
   exact built-in class checks and keeps ordinary Ruby dispatch for subclasses,
   overrides and C bodies the generator cannot prove safe. Single-argument
-  paths substitute the compiled call argument, and the Hash `__delete` path
-  preserves the core wrapper's call-info side effect while calling mruby's
-  public deletion helper. A one-argument Array `push` send follows the exact
-  fast branch in mruby's wrapper; other arities keep the wrapper's existing
-  path. See
+  paths substitute the compiled call argument, and public frame-independent
+  C method implementations can be called directly when their declarations are
+  present in mruby headers. The Hash `__delete` path preserves the core
+  wrapper's call-info side effect while calling mruby's public deletion
+  helper. A one-argument Array `push` send follows the exact fast branch in
+  mruby's wrapper; other arities keep the wrapper's existing path. See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
-  [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md)
-  and [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md).
+  [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
+  [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md)
+  and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
 
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
