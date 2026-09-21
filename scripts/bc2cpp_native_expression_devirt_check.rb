@@ -47,6 +47,17 @@ check.call('Float#finite? and Float#nan? are generated from their C predicates',
 check.call('Float#abs preserves the original value unless the C body negates it',
            exact_class_expressions['abs']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Float', '(signbit((mrb_float(recv)))) ? (mrb_float_value(M, -(mrb_float(recv)))) : (recv)']])
+check.call('Float#infinite? is generated from its braced conditional C body with a 32-bit-safe +/-1 result',
+           exact_class_expressions['infinite?']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
+             [['Float', 0, '(isinf((mrb_float(recv)))) ? (mrb_fixnum_value((mrb_float(recv)) < 0 ? -1 : 1)) : (mrb_nil_value())']])
+check.call('Range#exclude_end? is generated through the public Range exclusion macro',
+           exact_class_expressions['exclude_end?']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
+             [['Range', 0, 'mrb_bool_value(mrb_range_excl_p(M, recv))']])
+check.call('a braced early return with extra statements is still declined',
+           NativeExpressionDevirt.exact_class_return_expression(
+             'if (mrb_float(self) == 0) { mrb_raise(mrb, E_RUNTIME_ERROR, "x"); return mrb_nil_value(); } return mrb_true_value();',
+             'mrb', 'self'
+           ).nil?)
 check.call('Range#begin and Range#end are generated through public Range accessors',
            exact_class_expressions['begin']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Range', 'mrb_range_beg(M, recv)']] &&
@@ -246,6 +257,15 @@ check.call('Float#abs uses the recognized conditional C body and keeps dynamic f
            abs_code.include?('case MRB_TT_FLOAT:') && abs_code.include?('signbit((mrb_float(r3)))') &&
              abs_code.include?('mrb_float_value(M, -(mrb_float(r3)))') &&
              abs_code.include?('mrb_funcall(M, r3, "abs", 0)'))
+infinite_code = generator.compile_native_primitive_send('infinite?', 1, 'r3', [])
+exclude_end_code = generator.compile_native_primitive_send('exclude_end?', 1, 'r3', [])
+check.call('Float#infinite? and Range#exclude_end? use immediate/exact-class guards and keep dynamic fallback',
+           infinite_code.include?('case MRB_TT_FLOAT:') && infinite_code.include?('isinf((mrb_float(r3)))') &&
+             infinite_code.include?('mrb_fixnum_value((mrb_float(r3)) < 0 ? -1 : 1)') &&
+             infinite_code.include?('mrb_nil_value()') && !infinite_code.include?('mrb_obj_ptr(r3)') &&
+             infinite_code.include?('mrb_funcall(M, r3, "infinite?", 0)') &&
+             exclude_end_code.include?('M->range_class') && exclude_end_code.include?('mrb_range_excl_p(M, r3)') &&
+             exclude_end_code.include?('mrb_funcall(M, r3, "exclude_end?", 0)'))
 override_registry = {
   'size' => [
     MethodDef.new(name: 'size', owner: '<native>', irep: nil, visibility: :public),
