@@ -67,6 +67,11 @@ check.call('Hash#[] is generated from its C wrapper through public mrb_hash_get'
              NativeExpressionDevirt.exact_class_return_expression(
                'mrb_value key = mrb_get_arg1(mrb); return mrb_hash_get(mrb, self, key);', 'mrb', 'self', arity: 1
              ) == 'mrb_hash_get(M, recv, (BC2CPP_ARG0))')
+check.call('Array#at is generated from mruby-array-ext using public integer and element accessors',
+           exact_class_expressions['at']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Array', 1]] &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_ary_entry(recv,') &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_as_int(M,') &&
+             exact_class_expressions['at'].first[:expression].include?('BC2CPP_ARG0'))
 check.call('Hash#__delete preserves the core call-info side effect and public deletion helper',
            exact_class_expressions['__delete']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
              [['Hash', 1, '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))']] &&
@@ -178,6 +183,13 @@ hash_aref_code = hash_aref_generator.compile_native_primitive_send('[]', 1, 'r3'
 check.call('generated Hash#[] calls the public lookup helper behind an exact Hash guard and keeps fallback',
            hash_aref_code.include?('M->hash_class') && hash_aref_code.include?('mrb_hash_get(M, r3, (r4))') &&
              hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
+array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
+                                                                 visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                  native_registered_expressions: exact_class_expressions)
+array_at_code = array_at_generator.compile_native_primitive_send('at', 1, 'r3', ['r4'])
+check.call('generated Array#at uses exact Array identity and keeps fallback dispatch',
+           array_at_code.include?('M->array_class') && array_at_code.include?('mrb_ary_entry(r3,') &&
+             array_at_code.include?('mrb_as_int(M,') && array_at_code.include?('mrb_funcall(M, r3, "at", 1, r4)'))
 hash_delete_generator = CodeGen.new({}, { '__delete' => [MethodDef.new(name: '__delete', owner: '<native>', irep: nil,
                                                                         visibility: :private)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                     native_registered_expressions: exact_class_expressions)
@@ -200,6 +212,24 @@ public_api_registry = %w[clear pop keys values intern].to_h do |name|
 end
 public_api_generator = CodeGen.new({}, public_api_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                    native_registered_expressions: exact_class_expressions)
+respond_to_registry = {
+  'respond_to?' => [MethodDef.new(name: 'respond_to?', owner: '<native>', irep: nil, visibility: :public)]
+}
+respond_to_generator = CodeGen.new({}, respond_to_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+respond_to_code = respond_to_generator.compile_native_primitive_send('respond_to?', 1, 'r3', ['r4'])
+check.call('respond_to? answers native hits directly and keeps the missing-hook fallback',
+           respond_to_code.include?('mrb_obj_to_sym(M, r4)') &&
+             respond_to_code.include?('mrb_respond_to(M, r3, bc2cpp_respond_to_id1)') &&
+             respond_to_code.include?('mrb_funcall(M, r3, "respond_to?", 1, r4)') &&
+             CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
+             respond_to_generator.native_only_mono?('respond_to?'))
+respond_to_override_registry = {
+  'respond_to?' => respond_to_registry['respond_to?'] +
+    [MethodDef.new(name: 'respond_to?', owner: 'Example', irep: 'Example#respond_to?', visibility: :public)]
+}
+respond_to_override_generator = CodeGen.new({}, respond_to_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+check.call('a Ruby respond_to? override disables the native-only fast path',
+           !respond_to_override_generator.native_only_mono?('respond_to?'))
 clear_code = public_api_generator.compile_native_primitive_send('clear', 1, 'r3', [])
 pop_code = public_api_generator.compile_native_primitive_send('pop', 1, 'r3', [])
 keys_code = public_api_generator.compile_native_primitive_send('keys', 1, 'r3', [])
