@@ -1127,6 +1127,8 @@ RClass* Game__Battle_compiled_class(void) {
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
+  // INSTANCE_TT_SETUP: every embedding class this build's ivar analysis lists.
+  bc2cpp_set_instance_tts(M);
   RClass* game = mrb_module_get(M, "Game");
   RClass* picture = mrb_class_get_under(M, game, "Picture");
 

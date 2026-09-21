@@ -438,8 +438,24 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
     end
     all_private_names = private_names.flatten
 
+    # A non-maker gem that depends directly on a maker gem (the opt-in
+    # RPGMAKER_BC2CPP `mruby-rpg2k-compiled` -> `mruby-rpg2k`) needs what that
+    # maker defines -- its init does mrb_module_get(M, "Game") -- so it cannot
+    # sit in the always-init group, which runs before any maker. Initialise it
+    # right after its maker, inside that maker's own init function. It also
+    # stays out of the shared group, so a build that never picks that maker
+    # (a single-format build) does not run it at all.
+    after_maker = maker_gem_names.to_h { |name| [name, []] }
+    active.each do |g|
+      next if maker_gem_names.include?(g.name) || all_private_names.include?(g.name)
+
+      owner = g.dependencies.map { |dep| dep[:gem] }.find { |dep| maker_gem_names.include?(dep) }
+      after_maker[owner] << g if owner
+    end
+    all_after_maker = after_maker.values.flatten
+
     shared = active.reject do |g|
-      maker_gem_names.include?(g.name) || all_private_names.include?(g.name)
+      maker_gem_names.include?(g.name) || all_private_names.include?(g.name) || all_after_maker.include?(g)
     end
     maker_private = maker_gem_names.each_with_index.to_h do |name, i|
       [name, active.select { |g| private_names[i].include?(g.name) }]
@@ -453,7 +469,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       f.puts '#include <mruby.h>'
       f.puts '#include <mruby/error.h>'
       f.puts
-      (shared + maker_private.values.flatten + makers).uniq.each do |g|
+      (shared + maker_private.values.flatten + makers + all_after_maker).uniq.each do |g|
         f.puts "void GENERATED_TMP_mrb_#{g.funcname}_gem_init(mrb_state*);"
       end
       f.puts
@@ -479,12 +495,14 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
       f.puts 'void rpg_maker_init_rpg2k_gem(mrb_state *mrb) {'
       maker_private['mruby-rpg2k'].each(&emit_call)
       emit_call.call(rpg2k)
+      after_maker['mruby-rpg2k'].each(&emit_call)
       f.puts '}'
       if rpgxp
         f.puts
         f.puts 'void rpg_maker_init_rpgxp_gem(mrb_state *mrb) {'
         maker_private['mruby-rpgxp'].each(&emit_call)
         emit_call.call(rpgxp)
+        after_maker['mruby-rpgxp'].each(&emit_call)
         f.puts '}'
       end
       if rpgvx
@@ -493,6 +511,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         f.puts '  rpg_maker_init_rpgxp_gem(mrb); /* RGSS2/3 extends RGSS */'
         maker_private['mruby-rpgvx'].each(&emit_call)
         emit_call.call(rpgvx)
+        after_maker['mruby-rpgvx'].each(&emit_call)
         f.puts '}'
       end
       if wolf
@@ -500,6 +519,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         f.puts 'void rpg_maker_init_wolf_gem(mrb_state *mrb) {'
         maker_private['mruby-wolf'].each(&emit_call)
         emit_call.call(wolf)
+        after_maker['mruby-wolf'].each(&emit_call)
         f.puts '}'
       end
       if mvjs
@@ -507,6 +527,7 @@ def rpg_maker_gem_dispatch(conf, include_mvjs:, single_format_only: false)
         f.puts 'void rpg_maker_init_mvjs_gem(mrb_state *mrb) {'
         maker_private['mruby-mvjs'].each(&emit_call)
         emit_call.call(mvjs)
+        after_maker['mruby-mvjs'].each(&emit_call)
         f.puts '}'
       end
     end
