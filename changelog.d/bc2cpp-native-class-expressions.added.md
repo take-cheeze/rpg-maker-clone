@@ -7,3 +7,5 @@
   public Range macros, while preserving dynamic dispatch for subclasses.
 - Float#finite? and Float#nan? are generated from their registered C
   predicates with immediate type-tag guards.
+- Float#abs is generated from mruby's conditional C body while preserving the
+  original Float value on its unchanged return path.

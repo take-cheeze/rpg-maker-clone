@@ -41,6 +41,9 @@ check.call('Float#finite? and Float#nan? are generated from their C predicates',
              [['Float', 'mrb_bool_value(isfinite(mrb_float(recv)))']] &&
              exact_class_expressions['nan?']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
                [['Float', 'mrb_bool_value(isnan(mrb_float(recv)))']])
+check.call('Float#abs preserves the original value unless the C body negates it',
+           exact_class_expressions['abs']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['Float', '(signbit((mrb_float(recv)))) ? (mrb_float_value(M, -(mrb_float(recv)))) : (recv)']])
 check.call('Range#begin and Range#end are generated through public Range accessors',
            exact_class_expressions['begin']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Range', 'mrb_range_beg(M, recv)']] &&
@@ -49,7 +52,10 @@ check.call('Range#begin and Range#end are generated through public Range accesso
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
-           ).nil?)
+           ).nil? &&
+             NativeExpressionDevirt.exact_class_return_expression(
+               'if (mrb_get_args(mrb, "i", &n)) return mrb_true_value(); return mrb_false_value();', 'mrb', 'self'
+             ).nil?)
 
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'fixture.c')
@@ -127,6 +133,11 @@ check.call('Float predicates use their source expressions behind immediate type-
              nan_code.include?('case MRB_TT_FLOAT:') && nan_code.include?('isnan(mrb_float(r3))') &&
              finite_code.include?('mrb_funcall(M, r3, "finite?", 0)') &&
              nan_code.include?('mrb_funcall(M, r3, "nan?", 0)'))
+abs_code = generator.compile_native_primitive_send('abs', 1, 'r3', [])
+check.call('Float#abs uses the recognized conditional C body and keeps dynamic fallback',
+           abs_code.include?('case MRB_TT_FLOAT:') && abs_code.include?('signbit((mrb_float(r3)))') &&
+             abs_code.include?('mrb_float_value(M, -(mrb_float(r3)))') &&
+             abs_code.include?('mrb_funcall(M, r3, "abs", 0)'))
 override_registry = {
   'size' => [
     MethodDef.new(name: 'size', owner: '<native>', irep: nil, visibility: :public),

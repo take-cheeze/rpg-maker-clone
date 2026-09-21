@@ -15,7 +15,7 @@ module NativeExpressionDevirt
   }.freeze
   CLASS_EXPRESSION_CALLS = %w[
     mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p
-    mrb_str_ptr mrb_range_beg mrb_range_end mrb_float isfinite isnan
+    mrb_str_ptr mrb_range_beg mrb_range_end mrb_float mrb_float_value isfinite isnan signbit
   ].freeze
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
   # private to string.c (and calls a private UTF-8 helper), so generated C++
@@ -285,13 +285,14 @@ module NativeExpressionDevirt
 
   def exact_class_return_expression(body, state_arg, self_arg)
     body = body.gsub(%r{/\*.*?\*/|//[^\n]*}, ' ').strip
-    match = body.match(/\A(.*?)return\s+(.+?)\s*;\s*\z/m)
+    conditional = body.match(/\A(.*?)if\s*\((.+?)\)\s*return\s+(.+?)\s*;\s*return\s+(.+?)\s*;\s*\z/m)
+    match = conditional || body.match(/\A(.*?)return\s+(.+?)\s*;\s*\z/m)
     return unless match
 
     statements = match[1].split(';').map(&:strip).reject(&:empty?)
     locals = {}
     statements.each do |statement|
-      declaration = statement.match(/\A(?:struct\s+\w+|mrb_int)\s*\*?\s*(\w+)\s*=\s*(.+)\z/m)
+      declaration = statement.match(/\A(?:struct\s+\w+|mrb_int|mrb_float)\s*\*?\s*(\w+)\s*=\s*(.+)\z/m)
       return unless declaration
 
       local, initializer = declaration.captures
@@ -300,7 +301,16 @@ module NativeExpressionDevirt
       locals[local] = substitute_expression(initializer, state_arg, self_arg, locals)
       return unless locals[local]
     end
-    substitute_expression(match[2], state_arg, self_arg, locals)
+    if conditional
+      condition = substitute_expression(match[2], state_arg, self_arg, locals)
+      when_true = substitute_expression(match[3], state_arg, self_arg, locals)
+      when_false = substitute_expression(match[4], state_arg, self_arg, locals)
+      return unless condition && when_true && when_false
+
+      "(#{condition}) ? (#{when_true}) : (#{when_false})"
+    else
+      substitute_expression(match[2], state_arg, self_arg, locals)
+    end
   end
 
   def substitute_expression(expression, state_arg, self_arg, locals)
@@ -309,7 +319,7 @@ module NativeExpressionDevirt
     locals.each { |name, value| expression = expression.gsub(/\b#{Regexp.escape(name)}\b/, "(#{value})") }
     tokens = expression.scan(/[A-Za-z_]\w*|\d+|&&|\|\||==|!=|<=|>=|\S/)
     return if tokens.empty?
-    return unless expression.gsub(/[A-Za-z_]\w*|\d+|\s+|&&|\|\||==|!=|<=|>=|[!~(),+\-*\/%<>&|^]/, '').empty?
+    return unless expression.gsub(/[A-Za-z_]\w*|\d+|\s+|&&|\|\||==|!=|<=|>=|[!~(),?:+\-*\/%<>&|^]/, '').empty?
     allowed = %w[M recv] + CLASS_EXPRESSION_CALLS + CLASS_EXPRESSION_MACROS
     return if tokens.each_with_index.any? do |token, index|
       next false unless token.match?(/\A[A-Za-z_]/)

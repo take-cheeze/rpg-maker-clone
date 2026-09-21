@@ -27,7 +27,8 @@ shared identity body, using immediate type tags rather than object-pointer
 guards. It also generates the receiver-wide `!` expression from BasicObject's
 implementation. Range `begin` and `end` use mruby's public Range accessors
 behind exact-class guards. Float `finite?` and `nan?` use their registered C
-predicates behind immediate Float tag guards.
+predicates, and Float `abs` uses the narrowly recognized conditional-return
+body, all behind immediate Float tag guards.
 Existing whole-program name, arity, override, prepend, and runtime class
 checks remain in force.
 Frame-reading methods, conflicting registrations, and unsupported bodies
@@ -41,6 +42,7 @@ subclass overrides through normal dispatch. Float#to_f and Symbol#to_sym use
 their unambiguous immediate type tags; neither path treats an immediate value
 as an object pointer. String#size and String#length remain dynamic
 because `RSTRING_CHAR_LEN` is private to string.c and calls a private UTF-8
-helper. The accepted C subset is intentionally small; methods with branches,
-complex locals, argument extraction, allocations, or frame-dependent helpers
-need an explicit safe adapter or broader analysis before they can be generated.
+helper. The accepted C subset is intentionally small; methods with arbitrary
+branches, complex locals, argument extraction, allocations, or frame-dependent
+helpers need an explicit safe adapter or broader analysis before they can be
+generated.
