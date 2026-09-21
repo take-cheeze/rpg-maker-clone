@@ -2238,9 +2238,16 @@ jobs:
         with:
           # The wio mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/lvgl,
           # 3rd/mruby-marshal, 3rd/mruby-stringio, 3rd/mruby-onig-regexp and
-          # 3rd/mgem-list -- everything else (3rd/SDL, 3rd/SDL_mixer,
-          # 3rd/effekseer, 3rd/gflags, 3rd/ng-log, 3rd/inicpp, 3rd/quickjs,
-          # 3rd/stb, 3rd/optcarrot) goes unused, so the step below skips them.
+          # 3rd/mgem-list -- plus 3rd/quickjs and 3rd/stb, which rake's own
+          # bootstrap "host" sub-build (mrbc) needs regardless of the target:
+          # rpg_maker_gems only gates mruby-mvjs behind `single_format_only`
+          # (build_config.rb's `%w[psp wio maix]`), and conf.name is "host"
+          # for that sub-build, never one of those three -- confirmed for
+          # real by the `psp` job's own "fatal error: quickjs.h: No such file
+          # or directory" failure compiling mruby-mvjs's mvcanvas.cxx there.
+          # Everything else (3rd/SDL, 3rd/SDL_mixer, 3rd/effekseer,
+          # 3rd/gflags, 3rd/ng-log, 3rd/inicpp, 3rd/optcarrot) goes genuinely
+          # unused, so the step below skips only those.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -2249,7 +2256,7 @@ jobs:
         env:
           SKIP_SUBMODULES: >-
             3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
-            3rd/inicpp 3rd/quickjs 3rd/stb 3rd/optcarrot
+            3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
@@ -2405,9 +2412,14 @@ jobs:
           # in 3rd/mruby, 3rd/mruby-marshal, 3rd/mruby-onig-regexp,
           # 3rd/mruby-stringio, 3rd/mgem-list (cmake/build-mruby.cmake, shared
           # with the desktop build) and 3rd/stb (mruby-rgss's stbi_load_from_memory
-          # decode path, STBI_NO_STDIO below). It never touches 3rd/SDL,
-          # 3rd/SDL_mixer, 3rd/gflags, 3rd/ng-log, 3rd/quickjs, 3rd/effekseer,
-          # 3rd/inicpp or 3rd/optcarrot.
+          # decode path, STBI_NO_STDIO below). It also needs 3rd/quickjs: rake's
+          # own bootstrap "host" sub-build (mrbc) always builds mruby-mvjs
+          # (rpg_maker_gems only gates that gem behind `single_format_only`,
+          # and conf.name is "host" there, never "psp") -- confirmed for real
+          # by a CI run failing on "fatal error: quickjs.h: No such file or
+          # directory" compiling mruby-mvjs's mvcanvas.cxx. It never touches
+          # 3rd/SDL, 3rd/SDL_mixer, 3rd/gflags, 3rd/ng-log, 3rd/effekseer or
+          # 3rd/inicpp.
           submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
@@ -2416,7 +2428,7 @@ jobs:
       - name: Init submodules
         env:
           SKIP_SUBMODULES: >-
-            3rd/SDL 3rd/SDL_mixer 3rd/gflags 3rd/ng-log 3rd/quickjs
+            3rd/SDL 3rd/SDL_mixer 3rd/gflags 3rd/ng-log
             3rd/effekseer 3rd/inicpp 3rd/optcarrot
         run: ./scripts/checkout-submodules.bash
 
