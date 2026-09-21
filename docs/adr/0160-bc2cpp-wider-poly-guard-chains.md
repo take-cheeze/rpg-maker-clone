@@ -40,3 +40,15 @@ long chain of class comparisons is less attractive than mruby's method lookup.
 - The generated code grows with the number of eligible targets. The fallback
   preserves behavior for unlisted classes, singleton methods, and targets
   that cannot be compiled safely.
+
+## Addendum: accessor candidates
+
+`attr_reader`/`attr_writer`/`attr_accessor` definitions (registry entries with
+`kind: :ivar_accessor` and no irep) now join the chain as exact-class-guarded
+`mrb_iv_get`/`mrb_iv_set`, the same lowering IVAR_ACCESSOR_DEVIRT already uses
+for a traced receiver. Only the accessor's real arity is accepted (0 for a
+reader, 1 for a writer). An owner that defines the name more than once (for
+example an `attr_reader` redefined by a `def`) is excluded, because definition
+order decides which body is live. Any other class still falls back to
+`mrb_funcall`, so the total dynamic call-site count is unchanged; the sites are
+reclassified from POLY to POLY_SMALL_N.
