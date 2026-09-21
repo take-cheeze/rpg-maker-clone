@@ -11078,6 +11078,7 @@ class RPG2k
       # shake-affected pictures hang off. Comparing arrays compares values, so
       # a picture mid-Move-Picture (interpolated per frame) reads dirty until
       # it arrives.
+      # bc2cpp: (Hash<Game::Picture>, fixnum, fixnum)
       def pictures_signature(pics, cam_x, cam_y)
         return [].freeze if pics.empty?
         sig = [cam_x, cam_y, @state.screen.shake_offset]
