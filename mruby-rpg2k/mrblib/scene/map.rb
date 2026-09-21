@@ -10976,6 +10976,7 @@ class RPG2k
       # one always draws its standing pose 1, since it snaps tile to tile
       # rather than sliding (see the "Vehicle move-routes" note in
       # docs/TODO.md) and so has no in-tile progress to animate against.
+      # bc2cpp: (nil, Game::Vehicle)
       def draw_vehicle_frame(type, v, charset, index, ridden)
         pat = ridden ? player_walk_pattern : 1
         frame = [index, v.direction, charset.object_id, pat]
@@ -10998,6 +10999,7 @@ class RPG2k
       # initial placement) or the database default (System boat/ship/airship
       # name). Loaded through the shared event-charset cache; nil when it has
       # none.
+      # bc2cpp: (Game::Vehicle)
       def vehicle_charset(v)
         mirror = @vehicle_chars[v.type]
         return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
@@ -11024,6 +11026,7 @@ class RPG2k
       # whether Change Vehicle Graphic / Set Vehicle Location's own graphic
       # slot has ever been written; a mirror override (Set Move Route's own
       # "Change Graphic") already returns above and never reaches this.
+      # bc2cpp: (Game::Vehicle)
       def vehicle_charset_index(v)
         mirror = @vehicle_chars[v.type]
         return mirror.graphic_index if mirror && mirror.graphic_name
