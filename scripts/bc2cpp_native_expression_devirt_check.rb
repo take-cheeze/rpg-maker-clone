@@ -34,11 +34,11 @@ check.call('String#bytesize is generated from its public byte-length macro',
 check.call('Hash#to_hash is generated as an exact-class identity conversion',
            exact_class_expressions['to_hash']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Hash', 'recv']])
-check.call('Float#to_f and Symbol#to_sym are generated from the shared C identity body',
+check.call('Float#to_f and String/Symbol#to_sym are generated from their C bodies',
            exact_class_expressions['to_f']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Float', 'recv']] &&
              exact_class_expressions['to_sym']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
-               [['Symbol', 'recv']])
+               [['String', 'mrb_str_intern(M, recv)'], ['Symbol', 'recv']])
 check.call('Float#finite? and Float#nan? are generated from their C predicates',
            exact_class_expressions['finite?']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Float', 'mrb_bool_value(isfinite(mrb_float(recv)))']] &&
@@ -85,6 +85,19 @@ check.call('Array#push derives only the one-argument C fast branch from mruby co
                'mrb_int argc = mrb_get_argc(mrb); if (argc == 2) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
                'mrb', 'self'
              ).nil?)
+check.call('frame-independent public mruby APIs are generated from exact zero-argument registrations',
+           exact_class_expressions['clear']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['Array', 'mrb_ary_clear(M, recv)'], ['Hash', 'mrb_hash_clear(M, recv)']] &&
+             exact_class_expressions['pop']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+               [['Array', 'mrb_ary_pop(M, recv)']] &&
+             %w[keys values].all? do |name|
+               exact_class_expressions[name]&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+                 [['Hash', "mrb_hash_#{name}(M, recv)"]]
+             end &&
+             exact_class_expressions['intern']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+               [['String', 'mrb_str_intern(M, recv)']] &&
+             NativeExpressionDevirt.frame_dependent_body?('mrb_get_args(mrb, "i", &index); return self;') &&
+             NativeExpressionDevirt.frame_dependent_body?('mrb->c->ci->mid = 0; return self;'))
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -169,6 +182,24 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
            array_push_code.include?('M->array_class') && array_push_code.include?('mrb_ary_push(M, r3, (r4))') &&
              array_push_code.include?('), r3);') && array_push_wrong_arity.include?('mrb_funcall(M, r3, "push", 2, r4, r5)') &&
              !array_push_wrong_arity.include?('mrb_ary_push(M, r3,'))
+public_api_registry = %w[clear pop keys values intern].to_h do |name|
+  [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
+end
+public_api_generator = CodeGen.new({}, public_api_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                   native_registered_expressions: exact_class_expressions)
+clear_code = public_api_generator.compile_native_primitive_send('clear', 1, 'r3', [])
+pop_code = public_api_generator.compile_native_primitive_send('pop', 1, 'r3', [])
+keys_code = public_api_generator.compile_native_primitive_send('keys', 1, 'r3', [])
+values_code = public_api_generator.compile_native_primitive_send('values', 1, 'r3', [])
+intern_code = public_api_generator.compile_native_primitive_send('intern', 1, 'r3', [])
+check.call('generated public C method paths use exact class guards and preserve dynamic fallback',
+           clear_code.include?('ARRAY_CLEAR :clear -- generated from mruby core C') &&
+             clear_code.include?('mrb_ary_clear(M, r3)') && clear_code.include?('mrb_hash_clear(M, r3)') &&
+             pop_code.include?('M->array_class') && pop_code.include?('mrb_ary_pop(M, r3)') &&
+             pop_code.include?('mrb_funcall(M, r3, "pop", 0)') &&
+             keys_code.include?('mrb_hash_keys(M, r3)') && values_code.include?('mrb_hash_values(M, r3)') &&
+             intern_code.include?('mrb_str_intern(M, r3)') &&
+             clear_code.include?('mrb_funcall(M, r3, "clear", 0)'))
 begin_code = generator.compile_native_primitive_send('begin', 1, 'r3', [])
 end_code = generator.compile_native_primitive_send('end', 1, 'r3', [])
 check.call('Range accessors use an exact Range class guard and dynamic fallback',
@@ -183,12 +214,13 @@ check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic 
              hash_to_hash_code.include?('mrb_funcall(M, r3, "to_hash", 0)'))
 float_to_f_code = generator.compile_native_primitive_send('to_f', 1, 'r3', [])
 symbol_to_sym_code = generator.compile_native_primitive_send('to_sym', 1, 'r3', [])
-check.call('immediate Float and Symbol fast paths use type tags without object-pointer dereferences',
+symbol_to_sym_case = symbol_to_sym_code.split('case MRB_TT_SYMBOL:').last.to_s.split('break;').first.to_s
+check.call('immediate Float and Symbol paths use type tags without object-pointer dereferences',
            float_to_f_code.include?('case MRB_TT_FLOAT:') && symbol_to_sym_code.include?('case MRB_TT_SYMBOL:') &&
              float_to_f_code.include?('r1 = r3;') && symbol_to_sym_code.include?('r1 = r3;') &&
              float_to_f_code.include?('mrb_funcall(M, r3, "to_f", 0)') &&
              symbol_to_sym_code.include?('mrb_funcall(M, r3, "to_sym", 0)') &&
-             !float_to_f_code.include?('mrb_obj_ptr(r3)') && !symbol_to_sym_code.include?('mrb_obj_ptr(r3)'))
+             !float_to_f_code.include?('mrb_obj_ptr(r3)') && !symbol_to_sym_case.include?('mrb_obj_ptr(r3)'))
 finite_code = generator.compile_native_primitive_send('finite?', 1, 'r3', [])
 nan_code = generator.compile_native_primitive_send('nan?', 1, 'r3', [])
 check.call('Float predicates use their source expressions behind immediate type-tag guards',
