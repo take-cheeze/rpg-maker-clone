@@ -72,6 +72,19 @@ check.call('Hash#__delete preserves the core call-info side effect and public de
                'mrb->c->ci->mid = 0; return mrb_hash_delete_key(mrb, self, mrb_get_arg1(mrb));',
                'mrb', 'self'
              ).nil?)
+check.call('Array#push derives only the one-argument C fast branch from mruby core',
+           exact_class_expressions['push']&.map do |entry|
+             [entry[:owner][:class_name], entry[:arity], entry[:expression]]
+           end == [['Array', 1, '(mrb_ary_push(M, recv, (BC2CPP_ARG0)), recv)']] &&
+             exact_class_expressions['<<']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Array', 1]] &&
+             NativeExpressionDevirt.exact_array_push_one_argument_expression(
+               'mrb_int argc = mrb_get_argc(mrb); if (argc == 1) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
+               'mrb', 'self'
+             ) == '(mrb_ary_push(M, recv, (BC2CPP_ARG0)), recv)' &&
+             NativeExpressionDevirt.exact_array_push_one_argument_expression(
+               'mrb_int argc = mrb_get_argc(mrb); if (argc == 2) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
+               'mrb', 'self'
+             ).nil?)
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -147,6 +160,15 @@ check.call('Hash#__delete emits its generated mutation behind the exact Hash gua
            hash_delete_code.include?('M->hash_class') && hash_delete_code.include?('M->c->ci->mid = 0') &&
              hash_delete_code.include?('mrb_hash_delete_key(M, r3, (r4))') &&
              hash_delete_code.include?('mrb_funcall(M, r3, "__delete", 1, r4)'))
+array_push_generator = CodeGen.new({}, { 'push' => [MethodDef.new(name: 'push', owner: '<native>', irep: nil,
+                                                                  visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                    native_registered_expressions: exact_class_expressions)
+array_push_code = array_push_generator.compile_native_primitive_send('push', 1, 'r3', ['r4'])
+array_push_wrong_arity = array_push_generator.compile_native_primitive_send('push', 1, 'r3', %w[r4 r5])
+check.call('Array#push emits the exact one-argument helper call and keeps multi-argument dispatch',
+           array_push_code.include?('M->array_class') && array_push_code.include?('mrb_ary_push(M, r3, (r4))') &&
+             array_push_code.include?('), r3);') && array_push_wrong_arity.include?('mrb_funcall(M, r3, "push", 2, r4, r5)') &&
+             !array_push_wrong_arity.include?('mrb_ary_push(M, r3,'))
 begin_code = generator.compile_native_primitive_send('begin', 1, 'r3', [])
 end_code = generator.compile_native_primitive_send('end', 1, 'r3', [])
 check.call('Range accessors use an exact Range class guard and dynamic fallback',
