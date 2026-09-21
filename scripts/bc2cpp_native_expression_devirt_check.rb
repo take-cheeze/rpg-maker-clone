@@ -200,6 +200,24 @@ public_api_registry = %w[clear pop keys values intern].to_h do |name|
 end
 public_api_generator = CodeGen.new({}, public_api_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                    native_registered_expressions: exact_class_expressions)
+respond_to_registry = {
+  'respond_to?' => [MethodDef.new(name: 'respond_to?', owner: '<native>', irep: nil, visibility: :public)]
+}
+respond_to_generator = CodeGen.new({}, respond_to_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+respond_to_code = respond_to_generator.compile_native_primitive_send('respond_to?', 1, 'r3', ['r4'])
+check.call('respond_to? answers native hits directly and keeps the missing-hook fallback',
+           respond_to_code.include?('mrb_obj_to_sym(M, r4)') &&
+             respond_to_code.include?('mrb_respond_to(M, r3, bc2cpp_respond_to_id1)') &&
+             respond_to_code.include?('mrb_funcall(M, r3, "respond_to?", 1, r4)') &&
+             CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
+             respond_to_generator.native_only_mono?('respond_to?'))
+respond_to_override_registry = {
+  'respond_to?' => respond_to_registry['respond_to?'] +
+    [MethodDef.new(name: 'respond_to?', owner: 'Example', irep: 'Example#respond_to?', visibility: :public)]
+}
+respond_to_override_generator = CodeGen.new({}, respond_to_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+check.call('a Ruby respond_to? override disables the native-only fast path',
+           !respond_to_override_generator.native_only_mono?('respond_to?'))
 clear_code = public_api_generator.compile_native_primitive_send('clear', 1, 'r3', [])
 pop_code = public_api_generator.compile_native_primitive_send('pop', 1, 'r3', [])
 keys_code = public_api_generator.compile_native_primitive_send('keys', 1, 'r3', [])
