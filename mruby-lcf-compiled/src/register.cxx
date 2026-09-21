@@ -403,4 +403,6 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
 extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {
   // SYMBOL_CACHE: drop the ids interned for this VM.
   bc2cpp_reset_symbol_cache();
+  // OWNER_CLASS_CACHE: drop the guard class pointers cached for this VM.
+  bc2cpp_reset_owner_classes();
 }

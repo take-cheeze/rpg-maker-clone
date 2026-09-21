@@ -7324,6 +7324,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
   // SYMBOL_CACHE: drop the ids interned for this VM.
   bc2cpp_reset_symbol_cache();
+  // OWNER_CLASS_CACHE: drop the guard class pointers cached for this VM.
+  bc2cpp_reset_owner_classes();
   // Defensive only (mrb_close frees every RClass this VM owns, so these
   // would-be-dangling pointers are never actually dereferenced by anything
   // reachable after this point) -- mirrors mruby-rgss/src/lib.cxx's own

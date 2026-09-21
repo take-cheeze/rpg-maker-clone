@@ -68,7 +68,10 @@ check.call('Hash key predicates are generated with the call-site argument and pu
              exact_class_expressions[name]&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Hash', 1]] &&
                exact_class_expressions[name].first[:expression].include?('mrb_hash_key_p(M, recv, (BC2CPP_ARG0))')
            end &&
-             exact_class_expressions['include?'].nil? &&
+             # Module#include? (class.c's `mod`) no longer counts as an unknown
+             # owner, so the Hash alias is generated like its siblings; a Module
+             # receiver has MRB_TT_MODULE, never the MRB_TT_HASH tag it is guarded by.
+             exact_class_expressions['include?']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Hash', 1]] &&
              NativeExpressionDevirt.exact_class_return_expression(
                'return mrb_bool_value(mrb_hash_key_p(mrb, self, mrb_get_arg1(mrb)));', 'mrb', 'self'
              ).nil?)
@@ -119,8 +122,10 @@ check.call('Array#first and #last derive only the zero-argument C branch and kee
              exact_class_expressions['last']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } ==
                [['Array', 0], ['Range', 0]] &&
              exact_class_expressions['first'].first[:expression] ==
-               '(ARY_LEN((mrb_ary_ptr(recv))) > 0) ? (ARY_PTR(mrb_ary_ptr(recv))[0]) : (mrb_nil_value())' &&
-             exact_class_expressions['last'].first[:expression].include?('ARY_PTR(mrb_ary_ptr(recv))[(ARY_LEN((mrb_ary_ptr(recv)))) - 1]') &&
+               '({ struct RArray *bc2cpp_ary_ptr = mrb_ary_ptr(recv); ' \
+               '(ARY_LEN((bc2cpp_ary_ptr)) > 0) ? (ARY_PTR(bc2cpp_ary_ptr)[0]) : (mrb_nil_value()); })' &&
+             exact_class_expressions['last'].first[:expression].include?('ARY_PTR(bc2cpp_ary_ptr)[(ARY_LEN((bc2cpp_ary_ptr))) - 1]') &&
+             exact_class_expressions['last'].first[:expression].scan('mrb_ary_ptr(recv)').length == 1 &&
              exact_class_expressions['first'].last[:expression] == 'mrb_range_beg(M, recv)' &&
              exact_class_expressions['last'].last[:expression] == 'mrb_range_end(M, recv)' &&
              NativeExpressionDevirt.exact_array_no_argument_element_expression(first_body, 'mrb', 'self') ==
@@ -218,6 +223,31 @@ hash_aref_code = hash_aref_generator.compile_native_primitive_send('[]', 1, 'r3'
 check.call('generated Hash#[] calls the public lookup helper behind an exact Hash guard and keeps fallback',
            hash_aref_code.include?('M->hash_class') && hash_aref_code.include?('mrb_hash_get(M, r3, (r4))') &&
              hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
+check.call('String#== and Symbol#== are generated from their C wrappers once BasicObject is a known owner',
+           exact_class_expressions['==']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] }&.sort ==
+             [['String', 1, 'mrb_bool_value(mrb_str_equal(M, recv, (BC2CPP_ARG0)))'],
+              ['Symbol', 1, 'mrb_bool_value(mrb_obj_equal(M, recv, (BC2CPP_ARG0)))']])
+eq_registry = { '==' => [MethodDef.new(name: '==', owner: '<native>', irep: nil, visibility: :public)] }
+eq_generator = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                           native_registered_expressions: exact_class_expressions)
+eq_code = eq_generator.compile_cmp('EQ', 'R3 (R4)')
+check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol equality before dispatch',
+           eq_code.index('mrb_obj_eq(M, r3, r4)') < eq_code.index('MRB_TT_INTEGER') &&
+             eq_code.include?('mrb_type(r3) == MRB_TT_STRING && mrb_obj_ptr(r3)->c == M->string_class') &&
+             eq_code.include?('r3 = mrb_bool_value(mrb_str_equal(M, r3, (r4)));') &&
+             eq_code.include?('mrb_type(r3) == MRB_TT_SYMBOL) {') &&
+             eq_code.include?('r3 = mrb_bool_value(mrb_obj_equal(M, r3, (r4)));') &&
+             eq_code.scan('mrb_funcall(M, r3, "==", 1, r4)').size == 1)
+plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp('EQ', 'R3 (R4)')
+check.call('OP_EQ without a generated == registration is unchanged',
+           !plain_eq_code.include?('mrb_str_equal') && plain_eq_code.include?('mrb_funcall(M, r3, "==", 1, r4)'))
+eq_override_registry = eq_registry.merge(
+  '==' => eq_registry['=='] + [MethodDef.new(name: '==', owner: 'String', irep: 'irep0', visibility: :public)]
+)
+eq_override_code = CodeGen.new({}, eq_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                               native_registered_expressions: exact_class_expressions).compile_cmp('EQ', 'R3 (R4)')
+check.call('a Ruby String#== override rejects the generated OP_EQ paths',
+           !eq_override_code.include?('mrb_str_equal') && !eq_override_code.include?('mrb_obj_equal('))
 array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
                                                                  visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                   native_registered_expressions: exact_class_expressions)
@@ -250,7 +280,8 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
   element_count_code = element_generator.compile_native_primitive_send(name, 1, 'r3', ['r4'])
   check.call("Array##{name} emits the exact Array element path and keeps count-argument dispatch",
              element_code.include?('case MRB_TT_ARRAY:') && element_code.include?('M->array_class') &&
-               element_code.include?('ARY_PTR(mrb_ary_ptr(r3))[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
+               element_code.include?('ARY_PTR(bc2cpp_ary_ptr)[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
+               element_code.scan('mrb_ary_ptr(r3)').length == 1 &&
                element_count_code.include?("mrb_funcall(M, r3, \"#{name}\", 1, r4)") &&
                !element_count_code.include?('ARY_PTR('))
 end
