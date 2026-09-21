@@ -286,7 +286,7 @@ current_fallback = nil
 end
 fallback_element_functions = fallback_element_sends.count { |_name, sends| sends.positive? }
 fallback_element_send_count = fallback_element_sends.values.sum
-report << "  fallback cfuncs with guarded Array#each element sends: " \
+report << "  fallback cfuncs with guarded Array iterator element sends: " \
           "#{fallback_element_functions} function(s), #{fallback_element_send_count} send(s)\n"
 
 # LAMBDA_FALLBACK_SUPPORT: the LAMBDA-opcode sibling of BLOCK_CFUNC_
