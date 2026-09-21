@@ -67,6 +67,11 @@ check.call('Hash#[] is generated from its C wrapper through public mrb_hash_get'
              NativeExpressionDevirt.exact_class_return_expression(
                'mrb_value key = mrb_get_arg1(mrb); return mrb_hash_get(mrb, self, key);', 'mrb', 'self', arity: 1
              ) == 'mrb_hash_get(M, recv, (BC2CPP_ARG0))')
+check.call('Array#at is generated from mruby-array-ext using public integer and element accessors',
+           exact_class_expressions['at']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } == [['Array', 1]] &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_ary_entry(recv,') &&
+             exact_class_expressions['at'].first[:expression].include?('mrb_as_int(M,') &&
+             exact_class_expressions['at'].first[:expression].include?('BC2CPP_ARG0'))
 check.call('Hash#__delete preserves the core call-info side effect and public deletion helper',
            exact_class_expressions['__delete']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] } ==
              [['Hash', 1, '(M->c->ci->mid = 0, mrb_hash_delete_key(M, recv, (BC2CPP_ARG0)))']] &&
@@ -178,6 +183,13 @@ hash_aref_code = hash_aref_generator.compile_native_primitive_send('[]', 1, 'r3'
 check.call('generated Hash#[] calls the public lookup helper behind an exact Hash guard and keeps fallback',
            hash_aref_code.include?('M->hash_class') && hash_aref_code.include?('mrb_hash_get(M, r3, (r4))') &&
              hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
+array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
+                                                                 visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                  native_registered_expressions: exact_class_expressions)
+array_at_code = array_at_generator.compile_native_primitive_send('at', 1, 'r3', ['r4'])
+check.call('generated Array#at uses exact Array identity and keeps fallback dispatch',
+           array_at_code.include?('M->array_class') && array_at_code.include?('mrb_ary_entry(r3,') &&
+             array_at_code.include?('mrb_as_int(M,') && array_at_code.include?('mrb_funcall(M, r3, "at", 1, r4)'))
 hash_delete_generator = CodeGen.new({}, { '__delete' => [MethodDef.new(name: '__delete', owner: '<native>', irep: nil,
                                                                         visibility: :private)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                     native_registered_expressions: exact_class_expressions)
