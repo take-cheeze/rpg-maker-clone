@@ -20137,6 +20137,14 @@ class CodeGen
         <<~CPP
           if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) + mrb_fixnum(r#{s}));
+          #ifndef MRB_NO_FLOAT
+          } else if (mrb_float_p(r#{d}) && mrb_integer_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) + mrb_integer(r#{s}));
+          } else if (mrb_integer_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_integer(r#{d}) + mrb_float(r#{s}));
+          } else if (mrb_float_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) + mrb_float(r#{s}));
+          #endif
           } else {
             #{compile_operator_fallback('+', d, s, nil, irep, idx, owner_def, reg_offset)}
           }
@@ -20165,6 +20173,14 @@ class CodeGen
         <<~CPP
           if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) - mrb_fixnum(r#{s}));
+          #ifndef MRB_NO_FLOAT
+          } else if (mrb_float_p(r#{d}) && mrb_integer_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) - mrb_integer(r#{s}));
+          } else if (mrb_integer_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_integer(r#{d}) - mrb_float(r#{s}));
+          } else if (mrb_float_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) - mrb_float(r#{s}));
+          #endif
           } else {
             #{compile_operator_fallback('-', d, s, nil, irep, idx, owner_def, reg_offset)}
           }
@@ -20186,6 +20202,14 @@ class CodeGen
         <<~CPP
           if (mrb_fixnum_p(r#{d}) && mrb_fixnum_p(r#{s})) {
             r#{d} = mrb_fixnum_value(mrb_fixnum(r#{d}) * mrb_fixnum(r#{s}));
+          #ifndef MRB_NO_FLOAT
+          } else if (mrb_float_p(r#{d}) && mrb_integer_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) * mrb_integer(r#{s}));
+          } else if (mrb_integer_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_integer(r#{d}) * mrb_float(r#{s}));
+          } else if (mrb_float_p(r#{d}) && mrb_float_p(r#{s})) {
+            r#{d} = mrb_float_value(M, mrb_float(r#{d}) * mrb_float(r#{s}));
+          #endif
           } else {
             #{compile_operator_fallback('*', d, s, nil, irep, idx, owner_def, reg_offset)}
           }

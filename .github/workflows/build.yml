@@ -865,6 +865,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_float_math_fastpath_check.rb
 
       - name: sccache stats
         if: always()
