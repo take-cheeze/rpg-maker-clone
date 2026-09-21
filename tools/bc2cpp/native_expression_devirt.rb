@@ -15,7 +15,7 @@ module NativeExpressionDevirt
   }.freeze
   CLASS_EXPRESSION_CALLS = %w[
     mrb_bool_value mrb_int_value mrb_ary_ptr mrb_hash_size mrb_hash_empty_p
-    mrb_str_ptr
+    mrb_str_ptr mrb_range_beg mrb_range_end
   ].freeze
   # Keep this list to macros exported by mruby headers. RSTRING_CHAR_LEN is
   # private to string.c (and calls a private UTF-8 helper), so generated C++
@@ -117,7 +117,7 @@ module NativeExpressionDevirt
     registrations = Hash.new { |hash, name| hash[name] = [] }
     implementations = Hash.new { |hash, function| hash[function] = [] }
     opaque_owners = Hash.new { |hash, name| hash[name] = [] }
-    target_classes = %w[Array Hash String Float Symbol].to_set
+    target_classes = %w[Array Hash String Float Symbol Range].to_set
 
     Array(paths).each do |path|
       next unless File.file?(path)
@@ -132,6 +132,10 @@ module NativeExpressionDevirt
       end
       source.scan(/(\w+)\s*=\s*mrb->(\w+_class)\b/) do |variable, field|
         class_variables[variable] ||= { field: field, class_name: field.sub(/_class\z/, '').capitalize }
+      end
+      source.scan(/mrb->(\w+_class)\s*=\s*(\w+)\s*;/) do |field, variable|
+        info = class_variables[variable]
+        info[:field] ||= field if info
       end
       source.scan(/\bmrb->(\w+_class)\b/) do |field|
         field = field.first

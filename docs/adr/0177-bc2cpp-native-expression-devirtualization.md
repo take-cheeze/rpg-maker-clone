@@ -25,7 +25,8 @@ Array/Hash `size` and `length`, Array/Hash/String `empty?`, and Hash
 `to_hash`; it also generates Float `to_f` and Symbol `to_sym` from their
 shared identity body, using immediate type tags rather than object-pointer
 guards. It also generates the receiver-wide `!` expression from BasicObject's
-implementation.
+implementation. Range `begin` and `end` use mruby's public Range accessors
+behind exact-class guards.
 Existing whole-program name, arity, override, prepend, and runtime class
 checks remain in force.
 Frame-reading methods, conflicting registrations, and unsupported bodies

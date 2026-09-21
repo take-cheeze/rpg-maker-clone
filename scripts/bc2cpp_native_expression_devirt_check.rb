@@ -36,6 +36,11 @@ check.call('Float#to_f and Symbol#to_sym are generated from the shared C identit
              [['Float', 'recv']] &&
              exact_class_expressions['to_sym']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
                [['Symbol', 'recv']])
+check.call('Range#begin and Range#end are generated through public Range accessors',
+           exact_class_expressions['begin']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+             [['Range', 'mrb_range_beg(M, recv)']] &&
+             exact_class_expressions['end']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
+               [['Range', 'mrb_range_end(M, recv)']])
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -90,6 +95,13 @@ length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
 check.call('Array/Hash length is generated from the same C expressions as size',
            length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
              length_code.include?('mrb_funcall(M, r3, "length", 0)'))
+begin_code = generator.compile_native_primitive_send('begin', 1, 'r3', [])
+end_code = generator.compile_native_primitive_send('end', 1, 'r3', [])
+check.call('Range accessors use an exact Range class guard and dynamic fallback',
+           begin_code.include?('M->range_class') && begin_code.include?('mrb_range_beg(M, r3)') &&
+             begin_code.include?('mrb_funcall(M, r3, "begin", 0)') &&
+             end_code.include?('M->range_class') && end_code.include?('mrb_range_end(M, r3)') &&
+             end_code.include?('mrb_funcall(M, r3, "end", 0)'))
 hash_to_hash_code = generator.compile_native_primitive_send('to_hash', 1, 'r3', [])
 check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic fallback',
            hash_to_hash_code.include?('M->hash_class') &&
@@ -123,5 +135,15 @@ float_override_generator = CodeGen.new({}, float_override_registry, {}, {}, {}, 
                                        native_registered_expressions: exact_class_expressions)
 check.call('a Ruby Float#to_f override rejects the generated immediate-type path',
            !float_override_generator.builtin_class_send_safe?('to_f', %w[Float]))
+range_override_registry = {
+  'begin' => [
+    MethodDef.new(name: 'begin', owner: '<native>', irep: nil, visibility: :public),
+    MethodDef.new(name: 'begin', owner: 'Range', irep: 'Range#begin', visibility: :public)
+  ]
+}
+range_override_generator = CodeGen.new({}, range_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                       native_registered_expressions: exact_class_expressions)
+check.call('a Ruby Range#begin override rejects the generated accessor',
+           !range_override_generator.builtin_class_send_safe?('begin', %w[Range]))
 
 abort "#{failures.length} native expression devirtualization check(s) failed" unless failures.empty?
