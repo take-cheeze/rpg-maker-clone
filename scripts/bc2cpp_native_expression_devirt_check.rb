@@ -5,10 +5,13 @@
 # method registrations and implementations.
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+require_relative '../tools/bc2cpp/compiled_gems'
 
 root = File.expand_path('..', __dir__)
-core_sources = Dir[File.join(root, '3rd/mruby/src/*.c')]
+core_sources = Dir[File.join(root, 'mruby-rgss/src/*.cxx')] +
+               core_native_srcs(File.join(root, '3rd/mruby')) + external_gem_native_srcs(root)
 generated = NativeExpressionDevirt.analyze(core_sources)
+containers = NativeExpressionDevirt.analyze_containers(core_sources)
 failures = []
 check = lambda do |description, condition|
   puts "  #{condition ? 'ok' : 'FAIL'}  #{description}"
@@ -17,6 +20,11 @@ end
 
 check.call('mruby BasicObject#! is generated from its registered C body',
            generated['!'] == 'mrb_bool_value(!mrb_test(recv))')
+check.call('Array and Hash size bodies are generated; String size is declined',
+           containers['size']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash] &&
+             containers['size'].none? { |entry| entry[:expression].include?('RSTRING_CHAR_LEN') })
+check.call('Array, Hash, and String empty? bodies are generated from their C implementations',
+           containers['empty?']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash String])
 check.call('frame-reading C methods are not expression candidates',
            NativeExpressionDevirt.direct_return_expression(
              'mrb_get_args(mrb, "i", &n); return mrb_int_value(mrb, n);', 'mrb', 'self'
@@ -57,10 +65,25 @@ end
 
 registry = { '!' => [MethodDef.new(name: '!', owner: '<native>', irep: nil, visibility: :public)] }
 generator = CodeGen.new({}, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
-                        native_expression_devirt: generated)
+                        native_expression_devirt: generated,
+                        native_container_devirt: containers)
 code = generator.compile_native_primitive_send('!', 1, 'r2', [])
 check.call('generated expression is emitted into bc2cpp output',
            code.include?("generated from mruby's registered C implementation") &&
              code.include?('mrb_bool_value(!mrb_test(r2))'))
+container_code = generator.compile_native_primitive_send('size', 1, 'r3', [])
+check.call('container output uses generated C expressions and falls back for other receiver classes',
+           container_code.include?('M->array_class') && container_code.include?('M->hash_class') &&
+             container_code.include?('mrb_funcall(M, r3, "size", 0)'))
+override_registry = {
+  'size' => [
+    MethodDef.new(name: 'size', owner: '<native>', irep: nil, visibility: :public),
+    MethodDef.new(name: 'size', owner: 'Array', irep: 'Array#size', visibility: :public)
+  ]
+}
+override_generator = CodeGen.new({}, override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                 native_container_devirt: containers)
+check.call('a Ruby override on a built-in container rejects generated native bodies',
+           !override_generator.builtin_class_send_safe?('size', %w[Array Hash String]))
 
 abort "#{failures.length} native expression devirtualization check(s) failed" unless failures.empty?

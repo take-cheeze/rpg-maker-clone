@@ -8543,7 +8543,8 @@ class CodeGen
                  hash_element_layout = {}, integer_constants = Set.new,
                  foreign_method_names = nil, outside_tokens = nil,
                   native_name_sources = nil, included_modules = {}, prepended_modules = {},
-                  unknown_mixins = Set.new, analysis_only: false, native_expression_devirt: {})
+                  unknown_mixins = Set.new, analysis_only: false, native_expression_devirt: {},
+                  native_container_devirt: {})
     @ireps = ireps
     # ENTRY_ARG_CALLSITE_PROOF: every identifier-shaped token appearing
     # anywhere in NATIVE_SRCS or FOREIGN_RUBY_SRCS (outside_world_tokens,
@@ -8571,6 +8572,9 @@ class CodeGen
     # native_expression_devirt.rb is accepted; all other C methods remain
     # ordinary Ruby dispatch.
     @native_expression_devirt = native_expression_devirt
+    # NATIVE_CONTAINER_DEVIRT: class-specific expressions generated from
+    # mruby's ROM registration owner, instance tag, and simple C method body.
+    @native_container_devirt = native_container_devirt
     # INTEGER_CONSTANT_PROOF: the set of bare constant names every definition
     # in this whole program agrees is an integer literal (IntegerConstants.
     # analyze, above). Read only by fixnum_proof_source?'s own GETCONST/
@@ -9512,66 +9516,9 @@ class CodeGen
   def compile_native_primitive_send(name, d, recv, argv)
     case name
     when 'size'
-      # Array and Hash use safe length APIs. String#size needs the private
-      # RSTRING_CHAR_LEN macro and stays on ordinary dispatch.
-      fallback = dynamic_dispatch_line(d, recv, name, argv)
-      <<~CPP
-          // size -- exact base Array/Hash only; preserve overrides and String semantics
-          switch (mrb_type(#{recv})) {
-          case MRB_TT_ARRAY:
-            if (mrb_obj_ptr(#{recv})->c == M->array_class) {
-              r#{d} = mrb_int_value(M, ARY_LEN(mrb_ary_ptr(#{recv})));
-            } else {
-              #{fallback.chomp}
-            }
-            break;
-          case MRB_TT_HASH:
-            if (mrb_obj_ptr(#{recv})->c == M->hash_class) {
-              r#{d} = mrb_int_value(M, mrb_hash_size(M, #{recv}));
-            } else {
-              #{fallback.chomp}
-            }
-            break;
-          default:
-            #{fallback.chomp}
-            break;
-          }
-      CPP
+      compile_native_container_expression(name, d, recv, argv)
     when 'empty?'
-      # The registered Array/Hash/String implementations all test the
-      # container's length. Exact class checks preserve subclasses and
-      # singleton overrides; the compile-time gate also rejects a Ruby
-      # override on the base class or a prepend ahead of it.
-      fallback = dynamic_dispatch_line(d, recv, name, argv)
-      <<~CPP
-          // empty? -- exact built-in containers only; keep dynamic dispatch for overrides
-          switch (mrb_type(#{recv})) {
-          case MRB_TT_ARRAY:
-            if (mrb_obj_ptr(#{recv})->c == M->array_class) {
-              r#{d} = mrb_bool_value(ARY_LEN(mrb_ary_ptr(#{recv})) == 0);
-            } else {
-              #{fallback.chomp}
-            }
-            break;
-          case MRB_TT_HASH:
-            if (mrb_obj_ptr(#{recv})->c == M->hash_class) {
-              r#{d} = mrb_bool_value(mrb_hash_empty_p(M, #{recv}));
-            } else {
-              #{fallback.chomp}
-            }
-            break;
-          case MRB_TT_STRING:
-            if (mrb_obj_ptr(#{recv})->c == M->string_class) {
-              r#{d} = mrb_bool_value(RSTR_LEN(mrb_str_ptr(#{recv})) == 0);
-            } else {
-              #{fallback.chomp}
-            }
-            break;
-          default:
-            #{fallback.chomp}
-            break;
-          }
-      CPP
+      compile_native_container_expression(name, d, recv, argv)
     when '!'
       expression = @native_expression_devirt[name]
       if expression
@@ -10058,6 +10005,34 @@ class CodeGen
       "    break;\n" \
       "  }\n"
     end
+  end
+
+  def compile_native_container_expression(name, d, recv, argv)
+    entries = @native_container_devirt[name]
+    fallback = dynamic_dispatch_line(d, recv, name, argv)
+    return fallback unless entries && !entries.empty?
+
+    cases = entries.map do |entry|
+      owner = entry[:owner]
+      <<~CPP
+        case #{owner[:tag]}:
+          if (mrb_obj_ptr(#{recv})->c == M->#{owner[:field]}) {
+            r#{d} = #{entry[:expression].gsub('recv', recv)};
+          } else {
+            #{fallback.chomp}
+          }
+          break;
+      CPP
+    end.join
+    <<~CPP
+      // #{name} -- generated from native registrations and C method bodies
+      switch (mrb_type(#{recv})) {
+      #{cases}
+      default:
+        #{fallback.chomp}
+        break;
+      }
+    CPP
   end
 
   # INTERP_UNLOCK: does MONO method `name` carry a hand-placed
@@ -23346,7 +23321,7 @@ class CodeGen
       CPP
     end
 
-    if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash])
+    if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash String])
       return compile_native_primitive_send(name, d, recv, argv)
     end
 
@@ -24036,11 +24011,19 @@ if $PROGRAM_NAME == __FILE__
   # respect to that native gem, same as before this existed.
   native_name_sources = nil
   native_expression_devirt = {}
+  native_container_devirt = {}
   if ENV['NATIVE_SRCS']
     native_paths = Shellwords.split(ENV['NATIVE_SRCS'])
     native_expression_devirt = NativeExpressionDevirt.analyze(native_paths)
+    native_container_devirt = NativeExpressionDevirt.analyze_containers(native_paths)
     warn "== generated native C-expression devirtualizations (#{native_expression_devirt.size}) =="
     native_expression_devirt.sort.each { |name, expression| warn "  C_EXPR :#{name}  (#{expression})" }
+    native_container_devirt.sort.each do |name, entries|
+      entries.each do |entry|
+        owner = entry[:owner]
+        warn "  C_EXPR :#{name}  (#{owner[:class_name]}##{name}: #{entry[:expression]})"
+      end
+    end
     warn ''
     # ZSUPER_NATIVE_SUPPORT: the per-name source map is the scan, and the
     # flat name set below is derived from its own keys -- so NATIVE_SRCS is
@@ -24237,7 +24220,8 @@ if $PROGRAM_NAME == __FILE__
                                    annotations, superclass_of, {}, {}, container_constants, {},
                                    Set.new, foreign_methods, nil, nil,
                                    analysis_only: true,
-                                   native_expression_devirt: native_expression_devirt).array_return_names
+                                   native_expression_devirt: native_expression_devirt,
+                                   native_container_devirt: native_container_devirt).array_return_names
   class_poison_reason = {}
   class_layout_raw = ClassLayout.analyze(ireps, registry, class_annotations, container_constants,
                                          annotated_array_return, poison_reason: class_poison_reason,
@@ -24489,7 +24473,8 @@ if $PROGRAM_NAME == __FILE__
                     element_layout, element_annotations, container_constants, hash_element_layout,
                     integer_constants, foreign_methods, outside_tokens, native_name_sources,
                     included_modules, prepended_modules, unknown_mixins,
-                    native_expression_devirt: native_expression_devirt)
+                    native_expression_devirt: native_expression_devirt,
+                    native_container_devirt: native_container_devirt)
   warn '== methods proven Fixnum-returning (FIXNUM_RETURN_PROOF) =='
   if gen.fixnum_return_names.empty?
     warn '  (none)'

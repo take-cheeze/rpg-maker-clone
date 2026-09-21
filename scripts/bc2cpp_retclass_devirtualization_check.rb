@@ -424,8 +424,14 @@ Dir.mktmpdir do |dir|
   empty_registry = registry.transform_values(&:dup)
   (empty_registry['empty?'] ||= []) << MethodDef.new(name: 'empty?', owner: '<native>', irep: nil,
                                                       visibility: :public)
+  native_sources = Dir[
+    File.expand_path('../3rd/mruby/src/**/*.{c,cxx}', __dir__),
+    File.expand_path('../3rd/mruby/mrbgems/**/src/**/*.{c,cxx}', __dir__)
+  ]
+  native_containers = NativeExpressionDevirt.analyze_containers(native_sources)
   empty_gen = CodeGen.new(ireps, empty_registry, {}, class_layout, class_annotations, {}, {}, element_layout,
-                          annotations, {}, {}, Set.new)
+                          annotations, {}, {}, Set.new,
+                          native_container_devirt: native_containers)
   fresh_empty = empty_registry['fresh_route_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
   fresh_empty_code = empty_gen.compile_method(fresh_empty.irep).fetch(:code)
   check.call('typed Ruby empty? target takes priority over built-in container intrinsic',
@@ -435,7 +441,7 @@ Dir.mktmpdir do |dir|
   unknown_empty = empty_registry['unknown_empty?'].find { |md| md.owner == 'Game::EmptyRouteCaller' }
   unknown_empty_code = empty_gen.compile_method(unknown_empty.irep).fetch(:code)
   check.call('unknown empty? receiver retains built-in container intrinsic and fallback',
-             unknown_empty_code.include?('empty? -- exact built-in containers only') &&
+             unknown_empty_code.include?('empty? -- generated from native registrations and C method bodies') &&
                unknown_empty_code.include?('mrb_funcall(M,'), true)
 
   values_registry = registry.transform_values(&:dup)
