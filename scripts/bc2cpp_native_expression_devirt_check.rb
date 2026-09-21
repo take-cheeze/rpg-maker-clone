@@ -91,6 +91,30 @@ check.call('Array#push derives only the one-argument C fast branch from mruby co
                'mrb_int argc = mrb_get_argc(mrb); if (argc == 2) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
                'mrb', 'self'
              ).nil?)
+first_body = 'struct RArray *a = mrb_ary_ptr(self); mrb_int size; ' \
+             'if (mrb_get_argc(mrb) == 0) { if (ARY_LEN(a) > 0) return ARY_PTR(a)[0]; return mrb_nil_value(); } ' \
+             'mrb_get_args(mrb, "|i", &size); return mrb_nil_value();'
+last_body = 'struct RArray *a = mrb_ary_ptr(self); mrb_int alen = ARY_LEN(a); ' \
+            'if (mrb_get_argc(mrb) == 0) { if (alen > 0) return ARY_PTR(a)[alen - 1]; return mrb_nil_value(); } ' \
+            'return mrb_nil_value();'
+check.call('Array#first and #last derive only the zero-argument C branch and keep Range accessors',
+           exact_class_expressions['first']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } ==
+             [['Array', 0], ['Range', 0]] &&
+             exact_class_expressions['last']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } ==
+               [['Array', 0], ['Range', 0]] &&
+             exact_class_expressions['first'].first[:expression] ==
+               '(ARY_LEN((mrb_ary_ptr(recv))) > 0) ? (ARY_PTR(mrb_ary_ptr(recv))[0]) : (mrb_nil_value())' &&
+             exact_class_expressions['last'].first[:expression].include?('ARY_PTR(mrb_ary_ptr(recv))[(ARY_LEN((mrb_ary_ptr(recv)))) - 1]') &&
+             exact_class_expressions['first'].last[:expression] == 'mrb_range_beg(M, recv)' &&
+             exact_class_expressions['last'].last[:expression] == 'mrb_range_end(M, recv)' &&
+             NativeExpressionDevirt.exact_array_no_argument_element_expression(first_body, 'mrb', 'self') ==
+               exact_class_expressions['first'].first[:expression] &&
+             NativeExpressionDevirt.exact_array_no_argument_element_expression(
+               first_body.sub('ARY_PTR(a)[0]', 'mrb_funcall(mrb, self, "x", 0)'), 'mrb', 'self'
+             ).nil? &&
+             NativeExpressionDevirt.exact_array_no_argument_element_expression(
+               first_body.sub('mrb_get_argc(mrb) == 0', 'mrb_get_argc(mrb) == 1'), 'mrb', 'self'
+             ).nil?)
 check.call('frame-independent public mruby APIs are generated from exact zero-argument registrations',
            exact_class_expressions['clear']&.map { |entry| [entry[:owner][:class_name], entry[:expression]] } ==
              [['Array', 'mrb_ary_clear(M, recv)'], ['Hash', 'mrb_hash_clear(M, recv)']] &&
@@ -195,6 +219,18 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
            array_push_code.include?('M->array_class') && array_push_code.include?('mrb_ary_push(M, r3, (r4))') &&
              array_push_code.include?('), r3);') && array_push_wrong_arity.include?('mrb_funcall(M, r3, "push", 2, r4, r5)') &&
              !array_push_wrong_arity.include?('mrb_ary_push(M, r3,'))
+%w[first last].each do |name|
+  element_generator = CodeGen.new({}, { name => [MethodDef.new(name: name, owner: '<native>', irep: nil,
+                                                               visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                  native_registered_expressions: exact_class_expressions)
+  element_code = element_generator.compile_native_primitive_send(name, 1, 'r3', [])
+  element_count_code = element_generator.compile_native_primitive_send(name, 1, 'r3', ['r4'])
+  check.call("Array##{name} emits the exact Array element path and keeps count-argument dispatch",
+             element_code.include?('case MRB_TT_ARRAY:') && element_code.include?('M->array_class') &&
+               element_code.include?('ARY_PTR(mrb_ary_ptr(r3))[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
+               element_count_code.include?("mrb_funcall(M, r3, \"#{name}\", 1, r4)") &&
+               !element_count_code.include?('ARY_PTR('))
+end
 public_api_registry = %w[clear pop keys values intern].to_h do |name|
   [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
 end
