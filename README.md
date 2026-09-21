@@ -1009,6 +1009,13 @@
 
 ### Performance
 
+- The opt-in RPG2k compiled-Ruby backend (`RPGMAKER_BC2CPP=1`) generates
+  guarded native call paths from recognized mruby core C methods. It uses
+  exact built-in class checks and keeps ordinary Ruby dispatch for subclasses,
+  overrides and C bodies the generator cannot prove safe. See
+  [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md)
+  and [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md).
+
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
   second instead of 60, to cut rendering CPU/GPU work and the memory
