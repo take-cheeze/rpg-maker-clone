@@ -68,6 +68,9 @@ SRC = <<~'RUBY'
       def fresh_route_empty?; Game::EmptyRoute.new.empty?; end
       def unknown_empty?(value); value.empty?; end
     end
+    class NativeValuesCaller
+      def values_for(hash); hash.values; end
+    end
     class HashValueOwner
       def initialize
         @sprites = {}
@@ -345,6 +348,17 @@ Dir.mktmpdir do |dir|
   check.call('unknown empty? receiver retains built-in container intrinsic and fallback',
              unknown_empty_code.include?('empty? -- exact built-in containers only') &&
                unknown_empty_code.include?('mrb_funcall(M,'), true)
+
+  values_registry = registry.transform_values(&:dup)
+  (values_registry['values'] ||= []) << MethodDef.new(name: 'values', owner: '<native>', irep: nil,
+                                                       visibility: :public)
+  values_gen = CodeGen.new(ireps, values_registry, {}, class_layout, class_annotations, {}, {}, element_layout,
+                           annotations, {}, {}, Set.new)
+  values_method = values_registry['values_for'].find { |md| md.owner == 'Game::NativeValuesCaller' }
+  values_code = values_gen.compile_method(values_method.irep).fetch(:code)
+  check.call('Hash#values uses guarded native implementation with Ruby fallback',
+             values_code.include?('mrb_hash_values(M,') && values_code.include?('mrb_hash_p(r') &&
+               values_code.include?('M->hash_class') && values_code.include?('mrb_funcall(M,'), true)
   hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
   hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
   check.call('fallback Hash#each_value devirtualizes proven values with guard/fallback',

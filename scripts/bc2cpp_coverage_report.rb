@@ -326,10 +326,12 @@ dispatch_counts = Hash.new(0)
 @shipped_stdout.scan(/mrb_funcall_with_block\(M,\s*[^,]+,\s*mrb_intern_cstr\(M,\s*"((?:[^"\\]|\\.)*)"\)/) { |m| dispatch_counts[m[0]] += 1 }
 total_dispatch = dispatch_counts.values.sum
 shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
+hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).size
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "total mrb_funcall/mrb_funcall_with_block call sites: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
 report << "  everything else (not yet attempted or failed MONO/TYPED): #{total_dispatch - shipped_poly}\n"
 report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
 report << "top 30 dynamically-dispatched method names:\n"
