@@ -1,0 +1,1 @@
+bc2cpp: scope the `respond_to?` fast-path symbol temporary in its own block so generated C++ no longer redeclares it when a register is reused or jumps over it with `goto` (fixes the `bc2cpp` CI build after #1850).
