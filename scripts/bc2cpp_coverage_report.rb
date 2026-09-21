@@ -265,17 +265,29 @@ report << "\n"
 # call site that now compiles clean via emit_block_fallback_glue's own
 # `// BLOCK_FALLBACK :name -- ...` marker comment -- these already count
 # toward "compiled clean" above, same as any other method, but are
-# deliberately ALSO broken out here: every one still dispatches
-# dynamically (mrb_funcall_with_block, never MONO/POLY/TYPED), so
-# whole-program devirtualization coverage is not actually done for them
-# the way an ordinary compiled-clean method's own call sites are. Counted
-# straight off @stdout (the marker text itself), the same source every
-# #error count above already reads from.
+# deliberately ALSO broken out here because the call carrying the block
+# still dispatches dynamically (`mrb_funcall_with_block`). The standalone
+# cfunc body can now specialize calls on proven Array#each elements, so
+# count those separately from the dynamic block-carrying call site.
 block_fallback_count = @stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :/).size
 report << "block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): " \
           "#{block_fallback_count}\n"
-report << "  still dynamic dispatch only -- MONO/POLY/TYPED devirtualization " \
-          "not yet attempted for these\n"
+fallback_element_sends = Hash.new(0)
+current_fallback = nil
+@stdout.each_line do |line|
+  if (m = line.match(/^\s*(?:static )?mrb_value (\w*block_fallback\w*_impl)\(.*\) \{\s*$/))
+    current_fallback = m[1]
+    fallback_element_sends[current_fallback] ||= 0
+  elsif line.match?(/^\s*(?:static )?mrb_value \w+\(.*\) \{\s*$/)
+    current_fallback = nil
+  elsif current_fallback && line.include?('// ELEMENT :')
+    fallback_element_sends[current_fallback] += 1
+  end
+end
+fallback_element_functions = fallback_element_sends.count { |_name, sends| sends.positive? }
+fallback_element_send_count = fallback_element_sends.values.sum
+report << "  fallback cfuncs with guarded Array#each element sends: " \
+          "#{fallback_element_functions} function(s), #{fallback_element_send_count} send(s)\n"
 
 # LAMBDA_FALLBACK_SUPPORT: the LAMBDA-opcode sibling of BLOCK_CFUNC_
 # FALLBACK_SUPPORT immediately above -- a previously-#error'd LAMBDA
