@@ -91,6 +91,8 @@ SRC = <<~'RUBY'
     class HashPictureOwner
       # bc2cpp: (Hash<Game::Picture>, fixnum, fixnum)
       def picture_name(pictures, id, unused); pictures[id].picture_only; end
+      # bc2cpp: (Hash<Game::Picture>, fixnum)
+      def first_picture(pictures, id); pictures[id].picture_only; end
       # An untyped hash must retain dynamic result dispatch.
       def unknown_picture_name(pictures, id); pictures[id].picture_only; end
     end
@@ -222,6 +224,24 @@ Dir.mktmpdir do |dir|
   check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
              picture_code.include?('TYPED :picture_only -> Game::Picture') &&
                picture_code.include?('mrb_obj_class(M, r') && picture_code.include?('mrb_funcall(M,'), true)
+  picture_getidx_idx = picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
+  picture_index_code = gen.compile_insn(picture_irep.instructions[picture_getidx_idx], picture_irep,
+                                        picture_method, picture_getidx_idx)
+  check.call('Hash<Klass> GETIDX falls back for an incorrect runtime receiver type',
+             picture_index_code.include?('mrb_hash_p(r') && picture_index_code.include?('mrb_hash_get(M,') &&
+               picture_index_code.include?('mrb_funcall(M,') && !picture_index_code.include?('expected Hash receiver'), true)
+
+  first_picture_method = registry['first_picture'].find { |md| md.owner == 'Game::HashPictureOwner' }
+  first_picture_irep = ireps.fetch(first_picture_method.irep)
+  getidx0_idx = first_picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
+  raise 'first_picture: expected GETIDX instruction' unless getidx0_idx
+
+  receiver_reg = first_picture_irep.instructions[getidx0_idx].args[/^R(\d+)/, 1]
+  getidx0_insn = Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver_reg}[0]", raw: '')
+  getidx0_code = gen.compile_insn(getidx0_insn, first_picture_irep, first_picture_method, getidx0_idx)
+  check.call('Hash<Klass> GETIDX0 falls back for an incorrect runtime receiver type',
+             getidx0_code.include?('mrb_hash_p(r') && getidx0_code.include?('mrb_hash_get(M,') &&
+               getidx0_code.include?('mrb_funcall(M,') && !getidx0_code.include?('expected Hash receiver'), true)
 
   unknown_method = registry['unknown_picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
   unknown_irep = ireps.fetch(unknown_method.irep)

@@ -17,6 +17,10 @@ SRC = <<~'RUBY'
     class World
       def put(key, value); @cells[key] = value; end
     end
+    class HashWorld
+      # bc2cpp: (Hash, Symbol, Object)
+      def put_hash(hash, key, value); hash[key] = value; end
+    end
   end
 RUBY
 
@@ -41,8 +45,9 @@ Dir.mktmpdir do |dir|
   registry = build_registry(ireps, root_label)[0]
   owners = Set.new(registry.values.flatten.map(&:owner))
   annotations = ElementAnnotations.extract(ireps, registry, owners)
+  class_annotations = ClassAnnotations.extract(ireps, registry, owners)
   class_layout = { 'Game::World' => { 'cells' => 'Cells' } }
-  gen = CodeGen.new(ireps, registry, {}, class_layout, {}, {}, {}, {}, annotations, {}, {}, Set.new)
+  gen = CodeGen.new(ireps, registry, {}, class_layout, class_annotations, {}, {}, {}, annotations, {}, {}, Set.new)
 
   method = registry.fetch('put').find { |md| md.owner == 'Game::World' }
   irep = ireps.fetch(method.irep)
@@ -57,6 +62,16 @@ Dir.mktmpdir do |dir|
                code.include?('mrb_funcall(M,') && code.include?('"[]=", 2'))
   check.call('typed branch retains compiled []= method result semantics',
              code.include?('TYPED :[]= -> Game::Cells#[]=') && code.match?(/r\d+ = Game__Cells_+impl\(M,/))
+
+  hash_method = registry.fetch('put_hash').find { |md| md.owner == 'Game::HashWorld' }
+  hash_irep = ireps.fetch(hash_method.irep)
+  hash_idx = hash_irep.instructions.index { |insn| insn.op == 'SETIDX' }
+  raise 'put_hash: no SETIDX instruction found' unless hash_idx
+
+  hash_code = gen.compile_insn(hash_irep.instructions[hash_idx], hash_irep, hash_method, hash_idx)
+  check.call('Hash annotation SETIDX falls back for an incorrect runtime receiver type',
+             hash_code.include?('mrb_hash_p(r') && hash_code.include?('mrb_hash_set(M,') &&
+               hash_code.include?('mrb_funcall(M,') && !hash_code.include?('expected Hash receiver'))
 end
 
 if failures.empty?
