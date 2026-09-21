@@ -868,6 +868,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_float_math_fastpath_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_array_push_fastpath_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
 
       - name: sccache stats
         if: always()
