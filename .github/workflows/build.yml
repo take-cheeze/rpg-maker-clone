@@ -104,7 +104,10 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          submodules: recursive
+          # Submodules are initialized by the step below instead of here (see
+          # its comment), so this job skips 3rd/SDL, 3rd/SDL_mixer and
+          # 3rd/optcarrot.
+          submodules: false
           # Keep the checkout quiet. `show-progress` is what adds `--progress`
           # to the fetch, which prints a "Receiving objects: NN%" line per
           # update — a screenful of log before anything is built. Dropping the
@@ -116,6 +119,18 @@ jobs:
           # settings on every checkout below.
           show-progress: false
           persist-credentials: false
+
+      # find_package(SDL2 REQUIRED) resolves the nix devshell's system SDL2 on
+      # this target (CMakeLists.txt), so the vendored 3rd/SDL and
+      # 3rd/SDL_mixer submodules build nothing here -- only the Android job
+      # links the vendored copies (it has no system SDL2 package to find).
+      # 3rd/optcarrot is unreferenced by CMakeLists.txt entirely; only the
+      # `bc2cpp` job's own Optcarrot benchmark reads it. See
+      # scripts/checkout-submodules.bash.
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       # No `Skip the quickjs test262 submodule` step here any more: it existed
       # only to keep nix's nested-`.gitmodules` walk off tc39/test262, and this
@@ -823,9 +838,19 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          submodules: recursive
+          # See the `build` job's "Init submodules" step. This job's own
+          # `cmake -S .` configure walks the same CMakeLists.txt (SDL2 comes
+          # from `find_package`), so it skips 3rd/SDL and 3rd/SDL_mixer too --
+          # but keeps 3rd/optcarrot, which the Optcarrot benchmark step below
+          # reads.
+          submodules: false
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer
+        run: ./scripts/checkout-submodules.bash
 
       - uses: nixbuild/nix-quick-install-action@v35
       - name: Restore and cache Nix store
@@ -898,10 +923,15 @@ jobs:
       CORS_PROXY_URL: ${{ secrets.CORS_PROXY_URL }}
 
     steps:
-      - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          submodules: recursive
+          # None of the checks in this job touch 3rd/ (they load
+          # mruby-*/mrblib sources directly under CRuby, and the nix dev shell
+          # no longer pulls submodules either -- see flake.nix's own comment on
+          # dropping `self.submodules = true`), so this job initializes no
+          # submodule at all rather than the full sixteen `recursive` used to
+          # clone.
+          submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
@@ -1179,13 +1209,22 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          submodules: recursive
+          # See the `build` job's "Init submodules" step -- CMakeLists.txt's
+          # `if(EMSCRIPTEN)` branch gets SDL2/SDL2_mixer from Emscripten's own
+          # ports (`-sUSE_SDL=2`), never from 3rd/SDL or 3rd/SDL_mixer, and
+          # nothing here reads 3rd/optcarrot.
+          submodules: false
           # The PR head for a `/preview` comment; empty everywhere else, which
           # is checkout's default of "the ref that triggered the workflow".
           ref: ${{ needs.preview-gate.outputs.head-sha }}
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       # No test262-skip step here either; see the `build` job.
 
@@ -1446,17 +1485,28 @@ jobs:
     # of the shared walk engine has no CI toolchain at all, so this job is the
     # only place any of the three firmwares is compiled -- the `wio-renode`
     # job below additionally boots them (docs/adr/0094).
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (along with `wio-renode` and `wio-bc2cpp` below)
+    # until the bc2cpp cross-build path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
           # LVGL is vendored as a submodule and linked into the firmware.
-          submodules: recursive
+          # PlatformIO's own `wio`/`wio_walk`/`wio_sd_upload` envs never
+          # reference 3rd/SDL, 3rd/SDL_mixer or 3rd/optcarrot (see
+          # scripts/checkout-submodules.bash), so this job skips them too.
+          submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
         with:
@@ -1509,11 +1559,21 @@ jobs:
           # The mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/stb,
           # 3rd/lvgl, 3rd/quickjs, 3rd/mruby-marshal, 3rd/mruby-stringio,
           # 3rd/mruby-onig-regexp (the host half configures it) and
-          # 3rd/mgem-list -- same reason the `wio-bc2cpp` job is recursive.
-          submodules: recursive
+          # 3rd/mgem-list -- everything else (3rd/SDL, 3rd/SDL_mixer,
+          # 3rd/effekseer, 3rd/gflags, 3rd/ng-log, 3rd/inicpp, 3rd/optcarrot)
+          # goes unused by this job's PlatformIO envs and build_config.rb's
+          # `maix` cross-build, so the step below skips them.
+          submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
         with:
@@ -1846,16 +1906,26 @@ jobs:
     # (Adafruit_ZeroDMA), which this platform does not model yet (P2's
     # DMAC gap, app/wio/renode/README.md) -- a real, understood, separate
     # piece of work, not a performance concern like the two bugs below were.
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (see `wio` job above) until the bc2cpp cross-build
+    # path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     steps:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the firmware.
-          submodules: recursive
+          # LVGL is vendored as a submodule and linked into the firmware. Same
+          # PlatformIO envs (wio/wio_walk/wio_sd_upload) as the `wio` job, so
+          # the same submodules go unused here; see its "Init submodules" step.
+          submodules: false
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
         with:
@@ -1973,10 +2043,17 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the firmware.
-          submodules: recursive
+          # LVGL is vendored as a submodule and linked into the firmware; see
+          # the `wio` job's "Init submodules" step for what else this build
+          # never touches.
+          submodules: false
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
         with:
@@ -2158,7 +2235,10 @@ jobs:
     # report runs under `if: always()` and never fails the job on the number. The
     # job fails only if the cross-build itself breaks (a patch that stops
     # applying, a toolchain change) or the report tooling breaks.
-    if: ${{ github.event_name != 'issue_comment' }}
+    #
+    # Temporarily disabled (see `wio` job above) until the bc2cpp cross-build
+    # path is more stable.
+    if: false
     runs-on: ubuntu-24.04
     # Two ARM cross-builds on a cache miss; well under the 360-minute runner
     # default the other jobs rely on, but enough to not cut a real build short.
@@ -2169,10 +2249,26 @@ jobs:
         with:
           # The wio mruby cross-build needs 3rd/mruby, 3rd/uni-algo, 3rd/lvgl,
           # 3rd/mruby-marshal, 3rd/mruby-stringio, 3rd/mruby-onig-regexp and
-          # 3rd/mgem-list.
-          submodules: recursive
+          # 3rd/mgem-list -- plus 3rd/quickjs and 3rd/stb, which rake's own
+          # bootstrap "host" sub-build (mrbc) needs regardless of the target:
+          # rpg_maker_gems only gates mruby-mvjs behind `single_format_only`
+          # (build_config.rb's `%w[psp wio maix]`), and conf.name is "host"
+          # for that sub-build, never one of those three -- confirmed for
+          # real by the `psp` job's own "fatal error: quickjs.h: No such file
+          # or directory" failure compiling mruby-mvjs's mvcanvas.cxx there.
+          # Everything else (3rd/SDL, 3rd/SDL_mixer, 3rd/effekseer,
+          # 3rd/gflags, 3rd/ng-log, 3rd/inicpp, 3rd/optcarrot) goes genuinely
+          # unused, so the step below skips only those.
+          submodules: false
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/SDL 3rd/SDL_mixer 3rd/effekseer 3rd/gflags 3rd/ng-log
+            3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - uses: actions/setup-python@v7
         with:
@@ -2322,11 +2418,30 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          # LVGL is vendored as a submodule and linked into the EBOOT.
-          submodules: recursive
+          # app/psp/CMakeLists.txt add_subdirectory()s only 3rd/lvgl and
+          # 3rd/uni-algo, and its psp mruby cross-build (build_config.rb) pulls
+          # in 3rd/mruby, 3rd/mruby-marshal, 3rd/mruby-onig-regexp,
+          # 3rd/mruby-stringio, 3rd/mgem-list (cmake/build-mruby.cmake, shared
+          # with the desktop build) and 3rd/stb (mruby-rgss's stbi_load_from_memory
+          # decode path, STBI_NO_STDIO below). It also needs 3rd/quickjs: rake's
+          # own bootstrap "host" sub-build (mrbc) always builds mruby-mvjs
+          # (rpg_maker_gems only gates that gem behind `single_format_only`,
+          # and conf.name is "host" there, never "psp") -- confirmed for real
+          # by a CI run failing on "fatal error: quickjs.h: No such file or
+          # directory" compiling mruby-mvjs's mvcanvas.cxx. It never touches
+          # 3rd/SDL, 3rd/SDL_mixer, 3rd/gflags, 3rd/ng-log, 3rd/effekseer or
+          # 3rd/inicpp.
+          submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: >-
+            3rd/SDL 3rd/SDL_mixer 3rd/gflags 3rd/ng-log
+            3rd/effekseer 3rd/inicpp 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       - name: Download Unicode mapping tables
         # mruby-lcf/cp932_to_unicode.rb and mruby-rgss/gen_shinonome_data.rb
@@ -2908,10 +3023,22 @@ jobs:
       - run: git config --global submodule.fetchJobs 4
       - uses: actions/checkout@v7
         with:
-          submodules: recursive
+          # `nix build`'s own `?submodules=1` walk (below) reads these off the
+          # local checkout, so unlike the other jobs this one genuinely needs
+          # them on disk -- but `packages.build` compiles the same
+          # CMakeLists.txt as the `build` job, which `find_package(SDL2)`s a
+          # nixpkgs package rather than building 3rd/SDL or 3rd/SDL_mixer, and
+          # nothing here reads 3rd/optcarrot either. See the `build` job's
+          # "Init submodules" step.
+          submodules: false
           # Quiet fetch + no post-job credential unset walk; see the `build` job.
           show-progress: false
           persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer 3rd/optcarrot
+        run: ./scripts/checkout-submodules.bash
 
       # This is the one job that still fetches submodules (`?submodules=1` on
       # the `nix build` below), and the walk covers every entry of every nested
