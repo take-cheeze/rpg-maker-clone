@@ -1,0 +1,1 @@
+- Run the bc2cpp coverage report alongside the other post-build CI checks.
