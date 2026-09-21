@@ -18,18 +18,32 @@ body or argument contract cannot be proven safe.
 ## Decision
 
 Add a conservative source analyzer for native method registrations and
-implementations. It accepts only zero-argument methods whose registered
-implementations all have the same, single return expression, and whose
-expression uses only a small allowlist of pure mruby value helpers. The first
-consumer generates the `!` call-site expression from mruby's own BasicObject C
-implementation. Existing whole-program name and call-arity checks remain in
-force. Any unsupported body, frame access, or conflicting registration is
-excluded and keeps ordinary Ruby dispatch.
+implementations. It extracts zero-argument, single-return bodies made from a
+small allowlist of pure mruby value helpers. It links ROM tables to their
+runtime class fields and instance tags, then generates exact-class paths for
+Array/Hash `size` and `length`, Array/Hash/String `empty?`, and Hash
+`to_hash`, plus String `bytesize` from its public byte-length macro; it also
+generates Float `to_f` and Symbol `to_sym` from their
+shared identity body, using immediate type tags rather than object-pointer
+guards. It also generates the receiver-wide `!` expression from BasicObject's
+implementation. Range `begin` and `end` use mruby's public Range accessors
+behind exact-class guards. Float `finite?` and `nan?` use their registered C
+predicates, and Float `abs` uses the narrowly recognized conditional-return
+body, all behind immediate Float tag guards.
+Existing whole-program name, arity, override, prepend, and runtime class
+checks remain in force.
+Frame-reading methods, conflicting registrations, and unsupported bodies
+keep ordinary Ruby dispatch.
 
 ## Consequences
 
 New source-derived fast paths can be added without copying their behavior into
-bc2cpp, and the compiled output follows the mruby C implementation. The
-accepted C subset is intentionally small; methods with branches, locals,
-argument extraction, allocations, or frame-dependent helpers need an explicit
-safe adapter or broader analysis before they can be generated.
+bc2cpp. Hash#to_hash is emitted only for an exact base Hash, preserving
+subclass overrides through normal dispatch. Float#to_f and Symbol#to_sym use
+their unambiguous immediate type tags; neither path treats an immediate value
+as an object pointer. String#size and String#length remain dynamic
+because `RSTRING_CHAR_LEN` is private to string.c and calls a private UTF-8
+helper. The accepted C subset is intentionally small; methods with arbitrary
+branches, complex locals, argument extraction, allocations, or frame-dependent
+helpers need an explicit safe adapter or broader analysis before they can be
+generated.
