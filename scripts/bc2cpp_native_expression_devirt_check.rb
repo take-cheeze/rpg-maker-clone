@@ -23,6 +23,9 @@ check.call('mruby BasicObject#! is generated from its registered C body',
 check.call('Array and Hash size bodies are generated; String size is declined',
            exact_class_expressions['size']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash] &&
              exact_class_expressions['size'].none? { |entry| entry[:expression].include?('RSTRING_CHAR_LEN') })
+check.call('Array and Hash length bodies are generated while String length is declined',
+           exact_class_expressions['length']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash] &&
+             exact_class_expressions['length'].none? { |entry| entry[:owner][:class_name] == 'String' })
 check.call('Array, Hash, and String empty? bodies are generated from their C implementations',
            exact_class_expressions['empty?']&.map { |entry| entry[:owner][:class_name] } == %w[Array Hash String])
 check.call('Hash#to_hash is generated as an exact-class identity conversion',
@@ -83,6 +86,10 @@ size_code = generator.compile_native_primitive_send('size', 1, 'r3', [])
 check.call('exact-class output uses generated C expressions and falls back for other receiver classes',
            size_code.include?('M->array_class') && size_code.include?('M->hash_class') &&
              size_code.include?('mrb_funcall(M, r3, "size", 0)'))
+length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
+check.call('Array/Hash length is generated from the same C expressions as size',
+           length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
+             length_code.include?('mrb_funcall(M, r3, "length", 0)'))
 hash_to_hash_code = generator.compile_native_primitive_send('to_hash', 1, 'r3', [])
 check.call('generated Hash#to_hash is exact-class guarded and preserves dynamic fallback',
            hash_to_hash_code.include?('M->hash_class') &&

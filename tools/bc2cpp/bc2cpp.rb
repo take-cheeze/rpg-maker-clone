@@ -23563,7 +23563,8 @@ class CodeGen
     builtin_native_expression_send = n.zero? && native_expression_entries &&
                                      builtin_class_send_safe?(name, native_expression_owners)
 
-    if (expected_n = NATIVE_PRIMITIVE_SEND_ARITY[name]) && n == expected_n && native_only_mono?(name)
+    if (expected_n = NATIVE_PRIMITIVE_SEND_ARITY[name]) && n == expected_n && native_only_mono?(name) &&
+       !@native_registered_expressions.key?(name)
       return compile_native_primitive_send(name, d, recv, argv)
     end
 
