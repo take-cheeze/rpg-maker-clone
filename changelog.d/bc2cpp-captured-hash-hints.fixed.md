@@ -1,0 +1,1 @@
+- bc2cpp preserves annotated Hash value types through captures in inlined blocks.

@@ -103,6 +103,12 @@ SRC = <<~'RUBY'
       def picture_name(pictures, id, unused); pictures[id].picture_only; end
       # bc2cpp: (Hash<Game::Picture>, fixnum)
       def first_picture(pictures, id); pictures[id].picture_only; end
+      # bc2cpp: (Hash<Game::Picture>)
+      def sorted_picture_names(pictures)
+        pictures.keys.sort.each do |id|
+          pictures[id].picture_only
+        end
+      end
       # An untyped hash must retain dynamic result dispatch.
       def unknown_picture_name(pictures, id); pictures[id].picture_only; end
     end
@@ -234,6 +240,13 @@ Dir.mktmpdir do |dir|
   check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
              picture_code.include?('TYPED :picture_only -> Game::Picture') &&
                picture_code.include?('mrb_obj_class(M, r') && picture_code.include?('mrb_funcall(M,'), true)
+
+  sorted_method = registry['sorted_picture_names'].find { |md| md.owner == 'Game::HashPictureOwner' }
+  sorted_code = gen.compile_method(sorted_method.irep).fetch(:code)
+  check.call('captured Hash<Klass> values devirtualize inside an inlined each block',
+             sorted_code.include?('TYPED :picture_only -> Game::Picture') &&
+               sorted_code.include?('mrb_obj_class(M, r') && sorted_code.include?('mrb_funcall(M,'), true)
+
   picture_getidx_idx = picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
   picture_index_code = gen.compile_insn(picture_irep.instructions[picture_getidx_idx], picture_irep,
                                         picture_method, picture_getidx_idx)
