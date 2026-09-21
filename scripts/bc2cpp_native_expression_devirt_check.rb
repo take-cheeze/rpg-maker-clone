@@ -119,8 +119,10 @@ check.call('Array#first and #last derive only the zero-argument C branch and kee
              exact_class_expressions['last']&.map { |entry| [entry[:owner][:class_name], entry[:arity]] } ==
                [['Array', 0], ['Range', 0]] &&
              exact_class_expressions['first'].first[:expression] ==
-               '(ARY_LEN((mrb_ary_ptr(recv))) > 0) ? (ARY_PTR(mrb_ary_ptr(recv))[0]) : (mrb_nil_value())' &&
-             exact_class_expressions['last'].first[:expression].include?('ARY_PTR(mrb_ary_ptr(recv))[(ARY_LEN((mrb_ary_ptr(recv)))) - 1]') &&
+               '({ struct RArray *bc2cpp_ary_ptr = mrb_ary_ptr(recv); ' \
+               '(ARY_LEN((bc2cpp_ary_ptr)) > 0) ? (ARY_PTR(bc2cpp_ary_ptr)[0]) : (mrb_nil_value()); })' &&
+             exact_class_expressions['last'].first[:expression].include?('ARY_PTR(bc2cpp_ary_ptr)[(ARY_LEN((bc2cpp_ary_ptr))) - 1]') &&
+             exact_class_expressions['last'].first[:expression].scan('mrb_ary_ptr(recv)').length == 1 &&
              exact_class_expressions['first'].last[:expression] == 'mrb_range_beg(M, recv)' &&
              exact_class_expressions['last'].last[:expression] == 'mrb_range_end(M, recv)' &&
              NativeExpressionDevirt.exact_array_no_argument_element_expression(first_body, 'mrb', 'self') ==
@@ -250,7 +252,8 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
   element_count_code = element_generator.compile_native_primitive_send(name, 1, 'r3', ['r4'])
   check.call("Array##{name} emits the exact Array element path and keeps count-argument dispatch",
              element_code.include?('case MRB_TT_ARRAY:') && element_code.include?('M->array_class') &&
-               element_code.include?('ARY_PTR(mrb_ary_ptr(r3))[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
+               element_code.include?('ARY_PTR(bc2cpp_ary_ptr)[') && element_code.include?("mrb_funcall(M, r3, \"#{name}\", 0)") &&
+               element_code.scan('mrb_ary_ptr(r3)').length == 1 &&
                element_count_code.include?("mrb_funcall(M, r3, \"#{name}\", 1, r4)") &&
                !element_count_code.include?('ARY_PTR('))
 end
