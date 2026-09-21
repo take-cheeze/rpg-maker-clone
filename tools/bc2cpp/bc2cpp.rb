@@ -9504,11 +9504,13 @@ class CodeGen
   def compile_native_primitive_send(name, d, recv, argv)
     case name
     when 'size'
-      # Array and Hash use safe length APIs. String#size needs the private
-      # RSTRING_CHAR_LEN macro and stays on ordinary dispatch.
+      # Array and Hash use safe length APIs. On this project's default
+      # non-UTF-8 build, exact base String#size is its byte length. Keep
+      # UTF-8 builds on Ruby dispatch: String#size there counts characters
+      # via string.c's private RSTRING_CHAR_LEN macro.
       fallback = dynamic_dispatch_line(d, recv, name, argv)
       <<~CPP
-          // size -- exact base Array/Hash only; preserve overrides and String semantics
+          // size -- exact base Array/Hash or non-UTF8 String only; preserve overrides and UTF8 semantics
           switch (mrb_type(#{recv})) {
           case MRB_TT_ARRAY:
             if (mrb_obj_ptr(#{recv})->c == M->array_class) {
@@ -9520,6 +9522,17 @@ class CodeGen
           case MRB_TT_HASH:
             if (mrb_obj_ptr(#{recv})->c == M->hash_class) {
               r#{d} = mrb_int_value(M, mrb_hash_size(M, #{recv}));
+            } else {
+              #{fallback.chomp}
+            }
+            break;
+          case MRB_TT_STRING:
+            if (mrb_obj_ptr(#{recv})->c == M->string_class) {
+          #ifndef MRB_UTF8_STRING
+              r#{d} = mrb_int_value(M, RSTR_LEN(mrb_str_ptr(#{recv})));
+          #else
+              #{fallback.chomp}
+          #endif
             } else {
               #{fallback.chomp}
             }
@@ -23333,7 +23346,7 @@ class CodeGen
       CPP
     end
 
-    if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash])
+    if name == 'size' && n.zero? && builtin_class_send_safe?(name, %w[Array Hash String])
       return compile_native_primitive_send(name, d, recv, argv)
     end
 

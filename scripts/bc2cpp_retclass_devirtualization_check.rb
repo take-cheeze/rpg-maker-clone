@@ -74,6 +74,9 @@ SRC = <<~'RUBY'
     class NativeHashKeyCaller
       def hash_key?(hash, key); hash.key?(key); end
     end
+    class NativeStringSizeCaller
+      def string_size(string); string.size; end
+    end
     class NumericCompareCaller
       def equal?(left, right); left == right; end
       def less?(left, right); left < right; end
@@ -459,6 +462,18 @@ Dir.mktmpdir do |dir|
              key_code.include?('mrb_hash_key_p(M,') && key_code.include?('mrb_hash_p(r') &&
                key_code.include?('M->hash_class') && key_code.include?('mrb_funcall(M,'), true)
 
+  size_registry = registry.transform_values(&:dup)
+  (size_registry['size'] ||= []) << MethodDef.new(name: 'size', owner: '<native>', irep: nil,
+                                                  visibility: :public)
+  size_gen = CodeGen.new(ireps, size_registry, {}, class_layout, class_annotations, {}, {}, {}, {}, {}, {}, Set.new)
+  size_method = size_registry.fetch('string_size').find { |md| md.owner == 'Game::NativeStringSizeCaller' }
+  size_code = size_gen.compile_method(size_method.irep).fetch(:code)
+  check.call('String#size uses byte length only in non-UTF8 builds, with exact-class fallback',
+             size_code.include?('MRB_TT_STRING') && size_code.include?('M->string_class') &&
+               size_code.include?('#ifndef MRB_UTF8_STRING') &&
+               size_code.include?('RSTR_LEN(mrb_str_ptr(') &&
+               size_code.include?('#else') && size_code.include?('mrb_funcall(M,'), true)
+
   compare_methods = {
     'equal?' => '==', 'less?' => '<', 'less_equal?' => '<=', 'greater?' => '>',
     'greater_equal?' => '>='
@@ -488,6 +503,19 @@ Dir.mktmpdir do |dir|
   check.call('Hash#key? keeps dynamic lookup when Hash defines a Ruby override',
              !overridden_key_code.include?('mrb_hash_key_p(M,') && overridden_key_code.include?('mrb_funcall(M,'),
              true)
+
+  overridden_size_registry = size_registry.transform_values(&:dup)
+  overridden_size_registry['size'] << MethodDef.new(name: 'size', owner: 'String', irep: nil,
+                                                      visibility: :public)
+  overridden_size_gen = CodeGen.new(ireps, overridden_size_registry, {}, class_layout, class_annotations, {}, {},
+                                    {}, {}, {}, {}, Set.new)
+  overridden_size_method = overridden_size_registry.fetch('string_size').find do |md|
+    md.owner == 'Game::NativeStringSizeCaller'
+  end
+  overridden_size_code = overridden_size_gen.compile_method(overridden_size_method.irep).fetch(:code)
+  check.call('String#size keeps dynamic lookup when String defines a Ruby override',
+             !overridden_size_code.include?('RSTR_LEN(mrb_str_ptr(') &&
+               overridden_size_code.include?('mrb_funcall(M,'), true)
 
   hash_values = registry['sprite_names_fallback'].find { |md| md.owner == 'Game::HashValueOwner' }
   hash_values_code = gen.compile_method(hash_values.irep).fetch(:code)
