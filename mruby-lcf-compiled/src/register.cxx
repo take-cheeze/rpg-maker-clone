@@ -400,4 +400,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
 }
 
-extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {}
+extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {
+  // SYMBOL_CACHE: drop the ids interned for this VM.
+  bc2cpp_reset_symbol_cache();
+}
