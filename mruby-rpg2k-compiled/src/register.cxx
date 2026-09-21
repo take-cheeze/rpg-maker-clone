@@ -1580,18 +1580,14 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // already use, registered below in place of `attr_reader`'s own plain
   // native accessor for exactly these two names.
   RClass* transition = mrb_class_get_under(M, game, "Transition");
-  MRB_SET_INSTANCE_TT(transition, MRB_TT_DATA);
+  // Not MRB_TT_DATA any more: Game::Transition is no longer an embedded-ivar
+  // class (tools/bc2cpp/compiled_gems.rb BC2CPP_WIRED_EMBEDDINGS), so its ivars
+  // stay in the ordinary table.
   // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
   // DIRECT_CONSTRUCT_TARGETS mechanism -- see this file's own top-of-file
   // comment (right after the generated-file #include) for the accessor
   // this backs (Game__Transition_compiled_class) and the full reasoning.
   g_direct_construct_game_transition_class = transition;
-  // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
-  // #frame/#frames -- see this block's own top comment.
-  mrb_define_method(M, transition, "frame", Game__Transition_frame,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, transition, "frames", Game__Transition_frames,
-                    MRB_ARGS_NONE());
 
   // #initialize is always private (the same real interpreter special case
   // as Game::EnemyAction#initialize/Game::Screen#initialize above -- mruby's
@@ -3932,7 +3928,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // still native, still `mrb_iv_get`/`iv_set`, unaffected by this round.
   // Reuses the `game` RClass* declared at the top of this function.
   RClass* map = mrb_class_get_under(M, game, "Map");
-  MRB_SET_INSTANCE_TT(map, MRB_TT_DATA);
+  // Not MRB_TT_DATA any more, see the Game::Transition note above.
   // docs/adr/0139's own follow-up: captured for bc2cpp's own generalized
   // DIRECT_CONSTRUCT_TARGETS mechanism -- see this file's own top-of-file
   // comment (right after the generated-file #include) for the accessor
@@ -3945,9 +3941,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // here).
   mrb_define_private_method(M, map, "initialize", Game__Map_initialize,
                             MRB_ARGS_REQ(2));
-  // ATTR_STRUCT_DEVIRT: overrides `attr_reader`'s own plain, iv_tbl-based
-  // #id -- see this block's own top comment.
-  mrb_define_method(M, map, "id", Game__Map_id, MRB_ARGS_NONE());
   mrb_define_method(M, map, "sync_layers_to_unit",
                     Game__Map_sync_layers_to_unit, MRB_ARGS_NONE());
   mrb_define_method(M, map, "in_bounds?", Game__Map_in_bounds_,
@@ -5285,7 +5278,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   //     bc2cpp's own `bc2cpp_direct_alloc` allocates with
   //     `mrb_obj_alloc(M, MRB_INSTANCE_TT(c), c)`, so it picks up this very
   //     call rather than hardcoding a type.
-  MRB_SET_INSTANCE_TT(interpreter, MRB_TT_DATA);
+  // Not MRB_TT_DATA any more: Game::Interpreter has 25 compiled entry points
+  // (#update among them) this file never installs, so embedding its ivars made
+  // the interpreted ones read nil. See BC2CPP_WIRED_EMBEDDINGS.
   // Captured for bc2cpp's own generalized DIRECT_CONSTRUCT_TARGETS
   // mechanism -- see this file's own top-of-file comment (right after the
   // generated-file #include) for the accessor this backs
