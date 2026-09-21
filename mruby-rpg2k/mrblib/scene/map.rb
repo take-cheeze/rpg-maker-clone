@@ -10976,6 +10976,7 @@ class RPG2k
       # one always draws its standing pose 1, since it snaps tile to tile
       # rather than sliding (see the "Vehicle move-routes" note in
       # docs/TODO.md) and so has no in-tile progress to animate against.
+      # bc2cpp: (nil, Game::Vehicle)
       def draw_vehicle_frame(type, v, charset, index, ridden)
         pat = ridden ? player_walk_pattern : 1
         frame = [index, v.direction, charset.object_id, pat]
@@ -10998,6 +10999,7 @@ class RPG2k
       # initial placement) or the database default (System boat/ship/airship
       # name). Loaded through the shared event-charset cache; nil when it has
       # none.
+      # bc2cpp: (Game::Vehicle)
       def vehicle_charset(v)
         mirror = @vehicle_chars[v.type]
         return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
@@ -11024,6 +11026,7 @@ class RPG2k
       # whether Change Vehicle Graphic / Set Vehicle Location's own graphic
       # slot has ever been written; a mirror override (Set Move Route's own
       # "Change Graphic") already returns above and never reaches this.
+      # bc2cpp: (Game::Vehicle)
       def vehicle_charset_index(v)
         mirror = @vehicle_chars[v.type]
         return mirror.graphic_index if mirror && mirror.graphic_name
@@ -11078,6 +11081,7 @@ class RPG2k
       # shake-affected pictures hang off. Comparing arrays compares values, so
       # a picture mid-Move-Picture (interpolated per frame) reads dirty until
       # it arrives.
+      # bc2cpp: (Hash<Game::Picture>, fixnum, fixnum)
       def pictures_signature(pics, cam_x, cam_y)
         return [].freeze if pics.empty?
         sig = [cam_x, cam_y, @state.screen.shake_offset]
@@ -11103,6 +11107,7 @@ class RPG2k
       end
 
       # Whether a picture asks for any tint at all.
+      # bc2cpp: (Game::Picture)
       def toned?(pic)
         pic.red != 100 || pic.green != 100 || pic.blue != 100 ||
           pic.saturation != 100
@@ -11118,6 +11123,7 @@ class RPG2k
       # into the shared picture bitmap, which is mutated in place. It is not the
       # per-frame `Sprite#bitmap=` swap that the map-layer tint attempt found
       # does not reach the display (see the screen-effects note in docs/TODO.md).
+      # bc2cpp: (Game::Picture)
       def toned_picture_src(pic, src)
         key = [pic.name, pic.use_transparent_color,
                pic.red, pic.green, pic.blue, pic.saturation]
@@ -11147,6 +11153,7 @@ class RPG2k
       # How many toned picture variants to keep before evicting the oldest.
       PICTURE_TONE_CACHE_MAX = 16
 
+      # bc2cpp: (Game::Picture, fixnum, fixnum)
       def draw_picture(pic, cam_x, cam_y)
         src = picture_src(pic.name, pic.use_transparent_color)
         return unless src

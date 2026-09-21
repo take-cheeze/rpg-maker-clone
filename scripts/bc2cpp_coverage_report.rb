@@ -267,7 +267,7 @@ report << "\n"
 # toward "compiled clean" above, same as any other method, but are
 # deliberately ALSO broken out here because the call carrying the block
 # still dispatches dynamically (`mrb_funcall_with_block`). The standalone
-# cfunc body can now specialize calls on proven Array#each elements, so
+# cfunc body can now specialize calls on proven Array/Hash iterator elements, so
 # count those separately from the dynamic block-carrying call site.
 block_fallback_count = @stdout.scan(/^\s*\/\/ BLOCK_FALLBACK :/).size
 report << "block bodies compiled via cfunc/RProc fallback (BLOCK_FALLBACK): " \
@@ -286,7 +286,7 @@ current_fallback = nil
 end
 fallback_element_functions = fallback_element_sends.count { |_name, sends| sends.positive? }
 fallback_element_send_count = fallback_element_sends.values.sum
-report << "  fallback cfuncs with guarded Array iterator element sends: " \
+report << "  fallback cfuncs with guarded Array/Hash iterator element sends: " \
           "#{fallback_element_functions} function(s), #{fallback_element_send_count} send(s)\n"
 
 # LAMBDA_FALLBACK_SUPPORT: the LAMBDA-opcode sibling of BLOCK_CFUNC_
@@ -326,10 +326,12 @@ dispatch_counts = Hash.new(0)
 @shipped_stdout.scan(/mrb_funcall_with_block\(M,\s*[^,]+,\s*mrb_intern_cstr\(M,\s*"((?:[^"\\]|\\.)*)"\)/) { |m| dispatch_counts[m[0]] += 1 }
 total_dispatch = dispatch_counts.values.sum
 shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
+hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).size
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "total mrb_funcall/mrb_funcall_with_block call sites: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
 report << "  everything else (not yet attempted or failed MONO/TYPED): #{total_dispatch - shipped_poly}\n"
 report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
 report << "top 30 dynamically-dispatched method names:\n"

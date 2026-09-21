@@ -1312,7 +1312,7 @@ module Game
     # Self-called bare at #total_exp/#total_gold/#drops' own `live_members`
     # (all just above, mruby-rpg2k/mrblib/game/battle_support.rb) --
     # `Array#reject` always returns a fresh Array, never nil.
-    # bc2cpp: () -> Array
+    # bc2cpp: () -> Array<Game::Enemy>
     def live_members; @members.reject(&:hidden) end
 
     def member(db, m)
