@@ -146,3 +146,48 @@ clean and registers" is a prerequisite for a speed win, not proof of one on
 its own (see `tools/optcarrot_probe/README.md`'s own extensive discussion
 of registration completeness mattering independent of, and often more than,
 ivar embedding for exactly this reason).
+
+## Update: the same gap in `mruby-lcf-compiled`/`mruby-rgss-compiled`
+
+Auditing the other two compiled gems the same way found smaller gaps: 14 of
+56 `mruby-lcf-compiled` entries (`LCF::Sections`, `LCF::Array1D`,
+`LCF::Array2D`, `LCF::File` -- `method_missing`/`respond_to_missing?`/
+`initialize`/a handful of others) and 25 of 122 `mruby-rgss-compiled`
+entries (`RGSS::ErrorReport::Tee`, `RGSS::Bitmap`, `Array`'s own `sort`/
+`sort!` override, and several `.singleton` owners). None of the four LCF
+classes or `RGSS::ErrorReport::Tee`/`RGSS::Bitmap`/`Array` has any
+raw-embeddable ivar in the real diagnostic's own `== ivar embedding ==`
+section -- confirmed directly, not assumed -- so wiring all seven is
+registration-completeness only, the same `RPG2k::Window` shape.
+`LCF::Array1D`/`Array2D` are worth calling out specifically: they are the
+exact classes whose `method_missing`-based schema-field accessors motivated
+`docs/adr/0186`'s own `MONO_EMBED_GUARD` fix (a MONO call mistargeting an
+embedding class through a `method_missing`-answering receiver) -- that
+guard already protects any OTHER embedding class against being mistargeted
+via these two, and wiring `Array1D`/`Array2D` themselves adds no new risk
+in the other direction since they have nothing to embed.
+
+Two owners were tried and dropped: `RGSS::Audio.singleton` (18 of 25
+methods installed, unchanged before and after wiring) and
+`RGSS::Graphics.singleton` (7/10 before, 9/10 after). Both plateau below
+100% for a structural reason `emit_owner_registrations` already documents:
+a `.singleton` owner's *private* methods have no safe registration call at
+all (`fn = nil` when `singleton && visibility == :private`, since mruby has
+no `mrb_define_private_class_method` API) -- every one of the remaining
+gaps on both owners (`find_encrypted_loose`, `try_encrypted_ext`,
+`decrypt_mv_asset`, `find_packed`, `resolve`, `search_for`,
+`exist_with_ext`, `brightness_sprite`) is exactly this shape. Wiring
+`RGSS::Graphics.singleton` was a real, partial win (`wait`/
+`_transition_map` newly installed), but `scripts/bc2cpp_wired_embedding_
+check.rb` fails any owner short of 100%, and there is no way to close the
+remaining gap without a real mruby API this project does not have --
+dropped both rather than leave a permanently-red check.
+
+`scripts/bc2cpp_wired_embedding_check.rb`: PASS, all newly-wired owners at
+100% (`RGSS.singleton` 12/12, `RGSS::ErrorReport.singleton` 9/9,
+`RGSS::Input.singleton` 12/12, `RGSS::Bitmap` 4/4, `RGSS::ErrorReport::Tee`
+7/7, `Array` 3/3, plus the four LCF classes). Coverage report unchanged at
+100.0%/0 `#error`; compiled entry point count unchanged (2343 -- no new
+`ATTR_STRUCT_DEVIRT` accessors or `MRB_SET_INSTANCE_TT` classes, matching
+the "nothing here embeds" finding). All 22 `scripts/bc2cpp_*_check.rb`
+checks pass.
