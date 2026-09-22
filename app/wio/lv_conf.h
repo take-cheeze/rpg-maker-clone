@@ -65,6 +65,21 @@
 #define LV_DRAW_SW_SUPPORT_RGB565_SWAPPED 0
 #define LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED 0
 
+/* LV_DRAW_SW_COMPLEX gates the software renderer's rounded corners,
+ * gradients, box shadows, arcs, lines, triangles and the lv_draw_sw_mask
+ * machinery behind them -- all reached only through style properties
+ * (radius, bg_grad, shadow_*, border/outline with radius, clip_corner) or
+ * lv_draw_arc/line/triangle calls, none of which anything on this board sets
+ * or makes: mruby-rgss's objects are lv_obj_remove_style_all()'d canvases and
+ * containers with no theme (see THEMES below), and Sprite/Viewport rendering
+ * only uses canvas buffers, lv_image scale/rotation, opa and blend mode --
+ * none of it gated by this. Checked by rendering the same scene (canvases
+ * with rotation+scale, opa+additive, subtractive, a clipping container, a
+ * label, a filled box) with this lv_conf.h on the host both ways and
+ * comparing snapshots: byte-identical, while adding a radius to one box
+ * makes them differ. See docs/adr/0201. */
+#define LV_DRAW_SW_COMPLEX 0
+
 /*====================
    LOGGING / ASSERTS
  *====================*/
