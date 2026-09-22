@@ -36,7 +36,12 @@ foreign = foreign_mrblib_srcs(root)
 # The identifier a `mrb_define_(private_|class_)?method(M, scope, "name", FN,
 # aspec)` call actually installs -- the same shape a hand call in register.cxx
 # and a generated call in bc2cpp_register_owner_methods both use.
-REGISTRATION_CALL = /mrb_define_(?:private_|class_)?method\(\s*M\s*,\s*[^,]+,\s*(?:"[^"]*"|\S+)\s*,\s*(\w+)\s*,/m
+# `bc2cpp_define_private_class_method` (emit_owner_registrations' own
+# public-API stand-in for the mrb_define_private_class_method mruby doesn't
+# ship) has the identical (M, scope, "name", FN, aspec) shape and needs to be
+# recognized the same way, or a real private singleton registration would be
+# reported as missing.
+REGISTRATION_CALL = /(?:mrb_define_(?:private_|class_)?method|bc2cpp_define_private_class_method)\(\s*M\s*,\s*[^,]+,\s*(?:"[^"]*"|\S+)\s*,\s*(\w+)\s*,/m
 
 failures = []
 BC2CPP_COMPILED_GEMS.each do |name, gem|

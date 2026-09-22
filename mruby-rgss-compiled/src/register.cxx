@@ -465,9 +465,6 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
   mrb_define_class_method(M, audio, "se_play", RGSS__Audio_singleton_se_play,
                           MRB_ARGS_REQ(1) | MRB_ARGS_OPT(3));
-  mrb_define_class_method(M, audio, "play_packed",
-                          RGSS__Audio_singleton_play_packed,
-                          MRB_ARGS_REQ(4) | MRB_ARGS_OPT(3));
 
   // RGSS::Input.singleton -- 11 real class methods. `key_index` and
   // `dir4`/`dir8` each carry a real, live GETCONST reference (SYMBOL_KEYS,
