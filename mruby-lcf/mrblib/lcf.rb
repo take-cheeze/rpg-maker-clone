@@ -8,40 +8,49 @@ end
 module LCF
   # INT32_MASK / INT32_SIGN_BIT / INT32_WRAP: the same three constants
   # (0xffff_ffff, 0x8000_0000, 0x1_0000_0000) the codecs below need for
-  # 32-bit two's-complement masking/sign-extension, computed here via small
-  # literal shifts instead of written as bare hex literals.
+  # 32-bit two's-complement masking/sign-extension, hoisted into module
+  # constants computed once, at load time, instead of written as bare hex
+  # literals inline in every codec below.
   #
-  # Why: mruby 4.0's own compiler bakes ANY integer literal wider than 32
-  # bits into an IREP bignum-pool entry regardless of the eventual runtime's
-  # own mrb_int width (see build_config.rb's own comment on why this project
-  # carries mruby-bigint as a core gem at all), and OP_LOADL re-parses that
-  # pool entry's own decimal/hex string into a fresh bignum via
-  # mrb_bint_new_str on EVERY execution of the instruction -- even though the
-  # value is a compile-time constant that never changes. #read_ber alone
-  # (called from Array1D#[] for every :int-typed chunk -- LCF::EventCommand's
-  # own #indent/#parameters among them) showed up costing measurable frame
-  # time on this project's own native (64-bit mrb_int) desktop build, where
-  # the bignum was always going to be immediately re-normalized back down to
-  # a plain mrb_int (bint_norm, 3rd/mruby/mrbgems/mruby-bigint/core/
-  # bigint.c) -- pure waste there, since 64 bits is more than enough for any
-  # of these three constants.
-  #
-  # `1 << 32`/`1 << 31` compute the identical values through Integer#<<,
-  # whose own operand literals (1, 31, 32) all trivially fit any mrb_int
-  # width, so THEY need no bignum pool entry either -- only the shift's own
-  # RESULT might, and only on the 32-bit-mrb_int cross targets (Emscripten/
-  # Wio/PSP, AGENTS.md's own "mrb_int is 32-bit on the cross targets"
-  # section), where it genuinely doesn't fit and a real bigint promotion is
-  # unavoidable regardless of how the value is spelled. The difference is
-  # WHEN that cost is paid: once, here, at LCF's own module-body execution
-  # (this file's own load time), computed once and stored as an ordinary
-  # constant -- never per #read_ber/#unpack_int32/#pack_int32 call the way
-  # a bare literal was. Every reference below is a plain GETCONST fetching
-  # that already-materialized Integer object, not another OP_LOADL/
+  # Why hoist at all: mruby 4.0's own compiler bakes ANY integer literal
+  # wider than 32 bits into an IREP bignum-pool entry regardless of the
+  # eventual runtime's own mrb_int width (see build_config.rb's own comment
+  # on why this project carries mruby-bigint as a core gem at all), and
+  # OP_LOADL re-parses that pool entry's own decimal/hex string into a fresh
+  # bignum via mrb_bint_new_str on EVERY execution of the instruction -- even
+  # though the value is a compile-time constant that never changes.
+  # #read_ber alone (called from Array1D#[] for every :int-typed chunk --
+  # LCF::EventCommand's own #indent/#parameters among them) showed up
+  # costing measurable frame time on this project's own native (64-bit
+  # mrb_int) desktop build, where the bignum was always going to be
+  # immediately re-normalized back down to a plain mrb_int (bint_norm,
+  # 3rd/mruby/mrbgems/mruby-bigint/core/bigint.c) -- pure waste there, since
+  # 64 bits is more than enough for any of these three constants. Loading
+  # this module's own compiled constant once, here, at LCF's own module-body
+  # execution (this file's own load time) pays that cost once instead of
+  # per #read_ber/#unpack_int32/#pack_int32 call the way a bare inline
+  # literal did -- every reference below is a plain GETCONST fetching that
+  # already-materialized Integer object, not another OP_LOADL/
   # mrb_bint_new_str round trip.
-  INT32_MASK = (1 << 32) - 1
-  INT32_SIGN_BIT = 1 << 31
-  INT32_WRAP = 1 << 32
+  #
+  # Bare literals, not `1 << 32`/`1 << 31` shift expressions: mrbc constant-
+  # folds a shift whose operands are both literals at COMPILE time, and the
+  # IREP bignum-pool entry that folding produces does not survive being
+  # cross-compiled by a 64-bit-mrb_int host `mrbc` (this project's own
+  # desktop build, AGENTS.md's "mrb_int is 32-bit on the cross targets") and
+  # then loaded by a 32-bit-mrb_int target VM (Emscripten/Wio/PSP) --
+  # `mrb_load_irep_file` on the 32-bit side fails the whole compiled unit
+  # with "irep load error", before any of this module's own code ever runs.
+  # A bare bignum literal's own pool entry does not have this problem
+  # (confirmed directly: cross-compiling `0x1_0000_0000`-as-a-literal with a
+  # 64-bit `mrbc` and loading it with a 32-bit runtime works; cross-
+  # compiling `1 << 32` the same way does not) -- only the *computed-at-
+  # compile-time* form is broken, so spelling these three constants as plain
+  # hex literals keeps the exact same "computed once, at load time" win
+  # while staying loadable on every target.
+  INT32_MASK = 0xffff_ffff
+  INT32_SIGN_BIT = 0x8000_0000
+  INT32_WRAP = 0x1_0000_0000
 
   def read_ber(s)
     ret = 0
@@ -423,7 +432,15 @@ module LCF
     sign = 0
     if v != v                       # NaN
       exp = 0x7ff
-      frac = 1 << 51
+      # A bare literal, not `1 << 51`: mrbc constant-folds a shift whose
+      # operands are both literals at compile time, and the resulting IREP
+      # bignum-pool entry does not survive being cross-compiled by this
+      # project's own 64-bit-mrb_int host `mrbc` and loaded by a
+      # 32-bit-mrb_int target VM (see INT32_MASK's own comment near the top
+      # of this file for the full mechanism) -- `mrb_load_irep_file` on the
+      # 32-bit side fails to load this whole gem with "irep load error"
+      # before any of its code, called or not, ever runs.
+      frac = 0x0008_0000_0000_0000 # 2**51
     elsif v == 0.0
       exp = 0
       frac = 0

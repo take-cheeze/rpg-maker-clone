@@ -116,6 +116,26 @@ Nothing in CI runs a 32-bit-`mrb_int` build, so these bugs pass every check and
 only show up in the deployed page. When you touch a codec, reason about the
 32-bit case by hand.
 
+A second, easier-to-miss trap in the same area: **spell a >32-bit constant as
+a literal, not a computed shift/OR expression**, even when every operand of
+that expression individually fits in 32 bits (`1 << 32`, `1 << 31`,
+`(0xDEAD << 16) | 0xCAFE`). mrbc constant-folds a shift or OR whose operands
+are both compile-time literals, and the bignum-pool entry that folding
+produces does not survive being cross-compiled by this project's own
+64-bit-`mrb_int` host `mrbc` and then loaded by a 32-bit-`mrb_int` target VM:
+`mrb_load_irep_file` on the 32-bit side fails to load the *whole compiled
+gem* with `ScriptError: irep load error`, before any of that gem's code —
+called or not — ever runs. This silently broke `psp-smoke` in production:
+`mruby-lcf` (loaded right before `mruby-rgss` in every build's gem-init
+order) failed to load, so `mruby-rgss`'s own init never ran, and the actual
+symptom several frames later was an unrelated-looking `NameError:
+uninitialized constant RGSS`. A bare literal (`0x1_0000_0000` instead of
+`1 << 32`) does not have this problem and is just as loadable on every
+target — use that, even for a module/class constant meant to replace a
+per-call literal (the "computed once, at load time" win only needs the
+constant hoisted out of the hot method, not the value itself computed via
+an expression).
+
 ## Error Handling
 
 - Do not silence errors. Never swallow an exception (or ignore a failing
