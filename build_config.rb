@@ -83,31 +83,47 @@ def wio_strip_inline_helpers(spec)
   end
 end
 
-# docs/adr/0144: the generalized version of wio_strip_debug_rbfiles/
-# wio_strip_inline_helpers above, this time for RPGMAKER_BC2CPP=1's own
-# real coverage -- deletes the whole `def ... end` (see
-# strip_wio_bc2cpp_stubs.rb's own file comment for why a stub body isn't
+# docs/adr/0144 (and its own host/wasm follow-up): the generalized version of
+# wio_strip_debug_rbfiles/wio_strip_inline_helpers above, this time for
+# RPGMAKER_BC2CPP=1's own real coverage -- deletes the whole `def ... end`
+# (see strip_wio_bc2cpp_stubs.rb's own file comment for why a stub body isn't
 # needed -- Ruby's own default `method_missing` covers the narrow
 # pre-override window this mechanism already has to verify is unreachable
 # per owner) of every method `compiled_gem`'s own real bc2cpp.rb run
 # registers a C++ override for, restricted to `owners` (a deliberately
-# bounded subset -- see docs/adr/0144 for why this round only ever passes
-# `RGSS::Sprite`, not compiled_gems.rb's own full owners list for
-# `compiled_gem`, as a correctness-bounded proof of the mechanism rather
-# than a full sweep).
+# bounded, per-gem-vetted subset -- see docs/adr/0144 and each gem's own
+# `wio_strip_bc2cpp_stubs` call site for how that list grew from an initial
+# `RGSS::Sprite`-only proof to its own current, per-gem-vetted scope).
 #
-# A no-op unless BOTH `spec.build.name == 'wio'` AND `ENV['RPGMAKER_BC2CPP']`
-# are set: deleting a real method with no RPGMAKER_BC2CPP-installed C++
-# override in place to replace it would be a live correctness regression
-# (every real call would raise NoMethodError), not just a missed flash
-# saving -- this must never fire for a build that does not also carry the
-# `compiled_gem` that makes the deleted method's call sites unreachable
-# in practice.
+# BUILD_NAME_SHARED_STRIP: originally wio-only (`spec.build.name == 'wio'`);
+# now also runs for `'host'` -- the *same*, unnamed `MRuby::Build.new` this
+# file's own top-level block defines, which is not desktop-exclusive: its own
+# `cross` branch (see that block's own `if cross ... emscripten ...` comment)
+# is what actually produces the wasm build too, so `'host'` covers desktop
+# AND wasm identically, both real, size-sensitive final binaries (wasm's own
+# load-time cost from every extra byte a browser has to fetch, if anything,
+# more directly than desktop's). Deliberately NOT extended to `'psp'`/
+# `'maix'`/`'android'` here -- those cross targets never called this function
+# at all before this change, and adding them needs the same kind of
+# real-measurement verification this file's own history already required for
+# wio and for widening `owners:`, not a bare guard-list addition.
+#
+# A no-op unless BOTH `spec.build.name` is one of the above AND
+# `ENV['RPGMAKER_BC2CPP']` is set: deleting a real method with no
+# RPGMAKER_BC2CPP-installed C++ override in place to replace it would be a
+# live correctness regression (every real call would raise NoMethodError),
+# not just a missed size saving -- this must never fire for a build that does
+# not also carry the `compiled_gem` that makes the deleted method's call
+# sites unreachable in practice. Nothing about that guarantee is build-name-
+# specific: `wio_registered_methods.rb`'s own probe (below) re-derives the
+# registered set from a real bc2cpp.rb run every time this function runs, for
+# whichever build called it, so a `'host'` call is exactly as safe as a
+# `'wio'` one and shares the identical soundness argument.
 #
 # Ordering (the property this whole mechanism depends on for soundness):
-# this only ever rewrites `spec.rbfiles` for the *base* gem's own wio
-# build (mruby-rgss/mruby-lcf/mruby-rpg2k -- never a `*-compiled` gem,
-# which has no mrblib of its own to strip in the first place).
+# this only ever rewrites `spec.rbfiles` for the *base* gem's own build
+# (mruby-rgss/mruby-lcf/mruby-rpg2k -- never a `*-compiled` gem, which has no
+# mrblib of its own to strip in the first place).
 # `compiled_gem`'s own bc2cpp.rb registry-building pass -- both its real
 # generation step (that gem's own mrbgem.rake) AND the probe this
 # function runs below (wio_registered_methods.rb) -- reads the
@@ -122,14 +138,15 @@ end
 #
 # Call this *before* wio_strip_debug_rbfiles/wio_strip_inline_helpers in a
 # gem's own spec block: all three share the same "last one wins on
-# `spec.rbfiles`'s surviving path for a given entry" convention, and
-# strip_wio_bc2cpp_stubs.rb's own registered.tsv lookups key on method
-# names exactly as bc2cpp.rb's own diagnostic named them -- running this
-# one first, against the real checked-in source, keeps that lookup
-# trivially correct regardless of what either sibling step goes on to do
-# to the same file afterward.
+# `spec.rbfiles`'s surviving path for a given entry" convention (the other
+# two stay wio-only, so for a `'host'` call they are simply never reached at
+# all -- no interaction to reason about), and strip_wio_bc2cpp_stubs.rb's own
+# registered.tsv lookups key on method names exactly as bc2cpp.rb's own
+# diagnostic named them -- running this one first, against the real checked-in
+# source, keeps that lookup trivially correct regardless of what either
+# sibling step goes on to do to the same file afterward.
 def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
-  return unless spec.build.name == 'wio' && ENV['RPGMAKER_BC2CPP']
+  return unless %w[wio host].include?(spec.build.name) && ENV['RPGMAKER_BC2CPP']
 
   repo_root = __dir__
   probe_script = File.expand_path('tools/bc2cpp/wio_registered_methods.rb', __dir__)
