@@ -22,6 +22,27 @@ assert "Wolf::Reader#uint keeps the top bit as data" do
   assert_equal 0x8000_0000, r.uint
 end
 
+assert "Wolf::INT32_MASK/INT32_SIGN_BIT/INT32_WRAP hold the exact 32bit constants" do
+  # These replaced bare 0xffff_ffff/0x8000_0000/0x1_0000_0000 hex literals
+  # (see the module's own comment) used by Wolf.s32_at, Reader#int/#uint,
+  # Crypt.v2 and Interpreter#fold32 -- prove the computed values are still
+  # bit-for-bit identical, not merely "close enough". Same reasoning and
+  # style as mruby-lcf/test/lcf_test.rb's own equivalent assertion.
+  assert_equal 0xffff_ffff, Wolf::INT32_MASK
+  assert_equal 0x8000_0000, Wolf::INT32_SIGN_BIT
+  assert_equal 0x1_0000_0000, Wolf::INT32_WRAP
+end
+
+assert "Wolf.s32_at folds the same way Reader#int does" do
+  # Wolf.s32_at shares Reader#int's own INT32_SIGN_BIT/INT32_WRAP fold but
+  # reads straight from an Array of Integers rather than a Reader's own
+  # byte string -- exercise it directly at the same sign-bit boundary
+  # Reader#int/#uint are already covered at above.
+  assert_equal(-1, Wolf.s32_at([0xff, 0xff, 0xff, 0xff], 0))
+  assert_equal 0x7fff_ffff, Wolf.s32_at([0xff, 0xff, 0xff, 0x7f], 0)
+  assert_equal(-2147483648, Wolf.s32_at([0x00, 0x00, 0x00, 0x80], 0))
+end
+
 assert "Wolf::Reader#str reads a length-prefixed NUL-terminated string" do
   data = "\x04\x00\x00\x00abc\x00"
   r = Wolf::Reader.new(data, true)

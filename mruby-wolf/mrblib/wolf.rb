@@ -51,6 +51,20 @@ module Wolf
   # removed once this term was found).
   UTF8_MARK = 0x55
 
+  # INT32_MASK / INT32_SIGN_BIT / INT32_WRAP: the same three 32-bit
+  # two's-complement fold constants (0xffff_ffff / 0x8000_0000 /
+  # 0x1_0000_0000) mruby-lcf's own LCF module defines for the identical
+  # reason -- see that module's own comment (mruby-lcf/mrblib/lcf.rb) for the
+  # full explanation. Used by Wolf.s32_at, Reader#int/#uint (every signed/
+  # unsigned 32-bit field WOLF's own binary formats are built from -- counts,
+  # ids, command parameters), Crypt.v2 (the 2.x Game.dat/Database.dat XOR
+  # scrambler, one mask per byte of the whole file) and Interpreter#fold32
+  # (every Variable Operation's own 32-bit wraparound), all real per-call/
+  # per-byte hot paths reading or decrypting a WOLF project.
+  INT32_MASK = (1 << 32) - 1
+  INT32_SIGN_BIT = 1 << 31
+  INT32_WRAP = 1 << 32
+
   class Error < StandardError; end
 
   # Transcode a Shift_JIS (Windows-31J) byte string to UTF-8. mruby-lcf's native
@@ -79,7 +93,7 @@ module Wolf
   # header for why.
   def self.s32_at(bytes, i)
     v = bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24)
-    v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
+    v >= INT32_SIGN_BIT ? v - INT32_WRAP : v
   end
 
   # Sequential reader over one file's bytes. Strings are decoded according to
@@ -133,7 +147,7 @@ module Wolf
       v = d.getbyte(p) | (d.getbyte(p + 1) << 8) | (d.getbyte(p + 2) << 16) |
           (d.getbyte(p + 3) << 24)
       @pos = p + 4
-      v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
+      v >= INT32_SIGN_BIT ? v - INT32_WRAP : v
     end
 
     # The same word read as an unsigned quantity, for the bit-field fields
@@ -242,7 +256,7 @@ module Wolf
         step = INTERVALS[s]
         i = 0
         while i < size
-          seed = (seed * 0x343FD + 0x269EC3) & 0xFFFF_FFFF
+          seed = (seed * 0x343FD + 0x269EC3) & INT32_MASK
           bytes[i] ^= (seed >> 28) & 7
           i += step
         end

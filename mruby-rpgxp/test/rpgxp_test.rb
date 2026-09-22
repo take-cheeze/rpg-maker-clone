@@ -103,6 +103,17 @@ assert "RGSSAD carries real Marshal data through the archive" do
   assert_equal 7, loaded.start_map_id
 end
 
+assert "RGSSAD::START_KEY/MASK/DEFAULT_V3_SEED hold the exact 32bit constants" do
+  # These replaced bare 0xDEADCAFE/0x100000000/0xCAFECAFE hex literals (see
+  # this class's own comment) -- prove the computed values are still
+  # bit-for-bit identical, not merely "close enough". Same reasoning and
+  # style as mruby-lcf/test/lcf_test.rb's own INT32_MASK/INT32_SIGN_BIT/
+  # INT32_WRAP assertion.
+  assert_equal 0xDEADCAFE, RPGXP::RGSSAD::START_KEY
+  assert_equal 0x100000000, RPGXP::RGSSAD::MASK
+  assert_equal 0xCAFECAFE, RPGXP::RGSSAD::DEFAULT_V3_SEED
+end
+
 assert "RGSSAD rejects a bad header and an unsupported version" do
   assert_raise(RuntimeError) { RPGXP::RGSSAD.new("NOTRGSS\x01") }
   # An unknown version (only 1 and 3 are supported) is rejected.
