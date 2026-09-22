@@ -184,6 +184,23 @@ else()
     pkg_check_modules(SDL2_MIXER REQUIRED IMPORTED_TARGET SDL2_mixer)
     set(SDL2_MIXER_LIB PkgConfig::SDL2_MIXER)
   endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # STATIC_LINK_DESKTOP (docs/adr/0186): fold the C++ runtime (libstdc++.so.6,
+    # ~2.5 MiB) and the compiler support library (libgcc_s.so.1) into the binary
+    # itself instead of resolving them against whatever GCC happens to be
+    # installed at run time. This is the always-safe half of "link statically"
+    # -- a plain ABI-compatibility improvement with no behavioral or licensing
+    # downside (both are runtime-support libraries with the GCC Runtime Library
+    # Exception, exactly the case this flag pair exists for) -- unlike SDL2/
+    # SDL2_mixer and their many codec libraries below, which stay dynamic; see
+    # the ADR for why those are a real, unresolved product/engineering tradeoff
+    # rather than a free win. Linux only: this is a GCC/binutils flag pair with
+    # no darwin/clang equivalent (macOS has no libstdc++.so/libgcc_s.so.1 in the
+    # same sense -- Xcode clang links libc++ from the system, which is already
+    # present on every Mac by definition), and EMSCRIPTEN/ANDROID have their own
+    # branches above with their own linking model.
+    add_link_options("-static-libgcc" "-static-libstdc++")
+  endif()
 endif()
 
 # Seed the toolchain probe results before any subproject can probe for them. The
