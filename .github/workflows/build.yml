@@ -934,6 +934,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_owner_registration_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_mono_embed_guard_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_const_site_cache_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
