@@ -1129,6 +1129,10 @@ RClass* Game__Battle_compiled_class(void) {
 extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // INSTANCE_TT_SETUP: every embedding class this build's ivar analysis lists.
   bc2cpp_set_instance_tts(M);
+  // OWNER_METHOD_REGISTRATION: install every compiled entry point of a wired
+  // embedding class, so an unregistered one never falls back to an interpreted
+  // method reading its ivars from the embedded struct's own iv_tbl-shaped nil.
+  bc2cpp_register_owner_methods(M);
   RClass* game = mrb_module_get(M, "Game");
   RClass* picture = mrb_class_get_under(M, game, "Picture");
 
