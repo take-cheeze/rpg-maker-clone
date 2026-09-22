@@ -241,10 +241,23 @@ check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol eq
 plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp('EQ', 'R3 (R4)')
 check.call('OP_EQ without a generated == registration is unchanged',
            !plain_eq_code.include?('mrb_str_equal') && plain_eq_code.include?('mrb_funcall(M, r3, "==", 1, r4)'))
-eq_override_registry = eq_registry.merge(
-  '==' => eq_registry['=='] + [MethodDef.new(name: '==', owner: 'String', irep: 'irep0', visibility: :public)]
-)
-eq_override_code = CodeGen.new({}, eq_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+# A real compiled Ruby String#== (the resolver now compiles candidate targets, so
+# a made-up irep name is not enough here).
+eq_override_ireps = nil
+eq_override_method = nil
+Dir.mktmpdir do |eq_dir|
+  eq_source = File.join(eq_dir, 'string_eq_override.rb')
+  File.write(eq_source, "class String\n  def ==(other)\n    true\n  end\nend\n")
+  eq_dump, eq_disasm = run_mrbc(eq_source, 'bc2cpp_string_eq_override', eq_dir)
+  eq_ireps, eq_root = parse_c_dump(eq_dump, 'bc2cpp_string_eq_override')
+  eq_order = dfs_order(eq_ireps, eq_root)
+  eq_blocks, eq_block_files, eq_block_catches = parse_disasm_blocks(eq_disasm)
+  merge!(eq_ireps, eq_order, eq_blocks, eq_block_files, eq_block_catches)
+  eq_override_ireps = eq_ireps
+  eq_override_method = build_registry(eq_ireps, eq_root)[0].fetch('==').find { |md| md.owner == 'String' }
+end
+eq_override_registry = eq_registry.merge('==' => eq_registry['=='] + [eq_override_method])
+eq_override_code = CodeGen.new(eq_override_ireps, eq_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                                native_registered_expressions: exact_class_expressions).compile_cmp('EQ', 'R3 (R4)')
 check.call('a Ruby String#== override rejects the generated OP_EQ paths',
            !eq_override_code.include?('mrb_str_equal') && !eq_override_code.include?('mrb_obj_equal('))
