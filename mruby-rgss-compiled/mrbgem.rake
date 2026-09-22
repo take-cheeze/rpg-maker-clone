@@ -20,6 +20,19 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   add_dependency 'mruby-rgss'
 
   bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
+  # STALE_REQUIRE_RELATIVE_DEPS: bc2cpp.rb require_relative's several sibling
+  # files (native_expression_devirt.rb, symbol_cache.rb, const_site_cache.rb,
+  # ...) that change its own generated output just as much as bc2cpp.rb itself
+  # editing only one of THOSE never touched bc2cpp.rb's own mtime, so an
+  # incremental build's `file generated => [bc2cpp, ...]` rule considered
+  # `generated` already up to date and silently kept stale C++ -- the exact
+  # same failure mode `compiled_gems_rb`'s own comment just below documents
+  # for a changed owners list, one file over. Globbed, not hand-listed, for
+  # the same "a future new file here is a prerequisite by construction, not
+  # by someone remembering to add it" reason cmake/build-mruby.cmake's own
+  # `file(GLOB bc2cpp_files CONFIGURE_DEPENDS ...)` already globs this exact
+  # directory for the outer CMake-level rebuild trigger.
+  bc2cpp_tool_srcs = Dir["#{dir}/../tools/bc2cpp/*.rb"]
   # BC2CPP_COMPILED_GEMS' own owners list (target_owners below) comes from
   # this file, required above -- it has to be a real prerequisite of the
   # `generated` rule too, or Rake has no way to know a changed owners list
@@ -74,7 +87,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
 
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
 
-  file generated => [bc2cpp, compiled_gems_rb, *closed_world_srcs, *native_srcs,
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, *closed_world_srcs, *native_srcs,
                      *foreign_ruby_srcs] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
