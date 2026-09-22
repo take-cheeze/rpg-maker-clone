@@ -3777,8 +3777,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Character_direction_away, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, character, "initialize",
                             Game__Character_initialize, MRB_ARGS_OPT(3));
-  mrb_define_method(M, character, "front_tile", Game__Character_front_tile,
-                    MRB_ARGS_OPT(1));
 
   // RPG2k::Scene::SaveLoad (mruby-rpg2k/mrblib/scene/save_load.rb) -- see
   // this file's own top comment for the real gap breakdown (#initialize's

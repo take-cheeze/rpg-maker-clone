@@ -6515,12 +6515,6 @@ module Game
       [px + dx, py + dy]
     end
 
-    # The tile immediately ahead of the character in the given direction
-    # (its current facing by default).
-    def front_tile(dir = @direction)
-      Character.step_tile(@x, @y, dir)
-    end
-
     # Turn to face `dir` without moving (a no-op while facing is locked, by
     # either #facing_locked or #fixed_facing) -- movement-driven facing only
     # (#move, #jump, #move_diagonal). An explicit Face Direction / Turn
