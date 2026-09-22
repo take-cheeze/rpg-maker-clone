@@ -956,10 +956,14 @@ module Wolf
     # implicit-spec #3 documents non-optimised Variable Operation clamping at
     # roughly +-2 billion by wraparound) using the same fold-without-pack
     # trick mruby-lcf's LCF.read_ber uses, for the same 32-bit-mrb_int
-    # portability reason (AGENTS.md).
+    # portability reason (AGENTS.md). Wolf::INT32_MASK/INT32_SIGN_BIT/
+    # INT32_WRAP (mruby-wolf/mrblib/wolf.rb) exist for exactly this call --
+    # every Variable Operation this interpreter runs reached a bare
+    # 0xffff_ffff/0x8000_0000/0x1_0000_0000 literal here before, each one
+    # rebuilt from its own mruby bignum-pool string on every call.
     def fold32(v)
-      v &= 0xffff_ffff
-      v >= 0x8000_0000 ? v - 0x1_0000_0000 : v
+      v &= INT32_MASK
+      v >= INT32_SIGN_BIT ? v - INT32_WRAP : v
     end
 
     # SetString(122): args[0] = target (a :string / self-var / system-string

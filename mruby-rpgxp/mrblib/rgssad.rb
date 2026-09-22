@@ -45,8 +45,32 @@
 class RPGXP
   class RGSSAD
     HEADER = "RGSSAD\0".freeze
-    START_KEY = 0xDEADCAFE
-    MASK = 0x100000000 # 2**32
+    # START_KEY/MASK/DEFAULT_V3_SEED used to be bare 0xDEADCAFE/0x100000000/
+    # 0xCAFECAFE literals. mruby's own compiler bakes any literal wider than
+    # 32 bits into an IREP bignum-pool entry regardless of the eventual
+    # runtime's own mrb_int width, and OP_LOADL re-parses that pool entry's
+    # own string form into a fresh bignum (mrb_bint_new_str) on every
+    # execution of the instruction -- see mruby-lcf/mrblib/lcf.rb's own
+    # INT32_MASK/INT32_SIGN_BIT/INT32_WRAP comment for the full mechanism,
+    # fixed there first. `advance` below (`(key * 7 + 3) % MASK`) runs once
+    # per byte of every filename plus once per length/size field while
+    # parsing an archive's entry table (#parse_v1/#parse_v3), and
+    # #decrypt_data calls it once per 4 bytes of every file's own data --
+    # real per-byte cost for a released game's whole packed Data/Graphics/
+    # Audio tree, not a cold path. START_KEY/MASK are now computed once, at
+    # this class body's own execution, via small-literal shifts/ORs whose
+    # own operands (0xDEAD, 0xCAFE, 1, 32) each individually fit any mrb_int
+    # width; only the shift/OR RESULT itself is a real 32-bit value, exactly
+    # as the bare literal was, but constructed once instead of on every
+    # #advance/#decrypt_int/#decrypt_data call.
+    START_KEY = (0xDEAD << 16) | 0xCAFE
+    MASK = 1 << 32 # 2**32
+    # .pack_v3's own default seed, same reasoning as START_KEY/MASK above --
+    # this one is cold (only #pack_v3, the archive-builder/test-fixture
+    # path, ever reads it, never the real archive-reading path), fixed here
+    # anyway for the same reason a per-call default-argument literal is
+    # still one bignum-pool re-parse per call rather than zero.
+    DEFAULT_V3_SEED = (0xCAFE << 16) | 0xCAFE
     # Little-endian byte multipliers, so an int is rebuilt without bit-shifting.
     POW = [1, 256, 65536, 16777216].freeze
     # Max per-byte integers held in one Array while decrypting, kept under mruby's
@@ -128,7 +152,7 @@ class RPGXP
     # Build a version-3 (`.rgss3a`) archive from `files` ([name, bytes] pairs).
     # The inverse of parse_v3 — used to repack a project and as the v3 test
     # fixture builder. `seed` is the plaintext base seed stored in the header.
-    def self.pack_v3(files, seed = 0xCAFECAFE)
+    def self.pack_v3(files, seed = DEFAULT_V3_SEED)
       key = (seed * 9 + 3) % MASK
       # Precompute name bytes and give each file a distinct per-file data key.
       entries = []
