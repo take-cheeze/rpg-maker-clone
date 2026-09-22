@@ -205,6 +205,76 @@ is silence. Too eager and it only costs speed, but too lazy and the picture is
 simply wrong, with nothing raising. The invalidation checks are the part of
 this work most worth keeping honest.
 
+## bc2cpp: compiled vs. interpreted, real measured effect
+
+Every `docs/adr/018*`/`019*` entry on the bc2cpp AOT compiler (registration
+completeness, ivar embedding, devirtualization) repeated the same caveat:
+"compiles clean and registers" is a prerequisite for a speed win, not proof of
+one, and none of them had a real linked build to measure against. This section
+closes that gap with the same repro this page already uses, built twice --
+once as an ordinary interpreted build, once with `RPGMAKER_BC2CPP=1` (which
+swaps in `mruby-rpg2k-compiled`/`mruby-lcf-compiled`/`mruby-rgss-compiled`,
+see `docs/adr/0139`) -- against the identical Nepheshel New Game repro:
+
+```sh
+scripts/native-build-without-nix.bash build            # interpreted
+RPGMAKER_BC2CPP=1 cp932_table=... jis0208_table=... \
+  cmake -S . -B build-bc2cpp -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+  cmake --build build-bc2cpp -j"$(nproc)"               # compiled
+
+SDL_AUDIODRIVER=dummy xvfb-run -a ./build/rpg_maker_clone \
+  --test_play --profile --profile_interval_ms=1000 --timeout_ms=25000 \
+  --game_dir data/Nepheshel206beta/Nepheshel206Rbeta --rpg2k_new_game
+# repeat against ./build-bc2cpp/rpg_maker_clone
+```
+
+Two independent 25-second trials per build, steady-state 1-second profiler
+windows only (the first window, dominated by the one-time New Game
+transition, excluded and covered separately below):
+
+| | interpreted (2 trials) | `RPGMAKER_BC2CPP=1` (2 trials) | delta |
+| --- | ---: | ---: | ---: |
+| frame(work) avg | 2.412ms / 2.386ms | 1.674ms / 1.730ms | **-29%** |
+| `scene.update` avg | 1.498ms / 1.496ms | 0.777ms / 0.785ms | **-48%** |
+| `gfx.lvgl` avg | 0.676ms | 0.653ms | -3% (unaffected, as expected -- bc2cpp never touches rendering) |
+| allocs/sec | ~4000 | ~3900 | roughly flat |
+
+Both builds sit at the 60fps cap throughout the steady state (this sandbox's
+host CPU is, per this page's own repeated caveat, far too fast to feel any of
+this as a displayed fps number), so **`scene.update` avg is the real number**:
+it is exactly the per-frame mruby interpreter/game-logic section every
+registration-completeness and devirtualization ADR in this series targeted,
+and it is now consistently, reproducibly **essentially half its interpreted
+cost** across two independent trials each. This is the first real evidence
+that the ~440 methods `docs/adr/0190` moved from interpreted to compiled, and
+the analysis-soundness fixes `docs/adr/0188`/`0191`/`0192` made along the way,
+add up to a genuine, measurable win on the exact code path they targeted --
+not just a compiles-clean-and-registers proof.
+
+**One honest counter-datum, not swept under the rug:** the one-time New
+Game/Continue transition itself (`map.transition.party`/
+`map.transition.common_events`, `Game::Party.new` building the starting
+roster and `Game::CommonEvent.load`, both now largely compiled per
+`docs/adr/0190`'s `Game::Party`/`Game::Actor` wiring) was consistently
+**higher**, not lower, under `RPGMAKER_BC2CPP=1` across both trials
+(`map.transition.party`: 152.71ms/161.53ms interpreted vs. 174.80ms/178.57ms
+compiled; `map.transition.common_events`: 92.74ms/96.76ms vs.
+102.30ms/103.47ms). This is a single `n=1` section per run (it only happens
+once per session), so it is far less statistically solid than the
+steady-state numbers above, but it reproduced in the same direction twice and
+is worth stating plainly rather than only reporting the favorable half of the
+measurement. A plausible explanation this page does not confirm: this page's
+own earlier finding is that the transition's cost is dominated by
+`LCF::Array2D`'s lazy byte-scanning decode of the item/common-event tables
+(the `StringIO#getbyte`/`read_row_bytes` fix earlier on this page), a cost
+bc2cpp's method-level devirtualization does not touch at all, while embedding
+`Game::Actor`'s ivars into a real C++ struct adds a fixed `mrb_data_init` cost
+to every construction on this one-time, construction-heavy path with nothing
+to amortize it against (unlike the steady-state frame, run tens of times a
+second). Not investigated further here -- a real follow-up, isolating
+construction cost from table-decode cost with the `map.transition.*` sections
+already in place, before assuming which one actually explains it.
+
 ## Audio: what is already off the main thread
 
 Short version: **the audio *processing* is already on another thread, and it
