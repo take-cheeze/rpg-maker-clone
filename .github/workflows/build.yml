@@ -1119,6 +1119,9 @@ jobs:
           - name: wio overflow report check
             run: ruby scripts/wio_overflow_report_check.rb
 
+          - name: wio dropped-gems check
+            run: ruby scripts/wio_dropped_gems_check.rb
+
           - name: RPG2k game-logic checks
             run: |
               ruby scripts/rpg2k_logic_check.rb
