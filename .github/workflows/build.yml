@@ -933,7 +933,12 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
+          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
+          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
 
       - name: sccache stats
         if: always()

@@ -1,0 +1,1 @@
+- bc2cpp chains `attr_reader`/`attr_writer`/`attr_accessor` owners into POLY_SMALL_N call sites as exact-class-guarded `mrb_iv_get`/`mrb_iv_set` with the usual dynamic fallback, so names backed only by accessors (`db`, `name`, `hp`, `id`, …) are no longer left as plain `mrb_funcall`. An owner defining the name twice stays out of the chain.

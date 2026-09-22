@@ -81,6 +81,17 @@ SRC = <<~'RUBY'
       def greater?(left, right); left > right; end
       def greater_equal?(left, right); left >= right; end
     end
+    class EqTarget
+      def ==(other); other == 1; end
+    end
+    # A second `==` owner keeps the name polymorphic, so only a receiver whose
+    # class is proven (EqTargetCaller) resolves; unknown receivers stay sends.
+    class EqOther
+      def ==(other); false; end
+    end
+    class EqTargetCaller
+      def typed_eq; Game::EqTarget.new == 2; end
+    end
     class HashKeySubclass < Hash
       def key?(key); :subclass_override; end
     end
@@ -479,8 +490,25 @@ Dir.mktmpdir do |dir|
     if operator == '=='
       check.call('OP_EQ preserves identity before numeric comparison',
                  code.index('mrb_obj_eq(M,') < code.index('MRB_TT_INTEGER'), true)
+      # OP_EQ: a non-identical Symbol receiver is unequal without any send, and
+      # the shortcut sits between the identity test and the numeric arms.
+      check.call('OP_EQ answers a non-identical Symbol receiver false without dispatch',
+                 code.index('mrb_obj_eq(M,') < code.index('mrb_symbol_p(r') &&
+                   code.index('mrb_symbol_p(r') < code.index('MRB_TT_INTEGER') &&
+                   code.include?('mrb_false_value()'), true)
+      # The fallback stores the `==` method's own result (OP_CMP's L_SEND_SYM)
+      # rather than re-testing identity and coercing to a boolean.
+      check.call('OP_EQ fallback sends == once and keeps its raw result',
+                 !code.include?('|| mrb_test(mrb_funcall') &&
+                   code.match?(/r\d+ = mrb_funcall\(M, r\d+, "==", 1, r\d+\);/), true)
     end
   end
+
+  eq_caller = registry.fetch('typed_eq').find { |md| md.owner == 'Game::EqTargetCaller' }
+  eq_code = gen.compile_method(eq_caller.irep).fetch(:code)
+  check.call('OP_EQ fallback goes through the MONO/TYPED resolver like the other comparisons',
+             eq_code.include?('TYPED :== -> Game::EqTarget#==') && eq_code.include?('Game__EqTarget____impl(M, r') &&
+               eq_code.include?('mrb_funcall(M, r2, "==", 1, r3)'), true)
 
   overridden_key_registry = key_registry.transform_values(&:dup)
   overridden_key_registry['key?'] << MethodDef.new(name: 'key?', owner: 'Hash', irep: nil,
