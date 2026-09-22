@@ -77,8 +77,18 @@
    FONTS
  *====================*/
 
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+/* LVGL's font only ever renders the two bring-up screens' own short ASCII
+ * status/key-echo labels (app/wio/src/main.cxx, wio_rgss_boot_main.cxx); real
+ * game text goes through mruby-rgss's shinonome/cp932 pipeline, never an
+ * lv_font_t. LVGL's default Montserrat 14 is a 4 bpp anti-aliased face that
+ * also carries ~60 FontAwesome LV_SYMBOL_* icons nothing here uses -- 13,641
+ * linked bytes, the largest single object in liblvgl.a. unscii 8 is LVGL's
+ * own 1 bpp 8x8 ASCII face (~1.3 KB): the labels stay readable, just smaller
+ * and unsmoothed. The label widget itself cannot go (see WIDGETS below), so
+ * this is the part of its cost that can. See docs/adr/0200. */
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_UNSCII_8 1
+#define LV_FONT_DEFAULT &lv_font_unscii_8
 
 /*====================
    DRIVERS
@@ -94,11 +104,12 @@
 
 /* lv_canvas/lv_image are the only widgets the real RGSS runtime needs (Sprite/
  * Viewport/Bitmap render through them) and are kept on to match the PSP
- * config. LV_USE_LABEL looked droppable too -- neither bring-up screen's own
- * status/key echo (rewritten to a background-color signal + Serial output,
- * docs/adr/0132) nor the real RGSS render path (which renders game text
- * through this project's own shinonome/cp932 pipeline, never LVGL's) calls
- * lv_label_* any more -- but LV_USE_IMAGE itself hard-requires it: LVGL's own
+ * config. LV_USE_LABEL looked droppable too -- only the two bring-up screens'
+ * own status/key-echo text calls lv_label_* (a rewrite of those to a
+ * background-color signal + Serial output was drafted and reverted,
+ * docs/adr/0132), never the real RGSS render path (which renders game text
+ * through this project's own shinonome/cp932 pipeline, never LVGL's) -- but
+ * LV_USE_IMAGE itself hard-requires it: LVGL's own
  * lv_image.h #errors at compile time ("lv_img: lv_label is required") when
  * LV_USE_LABEL is off, confirmed by a real MRUBY_TARGET=wio build. Sprite/
  * Viewport zoom and rotation genuinely need lv_image, so this stays on as a
