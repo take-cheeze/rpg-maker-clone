@@ -2395,7 +2395,8 @@ class IvarLayout
   # Annotation, from Annotations.extract -- same "only ever adds" property,
   # and (unlike arg_types) reaches `#initialize` too, see Annotations'
   # own comment.
-  def self.analyze(ireps, registry, arg_types = {}, annotations = {}, integer_constants = nil)
+  def self.analyze(ireps, registry, arg_types = {}, annotations = {}, integer_constants = nil,
+                    fixnum_return_names = nil)
     # class_name -> irep labels of every leaf method owned by that class.
     # `d.irep` is nil for a synthetic native MethodDef (extract_native_
     # method_names's own merge into the registry) -- no bytecode body
@@ -2432,7 +2433,7 @@ class IvarLayout
             # never happened to have a trailing comment.
             src_reg = insn.args[/R(\d+)/, 1]
             inferred = trace_type(irep, idx, src_reg, types[klass], arg_types, mand, d&.name, annotations, registry,
-                                   integer_constants)
+                                   integer_constants, fixnum_return_names)
             before = types[klass][ivar]
             merged = join(before, inferred)
             if merged != before
@@ -2492,7 +2493,7 @@ class IvarLayout
   # opcode (or the top of this straight-line method body, in which case
   # `reg` is an opaque incoming argument -- unknown).
   def self.trace_type(irep, idx, reg, known_ivar_types, arg_types = nil, mand = 0, method_name = nil, annotations = nil,
-                       registry = nil, integer_constants = nil)
+                       registry = nil, integer_constants = nil, fixnum_return_names = nil)
     (idx - 1).downto(0) do |i|
       insn = irep.instructions[i]
       case insn.op
@@ -2594,8 +2595,8 @@ class IvarLayout
         # than corrupting memory, if this proof were ever somehow wrong.
         s = insn.args[/\(R(\d+)\)/, 1]
         if s
-          left = trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants)
-          right = trace_type(irep, i, s, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants)
+          left = trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants, fixnum_return_names)
+          right = trace_type(irep, i, s, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants, fixnum_return_names)
           return :fixnum if left == :fixnum && right == :fixnum
         end
         return UNKNOWN
@@ -2607,7 +2608,7 @@ class IvarLayout
         # applied to the immediate form: only the destination register's
         # own prior value needs proving (the literal operand is a Fixnum
         # by construction, same as ADDI's own FIXNUM_OPERAND_PROOF).
-        return trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants)
+        return trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants, fixnum_return_names)
       when 'GETIV'
         d = insn.args[/^R(\d+)/, 1]
         next unless d == reg
@@ -2636,11 +2637,95 @@ class IvarLayout
         n = insn.args[/n=(\d+)/, 1]
         if registry && %w[% & | ^].include?(name) && n == '1' && native_only_mono?(registry, name)
           arg_reg = (d.to_i + 1).to_s
-          left = trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants)
-          right = trace_type(irep, i, arg_reg, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants)
+          left = trace_type(irep, i, d, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants, fixnum_return_names)
+          right = trace_type(irep, i, arg_reg, known_ivar_types, arg_types, mand, method_name, annotations, registry, integer_constants, fixnum_return_names)
           return :fixnum if left == :fixnum && right == :fixnum
         end
+
+        # FIXNUM_RETURN_IVAR_HINT: a SEND/SEND0/SSEND/SSEND0 whose bare name
+        # is already a member of the whole-program FIXNUM_RETURN_PROOF set
+        # (CodeGen#compute_fixnum_return_names -- every real definition of
+        # that bare name proven to leave a Fixnum in every one of its own
+        # RETURN sites) leaves a Fixnum in ITS OWN destination register too,
+        # for any receiver whatsoever. FIXNUM_RETURN_PROOF's own admission
+        # rule 1 already requires `@registry[N]` to hold EXACTLY ONE
+        # MethodDef -- the same MONO uniqueness test this file's direct-call
+        # devirtualization already trusts everywhere else -- so any real
+        # call to this bare name, whatever the receiver's actual class,
+        # either raises NoMethodError before this register is ever written
+        # or reaches that one definition and returns what it proved. No
+        # extra `registry`/`native_only_mono?` re-check is needed here the
+        # way the %/&/|/^ branch above needs one: that uniqueness is already
+        # baked into `fixnum_return_names` itself by construction, the same
+        # "trust the whole-program proof directly" precedent GETCONST's own
+        # INTEGER_CONST_EMBED_SUPPORT arm above already uses for
+        # `integer_constants`. `fixnum_return_names` is nil for every caller
+        # that never ran this proof (ArgTypes' own call site, which has no
+        # access to a CodeGen instance to compute it from) -- `&.include?`
+        # then always answers false, the same "prove nothing without the
+        # scan" posture every other out-of-closed-world gate in this
+        # function already takes.
+        return :fixnum if name && fixnum_return_names&.include?(name)
+
         return UNKNOWN
+      when 'RETURN', 'RETURN_BLK', 'BREAK', 'JMPIF', 'JMPNOT', 'JMPNIL', 'RAISEIF', 'MATCHERR'
+        # READ_ONLY_OPCODE_SKIP: these eight opcodes all print their lone
+        # register operand as the disassembly's own first `R%d` token (`RETURN
+        # R%d`, `JMPNOT R%d %03d`, ...), the same shape the generic `else`
+        # branch below treats as "some instruction we don't specifically
+        # model just wrote reg" -- but every one of them only READS that
+        # register, confirmed directly against this repo's own pinned
+        # `3rd/mruby` (831da26b) `include/mruby/ops.h`'s own comments
+        # (`RETURN`: "return R[a]"; `RETURN_BLK`: "return R[a]"; `BREAK`:
+        # "break R[a]"; `JMPIF`: "if R[a] pc+=b"; `JMPNOT`: "if !R[a]
+        # pc+=b"; `JMPNIL`: "if R[a]==nil pc+=b"; `RAISEIF`: "raise(R[a]) if
+        # R[a]"; `MATCHERR`: "raise NoMatchingPatternError unless R[a]" --
+        # none assigns anything to R[a]) and against `src/codedump.c`'s own
+        # print calls for each (`fprintf(out, "RETURN\tR%d\t", a)` and
+        # so on), never guessed at.
+        #
+        # A real gap this closes, demonstrated with a standalone repro (a
+        # class with a `pure_mandatory_arity?` `#initialize`, isolated from
+        # this file's own registry noise): `v = v ? true : false; return v
+        # if v == @flag; @flag = v; v` -- an early `RETURN R1` (the `return
+        # v if ...` guard) sits, in bytecode program order, between the
+        # ternary's own `LOADFALSE`/`MOVE` chain that provably types `v` as
+        # `:bool` and the `SETIV @flag R1` that reads it. Before this case
+        # existed, the backward walk from that `SETIV` hit `RETURN R1`
+        # first, matched `d == reg`, and stopped -- UNKNOWN -- even though
+        # that `RETURN` never executes on the path that actually reaches the
+        # `SETIV` at all (it is a *later*, alternate exit sharing the same
+        # register slot), and even if it did run, it never writes R1 either
+        # way. Skipping straight past a genuine non-writer and continuing
+        # the backward search is exactly as sound as skipping past a `MOVE`
+        # whose destination register does not match `reg` -- the walk keeps
+        # looking for whoever last actually wrote the register, which this
+        # opcode provably never did.
+        #
+        # `RPG2k::Window#pause=` (mruby-rpg2k/mrblib/main.rb) has this exact
+        # shape for `@pause`, and IvarLayout's own raw analysis now types it
+        # `:bool` -- confirmed in the whole-program diagnostic -- but that
+        # proof does NOT reach the real generated struct: `RPG2k::Window#
+        # initialize(x = 0, y = 0, width = 0, height = 0)` has four optional
+        # arguments, and `drop_unsafe_embeddings` separately requires an
+        # embedding owner's own `#initialize` to be `pure_mandatory_arity?`
+        # (the struct's `mrb_data_init` has to run on every real construction
+        # path, which this compiler only emits for a pure-mandatory
+        # `#initialize` today) -- the same well-documented, still-open gap
+        # `docs/adr/0139` repeats for many other classes. This case is still
+        # worth shipping on its own: it is a real, sound precision fix
+        # (strictly fewer false UNKNOWNs, never a wrong answer) that will
+        # matter the moment that separate optional-argument gap closes, for
+        # `RPG2k::Window` and for any future class with the same shape.
+        #
+        # `SETUPVAR` and `RESCUE` have the same read-only-first-token shape
+        # (checked against the same two files) but are deliberately left out
+        # of this list: `SETUPVAR`'s register interacts with the enclosing
+        # method's own upvar bookkeeping this file already treats specially
+        # elsewhere (`subtree_upvar_written_regs`), and `RESCUE` writes a
+        # SECOND register (`R[b] = R[a].isa?(R[b])`) this naive single-token
+        # regex can't see -- both deserve their own, separately-verified
+        # follow-up rather than being folded into this one.
       else
         # Any other opcode's destination register: nearly every mruby
         # opcode's first operand is its Rd (SEND, STRING, GETCONST,
@@ -9172,6 +9257,27 @@ class CodeGen
     # full constructor computes below from the same class_layout -- verified
     # empirically as well: the probe's 114 ARET names are identical to
     # master's.
+    # FIXNUM_RETURN_IVAR_HINT: a second, narrower probing mode alongside
+    # `analysis_only: true` just above -- stop right after FIXNUM_RETURN_PROOF
+    # instead of ARRAY_RETURN_PROOF, for the driver's own IvarLayout <->
+    # FIXNUM_RETURN_PROOF stratification (see that call site's own header for
+    # the full argument). Unlike ARRAY_RETURN_PROOF's own probe,
+    # compute_fixnum_return_names' proof source 3 (embed_type) DOES read
+    # @ivar_layout, so this mode runs drop_unsafe_embeddings first, exactly
+    # like the real, final pass below does -- an ivar IvarLayout.analyze's raw
+    # sweep proved embeddable but drop_unsafe_embeddings would still reject
+    # (a compiles_clean? failure, a native attr collision, ...) must not leak
+    # a false Fixnum-return proof through this probe. Deliberately stops
+    # before the ENTRY_ARG_CALLSITE_PROOF <-> FIXNUM_RETURN_PROOF alternation
+    # below: this probe only needs to feed IvarLayout.trace_type's SEND case,
+    # and the real, final CodeGen constructed from the enriched ivar_layout
+    # still runs its own full alternation against that richer table, exactly
+    # as before this change existed.
+    if analysis_only == :fixnum_return
+      @ivar_layout = drop_unsafe_embeddings(ivar_layout)
+      compute_fixnum_return_names
+      return
+    end
     if analysis_only
       compute_array_return_names
       return
@@ -25415,16 +25521,16 @@ if $PROGRAM_NAME == __FILE__
   warn "== integer constant literal values proven (INTEGER_CONSTANT_VALUE_PROOF): #{integer_constant_values.size} of #{integer_constants.size} =="
   integer_constant_values.sort.each { |n, v| warn "  CONST #{n} = #{v}" }
 
+  # FIXNUM_RETURN_IVAR_HINT: this is Level 0 -- IvarLayout computed with no
+  # FIXNUM_RETURN_PROOF evidence at all, byte-for-byte what this driver
+  # always computed before this mechanism existed. The `== ivar embedding ==`
+  # diagnostic is printed further below, once the enriched, final (Level 2)
+  # table is available -- see that later call site's own header -- so this
+  # one is deliberately silent, the same "diagnostic reflects only the real,
+  # final fact set codegen uses" discipline the CLASS_HINT/CLASS_CANDIDATE
+  # block below already holds itself to for ClassLayout's own analogous
+  # ARRAY_RETURN_IVAR_HINT stratification.
   ivar_layout = IvarLayout.analyze(ireps, registry, arg_types, annotations, integer_constants)
-  warn ''
-  warn '== ivar embedding =='
-  if ivar_layout.empty?
-    warn '  (none embeddable)'
-  else
-    ivar_layout.each do |klass, ivars|
-      ivars.each { |name, type| warn "  EMBED  #{klass}#@#{name}  (#{type})" }
-    end
-  end
 
   known_owners = registry.values.flatten.map(&:owner).uniq
   class_annotations = ClassAnnotations.extract(ireps, registry, known_owners)
@@ -25804,6 +25910,83 @@ if $PROGRAM_NAME == __FILE__
   warn "== Struct.new owners with a known member list (STRUCT_INDEX_CACHE): #{CodeGen.struct_members.size} =="
   CodeGen.integer_constant_values = integer_constant_values
   CodeGen.stable_class_constants.sort.each { |n| warn "  STABLE_CLASS #{n}" }
+
+  # ---------------------------------------------------------------------------
+  # FIXNUM_RETURN_IVAR_HINT: IvarLayout and FIXNUM_RETURN_PROOF are MUTUALLY
+  # dependent, and this is the stratification that breaks the cycle -- the
+  # exact same shape ARRAY_RETURN_IVAR_HINT above already uses for ClassLayout
+  # and ARRAY_RETURN_PROOF, applied to a different pair of facts.
+  #
+  # THE CYCLE IS REAL. IvarLayout.trace_type's SEND case can only trust a bare
+  # method name's return type once FIXNUM_RETURN_PROOF has already proven it
+  # (compute_fixnum_return_names, CodeGen) -- but that proof's own admission
+  # rule 4 reads @ivar_layout (proof source 3, embed_type, inside
+  # proven_fixnum_operand?). Feeding FIXNUM_RETURN_PROOF back into IvarLayout,
+  # the whole point of this change, would otherwise be circular:
+  # tools/optcarrot_probe/README.md's own "Why CPU's own register file stays
+  # unembedded" section names the real shape this closes --
+  # `@_pc = peek16(RESET_VECTOR)`-style SETIV sites whose source is a SEND
+  # result, where `peek16` itself is proven Fixnum-returning only via ITS OWN
+  # ivar reads.
+  #
+  # THE FIX: STRATIFY, not iterate to a full alternation (see "WHY NOT..."
+  # below). Level 0 is `ivar_layout` exactly as already computed above --
+  # today's shipped table, no FIXNUM_RETURN_PROOF evidence at all. Level 1 is
+  # FIXNUM_RETURN_PROOF computed by a probing CodeGen built from level 0 (via
+  # `analysis_only: :fixnum_return`, CodeGen#initialize's own comment) --
+  # every OTHER whole-program table this probe needs (class_layout,
+  # element_layout, hash_element_layout, container_constants, ...) is already
+  # final by this exact point in the driver and none of them depend on
+  # ivar_layout at all (ClassLayout/ArrayElementLayout/HashElementLayout's own
+  # `self.analyze` signatures take no ivar_layout parameter), so this probe
+  # gets the SAME real tables the final CodeGen below uses, not placeholders.
+  # Level 2 re-runs IvarLayout.analyze with level 1's proof now available to
+  # trace_type's SEND case, and is what the real CodeGen below actually
+  # receives.
+  #
+  # WHY SOUND, given level 0 and every non-ivar table are sound: level 1 is
+  # exactly today's FIXNUM_RETURN_PROOF computation, unchanged code, just run
+  # one step earlier against level 0's ivar table instead of a hypothetical
+  # richer one -- a strict subset of the ivar facts the real, final CodeGen
+  # itself ends up with, so this probe is only ever AS OR LESS permissive than
+  # a single-pass oracle could be, never more. Level 2 only ever turns a SEND
+  # site trace_type's existing cases already left UNKNOWN into `:fixnum` (an
+  # additive new arm on that case, guarded by MONO uniqueness the same way
+  # every other bare-name whole-program proof in this file already is -- see
+  # that arm's own comment) -- no existing embeddable ivar can lose or change
+  # its type, so level 2's table is a superset of level 0's, the identical
+  # monotonicity argument ARRAY_RETURN_IVAR_HINT's own header makes for
+  # ClassLayout.
+  #
+  # WHY NOT ITERATE TO A JOINT FIXPOINT (the ENTRY_ARG_ALTERNATION shape)?
+  # Sound either way -- each further level would stay sound by the same
+  # induction -- but deliberately not done here, for the identical reasons
+  # ARRAY_RETURN_IVAR_HINT's own header already gives for ClassLayout: two
+  # levels is what a real, measured target needs, stopping early is the
+  # conservative direction, and the real CodeGen below still recomputes
+  # FIXNUM_RETURN_PROOF itself against the level-2 table exactly as it always
+  # has (this change touches nothing about that recomputation), so the final,
+  # shipped proof set does get the full benefit of the richer table; only
+  # IvarLayout itself stops at level 2.
+  # ---------------------------------------------------------------------------
+  fixnum_return_probe = CodeGen.new(ireps, registry, ivar_layout, class_layout, class_annotations, annotations,
+                                    superclass_of, element_layout, element_annotations, container_constants,
+                                    hash_element_layout, integer_constants, foreign_methods, outside_tokens,
+                                    native_name_sources, included_modules, prepended_modules, unknown_mixins,
+                                    analysis_only: :fixnum_return,
+                                    native_expression_devirt: native_expression_devirt,
+                                    native_registered_expressions: native_registered_expressions).fixnum_return_names
+  ivar_layout = IvarLayout.analyze(ireps, registry, arg_types, annotations, integer_constants, fixnum_return_probe)
+  warn ''
+  warn '== ivar embedding =='
+  if ivar_layout.empty?
+    warn '  (none embeddable)'
+  else
+    ivar_layout.each do |klass, ivars|
+      ivars.each { |name, type| warn "  EMBED  #{klass}#@#{name}  (#{type})" }
+    end
+  end
+
   gen = CodeGen.new(ireps, registry, ivar_layout, class_layout, class_annotations, annotations, superclass_of,
                     element_layout, element_annotations, container_constants, hash_element_layout,
                     integer_constants, foreign_methods, outside_tokens, native_name_sources,
