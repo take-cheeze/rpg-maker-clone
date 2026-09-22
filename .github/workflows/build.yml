@@ -942,6 +942,7 @@ jobs:
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_integer_const_inline_check.rb
 
       - name: sccache stats
         if: always()
