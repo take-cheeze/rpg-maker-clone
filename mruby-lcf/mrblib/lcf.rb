@@ -6,6 +6,43 @@ class StringIO
 end
 
 module LCF
+  # INT32_MASK / INT32_SIGN_BIT / INT32_WRAP: the same three constants
+  # (0xffff_ffff, 0x8000_0000, 0x1_0000_0000) the codecs below need for
+  # 32-bit two's-complement masking/sign-extension, computed here via small
+  # literal shifts instead of written as bare hex literals.
+  #
+  # Why: mruby 4.0's own compiler bakes ANY integer literal wider than 32
+  # bits into an IREP bignum-pool entry regardless of the eventual runtime's
+  # own mrb_int width (see build_config.rb's own comment on why this project
+  # carries mruby-bigint as a core gem at all), and OP_LOADL re-parses that
+  # pool entry's own decimal/hex string into a fresh bignum via
+  # mrb_bint_new_str on EVERY execution of the instruction -- even though the
+  # value is a compile-time constant that never changes. #read_ber alone
+  # (called from Array1D#[] for every :int-typed chunk -- LCF::EventCommand's
+  # own #indent/#parameters among them) showed up costing measurable frame
+  # time on this project's own native (64-bit mrb_int) desktop build, where
+  # the bignum was always going to be immediately re-normalized back down to
+  # a plain mrb_int (bint_norm, 3rd/mruby/mrbgems/mruby-bigint/core/
+  # bigint.c) -- pure waste there, since 64 bits is more than enough for any
+  # of these three constants.
+  #
+  # `1 << 32`/`1 << 31` compute the identical values through Integer#<<,
+  # whose own operand literals (1, 31, 32) all trivially fit any mrb_int
+  # width, so THEY need no bignum pool entry either -- only the shift's own
+  # RESULT might, and only on the 32-bit-mrb_int cross targets (Emscripten/
+  # Wio/PSP, AGENTS.md's own "mrb_int is 32-bit on the cross targets"
+  # section), where it genuinely doesn't fit and a real bigint promotion is
+  # unavoidable regardless of how the value is spelled. The difference is
+  # WHEN that cost is paid: once, here, at LCF's own module-body execution
+  # (this file's own load time), computed once and stored as an ordinary
+  # constant -- never per #read_ber/#unpack_int32/#pack_int32 call the way
+  # a bare literal was. Every reference below is a plain GETCONST fetching
+  # that already-materialized Integer object, not another OP_LOADL/
+  # mrb_bint_new_str round trip.
+  INT32_MASK = (1 << 32) - 1
+  INT32_SIGN_BIT = 1 << 31
+  INT32_WRAP = 1 << 32
+
   def read_ber(s)
     ret = 0
     loop do
@@ -29,8 +66,8 @@ module LCF
     # failed for every RPG2000 game in the browser ("Failed to start new game:
     # integer out of range"). The subtraction below reduces the bignum back into
     # `mrb_int` range instead, which is exactly what pack could not do.
-    ret &= 0xffff_ffff
-    ret >= 0x8000_0000 ? ret - 0x1_0000_0000 : ret
+    ret &= INT32_MASK
+    ret >= INT32_SIGN_BIT ? ret - INT32_WRAP : ret
   end
 
   # Inverse of read_ber: encode an integer as a base-128 (BER) big-endian byte
@@ -41,7 +78,7 @@ module LCF
   # writes it. Non-negative numbers use the shortest encoding (RPG_RT's own),
   # so a value read from a real file re-encodes to the identical bytes.
   def write_ber(n)
-    n &= 0xffff_ffff
+    n &= INT32_MASK
     groups = [n & 0x7f]
     while n > 0x7f
       n >>= 7
@@ -308,7 +345,7 @@ module LCF
     (0...(bytes.size / 4)).each do |i|
       b = i * 4
       v = bytes[b] | (bytes[b + 1] << 8) | (bytes[b + 2] << 16) | (bytes[b + 3] << 24)
-      v -= 0x1_0000_0000 if v >= 0x8000_0000
+      v -= INT32_WRAP if v >= INT32_SIGN_BIT
       out.push v
     end
     out
@@ -351,7 +388,7 @@ module LCF
   def pack_int32 a
     out = []
     a.each do |v|
-      v &= 0xffff_ffff
+      v &= INT32_MASK
       out.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff)
     end
     out.pack('C*')
