@@ -610,6 +610,31 @@ assert 'LCF.write_ber matches the reference encoder and round-trips read_ber' do
   assert_equal "\x8f\xff\xff\xff\x7f", LCF.write_ber(-1)
 end
 
+assert 'LCF.unpack_int32/pack_int32 round-trip the signed 32bit range' do
+  # unpack_int32/pack_int32 fold the same 32-bit two's-complement mask/sign-bit/
+  # wrap constants read_ber/write_ber use (LCF::INT32_MASK/INT32_SIGN_BIT/
+  # INT32_WRAP) -- exercise the same extremes those constants exist for.
+  [0, 1, -1, -2, 2147483647, -2147483648, 1_000_000, -1_000_000].each do |n|
+    packed = LCF.pack_int32([n])
+    assert_equal 4, packed.bytesize
+    assert_equal [n], LCF.unpack_int32(packed)
+  end
+  # Byte-exact little-endian encoding for a couple of the extremes.
+  assert_equal "\xff\xff\xff\x7f", LCF.pack_int32([2147483647])
+  assert_equal "\x00\x00\x00\x80", LCF.pack_int32([-2147483648])
+  assert_equal "\xff\xff\xff\xff", LCF.pack_int32([-1])
+  assert_equal [2147483647, -2147483648, -1], LCF.unpack_int32("\xff\xff\xff\x7f\x00\x00\x00\x80\xff\xff\xff\xff")
+end
+
+assert 'LCF::INT32_MASK/INT32_SIGN_BIT/INT32_WRAP hold the exact 32bit constants' do
+  # These replaced bare 0xffff_ffff/0x8000_0000/0x1_0000_0000 hex literals
+  # (see mrblib/lcf.rb's own comment) -- prove the computed values are still
+  # bit-for-bit identical, not merely "close enough".
+  assert_equal 0xffff_ffff, LCF::INT32_MASK
+  assert_equal 0x8000_0000, LCF::INT32_SIGN_BIT
+  assert_equal 0x1_0000_0000, LCF::INT32_WRAP
+end
+
 assert 'Array1D#to_lcf reproduces its source bytes (terminated and not)' do
   body = lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
                       lcf_str_field(73, "chr")])
