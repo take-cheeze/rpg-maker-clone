@@ -6,6 +6,10 @@
 /build-maix-unialgo
 /wasm-build
 /emsdk
+# gprof's default output file, written to the current working directory by
+# any -pg-instrumented binary invoked without GMON_OUT_PREFIX -- several
+# tools/optcarrot_probe/compiled_run.rb GPROF=1 runs leave one here.
+/gmon.out
 
 # PlatformIO's build tree and downloaded packages for the Wio Terminal
 # firmwares (platformio.ini's `wio` / `wio_walk` environments). Machine-local
