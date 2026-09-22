@@ -4,8 +4,9 @@
 # per-owner RClass* instead of re-running the chained mrb_const_get on every
 # call. Covers the emitted call sites and, by compiling and running the
 # emitted cache against stub mruby functions, the cache's behaviour: one
-# lookup per VM, a re-lookup when the state changes or is reset, and no
-# cached pointer after a failed lookup.
+# lookup per VM, a re-lookup when the state changes or is reset, and a
+# class that is not defined yielding nullptr (a false guard, not a NameError)
+# without caching it.
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
@@ -50,9 +51,10 @@ Dir.mktmpdir do |dir|
   check.call('guards call the per-owner cache helper',
              body.scan(/bc2cpp_owner_class_(\d+)\(M\) == mrb_obj_class\(M, r/).flatten.uniq.size == 2)
   check.call('no guard re-runs the chained constant lookup', !body.include?('mrb_const_get'))
-  check.call('the helper resolves through the same chained mrb_const_get',
-             cache.include?('mrb_const_get(M, mrb_const_get(M, mrb_obj_value(M->object_class), ' \
-                            'mrb_intern_cstr(M, "Game")), mrb_intern_cstr(M, "Left"))'))
+  check.call('the helper resolves the owner path segment by segment',
+             cache.include?('{"Game", "Left"}') && cache.include?('bc2cpp_owner_class_lookup(M, path, 2)'))
+  check.call('an undefined segment is checked before mrb_const_get can raise',
+             cache.include?('if (!mrb_const_defined(M, v, s)) return nullptr;'))
   check.call('the cache is reset when the state changes and by bc2cpp_reset_owner_classes',
              cache.include?('bc2cpp_owner_class_state != M') && cache.include?('static void bc2cpp_reset_owner_classes()'))
   check.call('one owner used twice shares one slot',
@@ -68,13 +70,17 @@ Dir.mktmpdir do |dir|
       struct mrb_value { void* p; };
       typedef unsigned mrb_sym;
       static int g_lookups = 0;
-      static bool g_fail = false;
+      static bool g_undefined = false;
+      typedef bool mrb_bool;
       static RClass g_classes[8];
       static mrb_value mrb_obj_value(RClass* c) { return { c }; }
       static mrb_sym mrb_intern_cstr(mrb_state*, const char*) { return 0; }
-      static mrb_value mrb_const_get(mrb_state*, mrb_value, mrb_sym) {
+      static mrb_bool mrb_const_defined(mrb_state*, mrb_value, mrb_sym) {
         ++g_lookups;
-        if (g_fail) throw 1;
+        return !g_undefined;
+      }
+      static mrb_value mrb_const_get(mrb_state*, mrb_value, mrb_sym) {
+        if (g_undefined) throw 1;
         return { &g_classes[1] };
       }
       static RClass* mrb_class_ptr(mrb_value v) { return (RClass*)v.p; }
@@ -92,15 +98,15 @@ Dir.mktmpdir do |dir|
         bc2cpp_reset_owner_classes();
         bc2cpp_owner_class_0(&b);
         int after_reset = g_lookups;
-        g_fail = true;
+        g_undefined = true;
         bc2cpp_reset_owner_classes();
-        bool threw = false;
-        try { bc2cpp_owner_class_0(&b); } catch (int) { threw = true; }
-        g_fail = false;
+        bool missing = false;
+        try { missing = bc2cpp_owner_class_0(&b) == nullptr; } catch (int) { missing = false; }
+        g_undefined = false;
         int before_retry = g_lookups;
         bc2cpp_owner_class_0(&b);
         std::printf("%d %d %d %d %d %d %d\\n", first == &g_classes[1], after_repeat == after_first,
-                    after_switch > after_repeat, after_reset > after_switch, threw, g_lookups > before_retry, after_first > 0);
+                    after_switch > after_repeat, after_reset > after_switch, missing, g_lookups > before_retry, after_first > 0);
       }
     CPP
     binary = File.join(dir, 'cache_harness')
@@ -110,7 +116,7 @@ Dir.mktmpdir do |dir|
       results = IO.popen(binary, &:read).split.map { |value| value == '1' }
       check.call('a repeated lookup on one state is cached', results[1])
       check.call('a state switch and a reset each force a fresh lookup', results[2] && results[3])
-      check.call('a failed lookup raises and is not cached', results[4] && results[5])
+      check.call('an undefined class yields nullptr without raising and is not cached', results[4] && results[5])
       check.call('the cached pointer is the resolved class', results[0] && results[6])
     end
   end
