@@ -589,19 +589,56 @@ only when actually used), and a `GETCONST`/`GETMCNST` case that embeds as
 (threaded into `IvarLayout.analyze` for the first time; previously only
 `CodeGen` itself consumed that proof).
 
-Whole-program `ivar embedding (EMBED)` in the real project's own combined
-coverage report (`scripts/bc2cpp_coverage_report.rb`) goes 115 -> 216 --
-100.0% method-level coverage and zero `#error` markers unchanged, confirmed
-byte-identical against every one of this repo's own `bc2cpp_*_check.rb`
-static-analysis checks before and after. In this probe specifically, newly
-embedded fields include several `Optcarrot::PPU` rendering-enable flags
-(`@run`, `@vblank`, `@vblanking`, `@sp_overflow`, `@sp_zero_hit`, `:bool`)
-and more `CPU`/`PPU` clock-cycle counters (`@hclk`, `@scanline`, `:fixnum`,
-via the constant proof) that were previously OPAQUE -- exactly the ivars
-`iv_bsearch_idx` (17.7% of sampled time, 376.9M calls, in the profile just
-above) was paying to look up dynamically on every single access, compiled
-code included. The full 180-frame `nes.run` loop still checksums `59662` on
-CRuby, interpreted mruby, and bc2cpp alike, run repeatedly against the real,
+**Correction, same session**: the obvious way to measure this --
+`scripts/bc2cpp_coverage_report.rb`'s own `ivar embedding (EMBED)` line,
+115 -> 216 -- turned out to be the wrong number, and an earlier revision of
+this paragraph cited it as if newly-embedded `Optcarrot::PPU`/`CPU` fields
+(`@run`, `@vblank`, `@hclk`, `@scanline`, ...) were now cutting into this
+probe's own `iv_bsearch_idx` cost. They are not, and *no* Optcarrot ivar
+ever has been, regardless of this change: that `EMBED` count is `IvarLayout`'s
+own raw proof, printed by the driver before `CodeGen` even exists -- it says
+nothing about what the real generated code does with it. Two later,
+independent filters sit between that proof and an actual `mrb_bool`/`mrb_int`
+struct field: `CodeGen#drop_unsafe_embeddings` (every method touching the
+ivar has to compile clean, or embedding it would silently diverge from the
+interpreter's own `iv_tbl` -- a real, previously-caught corruption bug, see
+that method's own comment), and, decisively for this probe,
+`tools/bc2cpp/compiled_gems.rb`'s `BC2CPP_WIRED_EMBEDDINGS` -- a hand-
+maintained allowlist of nine real-project classes (`Game::Screen`, `Game::
+Interpreter`, ... -- see that constant's own comment) that `CodeGen.
+wired_embeddings` gates every embedding against, unconditionally, for
+*every* `bc2cpp.rb` invocation including this probe's own. No `Optcarrot::*`
+class is on that list, so `drop_unsafe_embeddings` rejects all of them
+outright regardless of what `IvarLayout` proved -- confirmed directly
+against the real generated code from this exact, current `compiled_run.rb`
+(`KEEP_TEMP=... ruby tools/optcarrot_probe/compiled_run.rb`, then `grep
+DATA_PTR gem/src/optcarrot_probe_gen.cpp`): zero matches, and `@clk_total`
+-- the one field this section has documented as "proven embeddable" since
+long before this session -- compiles to a plain `mrb_iv_get`/`mrb_iv_set`
+pair, not a struct access. That earlier "only `CPU#@clk_total` and 9
+`PPU#@...` fields are proven embeddable" claim above was always describing
+`IvarLayout`'s own proof, never active struct embedding; this correction
+applies to it equally, not just to this session's own new fields.
+
+This session's actual, *verified* effect is entirely in the real project,
+not this probe: `grep`-ing the real generated code for `BC2CPP_WIRED_
+EMBEDDINGS`'s own nine classes' `_ivars` structs, before vs. after, shows
+`Game::Interpreter` gaining 11 new `mrb_bool` fields (`@running`, `@erase_
+requested`, `@halt_movement_requested`, `@actor_graphic_changed`,
+`@parallax_changed`, `@tiles_changed`, `@vehicle_toggle_requested`, `@face_
+owner`, `@system_graphic_changed`, `@battle_animation_pending`, `@waiting`
+-- 1 field before, 12 after) and `Game::Screen` gaining 5 (`@shake_
+continuous`/`@flash_continuous`/`@pan_locked` as `mrb_bool`, `@shake_
+frames`/`@fade_transition` as `mrb_int` via the new constant-sourced case --
+12 fields before, 17 after). Both are real, hot classes in the RPG2k event/
+screen-effect pipeline, genuinely reducing their own `iv_bsearch_idx`
+traffic -- just not anything this probe's own gprof numbers can show, since
+this probe never compiles either class. The full 180-frame `nes.run` loop
+still checksums `59662` on CRuby, interpreted mruby, and bc2cpp alike (the
+`:bool`/constant-sourced codegen itself is exercised for real by this
+probe's own build even though none of it lands on a struct field here --
+every newly-recognized SETIV/GETIV source still has to compile to *some*
+correct code, struct-backed or not), run repeatedly against the real,
 non-scratch `compiled_run.rb`.
 
 The first concrete dispatch target is `CPU#run`: each opcode executes
