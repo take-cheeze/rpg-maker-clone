@@ -357,7 +357,6 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003_,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, database, "maker", LCF__Database_maker, MRB_ARGS_NONE());
 
   mrb_define_method(M, map_tree, "header", LCF__MapTree_header,
                     MRB_ARGS_NONE());
