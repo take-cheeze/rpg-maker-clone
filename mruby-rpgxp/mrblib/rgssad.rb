@@ -57,20 +57,31 @@ class RPGXP
     # parsing an archive's entry table (#parse_v1/#parse_v3), and
     # #decrypt_data calls it once per 4 bytes of every file's own data --
     # real per-byte cost for a released game's whole packed Data/Graphics/
-    # Audio tree, not a cold path. START_KEY/MASK are now computed once, at
-    # this class body's own execution, via small-literal shifts/ORs whose
-    # own operands (0xDEAD, 0xCAFE, 1, 32) each individually fit any mrb_int
-    # width; only the shift/OR RESULT itself is a real 32-bit value, exactly
-    # as the bare literal was, but constructed once instead of on every
-    # #advance/#decrypt_int/#decrypt_data call.
-    START_KEY = (0xDEAD << 16) | 0xCAFE
-    MASK = 1 << 32 # 2**32
+    # Audio tree, not a cold path. START_KEY/MASK/DEFAULT_V3_SEED are now
+    # computed once, at this class body's own execution, instead of on every
+    # #advance/#decrypt_int/#decrypt_data call -- but spelled as bare hex
+    # literals, not `(0xDEAD << 16) | 0xCAFE`/`1 << 32`-style shift/OR
+    # expressions: mrbc constant-folds a shift or OR whose operands are both
+    # literals at COMPILE time, and the IREP bignum-pool entry that folding
+    # produces does not survive being cross-compiled by this project's own
+    # 64-bit-mrb_int host `mrbc` and then loaded by a 32-bit-mrb_int target
+    # VM (Emscripten, AGENTS.md's "mrb_int is 32-bit on the cross targets")
+    # -- `mrb_load_irep_file` on the 32-bit side fails the whole compiled
+    # unit with "irep load error" before any of this class's own code ever
+    # runs. A bare bignum literal's own pool entry does not have this
+    # problem (confirmed directly against mruby-lcf/mrblib/lcf.rb's
+    # identical fix) -- only the *computed-at-compile-time* form is broken,
+    # so spelling these three constants as plain hex literals keeps the
+    # exact same "computed once, at load time" win while staying loadable
+    # on every target.
+    START_KEY = 0xDEADCAFE
+    MASK = 0x1_0000_0000 # 2**32
     # .pack_v3's own default seed, same reasoning as START_KEY/MASK above --
     # this one is cold (only #pack_v3, the archive-builder/test-fixture
     # path, ever reads it, never the real archive-reading path), fixed here
     # anyway for the same reason a per-call default-argument literal is
     # still one bignum-pool re-parse per call rather than zero.
-    DEFAULT_V3_SEED = (0xCAFE << 16) | 0xCAFE
+    DEFAULT_V3_SEED = 0xCAFECAFE
     # Little-endian byte multipliers, so an int is rebuilt without bit-shifting.
     POW = [1, 256, 65536, 16777216].freeze
     # Max per-byte integers held in one Array while decrypting, kept under mruby's

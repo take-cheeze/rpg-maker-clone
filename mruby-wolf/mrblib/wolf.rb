@@ -55,15 +55,24 @@ module Wolf
   # two's-complement fold constants (0xffff_ffff / 0x8000_0000 /
   # 0x1_0000_0000) mruby-lcf's own LCF module defines for the identical
   # reason -- see that module's own comment (mruby-lcf/mrblib/lcf.rb) for the
-  # full explanation. Used by Wolf.s32_at, Reader#int/#uint (every signed/
+  # full explanation, including why these are bare hex literals rather than
+  # `1 << 32`/`1 << 31`-style shift expressions: mrbc constant-folds a shift
+  # whose operands are both literals at COMPILE time, and the IREP bignum-
+  # pool entry that folding produces does not survive being cross-compiled
+  # by this project's own 64-bit-mrb_int host `mrbc` and then loaded by a
+  # 32-bit-mrb_int target VM (Emscripten, AGENTS.md's "mrb_int is 32-bit on
+  # the cross targets") -- `mrb_load_irep_file` on the 32-bit side fails the
+  # whole compiled unit with "irep load error" before any of this module's
+  # own code ever runs. A bare bignum literal's own pool entry does not have
+  # this problem. Used by Wolf.s32_at, Reader#int/#uint (every signed/
   # unsigned 32-bit field WOLF's own binary formats are built from -- counts,
   # ids, command parameters), Crypt.v2 (the 2.x Game.dat/Database.dat XOR
   # scrambler, one mask per byte of the whole file) and Interpreter#fold32
   # (every Variable Operation's own 32-bit wraparound), all real per-call/
   # per-byte hot paths reading or decrypting a WOLF project.
-  INT32_MASK = (1 << 32) - 1
-  INT32_SIGN_BIT = 1 << 31
-  INT32_WRAP = 1 << 32
+  INT32_MASK = 0xffff_ffff
+  INT32_SIGN_BIT = 0x8000_0000
+  INT32_WRAP = 0x1_0000_0000
 
   class Error < StandardError; end
 
