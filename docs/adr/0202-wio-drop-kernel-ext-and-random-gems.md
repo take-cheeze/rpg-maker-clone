@@ -72,9 +72,13 @@ serialized with `flock`. The measurements are on top of docs/adr/0201:
 | build | before | after | delta |
 | --- | ---: | ---: | ---: |
 | `wio_rgss_boot` baseline, FLASH overflow | 643,768 | 639,788 | -3,980 |
+| `wio_rgss_boot` bc2cpp, FLASH overflow | 3,540,296 | 3,536,308 | -3,988 |
 
-(The `RPGMAKER_BC2CPP=1` pair of cross-builds takes about 15 minutes; its
-row is added once measured.)
+The two bc2cpp builds were made from the same working tree, which by then
+also held the parallel bc2cpp task's own uncommitted `tools/bc2cpp` work.
+That is why their "before" is not docs/adr/0201's 3,573,400. The pair
+differs only in `build_config.rb`, so the -3,988 delta is this change's
+alone.
 
 The rebuilt "before" baseline `libmruby.a` reproduces docs/adr/0201's
 643,768 exactly. That confirms rebuilding the library against 0200/0201's
