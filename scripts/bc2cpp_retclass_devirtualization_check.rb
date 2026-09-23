@@ -358,8 +358,9 @@ Dir.mktmpdir do |dir|
     index_code = gen.compile_insn(index_insn, irep, method, getidx_idx)
     check.call("#{method_name}: #{index_op} devirtualizes annotated [] with guard/fallback",
                index_code.include?('TYPED :[] -> Game::Actors#[]') &&
-                 index_code.include?('mrb_obj_class(M, r') && index_code.include?('mrb_array_p(r') &&
-                 index_code.include?('mrb_funcall(M,'), true)
+                 index_code.include?('mrb_obj_class(M, r') &&
+                 # OUTLINED_INDEX_OPS: the guard's else arm is the generic chain's helper.
+                 index_code.include?("bc2cpp_#{index_op.downcase}(M, r"), true)
 
     idx = irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':name') }
     raise "#{method_name}: no #name send found" unless idx

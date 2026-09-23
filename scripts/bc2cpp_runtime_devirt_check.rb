@@ -87,9 +87,14 @@ RUBY
 fixture(INDEX, 'index_chain', natives: ['[]']) do |gen, registry|
   method = registry.fetch('get').find { |d| d.owner == 'Use' }
   code = gen.compile_method(method.irep).fetch(:code)
+  # OUTLINED_INDEX_OPS (docs/adr/0216): the site calls bc2cpp_getidx, which holds the chain.
+  helper = gen.emit_index_helpers([code])
   check.call('an untyped x[i] tail dispatches through the exact-class chain',
-             code.include?('POLY_SMALL_N :[] -> Vars') && code.match?(/Vars_+impl\(M, r\d+, r\d+\)/))
-  check.call('the exact Array/Hash/String arms are kept in front of it', code.include?('mrb_hash_get(M,') && code.include?('bc2cpp_ary_entry'))
+             code.match?(/r\d+ = bc2cpp_getidx\(M, r\d+, r\d+\);/) &&
+               helper.include?('POLY_SMALL_N :[] -> Vars') && helper.match?(/Vars_+impl\(M, recv, key\)/))
+  check.call('the exact Array/Hash/String arms are kept in front of it',
+             helper.index('bc2cpp_ary_entry') < helper.index('mrb_hash_get(M,') &&
+               helper.index('mrb_str_aref(M,') < helper.index('POLY_SMALL_N :[]'))
 end
 
 SHIFT = <<~'RUBY'

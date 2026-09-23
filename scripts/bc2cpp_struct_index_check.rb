@@ -101,13 +101,14 @@ Dir.mktmpdir do |dir|
   check.call('a literal-key read of a small struct uses the exact-class fast path',
              read_a.include?('mrb_type(r3) == MRB_TT_STRUCT') &&
                read_a.match?(/RARRAY_LEN\(r3\)\) \? RARRAY_PTR\(r3\)\[0\] : mrb_nil_value\(\)/) &&
-               read_a.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
+               # OUTLINED_INDEX_OPS (docs/adr/0216): every other receiver goes to the shared chain.
+               read_a.include?('r3 = bc2cpp_getidx(M, r3, r4);'))
   read_m10 = compiled.call('read_m10')
   check.call('a literal-key read past the ARRAY-splat threshold resolves the same real index (10)',
              read_m10.match?(/RARRAY_LEN\(r3\)\) \? RARRAY_PTR\(r3\)\[10\] : mrb_nil_value\(\)/))
   read_dynamic = compiled.call('read_dynamic')
   check.call('a non-literal (variable) key never gets the struct fast path',
-             !read_dynamic.include?('MRB_TT_STRUCT') && read_dynamic.include?('mrb_funcall(M, r'))
+             !read_dynamic.include?('MRB_TT_STRUCT') && read_dynamic.include?('bc2cpp_getidx(M, r'))
   read_string_key = compiled.call('read_string_key')
   check.call('a String literal key (not a Symbol) never gets the struct fast path either',
              !read_string_key.include?('MRB_TT_STRUCT'))
@@ -141,7 +142,7 @@ Dir.mktmpdir do |dir|
     check.call('two owners sharing one member name each get their own guarded branch, in order',
                code.scan('MRB_TT_STRUCT').size == 2 &&
                  code.index('bc2cpp_owner_class_0(M)') < code.index('bc2cpp_owner_class_1(M)') &&
-                 code.index('bc2cpp_owner_class_1(M)') < code.index('mrb_funcall(M, r'))
+                 code.index('bc2cpp_owner_class_1(M)') < code.index('bc2cpp_getidx(M, r'))
   end
 
   # STRUCT_INDEX_MAX: past the cap, the chain is left out entirely (falls

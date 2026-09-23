@@ -57,9 +57,12 @@ Dir.mktmpdir do |dir|
   code = gen.compile_insn(irep.instructions[idx], irep, method, idx)
   check.call('SETIDX devirtualizes compiled []= behind an exact-class guard',
              code.include?('TYPED :[]= -> Game::Cells#[]=') && code.include?('mrb_obj_class(M, r'))
+  # OUTLINED_INDEX_OPS (docs/adr/0216): the fallback is the bc2cpp_setidx helper.
+  helper = gen.emit_index_helpers([code])
   check.call('guard fallback preserves Array/Hash built-in assignment and dynamic []=',
-             code.include?('mrb_ary_set(M,') && code.include?('mrb_hash_set(M,') &&
-               code.include?('mrb_funcall(M,') && code.include?('"[]=", 2'))
+             code.match?(/\} else \{\n\s*r(\d+) = bc2cpp_setidx\(M, r\1, r\d+, r\d+\);/) &&
+               helper.include?('mrb_ary_set(M,') && helper.include?('mrb_hash_set(M,') &&
+               helper.include?('mrb_funcall(M, recv, "[]=", 2, idx, val)'))
   check.call('typed branch retains compiled []= method result semantics',
              code.include?('TYPED :[]= -> Game::Cells#[]=') && code.match?(/r\d+ = Game__Cells_+impl\(M,/))
 
