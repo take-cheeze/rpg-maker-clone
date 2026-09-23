@@ -54,7 +54,7 @@ check.call('an exempt name leaves c_literals only through the symbol table',
 check.call('a relative superclass path blocks every owner ending in it', S.subclassed?('RPG2k::Scene::Base', Set['Base']))
 check.call('an unrelated class sharing a short name is not blocked',
            !S.subclassed?('Game::Battle', Set['RPG2k::Scene::Battle']))
-check.call('an unnameable superclass (Class.new(klass)) blocks every owner',
+check.call('an unnameable superclass (a computed Class.new argument) blocks every owner',
            S.subclassed?('Game::Map', Set[S::ANY_CLASS]))
 
 if failures.empty?
