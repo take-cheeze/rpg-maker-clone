@@ -83,7 +83,7 @@ NOT_PER_METHOD = %w[
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_literal_devirt_safe
   @fixnum_proof_ctx @fixnum_proof_preds @keyword_never_defined_universe @known_owner_set @subclassed_set
   @own_upvar_written_regs @symbol_installed_names
-  @const_lookup_helper_used @const_site_cache @direct_construct_used @native_construct_used
+  @const_lookup_helper_used @const_site_cache @direct_construct_used @index_helper_code @native_construct_used
   @owner_class_cache @synthesize_accessor_for
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @ivar_layout @only_owners @other_owners

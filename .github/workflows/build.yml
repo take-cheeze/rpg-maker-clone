@@ -948,6 +948,7 @@ jobs:
           ruby scripts/bc2cpp_embed_guard_exemption_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
+          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
