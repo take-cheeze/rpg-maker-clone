@@ -1519,5 +1519,6 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
                                     RPG2k::Window RPG2k Game::Picture Game::Vehicle
                                     RPG2k::Scene::Map::LRUBitmapCache])
   wio_strip_inline_helpers(spec)
+  wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
 end
