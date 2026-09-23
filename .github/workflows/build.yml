@@ -1036,6 +1036,14 @@ jobs:
           ./scripts/download-wolfrpg-sample.bash
 
       - parallel:
+          # Dynamic Ruby (method_missing, computed send, ...) in the code bc2cpp
+          # compiles as a closed world; new offences fail, fixed ones must leave
+          # the baseline.
+          - name: RPG2k closed-world lint
+            run: |
+              ruby scripts/rpg2k_closed_world_lint_check.rb
+              ruby scripts/rpg2k_closed_world_lint.rb
+
           - name: LCF test-bed smoke check
             run: ruby scripts/lcf_testbed_check.rb
 
