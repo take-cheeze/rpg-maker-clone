@@ -88,19 +88,26 @@ NOT_PER_METHOD = %w[
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @ivar_layout @only_owners @other_owners
 ].freeze
-lines = File.readlines(File.join(root, 'tools/bc2cpp/bc2cpp.rb'))
-first = lines.index("class CodeGen\n")
-last = first + lines[first..].index("end\n")
-in_init = false
+# CodeGen is reopened across several tools/bc2cpp files (scripts/bc2cpp_split.rb).
 written = Set.new
-lines[first..last].each do |line|
-  in_init = true if line.start_with?('  def initialize(')
-  in_init = false if in_init && line == "  end\n"
-  next if in_init
+blocks = 0
+Dir[File.join(root, 'tools/bc2cpp/*.rb')].sort.each do |path|
+  lines = File.readlines(path)
+  lines.each_index.select { |i| lines[i] == "class CodeGen\n" }.each do |first|
+    blocks += 1
+    last = first + lines[first..].index("end\n")
+    in_init = false
+    lines[first..last].each do |line|
+      in_init = true if line.start_with?('  def initialize(')
+      in_init = false if in_init && line == "  end\n"
+      next if in_init
 
-  code = line.sub(/(^|\s)#.*$/, '')
-  code.scan(/(@[a-z_]\w*)\s*(?:\|\|=|\+=|<<|=(?![=~]))/) { |(ivar)| written << ivar }
+      code = line.sub(/(^|\s)#.*$/, '')
+      code.scan(/(@[a-z_]\w*)\s*(?:\|\|=|\+=|<<|=(?![=~]))/) { |(ivar)| written << ivar }
+    end
+  end
 end
+check.call("CodeGen's source is found (#{blocks} class bodies)", blocks.positive?)
 unlisted = written.to_a - CodeGen::METHOD_COMPILE_STATE.keys.map(&:to_s) - NOT_PER_METHOD
 check.call("every ivar written outside the constructor is classified#{unlisted.empty? ? '' : " (not: #{unlisted.sort.join(', ')})"}",
            unlisted.empty?)

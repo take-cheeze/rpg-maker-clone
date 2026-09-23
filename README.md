@@ -1024,6 +1024,9 @@
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
   [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md)
   and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
+  The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
+  order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
+  mechanical split of REF's single-file `bc2cpp.rb`.
 
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
