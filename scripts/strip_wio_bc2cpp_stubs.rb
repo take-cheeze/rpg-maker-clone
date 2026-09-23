@@ -589,16 +589,14 @@ if __FILE__ == $PROGRAM_NAME
 
         # Mixed stripped/kept argument list: shrink the statement to just
         # the kept names rather than deleting or keeping it whole. The
-        # whole argument span (first kept arg's start through last kept
-        # arg's end) is replaced with the kept names joined by `, ` -- safe
-        # whenever that span holds nothing but `:` names, commas and
-        # whitespace (a `#` comment or anything else in there raises
+        # whole argument span (through the LAST argument, so trailing
+        # stripped names go too) is replaced with the kept names joined by
+        # `, ` -- safe whenever that span holds nothing but `:` names, commas
+        # and whitespace (a `#` comment or anything else in there raises
         # rather than guessing).
         first_ln = vc[:node].first_lineno
         kept_idx = vc[:names].each_index.select { |i| kept.include?(vc[:names][i]) }
-        first_span = vc[:spans][kept_idx.first]
-        last_span = vc[:spans][kept_idx.last]
-        f0, fc0 = first_span[0] - 1, first_span[1]
+        last_span = vc[:spans].last
         l0, lc1 = last_span[2] - 1, last_span[3]
         stmt_first0 = vc[:node].first_lineno - 1
         arg_lines = lines_for_spans[stmt_first0..l0]

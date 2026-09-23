@@ -103,6 +103,8 @@ function(rpg2k_add_mruby)
   # reads at build time beyond these two.
   file(GLOB bc2cpp_files CONFIGURE_DEPENDS ${ARG_REPO_ROOT}/tools/bc2cpp/*.rb)
   list(APPEND mrb_files ${bc2cpp_files})
+  # The hot-method list a BC2CPP_HOT_ONLY build compiles (docs/adr/0214).
+  list(APPEND mrb_files ${ARG_REPO_ROOT}/tools/bc2cpp/hot_methods.txt)
 
   set(mrb_opts
       MRUBY_CONFIG=${ARG_REPO_ROOT}/build_config.rb

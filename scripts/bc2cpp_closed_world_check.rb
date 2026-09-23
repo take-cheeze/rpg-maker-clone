@@ -62,9 +62,9 @@ Dir.mktmpdir do |dir|
   check.call('a literal that defines a method is refused too', errors.size == 1)
 end
 
-config = File.read(File.join(root, 'build_config.rb'))
+config = File.read(File.join(root, 'build_config.rb'), encoding: 'UTF-8')
 check.call('build_config.rb enables the mode for single-format builds only',
-           config.include?('closed_world = proc { enable_bc2cpp_closed_world if single_format_only }') &&
+           config.match?(/closed_world = proc do\n\s+if single_format_only\n\s+enable_bc2cpp_closed_world\n/) &&
              BC2CPP_COMPILED_GEMS.keys.all? { |g| config.include?("#{g}\", &closed_world if bc2cpp") })
 check.call('every compiled gem passes the mode through the checked env',
            BC2CPP_COMPILED_GEMS.keys.all? do |g|

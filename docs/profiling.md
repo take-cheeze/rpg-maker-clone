@@ -275,6 +275,54 @@ second). Not investigated further here -- a real follow-up, isolating
 construction cost from table-decode cost with the `map.transition.*` sections
 already in place, before assuming which one actually explains it.
 
+## bc2cpp: regenerating the hot-method profile
+
+The flash-limited builds (psp, wio, maix) compile only the methods
+`tools/bc2cpp/hot_methods.txt` lists to C++, and every other method runs as
+bytecode (ADR 0214). Regenerate the list after a change moves hot code
+around. A method the list does not name is interpreted: always correct, but
+slower. `scripts/bc2cpp_hot_only_check.rb` fails when the list names a method
+that no longer exists.
+
+```sh
+# 1. A full-compile desktop build (no BC2CPP_HOT_ONLY). The mruby gems build
+#    with -g, which the attribution below needs.
+RPGMAKER_BC2CPP=1 cp932_table=... jis0208_table=... \
+  cmake -S . -B build-full -G Ninja -DCMAKE_BUILD_TYPE=Release && \
+  cmake --build build-full -j"$(nproc)"
+
+# 2. Record every scenario under callgrind (Nepheshel first; each further
+#    RPG2000/2003 game gets a boot run and a walk/menu run). This takes about
+#    an hour on 4 cores.
+ruby scripts/bc2cpp_hot_profile.rb record --binary build-full/rpg_maker_clone \
+  --out /tmp/hot --game data/Nepheshel206beta/Nepheshel206Rbeta \
+  --game <other game> ...
+
+# 3. Select the list: 98% of compiled-code Ir (ADR 0214 has the tradeoff
+#    table), then the classes' #initialize and the keyword/super callees
+#    those methods need.
+ruby scripts/bc2cpp_hot_profile.rb select --gen-dir build-full/mruby/host/mrbgems \
+  --threshold 0.98 --report /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
+```
+
+Each scenario is an `RPG2k#main_loop` count driven by `--script`, not a
+wall-clock `--timeout_ms`, so callgrind's slowdown does not change the work
+done. The scenarios are: map idle, battle play against troops 1 and 6,
+walking plus every main-menu screen, Marshal and `.lsd` save/load, a battle
+animation, and a boot and a walk for each extra game. Self Ir is attributed by
+source line of the generated `*_gen.cpp`, so an `_impl` inlined into its
+caller still counts for its own method. Block-fallback, rescue-try and
+nested helpers count for the method that owns them. A synthesized
+struct-field accessor counts for its class's `#initialize`, since the
+accessor exists only while that constructor compiles. That keeps record
+classes such as `RPG2k::Scene::Map::MapEventState` embedded.
+
+To check a new list, build with `BC2CPP_HOT_ONLY=1` in a fresh build
+directory and compare the two builds' Ir under callgrind. The engine-binary
+Ir is the stable figure: SDL's software blit under xvfb swings from run to
+run. Also confirm that bc2cpp's `== hot-only: listed but not compiled ==`
+section is empty.
+
 ## Audio: what is already off the main thread
 
 Short version: **the audio *processing* is already on another thread, and it

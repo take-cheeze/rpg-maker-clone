@@ -167,12 +167,17 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
   # never_called_registrations.rb/static_dispatch_unregistered.rb too, and an
   # edit to either changes this TSV (same STALE_REQUIRE_RELATIVE_DEPS reason
   # the compiled gems' own mrbgem.rake globs this directory).
-  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp,
+  # A hot-only build's probe uses the build's own list, so an excluded method's
+  # bytecode `def` -- its only implementation -- is never stripped (ADR 0214).
+  hot_methods = File.expand_path('tools/bc2cpp/hot_methods.txt', __dir__)
+  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp, hot_methods,
                           *Dir[File.expand_path('tools/bc2cpp/*.rb', __dir__)]].uniq do |t|
     FileUtils.mkdir_p File.dirname(registered_tsv), verbose: true
     mrbc = spec.build.mrbcfile.to_s
+    require compiled_gems_rb
+    env = { 'BC2CPP_HOT_METHODS' => (hot_methods if bc2cpp_hot_only_build?(spec.build)) }
     cmd = Shellwords.join([RbConfig.ruby, probe_script, compiled_gem, repo_root, mrbc])
-    sh "#{cmd} > #{registered_tsv.shellescape}"
+    sh env, "#{cmd} > #{registered_tsv.shellescape}"
   end
 
   owners_csv = owners.join(',')
@@ -362,7 +367,14 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # docs/adr/0210: on single-format builds the closed world is all the Ruby
   # there is, so the compiled gems may replace a proven-dead by-name fallback
   # with a raise (tools/bc2cpp/compiled_gems.rb re-checks the real gem list).
-  closed_world = proc { enable_bc2cpp_closed_world if single_format_only }
+  # ADR 0214: the same builds compile only tools/bc2cpp/hot_methods.txt to C++;
+  # BC2CPP_HOT_ONLY=1/0 overrides it for a whole build.
+  closed_world = proc do
+    if single_format_only
+      enable_bc2cpp_closed_world
+      enable_bc2cpp_hot_only
+    end
+  end
   conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled", &closed_world if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a

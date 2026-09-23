@@ -1028,6 +1028,15 @@
   order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`.
 
+- On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
+  compiles only the profiled hot methods listed in
+  `tools/bc2cpp/hot_methods.txt`. Every other method stays mruby bytecode.
+  The generated C++ shrinks from about 4.1 MB to 0.56 MB of `-Os` text.
+  Desktop, wasm and android still compile everything. `BC2CPP_HOT_ONLY=1`
+  builds the desktop binary in the same mode, and `docs/profiling.md` shows
+  how to regenerate the list. See
+  [`docs/adr/0214-bc2cpp-profile-guided-hot-only.md`](docs/adr/0214-bc2cpp-profile-guided-hot-only.md).
+
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
   second instead of 60, to cut rendering CPU/GPU work and the memory
