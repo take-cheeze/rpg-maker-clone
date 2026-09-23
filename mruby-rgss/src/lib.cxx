@@ -106,8 +106,11 @@ static inline dirent* readdir(DIR*) {
 // implementation for the whole build. mruby-mvjs depends on this gem and only
 // includes the header, so its glyph rasteriser (mvcanvas.cxx) resolves against
 // the symbols emitted here — keep exactly one STB_TRUETYPE_IMPLEMENTATION.
+// Not on wio (ADR 0218): nothing there can load a TrueType face.
+#if !defined(WIO_TERMINAL)
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
+#endif
 
 // Defined in terminal.cxx (same gem).  A no-op unless the game was started with
 // a terminal backend (--sixel / --iterm); forwards terminal keyboard input to
@@ -2729,7 +2732,12 @@ const shinonome::Char<shinonome::HEIGHT>* find_gothic_char(char32_t c) {
 // the font's pixel size (plus bold/italic/outline/shadow), instead of the
 // fixed-size shinonome bitmap font. When no usable font file is found we fall
 // back to the shinonome path below, so text always draws.
+//
+// Compiled out on wio (ADR 0218): it has no Fonts/ directory to scan (no
+// dirent) and no maker that sets RGSS::Font.default_path, so every face
+// lookup there fails and text is always shinonome.
 
+#if !defined(WIO_TERMINAL)
 struct TtfFont {
   std::vector<uint8_t> data;
   stbtt_fontinfo info{};
@@ -2829,6 +2837,7 @@ std::string find_font_path(mrb_state* M, const std::string& name) {
   }
   return partial.empty() ? first_any : partial;
 }
+#endif  // !defined(WIO_TERMINAL)
 
 // RGSS::Font.default_path, or "" when unset: the font to use for a project that
 // ships none of its own. Opt-in per maker rather than automatic, because
@@ -2860,6 +2869,7 @@ std::string font_default_path(mrb_state* M) {
 // The fallback path is part of the key, not just the name: a game's scripts may
 // set Font.default_path (or the boot may set it after the first text has been
 // drawn), and the entry cached before that must not outlive it.
+#if !defined(WIO_TERMINAL)
 std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
   static std::map<std::string, std::shared_ptr<TtfFont>> cache;
   const std::string fallback = font_default_path(M);
@@ -2876,10 +2886,13 @@ std::shared_ptr<TtfFont> ttf_for_name(mrb_state* M, const std::string& name) {
   cache[key] = f;
   return f;
 }
+#endif  // !defined(WIO_TERMINAL)
 
 // The subset of RGSS::Font a draw needs, read once from the bitmap's @font.
 struct FontAttr {
+#if !defined(WIO_TERMINAL)
   std::shared_ptr<TtfFont> ttf;
+#endif
   double size = 22;
   bool bold = false, italic = false, outline = true, shadow = false;
   uint8_t color[4] = {0, 0, 0, 255};      // r, g, b, a
@@ -2898,9 +2911,12 @@ void color_rgba(mrb_state* M, V cv, uint8_t out[4]) {
 
 FontAttr read_font(mrb_state* M, V self) {
   FontAttr fa;
+#if !defined(WIO_TERMINAL)
   std::string name;
+#endif
   const V fv = mrb_iv_get(M, self, mrb_intern_lit(M, "@font"));
   if (!mrb_nil_p(fv)) {
+#if !defined(WIO_TERMINAL)
     const V nv = mrb_funcall(M, fv, "name", 0);
     if (mrb_string_p(nv)) {
       name.assign(RSTRING_PTR(nv), RSTRING_LEN(nv));
@@ -2910,6 +2926,7 @@ FontAttr read_font(mrb_state* M, V self) {
       const V n0 = mrb_ary_ref(M, nv, 0);
       name.assign(RSTRING_PTR(n0), RSTRING_LEN(n0));
     }
+#endif
     const V sv = mrb_funcall(M, fv, "size", 0);
     if (mrb_fixnum_p(sv))
       fa.size = static_cast<double>(mrb_fixnum(sv));
@@ -2922,10 +2939,20 @@ FontAttr read_font(mrb_state* M, V self) {
     color_rgba(M, mrb_funcall(M, fv, "color", 0), fa.color);
     color_rgba(M, mrb_funcall(M, fv, "out_color", 0), fa.out_color);
   }
+#if defined(WIO_TERMINAL)
+  // A default face asks for the renderer this build left out; drawing it in
+  // shinonome instead would hide that.
+  if (!font_default_path(M).empty())
+    mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
+              "RGSS::Font.default_path: TrueType text is not compiled into "
+              "the Wio Terminal build (ADR 0218)");
+#else
   fa.ttf = ttf_for_name(M, name);
+#endif
   return fa;
 }
 
+#if !defined(WIO_TERMINAL)
 // Advance width and line height of `s` at `px` em size, in whole pixels.
 void measure_text_ttf(TtfFont& f,
                       std::string_view s,
@@ -3210,6 +3237,8 @@ void draw_text_tex_ttf(Bitmap& bmp,
   bmp.dirty = true;
 }
 
+#endif  // !defined(WIO_TERMINAL)
+
 // Measure the pixel width and height of `s` using the shinonome font tables.
 void measure_text(std::string_view s, int& width, unsigned& height) {
   width = 0;
@@ -3301,10 +3330,12 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   // rasterising at the font's pixel size. Fall back to the fixed-size shinonome
   // bitmap font when no usable font file is found.
   const FontAttr fa = read_font(M, self);
+#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     draw_text_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align));
     return self;
   }
+#endif
 
   // Text colour comes from the font (default opaque black when no @font is
   // set), laid out in the bitmap's byte order (B, G, R, A).
@@ -3378,13 +3409,15 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   Bitmap& src_bmp = bmp_require(M, src);
   const std::string_view sv(s, len);
 
-  const FontAttr fa = read_font(M, self);
+  [[maybe_unused]] const FontAttr fa = read_font(M, self);
+#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     draw_text_tex_ttf(bmp, fa, *fa.ttf, sv, x, y, w, h, static_cast<int>(align),
                       src_bmp, static_cast<int>(sx), static_cast<int>(sy),
                       static_cast<int>(sw), static_cast<int>(sh));
     return self;
   }
+#endif
 
   int tw = 0;
   unsigned th = 0;
@@ -3453,10 +3486,13 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
 
   int w = 0;
   int height = 0;
-  const FontAttr fa = read_font(M, self);
+  [[maybe_unused]] const FontAttr fa = read_font(M, self);
+#if !defined(WIO_TERMINAL)
   if (fa.ttf && fa.ttf->ok) {
     measure_text_ttf(*fa.ttf, sv, fa.size, w, height);
-  } else {
+  } else
+#endif
+  {
     unsigned uh = 0;
     measure_text(sv, w, uh);
     height = static_cast<int>(uh);
