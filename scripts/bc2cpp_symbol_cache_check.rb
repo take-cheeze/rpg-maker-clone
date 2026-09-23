@@ -2,7 +2,7 @@
 # encoding: UTF-8
 # Check SYMBOL_CACHE (tools/bc2cpp/symbol_cache.rb): generated C++ interns each
 # distinct name once per VM instead of on every execution. Covers the rewrite
-# (literal forms, funcall -> funcall_id with arbitrary receivers, calls that must
+# (literal forms, funcall -> bc2cpp_send with arbitrary receivers, calls that must
 # be left alone) and, by compiling and running the emitted cache against stub
 # mruby functions, its behaviour across VMs.
 
@@ -26,21 +26,20 @@ out = rw.call('a(mrb_intern_cstr(M, "@state")); b(mrb_intern_cstr(M, "@state"));
 check.call('a repeated name shares one slot', out == 'a(bc2cpp_sym(M, 0)); b(bc2cpp_sym(M, 0));' && table.size == 2)
 
 out = rw.call('r3 = mrb_funcall(M, r3, "new", 1, r4);')
-check.call('mrb_funcall with a literal name becomes mrb_funcall_id', out == 'r3 = mrb_funcall_id(M, r3, bc2cpp_sym(M, 2), 1, r4);')
+check.call('mrb_funcall with a literal name becomes bc2cpp_send', out == 'r3 = bc2cpp_send(M, r3, 2, 1, r4);')
 out = rw.call('mrb_funcall(M, r1, "empty?", 0)')
-check.call('a zero-argument call keeps its argc', out == 'mrb_funcall_id(M, r1, bc2cpp_sym(M, 3), 0)')
+check.call('a zero-argument call keeps its argc', out == 'bc2cpp_send(M, r1, 3, 0)')
 out = rw.call('mrb_funcall(M, f(a, "x,y", (b)), "run", 2, m, n)')
 check.call('a receiver with commas, parentheses and a string is delimited correctly',
-           out == "mrb_funcall_id(M, f(a, \"x,y\", (b)), bc2cpp_sym(M, 4), 2, m, n)")
+           out == "bc2cpp_send(M, f(a, \"x,y\", (b)), 4, 2, m, n)")
 out = rw.call('mrb_funcall(M, mrb_funcall(M, r1, "a", 0), "b", 1, mrb_funcall(M, r2, "c", 0))')
 check.call('nested funcalls are all rewritten',
-           out == 'mrb_funcall_id(M, mrb_funcall_id(M, r1, bc2cpp_sym(M, 5), 0), bc2cpp_sym(M, 6), 1, ' \
-                  'mrb_funcall_id(M, r2, bc2cpp_sym(M, 7), 0))')
+           out == 'bc2cpp_send(M, bc2cpp_send(M, r1, 5, 0), 6, 1, bc2cpp_send(M, r2, 7, 0))')
 out = rw.call('mrb_funcall(M, r1, name_var, 0)')
 check.call('a name that is not a literal is left alone', out == 'mrb_funcall(M, r1, name_var, 0)')
 out = rw.call('mrb_funcall(M, r1, "say \\"hi\\"", 0)')
 check.call('a literal with an escaped quote is kept intact',
-           out.include?('bc2cpp_sym(M, 8)') && table.literals[8] == '"say \\"hi\\""')
+           out == 'bc2cpp_send(M, r1, 8, 0)' && table.literals[8] == '"say \\"hi\\""')
 out = rw.call('x = mrb_funcall_argv(M, r1, id, 0, NULL); y = mrb_intern_cstr(other, "n");')
 check.call('other calls and other state variables are untouched', out == 'x = mrb_funcall_argv(M, r1, id, 0, NULL); y = mrb_intern_cstr(other, "n");')
 check.call('the rewritten text has no leftover literal interning',
@@ -59,8 +58,25 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
       #include <cstring>
       #include <string>
       #include <vector>
+      #include <cstdarg>
       typedef unsigned mrb_sym;
+      typedef long mrb_int;
       struct mrb_state { int id; };
+      struct mrb_value { long v; };
+      struct RClass {};
+      static RClass arg_error;
+      static int raised = 0;
+      static RClass* mrb_exc_get_id(mrb_state*, mrb_sym) { return &arg_error; }
+      #define mrb_intern_lit(M, s) 0u
+      static void mrb_raise(mrb_state*, RClass*, const char*) { ++raised; }
+      static mrb_sym sent_sym = 0;
+      static mrb_int sent_argc = -1;
+      static long sent_sum = 0;
+      static mrb_value mrb_funcall_argv(mrb_state*, mrb_value recv, mrb_sym mid, mrb_int argc, const mrb_value* argv) {
+        sent_sym = mid; sent_argc = argc; sent_sum = recv.v;
+        for (mrb_int k = 0; k < argc; k++) sent_sum += argv[k].v;
+        return mrb_value{ 7 };
+      }
       static std::vector<std::string> interned;
       static mrb_sym mrb_intern_cstr(mrb_state* M, const char* s) {
         interned.push_back(std::string(s));
@@ -77,8 +93,11 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
         bc2cpp_reset_symbol_cache();
         bc2cpp_sym(&b, 0);
         size_t after_reset = interned.size();
-        std::printf("%d %d %d %d %d\\n", first != 0, after_repeat == 2, other_vm != first && after_switch == 3,
-                    after_reset == 4, interned[0] == "@state");
+        mrb_value got = bc2cpp_send(&b, mrb_value{ 1 }, 0, 3, mrb_value{ 10 }, mrb_value{ 20 }, mrb_value{ 30 });
+        bool sent = got.v == 7 && sent_sym == bc2cpp_sym(&b, 0) && sent_argc == 3 && sent_sum == 61 && raised == 0;
+        bc2cpp_send(&b, mrb_value{ 1 }, 0, 17);
+        std::printf("%d %d %d %d %d %d %d\\n", first != 0, after_repeat == 2, other_vm != first && after_switch == 3,
+                    after_reset == 4, interned[0] == "@state", sent, raised == 1);
       }
     CPP
     binary = File.join(dir, 'sym_harness')
@@ -89,6 +108,8 @@ if system('g++', '--version', out: File::NULL, err: File::NULL)
       check.call('a name is interned once per VM however often it is read', r[0] && r[1] && r[4])
       check.call('a second VM re-interns and never sees the first VM\'s ids', r[2])
       check.call('bc2cpp_reset_symbol_cache forces a fresh intern', r[3])
+      check.call('bc2cpp_send forwards receiver, cached symbol and every argument to mrb_funcall_argv', r[5])
+      check.call('bc2cpp_send raises past 16 arguments, like mrb_funcall_id', r[6])
     end
   end
 end

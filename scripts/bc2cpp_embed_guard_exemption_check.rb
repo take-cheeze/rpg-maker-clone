@@ -24,7 +24,7 @@ def guard(owner, name, sym)
     if (bc2cpp_owner_class_1(M) == mrb_obj_class(M, self)) {
       r5 = #{owner.gsub('::', '__')}_#{name}_impl(M, self);
     } else {
-      r5 = mrb_funcall_id(M, self, bc2cpp_sym(M, #{sym}), 0);
+      r5 = bc2cpp_send(M, self, #{sym}, 0);
     }
   CPP
 end
@@ -38,7 +38,7 @@ table = <<~CPP
   };
 CPP
 src = table + guard('Game::Map', 'guarded_only', 0) + guard('Game::Map', 'also_sent', 1) +
-      "  r1 = mrb_funcall_id(M, r1, bc2cpp_sym(M, 1), 0);\n" +
+      "  r1 = bc2cpp_send(M, bc2cpp_send(M, r1, 1, 0), 1, 0);\n" +
       guard('RPG2k::Scene::Base', 'on_subclassed', 2) + guard('Game::Map.singleton', 'on_singleton', 3)
 subclassed = Set['RPG2k::Scene::Base']
 exempt = S.embed_guard_fallback_only(src, subclassed)
