@@ -609,7 +609,7 @@ class RPG2k
       def common_event_commands(id)
         entry = @common[id]
         return nil unless entry
-        entry[:commands] ||= entry[:chunk] && entry[:chunk].event
+        entry.commands ||= entry.chunk && entry.chunk.event
       end
 
       def map_event_commands(id, page_index)

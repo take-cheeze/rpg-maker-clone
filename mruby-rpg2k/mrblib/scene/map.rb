@@ -21,82 +21,142 @@ class RPG2k
       # One live map event's full per-frame state: identity/paging fields set
       # once by #build_event, plus render/movement fields updated every real
       # frame (#animate_event/#step_event/#walk_slide_step/...). Used to be a
-      # bare Hash literal (`{id: ..., char: ..., ...}`) -- a concrete, fixed-
-      # shape type instead, the same "opaque arbitrarily-keyed container ->
-      # named record" conversion mruby-lcf/mrblib/schema.rb's own FieldSchema
-      # already got. `keyword_init: true` keeps #build_event's own
-      # construction site looking almost identical to the Hash literal it
-      # replaces; real mruby's own Struct supports `#[]`/`#[]=` with a Symbol
-      # key exactly like Hash's own bracket access (confirmed against
-      # 3rd/mruby/mrbgems/mruby-struct/src/struct.c, the same fact
-      # FieldSchema's own comment already established), so every real
-      # consumer (`e[:id]`, `ev[:flash] = flash`, ...) throughout this file
-      # keeps working unchanged.
+      # bare Hash literal, then a Struct; a plain class now (docs/adr/0215).
+      # tools/bc2cpp/bc2cpp.rb sees the attr_accessors and keeps the
+      # Integer/boolean fields as typed struct fields (IVAR_ACCESS), where a
+      # Struct member was a runtime-created native closure it could not see.
       #
-      # 24 members set by #build_event's own literal, confirmed by parsing
-      # this file with RubyVM::AbstractSyntaxTree and reading off that one
-      # Hash literal's own key list (not guessed): id, char, page,
-      # page_number, trigger, commands, guarded, move_type, route,
-      # move_timer, layer, overlap_forbidden, translucent, anim_type,
-      # base_dir, base_pattern, anim_phase, anim_count, moving, disp_x,
-      # disp_y, move_count, slide_frac, jumping. Plus four more members this
-      # file sets only later, dynamically, never in the literal itself --
-      # found by grepping every `e[:name] =`/`ev[:name] =` site in this file,
-      # not assumed from the literal alone (the same real gap LCF::
-      # Array1D#sym2idx's own comment describes for FieldSchema): `flash`
-      # (#apply_sprite_flash), `forced_route`/`forced_freq`
-      # (#force_event_move_route), `crossed_hero_this_frame`
-      # (#step_event's own touch-trigger edge tracking).
-      MapEventState = Struct.new(
-        :id, :char, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
-        :move_timer, :layer, :overlap_forbidden, :translucent, :anim_type, :base_dir, :base_pattern,
-        :anim_phase, :anim_count, :moving, :disp_x, :disp_y, :move_count, :slide_frac, :jumping,
-        :flash, :forced_route, :forced_freq, :crossed_hero_this_frame,
-        keyword_init: true
-      )
+      # #build_event writes the first 24 fields right after `.new` (the
+      # typed defaults below are never read); `flash` (#apply_sprite_flash),
+      # `forced_route`/`forced_freq` (#force_event_move_route) and
+      # `crossed_hero_this_frame` (#step_event's own touch-trigger edge
+      # tracking) are set only later, so they start nil, as the Struct
+      # member did. An Integer field is only ever given an Integer and a
+      # boolean field only `true`/`false` -- the typed struct field's
+      # attr_writer raises TypeError on anything else.
+      class MapEventState
+        attr_accessor :id, :char, :page, :page_number, :trigger, :commands, :guarded, :move_type, :route,
+                      :move_timer, :layer, :overlap_forbidden, :translucent, :anim_type, :base_dir,
+                      :base_pattern, :anim_phase, :anim_count, :moving, :disp_x, :disp_y, :move_count,
+                      :slide_frac, :jumping, :flash, :forced_route, :forced_freq, :crossed_hero_this_frame
 
-      # A live Show Message/Show Choices window's full state (#open_message):
-      # 19 members set by its own literal (confirmed by parsing this file
-      # with RubyVM::AbstractSyntaxTree and reading off that Hash literal's
-      # key list directly, not guessed) -- window, choice, count,
-      # choice_start, reveal, contents, inner_w, seg_lines, interp, page,
-      # pages, auto_close, face, face_x, face_y, text_x, text_w, gold_window,
-      # trailing_color. Plus four more members this file sets only later,
-      # dynamically, never in the literal itself (found the same way
-      # MapEventState's own four late members were, by grepping every
-      # `@message[:name] =` site in this file): awaiting_followup,
-      # followup_resumed, pause_frames, pending_choice.
-      MessageState = Struct.new(
-        :window, :choice, :count, :choice_start, :reveal, :contents, :inner_w,
-        :seg_lines, :interp, :page, :pages, :auto_close, :face, :face_x, :face_y,
-        :text_x, :text_w, :gold_window, :trailing_color,
-        :awaiting_followup, :followup_resumed, :pause_frames, :pending_choice,
-        keyword_init: true
-      )
+        def initialize
+          @id = 0
+          @char = nil
+          @page = nil
+          @page_number = nil
+          @trigger = nil
+          @commands = nil
+          @guarded = false
+          @move_type = 0
+          @route = nil
+          @move_timer = 0
+          @layer = 0
+          @overlap_forbidden = false
+          @translucent = false
+          @anim_type = 0
+          @base_dir = nil
+          @base_pattern = 0
+          @anim_phase = 0
+          @anim_count = 0
+          @moving = false
+          @disp_x = 0
+          @disp_y = 0
+          @move_count = 0
+          @slide_frac = 0
+          @jumping = false
+          @flash = nil
+          @forced_route = nil
+          @forced_freq = nil
+          @crossed_hero_this_frame = nil
+        end
+      end
 
-      # A live shop's full UI state (#open_shop): 15 members set by its own
-      # literal -- model, has_menu, screen, index, scroll, cmd_index, window,
-      # gold, status, party, desc, prompt, terms, browsed, interp. Plus
-      # `confirm_timer`, set only later by #drive_shop_quantity once a
-      # transaction commits (found by the same `@shop[:name] =` grep as
-      # MapEventState/MessageState's own late members). `quantity` holds a
-      # genuinely distinct nested record while the quantity counter is open
-      # (see ShopQuantity below), not a scalar field, so it is listed here
-      # too but is never Hash-literal-initialized.
-      ShopState = Struct.new(
-        :model, :has_menu, :screen, :index, :scroll, :cmd_index, :window, :gold,
-        :status, :party, :desc, :prompt, :terms, :browsed, :interp,
-        :confirm_timer, :quantity,
-        keyword_init: true
-      )
+      # A live Show Message/Show Choices window's full state (#open_message,
+      # which sets the first 19 fields right after `.new`). The last four --
+      # awaiting_followup, followup_resumed, pause_frames, pending_choice --
+      # are set only later, so they start nil.
+      class MessageState
+        attr_accessor :window, :choice, :count, :choice_start, :reveal, :contents, :inner_w,
+                      :seg_lines, :interp, :page, :pages, :auto_close, :face, :face_x, :face_y,
+                      :text_x, :text_w, :gold_window, :trailing_color,
+                      :awaiting_followup, :followup_resumed, :pause_frames, :pending_choice
 
-      # The quantity counter's own sub-record, live only while `@shop[:screen]
+        def initialize
+          @window = nil
+          @choice = nil
+          @count = 0
+          @choice_start = 0
+          @reveal = nil
+          @contents = nil
+          @inner_w = 0
+          @seg_lines = nil
+          @interp = nil
+          @page = 0
+          @pages = 0
+          @auto_close = nil
+          @face = nil
+          @face_x = 0
+          @face_y = 0
+          @text_x = 0
+          @text_w = 0
+          @gold_window = nil
+          @trailing_color = nil
+          @awaiting_followup = nil
+          @followup_resumed = nil
+          @pause_frames = nil
+          @pending_choice = nil
+        end
+      end
+
+      # A live shop's full UI state (#open_shop, which sets the first 15
+      # fields right after `.new`). `confirm_timer` is set only later by
+      # #drive_shop_quantity once a transaction commits, and `quantity`
+      # holds a ShopQuantity only while the quantity counter is open, so
+      # both start nil.
+      class ShopState
+        attr_accessor :model, :has_menu, :screen, :index, :scroll, :cmd_index, :window, :gold,
+                      :status, :party, :desc, :prompt, :terms, :browsed, :interp,
+                      :confirm_timer, :quantity
+
+        def initialize
+          @model = nil
+          @has_menu = nil
+          @screen = nil
+          @index = 0
+          @scroll = 0
+          @cmd_index = 0
+          @window = nil
+          @gold = nil
+          @status = nil
+          @party = nil
+          @desc = nil
+          @prompt = nil
+          @terms = nil
+          @browsed = nil
+          @interp = nil
+          @confirm_timer = nil
+          @quantity = nil
+        end
+      end
+
+      # The quantity counter's own sub-record, live only while `@shop.screen
       # == :quantity` (and briefly after, through the purchased/sold
       # confirmation -- see #drive_shop_quantity's own comment): which item
       # (`id`), how many (`count`, 1..`max`), and whether this is a buy or a
       # sell (`mode`, read back by #shop_quantity_move and
       # #close_shop_quantity to know which screen to return to).
-      ShopQuantity = Struct.new(:id, :count, :max, :mode, keyword_init: true)
+      # #open_shop_quantity sets all four right after `.new`.
+      class ShopQuantity
+        attr_accessor :id, :count, :max, :mode
+
+        def initialize
+          @id = 0
+          @count = 0
+          @max = 0
+          @mode = :buy
+        end
+      end
       # Sub-pixel movement model. RPG2000's Move Speed (1..6) is no longer dead:
       # the per-frame slide advance for a character of internal move_speed `s`
       # (real RPG_RT's own 1-indexed Move Speed minus 1; see #page_move_speed
@@ -634,7 +694,7 @@ class RPG2k
       # page/conditions currently pick something else). Diagnostics only --
       # RPG2k#dump_bug_report is the one caller today.
       def parallel_interpreter_for(id)
-        p = @parallels.find { |pp| pp[:event] && pp[:event][:id] == id }
+        p = @parallels.find { |pp| pp[:event] && pp[:event].id == id }
         p && p[:interp]
       end
 
@@ -1612,29 +1672,16 @@ class RPG2k
         # first return value) -- diagnostics-only (RPG2k#bug_report_text),
         # nothing here reads it back.
         #
-        # Built via a bare `MapEventState.new` plus individual setters, not
+        # Built via a bare `MapEventState.new` plus one setter per field, not
         # the single `MapEventState.new(id: id, char: ch, ...)` keyword call
-        # this originally shipped as: real, measured tools/bc2cpp/bc2cpp.rb
-        # regression, caught comparing its own real `== compiled entry
-        # points ==` diagnostic before/after -- a keyword call site (`nk >
-        # 0`) can only devirtualize into a callee's own compiled `_impl`
-        # (mruby's own `mrb_funcall*` family cannot express keywords at
-        # all, see compile_keyword_send's own comment), and `MapEventState`'s
-        # `#initialize` is Struct's own NATIVE implementation (no bytecode
-        # body to devirtualize into, ever) -- so the keyword-call form had
-        # no sound translation at all and silently dropped this ENTIRE
-        # method (not just this one call) out of AOT compilation, back onto
-        # the ordinary bytecode interpreter, the same "loud gap" fallback
-        # `#error`/SKIP_UNSUPPORTED already uses everywhere else, just for
-        # a real 159-call-site-per-frame method. Each setter below is an
-        # ordinary one-argument send (`nk = 0`), which carries no such
-        # restriction -- confirmed for real: `build_event` compiles clean
-        # again with this shape, and `MapEventState.new` (Struct's own
-        # zero-arg default, keyword_init: true's own empty-keyword-hash
-        # path, 3rd/mruby/mrbgems/mruby-struct/src/struct.c's own
-        # mrb_struct_initialize) fills every member nil first, matching
-        # this constructor's own real invariant of writing all of them
-        # unconditionally before returning.
+        # this originally shipped as. While MapEventState was a Struct that
+        # was a real, measured tools/bc2cpp/bc2cpp.rb regression: a keyword
+        # call site can only devirtualize into a callee's own compiled
+        # `_impl`, and a Struct's #initialize is native, so the keyword form
+        # dropped this whole per-frame-hot method out of AOT compilation.
+        # MapEventState is a plain class now (docs/adr/0215) whose
+        # #initialize takes no arguments; the setters below still write
+        # every field #build_event owns before this returns.
         event = MapEventState.new
         event.id = id
         event.char = ch
@@ -1689,8 +1736,8 @@ class RPG2k
         size = @events.size
         while i < size
           e = @events[i]
-          ch = e[:char]
-          id = e[:id]
+          ch = e.char
+          id = e.id
           # A stationary event's tuple reads the same every frame -- reuse the
           # Array already sitting in @state.map_event_positions instead of
           # allocating an identical replacement each time; #event_last_position
@@ -1706,7 +1753,7 @@ class RPG2k
             pos = [ch.x, ch.y, ch.direction]
             @state.map_event_positions[id] = pos
           end
-          @state.map_event_route_index[id] = e[:route].index if e[:route]
+          @state.map_event_route_index[id] = e.route.index if e.route
           # Also keeps @event_last_position current for #event_id_at's hidden-
           # event fallback -- see #build_events' seeding comment.
           @event_last_position[id] = pos
@@ -1726,7 +1773,7 @@ class RPG2k
       def record_foreground_event_exec
         frames = @interpreter.call_stack_snapshot
         @state.foreground_event_exec =
-          frames && { event_id: @active_event ? @active_event[:id] : 0, frames: frames }
+          frames && { event_id: @active_event ? @active_event.id : 0, frames: frames }
       end
 
       # Resume whatever event was mid-execution in the shared foreground
@@ -1754,7 +1801,7 @@ class RPG2k
         @interpreter.restore_call_stack(frames)
         return unless @interpreter.running?
         ev_id = saved[:event_id]
-        @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e[:id] == ev_id } : nil
+        @active_event = (ev_id && ev_id != 0) ? @events.find { |e| e.id == ev_id } : nil
       end
 
       # Snapshot the current map's live Tile Substitution table onto
@@ -1770,7 +1817,7 @@ class RPG2k
       # id (they are global) plus this map's raw events for map-event page calls.
       def build_resolver
         common = {}
-        @common.each { |c| common[c[:id]] = c }
+        @common.each { |c| common[c.id] = c }
         map_events = (@map.unit.events rescue nil)
         EventResolver.new(common, map_events)
       rescue StandardError
@@ -1781,7 +1828,7 @@ class RPG2k
       def rebuild_event_tiles
         @event_tiles = {}
         @event_tiles_by_pos = {}
-        @events.each { |e| index_event_tile(e, e[:char].x, e[:char].y) }
+        @events.each { |e| index_event_tile(e, e.char.x, e.char.y) }
       end
 
       # Record event `e` as occupying (x, y) in both occupied-tile caches:
@@ -2025,35 +2072,35 @@ class RPG2k
       # cascade. Parallel processes are driven separately by #step_parallels.
       def start_autostart
         ev = @events.find do |e|
-          e[:trigger] == TRIGGER_AUTO_START && e[:commands] &&
-            !@started_auto[e[:id]] &&
-            !(e[:guarded] && @auto_once[e[:id]])
+          e.trigger == TRIGGER_AUTO_START && e.commands &&
+            !@started_auto[e.id] &&
+            !(e.guarded && @auto_once[e.id])
         end
         if ev
-          @started_auto[ev[:id]] = true
-          @auto_once[ev[:id]] = true if ev[:guarded]
+          @started_auto[ev.id] = true
+          @auto_once[ev.id] = true if ev.guarded
           @active_event = ev
-          @interpreter.start(ev[:commands])
-          @interpreter.event_id = ev[:id]
+          @interpreter.start(ev.commands)
+          @interpreter.event_id = ev.id
           return
         end
 
         ce = @common.find do |c|
-          c[:trigger] == Game::CommonEvent::AUTO_START && c[:commands] &&
-            common_gate_open?(c) && !@started_common[c[:id]] &&
-            !(c[:guarded] && @auto_once_common[c[:id]])
+          c.trigger == Game::CommonEvent::AUTO_START && c.commands &&
+            common_gate_open?(c) && !@started_common[c.id] &&
+            !(c.guarded && @auto_once_common[c.id])
         end
         return unless ce
-        @started_common[ce[:id]] = true
-        @auto_once_common[ce[:id]] = true if ce[:guarded]
+        @started_common[ce.id] = true
+        @auto_once_common[ce.id] = true if ce.guarded
         @active_event = nil # a common event has no "this event" map character
-        @interpreter.start(ce[:commands])
+        @interpreter.start(ce.commands)
       end
 
       # A common event's switch gate: open unless it needs a flag that is off.
       def common_gate_open?(c)
-        return true unless c[:need_flag]
-        @state.switches[c[:switch_id]]
+        return true unless c.need_flag
+        @state.switches[c.switch_id]
       end
 
       # Build the background (parallel-process) interpreters: parallel common
@@ -2120,7 +2167,7 @@ class RPG2k
           if p[:common_event_id]
             previous_common[p[:common_event_id]] = p
           elsif preserve_map_events && p[:event]
-            previous_map[p[:event][:id]] = p
+            previous_map[p[:event].id] = p
           end
         end
         @parallels = []
@@ -2139,17 +2186,17 @@ class RPG2k
         # @parallels in array order, so the order they are pushed in here is
         # the order they run in.
         @common.each do |c|
-          next unless c[:trigger] == Game::CommonEvent::PARALLEL && c[:commands]
-          gate = c[:need_flag] ? c[:switch_id] : nil
-          @parallels.push(previous_common[c[:id]] ||
-                           new_parallel(c[:commands], gate, nil, c[:id]))
+          next unless c.trigger == Game::CommonEvent::PARALLEL && c.commands
+          gate = c.need_flag ? c.switch_id : nil
+          @parallels.push(previous_common[c.id] ||
+                           new_parallel(c.commands, gate, nil, c.id))
         end
         live_map_ids = {}
         @events.each do |e|
-          next unless e[:trigger] == TRIGGER_PARALLEL && e[:commands]
-          live_map_ids[e[:id]] = true
-          prior = previous_map[e[:id]]
-          if prior && prior[:commands].equal?(e[:commands])
+          next unless e.trigger == TRIGGER_PARALLEL && e.commands
+          live_map_ids[e.id] = true
+          prior = previous_map[e.id]
+          if prior && prior[:commands].equal?(e.commands)
             # Same page, same command list -- only the surrounding
             # Game::Character objects were rebuilt (see #build_events), so keep
             # the still-running interpreter and just re-point its bookkeeping
@@ -2157,7 +2204,7 @@ class RPG2k
             prior[:event] = e
             @parallels.push prior
           else
-            @parallels.push new_parallel(e[:commands], nil, e, nil)
+            @parallels.push new_parallel(e.commands, nil, e, nil)
           end
         end
         # yado.tk, multiply corroborated: a Parallel Process whose own event's
@@ -2206,7 +2253,7 @@ class RPG2k
         saved_frames = if common_event_id
                          @state.common_event_exec[common_event_id]
                        elsif event
-                         @state.map_event_exec[event[:id]]
+                         @state.map_event_exec[event.id]
                        end
         if saved_frames && !saved_frames.empty?
           it.restore_call_stack(saved_frames)
@@ -2218,7 +2265,7 @@ class RPG2k
             it.start(commands)
           end
         end
-        it.event_id = event && event[:id]
+        it.event_id = event && event.id
         { interp: it, commands: commands, gate_switch: gate_switch,
           wait_timer: nil, event: event, common_event_id: common_event_id }
       end
@@ -2349,7 +2396,7 @@ class RPG2k
           # #start clears the "this event" id, so re-attach it on every lap or
           # the second pass would answer the process's own position queries with
           # nothing.
-          it.event_id = p[:event] && p[:event][:id]
+          it.event_id = p[:event] && p[:event].id
           it.update
         end
         # Same "starts on the same real frame the command runs" fix as
@@ -2403,7 +2450,7 @@ class RPG2k
           @state.common_event_exec[p[:common_event_id]] = frames if frames
         elsif p[:event]
           frames = p[:interp].call_stack_snapshot
-          @state.map_event_exec[p[:event][:id]] = frames if frames
+          @state.map_event_exec[p[:event].id] = frames if frames
         end
       end
 
@@ -2563,7 +2610,7 @@ class RPG2k
           # reaching #open_message's existing "append instead of opening
           # fresh" branch. A genuinely new, unrelated request still waits its
           # turn until whichever window is currently up closes.
-          if @message.nil? || @message[:interp].equal?(it)
+          if @message.nil? || @message.interp.equal?(it)
             open_message(it.choice_labels, true, interp: it)
           end
         elsif it.wait_kind == :number
@@ -2577,7 +2624,7 @@ class RPG2k
           # silently dropped outright -- docs/TODO.md "Left open: Input
           # Number (:number) issued from a Parallel Process is still
           # silently dropped."
-          if @message.nil? || @message[:interp].equal?(it)
+          if @message.nil? || @message.interp.equal?(it)
             open_number_input(it.input_digits, interp: it)
           end
         elsif it.wait_kind == :screen
@@ -2682,7 +2729,7 @@ class RPG2k
           # #drive_shop / #leave_shop): block until whichever message
           # window, name-entry screen, or shop screen is currently up
           # closes, then drive this one.
-          if (@shop.nil? || @shop[:interp].equal?(it)) && @message.nil? && @name_ui.nil?
+          if (@shop.nil? || @shop.interp.equal?(it)) && @message.nil? && @name_ui.nil?
             drive_shop(it)
           end
         elsif it.wait_kind == :inn
@@ -2717,7 +2764,7 @@ class RPG2k
           # to finish before starting its own.
           if @inn_interp.nil? || @inn_interp.equal?(it)
             req = it.inn_request
-            drive_inn(it) if (req && req[:prompt]) || @message.nil?
+            drive_inn(it) if (req && req.prompt) || @message.nil?
           end
         elsif it.wait_kind == :return_title
           # Return to Title Screen issued from a Parallel Process. Ported
@@ -2785,11 +2832,11 @@ class RPG2k
       # records that the action button (not a touch or auto-start) launched it,
       # which the "the decision key started this event" conditional branch reads.
       def start_event(ev, by_decision_key = false)
-        ev[:char].face(ev[:char].direction_toward(@state.x, @state.y))
+        ev.char.face(ev.char.direction_toward(@state.x, @state.y))
         @active_event = ev
-        @interpreter.start(ev[:commands])
+        @interpreter.start(ev.commands)
         @interpreter.triggered_by_decision_key = by_decision_key
-        @interpreter.event_id = ev[:id]
+        @interpreter.event_id = ev.id
       end
 
       # On the action button, run the trigger-0 event the player is facing. The
@@ -2824,7 +2871,7 @@ class RPG2k
         # happens to be standing on that exact tile (e.g. a switch flips
         # elsewhere, with no movement in between).
         here = event_at(@state.x, @state.y)
-        return start_event(here, true) if actionable?(here) && here[:layer] != LAYER_SAME
+        return start_event(here, true) if actionable?(here) && here.layer != LAYER_SAME
 
         # The faced tile only answers the button for a LAYER_SAME event: RPG_RT
         # ties this to priority type the same way it ties collision to it
@@ -2837,7 +2884,7 @@ class RPG2k
         # only way in.
         fx, fy = target_tile(@state.x, @state.y, @state.direction)
         ev = event_at(fx, fy)
-        return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
+        return start_event(ev, true) if actionable?(ev) && ev.layer == LAYER_SAME
         # A same-layer Player Touch / Event Touch event on the faced tile
         # answers the action button too, not just an action-triggered one --
         # ported from a reference implementation, NOT independently
@@ -2861,14 +2908,14 @@ class RPG2k
           break unless counter_tile?(fx, fy)
           fx, fy = target_tile(fx, fy, @state.direction)
           ev = event_at(fx, fy)
-          return start_event(ev, true) if actionable?(ev) && ev[:layer] == LAYER_SAME
+          return start_event(ev, true) if actionable?(ev) && ev.layer == LAYER_SAME
         end
         nil
       end
 
       # Whether an event can answer the action button.
       def actionable?(ev)
-        ev && ev[:trigger] == TRIGGER_ACTION && ev[:commands] ? true : false
+        ev && ev.trigger == TRIGGER_ACTION && ev.commands ? true : false
       end
 
       # Whether a same-layer Player Touch / Event Touch event on the faced
@@ -2880,8 +2927,8 @@ class RPG2k
       # hero-*contact* purposes): Parallel is not in that
       # `{Trigger_touched, Trigger_collision}` set here.
       def action_touch_trigger?(ev)
-        ev && ev[:layer] == LAYER_SAME && ev[:commands] &&
-          (ev[:trigger] == TRIGGER_PLAYER_TOUCH || ev[:trigger] == TRIGGER_EVENT_TOUCH) ? true : false
+        ev && ev.layer == LAYER_SAME && ev.commands &&
+          (ev.trigger == TRIGGER_PLAYER_TOUCH || ev.trigger == TRIGGER_EVENT_TOUCH) ? true : false
       end
 
       # Whether a trigger is one the party can set off by walking into the event
@@ -3035,7 +3082,7 @@ class RPG2k
       # disembarking here. Only a same-layer, non-Through event still does.
       def ship_disembark_passable?(x, y, dir)
         return false unless @map.in_bounds?(x, y)
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
+        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
         return true if @chipset.nil?
         @chipset.passable_tile?(@map.lower(x, y), @map.upper(x, y),
                                  Game::Character::TURN_180[dir] || dir)
@@ -3523,7 +3570,7 @@ class RPG2k
           return true if row.nil?
           return row.airship_pass ? true : false
         end
-        return false if blockers_at(x, y).any? { |b| !b[:char].through && b[:layer] == LAYER_SAME }
+        return false if blockers_at(x, y).any? { |b| !b.char.through && b.layer == LAYER_SAME }
         # A moving Boat/Ship also collides with a *different* parked
         # Boat/Ship, and with a grounded Airship -- ported from a reference
         # implementation's own movement-collision check (NOT independently
@@ -3654,7 +3701,7 @@ class RPG2k
         # #player_intended_target) never lingers into a later frame where
         # this event does not even attempt a move -- #step_movement must
         # only ever see this true for a refusal decided *this* frame.
-        e[:crossed_hero_this_frame] = false
+        e.crossed_hero_this_frame = false
         # An event fired earlier this frame; hold the rest -- except when this
         # is the "keep moving during the message" pass, which is *always*
         # called while busy (that is the point) and must not immediately bail.
@@ -3677,31 +3724,31 @@ class RPG2k
         # (`return nil if @moving`, `#step_movement`) -- events had no
         # equivalent.
         return if event_sliding?(e)
-        ch = e[:char]
-        e[:move_timer] -= 1
-        return if e[:move_timer] > 0
-        forced = e[:forced_route]
+        ch = e.char
+        e.move_timer -= 1
+        return if e.move_timer > 0
+        forced = e.forced_route
         # A forced route (from a Move Event) is paced by its own frequency when
         # one was given, otherwise by the page's; it overrides page movement.
-        freq = forced && e[:forced_freq] ? e[:forced_freq] : ch.move_frequency
-        e[:move_timer] = EVENT_MOVE_DELAY[freq] || 40
+        freq = forced && e.forced_freq ? e.forced_freq : ch.move_frequency
+        e.move_timer = EVENT_MOVE_DELAY[freq] || 40
         ox = ch.x
         oy = ch.y
         status = nil
         if forced
           status = run_route_step(forced, ch, @world) unless forced.done?
           if forced.done? # revert to page movement
-            e[:forced_route] = nil
+            e.forced_route = nil
             # The page's own Move Frequency reasserts itself once the forced
             # route finishes -- a Frequency Up/Down sub-command inside that
             # route must not go on pacing the event after control reverts to
             # its page, only for the duration of the route that issued it.
-            ch.move_frequency = page_move_frequency(e[:page])
+            ch.move_frequency = page_move_frequency(e.page)
           end
-        elsif e[:route]
-          status = run_route_step(e[:route], ch, @world) unless e[:route].done?
+        elsif e.route
+          status = run_route_step(e.route, ch, @world) unless e.route.done?
         else
-          dir = Game::MoveType.next_direction(e[:move_type], ch, @world)
+          dir = Game::MoveType.next_direction(e.move_type, ch, @world)
           move_autonomous(e, dir, allow_trigger: allow_trigger) if dir
         end
         # A Set Move Route (forced) or page-authored custom route stepping
@@ -3720,10 +3767,10 @@ class RPG2k
         # reason #move_autonomous gates its own crossing check on it -- see
         # that comment.
         if status == :touched_hero
-          e[:crossed_hero_this_frame] = allow_trigger && @player_intended_target == [ox, oy]
+          e.crossed_hero_this_frame = allow_trigger && @player_intended_target == [ox, oy]
         end
-        if allow_trigger && status == :touched_hero && !e[:crossed_hero_this_frame] &&
-           e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+        if allow_trigger && status == :touched_hero && !e.crossed_hero_this_frame &&
+           e.trigger == TRIGGER_EVENT_TOUCH && e.commands
           start_event(e)
         end
         # A jump that lands where it started still needs the render slide, so
@@ -3760,22 +3807,22 @@ class RPG2k
       end
 
       def animate_event(e)
-        ch = e[:char]
+        ch = e.char
         # Advance the slide first so a fixed-graphic event still glides smoothly.
         # The per-frame advance now follows the event's move_speed (a jump uses
         # the separate jump table) instead of a hardcoded constant, so the
         # previously-dead speed axis actually takes effect.
-        if e[:move_count] < TILE
-          step = e[:jumping] ? jump_slide_step(ch.move_speed)
+        if e.move_count < TILE
+          step = e.jumping ? jump_slide_step(ch.move_speed)
                              : walk_slide_step(ch.move_speed)
-          e[:move_count], e[:slide_frac] = advance_slide(e[:move_count], e[:slide_frac] || 0, step)
+          e.move_count, e.slide_frac = advance_slide(e.move_count, e.slide_frac || 0, step)
         end
         sliding = event_sliding?(e)
-        e[:moving] = sliding
-        type = e[:anim_type]
+        e.moving = sliding
+        type = e.anim_type
         return unless Game::EventGraphic.animated?(type)
         return unless sliding || Game::EventGraphic.continuous?(type)
-        e[:anim_count] += 1
+        e.anim_count += 1
         # Sliding always uses the (fastest) stationary-per-frame table; an
         # event merely idling in place -- Spin rotating its facing, or a
         # Continuous/Fixed-Continuous type cycling its walk frame with nobody
@@ -3785,19 +3832,19 @@ class RPG2k
                  elsif type == Game::EventGraphic::SPIN then anim_spin_period(ch.move_speed)
                  else anim_continuous_period(ch.move_speed)
                  end
-        return if e[:anim_count] < period
-        e[:anim_count] = 0
-        e[:anim_phase] = (e[:anim_phase] + 1) % Game::EventGraphic::WALK_COLUMNS.size
+        return if e.anim_count < period
+        e.anim_count = 0
+        e.anim_phase = (e.anim_phase + 1) % Game::EventGraphic::WALK_COLUMNS.size
       end
 
       # Whether an event is mid-step: its display origin has not yet caught up to
       # its logical tile (the slide started by reoccupy is still in progress).
       def event_sliding?(e)
-        return false unless e[:move_count] < TILE
+        return false unless e.move_count < TILE
         # A jump that lands on its own tile moves the sprite nowhere but is
         # still in progress, so it cannot be recognised by the displacement.
-        e[:jumping] ||
-          e[:disp_x] != e[:char].x || e[:disp_y] != e[:char].y
+        e.jumping ||
+          e.disp_x != e.char.x || e.disp_y != e.char.y
       end
 
       # Move an autonomous event one step in `dir`. Walking into the player fires
@@ -3826,7 +3873,7 @@ class RPG2k
       # never shows two message windows at once, so a second event's
       # commands have nowhere safe to run until the first message closes.
       def move_autonomous(e, dir, allow_trigger: true)
-        ch = e[:char]
+        ch = e.char
         nx, ny = Game::Character.step_tile(ch.x, ch.y, dir)
         if nx == @state.x && ny == @state.y
           ch.face(dir)
@@ -3849,9 +3896,9 @@ class RPG2k
           # frame and cannot be trusted -- treat that pass as never
           # crossing, same as it never fires the trigger either.
           crossing = allow_trigger && @player_intended_target == [ch.x, ch.y]
-          e[:crossed_hero_this_frame] = crossing
+          e.crossed_hero_this_frame = crossing
           start_event(e) if allow_trigger && !crossing &&
-                             e[:trigger] == TRIGGER_EVENT_TOUCH && e[:commands]
+                             e.trigger == TRIGGER_EVENT_TOUCH && e.commands
         elsif @world.passable?(ch, dir)
           ch.move(dir)
         end
@@ -3864,7 +3911,7 @@ class RPG2k
       # sprite glides instead of teleporting (see event_pixel).
       def reoccupy(e, ox, oy)
         deindex_event_tile(e, ox, oy)
-        index_event_tile(e, e[:char].x, e[:char].y)
+        index_event_tile(e, e.char.x, e.char.y)
         start_event_slide(e, ox, oy)
       end
 
@@ -3878,19 +3925,19 @@ class RPG2k
       # clearing the tiles between. Anything else -- a multi-tile displacement
       # that is not a jump -- snaps, so a sprite never streaks across the map.
       def start_event_slide(e, ox, oy)
-        jumped = e[:char].jumped
-        if jumped || (e[:char].x - ox).abs + (e[:char].y - oy).abs == 1
-          e[:disp_x] = ox
-          e[:disp_y] = oy
-          e[:move_count] = 0
-          e[:slide_frac] = 0
-          e[:jumping] = jumped
+        jumped = e.char.jumped
+        if jumped || (e.char.x - ox).abs + (e.char.y - oy).abs == 1
+          e.disp_x = ox
+          e.disp_y = oy
+          e.move_count = 0
+          e.slide_frac = 0
+          e.jumping = jumped
         else
-          e[:disp_x] = e[:char].x
-          e[:disp_y] = e[:char].y
-          e[:move_count] = TILE
-          e[:slide_frac] = 0
-          e[:jumping] = false
+          e.disp_x = e.char.x
+          e.disp_y = e.char.y
+          e.move_count = TILE
+          e.slide_frac = 0
+          e.jumping = false
         end
       end
 
@@ -3918,8 +3965,8 @@ class RPG2k
       # camera follows and what the draw order sorts on -- stays on the ground.
       JUMP_STEP_UNITS = 256              # a reference implementation's own screen-tile-size unit
       def event_jump_offset(e)
-        return 0 unless e[:jumping] && e[:move_count] < TILE
-        jump_offset_for(e[:move_count])
+        return 0 unless e.jumping && e.move_count < TILE
+        jump_offset_for(e.move_count)
       end
 
       # The arc itself, given how far through the hop the slide is (0..TILE).
@@ -3944,15 +3991,15 @@ class RPG2k
       # event every frame) can skip building and immediately discarding the
       # two-element array.
       def event_pixel_x(e)
-        cx = e[:char].x
+        cx = e.char.x
         return cx * TILE unless event_sliding?(e)
-        e[:disp_x] * TILE + (cx - e[:disp_x]) * e[:move_count]
+        e.disp_x * TILE + (cx - e.disp_x) * e.move_count
       end
 
       def event_pixel_y(e)
-        cy = e[:char].y
+        cy = e.char.y
         return cy * TILE unless event_sliding?(e)
-        e[:disp_y] * TILE + (cy - e[:disp_y]) * e[:move_count]
+        e.disp_y * TILE + (cy - e.disp_y) * e.move_count
       end
 
       # -- Erase Event --------------------------------------------------------
@@ -3975,8 +4022,8 @@ class RPG2k
         @events.delete(ev)
         # Remembered so a page refresh cannot resurrect it: an Erase Event lasts
         # for the rest of the visit to the map, whatever its conditions do next.
-        @erased_events[ev[:id]] = true
-        tile = [ev[:char].x, ev[:char].y]
+        @erased_events[ev.id] = true
+        tile = [ev.char.x, ev.char.y]
         deindex_event_tile(ev, tile[0], tile[1])
         # Starts frozen at the tile it occupied right before erasure --
         # #event_id_at still needs it (see there) even though the event no
@@ -3985,7 +4032,7 @@ class RPG2k
         # event's single backing object (see #set_char_location), and keep
         # this table in sync when they do, the same way ordinary movement
         # keeps @event_last_position current for a merely-hidden one.
-        @erased_event_positions[ev[:id]] = tile
+        @erased_event_positions[ev.id] = tile
         @parallels.reject! { |p| p[:event].equal?(ev) } if @parallels
       end
 
@@ -4062,7 +4109,7 @@ class RPG2k
           return false
         end
         live = {}
-        @events.each { |e| live[e[:id]] = e }
+        @events.each { |e| live[e.id] = e }
         changed = false
         evs.each do |id, src|
           next if changed || @erased_events[id]
@@ -4077,7 +4124,7 @@ class RPG2k
                                             @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
           e = live[id]
-          changed = true unless page.equal?(e && e[:page])
+          changed = true unless page.equal?(e && e.page)
         end
         sw.clear_dirty
         va.clear_dirty
@@ -4162,27 +4209,27 @@ class RPG2k
       # reasoning already applied to Through Mode above.
       def rebuild_events_preserving_positions
         placed = {}
-        @events.each { |e| placed[e[:id]] = e }
+        @events.each { |e| placed[e.id] = e }
         # false: this is a live, in-place page reselection, not a save/load
         # restore -- see #build_event's own comment on `restore_route_index`.
         build_events(restore_route_index: false)
         @events.each do |e|
-          old = placed[e[:id]]
+          old = placed[e.id]
           next unless old
-          e[:char].x = old[:char].x
-          e[:char].y = old[:char].y
-          e[:char].direction = old[:char].direction
-          e[:char].through = old[:char].through
-          e[:char].facing_locked = old[:char].facing_locked
-          e[:char].animation_stopped = old[:char].animation_stopped
-          e[:char].transparency = old[:char].transparency
-          if old[:page].equal?(e[:page])
-            e[:char].set_graphic(old[:char].graphic_name, old[:char].graphic_index)
+          e.char.x = old.char.x
+          e.char.y = old.char.y
+          e.char.direction = old.char.direction
+          e.char.through = old.char.through
+          e.char.facing_locked = old.char.facing_locked
+          e.char.animation_stopped = old.char.animation_stopped
+          e.char.transparency = old.char.transparency
+          if old.page.equal?(e.page)
+            e.char.set_graphic(old.char.graphic_name, old.char.graphic_index)
           end
-          next unless e[:move_type] == Game::MoveType::CUSTOM &&
-                      old[:move_type] == Game::MoveType::CUSTOM
-          if Game::MoveRoute.same_route?(page_move_route(old[:page]), page_move_route(e[:page]))
-            e[:route] = old[:route]
+          next unless e.move_type == Game::MoveType::CUSTOM &&
+                      old.move_type == Game::MoveType::CUSTOM
+          if Game::MoveRoute.same_route?(page_move_route(old.page), page_move_route(e.page))
+            e.route = old.route
           end
         end
         rebuild_event_tiles
@@ -4193,7 +4240,7 @@ class RPG2k
         build_parallels(preserve_map_events: true)
         # The event the foreground interpreter is running may have just been
         # rebuilt; re-point it so "this event" still reaches the live character.
-        @active_event = @events.find { |e| e[:id] == @active_event[:id] } if @active_event
+        @active_event = @events.find { |e| e.id == @active_event.id } if @active_event
       end
 
       # -- Halt All Movement --------------------------------------------------
@@ -4216,7 +4263,7 @@ class RPG2k
         @player_route = nil
         @player_char = nil
         sync_player_route_to_state
-        @events.each { |e| e[:forced_route] = nil } if @events
+        @events.each { |e| e.forced_route = nil } if @events
       rescue StandardError => e
         $stderr.puts "[RPG2k] Halt All Movement failed: #{e.message}"
         nil
@@ -4518,7 +4565,7 @@ class RPG2k
           @last_frame = nil # force the hero's cached frame to be re-toned
           flash
         when 0, MOVE_TARGET_THIS
-          this_event ? (this_event[:flash] = flash) : nil
+          this_event ? (this_event.flash = flash) : nil
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[r[:target] - MOVE_TARGET_BOAT]
           spr = @vehicle_sprites && @vehicle_sprites[type]
@@ -4527,8 +4574,8 @@ class RPG2k
           flash[:vehicle] = true
           flash
         else
-          ev = @events.find { |e| e[:id] == r[:target] }
-          ev ? (ev[:flash] = flash) : nil
+          ev = @events.find { |e| e.id == r[:target] }
+          ev ? (ev.flash = flash) : nil
         end
       end
 
@@ -4557,7 +4604,7 @@ class RPG2k
         size = @events.size
         while i < size
           e = @events[i]
-          e[:flash] = tick_flash(e[:flash]) if e[:flash]
+          e.flash = tick_flash(e.flash) if e.flash
           i += 1
         end
         # A vehicle-target Flash Sprite has no CharSet-tone hash of its own to
@@ -4781,7 +4828,7 @@ class RPG2k
             force_vehicle_route(type, route, r[:frequency])
           end
         else
-          ev = @events.find { |e| e[:id] == r[:target] }
+          ev = @events.find { |e| e.id == r[:target] }
           if ev
             force_event_route(ev, route, r[:frequency])
           elsif (@map.unit.events || {})[r[:target]]
@@ -4859,14 +4906,14 @@ class RPG2k
         when MOVE_TARGET_PLAYER
           [@state.x, @state.y]
         when 0, MOVE_TARGET_THIS
-          this_event ? [this_event[:char].x, this_event[:char].y] : nil
+          this_event ? [this_event.char.x, this_event.char.y] : nil
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           v = @state.vehicle(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
           [v.x, v.y]
         else
-          ev = @events.find { |e| e[:id] == target }
+          ev = @events.find { |e| e.id == target }
           if ev
-            [ev[:char].x, ev[:char].y]
+            [ev.char.x, ev.char.y]
           else
             pos = @event_last_position[target]
             pos && [pos[0], pos[1]]
@@ -4899,17 +4946,17 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           if this_event
             move_event_to(this_event, x, y)
-            this_event[:char].face!(dir) if dir && dir > 0
+            this_event.char.face!(dir) if dir && dir > 0
           end
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           type = Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
           move_vehicle_to(type, x, y)
           @state.vehicle(type).direction = dir if dir && dir > 0
         else
-          ev = @events.find { |e| e[:id] == target }
+          ev = @events.find { |e| e.id == target }
           if ev
             move_event_to(ev, x, y)
-            ev[:char].face!(dir) if dir && dir > 0
+            ev.char.face!(dir) if dir && dir > 0
           elsif @event_last_position[target]
             prior_dir = @event_last_position[target][2]
             @event_last_position[target] = [x, y, (dir && dir > 0) ? dir : prior_dir]
@@ -4939,10 +4986,10 @@ class RPG2k
       # and the marker follow it.
       def move_event_to(ev, x, y)
         return unless ev
-        ox = ev[:char].x
-        oy = ev[:char].y
-        ev[:char].x = x
-        ev[:char].y = y
+        ox = ev.char.x
+        oy = ev.char.y
+        ev.char.x = x
+        ev.char.y = y
         reoccupy(ev, ox, oy)
       end
 
@@ -4968,9 +5015,9 @@ class RPG2k
       # route finishes (a repeating route runs until replaced). It steps on the
       # next frame, paced by the requested frequency when one was given.
       def force_event_route(ev, route, freq)
-        ev[:forced_route] = route
-        ev[:forced_freq] = valid_move_freq(freq)
-        ev[:move_timer] = 0
+        ev.forced_route = route
+        ev.forced_freq = valid_move_freq(freq)
+        ev.move_timer = 0
       end
 
       # Give vehicle `type` a forced route (Move Event / Set Move Route
@@ -5224,7 +5271,7 @@ class RPG2k
       def step_forced_movement
         advance_player_slide
         step_player_route
-        @events.each { |e| step_forced_event(e) if e[:forced_route] }
+        @events.each { |e| step_forced_event(e) if e.forced_route }
         step_vehicle_routes
         forced_movement_done?
       end
@@ -5232,20 +5279,20 @@ class RPG2k
       # Pace and advance one event's forced route, mirroring step_event's forced
       # branch (used only while waiting on Proceed With Movement).
       def step_forced_event(e)
-        ch = e[:char]
-        e[:move_timer] -= 1
-        return if e[:move_timer] > 0
-        e[:move_timer] = EVENT_MOVE_DELAY[e[:forced_freq] || ch.move_frequency] || 40
+        ch = e.char
+        e.move_timer -= 1
+        return if e.move_timer > 0
+        e.move_timer = EVENT_MOVE_DELAY[e.forced_freq || ch.move_frequency] || 40
         ox = ch.x
         oy = ch.y
-        run_route_step(e[:forced_route], ch, @world) unless e[:forced_route].done?
-        e[:forced_route] = nil if e[:forced_route].done?
+        run_route_step(e.forced_route, ch, @world) unless e.forced_route.done?
+        e.forced_route = nil if e.forced_route.done?
         # A jump that lands where it started still needs the render slide, so
         # the hop is visible; an ordinary step only when the tile changed.
         reoccupy(e, ox, oy) if ch.x != ox || ch.y != oy || ch.jumped
       rescue StandardError => ex
         $stderr.puts "[RPG2k] forced movement failed: #{ex.message}"
-        e[:forced_route] = nil # drop a broken route so Proceed does not hang
+        e.forced_route = nil # drop a broken route so Proceed does not hang
       end
 
       # Whether no forced move route is still running (player or any event).
@@ -5254,7 +5301,7 @@ class RPG2k
       # exists under the CRuby host checks but not in the shipped engine.
       def forced_movement_done?
         return false if @player_route
-        return false if @events.any? { |e| e[:forced_route] }
+        return false if @events.any? { |e| e.forced_route }
         return false unless @stuck_move_targets.empty?
         !@vehicle_routes.values.any? { |route| route }
       end
@@ -5353,8 +5400,8 @@ class RPG2k
         # the layer test, uniformly for the hero, another event, or a
         # vehicle (see `#passable?`'s own citation).
         return false if blockers_at(nx, ny).any? do |b|
-          !b[:char].through && (b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
+          !b.char.through && (b.layer == character.layer ||
+            (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
         return false if vehicle_blocks?(nx, ny, block_airship: !hero)
         return true if @chipset.nil?
@@ -5389,8 +5436,8 @@ class RPG2k
         return false if x == @state.x && y == @state.y && character.layer == LAYER_SAME
         hero = character.event_id == MOVE_TARGET_PLAYER
         return false if blockers_at(x, y).any? do |b|
-          !b[:char].through && (b[:layer] == character.layer ||
-            (!hero && (character.overlap_forbidden || b[:overlap_forbidden])))
+          !b.char.through && (b.layer == character.layer ||
+            (!hero && (character.overlap_forbidden || b.overlap_forbidden)))
         end
         return false if vehicle_blocks?(x, y, block_airship: !hero)
         return true if @chipset.nil?
@@ -5432,11 +5479,11 @@ class RPG2k
       def event_id_at(x, y)
         best = 0
         ev = @event_tiles[[x, y]]
-        best = ev[:id] if ev
+        best = ev.id if ev
         @erased_event_positions.each do |id, tile|
           best = id if tile == [x, y] && id > best
         end
-        live_ids = @events.each_with_object({}) { |e, h| h[e[:id]] = true }
+        live_ids = @events.each_with_object({}) { |e, h| h[e.id] = true }
         @event_last_position.each do |id, pos|
           next if live_ids[id] || @erased_events[id]
           best = id if pos[0] == x && pos[1] == y && id > best
@@ -5468,9 +5515,9 @@ class RPG2k
       # exactly what #event_id_at's own identical fallback already had to
       # solve this same gap for.
       def event_position(id)
-        ev = @events.find { |e| e[:id] == id }
+        ev = @events.find { |e| e.id == id }
         if ev
-          c = ev[:char]
+          c = ev.char
           return { x: c.x, y: c.y, direction: c.direction }
         end
         pos = @event_last_position[id]
@@ -5524,7 +5571,7 @@ class RPG2k
         # has finished typing and is just waiting on the interpreter to reach
         # that next command (see #drive_text_message) -- fall through to the
         # `waiting?` dispatch below instead of driving it as a live message.
-        if @message && !@message[:awaiting_followup]
+        if @message && !@message.awaiting_followup
           drive_message
           return
         end
@@ -5913,24 +5960,24 @@ class RPG2k
       def resolve_key_input(it)
         req = it.key_input_request
         return it.resume_key_input(0) unless req
-        accepted = req[:accepted]
+        accepted = req.accepted
         active = []
         KEY_INPUT_BUTTONS.each do |sym, btn|
-          next unless accepted[sym]
-          active << sym if key_input_hit?(btn, req[:wait])
+          next unless accepted.accepts?(sym)
+          active << sym if key_input_hit?(btn, req.wait)
         end
-        if accepted[:numbers]
+        if accepted.numbers
           NUMBER_KEY_BUTTONS.each do |sym, btn|
-            active << sym if key_input_hit?(btn, req[:wait])
+            active << sym if key_input_hit?(btn, req.wait)
           end
         end
-        if accepted[:operators]
+        if accepted.operators
           OPERATOR_KEY_BUTTONS.each do |sym, btn|
-            active << sym if key_input_hit?(btn, req[:wait])
+            active << sym if key_input_hit?(btn, req.wait)
           end
         end
         code = it.key_input_result(active)
-        if req[:wait]
+        if req.wait
           it.resume_key_input(code) if code != 0
         else
           it.resume_key_input(code)
@@ -5984,7 +6031,7 @@ class RPG2k
           play_inn_bgm
           @inn_bgm_started = true
         end
-        return start_inn_fade_out(it) unless req[:prompt]
+        return start_inn_fade_out(it) unless req.prompt
 
         if @inn_window.nil?
           open_inn_window(req) # opened this frame; take input from the next one
@@ -6012,7 +6059,7 @@ class RPG2k
             # choice is disabled -- ported from a reference implementation,
             # not independently confirmed against genuine RPG_RT under wine,
             # whose disabled choice plays Buzzer rather than Decision.
-            if req[:can_afford]
+            if req.can_afford
               play_system_se(SFX_DECISION)
               close_inn_window
               start_inn_fade_out(it)
@@ -6099,9 +6146,9 @@ class RPG2k
       end
 
       def open_inn_window(req)
-        terms = inn_terms(req[:type])
+        terms = inn_terms(req.type)
         gold_term = db.term.gold.to_s
-        lines = ["#{terms[:greet1]} #{req[:price]}#{gold_term} #{terms[:greet2]}".strip,
+        lines = ["#{terms[:greet1]} #{req.price}#{gold_term} #{terms[:greet2]}".strip,
                  terms[:greet3], terms[:accept], terms[:cancel]]
         # Fixed 320x80 panel flush to the screen's bottom-left corner, the
         # same panel the message window uses (MSG_WIN_W/MSG_WIN_H) -- not a
@@ -6198,7 +6245,7 @@ class RPG2k
           open_shop(req, it) # opened this frame; take input from the next one
           return
         end
-        case @shop[:screen]
+        case @shop.screen
         when :command  then drive_shop_command
         when :quantity then drive_shop_quantity
         when :purchased, :sold then drive_shop_confirm
@@ -6207,10 +6254,10 @@ class RPG2k
       end
 
       def open_shop(req, it = @interpreter)
-        model = Game::Shop.new(db, @state.party, req[:goods],
-                               req[:allow_buy], req[:allow_sell])
-        has_menu = req[:allow_buy] && req[:allow_sell]
-        screen = has_menu ? :command : (req[:allow_buy] ? :buy : :sell)
+        model = Game::Shop.new(db, @state.party, req.goods,
+                               req.allow_buy, req.allow_sell)
+        has_menu = req.allow_buy && req.allow_sell
+        screen = has_menu ? :command : (req.allow_buy ? :buy : :sell)
         shop = ShopState.new
         shop.model = model
         shop.has_menu = has_menu
@@ -6224,7 +6271,7 @@ class RPG2k
         shop.party = nil
         shop.desc = nil
         shop.prompt = nil
-        shop.terms = shop_terms(req[:type])
+        shop.terms = shop_terms(req.type)
         shop.browsed = false
         shop.interp = it
         @shop = shop
@@ -6269,13 +6316,13 @@ class RPG2k
       # it is its own separate, full-width window at the screen's bottom
       # message slot instead; see #draw_shop_prompt.
       def shop_header
-        t = @shop[:terms]
-        case @shop[:screen]
-        when :command then @shop[:browsed] ? t[:regreeting] : t[:greeting]
+        t = @shop.terms
+        case @shop.screen
+        when :command then @shop.browsed ? t[:regreeting] : t[:greeting]
         when :buy then t[:buy_select]
         when :sell then t[:sell_select]
         when :quantity
-          @shop[:quantity][:mode] == :buy ? t[:buy_number] : t[:sell_number]
+          @shop.quantity.mode == :buy ? t[:buy_number] : t[:sell_number]
         when :purchased then t[:purchased]
         when :sold then t[:sold]
         end
@@ -6319,9 +6366,9 @@ class RPG2k
       # The [label, target] rows for the current shop screen: the command menu's
       # actions, the goods on the buy list, or the party's sellable items.
       def shop_lines
-        m = @shop[:model]
-        t = @shop[:terms]
-        case @shop[:screen]
+        m = @shop.model
+        t = @shop.terms
+        case @shop.screen
         when :command
           rows = []
           rows << [t[:buy], :buy] if m.allow_buy?
@@ -6330,11 +6377,11 @@ class RPG2k
           rows
         when :quantity
           # The counter is one row: how many, and what the stack comes to.
-          q = @shop[:quantity]
-          unit = q[:mode] == :buy ? m.price(q[:id]) : m.sell_price(q[:id])
-          verb = q[:mode] == :buy ? t[:buy] : t[:sell]
-          [["#{verb} #{m.name(q[:id])} x#{q[:count]}  " \
-            "#{unit * q[:count]}#{shop_gold_term}", q[:id]]]
+          q = @shop.quantity
+          unit = q.mode == :buy ? m.price(q.id) : m.sell_price(q.id)
+          verb = q.mode == :buy ? t[:buy] : t[:sell]
+          [["#{verb} #{m.name(q.id)} x#{q.count}  " \
+            "#{unit * q.count}#{shop_gold_term}", q.id]]
         when :buy
           m.goods.map { |id| ["#{m.name(id)}  #{m.price(id)}#{shop_gold_term}", id] }
         when :purchased, :sold
@@ -6393,7 +6440,7 @@ class RPG2k
 
       def draw_shop
         lines = shop_lines
-        @shop[:index] = Game.clamp(@shop[:index], 0, [lines.length - 1, 0].max)
+        @shop.index = Game.clamp(@shop.index, 0, [lines.length - 1, 0].max)
         # Scroll the fixed SHOP_LIST_ROWS-tall window instead of growing it
         # past that -- confirmed against genuine RPG_RT.exe under wine
         # (cycle #147, see SHOP_LIST_ROWS' own comment for the full
@@ -6402,12 +6449,12 @@ class RPG2k
         # (`@shop[:index]`) inside the visible page, matching every other
         # RPG2000 list window's own "scroll just far enough to reveal the
         # cursor" behaviour rather than snapping to a page boundary.
-        @shop[:scroll] ||= 0
-        @shop[:scroll] = @shop[:index] if @shop[:index] < @shop[:scroll]
-        if @shop[:index] > @shop[:scroll] + SHOP_LIST_ROWS - 1
-          @shop[:scroll] = @shop[:index] - SHOP_LIST_ROWS + 1
+        @shop.scroll ||= 0
+        @shop.scroll = @shop.index if @shop.index < @shop.scroll
+        if @shop.index > @shop.scroll + SHOP_LIST_ROWS - 1
+          @shop.scroll = @shop.index - SHOP_LIST_ROWS + 1
         end
-        @shop[:scroll] = Game.clamp(@shop[:scroll], 0, [lines.length - SHOP_LIST_ROWS, 0].max)
+        @shop.scroll = Game.clamp(@shop.scroll, 0, [lines.length - SHOP_LIST_ROWS, 0].max)
         # The command menu's own Buy/Sell/Leave rows are never drawn into
         # this list window -- confirmed against genuine RPG_RT.exe under
         # wine (cycle #148, a synthetic mode=0 Open Shop command spliced
@@ -6419,7 +6466,7 @@ class RPG2k
         # each screenshotted highlighted in turn showed the identical blank
         # window). The actual choice list renders merged into the bottom
         # prompt window instead -- see #draw_shop_command_prompt.
-        visible = @shop[:screen] == :command ? [] : (lines[@shop[:scroll], SHOP_LIST_ROWS] || [])
+        visible = @shop.screen == :command ? [] : (lines[@shop.scroll, SHOP_LIST_ROWS] || [])
         # Docks flush to the screen's left edge, not inset 10px -- the same
         # stale anti-pattern ADR 0021 already diagnosed and fixed for the
         # message window ("300px wide, inset 10px" -> "fixed 320x80 at
@@ -6430,7 +6477,7 @@ class RPG2k
         # edge lands exactly where the panel column starts on Buy/the
         # quantity counter, flush with the panel's own SHOP_STATUS_W+6
         # offset from the screen's right edge.
-        win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen]) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
+        win_w = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen) ? SCREEN_W - SHOP_STATUS_W - 6 : SCREEN_W
         inner_w = win_w - Window::BORDER * 2
         # Always the same fixed height -- never content-sized, whether the
         # list is short (cycle #144's single-good Sell list) or long enough
@@ -6441,7 +6488,7 @@ class RPG2k
         # because the two branches still differ.
         inner_h = [visible.length, 1].max * SHOP_LINE_H
         inner_h = [inner_h, shop_list_min_inner_h].max
-        @shop[:window].dispose if @shop[:window]
+        @shop.window.dispose if @shop.window
         # Top-anchored right below the description bar (#draw_shop_desc), not
         # bottom-anchored above a 6px screen margin -- confirmed against
         # genuine RPG_RT.exe under wine (cycle #144): the shopkeeper's own
@@ -6458,10 +6505,10 @@ class RPG2k
         end
         win.contents = c
         unless visible.empty?
-          cursor_row = @shop[:index] - @shop[:scroll]
+          cursor_row = @shop.index - @shop.scroll
           win.cursor_rect = Rect.new(0, cursor_row * SHOP_LINE_H, inner_w, SHOP_LINE_H)
         end
-        @shop[:window] = win
+        @shop.window = win
         draw_shop_gold
         draw_shop_status(lines)
         draw_shop_party(lines)
@@ -6500,29 +6547,29 @@ class RPG2k
       SHOP_DESC_VISIBLE_ON = %i[command buy sell quantity purchased sold].freeze
 
       def shop_desc_item_id(lines)
-        return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop[:screen])
-        case @shop[:screen]
+        return nil unless SHOP_DESC_VISIBLE_ON.include?(@shop.screen)
+        case @shop.screen
         when :buy, :sell
           return nil if lines.nil? || lines.empty?
-          lines[@shop[:index]][1]
+          lines[@shop.index][1]
         when :quantity, :purchased, :sold
-          @shop[:quantity] && @shop[:quantity][:id]
+          @shop.quantity && @shop.quantity.id
         end
       end
 
       def draw_shop_desc(lines)
         id = shop_desc_item_id(lines)
-        win = @shop[:desc]
+        win = @shop.desc
         unless win
           win = Window.new(0, 0, SCREEN_W, SHOP_DESC_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop[:desc] = win
+          @shop.desc = win
         end
         inner_w = SCREEN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? @shop[:model].description(id) : ''
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, id ? @shop.model.description(id) : ''
         win.contents = c
       end
 
@@ -6537,19 +6584,19 @@ class RPG2k
       # The command menu draws differently in this same window -- see
       # #draw_shop_command_prompt.
       def draw_shop_prompt
-        return draw_shop_command_prompt if @shop[:screen] == :command
+        return draw_shop_command_prompt if @shop.screen == :command
         text = shop_header
         if text.nil?
-          @shop[:prompt].dispose if @shop[:prompt]
-          @shop[:prompt] = nil
+          @shop.prompt.dispose if @shop.prompt
+          @shop.prompt = nil
           return
         end
-        win = @shop[:prompt]
+        win = @shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop[:prompt] = win
+          @shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H)
@@ -6582,12 +6629,12 @@ class RPG2k
       def draw_shop_command_prompt
         rows = shop_lines
         text_lines = [shop_header] + rows.map { |label, _| label }
-        win = @shop[:prompt]
+        win = @shop.prompt
         unless win
           win = Window.new(0, SCREEN_H - MSG_WIN_H, MSG_WIN_W, MSG_WIN_H)
           win.z = 300
           win.windowskin = @windowskin
-          @shop[:prompt] = win
+          @shop.prompt = win
         end
         inner_w = MSG_WIN_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, text_lines.length * MSG_LINE_H)
@@ -6596,7 +6643,7 @@ class RPG2k
           c.draw_text 0, i * MSG_LINE_H, inner_w, MSG_LINE_H, line
         end
         win.contents = c
-        win.cursor_rect = Rect.new(0, (1 + @shop[:index]) * MSG_LINE_H, inner_w, MSG_LINE_H)
+        win.cursor_rect = Rect.new(0, (1 + @shop.index) * MSG_LINE_H, inner_w, MSG_LINE_H)
       end
 
       # The gold and status panels share one visible/hidden set: ported from
@@ -6610,15 +6657,15 @@ class RPG2k
       SHOP_PANELS_VISIBLE_ON = %i[buy quantity purchased sold].freeze
 
       def draw_shop_gold
-        visible = SHOP_PANELS_VISIBLE_ON.include?(@shop[:screen])
-        @shop[:gold].visible = visible
+        visible = SHOP_PANELS_VISIBLE_ON.include?(@shop.screen)
+        @shop.gold.visible = visible
         return unless visible
         gw = SHOP_STATUS_W
         c = Bitmap.new(gw - Window::BORDER * 2, SHOP_LINE_H)
         c.font.color = Color.new(255, 255, 255, 255)
         c.draw_text 0, 0, c.width, SHOP_LINE_H,
                     "#{@state.party.gold}#{shop_gold_term}"
-        @shop[:gold].contents = c
+        @shop.gold.contents = c
       end
 
       # 136px wide -- confirmed against genuine RPG_RT.exe under wine (see
@@ -6634,12 +6681,12 @@ class RPG2k
       # see #drive_shop_quantity / #drive_shop_confirm). The command menu and
       # the sell list get no status panel at all, matching SHOP_PANELS_VISIBLE_ON.
       def shop_status_item_id(lines)
-        case @shop[:screen]
+        case @shop.screen
         when :buy
           return nil if lines.nil? || lines.empty?
-          lines[@shop[:index]][1]
+          lines[@shop.index][1]
         when :quantity, :purchased, :sold
-          @shop[:quantity] && @shop[:quantity][:id]
+          @shop.quantity && @shop.quantity.id
         end
       end
 
@@ -6656,11 +6703,11 @@ class RPG2k
       def draw_shop_status(lines)
         id = shop_status_item_id(lines)
         if id.nil?
-          @shop[:status].dispose if @shop[:status]
-          @shop[:status] = nil
+          @shop.status.dispose if @shop.status
+          @shop.status = nil
           return
         end
-        win = @shop[:status]
+        win = @shop.status
         unless win
           # Right-aligned, not the screen's left edge -- confirmed against
           # genuine RPG_RT.exe under wine (see #build_shop_gold_window's own
@@ -6671,7 +6718,7 @@ class RPG2k
                            SHOP_STATUS_W, SHOP_LINE_H * 2 + Window::BORDER * 2)
           win.z = 300
           win.windowskin = @windowskin
-          @shop[:status] = win
+          @shop.status = win
         end
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
@@ -6791,13 +6838,13 @@ class RPG2k
 
       def draw_shop_party(lines)
         id = shop_status_item_id(lines)
-        visible = id && @shop[:model].equip?(id)
+        visible = id && @shop.model.equip?(id)
         unless visible
-          @shop[:party].dispose if @shop[:party]
-          @shop[:party] = nil
+          @shop.party.dispose if @shop.party
+          @shop.party = nil
           return
         end
-        @shop[:party] ||= begin
+        @shop.party ||= begin
           win = Window.new(SCREEN_W - SHOP_STATUS_W - 6, SHOP_DESC_H,
                            SHOP_STATUS_W, SHOP_PARTY_H)
           win.z = 300
@@ -6824,7 +6871,7 @@ class RPG2k
           # cursor moved
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
-          case lines[@shop[:index]][1]
+          case lines[@shop.index][1]
           when :buy  then shop_switch(:buy)
           when :sell then shop_switch(:sell)
           when :leave then leave_shop
@@ -6846,14 +6893,14 @@ class RPG2k
         if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
-          if open_shop_quantity(lines[@shop[:index]][1])
+          if open_shop_quantity(lines[@shop.index][1])
             play_system_se(SFX_DECISION)
           else
             play_system_se(SFX_BUZZER)
           end
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
-          @shop[:has_menu] ? shop_switch(:command) : leave_shop
+          @shop.has_menu ? shop_switch(:command) : leave_shop
         end
       end
 
@@ -6868,10 +6915,10 @@ class RPG2k
       # so a button press neither dismisses the confirmation early nor
       # does anything else while it is up.
       def drive_shop_confirm
-        @shop[:confirm_timer] -= 1
-        return if @shop[:confirm_timer] > 0
-        @shop[:screen] = @shop[:screen] == :purchased ? :buy : :sell
-        @shop[:quantity] = nil
+        @shop.confirm_timer -= 1
+        return if @shop.confirm_timer > 0
+        @shop.screen = @shop.screen == :purchased ? :buy : :sell
+        @shop.quantity = nil
         draw_shop
       end
 
@@ -6887,16 +6934,16 @@ class RPG2k
       # 99-item cap, or (selling) what it holds. An item with no room at all —
       # unaffordable, already capped — never opens the counter.
       def open_shop_quantity(id)
-        model = @shop[:model]
-        max = @shop[:screen] == :buy ? model.max_buy(id) : model.max_sell(id)
+        model = @shop.model
+        max = @shop.screen == :buy ? model.max_buy(id) : model.max_sell(id)
         return false if max < 1
         q = ShopQuantity.new
         q.id = id
         q.count = 1
         q.max = max
-        q.mode = @shop[:screen]
-        @shop[:quantity] = q
-        @shop[:screen] = :quantity
+        q.mode = @shop.screen
+        @shop.quantity = q
+        @shop.screen = :quantity
         draw_shop
         true
       end
@@ -6905,19 +6952,19 @@ class RPG2k
       # clamped to 1..max), C commits the whole stack in one transaction and B
       # goes back to the list having bought nothing.
       def drive_shop_quantity
-        q = @shop[:quantity]
+        q = @shop.quantity
         if shop_quantity_move(q)
           draw_shop
           play_system_se(SFX_CURSOR)
         elsif Input.trigger?(Input::C)
-          model = @shop[:model]
-          mode = q[:mode]
-          mode == :buy ? model.buy(q[:id], q[:count]) : model.sell(q[:id], q[:count])
+          model = @shop.model
+          mode = q.mode
+          mode == :buy ? model.buy(q.id, q.count) : model.sell(q.id, q.count)
           # @shop[:quantity] survives into :purchased/:sold -- the status
           # panel there still needs its item id (see #shop_status_item_id) --
           # and is only cleared once #drive_shop_confirm leaves the screen.
-          @shop[:screen] = mode == :buy ? :purchased : :sold
-          @shop[:confirm_timer] = 60
+          @shop.screen = mode == :buy ? :purchased : :sold
+          @shop.confirm_timer = 60
           draw_shop
           play_system_se(SFX_DECISION)
         elsif Input.trigger?(Input::B)
@@ -6935,27 +6982,27 @@ class RPG2k
       # Scene::Battle's own `Input.trigger?(...) || Input.repeat?(...)`
       # cursor idiom), not a bare single fresh press.
       def shop_quantity_move(q)
-        before = q[:count]
+        before = q.count
         if Input.trigger?(Input::RIGHT) || Input.repeat?(Input::RIGHT)
-          q[:count] += 1
+          q.count += 1
         elsif Input.trigger?(Input::LEFT) || Input.repeat?(Input::LEFT)
-          q[:count] -= 1
+          q.count -= 1
         elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
-          q[:count] += SHOP_QUANTITY_STEP
+          q.count += SHOP_QUANTITY_STEP
         elsif Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
-          q[:count] -= SHOP_QUANTITY_STEP
+          q.count -= SHOP_QUANTITY_STEP
         else
           return false
         end
-        q[:count] = Game.clamp(q[:count], 1, q[:max])
-        q[:count] != before
+        q.count = Game.clamp(q.count, 1, q.max)
+        q.count != before
       end
 
       # Leave the counter for the list it was opened from, refreshing the gold
       # and (after a sale) the shrunk list.
       def close_shop_quantity
-        @shop[:screen] = @shop[:quantity][:mode]
-        @shop[:quantity] = nil
+        @shop.screen = @shop.quantity.mode
+        @shop.quantity = nil
         draw_shop
       end
 
@@ -6972,14 +7019,14 @@ class RPG2k
       # every RPG2000 list cursor in this ported model auto-repeats.
       def shop_move_cursor(lines)
         if (Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)) && !lines.empty?
-          @shop[:index] += 1
-          @shop[:index] %= lines.length
+          @shop.index += 1
+          @shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
         elsif (Input.trigger?(Input::UP) || Input.repeat?(Input::UP)) && !lines.empty?
-          @shop[:index] -= 1
-          @shop[:index] %= lines.length
+          @shop.index -= 1
+          @shop.index %= lines.length
           draw_shop
           play_system_se(SFX_CURSOR)
           true
@@ -6992,7 +7039,7 @@ class RPG2k
         # Once the player has gone into Buy or Sell at all this visit, the
         # shopkeeper's line on returning to the command menu switches from a
         # first-time greeting to "anything else?" for the rest of it.
-        @shop[:browsed] = true if screen == :buy || screen == :sell
+        @shop.browsed = true if screen == :buy || screen == :sell
         # The command menu's own cursor position persists across a trip into
         # Buy/Sell and back, rather than always snapping to the first row --
         # ported from a reference implementation, not independently
@@ -7005,34 +7052,34 @@ class RPG2k
         # only the command menu has a cursor position worth remembering
         # across a screen change -- Buy/Sell/the quantity counter always
         # start a fresh browse at their own first row.
-        @shop[:cmd_index] = @shop[:index] if @shop[:screen] == :command
-        @shop[:screen] = screen
-        @shop[:index] = screen == :command ? (@shop[:cmd_index] || 0) : 0
+        @shop.cmd_index = @shop.index if @shop.screen == :command
+        @shop.screen = screen
+        @shop.index = screen == :command ? (@shop.cmd_index || 0) : 0
         # A fresh browse also starts scrolled to the top -- #draw_shop only
         # ever nudges @shop[:scroll] forward to follow the cursor, so without
         # this a screen re-entered after scrolling deep into a long list
         # (e.g. cancelling out of Buy back to the command menu, then back
         # into Buy) would still open scrolled down instead of showing goods
         # 1..SHOP_LIST_ROWS the way a fresh Buy/Sell always does.
-        @shop[:scroll] = 0
+        @shop.scroll = 0
         draw_shop
       end
 
       def leave_shop
-        transacted = @shop[:model].did_transaction
-        interp = @shop[:interp]
+        transacted = @shop.model.did_transaction
+        interp = @shop.interp
         close_shop
         interp.resume_shop(transacted)
       end
 
       def close_shop
         return unless @shop
-        @shop[:window].dispose if @shop[:window]
-        @shop[:gold].dispose if @shop[:gold]
-        @shop[:status].dispose if @shop[:status]
-        @shop[:party].dispose if @shop[:party]
-        @shop[:desc].dispose if @shop[:desc]
-        @shop[:prompt].dispose if @shop[:prompt]
+        @shop.window.dispose if @shop.window
+        @shop.gold.dispose if @shop.gold
+        @shop.status.dispose if @shop.status
+        @shop.party.dispose if @shop.party
+        @shop.desc.dispose if @shop.desc
+        @shop.prompt.dispose if @shop.prompt
         @shop = nil
       end
 
@@ -7449,14 +7496,14 @@ class RPG2k
         return it.resume_name_input('') unless req
         if @name_ui.nil?
           background = build_field_background(@windowskin)
-          if req[:charset] == 2
-            @name_ui = { name: req[:seed] || '', sel: 0, win: nil, kana: false,
-                         actor_id: req[:actor_id], background: background, interp: it }
+          if req.charset == 2
+            @name_ui = { name: req.seed || '', sel: 0, win: nil, kana: false,
+                         actor_id: req.actor_id, background: background, interp: it }
             draw_name_input
           else
-            @name_ui = { name: req[:seed] || '', sel: 0, kana: true,
-                         page: req[:charset] == 1 ? :katakana : :hiragana,
-                         actor_id: req[:actor_id], background: background, interp: it }
+            @name_ui = { name: req.seed || '', sel: 0, kana: true,
+                         page: req.charset == 1 ? :katakana : :hiragana,
+                         actor_id: req.actor_id, background: background, interp: it }
             draw_kana_name_input
           end
           return
@@ -8078,7 +8125,7 @@ class RPG2k
         when 0, MOVE_TARGET_THIS
           !@active_event.nil?
         else
-          @events.any? { |e| e[:id] == target }
+          @events.any? { |e| e.id == target }
         end
       end
 
@@ -8239,7 +8286,7 @@ class RPG2k
           @last_frame = nil if @state.player_flash
           @state.player_flash = nil
         else
-          target[:flash] = nil
+          target.flash = nil
         end
       end
 
@@ -8341,7 +8388,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT]
         else
-          @events.find { |e| e[:id] == target }
+          @events.find { |e| e.id == target }
         end
       end
 
@@ -8455,7 +8502,7 @@ class RPG2k
         when MOVE_TARGET_BOAT, MOVE_TARGET_SHIP, MOVE_TARGET_AIRSHIP
           vehicle_pixel(Game::Vehicle::TYPES[target - MOVE_TARGET_BOAT])
         else
-          ev = @events.find { |e| e[:id] == target }
+          ev = @events.find { |e| e.id == target }
           ev ? event_pixel(ev) : player_pixel
         end
       end
@@ -8598,7 +8645,7 @@ class RPG2k
           @state.player_flash = flash
           @last_frame = nil # force the hero's cached frame to be re-toned
         else
-          target[:flash] = flash
+          target.flash = flash
         end
       end
 
@@ -9206,8 +9253,8 @@ class RPG2k
             # PauseMarker.new(at: off, kind: :page)` call -- the same real
             # tools/bc2cpp/bc2cpp.rb regression fbfe068/a0fa9e5 already
             # found and fixed for Struct construction (a keyword call can
-            # only devirtualize into a compiled bytecode body, and Struct's
-            # own #initialize is always native).
+            # only devirtualize into a compiled bytecode body, and a Struct's
+            # #initialize was native).
             pa = Game::Message::PauseMarker.new
             pa.at = off
             pa.kind = :page
@@ -9224,8 +9271,8 @@ class RPG2k
       # be revealed relative to its own start.
       def message_line_offset(idx)
         off = 0
-        lines = @message[:seg_lines]
-        idx.times { |i| (lines[i] || []).each { |s| off += (s[:text] || '').length } }
+        lines = @message.seg_lines
+        idx.times { |i| (lines[i] || []).each { |s| off += (s.text || '').length } }
         off
       end
 
@@ -9234,7 +9281,7 @@ class RPG2k
           # A Show Choices that directly follows a Show Text keeps the same
           # window: append the choice list below the text already on screen
           # instead of building a new window (see #drive_text_message).
-          return unless choice && @message[:awaiting_followup] == :choice
+          return unless choice && @message.awaiting_followup == :choice
           append_choice_lines(lines)
           return
         end
@@ -9246,8 +9293,8 @@ class RPG2k
         scans = raw.map do |l|
           Game::Message.scan(l.to_s, @state.variables, names)
         end
-        seg_lines = scans.map { |s| s[:segments] }
-        plain = seg_lines.map { |segs| segs.map { |s| s[:text] }.join }
+        seg_lines = scans.map { |s| s.segments }
+        plain = seg_lines.map { |segs| segs.map { |s| s.text }.join }
         # Lift each line's pacing codes into global reveal coordinates (offset by
         # the visible length of the lines before it) so one reveal counter drives
         # the whole window.
@@ -9261,21 +9308,21 @@ class RPG2k
           # Bare `.new` plus setters throughout this loop, not a keyword
           # call -- same reason as #message_page_layout's own PauseMarker
           # construction above.
-          s[:pauses].each do |p|
+          s.pauses.each do |p|
             pa = Game::Message::PauseMarker.new
-            pa.at = offset + p[:at]
-            pa.kind = p[:kind]
+            pa.at = offset + p.at
+            pa.kind = p.kind
             pauses << pa
           end
-          (s[:instants] || []).each { |a, b| instants << [offset + a, offset + b] }
-          (s[:speeds] || []).each do |sp0|
+          (s.instants || []).each { |a, b| instants << [offset + a, offset + b] }
+          (s.speeds || []).each do |sp0|
             sp = Game::Message::SpeedMarker.new
-            sp.at = offset + sp0[:at]
-            sp.speed = sp0[:speed]
+            sp.at = offset + sp0.at
+            sp.speed = sp0.speed
             speeds << sp
           end
-          auto_close ||= s[:auto_close]
-          show_gold ||= s[:show_gold]
+          auto_close ||= s.auto_close
+          show_gold ||= s.show_gold
           offset += plain[li].length
         end
 
@@ -9354,7 +9401,7 @@ class RPG2k
         # #append_choice_lines) inherits it rather than starting
         # back at the default (yado.tk: an explicit `\c[0]` is
         # needed in the text to stop the choices inheriting it).
-        message.trailing_color = scans.empty? ? 0 : scans.last[:end_color]
+        message.trailing_color = scans.empty? ? 0 : scans.last.end_color
         @message = message
         speak_message(plain)
         draw_message_contents
@@ -9385,21 +9432,21 @@ class RPG2k
       # for the pair: text on top, choices below). Reuses the existing window,
       # contents bitmap and text layout; only the reveal and line list grow.
       def append_choice_lines(labels)
-        @message[:awaiting_followup] = nil
+        @message.awaiting_followup = nil
         names = ->(id) { actor_name(id) }
         raw = (labels || [])
         raw = [''] if raw.empty?
         # Each choice label inherits the colour the preceding text (or an
         # earlier label) left off at, unless it sets its own -- the whole
         # merged window reads as one continuous colour stream (yado.tk).
-        color = @message[:trailing_color] || 0
+        color = @message.trailing_color || 0
         scans = raw.map do |l|
           s = Game::Message.scan(l.to_s, @state.variables, names, color)
-          color = s[:end_color]
+          color = s.end_color
           s
         end
-        @message[:trailing_color] = color
-        new_seg_lines = scans.map { |s| s[:segments] }
+        @message.trailing_color = color
+        new_seg_lines = scans.map { |s| s.segments }
         # RPG_RT only merges the options *under* the text when they still fit
         # in the window's four rows; when they do not, the text page finishes
         # on its own (pause arrow, one confirm) and the options open a fresh
@@ -9409,16 +9456,16 @@ class RPG2k
         # options at rows 1-2 with the text cleared -- not the text plus the
         # first option paginated, which is what appending unconditionally and
         # letting #message_page_layout split it produced here before.
-        if @message[:seg_lines].length + new_seg_lines.length > MSG_LINES_PER_PAGE
+        if @message.seg_lines.length + new_seg_lines.length > MSG_LINES_PER_PAGE
           # No room: hold the options back until the text page has been
           # confirmed on its own (#drive_text_message answers :pending_choice),
           # then they replace it.
-          @message[:pending_choice] = new_seg_lines
-          @message[:window].pause = true
+          @message.pending_choice = new_seg_lines
+          @message.window.pause = true
           return
         end
-        @message[:choice_start] = @message[:seg_lines].length
-        @message[:seg_lines] = @message[:seg_lines] + new_seg_lines
+        @message.choice_start = @message.seg_lines.length
+        @message.seg_lines = @message.seg_lines + new_seg_lines
         install_choice_lines(new_seg_lines)
       end
 
@@ -9426,11 +9473,11 @@ class RPG2k
       # they follow: the text page has now had its confirm, so the options take
       # the window over from row 0 with the text gone.
       def apply_pending_choice_lines
-        new_seg_lines = @message[:pending_choice]
-        @message[:pending_choice] = nil
-        @message[:window].pause = false
-        @message[:choice_start] = 0
-        @message[:seg_lines] = new_seg_lines
+        new_seg_lines = @message.pending_choice
+        @message.pending_choice = nil
+        @message.window.pause = false
+        @message.choice_start = 0
+        @message.seg_lines = new_seg_lines
         install_choice_lines(new_seg_lines)
       end
 
@@ -9438,24 +9485,24 @@ class RPG2k
       # (already spliced into @message[:seg_lines] by the caller, either merged
       # under the text or on their own page).
       def install_choice_lines(new_seg_lines)
-        @message[:choice] = true
-        @message[:count] = new_seg_lines.length
+        @message.choice = true
+        @message.count = new_seg_lines.length
         # Choice lists appear at once, same as a standalone choice window; the
         # text lines above are already fully revealed. A merged window that runs
         # past one screen still paginates, so recompute the page layout and
         # pause the reveal at each boundary (a confirm pages rather than
         # dismissing, see #drive_message).
-        plain = @message[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }
+        plain = @message.seg_lines.map { |segs| segs.map { |s| s.text }.join }
         page_pauses, pages = message_page_layout(plain)
         reveal = Game::TextReveal.new(plain, 0, page_pauses,
-                                      @message[:auto_close], [], [])
+                                      @message.auto_close, [], [])
         reveal.reveal_all
-        @message[:reveal] = reveal
-        @message[:pages] = pages
-        @message[:page] = 0
+        @message.reveal = reveal
+        @message.pages = pages
+        @message.page = 0
         # Only the newly appended options -- the preceding Show Text already
         # spoke itself from #open_message.
-        speak_message(new_seg_lines.map { |segs| segs.map { |s| s[:text] }.join })
+        speak_message(new_seg_lines.map { |segs| segs.map { |s| s.text }.join })
         draw_message_contents
         @choice_index = 0
         set_choice_cursor
@@ -9593,26 +9640,26 @@ class RPG2k
       # that more pages follow.
       def draw_message_contents
         return unless @message
-        c = @message[:contents]
+        c = @message.contents
         c.clear
         draw_message_face
-        lines = @message[:seg_lines]
-        page = @message[:page] || 0
+        lines = @message.seg_lines
+        page = @message.page || 0
         start = page * MSG_LINES_PER_PAGE
         slice = lines[start, MSG_LINES_PER_PAGE] || []
-        rel = @message[:reveal].revealed - message_line_offset(start)
+        rel = @message.reveal.revealed - message_line_offset(start)
         rel = 0 if rel < 0
         vis = Game::Message.visible_segments(slice, rel)
-        right = @message[:text_x] + @message[:text_w]
+        right = @message.text_x + @message.text_w
         vis.each_with_index do |segs, i|
-          x = @message[:text_x] + choice_row_indent(start + i)
+          x = @message.text_x + choice_row_indent(start + i)
           y = i * MSG_LINE_H
           segs.each do |seg|
             draw_message_run(c, x, y, right - x, seg)
-            x += c.text_size(seg[:text]).width
+            x += c.text_size(seg.text).width
           end
         end
-        draw_message_more if page + 1 < (@message[:pages] || 1)
+        draw_message_more if page + 1 < (@message.pages || 1)
       end
 
       # Show Choices labels sit MSG_CHOICE_INDENT past the message text's own
@@ -9621,8 +9668,8 @@ class RPG2k
       # list drew its labels at native x 20 in the same window whose plain text
       # sat at native x 8.
       def choice_row_indent(line_index)
-        return 0 unless @message && @message[:choice]
-        line_index >= (@message[:choice_start] || 0) ? MSG_CHOICE_INDENT : 0
+        return 0 unless @message && @message.choice
+        line_index >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0
       end
 
       # RPG2000's "▼" continuation marker, drawn bottom-right of the message
@@ -9631,7 +9678,7 @@ class RPG2k
       # replaces.
       def draw_message_more
         return unless @message
-        c = @message[:contents]
+        c = @message.contents
         return unless @anim_frame % 30 < 15
         col = message_color(0)
         x = c.width - 14
@@ -9663,8 +9710,8 @@ class RPG2k
       # boundary this codebase's own message layout defines rather than
       # whatever the contents bitmap happens to be sized to.
       def draw_message_run(c, x, y, w, seg)
-        idx = seg[:color]
-        text = clip_text_to_width(c, seg[:text], w)
+        idx = seg.color
+        text = clip_text_to_width(c, seg.text, w)
         if @windowskin && Game::MessagePalette.valid?(idx)
           draw_system_text c, x, y, w, MSG_LINE_H, text, @windowskin, idx
         else
@@ -9676,9 +9723,9 @@ class RPG2k
       # Blit the already-cropped (and possibly mirrored, see #build_face_cell)
       # face cell into the message contents at its configured side.
       def draw_message_face
-        face = @message[:face]
+        face = @message.face
         return unless face
-        @message[:contents].blt @message[:face_x], @message[:face_y] || 0, face,
+        @message.contents.blt @message.face_x, @message.face_y || 0, face,
                                 Rect.new(0, 0, FACE_SIZE, FACE_SIZE)
       end
 
@@ -9702,9 +9749,9 @@ class RPG2k
 
       def set_choice_cursor
         return unless @message
-        offset = @message[:choice_start] || 0
+        offset = @message.choice_start || 0
         sel = offset + @choice_index
-        page = @message[:page] || 0
+        page = @message.page || 0
         # The cursor only shows when the selected option is on the current page;
         # RPG2000 scrolls the choice list to keep the selection visible.
         if sel >= page * MSG_LINES_PER_PAGE &&
@@ -9717,11 +9764,11 @@ class RPG2k
           # side (native x 10..309 for the 320-wide window, cycle #257) -- so
           # the rect handed over is pulled in by the overhang plus that inset.
           inset = MSG_CURSOR_INSET + Game::WindowCursor::OVERHANG
-          @message[:window].cursor_rect =
+          @message.window.cursor_rect =
             Rect.new(inset, row * MSG_LINE_H,
-                     @message[:window].contents.width - inset * 2, MSG_LINE_H)
+                     @message.window.contents.width - inset * 2, MSG_LINE_H)
         else
-          @message[:window].cursor_rect = Rect.new(0, 0, 0, 0)
+          @message.window.cursor_rect = Rect.new(0, 0, 0, 0)
         end
       end
 
@@ -9729,9 +9776,9 @@ class RPG2k
       # scrolls the list to keep the cursor visible).
       def page_to_choice
         return unless @message
-        offset = @message[:choice_start] || 0
+        offset = @message.choice_start || 0
         sel = offset + @choice_index
-        @message[:page] = sel / MSG_LINES_PER_PAGE
+        @message.page = sel / MSG_LINES_PER_PAGE
       end
 
       def drive_message
@@ -9744,19 +9791,19 @@ class RPG2k
         # is a fresh object every message here rather than a persistent one
         # game scripts can poll, and holding logic off it would only delay
         # dismissal by MSG_ANIM_FRAMES with nothing else to show for it.
-        @message[:window].update
-        @message[:gold_window].update if @message[:gold_window]
-        if @message[:choice]
-          reveal = @message[:reveal]
+        @message.window.update
+        @message.gold_window.update if @message.gold_window
+        if @message.choice
+          reveal = @message.reveal
           # A merged text+choices window that runs past one screen pages its
           # text first: while a `:page` pause is still pending, a confirm
           # advances the page (releasing it) instead of choosing, so the options
           # only become selectable once they are actually on screen.
           unless reveal.done?
             p = reveal.pending_pause
-            if p && p[:kind] == :page
+            if p && p.kind == :page
               if Input.trigger?(Input::C)
-                @message[:page] = [@message[:page] + 1, @message[:pages] - 1].min
+                @message.page = [@message.page + 1, @message.pages - 1].min
                 reveal.release_pause
                 draw_message_contents
               end
@@ -9775,28 +9822,28 @@ class RPG2k
           # default and never overridden here).
           if Input.trigger?(Input::DOWN) || Input.repeat?(Input::DOWN)
             @choice_index += 1
-            @choice_index %= @message[:count]
+            @choice_index %= @message.count
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::UP) || Input.repeat?(Input::UP)
             @choice_index -= 1
-            @choice_index %= @message[:count]
+            @choice_index %= @message.count
             page_to_choice
             set_choice_cursor
             play_system_se(SFX_CURSOR)
           elsif Input.trigger?(Input::C)
             play_system_se(SFX_DECISION)
             index = @choice_index
-            interp = @message[:interp]
+            interp = @message.interp
             close_message
             interp.choose(index)
-          elsif Input.trigger?(Input::B) && @message[:interp].choice_cancellable?
+          elsif Input.trigger?(Input::B) && @message.interp.choice_cancellable?
             # The Show Choices block says what cancelling means (pick a given
             # choice, or run its [Cancel] branch); a block that forbids it
             # swallows the key, as RPG_RT does.
             play_system_se(SFX_CANCEL)
-            interp = @message[:interp]
+            interp = @message.interp
             close_message
             interp.cancel_choice
           end
@@ -9833,8 +9880,8 @@ class RPG2k
       MSG_PAUSE_FULL = 61
 
       def drive_text_message
-        interp = @message[:interp]
-        reveal = @message[:reveal]
+        interp = @message.interp
+        reveal = @message.reveal
         # Cancel (B) dismisses a plain message exactly like Decision (C) --
         # re-verified against genuine RPG_RT.exe under wine (cycle #143):
         # a synthetic autostart Show Message immediately followed by a long,
@@ -9863,10 +9910,10 @@ class RPG2k
           # page is full and more follow: a confirm advances to the next page
           # and releases it so that page's text starts typing, instead of
           # dismissing the window. No keypress arrow -- the "▼" marks it.
-          if pause && pause[:kind] == :page
-            @message[:window].pause = false
+          if pause && pause.kind == :page
+            @message.window.pause = false
             if fast_forward
-              @message[:page] = [@message[:page] + 1, @message[:pages] - 1].min
+              @message.page = [@message.page + 1, @message.pages - 1].min
               reveal.release_pause
               draw_message_contents
             end
@@ -9875,7 +9922,7 @@ class RPG2k
           # The blinking pause arrow only stands for a player-input wait
           # (`\!`, or the fully-revealed message below) -- not the timed
           # `\.` / `\|` holds, which clear on their own.
-          @message[:window].pause = pause ? pause[:kind] == :key : false
+          @message.window.pause = pause ? pause.kind == :key : false
           if pause
             drive_message_pause(reveal, pause, fast_forward, shift_forward)
           elsif fast_forward
@@ -9890,8 +9937,8 @@ class RPG2k
         # #append_choice_lines): the text page takes one confirm of its own,
         # then they replace it. The interpreter is already suspended on its
         # Show Choices, so nothing is resumed here.
-        if @message[:pending_choice]
-          @message[:window].pause = true
+        if @message.pending_choice
+          @message.window.pause = true
           apply_pending_choice_lines if confirm
           return
         end
@@ -9904,9 +9951,9 @@ class RPG2k
         # interpreter so its Show Choices runs now; #append_choice_lines then
         # either merges the options under the text or parks them above.
         # Input Number is left waiting for its confirm -- not measured.
-        if interp.message_followup == :choice && !@message[:followup_resumed]
-          @message[:followup_resumed] = true
-          @message[:awaiting_followup] = :choice
+        if interp.message_followup == :choice && !@message.followup_resumed
+          @message.followup_resumed = true
+          @message.awaiting_followup = :choice
           interp.resume
           return
         end
@@ -9914,7 +9961,7 @@ class RPG2k
         # what answers next (this frame or the one after), so a confirm landing
         # in the gap must not resume it a second time and step straight past
         # the choices.
-        return if @message[:followup_resumed]
+        return if @message.followup_resumed
         # `\^` closes the finished window on its own; otherwise wait for a button.
         if reveal.auto_close? || confirm
           followup = interp.message_followup
@@ -9922,13 +9969,13 @@ class RPG2k
             # A Show Choices / Input Number immediately follows this Show Text:
             # RPG_RT keeps the same window up, with the choices / digit entry
             # appended below the text already shown, instead of closing it.
-            @message[:awaiting_followup] = followup
+            @message.awaiting_followup = followup
           else
             close_message
           end
           interp.resume
         else
-          @message[:window].pause = true
+          @message.window.pause = true
         end
       end
 
@@ -9949,19 +9996,19 @@ class RPG2k
       # the reference implementation's own fast-forward guard around
       # that same wait -- an ordinary player confirm press must not.
       def drive_message_pause(reveal, pause, pressed, shift_forward)
-        if pause[:kind] == :key
+        if pause.kind == :key
           reveal.release_pause if pressed
           return
         end
-        @message[:pause_frames] ||= if pause[:kind] == :full
+        @message.pause_frames ||= if pause.kind == :full
                                        MSG_PAUSE_FULL
                                      else
-                                       speed = reveal.speed_at(pause[:at])
+                                       speed = reveal.speed_at(pause.at)
                                        MSG_PAUSE_QUARTER + Game.clamp(speed - 16, 0, 4)
                                      end
-        @message[:pause_frames] -= 1
-        if shift_forward || @message[:pause_frames] <= 0
-          @message[:pause_frames] = nil
+        @message.pause_frames -= 1
+        if shift_forward || @message.pause_frames <= 0
+          @message.pause_frames = nil
           reveal.release_pause
         end
       end
@@ -9980,8 +10027,8 @@ class RPG2k
       # selection, ...) is never blocked on the animation finishing.
       def close_message(animate: true)
         return unless @message
-        win = @message[:window]
-        gold = @message[:gold_window]
+        win = @message.window
+        gold = @message.gold_window
         frames = (animate && @battle.nil?) ? MSG_ANIM_FRAMES : 0
         if frames > 0
           win.close_animation(frames)
@@ -10032,10 +10079,10 @@ class RPG2k
       def open_number_input(digits, interp: @interpreter)
         return if @number_input
         model = Game::NumberInput.new(digits || 1)
-        if @message && @message[:awaiting_followup] == :number
-          @message[:awaiting_followup] = nil
-          x = @message[:inner_w] - model.digits * NUM_CELL
-          y = @message[:seg_lines].length * MSG_LINE_H
+        if @message && @message.awaiting_followup == :number
+          @message.awaiting_followup = nil
+          x = @message.inner_w - model.digits * NUM_CELL
+          y = @message.seg_lines.length * MSG_LINE_H
           @number_input = { model: model, embedded: true, x: x, y: y, interp: interp }
           draw_number_input
           return
@@ -10058,7 +10105,7 @@ class RPG2k
         return unless ni
         model = ni[:model]
         if ni[:embedded]
-          c = @message[:contents]
+          c = @message.contents
           x0 = ni[:x]
           y0 = ni[:y]
           c.fill_rect x0, y0, model.digits * NUM_CELL, MSG_LINE_H, Color.new(0, 0, 0, 0)
@@ -10195,8 +10242,8 @@ class RPG2k
           # passability check below exactly as if `touched` were not a touch
           # page at all -- ordinary blocking (a same-layer event still stops
           # the party cold, just silently) is unaffected.
-          if touched && touch_trigger?(touched[:trigger]) && touched[:commands] &&
-             !touched[:crossed_hero_this_frame]
+          if touched && touch_trigger?(touched.trigger) && touched.commands &&
+             !touched.crossed_hero_this_frame
             # A same-frame confirm press defers to #try_action_trigger instead
             # of starting the event here, when this same tile would also
             # answer the action button (#action_touch_trigger?) -- otherwise
@@ -10223,7 +10270,7 @@ class RPG2k
             # let it block movement elsewhere, so falling through to the
             # ordinary passability check below lets the party keep walking
             # onto its tile while the event's commands run alongside.
-            return if touched[:layer] == LAYER_SAME
+            return if touched.layer == LAYER_SAME
           end
           # Through Mode (see @player_through) bypasses collision the same way
           # it does for an event's own #char_passable? -- touch triggers still
@@ -10485,7 +10532,7 @@ class RPG2k
         # wandering-monster roll is suppressed for that step, same as
         # flying or a forced-route step above/below.
         ev = event_at(@state.x, @state.y)
-        return if ev && ev[:trigger] == TRIGGER_PLAYER_TOUCH
+        return if ev && ev.trigger == TRIGGER_PLAYER_TOUCH
         steps = current_encounter_steps
         if steps <= 0
           @state.encounter_total = 0
@@ -10586,7 +10633,7 @@ class RPG2k
         # blocks the party) must let the hero walk straight through it,
         # matching `#vehicle_passable?`'s own already-correct `!b[:char].
         # through` idiom just above.
-        return false if blockers_at(x, y).any? { |b| b[:layer] == LAYER_SAME && !b[:char].through }
+        return false if blockers_at(x, y).any? { |b| b.layer == LAYER_SAME && !b.char.through }
         # An unridden boat/ship blocks the hero on foot exactly like a
         # same-layer event would (see #vehicle_blocks?); an unridden airship
         # never does, on foot or otherwise (block_airship: false — the hero
@@ -10659,7 +10706,7 @@ class RPG2k
           elsif ref >= MOVE_TARGET_BOAT && ref <= MOVE_TARGET_AIRSHIP
             vehicle_pixel(Game::Vehicle::TYPES[ref - MOVE_TARGET_BOAT])
           else
-            e = @events.find { |ev| ev[:id] == ref }
+            e = @events.find { |ev| ev.id == ref }
             e && event_pixel(e)
           end
         return nil unless pixel
@@ -11348,13 +11395,13 @@ class RPG2k
       # buffer, rather than an array-of-tuples rebuilt every call, so a frame
       # with nothing to redraw costs no per-event allocation to find that out.
       def store_event_draw_sig(e, buf, base)
-        ch = e[:char]
-        dir = Game::EventGraphic.frame_dir(e[:anim_type], ch.direction, e[:anim_phase])
-        col = Game::EventGraphic.frame_col(e[:anim_type], e[:base_pattern],
-                                           e[:anim_phase], e[:moving])
+        ch = e.char
+        dir = Game::EventGraphic.frame_dir(e.anim_type, ch.direction, e.anim_phase)
+        col = Game::EventGraphic.frame_col(e.anim_type, e.base_pattern,
+                                           e.anim_phase, e.moving)
         epx = event_pixel_x(e)
         epy = event_pixel_y(e)
-        translucent = e[:translucent]
+        translucent = e.translucent
         jump = event_jump_offset(e)
         bush = event_bush_depth(e)
         upper = event_target_buffer(e).equal?(@upper_bmp)
@@ -11399,7 +11446,7 @@ class RPG2k
       # every frame by the global flash check below -- its tone changes per
       # frame, cheaper to over-draw than to fingerprint.
       def events_dirty?
-        return true if @state.player_flash || @events.any? { |e| e[:flash] }
+        return true if @state.player_flash || @events.any? { |e| e.flash }
         needed = @events.size * EVENT_DRAW_SIG_FIELDS
         unless @event_draw_sigs && @event_draw_sigs.size == needed
           store_event_draw_sigs
@@ -11577,15 +11624,15 @@ class RPG2k
       # A translucent page is blitted at half opacity. Events with no graphic
       # (empty CharSet name and no tile substitution) draw nothing.
       def draw_events(cam_x, cam_y)
-        ordered = @events.sort_by { |e| [e[:char].y, e[:char].x, e[:id]] }
+        ordered = @events.sort_by { |e| [e.char.y, e.char.x, e.id] }
         ordered.each { |e| draw_event e, cam_x, cam_y }
       end
 
       def draw_event(e, cam_x, cam_y)
         bmp = event_target_buffer(e)
         return unless bmp
-        opacity = e[:translucent] ? 128 : 255
-        ch = e[:char]
+        opacity = e.translucent ? 128 : 255
+        ch = e.char
         name = ch.graphic_name
         if name && !name.empty?
           draw_event_charset(e, bmp, cam_x, cam_y, opacity)
@@ -11599,28 +11646,28 @@ class RPG2k
       # Which tile buffer an event composits into, per its page layer and (for
       # the same-as-hero layer) its y relative to the player.
       def event_target_buffer(e)
-        case e[:layer]
+        case e.layer
         when 2 then @upper_bmp                                   # above hero
-        when 1 then e[:char].y >= @state.y ? @upper_bmp : @lower_bmp
+        when 1 then e.char.y >= @state.y ? @upper_bmp : @lower_bmp
         else @lower_bmp                                          # below hero
         end
       end
 
       # Blit an event's CharSet frame (24x32), feet-on-tile like the player.
       def draw_event_charset(e, bmp, cam_x, cam_y, opacity)
-        charset = event_charset(e[:char].graphic_name)
+        charset = event_charset(e.char.graphic_name)
         return unless charset
-        dir, col = Game::EventGraphic.frame(e[:anim_type], e[:base_dir],
-                                            e[:base_pattern],
-                                            e[:char].direction, e[:anim_phase],
-                                            e[:moving])
-        sx, sy, sw, sh = Game::CharSet.frame_rect(e[:char].graphic_index, dir, col)
+        dir, col = Game::EventGraphic.frame(e.anim_type, e.base_dir,
+                                            e.base_pattern,
+                                            e.char.direction, e.anim_phase,
+                                            e.moving)
+        sx, sy, sw, sh = Game::CharSet.frame_rect(e.char.graphic_index, dir, col)
         epx, epy = event_pixel(e)
         dx = epx - cam_x - (Game::CharSet::WIDTH - TILE) / 2
         dy = epy - cam_y - (Game::CharSet::HEIGHT - TILE) - event_jump_offset(e)
         src = Rect.new(sx, sy, sw, sh)
         bush = event_bush_depth(e)
-        toned = e[:flash] && flashed_charset(charset, src, e[:flash])
+        toned = e.flash && flashed_charset(charset, src, e.flash)
         if toned
           blt_bushed bmp, dx, dy, toned,
                      Rect.new(0, 0, Game::CharSet::WIDTH, Game::CharSet::HEIGHT),
@@ -11653,7 +11700,7 @@ class RPG2k
       # the tile event is skipped.
       def draw_event_tile(e, bmp, cam_x, cam_y, opacity)
         return unless @chipset_bmp
-        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index)
+        sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e.char.graphic_index)
         epx, epy = event_pixel(e)
         dx = epx - cam_x
         dy = epy - cam_y - event_jump_offset(e)
@@ -11768,9 +11815,9 @@ class RPG2k
       # `height` is the frame the depth is scaled against — the 32px charset
       # frame for an ordinary event, one tile for a tile-graphic one.
       def event_bush_depth(e, height = Game::CharSet::HEIGHT)
-        return 0 unless e[:layer] == 1
-        return 0 if e[:jumping]
-        ch = e[:char]
+        return 0 unless e.layer == 1
+        return 0 if e.jumping
+        ch = e.char
         Game::CharSet.bush_pixels(bush_depth_at(ch.x, ch.y), height)
       end
 

@@ -148,7 +148,7 @@ class RPG2k
         # shared entry point.
         play_system_se(SFX_BATTLE)
         @map.play_battle_bgm
-        troop = Game::Troop.new(db, @req[:troop_id], @rng)
+        troop = Game::Troop.new(db, @req.troop_id, @rng)
         allies = @state.party.actors.map { |a| Game::Battle.from_actor(a) }
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
         # The database's state table drives per-turn afflictions (poison slip,
@@ -177,7 +177,7 @@ class RPG2k
                        # diverge in which objects they each hold.
                        battle: Game::Battle.new(allies.dup, foes, @rng,
                                                 situations, true, true, true,
-                                                @req[:first_strike] ? true : false,
+                                                @req.first_strike ? true : false,
                                                 properties,
                                                 # Lets the troop run its 行動パターン:
                                                 # skills, transformations and the
@@ -267,7 +267,7 @@ class RPG2k
         # scripts/rpg2k_boot_check.bash can assert the battle path was really
         # reached rather than merely armed. A real encounter never sets
         # `headless`, so this line never appears for ordinary play.
-        $stderr.puts "[RPG2k-BATTLE] troop=#{@req[:troop_id]}" if @req[:headless]
+        $stderr.puts "[RPG2k-BATTLE] troop=#{@req.troop_id}" if @req.headless
         # A reference implementation's battle scene narrates the encounter
         # before the party is ever asked for a command -- ported from that
         # reference implementation, not independently confirmed against
@@ -322,7 +322,7 @@ class RPG2k
         lines = troop.members.reject(&:hidden).map do |enemy|
           "#{enemy.name}#{term(:encounter)}"
         end
-        lines << term(:special_combat) if req[:first_strike]
+        lines << term(:special_combat) if req.first_strike
         @ui[:banner_reveal] = true unless lines.empty?
         lines
       end
@@ -994,8 +994,8 @@ class RPG2k
       # #battle_background` for the full capture recipe and for why the
       # value is dropped on a map change.
       def encounter_backdrop
-        return @req[:background].to_s unless @req[:background].nil?
-        return @map.backdrop_for_terrain_id(@req[:terrain_id]) unless @req[:terrain_id].nil?
+        return @req.background.to_s unless @req.background.nil?
+        return @map.backdrop_for_terrain_id(@req.terrain_id) unless @req.terrain_id.nil?
         carried = @state.respond_to?(:battle_background) ? @state.battle_background : nil
         return carried unless carried.nil?
         Game::Backdrop.name_for(@state.map_id, @map.map_properties,
@@ -1613,7 +1613,7 @@ class RPG2k
           play_system_se(SFX_DECISION)
           queue_auto_battle_round
         when :escape
-          if @req[:allow_escape]
+          if @req.allow_escape
             play_system_se(SFX_DECISION)
             try_battle_escape
           else
@@ -1751,7 +1751,7 @@ class RPG2k
           # successful toggle is written back onto the real `Game::Actor`
           # (`#battle_row=`) so it survives past this battle -- Combatant#row
           # is a fight-scoped snapshot the same way #attr_ranks is (see the
-          # Combatant Struct's own field comment) -- and, like Special,
+          # Combatant class's own field comment) -- and, like Special,
           # consumes the turn as a `DoNothing` action
           # (`Game::Battle#command_skip`).
           if @ui[:battle].toggle_row(current_actor)
@@ -3075,10 +3075,10 @@ class RPG2k
         end
         # A defeat in "game over" mode (no custom [Defeat] handler) with the whole
         # party knocked out ends the game; every other outcome resumes the event.
-        game_over = result == :defeat && @req[:defeat_game_over] &&
+        game_over = result == :defeat && @req.defeat_game_over &&
                     @state.party.all_dead?
-        death_handler = result == :defeat && @req[:random] &&
-                        !@req[:defeat_game_over] && @state.party.all_dead?
+        death_handler = result == :defeat && @req.random &&
+                        !@req.defeat_game_over && @state.party.all_dead?
         owner = @owner
         @map.close_battle
         if game_over

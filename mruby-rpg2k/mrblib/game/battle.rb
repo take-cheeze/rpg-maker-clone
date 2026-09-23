@@ -45,185 +45,250 @@ module Game
     # Enemies leave them nil and attack a random party
     # member. `mp` / `max_mp` carry SP (skills spend it) and `spi` is the spirit
     # stat the skill formulas read as `int`.
-    Combatant = Struct.new(:name, :atk, :def, :agi, :hp, :max_hp,
-                           :action, :defending, :mp, :max_mp, :spi, :command,
-                           :actor, :states, :state_turns, :crit_chance,
-                           :prevents_crit, :attr_ranks, :atk_attrs, :skip,
-                           :hit_rate, :state_ranks, :hidden, :battle_turn,
-                           :actions, :charged, :enemy_id, :battler_name,
-                           :battler_hue,
-                           # Equipment-granted combat modifiers (ADR 0033):
-                           # how many times a basic attack swings, whether it
-                           # can be evaded, whether Defend halves twice, and
-                           # whether skills cost half.
-                           :strikes, :ignores_evasion, :strong_defence,
-                           :half_sp_cost,
-                           # Whether this battler's own gear makes a normal
-                           # attack likelier to miss it (Actor#physical_evasion_up?,
-                           # a flat -25 to the attacker's to_hit -- see
-                           # Battle#to_hit). Enemy Combatants leave it nil/false;
-                           # monsters equip nothing.
-                           :evasion_up,
-                           # A basic Attack read from the weapon's own
-                           # attack_all? flag (confirmed by an actual wine
-                           # capture to have no observable effect -- see
-                           # Actor#attack_all?'s own citation) or jumped to the
-                           # front of the round's turn order (preemptive?) --
-                           # see #turn_order and #strike. Actor-only; an enemy
-                           # Combatant leaves both nil/false, so it never
-                           # qualifies for either.
-                           :attack_all, :preemptive,
-                           # The ranks #attr_ranks started the battle at --
-                           # never itself written to, only read to cap how far
-                           # an "attribute defence up/down" skill (see
-                           # #skill_attr_shift) may move #attr_ranks in either
-                           # direction. Since #attr_ranks is a fresh Hash per
-                           # Combatant (Game::Actor#attribute_ranks builds one
-                           # from the database row on every call, not a cached
-                           # one) and #apply_to_party never writes it back to
-                           # the actor, a shift is battle-scoped for free: it
-                           # dies with the Combatant, no separate reset needed.
-                           :attr_base_ranks,
-                           # Per-battle ATK/DEF/SPI/AGI offsets a skill's own
-                           # affect_attack/affect_defense/affect_spirit/
-                           # affect_agility flags accumulate onto (see
-                           # Battle#apply_stat_mods) -- a reference
-                           # implementation's own per-battle stat modifiers,
-                           # reset to 0
-                           # by its battle-start reset there. This class
-                           # needs no equivalent reset: exactly like
-                           # #attr_ranks above, a fresh Combatant is built once
-                           # per fight and never written back to the actor, so
-                           # nil (read as 0 by #effective_atk and friends)
-                           # every construction is the reset for free.
-                           :atk_mod, :def_mod, :spi_mod, :agi_mod,
-                           # The status conditions this battler's equipped
-                           # weapon(s) carry into a basic Attack -- see
-                           # Game::Actor#weapon_states, whose `{ inflict:,
-                           # heal: }` shape this mirrors exactly. An enemy
-                           # Combatant leaves it nil (read as empty by
-                           # #atk_states -- monsters equip nothing in real
-                           # RPG_RT either).
-                           :atk_states,
-                           # Whether this ally's actor is currently a member of
-                           # the live Game::Party, kept in sync by
-                           # Battle#sync_allies_from_party for a fight
-                           # constructed with `party:` (mid-battle roster
-                           # sync). nil/true means "yes" -- every Combatant
-                           # built without going through that path (every
-                           # existing fixture, and an enemy, which never has
-                           # this field touched at all) is a member for free,
-                           # matching the unconditional-membership behaviour
-                           # this class had before the field existed. Distinct
-                           # from #out_of_play?'s other two causes
-                           # (dead?/hidden): a not-a-member Combatant has not
-                           # left *the fight* the way a felled or fled battler
-                           # has -- it is deliberately kept in @allies (not
-                           # removed) so a later rejoin finds and reuses this
-                           # exact object rather than rebuilding a fresh one
-                           # and losing its accumulated battle-only state (see
-                           # this Struct's own class comment).
-                           :member,
-                           # Whether this battler was under a "do nothing"
-                           # restriction (asleep/paralysed) at the moment its
-                           # action entered this round's queue (#refill_queue),
-                           # snapshotted there and consulted -- not
-                           # re-derived -- when the action is dequeued
-                           # (#step/#step_action). See #apply_turn_states'
-                           # own comment for why a live re-check at dequeue
-                            # time is wrong: ported from a reference
-                            # implementation's own action-preparation logic,
-                            # NOT independently
-                            # confirmed against genuine RPG_RT under wine --
-                            # it locks a restricted
-                            # battler's queued algorithm to `None` right when
-                            # it is chosen or first
-                            # afflicted mid-round,
-                            # and nothing in the reference ever reverses that
-                            # once the restriction later clears -- curing
-                            # Sleep/Paralysis after the round's queue is built
-                            # does not give the battler its turn back. nil
-                            # (never queued this round yet) reads as "not
-                            # locked", matching every existing fixture that
-                            # calls #apply_turn_states directly without going
-                            # through #refill_queue first.
-                            :queued_no_act,
-                            # The RPG2003 front/back row this battler stands
-                            # in (see the `ROW_FRONT`/`ROW_BACK` constants
-                            # above); nil defaults to the front row, the only
-                            # row RPG2000 knows. The row changes how the fight
-                            # treats the battler (#row_adjusted?): a back-row
-                            # defender is harder to hit and takes less damage,
-                            # a front-row actor deals more -- the row is an
-                            # RPG2003-only concept, so this stays front for
-                            # every 2000 fight.
-                            :row,
-                            # The RPG2003 active-time (gauge) charge for this
-                            # battler (ADR 0053, Phase 2). 0..GAUGE_MAX; a
-                            # battler whose gauge is full may act. Only the
-                            # 2003 gauge presentation (battle_type 2) actually
-                            # advances it -- RPG2000 (battle_type 0) and the
-                            # 2003 traditional presentation (1) leave it at 0
-                            # and run the turn-based machine instead.
-                            :gauge,
-                            # The ref of the battle command (into
-                            # `db.battlecommands.commands`, 1..4 for the fixed
-                            # four) this actor last chose in the command window,
-                            # recorded by the scene (#select_battle_command) the
-                            # way a reference implementation's own battle
-                            # scene records the last chosen command (ported,
-                            # NOT independently confirmed against genuine
-                            # RPG_RT under wine). Read by the
-                            # RPG2003 battle combo (#combo_hits) and, in time,
-                            # the battle-page `command_actor` condition. nil
-                            # until an actor picks a command (an enemy, or an
-                            # auto-battling ally, never records one).
-                            :last_battle_action,
-                            # The per-turn state reminder line this battler's
-                            # turn should open with, as of the most recent
-                            # #apply_turn_states call -- the message text
-                            # itself (already resolved against this
-                            # battler's name), or nil when nothing qualifies.
-                            # Ported from a reference implementation's own
-                            # turn-begin processing, NOT independently
-                            # confirmed against genuine RPG_RT under wine: it
-                            # computes this fresh every turn from whichever
-                            # single highest-`priority` state (ties to the
-                            # higher id) the battler either still carries or
-                            # just had auto-cured -- not accumulated across turns.
-                            :turn_state_message,
-                            # The database skill id this actor last chose from
-                            # the Skill menu (or had an Auto-Battle pick queue
-                            # on their behalf -- see #queue_single_auto_battle_skill/
-                            # #queue_auto_battle_group_skill's own citation),
-                            # so Scene::Battle#open_battle_skill can reopen the
-                            # list with the cursor back on it next turn instead
-                            # of always resetting to the top. Community デフォ戦
-                            # bot/@2000_battle_bot trivia. nil (an actor who has
-                            # never cast a skill this fight) reads as "top of
-                            # the list" wherever this is consulted.
-                            :last_skill_id,
-                            # An enemy's plain basic-Attack target, locked in
-                            # for the round by #refill_queue at queue-build
-                            # time rather than re-rolled live when the action
-                            # actually executes (#attack_target). Ported from
-                            # a reference implementation's own
-                            # CreateExecutionOrder/algorithm-init step, which
-                            # resolves a basic attack's target once, the
-                            # moment the round's execution order is built --
-                            # NOT independently confirmed against genuine
-                            # RPG_RT under wine, but the same "lock at queue
-                            # time" shape #queued_no_act already ports for the
-                            # do-nothing-restriction case. Only ever set for
-                            # an enemy (an ally's own target instead comes
-                            # from its `action` field, chosen at command time
-                            # and always current); nil (never queued this
-                            # round yet -- a fixture/test calling
-                            # #attack_target directly without going through
-                            # #refill_queue first) falls back to the old live
-                            # roll, matching #queued_no_act's own documented
-                            # default.
-                            :queued_target) do
+    class Combatant
+      attr_accessor(:name, :atk, :def, :agi, :hp, :max_hp,
+                    :action, :defending, :mp, :max_mp, :spi, :command,
+                    :actor, :states, :state_turns, :crit_chance,
+                    :prevents_crit, :attr_ranks, :atk_attrs, :skip,
+                    :hit_rate, :state_ranks, :hidden, :battle_turn,
+                    :actions, :charged, :enemy_id, :battler_name,
+                    :battler_hue,
+                    # Equipment-granted combat modifiers (ADR 0033):
+                    # how many times a basic attack swings, whether it
+                    # can be evaded, whether Defend halves twice, and
+                    # whether skills cost half.
+                    :strikes, :ignores_evasion, :strong_defence,
+                    :half_sp_cost,
+                    # Whether this battler's own gear makes a normal
+                    # attack likelier to miss it (Actor#physical_evasion_up?,
+                    # a flat -25 to the attacker's to_hit -- see
+                    # Battle#to_hit). Enemy Combatants leave it nil/false;
+                    # monsters equip nothing.
+                    :evasion_up,
+                    # A basic Attack read from the weapon's own
+                    # attack_all? flag (confirmed by an actual wine
+                    # capture to have no observable effect -- see
+                    # Actor#attack_all?'s own citation) or jumped to the
+                    # front of the round's turn order (preemptive?) --
+                    # see #turn_order and #strike. Actor-only; an enemy
+                    # Combatant leaves both nil/false, so it never
+                    # qualifies for either.
+                    :attack_all, :preemptive,
+                    # The ranks #attr_ranks started the battle at --
+                    # never itself written to, only read to cap how far
+                    # an "attribute defence up/down" skill (see
+                    # #skill_attr_shift) may move #attr_ranks in either
+                    # direction. Since #attr_ranks is a fresh Hash per
+                    # Combatant (Game::Actor#attribute_ranks builds one
+                    # from the database row on every call, not a cached
+                    # one) and #apply_to_party never writes it back to
+                    # the actor, a shift is battle-scoped for free: it
+                    # dies with the Combatant, no separate reset needed.
+                    :attr_base_ranks,
+                    # Per-battle ATK/DEF/SPI/AGI offsets a skill's own
+                    # affect_attack/affect_defense/affect_spirit/
+                    # affect_agility flags accumulate onto (see
+                    # Battle#apply_stat_mods) -- a reference
+                    # implementation's own per-battle stat modifiers,
+                    # reset to 0
+                    # by its battle-start reset there. This class
+                    # needs no equivalent reset: exactly like
+                    # #attr_ranks above, a fresh Combatant is built once
+                    # per fight and never written back to the actor, so
+                    # nil (read as 0 by #effective_atk and friends)
+                    # every construction is the reset for free.
+                    :atk_mod, :def_mod, :spi_mod, :agi_mod,
+                    # The status conditions this battler's equipped
+                    # weapon(s) carry into a basic Attack -- see
+                    # Game::Actor#weapon_states, whose `{ inflict:,
+                    # heal: }` shape this mirrors exactly. An enemy
+                    # Combatant leaves it nil (read as empty by
+                    # #atk_states -- monsters equip nothing in real
+                    # RPG_RT either). `atk_states` itself: attr_writer
+                    # below, #atk_states is its reader.
+                    # Whether this ally's actor is currently a member of
+                    # the live Game::Party, kept in sync by
+                    # Battle#sync_allies_from_party for a fight
+                    # constructed with `party:` (mid-battle roster
+                    # sync). nil/true means "yes" -- every Combatant
+                    # built without going through that path (every
+                    # existing fixture, and an enemy, which never has
+                    # this field touched at all) is a member for free,
+                    # matching the unconditional-membership behaviour
+                    # this class had before the field existed. Distinct
+                    # from #out_of_play?'s other two causes
+                    # (dead?/hidden): a not-a-member Combatant has not
+                    # left *the fight* the way a felled or fled battler
+                    # has -- it is deliberately kept in @allies (not
+                    # removed) so a later rejoin finds and reuses this
+                    # exact object rather than rebuilding a fresh one
+                    # and losing its accumulated battle-only state (see
+                    # this class's own comment).
+                    :member,
+                    # Whether this battler was under a "do nothing"
+                    # restriction (asleep/paralysed) at the moment its
+                    # action entered this round's queue (#refill_queue),
+                    # snapshotted there and consulted -- not
+                    # re-derived -- when the action is dequeued
+                    # (#step/#step_action). See #apply_turn_states'
+                    # own comment for why a live re-check at dequeue
+                     # time is wrong: ported from a reference
+                     # implementation's own action-preparation logic,
+                     # NOT independently
+                     # confirmed against genuine RPG_RT under wine --
+                     # it locks a restricted
+                     # battler's queued algorithm to `None` right when
+                     # it is chosen or first
+                     # afflicted mid-round,
+                     # and nothing in the reference ever reverses that
+                     # once the restriction later clears -- curing
+                     # Sleep/Paralysis after the round's queue is built
+                     # does not give the battler its turn back. nil
+                     # (never queued this round yet) reads as "not
+                     # locked", matching every existing fixture that
+                     # calls #apply_turn_states directly without going
+                     # through #refill_queue first.
+                     :queued_no_act,
+                     # The RPG2003 front/back row this battler stands
+                     # in (see the `ROW_FRONT`/`ROW_BACK` constants
+                     # above); nil defaults to the front row, the only
+                     # row RPG2000 knows. The row changes how the fight
+                     # treats the battler (#row_adjusted?): a back-row
+                     # defender is harder to hit and takes less damage,
+                     # a front-row actor deals more -- the row is an
+                     # RPG2003-only concept, so this stays front for
+                     # every 2000 fight. `row` itself: attr_writer below,
+                     # #row is its reader.
+                     # The RPG2003 active-time (gauge) charge for this
+                     # battler (ADR 0053, Phase 2). 0..GAUGE_MAX; a
+                     # battler whose gauge is full may act. Only the
+                     # 2003 gauge presentation (battle_type 2) actually
+                     # advances it -- RPG2000 (battle_type 0) and the
+                     # 2003 traditional presentation (1) leave it at 0
+                     # and run the turn-based machine instead. `gauge`
+                     # itself: attr_writer below, #gauge is its reader.
+                     # The ref of the battle command (into
+                     # `db.battlecommands.commands`, 1..4 for the fixed
+                     # four) this actor last chose in the command window,
+                     # recorded by the scene (#select_battle_command) the
+                     # way a reference implementation's own battle
+                     # scene records the last chosen command (ported,
+                     # NOT independently confirmed against genuine
+                     # RPG_RT under wine). Read by the
+                     # RPG2003 battle combo (#combo_hits) and, in time,
+                     # the battle-page `command_actor` condition. nil
+                     # until an actor picks a command (an enemy, or an
+                     # auto-battling ally, never records one).
+                     :last_battle_action,
+                     # The per-turn state reminder line this battler's
+                     # turn should open with, as of the most recent
+                     # #apply_turn_states call -- the message text
+                     # itself (already resolved against this
+                     # battler's name), or nil when nothing qualifies.
+                     # Ported from a reference implementation's own
+                     # turn-begin processing, NOT independently
+                     # confirmed against genuine RPG_RT under wine: it
+                     # computes this fresh every turn from whichever
+                     # single highest-`priority` state (ties to the
+                     # higher id) the battler either still carries or
+                     # just had auto-cured -- not accumulated across turns.
+                     :turn_state_message,
+                     # The database skill id this actor last chose from
+                     # the Skill menu (or had an Auto-Battle pick queue
+                     # on their behalf -- see #queue_single_auto_battle_skill/
+                     # #queue_auto_battle_group_skill's own citation),
+                     # so Scene::Battle#open_battle_skill can reopen the
+                     # list with the cursor back on it next turn instead
+                     # of always resetting to the top. Community デフォ戦
+                     # bot/@2000_battle_bot trivia. nil (an actor who has
+                     # never cast a skill this fight) reads as "top of
+                     # the list" wherever this is consulted.
+                     :last_skill_id,
+                     # An enemy's plain basic-Attack target, locked in
+                     # for the round by #refill_queue at queue-build
+                     # time rather than re-rolled live when the action
+                     # actually executes (#attack_target). Ported from
+                     # a reference implementation's own
+                     # CreateExecutionOrder/algorithm-init step, which
+                     # resolves a basic attack's target once, the
+                     # moment the round's execution order is built --
+                     # NOT independently confirmed against genuine
+                     # RPG_RT under wine, but the same "lock at queue
+                     # time" shape #queued_no_act already ports for the
+                     # do-nothing-restriction case. Only ever set for
+                     # an enemy (an ally's own target instead comes
+                     # from its `action` field, chosen at command time
+                     # and always current); nil (never queued this
+                     # round yet -- a fixture/test calling
+                     # #attack_target directly without going through
+                     # #refill_queue first) falls back to the old live
+                     # roll, matching #queued_no_act's own documented
+                     # default.
+                     :queued_target)
+
+      attr_writer :atk_states, :row, :gauge
+
+      # Positional, like the Struct's own constructor: Battle.from_actor/
+      # .from_enemy pass the first 22 fields, the host-side fixtures the first
+      # six. Every other field starts nil, as a Struct member did. (`dfn`
+      # because `def` cannot name a parameter.)
+      def initialize(name = nil, atk = nil, dfn = nil, agi = nil, hp = nil, max_hp = nil,
+                     action = nil, defending = nil, mp = nil, max_mp = nil, spi = nil,
+                     command = nil, actor = nil, states = nil, state_turns = nil, crit_chance = nil,
+                     prevents_crit = nil, attr_ranks = nil, atk_attrs = nil, skip = nil,
+                     hit_rate = nil, state_ranks = nil)
+        @name = name
+        @atk = atk
+        @def = dfn
+        @agi = agi
+        @hp = hp
+        @max_hp = max_hp
+        @action = action
+        @defending = defending
+        @mp = mp
+        @max_mp = max_mp
+        @spi = spi
+        @command = command
+        @actor = actor
+        @states = states
+        @state_turns = state_turns
+        @crit_chance = crit_chance
+        @prevents_crit = prevents_crit
+        @attr_ranks = attr_ranks
+        @atk_attrs = atk_attrs
+        @skip = skip
+        @hit_rate = hit_rate
+        @state_ranks = state_ranks
+        @hidden = nil
+        @battle_turn = nil
+        @actions = nil
+        @charged = nil
+        @enemy_id = nil
+        @battler_name = nil
+        @battler_hue = nil
+        @strikes = nil
+        @ignores_evasion = nil
+        @strong_defence = nil
+        @half_sp_cost = nil
+        @evasion_up = nil
+        @attack_all = nil
+        @preemptive = nil
+        @attr_base_ranks = nil
+        @atk_mod = nil
+        @def_mod = nil
+        @spi_mod = nil
+        @agi_mod = nil
+        @atk_states = nil
+        @member = nil
+        @queued_no_act = nil
+        @row = nil
+        @gauge = nil
+        @last_battle_action = nil
+        @turn_state_message = nil
+        @last_skill_id = nil
+        @queued_target = nil
+      end
+
       def dead?; hp <= 0; end
 
       # The HP/MP ceiling a status panel should show for this combatant: the
@@ -232,7 +297,7 @@ module Game
       def display_max_hp; hp && hp > max_hp ? hp : max_hp; end
       def display_max_mp; mp && mp > max_mp ? mp : max_mp; end
 
-      # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Struct
+      # Swings per basic attack: 2 with a 二刀流 weapon, 1 otherwise. Fields
       # members start nil, so the reader normalises.
       def strike_count; n = strikes; n && n > 1 ? n : 1; end
       # Whether this battler's gear halves what a skill costs (Party#skill_cost
@@ -241,7 +306,7 @@ module Game
       # The weapon-granted state chances this battler's basic Attack carries,
       # normalised to `{ inflict: {}, heal: {} }` for a Combatant that never
       # had any set (an enemy, or an actor built before this field existed).
-      def atk_states; self[:atk_states] || { inflict: {}, heal: {} }; end
+      def atk_states; @atk_states || { inflict: {}, heal: {} }; end
 
       # RPG2003 counts turns per battler as well as per battle: this is how many
       # turns *this* battler has taken, which the troop pages' turn_enemy /
@@ -249,7 +314,7 @@ module Game
       # implementation's own per-battler turn counter, which
       # increments as that battler's own turn begins (and resets to zero at
       # battle start).
-      # Struct members start nil, so the reader normalises rather than every
+      # Fields start nil, so the reader normalises rather than every
       # construction site having to pass 0.
       def turns_taken; battle_turn || 0; end
       def next_battle_turn; self.battle_turn = turns_taken + 1; end
@@ -273,11 +338,11 @@ module Game
       def state?(id); (states || []).include?(id); end
       # The battler's row: nil (never set, the RPG2000 default) reads as the
       # front row; only RPG2003 ever sets the back row.
-      def row; self[:row] || ROW_FRONT; end
+      def row; @row || ROW_FRONT; end
       def back_row?; row == ROW_BACK; end
       # The battler's active-time gauge: nil (never advanced, the RPG2000 /
       # traditional-2003 default) reads as empty.
-      def gauge; self[:gauge] || 0; end
+      def gauge; @gauge || 0; end
       def gauge_full?; gauge >= GAUGE_MAX; end
     end
 
@@ -741,8 +806,9 @@ module Game
     # original single target": a basic Attack's plain `#action` field, or a
     # single-target Skill/Item's `#command[:target]` (nil for an all-target
     # `#command[:all]` action). `@enemies.find_index` compares by identity
-    # (`#equal?`), not the Struct's own value equality, since two same-type
-    # enemies sharing every stat would otherwise collide onto the wrong
+    # (`#equal?`), explicitly -- Combatant is a plain class now, so its `==`
+    # is identity too, but when it was a Struct its value equality made two
+    # same-type enemies sharing every stat collide onto the wrong
     # index the way `#turn_order`'s own citation on this exact hazard
     # already documents. Only ever resolved for an ally `source` -- RPG_RT
     # itself only ever *sets* these fields for an acting ally; an
@@ -2064,9 +2130,10 @@ module Game
     # undocumented C++ sort behaviour.
     def turn_order
       # [battler, rolled_order] pairs, not a Hash keyed by battler --
-      # Combatant is a Struct, whose #hash/#eql? compare field *values*, so
-      # two battlers that happen to share identical stats (a common case for
-      # same-type enemies) would collide as one Hash key instead of two.
+      # written when Combatant was a Struct, whose #hash/#eql? compared field
+      # *values*, so two battlers sharing identical stats (a common case for
+      # same-type enemies) collided as one Hash key. A plain class hashes by
+      # identity, but the pairs keep the order explicit.
       rolled = (@allies + @enemies).reject(&:out_of_play?).map do |b|
         agi = effective_agi(b)
         roll = agi + @rng.random(agi / 4 + 4)
