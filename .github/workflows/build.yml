@@ -925,6 +925,7 @@ jobs:
           mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
           test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
           MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
