@@ -80,6 +80,7 @@ end
 
 def eq(expected, actual, msg = nil)
   return if expected == actual
+  return if record_values(expected) == record_values(actual)
   raise "expected #{expected.inspect}, got #{actual.inspect}#{msg ? " (#{msg})" : ''}"
 end
 
@@ -88,16 +89,40 @@ def ok(cond, msg = 'expected truthy')
 end
 
 # Game::Message.scan/#parse/#visible_segments return Game::Message::Segment/
-# PauseMarker/SpeedMarker/ScanResult Structs now (mruby-rpg2k's own Hash-to-
-# Struct conversion, matching MapEventState/ShopState/MessageState/...):
-# Struct#== never equals a same-shaped Hash, only a same-class Struct, so the
-# checks below build their own expected values with these instead of bare
-# `{ text:, color: }`/etc. Hash literals. A plain positional/keyword call is
-# fine here -- unlike the real game-logic sources tools/bc2cpp/bc2cpp.rb
-# actually compiles, this test file only ever runs under plain CRuby.
-def seg(text, color); Game::Message::Segment.new(text: text, color: color); end
-def speed_marker(at, speed); Game::Message::SpeedMarker.new(at: at, speed: speed); end
-def pause_marker(at, kind); Game::Message::PauseMarker.new(at: at, kind: kind); end
+# PauseMarker/SpeedMarker records -- plain classes (docs/adr/0215), which
+# compare by identity like any object, so the checks below build their
+# expected values with these helpers and #eq compares both sides through
+# #record_values, which turns each record into its field values.
+def seg(text, color)
+  s = Game::Message::Segment.new
+  s.text = text
+  s.color = color
+  s
+end
+
+def speed_marker(at, speed)
+  m = Game::Message::SpeedMarker.new
+  m.at = at
+  m.speed = speed
+  m
+end
+
+def pause_marker(at, kind)
+  m = Game::Message::PauseMarker.new
+  m.at = at
+  m.kind = kind
+  m
+end
+
+def record_values(v)
+  case v
+  when Array then v.map { |e| record_values(e) }
+  when Game::Message::Segment then [:segment, v.text, v.color]
+  when Game::Message::SpeedMarker then [:speed_marker, v.at, v.speed]
+  when Game::Message::PauseMarker then [:pause_marker, v.at, v.kind]
+  else v
+  end
+end
 
 # Runs the block with $stderr redirected to a StringIO and returns everything
 # written to it, for checks that assert on a "[RPG2k] ..." diagnostic line.
@@ -1006,13 +1031,13 @@ end
 
 check 'TextReveal halts at a pause until it is released' do
   # "ab" then a \! pause (at 2) then "cd".
-  pauses = [{ at: 2, kind: :key }]
+  pauses = [pause_marker(2, :key)]
   r = Game::TextReveal.new(['abcd'], 0, pauses)
   r.advance(10)                       # cannot cross the pause
   eq 2, r.revealed, 'the reveal stops at the pause point'
   ok !r.done?
   ok r.pending_pause, 'the pause is pending once reached'
-  eq :key, r.pending_pause[:kind]
+  eq :key, r.pending_pause.kind
   r.reveal_all                        # even a fast-forward respects it
   eq 2, r.revealed
   r.release_pause
@@ -1023,7 +1048,7 @@ check 'TextReveal halts at a pause until it is released' do
 end
 
 check 'TextReveal reveal_all runs to the end when no pause blocks it' do
-  r = Game::TextReveal.new(['abcd'], 0, [{ at: 2, kind: :quarter }])
+  r = Game::TextReveal.new(['abcd'], 0, [pause_marker(2, :quarter)])
   r.advance(2)
   r.release_pause                     # let the timed pause through
   r.reveal_all
@@ -1035,13 +1060,13 @@ check 'Message.scan records pacing codes in revealed-char coordinates' do
   def vars.[](i); { 3 => 42 }[i]; end
   names = ->(_i) { 'X' }
   s = Game::Message.scan('ab\.cd\|e\!f\^', vars, names)
-  eq 7, s[:length], '"abcdef" = 6 visible characters + 1 tick for the trailing \\^'
+  eq 7, s.length, '"abcdef" = 6 visible characters + 1 tick for the trailing \\^'
   eq [pause_marker(2, :quarter), pause_marker(4, :full), pause_marker(5, :key)],
-     s[:pauses]
-  ok s[:auto_close], '\\^ sets auto_close'
+     s.pauses
+  ok s.auto_close, '\\^ sets auto_close'
   # Pause offsets count the expanded length of \v / \n, not the code text.
   s2 = Game::Message.scan('\v[3]\!x', vars, names)
-  eq [pause_marker(2, :key)], s2[:pauses], '42 is two chars, so \\! sits at 2'
+  eq [pause_marker(2, :key)], s2.pauses, '42 is two chars, so \\! sits at 2'
 end
 
 check 'Message.scan threads a starting/ending colour for a caller to chain across calls' do
@@ -1053,14 +1078,14 @@ check 'Message.scan threads a starting/ending colour for a caller to chain acros
   # (Scene::Map#append_choice_lines threading a Show Text's trailing colour
   # into an attached Show Choices list, yado.tk).
   s = Game::Message.scan('plain', vars, names, 2)
-  eq 2, s[:segments].first[:color], 'the whole run picks up the seeded colour'
-  eq 2, s[:end_color], 'and it is still in effect at the end of the line'
+  eq 2, s.segments.first.color, 'the whole run picks up the seeded colour'
+  eq 2, s.end_color, 'and it is still in effect at the end of the line'
   # An explicit \c[] overrides it for the rest of the line.
   s2 = Game::Message.scan('ab\c[5]cd', vars, names, 2)
-  eq [seg('ab', 2), seg('cd', 5)], s2[:segments]
-  eq 5, s2[:end_color], 'end_color reflects the last colour set, not the seed'
+  eq [seg('ab', 2), seg('cd', 5)], s2.segments
+  eq 5, s2.end_color, 'end_color reflects the last colour set, not the seed'
   # Defaults to 0 when omitted, matching every existing call site.
-  eq 0, Game::Message.scan('x', vars, names)[:end_color]
+  eq 0, Game::Message.scan('x', vars, names).end_color
 end
 
 check 'Message.scan clamps an out-of-range \c[n] colour back to 0, matching RPG_RT' do
@@ -1068,7 +1093,7 @@ check 'Message.scan clamps an out-of-range \c[n] colour back to 0, matching RPG_
   names = {}
   s = Game::Message.scan('a\c[19]b\c[20]c\c[999]d', vars, names)
   eq [seg('a', 0), seg('b', 19), seg('c', 0),
-      seg('d', 0)], s[:segments],
+      seg('d', 0)], s.segments,
      '19 is still the highest valid palette index; 20 and anything beyond ' \
      'resets to colour 0 (ported from a reference implementation\'s source: `text_color = ' \
      'pres.value > 19 ? 0 : pres.value`; NOT independently confirmed against ' \
@@ -1083,9 +1108,9 @@ check 'Message.scan resolves a nested \V[] argument inside \c[]/\s[] too ' \
   vars[3] = 12  # \s[\V[3]] should set speed 12
   names = {}
   s = Game::Message.scan('a\c[\V[1]]b\c[\V[2]]c', vars, names)
-  eq [seg('a', 0), seg('b', 5), seg('c', 0)], s[:segments]
+  eq [seg('a', 0), seg('b', 5), seg('c', 0)], s.segments
   s2 = Game::Message.scan('a\s[\V[3]]b', vars, names)
-  eq [speed_marker(1, 12)], s2[:speeds]
+  eq [speed_marker(1, 12)], s2.speeds
 end
 
 check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
@@ -1103,23 +1128,23 @@ check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
   names = ->(id) { seen << id; id.zero? ? 'Leader' : nil }
 
   s = Game::Message.scan('\N[0]', vars, names)
-  eq 'Leader', s[:segments].map { |seg| seg[:text] }.join,
+  eq 'Leader', s.segments.map { |seg| seg.text }.join,
      'an explicit \\N[0] still substitutes the leader'
 
   seen.clear
   s2 = Game::Message.scan('\N[]', vars, names)
-  eq '', s2[:segments].map { |seg| seg[:text] }.join,
+  eq '', s2.segments.map { |seg| seg[:text] }.join,
      'a bare \\N[] with nothing parsed resolves to blank, not the leader'
   ok !seen.include?(0), 'the leader lookup (id 0) must never be attempted for an unparsed bracket'
 
   seen.clear
   s3 = Game::Message.scan('\N[x]', vars, names)
-  eq '', s3[:segments].map { |seg| seg[:text] }.join,
+  eq '', s3.segments.map { |seg| seg[:text] }.join,
      'a non-digit, non-\\V[] bracket body resolves to blank too'
 
   seen.clear
   s4 = Game::Message.scan('\N[\V[5]]', vars, names)
-  eq 'Leader', s4[:segments].map { |seg| seg[:text] }.join,
+  eq 'Leader', s4.segments.map { |seg| seg.text }.join,
      'a nested \\V[] that resolves to 0 still counts as "a number was read" -- ' \
      'leader substitution applies'
 end
@@ -1129,10 +1154,10 @@ check 'Message.scan flags \$ (show gold) and drops it from the text' do
   def vars.[](_i); 0; end
   names = ->(_i) { '' }
   s = Game::Message.scan('Gold:\$ here', vars, names)
-  ok s[:show_gold], '\\$ sets show_gold'
-  eq 'Gold: here'.length + 1, s[:length], '\\$ emits no visible character but costs one tick'
+  ok s.show_gold, '\\$ sets show_gold'
+  eq 'Gold: here'.length + 1, s.length, '\\$ emits no visible character but costs one tick'
   # No \$ -> flag stays off.
-  ok !Game::Message.scan('plain', vars, names)[:show_gold]
+  ok !Game::Message.scan('plain', vars, names).show_gold
 end
 
 check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
@@ -1140,11 +1165,11 @@ check 'Message.scan records \> \< instant spans (and an unclosed one to EOL)' do
   def vars.[](_i); 0; end
   names = ->(_i) { '' }
   s = Game::Message.scan('ab\>cd\<ef', vars, names)
-  eq 7, s[:length], '"abcdef" = 6 visible characters + 1 tick for the closing \\<'
-  eq [[2, 4]], s[:instants], 'cd is the instant span (the \\< tick lands after it)'
+  eq 7, s.length, '"abcdef" = 6 visible characters + 1 tick for the closing \\<'
+  eq [[2, 4]], s.instants, 'cd is the instant span (the \\< tick lands after it)'
   # An unclosed \> runs to the end of the line.
   s2 = Game::Message.scan('ab\>cd', vars, names)
-  eq [[2, 4]], s2[:instants]
+  eq [[2, 4]], s2.instants
 end
 
 check 'Message.scan records \s[n] speed changes, clamped to RPG_RT\'s 1..20' do
@@ -1152,14 +1177,14 @@ check 'Message.scan records \s[n] speed changes, clamped to RPG_RT\'s 1..20' do
   def vars.[](_i); 0; end
   names = ->(_i) { '' }
   s = Game::Message.scan('ab\s[3]cd\s[99]ef', vars, names)
-  eq [speed_marker(2, 3), speed_marker(4, 20)], s[:speeds],
+  eq [speed_marker(2, 3), speed_marker(4, 20)], s.speeds,
      '\s[99] clamps down to RPG_RT\'s max of 20 (ported from a reference implementation ' \
      'Player\'s source: Utils::Clamp(pres.value, 1, 20); NOT independently ' \
      'confirmed against genuine RPG_RT under wine)'
-  eq 6, s[:length], '\s[] produces no characters and burns no tick, like \c[]'
+  eq 6, s.length, '\s[] produces no characters and burns no tick, like \c[]'
   # An empty or missing bracket falls back to full speed (1), the same
   # nil/empty-string handling \c[]'s own default colour uses.
-  eq [speed_marker(1, 1)], Game::Message.scan('a\s[]b', vars, names)[:speeds]
+  eq [speed_marker(1, 1)], Game::Message.scan('a\s[]b', vars, names).speeds
 end
 
 check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
@@ -1169,15 +1194,15 @@ check '\^, \$ and the closing \< each delay what follows by one reveal tick' do
   # A \! pause right after each code should land one position later than it
   # would with no code there at all, since the code itself burns a tick.
   baseline = Game::Message.scan('ab\!cd', vars, names)
-  eq [pause_marker(2, :key)], baseline[:pauses]
+  eq [pause_marker(2, :key)], baseline.pauses
   after_close = Game::Message.scan('ab\^\!cd', vars, names)
-  eq [pause_marker(3, :key)], after_close[:pauses], '\\^ pushes the pause one tick later'
+  eq [pause_marker(3, :key)], after_close.pauses, '\\^ pushes the pause one tick later'
   after_gold = Game::Message.scan('ab\$\!cd', vars, names)
-  eq [pause_marker(3, :key)], after_gold[:pauses], '\\$ pushes the pause one tick later'
+  eq [pause_marker(3, :key)], after_gold.pauses, '\\$ pushes the pause one tick later'
   after_span = Game::Message.scan('ab\>x\<\!cd', vars, names)
-  eq [pause_marker(4, :key)], after_span[:pauses],
+  eq [pause_marker(4, :key)], after_span.pauses,
      'the closing \\< pushes the pause one tick later (span "x" itself is unaffected)'
-  eq [[2, 3]], after_span[:instants], 'the instant span itself still only covers "x"'
+  eq [[2, 3]], after_span.instants, 'the instant span itself still only covers "x"'
 end
 
 check 'TextReveal reveals an instant span in a single advance' do
@@ -1193,7 +1218,7 @@ end
 
 check 'an instant span still stops at a pause inside it' do
   # instant [1, 5) but a \! pause sits at 3: the span cannot leap past the pause.
-  r = Game::TextReveal.new(['abcdef'], 0, [{ at: 3, kind: :key }], false, [[1, 5]])
+  r = Game::TextReveal.new(['abcdef'], 0, [pause_marker(3, :key)], false, [[1, 5]])
   r.advance(1)                          # 0 -> 1 (span start); capped at the pause 3
   eq 3, r.revealed, 'the instant leap is capped at the pause'
   ok r.pending_pause, 'the pause gates the span'
@@ -1204,7 +1229,7 @@ end
 
 check 'TextReveal.speed_at reports the \s[n] in effect at a position, defaulting to 1' do
   r = Game::TextReveal.new(['abcdef'], 0, [], false, [],
-                            [{ at: 2, speed: 5 }, { at: 4, speed: 1 }])
+                            [speed_marker(2, 5), speed_marker(4, 1)])
   eq 1, r.speed_at(0), 'full speed before the first \s[] change'
   eq 1, r.speed_at(1)
   eq 5, r.speed_at(2), 'the change applies from its own position onward'
@@ -1215,7 +1240,7 @@ end
 check 'TextReveal varies its reveal rate across a \s[n] speed span' do
   # "ab" at full speed (1), then a \s[3] change at position 2 slows the rest
   # ("cdef") to a third of the per-frame budget.
-  speeds = [{ at: 2, speed: 3 }]
+  speeds = [speed_marker(2, 3)]
   r = Game::TextReveal.new(['abcdef'], 0, [], false, [], speeds)
   r.advance(2)
   eq 2, r.revealed, 'full speed reveals the whole first budget in one frame'
@@ -1569,7 +1594,7 @@ check 'Message.parse omits empty runs and matches expand when joined' do
   eq [seg('x', 4)], Game::Message.parse('\c[4]x', vars, names)
   eq [], Game::Message.parse('\c[3]', vars, names) # nothing visible
   src = 'a\c[1]b\c[0]c'
-  joined = Game::Message.parse(src, vars, names).map { |s| s[:text] }.join
+  joined = Game::Message.parse(src, vars, names).map { |s| s.text }.join
   eq Game::Message.expand(src, vars, names), joined
 end
 
@@ -2246,9 +2271,9 @@ check '#call_stack_snapshot rewinds a mid-Key-Input-Proc wait so #restore_call_s
   it2.update
   ok it2.waiting?, 'the very next #update re-ran the Key Input Proc command from its rewound position'
   eq :key_input, it2.wait_kind
-  eq true, it2.key_input_request[:wait], 'the wait flag survived re-execution'
-  eq true, it2.key_input_request[:accepted][:decision], 're-derived deterministically from the command\'s own params'
-  eq false, it2.key_input_request[:accepted][:cancel]
+  eq true, it2.key_input_request.wait, 'the wait flag survived re-execution'
+  eq true, it2.key_input_request.accepted.decision, 're-derived deterministically from the command\'s own params'
+  eq false, it2.key_input_request.accepted.cancel
 
   # And it genuinely still functions afterward -- not just decoding as inert
   # state: a Decision key input completes the proc and the command after it
@@ -11948,8 +11973,8 @@ check 'Enter Hero Name suspends on :name_input and resume renames the actor' do
   it.update
   ok it.waiting?, 'the interpreter waits for the entry to finish'
   eq :name_input, it.wait_kind
-  eq 1, it.name_input_request[:actor_id]
-  eq 'Hero', it.name_input_request[:seed], 'seeded with the current name'
+  eq 1, it.name_input_request.actor_id
+  eq 'Hero', it.name_input_request.seed, 'seeded with the current name'
   eq false, st.switches[1], 'the following command has not run yet'
   it.resume_name_input('Zephyr')
   eq 'Zephyr', st.party.actor_by_id(1).name, 'the actor is renamed'
@@ -11962,7 +11987,7 @@ check 'Enter Hero Name without the seed flag starts from an empty name' do
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::NAME_INPUT, [1, 2, 0])]) # seed flag off
   it.update
-  eq '', it.name_input_request[:seed]
+  eq '', it.name_input_request.seed
   it.resume_name_input('') # a blank entry keeps the old name (RPG_RT behaviour)
   eq 'Hero', st.party.actor_by_id(1).name
 end
@@ -12707,7 +12732,7 @@ check 'Key Input Proc (1.50 layout) waits, clears the var, resolves by priority'
   ok it.waiting?, 'a waiting proc suspends the interpreter'
   eq :key_input, it.wait_kind
   eq 0, st.variables[1], 'the target variable is cleared while waiting'
-  eq true, it.key_input_request[:wait]
+  eq true, it.key_input_request.wait
   # Highest-valued matching key wins: Shift(7) > Cancel(6) > Decision(5) >
   # Up(4) > Right(3) > Left(2) > Down(1); nothing pressed yields 0.
   eq 7, it.key_input_result([:down, :decision, :shift])
@@ -12732,11 +12757,11 @@ check 'Key Input Proc pre-1.50 layout enables the whole D-pad, no Shift' do
   it.update
   ok it.waiting?, 'even a no-wait proc routes through the scene once'
   req = it.key_input_request
-  eq false, req[:wait], 'no-wait requests read held state, not edges'
-  acc = req[:accepted]
+  eq false, req.wait, 'no-wait requests read held state, not edges'
+  acc = req.accepted
   [:down, :left, :right, :up, :decision].each { |k| eq true, acc[k], "#{k} on" }
-  eq false, acc[:cancel], 'cancel not accepted'
-  eq false, acc[:shift], 'pre-1.50 has no Shift'
+  eq false, acc.cancel, 'cancel not accepted'
+  eq false, acc.shift, 'pre-1.50 has no Shift'
   eq 4, it.key_input_result([:up])
   eq 0, it.key_input_result([:cancel]), 'an unaccepted key yields 0'
   # No-wait mode does not pre-clear the variable; the resume writes the read.
@@ -12763,13 +12788,13 @@ check 'Key Input Proc (RPG2003 Numbers/Operators layout) decodes the two flags' 
   # the same param5/param6 slots for something else entirely.
   it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 1, 1, 0, 1, 1, 0, 0])])
   it.update
-  acc = it.key_input_request[:accepted]
-  eq true, acc[:numbers], 'Numbers accepted'
-  eq true, acc[:operators], 'Operators accepted'
-  eq true, acc[:decision]
-  eq false, acc[:cancel]
+  acc = it.key_input_request.accepted
+  eq true, acc.numbers, 'Numbers accepted'
+  eq true, acc.operators, 'Operators accepted'
+  eq true, acc.decision
+  eq false, acc.cancel
   [:down, :left, :right, :up].each { |k| eq true, acc[k], "#{k} on (single arrows-all flag)" }
-  eq false, acc[:shift], 'this layout has no individual Shift, unlike RPG2000 1.50+'
+  eq false, acc.shift, 'this layout has no individual Shift, unlike RPG2000 1.50+'
   # :numbers/:operators are the whole-group accept flags `do_key_input` sets,
   # not real per-key symbols -- key_input_result only ever receives one of the
   # concrete keys a group covers (:n0.."n9", :plus.."period", from
@@ -12806,10 +12831,10 @@ check 'Key Input Proc (RPG2003, 10 params) is the imported RPG2000 1.50+ layout,
   # Shift/Down/Left/Right/Up, never as Numbers/Operators.
   it.start([FakeCmd.new(IC::KEY_INPUT_PROC, [1, 1, 0, 1, 1, 1, 1, 1, 1, 1])])
   it.update
-  acc = it.key_input_request[:accepted]
-  eq true, acc[:shift]
-  eq false, acc[:numbers], 'a 10-param command is the RPG2000 layout, not Numbers/Operators'
-  eq false, acc[:operators]
+  acc = it.key_input_request.accepted
+  eq true, acc.shift
+  eq false, acc.numbers, 'a 10-param command is the RPG2000 layout, not Numbers/Operators'
+  eq false, acc.operators
 end
 
 # -- Show Inn (Stay at Inn) ---------------------------------------------------
@@ -12824,9 +12849,9 @@ check 'Show Inn: staying charges the price and full-heals the party' do
   ok it.waiting?, 'Show Inn suspends the interpreter'
   eq :inn, it.wait_kind
   req = it.inn_request
-  eq true, req[:prompt], 'a priced inn prompts'
-  eq true, req[:can_afford]
-  eq 100, req[:price]
+  eq true, req.prompt, 'a priced inn prompts'
+  eq true, req.can_afford
+  eq 100, req.price
   it.resume_inn(true)
   ok !it.waiting?, 'the inn resolved'
   eq 900, st.party.gold, 'the price was deducted'
@@ -12854,7 +12879,7 @@ check 'Show Inn: a free stay (price 0) skips the prompt' do
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::SHOW_INN, [0, 0, 0])])
   it.update
-  eq false, it.inn_request[:prompt], 'a free inn needs no prompt'
+  eq false, it.inn_request.prompt, 'a free inn needs no prompt'
   it.resume_inn(true)
   eq st.party.actors.first.max_hp, st.party.actors.first.hp, 'still heals'
 end
@@ -12865,7 +12890,7 @@ check 'Show Inn: the affordability flag reflects the party gold' do
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::SHOW_INN, [0, 100, 0])])
   it.update
-  eq false, it.inn_request[:can_afford], 'cannot afford a 100g inn with 50g'
+  eq false, it.inn_request.can_afford, 'cannot afford a 100g inn with 50g'
 end
 
 check 'Show Inn: Stay / No Stay handler branches route on the outcome' do
@@ -13072,9 +13097,9 @@ check 'Open Shop parses the mode and goods and suspends on :shop' do
   ok it.waiting?, 'Open Shop suspends the interpreter'
   eq :shop, it.wait_kind
   req = it.shop_request
-  eq true, req[:allow_buy]
-  eq false, req[:allow_sell], 'mode 1 is buy-only'
-  eq [3, 5, 7], req[:goods]
+  eq true, req.allow_buy
+  eq false, req.allow_sell, 'mode 1 is buy-only'
+  eq [3, 5, 7], req.goods
 end
 
 check 'Open Shop routes Transaction / No Transaction handler branches' do
@@ -13290,10 +13315,10 @@ check 'Enemy Encounter parses the troop and modes and suspends on :battle' do
   ok it.waiting?
   eq :battle, it.wait_kind
   req = it.battle_request
-  eq 4, req[:troop_id]
-  eq true, req[:allow_escape]
-  eq true, req[:first_strike]
-  eq false, req[:defeat_game_over], 'defeat mode 1 uses a handler'
+  eq 4, req.troop_id
+  eq true, req.allow_escape
+  eq true, req.first_strike
+  eq false, req.defeat_game_over, 'defeat mode 1 uses a handler'
 end
 
 check 'Enemy Encounter reads a variable troop id and escape-disallow' do
@@ -13302,9 +13327,9 @@ check 'Enemy Encounter reads a variable troop id and escape-disallow' do
   it = Game::Interpreter.new(st)
   it.start([FakeCmd.new(IC::ENEMY_ENCOUNTER, [1, 7, 0, 0, 0, 0])])
   it.update
-  eq 12, it.battle_request[:troop_id]
-  eq false, it.battle_request[:allow_escape], 'escape mode 0 disallows escape'
-  eq true, it.battle_request[:defeat_game_over], 'defeat mode 0 is game over'
+  eq 12, it.battle_request.troop_id
+  eq false, it.battle_request.allow_escape, 'escape mode 0 disallows escape'
+  eq true, it.battle_request.defeat_game_over, 'defeat mode 0 is game over'
 end
 
 check 'Enemy Encounter routes Victory / Escape / Defeat handler branches' do
@@ -13440,8 +13465,8 @@ check 'a random encounter with an active RPG2003 Death Handler is not marked gam
                        [1], rpg2003: true, battlecommands: table)
   it = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
   it.start_random_battle(1)
-  eq false, it.battle_request[:defeat_game_over]
-  eq true, it.battle_request[:random]
+  eq false, it.battle_request.defeat_game_over
+  eq true, it.battle_request.random
 end
 
 check 'a random encounter is still marked game-over without an active Death Handler' do
@@ -13450,14 +13475,14 @@ check 'a random encounter is still marked game-over without an active Death Hand
   # the same as before this fix.
   it = Game::Interpreter.new(party_state)
   it.start_random_battle(1)
-  eq true, it.battle_request[:defeat_game_over]
+  eq true, it.battle_request.defeat_game_over
 
   table = FakeBattleCommandsTable.new({}, 0, 0, false)
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) },
                        [1], rpg2003: true, battlecommands: table)
   it2 = Game::Interpreter.new(Game::State.new(Game::Party.new(db), 1, 0, 0))
   it2.start_random_battle(1)
-  eq true, it2.battle_request[:defeat_game_over]
+  eq true, it2.battle_request.defeat_game_over
 end
 
 # The --rpg2k_battle boot drive (Scene::Map#headless_battle) marks its request
@@ -13467,13 +13492,13 @@ end
 check 'a headless random-encounter request carries the headless marker' do
   it = Game::Interpreter.new(party_state)
   it.start_random_battle(1, headless: true)
-  eq true, it.battle_request[:headless], 'the boot-drive marker rides the request'
-  eq true, it.battle_request[:random], 'still a random encounter otherwise'
+  eq true, it.battle_request.headless, 'the boot-drive marker rides the request'
+  eq true, it.battle_request.random, 'still a random encounter otherwise'
   eq :battle, it.wait_kind
 
   it2 = Game::Interpreter.new(party_state)
   it2.start_random_battle(1)
-  eq false, it2.battle_request[:headless], 'an ordinary random encounter is not headless'
+  eq false, it2.battle_request.headless, 'an ordinary random encounter is not headless'
 end
 
 check 'Interpreter#start_death_handler runs the death event then a synthetic Teleport' do

@@ -1297,17 +1297,17 @@ class RPG2k
         r += "(none)\n\n"
       else
         map_scene.events.each do |e|
-          ch = e[:char]
-          interp = map_scene.parallel_interpreter_for(e[:id])
+          ch = e.char
+          interp = map_scene.parallel_interpreter_for(e.id)
           kind = if interp
                    "parallel"
-                 elsif fg.running? && fg.event_id == e[:id]
+                 elsif fg.running? && fg.event_id == e.id
                    interp = fg
                    "foreground"
                  end
-          r += "- id=#{e[:id]} x=#{ch.x} y=#{ch.y} direction=#{ch.direction}" \
+          r += "- id=#{e.id} x=#{ch.x} y=#{ch.y} direction=#{ch.direction}" \
                " graphic=#{ch.graphic_name.inspect}(#{ch.graphic_index})" \
-               " page=#{e[:page_number]}" \
+               " page=#{e.page_number}" \
                " interpreter=#{kind ? "#{kind} #{bug_report_interp_text(interp)}" : "idle"}\n"
         end
         r += "\n"
@@ -1331,7 +1331,7 @@ class RPG2k
     pos = interp.diagnostic_position
     return "idle" unless pos
     state = interp.waiting? ? "waiting(#{interp.wait_kind})" : "running"
-    "#{state} idx=#{pos[:index]}/#{pos[:size]} call_depth=#{pos[:call_depth]}"
+    "#{state} idx=#{pos.index}/#{pos.size} call_depth=#{pos.call_depth}"
   end
 
   # "YYYYMMDD_HHMMSS", filesystem-safe and sortable, so repeated F8 presses in

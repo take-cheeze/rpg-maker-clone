@@ -761,7 +761,7 @@ end
 # The runtime event hash (id => {char:, layer:, anim_type:, ...}) the scene built.
 def event_hashes(scene)
   h = {}
-  scene.instance_variable_get(:@events).each { |e| h[e[:id]] = e }
+  scene.instance_variable_get(:@events).each { |e| h[e.id] = e }
   h
 end
 
@@ -1021,7 +1021,7 @@ end
 # runtime characters (not the source structs), so tests inspect them by id.
 def chars(scene)
   h = {}
-  scene.instance_variable_get(:@events).each { |e| h[e[:id]] = e[:char] }
+  scene.instance_variable_get(:@events).each { |e| h[e.id] = e.char }
   h
 end
 
@@ -1171,7 +1171,7 @@ check 'a jumping event slides across the whole hop instead of snapping' do
   60.times do
     scene.update
     e = scene.instance_variable_get(:@events).first
-    seen << scene.send(:event_pixel, e)[0] if e[:jumping]
+    seen << scene.send(:event_pixel, e)[0] if e.jumping
   end
   ok seen.size >= 4, "the hop was drawn over several frames, got #{seen.size}"
   ok seen.uniq.size > 1, 'and the sprite actually travelled'
@@ -1188,7 +1188,7 @@ check 'a jumping sprite is lifted off the ground and comes back down' do
   40.times do
     scene.update
     e = scene.instance_variable_get(:@events).first
-    heights << scene.send(:event_jump_offset, e) if e[:jumping]
+    heights << scene.send(:event_jump_offset, e) if e.jumping
   end
   ok heights.max > 0, 'the sprite left the ground'
   eq 16, heights.max, "RPG_RT's arc peaks at exactly 16px on a 16px tile, never past it"
@@ -1206,7 +1206,7 @@ check 'an event that walks is never lifted' do
   40.times do
     scene.update
     e = scene.instance_variable_get(:@events).first
-    eq false, e[:jumping], 'a walking step is not a hop'
+    eq false, e.jumping, 'a walking step is not a hop'
     eq 0, scene.send(:event_jump_offset, e)
   end
 end
@@ -1238,9 +1238,9 @@ check 'Change Event Location does not arc the event it snaps' do
   scene = new_scene({ 1 => event(0, 1, page), 2 => event(5, 5, pg) },
                     player: [5, 0])
   20.times { scene.update }
-  e = scene.instance_variable_get(:@events).find { |x| x[:id] == 1 }
-  eq [4, 2], [e[:char].x, e[:char].y], 'the snap landed'
-  eq false, e[:jumping], 'a snap is not a hop'
+  e = scene.instance_variable_get(:@events).find { |x| x.id == 1 }
+  eq [4, 2], [e.char.x, e.char.y], 'the snap landed'
+  eq false, e.jumping, 'a snap is not a hop'
   eq 0, scene.send(:event_jump_offset, e), 'so the sprite is not lifted'
 end
 
@@ -1332,13 +1332,13 @@ check 'flipping a switch re-selects an event page mid-map' do
 
   5.times { scene.update }
   ev = event_hashes(scene)[1]
-  eq 0, ev[:trigger], 'page 1 is active while switch 3 is off'
+  eq 0, ev.trigger, 'page 1 is active while switch 3 is off'
   ok !st.switches[5], 'so the page-2 parallel process is not running'
 
   st.switches[3] = true
   5.times { scene.update }
   ev = event_hashes(scene)[1]
-  eq 4, ev[:trigger], 'switch 3 flipped the event to page 2'
+  eq 4, ev.trigger, 'switch 3 flipped the event to page 2'
   ok st.switches[5], 'and its parallel process now runs'
 end
 
@@ -1361,11 +1361,11 @@ check "Timer1 counting down past a page's threshold re-selects it mid-map" do
 
   scene.update
   ev = event_hashes(scene)[1]
-  eq 0, ev[:trigger], 'still above the threshold: page 1 stays active'
+  eq 0, ev.trigger, 'still above the threshold: page 1 stays active'
 
   130.times { scene.update } # ticks Timer1 down from 7 s to 5 s (< 60*2 frames)
   ev = event_hashes(scene)[1]
-  eq 4, ev[:trigger], 'Timer1 counted down to the threshold: page 2 takes over'
+  eq 4, ev.trigger, 'Timer1 counted down to the threshold: page 2 takes over'
   eq 5, st.timer_seconds
 end
 
@@ -1387,7 +1387,7 @@ check "an unrelated event's page change does not reset another event's " \
   st = scene.instance_variable_get(:@state)
   scene.update
 
-  ch = event_hashes(scene)[1][:char]
+  ch = event_hashes(scene)[1].char
   ch.through = true
   ch.facing_locked = true
   ch.animation_stopped = true
@@ -1397,9 +1397,9 @@ check "an unrelated event's page change does not reset another event's " \
   5.times { scene.update }
 
   ev2 = event_hashes(scene)[2]
-  eq 4, ev2[:trigger], "event 2's page did flip (switch 3 went on)"
+  eq 4, ev2.trigger, "event 2's page did flip (switch 3 went on)"
 
-  ch = event_hashes(scene)[1][:char]
+  ch = event_hashes(scene)[1].char
   ok ch.through, "event 1's Through Mode survived event 2's page rebuild"
   ok ch.facing_locked, "event 1's Direction Fix survived it too"
   ok ch.animation_stopped, 'as did Stop Animation'
@@ -1432,20 +1432,20 @@ check "an unrelated event's page change does not reset another event's Move " \
   st = scene.instance_variable_get(:@state)
   scene.update
 
-  event_hashes(scene)[1][:char].set_graphic('Override', 4)
+  event_hashes(scene)[1].char.set_graphic('Override', 4)
 
   st.switches[3] = true # flips event 2's own page and event 3's own page alike
   5.times { scene.update }
 
   ev2 = event_hashes(scene)[2]
-  eq 4, ev2[:trigger], "event 2's page did flip (switch 3 went on)"
+  eq 4, ev2.trigger, "event 2's page did flip (switch 3 went on)"
 
-  ch1 = event_hashes(scene)[1][:char]
+  ch1 = event_hashes(scene)[1].char
   eq 'Override', ch1.graphic_name,
      "event 1's Move Route Change Graphic override survived event 2's page rebuild"
   eq 4, ch1.graphic_index
 
-  ch3 = event_hashes(scene)[3][:char]
+  ch3 = event_hashes(scene)[3].char
   eq 'OwnAfter', ch3.graphic_name,
      "event 3's own page change still wins over whatever it was drawing before"
 end
@@ -1476,13 +1476,13 @@ check 'an identical custom move route continues its progress across a page switc
   scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
   st = scene.instance_variable_get(:@state)
   10.times { scene.update }
-  idx = event_hashes(scene)[1][:route].index
+  idx = event_hashes(scene)[1].route.index
   ok idx > 0, "expected progress before the switch (got #{idx})"
-  ok !event_hashes(scene)[1][:route].done?, 'not finished yet'
+  ok !event_hashes(scene)[1].route.done?, 'not finished yet'
 
   st.switches[3] = true
   scene.update
-  eq idx, event_hashes(scene)[1][:route].index,
+  eq idx, event_hashes(scene)[1].route.index,
      'the identical route kept its place instead of restarting'
 end
 
@@ -1494,12 +1494,12 @@ check 'a different custom move route restarts from the top on a page switch' do
   scene = new_scene({ 1 => two_page_event(0, 1, 3, p1, p2) }, player: [5, 5])
   st = scene.instance_variable_get(:@state)
   10.times { scene.update }
-  idx = event_hashes(scene)[1][:route].index
+  idx = event_hashes(scene)[1].route.index
   ok idx > 0, "expected progress before the switch (got #{idx})"
 
   st.switches[3] = true
   scene.update
-  eq 0, event_hashes(scene)[1][:route].index, 'a changed route restarts from the top'
+  eq 0, event_hashes(scene)[1].route.index, 'a changed route restarts from the top'
 end
 
 check "a fixed-direction event's own explicit Face Direction sub-command still " \
@@ -1518,8 +1518,8 @@ check "a fixed-direction event's own explicit Face Direction sub-command still "
   scene = new_scene({ 1 => event(2, 2, pg) }, player: [5, 4])
   frame_of = lambda do
     e = event_hashes(scene)[1]
-    Game::EventGraphic.frame(e[:anim_type], e[:base_dir], e[:base_pattern],
-                              e[:char].direction, e[:anim_phase], e[:moving])
+    Game::EventGraphic.frame(e.anim_type, e.base_dir, e.base_pattern,
+                              e.char.direction, e.anim_phase, e.moving)
   end
 
   # Move Right fires once move_timer (EVENT_MOVE_DELAY[frequency 6] == 6)
@@ -1529,13 +1529,13 @@ check "a fixed-direction event's own explicit Face Direction sub-command still "
   # that -- a new move decision cannot preempt a still-gliding one (see
   # #step_event's `event_sliding?` gate).
   8.times { scene.update }
-  ok event_hashes(scene)[1][:char].x > 2, 'the Move Right step landed first'
-  ok !event_hashes(scene)[1][:route].done?, "Face Up hasn't run yet"
+  ok event_hashes(scene)[1].char.x > 2, 'the Move Right step landed first'
+  ok !event_hashes(scene)[1].route.done?, "Face Up hasn't run yet"
   dir, = frame_of.call
   eq 2, dir, "ordinary movement never turns a fixed-direction event's sprite"
 
   30.times { scene.update }
-  ok event_hashes(scene)[1][:route].done?, 'the Face Up step ran too'
+  ok event_hashes(scene)[1].route.done?, 'the Face Up step ran too'
   dir, = frame_of.call
   eq 8, dir, 'an explicit Face Direction sub-command still turns it, though'
 end
@@ -2173,11 +2173,11 @@ check 'hero and event crossing paths (case (c)) requires an actual same-' \
   # all this frame, it is not a crossing.
   scene.update
   e = event_hashes(scene)[1]
-  ok !e[:crossed_hero_this_frame], 'not a crossing: the party was not moving'
+  ok !e.crossed_hero_this_frame, 'not a crossing: the party was not moving'
   # Freeze the event's own move cadence so its next decision cannot coincide
   # with the party's move below -- isolating "does an old refusal leak into
   # suppressing a later frame" from the crossing detection itself.
-  e[:move_timer] = 999
+  e.move_timer = 999
   st = scene.instance_variable_get(:@state)
   RGSS::Input.dir_value = 6 # only now does the party start walking in
   6.times { scene.update }
@@ -2806,7 +2806,7 @@ check "a fresh Scene::Map genuinely resumes a saved map event's own Parallel " \
   eq 0, st.variables[4], 'has not returned from the call yet'
   eq 0, st.variables[6], "hasn't reached the Wait's own follow-up yet"
 
-  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:event] && pp[:event][:id] == 5 }
+  p = scene.instance_variable_get(:@parallels).find { |pp| pp[:event] && pp[:event].id == 5 }
   frames = p[:interp].call_stack_snapshot
   ok frames && frames.size == 2, 'sanity: genuinely captured mid a nested Call Event'
 
@@ -2823,7 +2823,7 @@ check "a fresh Scene::Map genuinely resumes a saved map event's own Parallel " \
   fresh_scene = RPG2k::Scene::Map.new(parent, fresh_state)
 
   new_p = fresh_scene.instance_variable_get(:@parallels)
-                      .find { |pp| pp[:event] && pp[:event][:id] == 5 }
+                      .find { |pp| pp[:event] && pp[:event].id == 5 }
   restored_it = new_p[:interp]
   ok !restored_it.instance_variable_get(:@call_stack).empty?,
      'restored with the caller frame still on the call stack, not a fresh empty one'
@@ -3013,7 +3013,7 @@ check "an unrelated event's page change does not restart another event's " \
   # *every* map event's Parallel Process interpreter, event 1's included.
   st.switches[3] = true
   scene.update
-  ok event_hashes(scene)[2][:page].equal?(p2),
+  ok event_hashes(scene)[2].page.equal?(p2),
      "event 2's own page did flip (switch 3 went on)"
   eq 1, st.variables[1],
      "event 1's Parallel Process must not have restarted -- marker A would " \
@@ -4005,7 +4005,7 @@ check 'Show Picture is suppressed while a choice list is open (yado.tk)' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'choice list opened'
-  ok msg[:choice], 'it is a choice window, not a plain message'
+  ok msg.choice, 'it is a choice window, not a plain message'
 
   interp = scene.instance_variable_get(:@interpreter)
   interp.send(:do_show_picture,
@@ -4296,23 +4296,23 @@ check "an event's occupied tile updates the instant it steps, before the " \
             frequency: 8)
   scene = new_scene({ 1 => event(2, 2, pg) }, player: [5, 5])
   tiles = scene.instance_variable_get(:@event_tiles)
-  ok tiles[[2, 2]] && tiles[[2, 2]][:id] == 1, 'starts on its own tile'
+  ok tiles[[2, 2]] && tiles[[2, 2]].id == 1, 'starts on its own tile'
 
   # Advance to the first frame the character's logical tile reads (3, 2).
   ev = nil
   20.times do
     scene.update
     ev = event_hashes(scene)[1]
-    break if [ev[:char].x, ev[:char].y] == [3, 2]
+    break if [ev.char.x, ev.char.y] == [3, 2]
   end
-  eq [3, 2], [ev[:char].x, ev[:char].y], 'the character stepped to (3, 2)'
-  ok ev[:moving], 'and the sprite is still easing toward it, not there yet'
+  eq [3, 2], [ev.char.x, ev.char.y], 'the character stepped to (3, 2)'
+  ok ev.moving, 'and the sprite is still easing toward it, not there yet'
 
   tiles = scene.instance_variable_get(:@event_tiles)
   ok tiles[[2, 2]].nil?,
      "the vacated tile's hit-test cleared the instant the step committed, " \
      'even though the sprite is still drawn overlapping it'
-  ok tiles[[3, 2]] && tiles[[3, 2]][:id] == 1,
+  ok tiles[[3, 2]] && tiles[[3, 2]].id == 1,
      'and the destination tile is claimed for hit-testing immediately too'
 end
 
@@ -4500,7 +4500,7 @@ check 'Change Event Location snaps another event to a tile' do
   c = chars(scene)[2]
   eq [5, 3], [c.x, c.y], 'the event was moved to the target tile'
   tiles = scene.instance_variable_get(:@event_tiles)
-  ok tiles[[5, 3]] && tiles[[5, 3]][:id] == 2, 'the occupied-tile cache followed'
+  ok tiles[[5, 3]] && tiles[[5, 3]].id == 2, 'the occupied-tile cache followed'
   ok !tiles[[1, 1]], 'its old tile was released'
 end
 
@@ -4761,7 +4761,7 @@ check 'a message types out gradually, then a button completes and dismisses it' 
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   ok !reveal.done?, 'text is not fully revealed as soon as it opens'
   before = reveal.revealed
 
@@ -4789,19 +4789,19 @@ check 'a message longer than four lines paginates' do
   lines = %w[aaaa bbbb cccc dddd eeee ffff]
   scene.send(:open_message, lines, false)
   msg = scene.instance_variable_get(:@message)
-  reveal = msg[:reveal]
-  eq 2, msg[:pages], 'six lines make two pages'
+  reveal = msg.reveal
+  eq 2, msg.pages, 'six lines make two pages'
   # Reveal up to the first page boundary (the synthetic :page pause).
   reveal.reveal_all
   pause = reveal.pending_pause
-  ok pause && pause[:kind] == :page, 'the reveal stops at a page boundary'
+  ok pause && pause.kind == :page, 'the reveal stops at a page boundary'
   eq 16, reveal.revealed, 'the first four 4-char lines show before paging'
-  eq 0, msg[:page], 'still on the first page'
+  eq 0, msg.page, 'still on the first page'
   # A confirm advances to the next page and releases the boundary pause.
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.send(:drive_message)
   RGSS::Input.reset
-  eq 1, msg[:page], 'confirm paged to the second page'
+  eq 1, msg.page, 'confirm paged to the second page'
   ok !reveal.pending_pause, 'no more page pauses after the last page'
   reveal.reveal_all
   ok reveal.done?, 'the whole message is revealed on the last page'
@@ -4815,8 +4815,8 @@ check 'a message of exactly four lines does not paginate' do
   scene = new_scene({})
   scene.send(:open_message, %w[aaaa bbbb cccc dddd], false)
   msg = scene.instance_variable_get(:@message)
-  eq 1, msg[:pages], 'four lines is exactly one page'
-  reveal = msg[:reveal]
+  eq 1, msg.pages, 'four lines is exactly one page'
+  reveal = msg.reveal
   reveal.reveal_all
   ok !reveal.pending_pause, 'no page pause for a single-screen message'
 end
@@ -4826,7 +4826,7 @@ check 'a paginated message only draws the current page' do
   lines = %w[aaaa bbbb cccc dddd eeee ffff]
   scene.send(:open_message, lines, false)
   msg = scene.instance_variable_get(:@message)
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   reveal.reveal_all # sit on page one's boundary
   # On page zero only the first four lines are drawn; #draw_message_contents
   # slices the reveal to the page, so line five (index 4) is not yet shown.
@@ -4836,7 +4836,7 @@ check 'a paginated message only draws the current page' do
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.send(:drive_message)
   RGSS::Input.reset
-  eq 1, msg[:page], 'paged to two'
+  eq 1, msg.page, 'paged to two'
   reveal.reveal_all
   eq 24, reveal.revealed, 'page two reveals the remaining two lines'
 end
@@ -4859,7 +4859,7 @@ check 'a Show Text keeps its window open when a Show Choices follows directly' d
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  win = msg[:window]
+  win = msg.window
 
   scene.update # no input: text keeps revealing
   RGSS::Input.triggered = [RGSS::Input::C]
@@ -4872,12 +4872,12 @@ check 'a Show Text keeps its window open when a Show Choices follows directly' d
   8.times do
     scene.update
     choice_msg = scene.instance_variable_get(:@message)
-    break if choice_msg && choice_msg[:choice]
+    break if choice_msg && choice_msg.choice
   end
   ok choice_msg, 'the window is still open once the choices appear'
-  ok choice_msg[:window].equal?(win), 'the same window is reused, not closed and reopened'
-  eq 2, choice_msg[:count], 'both options are listed'
-  eq 1, choice_msg[:choice_start], 'the choices are appended below the one text line'
+  ok choice_msg.window.equal?(win), 'the same window is reused, not closed and reopened'
+  eq 2, choice_msg.count, 'both options are listed'
+  eq 1, choice_msg.choice_start, 'the choices are appended below the one text line'
 
   RGSS::Input.triggered = [RGSS::Input::C] # confirm option 0 ("yes")
   scene.update
@@ -4909,23 +4909,23 @@ def show_text_then_choices(text)
   8.times do
     scene.update
     choice_msg = scene.instance_variable_get(:@message)
-    break if choice_msg && choice_msg[:choice]
+    break if choice_msg && choice_msg.choice
   end
   choice_msg
 end
 
 check "a colour left open in a Show Text bleeds into an attached Show Choices list (yado.tk)" do
   choice_msg = show_text_then_choices('\c[2]hi')
-  ok choice_msg && choice_msg[:choice], 'the choices appeared, merged into the same window'
-  choice_segs = choice_msg[:seg_lines][choice_msg[:choice_start]..]
-  ok choice_segs.all? { |segs| segs.all? { |s| s[:color] == 2 } },
+  ok choice_msg && choice_msg.choice, 'the choices appeared, merged into the same window'
+  choice_segs = choice_msg.seg_lines[choice_msg.choice_start..]
+  ok choice_segs.all? { |segs| segs.all? { |s| s.color == 2 } },
      "both choice labels inherit the text's trailing colour with no reset in either"
 end
 
 check 'an explicit \c[0] in the Show Text stops the colour bleeding into Show Choices' do
   choice_msg = show_text_then_choices('\c[2]hi\c[0]')
-  choice_segs = choice_msg[:seg_lines][choice_msg[:choice_start]..]
-  ok choice_segs.all? { |segs| segs.all? { |s| s[:color] == 0 } },
+  choice_segs = choice_msg.seg_lines[choice_msg.choice_start..]
+  ok choice_segs.all? { |segs| segs.all? { |s| s.color == 0 } },
      'the reset before the text ends carries a colour 0 into the choices, not 2'
 end
 
@@ -4955,7 +4955,7 @@ check 'a \\^ in a standalone Show Choices label is confirmed already inert (yado
   5.times { RGSS::Input.reset; scene.update }
   ok scene.instance_variable_get(:@message),
      'the \\^ in the first label did not auto-close the window with no input'
-  eq 2, scene.instance_variable_get(:@message)[:count], 'both options are still listed'
+  eq 2, scene.instance_variable_get(:@message).count, 'both options are still listed'
 
   RGSS::Input.triggered = [RGSS::Input::C] # confirm option 0 ("yes\^")
   scene.update
@@ -4989,7 +4989,7 @@ check 'a \\^ in a choice merged onto a preceding Show Text stays inert there too
   8.times do
     scene.update
     merged = scene.instance_variable_get(:@message)
-    break if merged && merged[:choice]
+    break if merged && merged.choice
   end
   ok merged, 'the choices merged onto the still-open text window'
   5.times { RGSS::Input.reset; scene.update }
@@ -5011,7 +5011,7 @@ check 'a Show Text keeps its window open when an Input Number follows directly' 
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  win = msg[:window]
+  win = msg.window
 
   scene.update # no input: text keeps revealing
   RGSS::Input.triggered = [RGSS::Input::C]
@@ -5029,7 +5029,7 @@ check 'a Show Text keeps its window open when an Input Number follows directly' 
   ok ni, 'the number-entry widget opened'
   ok ni[:embedded], 'it was embedded in the still-open message window, not a new one'
   ok scene.instance_variable_get(:@message), 'the message window was not closed for it'
-  ok scene.instance_variable_get(:@message)[:window].equal?(win),
+  ok scene.instance_variable_get(:@message).window.equal?(win),
      'the same window is reused, not closed and reopened'
 
   RGSS::Input.triggered = [RGSS::Input::UP] # ones digit 0 -> 1 (value 1) -- the
@@ -5062,7 +5062,7 @@ check 'the cancel key backs out of a Show Choices, per its cancel type' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'the choice window opened'
-  eq 1, msg[:count], 'only the drawn option is listed, not the [Cancel] branch'
+  eq 1, msg.count, 'only the drawn option is listed, not the [Cancel] branch'
 
   RGSS::Input.triggered = [RGSS::Input::B]
   scene.update
@@ -5101,7 +5101,7 @@ check 'a \\. pause holds the reveal for RPG_RT\'s real 16 frames, not the docume
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   frames = 0
   until reveal.pending_pause
     scene.update
@@ -5141,7 +5141,7 @@ check 'an ordinary Decision press held throughout a \\. pause does not cut it ' 
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   frames = 0
   until reveal.pending_pause
     scene.update
@@ -5175,7 +5175,7 @@ check 'a \\. pause at typing speed 20 holds for 20 frames, not a flat 16' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   frames = 0
   until reveal.pending_pause
     scene.update
@@ -5200,7 +5200,7 @@ check 'a \\| pause holds the reveal for RPG_RT\'s real 61 frames, not the docume
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   frames = 0
   until reveal.pending_pause
     scene.update
@@ -5230,7 +5230,7 @@ check 'a \\! pause holds the reveal until a button is pressed' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   # Reveal runs up to the pause (2 chars) and then holds, no matter how long.
   10.times { RGSS::Input.reset; scene.update }
   eq 2, reveal.revealed, 'the reveal stops at the \\! pause'
@@ -5255,7 +5255,7 @@ check '\\s[n] slows the message typewriter; a higher n takes longer to fully rev
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   # At the plain 2 chars/frame rate all 8 characters would be fully revealed
   # within 4 frames; a message that drops \s[] outright (the pre-fix
   # behaviour) reveals at that same flat rate regardless of the code, so it
@@ -5309,7 +5309,7 @@ check '\\N[n] names the live actor, and \\N[0] the party leader' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message opened'
-  text = msg[:seg_lines].map { |segs| segs.map { |s| s[:text] }.join }.join
+  text = msg.seg_lines.map { |segs| segs.map { |s| s.text }.join }.join
   # \N[0] is the leader; 1 and 2 are live actors (2 is out of the party but in
   # the roster); 3 has never been instantiated, so it falls back to its row.
   eq 'Named/Named/Levelled/DbStranger', text
@@ -5323,7 +5323,7 @@ check 'a message with \$ shows a gold window; a plain one does not' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message opened'
-  gw = msg[:gold_window]
+  gw = msg.gold_window
   ok gw, 'the \\$ gold window is present'
   ok gw.visible, 'and visible'
 
@@ -5334,7 +5334,7 @@ check 'a message with \$ shows a gold window; a plain one does not' do
   msg2 = nil
   12.times { scene2.update; msg2 = scene2.instance_variable_get(:@message); break if msg2 }
   ok msg2, 'plain message opened'
-  ok msg2[:gold_window].nil?, 'no \\$ -> no gold window'
+  ok msg2.gold_window.nil?, 'no \\$ -> no gold window'
 end
 
 check 'a \> \< instant span reveals far faster than the typewriter' do
@@ -5346,7 +5346,7 @@ check 'a \> \< instant span reveals far faster than the typewriter' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   # At 2 chars/frame the plain typewriter would show ~4 characters in two frames;
   # the instant span collapses, so 'a' + the whole span is already out.
   2.times { RGSS::Input.reset; scene.update }
@@ -5374,7 +5374,7 @@ check 'Message Options positions the message window at the top' do
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  ok msg[:window].y < 60, "top-positioned window should sit near the top, y=#{msg[:window].y}"
+  ok msg.window.y < 60, "top-positioned window should sit near the top, y=#{msg.window.y}"
 end
 
 check 'a bystander event holds still during an open message by default' do
@@ -5457,16 +5457,16 @@ check 'Change Face Graphic opens a message with a face and insets the text' do
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  ok msg[:face], 'a face graphic was loaded for the message'
+  ok msg.face, 'a face graphic was loaded for the message'
   # The face is cropped once out of the FaceSet sheet at message-open time
   # (see #build_face_cell): a single blit of cell 2 (the third 48x48 tile,
   # x=96) into the dedicated 48x48 face bitmap, not a per-frame crop.
-  calls = msg[:face].blt_calls
+  calls = msg.face.blt_calls
   eq 1, calls.length, 'an unmirrored face is cropped in one blit'
   x, y, _src, rect = calls.first
   eq [0, 0, 96, 0, 48, 48], [x, y, rect.x, rect.y, rect.width, rect.height],
      'cropped cell 2 straight into the corner of the dedicated face bitmap'
-  ok msg[:text_x] > 0, 'text is inset to the right of a left-side face'
+  ok msg.text_x > 0, 'text is inset to the right of a left-side face'
 end
 
 check 'Change Face Graphic with the mirror flag draws a horizontally-flipped face' do
@@ -5479,7 +5479,7 @@ check 'Change Face Graphic with the mirror flag draws a horizontally-flipped fac
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  calls = msg[:face].blt_calls
+  calls = msg.face.blt_calls
   # RGSS::Bitmap#blt has no flip of its own, so a mirrored face is built one
   # source column at a time instead of a single crop (see #build_face_cell).
   eq 48, calls.length, 'a mirrored face is built one column at a time, not one crop'
@@ -5501,8 +5501,8 @@ check 'a right-side face draws on the right and does not inset the text' do
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  eq 0, msg[:text_x], 'a right-side face leaves the left text edge in place'
-  ok msg[:face_x] > 0, 'the face is drawn on the right side of the contents'
+  eq 0, msg.text_x, 'a right-side face leaves the left text edge in place'
+  ok msg.face_x > 0, 'the face is drawn on the right side of the contents'
 end
 
 # yado.tk: text beyond a line's own display-limit width is silently truncated,
@@ -5542,15 +5542,15 @@ check "a message line beyond its own display width is truncated, not left to ble
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  c = msg[:contents]
+  c = msg.contents
   def c.text_size(s); RGSS::Rect.new(0, 0, s.length * 6, 0); end
-  msg[:reveal].reveal_all
+  msg.reveal.reveal_all
   scene.send(:draw_message_contents)
   drawn = c.draw_calls.last
   ok drawn, 'the line was actually drawn'
   text = drawn[4]
-  eq msg[:text_w] / 6, text.length,
-     "clipped to exactly as many characters as fit #{msg[:text_w]}px, not the full #{long_line.length}"
+  eq msg.text_w / 6, text.length,
+     "clipped to exactly as many characters as fit #{msg.text_w}px, not the full #{long_line.length}"
   ok text.length < long_line.length, 'the overflowing tail was dropped, not left to draw over the face'
 end
 
@@ -6090,19 +6090,19 @@ check "a page's own custom move route resumes at its saved cursor across a save/
 
   15.times { scene.update } # partway through the 4-tile route
   e = scene.instance_variable_get(:@events).first
-  c = e[:char]
+  c = e.char
   ok c.x > 0 && c.x < 4, "expected partial progress into the route, got x=#{c.x}"
-  ok !e[:route].done?, 'the route has not finished yet'
-  saved_index = e[:route].index
+  ok !e.route.done?, 'the route has not finished yet'
+  saved_index = e.route.index
 
   restored = Game::State.load(db, Marshal.load(Marshal.dump(state.to_h)))
   restored.map = fake_map(1, events)
   fresh = RPG2k::Scene::Map.new(FakeParent.new(db) { |id| fake_map(id, events) },
                                 restored)
   re = fresh.instance_variable_get(:@events).first
-  eq saved_index, re[:route].index,
+  eq saved_index, re.route.index,
      'the restored route resumes at the exact command it was on, not index 0'
-  eq c.x, re[:char].x, 'the character position agrees (the already-fixed position half)'
+  eq c.x, re.char.x, 'the character position agrees (the already-fixed position half)'
 
   # Driving the restored scene onward finishes only the *remaining* distance,
   # not the full 4-tile route replayed from scratch. Each remaining tile now
@@ -6112,7 +6112,7 @@ check "a page's own custom move route resumes at its saved cursor across a save/
   # up to 4 whole tiles' worth of that combined pace rather than the old,
   # racing-slide budget.
   100.times { fresh.update }
-  fc = fresh.instance_variable_get(:@events).first[:char]
+  fc = fresh.instance_variable_get(:@events).first.char
   eq 4, fc.x, 'the route completes to its actual endpoint from the resumed cursor'
 end
 
@@ -6139,14 +6139,14 @@ check "a page's own custom-route index does not leak onto an unrelated page's " 
 
   20.times { scene.update } # partway through page 1's own route
   e = scene.instance_variable_get(:@events).first
-  ok e[:route].index > 0, "expected partial progress into page 1's route, got index #{e[:route].index}"
+  ok e.route.index > 0, "expected partial progress into page 1's route, got index #{e.route.index}"
 
   st.switches[5] = true
   scene.update # page 2's condition now holds: an in-place page reselection runs
 
   e2 = scene.instance_variable_get(:@events).first
-  ok !e2[:page].equal?(e[:page]), 'page 2 is now the active page'
-  eq 0, e2[:route].index,
+  ok !e2.page.equal?(e.page), 'page 2 is now the active page'
+  eq 0, e2.route.index,
      "page 2's own different route starts at its own index 0, not a stale " \
      "index carried over from page 1's unrelated route"
 end
@@ -6348,7 +6348,7 @@ check "a Map Event Parallel Process's own Show Choices now actually opens the sh
 
   msg = open_msg(scene)
   ok msg, "the Parallel Process's own Show Choices opened the shared message window"
-  ok msg[:choice], 'the window is showing a choice list, not plain text'
+  ok msg.choice, 'the window is showing a choice list, not plain text'
 
   RGSS::Input.triggered = [RGSS::Input::C] # pick "yes" (index 0)
   scene.update
@@ -6652,12 +6652,12 @@ check 'build_event captures the page graphic + layer fields' do
                         pattern: 2, animation_type: Game::EventGraphic::SPIN,
                         translucent: true))
   e = event_hashes(new_scene({ 1 => ev }))[1]
-  eq 'hero', e[:char].graphic_name
-  eq 3, e[:char].graphic_index
-  eq 2, e[:layer]
-  eq 2, e[:base_pattern]
-  eq Game::EventGraphic::SPIN, e[:anim_type]
-  ok e[:translucent], 'translucent page flagged'
+  eq 'hero', e.char.graphic_name
+  eq 3, e.char.graphic_index
+  eq 2, e.layer
+  eq 2, e.base_pattern
+  eq Game::EventGraphic::SPIN, e.anim_type
+  ok e.translucent, 'translucent page flagged'
 end
 
 check 'events route into the tile buffer matching their layer / y-order' do
@@ -6705,13 +6705,13 @@ check 'a wandering event cycles its walk phase; a stationary one rests' do
   # 400, not 200: a default-speed event now correctly takes 16 frames to
   # cross a tile (internal move_speed 2, i.e. real RPG_RT's own default
   # event speed 3) instead of the old, unconverted 8 -- see #page_move_speed.
-  400.times { scene.update; slid ||= eh[1][:moving] }
+  400.times { scene.update; slid ||= eh[1].moving }
   ok slid, 'a random mover slides between tiles at some point'
-  ok [eh[1][:char].x, eh[1][:char].y] != [3, 2], 'the mover changed tiles'
-  ok eh[1][:anim_phase] != 0, 'the mover advanced its walk animation while sliding'
-  ok !eh[2][:moving], 'a stationary event never slides'
-  eq [1, 1], [eh[2][:char].x, eh[2][:char].y], 'the stationary event held its tile'
-  eq 0, eh[2][:anim_phase], 'a stationary non-continuous event holds its pose'
+  ok [eh[1].char.x, eh[1].char.y] != [3, 2], 'the mover changed tiles'
+  ok eh[1].anim_phase != 0, 'the mover advanced its walk animation while sliding'
+  ok !eh[2].moving, 'a stationary event never slides'
+  eq [1, 1], [eh[2].char.x, eh[2].char.y], 'the stationary event held its tile'
+  eq 0, eh[2].anim_phase, 'a stationary non-continuous event holds its pose'
 end
 
 check 'an event slides smoothly between tiles instead of teleporting' do
@@ -6737,9 +6737,9 @@ check 'a multi-tile hop snaps rather than streaking across the map' do
   ev = event(1, 1, page(charset_name: 'c'))
   scene = new_scene({ 1 => ev })
   e = event_hashes(scene)[1]
-  e[:char].x = 4 # simulate a jump landing (2 tiles east)
+  e.char.x = 4 # simulate a jump landing (2 tiles east)
   scene.send(:reoccupy, e, 1, 1)
-  eq RPG2k::Scene::Map::TILE, e[:move_count], 'a long hop does not slide'
+  eq RPG2k::Scene::Map::TILE, e.move_count, 'a long hop does not slide'
   eq [4 * RPG2k::Scene::Map::TILE, 1 * RPG2k::Scene::Map::TILE],
      scene.send(:event_pixel, e), 'it snaps to the destination tile'
 end
@@ -6754,8 +6754,8 @@ check 'a continuous-animation event advances even while standing still' do
   # and read as "never cycled".
   13.times { scene.update }
   e = event_hashes(scene)[1]
-  eq [2, 2], [e[:char].x, e[:char].y], 'it did not move'
-  ok e[:anim_phase] != 0, 'but its walk animation kept cycling'
+  eq [2, 2], [e.char.x, e.char.y], 'it did not move'
+  ok e.anim_phase != 0, 'but its walk animation kept cycling'
 end
 
 # Ported from a reference implementation, NOT independently confirmed against
@@ -6771,11 +6771,11 @@ check 'a continuous-animation event standing still cycles on its own, ' \
   scene = new_scene({ 1 => ev }, player: [5, 4])
   e = event_hashes(scene)[1]
   8.times { scene.update }
-  eq 0, e[:anim_phase],
+  eq 0, e.anim_phase,
      'still on the first frame after 8 updates -- too soon for the sliding ' \
      'cadence, which this event is not using'
   2.times { scene.update }
-  ok e[:anim_phase] != 0, 'but the continuous cadence (10 frames) has advanced it by now'
+  ok e.anim_phase != 0, 'but the continuous cadence (10 frames) has advanced it by now'
 end
 
 # Same distinction, for a Spin-type event's own facing-rotation cadence
@@ -6790,11 +6790,11 @@ check 'a spin-type event rotates its facing on its own, slower cadence ' \
   scene = new_scene({ 1 => ev }, player: [5, 4])
   e = event_hashes(scene)[1]
   8.times { scene.update }
-  eq 0, e[:anim_phase],
+  eq 0, e.anim_phase,
      'still on the first facing after 8 updates -- too soon for the sliding ' \
      'cadence, which this event is not using'
   4.times { scene.update }
-  ok e[:anim_phase] != 0, 'but the spin cadence (12 frames) has rotated it by now'
+  ok e.anim_phase != 0, 'but the spin cadence (12 frames) has rotated it by now'
 end
 
 check 'a map with a looping, autoscrolling parallax renders without raising' do
@@ -7019,12 +7019,20 @@ check 'a picture saturation below neutral desaturates' do
   eq [0, 0, 0, 255], [tone.red, tone.green, tone.blue, tone.gray]
 end
 
+# One Game::Message::Segment, the record #draw_message_run draws.
+def message_segment(text, color)
+  seg = Game::Message::Segment.new
+  seg.text = text
+  seg.color = color
+  seg
+end
+
 check 'coloured message text blends with the windowskin swatch when present' do
   scene = new_scene({})
   skin = RGSS::Bitmap.new('System/skin')
   scene.instance_variable_set(:@windowskin, skin)
   c = RGSS::Bitmap.new(100, 20)
-  scene.send(:draw_message_run, c, 4, 0, 80, { text: 'hi', color: 3 })
+  scene.send(:draw_message_run, c, 4, 0, 80, message_segment('hi', 3))
   bc = c.blend_calls
   # RPG_RT draws each glyph twice: the shadow first, one pixel down and right,
   # then the glyph from the colour swatch.
@@ -7047,7 +7055,7 @@ check 'message text falls back to a flat colour without a windowskin' do
   scene = new_scene({})
   scene.instance_variable_set(:@windowskin, nil)
   c = RGSS::Bitmap.new(100, 20)
-  scene.send(:draw_message_run, c, 4, 0, 80, { text: 'hi', color: 3 })
+  scene.send(:draw_message_run, c, 4, 0, 80, message_segment('hi', 3))
   ok (c.blend_calls || []).empty?, 'no blend without a windowskin'
   eq 1, (c.draw_calls || []).size, 'flat draw_text used'
 end
@@ -7056,7 +7064,7 @@ check 'an out-of-range colour index falls back to a flat colour' do
   scene = new_scene({})
   scene.instance_variable_set(:@windowskin, RGSS::Bitmap.new('System/skin'))
   c = RGSS::Bitmap.new(100, 20)
-  scene.send(:draw_message_run, c, 0, 0, 80, { text: 'x', color: 99 })
+  scene.send(:draw_message_run, c, 0, 0, 80, message_segment('x', 99))
   ok (c.blend_calls || []).empty?, 'an invalid \\c[n] index does not blend'
   eq 1, (c.draw_calls || []).size, 'flat draw_text used'
   ok scene.send(:message_color, 99), 'out-of-range flat colour is safe'
@@ -7164,15 +7172,15 @@ check 'Open Shop scene: the buy list cursor wraps around' do
   st.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the shop opens straight to the buy list (buy-only)
   shop = scene.instance_variable_get(:@shop)
-  eq 0, shop[:index], 'starts on the first good'
+  eq 0, shop.index, 'starts on the first good'
   RGSS::Input.triggered = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 1, shop[:index], 'Up from the first good wraps to the last (2 goods)'
+  eq 1, shop.index, 'Up from the first good wraps to the last (2 goods)'
   RGSS::Input.triggered = [RGSS::Input::DOWN]
   scene.update
   RGSS::Input.reset
-  eq 0, shop[:index], 'Down from the last good wraps to the first'
+  eq 0, shop.index, 'Down from the last good wraps to the first'
 end
 
 # `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
@@ -7195,12 +7203,12 @@ check 'Open Shop scene: holding a direction auto-repeats the buy list ' \
   st.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the shop opens straight to the buy list (buy-only)
   shop = scene.instance_variable_get(:@shop)
-  eq 0, shop[:index], 'starts on the first good'
+  eq 0, shop.index, 'starts on the first good'
 
   RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
   scene.update
   RGSS::Input.reset
-  eq 1, shop[:index], 'a held (repeated) Down still moves the buy list cursor'
+  eq 1, shop.index, 'a held (repeated) Down still moves the buy list cursor'
 end
 
 # Open a buy-only shop stocking goods 3 (100g) and 5, with `gold` on hand, and
@@ -7231,10 +7239,10 @@ end
 check 'Open Shop scene: the quantity counter opens on a chosen good' do
   scene, _st = shop_quantity_scene(500)
   shop = scene.instance_variable_get(:@shop)
-  eq :quantity, shop[:screen], 'the counter is up'
-  eq 1, shop[:quantity][:count], 'starting at one'
-  eq 3, shop[:quantity][:id]
-  eq 5, shop[:quantity][:max], '500 gold buys five at 100'
+  eq :quantity, shop.screen, 'the counter is up'
+  eq 1, shop.quantity.count, 'starting at one'
+  eq 3, shop.quantity.id
+  eq 5, shop.quantity.max, '500 gold buys five at 100'
 end
 
 check 'Open Shop scene: the counter steps by one on the horizontal axis and ' \
@@ -7242,13 +7250,13 @@ check 'Open Shop scene: the counter steps by one on the horizontal axis and ' \
   scene, _st = shop_quantity_scene(500)
   shop = scene.instance_variable_get(:@shop)
   press(scene, RGSS::Input::RIGHT)
-  eq 2, shop[:quantity][:count]
+  eq 2, shop.quantity.count
   press(scene, RGSS::Input::LEFT)
-  eq 1, shop[:quantity][:count]
+  eq 1, shop.quantity.count
   press(scene, RGSS::Input::LEFT)
-  eq 1, shop[:quantity][:count], 'never below one'
+  eq 1, shop.quantity.count, 'never below one'
   5.times { press(scene, RGSS::Input::RIGHT) }
-  eq 5, shop[:quantity][:count], 'never past what the party can afford'
+  eq 5, shop.quantity.count, 'never past what the party can afford'
 end
 
 check 'Open Shop scene: the counter steps by ten on the vertical axis' do
@@ -7257,13 +7265,13 @@ check 'Open Shop scene: the counter steps by ten on the vertical axis' do
   # one, UP/DOWN by ten -- the tens step is vertical, not horizontal.
   scene, _st = shop_quantity_scene(999_999)
   shop = scene.instance_variable_get(:@shop)
-  eq 99, shop[:quantity][:max], 'rich enough to hit the item cap'
+  eq 99, shop.quantity.max, 'rich enough to hit the item cap'
   press(scene, RGSS::Input::UP)
-  eq 11, shop[:quantity][:count], '1 + 10'
+  eq 11, shop.quantity.count, '1 + 10'
   press(scene, RGSS::Input::DOWN)
-  eq 1, shop[:quantity][:count]
+  eq 1, shop.quantity.count
   20.times { press(scene, RGSS::Input::UP) }
-  eq 99, shop[:quantity][:count], 'clamped at the cap'
+  eq 99, shop.quantity.count, 'clamped at the cap'
 end
 
 # `RGSS::Input.repeated` (distinct from `.triggered`) lets this check hold a
@@ -7276,17 +7284,17 @@ check 'Open Shop scene: holding a direction auto-repeats the quantity counter, '
   # semantics every other in-game list uses.
   scene, _st = shop_quantity_scene(999_999)
   shop = scene.instance_variable_get(:@shop)
-  eq 99, shop[:quantity][:max], 'rich enough to hit the item cap'
+  eq 99, shop.quantity.max, 'rich enough to hit the item cap'
 
   RGSS::Input.repeated = [RGSS::Input::RIGHT] # held, but not a fresh trigger
   scene.update
   RGSS::Input.reset
-  eq 2, shop[:quantity][:count], 'a held (repeated) Right still steps the count by one'
+  eq 2, shop.quantity.count, 'a held (repeated) Right still steps the count by one'
 
   RGSS::Input.repeated = [RGSS::Input::UP]
   scene.update
   RGSS::Input.reset
-  eq 12, shop[:quantity][:count], 'a held (repeated) Up still steps the count by ten'
+  eq 12, shop.quantity.count, 'a held (repeated) Up still steps the count by ten'
 end
 
 check 'Open Shop scene: confirming the counter buys the whole stack at once' do
@@ -7297,17 +7305,17 @@ check 'Open Shop scene: confirming the counter buys the whole stack at once' do
   eq 200, st.party.gold, '500 - 3*100'
   eq 3, st.party.item_count(3), 'three bought in one confirm'
   shop = scene.instance_variable_get(:@shop)
-  eq :purchased, shop[:screen], 'the "purchased" confirmation shows first'
+  eq :purchased, shop.screen, 'the "purchased" confirmation shows first'
   # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), it auto-dismisses the confirmation after a flat
   # one-second (60 frame) timer -- Scene_Shop::vUpdate's Bought/Sold cases
   # never read Input:: at all -- so a button press alone does nothing here.
   press(scene, RGSS::Input::C)
   shop = scene.instance_variable_get(:@shop)
-  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+  eq :purchased, shop.screen, 'a button press does not dismiss it early'
   59.times { scene.update }
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'and the timer expiring on its own returns to the buy list'
+  eq :buy, shop.screen, 'and the timer expiring on its own returns to the buy list'
 end
 
 check 'Open Shop scene: cancelling the counter buys nothing' do
@@ -7317,7 +7325,7 @@ check 'Open Shop scene: cancelling the counter buys nothing' do
   eq 500, st.party.gold, 'no gold spent'
   eq 0, st.party.item_count(3)
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'back on the buy list'
+  eq :buy, shop.screen, 'back on the buy list'
 end
 
 check 'Open Shop scene: the counter sells a whole stack too' do
@@ -7335,9 +7343,9 @@ check 'Open Shop scene: the counter sells a whole stack too' do
   3.times { scene.update }
   press(scene, RGSS::Input::C)          # pick the held item -> the counter
   shop = scene.instance_variable_get(:@shop)
-  eq :quantity, shop[:screen]
-  eq :sell, shop[:quantity][:mode], 'selling, not buying'
-  eq 5, shop[:quantity][:max], 'bounded by what is held'
+  eq :quantity, shop.screen
+  eq :sell, shop.quantity.mode, 'selling, not buying'
+  eq 5, shop.quantity.max, 'bounded by what is held'
   press(scene, RGSS::Input::RIGHT)
   press(scene, RGSS::Input::RIGHT)      # three
   press(scene, RGSS::Input::C)
@@ -7348,8 +7356,8 @@ end
 check 'Open Shop scene: an unaffordable good never opens the counter' do
   scene, st = shop_quantity_scene(50)   # good 3 costs 100
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'still on the list'
-  ok shop[:quantity].nil?, 'no counter for something out of reach'
+  eq :buy, shop.screen, 'still on the list'
+  ok shop.quantity.nil?, 'no counter for something out of reach'
   eq 50, st.party.gold
 end
 
@@ -7378,7 +7386,7 @@ check 'Open Shop scene: the command list plays the RPG_RT system SE' do
   scene.update
   eq 'Decision1', RGSS::Audio.se_calls.last&.first, 'confirming a command plays decision'
 
-  eq :sell, scene.instance_variable_get(:@shop)[:screen]
+  eq :sell, scene.instance_variable_get(:@shop).screen
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::B] # leave the sell list, back to the command list
   scene.update
@@ -7414,7 +7422,7 @@ check 'Open Shop scene: the buy list plays cursor/decision SE, buzzer for an una
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   eq 'Buzzer1', RGSS::Audio.se_calls.last&.first, 'an unaffordable good plays buzzer, not decision'
-  eq :buy, scene.instance_variable_get(:@shop)[:screen], 'the counter never opened'
+  eq :buy, scene.instance_variable_get(:@shop).screen, 'the counter never opened'
 end
 
 check 'Open Shop scene: the quantity counter plays cursor/decision/cancel SE' do
@@ -11204,7 +11212,7 @@ check "a map-triggered Show Battle Animation's target-scope flash pulses the nam
   40.times do
     scene.update
     ev2 = event_hashes(scene)[2]
-    seen_target ||= (ev2[:flash] && ev2[:flash][:red] == 248)
+    seen_target ||= (ev2.flash && ev2.flash[:red] == 248)
     seen_player ||= !st.player_flash.nil?
     break if st.switches[6]
   end
@@ -11982,8 +11990,8 @@ check 'the choice window plays the cursor and decision system sounds' do
   ]
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = nil
-  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
-  ok(msg && msg[:choice], 'choice window opened')
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg.choice }
+  ok(msg && msg.choice, 'choice window opened')
   RGSS::Audio.reset_se
   # Moving the cursor plays the database cursor sound.
   RGSS::Input.triggered = [RGSS::Input::DOWN]
@@ -12019,8 +12027,8 @@ check 'the choice window cursor wraps around, like Scene::Title (98dad9b)' do
   ]
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = nil
-  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
-  ok(msg && msg[:choice], 'choice window opened')
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg.choice }
+  ok(msg && msg.choice, 'choice window opened')
   eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
   # Up on the first choice wraps to the last, instead of clamping at 0.
   RGSS::Input.triggered = [RGSS::Input::UP]
@@ -12056,8 +12064,8 @@ check 'the choice window cursor auto-repeats while a direction is held, ' \
   ]
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = nil
-  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg[:choice] }
-  ok(msg && msg[:choice], 'choice window opened')
+  12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg && msg.choice }
+  ok(msg && msg.choice, 'choice window opened')
   eq 0, scene.instance_variable_get(:@choice_index), 'starts on the first choice'
 
   RGSS::Input.repeated = [RGSS::Input::DOWN] # held, but not a fresh trigger
@@ -14880,9 +14888,9 @@ check 'Scene::Map#headless_battle arms a headless battle request on the interpre
   scene.headless_battle(14)
   it = scene.instance_variable_get(:@interpreter)
   eq :battle, it.wait_kind, 'the interpreter waits on the battle'
-  eq 14, it.battle_request[:troop_id], 'the requested troop id'
-  eq true, it.battle_request[:headless], 'the boot-drive marker rides the request'
-  eq true, it.battle_request[:random], 'otherwise a random-encounter-shaped request'
+  eq 14, it.battle_request.troop_id, 'the requested troop id'
+  eq true, it.battle_request.headless, 'the boot-drive marker rides the request'
+  eq true, it.battle_request.random, 'otherwise a random-encounter-shaped request'
 end
 
 # -- RPG_RT.exe legacy CLI arg: HideTitle --------------------------------------
@@ -15558,7 +15566,7 @@ check 'Flash Sprite tones the flashed event and decays away' do
   scene = new_scene({ 1 => event(2, 2, pg) }, player: [0, 0])
   scene.update
   ev = event_hashes(scene)[1]
-  ok ev[:flash], 'the event carries a running flash'
+  ok ev.flash, 'the event carries a running flash'
   out = scene.instance_variable_get(:@flash_out_buffer)
   ok out && (out.tone_calls || []).length > 0, 'the flash reached tone_blt'
   tone = out.tone_calls.last[1]
@@ -17045,7 +17053,7 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   state.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
+  eq :command, shop.screen
   # Follow-up (cycle #144): the shopkeeper's own line is its own separate
   # bottom-message-slot window (#draw_shop_prompt), not merged into the list
   # window's own first row any more -- confirmed against genuine RPG_RT.exe
@@ -17057,29 +17065,29 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   # confirmed against genuine RPG_RT.exe under wine (a synthetic mode=0 Open
   # Shop command, docs/TODO.md). The list window (shop[:window]) draws no
   # text at all on the command menu.
-  prompt_texts = window_texts(shop[:prompt])
+  prompt_texts = window_texts(shop.prompt)
   ok prompt_texts.any? { |t| t.include?('いらっしゃいませ！') },
      'the first-visit greeting shows'
   ok prompt_texts.any? { |t| t.include?('買う') } && prompt_texts.any? { |t| t.include?('売る') } &&
      prompt_texts.any? { |t| t.include?('やめる') },
      'the command row labels use the database terms, in the prompt window'
-  ok window_texts(shop[:window]).all?(&:empty?),
+  ok window_texts(shop.window).all?(&:empty?),
      'the list window itself draws none of the command labels'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('何をお求めですか？') },
+  eq :buy, shop.screen
+  ok window_texts(shop.prompt).any? { |t| t.include?('何をお求めですか？') },
      'the buy list shows its own prompt above the goods'
 
   RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the first good
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :quantity, shop[:screen]
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('いくつ買いますか？') },
+  eq :quantity, shop.screen
+  ok window_texts(shop.prompt).any? { |t| t.include?('いくつ買いますか？') },
      'the quantity screen shows its own prompt'
 
   RGSS::Input.triggered = [RGSS::Input::B] # back to the buy list
@@ -17089,8 +17097,8 @@ check 'Open Shop scene: the shopkeeper terms show greeting, regreeting and each 
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('他に何かご入用ですか？') },
+  eq :command, shop.screen
+  ok window_texts(shop.prompt).any? { |t| t.include?('他に何かご入用ですか？') },
      'having browsed once, the shopkeeper asks "anything else?" rather than greeting again'
 end
 
@@ -17114,9 +17122,9 @@ check 'Open Shop scene: the command menu\'s own cursor lives in the prompt ' \
   state.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
+  eq :command, shop.screen
 
-  win = shop[:prompt]
+  win = shop.prompt
   eq 0, win.x, "the prompt window is the ordinary bottom message slot"
   eq RPG2k::Scene::Map::SCREEN_H - RPG2k::Scene::Map::MSG_WIN_H, win.y
   eq RPG2k::Scene::Map::MSG_WIN_W, win.width
@@ -17130,18 +17138,18 @@ check 'Open Shop scene: the command menu\'s own cursor lives in the prompt ' \
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  win = shop[:prompt]
+  win = shop.prompt
   eq 2 * msg_line_h, win.cursor_rect.y, 'row 1 (Sell) selected -- two rows down'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Leave
   scene.update
   RGSS::Input.triggered = []
-  win = scene.instance_variable_get(:@shop)[:prompt]
+  win = scene.instance_variable_get(:@shop).prompt
   eq 3 * msg_line_h, win.cursor_rect.y, 'row 2 (Leave) selected -- three rows down'
 
   # The list window (goods box) never gets a cursor on the command menu --
   # SHOP_LIST_ROWS' own boundary-case machinery has nothing to scroll here.
-  list_win = scene.instance_variable_get(:@shop)[:window]
+  list_win = scene.instance_variable_get(:@shop).window
   eq 0, list_win.cursor_rect.width,
      'the list window carries no cursor rect while on the command menu'
 end
@@ -17167,27 +17175,27 @@ check 'Open Shop scene: the command cursor stays on Sell after cancelling ' \
   state.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  eq 0, shop[:index], 'starts on the first row (Buy)'
+  eq :command, shop.screen
+  eq 0, shop.index, 'starts on the first row (Buy)'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move onto Sell
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq 1, shop[:index], 'now on the second row (Sell)'
+  eq 1, shop.index, 'now on the second row (Sell)'
 
   RGSS::Input.triggered = [RGSS::Input::C] # enter the sell list
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen]
+  eq :sell, shop.screen
 
   RGSS::Input.triggered = [RGSS::Input::B] # cancel back to the command menu
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  eq 1, shop[:index],
+  eq :command, shop.screen
+  eq 1, shop.index,
      'the cursor is still on Sell, not reset to Buy (row 0)'
 end
 
@@ -17214,8 +17222,8 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   scene.update
 
   shop = scene.instance_variable_get(:@shop)
-  eq :purchased, shop[:screen], 'the purchase confirms before the list reappears'
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度あり！') },
+  eq :purchased, shop.screen, 'the purchase confirms before the list reappears'
+  ok window_texts(shop.prompt).any? { |t| t.include?('毎度あり！') },
      'the confirmation line uses the database shop_purchased term'
 
   # Per a reference implementation (NOT independently confirmed against genuine
@@ -17227,11 +17235,11 @@ check 'Open Shop scene: buying shows the shop_purchased confirmation, then retur
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :purchased, shop[:screen], 'a button press does not dismiss it early'
+  eq :purchased, shop.screen, 'a button press does not dismiss it early'
 
   59.times { scene.update }
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen], 'the timer expiring on its own returns to the buy list, ' \
+  eq :buy, shop.screen, 'the timer expiring on its own returns to the buy list, ' \
                           'same as a reference implementation\'s Bought -> Buy transition'
 end
 
@@ -17260,8 +17268,8 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   scene.update
 
   shop = scene.instance_variable_get(:@shop)
-  eq :sold, shop[:screen], 'the sale confirms before the list reappears'
-  ok window_texts(shop[:prompt]).any? { |t| t.include?('毎度！') },
+  eq :sold, shop.screen, 'the sale confirms before the list reappears'
+  ok window_texts(shop.prompt).any? { |t| t.include?('毎度！') },
      'the confirmation line uses the database shop_sold term'
 
   # Per a reference implementation (NOT independently confirmed against genuine
@@ -17271,11 +17279,11 @@ check 'Open Shop scene: selling shows the shop_sold confirmation, then returns '
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :sold, shop[:screen], 'a button press does not dismiss it early'
+  eq :sold, shop.screen, 'a button press does not dismiss it early'
 
   59.times { scene.update }
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen], 'the timer expiring on its own returns to the sell list, ' \
+  eq :sell, shop.screen, 'the timer expiring on its own returns to the sell list, ' \
                            'same as a reference implementation\'s Sold -> Sell'
 end
 
@@ -17302,8 +17310,8 @@ check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
   3.times { scene.update } # the shop opens straight to the sell list (sell-only)
 
   shop = scene.instance_variable_get(:@shop)
-  eq [3, 8], shop[:model].sellable_items, 'the key item stays on the list'
-  texts = window_texts(shop[:window])
+  eq [3, 8], shop.model.sellable_items, 'the key item stays on the list'
+  texts = window_texts(shop.window)
   ok texts.any? { |t| t.include?('Deed') }, 'and is actually drawn'
 
   # Move the cursor onto it (row 1, the second/last row) and try to select it.
@@ -17311,14 +17319,14 @@ check 'Open Shop scene: a price-0 (key) item stays listed on the sell ' \
   scene.update
   RGSS::Input.triggered = []
   scene.update
-  eq 1, scene.instance_variable_get(:@shop)[:index], 'cursor moved onto the key item'
+  eq 1, scene.instance_variable_get(:@shop).index, 'cursor moved onto the key item'
   RGSS::Audio.reset_se
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.triggered = []
   scene.update
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen], 'refused -- still on the sell list, not the quantity counter'
+  eq :sell, shop.screen, 'refused -- still on the sell list, not the quantity counter'
   ok RGSS::Audio.se_calls.any? { |c| c[0] == 'Buzzer1' }, 'a Buzzer SE, not Decision'
 end
 
@@ -17341,22 +17349,22 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
 
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  ok shop[:status].nil?, 'the command menu highlights no single item -- no panel'
+  eq :command, shop.screen
+  ok shop.status.nil?, 'the command menu highlights no single item -- no panel'
   # Confirmed against genuine RPG_RT.exe under wine: the command menu (no
   # side panels) fills the whole screen, flush to the left edge -- not the
   # old inset-10px, 300px-wide box, the same stale anti-pattern ADR 0021
   # already fixed for the message window.
-  eq 0, shop[:window].x, 'the list window is flush to the screen\'s left edge'
-  eq RPG2k::Scene::Map::SCREEN_W, shop[:window].width,
+  eq 0, shop.window.x, 'the list window is flush to the screen\'s left edge'
+  eq RPG2k::Scene::Map::SCREEN_W, shop.window.width,
      'and full screen width, with no side panels to leave room for'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  texts = window_texts(shop[:status])
+  eq :buy, shop.screen
+  texts = window_texts(shop.status)
   ok texts.include?('所持数'), 'the possessed_items term labels the first row'
   ok texts.include?('装備数'), 'the equipped_items term labels the second row'
   ok texts.include?('2'), 'two Potions already held'
@@ -17367,8 +17375,8 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   # sit right-aligned, status stacked directly above gold, both the same
   # width -- not the status panel pinned to the screen's left edge with a
   # narrower gold box at the top-right, the layout this used to draw.
-  status_win = shop[:status]
-  gold_win = scene.instance_variable_get(:@shop)[:gold]
+  status_win = shop.status
+  gold_win = scene.instance_variable_get(:@shop).gold
   status_x = RPG2k::Scene::Map::SCREEN_W - RPG2k::Scene::Map::SHOP_STATUS_W - 6
   eq status_x, status_win.x, "the status panel is right-aligned, not at the screen's left edge"
   eq status_x, gold_win.x, 'the gold panel shares the same right-aligned x as the status panel'
@@ -17378,14 +17386,14 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   # The list window itself narrows to leave room for that column -- also
   # confirmed against genuine RPG_RT.exe (the list's own right edge lands
   # exactly where the panel column starts), not the old full-width box.
-  eq 0, shop[:window].x, 'the buy list also stays flush to the left edge'
-  eq status_x, shop[:window].width,
+  eq 0, shop.window.x, 'the buy list also stays flush to the left edge'
+  eq status_x, shop.window.width,
      'and narrows to exactly where the status/gold column begins, no gap or overlap'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
   scene.update
   RGSS::Input.triggered = []
-  texts = window_texts(scene.instance_variable_get(:@shop)[:status])
+  texts = window_texts(scene.instance_variable_get(:@shop).status)
   ok texts.include?('0'), 'no Herbs held or equipped'
   ok !texts.include?('2') && !texts.include?('1'),
      'the stale Potion counts are gone once the cursor moves to a different good'
@@ -17394,15 +17402,15 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :quantity, shop[:screen]
+  eq :quantity, shop.screen
   # Per a reference implementation (NOT independently confirmed against genuine
   # RPG_RT under wine), Scene_Shop::SetMode keeps the right-hand panels
   # visible through BuyHowMany/Bought just like Buy itself -- the panel
   # still describes the item the counter was opened for, not "no panel".
-  ok !shop[:status].nil?, 'the quantity counter keeps the status panel visible, for the same item'
-  texts = window_texts(shop[:status])
+  ok !shop.status.nil?, 'the quantity counter keeps the status panel visible, for the same item'
+  texts = window_texts(shop.status)
   ok texts.include?('0'), 'still describing the Herb the counter was opened for'
-  eq status_x, shop[:window].width,
+  eq status_x, shop.window.width,
      'the quantity counter keeps the narrowed list width too, following ' \
      'SHOP_PANELS_VISIBLE_ON rather than being buy-screen-only'
 
@@ -17410,8 +17418,8 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :purchased, shop[:screen]
-  ok !shop[:status].nil?,
+  eq :purchased, shop.screen
+  ok !shop.status.nil?,
      'the purchase confirmation keeps the status panel visible too (Scene_Shop::SetMode\'s Bought case)'
 
   # The confirmation only leaves once its own 60-frame timer runs out --
@@ -17420,15 +17428,15 @@ check 'Open Shop scene: the status panel shows the highlighted item\'s possessed
   # Input:: at all.
   60.times { scene.update } # the timer expires, back to the buy list
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  ok !shop[:status].nil?, 'the panel returns once a good is highlighted again'
+  eq :buy, shop.screen
+  ok !shop.status.nil?, 'the panel returns once a good is highlighted again'
 
   RGSS::Input.triggered = [RGSS::Input::B] # back to the command menu
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  ok shop[:status].nil?, 'the command menu still shows no panel'
+  eq :command, shop.screen
+  ok shop.status.nil?, 'the command menu still shows no panel'
 end
 
 # Per a reference implementation (NOT independently confirmed against genuine
@@ -17453,8 +17461,8 @@ check 'Open Shop scene: the gold panel hides on the command menu and the ' \
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
 
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
-  ok !shop[:gold].visible, 'the command menu hides the gold panel'
+  eq :command, shop.screen
+  ok !shop.gold.visible, 'the command menu hides the gold panel'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to Sell
   scene.update
@@ -17462,15 +17470,15 @@ check 'Open Shop scene: the gold panel hides on the command menu and the ' \
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen]
-  ok !shop[:gold].visible, 'the sell list hides the gold panel too'
+  eq :sell, shop.screen
+  ok !shop.gold.visible, 'the sell list hides the gold panel too'
 
   RGSS::Input.triggered = [RGSS::Input::C] # open the quantity counter for the held Potion
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :quantity, shop[:screen]
-  ok shop[:gold].visible, 'the quantity counter shows the gold panel'
+  eq :quantity, shop.screen
+  ok shop.gold.visible, 'the quantity counter shows the gold panel'
 end
 
 # Follow-up (cycle #144, 2026-08-25): a full-width, one-line item-description
@@ -17495,25 +17503,25 @@ check 'Open Shop scene: a description bar above the list shows the highlighted '
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
 
   shop = scene.instance_variable_get(:@shop)
-  eq :command, shop[:screen]
+  eq :command, shop.screen
   # Follow-up (cycle #148): confirmed against genuine RPG_RT.exe under wine --
   # the command menu still shows this window (same position/size as every
   # other shop screen), just with no text in it, since no single good is
   # ever highlighted there; it is not hidden/disposed the way cycle #144's
   # own inference guessed. See docs/TODO.md.
-  ok !shop[:desc].nil?, 'the description bar is a real window on the ' \
+  ok !shop.desc.nil?, 'the description bar is a real window on the ' \
      'command menu too, just blank -- not hidden'
-  ok window_texts(shop[:desc]).all?(&:empty?),
+  ok window_texts(shop.desc).all?(&:empty?),
      'and it draws no text while the command menu has no single good to describe'
 
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  ok window_texts(shop[:desc]).any? { |t| t.include?('HPを30ポイント回復する') },
+  eq :buy, shop.screen
+  ok window_texts(shop.desc).any? { |t| t.include?('HPを30ポイント回復する') },
      'the buy list shows the highlighted (first) good\'s own description'
-  desc_win = shop[:desc]
+  desc_win = shop.desc
   eq 0, desc_win.x, "the bar is flush to the screen's left edge"
   eq 0, desc_win.y, "and to the screen's top edge"
   eq RPG2k::Scene::Map::SCREEN_W, desc_win.width, 'and full screen width -- not ' \
@@ -17523,7 +17531,7 @@ check 'Open Shop scene: a description bar above the list shows the highlighted '
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the second good (Herb, id 5)
   scene.update
   RGSS::Input.triggered = []
-  ok window_texts(scene.instance_variable_get(:@shop)[:desc])
+  ok window_texts(scene.instance_variable_get(:@shop).desc)
        .any? { |t| t.include?('HPを10ポイント回復する') },
      'the bar tracks the cursor, like the status panel does'
 
@@ -17536,12 +17544,12 @@ check 'Open Shop scene: a description bar above the list shows the highlighted '
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :sell, shop[:screen]
+  eq :sell, shop.screen
   # Confirmed live: unlike the status/gold panels (SHOP_PANELS_VISIBLE_ON,
   # hidden on :sell), the description bar showed on a real single-good Sell
   # list too -- a genuinely wider visibility rule (SHOP_DESC_VISIBLE_ON), not
   # a copy-paste of the status panel's own gating.
-  ok window_texts(shop[:desc]).any? { |t| t.include?('HPを30ポイント回復する') },
+  ok window_texts(shop.desc).any? { |t| t.include?('HPを30ポイント回復する') },
      'the sell list shows the held good\'s own description too, even though ' \
      'it gets no status/gold column'
 end
@@ -17563,7 +17571,7 @@ check 'Open Shop scene: the shopkeeper prompt is a fixed 320x80 panel at the ' \
   3.times { scene.update } # straight to the buy list (buy-only)
 
   shop = scene.instance_variable_get(:@shop)
-  win = shop[:prompt]
+  win = shop.prompt
   map_mod = RPG2k::Scene::Map
   eq 0, win.x, "the prompt bar is flush to the screen's left edge"
   eq map_mod::MSG_WIN_W, win.width, "the message window's own fixed width"
@@ -17573,7 +17581,7 @@ check 'Open Shop scene: the shopkeeper prompt is a fixed 320x80 panel at the ' \
   # The list window itself now sits right below the (hidden-on-:command,
   # shown-here) description bar instead of floating bottom-anchored above a
   # 6px screen margin -- also confirmed live.
-  eq map_mod::SHOP_DESC_H, shop[:window].y,
+  eq map_mod::SHOP_DESC_H, shop.window.y,
      'the list docks directly under the description bar'
 end
 
@@ -17603,14 +17611,14 @@ check 'Open Shop scene: the mystery band above the status panel is a window, ' \
 
   shop = scene.instance_variable_get(:@shop)
   map_mod = RPG2k::Scene::Map
-  eq :buy, shop[:screen]
-  ok shop[:party].nil?, 'the first good (a Potion) is not equipment -- no band'
+  eq :buy, shop.screen
+  ok shop.party.nil?, 'the first good (a Potion) is not equipment -- no band'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the Short Sword
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  win = shop[:party]
+  win = shop.party
   ok win, 'the highlighted good is now equipment -- the band is a real window'
   eq map_mod::SCREEN_W - map_mod::SHOP_STATUS_W - 6, win.x,
      'same x as the status panel below it'
@@ -17623,7 +17631,7 @@ check 'Open Shop scene: the mystery band above the status panel is a window, ' \
   RGSS::Input.triggered = [RGSS::Input::UP] # back to the Potion
   scene.update
   RGSS::Input.triggered = []
-  ok scene.instance_variable_get(:@shop)[:party].nil?,
+  ok scene.instance_variable_get(:@shop).party.nil?,
      'the band hides again once a non-equipment good is highlighted'
 end
 
@@ -17650,13 +17658,13 @@ check 'Open Shop scene: the equipment party band blits the measured System-' \
   3.times { scene.update } # straight to the buy list (buy-only)
 
   shop = scene.instance_variable_get(:@shop)
-  ok shop[:party].nil?, 'the first good (a Potion) is not equipment -- no band, no blit'
+  ok shop.party.nil?, 'the first good (a Potion) is not equipment -- no band, no blit'
 
   RGSS::Input.triggered = [RGSS::Input::DOWN] # move to the Short Sword
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  win = shop[:party]
+  win = shop.party
   map_mod = RPG2k::Scene::Map
   ok win.contents, 'the equipment band now has drawn contents, not a bare frame'
   calls = win.contents.blt_calls
@@ -17679,7 +17687,7 @@ check 'Open Shop scene: the equipment party band blits the measured System-' \
   RGSS::Input.triggered = [RGSS::Input::UP] # back to the Potion -- band hides
   scene.update
   RGSS::Input.triggered = []
-  ok scene.instance_variable_get(:@shop)[:party].nil?, 'hidden again for the Potion'
+  ok scene.instance_variable_get(:@shop).party.nil?, 'hidden again for the Potion'
 end
 
 # Follow-up (cycle #147, 2026-08-25): closed cycle #144's other last-open shop
@@ -17704,23 +17712,23 @@ check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' 
   scene = RPG2k::Scene::Map.new(fake_parent(db), state)
   state.instance_variable_set(:@party, ShopStubParty.new(500))
   3.times { scene.update } # the command menu opens (mode 0: buy+sell)
-  eq :command, scene.instance_variable_get(:@shop)[:screen]
+  eq :command, scene.instance_variable_get(:@shop).screen
   RGSS::Input.triggered = [RGSS::Input::C] # choose Buy (first row)
   scene.update
   RGSS::Input.triggered = []
 
   map_mod = RPG2k::Scene::Map
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  eq 10, shop[:model].goods.length, 'all ten goods are real, just more than one page shows'
-  win0 = shop[:window]
+  eq :buy, shop.screen
+  eq 10, shop.model.goods.length, 'all ten goods are real, just more than one page shows'
+  win0 = shop.window
   fixed_y, fixed_h = win0.y, win0.height
   eq map_mod::SHOP_DESC_H, fixed_y
   texts = window_texts(win0)
   ok texts.any? { |t| t.include?('Sword0') }, 'first good visible'
   ok texts.any? { |t| t.include?('Sword6') }, 'seventh good (last of the first page) visible'
   ok !texts.any? { |t| t.include?('Sword7') }, 'eighth good not yet on screen'
-  eq 0, shop[:scroll], 'scrolled to the top on a fresh browse'
+  eq 0, shop.scroll, 'scrolled to the top on a fresh browse'
 
   6.times do # move the cursor down through the first page's own 6 remaining rows
     RGSS::Input.triggered = [RGSS::Input::DOWN]
@@ -17728,9 +17736,9 @@ check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' 
     RGSS::Input.triggered = []
   end
   shop = scene.instance_variable_get(:@shop)
-  eq 6, shop[:index], 'cursor on the seventh good, still the last row of the first page'
-  eq 0, shop[:scroll], 'still no scroll -- the cursor has not yet passed the visible page'
-  win6 = shop[:window]
+  eq 6, shop.index, 'cursor on the seventh good, still the last row of the first page'
+  eq 0, shop.scroll, 'still no scroll -- the cursor has not yet passed the visible page'
+  win6 = shop.window
   eq fixed_y, win6.y, "the window hasn't moved just from filling its first page"
   eq fixed_h, win6.height, "...or grown"
 
@@ -17739,9 +17747,9 @@ check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' 
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq 7, shop[:index], 'cursor on the eighth good'
-  eq 1, shop[:scroll], 'the window scrolled down exactly one row to follow it'
-  win7 = shop[:window]
+  eq 7, shop.index, 'cursor on the eighth good'
+  eq 1, shop.scroll, 'the window scrolled down exactly one row to follow it'
+  win7 = shop.window
   eq fixed_y, win7.y, 'the window did not move down the screen'
   eq fixed_h, win7.height, 'the window did not grow -- this is the cycle #144 gap this closes'
   texts = window_texts(win7)
@@ -17756,9 +17764,9 @@ check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' 
     RGSS::Input.triggered = []
   end
   shop = scene.instance_variable_get(:@shop)
-  eq 9, shop[:index], 'cursor on the tenth (last) good'
-  eq 3, shop[:scroll], 'scroll clamped to 10 - SHOP_LIST_ROWS, so the last page is full'
-  win_last = shop[:window]
+  eq 9, shop.index, 'cursor on the tenth (last) good'
+  eq 3, shop.scroll, 'scroll clamped to 10 - SHOP_LIST_ROWS, so the last page is full'
+  win_last = shop.window
   eq fixed_y, win_last.y
   eq fixed_h, win_last.height
   texts = window_texts(win_last)
@@ -17776,9 +17784,9 @@ check 'Open Shop scene: a goods list past SHOP_LIST_ROWS scrolls, never grows ' 
   scene.update
   RGSS::Input.triggered = []
   shop = scene.instance_variable_get(:@shop)
-  eq :buy, shop[:screen]
-  eq 0, shop[:scroll], 'a fresh browse starts scrolled to the top again'
-  eq 0, shop[:index]
+  eq :buy, shop.screen
+  eq 0, shop.scroll, 'a fresh browse starts scrolled to the top again'
+  eq 0, shop.index
 end
 
 check 'Enemy Encounter scene: the result window shows the database Victory term' do
@@ -25460,7 +25468,7 @@ check 'an event sinks only on the hero\'s own layer' do
   eq 10, scene.send(:event_bush_depth, eh[1]), 'same layer wades'
   eq 0, scene.send(:event_bush_depth, eh[2]), 'below-hero is scenery'
   eq 0, scene.send(:event_bush_depth, eh[3]), 'above-hero is a treetop'
-  eh[1][:jumping] = true
+  eh[1].jumping = true
   eq 0, scene.send(:event_bush_depth, eh[1]), 'and a jumping event clears it'
 end
 
@@ -26377,7 +26385,7 @@ check 'holding Shift during Test Play fast-forwards a message\'s typing, but sti
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   ok !reveal.done?, 'text is not fully revealed as soon as it opens'
 
   RGSS::Input.triggered = [RGSS::Input::SHIFT]
@@ -26407,7 +26415,7 @@ check 'Shift only fast-forwards messages during Test Play' do
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   RGSS::Input.triggered = [RGSS::Input::SHIFT]
   scene.update
   ok !reveal.done?, 'a released game never sees Shift fast-forward the reveal'
@@ -26430,7 +26438,7 @@ check 'Cancel (B), not just Decision (C), dismisses a plain message and resumes 
   msg = nil
   12.times { scene.update; msg = scene.instance_variable_get(:@message); break if msg }
   ok msg, 'message window opened'
-  reveal = msg[:reveal]
+  reveal = msg.reveal
   ok !reveal.done?, 'a fresh short message has not finished typing out yet'
 
   # A first confirm (either key) only completes the reveal (fast_forward);
@@ -27368,7 +27376,7 @@ check 'Nepheshel-shaped Save choice event: a Show Choices "SAVE" branch reaches 
   st.save_access = false # Nepheshel's own Crystal Gate map forbids Save at the tree level
   scene.instance_variable_get(:@interpreter).start(cmds)
   msg = open_msg(scene)
-  ok msg && msg[:choice], 'the choice window opened'
+  ok msg && msg.choice, 'the choice window opened'
   RGSS::Input.triggered = [RGSS::Input::C] # confirm the first choice, "SAVE"
   scene.update # closes the choice window and calls Game::Interpreter#choose
   RGSS::Input.reset
@@ -28934,12 +28942,12 @@ check 'the message window reserves a face-sized column measured off RPG_RT: ' \
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  eq 72, msg[:text_x], 'text column pushed past the face by 8 + 48 + 16'
-  eq 229, msg[:text_w], 'text runs to contents 301 (304 - 3), so 301 - 72 wide'
-  eq 8, msg[:face_x], 'face inset 8px from the contents left edge'
-  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
-  eq m::FACE_INSET, msg[:face_x], 'the inset is FACE_INSET'
-  face_blt = (msg[:contents].blt_calls || []).find { |a| a[2].equal?(msg[:face]) }
+  eq 72, msg.text_x, 'text column pushed past the face by 8 + 48 + 16'
+  eq 229, msg.text_w, 'text runs to contents 301 (304 - 3), so 301 - 72 wide'
+  eq 8, msg.face_x, 'face inset 8px from the contents left edge'
+  eq 8, msg.face_y, 'and 8px down from the contents top edge'
+  eq m::FACE_INSET, msg.face_x, 'the inset is FACE_INSET'
+  face_blt = (msg.contents.blt_calls || []).find { |a| a[2].equal?(msg.face) }
   ok face_blt, 'the face cell was actually blitted into the contents'
   eq [m::FACE_INSET, m::FACE_INSET], [face_blt[0], face_blt[1]],
      'blitted at the measured contents offset, not the corner'
@@ -28961,13 +28969,13 @@ check 'a right-hand face reserves the same 72px on the right, so an overlong ' \
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  eq 0, msg[:text_x], 'the text column itself is unmoved by a right-hand face'
-  eq 229, msg[:text_w], 'but it stops 72px short of the contents right edge'
-  eq 248, msg[:face_x], 'face inset 8px from the contents right edge'
-  eq 8, msg[:face_y], 'and 8px down from the contents top edge'
-  eq msg[:inner_w] - m::FACE_INSET - m::FACE_SIZE, msg[:face_x],
+  eq 0, msg.text_x, 'the text column itself is unmoved by a right-hand face'
+  eq 229, msg.text_w, 'but it stops 72px short of the contents right edge'
+  eq 248, msg.face_x, 'face inset 8px from the contents right edge'
+  eq 8, msg.face_y, 'and 8px down from the contents top edge'
+  eq msg.inner_w - m::FACE_INSET - m::FACE_SIZE, msg.face_x,
      'i.e. inner_w - FACE_INSET - FACE_SIZE'
-  ok msg[:text_x] + msg[:text_w] <= msg[:face_x],
+  ok msg.text_x + msg.text_w <= msg.face_x,
      'the text boundary never reaches the portrait'
 end
 
@@ -28983,8 +28991,8 @@ check 'message text stops MSG_TEXT_RIGHT_MARGIN short of the contents edge ' \
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  eq 301, msg[:text_w], 'contents width 304 less the measured 3px right margin'
-  eq 1, msg[:count], 'an overlong line is clipped, never wrapped onto a second row'
+  eq 301, msg.text_w, 'contents width 304 less the measured 3px right margin'
+  eq 1, msg.count, 'an overlong line is clipped, never wrapped onto a second row'
 end
 
 check 'Show Choices labels are drawn MSG_CHOICE_INDENT past the message text column' do
@@ -29004,11 +29012,11 @@ check 'Show Choices labels are drawn MSG_CHOICE_INDENT past the message text col
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  12.times { RGSS::Input.reset; scene.update; break if msg[:choice] }
-  ok msg[:choice], 'the options merged into the window'
+  12.times { RGSS::Input.reset; scene.update; break if msg.choice }
+  ok msg.choice, 'the options merged into the window'
   drawn = {}
-  (msg[:contents].blend_calls || []).each { |a| drawn[a[4]] = a[0] }
-  (msg[:contents].draw_calls || []).each { |a| drawn[a[4]] = a[0] }
+  (msg.contents.blend_calls || []).each { |a| drawn[a[4]] = a[0] }
+  (msg.contents.draw_calls || []).each { |a| drawn[a[4]] = a[0] }
   eq 0, drawn['HEAD'], 'the Show Text row above keeps the plain text column'
   eq m::MSG_CHOICE_INDENT, drawn['A1'], 'the first option is indented'
   eq m::MSG_CHOICE_INDENT, drawn['A2'], 'and so is the second'
@@ -29033,9 +29041,9 @@ check 'the message window choice cursor lands 2px inside the contents area, ' \
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'the standalone choice window opened'
-  eq m::MSG_WIN_W, msg[:window].width, 'a standalone choice list reuses the message panel'
-  eq m::MSG_WIN_H, msg[:window].height, 'at its full fixed height, not a fitted box'
-  r = msg[:window].cursor_rect
+  eq m::MSG_WIN_W, msg.window.width, 'a standalone choice list reuses the message panel'
+  eq m::MSG_WIN_H, msg.window.height, 'at its full fixed height, not a fitted box'
+  r = msg.window.cursor_rect
   x, y, w, h = Game::WindowCursor.dest_rect(r.x, r.y, r.width, r.height,
                                             RPG2k::Window::BORDER)
   eq 10, x, 'drawn cursor starts at native x 10'
@@ -29056,7 +29064,7 @@ check 'the message window unrolls over MSG_ANIM_FRAMES = 8 frames, not 7' do
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  win = msg[:window]
+  win = msg.window
   eq 8, win.instance_variable_get(:@anim_frames_left), 'eight frames still to run'
   7.times { RGSS::Input.reset; scene.update }
   ok win.instance_variable_get(:@openness) < 1.0, 'still unrolling after seven frames'
@@ -29086,13 +29094,13 @@ check 'a Show Choices directly after a Show Text merges with no keypress at all'
   12.times do
     RGSS::Input.reset
     scene.update
-    merged = msg[:choice]
+    merged = msg.choice
     break if merged
   end
   ok merged, 'the options appeared without a single button press'
-  eq 3, msg[:seg_lines].length, 'one text row plus two option rows'
-  eq 1, msg[:choice_start], 'the options start on the row under the text'
-  eq 1, msg[:pages], 'and all three rows fit one page'
+  eq 3, msg.seg_lines.length, 'one text row plus two option rows'
+  eq 1, msg.choice_start, 'the options start on the row under the text'
+  eq 1, msg.pages, 'and all three rows fit one page'
 end
 
 check 'Show Choices that cannot fit under the text open on a fresh page ' \
@@ -29117,20 +29125,20 @@ check 'Show Choices that cannot fit under the text open on a fresh page ' \
   scene = new_scene({ 1 => event(2, 2, auto) }, player: [5, 5])
   msg = open_msg(scene)
   ok msg, 'message window opened'
-  12.times { RGSS::Input.reset; scene.update; break if msg[:pending_choice] }
-  ok msg[:pending_choice], 'the options were held back rather than appended'
-  ok !msg[:choice], 'the window is still a plain text page'
-  eq 3, msg[:seg_lines].length, 'showing exactly the three text rows'
-  eq 1, msg[:pages], 'no pagination was invented for the overflow'
-  ok msg[:window].pause, 'with the pause arrow asking for a confirm'
+  12.times { RGSS::Input.reset; scene.update; break if msg.pending_choice }
+  ok msg.pending_choice, 'the options were held back rather than appended'
+  ok !msg.choice, 'the window is still a plain text page'
+  eq 3, msg.seg_lines.length, 'showing exactly the three text rows'
+  eq 1, msg.pages, 'no pagination was invented for the overflow'
+  ok msg.window.pause, 'with the pause arrow asking for a confirm'
   RGSS::Input.triggered = [RGSS::Input::C]
   scene.update
   RGSS::Input.reset
-  ok msg[:choice], 'the confirm turns the window into the choice prompt'
-  eq 2, msg[:seg_lines].length, 'the text rows are gone; only the options remain'
-  eq 0, msg[:choice_start], 'the options start at row 0'
-  eq 2, msg[:count], 'both options are selectable'
-  eq 1, msg[:pages], 'still one page'
+  ok msg.choice, 'the confirm turns the window into the choice prompt'
+  eq 2, msg.seg_lines.length, 'the text rows are gone; only the options remain'
+  eq 0, msg.choice_start, 'the options start at row 0'
+  eq 2, msg.count, 'both options are selectable'
+  eq 1, msg.pages, 'still one page'
 end
 
 # -- RPG2003-only field-menu screens, measured under wine (cycle #256) --------

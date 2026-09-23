@@ -71,37 +71,67 @@ module Game
   # surfaced by #scan for the scene to act on.
   # `names` may be a Hash or any object responding to `[]`.
   module Message
-    # #scan/#parse's own record shapes -- used to be bare Hash literals;
-    # concrete Structs instead so tools/bc2cpp/bc2cpp.rb can prove each ivar/
-    # local that holds one is a single fixed shape (the same "opaque
-    # arbitrarily-keyed container -> named record" conversion already done
-    # for MapEventState/ShopState/MessageState/ShopQuantity, see fbfe068/
-    # a0fa9e5's own comments). `keyword_init: true` for consistency with
-    # those -- never actually invoked with keywords: every construction
-    # site below uses a bare `.new` plus individual setters instead (see
-    # SCAN_STRUCT_CONSTRUCTION below for why).
+    # #scan/#parse's own record shapes -- used to be bare Hash literals, then
+    # Structs; plain classes now (docs/adr/0215), so tools/bc2cpp/bc2cpp.rb
+    # sees each accessor and keeps the Integer/Symbol/boolean fields as
+    # typed struct fields. Every construction site below is a bare `.new`
+    # plus one setter per field (see SCAN_STRUCT_CONSTRUCTION below), so the
+    # typed defaults #initialize writes are never read.
     #
     # `Segment` (#parse/#scan's own :segments entries, also #visible_
     # segments' own truncated-copy shape): one coloured text run.
-    Segment = Struct.new(:text, :color, keyword_init: true)
+    class Segment
+      attr_accessor :text, :color
+
+      def initialize
+        @text = nil
+        @color = 0
+      end
+    end
     # `SpeedMarker` (#scan's own :speeds entries, TextReveal#speed_at's own
     # array): a `\s[n]` speed change in revealed-character coordinates.
-    SpeedMarker = Struct.new(:at, :speed, keyword_init: true)
+    class SpeedMarker
+      attr_accessor :at, :speed
+
+      def initialize
+        @at = 0
+        @speed = 0
+      end
+    end
     # `PauseMarker` (#scan's own :pauses entries, plus the synthetic :page
     # ones Scene::Map#message_page_layout injects; TextReveal's own array):
     # a pacing-stop marker in revealed-character coordinates. `kind` is one
     # of :quarter, :full, :key, :page.
-    PauseMarker = Struct.new(:at, :kind, keyword_init: true)
+    class PauseMarker
+      attr_accessor :at, :kind
+
+      def initialize
+        @at = 0
+        @kind = :key
+      end
+    end
     # `ScanResult`: #scan's own full return shape -- see #scan's own doc
     # comment below for each member's meaning.
-    ScanResult = Struct.new(:segments, :pauses, :auto_close, :instants,
-                             :show_gold, :speeds, :length, :end_color,
-                             keyword_init: true)
+    class ScanResult
+      attr_accessor :segments, :pauses, :auto_close, :instants,
+                    :show_gold, :speeds, :length, :end_color
+
+      def initialize
+        @segments = nil
+        @pauses = nil
+        @auto_close = false
+        @instants = nil
+        @show_gold = false
+        @speeds = nil
+        @length = 0
+        @end_color = 0
+      end
+    end
 
     # Expand a line to its plain visible text (no colour information): the same
     # string the segments from #parse concatenate to.
     def self.expand(text, variables, names)
-      parse(text, variables, names).map { |s| s[:text] }.join
+      parse(text, variables, names).map { |s| s.text }.join
     end
 
     # Parse a message line into coloured runs. Returns an array of segments
@@ -114,7 +144,7 @@ module Game
     # any character) are omitted, so a line that renders nothing yields an empty
     # array.
     def self.parse(text, variables, names)
-      scan(text, variables, names)[:segments]
+      scan(text, variables, names).segments
     end
 
     # One pass over a message line, returning both its colour `:segments` (as
@@ -190,7 +220,7 @@ module Game
             # the same real tools/bc2cpp/bc2cpp.rb regression fbfe068/
             # a0fa9e5 already found and fixed: a keyword call site can only
             # devirtualize into a callee's own compiled bytecode body, and
-            # Struct's own #initialize is always native, so a keyword-call
+            # a Struct's #initialize was native, so a keyword-call
             # construction silently drops the whole containing method (here,
             # all of #scan) out of AOT compilation with no visible #error.
             # See SCAN_STRUCT_CONSTRUCTION below for the rest of this
@@ -304,7 +334,7 @@ module Game
       seg_lines.map do |segs|
         out = []
         segs.each do |seg|
-          t = seg[:text]
+          t = seg.text
           if remaining <= 0
             next
           elsif remaining >= t.length
@@ -315,7 +345,7 @@ module Game
             # as #scan's own Segment sites above.
             truncated = Segment.new
             truncated.text = t[0, remaining]
-            truncated.color = seg[:color]
+            truncated.color = seg.color
             out << truncated
             remaining = 0
           end
@@ -488,10 +518,10 @@ module Game
       @revealed = Game.clamp(revealed, 0, @total)
       # Sort with an explicit block, not sort_by: this mruby build's gembox
       # has no Array#sort_by (the native engine aborts on it).
-      @pauses = (pauses || []).sort { |a, b| a[:at] <=> b[:at] }
+      @pauses = (pauses || []).sort { |a, b| a.at <=> b.at }
       @auto_close = auto_close ? true : false
       @instants = instants || []
-      @speeds = (speeds || []).sort { |a, b| a[:at] <=> b[:at] }
+      @speeds = (speeds || []).sort { |a, b| a.at <=> b.at }
       @released = 0 # how many leading pauses the owner has let through
       @carry = 0 # fractional per-frame budget banked while a \s[] slowdown is
                  # in effect, so a sub-1-character-per-frame rate still lands
@@ -508,7 +538,7 @@ module Game
     # current run but still honours an intervening `\!` / `\.` / `\|`).
     def reveal_all
       stop = next_pause
-      @revealed = stop ? stop[:at] : @total
+      @revealed = stop ? stop.at : @total
     end
 
     # Reveal up to `n` more characters (default 1) at the caller's own base
@@ -523,7 +553,7 @@ module Game
     def advance(n = 1)
       n = 0 if n < 0
       stop = next_pause
-      limit = stop ? stop[:at] : @total
+      limit = stop ? stop.at : @total
       return if @revealed >= limit # blocked on the pause: no time banked either
       s = speed_at(@revealed)
       @carry += n
@@ -543,8 +573,8 @@ module Game
     def speed_at(pos)
       s = 1
       @speeds.each do |sp|
-        break if sp[:at] > pos
-        s = sp[:speed]
+        break if sp.at > pos
+        s = sp.speed
       end
       s
     end
@@ -563,7 +593,7 @@ module Game
     # and it has not been released yet — or nil.
     def pending_pause
       p = @pauses[@released]
-      p && @revealed >= p[:at] ? p : nil
+      p && @revealed >= p.at ? p : nil
     end
 
     # Let the current pause through so the reveal can continue past it.
@@ -7460,20 +7490,26 @@ module Game
 
     # One common event's loaded record -- the same "opaque arbitrarily-keyed
     # container -> named record" conversion Scene::Map's own MapEventState
-    # already got (see that Struct's own comment for the full rationale).
+    # already got (see that class's own comment for the full rationale).
     # `guarded` is never actually set by #load below (unlike MapEventState's
-    # own same-named member, which #build_event does set from the page) --
+    # own same-named field, which #build_event does set from the page) --
     # it is here only because Scene::Map#start_autostart/#build_parallels
-    # read `c[:guarded]` off a common event record too (mirroring the map-
-    # event auto-start gate), and a Hash silently answers that missing key
-    # with nil where a Struct would raise NameError for a member that was
-    # never declared at all. Carrying it as a real (always-nil) member keeps
-    # that read exactly as safe as it always was.
-    CommonEventRecord = Struct.new(
-      :id, :trigger, :need_flag, :switch_id, :chunk, :commands, :guarded,
-      keyword_init: true
-    )
+    # read `c.guarded` off a common event record too (mirroring the map-
+    # event auto-start gate), so it stays nil. #load sets every other field
+    # right after `.new`; `id` is the only one typed up front.
+    class CommonEventRecord
+      attr_accessor :id, :trigger, :need_flag, :switch_id, :chunk, :commands, :guarded
 
+      def initialize
+        @id = 0
+        @trigger = nil
+        @need_flag = nil
+        @switch_id = nil
+        @chunk = nil
+        @commands = nil
+        @guarded = nil
+      end
+    end
     # Load the common events from the database into plain hashes.
     #
     # `:commands` is decoded eagerly only for AUTO_START/PARALLEL common
@@ -7514,9 +7550,9 @@ module Game
     # gated — their switch is on).
     def self.eligible(events, switches)
       events.select do |e|
-        next false unless e[:trigger] == AUTO_START || e[:trigger] == PARALLEL
-        next true unless e[:need_flag]
-        switches[e[:switch_id]]
+        next false unless e.trigger == AUTO_START || e.trigger == PARALLEL
+        next true unless e.need_flag
+        switches[e.switch_id]
       end
     end
   end

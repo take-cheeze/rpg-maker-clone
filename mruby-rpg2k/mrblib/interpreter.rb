@@ -205,57 +205,139 @@ module Game
     # aborts the process with an "invalid event call" error.
     MAX_CALL_DEPTH = 1000
 
-    # The wait-request records below used to be bare Hash literals -- the same
-    # "opaque arbitrarily-keyed container -> named record" conversion
-    # Scene::Map's own MapEventState/ShopState/MessageState already got (see
-    # that file's own comment on MapEventState for the full rationale).
-    # `keyword_init: true` keeps each construction site looking almost
-    # identical to the Hash literal it replaces, and every real consumer
-    # (`req[:actor_id]`, ...) throughout this codebase keeps working
-    # unchanged, real mruby's own Struct supporting `#[]`/`#[]=` with a
-    # Symbol key exactly like Hash's own bracket access.
+    # The wait-request records below used to be bare Hash literals, then
+    # Structs; they are plain classes now (docs/adr/0215). bc2cpp keeps a
+    # plain class's ivars as typed struct fields (IVAR_ACCESS) and can see
+    # its attr_accessors, where a Struct's members were runtime-created
+    # native closures. Each construction site is a bare `.new` followed by
+    # one setter per field, so #initialize takes no arguments: a field that
+    # every construction site sets gets a typed default (an Integer or a
+    # boolean, never read before the site overwrites it), and a field some
+    # site leaves unset starts nil, exactly as the Struct member did.
 
     # #do_name_input's own request: which actor is being renamed, which
     # character set the entry widget draws from, and the seed name (the
     # actor's current name, or blank) to start the widget with.
-    NameInputRequest = Struct.new(:actor_id, :charset, :seed, keyword_init: true)
+    class NameInputRequest
+      attr_accessor :actor_id, :charset, :seed
+
+      def initialize
+        @actor_id = 0
+        @charset = 0
+        @seed = nil
+      end
+    end
 
     # #do_show_inn's own request.
-    InnRequest = Struct.new(:type, :price, :can_afford, :prompt, keyword_init: true)
+    class InnRequest
+      attr_accessor :type, :price, :can_afford, :prompt
+
+      def initialize
+        @type = 0
+        @price = 0
+        @can_afford = false
+        @prompt = false
+      end
+    end
 
     # #do_open_shop's own request.
-    ShopRequest = Struct.new(:mode, :allow_buy, :allow_sell, :type, :goods, keyword_init: true)
+    class ShopRequest
+      attr_accessor :mode, :allow_buy, :allow_sell, :type, :goods
+
+      def initialize
+        @mode = 0
+        @allow_buy = false
+        @allow_sell = false
+        @type = 0
+        @goods = nil
+      end
+    end
 
     # #do_enemy_encounter's / #start_random_battle's shared request shape --
     # the two construction sites set different subsets of these members (see
     # each site's own comment): `background`/`terrain_id` are set only later,
     # dynamically, by #do_enemy_encounter (never in its own literal); `random`/
     # `headless` are set only by #start_random_battle's own literal, never by
-    # #do_enemy_encounter's.
-    BattleRequest = Struct.new(
-      :troop_id, :allow_escape, :first_strike, :defeat_game_over,
-      :background, :terrain_id, :random, :headless,
-      keyword_init: true
-    )
+    # #do_enemy_encounter's -- so those four start nil.
+    class BattleRequest
+      attr_accessor :troop_id, :allow_escape, :first_strike, :defeat_game_over,
+                    :background, :terrain_id, :random, :headless
+
+      def initialize
+        @troop_id = nil
+        @allow_escape = false
+        @first_strike = nil
+        @defeat_game_over = false
+        @background = nil
+        @terrain_id = nil
+        @random = nil
+        @headless = nil
+      end
+    end
 
     # #do_key_input's own request (Key Input Processing, 11610): `wait`
     # mirrors the command's own no-timeout flag, `accepted` the set of keys
     # (see KeyInputAccepted below) #resolve_key_input should sample.
-    KeyInputRequest = Struct.new(:wait, :accepted, keyword_init: true)
+    class KeyInputRequest
+      attr_accessor :wait, :accepted
+
+      def initialize
+        @wait = false
+        @accepted = nil
+      end
+    end
 
     # #do_key_input's own per-button accept-flag record -- one flag per
     # KEY_INPUT_BUTTONS entry (decision/cancel/shift/down/left/right/up),
     # plus `numbers`/`operators` (RPG2003's own whole-group flags -- see
     # KEY_INPUT_GROUPS's own comment for why individual digit/operator keys
-    # never get their own member here).
-    KeyInputAccepted = Struct.new(
-      :decision, :cancel, :shift, :down, :left, :right, :up, :numbers, :operators,
-      keyword_init: true
-    )
+    # never get their own member here). #do_key_input sets every flag.
+    class KeyInputAccepted
+      attr_accessor :decision, :cancel, :shift, :down, :left, :right, :up, :numbers, :operators
+
+      def initialize
+        @decision = false
+        @cancel = false
+        @shift = false
+        @down = false
+        @left = false
+        @right = false
+        @up = false
+        @numbers = false
+        @operators = false
+      end
+
+      # #key_input_result and Scene::Map#resolve_key_input look a flag up by
+      # a key symbol computed from KEY_INPUT_CODES/KEY_INPUT_BUTTONS, so this
+      # keeps the Struct's symbol lookup, and its NameError for a symbol
+      # that names no flag.
+      def [](key)
+        case key
+        when :decision then @decision
+        when :cancel then @cancel
+        when :shift then @shift
+        when :down then @down
+        when :left then @left
+        when :right then @right
+        when :up then @up
+        when :numbers then @numbers
+        when :operators then @operators
+        else raise NameError.new("no member '#{key}' in struct", key)
+        end
+      end
+    end
 
     # #diagnostic_position's own return shape (see that method's own
     # comment).
-    DiagnosticPosition = Struct.new(:index, :size, :call_depth, keyword_init: true)
+    class DiagnosticPosition
+      attr_accessor :index, :size, :call_depth
+
+      def initialize
+        @index = 0
+        @size = 0
+        @call_depth = 0
+      end
+    end
 
     # bc2cpp: (Game::State)
     def initialize(state)
@@ -976,7 +1058,7 @@ module Game
       # Through the roster, matching the lookup #do_name_input opened the request
       # with — otherwise naming a companion who is out of the party would put up
       # the widget and then quietly drop what was typed.
-      actor = req && party.roster[req[:actor_id]]
+      actor = req && party.roster[req.actor_id]
       actor.name = name if actor && name && !name.empty?
       reset_waits
     end
@@ -1136,7 +1218,7 @@ module Game
     # accepts, or 0 when none of the accepted keys are active. Called by the
     # owning scene once it has sampled real input.
     def key_input_result(active)
-      acc = @key_input_request && @key_input_request[:accepted]
+      acc = @key_input_request && @key_input_request.accepted
       return 0 unless acc
       KEY_INPUT_CODES.each do |sym, code|
         group = KEY_INPUT_GROUPS[sym] || sym
@@ -1643,24 +1725,24 @@ module Game
         # RPG2003's Numbers/Operators layout: still a single flag for the
         # whole D-pad, not the individual Shift/arrows RPG2000 1.50+ offers.
         if size < 10 && cmd.param(2) != 0
-          accepted[:down] = accepted[:left] = true
-          accepted[:right] = accepted[:up] = true
+          accepted.down = accepted.left = true
+          accepted.right = accepted.up = true
         end
-        accepted[:numbers] = cmd.param(5) != 0
-        accepted[:operators] = cmd.param(6) != 0
+        accepted.numbers = cmd.param(5) != 0
+        accepted.operators = cmd.param(6) != 0
       elsif size < 6
         # Pre-1.50: a single flag enables the whole D-pad, no Shift.
         if cmd.param(2) != 0
-          accepted[:down] = accepted[:left] = true
-          accepted[:right] = accepted[:up] = true
+          accepted.down = accepted.left = true
+          accepted.right = accepted.up = true
         end
       else
         # RPG2000 1.50+, or that same layout carried into an RPG2003 project.
-        accepted[:shift] = cmd.param(5) != 0
-        accepted[:down]  = cmd.param(6) != 0
-        accepted[:left]  = cmd.param(7) != 0
-        accepted[:right] = cmd.param(8) != 0
-        accepted[:up]    = cmd.param(9) != 0
+        accepted.shift = cmd.param(5) != 0
+        accepted.down  = cmd.param(6) != 0
+        accepted.left  = cmd.param(7) != 0
+        accepted.right = cmd.param(8) != 0
+        accepted.up    = cmd.param(9) != 0
       end
       @input_variable = var_id
       req = KeyInputRequest.new
@@ -1794,8 +1876,8 @@ module Game
       req.defeat_game_over = cmd.param(4) == 0
       @battle_request = req
       case cmd.param(2)
-      when 1 then @battle_request[:background] = cmd.string.to_s
-      when 2 then @battle_request[:terrain_id] = cmd.param(8)
+      when 1 then @battle_request.background = cmd.string.to_s
+      when 2 then @battle_request.terrain_id = cmd.param(8)
       end
       @wait_kind = :battle
       @waiting = true
