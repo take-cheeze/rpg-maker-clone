@@ -1,7 +1,7 @@
-- **bc2cpp builds** no longer read embedded instance variables as `nil`. A
-  devirtualized `attr_reader`/`attr_writer` call on an embedded ivar used the
-  ordinary ivar table instead of the RData struct. It affected 66 call sites,
-  including the party's gold in the menu, status and shop screens, actor
-  levels, message options and random-encounter counting. All ivar access now
-  goes through one helper (ADR 0204). The CI check
-  `scripts/bc2cpp_embedded_ivar_access_check.rb` guards it.
+- **bc2cpp**: every instance-variable access in generated code now goes
+  through one helper that picks the ivar table or the embedded RData struct,
+  so no emitter can read an embedded ivar as `nil` again. It also closes two
+  latent holes: a runtime-def/EXEC body no longer compiles struct access
+  against the wrong `self`, and an ivar a subclass method touches is never
+  embedded. The CI check `scripts/bc2cpp_embedded_ivar_access_check.rb`
+  compiles and runs a fixture against real mruby. See ADR 0205.

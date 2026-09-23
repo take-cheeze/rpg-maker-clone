@@ -1,4 +1,4 @@
-# 0204. bc2cpp reaches an embedded ivar only through IVAR_ACCESS
+# 0205. bc2cpp reaches an embedded ivar only through IVAR_ACCESS
 
 Date: 2026-09-23
 
@@ -16,7 +16,10 @@ checked for embedding. IVAR_ACCESSOR_DEVIRT and LEXICAL_SELF_IVAR_ACCESSOR did
 not check, and always emitted `mrb_iv_get`/`mrb_iv_set`.
 
 The shipped output had 66 such sites, all in `mruby-rpg2k-compiled` (45
-IVAR_ACCESSOR, 20 IVAR_ACCESSOR/ELEMENT, 1 LEXICAL_SELF). Examples:
+IVAR_ACCESSOR, 20 IVAR_ACCESSOR/ELEMENT, 1 LEXICAL_SELF). A parallel change
+(#1896) made those two accessor paths call the synthesized accessor, which
+removes all 66; this ADR puts every emitter behind one helper instead, so the
+storage choice is made in one place. Examples of what was affected:
 
 - `Game::Party#gold`, read by `Menu#draw_gold_window`, `StatusMenu#draw_gold`,
   `Shop#max_buy`, the shop and inn gold windows, and `State#to_lsd`.

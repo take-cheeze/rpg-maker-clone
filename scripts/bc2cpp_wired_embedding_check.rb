@@ -68,6 +68,25 @@ BC2CPP_COMPILED_GEMS.each do |name, gem|
     register = File.read("#{root}/#{name}/src/register.cxx")
     generated = File.read(generated_path)
     identifiers = (register.scan(REGISTRATION_CALL) + generated.scan(REGISTRATION_CALL)).flatten.to_set
+    # EMBEDDED_ACCESSOR_DEVIRT: an attr_reader/writer devirtualized for an
+    # owner whose ivar is embedded must go through the synthesized struct
+    # accessor -- the ivar table holds nil there (Game::Actor#id read via
+    # mrb_iv_get broke RPG2003 battles). Every devirtualized accessor site
+    # carries an `IVAR_ACCESSOR... :name -> Owner#@ivar` note; the code right
+    # after it must not touch the ivar table for an embedded field.
+    embedded = generated.scan(/^struct (\w+)_ivars \{\n(.*?)^\};/m).to_h do |sname, body|
+      [sname, body.scan(/^\s+\w+ (\w+);/).flatten.to_set]
+    end
+    generated.scan(%r{// (?:LEXICAL_SELF_)?IVAR_ACCESSOR\S* :\S+ -> (\S+)#@(\w+) .*\n((?:.*\n){1,3})}) do |owner, ivar, code|
+      next unless embedded[owner.gsub(/[^a-zA-Z0-9_]/, '_')]&.include?(ivar)
+
+      site = code[/\A(?:  if \(.*\) \{\n)?.*\n/]
+      next unless site.match?(/mrb_iv_[gs]et\(/)
+
+      puts "  FAIL #{owner}#@#{ivar}: accessor devirtualized to the ivar table, but the ivar is embedded"
+      failures << "#{owner}#@#{ivar} (accessor)"
+    end
+
     wired.each do |owner|
       owned = entries.select { |_, o, _| o == owner }
       missing = owned.reject { |entry, _, _| identifiers.include?(entry) }.map { |_, _, m| m }
