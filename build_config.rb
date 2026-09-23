@@ -359,7 +359,11 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # above) as the unconditional fallback for everything this doesn't
   # override. Never part of the default build for any target -- this whole
   # gem doesn't even exist in the gem list unless the env var is set.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled" if bc2cpp
+  # docs/adr/0210: on single-format builds the closed world is all the Ruby
+  # there is, so the compiled gems may replace a proven-dead by-name fallback
+  # with a raise (tools/bc2cpp/compiled_gems.rb re-checks the real gem list).
+  closed_world = proc { enable_bc2cpp_closed_world if single_format_only }
+  conf.gem "#{MRUBY_ROOT}/../../mruby-lcf-compiled", &closed_world if bc2cpp
   # mruby-rgss owns the shared RGSS namespace (Bitmap, Sprite, Viewport, Window,
   # ...). Every maker gem below loads after it and *reopens* that namespace, so a
   # class one of them defines under RGSS replaces mruby-rgss's for the whole
@@ -370,12 +374,12 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # docs/adr/0139: same opt-in mechanism as mruby-lcf-compiled/
   # mruby-rpg2k-compiled above, this time for all 17 of RGSS::Sprite's
   # real bytecode-defined methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled" if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rgss-compiled", &closed_world if bc2cpp
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k"
   # docs/adr/0139's own follow-up: same opt-in mechanism, this time for 25
   # of Game::Picture's 26 real methods (everything but #initialize), plus
   # (docs/adr/0139) all 6 of Game::EnemyAction's own real methods.
-  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled" if bc2cpp
+  conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled", &closed_world if bc2cpp
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"
