@@ -14,7 +14,7 @@
 #     BC2CPP_HOT_ONLY) so every compiled method can show up.
 #
 #   ruby scripts/bc2cpp_hot_profile.rb select --gen-dir build/mruby/host/mrbgems \
-#        [--threshold 0.99] /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
+#        [--threshold 0.98] /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
 #     Sums self Ir per compiled method over every profile and takes the
 #     smallest set covering at least --threshold of all compiled-code Ir.
 #     To that set it adds the #initialize of each class (see
@@ -137,9 +137,22 @@ module HotProfile
       end
       by_length = @methods.keys.sort_by { |k| -k.size }
       @owner_of = {}
+      # ATTR_STRUCT_DEVIRT's synthesized accessors (`Owner_ivar[_eq][_impl]`)
+      # read and write the embedded struct. They exist only while the ivar
+      # embeds, which needs the class's compiled #initialize, so their Ir is
+      # credited to that #initialize: a record class like
+      # RPG2k::Scene::Map::MapEventState has no hot bytecode method of its
+      # own, but its accessors run per event per frame.
+      synthesized = {}
+      lines.each do |l|
+        next unless (m = l.match(/\A\/\/ (\S+)#(\w+)=? -- synthesized attr_(?:reader|writer) override/))
+
+        base = "#{m[1].gsub(/[^a-zA-Z0-9_]/, '_')}_#{m[2]}"
+        [base, "#{base}_impl", "#{base}_eq", "#{base}_eq_impl"].each { |f| synthesized[f] = "#{m[1]}#initialize" }
+      end
       @functions.each do |name, _, _|
         cpp = by_length.find { |k| name == k || name.start_with?("#{k}_") }
-        @owner_of[name] = @methods[cpp] if cpp
+        @owner_of[name] = synthesized[name] || (@methods[cpp] if cpp)
       end
       @line_owner = []
       @functions.each { |name, a, b| (a..b).each { |ln| @line_owner[ln] = @owner_of[name] } }
@@ -377,7 +390,7 @@ end
 
 if $PROGRAM_NAME == __FILE__
   mode = ARGV.shift
-  opts = { threshold: 0.99, games: [], report: false, initializers: true }
+  opts = { threshold: 0.98, games: [], report: false, initializers: true }
   parser = OptionParser.new do |o|
     o.on('--binary PATH') { |v| opts[:binary] = v }
     o.on('--out DIR') { |v| opts[:out] = v }
@@ -412,7 +425,7 @@ if $PROGRAM_NAME == __FILE__
     if opts[:report]
       warn format('profiles: %d, total Ir %d, compiled-code Ir %d (%.1f%%), %d of %d compiled methods executed',
                   files.size, total, compiled, 100.0 * compiled / total, ir.size, all_methods.size)
-      [0.98, 0.99, 0.995, 0.999, 1.0].each do |t|
+      [0.98, 0.99, 0.995, 0.997, 0.999, 1.0].each do |t|
         set = HotProfile.select(ir, t)
         init, full = expand.call(set)
         warn format('  threshold %5.1f%%: %4d by Ir + %d initializers + %d required callees = %d, %.3f%% of compiled Ir',

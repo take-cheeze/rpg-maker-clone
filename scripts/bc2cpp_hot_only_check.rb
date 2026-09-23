@@ -93,6 +93,21 @@ check.call('but in a hot-only build only a real registration lets its bytecode g
            !WioRegisteredMethods.strippable?(entry, installed: Set.new, never_called: Set.new, hot_only: true) &&
              WioRegisteredMethods.strippable?(entry, installed: Set['Unused_entry'], never_called: Set.new, hot_only: true))
 
+# A list changes which names strip, so a stripped name can now trail a mixed
+# `public` list (RPG2k::Scene::Map#try_open_debug_menu); it must go with its def.
+Dir.mktmpdir do |dir|
+  tsv = File.join(dir, 'registered.tsv')
+  src = File.join(dir, 'in.rb')
+  out = File.join(dir, 'out.rb')
+  File.write(tsv, "HoVis\tgone\t0\tpublic\t0\n")
+  File.write(src, "class HoVis\n  private\n\n  def kept; end\n\n  def gone\n    1\n  end\n" \
+                  "  public :kept,\n         :gone\nend\n")
+  _o, st = Open3.capture2e(RbConfig.ruby, File.join(root, 'scripts/strip_wio_bc2cpp_stubs.rb'), tsv, 'HoVis', src, out)
+  stripped = st.success? ? File.read(out) : ''
+  check.call('the wio strip drops a stripped name that trails a multi-line visibility list',
+             stripped.include?('public :kept') && !stripped.include?('gone'))
+end
+
 mrbc = ENV['MRBC'] || 'mrbc'
 ENV['MRBC'] = mrbc
 require_relative '../tools/bc2cpp/bc2cpp'

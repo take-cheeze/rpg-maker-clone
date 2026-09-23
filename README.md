@@ -1031,7 +1031,7 @@
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
   `tools/bc2cpp/hot_methods.txt`. Every other method stays mruby bytecode.
-  The generated C++ shrinks from about 5.0 MB to 0.70 MB of `-Os` text.
+  The generated C++ shrinks from about 4.1 MB to 0.56 MB of `-Os` text.
   Desktop, wasm and android still compile everything. `BC2CPP_HOT_ONLY=1`
   builds the desktop binary in the same mode, and `docs/profiling.md` shows
   how to regenerate the list. See

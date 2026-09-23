@@ -298,10 +298,11 @@ ruby scripts/bc2cpp_hot_profile.rb record --binary build-full/rpg_maker_clone \
   --out /tmp/hot --game data/Nepheshel206beta/Nepheshel206Rbeta \
   --game <other game> ...
 
-# 3. Select the list: 99% of compiled-code Ir, then the classes' #initialize
-#    and the keyword/super callees those methods need.
+# 3. Select the list: 98% of compiled-code Ir (ADR 0214 has the tradeoff
+#    table), then the classes' #initialize and the keyword/super callees
+#    those methods need.
 ruby scripts/bc2cpp_hot_profile.rb select --gen-dir build-full/mruby/host/mrbgems \
-  --threshold 0.99 --report /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
+  --threshold 0.98 --report /tmp/hot/callgrind.*.out > tools/bc2cpp/hot_methods.txt
 ```
 
 Each scenario is an `RPG2k#main_loop` count driven by `--script`, not a
@@ -311,7 +312,10 @@ walking plus every main-menu screen, Marshal and `.lsd` save/load, a battle
 animation, and a boot and a walk for each extra game. Self Ir is attributed by
 source line of the generated `*_gen.cpp`, so an `_impl` inlined into its
 caller still counts for its own method. Block-fallback, rescue-try and
-nested helpers count for the method that owns them.
+nested helpers count for the method that owns them. A synthesized
+struct-field accessor counts for its class's `#initialize`, since the
+accessor exists only while that constructor compiles. That keeps record
+classes such as `RPG2k::Scene::Map::MapEventState` embedded.
 
 To check a new list, build with `BC2CPP_HOT_ONLY=1` in a fresh build
 directory and compare the two builds' Ir under callgrind. The engine-binary

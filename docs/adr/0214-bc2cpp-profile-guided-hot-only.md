@@ -9,7 +9,7 @@ Accepted
 ## Context
 
 bc2cpp's generated C++ is about four times the size of the bytecode it
-replaces. At `-Os` the RPG2k compiled gem is 4.75 MB of text over 2,190 entry
+replaces. At `-Os` the RPG2k compiled gem is 3.91 MB of text over 2,344 entry
 points, with a long tail. A callgrind run of a normal session executes only a
 small part of it. psp, wio and maix (build_config.rb's `single_format_only`)
 are limited by flash, not speed, so most of those bytes buy nothing.
@@ -94,7 +94,13 @@ today's:
    so its bytecode `def`, the only implementation it has, is never stripped.
    In a hot-only build `WioRegisteredMethods.strippable?` also drops the
    ADR 0203 exemption that let an unregistered name strip, so only a real
-   registration counts.
+   registration counts. A list also changes which names strip, so
+   `strip_wio_bc2cpp_stubs.rb` now also drops a stripped name that ends a
+   mixed `public :kept, :stripped` list. Before the fix, it shrank the list
+   only up to the last kept name. The 99.7% list hit this: it strips
+   `RPG2k::Scene::Map#try_open_debug_menu`, and that build then failed to
+   load mrblib with a `NameError`. With the fix, it boots and passes the
+   same correctness runs as the other builds.
 
 ### Scope
 
@@ -129,12 +135,17 @@ run.
 `select` sums self Ir per method and takes the smallest set that covers the
 threshold of all compiled-code Ir. The build carries `-g`, so Ir is
 attributed by source line of the generated `*_gen.cpp`. That stays correct
-when an optimizing build inlines an `_impl` into its caller. Blocks and the `block_fallback`, `rescue_try` and nested
-helpers count for the method that owns them. Two closures follow:
+when an optimizing build inlines an `_impl` into its caller. Blocks and the
+`block_fallback`, `rescue_try` and nested helpers count for the method that
+owns them. Two closures follow:
 
 - **The `#initialize` of each class with a hot method.** Excluding a
   once-per-object constructor un-embeds every ivar of the class. That
   happened in the first measurement: the embedding classes fell from 34 to 1.
+  A record class whose only bytecode method is `#initialize` (ADR 0215's
+  `MapEventState` and friends) is used through its synthesized struct
+  accessors instead. The Ir of those accessors counts for that
+  `#initialize`, since the accessors exist only while it compiles.
 - **Every keyword-call or `super` target of a listed method, to a fixpoint.**
   bc2cpp has no dynamic form for either, so without its target the caller
   itself stops compiling. That hit `RPG2k::Scene::Map#update` through
@@ -145,52 +156,61 @@ the checked-in list.
 
 ## Consequences
 
-Measured on the checked-in profile. There are 12 callgrind profiles, and
-1,245 of 2,291 compiled methods executed at all.
+These figures were measured on master after ADR 0215 (the rpg2k Structs became
+plain classes), ADR 0216 (outlined getidx) and #1911 (LCF `[]` access without
+`method_missing`). Across 12 callgrind profiles, 1,259 of the 2,307 compiled
+methods executed at all.
 
-| threshold | methods (by Ir + init + required) | rpg2k `-Os` | lcf | rgss | total | map | battle 6 | walk + menus | not profiled |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| full compile | 2,291 | 4,750,480 | 62,561 | 186,691 | 4,999,732 | — | — | — | — |
-| 98% | 179 + 17 + 6 = 202 | 591,318 | 29,867 | 14,014 | 635,199 | +3.3% | +5.0% | +4.6% | +8.1% |
-| **99%** (checked in) | 220 + 22 + 6 = 248 | 654,583 | 34,942 | 14,026 | **703,551** | +1.6% | +3.2% | +3.1% | +7.0% |
-| 99.5% | 267 + 22 + 6 = 295 | 737,871 | 38,321 | 20,196 | 796,388 | +1.3% | +2.7% | +2.6% | +6.6% |
+The checked-in list uses the **98%** threshold. It is the cheapest threshold
+measured at which every profiled scenario stays within the roughly +3%
+engine-Ir budget; its worst case is +1.9%.
 
-The speed columns are engine-binary Ir deltas against the full compile, as in
-the table further down. Going from 99% to 99.5% costs 93 KB for about half a
-point. Going from 99% to 98% saves 68 KB for one to two points.
+| threshold | methods (by Ir + init + required) | rpg2k `-Os` | lcf | rgss | total | wio closed world | wio bytecode kept | net wio flash |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| full compile | 2,307 | 3,906,508 | 51,100 | 167,909 | 4,125,517 | 4,017,972 | 0 | 0 |
+| **98%** (checked in) | 189 + 20 + 6 = 215 | 525,115 | 24,624 | 10,934 | **560,673** | 551,144 | 375,483 | **−3.09 MB** |
+| 99% | 232 + 23 + 6 = 261 | 588,272 | 28,901 | 10,964 | 628,137 | 617,081 | 366,652 | −3.03 MB |
+| 99.5% | 282 + 21 + 6 = 309 | 696,868 | 31,019 | 15,843 | 743,730 | 732,459 | 355,795 | −2.93 MB |
+| 99.7% | 351 | 858,369 | 33,660 | 20,174 | 912,203 | 898,897 | 345,335 | −2.77 MB |
 
-These are x86-64 g++ `-Os` text figures, measured by compiling each gem's
-`register.cxx` with the build's own flags. On wio, which also runs
-closed-world, rpg2k goes from 4,643,149 to 644,051. The flash the bytecode
-reclaims shrinks accordingly. The wio mrblib of mruby-rpg2k, after its wio
-file exclusions and the stub strip, grows from 42,198 to 410,248 bytes of
-`mrbc` output (+368,050), because the excluded methods keep their `def`s.
-lcf and rgss bytecode is never stripped, so it does not change. Net wio
-flash estimate: 4,892,401 − 693,019 (compiled text, closed world) − 368,050
-(bytecode kept) = **−3.83 MB**.
+Sizes are x86-64 g++ `-Os` text in bytes, measured by compiling each gem's
+`register.cxx` with the build's own flags. "wio closed world" is the same
+total under CLOSED_WORLD (ADR 0210), as wio builds it. "wio bytecode kept" is
+the growth of mruby-rpg2k's wio mrblib `mrbc` output after the file
+exclusions and the stub strip: 46,060 bytes in the full compile against
+421,543 at 98%. The excluded methods keep their `def`s. lcf and rgss bytecode
+is never stripped, so it does not change. Net wio flash is the closed-world
+text saved minus the bytecode kept.
 
-Speed is callgrind Ir of the engine binary (SDL and libc are excluded: the
-SDL blit under xvfb swings the process total by up to 45% from run to run), full compile
-against hot-only, on the default desktop build:
+Speed is callgrind Ir of the engine binary, full compile against hot-only, on
+the default desktop build. SDL and libc are excluded: the SDL blit under xvfb
+swings the process total by up to 45% from run to run.
 
-| scenario | full | hot-only 99% | delta |
-| --- | ---: | ---: | ---: |
-| map idle | 8.579 G | 8.715 G | +1.6% |
-| battle troop 1 | 11.475 G | 11.745 G | +2.4% |
-| battle troop 6 | 14.981 G | 15.455 G | +3.2% |
-| walk + menus | 10.882 G | 11.215 G | +3.1% |
-| save/load | 25.385 G | 25.532 G | +0.6% |
-| histoire walk | 11.845 G | 12.213 G | +3.1% |
-| yumenikki walk | 12.665 G | 12.739 G | +0.6% |
-| **not profiled**: Nepheshel map 10, walk + menus | 18.336 G | 19.618 G | +7.0% |
+| scenario | full | 98% | 99% | 99.5% |
+| --- | ---: | ---: | ---: | ---: |
+| map idle | 8.679 G | +0.2% | +0.5% | −0.8% |
+| battle troop 1 | 11.686 G | +0.4% | +0.5% | −0.7% |
+| battle troop 6 | 15.253 G | +1.3% | +1.0% | −0.2% |
+| walk + menus | 11.025 G | +0.7% | +0.6% | −0.4% |
+| save/load | 25.481 G | +0.1% | +0.2% | −0.4% |
+| battle animation | 9.432 G | −1.1% | −0.4% | −1.5% |
+| histoire walk | 12.060 G | +1.9% | +1.3% | −0.1% |
+| yumenikki walk | 12.379 G | +1.2% | +1.0% | −0.1% |
+| **not profiled**: Nepheshel map 10, walk + menus | 18.296 G | −1.8% | −2.1% | −2.6% |
 
-The profiled scenarios stay within about 3%. The one scenario kept out of
-the profile costs 7%. That is the price of the profile's coverage: code no
-scenario reached runs interpreted. An earlier 9-profile list was checked
-against histoire before histoire joined the profile. It cost 10% there,
-mostly in `Game::Interpreter#do_end_loop`, which Nepheshel never ran. The
-threshold and the scenario list are therefore the knobs, and a new game
-genre in the profile helps more than a higher threshold.
+A negative delta means the hot-only binary executed fewer engine
+instructions than the full compile for the same frames. This was not traced
+to a cause. The kk1.12 walk is left out of the table because both builds end
+it the same way: New Game fails in the game's own script, as it does under
+the interpreter, and the driver's menu keys then reach Shutdown. The
+99.7% build was not timed, because 99.5% already cost nothing measurable.
+Going from 98% to 99% costs 67 KB of text for at most 0.6 points. Going
+from 99% to 99.5% costs 116 KB.
+
+The threshold and the scenario list are the knobs. An earlier list tried on
+histoire before histoire joined the profile cost 10%, mostly in
+`Game::Interpreter#do_end_loop`, which Nepheshel never ran. Adding a new game
+genre to the profile helps more than raising the threshold.
 
 The desktop mruby gems build without `-O` (`enable_debug`, then `-O0` is
 removed), so these Ir ratios understate what a `-Os` flash build would lose
@@ -198,20 +218,23 @@ per interpreted call. Treat them as a lower bound.
 
 Other consequences:
 
-- Registering the static-dispatch-only entries again costs a little flash. It
-  is part of the hot-only figures above.
-- `Game::State#to_lsd`/`.from_lsd` (98.6 and 92.6 KB at `-Os`, the two
-  largest functions) are cold: two saves and one load in the save/load scenario, under 0.01% of
-  compiled Ir each. So are
-  the other large one-off methods (battle skill resolution, `State.load`,
-  `Message.scan`, shop drawing).
-- A full-compile desktop run of kk1.12 crashes at New Game with `TypeError:
-  bc2cpp: expected Array receiver for inlined #each`. The cause is
-  `RPG2k#start_new_game`'s rescue path, where a register that holds the
-  rescued exception reaches an inlined `@scenes.each`. This is a bug in the
-  existing compiler, and the hot-only and interpreted builds do not have it:
-  they log "Failed to start new game" as the interpreter does. It is not
-  fixed here.
+- The embedding classes go from 50 in the full compile to 12 at 98%. The
+  kept ones include the ADR 0215 record classes the profile reaches:
+  `RPG2k::Scene::Map::MapEventState` (its synthesized accessors run per event
+  per frame, and their Ir counts for its `#initialize`),
+  `Game::CommonEvent::CommonEventRecord` and
+  `Game::Interpreter::KeyInputAccepted`. Cold ones such as `MessageState`
+  stay in the iv_tbl and run as bytecode.
+- Registering the static-dispatch-only entries again costs a little flash.
+  It is part of the hot-only figures above.
+- `Game::State#to_lsd`/`.from_lsd`, the two largest functions, are cold: two
+  saves and one load in the save/load scenario, under 0.01% of compiled Ir
+  each. So are the other large one-off methods (battle skill resolution,
+  `State.load`, `Message.scan`, `MoveRoute#execute`).
+- Two existing compiler bugs that earlier profiles ran into are fixed on
+  master. #1911 fixed the `Game::Picture#zoom` direct call, which made the
+  full compile skip battle-animation cells. #1909 fixed the kk1.12 New Game
+  crash in `RPG2k#start_new_game`'s rescue path.
 - `scripts/bc2cpp_hot_only_check.rb` (in the CI `bc2cpp` job) covers the
   mechanism. It runs on a fixture world and against the real mruby core, and
   checks that the checked-in list names only existing methods.
