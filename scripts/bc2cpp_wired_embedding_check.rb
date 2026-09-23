@@ -26,6 +26,7 @@ require 'open3'
 require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp/static_dispatch_unregistered'
 
 root = File.expand_path('..', __dir__)
 mrbc = ENV['MRBC'] || 'mrbc'
@@ -88,7 +89,11 @@ BC2CPP_COMPILED_GEMS.each do |name, gem|
     end
 
     wired.each do |owner|
-      owned = entries.select { |_, o, _| o == owner }
+      # A STATIC_DISPATCH_UNREGISTERED entry (docs/adr/0203) is deliberately
+      # not installed: proven no runtime lookup can reach its name, so no
+      # interpreted fallback -- the hazard this check exists for -- can ever
+      # run for it. scripts/bc2cpp_static_dispatch_check.rb re-proves that.
+      owned = entries.select { |_, o, m| o == owner && !STATIC_DISPATCH_UNREGISTERED.include?("#{o}##{m}") }
       missing = owned.reject { |entry, _, _| identifiers.include?(entry) }.map { |_, _, m| m }
       ok = missing.empty?
       puts "  #{ok ? 'ok  ' : 'FAIL'} #{owner}: #{owned.size - missing.size}/#{owned.size} compiled entry points installed by #{name}" \

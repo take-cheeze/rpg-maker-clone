@@ -163,7 +163,12 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
   # `compiled_gem` (from a different base gem's own mrbgem.rake, in the
   # same build) reuses this exact task rather than re-running bc2cpp.rb
   # a second time for the same answer.
-  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp] do |t|
+  # Every tools/bc2cpp/*.rb, not a hand list: the probe require_relative's
+  # never_called_registrations.rb/static_dispatch_unregistered.rb too, and an
+  # edit to either changes this TSV (same STALE_REQUIRE_RELATIVE_DEPS reason
+  # the compiled gems' own mrbgem.rake globs this directory).
+  file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp,
+                          *Dir[File.expand_path('tools/bc2cpp/*.rb', __dir__)]].uniq do |t|
     FileUtils.mkdir_p File.dirname(registered_tsv), verbose: true
     mrbc = spec.build.mrbcfile.to_s
     cmd = Shellwords.join([RbConfig.ruby, probe_script, compiled_gem, repo_root, mrbc])

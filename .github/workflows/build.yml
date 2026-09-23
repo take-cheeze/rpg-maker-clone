@@ -934,6 +934,10 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
+          # Re-proves every STATIC_DISPATCH_UNREGISTERED name (docs/adr/0203):
+          # a new dynamic reference to one is a NoMethodError, so it fails here.
+          MRBC="$mrbc" ruby scripts/bc2cpp_static_dispatch_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_owner_registration_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_mono_embed_guard_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
