@@ -193,8 +193,11 @@ end
 # The class a mrb_iv_* call is made on: the exact-class guard just above it, or
 # self in the method the enclosing function was compiled from.
 def site_class(lines, index, recv, func, slot_paths, by_sanitized)
-  guard = lines[[index - 3, 0].max..index].join.scan(/bc2cpp_owner_class_(\d+)\(M\) == mrb_obj_class\(M, #{Regexp.escape(recv)}\)/).last
-  return slot_paths.fetch(guard.first.to_i) if guard
+  # The nearest guard line; its first compare names the owner (INHERITED_GUARD
+  # appends subclasses that share the owner's accessor after it).
+  guard_re = /bc2cpp_owner_class_(\d+)\(M\) == (?:mrb_obj_class\(M, #{Regexp.escape(recv)}\)|bc2cpp_recv_class)/
+  guard = lines[[index - 3, 0].max..index].reverse.lazy.filter_map { |line| line[guard_re, 1] }.first
+  return slot_paths.fetch(guard.to_i) if guard
   return nil unless recv == 'self' && func
 
   prefix = by_sanitized.keys.select { |s| func.start_with?("#{s}_") }.max_by(&:size)
