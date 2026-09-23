@@ -958,6 +958,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_integer_const_inline_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_packed_attr_args_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_rescue_live_in_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
