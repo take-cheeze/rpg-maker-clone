@@ -1053,6 +1053,11 @@ jobs:
           - name: wio strip scripts still apply
             run: ruby scripts/wio_strip_scripts_check.rb
 
+          # ADR 0217: the compact CP932 tables (and wio's scan encoder) must
+          # agree with ADR 0111's pair tables on every 16-bit input.
+          - name: CP932 table lookups match the reference
+            run: ruby scripts/cp932_tables_check.rb
+
           - name: LCF test-bed smoke check
             run: ruby scripts/lcf_testbed_check.rb
 

@@ -4,7 +4,8 @@ Date: 2026-09-09
 
 ## Status
 
-Accepted
+Accepted. Amended by [ADR 0217](0217-cp932-compact-tables.md): wio drops the
+reverse table, and every target decodes from a compact table.
 
 ## Context
 
