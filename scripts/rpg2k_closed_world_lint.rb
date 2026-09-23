@@ -161,7 +161,8 @@ files.each do |f|
   offences.concat(o)
   malformed.concat(bad)
 end
-counts = offences.group_by(&:key).transform_values(&:size)
+# Defaults to 0: a baseline entry whose offences are all fixed is simply absent.
+counts = Hash.new(0).merge(offences.group_by(&:key).transform_values(&:size))
 
 if ARGV.include?('--regenerate-baseline')
   grown = counts.select { |key, n| n > load_baseline[key] }
