@@ -21042,8 +21042,8 @@ not yet verified:
   now-rare case where two rolled totals still tie exactly (not because it's
   RPG_RT's own rule — it isn't — but so the same inputs still reproduce the
   same output for testing). Built with `[battler, roll]` pairs rather than a
-  `Hash` keyed by battler, since `Combatant` is a `Struct` whose `#hash`/
-  `#eql?` compare field values, not identity — two battlers that happen to
+  `Hash` keyed by battler, since `Combatant` was then a `Struct` whose `#hash`/
+  `#eql?` compared field values, not identity — two battlers that happen to
   share identical stats (same-type enemies) would otherwise collide as one
   Hash key. Covered by a new `scripts/rpg2k_logic_check.rb` check pinning
   two battlers tied on raw Agility landing in opposite orders under two

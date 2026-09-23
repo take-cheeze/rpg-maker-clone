@@ -4279,7 +4279,7 @@ check 'Erase Event removes the running event from the map' do
   ok chars(scene)[1], 'event present before it runs'
   5.times { scene.update }
   evs = scene.instance_variable_get(:@events)
-  ok evs.none? { |e| e[:id] == 1 }, 'the event is gone from the runtime list'
+  ok evs.none? { |e| e.id == 1 }, 'the event is gone from the runtime list'
   tiles = scene.instance_variable_get(:@event_tiles)
   ok !tiles[[2, 2]], 'its occupied tile is cleared (no marker, no collision)'
 end
@@ -4324,7 +4324,7 @@ check 'Erase Event stops a parallel process that erases itself' do
   10.times { scene.update }
   st = scene.instance_variable_get(:@state)
   eq 1, st.variables[1], 'the process ran once, then erased itself (no re-loop)'
-  ok scene.instance_variable_get(:@events).none? { |e| e[:id] == 1 },
+  ok scene.instance_variable_get(:@events).none? { |e| e.id == 1 },
      'erased from the event list'
   ok scene.instance_variable_get(:@parallels).empty?,
      'its background process was removed'

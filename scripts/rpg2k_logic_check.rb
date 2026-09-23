@@ -1133,13 +1133,13 @@ check 'Message.scan\'s \N[]-id-0-means-party-leader convenience only applies ' \
 
   seen.clear
   s2 = Game::Message.scan('\N[]', vars, names)
-  eq '', s2.segments.map { |seg| seg[:text] }.join,
+  eq '', s2.segments.map { |seg| seg.text }.join,
      'a bare \\N[] with nothing parsed resolves to blank, not the leader'
   ok !seen.include?(0), 'the leader lookup (id 0) must never be attempted for an unparsed bracket'
 
   seen.clear
   s3 = Game::Message.scan('\N[x]', vars, names)
-  eq '', s3.segments.map { |seg| seg[:text] }.join,
+  eq '', s3.segments.map { |seg| seg.text }.join,
      'a non-digit, non-\\V[] bracket body resolves to blank too'
 
   seen.clear
