@@ -235,6 +235,8 @@ report << "annotation candidates (opaque argument, unresolved): #{count(err, 'an
 # was feeding), so a drift in it is exactly the kind of thing this file's own
 # git diff exists to make visible.
 report << "integer-valued constants proven (INTEGER_CONSTANT_PROOF): #{count(err, 'integer-valued constants proven (INTEGER_CONSTANT_PROOF)', placeholder: '(none)')}\n"
+# UNIQUE_CLASS_NAME: bare class names canonicalized to their one definition.
+report << "bare class names with one definition (UNIQUE_CLASS_NAME): #{count(err, 'bare class names with one definition (UNIQUE_CLASS_NAME)')}\n"
 # FIXNUM_RETURN_PROOF: bare method names whose one closed-world definition
 # provably returns a Fixnum on every return path -- FIXNUM_OPERAND_PROOF's
 # own sixth proof source. Tracked here for exactly the reason the constant
