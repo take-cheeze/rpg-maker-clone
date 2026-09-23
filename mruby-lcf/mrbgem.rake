@@ -105,8 +105,8 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   # `param`), Tree 1 (`initialize`), Sections 4 (`initialize`/`[]`/`key?`/
   # `add`), Array1D 5 (`[]`/`[]=`/`key?`/`int16_values`/`delete`), Array2D 2
   # (`[]`/`[]=`), StringIO 1 (`ungetbyte`, this project's own real reopening
-  # of mruby-stringio's `StringIO` -- see compiled_gems.rb's own round-31
-  # comment) -- all seven defined in lcf.rb.
+  # of mruby-stringio's `StringIO` -- see the StringIO note in
+  # compiled_gems.rb's mruby-lcf-compiled entry) -- all seven defined in lcf.rb.
   #
   # `LCF::EventCommand#initialize`/`LCF::MoveCommand#initialize` are also
   # named in bc2cpp.rb's own NATIVE_ARG_TARGETS allowlist (their own

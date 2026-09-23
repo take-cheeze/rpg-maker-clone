@@ -22,7 +22,8 @@ evidence -- this project's own `docs/rpgxp-rgss-api-gap.md`/
 
 Audited, individually, every one of bc2cpp.rb's own 29 "never called"
 entries for `mruby-rgss-compiled` against real evidence. **Zero qualify for
-pruning.** The full per-entry verdict and methodology is recorded in
+pruning.** The four criteria and a condensed per-entry verdict (which
+criteria clear each entry) are recorded in
 `tools/bc2cpp/rgss_confirmed_unused.rb` (a real, checked-in file exporting
 an intentionally empty `Set`, kept so the investigation is not repeated
 from scratch by a later round, and so a genuinely new candidate has a

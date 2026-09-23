@@ -82,8 +82,8 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   #
   # mruby's own core (Array/Hash/String/Kernel/Symbol/...) is the exact
   # same kind of gap, just against the standard library instead of RGSS --
-  # see compiled_gems.rb's own core_native_srcs comment for the real,
-  # further collisions (:delete, :puts, :resume, ...) this found.
+  # see compiled_gems.rb's own core_native_srcs comment (ADR 0139 lists the
+  # further collisions this found: :delete, :puts, :resume, ...).
   #
   # external_gem_native_srcs (compiled_gems.rb) closes the same gap one
   # level further out: mruby-marshal/mruby-onig-regexp/mruby-stringio each

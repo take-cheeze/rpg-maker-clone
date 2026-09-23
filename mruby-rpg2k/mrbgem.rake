@@ -879,7 +879,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Ground truth (a real `wio_registered_methods.rb` run against
   # `mruby-rpg2k-compiled`, never hand-counted): 173 real registered
   # methods, confirming both round 38's own forward-looking count and
-  # `tools/bc2cpp/compiled_gems.rb`'s own real emission-owner writeup
+  # ADR 0139's Game::Interpreter emission-owner writeup
   # exactly ("173 of its own 207 real bytecode-defined methods... compile
   # clean"). `Game::Interpreter`'s own real class body is defined in
   # `mrblib/interpreter.rb` (confirmed directly, `grep -rn 'class
@@ -1050,7 +1050,7 @@ MRuby::Gem::Specification.new('mruby-rpg2k') do |spec|
   # Ground truth (a real `wio_registered_methods.rb` run against
   # `mruby-rpg2k-compiled`, never hand-counted): 223 real registered
   # methods, confirming both round 38's own forward-looking count and
-  # `tools/bc2cpp/compiled_gems.rb`'s own real emission-owner writeup
+  # ADR 0139's RPG2k::Scene::Map emission-owner writeup
   # exactly. Unlike every `Game::*` owner rounds 38-42 covered,
   # `RPG2k::Scene::Map` has no partial-owner reopening anywhere: a whole-gem
   # `grep -rn 'class Map'` finds exactly one real class body defining it,
