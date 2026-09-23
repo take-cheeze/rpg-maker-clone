@@ -94,28 +94,24 @@ way; the check harnesses' stand-in records gained `[]` where they lacked it
   modifiers in `Scene::Map` are unchanged in number, but they now read
   `u[:parallax_flag] rescue false` and so on, so their baseline entries were
   re-keyed (`--accept-new`) rather than added.
-- Compiled size grows. x86-64 `-Os` `.text` of each compiled gem's
-  `register.o` (the build's own flags plus `-Os`), origin/master to this
-  change:
+- Compiled size grows slightly. bc2cpp cannot type most receivers, so every
+  `x[:name]` is an untyped `GETIDX`: 2,320 sites against 1,486 before. Since
+  ADR 0216 each generic site is one call to the outlined `bc2cpp_getidx`
+  helper, which calls the compiled `Array1D#[]` directly. A dotted read of a
+  name only LCF answered used to be one `mrb_funcall` into the interpreted
+  `method_missing`. x86-64 `-Os` `.text` of each compiled gem's `register.o`
+  (the build's own flags plus `-Os`), on top of ADR 0216:
 
   | gem | before | after | change |
   | --- | ---: | ---: | ---: |
-  | mruby-lcf-compiled | 53,625 | 51,413 | -2,212 |
-  | mruby-rpg2k-compiled | 4,406,700 | 4,826,745 | +420,045 (+9.5%) |
-  | mruby-rgss-compiled | 162,907 | 163,242 | +335 |
+  | mruby-lcf-compiled | 52,398 | 51,100 | -1,298 |
+  | mruby-rpg2k-compiled | 3,871,095 | 3,913,107 | +42,012 (+1.1%) |
+  | mruby-rgss-compiled | 167,508 | 167,909 | +401 |
 
-  bc2cpp cannot type most receivers, so every `x[:name]` compiles to the
-  same inline Array/Hash/String `GETIDX` fast path plus an 8-way
-  `POLY_SMALL_N` chain over every class that defines `#[]` (LCF::Sections,
-  Array1D, Array2D, File, Game::Switches/Variables/Actors,
-  LRUBitmapCache). There are 2,814 such chains now against 1,980 before,
-  about 500 bytes each. A dotted read of a name only LCF answered used to be
-  one `mrb_funcall` that landed in the interpreted `method_missing`; the
-  chain calls the compiled `Array1D#[]` directly instead. This is more
-  than the 89 KB the rejected generated readers (ADR 0211) cost the rpg2k
-  gem. Making `[]` sites cheap is bc2cpp work and a follow-up: typing the
-  receiver (a record read from `db[:item][id]` is always an Array1D), or
-  emitting a smaller dispatch for a `[]` whose key is a Symbol literal.
+  Without ADR 0216's helper the same change cost the rpg2k gem +399,613
+  bytes (+9.4%), which is why it landed after ADR 0216. Typing the receiver
+  (a record read from `db[:item][id]` is always an Array1D) would shrink the
+  remaining cost further; that is a follow-up.
 - `tools/bc2cpp/bc2cpp.rb`'s `ZSUPER_NATIVE_TARGETS` still names the deleted
   LCF `respond_to_missing?`/`method_missing` methods. The entries are keyed
   lookups and never match now; removing them (and possibly the whole native
