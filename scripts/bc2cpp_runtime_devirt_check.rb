@@ -11,6 +11,9 @@
 #   INTEGER_LSHIFT   `a << b` on two immediate Integers uses mrb_num_shift and
 #       agrees with Integer#<< (compared on a real mruby core); overflow and
 #       MRB_INT_MIN keep the ordinary dispatch.
+#   INTEGER_UNARY    `-a`, `a.zero?`, `a.round` on an Integer are computed inline
+#       and agree with the Numeric/Integer bodies they replace; a Ruby definition
+#       reachable from Integer (reopen or unresolved mixin) keeps the dispatch.
 
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
@@ -31,11 +34,12 @@ def fixture(source, name, natives: [])
     order = dfs_order(ireps, root_label)
     blocks, block_files, block_catches = parse_disasm_blocks(disasm)
     merge!(ireps, order, blocks, block_files, block_catches)
-    registry = build_registry(ireps, root_label)[0]
+    registry, _superclass_of, _containers, included, prepended, unknown_mixins = build_registry(ireps, root_label)
     natives.each do |op|
       registry[op] = [MethodDef.new(name: op, owner: '<native>', irep: nil, visibility: :public)] + Array(registry[op])
     end
-    gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+    gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new, nil, nil, nil,
+                      included, prepended, unknown_mixins)
     yield gen, registry
   end
 end
@@ -161,6 +165,116 @@ else
       output = IO.popen(binary, err: %i[child out], &:read)
       puts output.lines.map { |l| "  #{l}" }.join
       check.call('the emitted shift agrees with Integer#<< on every value/count pair, on both the fast and fallback paths',
+                 $?.success? && output.include?(' 0 differ'))
+    end
+  end
+end
+
+UNARY = <<~'RUBY'
+  class Num
+    def neg(a); -a; end
+    def zero(a); a.zero?; end
+    def rnd(a); a.round; end
+  end
+RUBY
+UNARY_METHODS = { 'neg' => '-@', 'zero' => 'zero?', 'rnd' => 'round' }.freeze
+
+unary_code = {}
+fixture(UNARY, 'int_unary', natives: UNARY_METHODS.values) do |gen, registry|
+  UNARY_METHODS.each do |meth, op|
+    unary_code[op] = gen.compile_method(registry.fetch(meth).find { |d| d.owner == 'Num' }.irep).fetch(:code)
+  end
+end
+UNARY_METHODS.each_value do |op|
+  code = unary_code.fetch(op)
+  check.call("Integer #{op} is computed inline with the funcall kept for other receivers",
+             code.include?("INTEGER_UNARY :#{op}") && code.match?(/if \(mrb_integer_p\(r\d+\)/) &&
+               code.match?(/mrb_funcall\(M, r\d+, "#{Regexp.escape(op)}", 0\)/))
+end
+check.call('-MRB_INT_MIN (a bigint) keeps the dispatch', unary_code.fetch('-@').include?('!= MRB_INT_MIN'))
+
+# A Ruby definition Integer can reach, or an unresolved mixin, keeps the dispatch.
+[['a reopened Integer#zero?', "class Integer; def zero?; false; end; end\n", 'zero'],
+ ['an unresolved include into Integer', "MODS = [Comparable]\nclass Integer; include(*MODS); end\n", 'rnd']].each do |what, prefix, meth|
+  fixture(prefix + UNARY, 'int_unary_blocked', natives: UNARY_METHODS.values) do |gen, registry|
+    code = gen.compile_method(registry.fetch(meth).find { |d| d.owner == 'Num' }.irep).fetch(:code)
+    check.call("#{what} keeps #{UNARY_METHODS[meth]} on the dispatch", !code.include?('INTEGER_UNARY'))
+  end
+end
+
+unless core.nil? || !system('g++', '--version', out: File::NULL, err: File::NULL)
+  snippets = UNARY_METHODS.values.map do |op|
+    body = unary_code.fetch(op)[%r{// INTEGER_UNARY :#{Regexp.escape(op)}.*?\n\}\n}m]
+    recv = body[/mrb_integer_p\((r\d+)\)/, 1]
+    dest = body[/^\s*(r\d+) = /, 1]
+    [op, recv, dest, body]
+  end
+  Dir.mktmpdir do |dir|
+    source = File.join(dir, 'unary.cpp')
+    functions = snippets.map.with_index do |(_op, recv, dest, body), i|
+      <<~CPP
+        static mrb_value emitted_#{i}(mrb_state* M, mrb_value in_recv) {
+          mrb_value #{recv} = in_recv;
+          #{recv == dest ? '' : "mrb_value #{dest} = mrb_nil_value();"}
+          #{body}
+          return #{dest};
+        }
+      CPP
+    end
+    File.write(source, <<~CPP)
+      #include <mruby.h>
+      #include <mruby/error.h>
+      #include <cstdio>
+      #include <cstring>
+      extern "C" void mrb_init_mrblib(mrb_state*) {}
+      static int fallbacks = 0;
+      // The core build has no mrblib, so the reference is each replaced body
+      // spelled with its core C operations: Numeric#-@ is `0 - self`,
+      // Numeric#zero? is `self == 0`, Integer#round is int_round.
+      static mrb_value reference(mrb_state* M, mrb_value self, const char* name) {
+        if (!std::strcmp(name, "-@")) return (mrb_funcall)(M, mrb_fixnum_value(0), "-", 1, self);
+        if (!std::strcmp(name, "zero?")) return (mrb_funcall)(M, self, "==", 1, mrb_fixnum_value(0));
+        return (mrb_funcall)(M, self, "round", 0);
+      }
+      #define mrb_funcall(M, s, name, argc) (++fallbacks, reference(M, s, name))
+      #{functions.join}
+      static mrb_value (*const emitted[])(mrb_state*, mrb_value) = { #{snippets.each_index.map { |i| "emitted_#{i}" }.join(', ')} };
+      static const char* const names[] = { #{snippets.map { |op, *| "\"#{op}\"" }.join(', ')} };
+      struct Args { int op; mrb_value v; };
+      static mrb_value body(mrb_state* M, void* ud) { Args* a = (Args*)ud; return emitted[a->op](M, a->v); }
+      static mrb_value ref_body(mrb_state* M, void* ud) { Args* a = (Args*)ud; return reference(M, a->v, names[a->op]); }
+      int main() {
+        mrb_state* M = mrb_open_core();
+        mrb_value vals[] = { mrb_fixnum_value(0), mrb_fixnum_value(1), mrb_fixnum_value(-1), mrb_fixnum_value(42),
+                             mrb_int_value(M, MRB_INT_MAX), mrb_int_value(M, MRB_INT_MIN), mrb_int_value(M, MRB_INT_MIN + 1),
+                             mrb_float_value(M, 0.0), mrb_float_value(M, -2.5), mrb_float_value(M, 2.5) };
+        int bad = 0, n = 0, fast = 0, fell = 0;
+        for (int op = 0; op < #{snippets.size}; ++op) for (mrb_value v : vals) {
+          Args args = { op, v };
+          mrb_bool e1 = FALSE, e2 = FALSE;
+          fallbacks = 0;
+          mrb_value got = mrb_protect_error(M, body, &args, &e1);
+          int took_fallback = fallbacks;
+          mrb_value want = mrb_protect_error(M, ref_body, &args, &e2);
+          ++n; took_fallback ? ++fell : ++fast;
+          bool same = e1 == e2 && (e1 || (mrb_type(got) == mrb_type(want) &&
+                      (mrb_integer_p(got) ? mrb_integer(got) == mrb_integer(want) :
+                       mrb_float_p(got) ? mrb_float(got) == mrb_float(want) : mrb_test(got) == mrb_test(want))));
+          if (!same) { ++bad; std::printf("MISMATCH %s case %d\\n", names[op], n); }
+        }
+        std::printf("compared %d unary sends: %d fast, %d fallback, %d differ\\n", n, fast, fell, bad);
+        mrb_close(M);
+        return (bad || fast == 0 || fell == 0) ? 1 : 0;
+      }
+    CPP
+    binary = File.join(dir, 'unary')
+    built = system('g++', '-std=c++17', '-fexceptions', '-DMRB_USE_CXX_EXCEPTION', '-DMRB_NO_GEMS',
+                   "-I#{core}/include", "-I#{root}/3rd/mruby/include", source, "#{core}/lib/libmruby_core.a", '-o', binary)
+    check.call('the emitted unary sends compile against real mruby headers', built)
+    if built
+      output = IO.popen(binary, err: %i[child out], &:read)
+      puts output.lines.map { |l| "  #{l}" }.join
+      check.call('the emitted unary sends agree with the replaced bodies, on both the fast and fallback paths',
                  $?.success? && output.include?(' 0 differ'))
     end
   end
