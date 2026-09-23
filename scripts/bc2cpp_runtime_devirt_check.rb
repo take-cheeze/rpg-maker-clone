@@ -64,6 +64,7 @@ fixture(ACCESSOR, 'lone_accessor') do |gen, registry|
   check.call('any other receiver class still reaches the funcall fallback', code.match?(/\} else \{\n\s+r\d+ = mrb_funcall\(M, r\d+, "code", 0\);/))
 
   # An embedded ivar's accessor is the synthesized struct reader.
+  gen.instance_variable_get(:@ivar_layout)['Command'] = { 'code' => :fixnum, 'label' => :fixnum }
   gen.instance_variable_get(:@synthesize_accessor_for) << ['Command', 'code', :reader]
   embedded = gen.compile_method(method.irep).fetch(:code)
   check.call('an embedded accessor calls the synthesized struct reader',
