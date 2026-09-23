@@ -93,6 +93,7 @@ Dir.mktmpdir do |dir|
     sym_table = SymbolCache.emit(table)
     harness = File.join(dir, 'const_harness.cpp')
     File.write(harness, <<~CPP)
+      #include <cstdarg>
       #include <cstdio>
       #include <string>
       #include <vector>
@@ -110,6 +111,12 @@ Dir.mktmpdir do |dir|
       static mrb_value mrb_obj_value(RClass*) { return { MRB_TT_CLASS, 0 }; }
       static mrb_value mrb_nil_value() { return { 0, 0 }; }
       static int mrb_type(mrb_value v) { return v.tt; }
+      // Declared for symbol_cache.rb's bc2cpp_send, which this harness never calls.
+      typedef long mrb_int;
+      #define mrb_intern_lit(M, s) mrb_intern_cstr(M, s)
+      static RClass* mrb_exc_get_id(mrb_state*, mrb_sym) { return nullptr; }
+      static void mrb_raise(mrb_state*, RClass*, const char*) {}
+      static mrb_value mrb_funcall_argv(mrb_state*, mrb_value r, mrb_sym, mrb_int, const mrb_value*) { return r; }
       static mrb_value mrb_const_get(mrb_state*, mrb_value, mrb_sym s) {
         ++lookups;
         if (missing) throw 1;
