@@ -160,9 +160,9 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # #initialize privacy, not an explicit companion statement), Array 1
   # (include?) -- 34 real registered methods total across these 10 owners.
   #
-  # One real, notable discrepancy from tools/bc2cpp/compiled_gems.rb's own
-  # dated comment on `RGSS::Bitmap.singleton`: that comment (written at
-  # docs/adr/0139's own time) says `self.failure_reason`'s own real body
+  # One real, notable discrepancy from docs/adr/0139's ".singleton owner
+  # support" follow-up on `RGSS::Bitmap.singleton`: it says
+  # `self.failure_reason`'s own real body
   # was "not re-verified opcode-by-opcode" past confirming it reaches
   # `compile_method` at all, and that `SKIP_UNSUPPORTED=1` drops it either
   # way if it doesn't compile clean. A real, fresh run against the current
@@ -172,11 +172,11 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # singleton#failure_reason, arity 1)` inside the real "== compiled entry
   # points ==" section, not the "== skipped ==" one), not merely trusted
   # from the TSV alone -- some intervening round between docs/adr/0139 and
-  # this one evidently closed the opcode gap that comment flagged as open.
+  # this one evidently closed the opcode gap that follow-up flagged as open.
   # Not a soundness concern for this round (the real registry, whatever it
   # says today, is what this mechanism has always trusted -- see
   # wio_registered_methods.rb's own file comment), just worth recording so
-  # a future reader of that older comment isn't misled by it.
+  # a future reader of that ADR 0139 writeup isn't misled by it.
   #
   # Companion-statement hazard check (private/protected/public with an
   # explicit Symbol argument, alias_method, attr_reader/attr_accessor/

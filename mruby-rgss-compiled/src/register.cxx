@@ -47,7 +47,7 @@
 // owner-scope-first chain still finds it, only by falling all the way
 // through to its final unprotected Object-level `mrb_const_get` rather
 // than matching at the RGSS scope the way Tone/Color did (see
-// compiled_gems.rb's own comment for the real regenerated-body
+// ADR 0139 (RGSS::Tilemap) for the regenerated-body
 // confirmation). `attr_reader :tileset, :map_data, :ox, :oy, :viewport,
 // :priorities, :flags` and `attr_accessor :flash_data` stay
 // native/uncompiled, as always. Tilemap has no #initialize of its own
@@ -208,11 +208,11 @@
 // Follow-up (docs/adr/0139: "RGSS .singleton coverage cluster") -- five more
 // `.singleton`-owned classes join RGSS::Bitmap.singleton above:
 // RGSS.singleton, RGSS::Audio.singleton, RGSS::Input.singleton,
-// RGSS::ErrorReport.singleton, RGSS::Graphics.singleton (compiled_gems.rb's
-// own comment on this gem's `owners:` has the full per-class compiled/
-// skipped breakdown and diagnostic transcript; this comment covers only what
-// changes about *registering* them here). 38 real class methods across the
-// five, all via `mrb_define_class_method` for the same reason
+// RGSS::ErrorReport.singleton, RGSS::Graphics.singleton (ADR 0139's
+// "RGSS .singleton coverage cluster" follow-up has the full per-class
+// compiled/skipped breakdown and diagnostic transcript; this comment covers
+// only what changes about *registering* them here). 38 real class methods
+// across the five, all via `mrb_define_class_method` for the same reason
 // RGSS::Bitmap.singleton's own two already are: every compiled body's `self`
 // is the owning module/class object itself, never an instance.
 //
@@ -232,7 +232,7 @@
 // (resize_screen/brightness=/freeze): its 4th, `brightness_sprite`, is a
 // real, individually-compiled entry (its own `_impl` ships in
 // rgss_compiled_gen.cpp, and `brightness=`'s own body already calls it
-// directly -- see compiled_gems.rb's own comment for the real generated
+// directly -- see ADR 0139 for the real generated
 // call site) but is genuinely `private` in the real source (`class << self
 // ... private ... def brightness_sprite; ... end; end`) and mruby's public
 // API has no "private class method" registration entry point at all
@@ -241,8 +241,8 @@
 // and mruby/class.h). Registering it here via plain
 // `mrb_define_class_method` would make `Graphics.brightness_sprite`
 // callable from any script, silently widening this method's real visibility
-// -- exactly what compiled_gems.rb's own comment on this same method
-// explains at length. So it is left out of the calls below entirely: its
+// -- see the brightness_sprite note in compiled_gems.rb's
+// mruby-rgss-compiled entry. So it is left out of the calls below entirely: its
 // compiled body still exists and is still reachable (via `brightness=`'s
 // own already-devirtualized direct C++ call), just never through
 // `mrb_define_class_method`.
@@ -396,8 +396,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // RGSS.singleton (docs/adr/0139: "RGSS .singleton coverage cluster") --
   // installs onto `rgss` itself, declared at the very top of this function:
   // RGSS is both this gem's enclosing module and, for these 5 methods, a
-  // `.singleton` owner in its own right (see compiled_gems.rb's own comment
-  // for the full compiled/skipped breakdown).
+  // `.singleton` owner in its own right (see ADR 0139's "RGSS .singleton
+  // coverage cluster" follow-up for the full compiled/skipped breakdown).
   mrb_define_class_method(M, rgss, "warn_once", RGSS_singleton_warn_once,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, rgss, "warn_stub", RGSS_singleton_warn_stub,
@@ -475,8 +475,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // repeat? all make same-owner self-implicit calls (to dir4/key_index
   // respectively) that MONO-devirtualize into direct C++ calls, also
   // confirmed directly against rgss_compiled_gen.cpp. `update` (the one
-  // method on this class that does not compile -- see compiled_gems.rb's
-  // own comment) stays on the interpreter, unregistered here, as always.
+  // method on this class that does not compile -- see ADR 0139's
+  // "RGSS .singleton coverage cluster" follow-up) stays on the interpreter,
+  // unregistered here, as always.
   RClass* input = mrb_module_get_under(M, rgss, "Input");
 
   mrb_define_class_method(M, input, "key_index",
@@ -532,12 +533,13 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // RGSS::Graphics.singleton -- 3 of its own 4 compiled methods register
   // here (resize_screen/brightness=/freeze); the 4th, the real, private
   // `brightness_sprite` helper, is deliberately NOT registered -- see this
-  // file's own top comment and compiled_gems.rb's own comment on this same
-  // method for why. `brightness=`'s own body makes a same-owner
-  // self-implicit call into `brightness_sprite` that MONO-devirtualizes
-  // into a direct C++ call regardless of whether brightness_sprite is ever
-  // registered here, confirmed directly against rgss_compiled_gen.cpp --
-  // registration and reachability-via-devirtualization are independent.
+  // file's own top comment and the brightness_sprite note in
+  // compiled_gems.rb's mruby-rgss-compiled entry for why. `brightness=`'s own
+  // body makes a same-owner self-implicit call into `brightness_sprite` that
+  // MONO-devirtualizes into a direct C++ call regardless of whether
+  // brightness_sprite is ever registered here, confirmed directly against
+  // rgss_compiled_gen.cpp -- registration and reachability-via-devirtualization
+  // are independent.
   RClass* graphics = mrb_module_get_under(M, rgss, "Graphics");
 
   mrb_define_class_method(M, graphics, "resize_screen",

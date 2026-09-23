@@ -145,6 +145,28 @@ modifiers there: `scripts/rpg2k_closed_world_lint.rb` fails on new ones (see
 `docs/rpg2k-closed-world-lint.md`). If a use is genuinely data-driven, allow it
 in place with `# rpg2k-lint:allow Cop/Name -- reason`.
 
+### Comments: explain why, briefly — history goes in the ADR
+
+- A comment says **why** the code is the way it is: the invariant it relies on,
+  the soundness condition, the non-obvious constraint, the trap it avoids.
+  Don't restate what the code does.
+- Keep it short — usually one to three lines. If the rationale needs more,
+  it belongs in an ADR (`docs/adr/`); reference it as `ADR 0123` next to the
+  code instead of repeating it.
+- No narratives: how a bug was found, what was measured, which run confirmed
+  it, dates, or "caught for real" stories go in the commit message, PR body or
+  ADR — not in the source.
+- State a soundness condition once, where it is enforced; elsewhere refer to
+  that place by name (`see compile_poly_small_n`), not by re-arguing it.
+- Tag names used by checks and greps (e.g. `POLY_SMALL_N`, `IVAR_ACCESS`,
+  `CLOSED_WORLD`) are fine to keep as short anchors.
+- Comments inside generated-code templates (heredocs emitted into C++) are
+  output, not source comments — do not change them without updating the
+  checks that read them.
+- A comment-only change to `tools/bc2cpp/*.rb` can be proven code-neutral with
+  `ruby scripts/bc2cpp_comment_only_check.rb [BASE_REF [HEAD_REF]]`, which
+  compares the Prism ASTs with comments and locations stripped.
+
 ## Error Handling
 
 - Do not silence errors. Never swallow an exception (or ignore a failing

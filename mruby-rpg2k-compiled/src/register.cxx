@@ -486,8 +486,8 @@
 // game.rb) -- one loaded chipset's own tile graphic name plus the lower/
 // upper passability tables, terrain table, and water-animation parameters.
 // ALL 9 of its own real bytecode-defined instance methods compile clean,
-// needing no new opcode work at all; see compiled_gems.rb's own comment on
-// this gem's `owners:` entry for the full writeup, including the real
+// needing no new opcode work at all; see ADR 0139 (Game::ChipSet) for the
+// full writeup, including the real
 // bitwise/modulo-operator SEND-name-extraction bug this class's own
 // #passable_tile?/#landable_tile? surfaced in bc2cpp.rb itself -- also live
 // in RPG2k::Scene::ChipsetEditor#toggled_byte/#cell_color_for and 30 other
@@ -831,8 +831,8 @@
 // BLKPUSH/BLKCALL, for #cached_bitmap's own implicit-block `yield`; 7 real
 // keyword-argument-heavy SEND call sites; 2 real `rescue StandardError`
 // clauses; and 5 methods with a non-mandatory argument). See that class's
-// own registration block below, and tools/bc2cpp/compiled_gems.rb's own
-// owners-entry comment, for the full per-method breakdown. #initialize
+// own registration block below, and ADR 0139 (RPG2k::Scene::Battle), for
+// the full per-method breakdown. #initialize
 // never compiling means no ivar gets embedded here, the same established
 // shape as every other unembedded target above; RPG2k3::Scene::Battle's
 // own already-shipped 7 registered entry points below are confirmed
@@ -880,7 +880,7 @@
 // four classes' own real source, so all 45 are plain, public
 // `mrb_define_class_method` registrations. See each class's own
 // registration block at the end of this file for the full per-method
-// breakdown, and tools/bc2cpp/compiled_gems.rb's own owners-entry comment
+// breakdown, and ADR 0139's round 30 follow-up
 // for the real regression-safety numbers (entry-point count, whole-
 // program registry count, and generated-`.cpp` diff, all confirmed purely
 // additive).
@@ -2992,7 +2992,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // `SKIP_UNSUPPORTED=0`, bc2cpp emits zero output -- no declaration, no
   // `#error` stub -- for any of the 9, the same `.singleton` pseudo-owner
   // structural non-emittability this ADR's own `RGSS::Font` follow-up
-  // already established. See compiled_gems.rb's own Game::State writeup
+  // already established. See ADR 0139 (Game::State, lsd_io.rb)
   // for the full per-method breakdown (4 real blocks, 2 real `rescue`
   // clauses, and 2 -- `.bgm_from_chunk`/`.se_from_chunk` -- that would
   // likely compile if this compiler ever gained a way to emit a
@@ -3500,7 +3500,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // this class's own 10 real methods compile clean, not all 10).
 
   // Game::ChipSet (mruby-rpg2k/mrblib/game.rb) -- see this file's own top
-  // comment (compiled_gems.rb's own comment carries the full writeup) for
+  // comment (ADR 0139 (Game::ChipSet) carries the full writeup) for
   // the real construction-site check backing the embedding below, and for
   // the real bitwise/modulo-operator SEND-name-extraction bug this class's
   // own #passable_tile?/#landable_tile? surfaced in bc2cpp.rb itself (also
@@ -3690,7 +3690,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Variables_initialize, MRB_ARGS_OPT(1));
 
   // RPG2k::Scene::Title (mruby-rpg2k/mrblib/scene/title.rb) -- see
-  // compiled_gems.rb's own comment on this gem's `owners:` entry for the
+  // ADR 0139 (RPG2k::Scene::Title) for the
   // full writeup, including the real gap breakdown (13 rescue clauses;
   // #initialize's own SUPER + BLOCK double gap) and why no
   // MRB_SET_INSTANCE_TT call belongs here. #refresh_cursor is genuinely
@@ -3895,7 +3895,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // out-of-scope shape (see this file's own top comment).
 
   // RPG2k::Scene::GameOver (mruby-rpg2k/mrblib/scene/game_over.rb) -- see
-  // compiled_gems.rb's own comment on this gem's `owners:` entry for the
+  // ADR 0139 (RPG2k::Scene::GameOver) for the
   // full writeup, including why the real source has 7 bytecode-defined
   // methods (not the 3 a first read of just #initialize/#update/#dispose
   // suggests) and why no MRB_SET_INSTANCE_TT call belongs here (its own
@@ -3948,8 +3948,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // parameter, a non-mandatory-argument shape this compiler's calling
   // convention doesn't model at all (see this block's own top comment).
 
-  // Game::Rng (mruby-rpg2k/mrblib/game.rb) -- see compiled_gems.rb's own
-  // comment on this gem's `owners:` entry for the full writeup. 3 of its
+  // Game::Rng (mruby-rpg2k/mrblib/game.rb) -- see ADR 0139 (Game::Rng)
+  // for the full writeup. 3 of its
   // own 4 real bytecode-defined methods compile clean, needing no new
   // opcode work at all: #next_int (`@state = (@state * 75 + 74) %
   // PERIOD`, a real GETCONST plus MUL/ADDI fastpaths and a POLY `%` send
@@ -3989,8 +3989,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Game::Picture's/RPG2k::Window's own #initialize above, and
   // drop_unsafe_embeddings correctly refuses to embed either of this
   // class's own two ivars (@type, @strength) as a result -- see this
-  // file's own top comment and compiled_gems.rb's own owners-entry
-  // comment for the full writeup. attr_reader :type, :strength are both
+  // file's own top comment and ADR 0139 (Game::Weather)
+  // for the full writeup. attr_reader :type, :strength are both
   // native (Module#attr_reader), invisible to bc2cpp the same way every
   // other attr_reader in this codebase is, so neither gets a registration
   // line here either. No bare `private`/`protected`/`public` anywhere in
@@ -4007,7 +4007,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_OPT(2));
 
   // Game::Troop (mruby-rpg2k/mrblib/game/battle_support.rb) -- see
-  // compiled_gems.rb's own owners-entry comment for the full writeup.
+  // ADR 0139 (Game::Troop) for the full writeup.
   // Only #member (`def member(db, m); Enemy.new(db, m.enemy_id, m.x, m.y,
   // m.invisible); end`) compiles clean -- a plain 4-argument constructor
   // call, no arithmetic, no block. #initialize (`rng = nil`, one optional
@@ -4046,7 +4046,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // and drop_unsafe_embeddings correctly refuses to embed any of this
   // class's own four provably-Fixnum ivars (@map_id, @x, @y,
   // @charset_index) as a result -- see this file's own top comment and
-  // compiled_gems.rb's own owners-entry comment for the full writeup.
+  // ADR 0139 (Game::Vehicle) for the full writeup.
   // attr_accessor :map_id, :x, :y, :direction, :charset_name,
   // :charset_index and attr_reader :type are all native
   // (Module#attr_reader/attr_accessor), invisible to bc2cpp the same way
@@ -4067,7 +4067,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(4));
 
   // Game::Enemy (mruby-rpg2k/mrblib/game/battle_support.rb) -- see
-  // compiled_gems.rb's own owners-entry comment for the full writeup. 3 of
+  // ADR 0139 (Game::Enemy) for the full writeup. 3 of
   // its own 4 real bytecode-defined methods compile clean, needing zero
   // bc2cpp.rb changes: #attack_hit_rate (`@miss ? 70 : 90`, a plain GETIV
   // plus JMPIF-based ternary), #dead? (`@hp <= 0`, the fixnum-fastpath LE
@@ -4075,8 +4075,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // fed by `into.exp`/`into.gold`/`into.drop_id`/`into.drop_prob`, each a
   // real POLY send that correctly stays ordinary mrb_funcall dispatch --
   // confirmed directly against the real generated output, not merely
-  // assumed from the registry's own dump: see this class's own
-  // compiled_gems.rb comment for why the registry's dump is misleadingly
+  // assumed from the registry's own dump: see ADR 0139 (Game::Enemy)
+  // for why the registry's dump is misleadingly
   // stale for these four particular names, and why that staleness still
   // resolves safely here regardless). #initialize (`db, id, x = 0, y = 0,
   // hidden = false`, three optional arguments) is the one gap -- the same
@@ -4119,9 +4119,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Already registry-visible for MONO/POLY soundness since round 1
   // (closed_world_mrblib_srcs always covers every gem's whole mrblib
   // regardless of any single compiled gem's own `owners:` list -- see
-  // tools/bc2cpp/compiled_gems.rb's own comment), but never an emission
-  // owner until this round -- this project's 62nd owner overall. See
-  // tools/bc2cpp/compiled_gems.rb's own owners-entry comment for the full
+  // closed_world_mrblib_srcs in tools/bc2cpp/compiled_gems.rb), but never an
+  // emission owner until this round -- this project's 62nd owner overall. See
+  // ADR 0139 (RPG2k::Scene::Battle) for the full
   // per-gap breakdown (six distinct, individually confirmed reasons the
   // other 64 of its 174 real bytecode-defined methods stay interpreted:
   // #initialize's own real SUPER call; 48 real Ruby-block users, BLOCK/
@@ -4385,7 +4385,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // (`natively_exposed?`) and its ninth-round follow-up (the stale
   // `LCF::MoveCommand` MRB_SET_INSTANCE_TT tag), since every one of this
   // class's own 8 ivars is covered by a plain `attr_accessor` -- see
-  // compiled_gems.rb's own owners-entry comment for the full per-ivar
+  // ADR 0139 (Game::MessageConfig) for the full per-ivar
   // writeup. #initialize compiles clean (arity 0), and its own
   // provably-Fixnum ivar (@face_index) genuinely reaches bc2cpp's own
   // ivar-embedding proposal pass (`EMBED Game::MessageConfig#@face_index
@@ -5996,7 +5996,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // Round 31 (".singleton/leftover mop-up") follow-up: the remaining small
   // `.singleton` scraps a real, unrestricted diagnostic run found but
   // round 30's own two `.singleton`-coverage rounds didn't have time for
-  // -- see compiled_gems.rb's own comment on this gem's `owners:` for the
+  // -- see ADR 0139's round 31 follow-up for the
   // full per-class breakdown. All 12 owners below are plain, never-
   // instantiated `module`s, so none is a MRB_SET_INSTANCE_TT candidate,
   // and none has a bare `private`/`private_class_method`/`protected`

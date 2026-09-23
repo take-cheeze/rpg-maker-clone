@@ -72,12 +72,12 @@
 // LCF::Sections above (9 real bytecode-defined methods, not 1-4), so only
 // 5 of them compile clean and are registered below: #[], #key?,
 // #int16_values, #delete, #[]= -- all public, pure mandatory arity, no
-// super, no block. See tools/bc2cpp/compiled_gems.rb's own LCF::Array1D
-// comment for the full per-method writeup, including exactly why each of
-// the others (#initialize, #to_lcf, #sym2idx, plus the native `attr_reader
-// :schema`) stays interpreted; #field? (docs/adr/0213, which also removed
-// #method_missing/#respond_to_missing?) is simply not registered here:
-// #initialize's own `loop do ... end` and #sym2idx's
+// super, no block. See ADR 0139 (LCF::Array1D) for the full per-method
+// writeup, including exactly why each of the others (#initialize, #to_lcf,
+// #sym2idx, plus the native `attr_reader :schema`) stays interpreted;
+// #field? (ADR 0213, which also removed #method_missing/
+// #respond_to_missing?) is simply not registered here: #initialize's own
+// `loop do ... end` and #sym2idx's
 // own `LCF.elements_of(@schema).each { |k, e| ... }` are both real
 // BLOCK/S(S)ENDB blocks (loop is an ordinary Kernel#loop method call
 // taking a block, not the already-supported JMP/JMPNOT back-edge shape a
@@ -102,9 +102,9 @@
 // (lazily decodes and in-place caches a row's raw byte span into a real
 // `Array1D.new(entry, @schema)` on first access) and #[]= (a bare
 // `@data[idx] = entry` SETIDX, simpler than Array1D's own #[]=). Both
-// public, pure mandatory arity, no super, no block. See tools/bc2cpp/
-// compiled_gems.rb's own LCF::Array2D comment for the full per-method
-// writeup, including exactly why the other 4 real methods (#initialize,
+// public, pure mandatory arity, no super, no block. See ADR 0139
+// (LCF::Array2D) for the full per-method writeup, including exactly why
+// the other 4 real methods (#initialize,
 // #each, #to_lcf, #read_row_bytes) stay interpreted: #initialize's own
 // `(0...LCF.read_ber(s)).each do ... end` (a Range#each method call
 // taking a block -- NOT the same on-disk shape as Array1D#initialize's
@@ -290,8 +290,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // this file, #[]/#key?/#int16_values/#delete/#[]= carry no source-level
   // `private` and are not mruby's own always-private #initialize special
   // case). #initialize, #to_lcf, #field? and #sym2idx stay interpreted --
-  // see this file's own top comment and
-  // tools/bc2cpp/compiled_gems.rb's own LCF::Array1D comment for exactly
+  // see this file's own top comment and ADR 0139 (LCF::Array1D) for exactly
   // why each one does. No MRB_SET_INSTANCE_TT call belongs here: this
   // class never appears in bc2cpp's own "classes needing
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
@@ -309,7 +308,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // directly against the real diagnostic's own `== compiled entry
   // points ==` listing. #initialize, #each, #to_lcf, and the private
   // #read_row_bytes all stay interpreted -- see this file's own top
-  // comment and tools/bc2cpp/compiled_gems.rb's own LCF::Array2D comment
+  // comment and ADR 0139 (LCF::Array2D)
   // for exactly why each one does. No MRB_SET_INSTANCE_TT call belongs
   // here: this class never appears in bc2cpp's own "classes needing
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
