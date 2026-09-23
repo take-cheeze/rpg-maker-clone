@@ -83,6 +83,24 @@ def wio_strip_inline_helpers(spec)
   end
 end
 
+# ADR 0218: wio-only. Drops the RGSS.*_probe diagnostics from a build-time copy
+# of mruby-rgss/mrblib/lib.rb (see strip_wio_rgss_probes.rb). Call it before
+# wio_strip_bc2cpp_stubs, so it reads the checked-in source.
+def wio_strip_rgss_probes(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('scripts/strip_wio_rgss_probes.rb', __dir__)
+  lib_rb = "#{spec.dir}/mrblib/lib.rb"
+  out = "#{spec.build_dir}/wio_rgss_probes_stripped/mrblib/lib.rb"
+  raise "wio_strip_rgss_probes: #{lib_rb} is not in #{spec.name}'s rbfiles" unless spec.rbfiles.include?(lib_rb)
+
+  file out => [lib_rb, strip_script] do
+    FileUtils.mkdir_p File.dirname(out), verbose: true
+    ruby strip_script, lib_rb, out
+  end
+  spec.rbfiles = spec.rbfiles.map { |src| src == lib_rb ? out : src }
+end
+
 # docs/adr/0144 (and its own host/wasm follow-up): the generalized version of
 # wio_strip_debug_rbfiles/wio_strip_inline_helpers above, this time for
 # RPGMAKER_BC2CPP=1's own real coverage -- deletes the whole `def ... end`
