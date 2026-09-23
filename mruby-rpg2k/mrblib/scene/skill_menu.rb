@@ -183,7 +183,7 @@ class RPG2k
 
       def skill_name(sid)
         sk = @state.party.db_skill(sid)
-        n = sk && sk.name.to_s
+        n = sk && sk[:name].to_s
         n.nil? || n.empty? ? "Skill #{sid}" : n
       end
 
@@ -242,10 +242,10 @@ class RPG2k
       def skill_unavailable?(sid, sk)
         (sk && @state.party.respond_to?(:field_skill?) && !@state.party.field_skill?(sk, @state)) ||
           (@state.party.respond_to?(:can_cast?) && !@state.party.can_cast?(caster, sid)) ||
-          (sk && sk.type == Game::Party::SKILL_ESCAPE &&
+          (sk && sk[:type] == Game::Party::SKILL_ESCAPE &&
            @state.party.respond_to?(:escape_skill_available?) &&
            !@state.party.escape_skill_available?(@state)) ||
-          (sk && sk.type == Game::Party::SKILL_TELEPORT &&
+          (sk && sk[:type] == Game::Party::SKILL_TELEPORT &&
            @state.party.respond_to?(:teleport_skill_available?) &&
            !@state.party.teleport_skill_available?(@state))
       end
@@ -288,18 +288,18 @@ class RPG2k
         # target-confirm screen -- see #enter_target_confirm's own doc comment
         # for why self/all-ally still need one, cursor locked to who it will
         # land on rather than skipped outright.
-        if sk && sk.type == Game::Party::SKILL_SWITCH
+        if sk && sk[:type] == Game::Party::SKILL_SWITCH
           apply_switch_skill(sid)
-        elsif sk && sk.type == Game::Party::SKILL_ESCAPE
+        elsif sk && sk[:type] == Game::Party::SKILL_ESCAPE
           apply_escape_skill(sid)
-        elsif sk && sk.type == Game::Party::SKILL_TELEPORT
+        elsif sk && sk[:type] == Game::Party::SKILL_TELEPORT
           @pending_skill = sid
           @mode = :teleport_target
           @teleport_index = 0
           enter_teleport_target
         else
           @pending_skill = sid
-          enter_target_confirm(sk && sk.scope == 2 ? :self : sk && sk.scope == 4 ? :party : nil)
+          enter_target_confirm(sk && sk[:scope] == 2 ? :self : sk && sk[:scope] == 4 ? :party : nil)
         end
       end
 
@@ -383,7 +383,7 @@ class RPG2k
           play_system_se(SFX_BUZZER)
         else
           sk = @state.party.db_skill(sid)
-          play_animation_se(sk && sk.animation_id)
+          play_animation_se(sk && sk[:animation_id])
         end
       end
 
@@ -428,11 +428,11 @@ class RPG2k
       # filename, or when the field carries no SE at all.
       def play_skill_sound_effect(sid)
         sk = @state.party.db_skill(sid)
-        se = sk && sk.sound_effect
+        se = sk && sk[:sound_effect]
         return unless se
-        name = se.file
+        name = se[:file]
         return if name.nil? || name.empty?
-        Audio.se_play name, se.volume, se.pitch, se.balance
+        Audio.se_play name, se[:volume], se[:pitch], se[:balance]
       rescue StandardError => e
         $stderr.puts "[RPG2k] skill SE '#{name}' playback failed: #{e.message}"
       end
@@ -669,9 +669,9 @@ class RPG2k
         text = if sk.nil?
                  ''
                elsif @mode == :target
-                 sk.name.to_s
+                 sk[:name].to_s
                else
-                 sk.description.to_s
+                 sk[:description].to_s
                end
         @desc_contents.clear
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
@@ -1028,8 +1028,8 @@ class RPG2k
       # which reads the same map-tree field this build's #map_properties
       # elsewhere already exposes.
       def map_display_name(map_id)
-        row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
-        name = row && row.respond_to?(:name) ? row.name.to_s : nil
+        row = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties][map_id] : nil
+        name = row && LCF.field?(row, :name) ? row[:name].to_s : nil
         name.nil? || name.empty? ? "Map #{map_id}" : name
       end
 

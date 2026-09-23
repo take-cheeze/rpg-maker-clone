@@ -531,7 +531,7 @@ class RPG2k
       # until the map is re-entered.
       def each_event_position
         return unless @map
-        events = @map.unit.events
+        events = @map.unit[:events]
         return unless events
         # Only the live map's own events can have wandered from their authored
         # spawn -- Game::State#map_event_positions records the *current* map's
@@ -540,9 +540,9 @@ class RPG2k
         positions = @live ? (@state.map_event_positions || {}) : {}
         events.each do |id, ev|
           pos = positions[id]
-          x = pos ? pos[0] : ev.x
-          y = pos ? pos[1] : ev.y
-          yield id, ev.name, x, y
+          x = pos ? pos[0] : ev[:x]
+          y = pos ? pos[1] : ev[:y]
+          yield id, ev[:name], x, y
         end
       end
 

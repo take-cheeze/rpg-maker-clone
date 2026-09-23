@@ -83,8 +83,8 @@ assert "LCF::Database nested Array2D actor table + int16_array status" do
                        lcf_field(31, [10, 20, 30, 40, 50, 60].pack('v*'))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(11, lcf_array2d([[1, actor]]))])))
-  assert_equal "Hero", db.player[1].name
-  st = db.player[1].status
+  assert_equal "Hero", db[:player][1][:name]
+  st = db[:player][1][:status]
   assert_equal 10, st[:max_hp]
   assert_equal 60, st[:agi]
 end
@@ -94,8 +94,8 @@ assert "LCF::Database chipset passability table (int8_array)" do
                       lcf_field(4, "\x0f\x00\x08")])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(20, lcf_array2d([[1, chip]]))])))
-  assert_equal "World", db.chipset[1].chipset_name
-  assert_equal [0x0f, 0x00, 0x08], db.chipset[1].passable_data_lower
+  assert_equal "World", db[:chipset][1][:chipset_name]
+  assert_equal [0x0f, 0x00, 0x08], db[:chipset][1][:passable_data_lower]
 end
 
 assert "LCF::MapTree multi-part parse exposes start position" do
@@ -104,11 +104,11 @@ assert "LCF::MapTree multi-part parse exposes start position" do
   initial = lcf_array1d([lcf_int_field(1, 1), lcf_int_field(2, 5),
                          lcf_int_field(3, 7)])
   lmt = LCF::MapTree.new(lcf_file("LcfMapTree", props + tree + initial))
-  assert_equal 1, lmt.initial.initial_map_id
-  assert_equal 5, lmt.initial.initial_x
-  assert_equal 7, lmt.initial.initial_y
-  assert_equal [1], lmt.tree.maps
-  assert_equal "MAP1", lmt.map_properties[1].name
+  assert_equal 1, lmt[:initial][:initial_map_id]
+  assert_equal 5, lmt[:initial][:initial_x]
+  assert_equal 7, lmt[:initial][:initial_y]
+  assert_equal [1], lmt[:tree].maps
+  assert_equal "MAP1", lmt[:map_properties][1][:name]
 end
 
 assert "LCF::Database item armour option flags (chunks 25-28) and equip animation" do
@@ -122,15 +122,15 @@ assert "LCF::Database item armour option flags (chunks 25-28) and equip animatio
                       lcf_field(70, lcf_array2d([[1, equip_anim]]))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(13, lcf_array2d([[1, item]]))]))) # item = chunk 13
-  assert_equal "Shield", db.item[1].name
-  assert_true db.item[1].prevent_critical
-  assert_false db.item[1].raise_evasion
-  assert_true db.item[1].half_sp_cost
-  assert_true db.item[1].no_terrain_damage
-  a = db.item[1].animation_data[1]
-  assert_equal 2, a.weapon_cba
-  assert_equal 5, a.weapon
-  assert_equal 4, a.speed
+  assert_equal "Shield", db[:item][1][:name]
+  assert_true db[:item][1][:prevent_critical]
+  assert_false db[:item][1][:raise_evasion]
+  assert_true db[:item][1][:half_sp_cost]
+  assert_true db[:item][1][:no_terrain_damage]
+  a = db[:item][1][:animation_data][1]
+  assert_equal 2, a[:weapon_cba]
+  assert_equal 5, a[:weapon]
+  assert_equal 4, a[:speed]
 end
 
 assert "LCF::Database battle-commands table (chunk 29 -- name + type)" do
@@ -142,10 +142,10 @@ assert "LCF::Database battle-commands table (chunk 29 -- name + type)" do
   battlecommands = lcf_array1d([lcf_field(10, lcf_array2d([[1, cmd1], [2, cmd2]]))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(29, battlecommands)])))
-  assert_equal "Attack", db.battlecommands.commands[1].name
-  assert_equal 0, db.battlecommands.commands[1].type
-  assert_equal "Cast Fire", db.battlecommands.commands[2].name
-  assert_equal 2, db.battlecommands.commands[2].type
+  assert_equal "Attack", db[:battlecommands][:commands][1][:name]
+  assert_equal 0, db[:battlecommands][:commands][1][:type]
+  assert_equal "Cast Fire", db[:battlecommands][:commands][2][:name]
+  assert_equal 2, db[:battlecommands][:commands][2][:type]
 end
 
 assert "LCF::Database battle-commands table decodes battle_type (chunk 29 field 7)" do
@@ -156,12 +156,12 @@ assert "LCF::Database battle-commands table decodes battle_type (chunk 29 field 
   gauge = lcf_array1d([lcf_int_field(7, 2)])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(29, gauge)])))
-  assert_equal 2, db.battlecommands.battle_type
+  assert_equal 2, db[:battlecommands][:battle_type]
 
   bare = lcf_array1d([lcf_field(10, lcf_array2d([]))])
   db2 = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(29, bare)])))
-  assert_equal 0, db2.battlecommands.battle_type
+  assert_equal 0, db2[:battlecommands][:battle_type]
 end
 
 assert "LCF::Database battle-commands table decodes placement (chunk 29 field 2)" do
@@ -173,12 +173,12 @@ assert "LCF::Database battle-commands table decodes placement (chunk 29 field 2)
   automatic = lcf_array1d([lcf_int_field(2, 1)])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(29, automatic)])))
-  assert_equal 1, db.battlecommands.placement
+  assert_equal 1, db[:battlecommands][:placement]
 
   bare = lcf_array1d([lcf_field(10, lcf_array2d([]))])
   db2 = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(29, bare)])))
-  assert_equal 0, db2.battlecommands.placement
+  assert_equal 0, db2[:battlecommands][:placement]
 end
 
 assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
@@ -191,7 +191,7 @@ assert "LCF::Array1D#key? distinguishes an absent chunk from a present one" do
   assert_false row.key?(2)
 end
 
-assert "LCF::Array1D#int16_values reads a raw short array past a named accessor" do
+assert "LCF::Array1D#int16_values reads a raw short array past a named field read" do
   # Chunk 31 with a two-level parameter curve (six shorts per level); the named
   # `status` accessor only surfaces the first row, int16_values sees all of it.
   status = [10, 5, 3, 2, 1, 4, 20, 10, 6, 4, 2, 8]
@@ -199,13 +199,17 @@ assert "LCF::Array1D#int16_values reads a raw short array past a named accessor"
     lcf_array1d([lcf_shorts_field(31, status)]),
     { elements: { 31 => { name: :status, type: :int16_array,
                           order: [:max_hp, :max_mp, :atk, :def, :int, :agi] } } })
-  assert_equal 10, row.status[:max_hp]        # named accessor: level 1 only
+  assert_equal 10, row[:status][:max_hp]        # named read: level 1 only
   assert_equal status, row.int16_values(31)   # raw: the whole curve
   assert_nil row.int16_values(99)             # absent chunk
-  # A schema field name is reflected by respond_to?, so callers can probe for an
-  # optional section (e.g. the item table) instead of rescuing a missing method.
-  assert_true row.respond_to?(:status)
-  assert_false row.respond_to?(:no_such_field)
+  # A schema field name is reflected by #field? (and LCF.field?), so callers
+  # can probe for an optional section (e.g. the item table) instead of
+  # rescuing a failed read. Fields are not methods: respond_to? says no.
+  assert_true row.field?(:status)
+  assert_false row.field?(:no_such_field)
+  assert_true LCF.field?(row, :status)
+  assert_false LCF.field?(nil, :status)
+  assert_false row.respond_to?(:status)
 end
 
 assert "LCF absent-field defaults: a lambda default is evaluated, not returned raw" do
@@ -214,9 +218,9 @@ assert "LCF absent-field defaults: a lambda default is evaluated, not returned r
     { elements: { 1 => { name: :present, type: :int, default: 0 },
                   2 => { name: :lazy,    type: :int, default: -> { 42 } },
                   3 => { name: :static,  type: :int, default: 5 } } })
-  assert_equal 7, row.present   # a present chunk decodes normally
-  assert_equal 42, row.lazy     # absent + callable default -> its called value
-  assert_equal 5, row.static    # absent + plain default -> the value itself
+  assert_equal 7, row[:present] # a present chunk decodes normally
+  assert_equal 42, row[:lazy]    # absent + callable default -> its called value
+  assert_equal 5, row[:static]  # absent + plain default -> the value itself
 end
 
 assert "LCF edition-dependent helpers are callable as module methods (used by lazy defaults)" do
@@ -239,8 +243,8 @@ assert "LCF::Database#maker detects RPG2003 by the Classes section (chunk 30)" d
                  lcf_field(30, lcf_array2d([[3, klass]]))])))
   assert_true db2003.rpg2003?
   assert_equal 2003, db2003.maker
-  assert_equal "Soldier", db2003.job[3].name
-  assert_equal 3, db2003.player[1].class_id
+  assert_equal "Soldier", db2003[:job][3][:name]
+  assert_equal 3, db2003[:player][1][:class_id]
 
   db2000 = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(11, lcf_array2d([[1, lcf_array1d([lcf_str_field(1, "Hero")])]]))])))
@@ -255,11 +259,11 @@ assert "LCF::Database skill switch/occasion chunks (13, 16, 18, 19)" do
                        lcf_field(19, "\x00")])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(12, lcf_array2d([[1, skill]]))]))) # skill = chunk 12
-  assert_equal 7, db.skill[1].switch_id
-  assert_equal "Teleport", db.skill[1].sound_effect.file
-  assert_equal 80, db.skill[1].sound_effect.volume
-  assert_true db.skill[1].occasion_field
-  assert_false db.skill[1].occasion_battle
+  assert_equal 7, db[:skill][1][:switch_id]
+  assert_equal "Teleport", db[:skill][1][:sound_effect][:file]
+  assert_equal 80, db[:skill][1][:sound_effect][:volume]
+  assert_true db[:skill][1][:occasion_field]
+  assert_false db[:skill][1][:occasion_battle]
 end
 
 assert "LCF::Database battleranimations speed and weapon_data pose lists (chunk 32, fields 2, 11)" do
@@ -269,9 +273,9 @@ assert "LCF::Database battleranimations speed and weapon_data pose lists (chunk 
                       lcf_field(11, lcf_array2d([[1, weapon]]))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))]))) # battleranimations = chunk 32
-  assert_equal "Fighter", db.battleranimations[1].name
-  assert_equal 3, db.battleranimations[1].speed
-  assert_equal "WpnGfx", db.battleranimations[1].weapon_data[1].battler_name
+  assert_equal "Fighter", db[:battleranimations][1][:name]
+  assert_equal 3, db[:battleranimations][1][:speed]
+  assert_equal "WpnGfx", db[:battleranimations][1][:weapon_data][1][:battler_name]
 end
 
 assert "LCF::Database battleranimations poses (chunk 32 field 10) round-trip, id-keyed by Pose" do
@@ -288,15 +292,15 @@ assert "LCF::Database battleranimations poses (chunk 32 field 10) round-trip, id
                       lcf_field(10, lcf_array2d([[0, idle], [10, victory]]))])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(32, lcf_array2d([[1, anim]]))])))
-  poses = db.battleranimations[1].poses
-  assert_equal "Idle Pose", poses[0].name
-  assert_equal "Hero", poses[0].battler_name
-  assert_equal 1, poses[0].battler_index
-  assert_equal 1, poses[0].animation_type
-  assert_equal 4, poses[0].battle_animation_id
-  assert_equal "HeroWin", poses[10].battler_name
-  assert_equal 0, poses[10].animation_type
-  assert_equal 7, poses[10].battle_animation_id
+  poses = db[:battleranimations][1][:poses]
+  assert_equal "Idle Pose", poses[0][:name]
+  assert_equal "Hero", poses[0][:battler_name]
+  assert_equal 1, poses[0][:battler_index]
+  assert_equal 1, poses[0][:animation_type]
+  assert_equal 4, poses[0][:battle_animation_id]
+  assert_equal "HeroWin", poses[10][:battler_name]
+  assert_equal 0, poses[10][:animation_type]
+  assert_equal 7, poses[10][:battle_animation_id]
   assert_nil poses[1]
 end
 
@@ -305,8 +309,8 @@ assert "LCF decodes boolean chunks (1 byte 0/1)" do
                     lcf_int_field(13, 7)])
   db = LCF::Database.new(lcf_file("LcfDataBase",
     lcf_array1d([lcf_field(25, lcf_array2d([[1, ce]]))]))) # common_event = chunk 25
-  assert_true db.common_event[1].need_flag
-  assert_equal 3, db.common_event[1].start_term
+  assert_true db[:common_event][1][:need_flag]
+  assert_equal 3, db[:common_event][1][:start_term]
 end
 
 assert "LCF.parse_event_commands decodes an event command list" do
@@ -394,8 +398,8 @@ assert "LCF map-tree scroll bars decode as ints, not booleans" do
   lmt = LCF::MapTree.new(lcf_file("LcfMapTree",
     props + lcf_tree([1], 1) +
     lcf_array1d([lcf_int_field(1, 1), lcf_int_field(2, 0), lcf_int_field(3, 0)])))
-  assert_equal 320, lmt.map_properties[1].scrollbar_x
-  assert_equal(-48, lmt.map_properties[1].scrollbar_y)
+  assert_equal 320, lmt[:map_properties][1][:scrollbar_x]
+  assert_equal(-48, lmt[:map_properties][1][:scrollbar_y])
 end
 
 assert "LCF::MapUnit event page decodes a move route" do
@@ -410,10 +414,10 @@ assert "LCF::MapUnit event page decodes a move route" do
                       lcf_int_field(3, 1),
                       lcf_field(81, lcf_array2d([[1, event]]))])
   lmu = LCF::MapUnit.new(lcf_file("LcfMapUnit", body))
-  mr = lmu.events[1].pages[1].move_route
-  assert_false mr.repeat
-  assert_true mr.skippable
-  cmds = mr.commands
+  mr = lmu[:events][1][:pages][1][:move_route]
+  assert_false mr[:repeat]
+  assert_true mr[:skippable]
+  cmds = mr[:commands]
   assert_equal 2, cmds.size
   assert_equal 14, cmds[0].command_id
   assert_equal 11, cmds[1].command_id
@@ -432,19 +436,19 @@ assert "LCF::MapUnit parses layers, nested events and event commands" do
                       lcf_shorts_field(72, [0, 0, 0, 0, 0, 0, 0, 0]),
                       lcf_field(81, lcf_array2d([[1, event]]))])
   lmu = LCF::MapUnit.new(lcf_file("LcfMapUnit", body))
-  assert_equal 3, lmu.chipset_id
-  assert_equal 4, lmu.width
-  assert_equal 2, lmu.height
-  assert_equal [1, 2, 3, 4, 5, 6, 7, 8], lmu.lower_layer
-  assert_equal "NPC", lmu.events[1].name
-  page1 = lmu.events[1].pages[1]
-  assert_equal "hero", page1.charset_name
-  assert_equal 4, page1.direction
-  assert_equal 10110, page1.event_commands[0].code
-  assert_equal "Hi", page1.event_commands[0].string
+  assert_equal 3, lmu[:chipset_id]
+  assert_equal 4, lmu[:width]
+  assert_equal 2, lmu[:height]
+  assert_equal [1, 2, 3, 4, 5, 6, 7, 8], lmu[:lower_layer]
+  assert_equal "NPC", lmu[:events][1][:name]
+  page1 = lmu[:events][1][:pages][1]
+  assert_equal "hero", page1[:charset_name]
+  assert_equal 4, page1[:direction]
+  assert_equal 10110, page1[:event_commands][0].code
+  assert_equal "Hi", page1[:event_commands][0].string
 
   collected = []
-  lmu.events.each { |id, ev| collected << [id, ev.name] }
+  lmu[:events].each { |id, ev| collected << [id, ev[:name]] }
   assert_equal [[1, "NPC"]], collected
 end
 
@@ -468,21 +472,21 @@ assert "LCF::SaveData teleport targets, map events and pictures" do
                       lcf_field(111, map_events)])
   save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
 
-  assert_equal 5, save.targets[0].map_id
-  assert_equal 3, save.targets[0].x
-  assert_true save.targets[0].switch_on
-  assert_equal 12, save.targets[0].switch_id
+  assert_equal 5, save[:targets][0][:map_id]
+  assert_equal 3, save[:targets][0][:x]
+  assert_true save[:targets][0][:switch_on]
+  assert_equal 12, save[:targets][0][:switch_id]
 
-  ev = save.map_events.events[1]
-  assert_equal 4, ev.x
-  assert_equal 9, ev.y
-  assert_equal "npc", ev.charset_name
-  assert_equal [0x02, 0x03], save.map_events.chip_replacement_lower
+  ev = save[:map_events][:events][1]
+  assert_equal 4, ev[:x]
+  assert_equal 9, ev[:y]
+  assert_equal "npc", ev[:charset_name]
+  assert_equal [0x02, 0x03], save[:map_events][:chip_replacement_lower]
 
-  assert_equal "Fog", save.pictures[1].name
-  assert_true save.pictures[1].use_transparent_color
-  assert_equal 150, save.pictures[1].zoom
-  assert_equal 20, save.pictures[1].tone_red
+  assert_equal "Fog", save[:pictures][1][:name]
+  assert_true save[:pictures][1][:use_transparent_color]
+  assert_equal 150, save[:pictures][1][:zoom]
+  assert_equal 20, save[:pictures][1][:tone_red]
 end
 
 assert "LCF::SaveData decodes bool_array switches, int32 variables and the double timestamp" do
@@ -505,12 +509,12 @@ assert "LCF::SaveData decodes bool_array switches, int32 variables and the doubl
   save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
 
   sys = save[101]
-  assert_equal [true, false, true], sys.switches
-  assert_equal [7, -3], sys.variables
-  assert_equal 0xff, sys.teleport_erase_transition
-  assert_equal "Iris", save.title.hero_name
-  assert_equal 7, save.title.hero_level
-  assert_equal 1.5, save.title.timestamp
+  assert_equal [true, false, true], sys[:switches]
+  assert_equal [7, -3], sys[:variables]
+  assert_equal 0xff, sys[:teleport_erase_transition]
+  assert_equal "Iris", save[:title][:hero_name]
+  assert_equal 7, save[:title][:hero_level]
+  assert_equal 1.5, save[:title][:timestamp]
 end
 
 assert "LCF::SaveData decodes the inventory, common-event and foreground-event chunks" do
@@ -544,22 +548,22 @@ assert "LCF::SaveData decodes the inventory, common-event and foreground-event c
                       lcf_field(114, common)])
   save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
 
-  assert_equal 2, save.inventory.item_count
-  assert_equal [1, 451], save.inventory.item_ids
-  assert_equal [3, 1], save.inventory.item_counts
-  assert_equal 100, save.inventory.gold
+  assert_equal 2, save[:inventory][:item_count]
+  assert_equal [1, 451], save[:inventory][:item_ids]
+  assert_equal [3, 1], save[:inventory][:item_counts]
+  assert_equal 100, save[:inventory][:gold]
 
-  ce = save.common_events[1].execution_state.stack[1]
-  assert_equal [], ce.commands
-  assert_equal 3, ce.current_command
-  assert_equal 7, ce.event_id
-  assert_equal true, ce.triggered_by_decision_key
+  ce = save[:common_events][1][:execution_state][:stack][1]
+  assert_equal [], ce[:commands]
+  assert_equal 3, ce[:current_command]
+  assert_equal 7, ce[:event_id]
+  assert_equal true, ce[:triggered_by_decision_key]
 
-  fg = save.foreground_event.execution_state.stack[1]
-  assert_equal [], fg.commands
-  assert_equal 5, fg.current_command
-  assert_equal 0, fg.event_id
-  assert_equal false, fg.triggered_by_decision_key
+  fg = save[:foreground_event][:execution_state][:stack][1]
+  assert_equal [], fg[:commands]
+  assert_equal 5, fg[:current_command]
+  assert_equal 0, fg[:event_id]
+  assert_equal false, fg[:triggered_by_decision_key]
 end
 
 assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
@@ -575,18 +579,18 @@ assert "LCF::SaveData decodes per-actor level/exp/skills/HP/MP (chunk 108)" do
   body = lcf_array1d([lcf_field(108, lcf_array2d([[1, a1], [3, a3]]))])
   save = LCF::SaveData.new(lcf_file("LcfSaveData", body))
 
-  assert_equal 5, save.actors[3].level
-  assert_equal 307, save.actors[3].exp
-  assert_equal 3, save.actors[3].skill_size
-  assert_equal [11, 12, 13], save.actors[3].skills
-  assert_equal [82, 0, 128, 220, 0], save.actors[3].equipment
-  assert_equal 56, save.actors[3].hp
-  assert_equal 53, save.actors[3].mp
-  assert_equal 1, save.actors[1].level
-  assert_equal 50, save.actors[1].hp
-  assert_equal 0, save.actors[1].mp
+  assert_equal 5, save[:actors][3][:level]
+  assert_equal 307, save[:actors][3][:exp]
+  assert_equal 3, save[:actors][3][:skill_size]
+  assert_equal [11, 12, 13], save[:actors][3][:skills]
+  assert_equal [82, 0, 128, 220, 0], save[:actors][3][:equipment]
+  assert_equal 56, save[:actors][3][:hp]
+  assert_equal 53, save[:actors][3][:mp]
+  assert_equal 1, save[:actors][1][:level]
+  assert_equal 50, save[:actors][1][:hp]
+  assert_equal 0, save[:actors][1][:mp]
   # Absent optional vitals read as nil, so the runtime restore leaves them alone.
-  assert_nil save.actors[1].skills
+  assert_nil save[:actors][1][:skills]
 end
 
 # ---- LCF binary format WRITER (inverse of the readers, ADR 0018) -----------
@@ -649,14 +653,14 @@ assert 'Array1D#[]= re-encodes int and string fields through the schema' do
   schema = { elements: LCF::Schema::SAVE_MOVABLE }
   a = LCF::Array1D.new(lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),
                                     lcf_str_field(73, "old")]), schema)
-  assert_equal 5, a.x
+  assert_equal 5, a[:x]
   a[12] = 9                 # :int field
   a[73] = "newchr"          # :string field (exercises LCF.encode + utf8_to_cp932)
-  assert_equal 9, a.x
+  assert_equal 9, a[:x]
   reread = LCF::Array1D.new(a.to_lcf, schema)
-  assert_equal 9, reread.x
-  assert_equal 7, reread.y             # untouched field preserved
-  assert_equal "newchr", reread.charset_name
+  assert_equal 9, reread[:x]
+  assert_equal 7, reread[:y]             # untouched field preserved
+  assert_equal "newchr", reread[:charset_name]
 end
 
 assert 'Array1D hands out one decoded nested table, and re-decodes after a write' do
@@ -706,12 +710,12 @@ assert 'SaveData edit survives a write/reload round-trip' do
   save  = LCF::SaveData.new(lcf_file("LcfSaveData", body))
 
   h = save[104]; h[12] = 42;               save[104] = h
-  s = save[101]; s[131] = s.save_count + 1; save[101] = s
+  s = save[101]; s[131] = s[:save_count] + 1; save[101] = s
 
   reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
-  assert_equal 42, reread.hero.x
-  assert_equal 7, reread.hero.y          # untouched field preserved
-  assert_equal 2, reread[101].save_count
+  assert_equal 42, reread[:hero][:x]
+  assert_equal 7, reread[:hero][:y]          # untouched field preserved
+  assert_equal 2, reread[101][:save_count]
 end
 
 # ---- Build a save FROM SCRATCH (ADR 0019, Game::State#to_lsd) --------------
@@ -765,27 +769,27 @@ assert 'SaveData title chunk + system message/bgm/access fields round-trip from 
 
   reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
   t = reread[100]
-  assert_equal 45000.5, t.timestamp
-  assert_equal "Iris", t.hero_name
-  assert_equal 9, t.hero_level
-  assert_equal 123, t.hero_hp
-  assert_equal "FaceA", t.face1_name
-  assert_equal 2, t.face1_index
+  assert_equal 45000.5, t[:timestamp]
+  assert_equal "Iris", t[:hero_name]
+  assert_equal 9, t[:hero_level]
+  assert_equal 123, t[:hero_hp]
+  assert_equal "FaceA", t[:face1_name]
+  assert_equal 2, t[:face1_index]
   s = reread[101]
-  assert_equal 1, s.message_transparent
-  assert_equal 0, s.message_position
-  assert_false s.message_prevent_overlap
-  assert_equal "MsgFace", s.face_name
-  assert_equal 4, s.face_index
-  assert_equal 1, s.face_right_position
-  assert_true s.face_flip
-  assert_equal "Field", s.current_bgm.file
-  assert_equal 80, s.current_bgm.volume
-  assert_equal 120, s.current_bgm.pitch
-  assert_true s.teleport_allowed
-  assert_false s.escape_allowed
-  assert_false s.save_allowed
-  assert_true s.menu_allowed
+  assert_equal 1, s[:message_transparent]
+  assert_equal 0, s[:message_position]
+  assert_false s[:message_prevent_overlap]
+  assert_equal "MsgFace", s[:face_name]
+  assert_equal 4, s[:face_index]
+  assert_equal 1, s[:face_right_position]
+  assert_true s[:face_flip]
+  assert_equal "Field", s[:current_bgm][:file]
+  assert_equal 80, s[:current_bgm][:volume]
+  assert_equal 120, s[:current_bgm][:pitch]
+  assert_true s[:teleport_allowed]
+  assert_false s[:escape_allowed]
+  assert_false s[:save_allowed]
+  assert_true s[:menu_allowed]
 end
 
 assert 'SAVE_MOVABLE transparency (Set Transparent Flag on the hero record, ' \
@@ -794,8 +798,8 @@ assert 'SAVE_MOVABLE transparency (Set Transparent Flag on the hero record, ' \
   hero[11] = 3; hero[12] = 5; hero[13] = 7
   hero[24] = 3 # liblcf's own "0 or 3" convention
   reread = LCF::Array1D.new(hero.to_lcf, { elements: LCF::Schema::SAVE_MOVABLE })
-  assert_equal 3, reread.map_id
-  assert_equal 3, reread.transparency
+  assert_equal 3, reread[:map_id]
+  assert_equal 3, reread[:transparency]
 end
 
 assert 'Array2D built from scratch serialises and reads back' do
@@ -807,9 +811,9 @@ assert 'Array2D built from scratch serialises and reads back' do
   e[61] = [1, 2, 0, 0, 0]                  # equipment (:int16_array)
   a[1] = e
   reread = LCF::Array2D.new(a.to_lcf, schema)
-  assert_equal 5, reread[1].level
-  assert_equal [101, 102], reread[1].skills
-  assert_equal [1, 2, 0, 0, 0], reread[1].equipment
+  assert_equal 5, reread[1][:level]
+  assert_equal [101, 102], reread[1][:skills]
+  assert_equal [1, 2, 0, 0, 0], reread[1][:equipment]
 end
 
 assert 'SaveData built from scratch round-trips through the reader' do
@@ -824,11 +828,11 @@ assert 'SaveData built from scratch round-trips through the reader' do
   save[101] = sys
 
   reread = LCF::SaveData.new(StringIO.new(save.to_lcf))
-  assert_equal 3, reread.hero.map_id
-  assert_equal 8, reread.hero.x
-  assert_equal 4, reread.hero.y
-  assert_equal 1, reread.hero.direction
-  assert_equal [false, true, false], reread[101].switches
-  assert_equal [0, 7, 0], reread[101].variables
-  assert_equal 2, reread[101].save_count
+  assert_equal 3, reread[:hero][:map_id]
+  assert_equal 8, reread[:hero][:x]
+  assert_equal 4, reread[:hero][:y]
+  assert_equal 1, reread[:hero][:direction]
+  assert_equal [false, true, false], reread[101][:switches]
+  assert_equal [0, 7, 0], reread[101][:variables]
+  assert_equal 2, reread[101][:save_count]
 end

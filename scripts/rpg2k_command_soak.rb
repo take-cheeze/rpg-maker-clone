@@ -71,8 +71,10 @@ load File.join(root, 'mruby-rpg2k/mrblib/game', 'battle_support.rb') # battle-on
 load File.join(root, 'mruby-rpg2k/mrblib/game', 'lsd_io.rb') # Game::State#to_lsd/.from_lsd, split out for wio, see docs/adr/0128
 load File.join(root, 'mruby-rpg2k/mrblib/interpreter.rb')
 
-# Under CRuby `db.system` resolves to Kernel#system, so route that one field
-# explicitly (the same trap AGENTS.md records for `save.system`).
+# Forwards every call to the database. It once existed to route `db.system`
+# around CRuby's Kernel#system; LCF files have no dotted field access any more
+# (docs/adr/0213), and the runtime reads `db[:system]`, but the shim's
+# respond-to-everything answer is kept so the soak runs exactly as before.
 class DbShim
   def initialize(db); @db = db; end
   def system; @db[22]; end
@@ -114,15 +116,15 @@ end
 def command_lists(dir)
   lists = []
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
-  db.common_event&.each do |id, ce|
-    lists << ["common#{id}", ce.event] if ce.event
+  db[:common_event]&.each do |id, ce|
+    lists << ["common#{id}", ce[:event]] if ce[:event]
   end
   Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
     lmu = LCF::MapUnit.new(File.open(f, 'rb'))
-    lmu.events.each do |eid, ev|
-      ev.pages.each do |pid, pg|
-        next unless pg.event_commands
-        lists << ["#{File.basename(f)}:event#{eid}/page#{pid}", pg.event_commands]
+    lmu[:events].each do |eid, ev|
+      ev[:pages].each do |pid, pg|
+        next unless pg[:event_commands]
+        lists << ["#{File.basename(f)}:event#{eid}/page#{pid}", pg[:event_commands]]
       end
     end
   rescue StandardError => e

@@ -48,8 +48,7 @@ FileUtils.mkdir_p(File.join(OUT, 'Title'))
 # RPG_RT.ldb: System (22) + Terms (21) sections only. The party field stays
 # empty (no actors ship): rpg2k_testbed_logic_check.rb scans every game dir
 # including this one, and an absent party must read back as [] (not nil),
-# or Game::Party falls back to `db.system`, which only resolves under mruby
-# (under CRuby it hits Kernel#system -- see AGENTS.md).
+# or Game::Party falls back to reading `db[:system][:party]` itself.
 db = LCF::Database.new
 sys_schema = LCF::Schema::DATABASE[:elements][22]
 sys = LCF::Array1D.new('', sys_schema)

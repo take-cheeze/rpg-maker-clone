@@ -209,7 +209,7 @@ class RPG2k
         # A blank database name draws blank -- see Scene::ItemMenu's own
         # citation (cycle #254, measured under wine). The placeholder above is
         # only for an id with no row at all.
-        it.name.to_s
+        it[:name].to_s
       end
 
       # #item_name's diagnostic for an equipped slot whose item id has no
@@ -472,7 +472,7 @@ class RPG2k
         return unless @desc_contents
         id = @mode == :items ? candidates[@cand_index].first : actor.equipment[@slot_index]
         it = id && id != 0 ? @state.party.db_item(id) : nil
-        text = it ? it.description.to_s : ''
+        text = it ? it[:description].to_s : ''
         @desc_contents.clear
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
         draw_system_text @desc_contents, 0, 0, @desc_contents.width, LINE_H,
@@ -628,7 +628,7 @@ class RPG2k
         return 0 if id.nil? || id == 0
         row = @state.party.db_item(id)
         return 0 unless row
-        (row.respond_to?(field) ? row.send(field) : nil) || 0
+        (LCF.field?(row, field) ? row[field] : nil) || 0
       end
 
       # The summed equip-bonus points of item `id` across all four battle

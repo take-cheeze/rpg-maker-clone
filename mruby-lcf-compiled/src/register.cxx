@@ -14,8 +14,8 @@
 // running its complete init before the next gem's own init starts), so
 // every class fetched below is guaranteed to already exist.
 //
-// Every method NOT registered here (LCF::File#initialize,
-// #method_missing, #respond_to_missing?, #save_to, ...) is untouched:
+// Every method NOT registered here (LCF::File#initialize, #save_to,
+// #field?, #delete, ...) is untouched:
 // mruby-lcf's own mrblib already defined it moments ago, and it keeps
 // running on the ordinary interpreted bytecode path -- the documented
 // fallback for anything bc2cpp couldn't safely compile.
@@ -58,8 +58,8 @@
 // all -- always private, same as every other compiled #initialize in
 // this project), #add, #key?, and #[] (its own `idx.is_a? Symbol` guard
 // is an ordinary POLY send into the native `is_a?`, needing no new
-// bc2cpp.rb opcode work). #method_missing/#respond_to_missing? stay
-// interpreted, same as every other method_missing-using class here.
+// bc2cpp.rb opcode work). #field? (docs/adr/0213, added after this
+// block was written) is not registered and stays interpreted.
 // @by_name/@list are a Hash and an Array (never Fixnum/Symbol), so
 // nothing on this class is embeddable -- confirmed directly: it never
 // appears in bc2cpp's own "classes needing MRB_SET_INSTANCE_TT"
@@ -69,22 +69,22 @@
 // LCF::Array1D (mruby-lcf/mrblib/lcf.rb, right above LCF::Array2D) -- the
 // sequential chunk-id -> raw-bytes record every LCF::File-family object
 // actually decodes through. A more complex class than LCF::Tree/
-// LCF::Sections above (11 real bytecode-defined methods, not 1-4), so only
+// LCF::Sections above (9 real bytecode-defined methods, not 1-4), so only
 // 5 of them compile clean and are registered below: #[], #key?,
 // #int16_values, #delete, #[]= -- all public, pure mandatory arity, no
 // super, no block. See tools/bc2cpp/compiled_gems.rb's own LCF::Array1D
 // comment for the full per-method writeup, including exactly why each of
-// the other 6 real methods (#initialize, #to_lcf, #method_missing,
-// #respond_to_missing?, #sym2idx, plus the native `attr_reader :schema`)
-// stays interpreted: #initialize's own `loop do ... end` and #sym2idx's
+// the others (#initialize, #to_lcf, #sym2idx, plus the native `attr_reader
+// :schema`) stays interpreted; #field? (docs/adr/0213, which also removed
+// #method_missing/#respond_to_missing?) is simply not registered here:
+// #initialize's own `loop do ... end` and #sym2idx's
 // own `LCF.elements_of(@schema).each { |k, e| ... }` are both real
 // BLOCK/S(S)ENDB blocks (loop is an ordinary Kernel#loop method call
 // taking a block, not the already-supported JMP/JMPNOT back-edge shape a
 // plain `while`/`until` keyword loop compiles to -- confirmed directly
 // against the real generated body, not assumed from the source shape);
-// #to_lcf/#respond_to_missing? each have one optional argument; #method_
-// missing has a rest argument. No MRB_SET_INSTANCE_TT call belongs in this
-// class's own registration block below: @data (Array of Strings) and
+// #to_lcf has one optional argument. No MRB_SET_INSTANCE_TT call belongs in
+// this class's own registration block below: @data (Array of Strings) and
 // @schema (a Hash, per its own `# bc2cpp: (, Hash)` annotation) are never
 // Fixnum/Symbol, so this class never appears in bc2cpp's own "classes
 // needing MRB_SET_INSTANCE_TT" diagnostic -- confirmed directly, not
@@ -289,8 +289,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // listing, none flagged private (unlike every compiled #initialize in
   // this file, #[]/#key?/#int16_values/#delete/#[]= carry no source-level
   // `private` and are not mruby's own always-private #initialize special
-  // case). #initialize, #to_lcf, #method_missing, #respond_to_missing?
-  // and #sym2idx stay interpreted -- see this file's own top comment and
+  // case). #initialize, #to_lcf, #field? and #sym2idx stay interpreted --
+  // see this file's own top comment and
   // tools/bc2cpp/compiled_gems.rb's own LCF::Array1D comment for exactly
   // why each one does. No MRB_SET_INSTANCE_TT call belongs here: this
   // class never appears in bc2cpp's own "classes needing
@@ -303,8 +303,6 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "delete", LCF__Array1D_delete, MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "[]=", LCF__Array1D____, MRB_ARGS_REQ(2));
-  mrb_define_method(M, array1d, "method_missing", LCF__Array1D_method_missing,
-                    MRB_ARGS_REQ(1) | MRB_ARGS_REST());
 
   // LCF::Array2D: only 2 of its own 6 real bytecode-defined methods
   // compile clean and are registered below -- both public, confirmed
@@ -324,7 +322,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // end` / `def []= idx, value ; @root[idx] = value end`) were flagged as a
   // pre-existing gap by this project's own LCF::Array1D follow-up
   // (docs/adr/0139): the `#error unhandled opcode BLOCK`-style diagnostics
-  // that keep #initialize/#method_missing/#respond_to_missing?/#save_to
+  // that keep #initialize/#save_to
   // interpreted (see this file's own top comment) never applied to these
   // two -- both #[] and #[]= compile clean today, confirmed directly
   // against the real `== compiled entry points ==` listing, but had simply

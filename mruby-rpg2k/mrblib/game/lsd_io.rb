@@ -254,13 +254,13 @@ module Game
           mv[73] = v.charset_name
           idx = v.charset_index || 0
           mv[74] = idx if idx != 0
-        elsif db && db.respond_to?(:system) && db.system
-          name_field = "#{type}_name"
-          index_field = "#{type}_index"
-          name = db.system.respond_to?(name_field) ? db.system.send(name_field) : nil
+        elsif db && LCF.field?(db, :system) && db[:system]
+          name_field = :"#{type}_name"
+          index_field = :"#{type}_index"
+          name = LCF.field?(db[:system], name_field) ? db[:system][name_field] : nil
           if name && !name.to_s.empty?
             mv[73] = name.to_s
-            idx = db.system.respond_to?(index_field) ? (db.system.send(index_field) || 0) : 0
+            idx = LCF.field?(db[:system], index_field) ? (db[:system][index_field] || 0) : 0
             mv[74] = idx if idx != 0
           end
         end
@@ -438,13 +438,13 @@ module Game
       # gap.
       if db && map_tree && self.map
         begin
-          props = map_tree.respond_to?(:map_properties) ? map_tree.map_properties : nil
+          props = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
           terrain_name = ''
-          if db.respond_to?(:chipset) && db.respond_to?(:terrain) && self.map.in_bounds?(@x, @y)
+          if LCF.field?(db, :chipset) && LCF.field?(db, :terrain) && self.map.in_bounds?(@x, @y)
             chipset = ChipSet.new(db, self.map.chipset_id)
             tid = chipset.terrain(self.map.lower(@x, @y))
-            row = db.terrain[tid]
-            terrain_name = row.background_name.to_s if row && row.respond_to?(:background_name)
+            row = db[:terrain][tid]
+            terrain_name = row[:background_name].to_s if row && LCF.field?(row, :background_name)
           end
           name = Backdrop.name_for(map_id, props, terrain_name)
           sys[125] = name unless name.nil? || name.empty?
@@ -1216,7 +1216,7 @@ module Game
           # restores the same as never having touched it, so no changed-flag
           # gating is needed the way battle_commands' own nil-vs-empty
           # ambiguity requires above.
-          actor.battle_row = sa[:row] if sa.respond_to?(:row)
+          actor.battle_row = sa[:row] if LCF.field?(sa, :row)
           # A Change Actor Name override on *any* roster member, not just the
           # leader (whose name chunk 100's title also carries below). ADR
           # 0014 already flagged this field's other case when it was first
@@ -1245,8 +1245,8 @@ module Game
           # writes it under; an absent field leaves the actor's own database
           # default charset (#initialize) untouched.
           sn = sa[:sprite_name]
-          actor.set_charset(sn, sa.sprite_id || 0) if sn
-          actor.transparent = (sa.sprite_transparent || 0) != 0 if sn
+          actor.set_charset(sn, sa[:sprite_id] || 0) if sn
+          actor.transparent = (sa[:sprite_transparent] || 0) != 0 if sn
         end
         hp[aid] = sa[:hp] if sa[:hp]
         mp[aid] = sa[:mp] if sa[:mp]

@@ -36,13 +36,22 @@ module LCF
     def header; raise end
     def schema; raise end
 
-    # Forward straight to the root record/section -- a real method instead of
-    # relying on method_missing below, which every numeric- or symbol-keyed
-    # `file[idx]`/`file[idx] = v` call site already went through anyway
-    # (Array1D/Sections' own #[]/#[]= already accept both forms).
+    # Forward straight to the root record/section (Array1D/Sections' own
+    # #[]/#[]= accept both a chunk id and a Symbol field/section name). These
+    # are the whole of a file's field access: `db[:system]`, `tree[:initial]`,
+    # `save[:hero]`. There is no dotted `db.system` form and no catch-all
+    # forwarding of other names to the root (docs/adr/0213); a root method a
+    # caller needs through the file gets its own forwarder here.
     def [] idx ; @root[idx] end
     def []= idx, value ; @root[idx] = value end
     def key? idx ; @root.key?(idx) end
+    # Whether the root's schema declares field/section +sym+ (see
+    # Array1D#field? / Sections#field?).
+    def field? sym ; @root.field?(sym) end
+    # Drop a root chunk (Array1D#delete), e.g. to write a save that predates
+    # a chunk. A section-based root has no chunks to drop and raises
+    # NoMethodError, as before.
+    def delete idx ; @root.delete(idx) end
 
     # Whether the root chunk list ends with a trailing 0x00 terminator.
     # `.lsd` (SaveData) and `.ldb` (Database) do not -- confirmed by a
@@ -64,17 +73,6 @@ module LCF
     # Write #to_lcf to a path (binary). Uses ::File since LCF::File shadows it.
     def save_to path
       ::File.open(path, 'wb') { |f| f.write to_lcf }
-    end
-
-    def method_missing sym, *args
-      # Use __send__ rather than send: some mruby builds do not expose Kernel#send
-      # on objects that define their own method_missing (Array1D / Sections),
-      # which routes `send` into method_missing and breaks field access.
-      @root.__send__ sym, *args
-    end
-
-    def respond_to_missing? sym, include_private = false
-      @root.respond_to?(sym) || super
     end
   end
 

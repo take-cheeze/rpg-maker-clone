@@ -645,8 +645,8 @@ class RPG2k
   # harmless default every real project's database also reads back until
   # this box is unchecked.
   def show_title?
-    !(@db.respond_to?(:system) && @db.system.respond_to?(:show_title) &&
-      @db.system.show_title == false)
+    !(LCF.field?(@db, :system) && LCF.field?(@db[:system], :show_title) &&
+      @db[:system][:show_title] == false)
   end
 
   # Split out of #initialize so #show_title?'s branch can be exercised
@@ -821,11 +821,11 @@ class RPG2k
   # inspect one map's rendering, e.g. piped through --iterm, without a save
   # file positioned there.
   def start_new_game
-    init = map_tree.initial
-    map_id = preview_map_id || init.initial_map_id
+    init = map_tree[:initial]
+    map_id = preview_map_id || init[:initial_map_id]
     map = RGSS::Profiler.section("map.transition.load") { load_map map_id }
     x, y = preview_map_id ? [map.width / 2, map.height / 2]
-                           : [init.initial_x, init.initial_y]
+                           : [init[:initial_x], init[:initial_y]]
     state = RGSS::Profiler.section("map.transition.party") do
       Game::State.new Game::Party.new(@db), map_id, x, y
     end

@@ -72,8 +72,9 @@ assert "Game::Transition.new survives real GC pressure, independently, field-for
 end
 
 # A minimal duck-typed stand-in for LCF::MapUnit (mruby-lcf/mrblib/lcf.rb) --
-# Game::Map#initialize only ever calls #width/#height/#chipset_id/
-# #lower_layer/#upper_layer on its own `unit` argument (mruby-rpg2k/mrblib/
+# Game::Map#initialize only ever reads `unit[:width]`/`[:height]`/
+# `[:chipset_id]`/`[:lower_layer]`/`[:upper_layer]` (LCF::Array1D#[], see
+# docs/adr/0213) on its own `unit` argument (mruby-rpg2k/mrblib/
 # game.rb), so a real parsed .lmu file is not needed to exercise the exact
 # same construction shape RPG2k#load_map's own real `Game::Map.new id,
 # LCF::MapUnit.new(File.open(map_path(id)))` call site uses.
@@ -93,6 +94,11 @@ class RPG2kMapUnitTestStub
 
   def upper_layer
     @upper
+  end
+
+  # LCF::Array1D#[] by field name.
+  def [](name)
+    send(name)
   end
 end
 
@@ -185,7 +191,7 @@ end
 # A minimal duck-typed stand-in for the one database player row
 # `Game::Actor#initialize` actually reads (mruby-rpg2k/mrblib/game.rb) --
 # every field this class does NOT define is one `#initialize`/#set_level
-# only ever reads through its own `respond_to?` guard (class table, growth
+# only ever reads through its own `LCF.field?` guard (class table, growth
 # curve, equipment, skills, RPG2003-only fields), each already documented
 # to fall back to a plain RPG2000-shaped default (no class, curve-less
 # zeroed base stats, empty equipment/skills, `#rpg2003?` reading false --
@@ -204,6 +210,11 @@ class RPG2kActorTestRow
     @faceset_index = 0
     @initial_level = 1
   end
+
+  # LCF::Array1D#[] by field name (docs/adr/0213).
+  def [](name)
+    send(name)
+  end
 end
 
 class RPG2kActorTestDb
@@ -211,6 +222,11 @@ class RPG2kActorTestDb
     @player = { 1 => RPG2kActorTestRow.new }
   end
   attr_reader :player
+
+  # LCF::File#[] by section name (docs/adr/0213).
+  def [](name)
+    send(name)
+  end
 end
 
 assert 'Game::Actor NATIVE_ARG_TARGETS methods: correct results for a real Integer ' \

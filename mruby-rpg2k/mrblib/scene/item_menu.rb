@@ -296,9 +296,9 @@ class RPG2k
           return
         end
         it = @state.party.db_item(id)
-        sk = (it && (it.type == Game::Party::ITEM_SPECIAL ||
-                    (it.use_skill && (1..5).cover?(it.type)))) ?
-               @state.party.db_skill(it.skill_id) : nil
+        sk = (it && (it[:type] == Game::Party::ITEM_SPECIAL ||
+                    (it[:use_skill] && (1..5).cover?(it[:type])))) ?
+               @state.party.db_skill(it[:skill_id]) : nil
         # Only a genuine type-9 special item warps for an Escape/Teleport
         # skill (or is buzzer-gated on access/target before it even tries)
         # -- ported from a reference implementation, not independently
@@ -323,7 +323,7 @@ class RPG2k
         # shared `do_skill` path for both item kinds, which `#apply_special
         # _switch_item`/`#use_special_switch_item` below already gets right
         # for both.
-        special = it && it.type == Game::Party::ITEM_SPECIAL
+        special = it && it[:type] == Game::Party::ITEM_SPECIAL
         # An Escape/Teleport-invoking special item is always listed (see
         # Game::Party#field_skill?, which #field_usable?'s special-item
         # branch now defers to) but only castable once access and a
@@ -339,13 +339,13 @@ class RPG2k
         # show a fabricated "It had no effect." message and a stray
         # Decision-then-Buzzer double beep that RPG_RT never produces for a
         # disabled entry.
-        if special && sk && sk.type == Game::Party::SKILL_ESCAPE &&
+        if special && sk && sk[:type] == Game::Party::SKILL_ESCAPE &&
            @state.party.respond_to?(:escape_skill_available?) &&
            !@state.party.escape_skill_available?(@state)
           play_system_se(SFX_BUZZER)
           return
         end
-        if special && sk && sk.type == Game::Party::SKILL_TELEPORT &&
+        if special && sk && sk[:type] == Game::Party::SKILL_TELEPORT &&
            @state.party.respond_to?(:teleport_skill_available?) &&
            !@state.party.teleport_skill_available?(@state)
           play_system_se(SFX_BUZZER)
@@ -356,15 +356,15 @@ class RPG2k
         # target prompt; single-target medicines / skill books ask who to use on.
         # A special item follows the *skill* it invokes, since that is what
         # decides the scope — self (2) or all-ally (4) needs no prompt.
-        if it && it.type == Game::Party::ITEM_SWITCH
+        if it && it[:type] == Game::Party::ITEM_SWITCH
           apply_switch_item(id)
-        elsif sk && special && sk.type == Game::Party::SKILL_ESCAPE
+        elsif sk && special && sk[:type] == Game::Party::SKILL_ESCAPE
           # Escape has one registered target and no picker -- mirroring
           # Scene::SkillMenu#apply_escape_skill, a successful cast warps
           # straight there with no confirmation message. Genuine special
           # items only -- see this method's own doc comment above.
           apply_escape_item(id)
-        elsif sk && special && sk.type == Game::Party::SKILL_TELEPORT
+        elsif sk && special && sk[:type] == Game::Party::SKILL_TELEPORT
           # Teleport opens a third list of every registered destination, the
           # same as Scene::SkillMenu's own teleport picker. Genuine special
           # items only -- see this method's own doc comment above.
@@ -373,19 +373,19 @@ class RPG2k
           @teleport_index = 0
           enter_teleport_target
         elsif sk
-          if sk.type == Game::Party::SKILL_SWITCH
+          if sk[:type] == Game::Party::SKILL_SWITCH
             # A switch skill has no target and no confirmation message either
             # -- mirroring Scene::SkillMenu#apply_switch_skill, a successful
             # cast closes the whole menu stack at once. Both item kinds take
             # this branch -- see this method's own doc comment above.
             apply_special_switch_item(id)
-          elsif sk.type == Game::Party::SKILL_ESCAPE || sk.type == Game::Party::SKILL_TELEPORT
+          elsif sk[:type] == Game::Party::SKILL_ESCAPE || sk[:type] == Game::Party::SKILL_TELEPORT
             # A use_skill equipment item invoking Escape/Teleport: no warp,
             # no picker of its own -- the ordinary single-target prompt
             # below, exactly like ordinary equipment (see this method's own
             # doc comment above and #use_equip_skill_item's).
             prompt_item_target(id)
-          elsif sk.scope == 2 || sk.scope == 4
+          elsif sk[:scope] == 2 || sk[:scope] == 4
             # Unlike a medicine (whose all-ally scope needs no actor at all --
             # #use_medicine reads the whole party off `@actors`, ignoring the
             # argument), a special item's `actor` argument is the *caster*
@@ -397,11 +397,11 @@ class RPG2k
             # #enter_target_confirm's own doc comment for why this codebase
             # still shows the confirm screen for both rather than skipping it.
             @pending_item = id
-            enter_target_confirm(sk.scope == 2 ? :self : :party)
+            enter_target_confirm(sk[:scope] == 2 ? :self : :party)
           else
             prompt_item_target(id)
           end
-        elsif it && it.scope == 1 && it.type == Game::Party::ITEM_MEDICINE
+        elsif it && it[:scope] == 1 && it[:type] == Game::Party::ITEM_MEDICINE
           @pending_item = id
           enter_target_confirm(:party)
         else
@@ -640,8 +640,8 @@ class RPG2k
       # A map's editor name for the teleport picker, or its bare id when the
       # tree carries no name for it -- see Scene::SkillMenu#map_display_name.
       def map_display_name(map_id)
-        row = map_tree.respond_to?(:map_properties) ? map_tree.map_properties[map_id] : nil
-        name = row && row.respond_to?(:name) ? row.name.to_s : nil
+        row = LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties][map_id] : nil
+        name = row && LCF.field?(row, :name) ? row[:name].to_s : nil
         name.nil? || name.empty? ? "Map #{map_id}" : name
       end
 
@@ -751,11 +751,11 @@ class RPG2k
       # (`SFX_UseItem`) for every other item type.
       def play_item_use_se(id)
         it = @state.party.db_item(id)
-        do_skill = it && (it.type == Game::Party::ITEM_SPECIAL ||
-                           (it.use_skill && (1..5).cover?(it.type)))
+        do_skill = it && (it[:type] == Game::Party::ITEM_SPECIAL ||
+                           (it[:use_skill] && (1..5).cover?(it[:type])))
         if do_skill
-          sk = @state.party.db_skill(it.skill_id)
-          play_animation_se(sk && sk.animation_id)
+          sk = @state.party.db_skill(it[:skill_id])
+          play_animation_se(sk && sk[:animation_id])
         else
           play_system_se(SFX_ITEM)
         end
@@ -835,9 +835,9 @@ class RPG2k
         text = if it.nil?
                  ''
                elsif @mode == :target
-                 it.name.to_s
+                 it[:name].to_s
                else
-                 it.description.to_s
+                 it[:description].to_s
                end
         @desc_contents.clear
         @desc_contents.font.color = Color.new(255, 255, 255, 255)
@@ -904,7 +904,7 @@ class RPG2k
         # column empty while this engine printed an invented "Item <id>". The
         # placeholder is kept only for an id with no row at all, which is a
         # broken-data diagnostic rather than something RPG_RT was measured on.
-          name = it ? it.name.to_s : "Item #{id}"
+          name = it ? it[:name].to_s : "Item #{id}"
           x = item_col_x(i % COLUMN_MAX)
           y = (i / COLUMN_MAX - @item_top) * LINE_H
           idx = @state.party.field_usable?(id, @state) ? 0 : 3

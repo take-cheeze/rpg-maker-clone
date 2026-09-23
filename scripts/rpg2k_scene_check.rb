@@ -904,6 +904,9 @@ class FakeMapUnit
   def respond_to_missing?(sym, include_private = false)
     @fields.key?(sym) || super
   end
+  # LCF::Array1D#[] by field name, which is how the runtime reads a map
+  # unit's fields.
+  def [](sym) = @fields.fetch(sym)
   def []=(idx, value); @sets[idx] = value; end
   def save_to(path)
     @saved_to = path
@@ -929,7 +932,10 @@ class FakeChipsetRow
   def respond_to_missing?(sym, include_private = false)
     @fields.key?(sym) || super
   end
+  # A field name (what the editor reads) or a chunk id (what it writes back),
+  # the two keys a real Array1D#[] takes.
   def [](idx)
+    return @fields[idx] if idx.is_a?(Symbol)
     name = FIELD_IDX.key(idx)
     name ? @fields[name] : nil
   end

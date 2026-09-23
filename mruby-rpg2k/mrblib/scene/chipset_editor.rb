@@ -63,7 +63,7 @@ class RPG2k
         @state = state
         @quit_on_close = quit_on_close
         @chipset_id = state.map ? state.map.chipset_id : 1
-        @chip = @db.respond_to?(:chipset) ? @db.chipset[@chipset_id] : nil
+        @chip = LCF.field?(@db, :chipset) ? @db[:chipset][@chipset_id] : nil
         @skin = make_windowskin
         @background = build_field_background(@skin)
         @window = Window.new(0, 0, SCREEN_W, SCREEN_H)
@@ -150,9 +150,9 @@ class RPG2k
       def current_bytes
         return nil unless @chip
         if @tab == :lower
-          @chip.passable_data_lower || Array.new(LOWER_COUNT, Game::ChipSet::ALL_DIRS)
+          @chip[:passable_data_lower] || Array.new(LOWER_COUNT, Game::ChipSet::ALL_DIRS)
         else
-          @chip.passable_data_upper || Array.new(UPPER_COUNT, 0)
+          @chip[:passable_data_upper] || Array.new(UPPER_COUNT, 0)
         end
       end
 

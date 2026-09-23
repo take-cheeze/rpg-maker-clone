@@ -1053,6 +1053,13 @@ jobs:
           - name: LCF schema coverage
             run: ruby scripts/lcf_schema_coverage.rb
 
+          # LCF record/section/file fields are read with `[]` only (ADR 0213):
+          # method_missing must not come back, no field name may answer as a
+          # method, and `[]` must read what the removed dotted access read on
+          # real test-bed records.
+          - name: LCF bracket field access check
+            run: ruby scripts/lcf_bracket_access_check.rb
+
           - name: RPG2003 battle-command data check
             run: ruby scripts/rpg2k3_battle_command_check.rb
 

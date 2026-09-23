@@ -124,23 +124,23 @@ class SaveChecker
   # position must lie inside the map. (Chunk 111 also carries two leading int
   # fields whose meaning needs differential saves to pin down.)
   def check_map_events(save, dir)
-    me = save.map_events
-    return unless me && me.events
-    map_id = save.hero.map_id.to_i
+    me = save[:map_events]
+    return unless me && me[:events]
+    map_id = save[:hero][:map_id].to_i
     f = File.join(dir, "Map#{map_id.to_s.rjust(4, '0')}.lmu")
     return unless File.exist?(f)
     mu = LCF::MapUnit.new(File.open(f, 'rb'))
     defined = {}
-    mu.events.each { |id, _e| defined[id] = true }
-    w = mu.width.to_i
-    h = mu.height.to_i
+    mu[:events].each { |id, _e| defined[id] = true }
+    w = mu[:width].to_i
+    h = mu[:height].to_i
     saved = 0
-    me.events.each do |id, m|
+    me[:events].each do |id, m|
       next unless m
       saved += 1
       fail "map-event #{id} not defined on map #{map_id}" unless defined[id]
-      unless (0...w).cover?(m.x.to_i) && (0...h).cover?(m.y.to_i)
-        fail "map-event #{id} position (#{m.x},#{m.y}) outside map #{map_id} #{w}x#{h}"
+      unless (0...w).cover?(m[:x].to_i) && (0...h).cover?(m[:y].to_i)
+        fail "map-event #{id} position (#{m[:x]},#{m[:y]}) outside map #{map_id} #{w}x#{h}"
       end
     end
     puts "  map-events: #{saved} saved on map #{map_id} (all match defined events, in-bounds)"
@@ -149,41 +149,41 @@ class SaveChecker
   # Cross-check the decoded values a save always carries -- these confirm the
   # documented sections read as the right types rather than merely not raising.
   def summarise(save, raw, schema)
-    t = save.title
-    puts "  title:   hero=#{t.hero_name.inspect} lv=#{t.hero_level} hp=#{t.hero_hp} " \
-         "timestamp=#{t.timestamp.inspect}"
+    t = save[:title]
+    puts "  title:   hero=#{t[:hero_name].inspect} lv=#{t[:hero_level]} hp=#{t[:hero_hp]} " \
+         "timestamp=#{t[:timestamp].inspect}"
     sys = save[101] # avoid Kernel#system when reached by name under CRuby
     if sys
-      sw = sys.switches
-      va = sys.variables
-      puts "  system:  scene=#{sys.scene} frame=#{sys.frame_count} " \
-           "save_count=#{sys.save_count} save_slot=#{sys.save_slot}"
+      sw = sys[:switches]
+      va = sys[:variables]
+      puts "  system:  scene=#{sys[:scene]} frame=#{sys[:frame_count]} " \
+           "save_count=#{sys[:save_count]} save_slot=#{sys[:save_slot]}"
       puts "  switches: #{sw ? "#{sw.count(true)} on / #{sw.size}" : 'nil'}   " \
            "variables: #{va ? "#{va.count { |x| x != 0 }} nonzero / #{va.size}" : 'nil'}"
       fail 'switches decoded to a non-boolean array' if sw && !sw.all? { |x| x == true || x == false }
     end
-    h = save.hero
+    h = save[:hero]
     if h
-      puts "  hero:    map=#{h.map_id} pos=(#{h.x},#{h.y}) dir=#{h.direction} " \
-           "charset=#{h.charset_name.inspect}"
-      fail 'hero has non-positive map id' if h.map_id.to_i <= 0
+      puts "  hero:    map=#{h[:map_id]} pos=(#{h[:x]},#{h[:y]}) dir=#{h[:direction]} " \
+           "charset=#{h[:charset_name].inspect}"
+      fail 'hero has non-positive map id' if h[:map_id].to_i <= 0
     end
     actors = 0
     detail = []
-    (save.actors.each do |id, a|
+    (save[:actors].each do |id, a|
       actors += 1
       if detail.size < 4
-        eq = (a.equipment || []).reject { |i| i == 0 }.size
-        detail << "##{id} L#{a.level}/#{a.exp}xp hp=#{a.hp} mp=#{a.mp} eq=#{eq}"
+        eq = (a[:equipment] || []).reject { |i| i == 0 }.size
+        detail << "##{id} L#{a[:level]}/#{a[:exp]}xp hp=#{a[:hp]} mp=#{a[:mp]} eq=#{eq}"
       end
     end rescue nil)
     puts "  party:   #{actors} saved actor entrie(s)#{detail.empty? ? '' : " #{detail.join('  ')}"}"
-    inv = save.inventory
+    inv = save[:inventory]
     if inv
-      ids = inv.item_ids || []
-      cnt = inv.item_counts || []
+      ids = inv[:item_ids] || []
+      cnt = inv[:item_counts] || []
       items = ids.each_index.map { |i| "#{ids[i]}x#{cnt[i]}" }.join(' ')
-      puts "  inventory: gold=#{inv.gold} items(id x count)=[#{items}]"
+      puts "  inventory: gold=#{inv[:gold]} items(id x count)=[#{items}]"
     end
   end
 

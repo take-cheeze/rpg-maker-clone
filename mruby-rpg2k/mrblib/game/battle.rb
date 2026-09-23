@@ -1421,8 +1421,8 @@ module Game
     # unknown state or a fixture row without the field. Distinct from
     # #state_field, whose 0 default would read a missing field as "always miss".
     def state_hit_ratio(d)
-      return 100 unless d.respond_to?(:reduce_hit_ratio)
-      v = d.reduce_hit_ratio
+      return 100 unless LCF.field?(d, :reduce_hit_ratio)
+      v = d[:reduce_hit_ratio]
       v.nil? ? 100 : v
     end
 
@@ -1461,7 +1461,7 @@ module Game
       (b.states || []).each do |sid|
         d = state_def(sid)
         next unless d && state_flag(d, stat_flag)
-        case d.respond_to?(:affect_type) ? d.affect_type : 2
+        case LCF.field?(d, :affect_type) ? d[:affect_type] : 2
         when 0 then half = true
         when 1 then dbl = true
         end
@@ -1762,9 +1762,9 @@ module Game
         d = state_def(sid)
         next unless d
         return true if state_flag(d, :restrict_skill) &&
-                       (sk.physical_rate || 0) >= state_field(d, :restrict_skill_level)
+                       (sk[:physical_rate] || 0) >= state_field(d, :restrict_skill_level)
         return true if state_flag(d, :restrict_magic) &&
-                       (sk.magical_rate || 0) >= state_field(d, :restrict_magic_level)
+                       (sk[:magical_rate] || 0) >= state_field(d, :restrict_magic_level)
       end
       false
     end
@@ -1826,7 +1826,7 @@ module Game
     end
 
     # A field off a state row, tolerating a fixture that omits it.
-    def state_field(d, name); d.respond_to?(name) ? (d.send(name) || 0) : 0; end
+    def state_field(d, name); LCF.field?(d, name) ? (d[name] || 0) : 0; end
 
     # Apply `b`'s afflicted states at the start of its turn: first roll each state
     # for auto-recovery (once it has held longer than its `hold_turn`, an
@@ -2340,7 +2340,7 @@ module Game
     def battle_command_type(b, cmd_id)
       actor = b.respond_to?(:actor) ? b.actor : nil
       row = actor && actor.respond_to?(:battle_command_row) ? actor.battle_command_row(cmd_id) : nil
-      return row.type if row && row.respond_to?(:type)
+      return row[:type] if row && LCF.field?(row, :type)
       DEFAULT_BATTLE_COMMAND_TYPES[cmd_id]
     end
 
@@ -2765,14 +2765,14 @@ module Game
     end
 
     def skill_name_of(sk)
-      sk.respond_to?(:name) ? sk.name.to_s : ''
+      LCF.field?(sk, :name) ? sk[:name].to_s : ''
     end
 
     # Who an enemy's skill hits, read from the caster's side of the field: a
     # scope aimed at "enemies" (0 single / 1 all) means the party, and one aimed
     # at "allies" (2 the caster / 3 single / 4 all) means the troop.
     def enemy_skill_targets(b, sk)
-      scope = sk.respond_to?(:scope) ? sk.scope.to_i : 0
+      scope = LCF.field?(sk, :scope) ? sk[:scope].to_i : 0
       case scope
       when 1 then @allies.reject(&:out_of_play?)
       when 2 then [b]
@@ -2913,7 +2913,7 @@ module Game
       return 0.0 unless Game::Party.normal_skill?(sk)
       return 0.0 unless @ai && b.actor && @ai.skill_ready?(b.actor, sid)
       rank =
-        case sk.scope
+        case sk[:scope]
         when 3 then @allies.reduce(0.0) { |m, t| [m, auto_battle_heal_rank(b, sk, t)].max }
         when 4 then @allies.reduce(0.0) { |s, t| s + auto_battle_heal_rank(b, sk, t) }
         when 0 then @enemies.reduce(0.0) { |m, t| [m, auto_battle_damage_rank(b, sk, t)].max }
@@ -2951,7 +2951,7 @@ module Game
       return 0.0 unless cmd
       dmg = -(cmd[:hp] || 0)
       dmg = apply_attr_multiplier(dmg, cmd[:attributes], target)
-      dmg = varied(dmg, sk.respond_to?(:variance) ? (sk.variance || 0) : 0)
+      dmg = varied(dmg, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
       tgt_hp = target.hp
       return 0.0 if tgt_hp <= 0
       rank = [dmg, tgt_hp].min.to_f / tgt_hp
@@ -2988,13 +2988,13 @@ module Game
     # here, exactly like real RPG_RT).
     def auto_battle_heal_rank(b, sk, target)
       if target.hp > 0
-        return 0.0 unless sk.respond_to?(:affect_hp) && sk.affect_hp
+        return 0.0 unless LCF.field?(sk, :affect_hp) && sk[:affect_hp]
         cmd = @ai && @ai.skill_command(sk, b, target)
         return 0.0 unless cmd
         base = cmd[:hp] || 0
         return 0.0 if base <= 0
         base = apply_attr_multiplier(base, cmd[:attributes], target)
-        base = varied(base, sk.respond_to?(:variance) ? (sk.variance || 0) : 0)
+        base = varied(base, LCF.field?(sk, :variance) ? (sk[:variance] || 0) : 0)
         tgt_max_hp = target.max_hp || 0
         return 0.0 if tgt_max_hp <= 0
         max_effect = [base, tgt_max_hp - target.hp].min
@@ -3006,9 +3006,9 @@ module Game
         end
         rank
       else
-        ids = sk.respond_to?(:state_effects) ? sk.state_effects : nil
+        ids = LCF.field?(sk, :state_effects) ? sk[:state_effects] : nil
         return 0.0 unless ids && ids[0] && ids[0] != 0
-        (sk.respond_to?(:power) ? (sk.power || 0) : 0) / 1000.0 + 1.0
+        (LCF.field?(sk, :power) ? (sk[:power] || 0) : 0) / 1000.0 + 1.0
       end
     end
 
@@ -3031,10 +3031,10 @@ module Game
       # so a hand-edited row can carry anything) would route through the
       # percent formula here even though the actual charge (#skill_cost) never
       # would, inflating the ranking-only cost term this feeds.
-      if @rpg2003 && sk.respond_to?(:sp_type) && sk.sp_type == 1
-        (caster.max_mp || 0) * (sk.respond_to?(:sp_percent) ? (sk.sp_percent || 0) : 0) / 100
+      if @rpg2003 && LCF.field?(sk, :sp_type) && sk[:sp_type] == 1
+        (caster.max_mp || 0) * (LCF.field?(sk, :sp_percent) ? (sk[:sp_percent] || 0) : 0) / 100
       else
-        sk.respond_to?(:sp_cost) ? (sk.sp_cost || 0) : 0
+        LCF.field?(sk, :sp_cost) ? (sk[:sp_cost] || 0) : 0
       end
     end
 
@@ -3121,7 +3121,7 @@ module Game
     # every candidate ranks at or below zero. Self/all-target scopes need no
     # such search.
     def queue_auto_battle_skill(b, sk, sid)
-      case sk.scope
+      case sk[:scope]
       when 1 # all enemies
         queue_auto_battle_group_skill(b, sk, sid, @enemies.reject(&:out_of_play?))
       when 4 # all allies
@@ -3540,8 +3540,8 @@ module Game
     # when known, else the RPG2000 default table.
     def attr_rate(aid, rank)
       row = @attributes ? @attributes[aid] : nil
-      if row && row.respond_to?(:a_rate)
-        r = [row.a_rate, row.b_rate, row.c_rate, row.d_rate, row.e_rate][rank]
+      if row && LCF.field?(row, :a_rate)
+        r = [row[:a_rate], row[:b_rate], row[:c_rate], row[:d_rate], row[:e_rate]][rank]
         return r if r
       end
       ATTR_RATE_PCT[rank]
@@ -3556,7 +3556,7 @@ module Game
     # #attribute_weapon_type? also falls back to.
     def attribute_physical?(aid)
       row = @attributes ? @attributes[aid] : nil
-      row && row.respond_to?(:type) && row.type == 0 ? true : false
+      row && LCF.field?(row, :type) && row[:type] == 0 ? true : false
     end
 
     # Scale `dmg` by `attr_ids`'s rate against `target`'s per-attribute
@@ -3662,7 +3662,7 @@ module Game
     # A state's boolean field, false for an unknown state or a fixture row that
     # does not model it.
     def state_flag(d, name)
-      d.respond_to?(name) ? (d.send(name) ? true : false) : false
+      LCF.field?(d, name) ? (d[name] ? true : false) : false
     end
 
     # A random living target for a forced attack: an enemy (attack-enemy) or a
@@ -4222,8 +4222,8 @@ module Game
     # known, else the RPG2000 default table.
     def state_rate(sid, rank)
       row = state_def(sid)
-      if row && row.respond_to?(:a_rate)
-        r = [row.a_rate, row.b_rate, row.c_rate, row.d_rate, row.e_rate][rank]
+      if row && LCF.field?(row, :a_rate)
+        r = [row[:a_rate], row[:b_rate], row[:c_rate], row[:d_rate], row[:e_rate]][rank]
         return r if r
       end
       STATE_RATE_PCT[rank]

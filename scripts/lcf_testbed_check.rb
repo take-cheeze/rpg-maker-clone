@@ -90,17 +90,17 @@ class Checker
     maker = db.maker
     puts "  maker: RPG Maker #{maker}"
     if db.rpg2003?
-      classes = db.job
+      classes = db[:job]
       fail 'ldb: 2003 database has no Classes section' unless classes
       ids = {}
       classes&.each { |id, _c| ids[id] = true }
-      db.player&.each do |aid, actor|
-        cid = actor.class_id.to_i
+      db[:player]&.each do |aid, actor|
+        cid = actor[:class_id].to_i
         next if cid.zero?
         fail "ldb.player[#{aid}].class_id #{cid} has no matching class" unless ids[cid]
       end
       puts "  classes: #{ids.size}"
-    elsif db.job
+    elsif db[:job]
       fail 'ldb: RPG2000 database unexpectedly carries a Classes section (chunk 30)'
     end
   end
@@ -119,22 +119,22 @@ class Checker
   # is closed.
   def check_battlecommands(db)
     if db.rpg2003?
-      bc = db.battlecommands
+      bc = db[:battlecommands]
       fail 'ldb: 2003 database has no Battle Commands list (chunk 29)' unless bc
-      cmds = bc && bc.commands
+      cmds = bc && bc[:commands]
       fail 'ldb: 2003 Battle Commands list has no commands (field 10)' unless cmds
       ids = {}
       cmds&.each { |id, _c| ids[id] = true }
       %w[player job].each do |table|
-        db.send(table)&.each do |id, row|
-          row.battle_commands&.each do |rid|
+        db[table.to_sym]&.each do |id, row|
+          row[:battle_commands]&.each do |rid|
             next unless rid.is_a?(Integer) && rid.positive?
             fail "ldb.#{table}[#{id}].battle_commands reference #{rid} has no matching command" unless ids[rid]
           end
         end
       end
       puts "  battlecommands: #{ids.size} commands"
-    elsif db.battlecommands
+    elsif db[:battlecommands]
       fail 'ldb: RPG2000 database unexpectedly carries a Battle Commands list (chunk 29)'
     end
   end
@@ -148,8 +148,8 @@ class Checker
     check_battlecommands(db)
 
     lmt = LCF::MapTree.new(File.open(File.join(dir, 'RPG_RT.lmt'), 'rb'))
-    fail 'map tree has no start map' if lmt.initial.initial_map_id.to_i <= 0
-    lmt.map_properties.each { |id, m| walk(m, LCF::Schema::MAP_TREE[0], "lmt[#{id}]") }
+    fail 'map tree has no start map' if lmt[:initial][:initial_map_id].to_i <= 0
+    lmt[:map_properties].each { |id, m| walk(m, LCF::Schema::MAP_TREE[0], "lmt[#{id}]") }
 
     Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
       base = File.basename(f)
@@ -162,15 +162,15 @@ class Checker
       # genuine RPG_RT.exe hung on a black screen trying to load one.
       rebuilt = lmu.to_lcf
       fail "#{base}: round-trip not byte-exact (#{rebuilt.bytesize} vs #{original.bytesize} bytes)" if rebuilt != original
-      w = lmu.width.to_i
-      h = lmu.height.to_i
+      w = lmu[:width].to_i
+      h = lmu[:height].to_i
       fail "#{base}: non-positive dimensions #{w}x#{h}" if w <= 0 || h <= 0
-      lower = lmu.lower_layer
-      upper = lmu.upper_layer
+      lower = lmu[:lower_layer]
+      upper = lmu[:upper_layer]
       fail "#{base}: lower layer #{lower.size} != #{w}x#{h}" if lower && lower.size != w * h
       fail "#{base}: upper layer #{upper.size} != #{w}x#{h}" if upper && upper.size != w * h
       check_generator(base, lmu)
-      lmu.events.each { |_id, _ev| @events += 1 }
+      lmu[:events].each { |_id, _ev| @events += 1 }
       @maps += 1
     end
   rescue => ex
@@ -190,19 +190,19 @@ class Checker
   def check_generator(base, lmu)
     # Every declared field must materialise, from the file or from its default,
     # so a map that omits the whole block still answers.
-    fail "#{base}: generator_width did not default" if lmu.generator_width.nil?
-    fail "#{base}: generator_surround did not default" if lmu.generator_surround.nil?
-    h = lmu.generator_height
+    fail "#{base}: generator_width did not default" if lmu[:generator_width].nil?
+    fail "#{base}: generator_surround did not default" if lmu[:generator_surround].nil?
+    h = lmu[:generator_height]
     fail "#{base}: generator_height #{h.inspect} not a positive int" if h.nil? || h < 1
 
     # The room slots are parallel arrays: nine x/y coordinates and their tile
     # ids. A wrong element width would change these counts.
-    gx = lmu.generator_x
-    gy = lmu.generator_y
+    gx = lmu[:generator_x]
+    gy = lmu[:generator_y]
     fail "#{base}: generator_x is #{gx.size} values, expected 9" if gx && gx.size != 9
     fail "#{base}: generator_y is #{gy.size} values, expected 9" if gy && gy.size != 9
 
-    ids = lmu.generator_tile_ids
+    ids = lmu[:generator_tile_ids]
     return unless ids
     fail "#{base}: generator_tile_ids is #{ids.size} values, expected 18" if ids.size != 18
     # Read as shorts these are ordinary RPG2000 tile ids; read as int32 they run

@@ -26,11 +26,11 @@ module Game
     # `prevent_critical` flag, item field 25). A database with no item table
     # (the test fixtures) or an item lacking the flag contributes nothing.
     def prevents_critical?
-      return false unless @db.respond_to?(:item)
+      return false unless LCF.field?(@db, :item)
       @equipment.any? do |iid|
         next false if iid.nil? || iid == 0
-        it = @db.item[iid]
-        it && it.respond_to?(:prevent_critical) && it.prevent_critical
+        it = @db[:item][iid]
+        it && LCF.field?(it, :prevent_critical) && it[:prevent_critical]
       end
     end
 
@@ -50,18 +50,18 @@ module Game
     # source, NOT independently confirmed against genuine RPG_RT under wine).
     def state_resist_mul(sid)
       mul = 100
-      return mul unless @db.respond_to?(:item)
+      return mul unless LCF.field?(@db, :item)
       is2k3 = rpg2003?
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        next unless it && it.respond_to?(:type) &&
+        it = @db[:item][iid]
+        next unless it && LCF.field?(it, :type) &&
                     [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
-                     Party::ITEM_ACCESSORY].include?(it.type)
-        next if is2k3 && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
-        set = it.respond_to?(:state_set) ? it.state_set : nil
+                     Party::ITEM_ACCESSORY].include?(it[:type])
+        next if is2k3 && LCF.field?(it, :reverse_state_effect) && it[:reverse_state_effect]
+        set = LCF.field?(it, :state_set) ? it[:state_set] : nil
         next unless set && set[sid - 1] && set[sid - 1] != 0
-        chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+        chance = LCF.field?(it, :state_chance) ? (it[:state_chance] || 0) : 0
         mul = 100 - chance if 100 - chance < mul
       end
       mul
@@ -82,14 +82,14 @@ module Game
     # there is nothing here for that second weapon to override.
     def attack_animation_id
       iid = @equipment[WEAPON_SLOT]
-      if iid && iid != 0 && @db.respond_to?(:item)
-        it = @db.item[iid]
-        if it && it.respond_to?(:type) && it.type == ITEM_WEAPON &&
-           it.respond_to?(:animation_id) && it.animation_id && it.animation_id > 0
-          return it.animation_id
+      if iid && iid != 0 && LCF.field?(@db, :item)
+        it = @db[:item][iid]
+        if it && LCF.field?(it, :type) && it[:type] == ITEM_WEAPON &&
+           LCF.field?(it, :animation_id) && it[:animation_id] && it[:animation_id] > 0
+          return it[:animation_id]
         end
       end
-      @db_row.respond_to?(:unarmed_animation) ? @db_row.unarmed_animation : nil
+      LCF.field?(@db_row, :unarmed_animation) ? @db_row[:unarmed_animation] : nil
     end
 
     # 必中 — an equipped weapon whose attack cannot be evaded. Ported from
@@ -147,7 +147,7 @@ module Game
     def weapon_sp_cost
       it = equipped_weapons.first
       return 0 unless it
-      cost = it.respond_to?(:sp_cost) ? (it.sp_cost || 0) : 0
+      cost = LCF.field?(it, :sp_cost) ? (it[:sp_cost] || 0) : 0
       half_sp_cost? ? (cost + 1) / 2 : cost
     end
 
@@ -162,13 +162,13 @@ module Game
     # way #equip_bonus already reads every equipped slot, so a 二刀流 actor's
     # second weapon (sitting in the shield slot) is correctly excluded too.
     def physical_evasion_up?
-      return false unless @db.respond_to?(:item)
+      return false unless LCF.field?(@db, :item)
       @equipment.any? do |iid|
         next false if iid.nil? || iid == 0
-        it = @db.item[iid]
+        it = @db[:item][iid]
         next false unless it
-        next false if it.respond_to?(:type) && it.type == ITEM_WEAPON
-        it.respond_to?(:raise_evasion) && it.raise_evasion ? true : false
+        next false if LCF.field?(it, :type) && it[:type] == ITEM_WEAPON
+        LCF.field?(it, :raise_evasion) && it[:raise_evasion] ? true : false
       end
     end
 
@@ -192,7 +192,7 @@ module Game
     # The renamed label itself (独自戦闘コマンド名称, field 67), read only when
     # #rename_skill? is set.
     def skill_command_name
-      @db_row.respond_to?(:custom_battle_command_name) ? (@db_row.custom_battle_command_name || '') : ''
+      LCF.field?(@db_row, :custom_battle_command_name) ? (@db_row[:custom_battle_command_name] || '') : ''
     end
   end
 
@@ -205,9 +205,9 @@ module Game
     # scene/battle.rb's `#refresh_battle_status`); an alternative-layout (1)
     # database, or one with no `#battlecommands` table at all, reads false.
     def gauge_battle_layout?
-      return false unless @db.respond_to?(:battlecommands)
-      table = @db.battlecommands
-      table && table.battle_type == 2 ? true : false
+      return false unless LCF.field?(@db, :battlecommands)
+      table = @db[:battlecommands]
+      table && table[:battle_type] == 2 ? true : false
     end
 
     # RPG2003's battle-sprite placement choice (`battlecommands.placement`,
@@ -221,9 +221,9 @@ module Game
     # no `#battlecommands` table, or an RPG2000 database (which never sets
     # this field), reads false/manual, same as `#alternate_battle_layout?`.
     def automatic_battle_placement?
-      return false unless @db.respond_to?(:battlecommands)
-      table = @db.battlecommands
-      table && table.respond_to?(:placement) && table.placement == 1 ? true : false
+      return false unless LCF.field?(@db, :battlecommands)
+      table = @db[:battlecommands]
+      table && LCF.field?(table, :placement) && table[:placement] == 1 ? true : false
     end
 
     # Whether an enemy AI's own self/ally/troop-scope skill action `sk` could
@@ -256,7 +256,7 @@ module Game
     # anything.
     def skill_helps_troop?(sk, caster, troop)
       return true unless Party.normal_skill?(sk)
-      scope = sk.respond_to?(:scope) ? sk.scope : 0
+      scope = LCF.field?(sk, :scope) ? sk[:scope] : 0
       return true if scope == 0 || scope == 1
       targets = scope == 2 ? [caster] : troop
       states = skill_state_ids(sk)
@@ -265,9 +265,9 @@ module Game
         if t.out_of_play?
           states.include?(1)
         else
-          sk.affect_hp || sk.affect_sp || !skill_stat_mod_keys(sk).empty? ||
+          sk[:affect_hp] || sk[:affect_sp] || !skill_stat_mod_keys(sk).empty? ||
             states.any? { |sid| t.state?(sid) } ||
-            (sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence && !skill_attributes(sk).empty?)
+            (LCF.field?(sk, :affect_attr_defence) && sk[:affect_attr_defence] && !skill_attributes(sk).empty?)
         end
       end
     end
@@ -309,10 +309,10 @@ module Game
     # nothing else of it once a battle is running.
     def battle_skill?(sk)
       return false unless sk
-      case sk.type
+      case sk[:type]
       when SKILL_ESCAPE, SKILL_TELEPORT then false
       when SKILL_SWITCH then battle_occasion?(sk)
-      else BATTLE_SKILL_SCOPES.include?(sk.scope)
+      else BATTLE_SKILL_SCOPES.include?(sk[:scope])
       end
     end
 
@@ -320,13 +320,13 @@ module Game
     # #field_skill? for why only switch skills consult these). Defaults to usable
     # when the row (a bare fixture) carries no flag.
     def battle_occasion?(sk)
-      sk.respond_to?(:occasion_battle) ? sk.occasion_battle : true
+      LCF.field?(sk, :occasion_battle) ? sk[:occasion_battle] : true
     end
 
     # Whom a battle skill targets: :enemy (scope 0), :all_enemy (1), :self (2),
     # :all_ally (4) or a single :ally (3, the default).
     def battle_skill_target(sk)
-      case sk.scope
+      case sk[:scope]
       when 0 then :enemy
       when 1 then :all_enemy
       when 2 then :self
@@ -341,7 +341,7 @@ module Game
     # Nepheshel's skills and 5 of mtf-meido-action's set it, and nothing read it,
     # so every drain spell in both games was a plain attack spell.
     def skill_absorbs?(sk)
-      sk.respond_to?(:absorb_damage) ? (sk.absorb_damage ? true : false) : false
+      LCF.field?(sk, :absorb_damage) ? (sk[:absorb_damage] ? true : false) : false
     end
 
     # `sk.hit == -1` is a sentinel meaning "use the caster's own weapon-based
@@ -359,8 +359,8 @@ module Game
     # reach this, falls back to `Battle.hit_rate_of` instead, the identical
     # `attack_hit_rate`-reading helper a fresh `Combatant` is seeded from.
     def skill_hit(sk, source)
-      return skill_hit_weapon_fallback(source) if sk.respond_to?(:hit) && sk.hit == -1
-      sk.respond_to?(:hit) ? (sk.hit || 100) : 100
+      return skill_hit_weapon_fallback(source) if LCF.field?(sk, :hit) && sk[:hit] == -1
+      LCF.field?(sk, :hit) ? (sk[:hit] || 100) : 100
     end
 
     def skill_hit_weapon_fallback(source)
@@ -389,14 +389,14 @@ module Game
     # penalty a pre-reference guess had used for attacks; the reference settles
     # it: skills are untouched by rows. See ADR 0053/0054.
     def skill_to_hit(sk, source, target)
-      return skill_hit(sk, source) unless sk.respond_to?(:failure_message) && sk.failure_message == 3
+      return skill_hit(sk, source) unless LCF.field?(sk, :failure_message) && sk[:failure_message] == 3
       # The physical formula is enemy-only: an ally/self-scoped skill (scope 2/3/4)
       # always falls back to the flat rate regardless of the flag — a reference
       # implementation guards the whole physical branch behind
       # an ally-scope check, and its own comment notes the 2k3 editor
       # can no longer even set the flag, so the branch is reached only by skills
       # that still target the opposing side (scope 0 single / 1 all enemy).
-      scope = sk.respond_to?(:scope) ? sk.scope.to_i : 0
+      scope = LCF.field?(sk, :scope) ? sk[:scope].to_i : 0
       return skill_hit(sk, source) unless scope == 0 || scope == 1
 
       to_hit = skill_hit(sk, source)
@@ -426,8 +426,8 @@ module Game
     def do_nothing_restricted?(b)
       return false unless b.respond_to?(:states)
       (b.states || []).each do |sid|
-        d = @db.respond_to?(:situation) ? @db.situation[sid] : nil
-        return true if d.respond_to?(:restriction) && (d.restriction || 0) == 1
+        d = LCF.field?(@db, :situation) ? @db[:situation][sid] : nil
+        return true if LCF.field?(d, :restriction) && (d[:restriction] || 0) == 1
       end
       false
     end
@@ -441,7 +441,7 @@ module Game
       m = 100
       return m unless b.respond_to?(:states)
       (b.states || []).each do |sid|
-        d = @db.respond_to?(:situation) ? @db.situation[sid] : nil
+        d = LCF.field?(@db, :situation) ? @db[:situation][sid] : nil
         r = state_hit_ratio(d)
         m = r if r < m
       end
@@ -451,22 +451,22 @@ module Game
     # A state's `reduce_hit_ratio`, defaulting to 100 (no reduction) for an
     # unknown state or a fixture row without the field.
     def state_hit_ratio(d)
-      return 100 unless d.respond_to?(:reduce_hit_ratio)
-      v = d.reduce_hit_ratio
+      return 100 unless LCF.field?(d, :reduce_hit_ratio)
+      v = d[:reduce_hit_ratio]
       v.nil? ? 100 : v
     end
 
     # A skill's damage variance (its `variance` field on the 0-10 scale, default
     # 4), the spread applied to its battle damage when the fight rolls variance.
     def skill_variance(sk)
-      sk.respond_to?(:variance) ? (sk.variance || 4) : 4
+      LCF.field?(sk, :variance) ? (sk[:variance] || 4) : 4
     end
 
     # The elemental attribute ids a skill applies — its `attribute_effects` bool
     # array (field 44), a flag per attribute — used to scale the skill's battle
     # damage by the target's resistance. A fixture without the field applies none.
     def skill_attributes(sk)
-      set = sk.respond_to?(:attribute_effects) ? sk.attribute_effects : nil
+      set = LCF.field?(sk, :attribute_effects) ? sk[:attribute_effects] : nil
       return [] unless set
       ids = []
       set.each_with_index { |on, i| ids << (i + 1) if on }
@@ -501,8 +501,8 @@ module Game
     # #battle_skill_target's own enemy-scope test (`scope == 0 || scope ==
     # 1`). nil when the skill does not touch attribute defence at all.
     def skill_attr_shift(sk)
-      return nil unless sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
-      sk.scope == 0 || sk.scope == 1 ? -1 : 1
+      return nil unless LCF.field?(sk, :affect_attr_defence) && sk[:affect_attr_defence]
+      sk[:scope] == 0 || sk[:scope] == 1 ? -1 : 1
     end
 
     # The (skill field name -> Combatant ability-value key) pairs
@@ -533,7 +533,7 @@ module Game
     # through `Game::Battle#apply_stat_mods`, which clamps the delta against
     # the target's own cap before it lands.
     def skill_stat_mod_keys(sk)
-      SKILL_STAT_MOD_FLAGS.keys.select { |key| sk.respond_to?(SKILL_STAT_MOD_FLAGS[key]) && sk.send(SKILL_STAT_MOD_FLAGS[key]) }
+      SKILL_STAT_MOD_FLAGS.keys.select { |key| LCF.field?(sk, SKILL_STAT_MOD_FLAGS[key]) && sk[SKILL_STAT_MOD_FLAGS[key]] }
     end
 
     # The command numbers for casting `sk` from `caster` on `target` (both
@@ -567,7 +567,7 @@ module Game
       # log entry, and `Scene::Battle#drive_battle_animate` already flips it
       # the same moment it does for a switch item; only the battle-cast
       # switch-skill command itself never carried one.
-      return { cost: cost, switch_id: sk.switch_id } if sk.type == SKILL_SWITCH
+      return { cost: cost, switch_id: sk[:switch_id] } if sk[:type] == SKILL_SWITCH
       base = skill_effect(sk, caster)
       # Attribute-defence shifting isn't scoped to attack skills -- a "raise
       # my own resistance" buff and a "lower the enemy's" debuff are both this
@@ -576,7 +576,7 @@ module Game
       shift = skill_attr_shift(sk)
       shift_ids = shift ? skill_attributes(sk) : []
       stat_keys = skill_stat_mod_keys(sk)
-      enemy_scope = sk.scope == 0 || sk.scope == 1 # single or all enemies
+      enemy_scope = sk[:scope] == 0 || sk[:scope] == 1 # single or all enemies
       # A skill's own `state_effects` list normally cures on an ally/self scope
       # and inflicts on an enemy scope, XORed with `reverse_state_effect`:
       # an ally-scoped skill with it set inflicts its listed states instead of
@@ -599,7 +599,7 @@ module Game
       # editor also cannot set but RPG_RT still reads. The gate is dropped
       # here to match; a database only the 2000 editor itself ever produced
       # still behaves identically, since it can never carry the bit set.
-      reverse = sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      reverse = LCF.field?(sk, :reverse_state_effect) && sk[:reverse_state_effect]
       heals_states = !enemy_scope ^ reverse
       state_ids = skill_state_ids(sk)
       cure_ids = heals_states ? state_ids : []
@@ -632,7 +632,7 @@ module Game
           # affect_sp set -- a real, valid Effects-tab combination, per
           # @2000_battle_bot/デフォ戦bot trivia on the HP-reaches-zero
           # interaction below) never touches HP at all.
-          hp: sk.affect_hp ? -dmg : 0, mp: sk.affect_sp ? -dmg : 0, attack: true,
+          hp: sk[:affect_hp] ? -dmg : 0, mp: sk[:affect_sp] ? -dmg : 0, attack: true,
           inflict: inflict_ids, chance: skill_to_hit(sk, caster, target),
           variance: skill_variance(sk), attributes: skill_attributes(sk),
           # 吸収 — the caster takes what the target loses. Ported from a
@@ -659,9 +659,9 @@ module Game
           # independently confirmed against genuine RPG_RT under wine. 0 for
           # a purely magical skill, which #shake_off_states already reads as
           # "never rolls".
-          physical_rate: (sk.physical_rate || 0) * 10 }
+          physical_rate: (sk[:physical_rate] || 0) * 10 }
       else
-        { cost: cost, hp: sk.affect_hp ? base : 0, mp: sk.affect_sp ? base : 0,
+        { cost: cost, hp: sk[:affect_hp] ? base : 0, mp: sk[:affect_sp] ? base : 0,
           # Ported from a reference implementation's own skill-effect formula,
           # which runs
           # its attribute-multiplier step unconditionally --
@@ -701,7 +701,7 @@ module Game
     # menu's identical one (see #battle_usable? just below, which already
     # gates such an item on its invoked skill being battle-usable at all).
     def skill_invoking_item?(it)
-      it && (it.type == ITEM_SPECIAL || (it.use_skill && (1..5).cover?(it.type)))
+      it && (it[:type] == ITEM_SPECIAL || (it[:use_skill] && (1..5).cover?(it[:type])))
     end
 
     # Whether item `id` can be used in battle: a medicine flagged occasion_battle
@@ -720,11 +720,11 @@ module Game
         return false
       end
       return false unless item_count(id) > 0
-      return use_skill_item_usable?(it, true) if it.use_skill
-      case it.type
+      return use_skill_item_usable?(it, true) if it[:use_skill]
+      case it[:type]
       when ITEM_MEDICINE then !item_field_only?(it)
       when ITEM_SWITCH then item_battle_occasion?(it)
-      when ITEM_SPECIAL then battle_skill?(db_skill(it.skill_id))
+      when ITEM_SPECIAL then battle_skill?(db_skill(it[:skill_id]))
       else false
       end
     end
@@ -787,7 +787,7 @@ module Game
     # single ally (scope 0). The battle menu casts an all-party item on every
     # living member at once, skipping target selection.
     def item_all_allies?(it)
-      it.respond_to?(:scope) && it.scope == 1
+      LCF.field?(it, :scope) && it[:scope] == 1
     end
   end
 
@@ -906,22 +906,22 @@ module Game
       # such pages (446 of Nepheshel's 3265, all 88 of mtf-meido-action's), and
       # every one of them is empty, so the rule costs those games nothing.
       return false if cond.nil?
-      flags = cond.flags || 0
+      flags = cond[:flags] || 0
       return false if flags == 0
-      return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
-      return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
+      return false if (flags & SWITCH_A) != 0 && !switches[cond[:switch_a_id]]
+      return false if (flags & SWITCH_B) != 0 && !switches[cond[:switch_b_id]]
       if (flags & VARIABLE) != 0
-        return false if variables[cond.variable_id] < cond.variable_value
+        return false if variables[cond[:variable_id]] < cond[:variable_value]
       end
       return false if (flags & TURN) != 0 &&
-                      !check_turns(ctx.turn, cond.turn_b, cond.turn_a)
+                      !check_turns(ctx.turn, cond[:turn_b], cond[:turn_a])
       if (flags & ENEMY_HP) != 0
-        return false unless hp_within?(ctx.enemy(cond.enemy_id),
-                                       cond.enemy_hp_min, cond.enemy_hp_max)
+        return false unless hp_within?(ctx.enemy(cond[:enemy_id]),
+                                       cond[:enemy_hp_min], cond[:enemy_hp_max])
       end
       if (flags & ACTOR_HP) != 0
-        return false unless hp_within?(ctx.ally_by_actor_id(cond.actor_id),
-                                       cond.actor_hp_min, cond.actor_hp_max)
+        return false unless hp_within?(ctx.ally_by_actor_id(cond[:actor_id]),
+                                       cond[:actor_hp_min], cond[:actor_hp_max])
       end
       # turn_enemy / turn_actor / fatigue / command_actor are RPG2003-only
       # conditions -- ported from a reference implementation's own condition
@@ -934,22 +934,22 @@ module Game
       # the same silent-pass-through class of bug the map-event TIMER2
       # condition (Game::EventPage.active?, this file) was already fixed for.
       if (flags & TURN_ENEMY) != 0 && ctx.rpg2003?
-        t = ctx.enemy_turn(cond.turn_enemy_id, source)
+        t = ctx.enemy_turn(cond[:turn_enemy_id], source)
         return false if t.nil?
-        return false unless check_turns(t, cond.turn_enemy_b, cond.turn_enemy_a)
+        return false unless check_turns(t, cond[:turn_enemy_b], cond[:turn_enemy_a])
       end
       if (flags & TURN_ACTOR) != 0 && ctx.rpg2003?
-        t = ctx.actor_turn(cond.turn_actor_id, source)
+        t = ctx.actor_turn(cond[:turn_actor_id], source)
         return false if t.nil?
-        return false unless check_turns(t, cond.turn_actor_b, cond.turn_actor_a)
+        return false unless check_turns(t, cond[:turn_actor_b], cond[:turn_actor_a])
       end
       if (flags & COMMAND_ACTOR) != 0 && ctx.rpg2003?
-        return false unless ctx.actor_command(cond.command_actor_id, source) == cond.command_id
+        return false unless ctx.actor_command(cond[:command_actor_id], source) == cond[:command_id]
       end
       if (flags & FATIGUE) != 0 && ctx.rpg2003?
         f = ctx.fatigue
         return false if f.nil?
-        return false if f < cond.fatigue_min || f > cond.fatigue_max
+        return false if f < cond[:fatigue_min] || f > cond[:fatigue_max]
       end
       true
     end
@@ -961,7 +961,7 @@ module Game
     def self.select_all(pages, switches, variables, ctx, source = nil)
       out = []
       return out if pages.nil?
-      pages.each { |id, page| out << [id, page] if active?(page.condition, switches, variables, ctx, source) }
+      pages.each { |id, page| out << [id, page] if active?(page[:condition], switches, variables, ctx, source) }
       out
     end
   end
@@ -1038,13 +1038,13 @@ module Game
     private
 
     def int_of(row, name, dflt)
-      return dflt unless row.respond_to?(name)
-      v = row.send(name)
+      return dflt unless LCF.field?(row, name)
+      v = row[name]
       v.nil? ? dflt : v.to_i
     end
 
     def bool_of(row, name)
-      row.respond_to?(name) && row.send(name) ? true : false
+      LCF.field?(row, name) && row[name] ? true : false
     end
   end
 
@@ -1061,7 +1061,7 @@ module Game
     attr_accessor :hidden
 
     def initialize(db, id, x = 0, y = 0, hidden = false)
-      row = db.enemy[id]
+      row = db[:enemy][id]
       # A database shrink can leave a troop member naming a deleted individual
       # enemy id (chunk 14) -- shown as "?" in the editor, docs/TODO.md's
       # runtime error catalog, distinct from the enemy-*group* (troop) id case
@@ -1071,27 +1071,27 @@ module Game
       # guarded the same way `db_item`/`db_enemy_group` reach into `@db`, so a
       # bare test fixture with no `enemy` table at all stays silent -- this is
       # only for a genuine dangling id in a real database.
-      if row.nil? && id && id > 0 && db.respond_to?(:enemy)
+      if row.nil? && id && id > 0 && LCF.field?(db, :enemy)
         $stderr.puts "[RPG2k] Enemy: enemy id #{id} not found in the " \
                      'database, degrading to a blank placeholder'
       end
       @id = id
-      @name    = row ? row.name.to_s : ''
+      @name    = row ? row[:name].to_s : ''
       # The Monster/<name> battle graphic (blank for a fixture that omits it);
       # the battle screen draws it, falling back to a placeholder block.
-      @battler_name = row && row.respond_to?(:battler_name) ? (row.battler_name || '') : ''
-      @max_hp  = row ? row.max_hp : 1
-      @max_sp  = row ? row.max_sp : 0
-      @atk     = row ? row.attack : 0
-      @def     = row ? row.defense : 0
-      @spi     = row ? row.spirit : 0
-      @agi     = row ? row.agility : 0
-      @exp     = row ? row.exp : 0
-      @gold    = row ? row.gold : 0
+      @battler_name = row && LCF.field?(row, :battler_name) ? (row[:battler_name] || '') : ''
+      @max_hp  = row ? row[:max_hp] : 1
+      @max_sp  = row ? row[:max_sp] : 0
+      @atk     = row ? row[:attack] : 0
+      @def     = row ? row[:defense] : 0
+      @spi     = row ? row[:spirit] : 0
+      @agi     = row ? row[:agility] : 0
+      @exp     = row ? row[:exp] : 0
+      @gold    = row ? row[:gold] : 0
       # The item this enemy may drop on defeat (field 13, 0 = none) and its drop
       # probability as a percentage (field 14; 0 for a fixture lacking it).
-      @drop_id   = row && row.respond_to?(:drop_id) ? (row.drop_id || 0) : 0
-      @drop_prob = row && row.respond_to?(:drop_prob) ? (row.drop_prob || 0) : 0
+      @drop_id   = row && LCF.field?(row, :drop_id) ? (row[:drop_id] || 0) : 0
+      @drop_prob = row && LCF.field?(row, :drop_prob) ? (row[:drop_prob] || 0) : 0
       @x = x
       @y = y
       @hidden = hidden ? true : false
@@ -1107,8 +1107,8 @@ module Game
       # critical_hit flag and its 1-in-`critical_hit_chance` rate, truncated
       # the same way -- and for the same reason -- as Actor#crit_chance. An
       # enemy has no equipment, so unlike an actor's this is the whole of it.
-      @crit_chance = if row && row.respond_to?(:critical_hit) && row.critical_hit
-                       n = row.respond_to?(:critical_hit_chance) ? row.critical_hit_chance : 0
+      @crit_chance = if row && LCF.field?(row, :critical_hit) && row[:critical_hit]
+                       n = LCF.field?(row, :critical_hit_chance) ? row[:critical_hit_chance] : 0
                        n && n > 0 ? (100.0 / n).to_i : 0
                      else
                        0
@@ -1117,16 +1117,16 @@ module Game
       # enemy's attribute_ranks byte array, so an elemental attack scales its
       # damage by this monster's resistance. Captured now since `row` isn't kept.
       @attribute_ranks = {}
-      arr = row && row.respond_to?(:attribute_ranks) ? row.attribute_ranks : nil
+      arr = row && LCF.field?(row, :attribute_ranks) ? row[:attribute_ranks] : nil
       arr.each_with_index { |v, i| @attribute_ranks[i + 1] = v } if arr
       # Per-state susceptibility ranks ({ state_id => rank 0..4 }) from the
       # enemy's state_ranks byte array, scaling how often a status lands on it.
       @state_ranks = {}
-      sr = row && row.respond_to?(:state_ranks) ? row.state_ranks : nil
+      sr = row && LCF.field?(row, :state_ranks) ? row[:state_ranks] : nil
       sr.each_with_index { |v, i| @state_ranks[i + 1] = v } if sr
       # The "miss" flag (field 26): a flagged enemy is clumsier and attacks at a
       # 70% base hit rate rather than the usual 90% (a reference implementation's GetHitChance).
-      @miss = row && row.respond_to?(:miss) ? (row.miss ? true : false) : false
+      @miss = row && LCF.field?(row, :miss) ? (row[:miss] ? true : false) : false
       # The "airborne" flag (field 28, `levitate`): purely a battle-screen
       # display effect (per a reference implementation's flying-offset logic) with no
       # accuracy/hit-related effect of any kind -- and, per that same source,
@@ -1134,7 +1134,7 @@ module Game
       # mentioned in the help file"), only RPG2003 does, gated by
       # `Scene::Map#flying_offset` the same way. Read here regardless of
       # edition, same as every other schema field this class exposes.
-      @levitate = row && row.respond_to?(:levitate) ? (row.levitate ? true : false) : false
+      @levitate = row && LCF.field?(row, :levitate) ? (row[:levitate] ? true : false) : false
       # The "Appear Transparent" flag (field 10): the battle screen renders this
       # enemy's sprite at reduced opacity for the whole fight -- purely cosmetic,
       # like `levitate`, with no accuracy/evasion effect of any kind. Ported
@@ -1145,7 +1145,7 @@ module Game
       # alpha / 255` whenever it is set -- 160/255 (~63%) of whatever opacity the
       # sprite would otherwise have (255 outside of the death-fade/explode
       # animations this codebase does not yet model).
-      @transparent = row && row.respond_to?(:transparent) ? (row.transparent ? true : false) : false
+      @transparent = row && LCF.field?(row, :transparent) ? (row[:transparent] ? true : false) : false
       # The battle-graphic hue shift (field 3, degrees 0..359): lets a game
       # reuse one Monster/<name> bitmap for several palette-swapped variants
       # (a red slime and a blue slime sharing "Slime.png") instead of shipping
@@ -1157,11 +1157,11 @@ module Game
       # a hue-change blit whenever it is nonzero, before the sprite is
       # ever shown -- purely a render-time recolour with no stat effect,
       # unlike every field above it.
-      @battler_hue = row && row.respond_to?(:battler_hue) ? (row.battler_hue || 0) : 0
+      @battler_hue = row && LCF.field?(row, :battler_hue) ? (row[:battler_hue] || 0) : 0
       # The 行動パターン table (field 42), decoded now since `row` isn't kept. An
       # enemy whose row lists none falls back to plain attacking.
       @actions = []
-      list = row && row.respond_to?(:actions) ? row.actions : nil
+      list = row && LCF.field?(row, :actions) ? row[:actions] : nil
       list.each { |_i, a| @actions << EnemyAction.new(a) } if list
     end
 
@@ -1230,13 +1230,13 @@ module Game
     attr_reader :pages
 
     def initialize(db, id, rng = nil)
-      row = db.enemy_group[id]
+      row = db[:enemy_group][id]
       @id = id
-      @name = row ? row.name.to_s : ''
+      @name = row ? row[:name].to_s : ''
       @members = []
       # Array2D#each yields (id, entry); a plain Hash test double does the same.
-      row.members.each { |_, m| @members << member(db, m) } if row && row.members
-      @pages = row && row.respond_to?(:pages) ? row.pages : nil
+      row[:members].each { |_, m| @members << member(db, m) } if row && row[:members]
+      @pages = row && LCF.field?(row, :pages) ? row[:pages] : nil
       apply_appear_randomly(row, rng) if row && rng
       # Each levitating member's own `flying_phase` (see Enemy#flying_phase's
       # own citation): rolled once here, in member order, the same way
@@ -1316,7 +1316,7 @@ module Game
     def live_members; @members.reject(&:hidden) end
 
     def member(db, m)
-      Enemy.new(db, m.enemy_id, m.x, m.y, m.invisible)
+      Enemy.new(db, m[:enemy_id], m[:x], m[:y], m[:invisible])
     end
 
     # ランダムに出現 (Appear Randomly, chunk 15 field 6): once per battle, roll
@@ -1333,7 +1333,7 @@ module Game
     # pass) since most callers -- the seeded harness fixtures included --
     # have no RNG to hand in and expect a `Troop` to build deterministically.
     def apply_appear_randomly(row, rng)
-      return unless row.respond_to?(:appear_randomly) && row.appear_randomly
+      return unless LCF.field?(row, :appear_randomly) && row[:appear_randomly]
       non_hidden = @members.count { |m| !m.hidden }
       @members.each do |m|
         break if non_hidden <= 1
@@ -1379,7 +1379,7 @@ module Game
 
     # The database row for a skill / enemy id, or nil.
     def skill(id)
-      @db && @db.respond_to?(:skill) ? @db.skill[id] : nil
+      @db && LCF.field?(@db, :skill) ? @db[:skill][id] : nil
     end
 
     # A freshly instantiated Game::Enemy for `id` — what a transformation turns
@@ -1387,8 +1387,8 @@ module Game
     # decodes its stats, ranks and its own action pattern). nil when unknown.
     # bc2cpp: (fixnum)
     def enemy(id)
-      return nil unless @db && @db.respond_to?(:enemy) && id && id > 0
-      return nil unless @db.enemy[id]
+      return nil unless @db && LCF.field?(@db, :enemy) && id && id > 0
+      return nil unless @db[:enemy][id]
       Enemy.new(@db, id)
     end
 
@@ -1489,7 +1489,7 @@ module Game
     DEFAULT_ANIMATION_POSE = 6
     def self.animation_pose(id, table)
       r = row(id, table)
-      p = r && r.respond_to?(:battler_animation_id) ? r.battler_animation_id : nil
+      p = r && LCF.field?(r, :battler_animation_id) ? r[:battler_animation_id] : nil
       p.nil? ? DEFAULT_ANIMATION_POSE : p
     end
 
@@ -1528,7 +1528,7 @@ module Game
 
     def self.field(id, table, name)
       r = row(id, table)
-      v = r && r.respond_to?(name) ? r.send(name) : nil
+      v = r && LCF.field?(r, name) ? r[name] : nil
       v.nil? || v.empty? ? nil : v
     end
 
@@ -1562,7 +1562,7 @@ module Game
       ENEMY_PARTICLE = 'に '.freeze
 
       def self.term(terms, name)
-        v = terms && terms.respond_to?(name) ? terms.send(name) : nil
+        v = terms && LCF.field?(terms, name) ? terms[name] : nil
         v.nil? || v.to_s.empty? ? nil : v.to_s
       end
 
@@ -1686,8 +1686,8 @@ module Game
       end
 
       def self.skill_failure(terms, skill_row, target_name)
-        i = skill_row && skill_row.respond_to?(:failure_message) ?
-              skill_row.failure_message : nil
+        i = skill_row && LCF.field?(skill_row, :failure_message) ?
+              skill_row[:failure_message] : nil
         f = FAILURE_TERMS[i || 0]
         f && action(terms, target_name, f)
       end

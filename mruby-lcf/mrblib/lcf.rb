@@ -250,8 +250,10 @@ module LCF
 
   # Holds the sequential sections of a multi-section file (e.g. the map tree,
   # which is a map-properties table followed by the tree order and the initial
-  # party/vehicle positions). Sections are reachable by their schema name;
-  # #[] indexes into the first section for convenience.
+  # party/vehicle positions). Sections are reachable by their schema name
+  # through #[] (`tree[:initial]`); a non-Symbol index reaches into the first
+  # section for convenience. There is no dotted `tree.initial` form: see
+  # Array1D#[] for why field access is `[]` only (docs/adr/0213).
   class Sections
     def initialize
       @by_name = {}
@@ -272,18 +274,11 @@ module LCF
 
     def key? sym ; @by_name.key? sym end
 
-    # Kept only for any not-yet-migrated `.section_name` call site; every new
-    # caller should use `sections[:section_name]` instead (a real method, not
-    # this reflection fallback -- see Array1D's own method_missing below for
-    # why).
-    def method_missing sym, *args
-      return @by_name[sym] if @by_name.key? sym
-      super
-    end
-
-    def respond_to_missing? sym, include_private = false
-      @by_name.key?(sym) || super
-    end
+    # Whether the file's schema declares a section called +sym+ -- every
+    # section a multi-section file's schema lists is always read, so this is
+    # the same answer as #key?. The Sections counterpart of Array1D#field?,
+    # which LCF::File#field? forwards to.
+    def field? sym ; @by_name.key? sym end
   end
 
   # Read one section of a file sequentially from the stream +io+.
@@ -530,11 +525,31 @@ module LCF
     schema[:elements] = e.call
   end
 
+  # Whether +obj+ has a field called +name+. For an LCF record, section list
+  # or file that is whether its schema declares the name (Array1D#field?,
+  # Sections#field?, File#field?). For anything else -- nil for an absent row
+  # or chunk, a plain value, a check harness's stand-in record -- it is
+  # whether +obj+ responds to +name+.
+  #
+  # This is the replacement for the `obj.respond_to?(:name)` guard callers
+  # put in front of a field read while records answered fields through
+  # method_missing (docs/adr/0213): it gives that guard's exact answer for
+  # every receiver, an LCF record included, now that a record no longer
+  # responds to its field names. Callers read the field itself with
+  # `obj[:name]`.
+  def field? obj, name
+    if obj.is_a?(Array1D) || obj.is_a?(Sections) || obj.is_a?(LCF::File)
+      obj.field?(name)
+    else
+      obj.respond_to?(name)
+    end
+  end
+
   module_function :read_ber, :write_ber, :to_rb, :read_section,
                   :parse_event_commands, :encode_event_commands,
                   :parse_move_commands, :encode_move_commands,
                   :unpack_int32, :unpack_double, :pack_int32, :pack_int16,
-                  :pack_double, :encode, :binstr, :elements_of
+                  :pack_double, :encode, :binstr, :elements_of, :field?
 
   MODE = 2000 # 2003
 
@@ -591,9 +606,13 @@ module LCF
     # where a scalar or String decode is cheap and handing out the same mutable
     # object would change what a caller can do with it. The two writers below,
     # #[]= and #delete, drop the cached decode with the bytes.
-    # A Symbol is a field name (resolved via the schema to its chunk id --
-    # the same lookup method_missing below used to do implicitly); anything
-    # else is already a chunk id.
+    # A Symbol is a field name (resolved via the schema to its chunk id);
+    # anything else is already a chunk id. This is the only way to read a
+    # field by name: there is no dotted `row.field_name` form (it used to be
+    # answered by method_missing, which kept every call whose receiver might
+    # be a record unprovable for bc2cpp's closed-world compile -- see
+    # docs/adr/0213). A name the record's schema does not declare resolves to
+    # a nil chunk id and raises, as the dotted form did.
     def [] idx
       idx = sym2idx[idx] if idx.is_a? Symbol
       cached = @decoded && @decoded[idx]
@@ -614,8 +633,9 @@ module LCF
     # through []), which is how the RPG2000/2003 edition is detected. A Symbol
     # first resolves to a chunk id the same way #[] does; a field name this
     # record's schema does not declare at all resolves to a nil id, which
-    # never has data -- correctly false, the same answer
-    # respond_to_missing? gives for an unknown field name today.
+    # never has data -- correctly false. Not the same question as #field?,
+    # which asks whether the schema declares the name at all (a declared but
+    # absent field is `field?` true, `key?` false, and reads its default).
     def key? idx
       idx = sym2idx[idx] if idx.is_a? Symbol
       !@data[idx].nil?
@@ -623,7 +643,7 @@ module LCF
 
     # Raw little-endian int16 values of a chunk, bypassing any schema `order`
     # mapping. Lets a caller read a variable-length short array (e.g. the actor
-    # parameter growth curve, six shorts per level) whose named accessor only
+    # parameter growth curve, six shorts per level) whose typed `[]` read only
     # surfaces the first row. Returns nil when the chunk is absent.
     def int16_values idx
       d = @data[idx]
@@ -646,10 +666,9 @@ module LCF
     # Set the raw bytes of a chunk from a Ruby value, encoding it through the
     # schema type of that field (LCF.encode) so an authored/edited section can
     # be written back out. With no schema attached a raw String is stored as-is.
-    # A Symbol resolves to a chunk id the same way #[] does -- no known call
-    # site needs this (method_missing below can never reach a setter; see its
-    # own `raise args unless args.empty?`), but File#[]= forwards here blindly
-    # for either key type, so this stays consistent with #[] and #key?.
+    # A Symbol resolves to a chunk id the same way #[] does -- File#[]=
+    # forwards here blindly for either key type, so this stays consistent
+    # with #[] and #key?.
     def []= idx, value
       idx = sym2idx[idx] if idx.is_a? Symbol
       elem = @schema && LCF.elements_of(@schema)[idx]
@@ -687,19 +706,20 @@ module LCF
       out
     end
 
-    def method_missing sym, *args
-      raise args unless args.empty?
-      self[sym2idx[sym]]
-    end
-
-    def respond_to_missing? sym, include_private = false
-      (@schema && sym2idx.key?(sym)) || super
+    # Whether this record's schema declares a field called +sym+ -- the
+    # explicit form of the `row.respond_to?(:field)` guard callers used while
+    # fields were answered by method_missing, and the same answer it gave:
+    # true for every name the record type's schema lists, present in the file
+    # or not; false for any other name and for a record built without a
+    # schema. See #key? for "present in the file".
+    def field? sym
+      (@schema && sym2idx.key?(sym)) ? true : false
     end
 
     private
 
-    # Field-name -> chunk-id lookup for method_missing dispatch, built lazily
-    # (only paid by callers that actually use a symbolic field accessor --
+    # Field-name -> chunk-id lookup for Symbol keys, built lazily
+    # (only paid by callers that actually use a symbolic field key --
     # several save-data call sites write every field through numeric #[]=
     # and never touch this at all) and shared per record type via the schema
     # itself: `@schema` is normally one of schema.rb's shared, module-level

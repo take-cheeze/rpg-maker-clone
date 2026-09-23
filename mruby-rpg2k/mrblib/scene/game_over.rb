@@ -130,7 +130,7 @@ class RPG2k
       # `RPG2k#initialize`), so this `Bitmap.new` resolves the same way
       # RPG_RT does.
       def gameover_bitmap
-        name = db.system.gameover_name.to_s
+        name = db[:system][:gameover_name].to_s
         return nil if name.empty?
         Bitmap.new "GameOver/#{name}"
       rescue StandardError => e
@@ -188,9 +188,9 @@ class RPG2k
       end
 
       def database_gameover_bgm
-        bgm = db.system.gameover_music
+        bgm = db[:system][:gameover_music]
         return [nil, 100, 100, 0, 50] unless bgm
-        [bgm.file, (bgm.volume || 100), (bgm.pitch || 100), (bgm.fade_in || 0), (bgm.balance || 50)]
+        [bgm[:file], (bgm[:volume] || 100), (bgm[:pitch] || 100), (bgm[:fade_in] || 0), (bgm[:balance] || 50)]
       end
     end
 

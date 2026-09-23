@@ -360,7 +360,7 @@ class RPG2k
       # bc2cpp: () -> Array<Array>
       def build_commands
         keys = if db.rpg2003?
-                 ids = db.system.menu_commands || []
+                 ids = db[:system][:menu_commands] || []
                  ids.filter_map { |id| RPG2K3_COMMAND_IDS[id] } << RPG2K_COMMAND_KEYS.last
                else
                  RPG2K_COMMAND_KEYS

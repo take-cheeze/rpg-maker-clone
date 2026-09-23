@@ -153,8 +153,8 @@ class RPG2k
         foes = troop.members.map { |e| Game::Battle.from_enemy(e) }
         # The database's state table drives per-turn afflictions (poison slip,
         # sleep skip) in battle.
-        situations = db.respond_to?(:situation) ? db.situation : nil
-        properties = db.respond_to?(:property) ? db.property : nil
+        situations = LCF.field?(db, :situation) ? db[:situation] : nil
+        properties = LCF.field?(db, :property) ? db[:property] : nil
         @ui = { phase: :command, troop: troop,
                        # Whether the Battle/Auto Battle/Escape options window
                        # has already shown its once-per-battle automatic
@@ -198,7 +198,7 @@ class RPG2k
                                                  # RPG2000 has no battlecommands
                                                  # table, so this reads 0 and the
                                                  # turn-based machine is used.
-                                                 battle_type: db.respond_to?(:battlecommands) && db.battlecommands ? (db.battlecommands.battle_type || 0) : 0,
+                                                 battle_type: LCF.field?(db, :battlecommands) && db[:battlecommands] ? (db[:battlecommands][:battle_type] || 0) : 0,
                                                  # Mid-battle roster sync
                                                 # (Game::Battle#sync_allies_from_party):
                                                 # a Change Party Member command
@@ -662,17 +662,17 @@ class RPG2k
       # RPG_RT under wine: it splits exactly this way there.
       def build_actor_sprite(actor, i, defending: false, dead: false, states: nil)
         anim_id = actor.respond_to?(:battler_animation_id) ? (actor.battler_animation_id || 0) : 0
-        table = db.respond_to?(:battleranimations) ? db.battleranimations : nil
+        table = LCF.field?(db, :battleranimations) ? db[:battleranimations] : nil
         entry = (table && anim_id > 0) ? table[anim_id] : nil
         return nil unless entry
-        poses = entry.respond_to?(:poses) ? entry.poses : nil
+        poses = LCF.field?(entry, :poses) ? entry[:poses] : nil
         return nil unless poses
         pose_id = if defending && poses[ACTOR_DEFEND_POSE]
                     ACTOR_DEFEND_POSE
                   elsif dead && poses[ACTOR_DEAD_POSE]
                     ACTOR_DEAD_POSE
                   else
-                    situations = db.respond_to?(:situation) ? db.situation : nil
+                    situations = LCF.field?(db, :situation) ? db[:situation] : nil
                     sig = Game::States.significant(states, situations)
                     # `animation_pose` is the state row's own 0-based
                     # AnimationState value; the pose table it indexes is
@@ -684,7 +684,7 @@ class RPG2k
         pose = poses[pose_id]
         return nil unless pose
 
-        if pose.animation_type == ACTOR_POSE_TYPE_BATTLE
+        if pose[:animation_type] == ACTOR_POSE_TYPE_BATTLE
           label = { ACTOR_DEFEND_POSE => 'defend', ACTOR_DEAD_POSE => 'dead',
                     ACTOR_IDLE_POSE => 'idle' }.fetch(pose_id, 'state')
           $stderr.puts "[RPG2k] actor ##{actor.id}: #{label} pose " \
@@ -693,7 +693,7 @@ class RPG2k
           return nil
         end
 
-        bmp = actor_battlecharset_bitmap(pose.battler_name)
+        bmp = actor_battlecharset_bitmap(pose[:battler_name])
         return nil unless bmp
 
         x, y = automatic_battle_position(i)
@@ -705,7 +705,7 @@ class RPG2k
 
         spr = Sprite.new
         spr.bitmap = bmp
-        spr.src_rect = Rect.new(0, (pose.battler_index || 0) * ACTOR_CHARSET_CELL,
+        spr.src_rect = Rect.new(0, (pose[:battler_index] || 0) * ACTOR_CHARSET_CELL,
                                 ACTOR_CHARSET_CELL, ACTOR_CHARSET_CELL)
         spr.x = x
         spr.y = y
@@ -814,12 +814,12 @@ class RPG2k
       # the reference implementation's no-terrain defaults when the party's tile names no terrain.
       def battle_grid_params
         tid = @map.respond_to?(:terrain_id) ? @map.terrain_id(@state.x, @state.y) : 0
-        row = tid && tid > 0 && db.respond_to?(:terrain) && db.terrain ? db.terrain[tid] : nil
+        row = tid && tid > 0 && LCF.field?(db, :terrain) && db[:terrain] ? db[:terrain][tid] : nil
         return { top_y: GRID_TOP_Y_DEFAULT, elongation: GRID_ELONGATION_DEFAULT,
                  inclination: GRID_INCLINATION_DEFAULT } unless row
-        { top_y: row.respond_to?(:grid_top_y) ? (row.grid_top_y || 0) : 0,
-          elongation: row.respond_to?(:grid_elongation) ? (row.grid_elongation || 0) : 0,
-          inclination: row.respond_to?(:grid_inclination) ? (row.grid_inclination || 0) : 0 }
+        { top_y: LCF.field?(row, :grid_top_y) ? (row[:grid_top_y] || 0) : 0,
+          elongation: LCF.field?(row, :grid_elongation) ? (row[:grid_elongation] || 0) : 0,
+          inclination: LCF.field?(row, :grid_inclination) ? (row[:grid_inclination] || 0) : 0 }
       end
 
       # Interpreter#do_change_party's hook (via `@ui[:events].
@@ -1411,17 +1411,17 @@ class RPG2k
           row = actor.battle_command_row(cmd_id)
           next unless row
 
-          case row.type
+          case row[:type]
           when Game::Actor::BATTLE_COMMAND_ATTACK
-            out << { label: row.name.to_s, action: :attack, command_id: cmd_id }
+            out << { label: row[:name].to_s, action: :attack, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_SKILL, Game::Actor::BATTLE_COMMAND_SUBSKILL
-            out << { label: row.name.to_s, action: :skill, command_id: cmd_id }
+            out << { label: row[:name].to_s, action: :skill, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_DEFENSE
-            out << { label: row.name.to_s, action: :defend, command_id: cmd_id }
+            out << { label: row[:name].to_s, action: :defend, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_ITEM
-            out << { label: row.name.to_s, action: :item, command_id: cmd_id }
+            out << { label: row[:name].to_s, action: :item, command_id: cmd_id }
           when Game::Actor::BATTLE_COMMAND_SPECIAL
-            out << { label: row.name.to_s, action: :special, command_id: cmd_id }
+            out << { label: row[:name].to_s, action: :special, command_id: cmd_id }
           end
           # Escape: no menu row (see the method comment above) -- Special has
           # one now, since #select_battle_command drives it.
@@ -2097,7 +2097,7 @@ class RPG2k
         item_id = @ui[:pending][:item_id]
         c = @state.party.battle_skill_command(sk, current_actor, target, free: !item_id.nil?)
         @ui[:battle].command_skill(current_actor, target,
-                                          name: sk.name, skill_id: sid, item_id: item_id,
+                                          name: sk[:name], skill_id: sid, item_id: item_id,
                                           absorb: c[:absorb] ? true : false,
                                           # Left as `c[:attack]` verbatim (not coerced to a
                                           # boolean): a stub `battle_skill_command` in the test
@@ -2141,7 +2141,7 @@ class RPG2k
           { target: t, hp: c[:hp], mp: c[:mp] }
         end
         @ui[:battle].command_skill_all(current_actor, effects,
-                                              name: sk.name, skill_id: sid, item_id: item_id,
+                                              name: sk[:name], skill_id: sid, item_id: item_id,
                                               absorb: meta[:absorb] ? true : false,
                                               attack: meta[:attack], # see #apply_pending_skill's comment
                                               cost: meta[:cost],
@@ -2244,10 +2244,10 @@ class RPG2k
           # this item from the list entirely unless its skill is battle-usable
           # in the first place (never Escape/Teleport, see #battle_skill?), so
           # every skill reached here is one #battle_skill_target can resolve.
-          sk = @state.party.skill_invoking_item?(it) ? @state.party.db_skill(it.skill_id) : nil
+          sk = @state.party.skill_invoking_item?(it) ? @state.party.db_skill(it[:skill_id]) : nil
           if sk
             @ui[:pending][:sk] = sk
-            @ui[:pending][:sid] = it.skill_id
+            @ui[:pending][:sid] = it[:skill_id]
             case @state.party.battle_skill_target(sk)
             when :self
               apply_pending_skill(current_actor)
@@ -2387,8 +2387,8 @@ class RPG2k
         pending = @ui[:pending]
         @ui[:battle].command_item(current_actor, current_actor,
                                          item_id: pending[:item_id],
-                                         name: pending[:it].name,
-                                         switch_id: pending[:it].switch_id)
+                                         name: pending[:it][:name],
+                                         switch_id: pending[:it][:switch_id])
         @ui[:pending] = nil
         @ui[:phase] = :command
         advance_actor
@@ -2401,7 +2401,7 @@ class RPG2k
         c = @state.party.battle_item_command(pending[:it], target)
         @ui[:battle].command_item(current_actor, target,
                                          item_id: pending[:item_id],
-                                         name: pending[:it].name,
+                                         name: pending[:it][:name],
                                          hp: c[:hp], mp: c[:mp], cured: c[:cured])
         @ui[:pending] = nil
         @ui[:phase] = :command
@@ -2419,7 +2419,7 @@ class RPG2k
         cured = @state.party.battle_item_command(pending[:it], targets.first)[:cured]
         @ui[:battle].command_item_all(current_actor, effects,
                                              item_id: pending[:item_id],
-                                             name: pending[:it].name, cured: cured)
+                                             name: pending[:it][:name], cured: cured)
         @ui[:pending] = nil
         @ui[:phase] = :command
         advance_actor
@@ -2640,12 +2640,12 @@ class RPG2k
 
       def battle_animation_id(entry)
         row =
-          if entry[:skill_id] && db.respond_to?(:skill) && db.skill
-            db.skill[entry[:skill_id]]
-          elsif entry[:item_id] && db.respond_to?(:item) && db.item
-            db.item[entry[:item_id]]
+          if entry[:skill_id] && LCF.field?(db, :skill) && db[:skill]
+            db[:skill][entry[:skill_id]]
+          elsif entry[:item_id] && LCF.field?(db, :item) && db[:item]
+            db[:item][entry[:item_id]]
           end
-        return row.animation_id if row && row.respond_to?(:animation_id)
+        return row[:animation_id] if row && LCF.field?(row, :animation_id)
         # Neither a skill nor an item: a plain Attack, whose own animation
         # Game::Battle#deal_attack already resolved onto the log entry.
         entry[:attack_animation_id]
@@ -2825,7 +2825,7 @@ class RPG2k
         entry = matched.find { |(id, _)| !ui[:pages_run][id] }
         return false unless entry
         ui[:pages_run][entry[0]] = true
-        cmds = entry[1].event
+        cmds = entry[1][:event]
         return run_battle_events(return_phase, source) if cmds.nil? || cmds.empty? # empty page: try the next
         ui[:events].battle = ui[:battle]
         ui[:events].battle_source = source
@@ -3115,7 +3115,7 @@ class RPG2k
         return battle_skill_body(e) if e[:skill_id]
         return battle_item_body(e) if e[:item_id]
         return [battle_action_line(e)] if e[:recover] || e[:skill]
-        t = db.respond_to?(:term) ? db.term : nil
+        t = LCF.field?(db, :term) ? db[:term] : nil
         want_start = battle_start_field(e)
         want_result = battle_result_wanted?(e)
         want_crit = e[:critical] ? true : false
@@ -3165,11 +3165,11 @@ class RPG2k
       # only thing naming what was cast.
       def battle_skill_body(e)
         bt = Game::States::BattleText
-        row = db.respond_to?(:skill) && db.skill ? db.skill[e[:skill_id]] : nil
+        row = LCF.field?(db, :skill) && db[:skill] ? db[:skill][e[:skill_id]] : nil
         caster = (e[:recover] ? e[:actor] : e[:attacker]).to_s
         lines = skill_start_lines(e, row, caster)
         return [battle_action_line(e)] if lines.empty?
-        t = db.respond_to?(:term) ? db.term : nil
+        t = LCF.field?(db, :term) ? db[:term] : nil
         rest = battle_skill_result(t, row, e)
         return [battle_action_line(e)] unless rest
         lines + rest
@@ -3214,10 +3214,10 @@ class RPG2k
         bt = Game::States::BattleText
         it = e[:item_id] && @state.party.db_item(e[:item_id])
         if it
-          uses_skill_message = it.respond_to?(:using_message) && (it.using_message || 0) != 0
+          uses_skill_message = LCF.field?(it, :using_message) && (it[:using_message] || 0) != 0
           unless uses_skill_message
-            t = db.respond_to?(:term) ? db.term : nil
-            line = bt.item_start(t, caster, it.name.to_s)
+            t = LCF.field?(db, :term) ? db[:term] : nil
+            line = bt.item_start(t, caster, it[:name].to_s)
             return line ? [line] : []
           end
         end
@@ -3259,7 +3259,7 @@ class RPG2k
       # from two names -- and then says what it restored.
       def battle_item_body(e)
         bt = Game::States::BattleText
-        t = db.respond_to?(:term) ? db.term : nil
+        t = LCF.field?(db, :term) ? db[:term] : nil
         start = bt.item_start(t, e[:actor].to_s, e[:source].to_s)
         return [battle_action_line(e)] unless start
         rest =
@@ -3467,7 +3467,7 @@ class RPG2k
         troop.drops(@ui[:battle].rng).each do |iid|
           @state.party.gain_item(iid, 1)
           it = @state.party.db_item(iid)
-          name = it ? it.name : "item #{iid}"
+          name = it ? it[:name] : "item #{iid}"
           lines << "#{name}#{term(:item_received)}"
         end
         @state.party.actors.each do |a|
@@ -3521,7 +3521,7 @@ class RPG2k
       # since it always trails that actor's own level-up line the way it
       # does here too.
       def battle_skill_learned_message(actor, sk)
-        "#{sk.name}#{term(:skill_learned)}"
+        "#{sk[:name]}#{term(:skill_learned)}"
       end
 
       # RPG_RT's battle windows share one fixed panel: a 320x80 strip along
@@ -3907,7 +3907,7 @@ class RPG2k
       # `#battler_bitmap`/`#actor_battlecharset_bitmap`, there is no sensible
       # placeholder gauge sprite sheet to draw in its place.
       def battle_system2_bitmap
-        name = db.system.respond_to?(:system2_name) ? db.system.system2_name : nil
+        name = LCF.field?(db[:system], :system2_name) ? db[:system][:system2_name] : nil
         return nil unless name && !name.empty?
         cached_bitmap(@system2_cache, name) do
           begin
@@ -4287,7 +4287,7 @@ class RPG2k
         @ui[:skill_win].dispose if @ui[:skill_win]
         labels = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
-          [sk ? sk.name : "Skill #{sid}", '-', cost.to_s]
+          [sk ? sk[:name] : "Skill #{sid}", '-', cost.to_s]
         end
         idxs = @ui[:skills].map do |sid, cost|
           sk = @state.party.db_skill(sid)
@@ -4336,7 +4336,7 @@ class RPG2k
         @ui[:item_win].dispose if @ui[:item_win]
         labels = @ui[:items].map do |id, count|
           it = @state.party.db_item(id)
-          [it ? it.name : "Item #{id}", ':', count.to_s]
+          [it ? it[:name] : "Item #{id}", ':', count.to_s]
         end
         idxs = @ui[:items].map { |id, _count| @state.party.battle_usable?(id) ? 0 : 3 }
         @ui[:item_win] = battle_list_window(0, SCREEN_W, labels, @ui[:item_i], 325,
@@ -4358,8 +4358,8 @@ class RPG2k
       def battle_list_description(row, skill)
         return '' unless row
         rec = skill ? @state.party.db_skill(row[0]) : @state.party.db_item(row[0])
-        return '' unless rec && rec.respond_to?(:description)
-        rec.description.to_s
+        return '' unless rec && LCF.field?(rec, :description)
+        rec[:description].to_s
       end
 
       # Keeps `@ui[:item_top]` for the same measured reason
@@ -4535,7 +4535,7 @@ class RPG2k
       # which is where the game's own wording lives. An English-release database
       # leaves them blank, so a plain composition stands in.
       def battle_state_lines(entry)
-        table = db.respond_to?(:situation) ? db.situation : nil
+        table = LCF.field?(db, :situation) ? db[:situation] : nil
         name = entry[:target].to_s
         ally = entry[:target_ally] ? true : false
         lines = []
@@ -4567,7 +4567,7 @@ class RPG2k
                                                  name, ally) ||
                     "#{name} is defeated!")
         end
-        terms = db.respond_to?(:term) ? db.term : nil
+        terms = LCF.field?(db, :term) ? db[:term] : nil
         (entry[:stat_changed] || {}).each do |key, delta|
           term_name = STAT_CHANGE_TERM[key]
           next unless term_name && delta && delta != 0
@@ -4577,10 +4577,10 @@ class RPG2k
         attr_ids = entry[:attr_shifted] || []
         unless attr_ids.empty?
           positive = (entry[:attr_shift_dir] || 1) > 0
-          props = db.respond_to?(:property) ? db.property : nil
+          props = LCF.field?(db, :property) ? db[:property] : nil
           attr_ids.each do |aid|
             row = props ? props[aid] : nil
-            attr_name = row && row.respond_to?(:name) ? row.name : "attribute #{aid}"
+            attr_name = row && LCF.field?(row, :name) ? row[:name] : "attribute #{aid}"
             lines << (Game::States::BattleText.attribute_shift(terms, name, positive, attr_name) ||
                       "#{name}'s resistance to #{attr_name} #{positive ? 'rose' : 'fell'}")
           end
@@ -4882,8 +4882,8 @@ class RPG2k
         sprites = @ui && @ui[:enemy_sprites]
         spr = target_index && sprites ? sprites[target_index] : nil
         return unless spr
-        spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
-                            (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
+        spr.flash(Color.new((t[:flash_red] || 0) * 8, (t[:flash_green] || 0) * 8,
+                            (t[:flash_blue] || 0) * 8, (t[:flash_power] || 0) * 8),
                   Map::ANIM_FLASH_FRAMES)
       end
 

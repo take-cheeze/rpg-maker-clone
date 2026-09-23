@@ -55,6 +55,7 @@ SOURCE_GLOBS = ['mruby-*/mrblib/**/*.rb'].freeze
 # themselves skip.
 CHECKS = [
   { name: 'lcf-testbed',        command: %w[scripts/lcf_testbed_check.rb] },
+  { name: 'lcf-bracket-access', command: %w[scripts/lcf_bracket_access_check.rb] },
   { name: 'rpg2k-command-soak', command: %w[scripts/rpg2k_command_soak.rb],
     needs: :rpg2k_game },
   { name: 'rpgxp-testbed',      command: %w[scripts/rpgxp_testbed_check.rb] },

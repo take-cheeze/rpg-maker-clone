@@ -32,7 +32,7 @@ class RPG2k
       # is transparent, and every menu built on this would otherwise draw the
       # cursor and frame corners on opaque blocks.
       def make_windowskin
-        name = @db.system.system_graphic
+        name = @db[:system][:system_graphic]
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}", true
       rescue StandardError => e
@@ -245,7 +245,7 @@ class RPG2k
       # The database's status-condition table (the `situation` array), or nil for
       # a scene built on a fixture database that has none.
       def state_table
-        db.respond_to?(:situation) ? db.situation : nil
+        LCF.field?(db, :situation) ? db[:situation] : nil
       end
 
       def state_display(states)
@@ -324,8 +324,8 @@ class RPG2k
       # database lets a project rename (menu commands, stat abbreviations,
       # equipment slots, ...).
       def term(name)
-        t = db.respond_to?(:term) ? db.term : nil
-        s = t && t.respond_to?(name) ? t.send(name) : nil
+        t = LCF.field?(db, :term) ? db[:term] : nil
+        s = t && LCF.field?(t, name) ? t[name] : nil
         s.to_s
       end
 
@@ -412,9 +412,9 @@ class RPG2k
 
       def db_system_se(slot)
         field = DB_SE_FIELD[slot]
-        return nil unless field && db.system.respond_to?(field)
-        se = db.system.send(field)
-        name = se && se.respond_to?(:file) ? se.file : nil
+        return nil unless field && LCF.field?(db[:system], field)
+        se = db[:system][field]
+        name = se && LCF.field?(se, :file) ? se[:file] : nil
         # Ported from a reference implementation's actual C++ source, NOT
         # independently confirmed against genuine RPG_RT under wine
         # (matching the identical, already-disclosed convention
@@ -426,9 +426,9 @@ class RPG2k
         # schema field 5, the same field id `#do_change_system_sfx`'s own
         # override hash already tracks below), but this DB-default path never
         # read it at all until now -- see #play_system_se's own citation.
-        { name: name, volume: (se.respond_to?(:volume) ? se.volume : 100),
-          tempo: (se.respond_to?(:pitch) ? se.pitch : 100),
-          balance: (se.respond_to?(:balance) ? se.balance : 50) }
+        { name: name, volume: (LCF.field?(se, :volume) ? se[:volume] : 100),
+          tempo: (LCF.field?(se, :pitch) ? se[:pitch] : 100),
+          balance: (LCF.field?(se, :balance) ? se[:balance] : 50) }
       end
 
       # Plays a battle_anime row's own sound effect -- ported from
@@ -451,14 +451,14 @@ class RPG2k
       # literally named "(OFF)".
       def play_animation_se(anim_id)
         return unless anim_id
-        table = db.respond_to?(:battle_anime) ? db.battle_anime : nil
+        table = LCF.field?(db, :battle_anime) ? db[:battle_anime] : nil
         anim = table && table[anim_id]
-        return unless anim && anim.timings
-        anim.timings.each do |_id, t|
-          se = t.respond_to?(:se) ? t.se : nil
-          name = se && se.file
+        return unless anim && anim[:timings]
+        anim[:timings].each do |_id, t|
+          se = LCF.field?(t, :se) ? t[:se] : nil
+          name = se && se[:file]
           next if name.nil? || name.empty? || name == '(OFF)'
-          Audio.se_play name, se.volume, se.pitch, se.balance
+          Audio.se_play name, se[:volume], se[:pitch], se[:balance]
           return
         end
       rescue StandardError => e
@@ -609,16 +609,16 @@ class RPG2k
       def common_event_commands(id)
         entry = @common[id]
         return nil unless entry
-        entry.commands ||= entry.chunk && entry.chunk.event
+        entry.commands ||= entry.chunk && entry.chunk[:event]
       end
 
       def map_event_commands(id, page_index)
         ev = @map_events[id]
         return nil unless ev
-        pages = ev.pages
+        pages = ev[:pages]
         return nil unless pages
         page = pages[page_index]
-        page && page.event_commands
+        page && page[:event_commands]
       rescue StandardError
         nil
       end

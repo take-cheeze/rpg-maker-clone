@@ -137,6 +137,14 @@ end
 
 # -- fakes --------------------------------------------------------------------
 
+# The runtime reads an LCF record's fields as `row[:name]` (LCF::Array1D#[];
+# LCF has no dotted field access, docs/adr/0213). A stand-in record that keeps
+# its fields in plain readers includes this so the same read works on it.
+# Struct/OpenStruct fixtures already answer `[]` for their own members.
+module FixtureFields
+  def [](name) = public_send(name)
+end
+
 # A grid world implementing the MoveRoute/MoveType `world` protocol. Passability
 # is a set of blocked [x, y] tiles; everything else is walkable.
 class FakeWorld
@@ -4142,6 +4150,7 @@ end
 # does (six shorts per level via #int16_values(31)), so Actor scales its base
 # stats by level instead of using a single level-independent status hash.
 class CurveRow < FakePlayerRow
+  include FixtureFields
   def initialize(name, cs, ci, level, curve)
     super(name, cs, ci, level, nil)
     @curve = curve
@@ -4157,10 +4166,12 @@ end
 # id, entry). Lets Game::Actor seed its skills by level without the LCF parser.
 FakeLearn = Struct.new(:skill_id, :level)
 class FakeLearnTable
+  include FixtureFields
   def initialize(pairs); @pairs = pairs; end # [[skill_id, level], ...]
   def each; @pairs.each_index { |i| yield i, FakeLearn.new(*@pairs[i]) }; end
 end
 class SkillRow < CurveRow
+  include FixtureFields
   def initialize(name, cs, ci, level, curve, learns)
     super(name, cs, ci, level, curve)
     @learns = learns
@@ -4174,6 +4185,7 @@ end
 # Actor#initialize's `a.respond_to?(:initial_equipment)` guard always reads
 # false for one and every existing fixture actor starts unarmed and unworn.
 class InitialEquipmentRow < FakePlayerRow
+  include FixtureFields
   def initialize(name, cs, ci, level, status, equip)
     super(name, cs, ci, level, status)
     @equip = equip
@@ -4428,6 +4440,7 @@ end
 # An RPG2003 class row (職業, database chunk 30): its own growth curve, learn
 # table, EXP curve and battle-command list, exposed the way a real LCF row is.
 class JobRow
+  include FixtureFields
   attr_reader :name, :skills, :battle_commands,
               :exp_basic, :exp_increase, :exp_correction,
               # The class's own default battle animation id (chunk 30 field
@@ -4464,6 +4477,7 @@ end
 # An actor row that starts out in a class (RPG2003 field 57) and carries its own
 # battle-command list (field 80).
 class ClassedRow < SkillRow
+  include FixtureFields
   attr_reader :class_id, :battle_commands
   def initialize(name, cs, ci, level, curve, learns, class_id, battle_commands = nil)
     super(name, cs, ci, level, curve, learns)
@@ -4473,6 +4487,8 @@ class ClassedRow < SkillRow
 end
 
 class FakeActorDB
+
+  include FixtureFields
   attr_reader :player, :system, :item, :skill, :job, :situation, :property, :battlecommands,
               :enemy_group, :battleranimations, :term
   # Writable (unlike the others above): nil by default, matching a database
@@ -4727,7 +4743,7 @@ check 'to_lsd/from_lsd round-trips a live Change Parameters edit on every ' \
   untouched_db = FakeActorDB.new({ 1 => CurveRow.new('Hero', '', 0, 1, [10, 5, 3, 2, 1, 4]) }, [1])
   untouched_st = Game::State.new(Game::Party.new(untouched_db), 1, 0, 0)
   saved = untouched_st.to_lsd[108][1]
-  eq 0, saved.attack_mod, 'no Change Parameters this session means no mod fields written -- reads back at the neutral default'
+  eq 0, saved[:attack_mod], 'no Change Parameters this session means no mod fields written -- reads back at the neutral default'
   untouched_round = Game::State.from_lsd(untouched_db, untouched_st.to_lsd)
   eq [10, 5, 3, 2, 1, 4],
      [untouched_round.party.leader.max_hp, untouched_round.party.leader.max_mp,
@@ -4762,10 +4778,10 @@ check 'to_lsd mirrors chunk 108\'s own class/database-derived combat ' \
   ok hero.strong_defence?
 
   saved = st.to_lsd[108][1]
-  eq true, saved.two_weapon
-  eq true, saved.lock_equipment
-  eq true, saved.auto_battle
-  eq true, saved.super_guard
+  eq true, saved[:two_weapon]
+  eq true, saved[:lock_equipment]
+  eq true, saved[:auto_battle]
+  eq true, saved[:super_guard]
 
   # None of the four ever set: a genuine save leaves the field absent
   # rather than writing an explicit false -- same "omit at default"
@@ -4774,10 +4790,10 @@ check 'to_lsd mirrors chunk 108\'s own class/database-derived combat ' \
   plain_db = FakeActorDB.new({ 1 => plain_row }, [1])
   plain_st = Game::State.new(Game::Party.new(plain_db), 1, 0, 0)
   plain_saved = plain_st.to_lsd[108][1]
-  eq false, plain_saved.two_weapon
-  eq false, plain_saved.lock_equipment
-  eq false, plain_saved.auto_battle
-  eq false, plain_saved.super_guard
+  eq false, plain_saved[:two_weapon]
+  eq false, plain_saved[:lock_equipment]
+  eq false, plain_saved[:auto_battle]
+  eq false, plain_saved[:super_guard]
 end
 
 check 'to_lsd/from_lsd leaves an actor untouched by either command exactly ' \
@@ -4814,14 +4830,14 @@ check 'to_lsd/from_lsd writes chunk 108\'s states (81/82) as a dense, ' \
   # database's own state count -- not omitted (this codebase's own prior
   # "unless a.states.empty?" guard).
   untouched = st.to_lsd[108][1]
-  eq 3, untouched.state_size
-  eq [0, 0, 0], untouched.states
+  eq 3, untouched[:state_size]
+  eq [0, 0, 0], untouched[:states]
 
   # Afflicted with state 2 (index 1): only that slot goes nonzero.
   hero.states = [2]
   saved = st.to_lsd[108][1]
-  eq 3, saved.state_size
-  eq [0, 1, 0], saved.states, 'state id 2 sets slot index 1 (state_id - 1), the rest stay 0'
+  eq 3, saved[:state_size]
+  eq [0, 1, 0], saved[:states], 'state id 2 sets slot index 1 (state_id - 1), the rest stay 0'
 
   round = Game::State.from_lsd(db, st.to_lsd)
   eq [2], round.party.leader.states,
@@ -4834,8 +4850,8 @@ check 'to_lsd/from_lsd writes chunk 108\'s states (81/82) as a dense, ' \
   bare_st = Game::State.new(Game::Party.new(bare_db), 1, 0, 0)
   eq 0, bare_st.party.leader.total_state_count
   bare_saved = bare_st.to_lsd[108][1]
-  eq 0, bare_saved.state_size
-  eq [], bare_saved.states || []
+  eq 0, bare_saved[:state_size]
+  eq [], bare_saved[:states] || []
 end
 
 check 'to_lsd/from_lsd round-trips the file-select screen\'s face-thumbnail ' \
@@ -5040,10 +5056,10 @@ check 'to_lsd writes chunk 104/105-107 field 33 (layer) as the constant 1, ' \
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 5, max_hp: 100) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   saved = st.to_lsd
-  eq 1, saved[104].layer, "the hero's own record"
-  eq 1, saved[105].layer, 'the boat'
-  eq 1, saved[106].layer, 'the ship'
-  eq 1, saved[107].layer, 'the airship'
+  eq 1, saved[104][:layer], "the hero's own record"
+  eq 1, saved[105][:layer], 'the boat'
+  eq 1, saved[106][:layer], 'the ship'
+  eq 1, saved[107][:layer], 'the airship'
 end
 
 check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
@@ -5059,9 +5075,9 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   eq nil, st.player_flash
 
   saved = st.to_lsd[104]
-  eq 0, saved.flash_red, 'the RGB triple is an explicit 0, not the schema default (-1) or absent'
-  eq 0, saved.flash_green
-  eq 0, saved.flash_blue
+  eq 0, saved[:flash_red], 'the RGB triple is an explicit 0, not the schema default (-1) or absent'
+  eq 0, saved[:flash_green]
+  eq 0, saved[:flash_blue]
   ok !saved.key?(84), 'flash_current_level stays absent while nothing is flashing'
   ok !saved.key?(85), 'flash_time_left stays absent while nothing is flashing'
 
@@ -5074,11 +5090,11 @@ check 'to_lsd/from_lsd round-trips the hero\'s own in-flight Flash Sprite ' \
   # @player_flash, dropped silently by any save.
   st.player_flash = { red: 200, green: 50, blue: 10, power: 24, frames: 8, total: 12 }
   saved2 = st.to_lsd[104]
-  eq 200, saved2.flash_red
-  eq 50, saved2.flash_green
-  eq 10, saved2.flash_blue
-  eq 8, saved2.flash_time_left
-  eq 24.0 * 8 / 12, saved2.flash_current_level
+  eq 200, saved2[:flash_red]
+  eq 50, saved2[:flash_green]
+  eq 10, saved2[:flash_blue]
+  eq 8, saved2[:flash_time_left]
+  eq 24.0 * 8 / 12, saved2[:flash_current_level]
 
   round2 = Game::State.from_lsd(db, st.to_lsd)
   pf = round2.player_flash
@@ -5110,14 +5126,14 @@ check 'to_lsd/from_lsd round-trips a live Set Move Route on the hero ' \
   st.player_route = { commands: cmds, repeat: true, skippable: true, index: 1, frequency: 5 }
   st.player_through = true
   saved = st.to_lsd[104]
-  eq 5, saved.move_frequency
-  eq 1, saved.move_route_index
-  eq true, saved.through
-  mr = saved.move_route
-  eq 2, mr.command_size
-  eq true, mr.repeat
-  eq true, mr.skippable
-  route_cmds = mr.commands
+  eq 5, saved[:move_frequency]
+  eq 1, saved[:move_route_index]
+  eq true, saved[:through]
+  mr = saved[:move_route]
+  eq 2, mr[:command_size]
+  eq true, mr[:repeat]
+  eq true, mr[:skippable]
+  route_cmds = mr[:commands]
   eq 2, route_cmds.size
   eq Game::MoveRoute::MOVE_UP, route_cmds[0].command_id
   eq Game::MoveRoute::PLAY_SOUND, route_cmds[1].command_id
@@ -5140,8 +5156,8 @@ check 'to_lsd/from_lsd round-trips a live Set Move Route on the hero ' \
   # false respectively), matching the genuine save's own field 21 (present,
   # differing from default) vs 22 (absent, at default) split.
   st.player_route = { commands: cmds, repeat: false, skippable: false, index: 0 }
-  saved2 = st.to_lsd[104].move_route
-  eq false, saved2.repeat
+  saved2 = st.to_lsd[104][:move_route]
+  eq false, saved2[:repeat]
   ok !saved2.key?(22), 'skippable stays absent at its own false default'
 end
 
@@ -5216,11 +5232,11 @@ check 'to_lsd writes SAVE_SYSTEM fields 71-82/91-102 (title/battle/etc. ' \
   sys = st.to_lsd[101]
   [71, 72, 73, 74, 79, 80, 81, 82].each do |field|
     ok sys.key?(field), "BGM field #{field} is present even when never touched"
-    eq '', sys[field].file, "BGM field #{field} is blank-named"
+    eq '', sys[field][:file], "BGM field #{field} is blank-named"
   end
   (91..102).each do |field|
     ok sys.key?(field), "SE field #{field} is present even when never touched"
-    eq '', sys[field].file, "SE field #{field} is blank-named"
+    eq '', sys[field][:file], "SE field #{field} is blank-named"
   end
 end
 
@@ -5233,11 +5249,11 @@ check 'to_lsd writes SAVE_SYSTEM field 1 (scene) as the constant 5, and ' \
   db = FakeActorDB.new({ 1 => FakePlayerRow.new('Hero', '', 0, 1, max_hp: 10) }, [1])
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   sys = st.to_lsd[101]
-  eq 5, sys.scene
+  eq 5, sys[:scene]
   ok !sys.key?(23), 'font_id is absent at its own default (0)'
 
   st.font_id = 2
-  eq 2, st.to_lsd[101].font, 'a changed font_id is still written'
+  eq 2, st.to_lsd[101][:font], 'a changed font_id is still written'
 end
 
 check 'to_lsd elides SAVE_SYSTEM field 31 (switch count) when no switch ' \
@@ -5251,12 +5267,12 @@ check 'to_lsd elides SAVE_SYSTEM field 31 (switch count) when no switch ' \
   st = Game::State.new(Game::Party.new(db), 1, 0, 0)
   sys = st.to_lsd[101]
   ok !sys.key?(31), 'switch count is absent when no switch was ever touched'
-  eq [], sys.switches, 'the switch data array is still present, just empty'
+  eq [], sys[:switches], 'the switch data array is still present, just empty'
 
   st.switches[3] = true
   touched = st.to_lsd[101]
-  eq 3, touched.switch_size
-  eq [false, false, true], touched.switches
+  eq 3, touched[:switch_size]
+  eq [false, false, true], touched[:switches]
 end
 
 check 'to_lsd/from_lsd round-trips the current and memorized BGM\'s balance, ' \
@@ -5296,7 +5312,7 @@ check 'to_lsd writes chunk 101 field 78 (stored_bgm/Memorize BGM) ' \
 
   saved = st.to_lsd
   eq true, saved[101].key?(78), 'always present, unlike an ordinary omit-at-default field'
-  eq '(OFF)', saved[101][78].file
+  eq '(OFF)', saved[101][78][:file]
 
   round = Game::State.from_lsd(db, saved)
   eq nil, round.memorized_bgm, '"(OFF)" reads back as nil, not a literal track named "(OFF)"'
@@ -5318,8 +5334,8 @@ check 'to_lsd/from_lsd round-trips the vehicle/battle BGM restore point ' \
   saved = st.to_lsd
   eq true, saved[101].key?(76), 'always present, unlike an ordinary omit-at-default field'
   eq true, saved[101].key?(77)
-  eq '(OFF)', saved[101][76].file
-  eq '(OFF)', saved[101][77].file
+  eq '(OFF)', saved[101][76][:file]
+  eq '(OFF)', saved[101][77][:file]
 
   round = Game::State.from_lsd(db, saved)
   eq nil, round.pre_vehicle_bgm, '"(OFF)" reads back as nil, not a literal track named "(OFF)"'
@@ -5733,8 +5749,8 @@ check 'to_lsd/from_lsd round-trips the step counter and battle tallies' do
   fresh.timer(0).frames = 100
   fresh.timer(0).running = true
   touched = fresh.to_lsd[109]
-  eq 100, touched.timer1_frames, 'a touched timer is still written'
-  ok touched.timer1_active
+  eq 100, touched[:timer1_frames], 'a touched timer is still written'
+  ok touched[:timer1_active]
   ok !touched.instance_variable_get(:@data)[25], 'the untouched sibling field (visible) stays absent'
 end
 
@@ -5816,10 +5832,10 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
 
   saved = st.to_lsd[103][3]
   ok !saved.nil?, 'chunk 103 carries the shown picture'
-  eq 'backdrop', saved.name
-  eq 200, saved.finish_x.to_i
-  eq 150, saved.finish_y.to_i
-  eq 150, saved.zoom
+  eq 'backdrop', saved[:name]
+  eq 200, saved[:finish_x].to_i
+  eq 150, saved[:finish_y].to_i
+  eq 150, saved[:zoom]
   # Game.opacity_to_trans(191) == 100 - 191*100/255 == 26 -- not 25: this
   # codebase's own Game::Picture keeps opacity (0..255), not RPG_RT's own
   # native 0..100 transparency, as its live ground truth (#trans_to_opacity
@@ -5829,11 +5845,11 @@ check 'to_lsd writes chunk 103 (shown pictures), not just from_lsd reading it' d
   # genuine RPG_RT under wine: it is the 0..100 value directly there, suggesting real
   # RPG_RT may have no such drift -- a pre-existing, separate precision gap noted
   # in docs/TODO.md, out of scope for this fix.
-  eq 26, saved.transparency
-  eq 50, saved.tone_red
-  eq 60, saved.tone_green
-  eq 70, saved.tone_blue
-  eq 80, saved.tone_saturation
+  eq 26, saved[:transparency]
+  eq 50, saved[:tone_red]
+  eq 60, saved[:tone_green]
+  eq 70, saved[:tone_blue]
+  eq 80, saved[:tone_saturation]
 
   # End-to-end through .from_lsd too, at the two values that round-trip
   # exactly (0 and 255 are each other's fixed point under both conversions,
@@ -5899,11 +5915,11 @@ check 'to_lsd mirrors the RPG2003-only bottom-half transparency fields ' \
   st.show_picture(3, name: 'backdrop', x: 200, y: 150,
                   opacity: Game.trans_to_opacity(25))
   saved = st.to_lsd[103][3]
-  eq saved.transparency, saved.bot_transparency,
+  eq saved[:transparency], saved[:bot_transparency],
      'finish_bot_trans (35) mirrors finish_top_trans (34)'
-  eq saved.current_transparency, saved.current_bot_transparency,
+  eq saved[:current_transparency], saved[:current_bot_transparency],
      'current_bot_trans (18) mirrors current_top_trans (8)'
-  ok saved.bot_transparency != 0, 'the mirrored value is not just both sides defaulting to 0'
+  ok saved[:bot_transparency] != 0, 'the mirrored value is not just both sides defaulting to 0'
 
   # A picture never shown (still at its own default opacity/transparency 0)
   # must leave both mirrored fields elided too, the same "omit at default"
@@ -5935,11 +5951,11 @@ check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' 
 
   saved = st.to_lsd[103][5]
   ok !saved.nil?, 'the mid-move picture is written to chunk 103'
-  eq 39, saved.time_left, 'one frame already elapsed off the saved move'
-  eq st.pictures[5].x, saved.current_x.to_i
-  eq st.pictures[5].y, saved.current_y.to_i
-  eq 210, saved.finish_x.to_i
-  eq 120, saved.finish_y.to_i
+  eq 39, saved[:time_left], 'one frame already elapsed off the saved move'
+  eq st.pictures[5].x, saved[:current_x].to_i
+  eq st.pictures[5].y, saved[:current_y].to_i
+  eq 210, saved[:finish_x].to_i
+  eq 120, saved[:finish_y].to_i
 
   round = Game::State.from_lsd(db, st.to_lsd)
   restored = round.pictures[5]
@@ -5959,7 +5975,7 @@ check 'to_lsd/from_lsd round-trips a picture still mid-Move-Picture, resuming ' 
   # time_left absent/0 means the new fields are never even consulted.
   st.show_picture(6, name: 'still', x: 5, y: 5)
   still_saved = st.to_lsd[103][6]
-  eq 0, (still_saved.time_left || 0)
+  eq 0, (still_saved[:time_left] || 0)
   still_round = Game::State.from_lsd(db, st.to_lsd)
   ok !still_round.pictures[6].moving?, 'a picture never moved restores at rest'
 end
@@ -5993,8 +6009,8 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
   present = (0...raw.size).select { |i| raw[i] }
   eq [1, 2, 3, 4, 5, 31, 32], present,
      'zoom/transparency/tone are all absent when every one sits at its own default'
-  eq 111.0, at_default.current_x
-  eq 77.0, at_default.current_y
+  eq 111.0, at_default[:current_x]
+  eq 77.0, at_default[:current_y]
 
   st.show_picture(9, name: 'black', x: 111, y: 77,
                   zoom: 133, opacity: Game.trans_to_opacity(25),
@@ -6006,17 +6022,17 @@ check 'to_lsd writes chunk 103\'s current_x/y/zoom/etc unconditionally (not ' \
      'zoom/transparency/tone are all present (current and finish alike) once ' \
      'every one is off its own default, though the picture was never moved -- ' \
      'including the mirrored bottom-half transparency fields 18/35'
-  eq 133.0, off_default.current_zoom
+  eq 133.0, off_default[:current_zoom]
   # 26, not 25: the same pre-existing opacity/transparency round-trip
   # precision gap the "to_lsd writes chunk 103..." check above already notes
   # (Game.trans_to_opacity(25) == 191, then Game.opacity_to_trans(191) ==
   # 26) -- unrelated to and unaffected by this check's own fix.
-  eq 26, off_default.transparency
-  eq 133, off_default.zoom
-  eq 140, off_default.tone_red
-  eq 60, off_default.tone_green
-  eq 180, off_default.tone_blue
-  eq 50, off_default.tone_saturation
+  eq 26, off_default[:transparency]
+  eq 133, off_default[:zoom]
+  eq 140, off_default[:tone_red]
+  eq 60, off_default[:tone_green]
+  eq 180, off_default[:tone_blue]
+  eq 50, off_default[:tone_saturation]
 
   # Round-trips correctly too: a fresh Game::State built from this save
   # restores the exact same off-default values, not Picture's own defaults.
@@ -6049,12 +6065,12 @@ check 'to_lsd/from_lsd round-trips chunk 103\'s show_x/show_y (field 2/3), ' \
   180.times { st.pictures[10].update } # 3.0s elapsed, still 120 frames left
 
   saved = st.to_lsd[103][10]
-  eq 120, saved.time_left, 'sanity: the move is genuinely still in flight'
-  eq 111.0, saved.show_x, 'show_x stays the original Show Picture position...'
-  eq 77.0, saved.show_y, '...not the live current position...'
-  ok (saved.current_x.to_i - 177).abs <= 1, '...which has moved on (~177.6)'
-  eq 222, saved.finish_x.to_i, '...nor the move\'s own finish target'
-  eq 188, saved.finish_y.to_i
+  eq 120, saved[:time_left], 'sanity: the move is genuinely still in flight'
+  eq 111.0, saved[:show_x], 'show_x stays the original Show Picture position...'
+  eq 77.0, saved[:show_y], '...not the live current position...'
+  ok (saved[:current_x].to_i - 177).abs <= 1, '...which has moved on (~177.6)'
+  eq 222, saved[:finish_x].to_i, '...nor the move\'s own finish target'
+  eq 188, saved[:finish_y].to_i
 
   round = Game::State.from_lsd(db, st.to_lsd)
   restored = round.pictures[10]
@@ -8433,8 +8449,8 @@ check 'to_lsd/from_lsd round-trips the 使用回数 tally (chunk 109 field 14)' 
   st.party.use_switch_item(4)
 
   inv = st.to_lsd[109]
-  eq [4, 5], inv.item_ids
-  eq [1, 0], inv.item_usage, 'the array is written for every id, zeros included'
+  eq [4, 5], inv[:item_ids]
+  eq [1, 0], inv[:item_usage], 'the array is written for every id, zeros included'
 
   round = Game::State.from_lsd(db, st.to_lsd)
   eq 1, round.party.item_usage[4], 'the part-used item comes back part-used'
@@ -8465,8 +8481,8 @@ check 'to_lsd writes the party roster as a count-then-data pair (chunk 109 ' \
   st = Game::State.new(party, 1, 0, 0)
 
   inv = st.to_lsd[109]
-  eq 3, inv.party_count, 'field 1 is the count, not the roster itself'
-  eq [1, 2, 3], inv.party, 'field 2 is the roster data'
+  eq 3, inv[:party_count], 'field 1 is the count, not the roster itself'
+  eq [1, 2, 3], inv[:party], 'field 2 is the roster data'
 
   round = Game::State.from_lsd(db, st.to_lsd)
   eq [1, 2, 3], round.party.actors.map(&:id)
@@ -8508,8 +8524,8 @@ check 'to_lsd writes the bag in its own order, so a save/load round trip ' \
             9 => fake_item(type: 6, rsp: 10) }
   st = stored_bag(item_party(items), [[9, 2], [5, 1], [7, 1]])
   inv = st.to_lsd[109]
-  eq [9, 5, 7], inv.item_ids, 'chunk 109 field 12 keeps the stored order'
-  eq [2, 1, 1], inv.item_counts, 'and field 13 stays parallel to it'
+  eq [9, 5, 7], inv[:item_ids], 'chunk 109 field 12 keeps the stored order'
+  eq [2, 1, 1], inv[:item_counts], 'and field 13 stays parallel to it'
 end
 
 check 'a field-only medicine is kept out of battle; every medicine is in the field' do
@@ -11239,14 +11255,14 @@ check 'to_lsd writes an erased-but-previously-shown picture with its stale ' \
     id = LCF::Schema::SAVE_PICTURE.call.find { |_, spec| spec[:name] == name }.first
     ok erased.key?(id), "field #{id} (#{name}) is still present after erase"
   end
-  eq 111, erased.show_x
-  eq 77, erased.show_y
-  eq 133, erased.zoom
+  eq 111, erased[:show_x]
+  eq 77, erased[:show_y]
+  eq 133, erased[:zoom]
   # 26, not 25: the same pre-existing opacity<->transparency round-trip
   # precision gap the "to_lsd writes chunk 103..." check above already
   # documents (out of scope for this fix; unrelated to erasure).
-  eq 26, erased.transparency
-  eq 140, erased.tone_red
+  eq 26, erased[:transparency]
+  eq 140, erased[:tone_red]
 
   # Control: an id that was never shown at all is still a fully field-less
   # placeholder (cycle #154, unchanged by this fix).
@@ -11853,11 +11869,11 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   [105, 106, 107].each { |chunk| ok saved.key?(chunk), "chunk #{chunk} is present even though unplaced" }
 
   boat = saved[105]
-  eq 0, boat.map_id
-  eq 0, boat.x
-  eq 0, boat.y
-  eq 1, boat.vehicle, "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 1 for the boat"
-  eq 4, boat.move_speed
+  eq 0, boat[:map_id]
+  eq 0, boat[:x]
+  eq 0, boat[:y]
+  eq 1, boat[:vehicle], "liblcf's own SaveVehicleLocation.vehicle ordinal (field 101), 1 for the boat"
+  eq 4, boat[:move_speed]
   # Uncustomized (Vehicle.new's own empty charset_name/0 index sentinel)
   # and no `db` given: 73/74 stay absent, the same sentinel Scene::Map's
   # own #vehicle_charset/#vehicle_charset_index already test for -- with
@@ -11867,12 +11883,12 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   ok !boat.key?(74)
 
   ship = saved[106]
-  eq 2, ship.vehicle
-  eq 4, ship.move_speed
+  eq 2, ship[:vehicle]
+  eq 4, ship[:move_speed]
 
   airship = saved[107]
-  eq 3, airship.vehicle
-  eq 5, airship.move_speed, 'move_speed (field 37), 5 for the (faster) airship vs 4 for boat/ship'
+  eq 3, airship[:vehicle]
+  eq 5, airship[:move_speed], 'move_speed (field 37), 5 for the (faster) airship vs 4 for boat/ship'
 
   # A live Change Vehicle Graphic override (or a restored .lsd's own
   # charset_name/_index, via #load_movable) is still written through as
@@ -11880,8 +11896,8 @@ check 'to_lsd writes chunks 105-107 (vehicle locations) unconditionally, ' \
   st.vehicle(:boat).charset_name = 'Vehicle'
   st.vehicle(:boat).charset_index = 2
   customized = st.to_lsd[105]
-  eq 'Vehicle', customized.charset_name
-  eq 2, customized.charset_index
+  eq 'Vehicle', customized[:charset_name]
+  eq 2, customized[:charset_index]
 end
 
 FakeVehicleSystem = Struct.new(:boat_name, :boat_index, :ship_name, :ship_index,
@@ -11903,24 +11919,24 @@ check 'to_lsd resolves an uncustomized vehicle\'s charset_name/_index off ' \
 
   saved = st.to_lsd(1, nil, 1, fake_db)
   boat = saved[105]
-  eq '乗り物', boat.charset_name
+  eq '乗り物', boat[:charset_name]
   ok !boat.key?(74), 'boat_index 0 elides field 74, same as a live customization would'
 
   ship = saved[106]
-  eq '乗り物', ship.charset_name
-  eq 1, ship.charset_index
+  eq '乗り物', ship[:charset_name]
+  eq 1, ship[:charset_index]
 
   airship = saved[107]
-  eq '乗り物', airship.charset_name
-  eq 3, airship.charset_index
+  eq '乗り物', airship[:charset_name]
+  eq 3, airship[:charset_index]
 
   # A live Change Vehicle Graphic override still wins over the database
   # fallback, exactly like Scene::Map's own #vehicle_charset does.
   st.vehicle(:boat).charset_name = 'Vehicle'
   st.vehicle(:boat).charset_index = 2
   overridden = st.to_lsd(1, nil, 1, fake_db)[105]
-  eq 'Vehicle', overridden.charset_name
-  eq 2, overridden.charset_index
+  eq 'Vehicle', overridden[:charset_name]
+  eq 2, overridden[:charset_index]
 end
 
 check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \
@@ -11953,8 +11969,8 @@ check 'to_lsd writes the camera scroll (chunk 111 fields 1/2) from the ' \
   # cam = clamp(hero_px + TILE/2 - screen_px/2, 0, map_px - screen_px)
   # x: clamp(10*16+8 - 160, 0, 480-320) = clamp(8, 0, 160) = 8 -> *16 = 128
   # y: clamp(10*16+8 - 120, 0, 480-240) = clamp(48, 0, 240) = 48 -> *16 = 768
-  eq 128, mapev.scroll_x, 'scroll_x is the hero-centred camera in 1/16 pixel'
-  eq 768, mapev.scroll_y, 'scroll_y is the hero-centred camera in 1/16 pixel'
+  eq 128, mapev[:scroll_x], 'scroll_x is the hero-centred camera in 1/16 pixel'
+  eq 768, mapev[:scroll_y], 'scroll_y is the hero-centred camera in 1/16 pixel'
 
   # A map with no camera loaded at all (State#map still nil) keeps omitting
   # chunk 111 when nothing else is live, matching the pre-existing "absent
@@ -12440,6 +12456,7 @@ end
 # A database row carrying the EXP-curve fields, a max level and either a level-
 # independent status hash or a full per-level stat curve (int16_values(31)).
 class ExpRow
+  include FixtureFields
   attr_reader :name, :charset_name, :charset_index, :initial_level, :max_level,
               :status, :exp_basic, :exp_increase, :exp_correction,
               :faceset_name, :faceset_index
@@ -13648,7 +13665,7 @@ check 'to_lsd/from_lsd round-trips a map event\'s custom-route index' do
   # invent one, matching Scene::Map#build_event's existing "no saved index
   # means start the custom route from the top" fallback.
   legacy = st.to_lsd
-  legacy[111].events[3].delete(43)
+  legacy[111][:events][3].delete(43)
   old = Game::State.from_lsd(db, legacy)
   eq [5, 7, 6], old.map_event_positions[3], 'position still round-trips without a route index'
   eq nil, old.map_event_route_index[3], 'no saved cursor means the route restarts at 0'
@@ -13861,9 +13878,9 @@ check 'to_lsd/from_lsd round-trips a live screen tint transition (chunk 102)' do
   eq [1, 2, 3, 4, 11, 12, 13, 14], (1..15).select { |f| scr.key?(f) }.sort,
      'every changed channel (finish and settled current) is present; field 15 (time_left, ' \
      'still at its own default 0) is not'
-  eq [150, 60, 90, 140], [scr.tint_finish_red, scr.tint_finish_green, scr.tint_finish_blue, scr.tint_finish_sat]
+  eq [150, 60, 90, 140], [scr[:tint_finish_red], scr[:tint_finish_green], scr[:tint_finish_blue], scr[:tint_finish_sat]]
   eq [150.0, 60.0, 90.0, 140.0],
-     [scr.tint_current_red, scr.tint_current_green, scr.tint_current_blue, scr.tint_current_sat]
+     [scr[:tint_current_red], scr[:tint_current_green], scr[:tint_current_blue], scr[:tint_current_sat]]
 
   # A save written before this landed simply omits chunk 102 entirely;
   # from_lsd must leave the fresh Screen.new neutral defaults alone rather
@@ -13891,7 +13908,7 @@ check 'to_lsd/from_lsd round-trips a live Pan Screen offset (chunk 102 ' \
   st.screen.instance_variable_set(:@pan_y, 96)
   scr = st.to_lsd[102]
   ok !scr.key?(41), 'pan_x is absent at its own default (0)'
-  eq 96, scr.pan_y
+  eq 96, scr[:pan_y]
 
   round = Game::State.from_lsd(db, st.to_lsd)
   eq [0, 96], round.screen.pan_offset, 'the pan offset round-trips, restored at rest'
@@ -21788,6 +21805,7 @@ end
 # A stand-in for one row of an enemy's action table; EnemyAction reads whichever
 # fields are present, so a test only names the ones it cares about.
 class FakeAction
+  include FixtureFields
   attr_accessor :kind, :basic, :skill_id, :enemy_id, :condition_type,
                 :condition_param1, :condition_param2, :switch_id, :switch_on,
                 :switch_on_id, :switch_off, :switch_off_id, :rating
@@ -22146,6 +22164,7 @@ end
 
 # A minimal skill row for the AI env to resolve.
 class FakeAiSkill
+  include FixtureFields
   attr_accessor :name, :type, :scope, :sp_type, :sp_cost, :sp_percent, :power,
                 :physical_rate, :magical_rate, :hit, :variance, :state_effects,
                 :attribute_effects, :affect_hp, :affect_sp, :occasion_battle,
@@ -22757,6 +22776,7 @@ end
 
 # One map-tree node's backdrop settings.
 class FakeMapNode
+  include FixtureFields
   attr_accessor :backdrop_type, :backdrop_file, :parent_map_id
   def initialize(type, file = '', parent = 0)
     @backdrop_type = type; @backdrop_file = file; @parent_map_id = parent
@@ -22822,6 +22842,7 @@ end
 
 # One map-tree node's Save setting.
 class FakeSaveNode
+  include FixtureFields
   attr_accessor :save, :parent_map_id
   def initialize(save, parent = 0)
     @save = save; @parent_map_id = parent
@@ -22888,6 +22909,8 @@ end
 # have to show each method reads its own field rather than borrowing #save's.
 
 class FakeAccessNode
+
+  include FixtureFields
   attr_accessor :save, :teleport, :escape, :parent_map_id
   def initialize(save, teleport, escape, parent = 0)
     @save = save; @teleport = teleport; @escape = escape; @parent_map_id = parent
@@ -22925,6 +22948,8 @@ end
 FakeBgmChunk = Struct.new(:file, :volume, :pitch)
 
 class FakeBgmNode
+
+  include FixtureFields
   attr_accessor :bgm_type, :bgm, :parent_map_id
   def initialize(type, file = '', parent = 0)
     @bgm_type = type
