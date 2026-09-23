@@ -262,20 +262,41 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # moment a party member is built — so a game's own engine died on New Game
   # with "undefined method 'Integer'" without this. Same gem supplies Float() /
   # String() / Array(), which community scripts reach for.
-  conf.gem core: 'mruby-kernel-ext'
+  #
+  # Both this and mruby-random below exist only for a game's *own* Ruby -- the
+  # RGSS script host's Game_Battler/Game_Player/community scripts. wio ships
+  # mruby-rpg2k alone (single_format_only, below): RPG2000/2003 games carry
+  # no Ruby, the build links no compiler/eval to run any, and none of wio's
+  # gems (mruby-rpg2k/-lcf/-rgss mrblib and src, marshal, stringio, or the
+  # core gems' own mrblib) calls Integer()/Float()/String()/Array()/Hash()/
+  # fail/caller/__method__ or rand/srand/Random/shuffle/sample -- grepped. So
+  # on wio both gems are provably unreachable flash. See docs/adr/0202.
+  conf.gem core: 'mruby-kernel-ext' unless conf.name == 'wio'
   # Kernel#rand: a game's own scripts roll dice constantly — `Game_Player`
   # makes its encounter count with `rand(n) + rand(n) + 1` the moment New Game
   # places the party, damage variance uses it, and RPG::Weather scatters its
   # drops with it. This engine's own code deliberately uses seeded LCGs instead
   # (its runs are diffed frame by frame against the genuine runtimes), which is
   # why the gem was never needed until games ran their own code.
-  conf.gem core: 'mruby-random'
+  conf.gem core: 'mruby-random' unless conf.name == 'wio'
   # The Math module. `Game_Character#jump` — stock RMXP, run by every game the
   # moment an event or a move route jumps — sizes its arc with
   # `Math.sqrt(x_plus * x_plus + y_plus * y_plus).round`, and community scripts
   # reach for sin/cos to move things in circles. Not in the default gem set:
   # mruby keeps Math in its own core gem (mrbgems/math.gembox).
-  conf.gem core: 'mruby-math'
+  #
+  # wio gets app/wio/mruby-math-wio instead: only Math::PI/E and Math.sin.
+  # Nothing there can call the rest -- no game Ruby exists on wio (see
+  # mruby-kernel-ext above) and the engine's own gems use only those two --
+  # while mruby-math's ~30 registered functions keep every libm routine
+  # behind them (erf, cbrt, the hyperbolics, ...) linked. 20.8 KB.
+  # scripts/wio_dropped_gems_check.rb keeps the engine inside that set. See
+  # docs/adr/0204.
+  if conf.name == 'wio'
+    conf.gem "#{MRUBY_ROOT}/../../app/wio/mruby-math-wio"
+  else
+    conf.gem core: 'mruby-math'
+  end
   # Time. Stock `Scene_Load` picks the newest save with `latest_time =
   # Time.at(0)` and `Window_SaveFile` stamps each slot with `file.mtime` — and
   # mruby-io's File#mtime answers a Time, so the save and load screens of every
