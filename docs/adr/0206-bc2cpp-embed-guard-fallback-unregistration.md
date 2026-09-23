@@ -72,7 +72,18 @@ does need them.
 
 ## Measurement
 
-(pending: `wio_rgss_boot` A/B against docs/adr/0203's head)
+A/B with `scripts/wio_bc2cpp_measure.bash`, `flock`-serialized, each side in
+its own clean worktree. "Without" is docs/adr/0203's head (d4579258), and
+"with" is this change on top of it:
+
+| `wio_rgss_boot` link | without | with | delta |
+| --- | ---: | ---: | ---: |
+| bc2cpp, FLASH overflow | 3,600,880 | 3,574,168 | -26,712 |
+| bc2cpp, flash used | 4,108,784 | 4,082,072 | -26,712 |
+| baseline (bytecode), FLASH overflow | 619,092 | 619,100 | +8 (noise) |
+
+RAM is unchanged. Together with docs/adr/0203, 543 wrappers are gone from
+the bc2cpp link.
 
 ## Consequences
 

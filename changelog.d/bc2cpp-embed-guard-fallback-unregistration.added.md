@@ -1,5 +1,6 @@
 - **364 more compiled RPG2000/2003 methods drop their `mrb_define_method`
-  registration** (543 in total). Once bc2cpp started embedding ivars into
+  registration** (543 in total), -26,712 bytes of `wio_rgss_boot` bc2cpp
+  flash in a clean A/B link. Once bc2cpp started embedding ivars into
   more classes, every direct call into such a class went through
   MONO_EMBED_GUARD: an exact-class check, then a by-name `mrb_funcall`
   fallback. The static-dispatch proof (docs/adr/0203) counted that fallback
