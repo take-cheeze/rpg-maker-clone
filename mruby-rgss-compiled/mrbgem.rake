@@ -20,6 +20,8 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   add_dependency 'mruby-rgss'
   # build_config.rb turns on BC2CPP_CLOSED_WORLD for single-format builds.
   extend Bc2cppClosedWorldOption
+  # build_config.rb turns on BC2CPP_HOT_ONLY (docs/adr/0214) for the same builds.
+  extend Bc2cppHotOnlyOption
 
   bc2cpp = "#{dir}/../tools/bc2cpp/bc2cpp.rb"
   # STALE_REQUIRE_RELATIVE_DEPS: bc2cpp.rb require_relative's several sibling
@@ -90,7 +92,8 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   generated = "#{build_dir}/rgss_compiled_gen.cpp"
 
   file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, *closed_world_srcs, *native_srcs,
-                     *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/..")] do |t|
+                     *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
+                     BC2CPP_HOT_METHODS_PATH] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
@@ -102,7 +105,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
       'NATIVE_SRCS' => Shellwords.join(native_srcs),
       'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
       'SKIP_UNSUPPORTED' => '1',
-    }.merge(bc2cpp_closed_world_env(spec, "#{dir}/.."))
+    }.merge(bc2cpp_closed_world_env(spec, "#{dir}/..")).merge(bc2cpp_hot_only_env(spec))
     cmd ="#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
           "#{closed_world_srcs.map(&:shellescape).join(' ')} > #{generated.shellescape}"
     sh env, cmd
