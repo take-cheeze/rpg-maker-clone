@@ -943,6 +943,7 @@ jobs:
           # Re-proves every STATIC_DISPATCH_UNREGISTERED name (docs/adr/0203):
           # a new dynamic reference to one is a NoMethodError, so it fails here.
           MRBC="$mrbc" ruby scripts/bc2cpp_static_dispatch_check.rb
+          ruby scripts/bc2cpp_embed_guard_exemption_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb

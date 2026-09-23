@@ -1339,13 +1339,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(5));
   mrb_define_method(M, screen, "tint_save_data", Game__Screen_tint_save_data,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, screen, "restore_tint", Game__Screen_restore_tint,
-                    MRB_ARGS_REQ(3));
   mrb_define_method(M, screen, "shake", Game__Screen_shake, MRB_ARGS_REQ(3));
   mrb_define_method(M, screen, "shake_begin", Game__Screen_shake_begin,
                     MRB_ARGS_REQ(2));
-  mrb_define_method(M, screen, "shake_end", Game__Screen_shake_end,
-                    MRB_ARGS_NONE());
   mrb_define_method(M, screen, "flash", Game__Screen_flash, MRB_ARGS_REQ(5));
   mrb_define_method(M, screen, "flash_begin", Game__Screen_flash_begin,
                     MRB_ARGS_REQ(5));
@@ -1356,8 +1352,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, screen, "pan_lock", Game__Screen_pan_lock,
                     MRB_ARGS_NONE());
   mrb_define_method(M, screen, "pan_unlock", Game__Screen_pan_unlock,
-                    MRB_ARGS_NONE());
-  mrb_define_method(M, screen, "pan_clear", Game__Screen_pan_clear,
                     MRB_ARGS_NONE());
   mrb_define_method(M, screen, "pan", Game__Screen_pan, MRB_ARGS_REQ(3));
   mrb_define_method(M, screen, "update", Game__Screen_update, MRB_ARGS_NONE());
@@ -1370,20 +1364,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // above.
   mrb_define_private_method(M, screen, "fade_to", Game__Screen_fade_to,
                             MRB_ARGS_REQ(4));
-  mrb_define_private_method(M, screen, "update_fade", Game__Screen_update_fade,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, screen, "update_tint", Game__Screen_update_tint,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, screen, "update_pan", Game__Screen_update_pan,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, screen, "update_shake",
-                            Game__Screen_update_shake, MRB_ARGS_NONE());
   mrb_define_private_method(M, screen, "update_flash",
                             Game__Screen_update_flash, MRB_ARGS_NONE());
   mrb_define_private_method(M, screen, "approach", Game__Screen_approach,
                             MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, screen, "pan_step_for",
-                            Game__Screen_pan_step_for, MRB_ARGS_REQ(1));
   mrb_define_method(M, screen, "erase", Game__Screen_erase,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, screen, "show", Game__Screen_show,
@@ -1633,49 +1619,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, transition, "frame_ratio",
                             Game__Transition_frame_ratio, MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "mosaic_wave_progress",
-                            Game__Transition_mosaic_wave_progress,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, transition, "scroll_offset",
                             Game__Transition_scroll_offset, MRB_ARGS_NONE());
   mrb_define_private_method(M, transition, "half", Game__Transition_half,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, transition, "vertical_split_ops",
-                            Game__Transition_vertical_split_ops,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, transition, "horizontal_split_ops",
-                            Game__Transition_horizontal_split_ops,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, transition, "cross_split_ops",
                             Game__Transition_cross_split_ops, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, transition, "zoom_rect",
                             Game__Transition_zoom_rect, MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "border_to_center_rect",
-                            Game__Transition_border_to_center_rect,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "center_to_border_rect",
-                            Game__Transition_center_to_border_rect,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "blind_rects",
-                            Game__Transition_blind_rects, MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "vertical_stripe_rects",
-                            Game__Transition_vertical_stripe_rects,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "horizontal_stripe_rects",
-                            Game__Transition_horizontal_stripe_rects,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, transition, "around", Game__Transition_around,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, transition, "block_grid_cols",
-                            Game__Transition_block_grid_cols, MRB_ARGS_NONE());
-  mrb_define_private_method(M, transition, "block_count_through",
-                            Game__Transition_block_count_through,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, transition, "block_shuffle_rank",
-                            Game__Transition_block_shuffle_rank,
-                            MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, transition, "block_order",
-                            Game__Transition_block_order, MRB_ARGS_NONE());
 
   // Game::Actor (docs/adr/0139's own GETIDX/SETIDX/GETGV follow-up) -- 74
   // real methods (76 as of the Game::Party round's own full-sweep
@@ -1997,14 +1950,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Party_death_handler_event, MRB_ARGS_NONE());
   mrb_define_method(M, party, "death_handler_teleport",
                     Game__Party_death_handler_teleport, MRB_ARGS_NONE());
-  mrb_define_method(M, party, "use_skill_item_usable?",
-                    Game__Party_use_skill_item_usable_, MRB_ARGS_REQ(2));
   mrb_define_method(M, party, "item_field_occasion?",
                     Game__Party_item_field_occasion_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, party, "item_battle_occasion?",
-                    Game__Party_item_battle_occasion_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, party, "item_field_only?", Game__Party_item_field_only_,
-                    MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "switch_item?", Game__Party_switch_item_,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "use_switch_item", Game__Party_use_switch_item,
@@ -2019,8 +1966,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, party, "item_usable_by_class?",
                     Game__Party_item_usable_by_class_, MRB_ARGS_REQ(2));
-  mrb_define_method(M, party, "item_uses", Game__Party_item_uses,
-                    MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "consume_item_use", Game__Party_consume_item_use,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "use_special_item", Game__Party_use_special_item,
@@ -2086,8 +2031,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, party, "skill_defence_term",
                     Game__Party_skill_defence_term, MRB_ARGS_REQ(2));
-  mrb_define_method(M, party, "skill_ignores_defence?",
-                    Game__Party_skill_ignores_defence_, MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "skill_targets", Game__Party_skill_targets,
                     MRB_ARGS_REQ(3));
   mrb_define_method(M, party, "skill_cured_states",
@@ -2104,17 +2047,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "battle_skill_target",
                     Game__Party_battle_skill_target, MRB_ARGS_REQ(1));
-  mrb_define_method(M, party, "skill_absorbs?", Game__Party_skill_absorbs_,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, party, "skill_hit", Game__Party_skill_hit,
-                    MRB_ARGS_REQ(2));
-  mrb_define_method(M, party, "skill_hit_weapon_fallback",
-                    Game__Party_skill_hit_weapon_fallback, MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "skill_to_hit", Game__Party_skill_to_hit,
                     MRB_ARGS_REQ(3));
   mrb_define_method(M, party, "state_hit_ratio", Game__Party_state_hit_ratio,
-                    MRB_ARGS_REQ(1));
-  mrb_define_method(M, party, "skill_variance", Game__Party_skill_variance,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, party, "skill_attr_shift", Game__Party_skill_attr_shift,
                     MRB_ARGS_REQ(1));
@@ -2199,68 +2134,18 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_viewer, "update_pan",
                             RPG2k__Scene__MapViewer_update_pan,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "update_select",
-                            RPG2k__Scene__MapViewer_update_select,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "update_edit",
-                            RPG2k__Scene__MapViewer_update_edit,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "close",
                             RPG2k__Scene__MapViewer_close, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "enter_select_mode",
-                            RPG2k__Scene__MapViewer_enter_select_mode,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "enter_edit_mode",
-                            RPG2k__Scene__MapViewer_enter_edit_mode,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "cursor_start",
-                            RPG2k__Scene__MapViewer_cursor_start,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "zoom_in",
-                            RPG2k__Scene__MapViewer_zoom_in, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "zoom_out",
-                            RPG2k__Scene__MapViewer_zoom_out, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "set_zoom",
                             RPG2k__Scene__MapViewer_set_zoom, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_viewer, "recompute_view",
-                            RPG2k__Scene__MapViewer_recompute_view,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "paint_cursor",
-                            RPG2k__Scene__MapViewer_paint_cursor,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "pick_brush",
-                            RPG2k__Scene__MapViewer_pick_brush,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "ensure_cursor_visible",
-                            RPG2k__Scene__MapViewer_ensure_cursor_visible,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "scroll_to_fit",
-                            RPG2k__Scene__MapViewer_scroll_to_fit,
-                            MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_viewer, "teleport_to_cursor",
-                            RPG2k__Scene__MapViewer_teleport_to_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "pan", RPG2k__Scene__MapViewer_pan,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "max_ox",
-                            RPG2k__Scene__MapViewer_max_ox, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "max_oy",
-                            RPG2k__Scene__MapViewer_max_oy, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "center_on_player",
-                            RPG2k__Scene__MapViewer_center_on_player,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "clamp",
                             RPG2k__Scene__MapViewer_clamp, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_viewer, "refresh",
                             RPG2k__Scene__MapViewer_refresh, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "player_header_text",
-                            RPG2k__Scene__MapViewer_player_header_text,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "select_header_text",
                             RPG2k__Scene__MapViewer_select_header_text,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_viewer, "edit_header_text",
-                            RPG2k__Scene__MapViewer_edit_header_text,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "draw_footer",
                             RPG2k__Scene__MapViewer_draw_footer,
@@ -2268,9 +2153,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_viewer, "tile_color",
                             RPG2k__Scene__MapViewer_tile_color,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_viewer, "draw_player",
-                            RPG2k__Scene__MapViewer_draw_player,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_viewer, "mark", RPG2k__Scene__MapViewer_mark,
                             MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_viewer, "draw_cursor",
@@ -2366,16 +2248,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, battle, "toggle_row", Game__Battle_toggle_row,
                     MRB_ARGS_REQ(1));
-  mrb_define_method(M, battle, "compute_escape_chance",
-                    Game__Battle_compute_escape_chance, MRB_ARGS_NONE());
   mrb_define_method(M, battle, "first_strike?", Game__Battle_first_strike_,
                     MRB_ARGS_NONE());
   mrb_define_method(M, battle, "row_adjusted?", Game__Battle_row_adjusted_,
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, battle, "all_combatants", Game__Battle_all_combatants,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, battle, "reset_gauge", Game__Battle_reset_gauge,
-                    MRB_ARGS_REQ(1));
   mrb_define_method(M, battle, "pop_ready", Game__Battle_pop_ready,
                     MRB_ARGS_NONE());
   mrb_define_method(M, battle, "begin_gauge_turn",
@@ -2421,21 +2299,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Battle_preemptive_boost_, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, battle, "strike", Game__Battle_strike,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, battle, "pay_weapon_sp_cost",
-                            Game__Battle_pay_weapon_sp_cost, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, battle, "battle_command_type",
-                            Game__Battle_battle_command_type, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, battle, "combo_hits", Game__Battle_combo_hits,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, battle, "within_percent?",
-                            Game__Battle_within_percent_, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, battle, "enemy_skill_ready?",
-                            Game__Battle_enemy_skill_ready_, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, battle, "perform_enemy_action",
                             Game__Battle_perform_enemy_action, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, battle, "apply_action_switches",
-                            Game__Battle_apply_action_switches,
-                            MRB_ARGS_REQ(1));
   // #enemy_basic_action is NOT registered here -- tools/bc2cpp/bc2cpp.rb's
   // own compile_send fix (see that file's top comment) now correctly
   // refuses to compile a body containing a keyword-argument call site
@@ -2447,8 +2314,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // compiles clean and is no longer emitted, staying on the interpreter.
   mrb_define_private_method(M, battle, "skill_command_hash",
                             Game__Battle_skill_command_hash, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, battle, "skill_name_of",
-                            Game__Battle_skill_name_of, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, battle, "enemy_transform_action",
                             Game__Battle_enemy_transform_action,
                             MRB_ARGS_REQ(3));
@@ -2475,12 +2340,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(2));
   mrb_define_private_method(M, battle, "attribute_physical?",
                             Game__Battle_attribute_physical_, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, battle, "above_attr_limit?",
-                            Game__Battle_above_attr_limit_, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, battle, "state_flag", Game__Battle_state_flag,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, battle, "restricted_target",
-                            Game__Battle_restricted_target, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, battle, "attack_target",
                             Game__Battle_attack_target, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, battle, "command_targets_dead_ok?",
@@ -2490,9 +2351,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(2));
   mrb_define_private_method(M, battle, "state_susceptibility",
                             Game__Battle_state_susceptibility, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, battle, "combatant_permanent_states",
-                            Game__Battle_combatant_permanent_states,
-                            MRB_ARGS_REQ(1));
   // #inflict_state is NOT registered here for the same reason
   // #enemy_basic_action/#enemy_fallback_attack above aren't -- its own body
   // calls `Game::States.prune((target.states || []) + [sid], @states, keep:
@@ -2663,12 +2521,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, item_menu, "update_items",
                             RPG2k__Scene__ItemMenu_update_items,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, item_menu, "move_item_cursor",
-                            RPG2k__Scene__ItemMenu_move_item_cursor,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "scroll_item_list_to_cursor",
-                            RPG2k__Scene__ItemMenu_scroll_item_list_to_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, item_menu, "choose_item",
                             RPG2k__Scene__ItemMenu_choose_item,
                             MRB_ARGS_NONE());
@@ -2684,15 +2536,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, item_menu, "apply_switch_item",
                             RPG2k__Scene__ItemMenu_apply_switch_item,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "apply_escape_item",
-                            RPG2k__Scene__ItemMenu_apply_escape_item,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "apply_special_switch_item",
-                            RPG2k__Scene__ItemMenu_apply_special_switch_item,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "apply_teleport_item",
-                            RPG2k__Scene__ItemMenu_apply_teleport_item,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, item_menu, "queue_teleport",
                             RPG2k__Scene__ItemMenu_queue_teleport,
                             MRB_ARGS_REQ(1));
@@ -2704,12 +2547,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, item_menu, "apply_item",
                             RPG2k__Scene__ItemMenu_apply_item, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, item_menu, "play_item_use_se",
-                            RPG2k__Scene__ItemMenu_play_item_use_se,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "leave_target_mode",
-                            RPG2k__Scene__ItemMenu_leave_target_mode,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, item_menu, "left_panel_w",
                             RPG2k__Scene__ItemMenu_left_panel_w,
                             MRB_ARGS_NONE());
@@ -2720,9 +2557,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__ItemMenu_item_col_w, MRB_ARGS_NONE());
   mrb_define_private_method(M, item_menu, "item_col_x",
                             RPG2k__Scene__ItemMenu_item_col_x, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, item_menu, "refresh_item_cursor",
-                            RPG2k__Scene__ItemMenu_refresh_item_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, item_menu, "build_possessed_window",
                             RPG2k__Scene__ItemMenu_build_possessed_window,
                             MRB_ARGS_NONE());
@@ -2794,9 +2628,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, skill_menu, "move_skill_cursor",
                             RPG2k__Scene__SkillMenu_move_skill_cursor,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, skill_menu, "skill_unavailable?",
-                            RPG2k__Scene__SkillMenu_skill_unavailable_,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, skill_menu, "choose_skill",
                             RPG2k__Scene__SkillMenu_choose_skill,
                             MRB_ARGS_NONE());
@@ -2818,9 +2649,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, skill_menu, "apply_escape_skill",
                             RPG2k__Scene__SkillMenu_apply_escape_skill,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, skill_menu, "apply_teleport_skill",
-                            RPG2k__Scene__SkillMenu_apply_teleport_skill,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, skill_menu, "queue_teleport",
                             RPG2k__Scene__SkillMenu_queue_teleport,
                             MRB_ARGS_REQ(1));
@@ -2842,9 +2670,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, skill_menu, "build_mp_cost_window",
                             RPG2k__Scene__SkillMenu_build_mp_cost_window,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, skill_menu, "refresh_skill_cursor",
-                            RPG2k__Scene__SkillMenu_refresh_skill_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, skill_menu, "total_rows",
                             RPG2k__Scene__SkillMenu_total_rows,
                             MRB_ARGS_NONE());
@@ -2862,9 +2687,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, skill_menu, "load_face_bitmap",
                             RPG2k__Scene__SkillMenu_load_face_bitmap,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, skill_menu, "play_skill_sound_effect",
-                            RPG2k__Scene__SkillMenu_play_skill_sound_effect,
                             MRB_ARGS_REQ(1));
 
   // RPG2k::Scene::DebugMenu (docs/adr/0139's own follow-up,
@@ -2941,41 +2763,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
 
   mrb_define_private_method(M, debug_menu, "refresh",
                             RPG2k__Scene__DebugMenu_refresh, MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_switch_or_variable",
-                            RPG2k__Scene__DebugMenu_update_switch_or_variable,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_block_focus",
-                            RPG2k__Scene__DebugMenu_update_block_focus,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_row_focus",
-                            RPG2k__Scene__DebugMenu_update_row_focus,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_chipset_page",
-                            RPG2k__Scene__DebugMenu_update_chipset_page,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "cycle_mode",
                             RPG2k__Scene__DebugMenu_cycle_mode,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "max_page",
-                            RPG2k__Scene__DebugMenu_max_page, MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "move_block",
-                            RPG2k__Scene__DebugMenu_move_block,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "move_row",
-                            RPG2k__Scene__DebugMenu_move_row, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "enter_row_focus",
-                            RPG2k__Scene__DebugMenu_enter_row_focus,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "turn_page",
-                            RPG2k__Scene__DebugMenu_turn_page, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "current_id",
-                            RPG2k__Scene__DebugMenu_current_id,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "update_animation",
                             RPG2k__Scene__DebugMenu_update_animation,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_map_page",
-                            RPG2k__Scene__DebugMenu_update_map_page,
                             MRB_ARGS_NONE());
   // #play_animation is NOT registered here for the same reason -- its own
   // body calls `scene.anim_target(x, y, height: nil, index: nil,
@@ -2984,57 +2776,22 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // default) -- silently dropping them the old way would not just pass a
   // wrong value, it would raise a real ArgumentError (missing keyword) at
   // runtime the moment this ran.
-  mrb_define_private_method(M, debug_menu, "activate_row",
-                            RPG2k__Scene__DebugMenu_activate_row,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "row_name",
                             RPG2k__Scene__DebugMenu_row_name, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, debug_menu, "row_value_text",
                             RPG2k__Scene__DebugMenu_row_value_text,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "id_label",
-                            RPG2k__Scene__DebugMenu_id_label, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "build_window",
-                            RPG2k__Scene__DebugMenu_build_window,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "refresh_map_page",
-                            RPG2k__Scene__DebugMenu_refresh_map_page,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "map_name",
                             RPG2k__Scene__DebugMenu_map_name, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "refresh_chipset_page",
-                            RPG2k__Scene__DebugMenu_refresh_chipset_page,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "refresh_animation_page",
-                            RPG2k__Scene__DebugMenu_refresh_animation_page,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "animation_name",
                             RPG2k__Scene__DebugMenu_animation_name,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, debug_menu, "editor_digits",
                             RPG2k__Scene__DebugMenu_editor_digits,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "open_editor",
-                            RPG2k__Scene__DebugMenu_open_editor,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, debug_menu, "build_editor_window",
-                            RPG2k__Scene__DebugMenu_build_editor_window,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "refresh_editor",
-                            RPG2k__Scene__DebugMenu_refresh_editor,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "update_editor",
-                            RPG2k__Scene__DebugMenu_update_editor,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, debug_menu, "close_editor",
-                            RPG2k__Scene__DebugMenu_close_editor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, debug_menu, "initialize",
                             RPG2k__Scene__DebugMenu_initialize,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, debug_menu, "play_animation",
-                            RPG2k__Scene__DebugMenu_play_animation,
-                            MRB_ARGS_NONE());
 
   // RPG2k::Scene::EquipMenu (docs/adr/0139's own follow-up, mruby-rpg2k/
   // mrblib/scene/equip_menu.rb) -- the field equip screen. 29 of its own 36
@@ -3088,12 +2845,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "candidates",
                             RPG2k__Scene__EquipMenu_candidates,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, equip_menu, "move_cand_cursor",
-                            RPG2k__Scene__EquipMenu_move_cand_cursor,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, equip_menu, "scroll_cand_list_to_cursor",
-                            RPG2k__Scene__EquipMenu_scroll_cand_list_to_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, equip_menu, "cand_row_count",
                             RPG2k__Scene__EquipMenu_cand_row_count,
                             MRB_ARGS_NONE());
@@ -3106,14 +2857,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, equip_menu, "rebuild_for_actor",
                             RPG2k__Scene__EquipMenu_rebuild_for_actor,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, equip_menu, "build_stats_window",
-                            RPG2k__Scene__EquipMenu_build_stats_window,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, equip_menu, "refresh_slot_cursor",
-                            RPG2k__Scene__EquipMenu_refresh_slot_cursor,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, equip_menu, "item_stat",
-                            RPG2k__Scene__EquipMenu_item_stat, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, equip_menu, "other_hand_item",
                             RPG2k__Scene__EquipMenu_other_hand_item,
                             MRB_ARGS_NONE());
@@ -3187,24 +2930,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, menu, "draw_gold_window",
                             RPG2k__Scene__Menu_draw_gold_window,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, menu, "draw_status_stat",
-                            RPG2k__Scene__Menu_draw_status_stat,
-                            MRB_ARGS_REQ(6));
-  mrb_define_private_method(M, menu, "draw_status_exp",
-                            RPG2k__Scene__Menu_draw_status_exp,
-                            MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, menu, "redraw_command_labels",
-                            RPG2k__Scene__Menu_redraw_command_labels,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, menu, "command_disabled?",
                             RPG2k__Scene__Menu_command_disabled_,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, menu, "refresh_status_cursor",
                             RPG2k__Scene__Menu_refresh_status_cursor,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, menu, "enter_actor_selection",
-                            RPG2k__Scene__Menu_enter_actor_selection,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, menu, "select_command",
                             RPG2k__Scene__Menu_select_command, MRB_ARGS_NONE());
   mrb_define_private_method(M, menu, "open_end_game_confirm",
@@ -3288,8 +3019,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, state, "erase_picture", Game__State_erase_picture,
                     MRB_ARGS_REQ(1));
-  mrb_define_method(M, state, "erase_all_pictures",
-                    Game__State_erase_all_pictures, MRB_ARGS_NONE());
   mrb_define_method(M, state, "timer_seconds", Game__State_timer_seconds,
                     MRB_ARGS_NONE());
   mrb_define_method(M, state, "timer_display_text",
@@ -3310,8 +3039,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, state, "set_screen_transition",
                     Game__State_set_screen_transition, MRB_ARGS_REQ(2));
-  mrb_define_method(M, state, "set_system_graphic",
-                    Game__State_set_system_graphic, MRB_ARGS_REQ(2));
   mrb_define_method(M, state, "bgm_chunk", Game__State_bgm_chunk,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, state, "se_chunk", Game__State_se_chunk,
@@ -3458,38 +3185,17 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // through the end of the class body).
   mrb_define_private_method(M, chipset_editor, "close",
                             RPG2k__Scene__ChipsetEditor_close, MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "switch_tab",
-                            RPG2k__Scene__ChipsetEditor_switch_tab,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "cell_count",
-                            RPG2k__Scene__ChipsetEditor_cell_count,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, chipset_editor, "rows",
                             RPG2k__Scene__ChipsetEditor_rows, MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "current_bytes",
-                            RPG2k__Scene__ChipsetEditor_current_bytes,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, chipset_editor, "toggle_passable",
                             RPG2k__Scene__ChipsetEditor_toggle_passable,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "toggled_byte",
-                            RPG2k__Scene__ChipsetEditor_toggled_byte,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, chipset_editor, "refresh",
                             RPG2k__Scene__ChipsetEditor_refresh,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "cell_word",
-                            RPG2k__Scene__ChipsetEditor_cell_word,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, chipset_editor, "draw_footer",
                             RPG2k__Scene__ChipsetEditor_draw_footer,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, chipset_editor, "cell_color",
-                            RPG2k__Scene__ChipsetEditor_cell_color,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, chipset_editor, "cell_color_for",
-                            RPG2k__Scene__ChipsetEditor_cell_color_for,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, chipset_editor, "draw_cursor",
                             RPG2k__Scene__ChipsetEditor_draw_cursor,
                             MRB_ARGS_NONE());
@@ -3637,18 +3343,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, save_load, "build_header_window",
                             RPG2k__Scene__SaveLoad_build_header_window,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, save_load, "draw_slot_label",
-                            RPG2k__Scene__SaveLoad_draw_slot_label,
-                            MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, save_load, "draw_slot_box",
-                            RPG2k__Scene__SaveLoad_draw_slot_box,
-                            MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, save_load, "draw_level_hp",
-                            RPG2k__Scene__SaveLoad_draw_level_hp,
-                            MRB_ARGS_REQ(5));
-  mrb_define_private_method(M, save_load, "fixed_width_term",
-                            RPG2k__Scene__SaveLoad_fixed_width_term,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, save_load, "build_face_cell",
                             RPG2k__Scene__SaveLoad_build_face_cell,
                             MRB_ARGS_REQ(2));
@@ -3661,9 +3355,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, save_load, "draw_arrow_fallback",
                             RPG2k__Scene__SaveLoad_draw_arrow_fallback,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, save_load, "build_slot_windows",
-                            RPG2k__Scene__SaveLoad_build_slot_windows,
-                            MRB_ARGS_NONE());
 
   // RPG2k::Scene::Order (mruby-rpg2k/mrblib/scene/order.rb) -- see this
   // file's own top comment for the real gap breakdown (#initialize's own
@@ -3678,25 +3369,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, order, "dispose", RPG2k__Scene__Order_dispose,
                     MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "update_left",
-                            RPG2k__Scene__Order_update_left, MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "pick_current",
-                            RPG2k__Scene__Order_pick_current, MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "undo_last_pick",
-                            RPG2k__Scene__Order_undo_last_pick,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, order, "enter_confirm",
                             RPG2k__Scene__Order_enter_confirm, MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "update_confirm",
-                            RPG2k__Scene__Order_update_confirm,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "confirm_order",
-                            RPG2k__Scene__Order_confirm_order, MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "redo_picks",
-                            RPG2k__Scene__Order_redo_picks, MRB_ARGS_NONE());
-  mrb_define_private_method(M, order, "refresh_left_cursor",
-                            RPG2k__Scene__Order_refresh_left_cursor,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, order, "refresh_confirm_cursor",
                             RPG2k__Scene__Order_refresh_confirm_cursor,
                             MRB_ARGS_NONE());
@@ -3789,8 +3463,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   // through the end of it) -- the same real visibility check this file's
   // own Game::Picture#step/#finish_move bug (docs/adr/0139) already
   // established the need for.
-  mrb_define_private_method(M, map, "set_tile", Game__Map_set_tile,
-                            MRB_ARGS_REQ(4));
   mrb_define_private_method(M, map, "tile", Game__Map_tile, MRB_ARGS_REQ(4));
 
   // Game::EnemyAi (mruby-rpg2k/mrblib/game/battle_support.rb) -- see this
@@ -3931,8 +3603,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, timer, "seconds", Game__Timer_seconds, MRB_ARGS_NONE());
   mrb_define_method(M, timer, "to_h", Game__Timer_to_h, MRB_ARGS_NONE());
   mrb_define_method(M, timer, "load_h", Game__Timer_load_h, MRB_ARGS_REQ(1));
-  mrb_define_method(M, timer, "display_text", Game__Timer_display_text,
-                    MRB_ARGS_NONE());
   mrb_define_method(M, timer, "start", Game__Timer_start,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
   mrb_define_method(M, timer, "tick", Game__Timer_tick, MRB_ARGS_OPT(1));
@@ -4057,28 +3727,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, title, "load_windowskin",
                             RPG2k__Scene__Title_load_windowskin,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "new_game_flag?",
-                            RPG2k__Scene__Title_new_game_flag_,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "auto_continue?",
-                            RPG2k__Scene__Title_auto_continue_,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, title, "battle_troop",
                             RPG2k__Scene__Title_battle_troop, MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "map_editor_flag?",
-                            RPG2k__Scene__Title_map_editor_flag_,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "chipset_editor_flag?",
-                            RPG2k__Scene__Title_chipset_editor_flag_,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, title, "continue_available?",
                             RPG2k__Scene__Title_continue_available_,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "load_title_picture",
-                            RPG2k__Scene__Title_load_title_picture,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, title, "play_cursor_se",
-                            RPG2k__Scene__Title_play_cursor_se,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, title, "play_title_bgm",
                             RPG2k__Scene__Title_play_title_bgm,
@@ -4983,8 +4635,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Interpreter_take_revealed_monsters, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "take_fled_monsters",
                     Game__Interpreter_take_fled_monsters, MRB_ARGS_NONE());
-  mrb_define_method(M, interpreter, "take_monster_kills",
-                    Game__Interpreter_take_monster_kills, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "take_battle_background",
                     Game__Interpreter_take_battle_background, MRB_ARGS_NONE());
   mrb_define_private_method(M, interpreter, "trans_to_opacity",
@@ -5038,9 +4688,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, interpreter, "take_sprite_flash_requests",
                     Game__Interpreter_take_sprite_flash_requests,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, interpreter, "take_battle_animation_request",
-                    Game__Interpreter_take_battle_animation_request,
-                    MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "reset_frame_steps",
                     Game__Interpreter_reset_frame_steps, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "step_cost", Game__Interpreter_step_cost,
@@ -5049,8 +4696,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Interpreter_return_from_call, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "resumable_index",
                     Game__Interpreter_resumable_index, MRB_ARGS_NONE());
-  mrb_define_method(M, interpreter, "diagnostic_position",
-                    Game__Interpreter_diagnostic_position, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "call_stack_snapshot",
                     Game__Interpreter_call_stack_snapshot, MRB_ARGS_NONE());
   mrb_define_method(M, interpreter, "start_at", Game__Interpreter_start_at,
@@ -5069,50 +4714,23 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Interpreter_resume_name_input, MRB_ARGS_REQ(1));
   mrb_define_method(M, interpreter, "resume_key_input",
                     Game__Interpreter_resume_key_input, MRB_ARGS_REQ(1));
-  mrb_define_method(M, interpreter, "find_inn_option",
-                    Game__Interpreter_find_inn_option, MRB_ARGS_REQ(1));
   mrb_define_method(M, interpreter, "resume_shop",
                     Game__Interpreter_resume_shop, MRB_ARGS_REQ(1));
-  mrb_define_method(M, interpreter, "find_shop_option",
-                    Game__Interpreter_find_shop_option, MRB_ARGS_REQ(1));
   mrb_define_method(M, interpreter, "resume_battle",
                     Game__Interpreter_resume_battle, MRB_ARGS_REQ(1));
-  mrb_define_method(M, interpreter, "find_battle_option",
-                    Game__Interpreter_find_battle_option, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "reset_waits",
-                            Game__Interpreter_reset_waits, MRB_ARGS_NONE());
   mrb_define_private_method(M, interpreter, "do_call_event",
                             Game__Interpreter_do_call_event, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "map_event_call",
-                            Game__Interpreter_map_event_call, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "character_ref",
                             Game__Interpreter_character_ref, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "consume",
                             Game__Interpreter_consume, MRB_ARGS_NONE());
-  mrb_define_private_method(M, interpreter, "do_end_loop",
-                            Game__Interpreter_do_end_loop, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_break_loop",
-                            Game__Interpreter_do_break_loop, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_show_message",
-                            Game__Interpreter_do_show_message, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_message_options",
                             Game__Interpreter_do_message_options,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_change_face",
                             Game__Interpreter_do_change_face, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "find_choice_option",
-                            Game__Interpreter_find_choice_option,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_input_number",
-                            Game__Interpreter_do_input_number, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_key_input",
                             Game__Interpreter_do_key_input, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_name_input",
-                            Game__Interpreter_do_name_input, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_show_inn",
-                            Game__Interpreter_do_show_inn, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_open_shop",
-                            Game__Interpreter_do_open_shop, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_enemy_encounter",
                             Game__Interpreter_do_enemy_encounter,
                             MRB_ARGS_REQ(1));
@@ -5123,36 +4741,18 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     Game__Interpreter_start_death_handler, MRB_ARGS_NONE());
   mrb_define_private_method(M, interpreter, "range", Game__Interpreter_range,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "operand_value",
-                            Game__Interpreter_operand_value, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "event_operand",
                             Game__Interpreter_event_operand, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "vehicle_operand",
                             Game__Interpreter_vehicle_operand, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "screen_operand",
                             Game__Interpreter_screen_operand, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, interpreter, "item_operand",
-                            Game__Interpreter_item_operand, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "random_operand",
-                            Game__Interpreter_random_operand, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "actor_operand",
-                            Game__Interpreter_actor_operand, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "enemy_operand",
-                            Game__Interpreter_enemy_operand, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "other_operand",
-                            Game__Interpreter_other_operand, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "apply", Game__Interpreter_apply,
                             MRB_ARGS_REQ(3));
   mrb_define_private_method(M, interpreter, "trunc_div",
                             Game__Interpreter_trunc_div, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "trunc_mod",
                             Game__Interpreter_trunc_mod, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, interpreter, "do_timer",
-                            Game__Interpreter_do_timer, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_gold",
-                            Game__Interpreter_do_change_gold, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_items",
-                            Game__Interpreter_do_change_items, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_change_party",
                             Game__Interpreter_do_change_party, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "check_game_over",
@@ -5163,15 +4763,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "skill_learned_message",
                             Game__Interpreter_skill_learned_message,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, interpreter, "party_term",
-                            Game__Interpreter_party_term, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "show_next_pending_message",
-                            Game__Interpreter_show_next_pending_message,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, interpreter, "stat_targets",
                             Game__Interpreter_stat_targets, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "stat_amount",
-                            Game__Interpreter_stat_amount, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "simulated_attack_variance",
                             Game__Interpreter_simulated_attack_variance,
                             MRB_ARGS_REQ(2));
@@ -5179,35 +4772,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Interpreter_identity_target, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_change_actor_name",
                             Game__Interpreter_do_change_actor_name,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_actor_title",
-                            Game__Interpreter_do_change_actor_title,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_actor_sprite",
-                            Game__Interpreter_do_change_actor_sprite,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_actor_face",
-                            Game__Interpreter_do_change_actor_face,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "vehicle_target",
-                            Game__Interpreter_vehicle_target, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_set_vehicle_location",
-                            Game__Interpreter_do_set_vehicle_location,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_vehicle_graphic",
-                            Game__Interpreter_do_change_vehicle_graphic,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "monster_change_amount",
-                            Game__Interpreter_monster_change_amount,
-                            MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, interpreter, "do_change_monster_hp",
-                            Game__Interpreter_do_change_monster_hp,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_monster_mp",
-                            Game__Interpreter_do_change_monster_mp,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_monster_condition",
-                            Game__Interpreter_do_change_monster_condition,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_show_hidden_monster",
                             Game__Interpreter_do_show_hidden_monster,
@@ -5245,10 +4809,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_conditional",
                             Game__Interpreter_do_conditional, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "eval_condition",
-                            Game__Interpreter_eval_condition, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "timer_condition",
-                            Game__Interpreter_timer_condition, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "character_facing",
                             Game__Interpreter_character_facing,
                             MRB_ARGS_REQ(1));
@@ -5258,20 +4818,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             Game__Interpreter_do_teleport, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "teleport_facing",
                             Game__Interpreter_teleport_facing, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_memorize_location",
-                            Game__Interpreter_do_memorize_location,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_recall_location",
                             Game__Interpreter_do_recall_location,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_event_location",
-                            Game__Interpreter_do_change_event_location,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_trade_event_locations",
-                            Game__Interpreter_do_trade_event_locations,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "query_position",
-                            Game__Interpreter_query_position, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_move_event",
                             Game__Interpreter_do_move_event, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "decode_move_route",
@@ -5279,25 +4828,13 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "do_wait",
                             Game__Interpreter_do_wait, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_proceed_with_movement",
-                            Game__Interpreter_do_proceed_with_movement,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_player_visibility",
                             Game__Interpreter_do_player_visibility,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_flash_sprite",
                             Game__Interpreter_do_flash_sprite, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_open_save_menu",
-                            Game__Interpreter_do_open_save_menu,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_open_main_menu",
                             Game__Interpreter_do_open_main_menu,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_tile_substitution",
-                            Game__Interpreter_do_tile_substitution,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_return_to_title",
-                            Game__Interpreter_do_return_to_title,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_open_load_menu",
                             Game__Interpreter_do_open_load_menu,
@@ -5313,21 +4850,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "do_open_video_options",
                             Game__Interpreter_do_open_video_options,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_game_over",
-                            Game__Interpreter_do_game_over, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_erase_screen",
-                            Game__Interpreter_do_erase_screen, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_show_screen",
-                            Game__Interpreter_do_show_screen, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "teleport_transition",
-                            Game__Interpreter_teleport_transition,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_tint_screen",
-                            Game__Interpreter_do_tint_screen, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_flash_screen",
-                            Game__Interpreter_do_flash_screen, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_pan_screen",
-                            Game__Interpreter_do_pan_screen, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_shake_screen",
                             Game__Interpreter_do_shake_screen, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "message_window_blocks_command?",
@@ -5354,38 +4876,16 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(
       M, interpreter, "block_pending_message_config_command",
       Game__Interpreter_block_pending_message_config_command, MRB_ARGS_NONE());
-  mrb_define_private_method(M, interpreter, "do_move_picture",
-                            Game__Interpreter_do_move_picture, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_erase_picture",
                             Game__Interpreter_do_erase_picture,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_show_battle_animation",
                             Game__Interpreter_do_show_battle_animation,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "picture_coord",
-                            Game__Interpreter_picture_coord, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, interpreter, "picture_name",
                             Game__Interpreter_picture_name, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_weather",
-                            Game__Interpreter_do_weather, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_play_movie",
-                            Game__Interpreter_do_play_movie, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_memorize_bgm",
-                            Game__Interpreter_do_memorize_bgm, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_set_teleport_target",
-                            Game__Interpreter_do_set_teleport_target,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_set_escape_target",
-                            Game__Interpreter_do_set_escape_target,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_system_graphic",
-                            Game__Interpreter_do_change_system_graphic,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_change_system_bgm",
                             Game__Interpreter_do_change_system_bgm,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_change_system_sfx",
-                            Game__Interpreter_do_change_system_sfx,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_call_common_event",
                             Game__Interpreter_do_call_common_event,
@@ -5393,17 +4893,9 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, interpreter, "common_event_commands",
                             Game__Interpreter_common_event_commands,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_store_terrain_id",
-                            Game__Interpreter_do_store_terrain_id,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, interpreter, "do_store_event_id",
-                            Game__Interpreter_do_store_event_id,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(
       M, interpreter, "block_pending_message_config_command",
       Game__Interpreter_block_pending_message_config_command, MRB_ARGS_NONE());
-  mrb_define_private_method(M, interpreter, "do_fadeout_bgm",
-                            Game__Interpreter_do_fadeout_bgm, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, interpreter, "do_play_memorized_bgm",
                             Game__Interpreter_do_play_memorized_bgm,
                             MRB_ARGS_REQ(1));
@@ -5658,9 +5150,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "release_transition_capture",
                             RPG2k__Scene__Map_release_transition_capture,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "release_random_blocks_transition",
-                            RPG2k__Scene__Map_release_random_blocks_transition,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "reset_fade_bitmap",
                             RPG2k__Scene__Map_reset_fade_bitmap,
                             MRB_ARGS_NONE());
@@ -5720,9 +5209,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__Map_event_at, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "actionable?",
                             RPG2k__Scene__Map_actionable_, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "action_touch_trigger?",
-                            RPG2k__Scene__Map_action_touch_trigger_,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "touch_trigger?",
                             RPG2k__Scene__Map_touch_trigger_, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "counter_tile?",
@@ -5757,19 +5243,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "warn_stale_terrain",
                             RPG2k__Scene__Map_warn_stale_terrain,
                             MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "run_route_step",
-                            RPG2k__Scene__Map_run_route_step, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "animate_events",
                             RPG2k__Scene__Map_animate_events, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "animate_event",
-                            RPG2k__Scene__Map_animate_event, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "event_sliding?",
                             RPG2k__Scene__Map_event_sliding_, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "reoccupy",
                             RPG2k__Scene__Map_reoccupy, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "start_event_slide",
-                            RPG2k__Scene__Map_start_event_slide,
-                            MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "event_jump_offset",
                             RPG2k__Scene__Map_event_jump_offset,
                             MRB_ARGS_REQ(1));
@@ -5786,9 +5265,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "reload_windowskin",
                             RPG2k__Scene__Map_reload_windowskin,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "refresh_player_graphic",
-                            RPG2k__Scene__Map_refresh_player_graphic,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "player_hidden?",
                             RPG2k__Scene__Map_player_hidden_, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "player_translucent?",
@@ -5797,14 +5273,8 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "apply_player_visibility",
                             RPG2k__Scene__Map_apply_player_visibility,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "dispose_parallax",
-                            RPG2k__Scene__Map_dispose_parallax,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "apply_tile_substitution",
                             RPG2k__Scene__Map_apply_tile_substitution,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "apply_movie_request",
-                            RPG2k__Scene__Map_apply_movie_request,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "apply_battle_animation_request",
                             RPG2k__Scene__Map_apply_battle_animation_request,
@@ -5812,13 +5282,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "sprite_flashing?",
                             RPG2k__Scene__Map_sprite_flashing_,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "update_sprite_flashes",
-                            RPG2k__Scene__Map_update_sprite_flashes,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "tick_flash",
-                            RPG2k__Scene__Map_tick_flash, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "flash_tone",
-                            RPG2k__Scene__Map_flash_tone, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "flash_buffer",
                             RPG2k__Scene__Map_flash_buffer, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "flash_out_buffer",
@@ -5827,12 +5290,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "apply_location_request",
                             RPG2k__Scene__Map_apply_location_request,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "move_player_to",
-                            RPG2k__Scene__Map_move_player_to, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "move_event_to",
-                            RPG2k__Scene__Map_move_event_to, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "move_vehicle_to",
-                            RPG2k__Scene__Map_move_vehicle_to, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "force_event_route",
                             RPG2k__Scene__Map_force_event_route,
                             MRB_ARGS_REQ(3));
@@ -5875,44 +5332,17 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__Map_drive_key_input, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "key_input_hit?",
                             RPG2k__Scene__Map_key_input_hit_, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "start_inn_bgm_wait",
-                            RPG2k__Scene__Map_start_inn_bgm_wait,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "inn_terms",
-                            RPG2k__Scene__Map_inn_terms, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "build_inn_gold_window",
-                            RPG2k__Scene__Map_build_inn_gold_window,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "set_inn_cursor",
-                            RPG2k__Scene__Map_set_inn_cursor, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "close_inn_window",
-                            RPG2k__Scene__Map_close_inn_window,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "shop_gold_term",
                             RPG2k__Scene__Map_shop_gold_term, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "shop_terms",
-                            RPG2k__Scene__Map_shop_terms, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "shop_header",
-                            RPG2k__Scene__Map_shop_header, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "build_shop_gold_window",
                             RPG2k__Scene__Map_build_shop_gold_window,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "shop_list_min_inner_h",
                             RPG2k__Scene__Map_shop_list_min_inner_h,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "shop_desc_item_id",
-                            RPG2k__Scene__Map_shop_desc_item_id,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "draw_shop_desc",
-                            RPG2k__Scene__Map_draw_shop_desc, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "draw_shop_prompt",
                             RPG2k__Scene__Map_draw_shop_prompt,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "draw_shop_gold",
-                            RPG2k__Scene__Map_draw_shop_gold, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "shop_status_item_id",
-                            RPG2k__Scene__Map_shop_status_item_id,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "draw_shop_status",
                             RPG2k__Scene__Map_draw_shop_status,
                             MRB_ARGS_REQ(1));
@@ -5923,18 +5353,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "drive_shop_list",
                             RPG2k__Scene__Map_drive_shop_list, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "drive_shop_confirm",
-                            RPG2k__Scene__Map_drive_shop_confirm,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "open_shop_quantity",
                             RPG2k__Scene__Map_open_shop_quantity,
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "drive_shop_quantity",
                             RPG2k__Scene__Map_drive_shop_quantity,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "shop_quantity_move",
-                            RPG2k__Scene__Map_shop_quantity_move,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "close_shop_quantity",
                             RPG2k__Scene__Map_close_shop_quantity,
                             MRB_ARGS_NONE());
@@ -5945,8 +5369,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             RPG2k__Scene__Map_shop_switch, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "leave_shop",
                             RPG2k__Scene__Map_leave_shop, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "close_shop",
-                            RPG2k__Scene__Map_close_shop, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "close_battle",
                             RPG2k__Scene__Map_close_battle, MRB_ARGS_NONE());
   // #active_battle (a bare `@battle` reader, public via a retroactive
@@ -5979,48 +5401,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "terrain_backdrop",
                             RPG2k__Scene__Map_terrain_backdrop,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "set_map_layers_visible",
-                            RPG2k__Scene__Map_set_map_layers_visible,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "name_row_len",
-                            RPG2k__Scene__Map_name_row_len, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "handle_name_input",
-                            RPG2k__Scene__Map_handle_name_input,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "name_input_confirm",
-                            RPG2k__Scene__Map_name_input_confirm,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "name_input_cancel",
-                            RPG2k__Scene__Map_name_input_cancel,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "backspace_name_input",
-                            RPG2k__Scene__Map_backspace_name_input,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "commit_name_input",
                             RPG2k__Scene__Map_commit_name_input,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "name_kana_rows",
-                            RPG2k__Scene__Map_name_kana_rows, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "kana_snap_col",
-                            RPG2k__Scene__Map_kana_snap_col, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "kana_confirm_sel",
-                            RPG2k__Scene__Map_kana_confirm_sel,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "handle_kana_name_input",
-                            RPG2k__Scene__Map_handle_kana_name_input,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "kana_name_input_confirm",
-                            RPG2k__Scene__Map_kana_name_input_confirm,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "kana_cell_label",
-                            RPG2k__Scene__Map_kana_cell_label, MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "kana_cell_rect",
                             RPG2k__Scene__Map_kana_cell_rect, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "draw_kana_name_input",
-                            RPG2k__Scene__Map_draw_kana_name_input,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "draw_kana_face",
-                            RPG2k__Scene__Map_draw_kana_face, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "close_name_input",
                             RPG2k__Scene__Map_close_name_input,
                             MRB_ARGS_NONE());
@@ -6033,12 +5418,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "step_ownerless_map_animation",
                             RPG2k__Scene__Map_step_ownerless_map_animation,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "init_map_animation",
-                            RPG2k__Scene__Map_init_map_animation,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "begin_map_animation",
-                            RPG2k__Scene__Map_begin_map_animation,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "missing_animation_wait",
                             RPG2k__Scene__Map_missing_animation_wait,
                             MRB_ARGS_REQ(1));
@@ -6066,9 +5445,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "animation_cell_zoom",
                             RPG2k__Scene__Map_animation_cell_zoom,
                             MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "animation_cell_dest_rect",
-                            RPG2k__Scene__Map_animation_cell_dest_rect,
-                            MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "animation_cell_tone",
                             RPG2k__Scene__Map_animation_cell_tone,
                             MRB_ARGS_REQ(1));
@@ -6092,9 +5468,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "apply_pending_choice_lines",
                             RPG2k__Scene__Map_apply_pending_choice_lines,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "effective_message_position",
-                            RPG2k__Scene__Map_effective_message_position,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "message_window_y",
                             RPG2k__Scene__Map_message_window_y,
                             MRB_ARGS_REQ(2));
@@ -6111,29 +5484,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "draw_message_run",
                             RPG2k__Scene__Map_draw_message_run,
                             MRB_ARGS_REQ(5));
-  mrb_define_private_method(M, map_scene, "draw_message_face",
-                            RPG2k__Scene__Map_draw_message_face,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "message_color",
                             RPG2k__Scene__Map_message_color, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "set_choice_cursor",
-                            RPG2k__Scene__Map_set_choice_cursor,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "page_to_choice",
-                            RPG2k__Scene__Map_page_to_choice, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "drive_message",
                             RPG2k__Scene__Map_drive_message, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "drive_text_message",
                             RPG2k__Scene__Map_drive_text_message,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "drive_message_pause",
-                            RPG2k__Scene__Map_drive_message_pause,
-                            MRB_ARGS_REQ(4));
-  mrb_define_private_method(M, map_scene, "drive_number_input",
-                            RPG2k__Scene__Map_drive_number_input,
-                            MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "close_number_input",
-                            RPG2k__Scene__Map_close_number_input,
                             MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "player_intended_target",
                             RPG2k__Scene__Map_player_intended_target,
@@ -6146,24 +5502,17 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "map_node_properties",
                             RPG2k__Scene__Map_map_node_properties,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "area_contains?",
-                            RPG2k__Scene__Map_area_contains_, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "troop_allowed_on_terrain?",
                             RPG2k__Scene__Map_troop_allowed_on_terrain_,
                             MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "debug_through?",
                             RPG2k__Scene__Map_debug_through_, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "roll_encounter_chance",
-                            RPG2k__Scene__Map_roll_encounter_chance,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "target_tile",
                             RPG2k__Scene__Map_target_tile, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "player_pixel",
                             RPG2k__Scene__Map_player_pixel, MRB_ARGS_NONE());
   mrb_define_method(M, map_scene, "char_in_sight?",
                     RPG2k__Scene__Map_char_in_sight_, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "vehicle_pixel",
-                            RPG2k__Scene__Map_vehicle_pixel, MRB_ARGS_REQ(1));
   mrb_define_method(M, map_scene, "draw_timer", RPG2k__Scene__Map_draw_timer,
                     MRB_ARGS_NONE());
   mrb_define_method(M, map_scene, "draw_one_timer",
@@ -6188,16 +5537,12 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k__Scene__Map_tile_cache_valid_, MRB_ARGS_REQ(4));
   mrb_define_method(M, map_scene, "invalidate_tile_cache",
                     RPG2k__Scene__Map_invalidate_tile_cache, MRB_ARGS_NONE());
-  mrb_define_method(M, map_scene, "note_anim_input",
-                    RPG2k__Scene__Map_note_anim_input, MRB_ARGS_REQ(1));
   mrb_define_method(M, map_scene, "event_target_buffer",
                     RPG2k__Scene__Map_event_target_buffer, MRB_ARGS_REQ(1));
   mrb_define_method(M, map_scene, "draw_event_charset",
                     RPG2k__Scene__Map_draw_event_charset, MRB_ARGS_REQ(5));
   mrb_define_method(M, map_scene, "draw_event_tile",
                     RPG2k__Scene__Map_draw_event_tile, MRB_ARGS_REQ(5));
-  mrb_define_method(M, map_scene, "draw_tile", RPG2k__Scene__Map_draw_tile,
-                    MRB_ARGS_REQ(6));
   mrb_define_method(M, map_scene, "player_draw_charset",
                     RPG2k__Scene__Map_player_draw_charset, MRB_ARGS_NONE());
   mrb_define_method(M, map_scene, "player_walk_pattern",
@@ -6221,8 +5566,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     RPG2k__Scene__Map_constrained_scale, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "update_map_tone",
                             RPG2k__Scene__Map_update_map_tone, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "setup_parallax",
-                            RPG2k__Scene__Map_setup_parallax, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "build_chipset",
                             RPG2k__Scene__Map_build_chipset, MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "load_chipset_graphic",
@@ -6246,38 +5589,15 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "restore_pre_battle_bgm",
                             RPG2k__Scene__Map_restore_pre_battle_bgm,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "play_inn_bgm",
-                            RPG2k__Scene__Map_play_inn_bgm, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "restore_pre_inn_bgm",
-                            RPG2k__Scene__Map_restore_pre_inn_bgm,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(M, map_scene, "music_name",
                             RPG2k__Scene__Map_music_name, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "terrain_row_at",
                             RPG2k__Scene__Map_terrain_row_at, MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "apply_erase_request",
-                            RPG2k__Scene__Map_apply_erase_request,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "refresh_event_pages",
                             RPG2k__Scene__Map_refresh_event_pages,
                             MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "apply_graphic_change",
-                            RPG2k__Scene__Map_apply_graphic_change,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "apply_tileset_request",
-                            RPG2k__Scene__Map_apply_tileset_request,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "apply_parallax_request",
-                            RPG2k__Scene__Map_apply_parallax_request,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "watch_bgm_loop",
                             RPG2k__Scene__Map_watch_bgm_loop, MRB_ARGS_NONE());
-  mrb_define_private_method(M, map_scene, "apply_vehicle_toggle",
-                            RPG2k__Scene__Map_apply_vehicle_toggle,
-                            MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "step_vehicle_route",
-                            RPG2k__Scene__Map_step_vehicle_route,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "step_forced_event",
                             RPG2k__Scene__Map_step_forced_event,
                             MRB_ARGS_REQ(1));
@@ -6291,9 +5611,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                             MRB_ARGS_REQ(1));
   mrb_define_private_method(M, map_scene, "animation_row",
                             RPG2k__Scene__Map_animation_row, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, map_scene, "toned_animation_cell_src",
-                            RPG2k__Scene__Map_toned_animation_cell_src,
-                            MRB_ARGS_REQ(8));
   mrb_define_private_method(M, map_scene, "blit_animation_cell",
                             RPG2k__Scene__Map_blit_animation_cell,
                             MRB_ARGS_REQ(4));
@@ -6302,15 +5619,10 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, map_scene, "play_terrain_footstep_se",
                             RPG2k__Scene__Map_play_terrain_footstep_se,
                             MRB_ARGS_REQ(2));
-  mrb_define_private_method(M, map_scene, "toned_picture_src",
-                            RPG2k__Scene__Map_toned_picture_src,
-                            MRB_ARGS_REQ(2));
   mrb_define_private_method(M, map_scene, "draw_picture",
                             RPG2k__Scene__Map_draw_picture, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "draw_event",
                             RPG2k__Scene__Map_draw_event, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "flashed_charset",
-                            RPG2k__Scene__Map_flashed_charset, MRB_ARGS_REQ(3));
   mrb_define_private_method(M, map_scene, "draw_weather",
                             RPG2k__Scene__Map_draw_weather, MRB_ARGS_NONE());
   mrb_define_private_method(
@@ -6322,36 +5634,11 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(
       M, map_scene, "move_autonomous", RPG2k__Scene__Map_move_autonomous,
       MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
-  mrb_define_private_method(M, map_scene, "perform_exit_game",
-                            RPG2k__Scene__Map_perform_exit_game,
-                            MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "drive_inn",
-                            RPG2k__Scene__Map_drive_inn, MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "start_inn_fade_out",
-                            RPG2k__Scene__Map_start_inn_fade_out,
-                            MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "finish_inn",
-                            RPG2k__Scene__Map_finish_inn,
-                            MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "drive_shop",
-                            RPG2k__Scene__Map_drive_shop, MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "open_shop",
-                            RPG2k__Scene__Map_open_shop,
-                            MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "drive_name_input",
-                            RPG2k__Scene__Map_drive_name_input,
-                            MRB_ARGS_OPT(1));
-  mrb_define_private_method(M, map_scene, "draw_kana_name_field",
-                            RPG2k__Scene__Map_draw_kana_name_field,
-                            MRB_ARGS_REQ(1));
   mrb_define_private_method(
       M, map_scene, "anim_target", RPG2k__Scene__Map_anim_target,
       MRB_ARGS_REQ(2) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(3, 0));
   mrb_define_private_method(M, map_scene, "build_face_cell",
                             RPG2k__Scene__Map_build_face_cell, MRB_ARGS_REQ(3));
-  mrb_define_private_method(M, map_scene, "draw_message_more",
-                            RPG2k__Scene__Map_draw_message_more,
-                            MRB_ARGS_NONE());
   mrb_define_private_method(
       M, map_scene, "close_message", RPG2k__Scene__Map_close_message,
       MRB_ARGS_REQ(0) | MRB_ARGS_OPT(0) | MRB_ARGS_KEY(1, 0));
@@ -6689,8 +5976,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, rpg2k, "map_path", RPG2k_map_path, MRB_ARGS_REQ(1));
   mrb_define_method(M, rpg2k, "db_path", RPG2k_db_path, MRB_ARGS_NONE());
   mrb_define_method(M, rpg2k, "load_map", RPG2k_load_map, MRB_ARGS_REQ(1));
-  mrb_define_method(M, rpg2k, "bug_report_interp_text",
-                    RPG2k_bug_report_interp_text, MRB_ARGS_REQ(1));
   mrb_define_method(M, rpg2k, "bug_report_stamp", RPG2k_bug_report_stamp,
                     MRB_ARGS_NONE());
   mrb_define_private_method(M, rpg2k, "native_test_play?",
@@ -6707,10 +5992,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, rpg2k, "preview_animation_id",
                     RPG2k_preview_animation_id, MRB_ARGS_NONE());
-  mrb_define_method(M, rpg2k, "save_path", RPG2k_save_path, MRB_ARGS_OPT(1));
   mrb_define_method(M, rpg2k, "lsd_path", RPG2k_lsd_path, MRB_ARGS_OPT(1));
-  mrb_define_method(M, rpg2k, "fire_preview_animation",
-                    RPG2k_fire_preview_animation, MRB_ARGS_REQ(1));
   // Round 31 (".singleton/leftover mop-up") follow-up: the remaining small
   // `.singleton` scraps a real, unrestricted diagnostic run found but
   // round 30's own two `.singleton`-coverage rounds didn't have time for
@@ -6901,9 +6183,6 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_REQ(2));
   mrb_define_method(M, lru_bitmap_cache, "key?",
                     RPG2k__Scene__Map__LRUBitmapCache_key_, MRB_ARGS_REQ(1));
-  mrb_define_private_method(M, lru_bitmap_cache, "bitmap_bytes",
-                            RPG2k__Scene__Map__LRUBitmapCache_bitmap_bytes,
-                            MRB_ARGS_REQ(1));
 
   // Round 32 follow-up: Game.singleton -- `def self.x` methods defined
   // directly on the `Game` module itself (mruby-rpg2k/mrblib/game.rb,
