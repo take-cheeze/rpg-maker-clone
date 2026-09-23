@@ -136,6 +136,15 @@ per-call literal (the "computed once, at load time" win only needs the
 constant hoisted out of the hot method, not the value itself computed via
 an expression).
 
+### Keep the bc2cpp-compiled Ruby statically visible
+
+`mruby-rpg2k`, `mruby-lcf` and `mruby-rgss` mrblib is compiled by bc2cpp as a
+closed world. Avoid `method_missing`, `send` with a computed name,
+`const_get`, ivar reflection, `define_method`/`alias`, `eval` and `rescue`
+modifiers there: `scripts/rpg2k_closed_world_lint.rb` fails on new ones (see
+`docs/rpg2k-closed-world-lint.md`). If a use is genuinely data-driven, allow it
+in place with `# rpg2k-lint:allow Cop/Name -- reason`.
+
 ## Error Handling
 
 - Do not silence errors. Never swallow an exception (or ignore a failing

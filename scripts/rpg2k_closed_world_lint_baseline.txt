@@ -1,0 +1,63 @@
+# rpg2k_closed_world_lint.rb baseline: count<TAB>cop<TAB>file<TAB>snippet.
+# Regenerate with --regenerate-baseline; entries may only disappear.
+2	Dynamic/ConstReflection	mruby-lcf/mrblib/lcf_file.rb	LCF.const_get(schema[:type])
+1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	archive.instance_variable_set(:@entries, entries)
+1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	vx.instance_variable_get(:@_tm_above_obj)
+1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	xp.instance_variable_get(:@_tm_above_obj)
+1	Dynamic/MethodDefinition	mruby-rgss/mrblib/array_sort.rb	alias_method :_rgss_native_sort!, :sort!
+1	Dynamic/MethodDefinition	mruby-rgss/mrblib/array_sort.rb	alias_method :_rgss_native_sort, :sort
+1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_probe_update, :update
+1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :_rgss1_initialize, :initialize
+1	Dynamic/MethodDefinition	mruby-rgss/mrblib/lib.rb	alias_method :update, :_probe_update
+2	Dynamic/MethodMissing	mruby-lcf/mrblib/lcf.rb	def method_missing sym, *args
+2	Dynamic/MethodMissing	mruby-lcf/mrblib/lcf.rb	def respond_to_missing? sym, include_private = false
+1	Dynamic/MethodMissing	mruby-lcf/mrblib/lcf_file.rb	def method_missing sym, *args
+1	Dynamic/MethodMissing	mruby-lcf/mrblib/lcf_file.rb	def respond_to_missing? sym, include_private = false
+1	Dynamic/MethodMissing	mruby-rgss/mrblib/error_report.rb	def method_missing(name, *args, &block)
+1	Dynamic/MethodMissing	mruby-rgss/mrblib/error_report.rb	def respond_to_missing?(name, include_private = false)
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	@map.unit.events rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m.balance rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m.fade_in rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m.file rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m.pitch rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	m.volume rescue nil
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_autoloop_x rescue false
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_autoloop_y rescue false
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_flag rescue false
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_loop_x rescue false
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_loop_y rescue false
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_name rescue ''
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_sx rescue 0
+1	Dynamic/RescueModifier	mruby-rpg2k/mrblib/scene/map.rb	u.parallax_sy rescue 0
+1	Dynamic/Send	mruby-lcf/mrblib/lcf_file.rb	@root.__send__ sym, *args
+1	Dynamic/Send	mruby-rgss/mrblib/error_report.rb	@io.__send__(name, *args, &block)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	b.send(mod_field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	d.send(stat_flag)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	init.send("#{type}_map_id")
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	init.send("#{type}_x")
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	init.send("#{type}_y")
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	it.send(field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	it.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	row.__send__(field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	row.send(field)
+3	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	row.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	sys.send(field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game.rb	t.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	b.send(name)
+2	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	d.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", 0)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send("#{field}=", new_mod)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle.rb	target.send(key)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle_support.rb	r.send(name)
+2	Dynamic/Send	mruby-rpg2k/mrblib/game/battle_support.rb	row.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle_support.rb	sk.send(SKILL_STAT_MOD_FLAGS[key])
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/battle_support.rb	terms.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/lsd_io.rb	db.system.send(index_field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/game/lsd_io.rb	db.system.send(name_field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/scene/base.rb	db.system.send(field)
+1	Dynamic/Send	mruby-rpg2k/mrblib/scene/base.rb	t.send(name)
+1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	@state.party.send(effective_method, a)
+1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	a.send(accessor)
+1	Dynamic/Send	mruby-rpg2k/mrblib/scene/equip_menu.rb	row.send(field)
+3	Dynamic/Send	mruby-rpg2k/mrblib/scene/map.rb	@db.system.send(field)
