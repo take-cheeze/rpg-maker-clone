@@ -126,7 +126,7 @@ end
 def sections_to_text(file)
   h = {}
   file.schema.each do |s|
-    section = file.send(s[:name])
+    section = file[s[:name]]
     h[s[:name].to_s] =
       case s[:type]
       when :Array2D, :Array1D then array1d_or_2d_to_text(section, s)

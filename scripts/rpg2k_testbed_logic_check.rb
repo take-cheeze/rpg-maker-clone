@@ -385,7 +385,7 @@ def check_menus(dir)
     unreachable = skill_ids.reject do |id|
       sk = party.db_skill(id)
       next true if party.unsupported_field_skill?(sk)
-      next true if sk.type == Game::Party::SKILL_SWITCH &&
+      next true if sk[:type] == Game::Party::SKILL_SWITCH &&
                    !party.field_occasion?(sk) && !party.battle_occasion?(sk)
       party.field_skill?(sk) || party.battle_skill?(sk)
     end
@@ -405,22 +405,22 @@ def check_menus(dir)
   special = []
   switch = []
   db[DB_ITEM]&.each do |id, it|
-    next if it.name.to_s.empty?
-    special << id if it.type == Game::Party::ITEM_SPECIAL
-    switch << id if it.type == Game::Party::ITEM_SWITCH
+    next if it[:name].to_s.empty?
+    special << id if it[:type] == Game::Party::ITEM_SPECIAL
+    switch << id if it[:type] == Game::Party::ITEM_SWITCH
   end
   return if special.empty? && switch.empty?
   puts "   #{special.size} special item(s), #{switch.size} switch item(s)"
 
   check "#{name}: special items invoke a real skill, switch items a real switch" do
     special.each do |id|
-      sk = party.db_skill(party.db_item(id).skill_id)
+      sk = party.db_skill(party.db_item(id)[:skill_id])
       ok sk, "special item ##{id} names a skill that exists"
       ok party.field_usable?(id) || party.battle_usable?(id),
-         "special item ##{id} (#{sk.name}) is usable somewhere"
+         "special item ##{id} (#{sk[:name]}) is usable somewhere"
     end
     switch.each do |id|
-      sid = party.db_item(id).switch_id
+      sid = party.db_item(id)[:switch_id]
       ok sid && sid > 1,
          "switch item ##{id} names a switch of its own, not the default 1"
       ok party.switch_item?(id), "switch item ##{id} is recognised as one"
@@ -433,14 +433,14 @@ def check_menus(dir)
   # the self-contained probe: using one needs no target and always does
   # something, so every call reaches Game::Party#consume_item_use. Each gets a
   # party of its own so the shared one above keeps its full bag.
-  multi = switch.select { |id| (party.db_item(id).uses || 1) != 1 }
+  multi = switch.select { |id| (party.db_item(id)[:uses] || 1) != 1 }
   return if multi.empty?
   puts "   #{multi.size} switch item(s) with a non-default 使用回数"
 
   check "#{name}: a switch item's 使用回数 decides when a copy is spent" do
     multi.each do |id|
       p2 = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
-      uses = p2.db_item(id).uses
+      uses = p2.db_item(id)[:uses]
       p2.gain_item(id, 1)
       if uses == 0
         5.times { ok p2.use_switch_item(id), "item ##{id} (無制限) still flips its switch" }
@@ -486,10 +486,10 @@ def check_skill_defence(dir)
   ignoring = []
   magical = 0
   skills.each do |id, sk|
-    next unless sk.scope == 0 || sk.scope == 1
+    next unless sk[:scope] == 0 || sk[:scope] == 1
     atk << id
-    ignoring << id if sk.ignore_defense
-    magical += 1 if (sk.physical_rate || 0).zero? && (sk.magical_rate || 0) > 0
+    ignoring << id if sk[:ignore_defense]
+    magical += 1 if (sk[:physical_rate] || 0).zero? && (sk[:magical_rate] || 0) > 0
   end
   puts format('   skills: %d enemy-scope, %d 防御無視, %d purely magical',
               atk.size, ignoring.size, magical)
@@ -502,12 +502,12 @@ def check_skill_defence(dir)
     foe.spi = 40
     atk.each do |id|
       sk = skills[id]
-      want = if sk.ignore_defense
+      want = if sk[:ignore_defense]
                0
              else
-               (sk.physical_rate || 0) * 40 / 40 + (sk.magical_rate || 0) * 40 / 80
+               (sk[:physical_rate] || 0) * 40 / 40 + (sk[:magical_rate] || 0) * 40 / 80
              end
-      eq want, party.send(:skill_defence_term, sk, foe), "skill ##{id} (#{sk.name})"
+      eq want, party.send(:skill_defence_term, sk, foe), "skill ##{id} (#{sk[:name]})"
     end
   end
 
@@ -519,11 +519,11 @@ def check_skill_defence(dir)
     n = 0
     atk.each do |id|
       sk = skills[id]
-      next unless (sk.physical_rate || 0).zero? && (sk.magical_rate || 0) > 0
+      next unless (sk[:physical_rate] || 0).zero? && (sk[:magical_rate] || 0) > 0
       n += 1
       eq party.send(:skill_defence_term, sk, soft),
          party.send(:skill_defence_term, sk, hard),
-         "skill ##{id} (#{sk.name}) reads the same through any armour"
+         "skill ##{id} (#{sk[:name]}) reads the same through any armour"
     end
     ok n > 0, "#{n} purely magical skill(s) checked"
   end
@@ -534,7 +534,7 @@ def check_skill_defence(dir)
     hard.spi = 999
     ignoring.each do |id|
       eq 0, party.send(:skill_defence_term, skills[id], hard),
-         "skill ##{id} (#{skills[id].name})"
+         "skill ##{id} (#{skills[id][:name]})"
     end
   end
 end
@@ -546,7 +546,7 @@ def check_ko_only(dir)
   return unless items
 
   ko = []
-  items.each { |id, it| ko << id if it.ko_only }
+  items.each { |id, it| ko << id if it[:ko_only] }
   puts format('   items: %d 蘇生専用 (revive-only)', ko.size)
   return if ko.empty?
 
@@ -562,12 +562,12 @@ def check_ko_only(dir)
       it = items[iid]
       # Every one of them restores a *percentage* of max HP, which is what makes
       # "not even the HP" a different answer from "cures nothing".
-      ok (it.recover_hp_rate || 0) > 0 || (it.recover_hp || 0) > 0,
-         "item ##{iid} (#{it.name}) restores something when it does work"
+      ok (it[:recover_hp_rate] || 0) > 0 || (it.recover_hp || 0) > 0,
+         "item ##{iid} (#{it[:name]}) restores something when it does work"
       hero.clear_states
       hero.set_hp(1)
       eq false, party.item_effective?(iid, hero),
-         "item ##{iid} (#{it.name}) is inert on a standing member"
+         "item ##{iid} (#{it[:name]}) is inert on a standing member"
       party.gain_item(iid, 1)
       eq [], party.use_item(iid, hero)
       eq 1, hero.hp, 'and left the HP alone'
@@ -599,11 +599,11 @@ def check_two_handed(dir)
   shields = 0
   odd = []
   items.each do |id, it|
-    weapons += 1 if it.type == 1
-    shields += 1 if it.type == 2
-    next if (it.two_handed || 0) == 0
+    weapons += 1 if it[:type] == 1
+    shields += 1 if it[:type] == 2
+    next if (it[:two_handed] || 0) == 0
     two << id
-    odd << id unless it.type == 1
+    odd << id unless it[:type] == 1
   end
   puts format('   items: %d 両手持ち of %d weapon(s), %d shield(s)',
               two.size, weapons, shields)
@@ -622,7 +622,7 @@ def check_two_handed(dir)
                 '(harmless -- #two_handed? gates on type)', odd.size)
   end
 
-  two_weapons = two.select { |id| items[id].type == 1 }
+  two_weapons = two.select { |id| items[id][:type] == 1 }
   return if two_weapons.empty? || shields.zero?
 
   check "#{name}: every real two-handed weapon empties the shield hand" do
@@ -630,13 +630,13 @@ def check_two_handed(dir)
     hero = party.leader
     ok hero, 'the game has someone to equip'
     shield = nil
-    items.each { |id, it| shield ||= id if it.type == 2 }
+    items.each { |id, it| shield ||= id if it[:type] == 2 }
     two_weapons.each do |wid|
       hero.equip([0, 0, 0, 0, 0])
       hero.equip_item(shield)
       eq shield, hero.equipment[1], 'the shield went on'
       hero.equip_item(wid)
-      eq wid, hero.equipment[0], "weapon ##{wid} (#{items[wid].name}) went on"
+      eq wid, hero.equipment[0], "weapon ##{wid} (#{items[wid][:name]}) went on"
       eq 0, hero.equipment[1], 'and took the shield hand with it'
     end
     hero.equip([0, 0, 0, 0, 0])
@@ -655,12 +655,12 @@ def check_states(dir)
   slipping = []
   already = []
   states.each do |id, r|
-    blinding << id if r.reduce_hit_ratio && r.reduce_hit_ratio < 100
-    waking << id if (r.release_by_attack || 0) > 0
-    sealing << id if r.restrict_magic || r.restrict_skill
-    slipping << id if (r.hp_change_map_steps || 0) > 0 &&
-                      (r.hp_change_map_val || 0) > 0
-    already << id unless r.message_already.to_s.empty?
+    blinding << id if r[:reduce_hit_ratio] && r[:reduce_hit_ratio] < 100
+    waking << id if (r[:release_by_attack] || 0) > 0
+    sealing << id if r[:restrict_magic] || r[:restrict_skill]
+    slipping << id if (r[:hp_change_map_steps] || 0) > 0 &&
+                      (r[:hp_change_map_val] || 0) > 0
+    already << id unless r[:message_already].to_s.empty?
   end
   puts format('   states: %d blinding, %d shaken off by a blow, %d sealing, ' \
               '%d slipping on the map, %d with an "already" sentence',
@@ -677,9 +677,9 @@ def check_states(dir)
       already.each do |sid|
         row = states[sid]
         line = Game::States.already_message(sid, states, 'スライム')
-        eq "スライム#{row.message_already}", line,
-           "state ##{sid} (#{row.name})"
-        eq "リト#{row.message_already}",
+        eq "スライム#{row[:message_already]}", line,
+           "state ##{sid} (#{row[:name]})"
+        eq "リト#{row[:message_already]}",
            Game::States.already_message(sid, states, 'リト'),
            'and the same sentence for the other side'
       end
@@ -696,7 +696,7 @@ def check_states(dir)
                    0, { name: 'X', inflict: [sid], chance: 0 })
       eq [], e[:inflicted]
       eq [sid], e[:already],
-         "state ##{sid} (#{states[sid].name}) is announced at 0% accuracy"
+         "state ##{sid} (#{states[sid][:name]}) is announced at 0% accuracy"
       ok Game::States.already_message(sid, states, foe.name),
          'and the database has the sentence to announce it with'
     end
@@ -712,7 +712,7 @@ def check_states(dir)
       ok base > 0, 'an unafflicted attacker can hit'
       blinding.each do |sid|
         clear.states = [sid]
-        ratio = states[sid].reduce_hit_ratio
+        ratio = states[sid][:reduce_hit_ratio]
         # #hit_modifier -- the exact hook reduce_hit_ratio feeds -- rather than
         # re-deriving the whole scaled #to_hit figure from the unafflicted
         # `base` above: a real state carrying reduce_hit_ratio need not be a
@@ -725,7 +725,7 @@ def check_states(dir)
         # what reduce_hit_ratio alone controls, so it is the one figure this
         # check can assert exactly regardless of whatever else the state does.
         eq ratio, bat.send(:hit_modifier, clear),
-           "state ##{sid} (#{states[sid].name}) feeds #{ratio}% into #hit_modifier"
+           "state ##{sid} (#{states[sid][:name]}) feeds #{ratio}% into #hit_modifier"
       end
     end
   end
@@ -734,7 +734,7 @@ def check_states(dir)
     check "#{name}: a blow shakes off a state that allows it" do
       # Roll each state many times; a state set to N% must come off sometimes and
       # a 100% one every time. Seeds vary so the rolls do.
-      sid = waking.max_by { |i| states[i].release_by_attack }
+      sid = waking.max_by { |i| states[i][:release_by_attack] }
       shaken = 0
       200.times do |i|
         foe = combatant('Foe', 0, 0, 5, 1000, [sid])
@@ -743,7 +743,7 @@ def check_states(dir)
         shaken += 1 if bat.send(:deal_attack, bat.allies[0], foe)[:woke]
       end
       ok shaken > 0,
-         "state ##{sid} (#{states[sid].name}, #{states[sid].release_by_attack}%) " \
+         "state ##{sid} (#{states[sid][:name]}, #{states[sid][:release_by_attack]}%) " \
          'never came off in 200 blows'
     end
   end
@@ -759,16 +759,16 @@ def check_states(dir)
         physical_sealed = 0
         total_magic = 0
         db[DB_SKILL]&.each do |_id, sk|
-          if (sk.magical_rate || 0) > 0
+          if (sk[:magical_rate] || 0) > 0
             total_magic += 1
             sealed += 1 if bat.skill_sealed?(caster, sk)
-          elsif (sk.physical_rate || 0) == 0
+          elsif (sk[:physical_rate] || 0) == 0
             physical_sealed += 1 if bat.skill_sealed?(caster, sk)
           end
         end
-        next unless states[sid].restrict_magic
+        next unless states[sid][:restrict_magic]
         ok total_magic.zero? || sealed > 0,
-           "state ##{sid} (#{states[sid].name}) seals no magic at all"
+           "state ##{sid} (#{states[sid][:name]}) seals no magic at all"
         # "but not plain physical skills" only holds for a *magic-only* seal.
         # #skill_sealed? (Game::Battle) grants restrict_skill and restrict_magic
         # fully independent thresholds, and histoire203's state #16 (人形,
@@ -777,7 +777,7 @@ def check_states(dir)
         # rate-0 skill here, correctly, same as it catches every physical one.
         # Nepheshel/mtf-meido-action's sealing states all leave restrict_skill
         # off, which is what let this go unexercised until now.
-        next if states[sid].restrict_skill
+        next if states[sid][:restrict_skill]
         eq 0, physical_sealed,
            "state ##{sid} left rate-0 skills alone"
       end
@@ -795,8 +795,8 @@ def check_states(dir)
       party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
       slipping.each do |sid|
         row = states[sid]
-        every = row.hp_change_map_steps
-        amount = row.hp_change_map_val
+        every = row[:hp_change_map_steps]
+        amount = row[:hp_change_map_val]
         actor = party.actors.first
         actor.clear_states
         actor.set_hp(actor.max_hp)
@@ -805,20 +805,20 @@ def check_states(dir)
         # Every step short of the interval leaves it alone ...
         (1...every).each do |s|
           eq [], party.apply_map_step_damage(states, s),
-             "state ##{sid} (#{row.name}) drained on step #{s} of #{every}"
+             "state ##{sid} (#{row[:name]}) drained on step #{s} of #{every}"
         end
         # ... and the one that reaches it takes exactly the row's amount.
         before = actor.hp
         eq [actor], party.apply_map_step_damage(states, every)
         eq before - amount, actor.hp,
-           "state ##{sid} (#{row.name}) should drain #{amount} HP every " \
+           "state ##{sid} (#{row[:name]}) should drain #{amount} HP every " \
            "#{every} steps"
 
         # It never kills: walk far enough to drain the member's whole HP bar
         # several times over, and it is still standing.
         laps = actor.max_hp / amount + 5
         laps.times { |i| party.apply_map_step_damage(states, (i + 1) * every) }
-        eq 1, actor.hp, "state ##{sid} (#{row.name}) wore it below 1 HP"
+        eq 1, actor.hp, "state ##{sid} (#{row[:name]}) wore it below 1 HP"
         ok !actor.dead?, 'field slip damage must not knock a member out'
         actor.clear_states
         actor.set_hp(actor.max_hp)
@@ -843,14 +843,14 @@ def check_equipment(dir)
   crit_weapons = []
   crit_others = []
   items.each do |id, it|
-    dual << id if it.type == 1 && it.dual_attack
-    sure << id if it.type == 1 && it.ignore_evasion
-    half << id if it.half_sp_cost
-    next unless (it.critical_hit || 0) > 0
-    (it.type == 1 ? crit_weapons : crit_others) << id
+    dual << id if it[:type] == 1 && it[:dual_attack]
+    sure << id if it[:type] == 1 && it[:ignore_evasion]
+    half << id if it[:half_sp_cost]
+    next unless (it[:critical_hit] || 0) > 0
+    (it[:type] == 1 ? crit_weapons : crit_others) << id
   end
   strong = []
-  db[DB_ACTOR]&.each { |id, r| strong << id if r.strong_defence }
+  db[DB_ACTOR]&.each { |id, r| strong << id if r[:strong_defence] }
   puts format('   equipment: %d 二刀流, %d 必中, %d MP消費半分, %d 強力防御 actor(s), ' \
               '%d 会心必殺 weapon(s) (+%d non-weapon)',
               dual.size, sure.size, half.size, strong.size,
@@ -864,7 +864,7 @@ def check_equipment(dir)
       dual.each do |iid|
         a = Game::Actor.new(db, first_actor_id(db))
         a.equip([iid, 0, 0, 0, 0])
-        eq true, a.dual_attack?, "item ##{iid} (#{items[iid].name}) grants it"
+        eq true, a.dual_attack?, "item ##{iid} (#{items[iid][:name]}) grants it"
         eq 1, Game::Battle.from_actor(a).strike_count
       end
     end
@@ -879,7 +879,7 @@ def check_equipment(dir)
         bat = Game::Battle.new([Game::Battle.from_actor(a)], [swift],
                                Game::Rng.new(1), db[DB_STATE], false, false, true)
         eq a.attack_hit_rate, bat.send(:to_hit, bat.allies[0], swift),
-           "item ##{iid} (#{items[iid].name}) hits at its own rate"
+           "item ##{iid} (#{items[iid][:name]}) hits at its own rate"
       end
     end
   end
@@ -888,7 +888,7 @@ def check_equipment(dir)
     check "#{name}: MP消費半分 gear halves a skill's cost" do
       party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
       sk = nil
-      db[DB_SKILL]&.each { |_i, s| sk ||= s if (s.sp_cost || 0) > 1 && s.sp_type == 0 }
+      db[DB_SKILL]&.each { |_i, s| sk ||= s if (s[:sp_cost] || 0) > 1 && s[:sp_type] == 0 }
       next unless sk
       a = Game::Actor.new(db, first_actor_id(db))
       full = party.skill_cost(sk, a)
@@ -896,12 +896,12 @@ def check_equipment(dir)
       half.each do |iid|
         # Equip it in the slot its own type names (1..5 map to the five slots),
         # so the flag is read off gear the actor is really wearing.
-        slot = items[iid].type - 1
+        slot = items[iid][:type] - 1
         next unless slot >= 0 && slot < 5
         gear = [0, 0, 0, 0, 0]
         gear[slot] = iid
         a.equip(gear)
-        ok a.half_sp_cost?, "item ##{iid} (#{items[iid].name}) grants MP消費半分"
+        ok a.half_sp_cost?, "item ##{iid} (#{items[iid][:name]}) grants MP消費半分"
         eq (full + 1) / 2, party.skill_cost(sk, a),
            "and halves the #{full}-SP skill, rounding up"
       end
@@ -919,8 +919,8 @@ def check_equipment(dir)
       crit_weapons.each do |iid|
         a = Game::Actor.new(db, aid)
         a.equip([iid, 0, 0, 0, 0])
-        eq base + items[iid].critical_hit, a.crit_chance,
-           "item ##{iid} (#{items[iid].name}) adds #{items[iid].critical_hit}%"
+        eq base + items[iid][:critical_hit], a.crit_chance,
+           "item ##{iid} (#{items[iid][:name]}) adds #{items[iid][:critical_hit]}%"
         ok a.crit_chance > base, 'and the weapon really moves the rate'
       end
     end
@@ -938,14 +938,14 @@ def check_equipment(dir)
       base = bare.crit_chance
       crit_others.each do |iid|
         it = items[iid]
-        slot = it.type - 1
+        slot = it[:type] - 1
         next unless slot >= 0 && slot < 5
         gear = [0, 0, 0, 0, 0]
         gear[slot] = iid
         a = Game::Actor.new(db, aid)
         a.equip(gear)
         eq base, a.crit_chance,
-           "item ##{iid} (#{it.name}, type #{it.type}, +#{it.critical_hit}) " \
+           "item ##{iid} (#{it[:name]}, type #{it[:type]}, +#{it[:critical_hit]}) " \
            'must not arm its wearer'
       end
     end
@@ -974,7 +974,7 @@ def check_terrain(dir)
   total_cs = 0
   db[DB_CHIPSET]&.each do |id, c|
     total_cs += 1
-    bare << id if c.terrain_data.nil? || c.terrain_data.empty?
+    bare << id if c[:terrain_data].nil? || c[:terrain_data].empty?
   end
   puts format('   chipsets: %d of %d store no terrain table at all',
               bare.size, total_cs)
@@ -984,7 +984,7 @@ def check_terrain(dir)
         cs = Game::ChipSet.new(db, id)
         # One tile id out of each lower block, plus an id no block claims.
         [0, 1000, 3000, 4000, 5000, -1].each do |tile|
-          eq 1, cs.terrain(tile), "chipset ##{id} (#{db[DB_CHIPSET][id].name}) tile #{tile}"
+          eq 1, cs.terrain(tile), "chipset ##{id} (#{db[DB_CHIPSET][id][:name]}) tile #{tile}"
         end
         ok terrain[1], 'and terrain #1 is a row the database really has'
       end
@@ -992,9 +992,9 @@ def check_terrain(dir)
   end
 
   damaging = []
-  terrain.each { |id, r| damaging << id if (r.damage || 0) > 0 }
+  terrain.each { |id, r| damaging << id if (r[:damage] || 0) > 0 }
   blockers = []
-  db[DB_ITEM]&.each { |id, it| blockers << id if it.no_terrain_damage }
+  db[DB_ITEM]&.each { |id, it| blockers << id if it[:no_terrain_damage] }
   puts format('   terrain: %d damaging tile type(s), %d item(s) that block them',
               damaging.size, blockers.size)
   return if damaging.empty?
@@ -1009,11 +1009,11 @@ def check_terrain(dir)
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
     leader = party.leader
     damaging.each do |tid|
-      amount = terrain[tid].damage
+      amount = terrain[tid][:damage]
       leader.hp = leader.max_hp
       hit = party.apply_terrain_damage(amount)
       ok hit.include?(leader),
-         "terrain ##{tid} (#{terrain[tid].name}, #{amount} HP) hit the leader"
+         "terrain ##{tid} (#{terrain[tid][:name]}, #{amount} HP) hit the leader"
       eq leader.max_hp - amount, leader.hp
       # However long the party stands in it, it is worn down rather than killed.
       (leader.max_hp / amount + 2).times { party.apply_terrain_damage(amount) }
@@ -1026,15 +1026,15 @@ def check_terrain(dir)
   check "#{name}: gear flagged 地形ダメージ無効 blocks it" do
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
     leader = party.leader
-    worst = damaging.map { |tid| terrain[tid].damage }.max
+    worst = damaging.map { |tid| terrain[tid][:damage] }.max
     blockers.each do |iid|
-      slot = db[DB_ITEM][iid].type - 1
+      slot = db[DB_ITEM][iid][:type] - 1
       next unless slot >= 0 && slot < 5
       gear = [0, 0, 0, 0, 0]
       gear[slot] = iid
       leader.equip(gear)
       ok leader.prevents_terrain_damage?,
-         "item ##{iid} (#{db[DB_ITEM][iid].name}) grants the immunity"
+         "item ##{iid} (#{db[DB_ITEM][iid][:name]}) grants the immunity"
       leader.hp = leader.max_hp
       eq [], party.apply_terrain_damage(worst), 'and nothing gets through'
       eq leader.max_hp, leader.hp
@@ -1054,7 +1054,7 @@ def check_bush(dir)
   return unless terrain
 
   bush = {}
-  terrain.each { |id, r| bush[id] = r.bush_depth if (r.bush_depth || 0) > 0 }
+  terrain.each { |id, r| bush[id] = r[:bush_depth] if (r[:bush_depth] || 0) > 0 }
   if bush.empty?
     puts '   bush: no terrain sinks a sprite'
     return
@@ -1068,9 +1068,9 @@ def check_bush(dir)
   maps = 0
   Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
     m = LCF::MapUnit.new(File.open(f, 'rb'))
-    cs = (cache[m.chipset_id] ||= Game::ChipSet.new(db, m.chipset_id))
+    cs = (cache[m[:chipset_id]] ||= Game::ChipSet.new(db, m[:chipset_id]))
     hot = false
-    (m.lower_layer || []).each do |t|
+    (m[:lower_layer] || []).each do |t|
       tid = cs.terrain(t)
       next unless bush.key?(tid)
       tiles[tid] += 1
@@ -1085,7 +1085,7 @@ def check_bush(dir)
   check "#{name}: every sinking terrain converts to a real pixel split" do
     bush.each do |id, depth|
       px = Game::CharSet.bush_pixels(depth)
-      ok px > 0, "terrain ##{id} (#{terrain[id].name}, depth #{depth}) sinks something"
+      ok px > 0, "terrain ##{id} (#{terrain[id][:name]}, depth #{depth}) sinks something"
       ok px <= Game::CharSet::HEIGHT, 'and never more than the whole frame'
       # RPG_RT's divisor form: depth 1 is a third of the frame, 2 a half, 3 all
       # of it. Nepheshel's own names say the same thing.
@@ -1097,7 +1097,7 @@ def check_bush(dir)
   check "#{name}: the ground the game actually lays down sinks the hero" do
     ok maps > 0, 'at least one shipped map places a sinking tile'
     tiles.each do |id, n|
-      ok n > 0, "terrain ##{id} (#{terrain[id].name}) is on #{n} tile(s)"
+      ok n > 0, "terrain ##{id} (#{terrain[id][:name]}) is on #{n} tile(s)"
       ok Game::CharSet.bush_pixels(bush[id]) > 0,
          "and #{n} tile(s) of it would sink the hero"
     end
@@ -1131,7 +1131,7 @@ def check_items(dir)
     party = Game::Party.new(db, db[DB_SYSTEM] ? db[DB_SYSTEM][SYS_PARTY] : nil)
     zeroed = 0
     items.each do |id, it|
-      set = it.actor_set
+      set = it[:actor_set]
       next unless set.respond_to?(:each_index)
       # Only a set that restricts somebody counts -- an all-zero array is the
       # editor's untouched state (see Game::Party.permission_set_active?).
@@ -1140,7 +1140,7 @@ def check_items(dir)
         next unless set[i] == 0
         zeroed += 1
         eq false, party.item_usable_by?(it, i + 1),
-           "item ##{id} (#{it.name}) has actor_set[#{i}] == 0, actor #{i + 1} refused"
+           "item ##{id} (#{it[:name]}) has actor_set[#{i}] == 0, actor #{i + 1} refused"
       end
     end
     puts format('   items: %d explicitly-refused actor_set entries, all refused', zeroed)
@@ -1150,13 +1150,13 @@ def check_items(dir)
   curative = []
   reversed = []
   items.each do |id, it|
-    next unless it.type == 6 # medicine
-    set = it.state_set
+    next unless it[:type] == 6 # medicine
+    set = it[:state_set]
     next unless set.respond_to?(:each_index)
     ids = []
     set.each_index { |i| ids << (i + 1) if set[i] && set[i] != 0 }
     next if ids.empty?
-    (it.reverse_state_effect ? reversed : curative) << [id, ids]
+    (it[:reverse_state_effect] ? reversed : curative) << [id, ids]
   end
   puts format('   items: %d curative medicine(s), %d with reverse_state_effect',
               curative.size, reversed.size)
@@ -1172,7 +1172,7 @@ def check_items(dir)
     curative.each do |iid, ids|
       row = items[iid]
       eq ids, party.item_cured_states(row),
-         "item ##{iid} (#{row.name}) should cure #{ids.size} state(s)"
+         "item ##{iid} (#{row[:name]}) should cure #{ids.size} state(s)"
 
       # ... and using it really lifts them, including from a downed actor: a
       # medicine naming state 1 is a revive, and several of these name only it.
@@ -1184,11 +1184,11 @@ def check_items(dir)
       ids.each { |sid| actor.add_state(sid) }
       party.gain_item(iid, 1)
       ok party.item_effective?(iid, actor),
-         "item ##{iid} (#{row.name}) is offered to an afflicted target"
+         "item ##{iid} (#{row[:name]}) is offered to an afflicted target"
       party.use_item(iid, actor)
       ids.each do |sid|
         eq false, actor.state?(sid),
-           "item ##{iid} (#{row.name}) left state #{sid} on"
+           "item ##{iid} (#{row[:name]}) left state #{sid} on"
       end
     end
     actor.clear_states
@@ -1221,8 +1221,8 @@ def check_terms(dir)
   check "#{name}: every basic action sentence composes after a battler's name" do
     filled.each do |f|
       line = bt.action(terms, 'スライム', f)
-      eq "スライム#{terms.send(f)}", line, "term #{f}"
-      ok line.length > terms.send(f).length, 'the name really is in front of it'
+      eq "スライム#{terms[f]}", line, "term #{f}"
+      ok line.length > terms[f].length, 'the name really is in front of it'
     end
   end
 
@@ -1233,9 +1233,9 @@ def check_terms(dir)
   second = []
   failures = Hash.new(0)
   db[DB_SKILL]&.each do |id, sk|
-    first << id unless sk.using_message1.to_s.empty?
-    second << id unless sk.using_message2.to_s.empty?
-    failures[sk.failure_message || 0] += 1
+    first << id unless sk[:using_message1].to_s.empty?
+    second << id unless sk[:using_message2].to_s.empty?
+    failures[sk[:failure_message] || 0] += 1
   end
   puts format('   skills: %d with a first sentence, %d with a second; ' \
               'failure_message %s',
@@ -1247,12 +1247,12 @@ def check_terms(dir)
       first.each do |id|
         sk = db[DB_SKILL][id]
         lines = bt.skill_start(sk, 'リト')
-        eq "リト#{sk.using_message1}", lines[0], "skill ##{id} (#{sk.name})"
-        if sk.using_message2.to_s.empty?
+        eq "リト#{sk[:using_message1]}", lines[0], "skill ##{id} (#{sk[:name]})"
+        if sk[:using_message2].to_s.empty?
           eq 1, lines.size, "skill ##{id} has only a first line"
         else
           # The second line stands alone -- no name in front of it.
-          eq sk.using_message2, lines[1], "skill ##{id} second line"
+          eq sk[:using_message2], lines[1], "skill ##{id} second line"
           ok !lines[1].start_with?('リト'), 'and it is not prefixed'
         end
       end
@@ -1260,9 +1260,9 @@ def check_terms(dir)
 
     check "#{name}: every skill's failure_message names a real 用語 line" do
       db[DB_SKILL].each do |id, sk|
-        i = sk.failure_message || 0
+        i = sk[:failure_message] || 0
         ok i >= 0 && i < Game::States::BattleText::FAILURE_TERMS.size,
-           "skill ##{id} (#{sk.name}) failure_message #{i} is in range"
+           "skill ##{id} (#{sk[:name]}) failure_message #{i} is in range"
         line = bt.skill_failure(terms, sk, 'スライム')
         ok line && line.start_with?('スライム'),
            "skill ##{id} composes a failure sentence"
@@ -1274,18 +1274,18 @@ def check_terms(dir)
     check "#{name}: the item and recovery lines build from the real table" do
       it = db[DB_ITEM] && db[DB_ITEM][1]
       if it
-        line = bt.item_start(terms, 'リト', it.name)
-        ok line.start_with?("リトは#{it.name}"),
+        line = bt.item_start(terms, 'リト', it[:name])
+        ok line.start_with?("リトは#{it[:name]}"),
            'the caster, は and the item name lead it'
-        ok line.end_with?(terms.use_item), 'and the term closes it'
+        ok line.end_with?(terms[:use_item]), 'and the term closes it'
       end
       # The pool name is the table's too, which is why one game reads ＨＰ and
       # the other HP -- a literal "HP" would be wrong in exactly one of them.
       %i[hp mp].each do |pool|
         next unless bt.term(terms, pool)
         r = bt.recovered(terms, 'リト', 30, pool)
-        ok r.include?(terms.send(pool).to_s), "the #{pool} line names the pool"
-        ok r.include?('30') && r.end_with?(terms.hp_recovery),
+        ok r.include?(terms[pool].to_s), "the #{pool} line names the pool"
+        ok r.include?('30') && r.end_with?(terms[:hp_recovery]),
            'with the amount and the term'
       end
     end
@@ -1293,7 +1293,7 @@ def check_terms(dir)
 
   if bt.term(terms, :enemy_hp_absorbed) && bt.term(terms, :hp)
     drains = []
-    db[DB_SKILL]&.each { |id, sk| drains << id if sk.absorb_damage }
+    db[DB_SKILL]&.each { |id, sk| drains << id if sk[:absorb_damage] }
     puts format('   skills: %d 吸収 (drain)', drains.size)
     unless drains.empty?
       check "#{name}: a real 吸収 skill drains what it deals, and no more" do
@@ -1305,8 +1305,8 @@ def check_terms(dir)
         foe.hp = 25
         bat = Game::Battle.new([mage], [foe], Game::Rng.new(1))
         e = bat.send(:apply_skill_hit, mage, foe, -200, 0,
-                     { name: sk.name, absorb: true })
-        eq 25, e[:damage], "skill ##{sid} (#{sk.name}) is capped by the target"
+                     { name: sk[:name], absorb: true })
+        eq 25, e[:damage], "skill ##{sid} (#{sk[:name]}) is capped by the target"
         eq 25, e[:absorbed_hp]
         eq 65, mage.hp
         ok bt.absorbed(terms, foe.name, 25, :hp, false),
@@ -1320,8 +1320,8 @@ def check_terms(dir)
     foe = bt.damage(terms, 'スライム', 42, false)
     ally = bt.damage(terms, 'リト', 42, true)
     ok foe.include?('42') && ally.include?('42'), 'both name the amount'
-    ok foe.include?(terms.enemy_damaged), 'the foe predicate'
-    ok ally.include?(terms.actor_damaged), 'the ally predicate'
+    ok foe.include?(terms[:enemy_damaged]), 'the foe predicate'
+    ok ally.include?(terms[:actor_damaged]), 'the ally predicate'
     ok foe != ally.sub('リト', 'スライム'),
        'the two sides really are worded differently'
     # The particle is what makes them read as Japanese rather than as two names
@@ -1334,8 +1334,8 @@ def check_terms(dir)
   check "#{name}: the critical-hit line is a bare term, keyed on the target" do
     foe = bt.critical(terms, false)
     ally = bt.critical(terms, true)
-    eq terms.enemy_critical, foe, 'an enemy taking the crit reads its own term'
-    eq terms.actor_critical, ally, 'a party member taking the crit reads its own term'
+    eq terms[:enemy_critical], foe, 'an enemy taking the crit reads its own term'
+    eq terms[:actor_critical], ally, 'a party member taking the crit reads its own term'
   end
 end
 
@@ -1357,7 +1357,7 @@ def check_animations(dir)
     resolves = 0
     db[chunk]&.each do |_id, r|
       rows += 1
-      a = r.animation_id || 0
+      a = r[:animation_id] || 0
       next unless a > 0
       with += 1
       resolves += 1 if anims[a]
@@ -1372,9 +1372,9 @@ def check_animations(dir)
   check "#{name}: every animation a skill or item names is a real row" do
     [[DB_SKILL, 'skill'], [DB_ITEM, 'item']].each do |chunk, label|
       db[chunk]&.each do |id, r|
-        a = r.animation_id || 0
+        a = r[:animation_id] || 0
         next unless a > 0
-        ok anims[a], "#{label} ##{id} (#{r.name}) names animation ##{a}"
+        ok anims[a], "#{label} ##{id} (#{r[:name]}) names animation ##{a}"
       end
     end
   end
@@ -1385,7 +1385,7 @@ def check_animations(dir)
     # empty must not arm one.
     drawable = 0
     anims.each do |_id, a|
-      f = a.frames
+      f = a[:frames]
       n = 0
       f&.each { |_i, _fr| n += 1 }
       drawable += 1 if n > 0

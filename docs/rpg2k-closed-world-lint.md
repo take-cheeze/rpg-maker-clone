@@ -25,11 +25,14 @@ The baseline only shrinks: fixing an offence requires regenerating it, and
 regenerating refuses new entries unless given `--accept-new`. Prefer explicit
 code: a real method instead of `method_missing`, a `case` or direct call instead
 of `send(name)`, an explicit mapping instead of `const_get`, and an explicit nil
-check instead of `rescue nil`. When a use is genuinely data-driven, allow it in
-place with a reason:
+check instead of `rescue nil`. An LCF record, section list or file has no
+dotted field access at all (ADR 0213): read a field with `row[:name]` (or
+`row[name]` for a computed name) and ask whether the schema declares it with
+`LCF.field?(row, :name)`, never `send`/`respond_to?`. When a use is genuinely
+data-driven, allow it in place with a reason:
 
 ```ruby
-value = row.send(field) # rpg2k-lint:allow Dynamic/Send -- field names come from the LCF schema
+value = obj.send(accessor) # rpg2k-lint:allow Dynamic/Send -- accessor names come from a fixed table
 ```
 
 See ADR 0212.

@@ -223,8 +223,8 @@ else
   # Landing on another map with no tile given: stand in the middle. It is always
   # in bounds, though possibly unwalkable -- which is fine, since the comparison
   # only needs both runtimes on the same tile, and both will draw the hero there.
-  x = map.width / 2
-  y = map.height / 2
+  x = map[:width] / 2
+  y = map[:height] / 2
 end
 
 hero[HERO_MAP] = map_id
@@ -246,8 +246,8 @@ moved_maps = map_id != from[0]
 # one our engine draws, which reads as a total rendering mismatch when it is
 # only a stale camera.
 map_ev = save[MAP_EVENTS] || LCF::Array1D.new('', LCF::Schema::SAVE_DATA[:elements][MAP_EVENTS])
-scroll_px = [camera_offset(x * TILE + TILE / 2, SCREEN_W, map.width * TILE),
-             camera_offset(y * TILE + TILE / 2, SCREEN_H, map.height * TILE)]
+scroll_px = [camera_offset(x * TILE + TILE / 2, SCREEN_W, map[:width] * TILE),
+             camera_offset(y * TILE + TILE / 2, SCREEN_H, map[:height] * TILE)]
 map_ev[SCROLL_X] = scroll_px[0] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
 map_ev[SCROLL_Y] = scroll_px[1] * LCF::Schema::SCROLL_UNITS_PER_PIXEL
 

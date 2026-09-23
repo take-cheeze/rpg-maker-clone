@@ -68,11 +68,11 @@ puts "== #{dir}"
 db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
 fail '2003 database does not report maker 2003' unless db.maker == 2003
 
-bc = db.battlecommands
+bc = db[:battlecommands]
 fail 'battlecommands (chunk 0x1D) absent in 2003 database' unless bc
 fail 'battlecommands is not an Array1D' unless bc.is_a?(LCF::Array1D)
 
-cmds = bc.commands
+cmds = bc[:commands]
 fail 'battlecommands.commands (field 10) absent' unless cmds
 fail 'battlecommands.commands is not an Array2D' unless cmds.is_a?(LCF::Array2D)
 
@@ -84,18 +84,18 @@ cmds.each do |id, rec|
   # A record is valid as long as it decodes: name is always a String (an empty
   # name is legitimate -- RPG_RT's Special command and unused table slots ship
   # with none), and type is a 0..6 int (absent -> schema default 0).
-  fail "command #{id} name not a String" unless rec.name.is_a?(String)
-  fail "command #{id} type not an Integer" unless rec.type.is_a?(Integer)
-  fail "command #{id} type out of range 0..6" unless (0..6).cover?(rec.type)
+  fail "command #{id} name not a String" unless rec[:name].is_a?(String)
+  fail "command #{id} type not an Integer" unless rec[:type].is_a?(Integer)
+  fail "command #{id} type out of range 0..6" unless (0..6).cover?(rec[:type])
 end
 fail 'battlecommands.commands is empty' if count.zero?
 puts "  commands: #{count} records"
 
 # Top-level presentation fields.
-bt = bc.battle_type
+bt = bc[:battle_type]
 fail "battle_type (field 7) nil" if bt.nil?
 fail "battle_type out of range 0..2" unless (0..2).cover?(bt.to_i)
-puts "  placement=#{bc.placement} battle_type=#{bt}"
+puts "  placement=#{bc[:placement]} battle_type=#{bt}"
 
 # The two newly-declared top-level fields (9 / 24) must not raise on access and
 # must read back as integers -- via the raw id (bc[fid]), not the accessor

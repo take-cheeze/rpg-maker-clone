@@ -352,7 +352,7 @@ class RPG2k
       # title screen showing a blank background beats an unhandled exception
       # blocking New Game before a single frame is drawn.
       def load_title_picture
-        name = db.system.title.to_s
+        name = db[:system][:title].to_s
         return nil if name.empty?
         Bitmap.new "Title/#{name}"
       rescue StandardError => e
@@ -365,7 +365,7 @@ class RPG2k
       # it is missing so the Window falls back to a plain panel instead of
       # crashing.
       def load_windowskin
-        name = db.system.system_graphic
+        name = db[:system][:system_graphic]
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}", true
       rescue StandardError => e
@@ -383,11 +383,11 @@ class RPG2k
       # the menu selection changes. A no-op when the game defines no cursor SE,
       # the file is missing, or no audio backend is installed.
       def play_cursor_se
-        se = db.system.cursor_se
+        se = db[:system][:cursor_se]
         return unless se
-        name = se.file
+        name = se[:file]
         return if name.nil? || name.empty?
-        Audio.se_play name, se.volume, se.pitch, se.balance
+        Audio.se_play name, se[:volume], se[:pitch], se[:balance]
       rescue StandardError => e
         $stderr.puts "[RGSS] cursor SE playback failed: #{e.message}"
       end
@@ -408,11 +408,11 @@ class RPG2k
       # no-op when the game defines no title music, the file is missing, or
       # no audio backend is installed.
       def play_title_bgm
-        bgm = db.system.title_music
+        bgm = db[:system][:title_music]
         return unless bgm
-        name = bgm.file
+        name = bgm[:file]
         return if name.nil? || name.empty?
-        Audio.bgm_play name, (bgm.volume || 100), (bgm.pitch || 100), 0, (bgm.fade_in || 0)
+        Audio.bgm_play name, (bgm[:volume] || 100), (bgm[:pitch] || 100), 0, (bgm[:fade_in] || 0)
       rescue StandardError => e
         $stderr.puts "[RPG2k] title BGM playback failed: #{e.message}"
       end

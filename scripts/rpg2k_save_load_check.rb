@@ -76,15 +76,15 @@ def check_game(dir)
   lsd = LCF::SaveData.new(File.open(save, 'rb'))
 
   state = Game::State.from_lsd(db, lsd)
-  hero = lsd.hero
-  inv = lsd.inventory
+  hero = lsd[:hero]
+  inv = lsd[:inventory]
   sys = lsd[101]
 
   # Leader position/facing come straight from the hero chunk.
-  eq hero.map_id, state.map_id, 'map id'
-  eq hero.x, state.x, 'hero x'
-  eq hero.y, state.y, 'hero y'
-  eq hero.direction, state.direction, 'hero direction'
+  eq hero[:map_id], state.map_id, 'map id'
+  eq hero[:x], state.x, 'hero x'
+  eq hero[:y], state.y, 'hero y'
+  eq hero[:direction], state.direction, 'hero direction'
 
   # Party roster, gold and items from the inventory chunk. The party leader's
   # database charset must match the saved hero's -- the state really points at
@@ -98,8 +98,8 @@ def check_game(dir)
   # chunk leader fixup). So the oracle here is the title chunk, the same one
   # the runtime itself resolves against, not the raw party list.
   title = lsd[100]
-  eq title.hero_name, state.party.leader && state.party.leader.name, 'leader name'
-  eq title.hero_level, state.party.leader && state.party.leader.level, 'leader level'
+  eq title[:hero_name], state.party.leader && state.party.leader.name, 'leader name'
+  eq title[:hero_level], state.party.leader && state.party.leader.level, 'leader level'
   # ...and when the save records a hero sprite, it must be the leader's, so we
   # know the state points at the right actor. A save can legitimately carry
   # *no* sprite: one taken during Nepheshel's opening (as
@@ -108,16 +108,16 @@ def check_game(dir)
   # empty charset because the hero graphic is not assigned until the opening
   # ends. Asserting equality there compared "unset" against the database default
   # and failed on a perfectly valid save.
-  if hero.charset_name.nil? || hero.charset_name.empty?
+  if hero[:charset_name].nil? || hero[:charset_name].empty?
     puts '  note: save carries no hero sprite (taken before one was set)'
   else
     eq hero.charset_name, (state.party.leader && state.party.leader.charset_name),
        'leader charset matches hero'
   end
-  eq inv.gold, state.party.gold, 'gold'
+  eq inv[:gold], state.party.gold, 'gold'
   expected_items = {}
-  ids = inv.item_ids || []
-  counts = inv.item_counts || []
+  ids = inv[:item_ids] || []
+  counts = inv[:item_counts] || []
   ids.each_index { |i| expected_items[ids[i]] = counts[i] }
   eq expected_items, state.party.items, 'items (id => count)'
 
@@ -130,10 +130,10 @@ def check_game(dir)
     next unless sa
     # Level (which rescales base stats) and exp are restored too, and the
     # rescaled max HP/MP must still bound the restored current HP/MP.
-    eq sa.level, a.level, "actor #{a.id} level" if sa.level
-    eq sa.exp, a.exp, "actor #{a.id} exp" if sa.exp
-    eq sa.hp, a.hp, "actor #{a.id} hp" if sa.hp
-    eq sa.mp, a.mp, "actor #{a.id} mp" if sa.mp
+    eq sa[:level], a.level, "actor #{a.id} level" if sa[:level]
+    eq sa[:exp], a.exp, "actor #{a.id} exp" if sa[:exp]
+    eq sa[:hp], a.hp, "actor #{a.id} hp" if sa[:hp]
+    eq sa[:mp], a.mp, "actor #{a.id} mp" if sa[:mp]
     # This save's own leader (actor 15, "デモ用" -- see the party leader fixup
     # above) has saved current HP/MP of 600/600 (chunk 108), which this
     # engine's level-50 growth-curve max_hp/max_mp (245/254) falls short of.
@@ -150,15 +150,15 @@ def check_game(dir)
       eq true, a.mp <= a.max_mp, "actor #{a.id} mp within max (#{a.mp}/#{a.max_mp})"
     end
     # The saved equipment (chunk 108 field 61) is re-equipped onto the actor.
-    eq (sa.equipment || []), a.equipment, "actor #{a.id} equipment" if sa.equipment
+    eq (sa[:equipment] || []), a.equipment, "actor #{a.id} equipment" if sa[:equipment]
     # The saved skills (chunk 108 field 52) are restored as the known-skill set.
-    eq (sa.skills || []).sort, a.skills.sort, "actor #{a.id} skills" if sa.skills
+    eq (sa[:skills] || []).sort, a.skills.sort, "actor #{a.id} skills" if sa[:skills]
   end
 
   # Switches/variables shift from the save's 0-indexed arrays to 1-indexed ids.
-  on = (sys.switches || []).each_index.select { |i| sys.switches[i] }.map { |i| i + 1 }
+  on = (sys[:switches] || []).each_index.select { |i| sys[:switches][i] }.map { |i| i + 1 }
   eq on, state.switches.to_h.select { |_k, v| v }.keys.sort, 'switch ids that are on'
-  nonzero = (sys.variables || []).each_index.reject { |i| sys.variables[i] == 0 }
+  nonzero = (sys[:variables] || []).each_index.reject { |i| sys[:variables][i] == 0 }
                                  .map { |i| i + 1 }
   eq nonzero, state.variables.to_h.reject { |_k, v| v == 0 }.keys.sort, 'variable ids set'
 
@@ -368,7 +368,7 @@ def check_game(dir)
     eq 5, round.party.leader.charset_index, 'to_lsd: leader sprite index'
     eq 'Renamed', round.party.leader.name, 'to_lsd: leader name override'
     lentry = round_lsd[108][round.party.leader.id]
-    eq 'HeroAlt', lentry && lentry.sprite_name,
+    eq 'HeroAlt', lentry && lentry[:sprite_name],
        'to_lsd: chunk 108 carries the live sprite override (not chunk 104)'
     eq true, round.party.leader.sprite_changed?,
        'to_lsd: leader sprite_changed? survives the round trip'

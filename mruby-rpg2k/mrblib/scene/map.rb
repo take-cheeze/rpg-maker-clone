@@ -1473,13 +1473,13 @@ class RPG2k
         ov = @state.parallax
         return ov if ov
         u = @map.unit
-        return nil unless (u.parallax_flag rescue false)
-        { name: (u.parallax_name rescue '').to_s,
-          loop_x: (u.parallax_loop_x rescue false),
-          loop_y: (u.parallax_loop_y rescue false),
-          auto_x: (u.parallax_autoloop_x rescue false),
-          auto_y: (u.parallax_autoloop_y rescue false),
-          sx: (u.parallax_sx rescue 0), sy: (u.parallax_sy rescue 0) }
+        return nil unless (u[:parallax_flag] rescue false)
+        { name: (u[:parallax_name] rescue '').to_s,
+          loop_x: (u[:parallax_loop_x] rescue false),
+          loop_y: (u[:parallax_loop_y] rescue false),
+          auto_x: (u[:parallax_autoloop_x] rescue false),
+          auto_y: (u[:parallax_autoloop_y] rescue false),
+          sx: (u[:parallax_sx] rescue 0), sy: (u[:parallax_sy] rescue 0) }
       end
 
       # The CharSet bitmap for an event graphic `name`, cached (including a
@@ -1560,7 +1560,7 @@ class RPG2k
         # A Change System Graphics override (persisted in the save) wins over the
         # database's own windowskin.
         name = @state.system_graphic
-        name = @db.system.system_graphic if name.nil?
+        name = @db[:system][:system_graphic] if name.nil?
         return nil if name.nil? || name.empty?
         Bitmap.new "System/#{name}", true
       rescue StandardError => e
@@ -1588,16 +1588,16 @@ class RPG2k
         @events = []
         @event_tiles = {}
         @event_tiles_by_pos = {}
-        evs = @map.unit.events
+        evs = @map.unit[:events]
         return unless evs
         evs.each do |id, ev|
           # First sighting of this id this visit: record its raw placement as
           # the fallback #event_id_at falls back to while it has no active
           # page (never touched again from here -- only #record_map_event_positions
           # keeps it current once the event actually goes live).
-          @event_last_position[id] ||= [ev.x, ev.y, nil]
+          @event_last_position[id] ||= [ev[:x], ev[:y], nil]
           next if @erased_events[id] # an Erase Event lasts the whole visit
-          selected = Game::EventPage.select(ev.pages, @state.switches,
+          selected = Game::EventPage.select(ev[:pages], @state.switches,
                                             @state.variables, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           next unless selected
@@ -1615,7 +1615,7 @@ class RPG2k
 
       def build_event(id, ev, page, page_number, restore_route_index: true)
         dir = Game::EventGraphic.numpad_direction(page_direction(page))
-        x, y = ev.x, ev.y
+        x, y = ev[:x], ev[:y]
         # A saved wandered position (see #record_map_event_positions) wins over
         # the map's own default placement -- restoring a Save/Continue taken on
         # this same map to wherever the NPC actually stood, not back to its
@@ -1818,7 +1818,7 @@ class RPG2k
       def build_resolver
         common = {}
         @common.each { |c| common[c.id] = c }
-        map_events = (@map.unit.events rescue nil)
+        map_events = (@map.unit[:events] rescue nil)
         EventResolver.new(common, map_events)
       rescue StandardError
         EventResolver.new({}, nil)
@@ -1881,12 +1881,12 @@ class RPG2k
         default
       end
 
-      def page_trigger(page); page_field(:trigger, 0) { page.trigger }; end
-      def page_commands(page); page_field(:commands, nil) { page.event_commands }; end
+      def page_trigger(page); page_field(:trigger, 0) { page[:trigger] }; end
+      def page_commands(page); page_field(:commands, nil) { page[:event_commands] }; end
       # The page's stored facing (0..3: up/right/down/left), default down (2).
       # Converted to the runtime numpad convention by build_event.
-      def page_direction(page); page_field(:direction, 2) { d = page.direction; (0..3).include?(d) ? d : 2 }; end
-      def page_move_type(page); page_field(:move_type, 0) { page.move_type || 0 }; end
+      def page_direction(page); page_field(:direction, 2) { d = page[:direction]; (0..3).include?(d) ? d : 2 }; end
+      def page_move_type(page); page_field(:move_type, 0) { page[:move_type] || 0 }; end
       # The page's stored Move Speed is real RPG_RT's own 1..6 scale (liblcf
       # default 3, "Normal"); converted to this engine's internal 0..5 scale
       # (real minus 1, see the SLIDE_UNITS comment above) so it lines up with
@@ -1894,16 +1894,16 @@ class RPG2k
       # treated a raw event's Move Speed as one full notch faster than real
       # RPG_RT -- e.g. the default "Normal" (3) walked at the player's own
       # default rate (real 4) instead of the correct half-speed.
-      def page_move_speed(page); page_field(:move_speed, 2) { (page.move_speed || 3) - 1 }; end
-      def page_move_frequency(page); page_field(:move_frequency, 3) { page.move_frequency || 3 }; end
-      def page_move_route(page); page_field(:move_route, nil) { page.move_route }; end
-      def page_charset_name(page); page_field(:charset_name, nil) { page.charset_name }; end
-      def page_charset_index(page); page_field(:charset_index, 0) { page.charset_index || 0 }; end
-      def page_layer(page); page_field(:layer, 0) { page.layer || 0 }; end
-      def page_overlap_forbidden(page); page_field(:overlap_forbidden, false) { page.overlap_forbidden ? true : false }; end
-      def page_pattern(page); page_field(:pattern, 1) { p = page.pattern; (0..2).include?(p) ? p : 1 }; end
-      def page_anim_type(page); page_field(:anim_type, 0) { page.animation_type || 0 }; end
-      def page_translucent(page); page_field(:translucent, false) { page.translucent ? true : false }; end
+      def page_move_speed(page); page_field(:move_speed, 2) { (page[:move_speed] || 3) - 1 }; end
+      def page_move_frequency(page); page_field(:move_frequency, 3) { page[:move_frequency] || 3 }; end
+      def page_move_route(page); page_field(:move_route, nil) { page[:move_route] }; end
+      def page_charset_name(page); page_field(:charset_name, nil) { page[:charset_name] }; end
+      def page_charset_index(page); page_field(:charset_index, 0) { page[:charset_index] || 0 }; end
+      def page_layer(page); page_field(:layer, 0) { page[:layer] || 0 }; end
+      def page_overlap_forbidden(page); page_field(:overlap_forbidden, false) { page[:overlap_forbidden] ? true : false }; end
+      def page_pattern(page); page_field(:pattern, 1) { p = page[:pattern]; (0..2).include?(p) ? p : 1 }; end
+      def page_anim_type(page); page_field(:anim_type, 0) { page[:animation_type] || 0 }; end
+      def page_translucent(page); page_field(:translucent, false) { page[:translucent] ? true : false }; end
       # Whether this page gates its own auto-start to one run per map visit (see
       # #start_autostart). No RPG2000/2003 page carries such a field -- a real
       # auto-start gates itself through its page *conditions*, and turning its
@@ -3122,7 +3122,7 @@ class RPG2k
         return false if vehicle_blocks?(x, y, block_airship: false)
         row = terrain_row_at(x, y)
         return true if row.nil?
-        row.airship_land ? true : false
+        row[:airship_land] ? true : false
       end
 
       # Play `music` ({ name:, volume:, tempo: }) as the current BGM, the one
@@ -3296,12 +3296,12 @@ class RPG2k
                     tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0,
                     balance: ov[:balance] || 50 }
         end
-        name = music_name(db.system.battle_music)
+        name = music_name(db[:system][:battle_music])
         return nil if name.nil? || name.empty?
-        { name: name, volume: music_volume(db.system.battle_music),
-          tempo: music_tempo(db.system.battle_music),
-          fadein: music_fadein(db.system.battle_music),
-          balance: music_balance(db.system.battle_music) }
+        { name: name, volume: music_volume(db[:system][:battle_music]),
+          tempo: music_tempo(db[:system][:battle_music]),
+          fadein: music_fadein(db[:system][:battle_music]),
+          balance: music_balance(db[:system][:battle_music]) }
       end
 
       # Play the victory fanfare over the result window on a win, the same way
@@ -3381,12 +3381,12 @@ class RPG2k
                     tempo: ov[:tempo] || 100, fadein: ov[:fadein] || 0,
                     balance: ov[:balance] || 50 }
         end
-        name = music_name(db.system.battle_end_music)
+        name = music_name(db[:system][:battle_end_music])
         return nil if name.nil? || name.empty?
-        { name: name, volume: music_volume(db.system.battle_end_music),
-          tempo: music_tempo(db.system.battle_end_music),
-          fadein: music_fadein(db.system.battle_end_music),
-          balance: music_balance(db.system.battle_end_music) }
+        { name: name, volume: music_volume(db[:system][:battle_end_music]),
+          tempo: music_tempo(db[:system][:battle_end_music]),
+          fadein: music_fadein(db[:system][:battle_end_music]),
+          balance: music_balance(db[:system][:battle_end_music]) }
       end
 
       # Restore the BGM that was playing before the fight started. A no-op
@@ -3454,11 +3454,11 @@ class RPG2k
           return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
                     fadein: ov[:fadein] || 0, balance: ov[:balance] || 50 }
         end
-        name = music_name(db.system.inn_music)
+        name = music_name(db[:system][:inn_music])
         return nil if name.nil? || name.empty?
-        { name: name, volume: music_volume(db.system.inn_music),
-          tempo: music_tempo(db.system.inn_music), fadein: music_fadein(db.system.inn_music),
-          balance: music_balance(db.system.inn_music) }
+        { name: name, volume: music_volume(db[:system][:inn_music]),
+          tempo: music_tempo(db[:system][:inn_music]), fadein: music_fadein(db[:system][:inn_music]),
+          balance: music_balance(db[:system][:inn_music]) }
       end
 
       # Restore the BGM that was playing before the inn stay began. A no-op
@@ -3501,9 +3501,9 @@ class RPG2k
           return { name: ov[:name], volume: ov[:volume] || 100, tempo: ov[:tempo] || 100,
                     fadein: ov[:fadein] || 0, balance: ov[:balance] || 50 }
         end
-        field = "#{type}_music"
-        return nil unless @db.system.respond_to?(field)
-        bgm = @db.system.send(field)
+        field = :"#{type}_music"
+        return nil unless LCF.field?(@db[:system], field)
+        bgm = @db[:system][field]
         name = music_name(bgm)
         return nil if name.nil? || name.empty?
         { name: name, volume: music_volume(bgm), tempo: music_tempo(bgm), fadein: music_fadein(bgm),
@@ -3513,22 +3513,22 @@ class RPG2k
       # A parsed BGM chunk exposes file / fade_in / volume / pitch / balance;
       # read them defensively so a bare fixture that omits a field still
       # works.
-      def music_name(m); m.file rescue nil; end
-      def music_volume(m); (m.volume rescue nil) || 100; end
-      def music_tempo(m); (m.pitch rescue nil) || 100; end
+      def music_name(m); m[:file] rescue nil; end
+      def music_volume(m); (m[:volume] rescue nil) || 100; end
+      def music_tempo(m); (m[:pitch] rescue nil) || 100; end
       # `fade_in` (cycle #203): liblcf's `BGM` struct field 2
       # (mruby-lcf/mrblib/schema.rb), present on every System Music slot this
       # scene reads (battle_music, inn_music, boat/ship/airship_music) --
       # previously never read here at all, so a database-configured fade-in
       # on any of those slots was silently dropped rather than reaching
       # #play_bgm.
-      def music_fadein(m); (m.fade_in rescue nil) || 0; end
+      def music_fadein(m); (m[:fade_in] rescue nil) || 0; end
       # `balance` (cycle #219): the same `BGM`-struct's field 5 (schema.rb),
       # present on the exact same slots as `fade_in` above -- previously
       # never read here either, so a database-configured pan on any of those
       # slots was silently dropped rather than reaching #play_bgm's own
       # `RGSS::Audio.bgm_pan` call (see that method's own doc comment).
-      def music_balance(m); (m.balance rescue nil) || 50; end
+      def music_balance(m); (m[:balance] rescue nil) || 50; end
 
       # Keep the ridden vehicle on the party's tile / facing.
       def follow_vehicle
@@ -3568,7 +3568,7 @@ class RPG2k
         row = terrain_row_at(x, y)
         if type == :airship
           return true if row.nil?
-          return row.airship_pass ? true : false
+          return row[:airship_pass] ? true : false
         end
         return false if blockers_at(x, y).any? { |b| !b.char.through && b.layer == LAYER_SAME }
         # A moving Boat/Ship also collides with a *different* parked
@@ -3583,7 +3583,7 @@ class RPG2k
         # non-vehicle character walking onto a *parked* vehicle's tile).
         return false if vehicle_blocks?(x, y, block_airship: true)
         return passable?(x, y, dir) unless row
-        type == :boat ? (row.boat_pass ? true : false) : (row.ship_pass ? true : false)
+        type == :boat ? (row[:boat_pass] ? true : false) : (row[:ship_pass] ? true : false)
       end
 
       # #vehicle_passable? wired to the move-route `world` protocol
@@ -3620,9 +3620,9 @@ class RPG2k
       # someone (the party, an event, a vehicle) currently occupies. See
       # #warn_stale_terrain for the "log once, not once per frame" diagnostic.
       def terrain_row_at(x, y)
-        return nil if @chipset.nil? || !@db.respond_to?(:terrain) || @db.terrain.nil?
+        return nil if @chipset.nil? || !LCF.field?(@db, :terrain) || @db[:terrain].nil?
         tid = @chipset.terrain(@map.lower(x, y))
-        row = @db.terrain[tid]
+        row = @db[:terrain][tid]
         warn_stale_terrain(x, y, tid) if row.nil?
         row
       rescue StandardError => e
@@ -4096,7 +4096,7 @@ class RPG2k
       # (an item or a member appeared), and a timer-conditioned event flips on
       # the timer's own schedule.
       def pages_changed?
-        evs = @map.unit.events
+        evs = @map.unit[:events]
         return false unless evs
         sw = @state.switches
         va = @state.variables
@@ -4120,7 +4120,7 @@ class RPG2k
                  ids_touch?(ids[:variables], var_dirty)
             next
           end
-          selected = Game::EventPage.select(src.pages, sw, va, @state.party,
+          selected = Game::EventPage.select(src[:pages], sw, va, @state.party,
                                             @state.timer_seconds, @state.timer2_seconds)
           page = selected && selected[1]
           e = live[id]
@@ -4143,13 +4143,13 @@ class RPG2k
       def page_condition_ids(id, src)
         (@page_condition_ids ||= {})[id] ||= begin
           sw = []; var = []; timer = false
-          (src.pages || []).each do |_pid, page|
-            cond = page && page.condition
+          (src[:pages] || []).each do |_pid, page|
+            cond = page && page[:condition]
             next unless cond
-            flags = cond.flags || 0
-            sw << cond.switch_a_id if flags & Game::EventPage::SWITCH_A != 0
-            sw << cond.switch_b_id if flags & Game::EventPage::SWITCH_B != 0
-            var << cond.variable_id if flags & Game::EventPage::VARIABLE != 0
+            flags = cond[:flags] || 0
+            sw << cond[:switch_a_id] if flags & Game::EventPage::SWITCH_A != 0
+            sw << cond[:switch_b_id] if flags & Game::EventPage::SWITCH_B != 0
+            var << cond[:variable_id] if flags & Game::EventPage::VARIABLE != 0
             timer = true if flags & (Game::EventPage::TIMER | Game::EventPage::TIMER2) != 0
           end
           { switches: sw, variables: var, timer: timer }
@@ -4831,7 +4831,7 @@ class RPG2k
           ev = @events.find { |e| e.id == r[:target] }
           if ev
             force_event_route(ev, route, r[:frequency])
-          elsif (@map.unit.events || {})[r[:target]]
+          elsif (@map.unit[:events] || {})[r[:target]]
             # A real event on this map, just currently hidden because no page's
             # conditions are satisfied (#build_events never gave it a
             # Game::Character) -- yado.tk: targeting one with Set Move Route
@@ -6134,20 +6134,20 @@ class RPG2k
       # raw -- a bare test project's blank terms draw blank, matching genuine
       # RPG_RT.
       def inn_terms(type)
-        t = db.term
+        t = db[:term]
         a = type.zero?
         {
-          greet1: (a ? t.inn_a_greeting_1 : t.inn_b_greeting_1).to_s,
-          greet2: (a ? t.inn_a_greeting_2 : t.inn_b_greeting_2).to_s,
-          greet3: (a ? t.inn_a_greeting_3 : t.inn_b_greeting_3).to_s,
-          accept: (a ? t.inn_a_accept : t.inn_b_accept).to_s,
-          cancel: (a ? t.inn_a_cancel : t.inn_b_cancel).to_s
+          greet1: (a ? t[:inn_a_greeting_1] : t[:inn_b_greeting_1]).to_s,
+          greet2: (a ? t[:inn_a_greeting_2] : t[:inn_b_greeting_2]).to_s,
+          greet3: (a ? t[:inn_a_greeting_3] : t[:inn_b_greeting_3]).to_s,
+          accept: (a ? t[:inn_a_accept] : t[:inn_b_accept]).to_s,
+          cancel: (a ? t[:inn_a_cancel] : t[:inn_b_cancel]).to_s
         }
       end
 
       def open_inn_window(req)
         terms = inn_terms(req.type)
-        gold_term = db.term.gold.to_s
+        gold_term = db[:term][:gold].to_s
         lines = ["#{terms[:greet1]} #{req.price}#{gold_term} #{terms[:greet2]}".strip,
                  terms[:greet3], terms[:accept], terms[:cancel]]
         # Fixed 320x80 panel flush to the screen's bottom-left corner, the
@@ -6278,26 +6278,26 @@ class RPG2k
         draw_shop
       end
 
-      def shop_gold_term; db.term.gold.to_s; end
+      def shop_gold_term; db[:term][:gold].to_s; end
 
       # RPG2000 shop term set (1/2/3, one of three shopkeeper "voices") selected
       # by Open Shop's own type parameter, mirroring #inn_terms, raw -- a bare
       # database's blank terms draw blank, matching genuine RPG_RT.
       def shop_terms(type)
-        t = db.term
+        t = db[:term]
         i = Game.clamp(type || 0, 0, 2)
         {
-          greeting: [t.shop_greeting1, t.shop_greeting2, t.shop_greeting3][i].to_s,
-          regreeting: [t.shop_regreeting1, t.shop_regreeting2, t.shop_regreeting3][i].to_s,
-          buy: [t.shop_buy1, t.shop_buy2, t.shop_buy3][i].to_s,
-          sell: [t.shop_sell1, t.shop_sell2, t.shop_sell3][i].to_s,
-          leave: [t.shop_leave1, t.shop_leave2, t.shop_leave3][i].to_s,
-          buy_select: [t.shop_buy_select1, t.shop_buy_select2, t.shop_buy_select3][i].to_s,
-          sell_select: [t.shop_sell_select1, t.shop_sell_select2, t.shop_sell_select3][i].to_s,
-          buy_number: [t.shop_buy_number1, t.shop_buy_number2, t.shop_buy_number3][i].to_s,
-          sell_number: [t.shop_sell_number1, t.shop_sell_number2, t.shop_sell_number3][i].to_s,
-          purchased: [t.shop_purchased1, t.shop_purchased2, t.shop_purchased3][i].to_s,
-          sold: [t.shop_sold1, t.shop_sold2, t.shop_sold3][i].to_s
+          greeting: [t[:shop_greeting1], t[:shop_greeting2], t[:shop_greeting3]][i].to_s,
+          regreeting: [t[:shop_regreeting1], t[:shop_regreeting2], t[:shop_regreeting3]][i].to_s,
+          buy: [t[:shop_buy1], t[:shop_buy2], t[:shop_buy3]][i].to_s,
+          sell: [t[:shop_sell1], t[:shop_sell2], t[:shop_sell3]][i].to_s,
+          leave: [t[:shop_leave1], t[:shop_leave2], t[:shop_leave3]][i].to_s,
+          buy_select: [t[:shop_buy_select1], t[:shop_buy_select2], t[:shop_buy_select3]][i].to_s,
+          sell_select: [t[:shop_sell_select1], t[:shop_sell_select2], t[:shop_sell_select3]][i].to_s,
+          buy_number: [t[:shop_buy_number1], t[:shop_buy_number2], t[:shop_buy_number3]][i].to_s,
+          sell_number: [t[:shop_sell_number1], t[:shop_sell_number2], t[:shop_sell_number3]][i].to_s,
+          purchased: [t[:shop_purchased1], t[:shop_purchased2], t[:shop_purchased3]][i].to_s,
+          sold: [t[:shop_sold1], t[:shop_sold2], t[:shop_sold3]][i].to_s
         }
       end
 
@@ -6723,8 +6723,8 @@ class RPG2k
         inner_w = SHOP_STATUS_W - Window::BORDER * 2
         c = Bitmap.new(inner_w, SHOP_LINE_H * 2)
         c.font.color = Color.new(255, 255, 255, 255)
-        c.draw_text 0, 0, inner_w, SHOP_LINE_H, db.term.possessed_items.to_s
-        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, db.term.equipped_items.to_s
+        c.draw_text 0, 0, inner_w, SHOP_LINE_H, db[:term][:possessed_items].to_s
+        c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H, db[:term][:equipped_items].to_s
         c.draw_text 0, 0, inner_w, SHOP_LINE_H, @state.party.item_count(id).to_s, 2
         c.draw_text 0, SHOP_LINE_H, inner_w, SHOP_LINE_H,
                     @state.party.equipped_item_count(id).to_s, 2
@@ -7164,7 +7164,7 @@ class RPG2k
       # (the scene harnesses construct a map directly).
       def map_properties
         return nil unless respond_to?(:map_tree) && map_tree
-        map_tree.respond_to?(:map_properties) ? map_tree.map_properties : nil
+        LCF.field?(map_tree, :map_properties) ? map_tree[:map_properties] : nil
       rescue StandardError
         nil
       end
@@ -7269,10 +7269,10 @@ class RPG2k
       # `Game::Backdrop.name_for`). '' when the id, the terrain table or the
       # field is missing.
       def backdrop_for_terrain_id(tid)
-        return '' unless tid && tid > 0 && db.respond_to?(:terrain)
-        row = db.terrain[tid]
-        return '' unless row && row.respond_to?(:background_name)
-        row.background_name.to_s
+        return '' unless tid && tid > 0 && LCF.field?(db, :terrain)
+        row = db[:terrain][tid]
+        return '' unless row && LCF.field?(row, :background_name)
+        row[:background_name].to_s
       rescue StandardError => e
         $stderr.puts "[RPG2k] terrain backdrop lookup failed: #{e.message}"
         ''
@@ -8148,7 +8148,7 @@ class RPG2k
       def missing_animation_wait(id)
         anim = animation_row(id)
         return 0 unless anim
-        table_entries(anim.frames).size * ANIM_CELL_FRAMES
+        table_entries(anim[:frames]).size * ANIM_CELL_FRAMES
       end
 
       # Advance the drawable animation one frame per ANIM_CELL_FRAMES, firing that
@@ -8417,12 +8417,12 @@ class RPG2k
       def build_animation(id, targets, battle = false, position: nil)
         anim = animation_row(id)
         return nil unless anim
-        frames = table_entries(anim.frames)
+        frames = table_entries(anim[:frames])
         return nil if frames.empty?
-        sheet = animation_sheet(anim.animation_name)
+        sheet = animation_sheet(anim[:animation_name])
         return nil unless sheet
-        { frames: frames, timings: table_entries(anim.timings), sheet: sheet,
-          position: (position || anim.position || 1), frame_i: 0,
+        { frames: frames, timings: table_entries(anim[:timings]), sheet: sheet,
+          position: (position || anim[:position] || 1), frame_i: 0,
           timer: ANIM_CELL_FRAMES, battle: battle, targets: targets }
       end
 
@@ -8437,8 +8437,8 @@ class RPG2k
       # so a bare test fixture with no battle_anime table at all stays silent;
       # only a genuine dangling id in a real database is reported.
       def animation_row(id)
-        return nil if id.nil? || !@db.respond_to?(:battle_anime) || @db.battle_anime.nil?
-        row = @db.battle_anime[id]
+        return nil if id.nil? || !LCF.field?(@db, :battle_anime) || @db[:battle_anime].nil?
+        row = @db[:battle_anime][id]
         if row.nil? && id.is_a?(Integer) && id > 0
           $stderr.puts "[RPG2k] battle animation ##{id} not found in " \
                        'database, nothing drawn'
@@ -8519,11 +8519,11 @@ class RPG2k
       # path uses.
       def fire_animation_flashes(ma)
         ma[:timings].each do |t|
-          next unless (t.frame || 0) == ma[:frame_i]
-          case (t.flash_scope || 0)
+          next unless (t[:frame] || 0) == ma[:frame_i]
+          case (t[:flash_scope] || 0)
           when 2
-            @state.screen.flash((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
-                                (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8,
+            @state.screen.flash((t[:flash_red] || 0) * 8, (t[:flash_green] || 0) * 8,
+                                (t[:flash_blue] || 0) * 8, (t[:flash_power] || 0) * 8,
                                 ANIM_FLASH_FRAMES)
             # #hold_animation_screen_flash keeps re-asserting this fire (and,
             # once it lapses, zeroing the screen flash outright) every real
@@ -8545,7 +8545,7 @@ class RPG2k
             # just above.
             ma[:target_flash_hold] = ANIM_FLASH_FRAMES
           end
-          case (t.screen_shaking || 0)
+          case (t[:screen_shaking] || 0)
           when 2
             # The exact mechanism the Shake Screen event command (11050,
             # #do_shake_screen) already drives -- same Game::Screen#shake
@@ -8591,13 +8591,13 @@ class RPG2k
           # this project's own standing rule against new citations there);
           # the blank/"(OFF)" no-op convention mirrors #play_animation_se's
           # own already-established handling of the identical field.
-          se = t.respond_to?(:se) ? t.se : nil
-          name = se && se.respond_to?(:file) ? se.file : nil
+          se = LCF.field?(t, :se) ? t[:se] : nil
+          name = se && LCF.field?(se, :file) ? se[:file] : nil
           next unless name && !name.empty? && name != '(OFF)'
           # See ANIM_SE_MAX_FRAME's own citation: a timing at frame 21+ never
           # sounds under genuine RPG_RT, confirmed by an actual wine capture.
-          next if (t.frame || 0) > ANIM_SE_MAX_FRAME
-          RGSS::Audio.se_play name, (se.volume || 100), (se.pitch || 100), (se.balance || 50)
+          next if (t[:frame] || 0) > ANIM_SE_MAX_FRAME
+          RGSS::Audio.se_play name, (se[:volume] || 100), (se[:pitch] || 100), (se[:balance] || 50)
         end
       end
 
@@ -8632,14 +8632,14 @@ class RPG2k
         if Game::Vehicle::TYPES.include?(target)
           spr = @vehicle_sprites && @vehicle_sprites[target]
           if spr
-            spr.flash(Color.new((t.flash_red || 0) * 8, (t.flash_green || 0) * 8,
-                                 (t.flash_blue || 0) * 8, (t.flash_power || 0) * 8),
+            spr.flash(Color.new((t[:flash_red] || 0) * 8, (t[:flash_green] || 0) * 8,
+                                 (t[:flash_blue] || 0) * 8, (t[:flash_power] || 0) * 8),
                       ANIM_FLASH_FRAMES)
           end
           return
         end
-        flash = { red: (t.flash_red || 0) * 8, green: (t.flash_green || 0) * 8,
-                  blue: (t.flash_blue || 0) * 8, power: (t.flash_power || 0) * 8,
+        flash = { red: (t[:flash_red] || 0) * 8, green: (t[:flash_green] || 0) * 8,
+                  blue: (t[:flash_blue] || 0) * 8, power: (t[:flash_power] || 0) * 8,
                   frames: ANIM_FLASH_FRAMES, total: ANIM_FLASH_FRAMES }
         if target == :player
           @state.player_flash = flash
@@ -8684,8 +8684,8 @@ class RPG2k
           cx = ma[:battle] ? tgt[:tx] : tgt[:tx] - cam_x + TILE / 2
           cy = (ma[:battle] ? tgt[:ty] : tgt[:ty] - cam_y + TILE / 2) +
                animation_position_offset(tgt, ma[:position])
-          table_entries(frame.cells).each do |cell|
-            next if cell.respond_to?(:visible) && cell.visible == false
+          table_entries(frame[:cells]).each do |cell|
+            next if LCF.field?(cell, :visible) && cell[:visible] == false
             blit_animation_cell(ma[:sheet], cell, cx, cy)
           end
         end
@@ -8741,7 +8741,7 @@ class RPG2k
       # `visible` guard uses. Clamped both ways so a database carrying an
       # out-of-range value cannot ask for a negative or over-255 opacity.
       def animation_cell_opacity(cell)
-        t = cell.respond_to?(:transparency) ? cell.transparency : nil
+        t = LCF.field?(cell, :transparency) ? cell[:transparency] : nil
         t = 0 if t.nil?
         t = 0 if t < 0
         t = 100 if t > 100
@@ -8760,7 +8760,7 @@ class RPG2k
       # `transparency`; no ceiling, matching that a picture's own zoom has none
       # either.
       def animation_cell_zoom(cell)
-        z = cell.respond_to?(:zoom) ? cell.zoom : nil
+        z = LCF.field?(cell, :zoom) ? cell[:zoom] : nil
         z = 100 if z.nil?
         z = 0 if z < 0
         z
@@ -8777,8 +8777,8 @@ class RPG2k
       def animation_cell_dest_rect(cell, cx, cy)
         z = animation_cell_zoom(cell)
         w = ANIM_CELL * z / 100
-        dx = cx + (cell.x || 0) - w / 2
-        dy = cy + (cell.y || 0) - w / 2
+        dx = cx + (cell[:x] || 0) - w / 2
+        dy = cy + (cell[:y] || 0) - w / 2
         [dx, dy, w, w]
       end
 
@@ -8794,10 +8794,10 @@ class RPG2k
       # guards match `#animation_cell_opacity`/`#animation_cell_zoom`'s own
       # shape for a bare test double.
       def animation_cell_tone(cell)
-        [cell.respond_to?(:tone_red)   ? (cell.tone_red   || 100) : 100,
-         cell.respond_to?(:tone_green) ? (cell.tone_green || 100) : 100,
-         cell.respond_to?(:tone_blue)  ? (cell.tone_blue  || 100) : 100,
-         cell.respond_to?(:tone_gray)  ? (cell.tone_gray  || 100) : 100]
+        [LCF.field?(cell, :tone_red)   ? (cell[:tone_red]   || 100) : 100,
+         LCF.field?(cell, :tone_green) ? (cell[:tone_green] || 100) : 100,
+         LCF.field?(cell, :tone_blue)  ? (cell[:tone_blue]  || 100) : 100,
+         LCF.field?(cell, :tone_gray)  ? (cell[:tone_gray]  || 100) : 100]
       end
 
       # Whether a cell asks for any tint at all.
@@ -8872,7 +8872,7 @@ class RPG2k
         # blit's own 96x96 per-pixel loop (Bitmap#blt would drop every pixel on
         # its `alpha <= 0` test anyway, one at a time).
         return if opacity <= 0
-        cid = cell.cell_id || 0
+        cid = cell[:cell_id] || 0
         sx = (cid % ANIM_SHEET_COLS) * ANIM_CELL
         sy = (cid / ANIM_SHEET_COLS) * ANIM_CELL
         src_bmp = sheet
@@ -8891,8 +8891,8 @@ class RPG2k
           # or set it back to 100) keeps the plain, cheaper #blt path exactly
           # as before this fix -- no resample needed when the source and
           # destination are the same size.
-          dx = cx + (cell.x || 0) - ANIM_CELL / 2
-          dy = cy + (cell.y || 0) - ANIM_CELL / 2
+          dx = cx + (cell[:x] || 0) - ANIM_CELL / 2
+          dy = cy + (cell[:y] || 0) - ANIM_CELL / 2
           @animation_bmp.blt dx, dy, src_bmp, src_rect, opacity
         else
           dx, dy, w, h = animation_cell_dest_rect(cell, cx, cy)
@@ -9206,8 +9206,8 @@ class RPG2k
       def actor_name(id)
         a = id.to_i.zero? ? party_leader : roster_actor(id)
         return a.name.to_s if a
-        row = @db.player[id]
-        row ? row.name.to_s : ''
+        row = @db[:player][id]
+        row ? row[:name].to_s : ''
       rescue StandardError => e
         $stderr.puts "[RPG2k] actor name ##{id} lookup failed: #{e.message}"
         ''
@@ -9374,7 +9374,7 @@ class RPG2k
         # `\$` shows the party's gold in a small window alongside the message.
         gold_window = nil
         if show_gold
-          gold_window = build_inn_gold_window(db.term.gold.to_s)
+          gold_window = build_inn_gold_window(db[:term][:gold].to_s)
           gold_window.open_animation(open_frames)
         end
         message = MessageState.new
@@ -10335,8 +10335,8 @@ class RPG2k
         unless @state.boarded == :airship
           row = terrain_row_at(@state.x, @state.y)
           terrain_hit = terrain_step_damage(row)
-          terrain_damaged = !terrain_hit.empty? && row && row.respond_to?(:damage) &&
-                            row.damage && row.damage > 0
+          terrain_damaged = !terrain_hit.empty? && row && LCF.field?(row, :damage) &&
+                            row[:damage] && row[:damage] > 0
           play_terrain_footstep_se(row, terrain_damaged)
         end
         return if hit.empty? && !terrain_damaged
@@ -10350,8 +10350,8 @@ class RPG2k
       # step) keep working; #note_party_step passes its own already-looked-up
       # row instead of asking #terrain_row_at a second time for the same tile.
       def terrain_step_damage(row = terrain_row_at(@state.x, @state.y))
-        return [] unless row && row.respond_to?(:damage)
-        @state.party.apply_terrain_damage(row.damage)
+        return [] unless row && LCF.field?(row, :damage)
+        @state.party.apply_terrain_damage(row[:damage])
       end
 
       # RPG2003's 歩行音 (footstep SE), ported from a reference implementation,
@@ -10379,13 +10379,13 @@ class RPG2k
       # the backend had anywhere to forward it to.
       def play_terrain_footstep_se(row, damaged)
         return unless @db.respond_to?(:rpg2003?) && @db.rpg2003?
-        return unless row && row.respond_to?(:footstep) && row.respond_to?(:on_damage_se)
-        return if row.on_damage_se && !damaged
-        se = row.footstep
-        name = se && se.respond_to?(:file) ? se.file : nil
+        return unless row && LCF.field?(row, :footstep) && LCF.field?(row, :on_damage_se)
+        return if row[:on_damage_se] && !damaged
+        se = row[:footstep]
+        name = se && LCF.field?(se, :file) ? se[:file] : nil
         return if name.nil? || name.empty? || name == '(OFF)'
-        balance = se.respond_to?(:balance) ? se.balance : 50
-        RGSS::Audio.se_play(name, se.volume, se.pitch, balance)
+        balance = LCF.field?(se, :balance) ? se[:balance] : 50
+        RGSS::Audio.se_play(name, se[:volume], se[:pitch], balance)
       rescue StandardError => e
         $stderr.puts "[RPG2k] Terrain: footstep SE playback failed: #{e.message}"
       end
@@ -10424,7 +10424,7 @@ class RPG2k
       def current_encounter_steps
         return @state.encounter_rate if @state.encounter_rate
         row = map_node_properties
-        row && row.respond_to?(:encount_steps) ? row.encount_steps : 25
+        row && LCF.field?(row, :encount_steps) ? row[:encount_steps] : 25
       end
 
       # The current map's own map-tree node row -- Game::MapAccess's per-id
@@ -10458,8 +10458,8 @@ class RPG2k
       end
 
       def troop_ids(row)
-        return [] unless row && row.respond_to?(:enemy_groups) && row.enemy_groups
-        row.enemy_groups.map { |_, e| e.enemy_group_id }
+        return [] unless row && LCF.field?(row, :enemy_groups) && row[:enemy_groups]
+        row[:enemy_groups].map { |_, e| e[:enemy_group_id] }
       end
 
       # Every Area node's own troop ids, for an Area that is a direct child of
@@ -10477,9 +10477,9 @@ class RPG2k
         return [] unless props
         troops = []
         props.each do |_, row|
-          next unless row.respond_to?(:type) && row.type == 2
-          next unless row.respond_to?(:parent_map_id) && row.parent_map_id == @state.map_id
-          area = row.respond_to?(:area) ? row.area : nil
+          next unless LCF.field?(row, :type) && row[:type] == 2
+          next unless LCF.field?(row, :parent_map_id) && row[:parent_map_id] == @state.map_id
+          area = LCF.field?(row, :area) ? row[:area] : nil
           next unless area && area_contains?(area, @state.x, @state.y)
           troops.concat(troop_ids(row))
         end
@@ -10491,10 +10491,10 @@ class RPG2k
       end
 
       def troop_allowed_on_terrain?(tid, tag)
-        return true unless tag && tag > 0 && db.respond_to?(:enemy_group)
-        troop = db.enemy_group[tid]
+        return true unless tag && tag > 0 && LCF.field?(db, :enemy_group)
+        troop = db[:enemy_group][tid]
         return true unless troop
-        ts = troop.respond_to?(:terrain_set) ? troop.terrain_set : nil
+        ts = LCF.field?(troop, :terrain_set) ? troop[:terrain_set] : nil
         return true unless ts
         ts.size < tag || (ts[tag - 1] || 0) != 0
       end
@@ -10556,7 +10556,7 @@ class RPG2k
         # it) can actually do.
         terrain = terrain_row_at(@state.x, @state.y)
         return unless terrain
-        rate = terrain.respond_to?(:encounter_rate) ? terrain.encounter_rate : 100
+        rate = LCF.field?(terrain, :encounter_rate) ? terrain[:encounter_rate] : 100
         @state.encounter_total += rate
         ratio = @state.encounter_total / steps
         @encounter_idx += 1 while ratio >= ENCOUNTER_TABLE[@encounter_idx + 1][0]
@@ -11052,8 +11052,8 @@ class RPG2k
         return event_charset(mirror.graphic_name) if mirror && mirror.graphic_name
         name = v.charset_name
         if (name.nil? || name.empty?)
-          field = "#{v.type}_name"
-          name = @db.system.send(field) if @db.system.respond_to?(field)
+          field = :"#{v.type}_name"
+          name = @db[:system][field] if LCF.field?(@db[:system], field)
         end
         event_charset(name)
       end
@@ -11078,8 +11078,8 @@ class RPG2k
         mirror = @vehicle_chars[v.type]
         return mirror.graphic_index if mirror && mirror.graphic_name
         if v.charset_name.nil? || v.charset_name.empty?
-          field = "#{v.type}_index"
-          return @db.system.send(field) if @db.system.respond_to?(field)
+          field = :"#{v.type}_index"
+          return @db[:system][field] if LCF.field?(@db[:system], field)
         end
         v.charset_index
       end
@@ -11829,8 +11829,8 @@ class RPG2k
       # the database has no terrain to ask).
       def bush_depth_at(x, y)
         row = terrain_row_at(x, y)
-        return 0 unless row && row.respond_to?(:bush_depth)
-        row.bush_depth || 0
+        return 0 unless row && LCF.field?(row, :bush_depth)
+        row[:bush_depth] || 0
       end
 
       # Deterministic, memoised colour for a tile id so distinct tiles read as

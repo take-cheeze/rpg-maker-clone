@@ -2627,7 +2627,7 @@ module Game
     # reasoning that it always trails that actor's own level-up line
     # the way it does here too.
     def skill_learned_message(actor, sk)
-      "#{sk.name}#{party_term(:skill_learned)}"
+      "#{sk[:name]}#{party_term(:skill_learned)}"
     end
 
     # `@state.party.term`, or '' when the live party is a bare fixture that

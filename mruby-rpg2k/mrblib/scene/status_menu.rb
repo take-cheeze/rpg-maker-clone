@@ -178,7 +178,7 @@ class RPG2k
         # citation (cycle #254, measured under wine). An *empty* slot draws
         # blank too: kk1.12's leader has nothing in the accessory slot and
         # that row shows its label alone, with no placeholder of any kind.
-        it.name.to_s
+        it[:name].to_s
       end
 
       # #item_name's diagnostic for an equipped slot whose item id has no

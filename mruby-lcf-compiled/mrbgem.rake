@@ -7,7 +7,7 @@ require_relative '../tools/bc2cpp/compiled_gems'
 # key?/to_lcf/#[]/#[]=, plus LCF::MoveCommand#initialize (docs/adr/0139's
 # own follow-up) -- generated at build time by tools/bc2cpp/bc2cpp.rb,
 # mruby's bytecode compiler still handles everything else this gem doesn't
-# override (LCF::File#initialize, #method_missing, #respond_to_missing?,
+# override (LCF::File#initialize, #field?, #delete,
 # #save_to -- see bc2cpp's own SKIP_UNSUPPORTED output for exactly why each
 # one stays interpreted; LCF::File#[]/#[]= *do* compile clean -- see
 # mruby-lcf-compiled/src/register.cxx's own registration block for why

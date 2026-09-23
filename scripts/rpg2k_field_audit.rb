@@ -92,7 +92,7 @@ NOT_OURS = {
 # Game::Actor#weapon_states reads it, this substring search finds the field on
 # its own and the entry is gone rather than stale.
 def maker_of(db)
-  v = db[22] && db[22].maker_version
+  v = db[22] && db[22][:maker_version]
   v == 2003 ? :rpg2k3 : :rpg2k
 rescue StandardError
   :rpg2k
@@ -157,10 +157,10 @@ LCF::Schema::DATABASE[:elements].each do |cid, spec|
       n = 0
       begin
         # An Array1D section (the term table) is one row, not many.
-        if table.respond_to?(:each) && !table.respond_to?(name)
-          table.each { |_id, r| n += 1 if set?(r.send(name), dflt) }
-        elsif table.respond_to?(name)
-          n += 1 if set?(table.send(name), dflt)
+        if table.is_a?(LCF::Array2D)
+          table.each { |_id, r| n += 1 if set?(r[name], dflt) }
+        elsif table.is_a?(LCF::Array1D) && table.field?(name)
+          n += 1 if set?(table[name], dflt)
         end
       rescue StandardError
         next

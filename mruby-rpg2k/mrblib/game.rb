@@ -784,25 +784,25 @@ module Game
     # (rather than a real dangling id) stays quiet.
     # bc2cpp: (, fixnum)
     def initialize(db, id)
-      has_table = db.respond_to?(:chipset)
-      c = has_table ? db.chipset[id] : nil
+      has_table = LCF.field?(db, :chipset)
+      c = has_table ? db[:chipset][id] : nil
       if c.nil? && has_table && id && id > 0
         $stderr.puts "[RPG2k] chipset ##{id} not found in database, " \
                      'tiles treated as blank/passable'
       end
-      @name = c ? c.name : ''
-      @graphic = c ? c.chipset_name : ''
-      @passable_lower = c ? c.passable_data_lower : nil
+      @name = c ? c[:name] : ''
+      @graphic = c ? c[:chipset_name] : ''
+      @passable_lower = c ? c[:passable_data_lower] : nil
       # The upper layer's own passage table, which is where the counter flag
       # lives (the lower table has no room for it).
-      @passable_upper = c ? c.passable_data_upper : nil
-      @terrain = c ? c.terrain_data : nil
+      @passable_upper = c ? c[:passable_data_upper] : nil
+      @terrain = c ? c[:terrain_data] : nil
       # Water-animation parameters (chipset chunks 11/12): the animation "type"
       # (0 = 3-frame back-and-forth, 1 = 3-frame cycle) and speed flag (0 slow,
       # non-zero fast). Consumed by ChipsetLayout when picking the animation
       # column for the water autotiles.
-      @animation_type = c ? (c.animation_type || 0) : 0
-      @animation_speed = c ? (c.animation_speed || 0) : 0
+      @animation_type = c ? (c[:animation_type] || 0) : 0
+      @animation_speed = c ? (c[:animation_speed] || 0) : 0
     end
 
     # Passage byte for an upper-layer tile id, or nil when there is none to
@@ -1701,7 +1701,7 @@ module Game
     # function's own comment already quoted above. `@class_row` is already
     # populated unconditionally at construction from the actor's starting
     # class id, so this just reads it straight.
-    def class_name; @class_row ? @class_row.name.to_s : ''; end
+    def class_name; @class_row ? @class_row[:name].to_s : ''; end
 
     # `db` is always the one real `LCF::Database` this process ever builds.
     # Traced end to end rather than assumed from the name: `RPG2k#initialize`
@@ -1724,18 +1724,18 @@ module Game
     def initialize(db, id)
       @db = db
       @id = id
-      a = db.player[id]
+      a = db[:player][id]
       raise "No such actor: #{id}" if a.nil?
 
-      @name = a.name
-      @title = a.respond_to?(:title) ? (a.title || '') : ''
-      @charset_name = a.charset_name
-      @charset_index = a.charset_index
-      @face_name = a.faceset_name || ''
-      @face_index = a.faceset_index || 0
-      @transparent = a.respond_to?(:semi_transparent) ? (a.semi_transparent ? true : false) : false
+      @name = a[:name]
+      @title = LCF.field?(a, :title) ? (a[:title] || '') : ''
+      @charset_name = a[:charset_name]
+      @charset_index = a[:charset_index]
+      @face_name = a[:faceset_name] || ''
+      @face_index = a[:faceset_index] || 0
+      @transparent = LCF.field?(a, :semi_transparent) ? (a[:semi_transparent] ? true : false) : false
       @db_row = a
-      set_class_id(a.respond_to?(:class_id) ? (a.class_id || 0) : 0)
+      set_class_id(LCF.field?(a, :class_id) ? (a[:class_id] || 0) : 0)
       # The runtime battler-animation override and whether a Change Class
       # event has actually run this session -- see #battler_animation_id.
       # Both start unset even when the database gives this actor a starting
@@ -1771,13 +1771,13 @@ module Game
       @row = ROW_FRONT
       @battle_combo = nil
       @exp = 0
-      @equipment = normalize_equipment(a.respond_to?(:initial_equipment) ? a.initial_equipment : nil)
+      @equipment = normalize_equipment(LCF.field?(a, :initial_equipment) ? a[:initial_equipment] : nil)
       @skills = []
       @states = []
       # Base stats scale with level from the growth curve and equipment adds on
       # top, and levelling learns skills, so seed them all at the actor's initial
       # level, then start at full health.
-      set_level(a.initial_level || 1)
+      set_level(a[:initial_level] || 1)
       @exp = exp_for_level(@level) # EXP consistent with the starting level
       @hp = @max_hp
       @mp = @max_mp
@@ -1854,9 +1854,9 @@ module Game
     # bc2cpp: () -> Array
     def learn_table
       a = curve_row
-      return [] unless a.respond_to?(:skills) && a.skills
+      return [] unless LCF.field?(a, :skills) && a[:skills]
       out = []
-      a.skills.each { |_i, l| out.push([l.skill_id, l.level]) }
+      a[:skills].each { |_i, l| out.push([l[:skill_id], l[:level]]) }
       out
     end
 
@@ -1892,9 +1892,9 @@ module Game
     # no-override state as never having touched it at all, so comparing
     # against the database row's own value reproduces that same collapse
     # for free, with no separate "ever changed" bookkeeping to keep in sync.
-    def name_changed?; @name != (@db_row.name || ''); end
+    def name_changed?; @name != (@db_row[:name] || ''); end
     def title_changed?
-      default = @db_row.respond_to?(:title) ? (@db_row.title || '') : ''
+      default = LCF.field?(@db_row, :title) ? (@db_row[:title] || '') : ''
       @title != default
     end
 
@@ -1916,7 +1916,7 @@ module Game
     # survives past the battle that inflicted it, so `#to_lsd` below writes
     # a plain `1` for "afflicted" rather than a real duration.
     def total_state_count
-      table = @db.respond_to?(:situation) ? @db.situation : nil
+      table = LCF.field?(@db, :situation) ? @db[:situation] : nil
       table ? table.to_a.size : 0
     end
 
@@ -1927,12 +1927,12 @@ module Game
     # database row (or edition) does not carry one.
     def faceset_name
       return @faceset_name if @faceset_name
-      @db_row.respond_to?(:faceset_name) ? (@db_row.faceset_name || '') : ''
+      LCF.field?(@db_row, :faceset_name) ? (@db_row[:faceset_name] || '') : ''
     end
 
     def faceset_index
       return @faceset_index if @faceset_index
-      @db_row.respond_to?(:faceset_index) ? (@db_row.faceset_index || 0) : 0
+      LCF.field?(@db_row, :faceset_index) ? (@db_row[:faceset_index] || 0) : 0
     end
 
     # Replace the actor's FaceSet graphic (the Change Actor Face event command):
@@ -2013,10 +2013,10 @@ module Game
     # caller, gating the Skill command the same way that reference
     # implementation's actor-selection Skill case does.
     def can_act?
-      table = @db.respond_to?(:situation) ? @db.situation : nil
+      table = LCF.field?(@db, :situation) ? @db[:situation] : nil
       !@states.any? do |id|
         row = Game::States.row(id, table)
-        row && row.respond_to?(:restriction) && row.restriction == Battle::RESTRICTION_DO_NOTHING
+        row && LCF.field?(row, :restriction) && row[:restriction] == Battle::RESTRICTION_DO_NOTHING
       end
     end
 
@@ -2038,10 +2038,10 @@ module Game
       @states.any? do |sid|
         d = Game::States.row(sid, table)
         next false unless d
-        (d.respond_to?(:restrict_skill) && d.restrict_skill &&
-         (sk.physical_rate || 0) >= (d.respond_to?(:restrict_skill_level) ? (d.restrict_skill_level || 0) : 0)) ||
-        (d.respond_to?(:restrict_magic) && d.restrict_magic &&
-         (sk.magical_rate || 0) >= (d.respond_to?(:restrict_magic_level) ? (d.restrict_magic_level || 0) : 0))
+        (LCF.field?(d, :restrict_skill) && d[:restrict_skill] &&
+         (sk[:physical_rate] || 0) >= (LCF.field?(d, :restrict_skill_level) ? (d[:restrict_skill_level] || 0) : 0)) ||
+        (LCF.field?(d, :restrict_magic) && d[:restrict_magic] &&
+         (sk[:magical_rate] || 0) >= (LCF.field?(d, :restrict_magic_level) ? (d[:restrict_magic_level] || 0) : 0))
       end
     end
 
@@ -2117,9 +2117,9 @@ module Game
     # bypassed) -- the same conservative refusal #remove_state already gave
     # before this parameter existed.
     def state_persists_type?(state_id)
-      table = @db.respond_to?(:situation) ? @db.situation : nil
+      table = LCF.field?(@db, :situation) ? @db[:situation] : nil
       row = Game::States.row(state_id, table)
-      !(row && row.respond_to?(:type) && (row.type || 0) != States::PERSISTS_ON_MAP)
+      !(row && LCF.field?(row, :type) && (row[:type] || 0) != States::PERSISTS_ON_MAP)
     end
 
     # Cure every status condition (RPG2000 Full Recovery clears them). If the
@@ -2178,10 +2178,10 @@ module Game
     # the equip menu does.
     # bc2cpp: (fixnum)
     def equip_item(item_id, slot = nil)
-      return if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
-      it = @db.item[item_id]
+      return if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
+      it = @db[:item][item_id]
       return unless it
-      slot ||= it.type - 1
+      slot ||= it[:type] - 1
       return unless slot >= 0 && slot < EQUIP_ORDER.size
       old_id = @equipment[slot]
       @equipment[slot] = item_id
@@ -2231,10 +2231,10 @@ module Game
     # carry the bit does not claim the other hand.
     # bc2cpp: (fixnum)
     def two_handed?(item_id)
-      return false if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
-      it = @db.item[item_id]
-      return false unless it && it.type == ITEM_WEAPON
-      it.respond_to?(:two_handed) ? ((it.two_handed || 0) != 0) : false
+      return false if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
+      it = @db[:item][item_id]
+      return false unless it && it[:type] == ITEM_WEAPON
+      LCF.field?(it, :two_handed) ? ((it[:two_handed] || 0) != 0) : false
     rescue StandardError
       false
     end
@@ -2283,7 +2283,7 @@ module Game
         lv = level > levels ? levels : level
         return Array.new(STAT_NAMES.size) { |i| curve[(i * levels) + (lv - 1)] || 0 }
       end
-      st = (a.respond_to?(:status) ? a.status : nil) || {}
+      st = (LCF.field?(a, :status) ? a[:status] : nil) || {}
       STAT_NAMES.map { |k| st[k] || 0 }
     end
 
@@ -2378,15 +2378,15 @@ module Game
     # bc2cpp: (fixnum) -> Array
     def cursed_armor_state_ids(item_id)
       return [] unless rpg2003?
-      return [] if item_id.nil? || item_id == 0 || !@db.respond_to?(:item)
-      it = @db.item[item_id]
+      return [] if item_id.nil? || item_id == 0 || !LCF.field?(@db, :item)
+      it = @db[:item][item_id]
       return [] unless it
       return [] unless [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
-                        Party::ITEM_ACCESSORY].include?(it.type)
-      return [] unless it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
-      return [] unless it.respond_to?(:state_set) && it.state_set
+                        Party::ITEM_ACCESSORY].include?(it[:type])
+      return [] unless LCF.field?(it, :reverse_state_effect) && it[:reverse_state_effect]
+      return [] unless LCF.field?(it, :state_set) && it[:state_set]
       ids = []
-      it.state_set.each_with_index { |set, i| ids << (i + 1) if set && set != 0 }
+      it[:state_set].each_with_index { |set, i| ids << (i + 1) if set && set != 0 }
       ids
     end
 
@@ -2487,12 +2487,12 @@ module Game
     def equip_bonus(i)
       field = EQUIP_BONUS_FIELD[i]
       return 0 unless field
-      return 0 unless @db.respond_to?(:item)
+      return 0 unless LCF.field?(@db, :item)
       total = 0
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        total += (it.send(field) || 0) if it
+        it = @db[:item][iid]
+        total += (it[field] || 0) if it
       end
       total
     end
@@ -2516,7 +2516,7 @@ module Game
     # ever consulting equipment.
     def attribute_ranks
       ranks = {}
-      arr = @db_row.respond_to?(:attribute_ranks) ? @db_row.attribute_ranks : nil
+      arr = LCF.field?(@db_row, :attribute_ranks) ? @db_row[:attribute_ranks] : nil
       arr.each_with_index { |v, i| ranks[i + 1] = v } if arr
       defensive_attribute_ids.each do |aid|
         ranks[aid] = [(ranks[aid] || 2) + 1, 4].min
@@ -2536,14 +2536,14 @@ module Game
     # bc2cpp: () -> Array
     def defensive_attribute_ids
       ids = []
-      return ids unless @db.respond_to?(:item)
+      return ids unless LCF.field?(@db, :item)
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        next unless it && it.respond_to?(:type) &&
+        it = @db[:item][iid]
+        next unless it && LCF.field?(it, :type) &&
                     [Party::ITEM_SHIELD, Party::ITEM_ARMOR, Party::ITEM_HELMET,
-                     Party::ITEM_ACCESSORY].include?(it.type)
-        set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+                     Party::ITEM_ACCESSORY].include?(it[:type])
+        set = LCF.field?(it, :attribute_set) ? it[:attribute_set] : nil
         next unless set
         set.each_index { |i| ids << (i + 1) if set[i] && set[i] != 0 }
       end
@@ -2556,7 +2556,7 @@ module Game
     # this actor. A fixture row without the field yields {}.
     def state_ranks
       ranks = {}
-      arr = @db_row.respond_to?(:state_ranks) ? @db_row.state_ranks : nil
+      arr = LCF.field?(@db_row, :state_ranks) ? @db_row[:state_ranks] : nil
       return ranks unless arr
       arr.each_with_index { |v, i| ranks[i + 1] = v }
       ranks
@@ -2573,13 +2573,13 @@ module Game
     # `ids.uniq` otherwise, never nil -- so the claim holds regardless.
     # bc2cpp: () -> Array
     def weapon_attributes
-      return [] unless @db.respond_to?(:item)
+      return [] unless LCF.field?(@db, :item)
       ids = []
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        next unless it && it.respond_to?(:type) && it.type == 1 # weapon slot only
-        set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+        it = @db[:item][iid]
+        next unless it && LCF.field?(it, :type) && it[:type] == 1 # weapon slot only
+        set = LCF.field?(it, :attribute_set) ? it[:attribute_set] : nil
         next unless set
         set.each_with_index { |on, i| ids << (i + 1) if on }
       end
@@ -2613,17 +2613,17 @@ module Game
     def weapon_states
       inflict = {}
       heal = {}
-      return { inflict: inflict, heal: heal } unless @db.respond_to?(:item)
+      return { inflict: inflict, heal: heal } unless LCF.field?(@db, :item)
       heals_flip = rpg2003?
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        next unless it && it.respond_to?(:type) && it.type == 1 # weapon slot only
-        set = it.respond_to?(:state_set) ? it.state_set : nil
+        it = @db[:item][iid]
+        next unless it && LCF.field?(it, :type) && it[:type] == 1 # weapon slot only
+        set = LCF.field?(it, :state_set) ? it[:state_set] : nil
         next unless set
-        chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+        chance = LCF.field?(it, :state_chance) ? (it[:state_chance] || 0) : 0
         next unless chance > 0
-        heals = heals_flip && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        heals = heals_flip && LCF.field?(it, :reverse_state_effect) && it[:reverse_state_effect]
         bucket = heals ? heal : inflict
         set.each_index do |i|
           next unless set[i] && set[i] != 0
@@ -2648,12 +2648,12 @@ module Game
     # : 90`), silently treating a 0%-hit weapon as if it were unequipped.
     def attack_hit_rate
       best = nil
-      if @db.respond_to?(:item)
+      if LCF.field?(@db, :item)
         @equipment.each do |iid|
           next if iid.nil? || iid == 0
-          it = @db.item[iid]
-          next unless it && it.respond_to?(:type) && it.type == 1 # weapon slot
-          h = it.respond_to?(:hit) ? it.hit : nil
+          it = @db[:item][iid]
+          next unless it && LCF.field?(it, :type) && it[:type] == 1 # weapon slot
+          h = LCF.field?(it, :hit) ? it[:hit] : nil
           best = h if h && (best.nil? || h > best)
         end
       end
@@ -2665,13 +2665,13 @@ module Game
     # `weapon_only` restricts the search to the weapon slot (item type 1), which
     # is where RPG2000 keeps the attack modifiers.
     def equipment_flag?(name, weapon_only = false)
-      return false unless @db.respond_to?(:item)
+      return false unless LCF.field?(@db, :item)
       @equipment.any? do |iid|
         next false if iid.nil? || iid == 0
-        it = @db.item[iid]
+        it = @db[:item][iid]
         next false unless it
-        next false if weapon_only && !(it.respond_to?(:type) && it.type == 1)
-        it.respond_to?(name) && it.send(name) ? true : false
+        next false if weapon_only && !(LCF.field?(it, :type) && it[:type] == 1)
+        LCF.field?(it, name) && it[name] ? true : false
       end
     end
 
@@ -2734,7 +2734,7 @@ module Game
       weapons = equipped_weapons
       return weapon_attack_multiplier(weapons.first) unless weapons.size >= 2
       weapons[0, 2].reduce(0) do |s, it|
-        s + (it.respond_to?(:dual_attack) && it.dual_attack ? 2 : 1) * weapon_attack_multiplier(it)
+        s + (LCF.field?(it, :dual_attack) && it[:dual_attack] ? 2 : 1) * weapon_attack_multiplier(it)
       end
     end
 
@@ -2753,9 +2753,9 @@ module Game
     # never touched the Battle Animation tab.
     def weapon_attack_multiplier(it)
       return 1 unless it && rpg2003?
-      table = it.respond_to?(:animation_data) ? it.animation_data : nil
+      table = LCF.field?(it, :animation_data) ? it[:animation_data] : nil
       row = table ? table[id] : nil
-      row && row.respond_to?(:attack_times) ? (row.attack_times || 0) + 1 : 1
+      row && LCF.field?(row, :attack_times) ? (row[:attack_times] || 0) + 1 : 1
     end
 
     # The equipped weapon-type items, in slot order (the weapon slot first,
@@ -2763,9 +2763,9 @@ module Game
     # possible for a `#double_hand?` actor). Shared by `#strike_count` and
     # `#swing_weapon_data`.
     def equipped_weapons
-      return [] unless @db.respond_to?(:item)
-      @equipment.map { |iid| iid && iid != 0 ? @db.item[iid] : nil }
-               .select { |it| it && it.respond_to?(:type) && it.type == ITEM_WEAPON }
+      return [] unless LCF.field?(@db, :item)
+      @equipment.map { |iid| iid && iid != 0 ? @db[:item][iid] : nil }
+               .select { |it| it && LCF.field?(it, :type) && it[:type] == ITEM_WEAPON }
     end
 
     # Which weapon governs swing index `i` (0-based) of a two-weapon actor's
@@ -2786,7 +2786,7 @@ module Game
       weapons = equipped_weapons
       return nil unless weapons.size >= 2
       w1, w2 = weapons[0, 2]
-      w1_hits = (w1.respond_to?(:dual_attack) && w1.dual_attack ? 2 : 1) * weapon_attack_multiplier(w1)
+      w1_hits = (LCF.field?(w1, :dual_attack) && w1[:dual_attack] ? 2 : 1) * weapon_attack_multiplier(w1)
       weapon_roll_data(i < w1_hits ? w1 : w2)
     end
 
@@ -2806,21 +2806,21 @@ module Game
     # weapon_data`'s own `weapons.size >= 2` guard), so the only "absent"
     # case left is a row with no `hit` field at all.
     def weapon_roll_data(it)
-      h = it.respond_to?(:hit) ? it.hit : nil
+      h = LCF.field?(it, :hit) ? it[:hit] : nil
       hit = h.nil? ? 90 : h
       attrs = []
-      set = it.respond_to?(:attribute_set) ? it.attribute_set : nil
+      set = LCF.field?(it, :attribute_set) ? it[:attribute_set] : nil
       set.each_with_index { |on, i| attrs << (i + 1) if on } if set
       inflict = {}
       heal = {}
-      sset = it.respond_to?(:state_set) ? it.state_set : nil
-      chance = it.respond_to?(:state_chance) ? (it.state_chance || 0) : 0
+      sset = LCF.field?(it, :state_set) ? it[:state_set] : nil
+      chance = LCF.field?(it, :state_chance) ? (it[:state_chance] || 0) : 0
       if sset && chance > 0
-        heals = rpg2003? && it.respond_to?(:reverse_state_effect) && it.reverse_state_effect
+        heals = rpg2003? && LCF.field?(it, :reverse_state_effect) && it[:reverse_state_effect]
         bucket = heals ? heal : inflict
         sset.each_index { |i| bucket[i + 1] = chance if sset[i] && sset[i] != 0 }
       end
-      crit = it.respond_to?(:critical_hit) ? (it.critical_hit || 0) : 0
+      crit = LCF.field?(it, :critical_hit) ? (it[:critical_hit] || 0) : 0
       { hit_rate: hit, atk_attrs: attrs, atk_states: { inflict: inflict, heal: heal },
         crit_chance: weapon_crit_chance(crit) }
     end
@@ -2850,7 +2850,7 @@ module Game
     def strong_defence?
       row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
-      row.respond_to?(:strong_defence) ? (row.strong_defence ? true : false) : false
+      LCF.field?(row, :strong_defence) ? (row[:strong_defence] ? true : false) : false
     end
 
     # 強制AI — an actor (or RPG2003 class) permanently under AI control in
@@ -2882,7 +2882,7 @@ module Game
     def force_ai?
       row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
-      row.respond_to?(:force_ai) ? (row.force_ai ? true : false) : false
+      LCF.field?(row, :force_ai) ? (row[:force_ai] ? true : false) : false
     end
 
     # 二刀流 — an actor (or RPG2003 class) trait that turns the *shield* slot
@@ -2905,7 +2905,7 @@ module Game
     def double_hand?
       row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
-      row.respond_to?(:double_hand) ? (row.double_hand ? true : false) : false
+      LCF.field?(row, :double_hand) ? (row[:double_hand] ? true : false) : false
     end
 
     # 装備固定 — an actor (or RPG2003 class) whose equipment cannot be changed
@@ -2940,7 +2940,7 @@ module Game
     def equipment_fixed?
       row = @class_row if @class_changed && @class_id && @class_id > 0
       row ||= @db_row
-      return true if row.respond_to?(:equipment_fixed) && row.equipment_fixed
+      return true if LCF.field?(row, :equipment_fixed) && row[:equipment_fixed]
       state_cursed?
     end
 
@@ -2951,10 +2951,10 @@ module Game
     # read fresh from `@states` every call rather than cached, the same way
     # #state? is.
     def state_cursed?
-      return false unless @db.respond_to?(:situation) && @db.situation
+      return false unless LCF.field?(@db, :situation) && @db[:situation]
       @states.any? do |sid|
-        d = @db.situation[sid]
-        d && d.respond_to?(:cursed) && d.cursed
+        d = @db[:situation][sid]
+        d && LCF.field?(d, :cursed) && d[:cursed]
       end
     end
 
@@ -2971,11 +2971,11 @@ module Game
     # ::Party's #equip_from_bag / #unequip_to_bag stay unguarded on purpose.
     # bc2cpp: (fixnum)
     def slot_cursed?(slot)
-      return false unless slot >= 0 && slot < EQUIP_ORDER.size && @db.respond_to?(:item)
+      return false unless slot >= 0 && slot < EQUIP_ORDER.size && LCF.field?(@db, :item)
       item_id = @equipment[slot]
       return false if item_id.nil? || item_id == 0
-      it = @db.item[item_id]
-      it && it.respond_to?(:cursed) ? (it.cursed ? true : false) : false
+      it = @db[:item][item_id]
+      it && LCF.field?(it, :cursed) ? (it[:cursed] ? true : false) : false
     end
 
     # Coerce an equipment spec (an EQUIP_ORDER hash, an array of ids, or nil) to a
@@ -3009,7 +3009,7 @@ module Game
 
     # The actor's maximum level (from the database row; 50 by RPG2000 default).
     def max_level
-      ml = @db_row.respond_to?(:max_level) ? @db_row.max_level : nil
+      ml = LCF.field?(@db_row, :max_level) ? @db_row[:max_level] : nil
       ml && ml >= 1 ? ml : 50
     end
 
@@ -3144,8 +3144,8 @@ module Game
     # bc2cpp: (fixnum)
     def weapon_crit_chance(bonus)
       pct = bonus
-      if @db_row.respond_to?(:has_critical_rate) && @db_row.has_critical_rate
-        n = @db_row.respond_to?(:critical_rate) ? @db_row.critical_rate : 0
+      if LCF.field?(@db_row, :has_critical_rate) && @db_row[:has_critical_rate]
+        n = LCF.field?(@db_row, :critical_rate) ? @db_row[:critical_rate] : 0
         pct += (100.0 / n).to_i if n && n > 0
       end
       pct
@@ -3163,13 +3163,13 @@ module Game
     # critical is not a design; it is the editor leaving weapon fields untouched
     # in a record every item type shares.
     def weapon_crit_bonus
-      return 0 unless @db.respond_to?(:item)
+      return 0 unless LCF.field?(@db, :item)
       best = 0
       @equipment.each do |iid|
         next if iid.nil? || iid == 0
-        it = @db.item[iid]
-        next unless it && it.respond_to?(:type) && it.type == 1
-        c = it.respond_to?(:critical_hit) ? it.critical_hit : nil
+        it = @db[:item][iid]
+        next unless it && LCF.field?(it, :type) && it[:type] == 1
+        c = LCF.field?(it, :critical_hit) ? it[:critical_hit] : nil
         best = c if c && c > best
       end
       best
@@ -3212,7 +3212,7 @@ module Game
     # nil for a fixture without one, which every Game::States accessor
     # already tolerates.
     def state_table
-      @db.respond_to?(:situation) ? @db.situation : nil
+      LCF.field?(@db, :situation) ? @db[:situation] : nil
     end
 
     # Apply a MP (SP) change, clamped to [0, max_mp]. Returns the new MP.
@@ -3371,7 +3371,7 @@ module Game
     # bc2cpp: (fixnum, , , )
     def change_class(class_id, new_level, skill_mode, param_mode)
       if class_id > 0 && class_row_for(class_id).nil?
-        if @db.respond_to?(:job) && @db.job
+        if LCF.field?(@db, :job) && @db[:job]
           $stderr.puts "[RPG2k] Change Class: class ##{class_id} not found " \
                        'in database, actor left unchanged'
         end
@@ -3392,7 +3392,7 @@ module Game
       # for why this is a separate flag from `@class_id`.
       @class_changed = true
       @battler_animation_override =
-        @class_row && @class_row.respond_to?(:battler_animation) ? (@class_row.battler_animation || 0) : 0
+        @class_row && LCF.field?(@class_row, :battler_animation) ? (@class_row[:battler_animation] || 0) : 0
       # preserve_mod: false -- Change Class always zeroes the Change
       # Parameters mod shadow before applying the new class's own curve
       # (a reference implementation's own change-class routine zeroes the
@@ -3450,10 +3450,10 @@ module Game
     # this database carries no such table at all (every RPG2000 file, and any
     # fixture that predates this chunk) or `cmd_id` names no entry in it.
     def battle_command_row(cmd_id)
-      return nil unless @db.respond_to?(:battlecommands)
-      table = @db.battlecommands
+      return nil unless LCF.field?(@db, :battlecommands)
+      table = @db[:battlecommands]
       return nil unless table
-      cmds = table.commands
+      cmds = table[:commands]
       cmds && cmds[cmd_id]
     end
 
@@ -3607,7 +3607,7 @@ module Game
     # (only the RPG2003 `battle_commands` list, field 80, is defined on both
     # Actor and Class).
     def rename_skill?
-      @db_row.respond_to?(:custom_battle_command) ? !!@db_row.custom_battle_command : false
+      LCF.field?(@db_row, :custom_battle_command) ? !!@db_row[:custom_battle_command] : false
     end
 
     # RPG2003's manual battle-sprite position (chunk 11 fields 59/60), ported
@@ -3618,11 +3618,11 @@ module Game
     # the alternative/gauge battle layouts. 0 (the database default) for
     # every RPG2000 row and any RPG2003 one that never set these.
     def battle_x
-      @db_row.respond_to?(:battle_x) ? (@db_row.battle_x || 0) : 0
+      LCF.field?(@db_row, :battle_x) ? (@db_row[:battle_x] || 0) : 0
     end
 
     def battle_y
-      @db_row.respond_to?(:battle_y) ? (@db_row.battle_y || 0) : 0
+      LCF.field?(@db_row, :battle_y) ? (@db_row[:battle_y] || 0) : 0
     end
 
     # The `db.battleranimations` (chunk 32) id this actor's battle sprite
@@ -3659,10 +3659,10 @@ module Game
 
       anim =
         if @class_changed && @class_id > 0 && @class_row
-          @class_row.respond_to?(:battler_animation) ? (@class_row.battler_animation || 0) : 0
+          LCF.field?(@class_row, :battler_animation) ? (@class_row[:battler_animation] || 0) : 0
         else
-          bid = @db_row.respond_to?(:battler_animation) ? (@db_row.battler_animation || 0) : 0
-          table = @db.respond_to?(:battleranimations) ? @db.battleranimations : nil
+          bid = LCF.field?(@db_row, :battler_animation) ? (@db_row[:battler_animation] || 0) : 0
+          table = LCF.field?(@db, :battleranimations) ? @db[:battleranimations] : nil
           if bid > 0
             entry = table ? table[bid] : nil
             unless entry
@@ -3692,7 +3692,7 @@ module Game
     # bc2cpp: () -> Array
     def class_battle_commands
       row = @class_changed && @class_id > 0 && @class_row ? @class_row : @db_row
-      list = row.respond_to?(:battle_commands) ? row.battle_commands : nil
+      list = LCF.field?(row, :battle_commands) ? row[:battle_commands] : nil
       list.is_a?(Array) && !list.empty? ? list.dup : [0]
     end
 
@@ -3750,7 +3750,7 @@ module Game
     # calculation.
     def db_exp_param(field)
       row = curve_row
-      row.respond_to?(field) ? (row.__send__(field) || EXP_DEFAULT) : EXP_DEFAULT
+      LCF.field?(row, field) ? (row[field] || EXP_DEFAULT) : EXP_DEFAULT
     end
 
     # The database row the level-scaled tables are read from: the class row (職業)
@@ -3780,8 +3780,8 @@ module Game
     # The database class row for `id`, or nil when this database has no class
     # table (RPG2000) or does not define that id.
     def class_row_for(id)
-      return nil unless @db.respond_to?(:job) && @db.job
-      @db.job[id]
+      return nil unless LCF.field?(@db, :job) && @db[:job]
+      @db[:job][id]
     end
   end
 
@@ -3860,7 +3860,7 @@ module Game
     # bc2cpp: (fixnum)
     def known_invalid?(id)
       return false if id.nil? || id <= 0 || @all[id]
-      return false if @db.player[id]
+      return false if @db[:player][id]
       unless @missing[id]
         @missing[id] = true
         $stderr.puts "[RPG2k] actor ##{id} could not be built: No such actor: #{id}"
@@ -3906,7 +3906,7 @@ module Game
     def initialize(db, ids = nil, roster = nil)
       @db = db
       @roster = roster || Actors.new(db)
-      ids ||= db.system.party || []
+      ids ||= db[:system][:party] || []
       @actors = ids.reject { |i| i.nil? || i <= 0 }.map { |i| @roster[i] }.compact
       @items = {}  # item id => count
       # 使用回数 bookkeeping: item id => how many uses the *current* copy has
@@ -4521,8 +4521,8 @@ module Game
     # The database row for a held item id, or nil when the database has no item
     # table (a bare test fixture) or no such row.
     def db_item(id)
-      return nil unless @db.respond_to?(:item)
-      @db.item[id]
+      return nil unless LCF.field?(@db, :item)
+      @db[:item][id]
     end
 
     # The database row for an enemy-group (troop) id, or nil when the database
@@ -4533,8 +4533,8 @@ module Game
     # random encounter, since `Game::Troop.new` itself tolerates a missing row
     # by degrading to an empty member list rather than raising.
     def db_enemy_group(id)
-      return nil unless @db.respond_to?(:enemy_group)
-      @db.enemy_group[id]
+      return nil unless LCF.field?(@db, :enemy_group)
+      @db[:enemy_group][id]
     end
 
     # Whether this party's database is an RPG2003 project (see
@@ -4555,9 +4555,9 @@ module Game
     # instead of guessed. A bare test fixture with no `#battlecommands` table
     # reads false, the same answer a genuine RPG2000 database gives.
     def alternate_battle_layout?
-      return false unless @db.respond_to?(:battlecommands)
-      table = @db.battlecommands
-      table && table.battle_type != 0 ? true : false
+      return false unless LCF.field?(@db, :battlecommands)
+      table = @db[:battlecommands]
+      table && table[:battle_type] != 0 ? true : false
     end
 
     # RPG2003's "Death Handler" (`battlecommands.death_handler`, chunk 29
@@ -4575,9 +4575,9 @@ module Game
     # fixture with no `#battlecommands` table, or an RPG2000 database, reads
     # false, same as `#alternate_battle_layout?` above.
     def death_handler?
-      return false unless rpg2003? && @db.respond_to?(:battlecommands)
-      table = @db.battlecommands
-      table && table.respond_to?(:death_handler) && table.death_handler ? true : false
+      return false unless rpg2003? && LCF.field?(@db, :battlecommands)
+      table = @db[:battlecommands]
+      table && LCF.field?(table, :death_handler) && table[:death_handler] ? true : false
     end
 
     # The common event id a Death Handler runs (`battlecommands.death_event`),
@@ -4585,8 +4585,8 @@ module Game
     # against genuine RPG_RT under wine (see `#death_handler?` above).
     def death_handler_event
       return 0 unless death_handler?
-      table = @db.battlecommands
-      table.respond_to?(:death_event) ? (table.death_event || 0) : 0
+      table = @db[:battlecommands]
+      LCF.field?(table, :death_event) ? (table[:death_event] || 0) : 0
     end
 
     # The Death Handler's own teleport target as [map_id, x, y, facing] (the
@@ -4598,10 +4598,10 @@ module Game
     # `#death_handler?` above).
     def death_handler_teleport
       return nil unless death_handler?
-      table = @db.battlecommands
-      return nil unless table.respond_to?(:death_teleport) && table.death_teleport
-      [table.death_teleport_id, table.death_teleport_x, table.death_teleport_y,
-       table.death_teleport_face]
+      table = @db[:battlecommands]
+      return nil unless LCF.field?(table, :death_teleport) && table[:death_teleport]
+      [table[:death_teleport_id], table[:death_teleport_x], table[:death_teleport_y],
+       table[:death_teleport_face]]
     end
 
     # Whether item `id` can be used from the field (main-menu) item screen: a
@@ -4641,11 +4641,11 @@ module Game
         return false
       end
       return false unless item_count(id) > 0
-      return use_skill_item_usable?(it, false) if it.use_skill
-      case it.type
+      return use_skill_item_usable?(it, false) if it[:use_skill]
+      case it[:type]
       when ITEM_MEDICINE, ITEM_SKILL_BOOK, ITEM_SEED then true
       when ITEM_SWITCH then item_field_occasion?(it)
-      when ITEM_SPECIAL then field_skill?(db_skill(it.skill_id), state)
+      when ITEM_SPECIAL then field_skill?(db_skill(it[:skill_id]), state)
       else false
       end
     end
@@ -4672,8 +4672,8 @@ module Game
     # separate, correctly-already-five-types-restricted check -- only this
     # *usability* gate is type-unrestricted in RPG_RT.
     def use_skill_item_usable?(it, in_battle)
-      sk = db_skill(it.skill_id)
-      sk && (in_battle || sk.scope >= 2)
+      sk = db_skill(it[:skill_id])
+      sk && (in_battle || sk[:scope] >= 2)
     end
 
     # An item's occasion flags, read by the **field name the format actually
@@ -4691,25 +4691,25 @@ module Game
     # assume usable" default on every genuine item and the gate never once fired.
     # Only hand-built fixtures, which did define that name, ever exercised it.
     def item_field_occasion?(it)
-      return it.occasion_field2 if it.respond_to?(:occasion_field2)
+      return it[:occasion_field2] if LCF.field?(it, :occasion_field2)
       true
     end
 
     def item_battle_occasion?(it)
-      return it.occasion_battle if it.respond_to?(:occasion_battle)
+      return it[:occasion_battle] if LCF.field?(it, :occasion_battle)
       true
     end
 
     # Whether `it` is flagged field-only (occasion_field1), which is what keeps a
     # medicine out of a battle.
     def item_field_only?(it)
-      it.respond_to?(:occasion_field1) ? it.occasion_field1 : false
+      LCF.field?(it, :occasion_field1) ? it[:occasion_field1] : false
     end
 
     # Whether item `id` is a switch item (turns on a game switch when used).
     def switch_item?(id)
       it = db_item(id)
-      !it.nil? && it.type == ITEM_SWITCH
+      !it.nil? && it[:type] == ITEM_SWITCH
     end
 
     # Use a switch item from the field menu: spend one use (#consume_item_use, so
@@ -4721,7 +4721,7 @@ module Game
     def use_switch_item(id)
       return nil unless switch_item?(id) && item_count(id) > 0
       consume_item_use(id)
-      db_item(id).switch_id
+      db_item(id)[:switch_id]
     end
 
     # Every held item as `[id, count]` pairs in ascending id order, for the
@@ -4763,8 +4763,8 @@ module Game
     # The HP and SP a medicine restores to `actor`: the flat amount plus a
     # percentage of the actor's maximum, summed with RPG2000's integer math.
     def item_recovery(it, actor)
-      hp = (it.recover_hp || 0) + (actor.max_hp * (it.recover_hp_rate || 0)) / 100
-      mp = (it.recover_sp || 0) + (actor.max_mp * (it.recover_sp_rate || 0)) / 100
+      hp = (it[:recover_hp] || 0) + (actor.max_hp * (it[:recover_hp_rate] || 0)) / 100
+      mp = (it[:recover_sp] || 0) + (actor.max_mp * (it[:recover_sp_rate] || 0)) / 100
       [hp, mp]
     end
 
@@ -4807,7 +4807,7 @@ module Game
     # remaining path returns a freshly-built `out` Array, never nil.
     # bc2cpp: () -> Array
     def item_state_ids(it)
-      set = it.state_set
+      set = it[:state_set]
       return [] unless set
       out = []
       set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
@@ -4827,7 +4827,7 @@ module Game
     # 戦闘不能 and restore 25 / 100 / 3 / 25 percent of max HP. Reading the flag
     # as nothing let all four be spent on a living, wounded ally for their HP.
     def ko_only_blocked?(it, actor)
-      return false unless it.respond_to?(:ko_only) && it.ko_only
+      return false unless LCF.field?(it, :ko_only) && it[:ko_only]
       return false if actor.nil?
       !actor.dead?
     end
@@ -4898,9 +4898,9 @@ module Game
 
     def item_usable_by?(it, actor_id)
       return item_usable_by_class?(it, actor_id) if equip_by_class?
-      return true unless it.respond_to?(:actor_set) && it.actor_set
+      return true unless LCF.field?(it, :actor_set) && it[:actor_set]
       return true if actor_id.nil?
-      set = it.actor_set
+      set = it[:actor_set]
       idx = actor_id - 1
       return true if idx < 0 || set.size <= idx
       return true unless Party.permission_set_active?(set)
@@ -4931,8 +4931,8 @@ module Game
     # missing field — degrades to the ordinary "by Actor" default rather than
     # raising.
     def equip_by_class?
-      rpg2003? && @db.respond_to?(:system) && @db.system.respond_to?(:equipment_setting) &&
-        @db.system.equipment_setting == 1
+      rpg2003? && LCF.field?(@db, :system) && LCF.field?(@db[:system], :equipment_setting) &&
+        @db[:system][:equipment_setting] == 1
     rescue StandardError
       false
     end
@@ -4946,11 +4946,11 @@ module Game
     # actor with no class at all (RPG2000 has none, and an RPG2003 actor can
     # simply start unclassed) reads index 0.
     def item_usable_by_class?(it, actor_id)
-      return true unless it.respond_to?(:class_set) && it.class_set
+      return true unless LCF.field?(it, :class_set) && it[:class_set]
       return true if actor_id.nil?
       actor = @roster[actor_id]
       class_id = actor && actor.respond_to?(:class_id) ? (actor.class_id || 0) : 0
-      set = it.class_set
+      set = it[:class_set]
       return true if set.size <= class_id
       return true unless Party.permission_set_active?(set)
       # Same int8-zero-is-truthy trap as #item_usable_by? above -- see its own
@@ -4970,14 +4970,14 @@ module Game
       it = db_item(id)
       return false unless it && actor
       return false unless item_usable_by?(it, actor.id)
-      case it.type
+      case it[:type]
       when ITEM_MEDICINE
         return false if ko_only_blocked?(it, actor)
         hp, mp = item_recovery(it, actor)
         (hp > 0 && actor.hp < actor.max_hp) || (mp > 0 && actor.mp < actor.max_mp) ||
           item_cured_states(it).any? { |s| actor.state?(s) }
       when ITEM_SKILL_BOOK
-        s = it.skill_id
+        s = it[:skill_id]
         !actor.dead? && !s.nil? && s != 0 && !actor.knows_skill?(s)
       when ITEM_SEED
         !actor.dead? && seed_boosts(it).any? { |b| b != 0 }
@@ -4986,7 +4986,7 @@ module Game
       when ITEM_SPECIAL
         # Judged by the skill it invokes, exactly as casting that skill would be
         # -- but free: the item is the cost, and its user need not know the skill.
-        skill_effective?(actor, it.skill_id, actor, true)
+        skill_effective?(actor, it[:skill_id], actor, true)
       else
         false
       end
@@ -5004,7 +5004,7 @@ module Game
     # default (`LCF::Schema` item field 6), so a hand-built test item keeps the
     # single-use behaviour it has always had.
     def item_uses(it)
-      u = it.respond_to?(:uses) ? it.uses : nil
+      u = LCF.field?(it, :uses) ? it[:uses] : nil
       u.nil? ? 1 : u
     end
 
@@ -5040,7 +5040,7 @@ module Game
                      'row, consuming nothing'
         return
       end
-      case it.type
+      case it[:type]
       when ITEM_NORMAL, Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR,
            ITEM_HELMET, ITEM_ACCESSORY
         return
@@ -5063,13 +5063,13 @@ module Game
     def use_item(id, actor = nil)
       it = db_item(id)
       return [] unless it && item_count(id) > 0
-      case it.type
+      case it[:type]
       when ITEM_MEDICINE then use_medicine(it, id, actor)
       when ITEM_SKILL_BOOK then use_skill_book(it, id, actor)
       when ITEM_SEED then use_seed(it, id, actor)
       when ITEM_SPECIAL then use_special_item(it, id, actor)
       when Actor::ITEM_WEAPON, ITEM_SHIELD, ITEM_ARMOR, ITEM_HELMET, ITEM_ACCESSORY
-        it.use_skill ? use_equip_skill_item(it, id, actor) : []
+        it[:use_skill] ? use_equip_skill_item(it, id, actor) : []
       else []
       end
     end
@@ -5087,7 +5087,7 @@ module Game
     # reason a switch item bypasses #use_item for #use_switch_item.
     def use_special_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
-      affected = cast_skill(actor, it.skill_id, actor, true)
+      affected = cast_skill(actor, it[:skill_id], actor, true)
       consume_item_use(id) unless affected.empty?
       affected
     end
@@ -5137,12 +5137,12 @@ module Game
     # own doc.)
     def use_equip_skill_item(it, id, actor)
       return [] unless actor && item_usable_by?(it, actor.id)
-      sk = db_skill(it.skill_id)
-      if sk && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
+      sk = db_skill(it[:skill_id])
+      if sk && (sk[:type] == SKILL_ESCAPE || sk[:type] == SKILL_TELEPORT)
         consume_item_use(id)
         return [actor]
       end
-      affected = cast_skill(actor, it.skill_id, actor, true)
+      affected = cast_skill(actor, it[:skill_id], actor, true)
       consume_item_use(id) unless affected.empty?
       affected
     end
@@ -5174,9 +5174,9 @@ module Game
       # this fast path from the item-use computation
       # without tracing one level further into what the skill-use path
       # itself does for these two skill types specifically.
-      return nil unless it && it.type == ITEM_SPECIAL &&
+      return nil unless it && it[:type] == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
-      target = cast_escape_skill(actor, it.skill_id, state, true)
+      target = cast_escape_skill(actor, it[:skill_id], state, true)
       return nil unless target
       consume_item_use(id)
       target
@@ -5191,9 +5191,9 @@ module Game
       # see #use_special_escape_item's own citation just above; the same
       # item-menu/skill-use dispatch gap applies to
       # Teleport-type skills identically.
-      return nil unless it && it.type == ITEM_SPECIAL &&
+      return nil unless it && it[:type] == ITEM_SPECIAL &&
                         actor && item_usable_by?(it, actor.id)
-      target = cast_teleport_skill(actor, it.skill_id, state, map_id, true)
+      target = cast_teleport_skill(actor, it[:skill_id], state, map_id, true)
       return nil unless target
       consume_item_use(id)
       target
@@ -5213,10 +5213,10 @@ module Game
     def use_special_switch_item(id, actor)
       it = db_item(id)
       return nil unless it &&
-                        (it.type == ITEM_SPECIAL ||
-                         (it.use_skill && (1..5).cover?(it.type))) &&
+                        (it[:type] == ITEM_SPECIAL ||
+                         (it[:use_skill] && (1..5).cover?(it[:type]))) &&
                         actor && item_usable_by?(it, actor.id)
-      switch = cast_switch_skill(actor, it.skill_id, true)
+      switch = cast_switch_skill(actor, it[:skill_id], true)
       return nil unless switch
       consume_item_use(id)
       switch
@@ -5228,7 +5228,7 @@ module Game
     # and consumes one from the bag only when it actually did something to someone
     # (so using it on a full, unafflicted party wastes nothing).
     def use_medicine(it, id, actor)
-      targets = it.scope == 1 ? @actors : [actor].compact
+      targets = it[:scope] == 1 ? @actors : [actor].compact
       cured = item_cured_states(it)
       affected = []
       targets.each do |t|
@@ -5330,7 +5330,7 @@ module Game
     # mystery" fresh this session -- not investigated further here, since a
     # pure save-file edit sidesteps it entirely.)
     def use_skill_book(it, id, actor)
-      skill = it.skill_id
+      skill = it[:skill_id]
       return [] unless actor && !actor.dead? && item_usable_by?(it, actor.id) &&
                        skill && skill != 0 && !actor.knows_skill?(skill)
       actor.learn_skill(skill)
@@ -5357,9 +5357,9 @@ module Game
     # scripts/rpg2k_logic_check.rb ("a seed permanently raises the target
     # stats (points2 set, not points1)...") for the full write-up.
     def seed_boosts(it)
-      [it.max_hp_points || 0, it.max_sp_points || 0,
-       it.atk_points2 || 0, it.def_points2 || 0,
-       it.spi_points2 || 0, it.agi_points2 || 0]
+      [it[:max_hp_points] || 0, it[:max_sp_points] || 0,
+       it[:atk_points2] || 0, it[:def_points2] || 0,
+       it[:spi_points2] || 0, it[:agi_points2] || 0]
     end
 
     # A seed permanently raises `actor`'s base stats by seed_boosts (each applied
@@ -5384,7 +5384,7 @@ module Game
     def equip_slot_for(id)
       it = db_item(id)
       return nil unless it
-      t = it.type
+      t = it[:type]
       (t >= 1 && t <= Actor::EQUIP_ORDER.size) ? t - 1 : nil
     end
 
@@ -5564,15 +5564,15 @@ module Game
     # its healing lines (Heal / Recovery / Cure / Raise are category 5) and its
     # elemental attack lines — from both the field menu and the battle menu.
     def self.normal_skill?(sk)
-      t = sk.type
+      t = sk[:type]
       t == SKILL_NORMAL || t >= SKILL_SUBSKILL
     end
 
     # The database row for a skill id, or nil when the database has no skill table
     # (a bare fixture) or no such row.
     def db_skill(id)
-      return nil unless @db.respond_to?(:skill)
-      @db.skill[id]
+      return nil unless LCF.field?(@db, :skill)
+      @db[:skill][id]
     end
 
     # `db.term.<name>` as-is, or '' when the field doesn't exist or the
@@ -5582,8 +5582,8 @@ module Game
     # outside one entirely, e.g. a common event), so it reads the database's
     # words through its party instead.
     def term(name)
-      t = @db.respond_to?(:term) ? @db.term : nil
-      s = t && t.respond_to?(name) ? t.send(name) : nil
+      t = LCF.field?(@db, :term) ? @db[:term] : nil
+      s = t && LCF.field?(t, name) ? t[name] : nil
       s.to_s
     end
 
@@ -5591,7 +5591,7 @@ module Game
     # priority, display name/colour, message text. nil for a fixture without
     # one, which every Game::States accessor already tolerates.
     def state_table
-      @db.respond_to?(:situation) ? @db.situation : nil
+      LCF.field?(@db, :situation) ? @db[:situation] : nil
     end
 
     # The SP `caster` pays to cast skill `sk`: a fixed cost (sp_type 0) or, on
@@ -5617,10 +5617,10 @@ module Game
     def skill_cost(sk, caster)
       half = caster.respond_to?(:half_sp_cost?) && caster.half_sp_cost?
       div = half ? 2 : 1
-      if rpg2003? && sk.sp_type == 1
-        caster.max_mp * (sk.sp_percent || 0) / 100 / div
+      if rpg2003? && sk[:sp_type] == 1
+        caster.max_mp * (sk[:sp_percent] || 0) / 100 / div
       else
-        ((sk.sp_cost || 0) + (half ? 1 : 0)) / div
+        ((sk[:sp_cost] || 0) + (half ? 1 : 0)) / div
       end
     end
 
@@ -5692,7 +5692,7 @@ module Game
     # something once there: change HP/SP, or inflict a state.
     def field_skill?(sk, state = nil)
       return false unless sk
-      case sk.type
+      case sk[:type]
       when SKILL_TELEPORT, SKILL_ESCAPE
         # A known Escape/Teleport skill is *always* listed on the field
         # menu, whether or not it is usable right this moment -- ported from
@@ -5712,7 +5712,7 @@ module Game
       when SKILL_SWITCH
         field_occasion?(sk)
       else
-        return false unless sk.scope >= 2
+        return false unless sk[:scope] >= 2
         # The raw state set, not #skill_inflicted_states: a plain antidote cures
         # rather than inflicts (`reverse_state_effect` off), and curing poison
         # between fights is the whole point of the field skill menu. A
@@ -5728,10 +5728,10 @@ module Game
         # skill field-usable, even though it's a perfectly ordinary skill in
         # battle. A dangling/unknown state id fails the same way the
         # reference's own `state &&` guard does -- not usable.
-        sk.affect_hp || sk.affect_sp ||
+        sk[:affect_hp] || sk[:affect_sp] ||
           skill_state_ids(sk).any? do |id|
             row = Game::States.row(id, state_table)
-            row.respond_to?(:type) && (row.type || 0) == States::PERSISTS_ON_MAP
+            LCF.field?(row, :type) && (row[:type] || 0) == States::PERSISTS_ON_MAP
           end
       end
     end
@@ -5790,7 +5790,7 @@ module Game
     # item is the cost.
     def cast_escape_skill(caster, sid, state, free = false)
       sk = db_skill(sid)
-      return nil unless sk && sk.type == SKILL_ESCAPE
+      return nil unless sk && sk[:type] == SKILL_ESCAPE
       return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
                          escape_skill_available?(state)
       target = state.escape_target
@@ -5809,7 +5809,7 @@ module Game
     # #use_special_teleport_item.
     def cast_teleport_skill(caster, sid, state, map_id, free = false)
       sk = db_skill(sid)
-      return nil unless sk && sk.type == SKILL_TELEPORT
+      return nil unless sk && sk[:type] == SKILL_TELEPORT
       return nil unless (free ? !caster.nil? : can_cast?(caster, sid)) &&
                          teleport_skill_available?(state)
       target = state.teleport_targets[map_id]
@@ -5826,19 +5826,19 @@ module Game
     # running map/interpreter behind it, to tell "this skill type is legitimately
     # state-gated" apart from "no menu offers this skill at all".
     def unsupported_field_skill?(sk)
-      !sk.nil? && (sk.type == SKILL_ESCAPE || sk.type == SKILL_TELEPORT)
+      !sk.nil? && (sk[:type] == SKILL_ESCAPE || sk[:type] == SKILL_TELEPORT)
     end
 
     # Whether a **switch** skill's field / battle occasion flag is set. Defaults
     # to usable when the row (a bare fixture) carries no flag.
     def field_occasion?(sk)
-      sk.respond_to?(:occasion_field) ? sk.occasion_field : true
+      LCF.field?(sk, :occasion_field) ? sk[:occasion_field] : true
     end
 
     # Whether skill `sid` is a switch skill (turns a game switch on, no target).
     def switch_skill?(sid)
       sk = db_skill(sid)
-      !sk.nil? && sk.type == SKILL_SWITCH
+      !sk.nil? && sk[:type] == SKILL_SWITCH
     end
 
     # Cast a switch skill: spend the caster's SP and return the id of the switch
@@ -5853,7 +5853,7 @@ module Game
       return nil unless switch_skill?(sid) && (free ? !caster.nil? : can_cast?(caster, sid))
       sk = db_skill(sid)
       caster.change_mp(-skill_cost(sk, caster)) unless free
-      sk.switch_id
+      sk[:switch_id]
     end
 
     # Whether `caster` can cast skill `sid` right now: it knows the skill, can
@@ -5902,7 +5902,7 @@ module Game
     # exemption.
     def weapon_attribute_ready?(caster, sk)
       return true unless sk
-      return true if sk.respond_to?(:affect_attr_defence) && sk.affect_attr_defence
+      return true if LCF.field?(sk, :affect_attr_defence) && sk[:affect_attr_defence]
       ids = skill_attributes(sk).select { |aid| attribute_weapon_type?(aid) }
       return true if ids.empty?
       equipped = caster.respond_to?(:weapon_attributes) ? caster.weapon_attributes : []
@@ -5916,9 +5916,9 @@ module Game
     # an attribute this build cannot look up would lock it out with no way
     # for the player to fix it.
     def attribute_weapon_type?(aid)
-      return false unless @db.respond_to?(:property) && @db.property
-      row = @db.property[aid]
-      row && row.respond_to?(:type) && row.type == 0 ? true : false
+      return false unless LCF.field?(@db, :property) && @db[:property]
+      row = @db[:property][aid]
+      row && LCF.field?(row, :type) && row[:type] == 0 ? true : false
     end
 
     # -- stat-affecting states (halve/double ATK/DEF/SPI/AGI), for skills -----
@@ -5936,12 +5936,12 @@ module Game
     # accessor every context reads through, not a battle-only variant --
     # ported, NOT independently confirmed against genuine RPG_RT under wine).
     def stat_mode(b, stat_flag)
-      return :normal unless @db.respond_to?(:situation) && @db.situation
+      return :normal unless LCF.field?(@db, :situation) && @db[:situation]
       half = false; dbl = false
       (b.respond_to?(:states) ? (b.states || []) : []).each do |sid|
-        d = @db.situation[sid]
-        next unless d && d.respond_to?(stat_flag) && d.send(stat_flag)
-        case d.respond_to?(:affect_type) ? d.affect_type : 2
+        d = @db[:situation][sid]
+        next unless d && LCF.field?(d, stat_flag) && d[stat_flag]
+        case LCF.field?(d, :affect_type) ? d[:affect_type] : 2
         when 0 then half = true
         when 1 then dbl = true
         end
@@ -6007,9 +6007,9 @@ module Game
     # implementation's own skill-effect formula, NOT independently confirmed against genuine
     # RPG_RT under wine (the ally-heal path has no target-defence term).
     def skill_effect(sk, caster)
-      (sk.power || 0) +
-        (sk.physical_rate || 0) * effective_atk(caster) / 20 +
-        (sk.magical_rate || 0) * effective_int(caster) / 40
+      (sk[:power] || 0) +
+        (sk[:physical_rate] || 0) * effective_atk(caster) / 20 +
+        (sk[:magical_rate] || 0) * effective_int(caster) / 40
     end
 
     # How much of an enemy-scope skill's effect the target's own stats absorb.
@@ -6033,14 +6033,14 @@ module Game
       return 0 if target.nil? || skill_ignores_defence?(sk)
       dfn = effective_def(target)
       spi = effective_spi(target)
-      (sk.physical_rate || 0) * dfn / 40 + (sk.magical_rate || 0) * spi / 80
+      (sk[:physical_rate] || 0) * dfn / 40 + (sk[:magical_rate] || 0) * spi / 80
     end
 
     # 防御無視 (`ignore_defense`): the effect lands undiminished. 13 of
     # Nepheshel's skills and 7 of mtf's set it, and nothing read it, so every
     # armour-piercing spell in both games was being blunted like any other.
     def skill_ignores_defence?(sk)
-      sk.respond_to?(:ignore_defense) ? (sk.ignore_defense ? true : false) : false
+      LCF.field?(sk, :ignore_defense) ? (sk[:ignore_defense] ? true : false) : false
     end
 
     # The actors a field skill affects: the caster (scope 2), a chosen single ally
@@ -6055,7 +6055,7 @@ module Game
     # bc2cpp still guards each element and keeps Ruby dispatch as fallback.
     # bc2cpp: () -> Array<Game::Actor>
     def skill_targets(sk, caster, target)
-      case sk.scope
+      case sk[:scope]
       when 4 then @actors
       when 2 then [caster]
       else [target].compact
@@ -6077,7 +6077,7 @@ module Game
     # `out` Array, never nil.
     # bc2cpp: () -> Array
     def skill_state_ids(sk)
-      set = sk.respond_to?(:state_effects) ? sk.state_effects : nil
+      set = LCF.field?(sk, :state_effects) ? sk[:state_effects] : nil
       return [] unless set
       out = []
       set.each_index { |i| out.push(i + 1) if set[i] && set[i] != 0 }
@@ -6086,13 +6086,13 @@ module Game
 
     # The states a field skill cures (the default, non-reverse case).
     def skill_cured_states(sk)
-      return [] if sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      return [] if LCF.field?(sk, :reverse_state_effect) && sk[:reverse_state_effect]
       skill_state_ids(sk)
     end
 
     # The states a field skill inflicts (the reverse case).
     def skill_inflicted_states(sk)
-      return [] unless sk.respond_to?(:reverse_state_effect) && sk.reverse_state_effect
+      return [] unless LCF.field?(sk, :reverse_state_effect) && sk[:reverse_state_effect]
       skill_state_ids(sk)
     end
 
@@ -6107,8 +6107,8 @@ module Game
       cured = skill_cured_states(sk)
       inflicted = skill_inflicted_states(sk)
       skill_targets(sk, caster, target).any? do |t|
-        (amount > 0 && sk.affect_hp && t.hp < t.max_hp) ||
-          (amount > 0 && sk.affect_sp && t.mp < t.max_mp) ||
+        (amount > 0 && sk[:affect_hp] && t.hp < t.max_hp) ||
+          (amount > 0 && sk[:affect_sp] && t.mp < t.max_mp) ||
           cured.any? { |s| t.state?(s) } ||
           inflicted.any? { |s| !t.state?(s) }
       end
@@ -6161,7 +6161,7 @@ module Game
         t.states = Game::States.prune(t.states, state_table, keep: t.permanent_states) if landed
         before_hp = t.hp
         before_mp = t.mp
-        if sk.affect_hp && amount > 0
+        if sk[:affect_hp] && amount > 0
           # Same `- revived` treatment as the Affect-HP-off branch just
           # below: a combined revive+HP skill must not add its full amount
           # on top of the 1 HP the Death cure above already granted --
@@ -6198,7 +6198,7 @@ module Game
         # `#change_hp`'s own `return @hp if dead?` guard gives the HP branch
         # this same protection incidentally; `#change_mp` has no such guard
         # of its own, so this needed to be explicit here.
-        t.change_mp(amount) if sk.affect_sp && amount > 0 && !t.dead?
+        t.change_mp(amount) if sk[:affect_sp] && amount > 0 && !t.dead?
         changed ||= t.hp != before_hp || t.mp != before_mp
         affected.push(t) if changed
       end
@@ -6232,11 +6232,11 @@ module Game
       @revision = 0
       @id = id
       @unit = unit
-      @width = unit.width
-      @height = unit.height
-      @chipset_id = unit.chipset_id
-      @lower = unit.lower_layer || []
-      @upper = unit.upper_layer || []
+      @width = unit[:width]
+      @height = unit[:height]
+      @chipset_id = unit[:chipset_id]
+      @lower = unit[:lower_layer] || []
+      @upper = unit[:upper_layer] || []
       # Tile Substitution (11750) rewrites, per layer: a sparse { original_id =>
       # current_id } deviation from identity. Kept as a lookup applied on read
       # rather than as an edit of the layer arrays -- the map data stays
@@ -6830,9 +6830,9 @@ module Game
     # carries no custom route.
     def self.from_page(route)
       return nil if route.nil?
-      cmds = route.commands
+      cmds = route[:commands]
       return nil if cmds.nil? || cmds.empty?
-      new(cmds, repeat: route.repeat, skippable: route.skippable)
+      new(cmds, repeat: route[:repeat], skippable: route[:skippable])
     rescue StandardError => e
       $stderr.puts "[RPG2k] move route parse failed, event uses no custom route: #{e.message}"
       nil
@@ -6847,9 +6847,9 @@ module Game
     def self.same_route?(a, b)
       return true if a.nil? && b.nil?
       return false if a.nil? || b.nil?
-      return false unless a.repeat == b.repeat && a.skippable == b.skippable
-      ca = a.commands || []
-      cb = b.commands || []
+      return false unless a[:repeat] == b[:repeat] && a[:skippable] == b[:skippable]
+      ca = a[:commands] || []
+      cb = b[:commands] || []
       return false unless ca.size == cb.size
       ca.each_index do |i|
         x = ca[i]; y = cb[i]
@@ -7424,9 +7424,9 @@ module Game
 
     def self.active?(cond, switches, variables, party, timer_seconds = 0, timer2_seconds = 0)
       return true if cond.nil?
-      flags = cond.flags || 0
-      return false if (flags & SWITCH_A) != 0 && !switches[cond.switch_a_id]
-      return false if (flags & SWITCH_B) != 0 && !switches[cond.switch_b_id]
+      flags = cond[:flags] || 0
+      return false if (flags & SWITCH_A) != 0 && !switches[cond[:switch_a_id]]
+      return false if (flags & SWITCH_B) != 0 && !switches[cond[:switch_b_id]]
       if (flags & VARIABLE) != 0
         # RPG2000 always compares with plain >=; RPG2003 reads the page's own
         # operator instead -- ported from a reference implementation's own
@@ -7438,19 +7438,19 @@ module Game
         # edition-gated constant.
         rpg2003 = party && party.respond_to?(:rpg2003?) && party.rpg2003?
         if rpg2003
-          op = cond.compare_operator
+          op = cond[:compare_operator]
           if op && op >= 0 && op <= 5
-            return false unless compare(variables[cond.variable_id], cond.variable_value, op)
+            return false unless compare(variables[cond[:variable_id]], cond[:variable_value], op)
           end
         else
-          return false if variables[cond.variable_id] < cond.variable_value
+          return false if variables[cond[:variable_id]] < cond[:variable_value]
         end
       end
       if (flags & ITEM) != 0
-        return false unless party && party.has_item?(cond.item_id)
+        return false unless party && party.has_item?(cond[:item_id])
       end
       if (flags & ACTOR) != 0
-        return false unless party && party.include_actor?(cond.actor_id)
+        return false unless party && party.include_actor?(cond[:actor_id])
       end
       # Ported from a reference implementation's own condition check -- NOT
       # independently confirmed
@@ -7458,13 +7458,13 @@ module Game
       # down to timer_sec or below, not on an exact match and not while
       # counting up.
       if (flags & TIMER) != 0
-        return false if timer_seconds > cond.timer_sec
+        return false if timer_seconds > cond[:timer_sec]
       end
       # TIMER2 is the identical rule against Timer2's own remaining seconds,
       # RPG2003-only -- ported from a reference implementation's own
       # RPG2003-gate check, NOT independently confirmed against genuine RPG_RT under wine.
       if (flags & TIMER2) != 0 && party && party.respond_to?(:rpg2003?) && party.rpg2003?
-        return false if timer2_seconds > cond.timer2_sec
+        return false if timer2_seconds > cond[:timer2_sec]
       end
       true
     end
@@ -7474,7 +7474,7 @@ module Game
       return nil if pages.nil?
       chosen = nil
       pages.each do |id, page|
-        chosen = [id, page] if active?(page.condition, switches, variables, party,
+        chosen = [id, page] if active?(page[:condition], switches, variables, party,
                                         timer_seconds, timer2_seconds)
       end
       chosen
@@ -7526,18 +7526,18 @@ module Game
     # waste for however many of them a given map visit never calls.
     def self.load(db)
       list = []
-      ce = db.common_event
+      ce = db[:common_event]
       return list unless ce
       ce.each do |id, c|
-        trigger = c.start_term
+        trigger = c[:start_term]
         eager = trigger == AUTO_START || trigger == PARALLEL
         rec = CommonEventRecord.new
         rec.id = id
         rec.trigger = trigger
-        rec.need_flag = c.need_flag
-        rec.switch_id = c.switch_id
+        rec.need_flag = c[:need_flag]
+        rec.switch_id = c[:switch_id]
         rec.chunk = c
-        rec.commands = eager ? c.event : nil
+        rec.commands = eager ? c[:event] : nil
         list.push(rec)
       end
       list
@@ -9064,22 +9064,22 @@ module Game
 
     # Database price of item `id` (0 when the item is missing or free).
     def price(id)
-      it = @db.item[id]
-      it ? (it.price || 0) : 0
+      it = @db[:item][id]
+      it ? (it[:price] || 0) : 0
     end
 
     # Display name of item `id` ('' when missing).
     def name(id)
-      it = @db.item[id]
-      it ? it.name.to_s : ''
+      it = @db[:item][id]
+      it ? it[:name].to_s : ''
     end
 
     # Database flavour/effect text of item `id` ('' when missing) -- the line
     # the shop screen's own description bar shows for the highlighted good,
     # the same field `Scene::ItemMenu`'s description banner already reads.
     def description(id)
-      it = @db.item[id]
-      it ? it.description.to_s : ''
+      it = @db[:item][id]
+      it ? it[:description].to_s : ''
     end
 
     # Whether item `id` is equipment (weapon/shield/armour/helmet/accessory
@@ -9088,8 +9088,8 @@ module Game
     # own mystery party-window band (`Scene::Map#draw_shop_party`) -- see its
     # doc comment and the cycle #145 docs/TODO.md entry.
     def equip?(id)
-      it = @db.item[id]
-      it && (Actor::ITEM_WEAPON..Party::ITEM_ACCESSORY).cover?(it.type)
+      it = @db[:item][id]
+      it && (Actor::ITEM_WEAPON..Party::ITEM_ACCESSORY).cover?(it[:type])
     end
 
     # Half the database price — what a sale returns (RPG2000 rounds down).
@@ -9231,7 +9231,7 @@ module Game
         return terrain_name unless row
         case int_field(row, :backdrop_type)
         when TYPE_SPECIFIC
-          return row.respond_to?(:backdrop_file) ? row.backdrop_file.to_s : ''
+          return LCF.field?(row, :backdrop_file) ? row[:backdrop_file].to_s : ''
         when TYPE_TERRAIN
           return terrain_name
         else
@@ -9244,8 +9244,8 @@ module Game
     end
 
     def self.int_field(row, name)
-      return 0 unless row.respond_to?(name)
-      v = row.send(name)
+      return 0 unless LCF.field?(row, name)
+      v = row[name]
       v.nil? ? 0 : v.to_i
     end
   end
@@ -9295,8 +9295,8 @@ module Game
         if type == TYPE_PARENT
           id = int_field(row, :parent_map_id)
         else
-          bgm = row.respond_to?(:bgm) ? row.bgm : nil
-          name = bgm && bgm.respond_to?(:file) ? bgm.file.to_s : ''
+          bgm = LCF.field?(row, :bgm) ? row[:bgm] : nil
+          name = bgm && LCF.field?(bgm, :file) ? bgm[:file].to_s : ''
           return (type == TYPE_SPECIFIC && !name.empty?) ? bgm : nil
         end
       end
@@ -9304,8 +9304,8 @@ module Game
     end
 
     def self.int_field(row, name)
-      return 0 unless row.respond_to?(name)
-      v = row.send(name)
+      return 0 unless LCF.field?(row, name)
+      v = row[name]
       v.nil? ? 0 : v.to_i
     end
   end
@@ -9353,10 +9353,10 @@ module Game
         seen[id] = true
         row = properties ? properties[id] : nil
         return true unless row
-        v = row.respond_to?(field) ? row.send(field) : nil
+        v = LCF.field?(row, field) ? row[field] : nil
         v = TRISTATE_ALLOW if v.nil? # schema default for an unset field
         return v != TRISTATE_FORBID unless v == TRISTATE_PARENT
-        id = row.respond_to?(:parent_map_id) ? row.parent_map_id.to_i : 0
+        id = LCF.field?(row, :parent_map_id) ? row[:parent_map_id].to_i : 0
       end
       true
     end
@@ -9429,7 +9429,7 @@ module Game
         next if id <= 0
         return DEATH_ID if id == DEATH_ID
         r = row(id, table)
-        priority = r && r.respond_to?(:priority) ? (r.priority || 0) : 0
+        priority = r && LCF.field?(r, :priority) ? (r[:priority] || 0) : 0
         next if priority < best_priority
         best = id
         best_priority = priority
@@ -9441,7 +9441,7 @@ module Game
     # that omits it), the same lookup #significant makes per-id.
     def self.priority_of(id, table)
       r = row(id, table)
-      r && r.respond_to?(:priority) ? (r.priority || 0) : 0
+      r && LCF.field?(r, :priority) ? (r[:priority] || 0) : 0
     end
 
     # How far below the current top priority a state may sit before RPG_RT
@@ -9498,14 +9498,14 @@ module Game
     # fixture, or an id the database does not define).
     def self.name(id, table)
       r = row(id, table)
-      n = r && r.respond_to?(:name) ? r.name : nil
+      n = r && LCF.field?(r, :name) ? r[:name] : nil
       n.nil? || n.empty? ? nil : n
     end
 
     # The message-palette colour index the name is drawn in.
     def self.color(id, table)
       r = row(id, table)
-      c = r && r.respond_to?(:color) ? r.color : nil
+      c = r && LCF.field?(r, :color) ? r[:color] : nil
       c.nil? ? DEFAULT_COLOR : c
     end
 
@@ -9546,7 +9546,7 @@ module Game
     end
 
     def self.int_field(row, name)
-      v = row.respond_to?(name) ? row.send(name) : nil
+      v = LCF.field?(row, name) ? row[name] : nil
       v.nil? ? 0 : v
     end
   end
@@ -10488,10 +10488,10 @@ module Game
     # the chunk's unsigned byte reads back out of range). Both mean the same
     # thing — ask the database — so both are refilled here.
     def seed_screen_transitions(db)
-      sys = db && db.respond_to?(:system) ? db.system : nil
+      sys = db && LCF.field?(db, :system) ? db[:system] : nil
       DB_TRANSITION_FIELDS.each_with_index do |field, i|
         next if Game::Transition.setting?(@screen_transitions[i])
-        v = sys && sys.respond_to?(field) ? sys.send(field) : nil
+        v = sys && LCF.field?(sys, field) ? sys[field] : nil
         @screen_transitions[i] = Game::Transition.setting?(v) ? v : 0
       end
     rescue StandardError => e
@@ -10510,14 +10510,14 @@ module Game
     # does not call this and cannot clobber it. A vehicle the tree never
     # positions keeps `Vehicle.new`'s own unplaced default (map_id 0).
     def seed_vehicle_positions(map_tree)
-      init = map_tree && map_tree.respond_to?(:initial) ? map_tree.initial : nil
+      init = map_tree && LCF.field?(map_tree, :initial) ? map_tree[:initial] : nil
       return unless init
       Vehicle::TYPES.each do |type|
-        next unless init.respond_to?("#{type}_map_id")
+        next unless LCF.field?(init, :"#{type}_map_id")
         v = @vehicles[type]
-        v.map_id = init.send("#{type}_map_id") || 0
-        v.x = init.send("#{type}_x") || 0
-        v.y = init.send("#{type}_y") || 0
+        v.map_id = init[:"#{type}_map_id"] || 0
+        v.x = init[:"#{type}_x"] || 0
+        v.y = init[:"#{type}_y"] || 0
       end
     rescue StandardError => e
       # A tree without the fields is not fatal — every vehicle then stays

@@ -254,23 +254,23 @@ usage_abort("no such map: #{map_path}") unless File.file?(map_path)
 db = LCF::Database.new(File.open(File.join(game_dir, 'RPG_RT.ldb'), 'rb'))
 lmu = LCF::MapUnit.new(File.open(map_path, 'rb'))
 
-width = lmu.width.to_i
-height = lmu.height.to_i
+width = lmu[:width].to_i
+height = lmu[:height].to_i
 if width <= 0 || height <= 0 || width > MAP_MAX_W || height > MAP_MAX_H
   usage_abort("map #{width}x#{height} exceeds on-device bounds #{MAP_MAX_W}x#{MAP_MAX_H} " \
               "for target #{target_name}")
 end
 
-lower_layer = lmu.lower_layer.to_a
-upper_layer = (lmu.upper_layer && lmu.upper_layer.to_a) || Array.new(width * height, 0)
+lower_layer = lmu[:lower_layer].to_a
+upper_layer = (lmu[:upper_layer] && lmu[:upper_layer].to_a) || Array.new(width * height, 0)
 if lower_layer.size != width * height || upper_layer.size != width * height
   usage_abort("map layer size mismatch: expected #{width * height} cells")
 end
 
-chipset = db.chipset[lmu.chipset_id]
-usage_abort("map ##{map_id} references chipset ##{lmu.chipset_id}, not found in database") if chipset.nil?
+chipset = db[:chipset][lmu[:chipset_id]]
+usage_abort("map ##{map_id} references chipset ##{lmu[:chipset_id]}, not found in database") if chipset.nil?
 
-chipset_path = File.join(game_dir, 'ChipSet', "#{chipset.chipset_name}.png")
+chipset_path = File.join(game_dir, 'ChipSet', "#{chipset[:chipset_name]}.png")
 usage_abort("chipset image not found: #{chipset_path} (only PNG chipsets are supported)") unless File.file?(chipset_path)
 
 # `true` is RPG Maker's colour-key flag: palette index 0 of a chipset is
@@ -279,12 +279,12 @@ usage_abort("chipset image not found: #{chipset_path} (only PNG chipsets are sup
 chipset_bmp = RGSS::Bitmap.allocate
 usage_abort("failed to decode chipset PNG: #{chipset_path}") unless chipset_bmp.send(:_init_file, chipset_path, true)
 
-cset = Game::ChipSet.new(db, lmu.chipset_id)
+cset = Game::ChipSet.new(db, lmu[:chipset_id])
 
 # ---- hero sprite ------------------------------------------------------------
 
 # The project's *initial* party leader (RPG_RT.ldb's own System.party --
-# Game::Party#restore's own `db.system.party || []`, first entry -- and that
+# Game::Party#restore's own `db[:system][:party] || []`, first entry -- and that
 # actor's own player row), the same source Scene::Map#load_charset draws
 # from at New Game. There is no live game state a host-side export can ask
 # instead, so this is a best-effort default, not a snapshot of any
@@ -298,15 +298,12 @@ cset = Game::ChipSet.new(db, lmu.chipset_id)
 # regress every map that exported fine before this format version.
 hero_bmp = nil
 hero_charset_index = 0
-# db[22], not db.system: under CRuby `system` resolves to Kernel#system
-# before method_missing ever sees it (AGENTS.md documents the identical trap
-# for `save[101]`/`save.system`; mruby has no such collision, which is why
-# mruby-rpg2k's own game.rb can spell this `db.system.party`).
-party_ids = db[22].party || []
-leader = party_ids.first && db.player[party_ids.first]
-hero_charset_name = leader && leader.charset_name.to_s
+# db[22] is the System chunk -- the same record `db[:system]` reads.
+party_ids = db[22][:party] || []
+leader = party_ids.first && db[:player][party_ids.first]
+hero_charset_name = leader && leader[:charset_name].to_s
 if hero_charset_name && !hero_charset_name.empty?
-  hero_charset_index = leader.charset_index || 0
+  hero_charset_index = leader[:charset_index] || 0
   if hero_charset_index < 0 || hero_charset_index > 7
     warn "[nano7] party leader's CharSet index #{hero_charset_index} is out of the " \
          '0..7 a CharSet PNG holds; exporting without a hero sprite'
@@ -334,8 +331,8 @@ end
 # on a coarse grid rather than per pixel -- bmp_read is pure Ruby here and a
 # panorama is commonly 640x480, while an average does not need every pixel.
 def backdrop_for(game_dir, lmu)
-  return 0 unless lmu.parallax_flag
-  name = lmu.parallax_name.to_s
+  return 0 unless lmu[:parallax_flag]
+  name = lmu[:parallax_name].to_s
   return 0 if name.empty?
 
   path = %w[png xyz bmp].map { |ext| File.join(game_dir, 'Panorama', "#{name}.#{ext}") }.find { |f| File.file?(f) }
@@ -375,9 +372,9 @@ start_x = start_x_arg && Integer(start_x_arg)
 start_y = start_y_arg && Integer(start_y_arg)
 if start_x.nil? || start_y.nil?
   lmt = LCF::MapTree.new(File.open(File.join(game_dir, 'RPG_RT.lmt'), 'rb'))
-  if lmt.initial.initial_map_id.to_i == map_id
-    start_x ||= lmt.initial.initial_x.to_i
-    start_y ||= lmt.initial.initial_y.to_i
+  if lmt[:initial][:initial_map_id].to_i == map_id
+    start_x ||= lmt[:initial][:initial_x].to_i
+    start_y ||= lmt[:initial][:initial_y].to_i
   else
     start_x ||= width / 2
     start_y ||= height / 2
@@ -592,7 +589,7 @@ hero_frames_bytes =
 # A map event whose *initially-active* page (Game::EventPage.select against a
 # fresh project's own switches/variables/party -- Game::Switches.new,
 # Game::Variables.new and Game::Party.new(db) build exactly that "New Game,
-# nothing has happened yet" state, the same source db.system.party the hero
+# nothing has happened yet" state, the same source db[:system][:party] the hero
 # lookup above already draws from) carries a CharSet graphic: one
 # precomposited frame, the same way the hero's twelve are, not simulated
 # movement or an on-page move route's own Change Graphic (ADR 96's own "no
@@ -605,14 +602,12 @@ hero_frames_bytes =
 # Frames are deduplicated the same way tile pixels are: many events commonly
 # share one NPC CharSet (58 distinct names project-wide in the Nepheshel test
 # bed), so the atlas is sized by distinct *pictures*, not by event count.
-if lmu.events
+if lmu[:events]
   switches = Game::Switches.new
   variables = Game::Variables.new
-  # party_ids passed explicitly, not left to Game::Party#initialize's own
-  # `ids ||= db.system.party` default: under plain CRuby (this script's own
-  # host, not the real mruby runtime) `db.system` hits Kernel#system before
-  # method_missing ever sees it -- the exact trap the hero lookup above
-  # already avoids by spelling this `db[22].party` instead.
+  # party_ids passed explicitly: the same initial party the hero lookup
+  # above read, which is also Game::Party#initialize's own
+  # `ids ||= db[:system][:party]` default.
   party = Game::Party.new(db, party_ids)
 
   event_bmp_by_path = {}
@@ -620,15 +615,15 @@ if lmu.events
   event_frames = [] # index -> packed pixel string
   events_out = []   # [x, y, frame_index, layer]
 
-  lmu.events.each do |event_id, ev|
-    selected = Game::EventPage.select(ev.pages, switches, variables, party)
+  lmu[:events].each do |event_id, ev|
+    selected = Game::EventPage.select(ev[:pages], switches, variables, party)
     next unless selected
 
     _, page = selected
-    charset_name = page.charset_name.to_s
+    charset_name = page[:charset_name].to_s
     next if charset_name.empty?
 
-    charset_index = page.charset_index || 0
+    charset_index = page[:charset_index] || 0
     if charset_index < 0 || charset_index > 7
       warn "[nano7] event ##{event_id}'s CharSet index #{charset_index} is out of the " \
            '0..7 a CharSet PNG holds; skipping its sprite'
@@ -657,12 +652,12 @@ if lmu.events
     # converted value (Game::Character.new(x, y, dir)), so it doubles as
     # both the page's base facing and the "char_dir" #frame wants -- nothing
     # here ever turns the character afterwards, unlike the genuine renderer.
-    base_dir = page.direction
+    base_dir = page[:direction]
     base_dir = 2 unless (0..3).include?(base_dir)
     base_dir_numpad = Game::EventGraphic.numpad_direction(base_dir)
-    base_pattern = page.pattern
+    base_pattern = page[:pattern]
     base_pattern = 1 unless (0..2).include?(base_pattern)
-    anim_type = page.animation_type || 0
+    anim_type = page[:animation_type] || 0
     # phase 0, moving false: the frame a freshly-loaded map shows before
     # anything has stepped or a move route has run a single sub-command --
     # see Game::EventGraphic.frame's own comment for exactly which anim_type
@@ -685,9 +680,9 @@ if lmu.events
       event_frames << pixels
     end
 
-    layer = page.layer
+    layer = page[:layer]
     layer = 0 unless (0..2).include?(layer)
-    events_out << [ev.x.to_i, ev.y.to_i, frame_index, layer]
+    events_out << [ev[:x].to_i, ev[:y].to_i, frame_index, layer]
   end
 
   # The genuine renderer's own same-tier y-sort (Scene::Map#draw_events:

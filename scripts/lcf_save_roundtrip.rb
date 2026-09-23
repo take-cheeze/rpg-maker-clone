@@ -98,8 +98,8 @@ class RoundTripper
     edit = LCF::SaveData.new(StringIO.new(original))
     hero = edit[HERO]
     sys  = edit[SYSTEM]
-    old_x     = hero.x.to_i
-    old_count = sys.save_count.to_i
+    old_x     = hero[:x].to_i
+    old_count = sys[:save_count].to_i
 
     hero[HERO_X]      = old_x + 1
     sys[SAVE_COUNT]   = old_count + 1
@@ -107,8 +107,8 @@ class RoundTripper
     edit[SYSTEM]      = sys
 
     reread = LCF::SaveData.new(StringIO.new(edit.to_lcf))
-    new_x     = reread.hero.x.to_i
-    new_count = reread[SYSTEM].save_count.to_i
+    new_x     = reread[:hero][:x].to_i
+    new_count = reread[SYSTEM][:save_count].to_i
     if new_x == old_x + 1 && new_count == old_count + 1
       puts "  edit: hero.x #{old_x} -> #{new_x}, save_count #{old_count} -> #{new_count} (reloaded OK)"
     else

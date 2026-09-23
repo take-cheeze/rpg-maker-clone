@@ -84,6 +84,7 @@ end
 def fake_party
   db = Object.new
   def db.system; Struct.new(:party).new([]); end
+  def db.[](name) = public_send(name) # LCF::File#[] (db[:system])
   Game::Party.new(db)
 end
 
@@ -238,6 +239,7 @@ sk = Object.new
 def sk.hit; 90; end
 def sk.failure_message; 3; end   # physical skill -> agility/evasion branch
 def sk.scope; 0; end
+def sk.[](name) = public_send(name) # the runtime reads a skill row as sk[:hit]
 
 tgt_front = combatant('TgtF', 0, 0, 5, 10_000)
 tgt_back = combatant('TgtB', 0, 0, 5, 10_000)

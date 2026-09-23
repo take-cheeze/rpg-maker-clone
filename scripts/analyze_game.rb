@@ -228,7 +228,7 @@ class GameStats
 
   def tally_move_route(route)
     return unless route
-    cmds = route.commands rescue nil
+    cmds = route[:commands] rescue nil
     return unless cmds
     cmds.each { |m| @move_hist[m.command_id] += 1 }
   end
@@ -247,11 +247,11 @@ def analyze(dir)
     db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
     %i[player skill item enemy enemy_group terrain chipset battle_anime
        switch variable common_event].each do |field|
-      st.db_counts[field] = (count2d(db.__send__(field)) rescue -1)
+      st.db_counts[field] = (count2d(db[field]) rescue -1)
     end
-    db.common_event&.each do |_id, ce|
-      st.common_by_start[ce.start_term.to_i] += 1 rescue nil
-      st.tally_commands(ce.event)
+    db[:common_event]&.each do |_id, ce|
+      st.common_by_start[ce[:start_term].to_i] += 1 rescue nil
+      st.tally_commands(ce[:event])
     end
   rescue => e
     st.errors << "RPG_RT.ldb: #{e.class}: #{e.message}"
@@ -262,14 +262,14 @@ def analyze(dir)
     begin
       lmu = LCF::MapUnit.new(File.open(f, 'rb'))
       st.maps += 1
-      lmu.events.each do |_id, ev|
+      lmu[:events].each do |_id, ev|
         st.map_events += 1
-        ev.pages.each do |_pid, pg|
+        ev[:pages].each do |_pid, pg|
           st.pages += 1
-          st.trigger_hist[pg.trigger.to_i] += 1 rescue nil
-          st.movetype_hist[pg.move_type.to_i] += 1 rescue nil
-          st.tally_commands(pg.event_commands)
-          st.tally_move_route(pg.move_route)
+          st.trigger_hist[pg[:trigger].to_i] += 1 rescue nil
+          st.movetype_hist[pg[:move_type].to_i] += 1 rescue nil
+          st.tally_commands(pg[:event_commands])
+          st.tally_move_route(pg[:move_route])
         end
       end
     rescue => e
@@ -393,19 +393,19 @@ def report_troops(dir)
   cmds = Hash.new(0)
   windows = []
   turns = Hash.new(0)
-  db.enemy_group.each do |_gid, group|
-    next unless group.respond_to?(:pages) && group.pages
-    group.pages.each do |_pid, page|
+  db[:enemy_group].each do |_gid, group|
+    next unless LCF.field?(group, :pages) && group[:pages]
+    group[:pages].each do |_pid, page|
       pages += 1
-      cond = page.condition
-      flags = cond && cond.flags ? cond.flags : 0
+      cond = page[:condition]
+      flags = cond && cond[:flags] ? cond[:flags] : 0
       conditional += 1 if flags != 0
       BATTLE_PAGE_FLAGS.each_index { |b| bits[b] += 1 if (flags & (1 << b)) != 0 }
       # The two sub-conditions whose *values* prove the bit: a deliberate HP
       # window (rather than the 0..100 default) and the turn base/multiple pair.
-      windows << [cond.enemy_id, cond.enemy_hp_min, cond.enemy_hp_max] if (flags & 0x020) != 0
-      turns["base=#{cond.turn_b} multiple=#{cond.turn_a}"] += 1 if (flags & 0x008) != 0
-      (page.event || []).each { |c| cmds[c.code] += 1 }
+      windows << [cond[:enemy_id], cond[:enemy_hp_min], cond[:enemy_hp_max]] if (flags & 0x020) != 0
+      turns["base=#{cond[:turn_b]} multiple=#{cond[:turn_a]}"] += 1 if (flags & 0x008) != 0
+      (page[:event] || []).each { |c| cmds[c.code] += 1 }
     end
   end
 
@@ -461,21 +461,21 @@ def report_enemies(dir)
   conds = Hash.new(0)
   ratings = Hash.new(0)
   switched = 0
-  db.enemy.each do |_id, row|
+  db[:enemy].each do |_id, row|
     enemies += 1
-    list = (row.respond_to?(:actions) ? row.actions : nil)
+    list = (LCF.field?(row, :actions) ? row[:actions] : nil)
     if list.nil? || list.to_a.empty?
       patternless += 1
       next
     end
     list.each do |_ai, a|
       actions += 1
-      k = a.kind.to_i
+      k = a[:kind].to_i
       kinds[k] += 1
-      basics[a.basic.to_i] += 1 if k.zero?
-      conds[a.condition_type.to_i] += 1
-      ratings[a.rating.to_i] += 1
-      switched += 1 if a.switch_on || a.switch_off
+      basics[a[:basic].to_i] += 1 if k.zero?
+      conds[a[:condition_type].to_i] += 1
+      ratings[a[:rating].to_i] += 1
+      switched += 1 if a[:switch_on] || a[:switch_off]
     end
   end
 
@@ -556,10 +556,10 @@ def analyze_params(dir)
     end
   end
   db = LCF::Database.new(File.open(File.join(dir, 'RPG_RT.ldb'), 'rb'))
-  db.common_event&.each { |_id, ce| tally.call(ce.event) }
+  db[:common_event]&.each { |_id, ce| tally.call(ce[:event]) }
   Dir[File.join(dir, 'Map*.lmu')].sort.each do |f|
     lmu = LCF::MapUnit.new(File.open(f, 'rb'))
-    lmu.events.each { |_id, ev| ev.pages.each { |_pid, pg| tally.call(pg.event_commands) } }
+    lmu[:events].each { |_id, ev| ev[:pages].each { |_pid, pg| tally.call(pg[:event_commands]) } }
   rescue StandardError => e
     warn "  #{File.basename(f)}: #{e.class}: #{e.message}"
   end

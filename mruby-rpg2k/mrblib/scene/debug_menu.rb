@@ -221,7 +221,7 @@ class RPG2k
       end
 
       def max_id
-        table = @mode == :switch ? db.switch : db.variable
+        table = @mode == :switch ? db[:switch] : db[:variable]
         values = @mode == :switch ? @state.switches : @state.variables
         ids = [FLOOR_ID]
         # A project that never named a switch/variable in the editor (or, in
@@ -334,9 +334,9 @@ class RPG2k
       end
 
       def row_name(id)
-        table = @mode == :switch ? db.switch : db.variable
+        table = @mode == :switch ? db[:switch] : db[:variable]
         row = table && table[id]
-        name = row && row.respond_to?(:name) ? row.name : nil
+        name = row && LCF.field?(row, :name) ? row[:name] : nil
         name.nil? ? '' : name
       end
 
@@ -459,9 +459,9 @@ class RPG2k
       # chunk) stays silent and only a genuine dangling id gets its own
       # "(not found)".
       def map_name(id)
-        return '' unless @map_tree.respond_to?(:map_properties) && @map_tree.map_properties
-        row = @map_tree.map_properties[id]
-        row && row.respond_to?(:name) ? row.name : '(not found)'
+        return '' unless LCF.field?(@map_tree, :map_properties) && @map_tree[:map_properties]
+        row = @map_tree[:map_properties][id]
+        row && LCF.field?(row, :name) ? row[:name] : '(not found)'
       end
 
       def refresh_chipset_page
@@ -485,9 +485,9 @@ class RPG2k
       # a bare test fixture with no battle_anime table at all stays silent and
       # only a genuine dangling id gets its own "(not found)".
       def animation_name(id)
-        return '' unless db.respond_to?(:battle_anime) && db.battle_anime
-        row = db.battle_anime[id]
-        row && row.respond_to?(:name) ? row.name : '(not found)'
+        return '' unless LCF.field?(db, :battle_anime) && db[:battle_anime]
+        row = db[:battle_anime][id]
+        row && LCF.field?(row, :name) ? row[:name] : '(not found)'
       end
 
       # -- Variable value editor, opened by C on a Variable row ----------------
