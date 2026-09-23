@@ -61,7 +61,10 @@ on top of docs/adr/0202:
 | `wio_rgss_boot` bc2cpp, FLASH overflow | 3,536,308 | 3,515,660 | -20,648 |
 
 The bc2cpp pair was built from the same working tree as docs/adr/0202's
-bc2cpp "after", which is this row's "before". The three generated
+bc2cpp "after", which is this row's "before". That tree already held
+docs/adr/0203's then-uncommitted registration pruning, so both bc2cpp
+figures include its 33,072 bytes. Without it, the "after" bc2cpp overflow is
+3,548,732. The delta here is unaffected. The three generated
 `*_compiled_gen.cpp` files are byte-identical between the two builds, apart
 from the build-directory path, so the delta is this change alone. The
 bc2cpp-compiled code links against the minimal module with no unresolved
