@@ -369,11 +369,11 @@ REWRITES = {
       { old: '        return unless sliding || Game::EventGraphic.continuous?(type)',
         new: '        return unless sliding || type == Game::EventGraphic::CONTINUOUS || ' \
              'type == Game::EventGraphic::FIXED_CONTINUOUS || type == Game::EventGraphic::SPIN' },
-      { old: '        dir = Game::EventGraphic.frame_dir(e[:anim_type], ch.direction, e[:anim_phase])',
-        new: '        dir = e[:anim_type] == Game::EventGraphic::SPIN ? ' \
-             'Game::EventGraphic.spin_direction(e[:anim_phase]) : ch.direction' },
-      { old: '        ev[:forced_freq] = valid_move_freq(freq)',
-        new: '        ev[:forced_freq] = ((freq && freq >= 1 && freq <= 8) ? freq : nil)' },
+      { old: '        dir = Game::EventGraphic.frame_dir(e.anim_type, ch.direction, e.anim_phase)',
+        new: '        dir = e.anim_type == Game::EventGraphic::SPIN ? ' \
+             'Game::EventGraphic.spin_direction(e.anim_phase) : ch.direction' },
+      { old: '        ev.forced_freq = valid_move_freq(freq)',
+        new: '        ev.forced_freq = ((freq && freq >= 1 && freq <= 8) ? freq : nil)' },
       { old: '        ch.move_frequency = valid_move_freq(freq) || ch.move_frequency',
         new: '        ch.move_frequency = ((freq && freq >= 1 && freq <= 8) ? freq : nil) || ' \
              'ch.move_frequency' },
@@ -413,7 +413,7 @@ REWRITES = {
       { old: '        record_foreground_event_exec
 ',
         new: '        (frames = @interpreter.call_stack_snapshot; @state.foreground_event_exec =
-          frames && { event_id: @active_event ? @active_event[:id] : 0, frames: frames })
+          frames && { event_id: @active_event ? @active_event.id : 0, frames: frames })
 ' }, # record_foreground_event_exec
       { old: '        record_tile_substitutions
 ',
@@ -475,7 +475,7 @@ REWRITES = {
           # cursor moved
         elsif Input.trigger?(Input::C)
           play_system_se(SFX_DECISION)
-          case lines[@shop[:index]][1]
+          case lines[@shop.index][1]
           when :buy  then shop_switch(:buy)
           when :sell then shop_switch(:sell)
           when :leave then leave_shop
@@ -490,14 +490,14 @@ REWRITES = {
         new: '        else (lines = shop_lines; if shop_move_cursor(lines)
           # cursor moved
         elsif Input.trigger?(Input::C) && !lines.empty?
-          if open_shop_quantity(lines[@shop[:index]][1])
+          if open_shop_quantity(lines[@shop.index][1])
             play_system_se(SFX_DECISION)
           else
             play_system_se(SFX_BUZZER)
           end
         elsif Input.trigger?(Input::B)
           play_system_se(SFX_CANCEL)
-          @shop[:has_menu] ? shop_switch(:command) : leave_shop
+          @shop.has_menu ? shop_switch(:command) : leave_shop
         end)
 ' }, # drive_shop_list
       { old: '        buf = animation_cell_crop_buffer
@@ -519,7 +519,7 @@ REWRITES = {
 ' }, # party_leader
       { old: '          apply_pending_choice_lines if confirm
 ',
-        new: '          (new_seg_lines = @message[:pending_choice]; @message[:pending_choice] = nil; @message[:window].pause = false; @message[:choice_start] = 0; @message[:seg_lines] = new_seg_lines; install_choice_lines(new_seg_lines)) if confirm
+        new: '          (new_seg_lines = @message.pending_choice; @message.pending_choice = nil; @message.window.pause = false; @message.choice_start = 0; @message.seg_lines = new_seg_lines; install_choice_lines(new_seg_lines)) if confirm
 ' }, # apply_pending_choice_lines
       { old: '        disp = hero_screen_y
 ',
@@ -572,7 +572,7 @@ REWRITES = {
           @last_frame = nil if @state.player_flash
           @state.player_flash = nil
         else
-          target[:flash] = nil
+          target.flash = nil
         end; end)
 ' }, # clear_map_target_flash
       { old: '            drive_wait_key_enter
@@ -581,12 +581,12 @@ REWRITES = {
 ' }, # drive_wait_key_enter
       { old: '          draw_event_tile(e, bmp, cam_x, cam_y, opacity)
 ',
-        new: '          (unless !(@chipset_bmp); sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e[:char].graphic_index); epx, epy = event_pixel(e); dx = epx - cam_x; dy = epy - cam_y - event_jump_offset(e); blt_bushed bmp, dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity,
+        new: '          (unless !(@chipset_bmp); sx, sy, sw, sh = Game::ChipsetLayout.event_tile_rect(e.char.graphic_index); epx, epy = event_pixel(e); dx = epx - cam_x; dy = epy - cam_y - event_jump_offset(e); blt_bushed bmp, dx, dy, @chipset_bmp, Rect.new(sx, sy, sw, sh), opacity,
                    event_bush_depth(e, sh); end)
 ' }, # draw_event_tile
-      { old: '            common_gate_open?(c) && !@started_common[c[:id]] &&
+      { old: '            common_gate_open?(c) && !@started_common[c.id] &&
 ',
-        new: '            (!(c[:need_flag]) ? true : (@state.switches[c[:switch_id]])) && !@started_common[c[:id]] &&
+        new: '            (!(c.need_flag) ? true : (@state.switches[c.switch_id])) && !@started_common[c.id] &&
 ' }, # common_gate_open?
       { old: '          break unless counter_tile?(fx, fy)
 ',
@@ -648,9 +648,9 @@ REWRITES = {
 ',
         new: '        face_sheet = (!(cfg.face?) ? nil : (load_face_bitmap(cfg.face_name)))
 ' }, # load_face
-      { old: '          x = @message[:text_x] + choice_row_indent(start + i)
+      { old: '          x = @message.text_x + choice_row_indent(start + i)
 ',
-        new: '          x = @message[:text_x] + (!(@message && @message[:choice]) ? 0 : (line_index >= (@message[:choice_start] || 0) ? MSG_CHOICE_INDENT : 0))
+        new: '          x = @message.text_x + (!(@message && @message.choice) ? 0 : ((start + i) >= (@message.choice_start || 0) ? MSG_CHOICE_INDENT : 0))
 ' }, # choice_row_indent
       { old: '          terrain_hit = terrain_step_damage(row)
 ',
