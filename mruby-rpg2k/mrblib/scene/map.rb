@@ -5963,7 +5963,7 @@ class RPG2k
         accepted = req.accepted
         active = []
         KEY_INPUT_BUTTONS.each do |sym, btn|
-          next unless accepted[sym]
+          next unless accepted.accepts?(sym)
           active << sym if key_input_hit?(btn, req.wait)
         end
         if accepted.numbers

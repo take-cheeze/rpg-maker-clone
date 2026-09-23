@@ -12759,7 +12759,7 @@ check 'Key Input Proc pre-1.50 layout enables the whole D-pad, no Shift' do
   req = it.key_input_request
   eq false, req.wait, 'no-wait requests read held state, not edges'
   acc = req.accepted
-  [:down, :left, :right, :up, :decision].each { |k| eq true, acc[k], "#{k} on" }
+  [:down, :left, :right, :up, :decision].each { |k| eq true, acc.accepts?(k), "#{k} on" }
   eq false, acc.cancel, 'cancel not accepted'
   eq false, acc.shift, 'pre-1.50 has no Shift'
   eq 4, it.key_input_result([:up])
@@ -12793,7 +12793,7 @@ check 'Key Input Proc (RPG2003 Numbers/Operators layout) decodes the two flags' 
   eq true, acc.operators, 'Operators accepted'
   eq true, acc.decision
   eq false, acc.cancel
-  [:down, :left, :right, :up].each { |k| eq true, acc[k], "#{k} on (single arrows-all flag)" }
+  [:down, :left, :right, :up].each { |k| eq true, acc.accepts?(k), "#{k} on (single arrows-all flag)" }
   eq false, acc.shift, 'this layout has no individual Shift, unlike RPG2000 1.50+'
   # :numbers/:operators are the whole-group accept flags `do_key_input` sets,
   # not real per-key symbols -- key_input_result only ever receives one of the

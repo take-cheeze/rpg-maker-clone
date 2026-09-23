@@ -310,8 +310,11 @@ module Game
       # #key_input_result and Scene::Map#resolve_key_input look a flag up by
       # a key symbol computed from KEY_INPUT_CODES/KEY_INPUT_BUTTONS, so this
       # keeps the Struct's symbol lookup, and its NameError for a symbol
-      # that names no flag.
-      def [](key)
+      # that names no flag. It is not named `[]`: bc2cpp would add this
+      # class to the guard chain of every `[]` call whose receiver it cannot
+      # type (about 1,500 of them), where a name only this class defines
+      # compiles to one guarded direct call (docs/adr/0215).
+      def accepts?(key)
         case key
         when :decision then @decision
         when :cancel then @cancel
@@ -1204,7 +1207,7 @@ module Game
     # Numbers/Operators, not one flag per digit/operator — this maps each of
     # KEY_INPUT_CODES' per-key symbols back onto the group flag that accepts
     # it, so #key_input_result can look up "was this key's group requested?"
-    # for :n3 the same way it looks up acc[:decision] for :decision. A symbol
+    # for :n3 the same way it looks up acc.accepts?(:decision) for :decision. A symbol
     # absent here (e.g. :decision) is its own group, i.e. `accepted` carries a
     # flag with that exact name.
     KEY_INPUT_GROUPS = { n0: :numbers, n1: :numbers, n2: :numbers, n3: :numbers,
@@ -1222,7 +1225,7 @@ module Game
       return 0 unless acc
       KEY_INPUT_CODES.each do |sym, code|
         group = KEY_INPUT_GROUPS[sym] || sym
-        return code if acc[group] && active.include?(sym)
+        return code if acc.accepts?(group) && active.include?(sym)
       end
       0
     end
