@@ -362,6 +362,7 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   # compiled_gems.rb exactly -- no further owner-scaling candidate remains
   # for this gem specifically (a future round adding a new bc2cpp-covered
   # RGSS owner would need to extend compiled_gems.rb's own list first).
+  wio_strip_rgss_probes(spec)
   wio_strip_bc2cpp_stubs(spec, compiled_gem: 'mruby-rgss-compiled',
                          owners: %w[RGSS::Sprite RGSS::Window RGSS::Audio.singleton
                                     RGSS::ErrorReport.singleton RGSS::Plane RGSS::Tilemap
