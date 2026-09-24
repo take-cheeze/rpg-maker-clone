@@ -8,9 +8,11 @@
 #
 # - The F8 bug-report file name is stamped with Graphics.frame_count. That
 #   is unique per press within a session, as the uptime-based clock was.
-# - State.ole_now returns NO_CLOCK_TIMESTAMP, the date lsd_io.rb already
-#   falls back to without a clock. game/lsd_io.rb is not in wio's rbfiles
+# - The save timestamp in game/lsd_io.rb is NO_CLOCK_TIMESTAMP, the date it
+#   already falls back to without a clock. That file is not in wio's rbfiles
 #   today; it is rewritten anyway, so it is clock-free if it comes back.
+#   The pattern matches the method body only: a method name mentioned under
+#   scripts/ counts as a dynamic call to bc2cpp_static_dispatch_check.rb.
 #
 # It then refuses any output that still names Time. Running over every wio
 # mrblib file makes that a build-time guarantee, not a convention.
@@ -30,9 +32,8 @@ module WioClock
        '"#{GAME_DIR}/bugreport_frame#{"%08d" % Graphics.frame_count}.md"']
     ],
     'mrblib/game/lsd_io.rb' => [
-      ["    def self.ole_now\n      Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET\n" \
-       "    rescue StandardError\n      NO_CLOCK_TIMESTAMP\n    end\n",
-       "    def self.ole_now\n      NO_CLOCK_TIMESTAMP\n    end\n"]
+      ["      Time.now.to_i / 86400.0 + OLE_EPOCH_OFFSET\n    rescue StandardError\n      NO_CLOCK_TIMESTAMP\n",
+       "      NO_CLOCK_TIMESTAMP\n"]
     ]
   }.freeze
 
