@@ -49,7 +49,13 @@ for an irep without debug info.
 
 ## Consequences
 
-WIO_NUMBERS_SLIM
+Measured with a full `wio_rgss_boot` link (the baseline configuration of
+`scripts/wio_bc2cpp_measure.bash`), on top of ADRs 0223 and 0224:
+
+- **Flash: −19,936 B.** That is 8 bytes for each of about 2,490 ireps.
+  `ld`'s `FLASH` overflow falls from 479,280 to 459,344 B.
+- **Static RAM:** unchanged. The ireps were already `.rodata`.
+
 
 - **No behaviour change on wio.** The fields were already `NULL` there.
   Bytecode loaded at run time (`mrb_load_irep_buf`) now drops its line
