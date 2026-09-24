@@ -1,4 +1,4 @@
-# 218. Compile unreachable RGSS features out of the wio build
+# 220. Compile unreachable RGSS features out of the wio build
 
 Date: 2026-09-23
 

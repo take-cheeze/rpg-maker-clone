@@ -106,7 +106,7 @@ static inline dirent* readdir(DIR*) {
 // implementation for the whole build. mruby-mvjs depends on this gem and only
 // includes the header, so its glyph rasteriser (mvcanvas.cxx) resolves against
 // the symbols emitted here — keep exactly one STB_TRUETYPE_IMPLEMENTATION.
-// Not on wio (ADR 0218): nothing there can load a TrueType face.
+// Not on wio (ADR 0220): nothing there can load a TrueType face.
 #if !defined(WIO_TERMINAL)
 #define STB_TRUETYPE_IMPLEMENTATION
 #include <stb_truetype.h>
@@ -2733,7 +2733,7 @@ const shinonome::Char<shinonome::HEIGHT>* find_gothic_char(char32_t c) {
 // fixed-size shinonome bitmap font. When no usable font file is found we fall
 // back to the shinonome path below, so text always draws.
 //
-// Compiled out on wio (ADR 0218): it has no Fonts/ directory to scan (no
+// Compiled out on wio (ADR 0220): it has no Fonts/ directory to scan (no
 // dirent) and no maker that sets RGSS::Font.default_path, so every face
 // lookup there fails and text is always shinonome.
 
@@ -2945,7 +2945,7 @@ FontAttr read_font(mrb_state* M, V self) {
   if (!font_default_path(M).empty())
     mrb_raise(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
               "RGSS::Font.default_path: TrueType text is not compiled into "
-              "the Wio Terminal build (ADR 0218)");
+              "the Wio Terminal build (ADR 0220)");
 #else
   fa.ttf = ttf_for_name(M, name);
 #endif
@@ -4679,7 +4679,7 @@ mrb_value plane_set_zoom_y(mrb_state* M, mrb_value self) {
 
 // ---- Tilemap --------------------------------------------------------------
 
-// Tilemap and Window are compiled out on wio (ADR 0218): its only maker,
+// Tilemap and Window are compiled out on wio (ADR 0220): its only maker,
 // RPG2k, draws with its own tilemap and RPG2k::Window. The classes stay, with
 // an initialize that raises (not_compiled_init).
 #if !defined(WIO_TERMINAL)
@@ -6878,7 +6878,7 @@ void vp_refresh_children(mrb_state* M, mrb_value self) {
       continue;
     if (mrb_obj_is_kind_of(M, v, spr_class))
       spr_bind_display(M, v, reinterpret_cast<lv_obj_t*>(DATA_PTR(v)));
-#if !defined(WIO_TERMINAL)  // Plane: ADR 0132; Tilemap: ADR 0218
+#if !defined(WIO_TERMINAL)  // Plane: ADR 0132; Tilemap: ADR 0220
     else if (mrb_obj_is_kind_of(M, v, plane_class))
       plane_retile(M, v);
     else if (mrb_obj_is_kind_of(M, v, tilemap_class))
@@ -7412,11 +7412,11 @@ static mrb_value window_title_get_m(mrb_state* M, mrb_value) {
 }
 
 #if defined(WIO_TERMINAL)
-// RGSS::Tilemap / RGSS::Window on wio (ADR 0218): fail loudly rather than
+// RGSS::Tilemap / RGSS::Window on wio (ADR 0220): fail loudly rather than
 // hand back an object that never draws.
 static mrb_value not_compiled_init(mrb_state* M, mrb_value self) {
   mrb_raisef(M, mrb_exc_get_id(M, MRB_ERROR_SYM(NotImplementedError)),
-             "%C is not compiled into the Wio Terminal build (ADR 0218)",
+             "%C is not compiled into the Wio Terminal build (ADR 0220)",
              mrb_obj_class(M, self));
   return self;
 }
@@ -7517,7 +7517,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
   mrb_define_method(M, plane, "disposed?", obj_disposed, MRB_ARGS_NONE());
 #endif  // !defined(WIO_TERMINAL)
 
-#if defined(WIO_TERMINAL)  // ADR 0218
+#if defined(WIO_TERMINAL)  // ADR 0220
   mrb_define_method(M, mrb_define_class_under(M, m, "Tilemap", M->object_class),
                     "initialize", not_compiled_init, MRB_ARGS_ANY());
   mrb_define_method(M, mrb_define_class_under(M, m, "Window", M->object_class),

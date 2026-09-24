@@ -4,4 +4,4 @@
   `RGSS::Window`, which RPG2k does not use. Both classes now raise
   `NotImplementedError` if constructed. The desktop-only render and audio
   probes are also stripped from wio's bytecode. `FLASH` overflow falls from
-  624,164 to 579,320 bytes (ADR 0218).
+  624,164 to 579,320 bytes (ADR 0220).

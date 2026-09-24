@@ -83,7 +83,7 @@ def wio_strip_inline_helpers(spec)
   end
 end
 
-# ADR 0218: wio-only. Drops the RGSS.*_probe diagnostics from a build-time copy
+# ADR 0220: wio-only. Drops the RGSS.*_probe diagnostics from a build-time copy
 # of mruby-rgss/mrblib/lib.rb (see strip_wio_rgss_probes.rb). Call it before
 # wio_strip_bc2cpp_stubs, so it reads the checked-in source.
 def wio_strip_rgss_probes(spec)

@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# wio-only build step (ADR 0218): deletes the RGSS render/audio probes from a
+# wio-only build step (ADR 0220): deletes the RGSS render/audio probes from a
 # build-time copy of mruby-rgss/mrblib/lib.rb. Only src/main.cxx's desktop
 # --rgss_effect_probe / --rgss_audio_probe flags call them, and on wio they
 # are dead bytecode. build_config.rb's wio_strip_rgss_probes wires this in.
