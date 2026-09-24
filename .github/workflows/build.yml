@@ -945,15 +945,13 @@ jobs:
             checks: |
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
-          - shard: optcarrot-coverage
-            checks: |
-              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
           - shard: optcarrot-benchmark
             checks: |
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
           - shard: fast
             checks: |
               ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
               MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
