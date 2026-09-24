@@ -50,7 +50,12 @@ The patch is applied to every build (`cmake/build-mruby.cmake`,
 
 ## Consequences
 
-WIO_NUMBERS_PRESYM
+Measured with a full `wio_rgss_boot` link (the baseline configuration of
+`scripts/wio_bc2cpp_measure.bash`), on top of ADR 0224's patch:
+
+- **Flash: −18,384 B.** The wio build has 4,714 presyms. Before the patch,
+  `presym_name_table` was 18,856 B and `presym_length_table` 9,428 B.
+- **Static RAM:** unchanged. The tables were already `.rodata`.
 
 - The per-length tables are a few hundred bytes whatever the presym count.
 - Symbol → name costs a binary search over the length table (about five
