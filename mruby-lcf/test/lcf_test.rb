@@ -45,6 +45,24 @@ assert "cp932 to unicode degrades on unmappable bytes instead of crashing" do
   assert_equal "�あ", LCF.cp932_to_utf8("\x82\x00\x82\xa0")
 end
 
+# ADR 0217's table layout: single bytes, the computed user-defined area, and
+# best-fit code points that only encode. scripts/cp932_tables_check.rb covers
+# every input; these pin the real transcoders to it.
+assert "cp932 to unicode across the table layout" do
+  assert_equal "ｱ", LCF.cp932_to_utf8("\xb1")
+  assert_equal "\u{e000}\u{e0bb}\u{e757}", LCF.cp932_to_utf8("\xf0\x40\xf0\xfc\xf9\xfc")
+  assert_equal "�", LCF.cp932_to_utf8("\xf0\x7f")
+  assert_equal "\\A", LCF.cp932_to_utf8("\x5c\x41")
+end
+
+assert "unicode to cp932" do
+  assert_equal "\x82\xa0A\xb1", LCF.utf8_to_cp932("あAｱ")
+  assert_equal "\xf0\x40\xf0\xfc\xf9\xfc", LCF.utf8_to_cp932("\u{e000}\u{e0bb}\u{e757}")
+  # Best fit: several code points share one CP932 code.
+  assert_equal "\x5cA", LCF.utf8_to_cp932("¥À")
+  assert_equal "?", LCF.utf8_to_cp932("\u{1f600}")
+end
+
 # ---- LCF binary format encoders (mirror the on-disk layout) ----------------
 # These let the parser be exercised against synthetic, self-consistent data.
 def lcf_ber(n)
