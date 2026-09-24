@@ -311,6 +311,16 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-force-no-cxx-exception-escape-hatch.patch"
   )
 
+  # Flash/RAM trims for the static irep and presym data every build embeds
+  # (docs/adr/0223, 0224, 0225). The first two change no behaviour; the third
+  # only adds the MRB_NO_IREP_DEBUG option, which only the wio build defines.
+  set(mruby_presym_compact_patch
+      "${ARG_REPO_ROOT}/patches/mruby-presym-compact-table.patch")
+  set(mruby_cdump_const_reps_patch
+      "${ARG_REPO_ROOT}/patches/mruby-cdump-const-reps.patch")
+  set(mruby_no_irep_debug_patch
+      "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
+
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
   # GitHub. Both repos/host and repos/<TARGET_NAME> are linked: a cross build
@@ -345,6 +355,12 @@ function(rpg2k_add_mruby)
             "${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}"
     COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
             "${mruby_force_no_cxx_exception_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_presym_compact_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_cdump_const_reps_patch}"
+    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
+            "${mruby_no_irep_debug_patch}"
     COMMAND
       mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
@@ -365,6 +381,9 @@ function(rpg2k_add_mruby)
             "${mruby_stringio_getbyte_patch}"
             "${mruby_marshal_onigmo_patch}"
             "${mruby_force_no_cxx_exception_patch}"
+            "${mruby_presym_compact_patch}"
+            "${mruby_cdump_const_reps_patch}"
+            "${mruby_no_irep_debug_patch}"
             ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)

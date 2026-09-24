@@ -7342,7 +7342,7 @@ static bool script_location(mrb_state* M, ScriptLocation* out) {
     if (proc == nullptr || MRB_PROC_CFUNC_P(proc))
       continue;
     const mrb_irep* irep = proc->body.irep;
-    if (irep == nullptr || irep->debug_info == nullptr || ci->pc == nullptr)
+    if (irep == nullptr || ci->pc == nullptr)
       continue;
     // ci->pc is the *next* instruction to run, so the call being made is the
     // one before it -- the same -1 mruby's backtrace applies.

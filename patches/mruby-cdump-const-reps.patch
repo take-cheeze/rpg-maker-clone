@@ -1,0 +1,24 @@
+mruby's C-struct dumper (src/cdump.c, used for every gem's mrblib because
+mrbc runs with -S) writes each irep's child table as
+
+  static const mrb_irep *NAME_reps_N[] = { &NAME_irep_1, ... };
+
+The pointees are const but the array itself is not, so every one of these
+arrays lands in .data: flash for its initializer plus the same bytes again
+in RAM, copied at startup, although nothing ever writes to it (mrb_irep's
+own `reps` field is already `const struct mrb_irep *const *`). Declaring
+the array `*const` moves it to .rodata. See docs/adr/0224.
+
+diff --git a/src/cdump.c b/src/cdump.c
+index c453dfb..7a18912 100644
+--- a/src/cdump.c
++++ b/src/cdump.c
+@@ -347,7 +347,7 @@ cdump_irep_struct(mrb_state *mrb, const mrb_irep *irep, uint8_t flags, FILE *fp,
+       if (cdump_irep_struct(mrb, irep->reps[i], flags, fp, name, max+i, init_syms_code, mp) != MRB_DUMP_OK)
+         return MRB_DUMP_INVALID_ARGUMENT;
+     }
+-    fprintf(fp,   "static const mrb_irep *%s_reps_%d[%d] = {\n", name, n, len);
++    fprintf(fp,   "static const mrb_irep *const %s_reps_%d[%d] = {\n", name, n, len);
+     for (i=0,len=irep->rlen; i<len; i++) {
+       fprintf(fp,   "  &%s_irep_%d,\n", name, max+i);
+     }

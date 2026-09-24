@@ -1,0 +1,150 @@
+mruby keeps the names of its presyms (the symbols known at build time) as
+one `const char *` per symbol plus one uint16_t length per symbol
+(build/include/mruby/presym/table.h). Presyms are already sorted by
+(length, name), so all names of one length form a contiguous run. This
+patch stores them as a single blob of NUL-terminated names and, per
+length, only the index and blob offset of that run's first name: 6 bytes
+less per presym on a 32-bit target. Lookup by name binary-searches only its
+own length's run; lookup by id binary-searches the (short) per-length
+table. The sort key also becomes the byte length instead of the character
+count, which is what presym_find always compared. See docs/adr/0223.
+
+diff --git a/lib/mruby/presym.rb b/lib/mruby/presym.rb
+index 3ede3b6..ba08b8f 100644
+--- a/lib/mruby/presym.rb
++++ b/lib/mruby/presym.rb
+@@ -66,7 +66,7 @@ module MRuby
+     def scan(paths)
+       presym_hash = {}
+       paths.each {|path| read_preprocessed(presym_hash, path)}
+-      presym_hash.keys.sort_by!{|sym| [c_literal_size(sym), sym]}
++      presym_hash.keys.sort_by!{|sym| [sym.bytesize, sym]}
+     end
+ 
+     def read_list
+@@ -98,14 +98,34 @@ module MRuby
+       end
+     end
+ 
++    # Presyms are sorted by [bytesize, name] (see #scan), so every name of one
++    # length sits in one run.  The table stores them as a single blob of
++    # NUL-terminated names plus, per length, the index and blob offset of that
++    # run's first name: no per-symbol pointer or length entry.
+     def write_table_header(presyms)
+       _pp "GEN", table_header_path.relative_path
++      len_max = presyms.empty? ? 0 : presyms.last.bytesize
++      counts = Array.new(len_max + 1, 0)
++      presyms.each {|sym| counts[sym.bytesize] += 1}
++      starts = [0]
++      offsets = [0]
++      counts.each_with_index do |n, len|
++        starts << starts.last + n
++        offsets << offsets.last + n * (len + 1)
++      end
++      offsets.pop
+       File.open(table_header_path, "w:binary") do |f|
+-        f.puts "static const uint16_t presym_length_table[] = {"
+-        presyms.each{|sym| f.puts "  #{sym.bytesize},\t/* #{sym} */"}
++        f.puts "#define MRB_PRESYM_LEN_MAX #{len_max}"
++        f.puts
++        f.puts "static const uint16_t presym_len_start[] = {"
++        starts.each_with_index {|s, len| f.puts "  #{s},\t/* #{len} */"}
+         f.puts "};"
+         f.puts
+-        f.puts "static const char * const presym_name_table[] = {"
++        f.puts "static const uint32_t presym_len_offset[] = {"
++        offsets.each_with_index {|o, len| f.puts "  #{o},\t/* #{len} */"}
++        f.puts "};"
++        f.puts
++        f.puts "static const char presym_name_blob[] ="
+         presyms.each do |sym|
+           sym = sym.gsub(/([\x01-\x1f\x7f-\xff])|("|\\)/n) {
+             case
+@@ -116,9 +136,9 @@ module MRuby
+               "\\#$2"
+             end
+           }
+-          f.puts %|  "#{sym}",|
++          f.puts %|  "#{sym}\\0"|
+         end
+-        f.puts "};"
++        f.puts "  \"\";"
+       end
+     end
+ 
+diff --git a/src/symbol.c b/src/symbol.c
+index f24987e..2379a24 100644
+--- a/src/symbol.c
++++ b/src/symbol.c
+@@ -12,28 +12,35 @@
+ #include <mruby/internal.h>
+ 
+ #ifndef MRB_PRESYM_SCANNING
+-/* const uint16_t presym_length_table[]   */
+-/* const char * const presym_name_table[] */
++/* #define MRB_PRESYM_LEN_MAX                              */
++/* const uint16_t presym_len_start[MRB_PRESYM_LEN_MAX+2]  */
++/* const uint32_t presym_len_offset[MRB_PRESYM_LEN_MAX+1] */
++/* const char presym_name_blob[]                          */
+ # include <mruby/presym/table.h>
+ #endif
+ 
++/* Presyms are sorted by (length, name); the names of length L are the
++   NUL-terminated run at presym_len_offset[L], indices presym_len_start[L]
++   up to presym_len_start[L+1] (see MRuby::Presym#write_table_header). */
++static const char*
++presym_run_name(size_t len, mrb_sym idx)
++{
++  return presym_name_blob + presym_len_offset[len] + (idx - presym_len_start[len]) * (len + 1);
++}
++
+ static mrb_sym
+ presym_find(const char *name, size_t len)
+ {
+-  if (presym_length_table[MRB_PRESYM_MAX-1] < len) return 0;
+-
+-  mrb_sym presym_size = MRB_PRESYM_MAX;
+-  for (mrb_sym start = 0; presym_size != 0; presym_size/=2) {
+-    mrb_sym idx = start+presym_size/2;
+-    int cmp = (int)len-(int)presym_length_table[idx];
+-    if (cmp == 0) {
+-      cmp = memcmp(name, presym_name_table[idx], len);
+-      if (cmp == 0) return idx+1;
+-    }
+-    if (0 < cmp) {
+-      start = ++idx;
+-      --presym_size;
+-    }
++  if (len > MRB_PRESYM_LEN_MAX) return 0;
++
++  mrb_sym lo = presym_len_start[len];
++  mrb_sym hi = presym_len_start[len+1];
++  while (lo < hi) {
++    mrb_sym idx = lo + (hi-lo)/2;
++    int cmp = memcmp(name, presym_run_name(len, idx), len);
++    if (cmp == 0) return idx+1;
++    if (cmp < 0) hi = idx;
++    else lo = idx+1;
+   }
+   return 0;
+ }
+@@ -42,8 +49,17 @@ static const char*
+ presym_sym2name(mrb_sym sym, mrb_int *lenp)
+ {
+   if (sym > MRB_PRESYM_MAX) return NULL;
+-  if (lenp) *lenp = presym_length_table[sym-1];
+-  return presym_name_table[sym-1];
++
++  mrb_sym idx = sym-1;
++  size_t lo = 0, hi = MRB_PRESYM_LEN_MAX;
++  /* find the length whose run holds idx: the last len with start <= idx */
++  while (lo < hi) {
++    size_t len = lo + (hi-lo+1)/2;
++    if (presym_len_start[len] <= idx) lo = len;
++    else hi = len-1;
++  }
++  if (lenp) *lenp = (mrb_int)lo;
++  return presym_run_name(lo, idx);
+ }
+ 
+ /* ------------------------------------------------------ */
