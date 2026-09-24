@@ -171,4 +171,5 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
                                     LCF::Sections LCF::Array1D LCF::Array2D StringIO])
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
+  wio_strip_unreachable(spec)
 end

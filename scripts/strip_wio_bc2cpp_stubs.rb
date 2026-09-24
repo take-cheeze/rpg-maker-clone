@@ -180,6 +180,10 @@
 
 require 'set'
 
+# The visibility statements whose explicit name list must drop a stripped
+# method: each raises NameError at load time when a named method is missing.
+VISIBILITY_MIDS = %i[private protected public].freeze
+
 # Reads wio_registered_methods.rb's own TSV output and returns
 # { "Owner::Path" => Set["method_name", ...] } for exactly the owners this
 # invocation was asked to strip (owners-csv) -- every other real owner in
@@ -382,29 +386,29 @@ end
 # business touching, never a class-body-level mode statement) or into a
 # matched FCALL's own children (a Symbol/String literal argument list has
 # no further CLASS/MODULE/FCALL nesting to find).
-def collect_visibility_calls(node, stack, out, singleton_owner: nil)
+def collect_visibility_calls(node, stack, out, singleton_owner: nil, mids: VISIBILITY_MIDS)
   return unless node.is_a?(RubyVM::AbstractSyntaxTree::Node)
 
   case node.type
   when :CLASS
     name = const_path_of(node.children[0])
-    collect_visibility_calls(node.children[2], name ? stack + [name] : stack, out)
+    collect_visibility_calls(node.children[2], name ? stack + [name] : stack, out, mids: mids)
     return
   when :MODULE
     name = const_path_of(node.children[0])
-    collect_visibility_calls(node.children[1], name ? stack + [name] : stack, out)
+    collect_visibility_calls(node.children[1], name ? stack + [name] : stack, out, mids: mids)
     return
   when :SCLASS
     recv, body = node.children
     if self_receiver?(recv) && !stack.empty?
-      collect_visibility_calls(body, stack, out, singleton_owner: "#{stack.join('::')}.singleton")
+      collect_visibility_calls(body, stack, out, singleton_owner: "#{stack.join('::')}.singleton", mids: mids)
     end
     return
   when :DEFN, :DEFS
     return
   when :FCALL
     mid, args = node.children
-    if %i[private protected public].include?(mid) && (singleton_owner || !stack.empty?)
+    if mids.include?(mid) && (singleton_owner || !stack.empty?)
       owner = singleton_owner || stack.join('::')
       parsed = literal_arg_names(args)
       out << { owner: owner, mid: mid, names: parsed&.first, spans: parsed&.last, node: node }
@@ -413,7 +417,7 @@ def collect_visibility_calls(node, stack, out, singleton_owner: nil)
   end
 
   node.children.each do |c|
-    collect_visibility_calls(c, stack, out, singleton_owner: singleton_owner) if c.is_a?(RubyVM::AbstractSyntaxTree::Node)
+    collect_visibility_calls(c, stack, out, singleton_owner: singleton_owner, mids: mids) if c.is_a?(RubyVM::AbstractSyntaxTree::Node)
   end
 end
 
@@ -453,12 +457,12 @@ def apply_deletion_plan(lines, wanted_defs, path, edits = [])
       # only safe once nothing else real shares the physical line): everything
       # outside the DEFN node's own [first_column, last_column) span must be
       # blank, or this line's deletion would silently take a second statement
-      # with it.
-      before = header[0...node.first_column] || ''
-      after = header[node.last_column..] || ''
+      # with it. A trailing `# comment` goes with the line. Columns are bytes.
+      before = header.byteslice(0, node.first_column) || ''
+      after = header.byteslice(node.last_column..) || ''
       raise "#{path}: #{d[:owner]}##{d[:name]}: one-line `def ...; end` shares its own physical " \
             'line with other real code -- refusing to guess' \
-        unless before.strip.empty? && after.strip.empty?
+        unless before.strip.empty? && (after.strip.empty? || after.lstrip.start_with?('#'))
     else
       # MULTILINE_DEF_SUPPORT: a real `def` whose own parameter list spans
       # more than one physical source line (a long keyword-argument list,
@@ -517,6 +521,116 @@ def apply_deletion_plan(lines, wanted_defs, path, edits = [])
   out.join
 end
 
+# Deletes every `def` in `source` whose owner/name `by_owner` lists, plus the
+# companion visibility statements naming them, and returns the new source
+# (`source` itself when nothing matches). Raises on any shape it cannot
+# rewrite safely.
+#
+# `list_names_by_owner` is what a visibility statement is checked against.
+# The default is the defs deleted from this file; a caller that strips by name
+# across files passes its whole-program set, because the statement and the def
+# can sit in different files. `visibility_mids` widens the statements
+# considered (e.g. `module_function :a, :b`, which also needs `a` to exist).
+def strip_defs_from_source(source, by_owner, path, list_names_by_owner: nil, visibility_mids: VISIBILITY_MIDS)
+  raise "#{path} does not parse to begin with" unless parses?(source)
+  # Most rbfiles define none of the target owners: skip the parse.
+  return source if by_owner.values.all?(&:empty?) && list_names_by_owner.nil?
+
+  ast = RubyVM::AbstractSyntaxTree.parse(source)
+  defs = []
+  collect_defs(ast, [], defs)
+  wanted = defs.select { |d| by_owner[d[:owner]]&.include?(d[:name]) }
+  wanted_names_by_owner = wanted.each_with_object(Hash.new { |h, k| h[k] = Set.new }) do |d, h|
+    h[d[:owner]] << d[:name]
+  end
+  list_names_by_owner ||= wanted_names_by_owner
+  return source if wanted.empty? && list_names_by_owner.values.all?(&:empty?)
+
+  # Round 38: also delete any companion `private :name`/`protected :name`/
+  # `public :name` statement that names ONLY methods this invocation is
+  # about to strip out of the same owner -- see collect_visibility_calls's
+  # own comment for why this exists (a stripped method's own leftover
+  # companion statement is a real NameError at mrblib load time, not a
+  # cosmetic loose end). Restricted to owners this invocation's own
+  # `wanted` actually touches; a companion statement on an owner nothing
+  # here strips is never even inspected for overlap.
+  vis_calls = []
+  collect_visibility_calls(ast, [], vis_calls, mids: visibility_mids)
+  companion_targets = []
+  companion_edits = []
+  lines_for_spans = source.each_line.to_a
+  vis_calls.each do |vc|
+    stripped_here = list_names_by_owner[vc[:owner]]
+    next if stripped_here.nil? || stripped_here.empty?
+
+    if vc[:names].nil?
+      # A companion private/protected/public statement on an owner this
+      # invocation IS stripping methods from, whose own argument list this
+      # script cannot statically resolve (a splat, a variable, ...) --
+      # cannot prove it doesn't also name a method being stripped, so this
+      # refuses to guess rather than silently leaving a possible
+      # `NameError` hazard standing.
+      raise "#{path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+            "#{vc[:node].first_lineno}) has an argument list this script cannot " \
+            'statically resolve, and this invocation strips other methods from the ' \
+            'same owner -- refusing to guess whether it names one of them'
+    end
+
+    overlap = vc[:names] & stripped_here.to_a
+    next if overlap.empty?
+
+    kept = vc[:names] - overlap
+    if kept.empty?
+      companion_targets << { owner: vc[:owner], name: "#{vc[:mid]}(:#{vc[:names].join(', :')})", node: vc[:node] }
+      next
+    end
+
+    # Mixed stripped/kept argument list: shrink the statement to just
+    # the kept names rather than deleting or keeping it whole. The
+    # whole argument span (through the LAST argument, so trailing
+    # stripped names go too) is replaced with the kept names joined by
+    # `, ` -- safe whenever that span holds nothing but `:` names, commas
+    # and whitespace (a `#` comment or anything else in there raises
+    # rather than guessing).
+    first_ln = vc[:node].first_lineno
+    kept_idx = vc[:names].each_index.select { |i| kept.include?(vc[:names][i]) }
+    last_span = vc[:spans].last
+    l0, lc1 = last_span[2] - 1, last_span[3]
+    stmt_first0 = vc[:node].first_lineno - 1
+    arg_lines = lines_for_spans[stmt_first0..l0]
+    stmt_line = arg_lines.first
+    mid = vc[:mid].to_s
+    mid_at = stmt_line.index(mid)
+    if mid_at.nil?
+      raise "#{path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+            "#{first_ln}) names both a stripped method " \
+            "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
+            'but the statement keyword is not on its first line -- partial-argument-list ' \
+            'editing is not supported yet, refusing to guess'
+    end
+    prefix_len = mid_at + mid.length
+    before = stmt_line[0...prefix_len] + ' '
+    arg_start_col = prefix_len + 1
+    region = arg_lines.first[arg_start_col..] + arg_lines[1...-1].to_a.join + (arg_lines.size > 1 ? arg_lines.last[0...lc1] : '')
+    region = arg_lines.first[arg_start_col...lc1] if arg_lines.size == 1
+    unless region.match?(/\A[\s,:A-Za-z0-9_?!'"]+\z/) && !region.include?('#')
+      raise "#{path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
+            "#{first_ln}) names both a stripped method " \
+            "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
+            'with non-trivial text between the kept arguments -- partial-argument-list ' \
+            'editing is not supported yet, refusing to guess'
+    end
+    kept_src = kept_idx.map { |i| ":#{vc[:names][i]}" }.join(', ')
+    companion_edits << { line0: stmt_first0, last0: l0, last_col: lc1, text: kept_src, before: before }
+  end
+  return source if wanted.empty? && companion_targets.empty? && companion_edits.empty?
+
+  rewritten = apply_deletion_plan(source.each_line.to_a, wanted + companion_targets, path, companion_edits)
+  raise "rewrite of #{path} does not parse; leaving the original untouched" unless parses?(rewritten)
+
+  rewritten
+end
+
 if __FILE__ == $PROGRAM_NAME
   registered_tsv, owners_csv, in_path, out_path = ARGV
   unless registered_tsv && owners_csv && in_path && out_path
@@ -526,111 +640,5 @@ if __FILE__ == $PROGRAM_NAME
   owners = owners_csv.split(',')
   by_owner = load_registered(registered_tsv, owners)
   source = File.read(in_path, external_encoding: Encoding::UTF_8)
-
-  raise "strip_wio_bc2cpp_stubs: #{in_path} does not parse to begin with" unless parses?(source)
-
-  if by_owner.values.all?(&:empty?)
-    # None of this invocation's target owners have any real registered
-    # method at all (the common case -- most rbfiles define none of
-    # today's bounded proof owners): copy through byte-for-byte rather
-    # than pay for a parse this file never needed.
-    File.write(out_path, source)
-  else
-    ast = RubyVM::AbstractSyntaxTree.parse(source)
-    defs = []
-    collect_defs(ast, [], defs)
-    wanted = defs.select { |d| by_owner[d[:owner]].include?(d[:name]) }
-
-    if wanted.empty?
-      File.write(out_path, source)
-    else
-      # Round 38: also delete any companion `private :name`/`protected :name`/
-      # `public :name` statement that names ONLY methods this invocation is
-      # about to strip out of the same owner -- see collect_visibility_calls's
-      # own comment for why this exists (a stripped method's own leftover
-      # companion statement is a real NameError at mrblib load time, not a
-      # cosmetic loose end). Restricted to owners this invocation's own
-      # `wanted` actually touches; a companion statement on an owner nothing
-      # here strips is never even inspected for overlap.
-      wanted_names_by_owner = wanted.each_with_object(Hash.new { |h, k| h[k] = Set.new }) do |d, h|
-        h[d[:owner]] << d[:name]
-      end
-
-      vis_calls = []
-      collect_visibility_calls(ast, [], vis_calls)
-      companion_targets = []
-      companion_edits = []
-      lines_for_spans = source.each_line.to_a
-      vis_calls.each do |vc|
-        stripped_here = wanted_names_by_owner[vc[:owner]]
-        next if stripped_here.nil? || stripped_here.empty?
-
-        if vc[:names].nil?
-          # A companion private/protected/public statement on an owner this
-          # invocation IS stripping methods from, whose own argument list this
-          # script cannot statically resolve (a splat, a variable, ...) --
-          # cannot prove it doesn't also name a method being stripped, so this
-          # refuses to guess rather than silently leaving a possible
-          # `NameError` hazard standing.
-          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
-                "#{vc[:node].first_lineno}) has an argument list this script cannot " \
-                'statically resolve, and this invocation strips other methods from the ' \
-                'same owner -- refusing to guess whether it names one of them'
-        end
-
-        overlap = vc[:names] & stripped_here.to_a
-        next if overlap.empty?
-
-        kept = vc[:names] - overlap
-        if kept.empty?
-          companion_targets << { owner: vc[:owner], name: "#{vc[:mid]}(:#{vc[:names].join(', :')})", node: vc[:node] }
-          next
-        end
-
-        # Mixed stripped/kept argument list: shrink the statement to just
-        # the kept names rather than deleting or keeping it whole. The
-        # whole argument span (through the LAST argument, so trailing
-        # stripped names go too) is replaced with the kept names joined by
-        # `, ` -- safe whenever that span holds nothing but `:` names, commas
-        # and whitespace (a `#` comment or anything else in there raises
-        # rather than guessing).
-        first_ln = vc[:node].first_lineno
-        kept_idx = vc[:names].each_index.select { |i| kept.include?(vc[:names][i]) }
-        last_span = vc[:spans].last
-        l0, lc1 = last_span[2] - 1, last_span[3]
-        stmt_first0 = vc[:node].first_lineno - 1
-        arg_lines = lines_for_spans[stmt_first0..l0]
-        stmt_line = arg_lines.first
-        mid = vc[:mid].to_s
-        mid_at = stmt_line.index(mid)
-        if mid_at.nil?
-          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
-                "#{first_ln}) names both a stripped method " \
-                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
-                'but the statement keyword is not on its first line -- partial-argument-list ' \
-                'editing is not supported yet, refusing to guess'
-        end
-        prefix_len = mid_at + mid.length
-        before = stmt_line[0...prefix_len] + ' '
-        arg_start_col = prefix_len + 1
-        region = arg_lines.first[arg_start_col..] + arg_lines[1...-1].to_a.join + (arg_lines.size > 1 ? arg_lines.last[0...lc1] : '')
-        region = arg_lines.first[arg_start_col...lc1] if arg_lines.size == 1
-        unless region.match?(/\A[\s,:A-Za-z0-9_?!'"]+\z/) && !region.include?('#')
-          raise "#{in_path}: #{vc[:owner]}: a #{vc[:mid]} statement (line " \
-                "#{first_ln}) names both a stripped method " \
-                "(#{overlap.sort.join(', ')}) and a kept one (#{kept.sort.join(', ')}) " \
-                'with non-trivial text between the kept arguments -- partial-argument-list ' \
-                'editing is not supported yet, refusing to guess'
-        end
-        kept_src = kept_idx.map { |i| ":#{vc[:names][i]}" }.join(', ')
-        companion_edits << { line0: stmt_first0, last0: l0, last_col: lc1, text: kept_src, before: before }
-      end
-
-      rewritten = apply_deletion_plan(source.each_line.to_a, wanted + companion_targets, in_path, companion_edits)
-      raise "strip_wio_bc2cpp_stubs: rewrite of #{in_path} does not parse; leaving the original " \
-            'untouched' unless parses?(rewritten)
-
-      File.write(out_path, rewritten)
-    end
-  end
+  File.write(out_path, strip_defs_from_source(source, by_owner, in_path))
 end

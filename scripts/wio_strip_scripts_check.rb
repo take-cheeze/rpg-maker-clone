@@ -69,9 +69,36 @@ Dir.mktmpdir do |tmp|
   end
 end
 
+# Last in the chain, strip_wio_unreachable_methods.rb (ADR 0218) over the
+# rbfiles each wio mrbgem.rake keeps: the analysis must accept the sources
+# (no unreviewed computed send) and every strip must apply and parse.
+require_relative 'wio_unreachable_methods'
+unreachable = 0
+missing = []
+Dir.mktmpdir do |tmp|
+  world = WioUnreachable.checked_in_world(tmp, chain: ->(gem) { CHAINS.fetch(gem) })
+  ruby, native = WioUnreachable.outside_srcs(WioUnreachable.checked_in_gem_dirs(missing: missing))
+  res = WioUnreachable.analyze(world: world, ruby: ruby, native: native)
+  WioUnreachable.check!(res)
+  unreachable = res.dead.size
+  by_owner = WioUnreachable.by_owner(res.dead)
+  world.each do |gem, rbfiles|
+    rbfiles.each do |path, rel|
+      out = strip_defs_from_source(File.read(path, encoding: 'UTF-8'), by_owner, path,
+                                   list_names_by_owner: by_owner, visibility_mids: UNREACHABLE_LIST_MIDS)
+      errors = Prism.parse(out).errors
+      failures << "#{gem}/#{rel}: unreachable-method strip output does not parse: #{errors.first.message}" unless errors.empty?
+    end
+  end
+rescue RuntimeError => e
+  failures << "unreachable-method strip: #{e.message}"
+end
+# CI's ruby-checks job has no submodules; fewer outside sources only strip more.
+warn "note: #{missing.join(', ')} not checked out; their sources were not scanned" unless missing.empty?
+
 failures.each { |f| warn "  FAIL #{f}" }
 if failures.empty?
-  puts "wio strip scripts check: PASS (#{files} mrblib files)"
+  puts "wio strip scripts check: PASS (#{files} mrblib files, #{unreachable} unreachable defs stripped)"
 else
   warn "wio strip scripts check: #{failures.size} failure(s)"
   exit 1
