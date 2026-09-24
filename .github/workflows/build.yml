@@ -963,6 +963,7 @@ jobs:
           MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
           MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
+          MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_reviewed_check.rb
           BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
 
       - name: sccache stats

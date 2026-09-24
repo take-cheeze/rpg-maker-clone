@@ -19,6 +19,7 @@ require 'open3'
 require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp/nomethod_reviewed'
 
 root = File.expand_path('..', __dir__)
 failures = []
@@ -170,7 +171,9 @@ generate = lambda do |source, name, closed|
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
-                 'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }))
+                 'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }),
+                 # The fixtures' dead sites are the point; NOMETHOD_REVIEWED gates real gems.
+                 NomethodReviewed::ALLOW_ENV => 'allow')
     end
     out, err, status = Open3.capture3(env, RbConfig.ruby, File.join(root, 'tools/bc2cpp/bc2cpp.rb'), path)
     abort "bc2cpp.rb failed for #{name}:\n#{err[-3000..] || err}" unless status.success?
