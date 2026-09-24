@@ -488,7 +488,7 @@ module WioUnreachable
     hal-wio-io mruby-array-ext mruby-bigint mruby-enum-ext mruby-enumerator mruby-exit mruby-fiber
     mruby-hash-ext mruby-io mruby-lcf mruby-marshal mruby-math-wio mruby-metaprog mruby-numeric-ext
     mruby-pack mruby-range-ext mruby-rgss mruby-rpg2k mruby-sprintf mruby-string-ext mruby-stringio
-    mruby-struct mruby-time
+    mruby-struct
   ].freeze
 
   # {gem => dir}. A gem missing from this checkout (CI's ruby-checks job has no
