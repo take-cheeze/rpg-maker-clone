@@ -864,8 +864,6 @@ jobs:
       SCCACHE_GHA_RW_MODE: >-
         ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
             && 'READ_WRITE' || 'READ_ONLY' }}
-      # TEMPORARY (reverted before merge): measure an uncached -m build.
-      SCCACHE_RECACHE: "1"
 
     steps:
       - run: git config --global submodule.fetchJobs 4
