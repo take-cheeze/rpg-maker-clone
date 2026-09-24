@@ -1037,6 +1037,12 @@
   how to regenerate the list. See
   [`docs/adr/0214-bc2cpp-profile-guided-hot-only.md`](docs/adr/0214-bc2cpp-profile-guided-hot-only.md).
 
+- A polymorphic call with more compiled definitions than the 16 an inline
+  class-check chain allows (`update`, with 19 classes on the full build)
+  finds its compiled method in one lookup table that every call site of the
+  name shares. Any other class keeps ordinary Ruby dispatch. See
+  [`docs/adr/0227-bc2cpp-poly-table-dispatch.md`](docs/adr/0227-bc2cpp-poly-table-dispatch.md).
+
 - `--render_fps=N` caps how many of every 60 `Graphics.update` calls actually
   repaint the screen — `30`, `15` or `10` redraw the screen that many times a
   second instead of 60, to cut rendering CPU/GPU work and the memory
