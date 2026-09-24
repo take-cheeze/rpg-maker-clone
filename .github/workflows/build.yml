@@ -150,7 +150,7 @@ jobs:
       # 3rd/SDL_mixer submodules build nothing here -- only the Android job
       # links the vendored copies (it has no system SDL2 package to find).
       # 3rd/optcarrot is unreferenced by CMakeLists.txt entirely; only the
-      # `bc2cpp` job's own Optcarrot benchmark reads it. See
+      # `bc2cpp-checks` jobs' Optcarrot benchmark reads it. See
       # scripts/checkout-submodules.bash.
       - name: Init submodules
         env:
@@ -841,12 +841,18 @@ jobs:
             ss/mz_battle.png
           if-no-files-found: warn
 
-  # The bc2cpp job builds the host mruby library with RPGMAKER_BC2CPP=1 on its
-  # own, then runs the compiler-specific analyses, coverage reports and the
+  # The bc2cpp jobs build the host mruby library with RPGMAKER_BC2CPP=1 on its
+  # own, then run the compiler-specific analyses, coverage reports and the
   # Optcarrot checksum benchmark. Keeping this separate from the normal game
   # build makes failures attributable to bc2cpp and ensures the generated
   # compiled gems are actually compiled into libmruby.a.
-  bc2cpp:
+  #
+  # Split three ways so the slow parts run side by side (ADR 0228):
+  # `bc2cpp-build` compiles the full libmruby.a; each `bc2cpp-checks` shard
+  # builds only the gem-free bootstrap host mrbc (`mruby_host_mrbc`) that every
+  # check reads, so the shards start at once instead of waiting on the full
+  # build; `bc2cpp` aggregates both and keeps the old status-check name.
+  bc2cpp-build:
     if: ${{ github.event_name != 'issue_comment' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -865,9 +871,7 @@ jobs:
         with:
           # See the `build` job's "Init submodules" step. This job's own
           # `cmake -S .` configure walks the same CMakeLists.txt (SDL2 comes
-          # from `find_package`), so it skips 3rd/SDL and 3rd/SDL_mixer too --
-          # but keeps 3rd/optcarrot, which the Optcarrot benchmark step below
-          # reads.
+          # from `find_package`), so it skips 3rd/SDL and 3rd/SDL_mixer too.
           submodules: false
           show-progress: false
           persist-credentials: false
@@ -896,79 +900,164 @@ jobs:
       - name: Build host mruby with bc2cpp
         timeout-minutes: 45
         # mruby core (including the three RPGMAKER_BC2CPP-only compiled gems)
-        # is built by `rake`, invoked from a CMake custom command
-        # (cmake/build-mruby.cmake) rather than through CMake's own compile
-        # rules -- so the dev shell's CMAKE_C_COMPILER_LAUNCHER/
-        # CMAKE_CXX_COMPILER_LAUNCHER (flake.nix) never reaches it, and every
-        # compile in this job ran uncached. mruby's own toolchain :gcc reads
-        # CC/CXX directly (build_config.rb), so wrap them here instead of at
-        # job level -- scoped to this one step so the "Configure host build"
-        # step above keeps CMake's own compiler detection, which does not
-        # handle a multi-word CC/CXX the way a shelled-out `rake` command does.
+        # is built by one `rake` run (cmake/build-mruby.cmake), so ninja's own
+        # parallelism never reaches it. `-m` makes rake schedule every
+        # prerequisite concurrently -- the three compiled gems' codegen and all
+        # C/C++ compiles -- on the runner's cores (ADR 0228). The compilers are
+        # the dev shell's CMAKE_<LANG>_COMPILER_LAUNCHER (sccache), passed to
+        # rake as CC=/CXX= by CMakeLists.txt.
         env:
-          CC: sccache gcc
-          CXX: sccache g++
-        run: cmake --build build-bc2cpp --target mruby_build --parallel 2
+          RAKEOPT: -m -j4
+        run: cmake --build build-bc2cpp --target mruby_build
 
-      - name: Report bc2cpp coverage
-        run: ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
-
-      - name: Optcarrot coverage and runtime benchmark
-        run: |
-          ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
-          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
-          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
-          MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
-
-      - name: Check bc2cpp static devirtualization analyses
-        run: |
-          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
-          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
-          MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_nilable_retclass_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_unique_class_names_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_float_math_fastpath_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_array_push_fastpath_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_owner_registration_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_mono_embed_guard_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_const_site_cache_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
-          # Re-proves every STATIC_DISPATCH_UNREGISTERED name (docs/adr/0203):
-          # a new dynamic reference to one is a NoMethodError, so it fails here.
-          MRBC="$mrbc" ruby scripts/bc2cpp_static_dispatch_check.rb
-          ruby scripts/bc2cpp_embed_guard_exemption_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
-          ruby scripts/bc2cpp_mrbgem_deps_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_integer_const_inline_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_packed_attr_args_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_rescue_live_in_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
-          MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_reviewed_check.rb
-          BC2CPP_MRUBY_CORE="$PWD/build-bc2cpp/mruby/host/mrbc" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
-
+      # Right after the build: the sccache server exits after 10 idle minutes,
+      # so a later stats step would only report a fresh, empty server.
       - name: sccache stats
         if: always()
         run: sccache --show-stats
+
+  bc2cpp-checks:
+    if: ${{ github.event_name != 'issue_comment' }}
+    name: bc2cpp-checks (${{ matrix.shard }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    # Shards are balanced by measured cost (ADR 0228), not by count. Every
+    # check that used to run in the single `bc2cpp` job is listed exactly once;
+    # keep it that way when adding one (put a fast check in `fast`).
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: static-dispatch
+            checks: |
+              # Re-proves every STATIC_DISPATCH_UNREGISTERED name (docs/adr/0203):
+              # a new dynamic reference to one is a NoMethodError, so it fails here.
+              MRBC="$mrbc" ruby scripts/bc2cpp_static_dispatch_check.rb
+          - shard: wired-embedding
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_wired_embedding_check.rb
+          - shard: hot-only
+            checks: |
+              MRBC="$mrbc" ruby scripts/bc2cpp_nomethod_reviewed_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hot_only_check.rb
+          - shard: registrations
+            checks: |
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
+          - shard: optcarrot-coverage
+            checks: |
+              ./scripts/optcarrot_bc2cpp_coverage_check.bash build-bc2cpp/mruby
+          - shard: optcarrot-benchmark
+            checks: |
+              MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
+          - shard: fast
+            checks: |
+              ./scripts/bc2cpp_coverage_check.bash build-bc2cpp/mruby
+              MRBC="$mrbc" ruby scripts/bc2cpp_include_ancestor_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_funcall_argc_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_retclass_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_nilable_retclass_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_unique_class_names_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_setidx_devirtualization_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_float_math_fastpath_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_array_push_fastpath_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_expression_devirt_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_runtime_wiring_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_owner_registration_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_mono_embed_guard_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_symbol_cache_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_const_site_cache_check.rb
+              ruby scripts/bc2cpp_embed_guard_exemption_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_native_class_const_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_struct_index_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_outlined_index_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_runtime_devirt_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_inherited_self_devirt_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_eqq_integer_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_const_lookup_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_poly_accessor_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_owner_class_cache_check.rb
+              ruby scripts/bc2cpp_mrbgem_deps_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_integer_const_inline_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_packed_attr_args_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_rescue_live_in_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_rescue_inline_block_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_return_join_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_nested_compile_state_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
+
+    env:
+      RPGMAKER_BC2CPP: "1"
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
+      SCCACHE_GHA_RW_MODE: >-
+        ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master')
+            && 'READ_WRITE' || 'READ_ONLY' }}
+
+    steps:
+      - run: git config --global submodule.fetchJobs 4
+      - uses: actions/checkout@v7
+        with:
+          # Same submodule set as `bc2cpp-build`, which keeps 3rd/optcarrot
+          # for the Optcarrot shards.
+          submodules: false
+          show-progress: false
+          persist-credentials: false
+
+      - name: Init submodules
+        env:
+          SKIP_SUBMODULES: 3rd/SDL 3rd/SDL_mixer
+        run: ./scripts/checkout-submodules.bash
+
+      - uses: nixbuild/nix-quick-install-action@v35
+      - name: Restore and cache Nix store
+        uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Set up development environment
+        run: ./scripts/nix-develop-export-env.bash
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Configure host build
+        run: cmake -S . -B build-bc2cpp -GNinja
+
+      # The same patched sources, build_config.rb and rake rule as the full
+      # build's own bootstrap mrbc -- only the gems are left out (ADR 0228).
+      - name: Build host bootstrap mrbc
+        run: cmake --build build-bc2cpp --target mruby_host_mrbc
+
+      - name: Run ${{ matrix.shard }} checks
+        run: |
+          mrbc="$(find build-bc2cpp/mruby -maxdepth 6 -type f -name mrbc -path '*/bin/mrbc' -perm -u+x -print -quit)"
+          test -n "$mrbc" || { echo "no host bin/mrbc found under build-bc2cpp/mruby" >&2; exit 1; }
+          # The checks below quietly SKIP their compiled-code comparison
+          # without these, so a missing piece must fail the shard instead.
+          core="$PWD/build-bc2cpp/mruby/host/mrbc"
+          test -f "$core/lib/libmruby_core.a" && test -d "$core/include" ||
+            { echo "no libmruby_core.a with include/ under $core" >&2; exit 1; }
+          ${{ matrix.checks }}
+
+  # The single status the old one-job `bc2cpp` reported: success only when the
+  # build and every check shard succeeded, so a required check on `bc2cpp`
+  # still gates on all of them.
+  bc2cpp:
+    if: ${{ always() && github.event_name != 'issue_comment' }}
+    needs: [bc2cpp-build, bc2cpp-checks]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every bc2cpp job to succeed
+        env:
+          BUILD: ${{ needs.bc2cpp-build.result }}
+          CHECKS: ${{ needs.bc2cpp-checks.result }}
+        run: |
+          echo "bc2cpp-build: $BUILD, bc2cpp-checks: $CHECKS"
+          test "$BUILD" = success && test "$CHECKS" = success
 
   # Ruby-only checks split out of `build`: none of the nine steps below ever
   # touches the compiled engine binary (they load the mruby-*/mrblib sources

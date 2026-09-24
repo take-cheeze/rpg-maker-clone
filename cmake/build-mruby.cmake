@@ -311,6 +311,12 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-force-no-cxx-exception-escape-hatch.patch"
   )
 
+  # mruby-onig-regexp builds its bundled onigmo inside Dir.chdir blocks, which
+  # change every rake thread's cwd; the patch keeps `rake -m` safe (ADR 0228).
+  set(mruby_onig_regexp_no_chdir_patch
+      "${ARG_REPO_ROOT}/patches/mruby-onig-regexp-no-chdir.patch")
+  set(mruby_onig_regexp_prefix "${ARG_REPO_ROOT}/3rd/mruby-onig-regexp")
+
   # Flash/RAM trims for the static irep and presym data every build embeds
   # (docs/adr/0223, 0224, 0225). The first two change no behaviour; the third
   # only adds the MRB_NO_IREP_DEBUG option, which only the wio build defines.
@@ -320,6 +326,34 @@ function(rpg2k_add_mruby)
       "${ARG_REPO_ROOT}/patches/mruby-cdump-const-reps.patch")
   set(mruby_no_irep_debug_patch
       "${ARG_REPO_ROOT}/patches/mruby-no-irep-debug.patch")
+
+  # One `apply_mruby_patch.bash DIR PATCH &&` link per patch, run in this order
+  # ahead of rake by both mruby_build and mruby_host_mrbc below.
+  set(mruby_patch_chain "")
+  set(mruby_patch_files "")
+  macro(rpg2k_mruby_patch dir patch)
+    list(APPEND mruby_patch_chain
+         "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${dir}" "${patch}"
+         &&)
+    list(APPEND mruby_patch_files "${patch}")
+  endmacro()
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_colon3_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_dollar_bang_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_defined_keyword_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_module_function_scope_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_parser_dump_back_nth_ref_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_nomem_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_gc_type_counts_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
+  rpg2k_mruby_patch("${mruby_stringio_prefix}"
+                    "${mruby_stringio_getbyte_patch}")
+  rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")
+  rpg2k_mruby_patch("${mruby_onig_regexp_prefix}"
+                    "${mruby_onig_regexp_no_chdir_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_force_no_cxx_exception_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_presym_compact_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_cdump_const_reps_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_no_irep_debug_patch}")
 
   # Point mruby's rake at the vendored mgem-list (the mgem index) via symlinks
   # in its repos/ dir so it resolves gems locally instead of cloning from
@@ -331,62 +365,30 @@ function(rpg2k_add_mruby)
   # link *inside* 3rd/mgem-list (a self-referential 3rd/mgem-list/mgem-list),
   # dirtying the submodule. `-n` (no-dereference; portable across GNU and
   # BSD/macOS) replaces the symlink in place instead.
-  add_custom_command(
-    OUTPUT "${libmruby_a}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_colon3_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_dollar_bang_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_defined_keyword_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_module_function_scope_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_parser_dump_back_nth_ref_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_nomem_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_gc_type_counts_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_io_maxpathlen_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
-            "${mruby_stringio_prefix}" "${mruby_stringio_getbyte_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash"
-            "${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_force_no_cxx_exception_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_presym_compact_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_cdump_const_reps_patch}"
-    COMMAND "${ARG_REPO_ROOT}/scripts/apply_mruby_patch.bash" "${mruby_prefix}"
-            "${mruby_no_irep_debug_patch}"
-    COMMAND
-      mkdir -p ${mruby_build_dir}/repos/host
+  set(mruby_rake_command
+      ${mruby_patch_chain} mkdir -p ${mruby_build_dir}/repos/host
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME} && ln -sfn
       ${ARG_REPO_ROOT}/3rd/mgem-list ${mruby_build_dir}/repos/host/mgem-list &&
       ln -sfn ${ARG_REPO_ROOT}/3rd/mgem-list
       ${mruby_build_dir}/repos/${ARG_TARGET_NAME}/mgem-list && ${mrb_opts} rake
-      -v
+      -v)
+
+  add_custom_command(
+    OUTPUT "${libmruby_a}"
+    COMMAND ${mruby_rake_command}
     WORKING_DIRECTORY "${mruby_prefix}"
-    DEPENDS "${ARG_REPO_ROOT}/build_config.rb"
-            "${mruby_colon3_patch}"
-            "${mruby_dollar_bang_patch}"
-            "${mruby_defined_keyword_patch}"
-            "${mruby_module_function_scope_patch}"
-            "${mruby_parser_dump_back_nth_ref_patch}"
-            "${mruby_nomem_patch}"
-            "${mruby_gc_type_counts_patch}"
-            "${mruby_io_maxpathlen_patch}"
-            "${mruby_stringio_getbyte_patch}"
-            "${mruby_marshal_onigmo_patch}"
-            "${mruby_force_no_cxx_exception_patch}"
-            "${mruby_presym_compact_patch}"
-            "${mruby_cdump_const_reps_patch}"
-            "${mruby_no_irep_debug_patch}"
+    DEPENDS "${ARG_REPO_ROOT}/build_config.rb" ${mruby_patch_files}
             ${mrb_files})
   add_custom_target(mruby_build DEPENDS "${libmruby_a}")
   add_dependencies(mruby mruby_build)
+
+  # Only the gem-free host bootstrap mrbc (build_config.rb's `host_mrbc` task):
+  # what the bc2cpp CI check jobs need, without the whole libmruby (ADR 0228).
+  # Not in `all`; never build it concurrently with mruby_build (same build dir).
+  add_custom_target(
+    mruby_host_mrbc
+    COMMAND ${mruby_rake_command} host_mrbc
+    WORKING_DIRECTORY "${mruby_prefix}")
 
   # Expose the computed paths and final rake options to the caller for anything
   # downstream that needs them: root CMakeLists.txt's emscripten-only onigmo

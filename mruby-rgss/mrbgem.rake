@@ -97,9 +97,8 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
   file "#{build_dir}/shinonome.hxx" => "#{build_dir}/shinonome.cxx"
   file "#{build_dir}/shinonome.cxx" => "#{dir}/gen_shinonome_data.rb" do |t|
     FileUtils.mkdir_p build_dir, verbose: true
-    Dir.chdir build_dir do
-      ruby  t.prereqs.first
-    end
+    # chdir: rather than Dir.chdir, which is process-wide and races `rake -m`.
+    ruby t.prereqs.first, chdir: build_dir
   end
 
   # docs/adr/0144 (bounded proof, plain-instance-method owners only):
