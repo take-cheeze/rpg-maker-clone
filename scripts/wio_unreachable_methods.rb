@@ -72,9 +72,9 @@ module WioUnreachable
     ['mruby-rgss/mrblib/error_report.rb', '@io.respond_to?(name, include_private)'] =>
       'Tee answers for its IO',
     ['mruby-rpg2k/mrblib/game.rb', 'b.respond_to?(mod_field)'] =>
-      'modified_stat callers pass :atk_mod/:def_mod/:spi_mod/:agi_mod literals',
+      "Game::Battle/Party's stat-modifier reader's callers pass :atk_mod/:def_mod/:spi_mod/:agi_mod literals",
     ['mruby-rpg2k/mrblib/game.rb', 'b.send(mod_field)'] =>
-      'modified_stat callers pass :atk_mod/:def_mod/:spi_mod/:agi_mod literals',
+      "Game::Battle/Party's stat-modifier reader's callers pass :atk_mod/:def_mod/:spi_mod/:agi_mod literals",
     ['mruby-rpg2k/mrblib/scene/equip_menu.rb', '@state.party.send(effective_method, a)'] =>
       'STAT_DEFS literal Symbols',
     ['mruby-rpg2k/mrblib/scene/equip_menu.rb', 'a.send(accessor)'] =>
@@ -83,8 +83,10 @@ module WioUnreachable
       'names from the BLOB literal, counted as a binary string',
     # game/battle.rb is not in the wio build; these matter for the desktop
     # test override (RPGMAKER_WIO_UNREACHABLE_HOST).
-    ['mruby-rpg2k/mrblib/game/battle.rb', 'b.respond_to?(name)'] => 'flag_of callers pass predicate literals',
-    ['mruby-rpg2k/mrblib/game/battle.rb', 'b.send(name)'] => 'flag_of callers pass predicate literals',
+    ['mruby-rpg2k/mrblib/game/battle.rb', 'b.respond_to?(name)'] =>
+      "Game::Battle.singleton's flag reader's callers pass predicate literals",
+    ['mruby-rpg2k/mrblib/game/battle.rb', 'b.send(name)'] =>
+      "Game::Battle.singleton's flag reader's callers pass predicate literals",
     ['mruby-rpg2k/mrblib/game/battle.rb', 'target.respond_to?(key)'] => 'STAT_MOD_FIELD literal keys',
     ['mruby-rpg2k/mrblib/game/battle.rb', 'target.send(key)'] => 'STAT_MOD_FIELD literal keys',
     ['mruby-rpg2k/mrblib/game/battle.rb', 'target.send(field)'] => 'STAT_MOD_FIELD literal values',
