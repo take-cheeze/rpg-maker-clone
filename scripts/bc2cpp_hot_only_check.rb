@@ -44,7 +44,10 @@ check.call('every compiled gem passes the list through the checked env and rebui
            BC2CPP_COMPILED_GEMS.keys.all? do |g|
              rake = File.read(File.join(root, g, 'mrbgem.rake'))
              rake.include?('extend Bc2cppHotOnlyOption') && rake.include?('.merge(bc2cpp_hot_only_env(spec))') &&
-               rake.include?('BC2CPP_HOT_METHODS_PATH] do |t|')
+               # ADR 0228 added `spec.build.mrbcfile` as a prerequisite right
+               # after BC2CPP_HOT_METHODS_PATH, so match the line's new
+               # ending, not the old, now-absent one.
+               rake.include?('BC2CPP_HOT_METHODS_PATH, spec.build.mrbcfile] do |t|')
            end)
 check.call("the wio strip's probe runs with the build's list",
            config.include?("env = { 'BC2CPP_HOT_METHODS' => (hot_methods if bc2cpp_hot_only_build?(spec.build)) }"))
