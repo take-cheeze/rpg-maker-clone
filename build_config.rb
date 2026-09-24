@@ -209,7 +209,8 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
   # bytecode `def` -- its only implementation -- is never stripped (ADR 0214).
   hot_methods = File.expand_path('tools/bc2cpp/hot_methods.txt', __dir__)
   file registered_tsv => [probe_script, compiled_gems_rb, bc2cpp, hot_methods,
-                          *Dir[File.expand_path('tools/bc2cpp/*.rb', __dir__)]].uniq do |t|
+                          *Dir[File.expand_path('tools/bc2cpp/*.rb', __dir__)],
+                          spec.build.mrbcfile].uniq do |t|
     FileUtils.mkdir_p File.dirname(registered_tsv), verbose: true
     mrbc = spec.build.mrbcfile.to_s
     require compiled_gems_rb
@@ -715,7 +716,7 @@ if wio
   # remember to ask for. `||=` so an explicit override (e.g. a measurement
   # build that wants the old compiled-in GOTHIC array back) still wins.
   # SHINONOME_GOTHIC_SD_FILE is read by gen_shinonome_data.rb from inside
-  # mruby-rgss's own build_dir (mrbgem.rake's Dir.chdir), so a bare filename
+  # mruby-rgss's own build_dir (mrbgem.rake's `chdir:`), so a bare filename
   # lands there rather than needing an absolute path computed this early.
   # RGSS_SHINONOME_GOTHIC_SD_PATH is the on-device path baked into the
   # firmware; no real SD deployment step writes gothic.bin there yet (ADR
@@ -1437,3 +1438,8 @@ if android
     rpg_maker_gems(conf)
   end
 end
+
+# Builds only the host's gem-free bootstrap mrbc (bin/mrbc, lib/libmruby_core.a,
+# include/) -- all the bc2cpp CI check jobs need, without the gem build (ADR 0228).
+desc 'build only the host bootstrap mrbc'
+task host_mrbc: MRuby.targets['host'].mrbcfile

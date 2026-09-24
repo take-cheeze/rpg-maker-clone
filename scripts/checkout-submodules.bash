@@ -11,10 +11,10 @@ set -eu -o pipefail
 # CMakeLists.txt only `add_subdirectory(3rd/SDL...)`s under the Android branch
 # (no system SDL2 package exists for an APK to link against there); every
 # other target either `find_package(SDL2)`s a system/nix package (the native
-# `build`/`bc2cpp` jobs) or gets it as an Emscripten port (`wasm`,
+# `build`/`bc2cpp-*` jobs) or gets it as an Emscripten port (`wasm`,
 # `-sUSE_SDL=2`), and the PlatformIO-driven embedded ports (wio/maix/psp/
 # m5stack) never touch SDL at all. Same idea for 3rd/optcarrot: nothing in
-# CMakeLists.txt references it, and only the `bc2cpp` job's own Optcarrot
+# CMakeLists.txt references it, and only the `bc2cpp-checks` jobs' Optcarrot
 # benchmark (tools/optcarrot_probe/) reads it.
 #
 # Run after a checkout with `submodules: false`, so this is the only thing

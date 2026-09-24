@@ -21,9 +21,8 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
   file "#{build_dir}/cp932.h" => "#{build_dir}/cp932.cc"
   file "#{build_dir}/cp932.cc" => "#{dir}/cp932_to_unicode.rb" do |t|
     FileUtils.mkdir_p build_dir, verbose: true
-    Dir.chdir build_dir do
-      ruby  t.prereqs.first
-    end
+    # chdir: rather than Dir.chdir, which is process-wide and races `rake -m`.
+    ruby t.prereqs.first, chdir: build_dir
   end
 
   # docs/adr/0109: mrblib/schema.rb's ~1,150 field descriptors, each its own
