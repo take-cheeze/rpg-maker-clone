@@ -122,9 +122,9 @@ fetch_table \
 export cp932_table="$TABLES_DIR/bestfit932.txt"
 export jis0208_table="$TABLES_DIR/JIS0208.TXT"
 
-# All nine patches cmake/build-mruby.cmake applies, in its own order, applied
+# The patches cmake/build-mruby.cmake applies, in its own order, applied
 # with the same idempotent helper it uses (scripts/apply_mruby_patch.bash).
-# Seven target 3rd/mruby; the last two target mruby's own submodules.
+# Two target mruby's own submodules; the rest target 3rd/mruby.
 echo "== applying mruby patches"
 apply() { scripts/apply_mruby_patch.bash "$1" "$REPO_ROOT/patches/$2"; }
 apply 3rd/mruby mruby-colon3-assign-setmcnst.patch
@@ -136,6 +136,9 @@ apply 3rd/mruby mruby-io-maxpathlen-fallback.patch
 apply 3rd/mruby-stringio mruby-stringio-native-getbyte.patch
 apply 3rd/mruby-marshal mruby-marshal-psp-wio-onigmo-optional.patch
 apply 3rd/mruby mruby-force-no-cxx-exception-escape-hatch.patch
+apply 3rd/mruby mruby-presym-compact-table.patch
+apply 3rd/mruby mruby-cdump-const-reps.patch
+apply 3rd/mruby mruby-no-irep-debug.patch
 
 # The standalone arm-none-eabi uni-algo. PlatformIO's LDF cannot build it (no
 # library.json, platformio.ini's own comment on env:wio_rgss_boot), so compile

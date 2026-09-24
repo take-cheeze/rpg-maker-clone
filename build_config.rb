@@ -1054,6 +1054,10 @@ if wio
       # docs/adr/0047-psp-memory-budget.md.
       t.defines << 'MRB_HEAP_PAGE_SIZE=256'
       t.defines << 'KHASH_INITIAL_SIZE=16'
+      # No lv/debug_info fields in mrb_irep: this build already compiles its
+      # Ruby without -g and strips lv (above), and links no compiler/binding.
+      # 8 bytes of flash per irep; see docs/adr/0225.
+      t.defines << 'MRB_NO_IREP_DEBUG'
       # Mirrors PSP_BUILD below: gates the wio.cxx HAL in the mruby-rgss gem
       # on and the desktop-only sixel/iTerm2 terminal.cxx backend off (that
       # file's own guard is `#if !defined(PSP_BUILD) && !defined(WIO_TERMINAL)`).

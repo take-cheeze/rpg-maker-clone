@@ -1,0 +1,487 @@
+Adds MRB_NO_IREP_DEBUG: a build option that drops the `lv` (local variable
+names) and `debug_info` (line numbers) pointers from struct mrb_irep, 8
+bytes per irep on a 32-bit target. Every gem's mrblib is dumped as static
+C structs (src/cdump.c), one mrb_irep per method/block, so this is flash on
+a build that already compiles its Ruby without -g and strips lv.
+
+Reads go through MRB_IREP_LV()/MRB_IREP_DEBUG_INFO(), which are NULL under
+the option, so backtraces, Proc#parameters and friends degrade the same way
+they already do for an irep compiled without that information. The .mrb
+loader skips the DEBUG and LV sections. mruby-compiler and mruby-binding,
+which write the fields, refuse to build with the option. cdump.c wraps the
+two initializers in #ifndef MRB_NO_IREP_DEBUG, so a host mrbc built without
+the option emits C that fits a target built with it. See docs/adr/0225.
+
+diff --git a/include/mruby/irep.h b/include/mruby/irep.h
+index 1719866..5defade 100644
+--- a/include/mruby/irep.h
++++ b/include/mruby/irep.h
+@@ -69,9 +69,11 @@ struct mrb_irep {
+   const mrb_sym *syms;
+   const struct mrb_irep *const *reps;
+ 
++#ifndef MRB_NO_IREP_DEBUG
+   const mrb_sym *lv;
+   /* debug info */
+   struct mrb_irep_debug_info *debug_info;
++#endif
+ 
+   uint32_t ilen;
+   uint16_t plen, slen;
+@@ -79,6 +81,23 @@ struct mrb_irep {
+   uint16_t refcnt;
+ };
+ 
++/*
++ * MRB_NO_IREP_DEBUG drops the lv and debug_info fields from every irep: no
++ * local variable names and no line numbers, two pointers less per irep.  It
++ * needs a build without mruby-compiler/mruby-binding, which write them.
++ * Read the fields through these; static initializers put
++ * MRB_IREP_DEBUG_NULL_FIELDS where the two fields go.
++ */
++#ifdef MRB_NO_IREP_DEBUG
++# define MRB_IREP_LV(irep) ((const mrb_sym*)NULL)
++# define MRB_IREP_DEBUG_INFO(irep) ((struct mrb_irep_debug_info*)NULL)
++# define MRB_IREP_DEBUG_NULL_FIELDS
++#else
++# define MRB_IREP_LV(irep) ((irep)->lv)
++# define MRB_IREP_DEBUG_INFO(irep) ((irep)->debug_info)
++# define MRB_IREP_DEBUG_NULL_FIELDS NULL, NULL,
++#endif
++
+ #define MRB_ISEQ_NO_FREE 1
+ #define MRB_IREP_NO_FREE 2
+ #define MRB_IREP_STATIC (MRB_ISEQ_NO_FREE | MRB_IREP_NO_FREE)
+diff --git a/mrbgems/mruby-binding/src/binding.c b/mrbgems/mruby-binding/src/binding.c
+index a5c9d6c..8c0fedc 100644
+--- a/mrbgems/mruby-binding/src/binding.c
++++ b/mrbgems/mruby-binding/src/binding.c
+@@ -8,6 +8,10 @@
+ #include <mruby/debug.h>
+ #include <mruby/internal.h>
+ 
++#ifdef MRB_NO_IREP_DEBUG
++# error "this gem needs the irep lv/debug_info fields that MRB_NO_IREP_DEBUG removes"
++#endif
++
+ #define BINDING_UPPER_DEFAULT  20
+ #define BINDING_UPPER_MINIMUM  10
+ #define BINDING_UPPER_MAXIMUM 100
+diff --git a/mrbgems/mruby-catch/src/catch.c b/mrbgems/mruby-catch/src/catch.c
+index 4acbd82..9690e80 100644
+--- a/mrbgems/mruby-catch/src/catch.c
++++ b/mrbgems/mruby-catch/src/catch.c
+@@ -40,8 +40,7 @@ static const mrb_irep catch_irep = {
+   3,5,0,
+   MRB_IREP_STATIC,catch_iseq,
+   NULL,catch_syms,NULL,
+-  NULL,
+-  NULL,
++  MRB_IREP_DEBUG_NULL_FIELDS
+   sizeof(catch_iseq),0,3,0,0
+ };
+ 
+diff --git a/mrbgems/mruby-compiler/core/codegen.c b/mrbgems/mruby-compiler/core/codegen.c
+index a335dae..33fc63a 100644
+--- a/mrbgems/mruby-compiler/core/codegen.c
++++ b/mrbgems/mruby-compiler/core/codegen.c
+@@ -40,6 +40,9 @@
+  */
+ 
+ #include <mruby.h>
++#ifdef MRB_NO_IREP_DEBUG
++# error "mruby-compiler needs the irep lv/debug_info fields that MRB_NO_IREP_DEBUG removes"
++#endif
+ #include <mruby/compile.h>
+ #include <mruby/proc.h>
+ #include <mruby/dump.h>
+diff --git a/mrbgems/mruby-proc-ext/src/proc.c b/mrbgems/mruby-proc-ext/src/proc.c
+index 14c42a7..8b4d520 100644
+--- a/mrbgems/mruby-proc-ext/src/proc.c
++++ b/mrbgems/mruby-proc-ext/src/proc.c
+@@ -187,7 +187,7 @@ mrb_proc_parameters(mrb_state *mrb, mrb_value self)
+     return mrb_ary_new(mrb);
+   }
+   const struct mrb_irep *irep = proc->body.irep;
+-  if (!irep || !irep->lv || *irep->iseq != OP_ENTER) {
++  if (!irep || !MRB_IREP_LV(irep) || *irep->iseq != OP_ENTER) {
+     return mrb_ary_new(mrb);
+   }
+ 
+@@ -220,12 +220,12 @@ mrb_proc_parameters(mrb_state *mrb, mrb_value self)
+     for (int j = 0; j < p->size; i++, j++) {
+       mrb_value a = mrb_ary_new(mrb);
+       mrb_ary_push(mrb, a, sname);
+-      if (i < max && irep->lv[i]) {
+-        mrb_ary_push(mrb, a, mrb_symbol_value(irep->lv[i]));
++      if (i < max && MRB_IREP_LV(irep)[i]) {
++        mrb_ary_push(mrb, a, mrb_symbol_value(MRB_IREP_LV(irep)[i]));
+       }
+       if (p->name == MRB_SYM(block)) {
+-        if (irep->lv[i+1]) {
+-          mrb_ary_push(mrb, a, mrb_symbol_value(irep->lv[i+1]));
++        if (MRB_IREP_LV(irep)[i+1]) {
++          mrb_ary_push(mrb, a, mrb_symbol_value(MRB_IREP_LV(irep)[i+1]));
+         }
+         block = a; continue;
+       }
+diff --git a/src/backtrace.c b/src/backtrace.c
+index ce4d9b1..29bf19a 100644
+--- a/src/backtrace.c
++++ b/src/backtrace.c
+@@ -64,7 +64,7 @@ pack_backtrace(mrb_state *mrb, ptrdiff_t ciidx, struct mrb_backtrace_location *p
+       mrb_assert(!MRB_PROC_ALIAS_P(ci->proc));
+       loc.irep = ci->proc->body.irep;
+       if (!loc.irep) continue;
+-      if (!loc.irep->debug_info) continue;
++      if (!MRB_IREP_DEBUG_INFO(loc.irep)) continue;
+       if (!ci->pc) continue;
+       pc = &ci->pc[-1];
+       loc.idx = (uint32_t)(pc - loc.irep->iseq);
+@@ -81,7 +81,7 @@ pack_backtrace(mrb_state *mrb, ptrdiff_t ciidx, struct mrb_backtrace_location *p
+ 
+         const mrb_irep *irep = ci->proc->body.irep;
+         if (!irep) continue;
+-        if (!irep->debug_info) continue;
++        if (!MRB_IREP_DEBUG_INFO(irep)) continue;
+         if (!ci->pc) continue;
+         pc = &ci->pc[-1];
+         loc.irep = irep;
+diff --git a/src/cdump.c b/src/cdump.c
+index c453dfb..20b8e54 100644
+--- a/src/cdump.c
++++ b/src/cdump.c
+@@ -376,12 +376,12 @@ cdump_irep_struct(mrb_state *mrb, const mrb_irep *irep, uint8_t flags, FILE *fp,
+   }
+   fputs("};\n", fp);
+   /* dump lv */
+-  if (irep->lv) {
+-    cdump_syms(mrb, name, "lv", n, irep->nlocals-1, irep->lv, init_syms_code, fp);
++  if (MRB_IREP_LV(irep)) {
++    cdump_syms(mrb, name, "lv", n, irep->nlocals-1, MRB_IREP_LV(irep), init_syms_code, fp);
+   }
+   /* dump debug */
+   if (flags & MRB_DUMP_DEBUG_INFO) {
+-    if (cdump_debug(mrb, name, n, irep->debug_info, init_syms_code, fp) == MRB_DUMP_OK) {
++    if (cdump_debug(mrb, name, n, MRB_IREP_DEBUG_INFO(irep), init_syms_code, fp) == MRB_DUMP_OK) {
+       debug_available = 1;
+     }
+   }
+@@ -409,7 +409,9 @@ cdump_irep_struct(mrb_state *mrb, const mrb_irep *irep, uint8_t flags, FILE *fp,
+   else {
+     fputs(      "NULL,\n", fp);
+   }
+-  if (irep->lv) {
++  /* the target may be built with MRB_NO_IREP_DEBUG */
++  fputs("#ifndef MRB_NO_IREP_DEBUG\n", fp);
++  if (MRB_IREP_LV(irep)) {
+     fprintf(fp, "  %s_lv_%d,\n", name, n);
+   }
+   else {
+@@ -421,6 +423,7 @@ cdump_irep_struct(mrb_state *mrb, const mrb_irep *irep, uint8_t flags, FILE *fp,
+   else {
+     fputs("  NULL,\t\t\t\t\t/* debug_info */\n", fp);
+   }
++  fputs("#endif\n", fp);
+   fprintf(fp,   "  %d,%d,%d,%d,0\n};\n", irep->ilen, irep->plen, irep->slen, irep->rlen);
+ 
+   return MRB_DUMP_OK;
+diff --git a/src/class.c b/src/class.c
+index 1a5512e..589296a 100644
+--- a/src/class.c
++++ b/src/class.c
+@@ -4270,7 +4270,7 @@ MRB_PRESYM_DEFINE_VAR_AND_INITER(new_syms, 2, MRB_SYM(allocate), MRB_SYM(initial
+ 
+ static const mrb_irep new_irep = {
+   4, 6, 0, MRB_IREP_STATIC,
+-  new_iseq, NULL, new_syms, NULL, NULL, NULL,
++  new_iseq, NULL, new_syms, NULL, MRB_IREP_DEBUG_NULL_FIELDS
+   sizeof(new_iseq), 0, 2, 0, 0,
+ };
+ 
+@@ -4302,7 +4302,7 @@ static const mrb_code neq_iseq[] = {
+ 
+ static const mrb_irep neq_irep = {
+   4, 6, 0, MRB_IREP_STATIC,
+-  neq_iseq, NULL, NULL, NULL, NULL, NULL,
++  neq_iseq, NULL, NULL, NULL, MRB_IREP_DEBUG_NULL_FIELDS
+   sizeof(neq_iseq), 0, 2, 0, 0,
+ };
+ 
+diff --git a/src/codedump.c b/src/codedump.c
+index 4b0f294..da4d412 100644
+--- a/src/codedump.c
++++ b/src/codedump.c
+@@ -12,9 +12,9 @@ static mrb_bool
+ print_r_p(mrb_state *mrb, const mrb_irep *irep, size_t n)
+ {
+   if (n == 0) return FALSE;
+-  if (!irep->lv) return FALSE;
++  if (!MRB_IREP_LV(irep)) return FALSE;
+   if (n >= irep->nlocals) return FALSE;
+-  if (!irep->lv[n-1]) return FALSE;
++  if (!MRB_IREP_LV(irep)[n-1]) return FALSE;
+   return TRUE;
+ }
+ 
+@@ -23,8 +23,8 @@ print_r(mrb_state *mrb, const mrb_irep *irep, size_t n, FILE *out)
+ {
+   if (n == 0) return;
+   if (n >= irep->nlocals) return;
+-  if (!irep->lv[n-1]) return;
+-  fprintf(out, " R%d:%s", (int)n, mrb_sym_dump(mrb, irep->lv[n-1]));
++  if (!MRB_IREP_LV(irep)[n-1]) return;
++  fprintf(out, " R%d:%s", (int)n, mrb_sym_dump(mrb, MRB_IREP_LV(irep)[n-1]));
+ }
+ 
+ static void
+@@ -101,11 +101,11 @@ codedump(mrb_state *mrb, const mrb_irep *irep, FILE *out)
+   fprintf(out, "irep %p nregs=%d nlocals=%d pools=%d syms=%d reps=%d ilen=%d\n", (void*)irep,
+           irep->nregs, irep->nlocals, (int)irep->plen, (int)irep->slen, (int)irep->rlen, (int)irep->ilen);
+ 
+-  if (irep->lv) {
++  if (MRB_IREP_LV(irep)) {
+     int head = FALSE;
+ 
+     for (int i = 1; i < irep->nlocals; i++) {
+-      char const *s = mrb_sym_dump(mrb, irep->lv[i - 1]);
++      char const *s = mrb_sym_dump(mrb, MRB_IREP_LV(irep)[i - 1]);
+       if (s) {
+         if (!head) {
+           head = TRUE;
+diff --git a/src/debug.c b/src/debug.c
+index 6bc6c01..8ae2ac7 100644
+--- a/src/debug.c
++++ b/src/debug.c
+@@ -139,8 +139,8 @@ MRB_API char const*
+ mrb_debug_get_filename(mrb_state *mrb, const mrb_irep *irep, uint32_t pc)
+ {
+   if (irep && pc < irep->ilen) {
+-    if (!irep->debug_info) return NULL;
+-    return debug_get_filename(mrb, get_file(irep->debug_info, pc));
++    if (!MRB_IREP_DEBUG_INFO(irep)) return NULL;
++    return debug_get_filename(mrb, get_file(MRB_IREP_DEBUG_INFO(irep), pc));
+   }
+   return NULL;
+ }
+@@ -154,8 +154,8 @@ MRB_API int32_t
+ mrb_debug_get_line(mrb_state *mrb, const mrb_irep *irep, uint32_t pc)
+ {
+   if (irep && pc < irep->ilen) {
+-    if (!irep->debug_info) return -1;
+-    return debug_get_line(mrb, get_file(irep->debug_info, pc), pc);
++    if (!MRB_IREP_DEBUG_INFO(irep)) return -1;
++    return debug_get_line(mrb, get_file(MRB_IREP_DEBUG_INFO(irep), pc), pc);
+   }
+   return -1;
+ }
+@@ -170,8 +170,8 @@ mrb_debug_get_line(mrb_state *mrb, const mrb_irep *irep, uint32_t pc)
+ MRB_API mrb_bool
+ mrb_debug_get_position(mrb_state *mrb, const mrb_irep *irep, uint32_t pc, int32_t *lp, const char **fp)
+ {
+-  if (irep && pc < irep->ilen && irep->debug_info) {
+-    mrb_irep_debug_info_file *f = get_file(irep->debug_info, pc);
++  if (irep && pc < irep->ilen && MRB_IREP_DEBUG_INFO(irep)) {
++    mrb_irep_debug_info_file *f = get_file(MRB_IREP_DEBUG_INFO(irep), pc);
+     *lp = debug_get_line(mrb, f, pc);
+     if (*lp > 0) {
+       *fp = debug_get_filename(mrb, f);
+@@ -188,6 +188,7 @@ mrb_debug_get_position(mrb_state *mrb, const mrb_irep *irep, uint32_t pc, int32_
+  * This function asserts that debug_info is not already allocated for the irep.
+  * Returns a pointer to the newly allocated `mrb_irep_debug_info` structure.
+  */
++#ifndef MRB_NO_IREP_DEBUG
+ MRB_API mrb_irep_debug_info*
+ mrb_debug_info_alloc(mrb_state *mrb, mrb_irep *irep)
+ {
+@@ -199,6 +200,7 @@ mrb_debug_info_alloc(mrb_state *mrb, mrb_irep *irep)
+   irep->debug_info = ret;
+   return ret;
+ }
++#endif
+ 
+ /*
+  * Appends a new file's debug information to an existing `mrb_irep_debug_info` structure `d`.
+diff --git a/src/dump.c b/src/dump.c
+index 705f96a..7ceedcd 100644
+--- a/src/dump.c
++++ b/src/dump.c
+@@ -454,8 +454,8 @@ get_debug_record_size(mrb_state *mrb, const mrb_irep *irep)
+   size_t ret = sizeof(uint32_t); /* record size */
+   ret += sizeof(uint16_t); /* file count */
+ 
+-  for (uint16_t f_idx = 0; f_idx < irep->debug_info->flen; f_idx++) {
+-    mrb_irep_debug_info_file const* file = irep->debug_info->files[f_idx];
++  for (uint16_t f_idx = 0; f_idx < MRB_IREP_DEBUG_INFO(irep)->flen; f_idx++) {
++    mrb_irep_debug_info_file const* file = MRB_IREP_DEBUG_INFO(irep)->files[f_idx];
+ 
+     ret += sizeof(uint32_t); /* position */
+     ret += sizeof(uint16_t); /* filename index */
+@@ -500,7 +500,7 @@ get_filename_table_size(mrb_state *mrb, const mrb_irep *irep, mrb_sym **fp, uint
+ {
+   mrb_sym *filenames = *fp;
+   size_t size = 0;
+-  const mrb_irep_debug_info *di = irep->debug_info;
++  const mrb_irep_debug_info *di = MRB_IREP_DEBUG_INFO(irep);
+ 
+   mrb_assert(lp);
+   for (int i = 0; i < di->flen; i++) {
+@@ -529,11 +529,11 @@ write_debug_record_1(mrb_state *mrb, const mrb_irep *irep, uint8_t *bin, mrb_sym
+   uint8_t *cur;
+ 
+   cur = bin + sizeof(uint32_t); /* skip record size */
+-  cur += uint16_to_bin(irep->debug_info->flen, cur); /* file count */
++  cur += uint16_to_bin(MRB_IREP_DEBUG_INFO(irep)->flen, cur); /* file count */
+ 
+-  for (int f_idx = 0; f_idx < irep->debug_info->flen; f_idx++) {
++  for (int f_idx = 0; f_idx < MRB_IREP_DEBUG_INFO(irep)->flen; f_idx++) {
+     int filename_idx;
+-    const mrb_irep_debug_info_file *file = irep->debug_info->files[f_idx];
++    const mrb_irep_debug_info_file *file = MRB_IREP_DEBUG_INFO(irep)->files[f_idx];
+ 
+     /* position */
+     cur += uint32_to_bin(file->start_pos, cur);
+@@ -642,7 +642,7 @@ create_lv_sym_table(mrb_state *mrb, const mrb_irep *irep, mrb_sym **syms, uint32
+   }
+ 
+   for (int i = 0; i + 1 < irep->nlocals; i++) {
+-    mrb_sym const name = irep->lv[i];
++    mrb_sym const name = MRB_IREP_LV(irep)[i];
+     if (name == 0) continue;
+     if (find_filename_index(*syms, *syms_len, name) != -1) continue;
+ 
+@@ -682,11 +682,11 @@ write_lv_record(mrb_state *mrb, const mrb_irep *irep, uint8_t **start, mrb_sym c
+   uint8_t *cur = *start;
+ 
+   for (int i = 0; i + 1 < irep->nlocals; i++) {
+-    if (irep->lv[i] == 0) {
++    if (MRB_IREP_LV(irep)[i] == 0) {
+       cur += uint16_to_bin(RITE_LV_NULL_MARK, cur);
+     }
+     else {
+-      int const sym_idx = find_filename_index(syms, syms_len, irep->lv[i]);
++      int const sym_idx = find_filename_index(syms, syms_len, MRB_IREP_LV(irep)[i]);
+       mrb_assert(sym_idx != -1); /* local variable name must be in syms */
+ 
+       cur += uint16_to_bin(sym_idx, cur);
+@@ -780,7 +780,7 @@ write_rite_binary_header(mrb_state *mrb, size_t binary_size, uint8_t *bin, uint8
+ static mrb_bool
+ debug_info_defined_p(const mrb_irep *irep)
+ {
+-  if (!irep->debug_info) return FALSE;
++  if (!MRB_IREP_DEBUG_INFO(irep)) return FALSE;
+   for (int i = 0; i < irep->rlen; i++) {
+     if (!debug_info_defined_p(irep->reps[i])) return FALSE;
+   }
+@@ -790,7 +790,7 @@ debug_info_defined_p(const mrb_irep *irep)
+ static mrb_bool
+ lv_defined_p(const mrb_irep *irep)
+ {
+-  if (irep->lv) return TRUE;
++  if (MRB_IREP_LV(irep)) return TRUE;
+   for (int i = 0; i < irep->rlen; i++) {
+     if (lv_defined_p(irep->reps[i])) return TRUE;
+   }
+diff --git a/src/load.c b/src/load.c
+index f106c7e..ef6f6d9 100644
+--- a/src/load.c
++++ b/src/load.c
+@@ -400,6 +400,7 @@ read_section_irep(mrb_state *mrb, const uint8_t *bin, size_t size, uint8_t flags
+   }
+ }
+ 
++#ifndef MRB_NO_IREP_DEBUG
+ static int
+ read_debug_record(mrb_state *mrb, const uint8_t *start, const uint8_t *end, mrb_irep* irep, size_t *record_len, const mrb_sym *filenames, size_t filenames_len)
+ {
+@@ -643,6 +644,7 @@ lv_exit:
+   mrb_str_resize(mrb, syms_obj, 0);
+   return result;
+ }
++#endif /* MRB_NO_IREP_DEBUG */
+ 
+ static int
+ read_binary_header(const uint8_t *bin, size_t bufsize, size_t *bin_size, uint8_t *flags)
+@@ -705,17 +707,21 @@ read_irep(mrb_state *mrb, const uint8_t *bin, size_t bufsize, uint8_t flags)
+     }
+     else if (memcmp(section_header->section_ident, RITE_SECTION_DEBUG_IDENT, sizeof(section_header->section_ident)) == 0) {
+       if (!irep) return NULL;   /* corrupted data */
++#ifndef MRB_NO_IREP_DEBUG
+       result = read_section_debug(mrb, bin, bin_size, irep, flags);
+       if (result < MRB_DUMP_OK) {
+         return NULL;
+       }
++#endif
+     }
+     else if (memcmp(section_header->section_ident, RITE_SECTION_LV_IDENT, sizeof(section_header->section_ident)) == 0) {
+       if (!irep) return NULL;
++#ifndef MRB_NO_IREP_DEBUG
+       result = read_section_lv(mrb, bin, bin_size, irep, flags);
+       if (result < MRB_DUMP_OK) {
+         return NULL;
+       }
++#endif
+     }
+     else if (memcmp(section_header->section_ident, RITE_BINARY_EOF, sizeof(section_header->section_ident)) != 0) {
+       break;
+diff --git a/src/proc.c b/src/proc.c
+index 546d949..cdbdd4e 100644
+--- a/src/proc.c
++++ b/src/proc.c
+@@ -26,8 +26,7 @@ static const mrb_irep call_irep = {
+   NULL,                                /* pool */
+   NULL,                                /* syms */
+   NULL,                                /* reps */
+-  NULL,                                /* lv */
+-  NULL,                                /* debug_info */
++  MRB_IREP_DEBUG_NULL_FIELDS           /* lv, debug_info */
+   1,                                   /* ilen */
+   0,                                   /* plen */
+   0,                                   /* slen */
+@@ -447,10 +446,10 @@ mrb_proc_local_variables(mrb_state *mrb, const struct RProc *proc)
+   while (proc) {
+     if (MRB_PROC_CFUNC_P(proc)) break;
+     const mrb_irep *irep = proc->body.irep;
+-    if (irep->lv) {
++    if (MRB_IREP_LV(irep)) {
+       for (size_t i = 0; i + 1 < irep->nlocals; i++) {
+-        if (irep->lv[i]) {
+-          mrb_sym sym = irep->lv[i];
++        if (MRB_IREP_LV(irep)[i]) {
++          mrb_sym sym = MRB_IREP_LV(irep)[i];
+           const char *name = mrb_sym_name(mrb, sym);
+           switch (name[0]) {
+           case '*': case '&':
+@@ -509,6 +508,9 @@ mrb_proc_get_caller(mrb_state *mrb, struct REnv **envp)
+ void
+ mrb_proc_merge_lvar(mrb_state *mrb, mrb_irep *irep, struct REnv *env, int num, const mrb_sym *lv, const mrb_value *stack)
+ {
++#ifdef MRB_NO_IREP_DEBUG
++  mrb_raise(mrb, E_RUNTIME_ERROR, "unavailable local variable names");
++#else
+   mrb_assert(!(irep->flags & MRB_IREP_NO_FREE));
+ 
+   if ((irep->nlocals + num) > IREP_LVAR_MERGE_LIMIT) {
+@@ -541,6 +543,7 @@ mrb_proc_merge_lvar(mrb_state *mrb, mrb_irep *irep, struct REnv *env, int num, c
+   irep->nlocals += num;
+   irep->nregs = irep->nlocals;
+   MRB_ENV_SET_LEN(env, irep->nlocals);
++#endif
+ }
+ 
+ /* ---------------------------*/
+diff --git a/src/state.c b/src/state.c
+index 2731c8d..cb77e4e 100644
+--- a/src/state.c
++++ b/src/state.c
+@@ -169,8 +169,8 @@ mrb_irep_free(mrb_state *mrb, mrb_irep *irep)
+     }
+     if (!consolidated) mrb_free(mrb, (void*)irep->reps);
+   }
+-  mrb_free(mrb, (void*)irep->lv);
+-  mrb_debug_info_free(mrb, irep->debug_info);
++  mrb_free(mrb, (void*)MRB_IREP_LV(irep));
++  mrb_debug_info_free(mrb, MRB_IREP_DEBUG_INFO(irep));
+ #ifdef MRB_DEBUG
+   memset(irep, -1, sizeof(*irep));
+ #endif

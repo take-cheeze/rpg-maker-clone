@@ -70,7 +70,8 @@ apply_patch() {
 for p in mruby-colon3-assign-setmcnst mruby-dollar-bang-scoped \
   mruby-defined-keyword mruby-nomemoryerror-reentrant-alloc \
   mruby-gc-type-live-counts mruby-io-maxpathlen-fallback \
-  mruby-force-no-cxx-exception-escape-hatch; do
+  mruby-force-no-cxx-exception-escape-hatch mruby-presym-compact-table \
+  mruby-cdump-const-reps mruby-no-irep-debug; do
   apply_patch "$root/3rd/mruby" "$root/patches/$p.patch"
 done
 apply_patch "$root/3rd/mruby-stringio" "$root/patches/mruby-stringio-native-getbyte.patch"
