@@ -149,9 +149,14 @@ scripts) is outside what the analysis sees.
 - **`scripts/wio_strip_scripts_check.rb` (CI).** It now also runs the analysis
   on the wio rbfiles, which it gets by evaluating each `mrbgem.rake` as the wio
   build does, and requires every strip to apply and parse. CI has no
-  submodules, which only makes it strip more (119 there, 118 with `3rd/`).
+  submodules, which only makes it strip more (one more def than with `3rd/`).
 
 ## Measured result
+
+These tables were measured before ADR 0220 and ADR 0221 landed. On top of
+them, the strip removes 110 defs and the FLASH overflow falls from 504,744 to
+487,656 bytes (−17,088). The 8 defs no longer on the list are the RGSS probes
+ADR 0220 already strips; the rest of the list is unchanged.
 
 A real `pio run -e wio_rgss_boot` link (arm-none-eabi GCC 14.2.1, default
 configuration), with the strip off (`RPGMAKER_WIO_KEEP_UNREACHABLE=1`) and on:
