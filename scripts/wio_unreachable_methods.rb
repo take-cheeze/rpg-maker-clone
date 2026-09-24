@@ -464,7 +464,10 @@ module WioUnreachable
         end
         rel = src.start_with?("#{gem_dir}/") ? src.delete_prefix("#{gem_dir}/") : File.basename(src)
         input = src
-        chain.call(gem).each_with_index do |script, i|
+        # A step is a script, or [script, the one gem-relative file it rewrites].
+        chain.call(gem).each_with_index do |(script, only), i|
+          next if only && only != rel
+
           out = File.join(tmp, "chain#{i}", gem, rel)
           FileUtils.mkdir_p(File.dirname(out))
           _o, err, st = Open3.capture3(RbConfig.ruby, script, input, out)
