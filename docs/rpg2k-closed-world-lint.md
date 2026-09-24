@@ -36,3 +36,10 @@ value = obj.send(accessor) # rpg2k-lint:allow Dynamic/Send -- accessor names com
 ```
 
 See ADR 0212.
+
+The wio build's unreachable-method strip (ADR 0218) relies on the same
+property: a method counts as reachable only when some literal spells its name.
+A computed `send`, `respond_to?`, `method` or `to_sym` in the wio build's
+mrblib therefore also has to be listed, with where its names come from, in
+`WioUnreachable::REVIEWED` (`scripts/wio_unreachable_methods.rb`), or the wio
+build and `scripts/wio_strip_scripts_check.rb` fail.
