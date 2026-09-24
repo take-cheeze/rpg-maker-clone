@@ -371,4 +371,5 @@ MRuby::Gem::Specification.new('mruby-rgss') do |spec|
                                     RGSS::Font.singleton RGSS::ErrorReport::Tee Array])
   wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
+  wio_strip_unreachable(spec)
 end

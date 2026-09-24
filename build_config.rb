@@ -34,7 +34,7 @@ UNI_ALGO_TRIM_DEFINES = %w[
 # line, including the ones mruby-rgss/mrblib/error_report.rb's Tee
 # specifically exists to capture into a crash report and a terminal log
 # console -- see that file's own comment. Call this *last* in a gem's own
-# spec block, after every other spec.rbfiles filter (debug-tools/battle
+# spec block (only wio_strip_unreachable follows it), after every other spec.rbfiles filter (debug-tools/battle
 # trims, schema.rb's own blob swap, ...): it replaces each surviving
 # entry's path outright, so anything that still needs to subtract or
 # substitute an entry by its original path has to run before this does.
@@ -225,6 +225,66 @@ def wio_strip_bc2cpp_stubs(spec, compiled_gem:, owners:)
     file out => [src, strip_script, registered_tsv] do |t|
       FileUtils.mkdir_p File.dirname(out), verbose: true
       ruby strip_script, registered_tsv, owners_csv, src, out
+    end
+    out
+  end
+end
+
+# docs/adr/0218: wio-only, per-gem build step, called after every other
+# rbfiles filter. Deletes each `def` scripts/wio_unreachable_methods.rb proves
+# nothing in the build can call. The analysis needs every closed-world gem's
+# final rbfiles, so one shared task per build runs it; each gem registers its
+# files here, and the task reads the rest of the build's gems when it runs,
+# after every gem is set up. Off under RPGMAKER_BC2CPP, whose compiled C++
+# still calls what the stripped Ruby no longer shows.
+# RPGMAKER_WIO_UNREACHABLE_HOST=1 runs it on the desktop build too, test-only:
+# desktop game Ruby (RGSS scripts, ...) is outside what the analysis sees.
+# RPGMAKER_WIO_KEEP_UNREACHABLE=1 turns it off (to measure it or bisect with it).
+WIO_UNREACHABLE_STATE = {}
+def wio_strip_unreachable(spec)
+  build = spec.build
+  host_test = build.name == 'host' && ENV['RPGMAKER_WIO_UNREACHABLE_HOST']
+  return unless (build.name == 'wio' || host_test) && !ENV['RPGMAKER_BC2CPP']
+  return if ENV['RPGMAKER_WIO_KEEP_UNREACHABLE']
+
+  root = __dir__
+  analysis = File.expand_path('scripts/wio_unreachable_methods.rb', root)
+  strip_script = File.expand_path('scripts/strip_wio_unreachable_methods.rb', root)
+  state = WIO_UNREACHABLE_STATE[build.name] ||= begin
+    dir = "#{build.build_dir}/wio_unreachable"
+    st = { tsv: "#{dir}/unreachable.tsv", world: {} }
+    deps = [analysis, strip_script, *Dir["#{root}/scripts/strip_wio_bc2cpp_stubs.rb"], *Dir["#{root}/tools/bc2cpp/*.rb"],
+            *Dir["#{MRUBY_ROOT}/{src,include,mrblib}/**/*.{c,h,rb}"],
+            *Dir["#{MRUBY_ROOT}/mrbgems/*/{src,core,include,mrblib}/**/*.{c,h,rb}"],
+            *Dir["#{root}/{app/wio,include,mruby-rgss/src,mruby-lcf/src,mruby-rpg2k/src}/**/*.{c,cc,cpp,cxx,h,hpp,hxx}"]]
+    deps += Dir["#{root}/src/**/*.{c,cc,cpp,cxx,h,hpp,hxx}"] if host_test
+    file st[:tsv] => deps do
+      require 'json'
+      require File.expand_path('tools/bc2cpp/compiled_gems.rb', root)
+      missing = BC2CPP_CLOSED_WORLD_GEMS - st[:world].keys
+      raise "wio_strip_unreachable: #{missing.join(', ')} never registered its rbfiles" unless missing.empty?
+
+      gems = build.gems.to_h { |g| [g.name, File.expand_path(g.dir)] }
+      native, ruby = bc2cpp_closed_world_outside_srcs(build.name, gems, root)
+      native += Dir["#{root}/src/**/#{BC2CPP_NATIVE_GLOB}"] if host_test
+      manifest = { build: build.name, gems: gems.keys, world: st[:world], ruby: ruby, native: native }
+      FileUtils.mkdir_p dir, verbose: true
+      File.write("#{dir}/manifest.json", JSON.pretty_generate(manifest))
+      ruby analysis, '--manifest', "#{dir}/manifest.json", '--out', st[:tsv]
+    end
+    st
+  end
+
+  out_dir = "#{spec.build_dir}/wio_unreachable"
+  # "mrblib/..." for the analysis's per-file keys; generated files by basename.
+  inputs = spec.rbfiles.map { |src| [src, src[%r{.*/(mrblib/.+)\z}, 1] || File.basename(src)] }
+  state[:world][spec.name] = inputs
+  Rake::Task[state[:tsv]].enhance(spec.rbfiles)
+  spec.rbfiles = inputs.map do |src, rel|
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script, state[:tsv]] do
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, state[:tsv], src, out
     end
     out
   end
