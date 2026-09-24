@@ -2,12 +2,13 @@
 # frozen_string_literal: true
 
 # Runs the wio-only mrblib rewrites (strip_wio_rgss_probes.rb,
-# strip_wio_inline_helpers.rb, then strip_wio_debug_output.rb) over every
-# mrblib file, chained in the order build_config.rb's wio_strip_* filters
-# apply them. Each script raises when a pattern no longer matches its source,
-# but only a MRUBY_TARGET=wio build ran them, and no CI job builds wio, so a
-# source edit could break every wio build unnoticed. Each rewritten file must
-# also still parse, and no wio file may still call a stripped RGSS probe.
+# strip_wio_inline_helpers.rb, strip_wio_clock.rb, then
+# strip_wio_debug_output.rb) over every mrblib file, chained in the order
+# build_config.rb's wio_strip_* filters apply them. Each script raises when a
+# pattern no longer matches its source, but only a MRUBY_TARGET=wio build ran
+# them, and no CI job builds wio, so a source edit could break every wio build
+# unnoticed. Each rewritten file must also still parse, and no wio file may
+# still call a stripped RGSS probe.
 
 require 'prism'
 require 'tmpdir'
@@ -20,13 +21,14 @@ ROOT = File.expand_path('..', __dir__)
 INLINE = File.join(ROOT, 'scripts/strip_wio_inline_helpers.rb')
 DEBUG = File.join(ROOT, 'scripts/strip_wio_debug_output.rb')
 PROBES = File.join(ROOT, 'scripts/strip_wio_rgss_probes.rb')
+CLOCK = File.join(ROOT, 'scripts/strip_wio_clock.rb')
 # Mirrors the mrbgem.rake calls: only mruby-rpg2k gets wio_strip_inline_helpers,
 # and only mruby-rgss's mrblib/lib.rb gets wio_strip_rgss_probes. A step is a
 # script, or [script, the one gem-relative file it applies to].
 CHAINS = {
-  'mruby-rpg2k' => [INLINE, DEBUG],
-  'mruby-lcf' => [DEBUG],
-  'mruby-rgss' => [[PROBES, 'mrblib/lib.rb'], DEBUG]
+  'mruby-rpg2k' => [INLINE, CLOCK, DEBUG],
+  'mruby-lcf' => [CLOCK, DEBUG],
+  'mruby-rgss' => [[PROBES, 'mrblib/lib.rb'], CLOCK, DEBUG]
 }.freeze
 
 failures = []

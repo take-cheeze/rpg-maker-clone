@@ -169,5 +169,6 @@ MRuby::Gem::Specification.new('mruby-lcf') do |spec|
                          owners: %w[LCF::File LCF::Database LCF::MapTree LCF::MapUnit
                                     LCF::SaveData LCF::MoveCommand LCF::EventCommand LCF::Tree
                                     LCF::Sections LCF::Array1D LCF::Array2D StringIO])
+  wio_strip_clock(spec)
   wio_strip_debug_rbfiles(spec)
 end

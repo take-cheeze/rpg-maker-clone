@@ -101,6 +101,26 @@ def wio_strip_rgss_probes(spec)
   spec.rbfiles = spec.rbfiles.map { |src| src == lib_rb ? out : src }
 end
 
+# ADR 0221: wio-only. The wio build links no mruby-time. This rewrites the
+# engine's Time uses in a build-time copy of each rbfile, and fails the build
+# if any Time reference survives (see strip_wio_clock.rb). Call it just
+# before wio_strip_debug_rbfiles, after wio_strip_inline_helpers.
+def wio_strip_clock(spec)
+  return unless spec.build.name == 'wio'
+
+  strip_script = File.expand_path('scripts/strip_wio_clock.rb', __dir__)
+  out_dir = "#{spec.build_dir}/wio_clock_stripped"
+  spec.rbfiles = spec.rbfiles.map do |src|
+    rel = src.sub(/\A#{Regexp.escape(spec.dir)}\//, '').sub(/\A#{Regexp.escape(spec.build_dir)}\//, '')
+    out = "#{out_dir}/#{rel}"
+    file out => [src, strip_script] do
+      FileUtils.mkdir_p File.dirname(out), verbose: true
+      ruby strip_script, src, out
+    end
+    out
+  end
+end
+
 # docs/adr/0144 (and its own host/wasm follow-up): the generalized version of
 # wio_strip_debug_rbfiles/wio_strip_inline_helpers above, this time for
 # RPGMAKER_BC2CPP=1's own real coverage -- deletes the whole `def ... end`
@@ -330,7 +350,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # mruby-io's File#mtime answers a Time, so the save and load screens of every
   # game need this gem even though nothing in the engine's own code does. Only a
   # test dependency of mruby-io, so it does not come along for the ride.
-  conf.gem core: 'mruby-time'
+  # Not on wio: it has no set real-time clock and no game Ruby, and
+  # wio_strip_clock keeps the engine's own gems Time-free (ADR 0221).
+  conf.gem core: 'mruby-time' unless conf.name == 'wio'
   # mruby 4.0 removed the mruby-print gem; Kernel#p / #print live in the core
   # now, and mruby-io (above) supplies Kernel#print / #puts / #printf.
 
