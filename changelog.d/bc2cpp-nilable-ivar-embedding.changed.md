@@ -25,7 +25,11 @@
   is enabled before the gem is added, so `src/register.o` is actually
   buildable; the probe now applies the same mruby patches the real build
   does (its generated code reads `mrb_state::errinfo`, which
-  `patches/mruby-dollar-bang-scoped.patch` adds); and `LD` is removed from
-  the rake environment rather than set to an empty string, which had left
-  mruby's link command blank. `OPTCARROT_FIXNUM_NIL_IVARS` runs an opt-in
-  Integer-or-nil A/B that also reports the linked binary's `.text`.
+  `patches/mruby-dollar-bang-scoped.patch` adds); and mruby's link now goes
+  through the compiler driver. That last one is a separate bug: nix's dev
+  shell exports `LD=ld`, and mruby takes its linker straight from the
+  environment, so raw `ld` links the host `mrbc` with no `libc` and the
+  base interpreted build dies with "DSO missing from command line" before
+  any of the probe's own targets are built. `OPTCARROT_FIXNUM_NIL_IVARS`
+  runs an opt-in Integer-or-nil A/B that also reports the linked binary's
+  `.text`.
