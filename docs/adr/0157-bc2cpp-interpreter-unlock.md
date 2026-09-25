@@ -37,13 +37,17 @@ the replicated rule), zero regressions.
 → `'Range'` (same end-of-trace gating as ARRAY; confirmed against
 vm.c). `Game::Interpreter#range` (all paths `a..b`/`1..0`) via
 single-entry `RANGE_RETURN_METHODS` allowlist in SUPER_TARGETS
-tradition, caller-owner-verified. Emitter clones each-loop with:
+tradition, caller-owner-verified. The recognizer now admits both one-argument
+and zero-argument blocks; both forms receive the same frozen Range counter
+semantics. Emitter clones each-loop with:
 fixnum counter (no fetch), snapshot bounds (Ranges frozen),
 overflow-safe `excl ? i < e : i <= e` (mrblib's `lim+=1` overflows at
 MAX), two-part guard (`mrb_range_p` + Integer edges -- endless,
 Float, succ-path raise, never unbounded), REAL excl flag (never
 `begin==end`; the `1...1` source shortcut is unsound in general).
-Fall-through leaves dest (each returns self). 12-case harness passes.
+Fall-through leaves dest (each returns self). The real Wio hot-only LCF
+output drops one cfunc/RProc fallback and 237 generated source bytes. 12-case
+harness plus a zero/one-arity regression pass.
 
 **C. flat_map + full_heal rewrite.** `flat_map` joins COLLECT set
 (1-arg); emitter mirrors mruby's own enum-ext shape exactly
