@@ -1070,6 +1070,14 @@
   208 bytes less `.text` and 2,904 bytes less total object size. See
   [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
 
+- `RGSS::Profiler.section("name") { ... }` and `Profiler.frame { ... }` are
+  compiled to a direct call around the native profiling primitives instead of an
+  RProc and a by-name block dispatch, removing 21 of the 26 hot-only profiler
+  block fallbacks in `mruby-rpg2k`. A same-flags Wio-style object comparison
+  measures 5,901 bytes less `.text`. A computed section name, or a body
+  containing `break`, keeps the existing fallback. See
+  [`docs/adr/0232-bc2cpp-profiler-section-inlining.md`](docs/adr/0232-bc2cpp-profiler-section-inlining.md).
+
 - A polymorphic call with more compiled definitions than the 16 an inline
   class-check chain allows (`update`, with 19 classes on the full build)
   finds its compiled method in one lookup table that every call site of the
