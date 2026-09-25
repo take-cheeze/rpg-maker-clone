@@ -944,6 +944,7 @@ jobs:
           - shard: registrations
             checks: |
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_embedded_ivar_access_check.rb
+              MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_nil_ivar_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
           - shard: optcarrot-benchmark
             checks: |
