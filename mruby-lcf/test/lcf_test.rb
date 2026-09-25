@@ -680,8 +680,8 @@ assert 'LCF loops preserve terminator, EOF, and StopIteration result behavior' d
     error.result = 7
     raise error
   end
-  assert_equal 7, LCF::Array1D.allocate.send(:initialize, stream, nil)
-  assert_equal '', LCF::Array2D.allocate.send(:read_row_bytes, stream)
+  assert_equal 7, LCF::Array1D.allocate.__send__(:initialize, stream, nil)
+  assert_equal '', LCF::Array2D.allocate.__send__(:read_row_bytes, stream)
 end
 
 assert 'Array1D#[]= re-encodes int and string fields through the schema' do
