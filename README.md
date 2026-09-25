@@ -1053,6 +1053,11 @@
   the one-argument form, removing one hot-only LCF cfunc/RProc fallback. See
   [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
 
+- A mandatory-arity method can now inline a one-level literal `times` block
+  that forwards its own `yield`, removing the `LCF::Array2D#each` fallback
+  while preserving break, return, exception, and missing-block behavior. See
+  [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
+
 - A polymorphic call with more compiled definitions than the 16 an inline
   class-check chain allows (`update`, with 19 classes on the full build)
   finds its compiled method in one lookup table that every call site of the
