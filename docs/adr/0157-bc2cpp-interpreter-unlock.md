@@ -69,6 +69,16 @@ cfunc/RProc fallbacks; the generated LCF C++ is 16,017 bytes smaller, and a
 same-flags object comparison shows 4,686 bytes less LCF text. The LCF testbed,
 bracket-access, and focused loop-behavior checks pass.
 
+A fourth follow-up rewrites the two remaining LCF hot-only `each` blocks:
+`LCF::File#initialize` now walks its schema array with an index loop, and
+`LCF::Array1D#sym2idx` walks a snapshot of the schema hash's keys while
+looking up each element. Both preserve input order, key/value lookup,
+and schema memoization. The real Wio hot-only LCF output drops from 2 to 0
+cfunc/RProc fallbacks. A same-flags `-Os` object comparison shows 208 bytes
+less `.text` and 2,904 bytes less total object size, despite generated source
+being 649 bytes larger; cfunc/RProc glue removal is the useful signal here,
+not source length. LCF parser, bracket-access, and loop-behavior checks pass.
+
 **C. flat_map + full_heal rewrite.** `flat_map` joins COLLECT set
 (1-arg); emitter mirrors mruby's own enum-ext shape exactly
 (respond_to?-gate; Array expansion inline with `mrb_array_p`
