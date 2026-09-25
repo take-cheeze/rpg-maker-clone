@@ -1037,6 +1037,22 @@
   how to regenerate the list. See
   [`docs/adr/0214-bc2cpp-profile-guided-hot-only.md`](docs/adr/0214-bc2cpp-profile-guided-hot-only.md).
 
+- A proven Hash receiver's clean `each_value` block is lowered to a native
+  values-snapshot loop, removing its cfunc/RProc and dynamic block dispatch;
+  unproven receivers retain the existing fallback, while a proven receiver that
+  changes class trips the native inliner's guard. See
+  [`docs/adr/0230-bc2cpp-hash-each-value-inlining.md`](docs/adr/0230-bc2cpp-hash-each-value-inlining.md).
+
+- Direct module-body ivar assignments feed the existing receiver proofs, so
+  module singleton methods such as `RGSS::Input#update` can use native
+  `Array#each_index` loops instead of cfunc/RProc block fallbacks. Class-body
+  and `class << module` ivars remain on the conservative fallback path. See
+  [`docs/adr/0231-bc2cpp-module-body-ivar-layout.md`](docs/adr/0231-bc2cpp-module-body-ivar-layout.md).
+
+- A zero-argument `Range#each` block now uses the same native counter loop as
+  the one-argument form, removing one hot-only LCF cfunc/RProc fallback. See
+  [`docs/adr/0157-bc2cpp-interpreter-unlock.md`](docs/adr/0157-bc2cpp-interpreter-unlock.md).
+
 - A polymorphic call with more compiled definitions than the 16 an inline
   class-check chain allows (`update`, with 19 classes on the full build)
   finds its compiled method in one lookup table that every call site of the
