@@ -667,6 +667,23 @@ assert 'Array1D#to_lcf reproduces its source bytes (terminated and not)' do
   assert_equal body[0...-1], a.to_lcf(false)
 end
 
+assert 'LCF loops preserve terminator, EOF, and StopIteration result behavior' do
+  row = lcf_int_field(12, 5) + lcf_ber(0)
+  assert_equal row, LCF::Array1D.new(row, nil).to_lcf
+  assert_equal row[0...-1], LCF::Array1D.new(row[0...-1], nil).to_lcf(false)
+  table = lcf_ber(1) + lcf_ber(3) + row
+  assert_equal table, LCF::Array2D.new(table, nil).to_lcf
+
+  stream = Object.new
+  def stream.eof?
+    error = StopIteration.new
+    error.result = 7
+    raise error
+  end
+  assert_equal 7, LCF::Array1D.allocate.__send__(:initialize, stream, nil)
+  assert_equal '', LCF::Array2D.allocate.__send__(:read_row_bytes, stream)
+end
+
 assert 'Array1D#[]= re-encodes int and string fields through the schema' do
   schema = { elements: LCF::Schema::SAVE_MOVABLE }
   a = LCF::Array1D.new(lcf_array1d([lcf_int_field(12, 5), lcf_int_field(13, 7),

@@ -49,6 +49,26 @@ Fall-through leaves dest (each returns self). The real Wio hot-only LCF
 output drops one cfunc/RProc fallback and 237 generated source bytes. 12-case
 harness plus a zero/one-arity regression pass.
 
+A second follow-up lets the same `times` inliner compile a literal block whose
+only block use is the enclosing method's `yield`. This covers
+`LCF::Array2D#each`; the method already extracts its received block as
+`bc2cpp_blk`, so the inlined body calls `mrb_yield_argv` directly. The gate
+requires one-level forwarding, a mandatory-arity enclosing method, no nested
+block bodies, and the existing synchronous-method allowlist. The real Wio
+hot-only LCF output drops from 5 to 4 cfunc/RProc fallbacks and 790 generated
+source bytes. A runtime regression covers normal yields, block `break`, method
+`return`, exceptions, missing-block recovery, and post-exception reuse.
+
+A third follow-up rewrites the two LCF chunk scanners,
+`LCF::Array1D#initialize` and `LCF::Array2D#read_row_bytes`, from
+`Kernel#loop` to direct EOF/terminator loops. Each replacement keeps the
+`StopIteration` rescue that `Kernel#loop` supplies: `Array1D#initialize`
+returns the exception result, while `read_row_bytes` continues to return its
+accumulated bytes. The real Wio hot-only LCF output drops from 4 to 2
+cfunc/RProc fallbacks; the generated LCF C++ is 16,017 bytes smaller, and a
+same-flags object comparison shows 4,686 bytes less LCF text. The LCF testbed,
+bracket-access, and focused loop-behavior checks pass.
+
 **C. flat_map + full_heal rewrite.** `flat_map` joins COLLECT set
 (1-arg); emitter mirrors mruby's own enum-ext shape exactly
 (respond_to?-gate; Array expansion inline with `mrb_array_p`

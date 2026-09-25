@@ -958,6 +958,7 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_hash_each_value_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_module_body_ivar_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_range_each_arity_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_forwarded_yield_times_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_nilable_retclass_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_unique_class_names_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_class_arg_devirtualization_check.rb
