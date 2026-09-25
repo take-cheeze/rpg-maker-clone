@@ -38,6 +38,7 @@ require 'set'
 
 ROOT = File.expand_path('..', __dir__)
 require_relative '../tools/bc2cpp/compiled_gems'
+require_relative '../tools/bc2cpp/symbol_cache'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
@@ -305,36 +306,70 @@ report << "  fallback cfuncs with guarded Array/Hash iterator element sends: " \
 lambda_fallback_count = @stdout.scan(/^\s*\/\/ LAMBDA_FALLBACK --/).size
 report << "lambda bodies compiled via cfunc/RProc fallback (LAMBDA_FALLBACK): " \
           "#{lambda_fallback_count}\n"
+sdef_fallback_count = @stdout.scan(/^\s*\/\/ SDEF_FALLBACK :/).size
+tdef_fallback_count = @stdout.scan(/^\s*\/\/ TDEF_FALLBACK :/).size
+sclass_fallback_count = @stdout.scan(/^\s*\/\/ SCLASS_FALLBACK \+/).size
+report << "runtime definition fallbacks (SDEF/TDEF/SCLASS+EXEC): " \
+          "#{sdef_fallback_count}/#{tdef_fallback_count}/#{sclass_fallback_count}\n"
 report << "\n"
 
 # DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site
 # left in the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1
-# -- see its own capture comment above), by the exact two real mruby API
-# call shapes this file ever emits one through: `mrb_funcall(M, recv,
-# "name", ...)` (dynamic_dispatch_line's own plain fallback, compile_
-# splat_send's own positional-splat fallback) and `mrb_funcall_with_
-# block(M, recv, mrb_intern_cstr(M, "name"), ...)` (emit_block_fallback_
-# glue's own call-site glue). A `POLY`-marked one (compile_send's own `//
-# POLY :name -- real dynamic dispatch, receiver's runtime class decides`
-# comment, emitted immediately before its own dispatch line whenever
-# multiple real definitions of `name` exist program-wide) is a genuinely
-# unavoidable dispatch -- the receiver's real class isn't known even in
-# principle without more type inference than this compiler does today;
-# every other one is a name this compiler simply never attempted (or
-# failed) to resolve MONO/TYPED, a real opportunity this count exists to
-# track over time.
+# -- see its own capture comment above). The generator's SymbolCache rewrites
+# the ordinary mrb_funcall form to `bc2cpp_send(M, recv, index, ...)`; resolve
+# those indices through the generated symbol table instead of scanning only the
+# pre-cache spelling. `mrb_funcall_with_block` is counted separately because it
+# carries a block and is emitted by the block-fallback glue, not SymbolCache.
+def unescape_cpp_string(s)
+  s.gsub(/\\x(\h\h)/) { [Regexp.last_match(1).hex].pack('C') }
+    .gsub(/\\([0-7]{1,3})/) { Regexp.last_match(1).to_i(8).chr }
+    .gsub(/\\(.)/) { { 'n' => "\n", 't' => "\t", 'r' => "\r" }.fetch(Regexp.last_match(1), Regexp.last_match(1)) }
+end
+
+def cached_send_indices(code)
+  indices = []
+  pos = 0
+  while (start = code.index(/\bbc2cpp_send\(M,\s*/, pos))
+    head_end = Regexp.last_match.end(0)
+    receiver_end = SymbolCache.expression_end(code, head_end)
+    index = receiver_end && code[receiver_end..][/\A,\s*(\d+)\s*[,)]/, 1]
+    indices << index.to_i if index
+    pos = start + 1
+  end
+  indices
+end
+
+def cached_with_block_indices(code)
+  indices = []
+  pos = 0
+  while (start = code.index(/\bmrb_funcall_with_block\(M,\s*/, pos))
+    head_end = Regexp.last_match.end(0)
+    receiver_end = SymbolCache.expression_end(code, head_end)
+    index = receiver_end && code[receiver_end..][/\A,\s*bc2cpp_sym\(M,\s*(\d+)\)\s*[,)]/, 1]
+    indices << index.to_i if index
+    pos = start + 1
+  end
+  indices
+end
+
 dispatch_counts = Hash.new(0)
-@shipped_stdout.scan(/mrb_funcall\(M,\s*[^,]+,\s*"((?:[^"\\]|\\.)*)"/) { |m| dispatch_counts[m[0]] += 1 }
-@shipped_stdout.scan(/mrb_funcall_with_block\(M,\s*[^,]+,\s*mrb_intern_cstr\(M,\s*"((?:[^"\\]|\\.)*)"\)/) { |m| dispatch_counts[m[0]] += 1 }
+symbol_names = @shipped_stdout[/static const char\* const bc2cpp_sym_names\[\d+\] = \{(.*?)\n\};/m, 1].to_s
+                         .scan(/"((?:[^"\\\n]|\\.)*)"/).flatten.map { |literal| unescape_cpp_string(literal) }
+(cached_send_indices(@shipped_stdout) + cached_with_block_indices(@shipped_stdout)).each do |index|
+  name = symbol_names[index]
+  dispatch_counts[name || "?symbol-#{index}"] += 1
+end
+@shipped_stdout.scan(/mrb_funcall_with_block\(M,\s*[^,]+,\s*mrb_intern_cstr\(M,\s*"((?:[^"\\]|\\.)*)"\)/) { |m| dispatch_counts[unescape_cpp_string(m[0])] += 1 }
 total_dispatch = dispatch_counts.values.sum
 shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
+raise "bc2cpp coverage report: POLY markers exceed dispatch sites" if shipped_poly > total_dispatch
 hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).size
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
-report << "total mrb_funcall/mrb_funcall_with_block call sites: #{total_dispatch}\n"
+report << "total cached bc2cpp_send/mrb_funcall_with_block call sites: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
 report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
-report << "  everything else (not yet attempted or failed MONO/TYPED): #{total_dispatch - shipped_poly}\n"
+report << "  everything else (not yet attempted or failed MONO/TYPED): #{[total_dispatch - shipped_poly, 0].max}\n"
 report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"
 report << "top 30 dynamically-dispatched method names:\n"
 dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|

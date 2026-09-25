@@ -26,7 +26,12 @@ module LCF
       raise "Invalid header: #{h} (expected: #{header})" if h != header
       if schema.is_a? Array
         sections = LCF::Sections.new
-        schema.each { |s| sections.add s[:name], LCF.read_section(io, s) }
+        i = 0
+        while i < schema.size
+          s = schema[i]
+          sections.add s[:name], LCF.read_section(io, s)
+          i += 1
+        end
         @root = sections
       else
         @root = LCF.const_get(schema[:type]).new io, schema

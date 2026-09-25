@@ -739,7 +739,15 @@ module LCF
       @sym2idx = @schema[:sym2idx]
       return @sym2idx if @sym2idx
       @sym2idx = {}
-      LCF.elements_of(@schema).each { |k, e| @sym2idx[e[:name]] = k }
+      elements = LCF.elements_of(@schema)
+      keys = elements.keys
+      i = 0
+      while i < keys.size
+        k = keys[i]
+        e = elements[k]
+        @sym2idx[e[:name]] = k
+        i += 1
+      end
       @schema[:sym2idx] = @sym2idx
     end
   end
