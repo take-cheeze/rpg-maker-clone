@@ -576,14 +576,16 @@ module LCF
       @data = []
       @schema = schema
 
-      loop do
-        break if s.eof?
+      begin
+        until s.eof?
+          idx = LCF.read_ber s
+          break if idx == 0
 
-        idx = LCF.read_ber s
-        break if idx == 0
-
-        len = LCF.read_ber s
-        @data[idx] = s.read len
+          len = LCF.read_ber s
+          @data[idx] = s.read len
+        end
+      rescue StopIteration => e
+        e.result
       end
     end
 
@@ -835,13 +837,16 @@ module LCF
     # missed it entirely -- confirmed by CI's real-game boot check).
     def read_row_bytes s
       out = String.new
-      loop do
-        break if s.eof?
-        idx = LCF.read_ber s
-        out << LCF.write_ber(idx)
-        break if idx == 0
-        len = LCF.read_ber s
-        out << LCF.write_ber(len) << s.read(len)
+      begin
+        until s.eof?
+          idx = LCF.read_ber s
+          out << LCF.write_ber(idx)
+          break if idx == 0
+          len = LCF.read_ber s
+          out << LCF.write_ber(len) << s.read(len)
+        end
+      rescue StopIteration => e
+        e.result
       end
       out
     end

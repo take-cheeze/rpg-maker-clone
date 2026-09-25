@@ -59,6 +59,16 @@ hot-only LCF output drops from 5 to 4 cfunc/RProc fallbacks and 790 generated
 source bytes. A runtime regression covers normal yields, block `break`, method
 `return`, exceptions, missing-block recovery, and post-exception reuse.
 
+A third follow-up rewrites the two LCF chunk scanners,
+`LCF::Array1D#initialize` and `LCF::Array2D#read_row_bytes`, from
+`Kernel#loop` to direct EOF/terminator loops. Each replacement keeps the
+`StopIteration` rescue that `Kernel#loop` supplies: `Array1D#initialize`
+returns the exception result, while `read_row_bytes` continues to return its
+accumulated bytes. The real Wio hot-only LCF output drops from 4 to 2
+cfunc/RProc fallbacks; the generated LCF C++ is 16,017 bytes smaller, and a
+same-flags object comparison shows 4,686 bytes less LCF text. The LCF testbed,
+bracket-access, and focused loop-behavior checks pass.
+
 **C. flat_map + full_heal rewrite.** `flat_map` joins COLLECT set
 (1-arg); emitter mirrors mruby's own enum-ext shape exactly
 (respond_to?-gate; Array expansion inline with `mrb_array_p`
