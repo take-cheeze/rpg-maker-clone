@@ -4159,6 +4159,7 @@ class RPG2k
       # Whether any of `ids` appears in the sweep's dirty set (nil dirty set =
       # a bulk write, relevant to everything; nil/empty ids = this event does
       # not read this input at all).
+      # bc2cpp: (Array, Hash)
       def ids_touch?(ids, dirty)
         return true if dirty.nil?
         return false if ids.nil? || ids.empty? || dirty.empty?
