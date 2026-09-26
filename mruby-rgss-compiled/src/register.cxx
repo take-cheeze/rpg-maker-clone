@@ -356,8 +356,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "openness", RGSS__Window_openness,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, window, "open?", RGSS__Window_open_, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "close?", RGSS__Window_close_, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "open?", RGSS__Window_open$3f, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "close?", RGSS__Window_close$3f,
+                    MRB_ARGS_NONE());
   mrb_define_method(M, window, "padding", RGSS__Window_padding,
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "padding_bottom", RGSS__Window_padding_bottom,
@@ -370,7 +371,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
 
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
-  mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font$3d, MRB_ARGS_REQ(1));
 
   // RGSS::Bitmap.singleton (docs/adr/0139: ".singleton owner support") --
   // this project's first `.singleton`-owned bc2cpp entries. Both are real
@@ -453,7 +454,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, audio, "se_stop", RGSS__Audio_singleton_se_stop,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, audio, "midi_available?",
-                          RGSS__Audio_singleton_midi_available_,
+                          RGSS__Audio_singleton_midi_available$3f,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, audio, "setup_midi",
                           RGSS__Audio_singleton_setup_midi, MRB_ARGS_NONE());
@@ -486,11 +487,11 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, input, "release", RGSS__Input_singleton_release,
                           MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press_,
+  mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press$3f,
                           MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "trigger?", RGSS__Input_singleton_trigger_,
-                          MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat_,
+  mrb_define_class_method(M, input, "trigger?",
+                          RGSS__Input_singleton_trigger$3f, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat$3f,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, input, "dir4", RGSS__Input_singleton_dir4,
                           MRB_ARGS_NONE());
@@ -501,7 +502,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, input, "mouse_y", RGSS__Input_singleton_mouse_y,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, input, "mouse_pressed?",
-                          RGSS__Input_singleton_mouse_pressed_,
+                          RGSS__Input_singleton_mouse_pressed$3f,
                           MRB_ARGS_NONE());
 
   // RGSS::ErrorReport.singleton -- 6 real class methods (mruby-rgss/mrblib/
@@ -515,14 +516,15 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, error_report, "push",
                           RGSS__ErrorReport_singleton_push, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, error_report, "installed?",
-                          RGSS__ErrorReport_singleton_installed_,
+                          RGSS__ErrorReport_singleton_installed$3f,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "record",
                           RGSS__ErrorReport_singleton_record, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, error_report, "clear",
                           RGSS__ErrorReport_singleton_clear, MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "probe!",
-                          RGSS__ErrorReport_singleton_probe_, MRB_ARGS_NONE());
+                          RGSS__ErrorReport_singleton_probe$21,
+                          MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "probe_raise",
                           RGSS__ErrorReport_singleton_probe_raise,
                           MRB_ARGS_NONE());
@@ -546,7 +548,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           RGSS__Graphics_singleton_resize_screen,
                           MRB_ARGS_REQ(2));
   mrb_define_class_method(M, graphics,
-                          "brightness=", RGSS__Graphics_singleton_brightness_,
+                          "brightness=", RGSS__Graphics_singleton_brightness$3d,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, graphics, "freeze",
                           RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
@@ -566,7 +568,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // interpreter's own bytecode path, unrelated to this fetch.
   RClass* font = mrb_class_get_under(M, rgss, "Font");
 
-  mrb_define_class_method(M, font, "exist?", RGSS__Font_singleton_exist_,
+  mrb_define_class_method(M, font, "exist?", RGSS__Font_singleton_exist$3f,
                           MRB_ARGS_REQ(1));
 
   // RGSS::ErrorReport::Tee#initialize -- its one real method (mruby-rgss/
@@ -577,7 +579,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, tee, "initialize",
                             RGSS__ErrorReport__Tee_initialize, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, tee, "respond_to_missing?",
-                            RGSS__ErrorReport__Tee_respond_to_missing_,
+                            RGSS__ErrorReport__Tee_respond_to_missing$3f,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
 
   // Array#include? -- a real bytecode reopening of the native, top-level
@@ -586,7 +588,8 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // already fetches the bare top-level RPG2k module.
   RClass* array_cls = mrb_class_get(M, "Array");
 
-  mrb_define_method(M, array_cls, "include?", Array_include_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array_cls, "include?", Array_include$3f,
+                    MRB_ARGS_REQ(1));
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {

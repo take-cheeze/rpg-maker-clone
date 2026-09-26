@@ -352,7 +352,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, database, "schema", LCF__Database_schema,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003_,
+  mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003$3f,
                     MRB_ARGS_NONE());
 
   mrb_define_method(M, map_tree, "header", LCF__MapTree_header,
@@ -365,7 +365,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, map_unit, "schema", LCF__MapUnit_schema,
                     MRB_ARGS_NONE());
   mrb_define_method(M, map_unit, "terminate_root?",
-                    LCF__MapUnit_terminate_root_, MRB_ARGS_NONE());
+                    LCF__MapUnit_terminate_root$3f, MRB_ARGS_NONE());
 
   mrb_define_method(M, save_data, "header", LCF__SaveData_header,
                     MRB_ARGS_NONE());
