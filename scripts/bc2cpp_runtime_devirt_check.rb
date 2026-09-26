@@ -18,6 +18,12 @@
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 
+# The generated symbol for `Vars#[]`, derived through the real CodeGen#cpp_name
+# rather than spelled out. `[]` mangles to `_$5b$5d`, and writing that by hand
+# inside a regex literal does not work: `$5b` interpolates.
+CPP_NAME = CodeGen.instance_method(:cpp_name).bind(CodeGen.allocate)
+VARS_INDEX_IMPL = "#{CPP_NAME.call('Vars', '[]')}_impl"
+
 root = File.expand_path('..', __dir__)
 failures = []
 check = lambda do |what, condition|
@@ -91,7 +97,7 @@ fixture(INDEX, 'index_chain', natives: ['[]']) do |gen, registry|
   helper = gen.emit_index_helpers([code])
   check.call('an untyped x[i] tail dispatches through the exact-class chain',
              code.match?(/r\d+ = bc2cpp_getidx\(M, r\d+, r\d+\);/) &&
-               helper.include?('POLY_SMALL_N :[] -> Vars') && helper.match?(/Vars_+impl\(M, recv, key\)/))
+               helper.include?('POLY_SMALL_N :[] -> Vars') && helper.include?("#{VARS_INDEX_IMPL}(M, recv, key)"))
   check.call('the exact Array/Hash/String arms are kept in front of it',
              helper.index('bc2cpp_ary_entry') < helper.index('mrb_hash_get(M,') &&
                helper.index('mrb_str_aref(M,') < helper.index('POLY_SMALL_N :[]'))

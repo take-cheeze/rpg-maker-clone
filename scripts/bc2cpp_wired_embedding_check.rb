@@ -42,7 +42,12 @@ foreign = foreign_mrblib_srcs(root)
 # ship) has the identical (M, scope, "name", FN, aspec) shape and needs to be
 # recognized the same way, or a real private singleton registration would be
 # reported as missing.
-REGISTRATION_CALL = /(?:mrb_define_(?:private_|class_)?method|bc2cpp_define_private_class_method)\(\s*M\s*,\s*[^,]+,\s*(?:"[^"]*"|\S+)\s*,\s*(\w+)\s*,/m
+#
+# The function-name group accepts `$`, not just `\w`: a generated symbol for an
+# operator or predicate name carries the mangling's `$<hex>` escapes
+# (`LCF__File_$5b$5d` for `LCF::File#[]`), and `\w+` stops at the first `$`, so
+# every such registration read back as the bare `LCF__File_` and looked missing.
+REGISTRATION_CALL = /(?:mrb_define_(?:private_|class_)?method|bc2cpp_define_private_class_method)\(\s*M\s*,\s*[^,]+,\s*(?:"[^"]*"|\S+)\s*,\s*([A-Za-z_][A-Za-z0-9_$]*)\s*,/m
 
 failures = []
 BC2CPP_COMPILED_GEMS.each do |name, gem|

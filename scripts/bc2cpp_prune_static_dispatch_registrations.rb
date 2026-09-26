@@ -24,7 +24,7 @@ removed = 0
 StaticDispatchRegistrations::GEMS.each do |gem|
   path = File.join(root, gem, 'src', 'register.cxx')
   src = File.read(path, encoding: 'UTF-8')
-  out = src.gsub(/^[ \t]*mrb_define_(?:private_|class_)?method\(\s*M\s*,\s*\w+\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\w+)\s*,[^;]*\);\n/m) do |line|
+  out = src.gsub(/^[ \t]*mrb_define_(?:private_|class_)?method\(\s*M\s*,\s*\w+\s*,\s*"((?:[^"\\]|\\.)*)"\s*,\s*([A-Za-z_][A-Za-z0-9_$]*)\s*,[^;]*\);\n/m) do |line|
     key = [StaticDispatchRegistrations.unescape(Regexp.last_match(1)), Regexp.last_match(2)]
     if wanted.include?(key)
       removed += 1

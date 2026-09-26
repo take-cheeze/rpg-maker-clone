@@ -76,7 +76,8 @@ class SanitizeTest < Minitest::Test
     # earlier revision did) lengthened every symbol and pushed the longest in
     # this program to 97 characters, past C++'s 63-significant-character
     # guarantee.
-    assert_equal 'Game$3a$3aActor_update', sanitize('Game::Actor_update')
+    assert_equal 'Game__Actor_update', sanitize('Game::Actor_update')
+    assert_equal 'Widget_singleton_make', sanitize('Widget.singleton_make')
     assert_equal 'Array_bsearch', sanitize('Array_bsearch')
     assert_equal 'Array_$3c', sanitize('Array_<')
   end
@@ -105,7 +106,8 @@ class SanitizeTest < Minitest::Test
   def test_owner_and_method_words_keep_their_readable_form
     # Only characters outside [A-Za-z0-9] are mangled, so the owner and method
     # words stay legible in the generated C++.
-    assert_equal 'Game$3a$3aActor_update', sanitize('Game::Actor_update')
+    assert_equal 'Game__Actor_update', sanitize('Game::Actor_update')
+    assert_equal 'Widget_singleton_make', sanitize('Widget.singleton_make')
     assert_equal 'Array_bsearch', sanitize('Array_bsearch')
     assert_equal 'Array_$3c', sanitize('Array_<')
   end
@@ -116,7 +118,7 @@ class SanitizeTest < Minitest::Test
         sym = sanitize("#{owner}_#{name}")
         # `$` is a legal C++ identifier character, and the symbol always starts
         # with a letter because every owner name does.
-        assert_match(/\A[A-Za-z][A-Za-z0-9_$]*\z/, sym,
+        assert_match(/\A[A-Za-z][A-Za-z0-9_.$]*\z/, sym,
                      "#{owner}##{name} -> #{sym} is not a C identifier")
         refute_match(/_\z/, sym, "#{owner}##{name} -> #{sym} ends in a bare underscore")
       end

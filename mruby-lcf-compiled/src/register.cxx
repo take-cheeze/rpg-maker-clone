@@ -210,8 +210,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, sections, "initialize", LCF__Sections_initialize,
                             MRB_ARGS_NONE());
   mrb_define_method(M, sections, "add", LCF__Sections_add, MRB_ARGS_REQ(2));
-  mrb_define_method(M, sections, "key?", LCF__Sections_key_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, sections, "[]", LCF__Sections___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, sections, "key?", LCF__Sections_key$3f, MRB_ARGS_REQ(1));
+  mrb_define_method(M, sections, "[]", LCF__Sections_$5b$5d, MRB_ARGS_REQ(1));
 
   // @code/@indent (`# bc2cpp: (fixnum, fixnum, , )` above #initialize)
   // embed into a real RData struct again -- ATTR_STRUCT_DEVIRT
@@ -296,12 +296,12 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
   // Symbol).
   RClass* array1d = mrb_class_get_under(M, lcf, "Array1D");
-  mrb_define_method(M, array1d, "[]", LCF__Array1D___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array1d, "key?", LCF__Array1D_key_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "[]", LCF__Array1D_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "key?", LCF__Array1D_key$3f, MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "int16_values", LCF__Array1D_int16_values,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "delete", LCF__Array1D_delete, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array1d, "[]=", LCF__Array1D____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, array1d, "[]=", LCF__Array1D_$5b$5d$3d, MRB_ARGS_REQ(2));
 
   // LCF::Array2D: only 2 of its own 6 real bytecode-defined methods
   // compile clean and are registered below -- both public, confirmed
@@ -314,8 +314,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
   // Symbol).
   RClass* array2d = mrb_class_get_under(M, lcf, "Array2D");
-  mrb_define_method(M, array2d, "[]", LCF__Array2D___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array2d, "[]=", LCF__Array2D____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, array2d, "[]", LCF__Array2D_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array2d, "[]=", LCF__Array2D_$5b$5d$3d, MRB_ARGS_REQ(2));
 
   // LCF::File#[]/#[]= (mruby-lcf/mrblib/lcf_file.rb: `def [] idx ; @root[idx]
   // end` / `def []= idx, value ; @root[idx] = value end`) were flagged as a
@@ -339,13 +339,13 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // `@root` itself). Both are public (no source-level `private`, confirmed
   // against the diagnostic's own listing, which carries no `[private -- ...]`
   // tag for either). Registered below to close the gap.
-  mrb_define_method(M, file, "[]", LCF__File___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, file, "[]=", LCF__File____, MRB_ARGS_REQ(2));
-  mrb_define_method(M, file, "key?", LCF__File_key_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, file, "[]", LCF__File_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, file, "[]=", LCF__File_$5b$5d$3d, MRB_ARGS_REQ(2));
+  mrb_define_method(M, file, "key?", LCF__File_key$3f, MRB_ARGS_REQ(1));
   mrb_define_method(M, file, "to_lcf", LCF__File_to_lcf, MRB_ARGS_NONE());
   mrb_define_method(M, file, "header", LCF__File_header, MRB_ARGS_NONE());
   mrb_define_method(M, file, "schema", LCF__File_schema, MRB_ARGS_NONE());
-  mrb_define_method(M, file, "terminate_root?", LCF__File_terminate_root_,
+  mrb_define_method(M, file, "terminate_root?", LCF__File_terminate_root$3f,
                     MRB_ARGS_NONE());
 
   mrb_define_method(M, database, "header", LCF__Database_header,

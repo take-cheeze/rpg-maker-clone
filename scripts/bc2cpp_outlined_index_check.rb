@@ -25,6 +25,12 @@ require 'open3'
 require 'shellwords'
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
+
+# Derived through the real CodeGen#cpp_name: `[]` mangles to `_$5b$5d`, and a
+# hand-written `$5b` inside a regex literal interpolates rather than matching.
+CPP_NAME = CodeGen.instance_method(:cpp_name).bind(CodeGen.allocate)
+VARS_INDEX_IMPL = "#{CPP_NAME.call('Vars', '[]')}_impl"
+GRID_INDEX_IMPL = "#{CPP_NAME.call('Grid', '[]')}_impl"
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/static_dispatch_registrations'
 
@@ -123,7 +129,7 @@ Dir.mktmpdir do |dir|
                getidx.index('M->string_class') < getidx.index('POLY_SMALL_N :[]'))
   check.call('its POLY_SMALL_N arm calls every compiled #[] and ends in the by-name fallback',
              getidx && getidx.include?('POLY_SMALL_N :[] -> Vars, Grid') &&
-               getidx.match?(/r0 = Vars_\w+_impl\(M, recv, key\);/) && getidx.match?(/r0 = Grid_\w+_impl\(M, recv, key\);/) &&
+               getidx.include?("r0 = #{VARS_INDEX_IMPL}(M, recv, key);") && getidx.include?("r0 = #{GRID_INDEX_IMPL}(M, recv, key);") &&
                getidx.include?('r0 = mrb_funcall(M, recv, "[]", 1, key);'))
   getidx0 = function_text(helpers, 'bc2cpp_getidx0')
   check.call('the GETIDX0 helper keeps its own Array/Hash/funcall chain (no String or POLY arm)',
