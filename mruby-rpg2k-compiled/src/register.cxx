@@ -1136,6 +1136,23 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
   RClass* game = mrb_module_get(M, "Game");
   RClass* picture = mrb_class_get_under(M, game, "Picture");
 
+// DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
+// bc2cpp_register_owner_methods(M) call above already installs, so a full build
+// registers every one of them twice. Measured on the real wio closed world:
+// 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
+// with no orphan -- no call below is the only registration of its method.
+//
+// They cannot simply be deleted, because a HOT-ONLY build does not compile 1229
+// of those 1375 callees at all. The generated call then installs a no-op
+// `bc2cpp_hot_only_excluded` overload instead, which does not reference the
+// real
+// `_impl`, so these calls are what keep the excluded symbols alive; removing
+// them unconditionally is a link error on every one of those methods.
+//
+// BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
+// #includes, and only on the hot-only path, so this guard selects between the
+// two builds with no second flag and the two cannot drift.
+#ifndef BC2CPP_HOT_ONLY_STUBS
   mrb_define_method(M, picture, "opacity", Game__Picture_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, picture, "x", Game__Picture_x, MRB_ARGS_NONE());
@@ -6252,6 +6269,7 @@ extern "C" void mrb_mruby_rpg2k_compiled_gem_init(mrb_state* M) {
                           Game_singleton_opacity_to_trans, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, game, "camera_offset",
                           Game_singleton_camera_offset, MRB_ARGS_REQ(3));
+#endif  // BC2CPP_HOT_ONLY_STUBS
 }
 
 extern "C" void mrb_mruby_rpg2k_compiled_gem_final(mrb_state*) {
