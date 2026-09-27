@@ -376,21 +376,27 @@ poly_paths = Hash.new(0)
 poly_receivers = Hash.new(0)
 dynamic_receivers = Hash.new(0)
 unresolved_origins = Hash.new(0)
+unresolved_origin_names = Hash.new { |hash, origin| hash[origin] = Hash.new(0) }
 poly_exclusions = Hash.new(0)
 poly_diag_sites = 0
 poly_dynamic_names = Hash.new(0)
 @shipped_stdout.each_line do |line|
-  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name=.* arity=\d+ candidates=(\d+) excluded=(\S+)(?: origin=(\S+))?/)
+  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name="((?:\\.|[^"\\])*)" arity=\d+ candidates=(\d+) excluded=(\S+)(?: origin=(\S+))?/)
   next unless match
 
   poly_diag_sites += 1
   poly_paths[match[1]] += 1
   poly_receivers[match[2]] += 1
   dynamic_receivers[[match[1], match[2]]] += 1 if match[1].start_with?('dynamic_')
-  unresolved_origins[match[5] || 'not_recorded'] += 1 if match[2] == 'receiver_class_unresolved'
-  next if match[4] == 'none'
+  if match[2] == 'receiver_class_unresolved'
+    origin = match[6] || 'not_recorded'
+    unresolved_origins[origin] += 1
+    method_name = match[3].gsub(/\\(.)/, '\\1')
+    unresolved_origin_names[origin][method_name] += 1
+  end
+  next if match[5] == 'none'
 
-  match[4].split(',').each do |entry|
+  match[5].split(',').each do |entry|
     reason, count = entry.split('=', 2)
     poly_exclusions[reason] += count.to_i
   end
@@ -412,6 +418,11 @@ end
 report << "  unresolved receiver origins (nearest defining instruction):\n"
 unresolved_origins.sort_by { |origin, count| [-count, origin] }.each do |origin, count|
   report << format("    %5d  %s\n", count, origin)
+end
+report << "  top dynamic method names within the largest unresolved origins:\n"
+unresolved_origins.sort_by { |origin, count| [-count, origin] }.first(8).each do |origin, _count|
+  names = unresolved_origin_names[origin].sort_by { |name, count| [-count, name] }.first(8)
+  report << "    #{origin}: #{names.map { |name, count| ":#{name} #{count}" }.join(', ')}\n"
 end
 report << "  receiver-class evidence at those sites:\n"
 poly_receivers.sort.each { |fact, count| report << format("    %5d  %s\n", count, fact) }

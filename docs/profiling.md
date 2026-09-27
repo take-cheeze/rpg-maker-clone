@@ -347,6 +347,9 @@ or unsafe targets. For unresolved receivers it also records the nearest
 defining opcode behind the receiver register (following `MOVE` aliases), so
 large groups such as constant lookups, method results, indexed values and ivar
 reads can be prioritized for a later proof without changing dispatch behavior.
+For the largest origin groups it also lists the most frequent dispatched names,
+which helps distinguish a repeated class-method opportunity from unrelated
+receiver-tracing gaps.
 
 ## Audio: what is already off the main thread
 
