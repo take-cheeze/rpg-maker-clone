@@ -18,17 +18,19 @@ metadata.
 
 ## Decision
 
-`drop_unsafe_embeddings` rejects a base layout when a known descendant defines
-its own `#initialize`. Those ivars stay in mruby's ordinary ivar table, so
-inherited compiled methods use the runtime ivar API. Descendants that do not
-override initialization can continue to use the base layout allocated by the
-inherited initializer.
+When a base layout is eligible for embedding, each known descendant that
+defines `#initialize` must contain a `SUPER` instruction or compilation fails
+with a storage error. Embedding is retained only when that `SUPER` is the
+initializer's first executable bytecode operation and no included or prepended
+module interposes on initialization. A later or conditional `super` remains
+legal Ruby but keeps that base layout in mruby's ordinary ivar table. This lets the
+compiler reject the unsafe no-`super` case while remaining conservative about
+initializers it cannot prove safe.
 
 ## Consequences
 
-This conservatively gives up embedding for the affected base classes, while
-preserving correctness without changing mruby's RData allocation ABI. The
-embedded-ivar check covers a subclass initializer that skips `super`. The
-proof relies on the compiler's known superclass graph; expanding embedding
-across separately compiled or otherwise unregistered subclasses needs a
-whole-program hierarchy proof.
+This enforces the storage contract at compile time without changing mruby's
+RData allocation ABI. A first-operation `super` reaches the ancestor
+initializer before subclass work can read inherited storage. The proof relies
+on the compiler's known superclass graph; separately compiled or otherwise
+unregistered subclasses still require a whole-program hierarchy proof.

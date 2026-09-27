@@ -99,7 +99,7 @@ LAYOUT_FIXTURE = <<~'RUBY'
     def x2; @x; end
   end
   class InitChild < InitBase
-    def initialize; end
+    def initialize; super; end
   end
   class Solo
     # bc2cpp: (fixnum)
@@ -119,8 +119,8 @@ Dir.mktmpdir do |dir|
   gen = CodeGen.new(ireps, registry, ivar_layout, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new)
   check.call('an ivar a subclass method also touches is never embedded (its GETIV would read iv_tbl)',
              gen.embed_type('Base', 'v').nil? && gen.embed_type('Solo', 'w') == :value)
-  check.call('a base ivar is not embedded when a subclass can skip base initialization',
-             gen.embed_type('InitBase', 'x').nil?)
+  check.call('a base ivar stays embedded when a subclass initializer calls super first',
+             gen.embed_type('InitBase', 'x') == :value)
   w2 = registry.fetch('w2').find { |d| d.owner == 'Solo' }
   irep = ireps.fetch(w2.irep)
   getiv = irep.instructions.index { |insn| insn.op == 'GETIV' }
@@ -131,6 +131,31 @@ Dir.mktmpdir do |dir|
   check.call('GETIV uses the runtime ivar API where self\'s class is unknown and a direct slot when known',
              unknown.include?('mrb_iv_get(M, self') &&
                known.include?("DATA_PTR(self))->#{gen.ivar_field_name('w')}"))
+
+  unsafe_path = File.join(dir, 'unsafe_layout.rb')
+  File.write(unsafe_path, <<~'RUBY')
+    class UnsafeBase
+      # bc2cpp: (fixnum)
+      def initialize; @x = 1; end
+      def x2; @x; end
+    end
+    class UnsafeChild < UnsafeBase
+      def initialize; end
+    end
+  RUBY
+  unsafe_dump, unsafe_disasm = run_mrbc(unsafe_path, 'bc2cpp_unsafe_layout', dir)
+  unsafe_ireps, unsafe_root = parse_c_dump(unsafe_dump, 'bc2cpp_unsafe_layout')
+  unsafe_blocks, unsafe_files, unsafe_catches = parse_disasm_blocks(unsafe_disasm)
+  merge!(unsafe_ireps, dfs_order(unsafe_ireps, unsafe_root), unsafe_blocks, unsafe_files, unsafe_catches)
+  unsafe_registry, unsafe_superclasses = build_registry(unsafe_ireps, unsafe_root)
+  rejected = begin
+    CodeGen.new(unsafe_ireps, unsafe_registry, IvarLayout.all(unsafe_ireps, unsafe_registry), {}, {}, {},
+                unsafe_superclasses, {}, {}, {}, {}, Set.new)
+    false
+  rescue RuntimeError => e
+    e.message.include?('UnsafeChild#initialize must call super')
+  end
+  check.call('compilation rejects an embedded base whose subclass initializer skips super', rejected)
 end
 
 puts '-- fixture (foreign and self accessor reads of an embedded ivar)'
