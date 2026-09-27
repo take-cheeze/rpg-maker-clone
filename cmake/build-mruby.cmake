@@ -239,6 +239,12 @@ function(rpg2k_add_mruby)
   set(mruby_gc_type_counts_patch
       "${ARG_REPO_ROOT}/patches/mruby-gc-type-live-counts.patch")
 
+  # RData payloads used by bc2cpp carry statically named Ruby ivars outside
+  # iv_tbl. This patch makes lookup, enumeration, copying and GC marking aware
+  # of the slots; dynamic ivars still use the ordinary table.
+  set(mruby_rdata_ivar_slots_patch
+      "${ARG_REPO_ROOT}/patches/mruby-rdata-ivar-slots.patch")
+
   # Vendored mruby-io's file.c unconditionally uses MAXPATHLEN (a `char
   # buf[MAXPATHLEN]` in path_getwd, backing Dir.getwd/File.expand_path) after
   # `#include <sys/param.h>` on every non-Windows target -- true on glibc and
@@ -344,6 +350,7 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_parser_dump_back_nth_ref_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_nomem_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_gc_type_counts_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_rdata_ivar_slots_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")

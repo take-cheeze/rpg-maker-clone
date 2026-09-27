@@ -107,10 +107,10 @@ Dir.mktmpdir do |dir|
   blocks, block_files, block_catches = parse_disasm_blocks(disasm)
   merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
   registry, superclass_of = build_registry(ireps, root_label)
-  ivar_layout = IvarLayout.analyze(ireps, registry, {}, Annotations.extract(ireps, registry))
+  ivar_layout = IvarLayout.all(ireps, registry)
   gen = CodeGen.new(ireps, registry, ivar_layout, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new)
   check.call('an ivar a subclass method also touches is never embedded (its GETIV would read iv_tbl)',
-             gen.embed_type('Base', 'v').nil? && gen.embed_type('Solo', 'w') == :fixnum)
+             gen.embed_type('Base', 'v').nil? && gen.embed_type('Solo', 'w') == :value)
   w2 = registry.fetch('w2').find { |d| d.owner == 'Solo' }
   irep = ireps.fetch(w2.irep)
   getiv = irep.instructions.index { |insn| insn.op == 'GETIV' }
@@ -118,8 +118,9 @@ Dir.mktmpdir do |dir|
   unknown = gen.compile_insn(irep.instructions[getiv], irep, w2, getiv)
   gen.instance_variable_set(:@self_class_unknown, false)
   known = gen.compile_insn(irep.instructions[getiv], irep, w2, getiv)
-  check.call('GETIV of an embedded name refuses to compile where self\'s class is unknown (runtime-def/EXEC body)',
-             unknown.include?('#error') && known.include?('DATA_PTR(self))->w'))
+  check.call('GETIV uses the runtime ivar API where self\'s class is unknown and a direct slot when known',
+             unknown.include?('mrb_iv_get(M, self') &&
+               known.include?("DATA_PTR(self))->#{gen.ivar_field_name('w')}"))
 end
 
 puts '-- fixture (foreign and self accessor reads of an embedded ivar)'

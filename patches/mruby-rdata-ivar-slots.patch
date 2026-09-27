@@ -1,0 +1,135 @@
+RData-backed bc2cpp payloads can own statically named Ruby ivars without
+putting those names in the object's ordinary iv_tbl. The descriptors keep
+mruby's ivar APIs and GC aware of those slots; unknown/dynamic names continue
+to use the ordinary table.
+
+--- a/include/mruby/data.h
++++ b/include/mruby/data.h
+@@ -27,0 +28,5 @@ typedef struct mrb_data_type {
++
++  /** Optional compiler-managed instance-variable slot descriptor. */
++  const struct mrb_data_ivar *ivars;
++  size_t ivar_count;
++  size_t ivar_data_size;
+@@ -29,0 +35,6 @@ typedef struct mrb_data_type {
++/** A GC-visible Ruby instance variable stored in an RData payload. */
++struct mrb_data_ivar {
++  const char *name;
++  size_t offset;
++};
++
+--- a/src/gc.c
++++ b/src/gc.c
+@@ -720,0 +731,9 @@ gc_mark_children(mrb_state *mrb, mrb_gc *gc, struct RBasic *obj)
++    if (obj->tt == MRB_TT_CDATA) {
++      struct RData *data = (struct RData*)obj;
++      if (data->type && data->type->ivars) {
++        for (size_t i = 0; i < data->type->ivar_count; ++i) {
++          mrb_value *slot = (mrb_value*)((char*)data->data + data->type->ivars[i].offset);
++          mrb_gc_mark_value(mrb, *slot);
++        }
++      }
++    }
+--- a/src/variable.c
++++ b/src/variable.c
+@@ -7,0 +8 @@
++#include <string.h>
+@@ -9,0 +11 @@
++#include <mruby/data.h>
+@@ -599,0 +602,17 @@ obj_iv_p(mrb_value obj)
++static mrb_value*
++rdata_ivar_slot(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
++{
++  if (obj->tt != MRB_TT_CDATA) return NULL;
++  struct RData *data = (struct RData*)obj;
++  if (!data->type || !data->type->ivars || !data->data) return NULL;
++  mrb_int len;
++  const char *name = mrb_sym_name_len(mrb, sym, &len);
++  for (size_t i = 0; i < data->type->ivar_count; ++i) {
++    const struct mrb_data_ivar *ivar = &data->type->ivars[i];
++    if ((mrb_int)strlen(ivar->name) == len && memcmp(ivar->name, name, (size_t)len) == 0) {
++      return (mrb_value*)((char*)data->data + ivar->offset);
++    }
++  }
++  return NULL;
++}
++
+@@ -620,0 +640,2 @@ mrb_obj_iv_get(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
++  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
++  if (slot) return mrb_undef_p(*slot) ? mrb_nil_value() : *slot;
+@@ -691,0 +713,6 @@ mrb_obj_iv_set_force(mrb_state *mrb, struct RObject *obj, mrb_sym sym, mrb_value
++  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
++  if (slot) {
++    *slot = v;
++    mrb_field_write_barrier_value(mrb, (struct RBasic*)obj, v);
++    return;
++  }
+@@ -744,0 +772,13 @@ mrb_iv_foreach(mrb_state *mrb, mrb_value obj, mrb_iv_foreach_func *func, void *p
++  if (mrb_data_p(obj)) {
++    struct RData *data = RDATA(obj);
++    if (data->type && data->type->ivars && data->data) {
++      for (size_t i = 0; i < data->type->ivar_count; ++i) {
++        const struct mrb_data_ivar *ivar = &data->type->ivars[i];
++        mrb_value val = *(mrb_value*)((char*)data->data + ivar->offset);
++        if (!mrb_undef_p(val)) {
++          mrb_sym sym = mrb_intern_cstr(mrb, ivar->name);
++          if (func(mrb, sym, val, p) != 0) return;
++        }
++      }
++    }
++  }
+@@ -793,0 +834,2 @@ mrb_obj_iv_defined(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
++  mrb_value *slot = rdata_ivar_slot(mrb, obj, sym);
++  if (slot) return !mrb_undef_p(*slot);
+@@ -889,0 +932,13 @@ mrb_iv_copy(mrb_state *mrb, mrb_value dest, mrb_value src)
++  if (s->tt == MRB_TT_CDATA && d->tt == MRB_TT_CDATA) {
++    struct RData *source = (struct RData*)s;
++    struct RData *target = (struct RData*)d;
++    if (source->type && source->type->ivars && source->data) {
++      if (target->data && target->type && target->type->dfree) {
++        target->type->dfree(mrb, target->data);
++      }
++      target->type = source->type;
++      target->data = mrb_malloc(mrb, source->type->ivar_data_size);
++      memcpy(target->data, source->data, source->type->ivar_data_size);
++    }
++  }
++
+@@ -939,0 +995,20 @@ mrb_iv_copy(mrb_state *mrb, mrb_value dest, mrb_value src)
++
++  if (s->tt == MRB_TT_CDATA) {
++    struct RData *source = (struct RData*)s;
++    if (source->type && source->type->ivars && source->data) {
++      for (size_t i = 0; i < source->type->ivar_count; ++i) {
++        const struct mrb_data_ivar *ivar = &source->type->ivars[i];
++        mrb_value value = *(mrb_value*)((char*)source->data + ivar->offset);
++        if (mrb_undef_p(value)) continue;
++        mrb_sym sym = mrb_intern_cstr(mrb, ivar->name);
++        mrb_value *slot = rdata_ivar_slot(mrb, d, sym);
++        if (slot) {
++          *slot = value;
++          mrb_field_write_barrier_value(mrb, (struct RBasic*)d, value);
++        }
++        else {
++          mrb_obj_iv_set_force(mrb, d, sym, value);
++        }
++      }
++    }
++  }
+@@ -961,0 +1037,7 @@ mrb_iv_remove(mrb_state *mrb, mrb_value obj, mrb_sym sym)
++    mrb_value *slot = rdata_ivar_slot(mrb, o, sym);
++    if (slot) {
++      mrb_value val = *slot;
++      *slot = mrb_undef_value();
++      return val;
++    }
++
+@@ -1022,7 +1104 @@ mrb_obj_instance_variables(mrb_state *mrb, mrb_value self)
+-    struct RObject *obj = mrb_obj_ptr(self);
+-    if (MRB_OBJ_SHAPED_P(obj)) {
+-      shaped_iv_foreach(mrb, obj, iv_i, &ary);
+-    }
+-    else {
+-      iv_foreach(mrb, obj->iv, iv_i, &ary);
+-    }
++    mrb_iv_foreach(mrb, self, iv_i, &ary);

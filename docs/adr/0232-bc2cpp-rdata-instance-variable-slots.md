@@ -48,3 +48,7 @@ continue to use ordinary ivar storage.
 `mrb_data_type` has optional trailing slot metadata; existing C data types leave
 it zero-initialized. Any changes to the descriptor or slot lifecycle must keep
 GC marking, `mrb_iv_copy`, reflection, and the write barrier in sync.
+
+The runtime support is carried by `patches/mruby-rdata-ivar-slots.patch` and
+applied through the shared mruby patch chain. The vendored submodule therefore
+remains pristine; host, cross, and CI builds reproduce the same runtime changes.
