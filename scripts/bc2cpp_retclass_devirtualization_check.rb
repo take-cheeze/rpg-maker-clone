@@ -8,6 +8,15 @@
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 
+# The generated symbol for `Game::EqTarget#==`, derived through the real
+# CodeGen#cpp_name rather than spelled out. `==` mangles to `$3d$3d`, and
+# writing that by hand inside a double-quoted string does not work: `$3d`
+# interpolates. Spelling it out the old way (`Game__EqTarget____impl`) is
+# worse -- that is what the non-injective mangling used to produce, so it
+# stopped matching the moment sanitize changed.
+CPP_NAME = CodeGen.instance_method(:cpp_name).bind(CodeGen.allocate)
+EQ_TARGET_EQ_IMPL = "#{CPP_NAME.call('Game::EqTarget', '==')}_impl"
+
 SRC = <<~'RUBY'
   class Array
     def bc2cpp_test_array_owner; end
@@ -508,7 +517,7 @@ Dir.mktmpdir do |dir|
   eq_caller = registry.fetch('typed_eq').find { |md| md.owner == 'Game::EqTargetCaller' }
   eq_code = gen.compile_method(eq_caller.irep).fetch(:code)
   check.call('OP_EQ fallback goes through the MONO/TYPED resolver like the other comparisons',
-             eq_code.include?('TYPED :== -> Game::EqTarget#==') && eq_code.include?('Game__EqTarget____impl(M, r') &&
+             eq_code.include?('TYPED :== -> Game::EqTarget#==') && eq_code.include?("#{EQ_TARGET_EQ_IMPL}(M, r") &&
                eq_code.include?('mrb_funcall(M, r2, "==", 1, r3)'), true)
 
   overridden_key_registry = key_registry.transform_values(&:dup)

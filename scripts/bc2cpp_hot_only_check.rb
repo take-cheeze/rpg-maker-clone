@@ -308,7 +308,7 @@ else
         struct RClass* caller = mrb_class_get(M, "HoCaller");
         mrb_define_method(M, callee, "hot", HoCallee_hot, MRB_ARGS_REQ(1));
         mrb_define_method(M, callee, "cold", HoCallee_cold, MRB_ARGS_REQ(1));
-        mrb_define_class_method(M, callee, "cold_s", EXCLUDED_SYMS[1], MRB_ARGS_REQ(1));
+        mrb_define_class_method(M, callee, "cold_s", #{EXCLUDED_SYMS[1]}, MRB_ARGS_REQ(1));
         mrb_define_method(M, pet, "ho_speak", HoPet_ho_speak, MRB_ARGS_NONE());
         mrb_define_method(M, robot, "ho_speak", HoRobot_ho_speak, MRB_ARGS_NONE());
         mrb_define_private_method(M, counter, "initialize", HoCounter_initialize, MRB_ARGS_NONE());
