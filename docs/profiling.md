@@ -323,6 +323,25 @@ Ir is the stable figure: SDL's software blit under xvfb swings from run to
 run. Also confirm that bc2cpp's `== hot-only: listed but not compiled ==`
 section is empty.
 
+## bc2cpp generation-time profiling
+
+`BC2CPP_PROFILE_TIMINGS=1` makes bc2cpp print phase and analysis timings to
+stderr. The whole-program report runs both the analysis and shipped-output
+passes, so it reports each pass separately:
+
+```sh
+BC2CPP_PROFILE_TIMINGS=1 MRBC=build/mruby/host/mrbc/bin/mrbc \
+  ruby scripts/bc2cpp_coverage_report.rb
+```
+
+The `BC2CPP_TIME` rows show broad pipeline phases; `BC2CPP_DETAIL` rows split
+the expensive whole-program analyses. Timings are opt-in and do not affect
+generated C++. Both `ArgTypes` and `ClassArgTypes` use the same call-site index,
+so each MONO method visits only its own callers rather than rescanning every
+instruction in the program. On the three-gem coverage workload, this reduced
+one bc2cpp pass from about 91 seconds to about 16 seconds while keeping the
+coverage totals unchanged.
+
 ## Audio: what is already off the main thread
 
 Short version: **the audio *processing* is already on another thread, and it

@@ -66,7 +66,9 @@ env = {
   'NATIVE_SRCS' => Shellwords.join(native_srcs),
   'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
 }
+env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
+shipped_stderr = nil
 Dir.mktmpdir do |dir|
   env['OUT_DIR'] = dir
   @stdout, @stderr, status = Open3.capture3(env, cmd)
@@ -411,6 +413,15 @@ report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}
 report << "top 30 dynamically-dispatched method names:\n"
 dispatch_counts.sort_by { |name, n| [-n, name] }.first(30).each_with_index do |(name, n), i|
   report << format("  %2d. %5d  :%s\n", i + 1, n, name)
+end
+
+if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
+  report << "\n-- bc2cpp generation phase timings (two complete passes) --\n"
+  [['analysis pass', err], ['shipped pass', shipped_stderr]].each do |label, stderr|
+    report << "  #{label}:\n"
+    stderr.each_line.grep(/^BC2CPP_TIME /).each { |line| report << "    #{line.sub(/^BC2CPP_TIME /, '')}" }
+    stderr.each_line.grep(/^BC2CPP_DETAIL /).each { |line| report << "    #{line.sub(/^BC2CPP_DETAIL /, 'detail ')}" }
+  end
 end
 
 if REPORT_PATH
