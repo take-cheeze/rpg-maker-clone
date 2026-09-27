@@ -6,6 +6,11 @@
 require 'tmpdir'
 require_relative '../tools/bc2cpp/bc2cpp'
 
+# `[]=` mangles to `_$5b$5d$3d`; a hand-written `$5b` inside a regex literal
+# interpolates instead of matching, so derive the symbol from cpp_name.
+CPP_NAME = CodeGen.instance_method(:cpp_name).bind(CodeGen.allocate)
+CELLS_SETIDX_IMPL = "#{CPP_NAME.call('Game::Cells', '[]=')}_impl"
+
 SRC = <<~'RUBY'
   module Game
     class Cells
@@ -64,7 +69,7 @@ Dir.mktmpdir do |dir|
                helper.include?('mrb_ary_set(M,') && helper.include?('mrb_hash_set(M,') &&
                helper.include?('mrb_funcall(M, recv, "[]=", 2, idx, val)'))
   check.call('typed branch retains compiled []= method result semantics',
-             code.include?('TYPED :[]= -> Game::Cells#[]=') && code.match?(/r\d+ = Game__Cells_+impl\(M,/))
+             code.include?('TYPED :[]= -> Game::Cells#[]=') && code.include?("#{CELLS_SETIDX_IMPL}(M,"))
 
   hash_method = registry.fetch('put_hash').find { |md| md.owner == 'Game::HashWorld' }
   hash_irep = ireps.fetch(hash_method.irep)

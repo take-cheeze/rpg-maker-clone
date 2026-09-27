@@ -223,9 +223,10 @@ hash_aref_code = hash_aref_generator.compile_native_primitive_send('[]', 1, 'r3'
 check.call('generated Hash#[] calls the public lookup helper behind an exact Hash guard and keeps fallback',
            hash_aref_code.include?('M->hash_class') && hash_aref_code.include?('mrb_hash_get(M, r3, (r4))') &&
              hash_aref_code.include?('mrb_funcall(M, r3, "[]", 1, r4)'))
-check.call('String#== and Symbol#== are generated from their C wrappers once BasicObject is a known owner',
+check.call('String#==, Symbol#== and Integer#== are generated from their C wrappers once BasicObject is a known owner',
            exact_class_expressions['==']&.map { |entry| [entry[:owner][:class_name], entry[:arity], entry[:expression]] }&.sort ==
-             [['String', 1, 'mrb_bool_value(mrb_str_equal(M, recv, (BC2CPP_ARG0)))'],
+             [['Integer', 1, 'mrb_bool_value(mrb_obj_equal(M, recv, BC2CPP_ARG0))'],
+              ['String', 1, 'mrb_bool_value(mrb_str_equal(M, recv, (BC2CPP_ARG0)))'],
               ['Symbol', 1, 'mrb_bool_value(mrb_obj_equal(M, recv, (BC2CPP_ARG0)))']])
 eq_registry = { '==' => [MethodDef.new(name: '==', owner: '<native>', irep: nil, visibility: :public)] }
 eq_generator = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,

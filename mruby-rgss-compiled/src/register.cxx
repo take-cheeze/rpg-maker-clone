@@ -305,6 +305,23 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   RClass* rgss = mrb_module_get(M, "RGSS");
   RClass* sprite = mrb_class_get_under(M, rgss, "Sprite");
 
+// DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
+// bc2cpp_register_owner_methods(M) call above already installs, so a full build
+// registers every one of them twice. Measured on the real wio closed world:
+// 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
+// with no orphan -- no call below is the only registration of its method.
+//
+// They cannot simply be deleted, because a HOT-ONLY build does not compile 1229
+// of those 1375 callees at all. The generated call then installs a no-op
+// `bc2cpp_hot_only_excluded` overload instead, which does not reference the
+// real
+// `_impl`, so these calls are what keep the excluded symbols alive; removing
+// them unconditionally is a link error on every one of those methods.
+//
+// BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
+// #includes, and only on the hot-only path, so this guard selects between the
+// two builds with no second flag and the two cannot drift.
+#ifndef BC2CPP_HOT_ONLY_STUBS
   mrb_define_method(M, sprite, "opacity", RGSS__Sprite_opacity,
                     MRB_ARGS_NONE());
   mrb_define_method(M, sprite, "zoom_x", RGSS__Sprite_zoom_x, MRB_ARGS_NONE());
@@ -356,8 +373,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "openness", RGSS__Window_openness,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, window, "open?", RGSS__Window_open_, MRB_ARGS_NONE());
-  mrb_define_method(M, window, "close?", RGSS__Window_close_, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "open?", RGSS__Window_open$3f, MRB_ARGS_NONE());
+  mrb_define_method(M, window, "close?", RGSS__Window_close$3f,
+                    MRB_ARGS_NONE());
   mrb_define_method(M, window, "padding", RGSS__Window_padding,
                     MRB_ARGS_NONE());
   mrb_define_method(M, window, "padding_bottom", RGSS__Window_padding_bottom,
@@ -370,7 +388,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   RClass* bitmap = mrb_class_get_under(M, rgss, "Bitmap");
 
   mrb_define_method(M, bitmap, "font", RGSS__Bitmap_font, MRB_ARGS_NONE());
-  mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, bitmap, "font=", RGSS__Bitmap_font$3d, MRB_ARGS_REQ(1));
 
   // RGSS::Bitmap.singleton (docs/adr/0139: ".singleton owner support") --
   // this project's first `.singleton`-owned bc2cpp entries. Both are real
@@ -453,7 +471,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, audio, "se_stop", RGSS__Audio_singleton_se_stop,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, audio, "midi_available?",
-                          RGSS__Audio_singleton_midi_available_,
+                          RGSS__Audio_singleton_midi_available$3f,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, audio, "setup_midi",
                           RGSS__Audio_singleton_setup_midi, MRB_ARGS_NONE());
@@ -486,11 +504,11 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, input, "release", RGSS__Input_singleton_release,
                           MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press_,
+  mrb_define_class_method(M, input, "press?", RGSS__Input_singleton_press$3f,
                           MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "trigger?", RGSS__Input_singleton_trigger_,
-                          MRB_ARGS_REQ(1));
-  mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat_,
+  mrb_define_class_method(M, input, "trigger?",
+                          RGSS__Input_singleton_trigger$3f, MRB_ARGS_REQ(1));
+  mrb_define_class_method(M, input, "repeat?", RGSS__Input_singleton_repeat$3f,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, input, "dir4", RGSS__Input_singleton_dir4,
                           MRB_ARGS_NONE());
@@ -501,7 +519,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, input, "mouse_y", RGSS__Input_singleton_mouse_y,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, input, "mouse_pressed?",
-                          RGSS__Input_singleton_mouse_pressed_,
+                          RGSS__Input_singleton_mouse_pressed$3f,
                           MRB_ARGS_NONE());
 
   // RGSS::ErrorReport.singleton -- 6 real class methods (mruby-rgss/mrblib/
@@ -515,14 +533,15 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_class_method(M, error_report, "push",
                           RGSS__ErrorReport_singleton_push, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, error_report, "installed?",
-                          RGSS__ErrorReport_singleton_installed_,
+                          RGSS__ErrorReport_singleton_installed$3f,
                           MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "record",
                           RGSS__ErrorReport_singleton_record, MRB_ARGS_REQ(1));
   mrb_define_class_method(M, error_report, "clear",
                           RGSS__ErrorReport_singleton_clear, MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "probe!",
-                          RGSS__ErrorReport_singleton_probe_, MRB_ARGS_NONE());
+                          RGSS__ErrorReport_singleton_probe$21,
+                          MRB_ARGS_NONE());
   mrb_define_class_method(M, error_report, "probe_raise",
                           RGSS__ErrorReport_singleton_probe_raise,
                           MRB_ARGS_NONE());
@@ -546,7 +565,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
                           RGSS__Graphics_singleton_resize_screen,
                           MRB_ARGS_REQ(2));
   mrb_define_class_method(M, graphics,
-                          "brightness=", RGSS__Graphics_singleton_brightness_,
+                          "brightness=", RGSS__Graphics_singleton_brightness$3d,
                           MRB_ARGS_REQ(1));
   mrb_define_class_method(M, graphics, "freeze",
                           RGSS__Graphics_singleton_freeze, MRB_ARGS_NONE());
@@ -566,7 +585,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // interpreter's own bytecode path, unrelated to this fetch.
   RClass* font = mrb_class_get_under(M, rgss, "Font");
 
-  mrb_define_class_method(M, font, "exist?", RGSS__Font_singleton_exist_,
+  mrb_define_class_method(M, font, "exist?", RGSS__Font_singleton_exist$3f,
                           MRB_ARGS_REQ(1));
 
   // RGSS::ErrorReport::Tee#initialize -- its one real method (mruby-rgss/
@@ -577,7 +596,7 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, tee, "initialize",
                             RGSS__ErrorReport__Tee_initialize, MRB_ARGS_REQ(1));
   mrb_define_private_method(M, tee, "respond_to_missing?",
-                            RGSS__ErrorReport__Tee_respond_to_missing_,
+                            RGSS__ErrorReport__Tee_respond_to_missing$3f,
                             MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
 
   // Array#include? -- a real bytecode reopening of the native, top-level
@@ -586,7 +605,9 @@ extern "C" void mrb_mruby_rgss_compiled_gem_init(mrb_state* M) {
   // already fetches the bare top-level RPG2k module.
   RClass* array_cls = mrb_class_get(M, "Array");
 
-  mrb_define_method(M, array_cls, "include?", Array_include_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array_cls, "include?", Array_include$3f,
+                    MRB_ARGS_REQ(1));
+#endif  // BC2CPP_HOT_ONLY_STUBS
 }
 
 extern "C" void mrb_mruby_rgss_compiled_gem_final(mrb_state*) {

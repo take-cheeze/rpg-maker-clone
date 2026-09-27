@@ -154,6 +154,17 @@ WORLD = <<~'RUBY'
 RUBY
 EXCLUDED = %w[HoCallee#cold HoCallee.singleton#cold_s HoRobot#ho_speak HoCounter#peek].freeze
 
+# The generated C++ symbol for each excluded method, derived through the real
+# CodeGen#cpp_name rather than written out by hand. `HoCallee.singleton` has a
+# `.` in it, so the symbol depends on the mangling in codegen.rb#sanitize;
+# hardcoding it here made this check break the moment that mapping changed.
+require_relative '../tools/bc2cpp/codegen'
+CPP_NAME = CodeGen.instance_method(:cpp_name).bind(CodeGen.allocate)
+EXCLUDED_SYMS = EXCLUDED.map { |k|
+  owner, meth = k.split('#', 2)
+  CPP_NAME.call(owner, meth)
+}.freeze
+
 world_registry = nil
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'world.rb')
@@ -206,10 +217,12 @@ hot_keys = all_keys - EXCLUDED
 hot_code, hot_err, hot_decls = generate.call(hot_keys)
 check.call('the run reports the exclusion',
            hot_err.include?("== hot-only (BC2CPP_HOT_METHODS): #{hot_keys.size} listed, #{EXCLUDED.size} of"))
+excluded_impls_re = Regexp.union(EXCLUDED_SYMS.map { |sym| "#{sym}_impl" })
+excluded_syms_re = Regexp.union(EXCLUDED_SYMS)
 check.call('an excluded method has no _impl, no entry wrapper, no declaration, no compiled entry',
-           !hot_code.match?(/HoCallee_cold_impl|HoCallee_singleton_cold_s_impl|HoRobot_ho_speak_impl|HoCounter_peek_impl/) &&
-             !hot_code.include?('static mrb_value HoCallee_cold(') &&
-             !hot_decls.match?(/HoCallee_cold|HoCallee_singleton_cold_s|HoRobot|HoCounter_peek/) &&
+           !hot_code.match?(excluded_impls_re) &&
+             !hot_code.include?("static mrb_value #{EXCLUDED_SYMS[0]}(") &&
+             !hot_decls.match?(excluded_syms_re) &&
              EXCLUDED.none? { |k| hot_err[/== compiled entry points ==.*/m].include?("(#{k},") })
 check.call('a kept MONO target is still called directly',
            body_of.call(hot_code, 'HoCaller_call_hot').include?('HoCallee_hot_impl('))
@@ -226,7 +239,7 @@ check.call('an ivar an excluded method touches is not embedded (it would read th
 check.call('a hand-written registration of an excluded entry resolves to the no-op overload',
            hot_code.include?('static inline void mrb_define_method(mrb_state*, struct RClass*, const char*, ' \
                              'bc2cpp_hot_only_excluded, mrb_aspec) {}') &&
-             %w[HoCallee_cold HoCallee_singleton_cold_s HoRobot_ho_speak HoCounter_peek].all? do |e|
+             EXCLUDED_SYMS.all? do |e|
                hot_code.include?("[[maybe_unused]] static constexpr bc2cpp_hot_only_excluded #{e}{};")
              end)
 check.call('without an exclusion none of that is emitted', !plain_code.include?('bc2cpp_hot_only_excluded'))
@@ -295,7 +308,7 @@ else
         struct RClass* caller = mrb_class_get(M, "HoCaller");
         mrb_define_method(M, callee, "hot", HoCallee_hot, MRB_ARGS_REQ(1));
         mrb_define_method(M, callee, "cold", HoCallee_cold, MRB_ARGS_REQ(1));
-        mrb_define_class_method(M, callee, "cold_s", HoCallee_singleton_cold_s, MRB_ARGS_REQ(1));
+        mrb_define_class_method(M, callee, "cold_s", #{EXCLUDED_SYMS[1]}, MRB_ARGS_REQ(1));
         mrb_define_method(M, pet, "ho_speak", HoPet_ho_speak, MRB_ARGS_NONE());
         mrb_define_method(M, robot, "ho_speak", HoRobot_ho_speak, MRB_ARGS_NONE());
         mrb_define_private_method(M, counter, "initialize", HoCounter_initialize, MRB_ARGS_NONE());

@@ -194,6 +194,23 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT call belongs here -- neither @selected_id nor @maps
   // is embedded, confirmed directly against the real generated output, not
   // just this class's own attr_reader shape by analogy.
+// DUPLICATE_REGISTRATIONS: every mrb_define_* below names a method that the
+// bc2cpp_register_owner_methods(M) call above already installs, so a full build
+// registers every one of them twice. Measured on the real wio closed world:
+// 39/39 here, 96/96 in mruby-rgss-compiled, 1240/1240 in mruby-rpg2k-compiled,
+// with no orphan -- no call below is the only registration of its method.
+//
+// They cannot simply be deleted, because a HOT-ONLY build does not compile 1229
+// of those 1375 callees at all. The generated call then installs a no-op
+// `bc2cpp_hot_only_excluded` overload instead, which does not reference the
+// real
+// `_impl`, so these calls are what keep the excluded symbols alive; removing
+// them unconditionally is a link error on every one of those methods.
+//
+// BC2CPP_HOT_ONLY_STUBS is defined by the generated file this register.cxx
+// #includes, and only on the hot-only path, so this guard selects between the
+// two builds with no second flag and the two cannot drift.
+#ifndef BC2CPP_HOT_ONLY_STUBS
   mrb_define_private_method(M, tree, "initialize", LCF__Tree_initialize,
                             MRB_ARGS_REQ(2));
 
@@ -210,8 +227,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_private_method(M, sections, "initialize", LCF__Sections_initialize,
                             MRB_ARGS_NONE());
   mrb_define_method(M, sections, "add", LCF__Sections_add, MRB_ARGS_REQ(2));
-  mrb_define_method(M, sections, "key?", LCF__Sections_key_, MRB_ARGS_REQ(1));
-  mrb_define_method(M, sections, "[]", LCF__Sections___, MRB_ARGS_REQ(1));
+  mrb_define_method(M, sections, "key?", LCF__Sections_key$3f, MRB_ARGS_REQ(1));
+  mrb_define_method(M, sections, "[]", LCF__Sections_$5b$5d, MRB_ARGS_REQ(1));
 
   // @code/@indent (`# bc2cpp: (fixnum, fixnum, , )` above #initialize)
   // embed into a real RData struct again -- ATTR_STRUCT_DEVIRT
@@ -296,12 +313,12 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
   // Symbol).
   RClass* array1d = mrb_class_get_under(M, lcf, "Array1D");
-  mrb_define_method(M, array1d, "[]", LCF__Array1D___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array1d, "key?", LCF__Array1D_key_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "[]", LCF__Array1D_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array1d, "key?", LCF__Array1D_key$3f, MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "int16_values", LCF__Array1D_int16_values,
                     MRB_ARGS_REQ(1));
   mrb_define_method(M, array1d, "delete", LCF__Array1D_delete, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array1d, "[]=", LCF__Array1D____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, array1d, "[]=", LCF__Array1D_$5b$5d$3d, MRB_ARGS_REQ(2));
 
   // LCF::Array2D: only 2 of its own 6 real bytecode-defined methods
   // compile clean and are registered below -- both public, confirmed
@@ -314,8 +331,8 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // MRB_SET_INSTANCE_TT" diagnostic (@data/@schema are never Fixnum/
   // Symbol).
   RClass* array2d = mrb_class_get_under(M, lcf, "Array2D");
-  mrb_define_method(M, array2d, "[]", LCF__Array2D___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, array2d, "[]=", LCF__Array2D____, MRB_ARGS_REQ(2));
+  mrb_define_method(M, array2d, "[]", LCF__Array2D_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, array2d, "[]=", LCF__Array2D_$5b$5d$3d, MRB_ARGS_REQ(2));
 
   // LCF::File#[]/#[]= (mruby-lcf/mrblib/lcf_file.rb: `def [] idx ; @root[idx]
   // end` / `def []= idx, value ; @root[idx] = value end`) were flagged as a
@@ -339,20 +356,20 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   // `@root` itself). Both are public (no source-level `private`, confirmed
   // against the diagnostic's own listing, which carries no `[private -- ...]`
   // tag for either). Registered below to close the gap.
-  mrb_define_method(M, file, "[]", LCF__File___, MRB_ARGS_REQ(1));
-  mrb_define_method(M, file, "[]=", LCF__File____, MRB_ARGS_REQ(2));
-  mrb_define_method(M, file, "key?", LCF__File_key_, MRB_ARGS_REQ(1));
+  mrb_define_method(M, file, "[]", LCF__File_$5b$5d, MRB_ARGS_REQ(1));
+  mrb_define_method(M, file, "[]=", LCF__File_$5b$5d$3d, MRB_ARGS_REQ(2));
+  mrb_define_method(M, file, "key?", LCF__File_key$3f, MRB_ARGS_REQ(1));
   mrb_define_method(M, file, "to_lcf", LCF__File_to_lcf, MRB_ARGS_NONE());
   mrb_define_method(M, file, "header", LCF__File_header, MRB_ARGS_NONE());
   mrb_define_method(M, file, "schema", LCF__File_schema, MRB_ARGS_NONE());
-  mrb_define_method(M, file, "terminate_root?", LCF__File_terminate_root_,
+  mrb_define_method(M, file, "terminate_root?", LCF__File_terminate_root$3f,
                     MRB_ARGS_NONE());
 
   mrb_define_method(M, database, "header", LCF__Database_header,
                     MRB_ARGS_NONE());
   mrb_define_method(M, database, "schema", LCF__Database_schema,
                     MRB_ARGS_NONE());
-  mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003_,
+  mrb_define_method(M, database, "rpg2003?", LCF__Database_rpg2003$3f,
                     MRB_ARGS_NONE());
 
   mrb_define_method(M, map_tree, "header", LCF__MapTree_header,
@@ -365,7 +382,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   mrb_define_method(M, map_unit, "schema", LCF__MapUnit_schema,
                     MRB_ARGS_NONE());
   mrb_define_method(M, map_unit, "terminate_root?",
-                    LCF__MapUnit_terminate_root_, MRB_ARGS_NONE());
+                    LCF__MapUnit_terminate_root$3f, MRB_ARGS_NONE());
 
   mrb_define_method(M, save_data, "header", LCF__SaveData_header,
                     MRB_ARGS_NONE());
@@ -398,6 +415,7 @@ extern "C" void mrb_mruby_lcf_compiled_gem_init(mrb_state* M) {
   RClass* string_io = mrb_class_get(M, "StringIO");
   mrb_define_method(M, string_io, "ungetbyte", StringIO_ungetbyte,
                     MRB_ARGS_REQ(1));
+#endif  // BC2CPP_HOT_ONLY_STUBS
 }
 
 extern "C" void mrb_mruby_lcf_compiled_gem_final(mrb_state*) {
