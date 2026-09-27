@@ -168,3 +168,15 @@ precede it and no include/prepend can alter lookup. Unknown ancestry, mixins,
 unstable constants, or uncertain definitions keep ordinary dispatch. This
 proves the target owner may be an ancestor without claiming the receiver itself
 has that ancestor's exact class.
+
+The same inherited lookup proof is reused by return-class analysis and `&:name`
+loop inlining. Return-class analysis may consume an ancestor's bytecode return
+annotation only as an analysis hint; downstream dispatch still has its runtime
+guard. Symbol-call inlining adds an exact-class branch for a declared subclass
+that inherits one of the already-proven bytecode targets, while retaining
+`mrb_funcall` for every other class. Both consumers refuse unknown definitions,
+outside definitions, incomplete ancestry and mixins; direct native definitions
+stop ancestor return analysis rather than being skipped.
+Runtime `include`, `prepend` or `extend` outside a recognized class body also
+refuses these closed-world proofs, because it can alter lookup without appearing
+in the static ancestry tables.

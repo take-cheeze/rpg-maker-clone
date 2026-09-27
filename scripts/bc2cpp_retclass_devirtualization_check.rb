@@ -558,6 +558,60 @@ Dir.mktmpdir do |dir|
   check.call('typed array argument devirtualizes a Struct element with guard/fallback',
              code.include?('ELEMENT :alive? -> Game::Battle::Combatant#alive?') &&
                code.include?('mrb_obj_class(M, r') && code.include?('mrb_funcall(M,'), true)
+
+  inherited_source = File.join(dir, 'inherited_retclass.rb')
+  File.write(inherited_source, <<~'RUBY')
+    class RetActor; def actor?; true; end; end
+    class RetBase
+      # bc2cpp: () -> RetActor
+      def produce; RetActor.new; end
+    end
+    class RetChild < RetBase; end
+    class RetOther
+      def produce; String.new; end
+    end
+    class RetHolder
+      def initialize; @child = RetChild.new; @items = [@child.produce]; end
+    end
+  RUBY
+  inherited_c, inherited_disasm = run_mrbc(inherited_source, 'bc2cpp_inherited_retclass', dir)
+  inherited_ireps, inherited_root = parse_c_dump(inherited_c, 'bc2cpp_inherited_retclass')
+  inherited_order = dfs_order(inherited_ireps, inherited_root)
+  inherited_blocks, inherited_block_files, inherited_block_catches = parse_disasm_blocks(inherited_disasm)
+  merge!(inherited_ireps, inherited_order, inherited_blocks, inherited_block_files, inherited_block_catches)
+  inherited_registry, inherited_supers, _cc, inherited_includes, inherited_prepends, inherited_unknown,
+    _structs, inherited_decls, inherited_walked = build_registry(inherited_ireps, inherited_root)
+  inherited_owners = Set.new(inherited_registry.values.flatten.map(&:owner))
+  inherited_annotations = ClassAnnotations.extract(inherited_ireps, inherited_registry, inherited_owners)
+  inherited_element_annotations = ElementAnnotations.extract(inherited_ireps, inherited_registry, inherited_owners)
+  inherited_world = ClosedWorld.new(ireps: inherited_ireps, registry: inherited_registry,
+                                    class_decls: inherited_decls, walked: inherited_walked,
+                                    native_paths: [], ruby_paths: [])
+  inherited_ctx = { registry: inherited_registry, ireps: inherited_ireps, class_layout: {},
+                    known_owners: inherited_owners,
+                    element_annotations: inherited_element_annotations, class_annotations: inherited_annotations,
+                    closed_world: inherited_world, superclass_of: inherited_supers,
+                    included_modules: inherited_includes, prepended_modules: inherited_prepends,
+                    unknown_mixins: inherited_unknown }
+  inherited_base_method = inherited_registry.fetch('produce').find { |md| md.owner == 'RetBase' }
+  inherited_ctx[:owner] = inherited_base_method.owner
+  inherited_ctx[:ivar_classes] = {}
+  inherited_ctx[:mand] = 0
+  inherited_ctx[:arg_classes] = nil
+  check.call('inherited lookup computes the ancestor method return class',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx, 0), 'RetActor')
+  inherited_ctx_without_world = inherited_ctx.merge(closed_world: nil)
+  check.call('inherited return class stays unknown without closed-world proof',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_without_world, 0).nil?, true)
+  inherited_ctx_with_mixin = inherited_ctx.merge(included_modules: { 'RetChild' => Set['RetMixin'] })
+  check.call('inherited return class refuses a mixed-in receiver',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_with_mixin, 0).nil?, true)
+  inherited_with_direct_native = inherited_registry.transform_values(&:dup)
+  inherited_with_direct_native['produce'] << MethodDef.new(name: 'produce', owner: 'RetChild', irep: nil,
+                                                            visibility: :public)
+  inherited_ctx_with_native = inherited_ctx.merge(registry: inherited_with_direct_native)
+  check.call('a direct native definition prevents bypassing it for an ancestor return proof',
+             class_scoped_return_class('RetChild', 'produce', inherited_ctx_with_native, 0).nil?, true)
 end
 
 if failures.empty?
