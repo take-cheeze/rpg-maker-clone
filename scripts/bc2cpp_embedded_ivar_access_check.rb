@@ -93,6 +93,14 @@ LAYOUT_FIXTURE = <<~'RUBY'
   class Sub < Base
     def peek; @v; end
   end
+  class InitBase
+    # bc2cpp: (fixnum)
+    def initialize; @x = 1; end
+    def x2; @x; end
+  end
+  class InitChild < InitBase
+    def initialize; end
+  end
   class Solo
     # bc2cpp: (fixnum)
     def initialize(w); @w = w; end
@@ -111,6 +119,8 @@ Dir.mktmpdir do |dir|
   gen = CodeGen.new(ireps, registry, ivar_layout, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new)
   check.call('an ivar a subclass method also touches is never embedded (its GETIV would read iv_tbl)',
              gen.embed_type('Base', 'v').nil? && gen.embed_type('Solo', 'w') == :value)
+  check.call('a base ivar is not embedded when a subclass can skip base initialization',
+             gen.embed_type('InitBase', 'x').nil?)
   w2 = registry.fetch('w2').find { |d| d.owner == 'Solo' }
   irep = ireps.fetch(w2.irep)
   getiv = irep.instructions.index { |insn| insn.op == 'GETIV' }
