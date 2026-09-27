@@ -53,6 +53,7 @@ check.call('one global write site is not a reassignment', single_global.empty?)
 check.call('a single global write in a repeatable context is rejected', repeatable_global.size == 1)
 check.call('plain, ||=, &&= and operator global writes are collected',
            lint.call("$plain = 1\n$or ||= 2\n$and &&= 3\n$operator += 4")[2].size == 4)
+check.call('global variables in multiple assignment are collected', lint.call('$left, $right = 1, 2')[2].size == 2)
 check.call('writes in methods and blocks are marked repeatable',
            lint.call("def update_probe\n  $method_write = 1\nend\n[1].each { $block_write = 1 }")[2].all?(&:last))
 

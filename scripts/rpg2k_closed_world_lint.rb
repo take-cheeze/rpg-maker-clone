@@ -71,7 +71,7 @@ class Linter < Prism::Visitor
   end
 
   %i[global_variable_write global_variable_or_write global_variable_and_write
-     global_variable_operator_write].each do |kind|
+     global_variable_operator_write global_variable_target].each do |kind|
     define_method("visit_#{kind}_node") do |node|
       @global_writes << [node.name, @file, node.location.start_line, node.slice.lines.first.strip,
                          @repeatable_write_depth.positive?]
