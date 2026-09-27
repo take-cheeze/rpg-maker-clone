@@ -255,6 +255,27 @@ Dir.mktmpdir do |dir|
   check.call("no iv_tbl access to an embedded ivar in the generated gems (#{sites.size} found)", sites.empty?)
 end
 
+# 3. The dfree of an embedded struct must tolerate p == NULL. mruby tests
+#    `d->type && d->type->dfree` but never `d->data` (3rd/mruby/src/gc.c), and
+#    free_heap frees every non-MRB_TT_FREE slot at mrb_close, so a compiled
+#    #initialize that raised before its mrb_data_init leaves a bare
+#    MRB_TT_DATA shell whose dfree runs with a null pointer. The placement
+#    destructor added for non-POD members is UB on null; mrb_free(NULL) was not.
+puts '-- the embedded free-er (null payload)'
+Dir.mktmpdir do |dir|
+  src = File.join(dir, 'purse.rb')
+  File.write(src, FIXTURE)
+  gen = File.join(dir, 'purse_gen.cpp')
+  run_bc2cpp({ 'OUT_SYMBOL' => 'purse', 'OUT_DIR' => dir, 'BC2CPP_SELF_REGISTERING' => '1' }, [src], gen)
+  code = File.read(gen)
+  free_ers = code.scan(/static void (\w+_ivars_free)\(mrb_state\* mrb, void\* p\) \{\n(.*?)\n\}/m)
+  check.call("the generated free-er destructs before mrb_free (#{free_ers.size} struct(s))",
+             !free_ers.empty? && free_ers.all? { |_, body|
+               body.match?(/if \(!p\) return;/) &&
+                 body.index('~') && body.index('~') < body.index('mrb_free')
+             })
+end
+
 if failures.empty?
   puts 'bc2cpp embedded ivar access check: PASS'
 else
