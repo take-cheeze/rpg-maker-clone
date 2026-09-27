@@ -374,6 +374,7 @@ hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).si
 # counts and are the useful denominator for unresolved dispatch.
 poly_paths = Hash.new(0)
 poly_receivers = Hash.new(0)
+dynamic_receivers = Hash.new(0)
 poly_exclusions = Hash.new(0)
 poly_diag_sites = 0
 poly_dynamic_names = Hash.new(0)
@@ -384,6 +385,7 @@ poly_dynamic_names = Hash.new(0)
   poly_diag_sites += 1
   poly_paths[match[1]] += 1
   poly_receivers[match[2]] += 1
+  dynamic_receivers[[match[1], match[2]]] += 1 if match[1].start_with?('dynamic_')
   next if match[4] == 'none'
 
   match[4].split(',').each do |entry|
@@ -401,6 +403,10 @@ report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
 report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
 report << "  dispatch path by call site:\n"
 poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, path) }
+report << "  generic dynamic sites by path and receiver evidence:\n"
+dynamic_receivers.sort.each do |(path, receiver), count|
+  report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
 report << "  receiver-class evidence at those sites:\n"
 poly_receivers.sort.each { |fact, count| report << format("    %5d  %s\n", count, fact) }
 report << "  excluded definitions across sites (counts repeat per call site):\n"

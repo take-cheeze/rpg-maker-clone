@@ -341,6 +341,9 @@ so each MONO method visits only its own callers rather than rescanning every
 instruction in the program. On the three-gem coverage workload, this reduced
 one bc2cpp pass from about 91 seconds to about 16 seconds while keeping the
 coverage totals unchanged.
+The same report cross-tabulates generic dynamic sites by dispatch path and
+receiver-class evidence, which helps separate unresolved tracing from missing
+or unsafe targets.
 
 ## Audio: what is already off the main thread
 
