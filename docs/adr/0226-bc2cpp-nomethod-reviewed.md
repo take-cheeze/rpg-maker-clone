@@ -82,8 +82,8 @@ catching drift, not about saving size.
 
 ## Consequences
 
-Measured with a host mrbc built from the pinned mruby plus the
-`cmake/build-mruby.cmake` patches, running the wio codegen of each gem:
+At introduction, measured with a host mrbc built from the pinned mruby plus
+the `cmake/build-mruby.cmake` patches, running the wio codegen of each gem:
 
 | gem | sites (all methods) | keys | sites (hot-only, as a real wio build) |
 | --- | ---: | ---: | ---: |
@@ -100,9 +100,13 @@ and runs the staleness check too.
 
 ADR 0210 counted 17. ADR 0213 later removed `method_missing` from LCF, which
 lets `LCF::File`'s own `self` calls convert, and more methods compile now.
-The only `method_missing` class left in the closed world is
-`RGSS::ErrorReport::Tee`, so the proof only converts sites whose receiver is
-the compiled method's own `self`. All 52 sites are of that kind.
+`RGSS::ErrorReport::Tee` no longer defines `method_missing` or
+`respond_to_missing?`; it explicitly delegates only `flush` in addition to its
+write methods. The closed-world proof consequently converts 3,070 sites across
+2,216 unique keys in the current full Wio run. The hot-only list now compiles
+418 of these sites; its generated RPG2K source is 210 bytes smaller in the
+current probe. The review set is regenerated with
+`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.
 
 Every site was reviewed. For each one, the guard chain was read to confirm
 that the enclosing class is in it, and the Ruby source was read to confirm
@@ -128,7 +132,7 @@ A new dead fallback now stops the psp/wio/maix build. The fix is one of:
 - after reading the site: add the key, by hand or with the update script.
 
 The CI check costs one wio codegen run per gem, about 80 s each on the dev
-container. The follow-up from ADR 0210 still applies: replacing
-`RGSS::ErrorReport::Tee#method_missing` with explicit delegation would let
-non-`self` receivers convert. Those receivers are where the proof could find
-real missing-method bugs, and each new site would come through this gate.
+container. The follow-up from ADR 0210 is implemented by ADR 0229: replacing
+`RGSS::ErrorReport::Tee#method_missing` with explicit delegation lets
+non-`self` receivers convert. The current reviewed set is regenerated with
+`MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.

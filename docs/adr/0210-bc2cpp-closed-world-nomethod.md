@@ -95,10 +95,19 @@ In the same mode the guards' owner-class lookup uses `mrb_const_defined_at`,
 so a guard never matches a same-named class found through ancestry. Without
 the switch the output is byte-identical.
 
+`OWNERLESS_NATIVE_DISPATCH` applies the same closed-input boundary to native
+primitive sends that compile to class-independent C++ expressions. The
+expression proof establishes the operation's behavior; `ClosedWorld` separately
+rejects the fast path when there is a global refusal, an unregistered method
+definition, an outside Ruby definition, or any registered non-native Ruby
+owner for the name. Open-world builds keep their existing native-only gate.
+This is not a blanket proof for the synthetic `<native>` owner: the expression
+analyzer must still establish a receiver-class-independent body, and the
+primitive must still have the expected arity.
+
 ## Consequences
 
-wio, measured by generating all three gems both ways and compiling each
-`register.cxx` at `-Os` (x86-64 host g++, the build's own flags):
+At introduction, the wio measurement was:
 
 | gem | guard + fallback dropped | `bc2cpp_nomethod` | kept | `-Os` text before | after |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -134,7 +143,8 @@ RGSS::ErrorReport::Tee define `method_missing`, so only `self` receivers
 convert. When the LCF `method_missing` removal lands, the analysis picks that
 up with no code change. Tee's forwarding `method_missing` still blocks every
 non-self receiver after that; replacing it with explicit IO delegation is the
-follow-up that frees those sites.
+follow-up implemented by ADR 0229. The figures above are the pre-follow-up
+census.
 
 One premise carries over from the existing generator. An unguarded MONO
 direct call assumes its receiver is the owner's instance, just as it already
@@ -142,3 +152,9 @@ assumes a method and not `method_missing` answers it. LEXICAL_SELF relies on
 that assumption already; the `self` rule and CLOSED_WORLD_SELF rely on it too. `scripts/bc2cpp_closed_world_check.rb` covers the
 build check and the generated code. It also compiles fixtures against the real
 mruby core and checks the raised `NoMethodError` against the interpreter's.
+
+The same whole-program hierarchy now backs receiver-class inference for
+implicit `self` calls and singleton `self` calls. The local superclass map can
+omit subclasses whose superclass expression it cannot resolve; when
+`ClosedWorld` is active, `exact_class?` is the authority for these proofs.
+Without that scan, the existing local-map check remains in force.

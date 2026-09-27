@@ -313,9 +313,8 @@ report << "runtime definition fallbacks (SDEF/TDEF/SCLASS+EXEC): " \
           "#{sdef_fallback_count}/#{tdef_fallback_count}/#{sclass_fallback_count}\n"
 report << "\n"
 
-# DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site
-# left in the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1
-# -- see its own capture comment above). The generator's SymbolCache rewrites
+# DYNAMIC_DISPATCH_STATS_SUPPORT: every real dynamic-dispatch call site left in
+# the actual SHIPPED build (@shipped_stdout, SKIP_UNSUPPORTED=1). SymbolCache rewrites
 # the ordinary mrb_funcall form to `bc2cpp_send(M, recv, index, ...)`; resolve
 # those indices through the generated symbol table instead of scanning only the
 # pre-cache spelling. `mrb_funcall_with_block` is counted separately because it
@@ -352,6 +351,8 @@ def cached_with_block_indices(code)
   indices
 end
 
+# These include fallback arms attached to direct-call guards; POLY_DIAG below
+# separately counts sites that had no complete direct set.
 dispatch_counts = Hash.new(0)
 symbol_names = @shipped_stdout[/static const char\* const bc2cpp_sym_names\[\d+\] = \{(.*?)\n\};/m, 1].to_s
                          .scan(/"((?:[^"\\\n]|\\.)*)"/).flatten.map { |literal| unescape_cpp_string(literal) }
@@ -365,9 +366,45 @@ shipped_poly = @shipped_stdout.scan(/^\s*\/\/ POLY :\S+ --/).size
 raise "bc2cpp coverage report: POLY markers exceed dispatch sites" if shipped_poly > total_dispatch
 hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).size
 
+# POLY_DIAGNOSTICS: generated markers are attached to every selected class
+# chain/table and every remaining POLY fallback. The exclusion counts are
+# definition-level and repeat across call sites; path counts are call-site
+# counts and are the useful denominator for unresolved dispatch.
+poly_paths = Hash.new(0)
+poly_receivers = Hash.new(0)
+poly_exclusions = Hash.new(0)
+poly_diag_sites = 0
+poly_dynamic_names = Hash.new(0)
+@shipped_stdout.each_line do |line|
+  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name=.* arity=\d+ candidates=(\d+) excluded=(\S+)/)
+  next unless match
+
+  poly_diag_sites += 1
+  poly_paths[match[1]] += 1
+  poly_receivers[match[2]] += 1
+  next if match[4] == 'none'
+
+  match[4].split(',').each do |entry|
+    reason, count = entry.split('=', 2)
+    poly_exclusions[reason] += count.to_i
+  end
+end
+@shipped_stdout.scan(/^\s*\/\/ POLY :(\S+) --/).each { |match| poly_dynamic_names[match.first] += 1 }
+poly_dynamic_sites = poly_paths.sum { |path, count| path.start_with?('dynamic_') ? count : 0 }
+
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "total cached bc2cpp_send/mrb_funcall_with_block call sites: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
+report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
+report << "  dispatch path by call site:\n"
+poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, path) }
+report << "  receiver-class evidence at those sites:\n"
+poly_receivers.sort.each { |fact, count| report << format("    %5d  %s\n", count, fact) }
+report << "  excluded definitions across sites (counts repeat per call site):\n"
+poly_exclusions.sort_by { |reason, count| [-count, reason] }.each do |reason, count|
+  report << format("    %5d  %s\n", count, reason)
+end
 report << "  guarded native Hash#values call sites: #{hash_values_fast_paths}\n"
 report << "  everything else (not yet attempted or failed MONO/TYPED): #{[total_dispatch - shipped_poly, 0].max}\n"
 report << "distinct dynamically-dispatched method names: #{dispatch_counts.size}\n"

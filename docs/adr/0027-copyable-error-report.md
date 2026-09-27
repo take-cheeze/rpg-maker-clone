@@ -86,7 +86,8 @@ crash has already happened:
   Re-running git on every build would rebuild the world on every commit, and CI
   configures a fresh checkout per run, so its reports name the exact commit.
 - The tee means `$stderr` is no longer the object mruby-io created. It forwards
-  everything and delegates the rest of the IO surface, but code that checks
+  the write methods used by the runtime and explicitly delegates `flush`; other
+  arbitrary IO calls no longer pass through the wrapper. Code that checks
   `$stderr.is_a?(IO)` (nothing does today) would see the tee instead.
 - The markers are a contract between `include/error_dump.hxx` and
   `src/shell.html`; changing one without the other silently loses the browser

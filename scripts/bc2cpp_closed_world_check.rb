@@ -223,6 +223,26 @@ check.call('a self receiver in a class with no method_missing still converts',
 # CLOSED_WORLD_SELF: a self call into an embedding owner nothing subclasses
 # needs no guard at all; a subclass keeps the guard (and the dispatch).
 require_relative '../tools/bc2cpp/bc2cpp'
+
+native_bang = MethodDef.new(name: '!', owner: '<native>', irep: nil, visibility: :public)
+native_only_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang] }, class_decls: {}, walked: Set.new,
+                                    native_paths: [], ruby_paths: [])
+check.call('closed world accepts a sole ownerless native definition', native_only_world.ownerless_native_dispatch_safe?('!'))
+overridden_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang,
+                                                                    MethodDef.new(name: '!', owner: 'CwOverride',
+                                                                                  irep: 1, visibility: :public)] },
+                                   class_decls: {}, walked: Set.new, native_paths: [], ruby_paths: [])
+check.call('closed world rejects a registered Ruby override for an ownerless native method',
+           !overridden_world.ownerless_native_dispatch_safe?('!'))
+Dir.mktmpdir do |dir|
+  override = File.join(dir, 'override.rb')
+  File.write(override, "class CwOverride\n  def !; true; end\nend\n")
+  external_override_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang] }, class_decls: {}, walked: Set.new,
+                                            native_paths: [], ruby_paths: [override])
+  check.call('closed world rejects an outside Ruby definition for an ownerless native method',
+             !external_override_world.ownerless_native_dispatch_safe?('!'))
+end
+
 COUNTER = <<~'RUBY'
   class CwCounter
     def initialize; @n = 0; end

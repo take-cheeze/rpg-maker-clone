@@ -1026,7 +1026,10 @@
   and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
-  mechanical split of REF's single-file `bc2cpp.rb`.
+  mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
+  on RData-backed classes use GC-traced `mrb_value` slots, while dynamic names
+  retain the normal ivar table; see
+  [`docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md`](docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in
@@ -1401,8 +1404,11 @@ part that explains it). Nothing else is collected.
   `--error_dump_probe` raises a real exception and checks the resulting report
   still carries the exception, the backtrace, the captured log and the run
   context (the `error_dump` ctest), and `scripts/error_report_check.rb` checks
-  the capture on CRuby. See
-  [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md).
+  the capture on CRuby. The wrapper exposes the runtime's write methods plus
+  an explicit `flush`; bc2cpp can therefore remove its closed-world
+  `method_missing` fallbacks. See
+  [`docs/adr/0027-copyable-error-report.md`](docs/adr/0027-copyable-error-report.md)
+  and [`docs/adr/0229-bc2cpp-tee-explicit-delegation.md`](docs/adr/0229-bc2cpp-tee-explicit-delegation.md).
 
 ### Text and fonts
 

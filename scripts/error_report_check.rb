@@ -116,11 +116,11 @@ check(failures, 'puts records what IO#puts writes') do
   assert_equal sink.string, report.log_tail
 end
 
-check(failures, 'the tee delegates the rest of the IO surface') do
+check(failures, 'the tee delegates its finite IO surface') do
   sink = StringIO.new
   tee = RGSS::ErrorReport::Tee.new(sink)
   tee.flush
-  assert tee.respond_to?(:flush), 'delegated methods are not answered by respond_to?'
+  assert tee.respond_to?(:flush), 'the explicit flush delegator is not answered'
   assert_equal sink, tee.io
 end
 
