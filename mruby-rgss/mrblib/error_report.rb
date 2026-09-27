@@ -96,6 +96,7 @@ module RGSS
     def self.install
       return false if @installed
       @installed = true
+      # rpg2k-lint:allow Dynamic/GlobalVariableReassignment -- guarded singleton install wraps stderr only once
       $stderr = Tee.new($stderr)
       true
     end

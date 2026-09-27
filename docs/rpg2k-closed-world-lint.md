@@ -11,7 +11,7 @@ it might reach is visible to that analysis, so these constructs are linted:
 | `Dynamic/ConstReflection` | `const_get`/`const_set`/`remove_const`/`autoload`, `const_missing` |
 | `Dynamic/IvarReflection` | `instance_variable_get`/`set`/`defined?`, `remove_instance_variable` |
 | `Dynamic/MethodDefinition` | `define_method`, `alias`/`alias_method`, `undef`, `remove_method` |
-| `Dynamic/GlobalVariableReassignment` | A global variable written at multiple sites across the closed-world Ruby sources |
+| `Dynamic/GlobalVariableReassignment` | A global variable written at multiple sites, or in a repeatable context (method, block or loop) |
 | `Dynamic/Eval` | `eval`, `instance_eval`/`class_eval`, `*_exec`, `binding`, `method(...)` |
 | `Dynamic/Extend` | `obj.extend` on anything but `self` |
 | `Dynamic/RescueModifier` | `expr rescue value` |

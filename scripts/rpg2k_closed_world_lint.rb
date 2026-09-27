@@ -31,7 +31,7 @@ COPS = {
   'Dynamic/ConstReflection' => 'const_get/const_set/remove_const/autoload/const_missing',
   'Dynamic/IvarReflection' => 'instance_variable_get/set/defined?/remove_instance_variable',
   'Dynamic/MethodDefinition' => 'define_method/alias/undef/remove_method installed at runtime',
-  'Dynamic/GlobalVariableReassignment' => 'a global variable has multiple write sites in the closed world',
+  'Dynamic/GlobalVariableReassignment' => 'a global variable may be written more than once in the closed world',
   'Dynamic/Eval' => 'eval family, instance_exec/class_exec, binding, method objects',
   'Dynamic/Extend' => 'extend on an object other than self',
   'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow'
@@ -58,12 +58,23 @@ class Linter < Prism::Visitor
     @allowed = allowed
     @offences = []
     @global_writes = []
+    @repeatable_write_depth = 0
+  end
+
+  %i[block lambda while until for].each do |kind|
+    define_method("visit_#{kind}_node") do |node|
+      @repeatable_write_depth += 1
+      super(node)
+    ensure
+      @repeatable_write_depth -= 1
+    end
   end
 
   %i[global_variable_write global_variable_or_write global_variable_and_write
      global_variable_operator_write].each do |kind|
     define_method("visit_#{kind}_node") do |node|
-      @global_writes << [node.name, @file, node.location.start_line, node.slice.lines.first.strip]
+      @global_writes << [node.name, @file, node.location.start_line, node.slice.lines.first.strip,
+                         @repeatable_write_depth.positive?]
       super(node)
     end
   end
@@ -71,7 +82,10 @@ class Linter < Prism::Visitor
   def visit_def_node(node)
     add('Dynamic/MethodMissing', node) if %i[method_missing respond_to_missing?].include?(node.name)
     add('Dynamic/ConstReflection', node) if node.name == :const_missing
-    super
+    @repeatable_write_depth += 1
+    super(node)
+  ensure
+    @repeatable_write_depth -= 1
   end
 
   def visit_call_node(node)
@@ -163,9 +177,10 @@ end
 
 def global_reassignment_offences(global_writes)
   global_writes.flat_map do |name, writes|
-    next [] unless writes.size > 1
+    conflicting = writes.size > 1 ? writes : writes.select { |_file, _line, _snippet, repeatable| repeatable }
+    next [] if conflicting.empty?
 
-    writes.map { |file, line, snippet| Offence.new('Dynamic/GlobalVariableReassignment', file, line, snippet) }
+    conflicting.map { |file, line, snippet, _repeatable| Offence.new('Dynamic/GlobalVariableReassignment', file, line, snippet) }
   end
 end
 
@@ -179,9 +194,9 @@ files.each do |f|
   o, bad, writes, allowed = lint_file(f)
   offences.concat(o)
   malformed.concat(bad)
-  writes.each do |name, file, line, snippet|
-    global_writes[name] << [file, line, snippet] unless allowed[line].include?('Dynamic/GlobalVariableReassignment') ||
-                                                       allowed[line - 1].include?('Dynamic/GlobalVariableReassignment')
+  writes.each do |name, file, line, snippet, repeatable|
+    global_writes[name] << [file, line, snippet, repeatable] unless allowed[line].include?('Dynamic/GlobalVariableReassignment') ||
+                                                                   allowed[line - 1].include?('Dynamic/GlobalVariableReassignment')
   end
 end
 offences.concat(global_reassignment_offences(global_writes))
