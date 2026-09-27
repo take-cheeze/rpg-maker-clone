@@ -169,6 +169,14 @@ unstable constants, or uncertain definitions keep ordinary dispatch. This
 proves the target owner may be an ancestor without claiming the receiver itself
 has that ancestor's exact class.
 
+When that traced receiver is specifically the result of `Klass.new`, the exact
+class can be established without a runtime guard if the class constant is
+stable, ordinary `Class#new`/`Class#allocate` lookup is closed-world complete,
+and no class in the constructor chain overrides either method or changes its
+singleton lookup with a mixin. The same proof allows direct construction to
+omit the redundant class-identity guard. Rebound constants, unknown constructor
+installers, and unstable class paths retain guarded construction or dispatch.
+
 The same inherited lookup proof is reused by return-class analysis and `&:name`
 loop inlining. Return-class analysis may consume an ancestor's bytecode return
 annotation only as an analysis hint; downstream dispatch still has its runtime

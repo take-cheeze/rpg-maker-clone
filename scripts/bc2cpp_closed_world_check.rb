@@ -163,6 +163,33 @@ INHERIT_WORLD = <<~'RUBY'
   end
 RUBY
 
+EXACT_CONSTRUCT_WORLD = <<~'RUBY'
+  module CwExact
+    class StableFresh
+      def exact_value; 1; end
+    end
+    class Other
+      def exact_value; 2; end
+    end
+    class Caller
+      def call; StableFresh.new.exact_value; end
+    end
+  end
+
+  module CwRebound
+    class Fresh
+      def exact_value; 3; end
+    end
+    class Other
+      def exact_value; 4; end
+    end
+    Fresh = Other
+    class Caller
+      def call; Fresh.new.exact_value; end
+    end
+  end
+RUBY
+
 mrbc = ENV['MRBC'] || 'mrbc'
 generate = lambda do |source, name, closed|
   Dir.mktmpdir do |dir|
@@ -189,6 +216,7 @@ open_code, = generate.call(WORLD, 'cw_open', false)
 closed_code, closed_err = generate.call(WORLD, 'cw_closed', true)
 ghost_code, ghost_err = generate.call(GHOST_WORLD, 'cw_ghost', true)
 inherit_code, = generate.call(INHERIT_WORLD, 'cw_inherit', true)
+exact_construct_code, = generate.call(EXACT_CONSTRUCT_WORLD, 'cw_exact_construct', true)
 
 check.call('without the switch no fallback changes: no bc2cpp_nomethod, ancestry-aware owner lookup',
            !open_code.include?('bc2cpp_nomethod') && !open_code.include?('CLOSED_WORLD') &&
@@ -217,6 +245,15 @@ check.call('the summary counts what was converted and why the rest was kept',
 check.call('a receiver that may be a method_missing instance keeps the dispatch',
            ghost_err.include?('method_missing classes: CwGhost') &&
              body_of.call(ghost_code, 'CwCaller_talk').include?('CLOSED_WORLD kept: method_missing_receiver'))
+exact_call = body_of.call(exact_construct_code, 'CwExact__Caller_call')
+rebound_call = body_of.call(exact_construct_code, 'CwRebound__Caller_call')
+exact_marker = exact_call.index('CLOSED_WORLD_EXACT_CLASS :exact_value -> CwExact::StableFresh#exact_value')
+check.call('a fresh instance of a stable class constant drops the exact-class guard and fallback',
+           exact_marker && exact_call[exact_marker..].include?('CwExact__StableFresh_exact_value_impl(M, r2)') &&
+             !exact_call[exact_marker..].include?('bc2cpp_send('))
+check.call('a class constant rebound in the closed world keeps guarded dynamic dispatch',
+           !rebound_call.include?('CLOSED_WORLD_EXACT_CLASS') && rebound_call.include?('mrb_obj_class(M,') &&
+             rebound_call.include?('mrb_funcall'))
 check.call('a self receiver in a class with no method_missing still converts',
            body_of.call(ghost_code, 'CwBase_chat').match?(/bc2cpp_nomethod\(M, self, \d+\);/))
 
@@ -300,9 +337,9 @@ Dir.mktmpdir do |dir|
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
                     included, prepended, unknown, closed_world: world)
   code = gen.compile_method(registry.fetch('call').find { |d| d.owner == 'CwMonoChild' }.irep).fetch(:code)
-  check.call('a traced receiver resolves a globally polymorphic inherited method with an exact-class guard',
-             code.include?('CLOSED_WORLD_TYPED_INHERITED :value -> CwMonoBase#value') &&
-               code.include?('CwMonoChild') && code.include?('mrb_funcall'))
+  check.call('a traced fresh receiver resolves a globally polymorphic inherited method without fallback',
+             code.include?('CLOSED_WORLD_EXACT_CLASS :value -> CwMonoBase#value') &&
+               code.include?('CwMonoBase_value_impl(M, r2)') && !code.include?('bc2cpp_send('))
 end
 
 # -- run against the real mruby core ---------------------------------------------
