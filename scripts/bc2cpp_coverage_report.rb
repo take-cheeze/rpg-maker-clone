@@ -375,17 +375,19 @@ hash_values_fast_paths = @shipped_stdout.scan(/^\s*\/\/ HASH_VALUES :values/).si
 poly_paths = Hash.new(0)
 poly_receivers = Hash.new(0)
 dynamic_receivers = Hash.new(0)
+unresolved_origins = Hash.new(0)
 poly_exclusions = Hash.new(0)
 poly_diag_sites = 0
 poly_dynamic_names = Hash.new(0)
 @shipped_stdout.each_line do |line|
-  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name=.* arity=\d+ candidates=(\d+) excluded=(\S+)/)
+  match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name=.* arity=\d+ candidates=(\d+) excluded=(\S+)(?: origin=(\S+))?/)
   next unless match
 
   poly_diag_sites += 1
   poly_paths[match[1]] += 1
   poly_receivers[match[2]] += 1
   dynamic_receivers[[match[1], match[2]]] += 1 if match[1].start_with?('dynamic_')
+  unresolved_origins[match[5] || 'not_recorded'] += 1 if match[2] == 'receiver_class_unresolved'
   next if match[4] == 'none'
 
   match[4].split(',').each do |entry|
@@ -406,6 +408,10 @@ poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, pa
 report << "  generic dynamic sites by path and receiver evidence:\n"
 dynamic_receivers.sort.each do |(path, receiver), count|
   report << format("    %5d  %-38s %s\n", count, path, receiver)
+end
+report << "  unresolved receiver origins (nearest defining instruction):\n"
+unresolved_origins.sort_by { |origin, count| [-count, origin] }.each do |origin, count|
+  report << format("    %5d  %s\n", count, origin)
 end
 report << "  receiver-class evidence at those sites:\n"
 poly_receivers.sort.each { |fact, count| report << format("    %5d  %s\n", count, fact) }
