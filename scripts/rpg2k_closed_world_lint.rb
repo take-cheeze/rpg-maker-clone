@@ -31,6 +31,7 @@ COPS = {
   'Dynamic/ConstReflection' => 'const_get/const_set/remove_const/autoload/const_missing',
   'Dynamic/IvarReflection' => 'instance_variable_get/set/defined?/remove_instance_variable',
   'Dynamic/MethodDefinition' => 'define_method/alias/undef/remove_method installed at runtime',
+  'Dynamic/GlobalVariableReassignment' => 'a global variable has multiple write sites in the closed world',
   'Dynamic/Eval' => 'eval family, instance_exec/class_exec, binding, method objects',
   'Dynamic/Extend' => 'extend on an object other than self',
   'Dynamic/RescueModifier' => '`expr rescue value` turns any StandardError into control flow'
@@ -49,13 +50,22 @@ Offence = Struct.new(:cop, :file, :line, :snippet) do
 end
 
 class Linter < Prism::Visitor
-  attr_reader :offences
+  attr_reader :offences, :global_writes
 
   def initialize(file, allowed)
     super()
     @file = file
     @allowed = allowed
     @offences = []
+    @global_writes = []
+  end
+
+  %i[global_variable_write global_variable_or_write global_variable_and_write
+     global_variable_operator_write].each do |kind|
+    define_method("visit_#{kind}_node") do |node|
+      @global_writes << [node.name, @file, node.location.start_line, node.slice.lines.first.strip]
+      super(node)
+    end
   end
 
   def visit_def_node(node)
@@ -137,7 +147,7 @@ def lint_file(path, source: nil)
   end
   linter = Linter.new(rel, allowed)
   result.value.accept(linter)
-  [linter.offences, bad]
+  [linter.offences, bad, linter.global_writes, allowed]
 end
 
 def load_baseline
@@ -151,16 +161,30 @@ def load_baseline
   end
 end
 
+def global_reassignment_offences(global_writes)
+  global_writes.flat_map do |name, writes|
+    next [] unless writes.size > 1
+
+    writes.map { |file, line, snippet| Offence.new('Dynamic/GlobalVariableReassignment', file, line, snippet) }
+  end
+end
+
 return unless $PROGRAM_NAME == __FILE__
 
 files = GEMS.flat_map { |g| Dir[File.join(ROOT, g, 'mrblib', '**', '*.rb')] }.sort
 offences = []
 malformed = []
+global_writes = Hash.new { |h, k| h[k] = [] }
 files.each do |f|
-  o, bad = lint_file(f)
+  o, bad, writes, allowed = lint_file(f)
   offences.concat(o)
   malformed.concat(bad)
+  writes.each do |name, file, line, snippet|
+    global_writes[name] << [file, line, snippet] unless allowed[line].include?('Dynamic/GlobalVariableReassignment') ||
+                                                       allowed[line - 1].include?('Dynamic/GlobalVariableReassignment')
+  end
 end
+offences.concat(global_reassignment_offences(global_writes))
 # Defaults to 0: a baseline entry whose offences are all fixed is simply absent.
 counts = Hash.new(0).merge(offences.group_by(&:key).transform_values(&:size))
 

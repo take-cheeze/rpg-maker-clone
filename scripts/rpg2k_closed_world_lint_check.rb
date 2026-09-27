@@ -44,6 +44,14 @@ check.call('an allow comment without a reason is rejected',
 check.call('an allow comment naming an unknown cop is rejected',
            !lint.call('o.send(f) # rpg2k-lint:allow Dynamic/Nope -- x').last.empty?)
 
+duplicate_globals = global_reassignment_offences('$state' => [['a.rb', 1, '$state = 1'], ['b.rb', 2, '$state = 2']])
+single_global = global_reassignment_offences('$once' => [['a.rb', 1, '$once = 1']])
+check.call('global writes at multiple closed-world sites are rejected',
+           duplicate_globals.size == 2 && duplicate_globals.all? { |o| o.cop == 'Dynamic/GlobalVariableReassignment' })
+check.call('one global write site is not a reassignment', single_global.empty?)
+check.call('plain, ||=, &&= and operator global writes are collected',
+           lint.call("$plain = 1\n$or ||= 2\n$and &&= 3\n$operator += 4")[2].size == 4)
+
 if failures.empty?
   puts 'rpg2k closed-world lint check: PASS'
 else
