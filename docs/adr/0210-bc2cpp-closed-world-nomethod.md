@@ -158,3 +158,13 @@ implicit `self` calls and singleton `self` calls. The local superclass map can
 omit subclasses whose superclass expression it cannot resolve; when
 `ClosedWorld` is active, `exact_class?` is the authority for these proofs.
 Without that scan, the existing local-map check remains in force.
+
+Call-site devirtualization can also resolve a globally polymorphic name through
+inheritance when the receiver is traced to one stable class constant. The
+generated call retains an exact runtime class guard for that traced class; the
+closed-world proof walks its complete superclass chain and chooses the first
+registered implementation only when no dynamic or outside definition can
+precede it and no include/prepend can alter lookup. Unknown ancestry, mixins,
+unstable constants, or uncertain definitions keep ordinary dispatch. This
+proves the target owner may be an ancestor without claiming the receiver itself
+has that ancestor's exact class.

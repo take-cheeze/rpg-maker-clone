@@ -275,6 +275,36 @@ native, ruby = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
   end
 end
 
+# A globally polymorphic name can still have one closed-world target for an
+# exactly traced class when that target is inherited through a complete MRO.
+Dir.mktmpdir do |dir|
+  path = File.join(dir, 'inherited.rb')
+  File.write(path, <<~RUBY)
+    class CwMonoBase
+      def value; 1; end
+    end
+    class CwMonoChild < CwMonoBase
+      def call; CwMonoChild.new.value; end
+    end
+    class CwMonoOther
+      def value; 2; end
+    end
+  RUBY
+  c_dump, disasm = run_mrbc(path, 'bc2cpp_cw_inherited', dir)
+  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_cw_inherited')
+  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
+  merge!(ireps, dfs_order(ireps, root_label), blocks, block_files, block_catches)
+  registry, superclass_of, _c, included, prepended, unknown, _s, class_decls, walked = build_registry(ireps, root_label)
+  world = ClosedWorld.new(ireps: ireps, registry: registry, class_decls: class_decls, walked: walked,
+                          native_paths: native, ruby_paths: ruby)
+  gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,
+                    included, prepended, unknown, closed_world: world)
+  code = gen.compile_method(registry.fetch('call').find { |d| d.owner == 'CwMonoChild' }.irep).fetch(:code)
+  check.call('a traced receiver resolves a globally polymorphic inherited method with an exact-class guard',
+             code.include?('CLOSED_WORLD_TYPED_INHERITED :value -> CwMonoBase#value') &&
+               code.include?('CwMonoChild') && code.include?('mrb_funcall'))
+end
+
 # -- run against the real mruby core ---------------------------------------------
 
 candidates = [ENV['BC2CPP_MRUBY_CORE']].compact + Dir[File.join(root, 'build*/mruby/host/mrbc')]
