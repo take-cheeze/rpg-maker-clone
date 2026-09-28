@@ -685,6 +685,8 @@ RClass* g_native_bitmap_class = nullptr;
 RClass* g_native_table_class = nullptr;
 RClass* g_native_window_class = nullptr;
 RClass* g_native_viewport_class = nullptr;
+RClass* g_native_plane_class = nullptr;
+RClass* g_native_tilemap_class = nullptr;
 }  // namespace
 
 // The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
@@ -7332,6 +7334,24 @@ RClass* native_window_class(void) {
 RClass* native_viewport_class(void) {
   return g_native_viewport_class;
 }
+RClass* native_plane_class(void) {
+  return g_native_plane_class;
+}
+RClass* native_tilemap_class(void) {
+  return g_native_tilemap_class;
+}
+
+mrb_value bitmap_width_direct(mrb_state* M, mrb_value self) {
+  return bmp_width(M, self);
+}
+
+mrb_value dispose_direct(mrb_state* M, mrb_value self) {
+  return obj_dispose(M, self);
+}
+
+mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self) {
+  return tilemap_dispose(M, self);
+}
 
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
@@ -7746,6 +7766,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 #if !defined( \
     WIO_TERMINAL)  // Plane: never instantiated by wio's Ruby (docs/adr/0132)
   RClass* plane = mrb_define_class_under(M, m, "Plane", M->object_class);
+  g_native_plane_class = plane;
   MRB_SET_INSTANCE_TT(plane, MRB_TT_DATA);
   mrb_define_method(M, plane, "initialize", plane_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, plane, "bitmap=", plane_set_bmp, MRB_ARGS_REQ(1));
@@ -7772,6 +7793,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
                     "initialize", not_compiled_init, MRB_ARGS_ANY());
 #else
   RClass* tilemap = mrb_define_class_under(M, m, "Tilemap", M->object_class);
+  g_native_tilemap_class = tilemap;
   MRB_SET_INSTANCE_TT(tilemap, MRB_TT_DATA);
   mrb_define_method(M, tilemap, "initialize", tilemap_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, tilemap, "tileset=", tilemap_set_tileset,
@@ -8065,4 +8087,6 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_table_class = nullptr;
   g_native_window_class = nullptr;
   g_native_viewport_class = nullptr;
+  g_native_plane_class = nullptr;
+  g_native_tilemap_class = nullptr;
 }

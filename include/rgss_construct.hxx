@@ -24,6 +24,8 @@ RClass* native_bitmap_class(void);
 RClass* native_table_class(void);
 RClass* native_window_class(void);
 RClass* native_viewport_class(void);
+RClass* native_plane_class(void);
+RClass* native_tilemap_class(void);
 
 mrb_value rect_new_direct(mrb_state* M,
                           RClass* klass,
@@ -81,6 +83,9 @@ mrb_value bitmap_copy_blt_direct(mrb_state* M,
                                  mrb_value source,
                                  mrb_value source_rect);
 mrb_value bitmap_text_size_direct(mrb_state* M, mrb_value self, mrb_value text);
+mrb_value bitmap_width_direct(mrb_state* M, mrb_value self);
+mrb_value dispose_direct(mrb_state* M, mrb_value self);
+mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self);
 mrb_value window_openness_set_direct(mrb_state* M,
                                      mrb_value self,
                                      mrb_value openness);
