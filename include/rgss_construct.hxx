@@ -21,6 +21,7 @@ RClass* native_color_class(void);
 RClass* native_tone_class(void);
 RClass* native_sprite_class(void);
 RClass* native_bitmap_class(void);
+RClass* native_table_class(void);
 
 mrb_value rect_new_direct(mrb_state* M,
                           RClass* klass,
@@ -42,5 +43,29 @@ mrb_value tone_new_direct(mrb_state* M,
                           mrb_float gray);
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport);
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h);
+mrb_value sprite_bitmap_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value bitmap);
+mrb_value bitmap_fill_rect_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x,
+                                  mrb_value y,
+                                  mrb_value w,
+                                  mrb_value h,
+                                  mrb_value color);
+mrb_value bitmap_blt_direct(mrb_state* M,
+                            mrb_value self,
+                            mrb_value x,
+                            mrb_value y,
+                            mrb_value source,
+                            mrb_value source_rect,
+                            mrb_value opacity,
+                            mrb_bool opacity_given);
+mrb_value table_new_direct(mrb_state* M,
+                           RClass* klass,
+                           mrb_int argc,
+                           mrb_int x,
+                           mrb_int y,
+                           mrb_int z);
 
 }  // namespace rgss

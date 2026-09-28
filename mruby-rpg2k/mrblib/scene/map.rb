@@ -7107,7 +7107,12 @@ class RPG2k
         req = it.battle_request
         return it.resume_battle(:victory) unless req
         if @battle.nil?
-          @battle = RPG2k::Scene.battle_scene_class(db).new(self, req, it)
+          battle_class = RPG2k::Scene.battle_scene_class(db)
+          if battle_class.equal?(RPG2k::Scene::Battle)
+            @battle = RPG2k::Scene::Battle.new(self, req, it)
+          else
+            @battle = RPG2k3::Scene::Battle.new(self, req, it)
+          end
           @battle.start # opened this frame; take input from the next one
           return
         end

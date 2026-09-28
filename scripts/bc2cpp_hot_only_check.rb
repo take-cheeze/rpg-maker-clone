@@ -251,6 +251,14 @@ check.call("another gem's caller calls the kept _impl across gems and dispatches
            body_of.call(caller_code, 'HoCaller_call_hot').include?('HoCallee_hot_impl(') &&
              !caller_code.match?(/HoCallee_cold_impl|HoRobot_ho_speak_impl|HoCounter_peek_impl/))
 
+module_copy = MethodDef.new(name: 'mf', owner: 'HoMod.singleton', irep: nil, visibility: :public,
+                            kind: :module_function, copy_irep: 'HoMod#mf', copy_owner: 'HoMod')
+module_source = MethodDef.new(name: 'mf', owner: 'HoMod', irep: 'HoMod#mf', visibility: :public)
+module_hot_registry = { 'mf' => [module_source, module_copy] }
+check.call('hot-method validation recognizes a module_function copy as its source body',
+           HotMethods.stale(module_hot_registry, Set['HoMod.singleton#mf']).empty? &&
+             HotMethods.excluded_labels(module_hot_registry, Set['HoMod.singleton#mf']).empty?)
+
 # STATIC_DISPATCH_UNREGISTRATION is proven over the full compile; with an
 # exclusion every such compiled entry is registered again.
 gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, superclass_of, {}, {}, {}, {}, Set.new, nil, nil, nil,

@@ -177,6 +177,16 @@ singleton lookup with a mixin. The same proof allows direct construction to
 omit the redundant class-identity guard. Rebound constants, unknown constructor
 installers, and unstable class paths retain guarded construction or dispatch.
 
+`ClosedWorld#single_assignment_constant?` exposes a narrower fact for ordinary
+value constants: exactly one bytecode binding site, outside sources do not name
+the constant, no dynamic constant mutation is found, and the write is not in a
+deferred method body or a class/module declaration. The outside-source name
+check is intentionally conservative because a native or foreign source that
+mentions the name could rebind it. The first consumer recognizes a direct
+`Klass.new` initializer and propagates that class to reads of the constant. The
+resulting call remains runtime-class-guarded: if a custom constructor returns an
+unexpected class, ordinary lookup remains available on the fallback path.
+
 The same inherited lookup proof is reused by return-class analysis and `&:name`
 loop inlining. Return-class analysis may consume an ancestor's bytecode return
 annotation only as an analysis hint; downstream dispatch still has its runtime

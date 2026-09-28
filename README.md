@@ -1024,6 +1024,21 @@
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),
   [`docs/adr/0180-bc2cpp-generated-array-push.md`](docs/adr/0180-bc2cpp-generated-array-push.md)
   and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
+  RGSS `Sprite#bitmap=` and the five-argument `Bitmap#fill_rect` form also use
+  frame-independent native entry points when the receiver's exact native class
+  is proven; other shapes keep normal Ruby dispatch. See
+  [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
+  Constructor analysis follows source indexes through inlined calls and can
+  directly build RGSS `Table` values when the native class and standard
+  constructor chain are proven. See
+  [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md).
+  Bare `new` in a closed-world class method uses the class object's singleton
+  owner as receiver proof, with the same constructor lookup checks.
+  Runtime-selected LCF root types and battle scene classes now use explicit
+  class branches for their closed-world class sets.
+  Zero-argument `to_i` calls use guarded native Integer, Float and String
+  conversions, with ordinary dispatch for other receiver types. See
+  [`docs/adr/0240-bc2cpp-to-i-type-dispatch.md`](docs/adr/0240-bc2cpp-to-i-type-dispatch.md).
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars

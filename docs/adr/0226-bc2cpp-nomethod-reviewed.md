@@ -87,10 +87,10 @@ the `cmake/build-mruby.cmake` patches, running the wio codegen of each gem:
 
 | gem | sites (all methods) | keys | sites (hot-only, as a real wio build) |
 | --- | ---: | ---: | ---: |
-| mruby-lcf-compiled | 13 | 5 | 0 |
-| mruby-rpg2k-compiled | 39 | 33 | 0 |
-| mruby-rgss-compiled | 0 | 0 | 0 |
-| total | 52 | 38 | 0 |
+| mruby-lcf-compiled | 15 | 6 | 0 |
+| mruby-rpg2k-compiled | 3046 | 2198 | 426 |
+| mruby-rgss-compiled | 1 | 1 | 0 |
+| total | 3062 | 2205 | 426 |
 
 Today the hot-only list (`tools/bc2cpp/hot_methods.txt`) compiles none of
 these sites, so shipped psp/wio/maix firmware contains no `bc2cpp_nomethod`
@@ -102,10 +102,10 @@ ADR 0210 counted 17. ADR 0213 later removed `method_missing` from LCF, which
 lets `LCF::File`'s own `self` calls convert, and more methods compile now.
 `RGSS::ErrorReport::Tee` no longer defines `method_missing` or
 `respond_to_missing?`; it explicitly delegates only `flush` in addition to its
-write methods. The closed-world proof consequently converts 3,070 sites across
-2,216 unique keys in the current full Wio run. The hot-only list now compiles
-418 of these sites; its generated RPG2K source is 210 bytes smaller in the
-current probe. The review set is regenerated with
+write methods. Selective module-function body emission increases the current
+full Wio run to 3,070 sites across 2,213 unique keys (LCF 23/14, RGSS 1/1,
+RPG2K 3,046/2,198 sites/keys). The hot-only list still compiles 426 of these
+sites. The review set is regenerated with
 `MRBC=... ruby scripts/bc2cpp_nomethod_reviewed_update.rb --write`.
 
 Every site was reviewed. For each one, the guard chain was read to confirm
@@ -118,7 +118,8 @@ Ruby source was changed.
 
 | sites | receiver (`self` in) | called | definer |
 | --- | --- | --- | --- |
-| `LCF::File#initialize`/`#to_lcf` (13) | LCF::File and subclasses | `schema`, `header`, `terminate_root?` | `LCF::File` (abstract `raise`) and each of Database, MapTree, MapUnit, SaveData (lcf_file.rb) |
+| `LCF::File#initialize`/`#to_lcf` (14) | LCF::File and subclasses | `schema`, `header`, `terminate_root?` | `LCF::File` (abstract `raise`) and each of Database, MapTree, MapUnit, SaveData (lcf_file.rb) |
+| `LCF::File#initialize` (1) | a fresh `LCF::Sections` | `add` | `LCF::Sections#add` (lcf.rb); the receiver is allocated immediately before this call |
 | `RPG2k::Scene::{Title,GameOver,Map,SaveLoad}#…` (14) | a `Scene::Base` subclass | `parent` | `Scene::Base` `attr_reader :parent` |
 | `Scene::Base#state_display`, `Scene::Map#note_party_step` (2) | Scene::Base subclasses | `state_table` | `Scene::Base#state_table` |
 | `RPG2k::Scene::Battle#…` (23) | Scene::Battle, RPG2k3::Scene::Battle | `advance_actor`, `enter_command_phase`, `open_battle_options`, `battle_commands`, `gauge_battle_layout?`, `drive_battle_command`, `prev_commandable_actor_index`, `finish_round_animation` | Scene::Battle, with overrides in `RPG2k3::Scene::Battle` (battle.rb, battle_rpg2k3.rb) |

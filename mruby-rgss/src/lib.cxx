@@ -21,6 +21,7 @@
 
 #include "default_font.hxx"
 #include "profiler.hxx"
+#include "rgss_construct.hxx"
 #include "shinonome.hxx"
 
 #include <algorithm>
@@ -681,6 +682,7 @@ RClass* g_native_color_class = nullptr;
 RClass* g_native_tone_class = nullptr;
 RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
+RClass* g_native_table_class = nullptr;
 }  // namespace
 
 // The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
@@ -742,16 +744,24 @@ long table_index(const Table& t, mrb_int x, mrb_int y, mrb_int z) {
   return x + y * (long)t.xsize + z * (long)t.xsize * t.ysize;
 }
 
-mrb_value table_init(mrb_state* M, V self) {
-  mrb_int a, b = 1, c = 1;
-  mrb_get_args(M, "i|ii", &a, &b, &c);
-  mrb_int argc = mrb_get_argc(M);
-  Table& t = DataType<Table>::alloc_obj(M, self);
+void table_initialize_fields(Table& t,
+                             mrb_int argc,
+                             mrb_int a,
+                             mrb_int b,
+                             mrb_int c) {
   t.dim = argc;
   t.xsize = a;
   t.ysize = argc >= 2 ? b : 1;
   t.zsize = argc >= 3 ? c : 1;
   t.data.assign((size_t)t.xsize * t.ysize * t.zsize, 0);
+}
+
+mrb_value table_init(mrb_state* M, V self) {
+  mrb_int a, b = 1, c = 1;
+  mrb_get_args(M, "i|ii", &a, &b, &c);
+  mrb_int argc = mrb_get_argc(M);
+  Table& t = DataType<Table>::alloc_obj(M, self);
+  table_initialize_fields(t, argc, a, b, c);
   return self;
 }
 
@@ -1831,6 +1841,9 @@ mrb_value bmp_fill_rect(mrb_state* M, V self) {
     h = rc.height;
   } else {
     mrb_get_args(M, "iiiio", &x, &y, &w, &h, &col);
+    return rgss::bitmap_fill_rect_direct(
+        M, self, mrb_int_value(M, x), mrb_int_value(M, y), mrb_int_value(M, w),
+        mrb_int_value(M, h), col);
   }
   Color& c = DataType<Color>::get(M, col);
   for (mrb_int j = y; j < y + h; ++j)
@@ -2272,21 +2285,13 @@ static void blt_pixels(Bitmap& dst,
 
 mrb_value bmp_blt(mrb_state* M, V self) {
   mrb_int x, y;
-  void* src;
+  V src;
   V srect;
   mrb_int opacity = 255;
-  mrb_get_args(M, "iido|i", &x, &y, &src, &DataType<Bitmap>::data_type, &srect,
-               &opacity);
-  Bitmap& dst = bmp_self(M, self);
-  Bitmap& sb = bmp_require(M, src);
-  Rect& rc = DataType<Rect>::get(M, srect);
-  if (opacity < 0)
-    opacity = 0;
-  if (opacity > 255)
-    opacity = 255;
-  blt_pixels(dst, sb, x, y, rc, opacity);
-  dst.dirty = true;
-  return self;
+  mrb_get_args(M, "iioo|i", &x, &y, &src, &srect, &opacity);
+  return rgss::bitmap_blt_direct(
+      M, self, mrb_int_value(M, x), mrb_int_value(M, y), src, srect,
+      mrb_int_value(M, opacity), mrb_get_argc(M) == 5);
 }
 
 // Bitmap#blt_quads(x, y, src, quads) -- #blt for a batch of source rects in
@@ -4195,10 +4200,7 @@ void spr_bind_display(mrb_state* M, mrb_value self, lv_obj_t* obj) {
 mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
   mrb_value bmp;
   mrb_get_args(M, "o", &bmp);
-  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bmp);
-  lv_obj_t* obj = obj_require(M, self);
-  spr_bind_display(M, self, obj);
-  return bmp;
+  return rgss::sprite_bitmap_set_direct(M, self, bmp);
 }
 
 // RGSS Sprite#opacity= (0..255). The Sprite's native handle is an lv_canvas,
@@ -7234,6 +7236,9 @@ RClass* native_sprite_class(void) {
 RClass* native_bitmap_class(void) {
   return g_native_bitmap_class;
 }
+RClass* native_table_class(void) {
+  return g_native_table_class;
+}
 
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
@@ -7260,6 +7265,71 @@ mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
 // String-branch-only affair, never touched here.
 mrb_value bitmap_new_direct(mrb_state* M, RClass* klass, mrb_int w, mrb_int h) {
   return DataType<Bitmap>::make(M, klass, w, h, LV_COLOR_FORMAT_ARGB8888);
+}
+
+mrb_value sprite_bitmap_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value bitmap) {
+  mrb_iv_set(M, self, mrb_intern_lit(M, "@bitmap"), bitmap);
+  lv_obj_t* obj = obj_require(M, self);
+  spr_bind_display(M, self, obj);
+  return bitmap;
+}
+
+mrb_value bitmap_fill_rect_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value x_value,
+                                  mrb_value y_value,
+                                  mrb_value w_value,
+                                  mrb_value h_value,
+                                  mrb_value color) {
+  const mrb_int x = mrb_as_int(M, x_value);
+  const mrb_int y = mrb_as_int(M, y_value);
+  const mrb_int w = mrb_as_int(M, w_value);
+  const mrb_int h = mrb_as_int(M, h_value);
+  Bitmap& b = bmp_self(M, self);
+  Color& c = DataType<Color>::get(M, color);
+  for (mrb_int j = y; j < y + h; ++j)
+    for (mrb_int i = x; i < x + w; ++i)
+      bmp_put(b, i, j, c.red, c.green, c.blue, c.alpha);
+  b.dirty = true;
+  return self;
+}
+
+mrb_value bitmap_blt_direct(mrb_state* M,
+                            mrb_value self,
+                            mrb_value x_value,
+                            mrb_value y_value,
+                            mrb_value source,
+                            mrb_value source_rect,
+                            mrb_value opacity_value,
+                            mrb_bool opacity_given) {
+  const mrb_int x = mrb_as_int(M, x_value);
+  const mrb_int y = mrb_as_int(M, y_value);
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  Bitmap& dst = bmp_self(M, self);
+  Bitmap& src = bmp_require(M, source_data);
+  Rect& rc = DataType<Rect>::get(M, source_rect);
+  mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
+  if (opacity < 0)
+    opacity = 0;
+  if (opacity > 255)
+    opacity = 255;
+  blt_pixels(dst, src, x, y, rc, opacity);
+  dst.dirty = true;
+  return self;
+}
+
+mrb_value table_new_direct(mrb_state* M,
+                           RClass* klass,
+                           mrb_int argc,
+                           mrb_int x,
+                           mrb_int y,
+                           mrb_int z) {
+  auto table = DataType<Table>::make_owned(M, int32_t{1}, int32_t{0},
+                                           int32_t{1}, int32_t{1});
+  table_initialize_fields(*table, argc, x, y, z);
+  return DataType<Table>::make_direct(M, klass, std::move(table));
 }
 
 }  // namespace rgss
@@ -7735,6 +7805,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* table = mrb_define_class_under(M, m, "Table", M->object_class);
   MRB_SET_INSTANCE_TT(table, MRB_TT_DATA);
+  g_native_table_class = table;
   mrb_define_method(M, table, "initialize", table_init,
                     MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
 #if !defined(WIO_TERMINAL)  // Table#dup/#clone: unused on wio (docs/adr/0132)
@@ -7812,4 +7883,5 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_tone_class = nullptr;
   g_native_sprite_class = nullptr;
   g_native_bitmap_class = nullptr;
+  g_native_table_class = nullptr;
 }

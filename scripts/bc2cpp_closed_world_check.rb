@@ -190,12 +190,54 @@ EXACT_CONSTRUCT_WORLD = <<~'RUBY'
   end
 RUBY
 
+CONSTANT_OBJECT_WORLD = <<~'RUBY'
+  module CwStableObject
+    def self.value; 11; end
+  end
+  module CwNamespace
+    module StableObject
+      def self.value; 12; end
+    end
+  end
+  module CwModuleFunction
+    def value(x); x + 3; end
+    module_function :value
+    def state; @state; end
+    module_function :state
+  end
+  module CwReplacementObject
+    def self.value; 22; end
+  end
+  class CwValueTypeA
+    def value_type_probe; 31; end
+  end
+  class CwValueTypeB
+    def value_type_probe; 32; end
+  end
+  class CwValueTypeA
+    def self.new; CwValueTypeB.allocate; end
+  end
+  CwValueTypeConstant = CwValueTypeA.new
+  class CwStableCaller
+    def stable; CwStableObject.value; end
+    def qualified; CwNamespace::StableObject.value; end
+    def module_function; CwModuleFunction.value(4); end
+    def module_function_state; CwModuleFunction.state; end
+    def value_constant_type; CwValueTypeConstant.value_type_probe; end
+  end
+  class CwReboundCaller
+    CwReboundObject = CwReplacementObject
+    def rebound; CwReboundObject.value; end
+  end
+RUBY
+
 mrbc = ENV['MRBC'] || 'mrbc'
-generate = lambda do |source, name, closed|
+generate = lambda do |source, name, closed, only_owners = nil|
   Dir.mktmpdir do |dir|
     path = File.join(dir, "#{name}.rb")
     File.write(path, source)
     env = { 'MRBC' => mrbc, 'OUT_SYMBOL' => name, 'OUT_DIR' => dir, 'SKIP_UNSUPPORTED' => '1' }
+    env['ONLY_OWNERS'] = only_owners.join(',') if only_owners
     if closed
       env.merge!('BC2CPP_CLOSED_WORLD' => '1', 'BC2CPP_BUILD_NAME' => 'wio',
                  'BC2CPP_BUILD_GEMS' => Shellwords.join(wio_gems.map { |n, d| "#{n}=#{d}" }),
@@ -217,6 +259,9 @@ closed_code, closed_err = generate.call(WORLD, 'cw_closed', true)
 ghost_code, ghost_err = generate.call(GHOST_WORLD, 'cw_ghost', true)
 inherit_code, = generate.call(INHERIT_WORLD, 'cw_inherit', true)
 exact_construct_code, = generate.call(EXACT_CONSTRUCT_WORLD, 'cw_exact_construct', true)
+constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object', true)
+selective_constant_object_code, = generate.call(CONSTANT_OBJECT_WORLD, 'cw_constant_object_selective', true,
+                                                 %w[CwStableCaller CwModuleFunction.singleton])
 
 check.call('without the switch no fallback changes: no bc2cpp_nomethod, ancestry-aware owner lookup',
            !open_code.include?('bc2cpp_nomethod') && !open_code.include?('CLOSED_WORLD') &&
@@ -254,6 +299,39 @@ check.call('a fresh instance of a stable class constant drops the exact-class gu
 check.call('a class constant rebound in the closed world keeps guarded dynamic dispatch',
            !rebound_call.include?('CLOSED_WORLD_EXACT_CLASS') && rebound_call.include?('mrb_obj_class(M,') &&
              rebound_call.include?('mrb_funcall'))
+
+constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_stable')
+qualified_constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_qualified')
+module_function_call = body_of.call(constant_object_code, 'CwStableCaller_module_function')
+module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
+value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
+rebound_object_call = body_of.call(constant_object_code, 'CwReboundCaller_rebound')
+check.call('a stable class/module constant dispatches directly to its unique singleton method',
+           constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             constant_object_call.include?('CwStableObject_singleton_value_impl(') &&
+             !constant_object_call.include?('bc2cpp_send('))
+check.call("a qualified constant object's VM register retains its exact class/module type",
+           qualified_constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             qualified_constant_object_call.include?('CwNamespace__StableObject_singleton_value_impl(') &&
+             !qualified_constant_object_call.include?('bc2cpp_send('))
+check.call('a single-assignment instance constant supplies a guarded class and falls back for a custom constructor result',
+           value_constant_type_call.include?('TYPED :value_type_probe -> CwValueTypeA') &&
+             value_constant_type_call.include?('CwValueTypeA_value_type_probe_impl('))
+check.call('a closed-world module_function copy calls its original compiled body directly',
+           module_function_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             module_function_call.include?('module_function copy of CwModuleFunction#value') &&
+             module_function_call.include?('CwModuleFunction_value_impl(') &&
+             !module_function_call.include?('bc2cpp_send('))
+check.call('selecting only the module singleton owner emits its copied body for cross-owner direct calls',
+           selective_constant_object_code.include?('CwModuleFunction_value_impl(mrb_state* M') &&
+             body_of.call(selective_constant_object_code, 'CwStableCaller_module_function')
+               .include?('CwModuleFunction_value_impl('))
+check.call('a module_function body that observes instance state keeps dynamic dispatch',
+           !module_function_state_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             module_function_state_call.include?('bc2cpp_send('))
+check.call('a lexically rebound class/module constant declines direct singleton dispatch',
+           !rebound_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             rebound_object_call.include?('bc2cpp_send('))
 check.call('a self receiver in a class with no method_missing still converts',
            body_of.call(ghost_code, 'CwBase_chat').match?(/bc2cpp_nomethod\(M, self, \d+\);/))
 
@@ -264,7 +342,58 @@ require_relative '../tools/bc2cpp/bc2cpp'
 native_bang = MethodDef.new(name: '!', owner: '<native>', irep: nil, visibility: :public)
 native_only_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang] }, class_decls: {}, walked: Set.new,
                                     native_paths: [], ruby_paths: [])
+single_write_irep = Irep.new(label: 'single-write', nlocals: 0, nregs: 3, pool: [], syms: [], reps: [], lv: [],
+                             instructions: [Insn.new(lineno: 1, addr: 0, op: 'SETCONST', args: 'CwSingleValue R2', raw: '')])
+single_write_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                     walked: Set['single-write'], native_paths: [], ruby_paths: [])
+repeated_write_irep = Irep.new(label: 'repeated-write', nlocals: 0, nregs: 3, pool: [], syms: [], reps: [], lv: [],
+                               instructions: [0, 1].map do |addr|
+                                 Insn.new(lineno: addr + 1, addr: addr, op: 'SETCONST', args: 'CwRepeatedValue R2', raw: '')
+                               end)
+repeated_write_world = ClosedWorld.new(ireps: { 'repeated-write' => repeated_write_irep }, registry: {}, class_decls: {},
+                                       walked: Set['repeated-write'], native_paths: [], ruby_paths: [])
+check.call('closed world proves one bytecode assignment for an untouched value constant',
+           single_write_world.single_assignment_constant?('CwSingleValue'))
+check.call('closed world rejects multiple bytecode assignments to a value constant',
+           !repeated_write_world.single_assignment_constant?('CwRepeatedValue'))
+deferred_write_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                       walked: Set.new, native_paths: [], ruby_paths: [])
+check.call('closed world rejects a constant write inside a deferred method body',
+           !deferred_write_world.single_assignment_constant?('CwSingleValue'))
+Dir.mktmpdir do |dir|
+  foreign_const = File.join(dir, 'foreign_const.rb')
+  File.write(foreign_const, "CwSingleValue = Object.new\n")
+  foreign_write_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                        walked: Set['single-write'], native_paths: [], ruby_paths: [foreign_const])
+  check.call('closed world rejects a bytecode single-assignment constant touched by foreign Ruby',
+             !foreign_write_world.single_assignment_constant?('CwSingleValue'))
+  File.write(foreign_const, "def read_value; CwSingleValue; end\n")
+  foreign_read_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                       walked: Set['single-write'], native_paths: [], ruby_paths: [foreign_const])
+  check.call('a foreign read alone does not poison the constant single-assignment fact',
+             foreign_read_world.single_assignment_constant?('CwSingleValue'))
+  File.write(foreign_const, "Object.const_set(:CwSingleValue, Object.new)\n")
+  dynamic_write_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                        walked: Set['single-write'], native_paths: [], ruby_paths: [foreign_const])
+  check.call('closed world rejects value-constant proof when outside Ruby can mutate constants dynamically',
+             !dynamic_write_world.single_assignment_constant?('CwSingleValue'))
+  native_const = File.join(dir, 'native_const.c')
+  File.write(native_const, 'void f(mrb_state* M) { mrb_const_set(M, mrb_obj_value(M->object_class), ' \
+                           'mrb_intern_lit(M, "CwSingleValue"), mrb_nil_value()); }')
+  native_write_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                      walked: Set['single-write'], native_paths: [native_const], ruby_paths: [])
+  check.call('closed world rejects a literal native write to a value constant by name',
+             !native_write_world.single_assignment_constant?('CwSingleValue'))
+  File.write(native_const, 'void f(mrb_state* M, mrb_sym sym) { mrb_const_set(M, ' \
+                           'mrb_obj_value(M->object_class), sym, mrb_nil_value()); }')
+  dynamic_native_world = ClosedWorld.new(ireps: { 'single-write' => single_write_irep }, registry: {}, class_decls: {},
+                                         walked: Set['single-write'], native_paths: [native_const], ruby_paths: [])
+  check.call('closed world rejects a computed native constant write',
+             !dynamic_native_world.single_assignment_constant?('CwSingleValue'))
+end
 check.call('closed world accepts a sole ownerless native definition', native_only_world.ownerless_native_dispatch_safe?('!'))
+check.call('closed world treats an unresolved symbolic class hint as unknown',
+           !native_only_world.stable_class_constant?(:unknown) && !native_only_world.stable_constant_identity?(:unknown))
 overridden_world = ClosedWorld.new(ireps: {}, registry: { '!' => [native_bang,
                                                                     MethodDef.new(name: '!', owner: 'CwOverride',
                                                                                   irep: 1, visibility: :public)] },
@@ -434,6 +563,27 @@ else
     check.call('rescue catches it', output.include?('rescued :rescued'))
     check.call('listed receivers, an inherited method and a core name still answer', output.include?('values [1, 2, 3, 20, 6]'))
   end
+
+  module_function_probe = <<~CPP
+    load(M, "$values = [CwStableCaller.new.module_function, CwModuleFunction.value(4)]");
+    std::printf("module_function values %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$values"))));
+  CPP
+  module_function_define = 'mrb_define_method(M, mrb_class_get(M, "CwStableCaller"), "module_function", ' \
+                           'CwStableCaller_module_function, MRB_ARGS_NONE());'
+  module_function_output = run.call(constant_object_code, CONSTANT_OBJECT_WORLD,
+                                    module_function_define, module_function_probe)
+  check.call('a direct module_function call agrees with mruby singleton-copy dispatch',
+             module_function_output&.include?('module_function values [7, 7]'))
+
+  value_constant_probe = <<~CPP
+    load(M, "$values = [CwStableCaller.new.value_constant_type, CwValueTypeConstant.value_type_probe]");
+    std::printf("value constant values %s\\n", str(M, mrb_gv_get(M, mrb_intern_lit(M, "$values"))));
+  CPP
+  value_constant_defines = define.call('CwStableCaller', 'value_constant_type', 0)
+  value_constant_output = run.call(constant_object_code, CONSTANT_OBJECT_WORLD, value_constant_defines,
+                                   value_constant_probe)
+  check.call('single-assignment constant receiver dispatch preserves the runtime result',
+             value_constant_output&.include?('value constant values [32, 32]'))
 
   ghost_ruby = <<~RUBY
     $values = [CwCaller.new.talk(CwGhost.new), CwKid.new.chat, CwBase.new.chat, CwCaller.new.talk(CwRobot.new)]
