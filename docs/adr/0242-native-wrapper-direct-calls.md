@@ -16,15 +16,16 @@ parsing safe.
 
 ## Decision
 
-For hot RGSS native methods, provide frame independent entry points that accept
-the already evaluated receiver and arguments. bc2cpp may call these only when
-its bytecode trace proves the receiver class; generated code still checks the
+For RGSS native methods, provide frame independent entry points that accept the
+already evaluated receiver and arguments. bc2cpp may call these only when its
+bytecode trace proves the receiver class; generated code still checks the
 native class pointer and falls back to ordinary dispatch if it differs. Keep
 argument conversion, optional defaults, and validation in the shared native
 body so wrapper and compiled calls have the same behavior.
 
 ## Consequences
 
-`Bitmap#stretch_blt` can be called directly at proven RGSS Bitmap sites. Other
-native wrappers remain on normal dispatch until they have an equivalent
-frame independent body and a call-site proof.
+`Bitmap#stretch_blt`, `Bitmap#copy_blt`, and both `Bitmap#draw_text` argument
+forms can be called directly at proven RGSS Bitmap sites. Other native
+wrappers remain on normal dispatch until they have an equivalent frame
+independent body and a call-site proof.

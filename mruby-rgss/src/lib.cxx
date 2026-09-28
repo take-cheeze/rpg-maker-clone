@@ -2365,11 +2365,12 @@ mrb_value bmp_blt_quads(mrb_state* M, V self) {
 // frame, 336x256 pixels twice, and through #blt's per-pixel read/blend/write
 // that measured ~5ms per frame -- a third of the engine's entire 16.67ms
 // budget spent blending pixels onto transparency. Row-wise, it is a memcpy.
-mrb_value bmp_copy_blt(mrb_state* M, V self) {
-  mrb_int x, y;
-  void* src;
-  V srect;
-  mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
+mrb_value bmp_copy_blt_body(mrb_state* M,
+                            V self,
+                            mrb_int x,
+                            mrb_int y,
+                            void* src,
+                            V srect) {
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect& rc = DataType<Rect>::get(M, srect);
@@ -2430,6 +2431,14 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
   }
   dst.dirty = true;
   return self;
+}
+
+mrb_value bmp_copy_blt(mrb_state* M, V self) {
+  mrb_int x, y;
+  void* src;
+  V srect;
+  mrb_get_args(M, "iido", &x, &y, &src, &DataType<Bitmap>::data_type, &srect);
+  return bmp_copy_blt_body(M, self, x, y, src, srect);
 }
 
 // Copy src_rect from `src` into dest_rect of self, scaling with nearest
@@ -3309,6 +3318,15 @@ mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
   return y + (h - static_cast<mrb_int>(shinonome::HEIGHT)) / 2;
 }
 
+mrb_value bmp_draw_text_body(mrb_state* M,
+                             mrb_value self,
+                             mrb_int x,
+                             mrb_int y,
+                             mrb_int w,
+                             mrb_int h,
+                             mrb_value text_obj,
+                             mrb_int align);
+
 // RGSS Bitmap#draw_text, in both the forms RGSS documents:
 //
 //   draw_text(x, y, width, height, str[, align])
@@ -3320,8 +3338,6 @@ mrb_int shinonome_text_top(mrb_int y, mrb_int h) {
 // "wrong number of arguments (given 2, expected 5..6)". Same argc branch as
 // #fill_rect, which RGSS overloads the same way.
 mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
-  auto& bmp = bmp_self(M, self);
-
   // Real RGSS3 accepts any object as the text argument, not just a String --
   // games routinely draw_text an Integer directly (HP/MP/gold: this game's
   // own stock Window_Gold#refresh -> #draw_currency_value among them),
@@ -3346,6 +3362,18 @@ mrb_value bmp_draw_text(mrb_state* M, mrb_value self) {
   } else {
     mrb_get_args(M, "iiiio|i", &x, &y, &w, &h, &text_obj, &align);
   }
+  return bmp_draw_text_body(M, self, x, y, w, h, text_obj, align);
+}
+
+mrb_value bmp_draw_text_body(mrb_state* M,
+                             mrb_value self,
+                             mrb_int x,
+                             mrb_int y,
+                             mrb_int w,
+                             mrb_int h,
+                             mrb_value text_obj,
+                             mrb_int align) {
+  auto& bmp = bmp_self(M, self);
   if (!mrb_string_p(text_obj)) {
     text_obj = mrb_obj_as_string(M, text_obj);
   }
@@ -7350,6 +7378,45 @@ mrb_value bitmap_stretch_blt_direct(mrb_state* M,
   void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
   return bmp_stretch_blt_body(M, self, destination_rect, source_data,
                               source_rect, opacity, opacity_given);
+}
+
+mrb_value bitmap_draw_text_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_int argc,
+                                  const mrb_value* argv) {
+  mrb_int x, y, w, h, align = 0;
+  mrb_value text;
+  if (argc <= 3) {
+    Rect& rect = DataType<Rect>::get(M, argv[0]);
+    x = rect.x;
+    y = rect.y;
+    w = rect.width;
+    h = rect.height;
+    text = argv[1];
+    if (argc == 3)
+      align = mrb_as_int(M, argv[2]);
+  } else {
+    x = mrb_as_int(M, argv[0]);
+    y = mrb_as_int(M, argv[1]);
+    w = mrb_as_int(M, argv[2]);
+    h = mrb_as_int(M, argv[3]);
+    text = argv[4];
+    if (argc == 6)
+      align = mrb_as_int(M, argv[5]);
+  }
+  return bmp_draw_text_body(M, self, x, y, w, h, text, align);
+}
+
+mrb_value bitmap_copy_blt_direct(mrb_state* M,
+                                 mrb_value self,
+                                 mrb_value x,
+                                 mrb_value y,
+                                 mrb_value source,
+                                 mrb_value source_rect) {
+  mrb_int dx = mrb_as_int(M, x);
+  mrb_int dy = mrb_as_int(M, y);
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  return bmp_copy_blt_body(M, self, dx, dy, source_data, source_rect);
 }
 
 mrb_value table_new_direct(mrb_state* M,

@@ -68,6 +68,16 @@ mrb_value bitmap_stretch_blt_direct(mrb_state* M,
                                     mrb_value source_rect,
                                     mrb_value opacity,
                                     mrb_bool opacity_given);
+mrb_value bitmap_draw_text_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_int argc,
+                                  const mrb_value* argv);
+mrb_value bitmap_copy_blt_direct(mrb_state* M,
+                                 mrb_value self,
+                                 mrb_value x,
+                                 mrb_value y,
+                                 mrb_value source,
+                                 mrb_value source_rect);
 mrb_value table_new_direct(mrb_state* M,
                            RClass* klass,
                            mrb_int argc,

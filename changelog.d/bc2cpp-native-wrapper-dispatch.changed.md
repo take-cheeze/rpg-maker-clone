@@ -1,2 +1,3 @@
-bc2cpp now resolves proven RGSS `Bitmap#stretch_blt` calls through a
-frame-independent native body guarded by exact runtime class identity.
+bc2cpp now resolves proven RGSS `Bitmap#stretch_blt`, `Bitmap#copy_blt`, and
+`Bitmap#draw_text` calls through frame-independent native bodies guarded by
+exact runtime class identity.
