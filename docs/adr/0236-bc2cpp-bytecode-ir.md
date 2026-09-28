@@ -27,7 +27,10 @@ mruby's `mrb_obj_new`. That API performs the same allocation and keeps
 class-identity guard retains ordinary dispatch for Modules, non-class values,
 and a receiver register that differs from the traced constant.
 Constructor proof also rejects `Class` mixins that could replace lookup for
-every class object's `new` or `allocate` method.
+every class object's `new` or `allocate` method. When the class has one clean,
+compiled positional `#initialize` and is emitted in the same translation unit,
+bc2cpp can call that implementation directly after matching allocation. The
+initializer's return value is discarded, as `Class#new` requires.
 
 ## Consequences
 
