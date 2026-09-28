@@ -25,17 +25,19 @@ and falls back to ordinary dispatch for other receivers. Keep argument
 conversion, optional defaults, and validation in the shared native body so
 wrapper and compiled calls have the same behavior.
 
-Use the same owner gate for `Bitmap#width` and native `#dispose` methods. The
-dispose entry points share the `obj_dispose` body except Tilemap, whose direct
-entry must retain its companion-canvas and priority-strip cleanup.
+Use the same owner gate for `Bitmap#width`, `Bitmap#height`, `#disposed?`,
+`#visible`, and native `#dispose` methods. The dispose entry points share the
+`obj_dispose` body except Tilemap, whose direct entry must retain its
+companion-canvas and priority-strip cleanup.
 
 ## Consequences
 
 `Sprite#bitmap=`, Sprite `#opacity=`/`#tone=`, Window `#openness=`/`#tone=`,
 Viewport `#tone=`, and Bitmap `#fill_rect`, `#blt`, `#stretch_blt`,
 `#draw_text`, `#copy_blt`, and `#text_size` use frame independent bodies.
-`Bitmap#width` and `dispose` on Bitmap, Sprite, Viewport, Plane, Tilemap, and
-Window also use frame independent bodies. Their exact runtime class guards
-resolve calls when static receiver tracing has no class fact. Other native
-wrappers remain on normal dispatch until they have an equivalent frame
-independent body and a guarded owner.
+`Bitmap#width`/`#height`, `#disposed?` on Bitmap, Sprite, Viewport, Plane,
+Tilemap, and Window, `#visible` on Sprite, Viewport, and Plane, and `dispose`
+on those six classes also use frame independent bodies. Their exact runtime
+class guards resolve calls when static receiver tracing has no class fact.
+Other native wrappers remain on normal dispatch until they have an equivalent
+frame independent body and a guarded owner.

@@ -84,6 +84,9 @@ mrb_value bitmap_copy_blt_direct(mrb_state* M,
                                  mrb_value source_rect);
 mrb_value bitmap_text_size_direct(mrb_state* M, mrb_value self, mrb_value text);
 mrb_value bitmap_width_direct(mrb_state* M, mrb_value self);
+mrb_value bitmap_height_direct(mrb_state* M, mrb_value self);
+mrb_value disposed_direct(mrb_state* M, mrb_value self);
+mrb_value visible_direct(mrb_state* M, mrb_value self);
 mrb_value dispose_direct(mrb_state* M, mrb_value self);
 mrb_value tilemap_dispose_direct(mrb_state* M, mrb_value self);
 mrb_value window_openness_set_direct(mrb_state* M,

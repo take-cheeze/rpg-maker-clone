@@ -315,6 +315,30 @@ check.call('respond_to? answers native hits directly and keeps the missing-hook 
              respond_to_code.include?('mrb_funcall(M, r3, "respond_to?", 1, r4)') &&
              CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
              respond_to_generator.native_only_mono?('respond_to?'))
+
+wrapper_registry = %w[height disposed? visible].to_h do |name|
+  [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
+end
+wrapper_generator = CodeGen.new({}, wrapper_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
+height_code = wrapper_generator.compile_send('R1 = SEND R2 :height n=0', self_implicit: false)
+disposed_code = wrapper_generator.compile_send('R1 = SEND R2 :disposed? n=0', self_implicit: false)
+visible_code = wrapper_generator.compile_send('R1 = SEND R2 :visible n=0', self_implicit: false)
+check.call('RGSS Bitmap#height uses its frame independent wrapper behind an exact class guard',
+           height_code.include?('rgss::native_bitmap_class()') &&
+             height_code.include?('rgss::bitmap_height_direct(M, r1)') &&
+             height_code.include?('mrb_funcall(M, r1, "height", 0)'))
+check.call('#disposed? uses frame independent wrappers only for registered RGSS data classes',
+           disposed_code.include?('native_bitmap_class()') && disposed_code.include?('native_sprite_class()') &&
+             disposed_code.include?('native_viewport_class()') && disposed_code.include?('native_plane_class()') &&
+             disposed_code.include?('native_tilemap_class()') && disposed_code.include?('native_window_class()') &&
+             disposed_code.include?('rgss::disposed_direct(M, r1)') &&
+             disposed_code.include?('mrb_funcall(M, r1, "disposed?", 0)'))
+check.call('#visible uses frame independent wrappers only for its native display classes',
+           visible_code.include?('native_sprite_class()') && visible_code.include?('native_viewport_class()') &&
+             visible_code.include?('native_plane_class()') &&
+             !visible_code.include?('native_bitmap_class()') &&
+             visible_code.include?('rgss::visible_direct(M, r1)') &&
+             visible_code.include?('mrb_funcall(M, r1, "visible", 0)'))
 # Two respond_to? sends that reuse one register with a goto across the first
 # must still compile: the temporary symbol is block-scoped, so it neither
 # redeclares nor sits between the jump and its label.

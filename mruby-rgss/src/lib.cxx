@@ -7345,6 +7345,18 @@ mrb_value bitmap_width_direct(mrb_state* M, mrb_value self) {
   return bmp_width(M, self);
 }
 
+mrb_value bitmap_height_direct(mrb_state* M, mrb_value self) {
+  return bmp_height(M, self);
+}
+
+mrb_value disposed_direct(mrb_state* M, mrb_value self) {
+  return obj_disposed(M, self);
+}
+
+mrb_value visible_direct(mrb_state* M, mrb_value self) {
+  return obj_visible(M, self);
+}
+
 mrb_value dispose_direct(mrb_state* M, mrb_value self) {
   return obj_dispose(M, self);
 }

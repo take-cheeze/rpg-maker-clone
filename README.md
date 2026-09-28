@@ -1027,8 +1027,12 @@
   RGSS `Sprite#bitmap=` and the five-argument `Bitmap#fill_rect` form also use
   frame-independent native entry points when the receiver's exact native class
   is proven, including inlined calls with a receiver proof; other shapes keep
-  normal Ruby dispatch. See
+  normal Ruby dispatch. Exact-class guards also cover Bitmap `width`/`height`,
+  data objects' `disposed?`, and display objects' `visible` queries without
+  requiring a static receiver type. See
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
+  The frame-independent wrapper rules and supported methods are recorded in
+  [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. See
