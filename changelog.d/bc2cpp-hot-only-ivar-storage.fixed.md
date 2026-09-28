@@ -1,0 +1,1 @@
+- Hot-only builds keep an ivar in `iv_tbl` when an excluded method accesses it.

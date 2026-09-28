@@ -44,6 +44,8 @@ Dir.mktmpdir do |dir|
 
     code = gen.compile_insn(send_insn, irep, method, irep.instructions.index(send_insn))
     check.call("#{method_name} uses the explicit-argv IO#puts model", code.include?('mrb_io_puts_direct(M,'))
+    check.call("#{method_name} gates the helper on mruby-io being linked",
+               code.include?('#ifdef HAVE_MRUBY_IO_GEM') && code.include?('#else'))
     check.call("#{method_name} retains ordinary Ruby dispatch when the target differs",
                code.include?('mrb_funcall(M,') && code.include?('"puts"'))
   end

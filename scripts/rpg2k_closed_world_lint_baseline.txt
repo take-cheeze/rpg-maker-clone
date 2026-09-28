@@ -1,6 +1,5 @@
 # rpg2k_closed_world_lint.rb baseline: count<TAB>cop<TAB>file<TAB>snippet.
 # Regenerate with --regenerate-baseline; entries may only disappear.
-2	Dynamic/ConstReflection	mruby-lcf/mrblib/lcf_file.rb	LCF.const_get(schema[:type])
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	archive.instance_variable_set(:@entries, entries)
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	vx.instance_variable_get(:@_tm_above_obj)
 1	Dynamic/IvarReflection	mruby-rgss/mrblib/lib.rb	xp.instance_variable_get(:@_tm_above_obj)
