@@ -1033,6 +1033,9 @@
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. See
   [`docs/adr/0237-bc2cpp-inlined-constant-construction.md`](docs/adr/0237-bc2cpp-inlined-constant-construction.md).
+  A call to `Exception#message` on a recognized rescued exception reads the
+  same stored message and applies the same default conversion as mruby's
+  `exc_to_s`; calls with unproven receivers or Ruby overrides keep dispatch.
   Bare `new` in a closed-world class method uses the class object's singleton
   owner as receiver proof, with the same constructor lookup checks.
   Runtime-selected LCF root types and battle scene classes now use explicit

@@ -44,3 +44,9 @@ A computed `send`, `respond_to?`, `method` or `to_sym` in the wio build's
 mrblib therefore also has to be listed, with where its names come from, in
 `WioUnreachable::REVIEWED` (`scripts/wio_unreachable_methods.rb`), or the wio
 build and `scripts/wio_strip_scripts_check.rb` fail.
+
+The bc2cpp closed-world dispatch analysis also recognizes calls to
+`Exception#message` whose receiver traces to a rescued exception register. The
+generated operation follows mruby's `exc_to_s` message/default-string behavior;
+it declines the shortcut when a Ruby instance override or runtime definition can
+replace `message`.
