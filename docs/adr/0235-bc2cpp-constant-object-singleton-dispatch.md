@@ -23,7 +23,10 @@ For a straight-line receiver-register trace, carry a class/module-object
 identity through `MOVE` and qualified `GETMCNST` writes back to the base
 `GETCONST`. Resolve the lexical constant path and require its identity to be
 stable in the closed world. Reopening the object is allowed; any known constant
-reassignment is not.
+reassignment is not. When same-named class/module constants exist at multiple
+lexical levels, use the innermost defined binding, matching Ruby's constant
+lookup order; outer bindings are shadowed rather than making the site
+ambiguous.
 Then emit a direct C++ call only when the registry has one public singleton
 definition for the name, the call's arity is exact, the method compiles cleanly,
 and the singleton lookup is not affected by blocked names or mixins. Branches,

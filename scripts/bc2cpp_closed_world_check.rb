@@ -199,6 +199,19 @@ CONSTANT_OBJECT_WORLD = <<~'RUBY'
       def self.value; 12; end
     end
   end
+  module CwOuter
+    module StableObject
+      def self.value; 13; end
+    end
+    module CwInner
+      module StableObject
+        def self.value; 14; end
+      end
+      class Caller
+        def nested_shadow; StableObject.value; end
+      end
+    end
+  end
   module CwModuleFunction
     def value(x); x + 3; end
     module_function :value
@@ -302,6 +315,7 @@ check.call('a class constant rebound in the closed world keeps guarded dynamic d
 
 constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_stable')
 qualified_constant_object_call = body_of.call(constant_object_code, 'CwStableCaller_qualified')
+nested_shadow_call = body_of.call(constant_object_code, 'CwOuter__CwInner__Caller_nested_shadow')
 module_function_call = body_of.call(constant_object_code, 'CwStableCaller_module_function')
 module_function_state_call = body_of.call(constant_object_code, 'CwStableCaller_module_function_state')
 value_constant_type_call = body_of.call(constant_object_code, 'CwStableCaller_value_constant_type')
@@ -314,6 +328,10 @@ check.call("a qualified constant object's VM register retains its exact class/mo
            qualified_constant_object_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
              qualified_constant_object_call.include?('CwNamespace__StableObject_singleton_value_impl(') &&
              !qualified_constant_object_call.include?('bc2cpp_send('))
+check.call('the innermost lexical class/module constant wins over same-named outer constants',
+           nested_shadow_call.include?('CLOSED_WORLD_CONSTANT_OBJECT') &&
+             nested_shadow_call.include?('CwOuter__CwInner__StableObject_singleton_value_impl(') &&
+             !nested_shadow_call.include?('bc2cpp_send('))
 check.call('a single-assignment instance constant supplies a guarded class and falls back for a custom constructor result',
            value_constant_type_call.include?('TYPED :value_type_probe -> CwValueTypeA') &&
              value_constant_type_call.include?('CwValueTypeA_value_type_probe_impl('))
