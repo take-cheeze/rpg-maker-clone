@@ -1040,6 +1040,8 @@
   Zero-argument `to_i` calls use guarded native Integer, Float and String
   conversions, with ordinary dispatch for other receiver types. See
   [`docs/adr/0240-bc2cpp-to-i-type-dispatch.md`](docs/adr/0240-bc2cpp-to-i-type-dispatch.md).
+  Compiled `module_function` bodies also resolve their bare self-calls against
+  the same module's emitted singleton copies.
   The generator is `tools/bc2cpp/bc2cpp.rb`, which loads its part files in
   order; `ruby scripts/bc2cpp_split.rb --verify REF` proves that layout is a
   mechanical split of REF's single-file `bc2cpp.rb`. Statically named ivars
