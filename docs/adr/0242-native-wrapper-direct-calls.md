@@ -27,9 +27,10 @@ wrapper and compiled calls have the same behavior.
 
 Use the same owner gate for `Bitmap#width`, `Bitmap#height`, `#disposed?`,
 `#visible`, `Bitmap#clear`, `Bitmap#rect`, `Viewport#rect`, and native
-`#update` methods. The dispose entry points share the `obj_dispose` body except
-Tilemap, whose direct entry must retain its companion-canvas and priority-strip
-cleanup.
+`#update` methods. Rect coordinates and dimensions plus Color/Tone components
+are read through exact-class guarded helper bodies. The dispose entry points
+share the `obj_dispose` body except Tilemap, whose direct entry must retain its
+companion-canvas and priority-strip cleanup.
 
 ## Consequences
 
@@ -41,6 +42,9 @@ Tilemap, and Window, `#visible` on Sprite, Viewport, and Plane, and `dispose`
 on those six classes also use frame independent bodies. Their exact runtime
 class guards resolve calls when static receiver tracing has no class fact.
 Bitmap `#clear`/`#rect` and Viewport `#rect` share the same guarded path.
+Rect's `#x`, `#y`, `#width`, and `#height` and Color/Tone component getters
+also use guarded direct wrappers; `Bitmap#width` and `Rect#width` select their
+own helper under separate class checks.
 Per-frame `#update` calls on Sprite, Viewport, and Window use the original
 frame-independent native bodies; Tilemap remains on normal dispatch because
 its build-specific registration is not uniformly available. Other native

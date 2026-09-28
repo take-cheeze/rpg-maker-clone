@@ -1030,7 +1030,9 @@
   normal Ruby dispatch. Exact-class guards also cover Bitmap `width`/`height`,
   Bitmap `clear`/`rect`, Viewport `rect`, data objects' `disposed?`, display
   objects' `visible` queries, and Sprite/Viewport/Window per-frame `update`
-  calls without requiring a static receiver type. See
+  calls without requiring a static receiver type. Rect coordinate/dimension
+  reads and Color/Tone component getters use their native bodies behind exact
+  class checks too. See
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).

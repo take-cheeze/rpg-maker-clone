@@ -7361,6 +7361,54 @@ mrb_value bitmap_height_direct(mrb_state* M, mrb_value self) {
   return bmp_height(M, self);
 }
 
+mrb_value rect_x_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).x);
+}
+
+mrb_value rect_y_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).y);
+}
+
+mrb_value rect_width_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).width);
+}
+
+mrb_value rect_height_direct(mrb_state* M, mrb_value self) {
+  return mrb_fixnum_value(DataType<Rect>::get(M, self).height);
+}
+
+mrb_value color_red_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::red>(M, self);
+}
+
+mrb_value color_green_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::green>(M, self);
+}
+
+mrb_value color_blue_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::blue>(M, self);
+}
+
+mrb_value color_alpha_direct(mrb_state* M, mrb_value self) {
+  return component_get<Color, &Color::alpha>(M, self);
+}
+
+mrb_value tone_red_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::red>(M, self);
+}
+
+mrb_value tone_green_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::green>(M, self);
+}
+
+mrb_value tone_blue_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::blue>(M, self);
+}
+
+mrb_value tone_gray_direct(mrb_state* M, mrb_value self) {
+  return component_get<Tone, &Tone::gray>(M, self);
+}
+
 mrb_value disposed_direct(mrb_state* M, mrb_value self) {
   return obj_disposed(M, self);
 }

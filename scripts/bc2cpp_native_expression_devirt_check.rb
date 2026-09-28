@@ -316,7 +316,7 @@ check.call('respond_to? answers native hits directly and keeps the missing-hook 
              CodeGen::NATIVE_PRIMITIVE_SEND_ARITY['respond_to?'] == 1 &&
              respond_to_generator.native_only_mono?('respond_to?'))
 
-wrapper_registry = %w[clear rect height disposed? visible update].to_h do |name|
+wrapper_registry = %w[clear rect height width x y red green blue alpha gray disposed? visible update].to_h do |name|
   [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
 end
 wrapper_generator = CodeGen.new({}, wrapper_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
@@ -326,6 +326,10 @@ visible_code = wrapper_generator.compile_send('R1 = SEND R2 :visible n=0', self_
 clear_code = wrapper_generator.compile_send('R1 = SEND R2 :clear n=0', self_implicit: false)
 rect_code = wrapper_generator.compile_send('R1 = SEND R2 :rect n=0', self_implicit: false)
 update_code = wrapper_generator.compile_send('R1 = SEND R2 :update n=0', self_implicit: false)
+rect_x_code = wrapper_generator.compile_send('R1 = SEND R2 :x n=0', self_implicit: false)
+rect_width_code = wrapper_generator.compile_send('R1 = SEND R2 :width n=0', self_implicit: false)
+color_red_code = wrapper_generator.compile_send('R1 = SEND R2 :red n=0', self_implicit: false)
+tone_red_code = wrapper_generator.compile_send('R1 = SEND R2 :red n=0', self_implicit: false)
 check.call('RGSS Bitmap#height uses its frame independent wrapper behind an exact class guard',
            height_code.include?('rgss::native_bitmap_class()') &&
              height_code.include?('rgss::bitmap_height_direct(M, r1)') &&
@@ -360,6 +364,19 @@ check.call('per-frame update calls use exact Sprite, Viewport, or Window wrapper
              update_code.include?('rgss::window_update_direct(M, r1)') &&
              !update_code.include?('native_tilemap_class()') &&
              update_code.include?('mrb_funcall(M, r1, "update", 0)'))
+check.call('Rect scalar accessors and Bitmap#width use exact class wrapper bodies',
+           rect_x_code.include?('native_rect_class()') &&
+             rect_x_code.include?('rgss::rect_x_direct(M, r1)') &&
+             rect_x_code.include?('mrb_funcall(M, r1, "x", 0)') &&
+             rect_width_code.include?('native_bitmap_class()') &&
+             rect_width_code.include?('rgss::bitmap_width_direct(M, r1)') &&
+             rect_width_code.include?('native_rect_class()') &&
+             rect_width_code.include?('rgss::rect_width_direct(M, r1)'))
+check.call('Color and Tone component reads select their own exact-class wrappers',
+           color_red_code.include?('native_color_class()') &&
+             color_red_code.include?('rgss::color_red_direct(M, r1)') &&
+             tone_red_code.include?('native_tone_class()') &&
+             tone_red_code.include?('rgss::tone_red_direct(M, r1)'))
 # Two respond_to? sends that reuse one register with a goto across the first
 # must still compile: the temporary symbol is block-scoped, so it neither
 # redeclares nor sits between the jump and its label.
