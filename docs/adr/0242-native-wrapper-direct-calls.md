@@ -28,7 +28,7 @@ body so wrapper and compiled calls have the same behavior.
 `Bitmap#stretch_blt`, `Bitmap#copy_blt`, `Bitmap#text_size`, both
 `Bitmap#draw_text` argument forms, and `Window#openness=`/`#tone=` can be
 called directly at RGSS sites. The proven Sprite setters `#opacity=` and
-`#tone=` also use frame independent bodies. For `text_size`, an exact runtime
-class guard is enough even when static receiver tracing has no class fact.
-Other native wrappers remain on normal dispatch until they have an equivalent
-frame independent body and a class guard.
+`#tone=`, plus `Viewport#tone=`, also use frame independent bodies. For
+`text_size`, an exact runtime class guard is enough even when static receiver
+tracing has no class fact. Other native wrappers remain on normal dispatch
+until they have an equivalent frame independent body and a class guard.

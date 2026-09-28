@@ -684,6 +684,7 @@ RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
 RClass* g_native_table_class = nullptr;
 RClass* g_native_window_class = nullptr;
+RClass* g_native_viewport_class = nullptr;
 }  // namespace
 
 // The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
@@ -7010,9 +7011,15 @@ mrb_value vp_tone(mrb_state* M, mrb_value self) {
   return t;
 }
 
+mrb_value vp_set_tone_body(mrb_state* M, mrb_value self, mrb_value t);
+
 mrb_value vp_set_tone(mrb_state* M, mrb_value self) {
   mrb_value t;
   mrb_get_args(M, "o", &t);
+  return vp_set_tone_body(M, self, t);
+}
+
+mrb_value vp_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
   vp_sync_tone(M, self);
   return t;
@@ -7322,6 +7329,9 @@ RClass* native_table_class(void) {
 RClass* native_window_class(void) {
   return g_native_window_class;
 }
+RClass* native_viewport_class(void) {
+  return g_native_viewport_class;
+}
 
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
@@ -7479,6 +7489,12 @@ mrb_value sprite_opacity_set_direct(mrb_state* M,
 
 mrb_value sprite_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone) {
   return spr_set_tone_body(M, self, tone);
+}
+
+mrb_value viewport_tone_set_direct(mrb_state* M,
+                                   mrb_value self,
+                                   mrb_value tone) {
+  return vp_set_tone_body(M, self, tone);
 }
 
 mrb_value table_new_direct(mrb_state* M,
@@ -7680,6 +7696,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* vp = mrb_define_class_under(M, m, "Viewport", M->object_class);
   MRB_SET_INSTANCE_TT(vp, MRB_TT_DATA);
+  g_native_viewport_class = vp;
   mrb_define_method(M, vp, "initialize", vp_init, MRB_ARGS_OPT(4));
   mrb_define_method(M, vp, "rect", vp_rect, MRB_ARGS_NONE());
   mrb_define_method(M, vp, "rect=", vp_set_rect, MRB_ARGS_REQ(1));
@@ -8047,4 +8064,5 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_bitmap_class = nullptr;
   g_native_table_class = nullptr;
   g_native_window_class = nullptr;
+  g_native_viewport_class = nullptr;
 }
