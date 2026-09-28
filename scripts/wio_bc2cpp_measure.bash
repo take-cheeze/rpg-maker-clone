@@ -134,6 +134,7 @@ apply 3rd/mruby mruby-nomemoryerror-reentrant-alloc.patch
 apply 3rd/mruby mruby-gc-type-live-counts.patch
 apply 3rd/mruby mruby-rdata-ivar-slots.patch
 apply 3rd/mruby mruby-io-maxpathlen-fallback.patch
+apply 3rd/mruby mruby-io-direct-puts.patch
 apply 3rd/mruby-stringio mruby-stringio-native-getbyte.patch
 apply 3rd/mruby-marshal mruby-marshal-psp-wio-onigmo-optional.patch
 apply 3rd/mruby mruby-force-no-cxx-exception-escape-hatch.patch

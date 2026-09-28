@@ -1036,6 +1036,11 @@
   A call to `Exception#message` on a recognized rescued exception reads the
   same stored message and applies the same default conversion as mruby's
   `exc_to_s`; calls with unproven receivers or Ruby overrides keep dispatch.
+  Explicit `IO#puts` calls use mruby-io's argv-based model only when runtime
+  lookup still resolves to its original C body; other receivers and overrides
+  retain normal dispatch. Division lowering has dedicated checks for integer
+  floor division, mixed numeric operands, literal-Float receivers and fallback
+  behavior.
   Bare `new` in a closed-world class method uses the class object's singleton
   owner as receiver proof, with the same constructor lookup checks.
   Runtime-selected LCF root types and battle scene classes now use explicit
