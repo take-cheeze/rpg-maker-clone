@@ -22,6 +22,7 @@ RClass* native_tone_class(void);
 RClass* native_sprite_class(void);
 RClass* native_bitmap_class(void);
 RClass* native_table_class(void);
+RClass* native_window_class(void);
 
 mrb_value rect_new_direct(mrb_state* M,
                           RClass* klass,
@@ -79,6 +80,14 @@ mrb_value bitmap_copy_blt_direct(mrb_state* M,
                                  mrb_value source,
                                  mrb_value source_rect);
 mrb_value bitmap_text_size_direct(mrb_state* M, mrb_value self, mrb_value text);
+mrb_value window_openness_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value openness);
+mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone);
+mrb_value sprite_opacity_set_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value opacity);
+mrb_value sprite_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone);
 mrb_value table_new_direct(mrb_state* M,
                            RClass* klass,
                            mrb_int argc,

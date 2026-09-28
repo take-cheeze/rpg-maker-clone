@@ -683,6 +683,7 @@ RClass* g_native_tone_class = nullptr;
 RClass* g_native_sprite_class = nullptr;
 RClass* g_native_bitmap_class = nullptr;
 RClass* g_native_table_class = nullptr;
+RClass* g_native_window_class = nullptr;
 }  // namespace
 
 // The bc2cpp direct-construct entry points (rgss::rect/color/tone/sprite/
@@ -4264,9 +4265,15 @@ mrb_value spr_set_bmp(mrb_state* M, mrb_value self) {
 // is clamped and mirrored into @opacity so the Ruby reader (defaulting to 255)
 // returns what was set. A fresh sprite needs no explicit call: LVGL's default
 // object opacity is fully opaque, matching RGSS's 255 default.
+mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa);
+
 mrb_value spr_set_opacity(mrb_state* M, mrb_value self) {
   mrb_int opa;
   mrb_get_args(M, "i", &opa);
+  return spr_set_opacity_body(M, self, opa);
+}
+
+mrb_value spr_set_opacity_body(mrb_state* M, mrb_value self, mrb_int opa) {
   if (opa < 0)
     opa = 0;
   else if (opa > 255)
@@ -4354,9 +4361,15 @@ mrb_value spr_set_mirror(mrb_state* M, mrb_value self) {
 
 // RGSS Sprite#tone= (a Tone tint) and #color= (a Color overlay). Both are baked
 // into the sprite's pixels by spr_bind_display, so assigning one re-composites.
+mrb_value spr_set_tone_body(mrb_state* M, mrb_value self, mrb_value v);
+
 mrb_value spr_set_tone(mrb_state* M, mrb_value self) {
   mrb_value v;
   mrb_get_args(M, "o", &v);
+  return spr_set_tone_body(M, self, v);
+}
+
+mrb_value spr_set_tone_body(mrb_state* M, mrb_value self, mrb_value v) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), v);
   lv_obj_t* obj = obj_require(M, self);
   spr_bind_display(M, self, obj);
@@ -6575,9 +6588,15 @@ double vp_tone_key(const Tone& t);
 // plain state because assigning it has to redraw -- the frame is drawn at a
 // fraction of its height (see window_refresh), which *is* the open/close
 // animation. `Window_Base#open` steps this by 48 a frame.
+mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v);
+
 mrb_value window_set_openness(mrb_state* M, mrb_value self) {
   mrb_int v;
   mrb_get_args(M, "i", &v);
+  return window_set_openness_body(M, self, v);
+}
+
+mrb_value window_set_openness_body(mrb_state* M, mrb_value self, mrb_int v) {
   v = std::min<mrb_int>(255, std::max<mrb_int>(0, v));
   mrb_iv_set(M, self, mrb_intern_lit(M, "@openness"), mrb_fixnum_value(v));
   window_refresh(M, self);
@@ -6598,9 +6617,15 @@ mrb_value window_tone(mrb_state* M, mrb_value self) {
   return t;
 }
 
+mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t);
+
 mrb_value window_set_tone(mrb_state* M, mrb_value self) {
   mrb_value t;
   mrb_get_args(M, "o", &t);
+  return window_set_tone_body(M, self, t);
+}
+
+mrb_value window_set_tone_body(mrb_state* M, mrb_value self, mrb_value t) {
   mrb_iv_set(M, self, mrb_intern_lit(M, "@tone"), t);
   window_refresh(M, self);
   return t;
@@ -7294,6 +7319,9 @@ RClass* native_bitmap_class(void) {
 RClass* native_table_class(void) {
   return g_native_table_class;
 }
+RClass* native_window_class(void) {
+  return g_native_window_class;
+}
 
 mrb_value sprite_new_direct(mrb_state* M, RClass* klass, mrb_value viewport) {
   mrb_value self = mrb_obj_value(mrb_obj_alloc(M, MRB_TT_DATA, klass));
@@ -7431,6 +7459,26 @@ mrb_value bitmap_text_size_direct(mrb_state* M,
                                   mrb_value text) {
   text = mrb_ensure_string_type(M, text);
   return bmp_text_size_body(M, self, RSTRING_PTR(text), RSTRING_LEN(text));
+}
+
+mrb_value window_openness_set_direct(mrb_state* M,
+                                     mrb_value self,
+                                     mrb_value openness) {
+  return window_set_openness_body(M, self, mrb_as_int(M, openness));
+}
+
+mrb_value window_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone) {
+  return window_set_tone_body(M, self, tone);
+}
+
+mrb_value sprite_opacity_set_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value opacity) {
+  return spr_set_opacity_body(M, self, mrb_as_int(M, opacity));
+}
+
+mrb_value sprite_tone_set_direct(mrb_state* M, mrb_value self, mrb_value tone) {
+  return spr_set_tone_body(M, self, tone);
 }
 
 mrb_value table_new_direct(mrb_state* M,
@@ -7738,6 +7786,7 @@ extern "C" void mrb_mruby_rgss_gem_init(mrb_state* M) {
 
   RClass* window = mrb_define_class_under(M, m, "Window", M->object_class);
   MRB_SET_INSTANCE_TT(window, MRB_TT_DATA);
+  g_native_window_class = window;
   mrb_define_method(M, window, "initialize", window_init, MRB_ARGS_OPT(1));
   mrb_define_method(M, window, "contents=", window_set_contents,
                     MRB_ARGS_REQ(1));
@@ -7997,4 +8046,5 @@ extern "C" void mrb_mruby_rgss_gem_final(mrb_state* mrb) {
   g_native_sprite_class = nullptr;
   g_native_bitmap_class = nullptr;
   g_native_table_class = nullptr;
+  g_native_window_class = nullptr;
 }
