@@ -22,9 +22,8 @@ the registered body. bc2cpp emits this call only when
 do not reference the gem symbol. The declaration is emitted alongside the
 generated code so fixtures do not need mruby-io's private include path.
 
-The project tracks the mruby fork containing this helper through the `3rd/mruby`
-submodule. The call keeps a dynamic fallback when method lookup finds an
-override.
+The helper is applied to the pinned mruby source by the build's existing patch
+step. The call keeps a dynamic fallback when method lookup finds an override.
 
 ## Consequences
 

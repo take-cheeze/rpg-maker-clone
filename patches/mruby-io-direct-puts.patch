@@ -1,0 +1,87 @@
+diff --git a/mrbgems/mruby-io/include/mruby/io.h b/mrbgems/mruby-io/include/mruby/io.h
+index e76241ba6..b53430b9e 100644
+--- a/mrbgems/mruby-io/include/mruby/io.h
++++ b/mrbgems/mruby-io/include/mruby/io.h
+@@ -70,6 +70,11 @@ struct mrb_io {
+ 
+ int mrb_io_fileno(mrb_state *mrb, mrb_value io);
+ 
++/* Call the core IO#puts body without a VM argument frame when method lookup
++ * still resolves to that body. Returns FALSE when Ruby overrides it. */
++MRB_API mrb_bool mrb_io_puts_direct(mrb_state *mrb, mrb_value io, mrb_int argc,
++                                    const mrb_value *argv, mrb_value *result);
++
+ #if defined(__cplusplus)
+ } /* extern "C" { */
+ #endif
+diff --git a/mrbgems/mruby-io/src/io.c b/mrbgems/mruby-io/src/io.c
+index 58b3094a2..01ae7f2e7 100644
+--- a/mrbgems/mruby-io/src/io.c
++++ b/mrbgems/mruby-io/src/io.c
+@@ -9,6 +9,7 @@
+ #include <mruby/hash.h>
+ #include <mruby/string.h>
+ #include <mruby/variable.h>
++#include <mruby/proc.h>
+ #include <mruby/io.h>
+ #include <mruby/error.h>
+ #include <mruby/internal.h>
+@@ -1017,7 +1018,7 @@ io_puts_ary(mrb_state *mrb, int fd, mrb_value ary)
+ }
+ 
+ static mrb_value
+-io_puts(mrb_state *mrb, mrb_value io)
++io_puts_argv(mrb_state *mrb, mrb_value io, mrb_int argc, const mrb_value *argv)
+ {
+   struct mrb_io *fptr = io_get_write_fptr(mrb, io);
+   int fd = io_get_write_fd(fptr);
+@@ -1025,10 +1026,6 @@ io_puts(mrb_state *mrb, mrb_value io)
+   /* Prepare IO for writing (handle read buffer adjustment) */
+   io_prepare_write(mrb, fptr);
+ 
+-  mrb_value *argv;
+-  mrb_int argc;
+-  mrb_get_args(mrb, "*", &argv, &argc);
+-
+   if (argc == 0) {
+     /* No arguments - just write a newline */
+     mrb_value newline = mrb_str_new_lit(mrb, "\n");
+@@ -1050,6 +1047,29 @@ io_puts(mrb_state *mrb, mrb_value io)
+   return mrb_nil_value();
+ }
+ 
++static mrb_value
++io_puts_method(mrb_state *mrb, mrb_value io)
++{
++  mrb_value *argv;
++  mrb_int argc;
++  mrb_get_args(mrb, "*", &argv, &argc);
++  return io_puts_argv(mrb, io, argc, argv);
++}
++
++mrb_bool
++mrb_io_puts_direct(mrb_state *mrb, mrb_value io, mrb_int argc,
++                  const mrb_value *argv, mrb_value *result)
++{
++  struct RClass *c = mrb_obj_class(mrb, io);
++  mrb_method_t method = mrb_method_search_vm(mrb, &c, MRB_SYM(puts));
++  if (MRB_METHOD_UNDEF_P(method) || !MRB_METHOD_CFUNC_P(method) ||
++      MRB_METHOD_CFUNC(method) != io_puts_method) {
++    return FALSE;
++  }
++  *result = io_puts_argv(mrb, io, argc, argv);
++  return TRUE;
++}
++
+ /*
+  * call-seq:
+  *   ios.print()             -> nil
+@@ -2225,7 +2245,7 @@ static const mrb_mt_entry io_rom_entries[] = {
+   MRB_MT_ENTRY(io_pid,               MRB_SYM(pid),           MRB_ARGS_NONE()),
+   MRB_MT_ENTRY(io_fileno,            MRB_SYM(fileno),        MRB_ARGS_NONE()),
+   MRB_MT_ENTRY(io_write,             MRB_SYM(write), MRB_ARGS_ANY()),  /* 15.2.20.5.20 */
+-  MRB_MT_ENTRY(io_puts,              MRB_SYM(puts), MRB_ARGS_ANY()),
++  MRB_MT_ENTRY(io_puts_method,       MRB_SYM(puts), MRB_ARGS_ANY()),
+   MRB_MT_ENTRY(io_print,             MRB_SYM(print), MRB_ARGS_ANY()),
+   MRB_MT_ENTRY(io_putc,              MRB_SYM(putc), MRB_ARGS_REQ(1)),
+   MRB_MT_ENTRY(io_lshift,            MRB_OPSYM(lshift), MRB_ARGS_REQ(1)),

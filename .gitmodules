@@ -4,7 +4,7 @@
 	branch = "rpg-maker"
 [submodule "third_party/mruby"]
 	path = 3rd/mruby
-	url = https://github.com/take-cheeze/mruby.git
+	url = https://github.com/mruby/mruby.git
 [submodule "third_party/lvgl"]
 	path = 3rd/lvgl
 	url = https://github.com/lvgl/lvgl.git

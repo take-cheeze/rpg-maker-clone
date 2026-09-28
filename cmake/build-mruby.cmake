@@ -261,6 +261,11 @@ function(rpg2k_add_mruby)
   set(mruby_io_maxpathlen_patch
       "${ARG_REPO_ROOT}/patches/mruby-io-maxpathlen-fallback.patch")
 
+  # bc2cpp supplies explicit argv, so this patch adds a guarded helper that
+  # bypasses IO#puts' VM-frame argument extraction.
+  set(mruby_io_direct_puts_patch
+      "${ARG_REPO_ROOT}/patches/mruby-io-direct-puts.patch")
+
   # 3rd/mruby-stringio's StringIO has no native `getbyte` -- mruby's own
   # `IO`/`File` does (mruby-io's io_getbyte, a bare Integer with no allocation),
   # but every LCF chunk (mruby-lcf/mrblib/lcf.rb) is decoded through a StringIO,
@@ -352,6 +357,7 @@ function(rpg2k_add_mruby)
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_gc_type_counts_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_rdata_ivar_slots_patch}")
   rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_maxpathlen_patch}")
+  rpg2k_mruby_patch("${mruby_prefix}" "${mruby_io_direct_puts_patch}")
   rpg2k_mruby_patch("${mruby_stringio_prefix}"
                     "${mruby_stringio_getbyte_patch}")
   rpg2k_mruby_patch("${mruby_marshal_prefix}" "${mruby_marshal_onigmo_patch}")

@@ -20,11 +20,10 @@ that its method has not been replaced would change Ruby behavior.
 Factor the implementation into a private argv-based body, keep the registered
 frame-based C wrapper, and expose `mrb_io_puts_direct`. The helper looks up
 `puts` on the receiver at runtime and invokes the argv body only when the
-resolved C function pointer is exactly mruby-io's registered `io_puts`; a
+resolved C function pointer is exactly mruby-io's registered `io_puts_method`; a
 different target returns false so generated code uses ordinary `mrb_funcall`.
-The helper is committed to the project-controlled mruby fork and pinned by the
-`3rd/mruby` submodule. Platform build scripts must not reapply a local patch
-for the same change.
+The helper is carried as `patches/mruby-io-direct-puts.patch` and applied
+idempotently by the host and cross-platform mruby build scripts.
 
 ## Consequences
 
