@@ -1018,7 +1018,9 @@
   present in mruby headers. The Hash `__delete` path preserves the core
   wrapper's call-info side effect while calling mruby's public deletion
   helper. A one-argument Array `push` send follows the exact fast branch in
-  mruby's wrapper; other arities keep the wrapper's existing path. See
+  mruby's wrapper; a one-argument `concat` send uses its public Array
+  conversion and concatenation helpers. Other arities keep ordinary dispatch.
+  See
   [`docs/adr/0177-bc2cpp-native-expression-devirtualization.md`](docs/adr/0177-bc2cpp-native-expression-devirtualization.md),
   [`docs/adr/0178-bc2cpp-generated-argument-expressions.md`](docs/adr/0178-bc2cpp-generated-argument-expressions.md),
   [`docs/adr/0179-bc2cpp-generated-hash-delete.md`](docs/adr/0179-bc2cpp-generated-hash-delete.md),

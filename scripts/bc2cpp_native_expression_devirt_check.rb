@@ -110,6 +110,21 @@ check.call('Array#push derives only the one-argument C fast branch from mruby co
                'mrb_int argc = mrb_get_argc(mrb); if (argc == 2) { mrb_ary_push(mrb, self, mrb_get_argv(mrb)[0]); return self; }',
                'mrb', 'self'
              ).nil?)
+check.call('Array#concat derives only the one-array C wrapper from mruby core',
+           exact_class_expressions['concat']&.map do |entry|
+             [entry[:owner][:class_name], entry[:arity], entry[:expression]]
+           end == [['Array', 1, '(mrb_ary_concat(M, recv, mrb_ensure_array_type(M, BC2CPP_ARG0)), recv)']] &&
+             NativeExpressionDevirt.exact_array_concat_one_argument_expression(
+               'mrb_value *args; mrb_int len; mrb_get_args(mrb, "*!", &args, &len); ' \
+               'for (int i=0; i<len; i++) { mrb_ensure_array_type(mrb, args[i]); } ' \
+               'for (int i=0; i<len; i++) { mrb_ary_concat(mrb, self, args[i]); } return self;',
+               'mrb', 'self'
+             ) == '(mrb_ary_concat(M, recv, mrb_ensure_array_type(M, BC2CPP_ARG0)), recv)' &&
+             NativeExpressionDevirt.exact_array_concat_one_argument_expression(
+               'mrb_value *args; mrb_int len; mrb_get_args(mrb, "*!", &args, &len); ' \
+               'for (int i=0; i<len; i++) { mrb_ary_concat(mrb, self, args[i]); } return self;',
+               'mrb', 'self'
+             ).nil?)
 first_body = 'struct RArray *a = mrb_ary_ptr(self); mrb_int size; ' \
              'if (mrb_get_argc(mrb) == 0) { if (ARY_LEN(a) > 0) return ARY_PTR(a)[0]; return mrb_nil_value(); } ' \
              'mrb_get_args(mrb, "|i", &size); return mrb_nil_value();'
@@ -286,6 +301,17 @@ check.call('Array#push emits the exact one-argument helper call and keeps multi-
            array_push_code.include?('M->array_class') && array_push_code.include?('mrb_ary_push(M, r3, (r4))') &&
              array_push_code.include?('), r3);') && array_push_wrong_arity.include?('mrb_funcall(M, r3, "push", 2, r4, r5)') &&
              !array_push_wrong_arity.include?('mrb_ary_push(M, r3,'))
+array_concat_generator = CodeGen.new({}, { 'concat' => [MethodDef.new(name: 'concat', owner: '<native>', irep: nil,
+                                                                        visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
+                                      native_registered_expressions: exact_class_expressions)
+array_concat_code = array_concat_generator.compile_native_primitive_send('concat', 1, 'r3', ['r4'])
+array_concat_wrong_arity = array_concat_generator.compile_native_primitive_send('concat', 1, 'r3', %w[r4 r5])
+check.call('Array#concat emits the exact one-argument conversion and keeps other arities on dispatch',
+           array_concat_code.include?('M->array_class') &&
+             array_concat_code.include?('mrb_ary_concat(M, r3, mrb_ensure_array_type(M, r4))') &&
+             array_concat_code.include?('mrb_funcall(M, r3, "concat", 1, r4)') &&
+             array_concat_wrong_arity.include?('mrb_funcall(M, r3, "concat", 2, r4, r5)') &&
+             !array_concat_wrong_arity.include?('mrb_ary_concat(M, r3,'))
 %w[first last].each do |name|
   element_generator = CodeGen.new({}, { name => [MethodDef.new(name: name, owner: '<native>', irep: nil,
                                                                visibility: :public)] }, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
