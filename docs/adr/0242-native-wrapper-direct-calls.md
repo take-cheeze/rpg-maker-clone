@@ -25,7 +25,9 @@ body so wrapper and compiled calls have the same behavior.
 
 ## Consequences
 
-`Bitmap#stretch_blt`, `Bitmap#copy_blt`, and both `Bitmap#draw_text` argument
-forms can be called directly at proven RGSS Bitmap sites. Other native
-wrappers remain on normal dispatch until they have an equivalent frame
-independent body and a call-site proof.
+`Bitmap#stretch_blt`, `Bitmap#copy_blt`, `Bitmap#text_size`, and both
+`Bitmap#draw_text` argument forms can be called directly at RGSS Bitmap sites.
+For `text_size`, the exact runtime class guard is enough even when static
+receiver tracing has no class fact. Other native wrappers remain on normal
+dispatch until they have an equivalent frame independent body and a class
+guard.

@@ -3531,10 +3531,10 @@ mrb_value bmp_blend_text(mrb_state* M, mrb_value self) {
   return self;
 }
 
-mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
-  mrb_int len;
-  const char* s;
-  mrb_get_args(M, "s", &s, &len);
+mrb_value bmp_text_size_body(mrb_state* M,
+                             mrb_value self,
+                             const char* s,
+                             mrb_int len) {
   const std::string_view sv(s, len);
 
   int w = 0;
@@ -3560,6 +3560,13 @@ mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
 
   return mrb_obj_new(
       M, mrb_class_get_under(M, mrb_module_get(M, "RGSS"), "Rect"), 4, args);
+}
+
+mrb_value bmp_text_size(mrb_state* M, mrb_value self) {
+  mrb_int len;
+  const char* s;
+  mrb_get_args(M, "s", &s, &len);
+  return bmp_text_size_body(M, self, s, len);
 }
 
 // RGSS #disposed?: whether #dispose has already run. The data pointer is
@@ -7417,6 +7424,13 @@ mrb_value bitmap_copy_blt_direct(mrb_state* M,
   mrb_int dy = mrb_as_int(M, y);
   void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
   return bmp_copy_blt_body(M, self, dx, dy, source_data, source_rect);
+}
+
+mrb_value bitmap_text_size_direct(mrb_state* M,
+                                  mrb_value self,
+                                  mrb_value text) {
+  text = mrb_ensure_string_type(M, text);
+  return bmp_text_size_body(M, self, RSTRING_PTR(text), RSTRING_LEN(text));
 }
 
 mrb_value table_new_direct(mrb_state* M,
