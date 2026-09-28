@@ -50,6 +50,11 @@ unknown. They must be refused before applying name/hierarchy operations; a
 symbolic unknown used to escape into `String#include?` and raised during full
 code generation.
 
+For value-constant receiver hints, a constructed constant may copy the result
+of `Klass.new` through plain `MOVE` instructions before `SETCONST`. The proof
+follows only those copies and rejects any intervening write or other factory
+method; `trace_new_target` separately proves the class expression.
+
 ## Consequences
 
 The full closed-world Wio codegen produced **426 direct singleton calls** from
