@@ -1,4 +1,4 @@
-bc2cpp now resolves RGSS `Bitmap#stretch_blt`, `Bitmap#copy_blt`,
-`Bitmap#text_size`, `Bitmap#draw_text`, `Window#openness=`/`#tone=`, and
-proven Sprite `#opacity=`/`#tone=` and `Viewport#tone=` calls through
-frame-independent native bodies guarded by exact runtime class identity.
+bc2cpp now resolves RGSS native wrapper calls through frame independent bodies
+and exact runtime class guards, including Bitmap drawing methods and Sprite,
+Window, and Viewport setters. Calls whose receiver class cannot be proven at
+compile time still retain ordinary dispatch for other runtime classes.

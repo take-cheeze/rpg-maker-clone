@@ -12,23 +12,24 @@ Native mrbgem methods commonly enter through C wrappers that parse the active
 mruby call frame with `mrb_get_args`. Calling such a wrapper directly from
 compiled bytecode would inspect the caller's frame. A proven exact receiver
 class identifies the implementation, but does not make that wrapper's frame
-parsing safe.
+parsing safe. Static receiver traces can also lose the class across returned
+values and indexed collections.
 
 ## Decision
 
 For RGSS native methods, provide frame independent entry points that accept the
-already evaluated receiver and arguments. bc2cpp may call these only when its
-bytecode trace proves the receiver class; generated code still checks the
-native class pointer and falls back to ordinary dispatch if it differs. Keep
-argument conversion, optional defaults, and validation in the shared native
-body so wrapper and compiled calls have the same behavior.
+already evaluated receiver and arguments. A direct call is allowed only for a
+listed owner with a native registration, no same-class Ruby definition, and
+no prepended module. Generated code checks the captured native class pointer
+and falls back to ordinary dispatch for other receivers. Keep argument
+conversion, optional defaults, and validation in the shared native body so
+wrapper and compiled calls have the same behavior.
 
 ## Consequences
 
-`Bitmap#stretch_blt`, `Bitmap#copy_blt`, `Bitmap#text_size`, both
-`Bitmap#draw_text` argument forms, and `Window#openness=`/`#tone=` can be
-called directly at RGSS sites. The proven Sprite setters `#opacity=` and
-`#tone=`, plus `Viewport#tone=`, also use frame independent bodies. For
-`text_size`, an exact runtime class guard is enough even when static receiver
+`Sprite#bitmap=`, Sprite `#opacity=`/`#tone=`, Window `#openness=`/`#tone=`,
+Viewport `#tone=`, and Bitmap `#fill_rect`, `#blt`, `#stretch_blt`,
+`#draw_text`, `#copy_blt`, and `#text_size` use frame independent bodies.
+Their exact runtime class guards also resolve calls when static receiver
 tracing has no class fact. Other native wrappers remain on normal dispatch
-until they have an equivalent frame independent body and a class guard.
+until they have an equivalent frame independent body and a guarded owner.
