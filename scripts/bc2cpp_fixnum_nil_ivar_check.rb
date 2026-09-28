@@ -8,8 +8,8 @@
 #    absorbing, and every other disagreement still poisons (the order-
 #    independence ADR 0139's sticky-UNKNOWN rule exists to guarantee).
 # 2. Analysis: a fixture written only as Integer/nil embeds as :fixnum_nil; a
-#    Symbol/object/bool write on the same field still refuses to embed; an
-#    ivar that is only ever nil does not embed.
+#    Symbol/object/bool writes and nil-only writes stay in generic mrb_value
+#    storage instead of receiving the nullable Fixnum representation.
 # 3. Generated code: the tagged struct and its helpers are emitted, the
 #    reader boxes, writes route through the setter, and the field never
 #    reaches iv_tbl.
@@ -178,11 +178,11 @@ end
 Dir.mktmpdir do |dir|
   [[NULLABLE_FIXTURE, 'declared_fix', DECLARED_POS, 'fixnum_nil'],
    [NULLABLE_FIXTURE, 'inferred_fix', nil, 'fixnum_nil'],
-   [SYMBOL_FIXTURE, 'symbol_fix', DECLARED_POS, nil],
-   [NIL_ONLY_FIXTURE, 'nil_only_fix', DECLARED_POS, nil],
+   [SYMBOL_FIXTURE, 'symbol_fix', DECLARED_POS, 'value'],
+   [NIL_ONLY_FIXTURE, 'nil_only_fix', DECLARED_POS, 'value'],
    [OPAQUE_FIXTURE, 'opaque_declared', DECLARED_POS, 'fixnum_nil'],
-   [OPAQUE_FIXTURE, 'opaque_undeclared', nil, nil],
-   [ARRAY_FIXTURE, 'array_field', DECLARED_POS, nil]].each do |body, symbol, decl, expected|
+   [OPAQUE_FIXTURE, 'opaque_undeclared', nil, 'value'],
+   [ARRAY_FIXTURE, 'array_field', DECLARED_POS, 'value']].each do |body, symbol, decl, expected|
     src = File.join(dir, "#{symbol}.rb")
     File.write(src, body)
     env = { 'OUT_SYMBOL' => symbol, 'OUT_DIR' => dir, 'BC2CPP_SELF_REGISTERING' => '1' }
@@ -289,9 +289,9 @@ Dir.mktmpdir do |dir|
   check.call('the tagged payload struct is emitted', code.include?('struct Bc2cppFixnumOrNil'))
   check.call('a nil check and a setter are emitted',
              code.include?('bc2cpp_fixnum_or_nil_p') && code.include?('bc2cpp_fixnum_or_nil_set'))
-  check.call('reads box the tagged field', code.match?(/bc2cpp_fixnum_or_nil_box\(\(\(Cursor_ivars\*\)DATA_PTR\(self\)\)->pos\)/))
+  check.call('reads box the tagged field', code.match?(/bc2cpp_fixnum_or_nil_box\(\(\(Cursor_ivars\*\)DATA_PTR\(self\)\)->ivar_pos\)/))
   check.call('compiled writes route through the setter',
-             code.match?(/bc2cpp_fixnum_or_nil_set\(&\(\(Cursor_ivars\*\)DATA_PTR\(self\)\)->pos, r\d+\);/))
+             code.match?(/bc2cpp_fixnum_or_nil_set\(&\(\(Cursor_ivars\*\)DATA_PTR\(self\)\)->ivar_pos, r\d+\);/))
   check.call('the field never reaches iv_tbl',
              !code.match?(/mrb_iv_(?:get|set)\(M, self, [^)]*"@pos"/))
   check.call('the heap-Bignum-safe check is used, not mrb_integer_p',
