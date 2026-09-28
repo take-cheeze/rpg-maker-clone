@@ -20,7 +20,9 @@ Keep each registered wrapper for ordinary Ruby dispatch and factor its body
 into a frame-independent C++ entry point. bc2cpp may call that entry point only
 when its receiver trace names the expected RGSS class, the runtime class
 identity matches the gem-init-captured class, and the call shape is supported.
-The generated branch retains ordinary dispatch as its fallback.
+Inlined callers use their original bytecode index, register mapping, and
+enclosing method's argument and ivar class facts for the receiver proof. The
+generated branch retains ordinary dispatch as its fallback.
 
 ## Consequences
 

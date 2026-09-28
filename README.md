@@ -1026,7 +1026,8 @@
   and [`docs/adr/0181-bc2cpp-generated-public-c-methods.md`](docs/adr/0181-bc2cpp-generated-public-c-methods.md).
   RGSS `Sprite#bitmap=` and the five-argument `Bitmap#fill_rect` form also use
   frame-independent native entry points when the receiver's exact native class
-  is proven; other shapes keep normal Ruby dispatch. See
+  is proven, including inlined calls with a receiver proof; other shapes keep
+  normal Ruby dispatch. See
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
