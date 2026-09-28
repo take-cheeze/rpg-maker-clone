@@ -7345,6 +7345,18 @@ mrb_value bitmap_width_direct(mrb_state* M, mrb_value self) {
   return bmp_width(M, self);
 }
 
+mrb_value bitmap_rect_direct(mrb_state* M, mrb_value self) {
+  return bmp_rect(M, self);
+}
+
+mrb_value bitmap_clear_direct(mrb_state* M, mrb_value self) {
+  return bmp_clear(M, self);
+}
+
+mrb_value viewport_rect_direct(mrb_state* M, mrb_value self) {
+  return vp_rect(M, self);
+}
+
 mrb_value bitmap_height_direct(mrb_state* M, mrb_value self) {
   return bmp_height(M, self);
 }
@@ -7355,6 +7367,18 @@ mrb_value disposed_direct(mrb_state* M, mrb_value self) {
 
 mrb_value visible_direct(mrb_state* M, mrb_value self) {
   return obj_visible(M, self);
+}
+
+mrb_value sprite_update_direct(mrb_state* M, mrb_value self) {
+  return spr_update(M, self);
+}
+
+mrb_value viewport_update_direct(mrb_state* M, mrb_value self) {
+  return vp_update(M, self);
+}
+
+mrb_value window_update_direct(mrb_state* M, mrb_value self) {
+  return window_update(M, self);
 }
 
 mrb_value dispose_direct(mrb_state* M, mrb_value self) {

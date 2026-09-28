@@ -1028,8 +1028,9 @@
   frame-independent native entry points when the receiver's exact native class
   is proven, including inlined calls with a receiver proof; other shapes keep
   normal Ruby dispatch. Exact-class guards also cover Bitmap `width`/`height`,
-  data objects' `disposed?`, and display objects' `visible` queries without
-  requiring a static receiver type. See
+  Bitmap `clear`/`rect`, Viewport `rect`, data objects' `disposed?`, display
+  objects' `visible` queries, and Sprite/Viewport/Window per-frame `update`
+  calls without requiring a static receiver type. See
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
