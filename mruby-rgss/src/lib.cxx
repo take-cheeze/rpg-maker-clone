@@ -2436,12 +2436,32 @@ mrb_value bmp_copy_blt(mrb_state* M, V self) {
 // neighbour sampling. Mirrors RGSS's Bitmap#stretch_blt and is used to stretch
 // the small windowskin pieces (32x32 background, 16x8/8x16 border edges) over
 // an arbitrarily sized window.
+mrb_value bmp_stretch_blt_body(mrb_state* M,
+                               mrb_value self,
+                               mrb_value drect_v,
+                               void* src,
+                               mrb_value srect_v,
+                               mrb_value opacity_value,
+                               mrb_bool opacity_given);
+
 mrb_value bmp_stretch_blt(mrb_state* M, V self) {
   V drect_v, srect_v;
   void* src;
   mrb_int opacity = 255;
   mrb_get_args(M, "odo|i", &drect_v, &src, &DataType<Bitmap>::data_type,
                &srect_v, &opacity);
+  return bmp_stretch_blt_body(M, self, drect_v, src, srect_v,
+                              mrb_int_value(M, opacity), mrb_get_argc(M) == 4);
+}
+
+mrb_value bmp_stretch_blt_body(mrb_state* M,
+                               mrb_value self,
+                               mrb_value drect_v,
+                               void* src,
+                               mrb_value srect_v,
+                               mrb_value opacity_value,
+                               mrb_bool opacity_given) {
+  mrb_int opacity = opacity_given ? mrb_as_int(M, opacity_value) : 255;
   Bitmap& dst = bmp_self(M, self);
   Bitmap& sb = bmp_require(M, src);
   Rect& dr = DataType<Rect>::get(M, drect_v);
@@ -7318,6 +7338,18 @@ mrb_value bitmap_blt_direct(mrb_state* M,
   blt_pixels(dst, src, x, y, rc, opacity);
   dst.dirty = true;
   return self;
+}
+
+mrb_value bitmap_stretch_blt_direct(mrb_state* M,
+                                    mrb_value self,
+                                    mrb_value destination_rect,
+                                    mrb_value source,
+                                    mrb_value source_rect,
+                                    mrb_value opacity,
+                                    mrb_bool opacity_given) {
+  void* source_data = mrb_data_get_ptr(M, source, &DataType<Bitmap>::data_type);
+  return bmp_stretch_blt_body(M, self, destination_rect, source_data,
+                              source_rect, opacity, opacity_given);
 }
 
 mrb_value table_new_direct(mrb_state* M,
