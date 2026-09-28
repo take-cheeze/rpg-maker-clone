@@ -22,9 +22,9 @@ frame-based C wrapper, and expose `mrb_io_puts_direct`. The helper looks up
 `puts` on the receiver at runtime and invokes the argv body only when the
 resolved C function pointer is exactly mruby-io's registered `io_puts`; a
 different target returns false so generated code uses ordinary `mrb_funcall`.
-The upstream submodule is not forked or committed. The change ships as
-`patches/mruby-io-direct-puts.patch`, applied idempotently alongside the other
-mruby patches before builds.
+The helper is committed to the project-controlled mruby fork and pinned by the
+`3rd/mruby` submodule. Platform build scripts must not reapply a local patch
+for the same change.
 
 ## Consequences
 
