@@ -104,5 +104,16 @@ check.call('preceding_run stops at another op', run.preceding_run('LOADSYM', 3).
 check.call('preceding_run limit zero', run.preceding_run('LOADSYM', 2, limit: 0).empty?)
 check.call('preceding_run before start', run.preceding_run('LOADSYM', -1).empty?)
 
+# enter / each_with_op / previous_real_index
+with_enter = irep(insn(0, 'ENTER', '1:0:0:0:0:0:0'), insn(4, 'LOADNIL', 'R2'), insn(6, 'SETIV', "@a\tR1"), insn(8, 'SETIV', "@b\tR2"))
+check.call('enter finds ENTER', with_enter.enter&.op == 'ENTER' && with_enter.enter_index.zero?)
+check.call('enter nil without ENTER', run.enter.nil? && run.enter_index.nil?)
+hits = []
+with_enter.each_with_op('SETIV', 'LOADNIL') { |i, index| hits << [i.op, index] }
+check.call('each_with_op order and index', hits == [['LOADNIL', 1], ['SETIV', 2], ['SETIV', 3]])
+exts = irep(insn(0, 'TCLASS', 'R1'), insn(2, 'EXT2', ''), insn(3, 'EXT1', ''), insn(4, 'METHOD', "R2\tI[3]"))
+check.call('previous_real_index skips EXT lines', exts.previous_real_index(2) == 0 && exts.previous_real_index(3) == 3)
+check.call('previous_real_index only EXT before', irep(insn(0, 'EXT1', '')).previous_real_index(0) == -1)
+
 abort("bc2cpp_irep_scans_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_irep_scans_check OK'
