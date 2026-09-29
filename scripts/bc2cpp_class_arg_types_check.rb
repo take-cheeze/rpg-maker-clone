@@ -37,7 +37,12 @@ class ClassArgTypesTest < Minitest::Test
   # nil) without compiling a closed world.
   MethodDefStub = Struct.new(:irep, :owner, :name, keyword_init: true)
   IrepStub = Struct.new(:label, :instructions, keyword_init: true)
-  InsnStub = Struct.new(:op, :args, keyword_init: true)
+  # A real Insn, so typed operand accessors (#reg, ...) behave as in bc2cpp.
+  InsnStub = Class.new do
+    def self.new(op:, args:)
+      Insn.new(lineno: 0, addr: 0, op: op, args: args, raw: "#{op} #{args}")
+    end
+  end
 
   def irep(label, insns)
     IrepStub.new(label: label, instructions: insns)
