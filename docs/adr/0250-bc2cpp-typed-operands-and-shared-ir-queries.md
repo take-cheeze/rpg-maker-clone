@@ -59,3 +59,18 @@ apart, and two control-flow graphs disagreed about `JMPUW` and `RAISE`.
   the schema check names the instruction that does not fit.
 - The one remaining text-derived surface is `Insn#args`/`#raw`, kept so
   generated comments stay identical; ADR 0249 moves the loader itself off text.
+
+## Addendum: catch-handler edges
+
+`tools/bc2cpp/bytecode_ir_handlers.rb` models exception flow beside, not inside,
+the normal-flow graph. Each instruction in a handler's half-open `[begin, end)`
+gets a kind-tagged (`:rescue`/`:ensure`) edge to the handler target;
+`instruction_predecessors(include_handlers: true)`, `successors_of`,
+`reachable_from`, `dominates?` and `every_path_reaches?` opt in. The edge set
+over-approximates (extra edges only cost proofs) and does not model an
+exception leaving the frame uncaught, so `every_path_reaches?` judges exits on
+normal flow. `Instruction#successors` and the blocks stay normal-only.
+
+The fixnum proof and the rescue recognizer now take their handler-derived sets
+(target addresses, protected addresses, partial-overlap test) from the IR; the
+barriers themselves are unchanged, so accept/reject decisions are identical.
