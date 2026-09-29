@@ -1050,6 +1050,13 @@
   [`docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md`](docs/adr/0236-bc2cpp-rgss-drawing-entrypoints.md).
   The frame-independent wrapper rules and supported methods are recorded in
   [`docs/adr/0242-native-wrapper-direct-calls.md`](docs/adr/0242-native-wrapper-direct-calls.md).
+  The remaining RGSS setters (`x=`/`y=`/`z=`/`visible=`/`color=`, Window
+  `contents=`/`windowskin=`/`cursor_rect=`/`active=`/`pause=`, `flash`, Rect
+  writers ...) are shared entry points too: each binding forwards to the same
+  `rgss::*_direct` function the generated exact-class arms call, and in a
+  closed world those arms let the chain's by-name fallback become a proven
+  NoMethodError. See
+  [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
