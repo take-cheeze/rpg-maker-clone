@@ -33,5 +33,17 @@ check.call('jump_edges_before stops at limit', BytecodeIR::Program.new(edge_irep
 bad_irep = Irep.new(label: 't3', instructions: [insn(0, 'JMP', '77'), insn(4, 'RETURN', 'R1')])
 check.call('jump_edges_before nil on unresolved target', BytecodeIR::Program.new(bad_irep).jump_edges_before(2, %w[JMP]).nil?)
 
+pred_irep = Irep.new(label: 't4', instructions: [
+  insn(0, 'JMPIF', "R1\t12"), insn(4, 'RAISE', 'R1'), insn(6, 'JMPUW', '14'),
+  insn(8, 'LOADNIL', 'R1'), insn(12, 'RETURN', 'R1'), insn(14, 'RETURN', 'R2')
+])
+preds = BytecodeIR::Program.new(pred_irep).instruction_predecessors
+check.call('entry edge into instruction 0', preds[0].to_a == [BytecodeIR::ENTRY])
+check.call('conditional branch adds target and fallthrough', preds[4].include?(0) && preds[1].include?(0))
+check.call('RAISE conservatively falls through', preds[2].include?(1))
+check.call('JMPUW never falls through', !preds[3].include?(2))
+check.call('JMPUW target predecessor', preds[5].include?(2))
+check.call('predecessors nil when unresolved', BytecodeIR::Program.new(bad_irep).instruction_predecessors.nil?)
+
 abort("bc2cpp_insn_operands_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_insn_operands_check OK'
