@@ -1059,6 +1059,11 @@
   closed world those arms let the chain's by-name fallback become a proven
   NoMethodError. See
   [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
+  Those entry points are no longer written by hand: clang tooling
+  (`scripts/native_binding_split.rb report|write|check`) classifies every RGSS
+  native binding, splits the frame-independent ones into a body plus an
+  `mrb_get_args` wrapper, and generates the compiler's table; see
+  [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as

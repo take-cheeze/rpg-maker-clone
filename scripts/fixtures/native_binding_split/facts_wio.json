@@ -1,0 +1,2442 @@
+{
+ "config": "wio",
+ "files": {
+  "scripts/fixtures/native_binding_split/bindings.cxx": {
+   "errors": [],
+   "exports": [
+    {
+     "body_extent": [
+      3066,
+      3099
+     ],
+     "extent": [
+      2994,
+      3099
+     ],
+     "line": 121,
+     "name": "fixture_named_direct",
+     "params": [
+      [
+       "mrb_state *",
+       "M"
+      ],
+      [
+       "mrb_value",
+       "self"
+      ],
+      [
+       "mrb_int",
+       "v"
+      ]
+     ],
+     "reasons": [],
+     "ret_call": {
+      "args": [
+       "v"
+      ],
+      "callee": "mrb_fixnum_value",
+      "ns": "",
+      "usr": "c:value.h@F@mrb_fixnum_value#L#"
+     },
+     "stmts": 1
+    }
+   ],
+   "functions": {
+    "fixture_init": [
+     {
+      "body_extent": [
+       3377,
+       4714
+      ],
+      "extent": [
+       3345,
+       4714
+      ],
+      "goto": false,
+      "line": 135,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args",
+       "unknown_mrb_api:mrb_define_class",
+       "unknown_mrb_api:mrb_define_class_method",
+       "unknown_mrb_api:mrb_define_method"
+      ],
+      "refs": "79aa010c58947caee9261bf7d101558e1bb25a0e",
+      "ret": "void",
+      "storage": "NONE",
+      "usr": "c:@F@fixture_init#*$@S@mrb_state#"
+     }
+    ],
+    "fixture_named_direct": [
+     {
+      "body_extent": [
+       3066,
+       3099
+      ],
+      "extent": [
+       2994,
+       3099
+      ],
+      "goto": false,
+      "line": 121,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ],
+       [
+        "mrb_int",
+        "v"
+       ]
+      ],
+      "reasons": [],
+      "refs": "05a7878e73cfa460747c72e07116f6907cdeb960",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:@N@rgss@F@fixture_named_direct#*$@S@mrb_state#$@S@mrb_value#L#"
+     }
+    ],
+    "forwards": [
+     {
+      "body_extent": [
+       3234,
+       3327
+      ],
+      "extent": [
+       3185,
+       3327
+      ],
+      "goto": false,
+      "line": 128,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "fba339154a7591e7e2c602cd0fa498ba2b6d6c0b",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@forwards#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "get_x": [
+     {
+      "body_extent": [
+       869,
+       927
+      ],
+      "extent": [
+       823,
+       927
+      ],
+      "goto": false,
+      "line": 28,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [],
+      "refs": "e30a5b8945c52126fffa9d294b861e430c9bd02b",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@get_x#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "helper_reads_args": [
+     {
+      "body_extent": [
+       1698,
+       1754
+      ],
+      "extent": [
+       1658,
+       1754
+      ],
+      "goto": false,
+      "line": 61,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "5b775b29faf0a6bb3c157bf47369712f909b739c",
+      "ret": "mrb_int",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@helper_reads_args#*$@S@mrb_state#"
+     }
+    ],
+    "hidden_get_args": [
+     {
+      "body_extent": [
+       1859,
+       1911
+      ],
+      "extent": [
+       1803,
+       1911
+      ],
+      "goto": false,
+      "line": 68,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args (via helper_reads_args)"
+      ],
+      "refs": "561c6261f337b63bc0ab1c2afd0058f7bff236df",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@hidden_get_args#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "ifdef_inside": [
+     {
+      "body_extent": [
+       2200,
+       2317
+      ],
+      "extent": [
+       2147,
+       2317
+      ],
+      "goto": false,
+      "line": 84,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "740679a3953f38eb2f9dae0e92fb5831dceb05ca",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@ifdef_inside#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "into_member": [
+     {
+      "body_extent": [
+       2623,
+       2686
+      ],
+      "extent": [
+       2571,
+       2686
+      ],
+      "goto": false,
+      "line": 102,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "0fdd26c6d232f00603f24c599db74ccc052b246d",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@into_member#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "optional": [
+     {
+      "body_extent": [
+       1171,
+       1250
+      ],
+      "extent": [
+       1122,
+       1250
+      ],
+      "goto": false,
+      "line": 40,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "b03d49a6872e628e207fea9a67a69582dcb63b50",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@optional#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "set_pair": [
+     {
+      "body_extent": [
+       721,
+       807
+      ],
+      "extent": [
+       677,
+       807
+      ],
+      "goto": false,
+      "line": 21,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        ""
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "e216da22866d1d4f4cfe36c607fa7dab543b4681",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@set_pair#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "set_x": [
+     {
+      "body_extent": [
+       478,
+       606
+      ],
+      "extent": [
+       432,
+       606
+      ],
+      "goto": false,
+      "line": 13,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "9fd030e713720ced5e06fd1bc781503c78700dc3",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@set_x#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "uses_argc": [
+     {
+      "body_extent": [
+       1016,
+       1090
+      ],
+      "extent": [
+       966,
+       1090
+      ],
+      "goto": false,
+      "line": 33,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_argc"
+      ],
+      "refs": "25adcfe6e3f2a0c8723a828b22e4b5421d385b58",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@uses_argc#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "uses_mid": [
+     {
+      "body_extent": [
+       2433,
+       2479
+      ],
+      "extent": [
+       2384,
+       2479
+      ],
+      "goto": false,
+      "line": 94,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_mid"
+      ],
+      "refs": "d70520c3cabb5ec570116b578a1378fda31c9115",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@uses_mid#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "with_block": [
+     {
+      "body_extent": [
+       1572,
+       1656
+      ],
+      "extent": [
+       1521,
+       1656
+      ],
+      "goto": false,
+      "line": 55,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args",
+       "frame_api:mrb_yield"
+      ],
+      "refs": "4b33e6b5d6c293c06555c8c5ee689cd096ba4243",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@with_block#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "with_goto": [
+     {
+      "body_extent": [
+       1980,
+       2093
+      ],
+      "extent": [
+       1930,
+       2093
+      ],
+      "goto": true,
+      "line": 73,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "86d59ff27c57c659bae2d74efdabb2270146358b",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@with_goto#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ],
+    "work_first": [
+     {
+      "body_extent": [
+       1375,
+       1501
+      ],
+      "extent": [
+       1324,
+       1501
+      ],
+      "goto": false,
+      "line": 47,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "5f6274b909abf9770e9592d9e6e1b51689d2a530",
+      "ret": "mrb_value",
+      "storage": "NONE",
+      "usr": "c:bindings.cxx@aN@F@work_first#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    ]
+   },
+   "registrations": [
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3462,
+       3463
+      ],
+      [
+       3465,
+       3466
+      ],
+      [
+       3468,
+       3472
+      ],
+      [
+       3474,
+       3479
+      ],
+      [
+       3481,
+       3496
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3444,
+      3497
+     ],
+     "kind": "method",
+     "line": 137,
+     "name": "x=",
+     "target": {
+      "body_extent": [
+       478,
+       606
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 13,
+      "extent": [
+       432,
+       606
+      ],
+      "external": [
+       "mrb_intern_static",
+       "mrb_iv_set"
+      ],
+      "gets": [
+       {
+        "extent": [
+         495,
+         519
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 14,
+          "type": "mrb_int",
+          "var": "x"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "set_x",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "0e67567326dd9a88b09f3c14418d0c37efc6e827",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "self"
+       ],
+       "callee": "mrb_value",
+       "ns": "mrb_value",
+       "usr": "c:@S@mrb_value@F@mrb_value#&&$@S@mrb_value#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         482,
+         492
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           482,
+           491
+          ],
+          "has_init": false,
+          "name": "x",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         495,
+         519
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         523,
+         588
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         592,
+         603
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@set_x#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3519,
+       3520
+      ],
+      [
+       3522,
+       3523
+      ],
+      [
+       3525,
+       3531
+      ],
+      [
+       3533,
+       3541
+      ],
+      [
+       3543,
+       3558
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3501,
+      3559
+     ],
+     "kind": "method",
+     "line": 138,
+     "name": "pair",
+     "target": {
+      "body_extent": [
+       721,
+       807
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 21,
+      "extent": [
+       677,
+       807
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         741,
+         770
+        ],
+        "format": "ii",
+        "nargs": 4,
+        "targets": [
+         {
+          "line": 22,
+          "type": "mrb_int",
+          "var": "a"
+         },
+         {
+          "line": 22,
+          "type": "mrb_int",
+          "var": "b"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "set_pair",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        ""
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "cf358b84381d1bfc53531c0df41cb921d1da8949",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        null
+       ],
+       "callee": "mrb_fixnum_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_fixnum_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         725,
+         738
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           725,
+           734
+          ],
+          "has_init": false,
+          "name": "a",
+          "storage": "NONE",
+          "type": "mrb_int"
+         },
+         {
+          "extent": [
+           736,
+           737
+          ],
+          "has_init": false,
+          "name": "b",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         741,
+         770
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         774,
+         804
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@set_pair#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3581,
+       3582
+      ],
+      [
+       3584,
+       3585
+      ],
+      [
+       3587,
+       3590
+      ],
+      [
+       3592,
+       3597
+      ],
+      [
+       3599,
+       3614
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3563,
+      3615
+     ],
+     "kind": "method",
+     "line": 139,
+     "name": "x",
+     "target": {
+      "body_extent": [
+       869,
+       927
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 28,
+      "extent": [
+       823,
+       927
+      ],
+      "external": [
+       "mrb_intern_static",
+       "mrb_iv_get"
+      ],
+      "gets": [],
+      "goto": false,
+      "kind": "function",
+      "name": "get_x",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [],
+      "refs": "e30a5b8945c52126fffa9d294b861e430c9bd02b",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "M",
+        "self",
+        null
+       ],
+       "callee": "mrb_iv_get",
+       "ns": "",
+       "usr": "c:@F@mrb_iv_get"
+      },
+      "stmts": [
+       {
+        "extent": [
+         873,
+         924
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@get_x#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3637,
+       3638
+      ],
+      [
+       3640,
+       3641
+      ],
+      [
+       3643,
+       3649
+      ],
+      [
+       3651,
+       3660
+      ],
+      [
+       3662,
+       3676
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3619,
+      3677
+     ],
+     "kind": "method",
+     "line": 140,
+     "name": "argc",
+     "target": {
+      "body_extent": [
+       1016,
+       1090
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 33,
+      "extent": [
+       966,
+       1090
+      ],
+      "external": [],
+      "gets": [],
+      "goto": false,
+      "kind": "function",
+      "name": "uses_argc",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_argc"
+      ],
+      "refs": "25adcfe6e3f2a0c8723a828b22e4b5421d385b58",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [],
+       "callee": "mrb_nil_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_nil_value#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         1020,
+         1061
+        ],
+        "kind": "IF_STMT"
+       },
+       {
+        "extent": [
+         1065,
+         1087
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@uses_argc#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3699,
+       3700
+      ],
+      [
+       3702,
+       3703
+      ],
+      [
+       3705,
+       3715
+      ],
+      [
+       3717,
+       3725
+      ],
+      [
+       3727,
+       3742
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3681,
+      3743
+     ],
+     "kind": "method",
+     "line": 141,
+     "name": "optional",
+     "target": {
+      "body_extent": [
+       1171,
+       1250
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 40,
+      "extent": [
+       1122,
+       1250
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         1192,
+         1217
+        ],
+        "format": "|i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 41,
+          "type": "mrb_int",
+          "var": "n"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "optional",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "e14744571546459964e1205b45e903589e9aa8e6",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "n"
+       ],
+       "callee": "mrb_fixnum_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_fixnum_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         1175,
+         1189
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           1175,
+           1188
+          ],
+          "has_init": true,
+          "name": "n",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         1192,
+         1217
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         1221,
+         1247
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@optional#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3765,
+       3766
+      ],
+      [
+       3768,
+       3769
+      ],
+      [
+       3771,
+       3778
+      ],
+      [
+       3780,
+       3790
+      ],
+      [
+       3792,
+       3807
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3747,
+      3808
+     ],
+     "kind": "method",
+     "line": 142,
+     "name": "first",
+     "target": {
+      "body_extent": [
+       1375,
+       1501
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 47,
+      "extent": [
+       1324,
+       1501
+      ],
+      "external": [
+       "mrb_intern_static",
+       "mrb_iv_get"
+      ],
+      "gets": [
+       {
+        "extent": [
+         1458,
+         1482
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 49,
+          "type": "mrb_int",
+          "var": "n"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "work_first",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "a54b5e8d956a5a007ddd8909b5dbcd21586a9b01",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "first"
+       ],
+       "callee": "mrb_value",
+       "ns": "mrb_value",
+       "usr": "c:@S@mrb_value@F@mrb_value#&&$@S@mrb_value#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         1379,
+         1442
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           1379,
+           1441
+          ],
+          "has_init": true,
+          "name": "first",
+          "storage": "NONE",
+          "type": "mrb_value"
+         }
+        ]
+       },
+       {
+        "extent": [
+         1445,
+         1455
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           1445,
+           1454
+          ],
+          "has_init": false,
+          "name": "n",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         1458,
+         1482
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         1486,
+         1498
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@work_first#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3830,
+       3831
+      ],
+      [
+       3833,
+       3834
+      ],
+      [
+       3836,
+       3843
+      ],
+      [
+       3845,
+       3855
+      ],
+      [
+       3857,
+       3873
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3812,
+      3874
+     ],
+     "kind": "method",
+     "line": 143,
+     "name": "block",
+     "target": {
+      "body_extent": [
+       1572,
+       1656
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 55,
+      "extent": [
+       1521,
+       1656
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         1593,
+         1619
+        ],
+        "format": "&",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 56,
+          "type": "mrb_value",
+          "var": "blk"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "with_block",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args",
+       "frame_api:mrb_yield"
+      ],
+      "refs": "0490fd58366673dfb98b4a09212160de2f3ccfeb",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "M",
+        "blk",
+        "self"
+       ],
+       "callee": "mrb_yield",
+       "ns": "",
+       "usr": "c:@F@mrb_yield"
+      },
+      "stmts": [
+       {
+        "extent": [
+         1576,
+         1590
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           1576,
+           1589
+          ],
+          "has_init": true,
+          "name": "blk",
+          "storage": "NONE",
+          "type": "mrb_value"
+         }
+        ]
+       },
+       {
+        "extent": [
+         1593,
+         1619
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         1623,
+         1653
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@with_block#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3896,
+       3897
+      ],
+      [
+       3899,
+       3900
+      ],
+      [
+       3902,
+       3910
+      ],
+      [
+       3912,
+       3927
+      ],
+      [
+       3929,
+       3944
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3878,
+      3945
+     ],
+     "kind": "method",
+     "line": 144,
+     "name": "hidden",
+     "target": {
+      "body_extent": [
+       1859,
+       1911
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 68,
+      "extent": [
+       1803,
+       1911
+      ],
+      "external": [],
+      "gets": [],
+      "goto": false,
+      "kind": "function",
+      "name": "hidden_get_args",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args (via helper_reads_args)"
+      ],
+      "refs": "561c6261f337b63bc0ab1c2afd0058f7bff236df",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        null
+       ],
+       "callee": "mrb_fixnum_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_fixnum_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         1863,
+         1908
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@hidden_get_args#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       3967,
+       3968
+      ],
+      [
+       3970,
+       3971
+      ],
+      [
+       3973,
+       3979
+      ],
+      [
+       3981,
+       3990
+      ],
+      [
+       3992,
+       4007
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      3949,
+      4008
+     ],
+     "kind": "method",
+     "line": 145,
+     "name": "jump",
+     "target": {
+      "body_extent": [
+       1980,
+       2093
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 73,
+      "extent": [
+       1930,
+       2093
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         1997,
+         2021
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 74,
+          "type": "mrb_int",
+          "var": "n"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": true,
+      "kind": "function",
+      "name": "with_goto",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "944f94fd8fb5191755a7bfc9ba6ece14d7eb8b2f",
+      "ret": "mrb_value",
+      "ret_call": null,
+      "stmts": [
+       {
+        "extent": [
+         1984,
+         1994
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           1984,
+           1993
+          ],
+          "has_init": false,
+          "name": "n",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         1997,
+         2021
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         2025,
+         2045
+        ],
+        "kind": "IF_STMT"
+       },
+       {
+        "extent": [
+         2049,
+         2054
+        ],
+        "kind": "BINARY_OPERATOR"
+       },
+       {
+        "extent": [
+         2056,
+         2090
+        ],
+        "kind": "LABEL_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@with_goto#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4030,
+       4031
+      ],
+      [
+       4033,
+       4034
+      ],
+      [
+       4036,
+       4043
+      ],
+      [
+       4045,
+       4057
+      ],
+      [
+       4059,
+       4074
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4012,
+      4075
+     ],
+     "kind": "method",
+     "line": 146,
+     "name": "ifdef",
+     "target": {
+      "body_extent": [
+       2200,
+       2317
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 84,
+      "extent": [
+       2147,
+       2317
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         2217,
+         2241
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 85,
+          "type": "mrb_int",
+          "var": "n"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "ifdef_inside",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "bee487b94d96d89bbe47e0c43059fb813109ad34",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "n"
+       ],
+       "callee": "mrb_fixnum_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_fixnum_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         2204,
+         2214
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           2204,
+           2213
+          ],
+          "has_init": false,
+          "name": "n",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         2217,
+         2241
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         2271,
+         2277
+        ],
+        "kind": "COMPOUND_ASSIGNMENT_OPERATOR"
+       },
+       {
+        "extent": [
+         2288,
+         2314
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@ifdef_inside#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4097,
+       4098
+      ],
+      [
+       4100,
+       4101
+      ],
+      [
+       4103,
+       4108
+      ],
+      [
+       4110,
+       4118
+      ],
+      [
+       4120,
+       4135
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4079,
+      4136
+     ],
+     "kind": "method",
+     "line": 147,
+     "name": "mid",
+     "target": {
+      "body_extent": [
+       2433,
+       2479
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 94,
+      "extent": [
+       2384,
+       2479
+      ],
+      "external": [],
+      "gets": [],
+      "goto": false,
+      "kind": "function",
+      "name": "uses_mid",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_mid"
+      ],
+      "refs": "d70520c3cabb5ec570116b578a1378fda31c9115",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        null
+       ],
+       "callee": "mrb_symbol_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_symbol_value#i#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         2437,
+         2476
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@uses_mid#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4158,
+       4159
+      ],
+      [
+       4161,
+       4162
+      ],
+      [
+       4164,
+       4172
+      ],
+      [
+       4174,
+       4185
+      ],
+      [
+       4187,
+       4202
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4140,
+      4203
+     ],
+     "kind": "method",
+     "line": 148,
+     "name": "member",
+     "target": {
+      "body_extent": [
+       2623,
+       2686
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 102,
+      "extent": [
+       2571,
+       2686
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         2639,
+         2668
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         null
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "into_member",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "19cff3e28fc15af30d49419ac4346c096a6fac0e",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "self"
+       ],
+       "callee": "mrb_value",
+       "ns": "mrb_value",
+       "usr": "c:@S@mrb_value@F@mrb_value#&&$@S@mrb_value#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         2627,
+         2636
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           2627,
+           2635
+          ],
+          "has_init": true,
+          "name": "h",
+          "storage": "NONE",
+          "type": "Holder"
+         }
+        ]
+       },
+       {
+        "extent": [
+         2639,
+         2668
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         2672,
+         2683
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@into_member#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4325,
+       4326
+      ],
+      [
+       4328,
+       4329
+      ],
+      [
+       4331,
+       4341
+      ],
+      [
+       4343,
+       4351
+      ],
+      [
+       4353,
+       4368
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4307,
+      4369
+     ],
+     "kind": "method",
+     "line": 152,
+     "name": "forwards",
+     "target": {
+      "body_extent": [
+       3234,
+       3327
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 128,
+      "extent": [
+       3185,
+       3327
+      ],
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         3251,
+         3275
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 129,
+          "type": "mrb_int",
+          "var": "v"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "function",
+      "name": "forwards",
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "parent": "",
+      "parent_kind": "NAMESPACE",
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "24a418927312ffc2d26e976b520ee848fb7f8f08",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "M",
+        "self",
+        "v"
+       ],
+       "callee": "fixture_named_direct",
+       "ns": "rgss",
+       "usr": "c:@N@rgss@F@fixture_named_direct#*$@S@mrb_state#$@S@mrb_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         3238,
+         3248
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           3238,
+           3247
+          ],
+          "has_init": false,
+          "name": "v",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         3251,
+         3275
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         3279,
+         3324
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "storage": "NONE",
+      "template": false,
+      "usr": "c:bindings.cxx@aN@F@forwards#*$@S@mrb_state#$@S@mrb_value#"
+     }
+    },
+    {
+     "api": "mrb_define_class_method",
+     "arg_extents": [
+      [
+       4404,
+       4405
+      ],
+      [
+       4407,
+       4408
+      ],
+      [
+       4410,
+       4417
+      ],
+      [
+       4425,
+       4573
+      ],
+      [
+       4581,
+       4596
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4373,
+      4597
+     ],
+     "kind": "class_method",
+     "line": 153,
+     "name": "twice",
+     "target": {
+      "body_extent": [
+       4471,
+       4573
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 155,
+      "external": [],
+      "gets": [
+       {
+        "extent": [
+         4500,
+         4524
+        ],
+        "format": "i",
+        "nargs": 3,
+        "targets": [
+         {
+          "line": 156,
+          "type": "mrb_int",
+          "var": "n"
+         }
+        ],
+        "top_level": true
+       }
+      ],
+      "goto": false,
+      "kind": "lambda",
+      "lambda_extent": [
+       4425,
+       4573
+      ],
+      "name": null,
+      "params": [
+       [
+        "mrb_state *",
+        "M"
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [
+       "frame_api:mrb_get_args"
+      ],
+      "refs": "e14744571546459964e1205b45e903589e9aa8e6",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        null
+       ],
+       "callee": "mrb_fixnum_value",
+       "ns": "",
+       "usr": "c:value.h@F@mrb_fixnum_value#L#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         4481,
+         4491
+        ],
+        "kind": "DECL_STMT",
+        "vars": [
+         {
+          "extent": [
+           4481,
+           4490
+          ],
+          "has_init": false,
+          "name": "n",
+          "storage": "NONE",
+          "type": "mrb_int"
+         }
+        ]
+       },
+       {
+        "extent": [
+         4500,
+         4524
+        ],
+        "kind": "CALL_EXPR"
+       },
+       {
+        "extent": [
+         4534,
+         4564
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "template": false
+     }
+    },
+    {
+     "api": "mrb_define_method",
+     "arg_extents": [
+      [
+       4626,
+       4627
+      ],
+      [
+       4629,
+       4630
+      ],
+      [
+       4632,
+       4638
+      ],
+      [
+       4640,
+       4687
+      ],
+      [
+       4695,
+       4710
+      ]
+     ],
+     "class_expr": "c",
+     "enclosing": {
+      "extent": [
+       3345,
+       4714
+      ],
+      "name": "fixture_init"
+     },
+     "extent": [
+      4601,
+      4711
+     ],
+     "kind": "method",
+     "line": 161,
+     "name": "zero",
+     "target": {
+      "body_extent": [
+       4671,
+       4687
+      ],
+      "decl_file": "scripts/fixtures/native_binding_split/bindings.cxx",
+      "decl_line": 162,
+      "external": [],
+      "gets": [],
+      "goto": false,
+      "kind": "lambda",
+      "lambda_extent": [
+       4640,
+       4687
+      ],
+      "name": null,
+      "params": [
+       [
+        "mrb_state *",
+        ""
+       ],
+       [
+        "mrb_value",
+        "self"
+       ]
+      ],
+      "reasons": [],
+      "refs": "19cff3e28fc15af30d49419ac4346c096a6fac0e",
+      "ret": "mrb_value",
+      "ret_call": {
+       "args": [
+        "self"
+       ],
+       "callee": "mrb_value",
+       "ns": "mrb_value",
+       "usr": "c:@S@mrb_value@F@mrb_value#&&$@S@mrb_value#"
+      },
+      "stmts": [
+       {
+        "extent": [
+         4673,
+         4684
+        ],
+        "kind": "RETURN_STMT"
+       }
+      ],
+      "template": false
+     }
+    }
+   ]
+  }
+ }
+}

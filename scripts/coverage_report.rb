@@ -73,6 +73,8 @@ CHECKS = [
   { name: 'nano7-map-export',   command: %w[scripts/export_nano7_map_check.rb],
     needs: :rpg2k_game },
   { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
+  # No CRuby-side lines of mrblib, but every scripts/*_check.rb rides here.
+  { name: 'native-binding-split', command: %w[scripts/native_binding_split_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
   # through the RGSS compatibility layer (scripts/rgss_cruby_compat.rb), so the
   # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.
