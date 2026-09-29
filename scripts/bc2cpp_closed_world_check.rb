@@ -36,7 +36,8 @@ core_gems = %w[mruby-array-ext mruby-hash-ext mruby-enum-ext mruby-io mruby-nume
 wio_gems = core_gems.to_h { |g| [g, "#{root}/3rd/mruby/mrbgems/#{g}"] }
 wio_gems.merge!('hal-wio-io' => "#{root}/app/wio/hal-wio-io", 'mruby-math-wio' => "#{root}/app/wio/mruby-math-wio",
                 'mruby-stringio' => "#{root}/3rd/mruby-stringio", 'mruby-marshal' => "#{root}/3rd/mruby-marshal")
-%w[mruby-lcf mruby-lcf-compiled mruby-rgss mruby-rgss-compiled mruby-rpg2k mruby-rpg2k-compiled].each do |g|
+%w[mruby-lcf mruby-lcf-compiled mruby-rgss mruby-rgss-compiled mruby-rpg2k mruby-rpg2k-compiled
+   mruby-core-compiled].each do |g|
   wio_gems[g] = "#{root}/#{g}"
 end
 

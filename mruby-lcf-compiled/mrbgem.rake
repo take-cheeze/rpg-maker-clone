@@ -66,7 +66,7 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
   # mrbgem.rake feed their own bc2cpp.rb runs, by construction rather than
   # by three separately hand-maintained literals staying in sync (see that
   # helper's own comment for the real drift risk this closes).
-  closed_world_srcs = closed_world_mrblib_srcs("#{dir}/..")
+  closed_world_prereqs = bc2cpp_closed_world_prerequisites("#{dir}/..")
 
   # RGSS's own C++-implemented methods (Sprite/Bitmap/Viewport/Window/Rect/
   # ...) are invisible to the closed_world_srcs scan above -- there's no .rb
@@ -121,9 +121,9 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
   # the bootstrap mrbc exists (ADR 0228).
-  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_srcs, *native_srcs,
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
-                     BC2CPP_HOT_METHODS_PATH] do |t|
+                     BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
@@ -141,6 +141,7 @@ MRuby::Gem::Specification.new('mruby-lcf-compiled') do |spec|
       # (this gem's own dependency) already loads first.
       'SKIP_UNSUPPORTED' => '1',
     }.merge(bc2cpp_closed_world_env(spec, "#{dir}/..")).merge(bc2cpp_hot_only_env(spec))
+    closed_world_srcs = bc2cpp_closed_world_srcs(spec, "#{dir}/..")
     cmd ="#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
           "#{closed_world_srcs.map(&:shellescape).join(' ')} > #{generated.shellescape}"
     sh env, cmd

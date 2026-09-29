@@ -493,6 +493,9 @@ def rpg_maker_gems(conf, include_mvjs: true)
   # of Game::Picture's 26 real methods (everything but #initialize), plus
   # (docs/adr/0139) all 6 of Game::EnemyAction's own real methods.
   conf.gem "#{MRUBY_ROOT}/../../mruby-rpg2k-compiled", &closed_world if bc2cpp
+  # docs/adr/0264: mruby's own Ruby (core mrblib, numeric-ext, range-ext) compiled
+  # by the same pipeline, methods listed in tools/bc2cpp/core_methods.txt only.
+  conf.gem "#{MRUBY_ROOT}/../../mruby-core-compiled", &closed_world if bc2cpp
   unless single_format_only
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgxp"
     conf.gem "#{MRUBY_ROOT}/../../mruby-rpgvx"

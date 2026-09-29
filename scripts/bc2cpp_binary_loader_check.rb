@@ -192,6 +192,16 @@ def compare_instructions(order, ireps, text, failures)
     irep.instructions.zip(want.insns).each do |g, w|
       fields = { addr: [g.addr, w.addr], op: [g.op, w.op], lineno: [g.lineno, w.lineno], args: [g.args, w.args],
                  raw: [g.raw, w.raw], typed: [g.typed, w.typed] }
+      # codedump.c prints both ALIAS names with two mrb_sym_dump calls in one fprintf, and a short
+      # (inline) symbol is decoded into a shared buffer, so `alias succ next` reads `:succ succ` in
+      # the text. The bytes decide (vm.c OP_ALIAS: Syms[a] is the new name, Syms[b] the old one), so
+      # only the first name of such a line is a usable reference.
+      names = ->(args) { args.split("\t").map { |n| n.delete_prefix(':') } }
+      if w.op == 'ALIAS' && names.call(w.args).uniq.size == 1 && names.call(g.args).uniq.size == 2
+        fields.delete(:raw)
+        fields[:args] = [g.args.split("\t").first, w.args.split("\t").first]
+        fields[:typed] = [g.typed.first, g.typed.first]
+      end
       fields.each do |field, (gv, wv)|
         failures << "irep #{index} @#{w.addr} #{w.op} #{field}: #{gv.inspect} != #{wv.inspect}" unless gv == wv
       end

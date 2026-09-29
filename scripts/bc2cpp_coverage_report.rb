@@ -60,6 +60,8 @@ all_owners = BC2CPP_COMPILED_GEMS.values.flat_map { |g| g[:owners] }
 # owner name -> gem short name, for the per-gem breakdown below.
 gem_of_owner = {}
 BC2CPP_COMPILED_GEMS.each { |gem, g| g[:owners].each { |o| gem_of_owner[o] = gem } }
+gem_of_owner_engine = {}
+BC2CPP_COMPILED_GEMS.each { |gem, g| g[:owners].each { |o| gem_of_owner_engine[o] = gem } unless gem == 'mruby-core-compiled' }
 
 env = {
   'MRBC' => MRBC,
@@ -98,8 +100,8 @@ end
 # way to get a true whole-program dynamic-dispatch count.
 Dir.mktmpdir do |dir|
   shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir)
-  @shipped_stdout, shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
-  raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{shipped_stderr[-4000..]}" unless shipped_status.success?
+  @shipped_stdout, @shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
+  raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{@shipped_stderr[-4000..]}" unless shipped_status.success?
 end
 # BC2CPP_COVERAGE_KEEP_DIR: keep the shipped run's generated C++ (stdout, plus
 # any OUT_DIR files) for a semantic diff of two compiler revisions.
@@ -187,10 +189,15 @@ errored = errored_names.size
 
 clean_names = compiled_names - errored_names
 synthesized_count = (compiled_names - attempted_names).size
+# CORE_DEFS (ADR 0264): the entries compiled from mruby's own Ruby. An owner both an engine gem and
+# core sources define methods on (Array, StringIO) is attributed by where each method comes from.
+core_section = err[/== core-source compiled entry points \(\d+\) ==\n(.*?)(?=\n==|\z)/m, 1].to_s
+core_keys = core_section.lines.map(&:strip).reject(&:empty?).to_set
 compiled_by_gem = Hash.new(0)
 clean_names.each do |name|
   owner = name.split('#', 2).first
-  compiled_by_gem[gem_of_owner[owner] || 'unknown'] += 1
+  gem = core_keys.include?(name) ? 'mruby-core-compiled' : gem_of_owner_engine[owner] || gem_of_owner[owner]
+  compiled_by_gem[gem || 'unknown'] += 1
 end
 
 report = +''
@@ -202,6 +209,12 @@ report << "compiled entry points (real build output -- clean, zero #error): #{cl
 report << "  from bytecode: #{clean_names.size - synthesized_count}\n"
 report << "  synthesized accessor overrides (ATTR_STRUCT_DEVIRT): #{synthesized_count}\n"
 compiled_by_gem.sort.each { |gem, n| report << "  #{gem}: #{n}\n" }
+core_summary = err.match(/== core methods: (\d+) core-source bytecode methods, (\d+) shadowed by a later definition, (\d+) kept interpreted \(([^)]*)\), (\d+) compiled without being registry definitions/)
+if core_summary
+  report << "mruby core mrblib (docs/adr/0264): #{core_summary[1]} bytecode methods in the world, " \
+            "#{(core_keys & clean_names).size} compiled clean (#{core_summary[5]} of them not registry definitions), " \
+            "#{core_summary[3]} kept interpreted (#{core_summary[4]}), #{core_summary[2]} shadowed by a later definition\n"
+end
 if never_called_match
   report << "never called (zero evidence in bytecode or NATIVE_SRCS): #{never_called_match[1]}\n"
 end
@@ -397,11 +410,25 @@ new_dispatch_paths = Hash.new(0)
 new_dispatch_exclusions = Hash.new(0)
 poly_diag_sites = 0
 poly_dynamic_names = Hash.new(0)
+# Which generated function a line belongs to: a core-source entry's `_impl` and the helper functions
+# (block, rescue, inline-loop bodies) named after it. Everything else is the engine's.
+shipped_core_keys = @shipped_stderr[/== core-source compiled entry points \(\d+\) ==\n(.*?)(?=\n==|\z)/m, 1].to_s.lines.map(&:strip).reject(&:empty?).to_set
+core_entry_names = section_lines(@shipped_stderr, 'compiled entry points').filter_map do |l|
+  (m = l.match(/\A(\S+) \/ \S+\s+\((\S+#[^,]+),/)) && shipped_core_keys.include?(m[2]) ? m[1] : nil
+end
+core_function = /\A(?:#{core_entry_names.map { |n| Regexp.escape(n) }.join('|')})(?:_impl|_(?:block_fallback|inline|rescue|exec|tdef|lambda)\w*)?\z/
+core_dispatch_diag_sites = 0
+core_dispatch_diag_dynamic = 0
+current_function = nil
 @shipped_stdout.each_line do |line|
+  current_function = Regexp.last_match(1) if !core_entry_names.empty? && line =~ /\A(?:static )?mrb_value (\w+|[\w$]+)\(mrb_state\*/
   match = line.match(/^\s*\/\/ POLY_DIAG path=(\S+) receiver=(\S+) name="((?:\\.|[^"\\])*)" arity=\d+ candidates=(\d+) excluded=(\S+)(?: origin=(\S+))?/)
   next unless match
 
   poly_diag_sites += 1
+  in_core = current_function && core_entry_names.any? && current_function.match?(core_function)
+  core_dispatch_diag_sites += 1 if in_core
+  core_dispatch_diag_dynamic += 1 if in_core && match[1].start_with?('dynamic_')
   poly_paths[match[1]] += 1
   poly_receivers[match[2]] += 1
   if match[3] == 'new' && match[1].start_with?('dynamic_')
@@ -436,6 +463,8 @@ report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fa
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
 report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
 report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
+report << "    in engine methods: #{poly_dynamic_sites - core_dispatch_diag_dynamic}\n"
+report << "    in compiled mruby-core mrblib methods: #{core_dispatch_diag_dynamic}\n"
 report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
 report << "  dispatch path by call site:\n"
 poly_paths.sort.each { |path, count| report << format("    %5d  %s\n", count, path) }

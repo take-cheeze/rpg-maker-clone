@@ -1069,6 +1069,19 @@
   native binding, splits the frame-independent ones into a body plus an
   `mrb_get_args` wrapper, and generates the compiler's table; see
   [`docs/adr/0263-native-binding-split-tooling.md`](docs/adr/0263-native-binding-split-tooling.md).
+  mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
+  mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
+  neither names the Fiber class, builds a lambda, nor comes from mruby-enumerator is
+  registered over its bytecode for the RPG2000/2003 maker, and the ones whose name no
+  native method shares (and that take no block) also become direct call targets.
+  The block-taking ones (`Array#each`, `Integer#times`, `Kernel#loop`, `Hash#each`,
+  most of `Enumerable`, ...) sit behind a Fiber guard: while a Fiber runs (a game
+  script, `Enumerator#next`) the entry hands the call to the bytecode, since a
+  `Fiber.yield` inside a block cannot cross a compiled frame. Flash-limited builds
+  (wio, psp, maix) compile none of it. See
+  [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md)
+  and
+  [`docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md`](docs/adr/0269-bc2cpp-core-block-methods-fiber-guard.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
