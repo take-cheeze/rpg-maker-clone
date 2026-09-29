@@ -1008,6 +1008,7 @@ jobs:
               ruby scripts/bc2cpp_bytecode_ir_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_bytecode_ir_dataflow_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_rescue_shadow_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_fallback_bodies_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_operand_schema_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
@@ -1286,6 +1287,12 @@ jobs:
           # lands by line number and drifts when an earlier patch shifts the file.
           - name: mruby patch context check
             run: ruby scripts/mruby_patch_context_check.rb
+
+          # The hand-built-irep half of the bc2cpp fallback-bodies check (JMPUW
+          # in rescue/ensure regions, bigint pool entries, ...). The compiled
+          # half needs a host mrbc and runs in the `bc2cpp-checks` fast shard.
+          - name: bc2cpp fallback bodies check (unit half)
+            run: ruby scripts/bc2cpp_fallback_bodies_check.rb
 
           # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
           # (scripts/wio_overflow_report.rb, ADR 0152) against a hand-built map

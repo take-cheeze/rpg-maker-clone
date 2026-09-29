@@ -74,6 +74,9 @@ CHECKS = [
     needs: :rpg2k_game },
   { name: 'error-report',       command: %w[scripts/error_report_check.rb] },
   { name: 'impossible-as-error', command: %w[scripts/impossible_as_error_check.rb] },
+  # bc2cpp's hand-built-irep half only (no mrbc under the reporter): it reaches
+  # no mrblib line, listed so the CHECKS list keeps mirroring `ruby-checks`.
+  { name: 'bc2cpp-fallback-bodies', command: %w[scripts/bc2cpp_fallback_bodies_check.rb] },
   # The mruby-rgss mrbtest suite (mruby-rgss/test/test.rb) run under CRuby
   # through the RGSS compatibility layer (scripts/rgss_cruby_compat.rb), so the
   # RGSS mrblib lines its 87 assertions reach count here instead of reading 0%.
