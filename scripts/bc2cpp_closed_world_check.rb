@@ -555,6 +555,87 @@ Dir.mktmpdir do |dir|
              !external_override_world.ownerless_native_dispatch_safe?('!'))
 end
 
+# TouchScan (docs/adr/0253): an outside file makes a class opaque only when it
+# can create, reopen, subclass or rebind it; a mention (a call, a constant
+# read, an instantiation, a native define of a class Ruby also declares) does not.
+Dir.mktmpdir do |dir|
+  decl = { super: :none, outer_nil: true }
+  decls = { 'CwTouched' => [decl], 'CwBoom' => [decl], 'CwMod::CwInner' => [decl] }
+  n = 0
+  opaque_by = lambda do |name, lang, source|
+    n += 1
+    path = File.join(dir, "touch#{n}.#{lang}")
+    File.write(path, source)
+    world = ClosedWorld.new(ireps: {}, registry: {}, class_decls: decls, walked: Set.new,
+                            native_paths: lang == 'rb' ? [] : [path], ruby_paths: lang == 'rb' ? [path] : [])
+    world.send(:opaque?, name)
+  end
+  ruby_cases = [
+    ['a Ruby file that only mentions a class', false, "x = CwTouched\ndef f; CwTouched.new; CwTouched::LIMIT; end\n"],
+    ['a Ruby file that reopens a class', true, "class CwTouched\n  def y; end\nend\n"],
+    ['a Ruby file that subclasses a class', true, "class CwKid < CwTouched\nend\n"],
+    ['a Ruby file that subclasses through a non-constant expression', true, "class CwKid < CwTouched.pick\nend\n"],
+    ['a Ruby file that rebinds a class constant', true, "CwTouched = 5\n"],
+    ['a Ruby file that rebinds a class constant with ||=', true, "CwTouched ||= 5\n"],
+    ['a Ruby file that aliases a class and reopens it', true, "CwAlias = CwTouched\nclass CwAlias\nend\n"],
+    ['a Ruby file that reopens a class through class_eval', true, "k = CwTouched\nk.class_eval { def z; end }\n"],
+    ['a Ruby file that copies a class with dup', true, "k = CwTouched\nk.dup\n"],
+    ['a Ruby file that extends a class from outside', true, "CwTouched.extend(Mixin)\n"],
+    ['a Ruby file that only reopens another namespace of the same simple name', false,
+     "module CwElse\n  class CwInner\n  end\nend\n"],
+    ['a Ruby file that reopens the qualified class', true, "module CwMod\n  class CwInner\n  end\nend\n"],
+    ['a Ruby file that reopens the qualified class by path', true, "class CwMod::CwInner\nend\n"],
+    ['a Ruby file whose lookup reaches the class through an included namespace', true,
+     "include CwMod\nclass CwKid < CwInner\nend\n"],
+    ['a Ruby file whose only `class` is prose in a comment', false, "def f; end # a class of CwTouched things\n"]
+  ]
+  ruby_cases.each do |what, opaque, source|
+    name = source.include?('CwInner') ? 'CwMod::CwInner' : 'CwTouched'
+    check.call(what, opaque_by.call(name, 'rb', source) == opaque)
+  end
+  native_prelude = 'void f(mrb_state* M, mrb_value obj, mrb_value v) { ' \
+                   'mrb_const_set(M, obj, mrb_intern_lit(M, "CW_MARK"), v); '
+  native_cases = [
+    ['a native file that only instantiates and adds methods to a class', false,
+     'RClass* k = mrb_class_get(M, "CwTouched"); mrb_define_method(M, k, "foo", g, MRB_ARGS_NONE()); ' \
+     'mrb_obj_new(M, mrb_class_get(M, "CwTouched"), 0, NULL);'],
+    ['a native file that only defines a class the closed world declares', false,
+     'mrb_define_class(M, "CwTouched", M->object_class);'],
+    ['a native file that subclasses a class', true,
+     'mrb_define_class(M, "CwKid", mrb_class_get(M, "CwTouched"));'],
+    ['a native file that subclasses through a variable', true,
+     'mrb_define_class(M, "CwKid", k); mrb_class_get(M, "CwTouched");'],
+    ['a native file that subclasses a built-in handle the closed world reopens', true,
+     'mrb_define_class(M, "CwKid", M->eCwBoom_class);', 'CwBoom'],
+    ['a native file that subclasses a class the closed world does not declare', false,
+     'mrb_define_class(M, "CwKid", E_STANDARD_ERROR); mrb_class_get(M, "CwTouched");'],
+    ['a native file that makes a class with mrb_class_new', true,
+     'mrb_class_new(M, mrb_class_get(M, "CwTouched"));'],
+    ['a native file that rebinds a class constant by name', true,
+     'mrb_const_set(M, obj, mrb_intern_lit(M, "CwTouched"), v);'],
+    ['a native file that mixes a module into a class', true,
+     'mrb_include_module(M, mrb_class_get(M, "CwTouched"), mod);'],
+    ['a native file that instantiates through a class it cannot see', true,
+     'mrb_obj_new(M, klass, 0, NULL); mrb_class_get(M, "CwTouched");'],
+    ['a native file that sends new to a class it cannot see', true,
+     'mrb_funcall_id(M, mrb_obj_value(klass), MRB_SYM(new), 0); mrb_class_get(M, "CwTouched");'],
+    ['a native file that sends an unrelated literal name', false,
+     'mrb_funcall_id(M, obj, MRB_SYM(clear), 0); mrb_class_get(M, "CwTouched");']
+  ]
+  native_cases.each do |what, opaque, body, name|
+    check.call(what, opaque_by.call(name || 'CwTouched', 'c', "#{native_prelude}#{body} }") == opaque)
+  end
+  # Defining a class natively is the origin of a class the closed world declares,
+  # but it still touches an owner the closed world does not declare.
+  path = File.join(dir, 'origin.c')
+  File.write(path, 'void f(mrb_state* M) { mrb_define_class(M, "CwNative", M->object_class); }')
+  origin_world = ClosedWorld.new(ireps: {}, registry: {}, class_decls: decls, walked: Set.new,
+                                 native_paths: [path], ruby_paths: [])
+  check.call('a native define touches a name the closed world does not declare',
+             origin_world.send(:touches_for, ['CwNative'], source: true).any? &&
+               origin_world.send(:touches_for, ['CwNative'], source: false).empty?)
+end
+
 COUNTER = <<~'RUBY'
   class CwCounter
     def initialize; @n = 0; end
