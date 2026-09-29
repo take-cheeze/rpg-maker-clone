@@ -129,6 +129,21 @@ WORLD = <<~'RUBY'
   end
 RUBY
 
+# SELF_INSTANCE_RECEIVER: a `.singleton` definer cannot answer `self` in an instance method.
+SINGLETON_WORLD = <<~'RUBY'
+  module CwHolder
+    def self.cw_hello; 9; end
+  end
+  class CwBase
+    def cw_hello; 1; end
+    def run; cw_hello; end
+    def outside(x); x.cw_hello; end
+  end
+  class CwKid < CwBase
+    def cw_hello; 2; end
+  end
+RUBY
+
 RESPOND_WORLD = <<~'RUBY'
   class CwRespondee
     def cw_known; 1; end
@@ -373,6 +388,13 @@ check.call('a class constant rebound in the closed world keeps guarded dynamic d
            !rebound_call.include?('CLOSED_WORLD_EXACT_CLASS') && rebound_call.include?('mrb_obj_class(M,') &&
              rebound_call.include?('mrb_funcall'))
 
+singleton_code, = generate.call(SINGLETON_WORLD, 'cw_singleton', true)
+singleton_self = body_of.call(singleton_code, 'CwBase_run')
+singleton_other = body_of.call(singleton_code, 'CwBase_outside')
+check.call('a self call in an instance method ignores a .singleton definer: the else raises',
+           singleton_self.match?(/bc2cpp_nomethod\(M, self, \d+\);/) && !singleton_self.include?('kept: singleton_definer'))
+check.call('a non-self receiver may be the module object, so the singleton definer keeps the dispatch',
+           singleton_other.include?('kept: singleton_definer') && !singleton_other.include?('bc2cpp_nomethod('))
 respond_outside = bc2cpp_closed_world_outside_srcs('wio', wio_gems, root)
 respond_code, = generate.call(RESPOND_WORLD, 'cw_respond', true, nil, respond_outside)
 respond_hook_code, = generate.call(RESPOND_HOOK_WORLD, 'cw_respond_hook', true, nil, respond_outside)
