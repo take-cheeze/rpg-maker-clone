@@ -44,7 +44,7 @@ check.call('every compiled gem passes the list through the checked env and rebui
            BC2CPP_COMPILED_GEMS.keys.all? do |g|
              rake = File.read(File.join(root, g, 'mrbgem.rake'))
              rake.include?('extend Bc2cppHotOnlyOption') && rake.include?('.merge(bc2cpp_hot_only_env(spec))') &&
-               rake.include?('BC2CPP_HOT_METHODS_PATH] do |t|')
+               rake.match?(/BC2CPP_HOT_METHODS_PATH[,\]][^\n]*(?:\n[^\n]*)?do \|t\|/)
            end)
 check.call("the wio strip's probe runs with the build's list",
            config.include?("env = { 'BC2CPP_HOT_METHODS' => (hot_methods if bc2cpp_hot_only_build?(spec.build)) }"))
@@ -52,9 +52,10 @@ check.call("the wio strip's probe runs with the build's list",
 spec = Struct.new(:name, :build) { include Bc2cppHotOnlyOption }
 build = Struct.new(:name, :gems)
 specs = ->(flags) { BC2CPP_COMPILED_GEMS.keys.zip(flags).map { |n, f| spec.new(n, nil).tap { |s| s.enable_bc2cpp_hot_only if f } } }
-open_build = build.new('host', specs.call([false, false, false]))
-hot_build = build.new('wio', specs.call([true, true, true]))
-mixed = build.new('wio', specs.call([true, false, true]))
+gem_count = BC2CPP_COMPILED_GEMS.size
+open_build = build.new('host', specs.call(Array.new(gem_count, false)))
+hot_build = build.new('wio', specs.call(Array.new(gem_count, true)))
+mixed = build.new('wio', specs.call([true, false] + Array.new(gem_count - 2, true)))
 check.call('a build that did not opt in is not hot-only', !bc2cpp_hot_only_build?(open_build, env: {}))
 check.call('an opted-in build is, and passes the list', bc2cpp_hot_only_build?(hot_build, env: {}) &&
            bc2cpp_hot_only_env(spec.new('x', hot_build), env: {}) == { 'BC2CPP_HOT_METHODS' => BC2CPP_HOT_METHODS_PATH })

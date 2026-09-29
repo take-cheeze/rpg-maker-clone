@@ -74,7 +74,8 @@ fresh = new_gen.call
 check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
            CodeGen::METHOD_COMPILE_STATE.all? { |ivar, v| fresh.instance_variable_get(ivar) == v })
 
-# Every ivar written outside `initialize`, split by what it is.
+# Every ivar written outside `initialize`, split by what it is. @closed_world is swapped out for the
+# body of a core method (ADR 0264) and restored by an `ensure` before compile_method returns.
 NOT_PER_METHOD = %w[
   @clean_cache @probing
   @builtin_class_send_safe @entry_arg_body_owner @entry_arg_call_index @eqq_literal_devirt_safe
@@ -84,6 +85,7 @@ NOT_PER_METHOD = %w[
   @owner_class_cache @synthesize_accessor_for @poly_tables @poly_tables_emitted
   @array_return_names @class_return_names @entry_arg_fixnum @fixnum_return_names @fiber_unsafe_methods
   @ivar_layout @only_owners @other_owners
+  @closed_world
   @constant_object_probe @direct_alloc_used @poly_diagnostic_reason_cache @rescued_exception_message_safe
   @sanitized @strict_ancestors @subtree_ivar_names
 ].freeze

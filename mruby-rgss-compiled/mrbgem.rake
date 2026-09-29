@@ -54,7 +54,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
   # mruby-rpg2k-compiled's own mrbgem.rake calls too -- see that helper's
   # own comment for why this stopped being three separately hand-
   # maintained literals.
-  closed_world_srcs = closed_world_mrblib_srcs("#{dir}/..")
+  closed_world_prereqs = bc2cpp_closed_world_prerequisites("#{dir}/..")
 
   # RGSS's own C++-implemented methods are invisible to closed_world_srcs
   # above (no .rb source for them) -- see mruby-lcf-compiled/mrbgem.rake's
@@ -93,9 +93,9 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
 
   # bc2cpp.rb runs MRBC: without this edge `rake -m` can start codegen before
   # the bootstrap mrbc exists (ADR 0228).
-  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_srcs, *native_srcs,
+  file generated => [*bc2cpp_tool_srcs, compiled_gems_rb, spec.build.mrbcfile, *closed_world_prereqs, *native_srcs,
                      *foreign_ruby_srcs, *bc2cpp_host_native_srcs(build.name, "#{dir}/.."),
-                     BC2CPP_HOT_METHODS_PATH] do |t|
+                     BC2CPP_HOT_METHODS_PATH, BC2CPP_CORE_REFUSED_PATH] do |t|
     FileUtils.mkdir_p build_dir, verbose: true
     env = {
       'MRBC' => spec.build.mrbcfile.to_s,
@@ -108,6 +108,7 @@ MRuby::Gem::Specification.new('mruby-rgss-compiled') do |spec|
       'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
       'SKIP_UNSUPPORTED' => '1',
     }.merge(bc2cpp_closed_world_env(spec, "#{dir}/..")).merge(bc2cpp_hot_only_env(spec))
+    closed_world_srcs = bc2cpp_closed_world_srcs(spec, "#{dir}/..")
     cmd ="#{RbConfig.ruby.shellescape} #{bc2cpp.shellescape} " \
           "#{closed_world_srcs.map(&:shellescape).join(' ')} > #{generated.shellescape}"
     sh env, cmd

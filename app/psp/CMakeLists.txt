@@ -208,6 +208,7 @@ rpg2k_add_mruby(
   mruby-lcf-compiled
   mruby-rpg2k-compiled
   mruby-rgss-compiled
+  mruby-core-compiled
   MRB_OPTS
   MRUBY_TARGET=psp)
 
