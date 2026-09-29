@@ -231,6 +231,11 @@ check.call('to_s type-tag arms share one cached-dispatch fallback',
            %w[string array hash].all? { |klass| to_s_code.include?("M->#{klass}_class") } &&
              to_s_code.include?('mrb_integer_to_str(M, r3, 10)') &&
              to_s_code.scan('mrb_funcall(M, r3, "to_s", 0)').one?)
+to_i_code = generator.compile_native_primitive_send('to_i', 1, 'r3', [])
+check.call('to_i numeric and String guards share one fallback for unsupported values and Float edges',
+           to_i_code.include?('MRB_TT_INTEGER') && to_i_code.include?('FIXABLE_FLOAT(mrb_float(r3))') &&
+             to_i_code.include?('M->string_class') &&
+             to_i_code.scan('mrb_funcall(M, r3, "to_i", 0)').one?)
 length_code = generator.compile_native_primitive_send('length', 1, 'r3', [])
 check.call('Array/Hash length is generated from the same C expressions as size',
            length_code.include?('M->array_class') && length_code.include?('M->hash_class') &&
