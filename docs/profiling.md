@@ -354,6 +354,12 @@ For the largest origin groups it also lists the most frequent dispatched names,
 which helps distinguish a repeated class-method opportunity from unrelated
 receiver-tracing gaps.
 
+This report runs under the wio closed-world proof with the same gem map used by
+the compiled gems. It allows the `NOMETHOD_REVIEWED` audit to report findings
+without aborting the measurement; that environment flag does not change
+generated code. The dispatch totals therefore describe closed-world output,
+rather than a non-closed-world all-owner analysis.
+
 ## Audio: what is already off the main thread
 
 Short version: **the audio *processing* is already on another thread, and it

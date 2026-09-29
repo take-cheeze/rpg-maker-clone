@@ -2,9 +2,9 @@
 # encoding: UTF-8
 #
 # bc2cpp coverage report: regenerates tools/bc2cpp/bc2cpp.rb's whole-program
-# diagnostic (every owner across all three compiled gems -- mruby-rpg2k-
-# compiled/mruby-lcf-compiled/mruby-rgss-compiled -- combined, the same
-# closed-world registry each real gem build feeds it) and prints a small,
+# wio closed-world diagnostic (every owner across all three compiled gems --
+# mruby-rpg2k-compiled/mruby-lcf-compiled/mruby-rgss-compiled -- combined,
+# with the actual wio gem set and outside-source proof inputs) and prints a small,
 # stats-only summary: compiled-entry-point and
 # #error counts, a method-level coverage percentage (attempted vs. actually
 # compiled clean), and both the resolved AND the poisoned-to-unknown side of
@@ -39,6 +39,7 @@ require 'set'
 ROOT = File.expand_path('..', __dir__)
 require_relative '../tools/bc2cpp/compiled_gems'
 require_relative '../tools/bc2cpp/symbol_cache'
+require_relative '../tools/bc2cpp/nomethod_reviewed_probe'
 
 BC2CPP = File.join(ROOT, 'tools/bc2cpp/bc2cpp.rb')
 MRBC = ENV['MRBC'] || 'mrbc'
@@ -65,6 +66,13 @@ env = {
   'ONLY_OWNERS' => all_owners.join(','),
   'NATIVE_SRCS' => Shellwords.join(native_srcs),
   'FOREIGN_RUBY_SRCS' => Shellwords.join(foreign_ruby_srcs),
+  # The whole-program dispatch count is meaningful only under the same closed
+  # world that the wio compiled gems use. `allow` skips the reviewed-site audit
+  # failure for this measurement run; it does not alter generated dispatch.
+  'BC2CPP_CLOSED_WORLD' => '1',
+  'BC2CPP_BUILD_NAME' => 'wio',
+  'BC2CPP_BUILD_GEMS' => Shellwords.join(NomethodReviewedProbe.wio_gems(ROOT).map { |n, d| "#{n}=#{d}" }),
+  NomethodReviewed::ALLOW_ENV => 'allow',
 }
 env['BC2CPP_PROFILE_TIMINGS'] = '1' if ENV['BC2CPP_PROFILE_TIMINGS'] == '1'
 cmd = [RbConfig.ruby, BC2CPP, *srcs].shelljoin
@@ -180,7 +188,7 @@ end
 
 report = +''
 report << "bc2cpp coverage report\n"
-report << "(scripts/bc2cpp_coverage_report.rb; whole-program, all three compiled\n"
+report << "(scripts/bc2cpp_coverage_report.rb; wio closed world, whole-program, all three\n"
 report << " gems' owners combined -- see that script's own header)\n\n"
 
 report << "compiled entry points (real build output -- clean, zero #error): #{clean_names.size}\n"
