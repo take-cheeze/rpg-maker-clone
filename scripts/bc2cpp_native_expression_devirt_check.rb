@@ -265,7 +265,7 @@ check.call('String#==, Symbol#== and Integer#== are generated from their C wrapp
 eq_registry = { '==' => [MethodDef.new(name: '==', owner: '<native>', irep: nil, visibility: :public)] }
 eq_generator = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
                            native_registered_expressions: exact_class_expressions)
-eq_code = eq_generator.compile_cmp('EQ', 'R3 (R4)')
+eq_code = eq_generator.compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol equality before dispatch',
            eq_code.index('mrb_obj_eq(M, r3, r4)') < eq_code.index('MRB_TT_INTEGER') &&
              eq_code.include?('mrb_type(r3) == MRB_TT_STRING && mrb_obj_ptr(r3)->c == M->string_class') &&
@@ -273,7 +273,7 @@ check.call('OP_EQ keeps identity and numeric arms and generates String/Symbol eq
              eq_code.include?('mrb_type(r3) == MRB_TT_SYMBOL) {') &&
              eq_code.include?('r3 = mrb_bool_value(mrb_obj_equal(M, r3, (r4)));') &&
              eq_code.scan('mrb_funcall(M, r3, "==", 1, r4)').size == 1)
-plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp('EQ', 'R3 (R4)')
+plain_eq_code = CodeGen.new({}, eq_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new).compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('OP_EQ without a generated == registration is unchanged',
            !plain_eq_code.include?('mrb_str_equal') && plain_eq_code.include?('mrb_funcall(M, r3, "==", 1, r4)'))
 # A real compiled Ruby String#== (the resolver now compiles candidate targets, so
@@ -293,7 +293,7 @@ Dir.mktmpdir do |eq_dir|
 end
 eq_override_registry = eq_registry.merge('==' => eq_registry['=='] + [eq_override_method])
 eq_override_code = CodeGen.new(eq_override_ireps, eq_override_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new,
-                               native_registered_expressions: exact_class_expressions).compile_cmp('EQ', 'R3 (R4)')
+                               native_registered_expressions: exact_class_expressions).compile_cmp(Insn.synthetic('EQ', 'R3 (R4)'))
 check.call('a Ruby String#== override rejects the generated OP_EQ paths',
            !eq_override_code.include?('mrb_str_equal') && !eq_override_code.include?('mrb_obj_equal('))
 array_at_generator = CodeGen.new({}, { 'at' => [MethodDef.new(name: 'at', owner: '<native>', irep: nil,
@@ -365,16 +365,16 @@ wrapper_registry = %w[clear rect height width x y red green blue alpha gray disp
   [name, [MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)]]
 end
 wrapper_generator = CodeGen.new({}, wrapper_registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
-height_code = wrapper_generator.compile_send('R1 = SEND R2 :height n=0', self_implicit: false)
-disposed_code = wrapper_generator.compile_send('R1 = SEND R2 :disposed? n=0', self_implicit: false)
-visible_code = wrapper_generator.compile_send('R1 = SEND R2 :visible n=0', self_implicit: false)
-clear_code = wrapper_generator.compile_send('R1 = SEND R2 :clear n=0', self_implicit: false)
-rect_code = wrapper_generator.compile_send('R1 = SEND R2 :rect n=0', self_implicit: false)
-update_code = wrapper_generator.compile_send('R1 = SEND R2 :update n=0', self_implicit: false)
-rect_x_code = wrapper_generator.compile_send('R1 = SEND R2 :x n=0', self_implicit: false)
-rect_width_code = wrapper_generator.compile_send('R1 = SEND R2 :width n=0', self_implicit: false)
-color_red_code = wrapper_generator.compile_send('R1 = SEND R2 :red n=0', self_implicit: false)
-tone_red_code = wrapper_generator.compile_send('R1 = SEND R2 :red n=0', self_implicit: false)
+height_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :height n=0'), self_implicit: false)
+disposed_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :disposed? n=0'), self_implicit: false)
+visible_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :visible n=0'), self_implicit: false)
+clear_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :clear n=0'), self_implicit: false)
+rect_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :rect n=0'), self_implicit: false)
+update_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :update n=0'), self_implicit: false)
+rect_x_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :x n=0'), self_implicit: false)
+rect_width_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :width n=0'), self_implicit: false)
+color_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
+tone_red_code = wrapper_generator.compile_send(Insn.synthetic('SEND', 'R1 :red n=0'), self_implicit: false)
 check.call('RGSS Bitmap#height uses its frame independent wrapper behind an exact class guard',
            height_code.include?('rgss::native_bitmap_class()') &&
              height_code.include?('rgss::bitmap_height_direct(M, r1)') &&

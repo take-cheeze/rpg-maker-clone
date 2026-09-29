@@ -299,7 +299,7 @@ Dir.mktmpdir do |dir|
 
   picture_irep = ireps.fetch(picture_method.irep)
   picture_send_idx = picture_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
-  picture_code = gen.compile_send(picture_irep.instructions[picture_send_idx].args, self_implicit: false,
+  picture_code = gen.compile_send(picture_irep.instructions[picture_send_idx], self_implicit: false,
                                   irep: picture_irep, idx: picture_send_idx, owner_def: picture_method)
   check.call('Hash<Klass> indexed value calls use guarded typed accessor dispatch',
              picture_code.include?('TYPED :picture_only -> Game::Picture') &&
@@ -323,7 +323,7 @@ Dir.mktmpdir do |dir|
   getidx0_idx = first_picture_irep.instructions.index { |insn| insn.op == 'GETIDX' }
   raise 'first_picture: expected GETIDX instruction' unless getidx0_idx
 
-  receiver_reg = first_picture_irep.instructions[getidx0_idx].args[/^R(\d+)/, 1]
+  receiver_reg = first_picture_irep.instructions[getidx0_idx].reg
   getidx0_insn = Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver_reg}[0]", raw: '')
   getidx0_code = gen.compile_insn(getidx0_insn, first_picture_irep, first_picture_method, getidx0_idx)
   check.call('Hash<Klass> GETIDX0 falls back for an incorrect runtime receiver type',
@@ -333,7 +333,7 @@ Dir.mktmpdir do |dir|
   unknown_method = registry['unknown_picture_name'].find { |md| md.owner == 'Game::HashPictureOwner' }
   unknown_irep = ireps.fetch(unknown_method.irep)
   unknown_send_idx = unknown_irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':picture_only') }
-  unknown_code = gen.compile_send(unknown_irep.instructions[unknown_send_idx].args, self_implicit: false,
+  unknown_code = gen.compile_send(unknown_irep.instructions[unknown_send_idx], self_implicit: false,
                                   irep: unknown_irep, idx: unknown_send_idx, owner_def: unknown_method)
   check.call('untyped Hash indexed values retain ordinary dispatch',
              !unknown_code.include?('TYPED :picture_only -> Game::Picture#picture_only') &&
@@ -358,7 +358,7 @@ Dir.mktmpdir do |dir|
     raise "#{method_name}: no GETIDX instruction found" unless getidx_idx
 
     index_insn = if method_name == 'first'
-                   receiver = irep.instructions[getidx_idx].args[/^R(\d+)/, 1]
+                   receiver = irep.instructions[getidx_idx].reg
                    Insn.new(lineno: 1, addr: 0, op: 'GETIDX0', args: "R4 R#{receiver}[0]", raw: '')
                  else
                    irep.instructions[getidx_idx]
@@ -374,7 +374,7 @@ Dir.mktmpdir do |dir|
     idx = irep.instructions.index { |insn| insn.op == 'SEND0' && insn.args.include?(':name') }
     raise "#{method_name}: no #name send found" unless idx
 
-    code = gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx,
+    code = gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx,
                             owner_def: method)
     check.call("#{method_name}: annotated indexed result devirtualizes with guard/fallback",
                code.include?('TYPED :name -> Game::Actor#name') &&

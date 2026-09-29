@@ -90,7 +90,7 @@ Dir.mktmpdir do |dir|
     idx = irep.instructions.index { |insn| insn.op.start_with?('SEND') && insn.args.include?(":#{send_name}") }
     raise "Reader##{method_name}: no :#{send_name} send found" unless idx
 
-    gen.compile_send(irep.instructions[idx].args, self_implicit: false, irep: irep, idx: idx, owner_def: reader)
+    gen.compile_send(irep.instructions[idx], self_implicit: false, irep: irep, idx: idx, owner_def: reader)
   end
 
   level_code = compile_call.call('read_level', 'level')

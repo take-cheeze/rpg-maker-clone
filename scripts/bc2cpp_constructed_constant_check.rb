@@ -19,7 +19,7 @@ end
 
 direct = fake_irep(['SEND', 'R1 :new n=0'])
 copied = fake_irep(['SEND', 'R1 :new n=0'], ['MOVE', 'R2 R1'])
-overwritten = fake_irep(['SEND', 'R1 :new n=0'], ['MOVE', 'R2 R1'], ['LOADI_1', 'R2'])
+overwritten = fake_irep(['SEND', 'R1 :new n=0'], ['MOVE', 'R2 R1'], ['LOADI_1', 'R2 (1)'])
 other_send = fake_irep(['SEND', 'R1 :build n=0'], ['MOVE', 'R2 R1'])
 
 check.call('direct constructor result is admitted', assigned_from_new_send?(direct, 1, '1'))
