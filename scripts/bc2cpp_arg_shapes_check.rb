@@ -382,8 +382,9 @@ Dir.mktmpdir do |dir|
   check.call('a fresh-receiver literal block is a direct call once the class is proven',
              typed.include?('CLOSED_WORLD_EXACT_CLASS :as_yield2') && typed.include?('AsBox_as_yield2_impl(M, r') &&
                !typed.match?(DISPATCH))
-  check.call('a callee that reads block_given? keeps the dispatch',
-             body_of(code, 'AsBox_blk_bg').match?(/mrb_funcall_with_block|bc2cpp_send/))
+  check.call('a callee that reads block_given? is a direct call: it answers from its own block parameter (ADR 0266)',
+             body_of(code, 'AsBox_blk_bg').include?('direct call with the block') &&
+               !body_of(code, 'AsBox_blk_bg').match?(DISPATCH) && body_of(code, 'AsBox_as_bg').include?('bc2cpp_blk'))
   check.call('an explicit &block argument keeps the dispatch',
              body_of(code, 'AsBox_amp_symbol').match?(DISPATCH))
   check.call('a rest callee gets a fresh Array built at the call',
@@ -400,7 +401,7 @@ Dir.mktmpdir do |dir|
   runtime = body_of(code, 'AsBox_splat_runtime')
   check.call('a runtime-sized splat switches on the Array length',
              runtime.include?('switch (RARRAY_LEN(') && runtime.include?('case 2:') &&
-               runtime.include?('AsBox_as_two_impl') && runtime.include?('mrb_funcall_argv'))
+               runtime.include?('AsBox_as_two_impl') && runtime.include?('bc2cpp_funcall_argv'))
 
   if core.nil? || !system('g++', '--version', out: File::NULL, err: File::NULL)
     puts '  SKIP run: no libmruby_core.a with include/ found (set BC2CPP_MRUBY_CORE)'
@@ -457,10 +458,6 @@ Dir.mktmpdir do |dir|
       compiled = IO.popen([binary, File.join(dir, 'arg_shapes.mrb'), 'compiled'], err: %i[child out], &:read)
       puts interpreted if interpreted.lines.size < 10
       check.call('the interpreted run produced a transcript', interpreted.lines.size > 60)
-      # The entry wrappers' mrb_get_args spell a rest/optional arity error
-      # "expected 1+" / "1..2" where OP_ENTER says "expected 1". That predates
-      # ARG_SHAPES and is the callee's own entry, not the call path under test.
-      compiled = compiled.gsub(/expected (\d+)(?:\+|\.\.\d+)\)/, 'expected \1)')
       lines = interpreted.lines.zip(compiled.lines)
       lines.each do |want, got|
         puts "  #{want == got ? 'ok  ' : 'DIFF'} #{want.to_s.strip}#{"   compiled: #{got.to_s.strip}" unless want == got}" unless want == got

@@ -89,8 +89,11 @@ module Bc2cppFixtureRuntime
 
   # Builds and runs a program: `body` is C++ run once per VM (it sees `M`, and
   # `compiled` says whether the compiled methods are registered). The fixture's
-  # bytecode is loaded first. Returns [built, output].
-  def run(dir, err, owners, body, build:, full: false, vms: [false, true])
+  # bytecode is loaded first. Returns [built, output]. With `envs` (an Array of
+  # environment Hashes) the binary runs once per entry, each in its own process
+  # so one crashing scenario cannot hide the others, and `output` is the Array
+  # of their outputs paired with the exit status: [[output, success], ...].
+  def run(dir, err, owners, body, build:, full: false, vms: [false, true], envs: nil)
     regs = registrations(err, owners).join("\n")
     File.write(File.join(dir, 'main.cpp'), <<~CPP)
       #include <mruby.h>
@@ -169,7 +172,15 @@ module Bc2cppFixtureRuntime
     return [false, ''] unless built
 
     FileUtils.cp_r(dir, ENV['BC2CPP_KEEP_DIR'], remove_destination: true) if ENV['BC2CPP_KEEP_DIR']
-    output = IO.popen([binary, File.join(dir, 'fixture.mrb')], err: %i[child out], &:read)
+    mrb = File.join(dir, 'fixture.mrb')
+    if envs
+      results = envs.map do |env|
+        out = IO.popen(env, [binary, mrb], err: %i[child out], &:read)
+        [out, $?.success?]
+      end
+      return [true, results]
+    end
+    output = IO.popen([binary, mrb], err: %i[child out], &:read)
     [$?.success?, output]
   end
 

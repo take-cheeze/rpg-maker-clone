@@ -68,7 +68,7 @@ state_of = ->(gen) { CodeGen::METHOD_COMPILE_STATE.keys.to_h { |ivar| [ivar, gen
 end
 first_page = new_gen.call.compile_method(label.call('first_page')).fetch(:code)
 check.call('first_page: the block break still throws out of the block cfunc',
-           first_page.include?('throw bc2cpp_block_break{'))
+           first_page.include?('bc2cpp_break(M, '))
 
 fresh = new_gen.call
 check.call('METHOD_COMPILE_STATE matches the constructor\'s initial values',
