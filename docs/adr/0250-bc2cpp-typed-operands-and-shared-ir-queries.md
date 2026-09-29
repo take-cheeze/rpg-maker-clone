@@ -74,3 +74,28 @@ normal flow. `Instruction#successors` and the blocks stay normal-only.
 The fixnum proof and the rescue recognizer now take their handler-derived sets
 (target addresses, protected addresses, partial-overlap test) from the IR; the
 barriers themselves are unchanged, so accept/reject decisions are identical.
+
+## Addendum: barrier shadow (not migrated)
+
+The Fixnum proof and return analysis refuse on two exception-flow sets:
+`ctx[:catch_targets]` (handler targets) and `ctx[:protected]` (handler ranges,
+end address included). `tools/bc2cpp/fixnum_barrier_shadow.rb` re-derives both
+from handler edges (edge targets; edge sources plus the instruction at each
+range end) and re-runs every barrier consumer with them swapped in.
+`scripts/bc2cpp_barrier_shadow_report.rb` runs it on the real closed-world wio
+build: 2405 irep contexts and 157431 queries, zero differences, generated
+output unchanged.
+
+The barriers stay as they are. Equality holds on the shipped gems only because
+they have no handler of these shapes; for arbitrary bytecode the edge-derived
+sets differ, always toward accepting more (unsafe):
+
+- a handler whose target is not an instruction has no edges, so its range is no
+  longer protected;
+- a handler whose range holds no instruction has no edge, so its target is no
+  longer a catch target.
+
+Making them equal needs the handler ranges and declared targets themselves,
+which is what `handler_target_addrs` / `handler_protected_addrs` already are
+(IR queries over `catch_handlers`), so an edge-based rewrite would add rules
+without removing a hand-written computation.
