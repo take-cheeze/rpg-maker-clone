@@ -27,13 +27,14 @@ to use the ordinary table.
    struct iv_tbl *iv;
 --- a/src/gc.c
 +++ b/src/gc.c
-@@ -728,6 +728,15 @@ gc_mark_children(mrb_state *mrb, mrb_gc *gc, struct RBasic *obj)
-
+@@ -728,6 +728,16 @@
+ 
    case MRB_TT_OBJECT:
    case MRB_TT_CDATA:
 +    if (obj->tt == MRB_TT_CDATA) {
 +      struct RData *data = (struct RData*)obj;
-+      if (data->type && data->type->ivars) {
++      /* data is NULL until mrb_data_init runs, and stays NULL if #initialize raised first. */
++      if (data->type && data->type->ivars && data->data) {
 +        for (size_t i = 0; i < data->type->ivar_count; ++i) {
 +          mrb_value *slot = (mrb_value*)((char*)data->data + data->type->ivars[i].offset);
 +          mrb_gc_mark_value(mrb, *slot);
@@ -42,7 +43,7 @@ to use the ordinary table.
 +    }
      children += mrb_gc_mark_iv(mrb, (struct RObject*)obj);
      break;
-
+ 
 --- a/src/variable.c
 +++ b/src/variable.c
 @@ -5,8 +5,10 @@

@@ -52,3 +52,36 @@ GC marking, `mrb_iv_copy`, reflection, and the write barrier in sync.
 The runtime support is carried by `patches/mruby-rdata-ivar-slots.patch` and
 applied through the shared mruby patch chain. The vendored submodule therefore
 remains pristine; host, cross, and CI builds reproduce the same runtime changes.
+
+## Follow-up: typed fields, NULL payloads and patch placement
+
+The descriptor lists only `mrb_value` slots. A typed field (`mrb_int`,
+`mrb_bool`, `mrb_sym`, the tagged Integer-or-nil) is a raw C value, and every
+descriptor consumer (GC marking, `mrb_iv_get`/`set`/`defined`/`remove`,
+`mrb_iv_foreach`, `mrb_iv_copy`) treats a slot as an `mrb_value`. So:
+
+- `emit_structs` puts only `:value` slots in the table. A typed ivar that a
+  method left on the interpreter touches is demoted to a `:value` slot
+  (`demote_typed_ivars_read_by_interpreter`). An all-typed owner keeps a
+  one-entry placeholder table with a count of 0: the non-NULL `ivars` pointer
+  is what makes `mrb_iv_copy` copy the whole payload, typed fields included.
+- A typed ivar is therefore invisible to reflection (`instance_variables`,
+  `inspect`, `instance_variable_get`, Marshal): it reads as unset instead of
+  being misread as an object. `dup` and `clone` still copy it with the payload.
+  Code that needs the value should read it through a method.
+- `data` is NULL until `mrb_data_init` runs, and stays NULL for an object whose
+  `#initialize` raised first or that came from `Class#allocate`. GC marking
+  skips a NULL payload like the `variable.c` consumers already do; compiled
+  bodies still assume an initialised payload, which the closed-world subclass
+  checks guarantee for wired owners.
+- The `gc.c` hunk of the patch carries context lines. It used to be a
+  zero-context insertion at a fixed line, so after `mruby-gc-type-live-counts`
+  (applied first by the patch chain) shifted `gc.c`, it landed inside the
+  `MRB_TT_CLASS` block, `obj->tt == MRB_TT_CDATA` was never true, and no slot was
+  marked. An existing checkout patched by the old text no longer matches and
+  `apply_mruby_patch.bash` reports it; reset `3rd/mruby` and rebuild.
+
+`scripts/bc2cpp_typed_slot_check.rb` covers the emitted tables and initial
+values. `scripts/bc2cpp_rdata_slot_native_check.rb` links generated code against
+the patch-chain mruby and runs it under GC pressure, so a misplaced hunk or a
+raw field in the table crashes it.
