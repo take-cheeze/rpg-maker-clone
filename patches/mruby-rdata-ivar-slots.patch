@@ -5,7 +5,7 @@ to use the ordinary table.
 
 --- a/include/mruby/data.h
 +++ b/include/mruby/data.h
-@@ -25,8 +25,19 @@
+@@ -25,8 +25,26 @@
  
    /** data type release function pointer */
    void (*dfree)(mrb_state *mrb, void*);
@@ -14,6 +14,13 @@ to use the ordinary table.
 +  const struct mrb_data_ivar *ivars;
 +  size_t ivar_count;
 +  size_t ivar_data_size;
++
++  /**
++   * Optional open-addressing table over `ivars` (FNV-1a 32 of the name, linear
++   * probing, 0xFFFF = empty, size ivar_hash_mask + 1); NULL falls back to a scan.
++   */
++  const uint16_t *ivar_hash;
++  size_t ivar_hash_mask;
  } mrb_data_type;
  
 +/** A GC-visible Ruby instance variable stored in an RData payload. */
@@ -57,7 +64,7 @@ to use the ordinary table.
  #include <mruby/proc.h>
  #include <mruby/string.h>
  #include <mruby/variable.h>
-@@ -597,6 +599,23 @@
+@@ -597,6 +599,42 @@
    }
  }
  
@@ -66,12 +73,31 @@ to use the ordinary table.
 +{
 +  if (obj->tt != MRB_TT_CDATA) return NULL;
 +  struct RData *data = (struct RData*)obj;
-+  if (!data->type || !data->type->ivars || !data->data) return NULL;
++  const mrb_data_type *type = data->type;
++  if (!type || !type->ivars || !data->data) return NULL;
 +  mrb_int len;
 +  const char *name = mrb_sym_name_len(mrb, sym, &len);
-+  for (size_t i = 0; i < data->type->ivar_count; ++i) {
-+    const struct mrb_data_ivar *ivar = &data->type->ivars[i];
-+    if ((mrb_int)strlen(ivar->name) == len && memcmp(ivar->name, name, (size_t)len) == 0) {
++  /* Descriptor names are "@x...", so a shorter name can never match. */
++  if (len < 2) return NULL;
++  if (type->ivar_hash) {
++    /* The hash must match tools/bc2cpp/codegen_emit.rb (RDATA_IVAR_HASH). */
++    uint32_t h = 2166136261u;
++    for (mrb_int i = 0; i < len; ++i) {
++      h ^= (uint8_t)name[i];
++      h *= 16777619u;
++    }
++    for (size_t p = h & type->ivar_hash_mask;; p = (p + 1) & type->ivar_hash_mask) {
++      uint16_t idx = type->ivar_hash[p];
++      if (idx == 0xFFFF) return NULL;
++      const struct mrb_data_ivar *ivar = &type->ivars[idx];
++      if (strncmp(ivar->name, name, (size_t)len) == 0 && ivar->name[len] == '\0') {
++        return (mrb_value*)((char*)data->data + ivar->offset);
++      }
++    }
++  }
++  for (size_t i = 0; i < type->ivar_count; ++i) {
++    const struct mrb_data_ivar *ivar = &type->ivars[i];
++    if (strncmp(ivar->name, name, (size_t)len) == 0 && ivar->name[len] == '\0') {
 +      return (mrb_value*)((char*)data->data + ivar->offset);
 +    }
 +  }
@@ -81,7 +107,7 @@ to use the ordinary table.
  static iv_tbl*
  class_iv_ptr(struct RClass *c)
  {
-@@ -618,6 +637,8 @@
+@@ -618,6 +656,8 @@
  MRB_API mrb_value
  mrb_obj_iv_get(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
  {
@@ -90,7 +116,7 @@ to use the ordinary table.
    if (MRB_OBJ_SHAPED_P(obj)) {
      return shaped_iv_get(obj, sym);
    }
-@@ -689,6 +710,12 @@
+@@ -689,6 +729,12 @@
  void
  mrb_obj_iv_set_force(mrb_state *mrb, struct RObject *obj, mrb_sym sym, mrb_value v)
  {
@@ -103,7 +129,7 @@ to use the ordinary table.
    if (namespace_p(obj->tt)) {
      assign_class_name(mrb, obj, sym, v);
    }
-@@ -742,6 +769,19 @@
+@@ -742,6 +788,19 @@
  mrb_iv_foreach(mrb_state *mrb, mrb_value obj, mrb_iv_foreach_func *func, void *p)
  {
    if (!obj_iv_p(obj)) return;
@@ -123,7 +149,7 @@ to use the ordinary table.
    if (MRB_OBJ_SHAPED_P(mrb_obj_ptr(obj))) {
      shaped_iv_foreach(mrb, mrb_obj_ptr(obj), func, p);
      return;
-@@ -791,6 +831,8 @@
+@@ -791,6 +850,8 @@
  MRB_API mrb_bool
  mrb_obj_iv_defined(mrb_state *mrb, struct RObject *obj, mrb_sym sym)
  {
@@ -132,7 +158,7 @@ to use the ordinary table.
    if (MRB_OBJ_SHAPED_P(obj)) {
      return shaped_iv_defined(obj, sym);
    }
-@@ -887,6 +929,19 @@
+@@ -887,6 +948,19 @@
    struct RObject *d = mrb_obj_ptr(dest);
    struct RObject *s = mrb_obj_ptr(src);
  
@@ -152,7 +178,7 @@ to use the ordinary table.
    /* free dest's existing IVs */
    if (MRB_OBJ_SHAPED_P(d)) {
      shaped_iv_free(mrb, d);
-@@ -937,6 +992,26 @@
+@@ -937,6 +1011,26 @@
        d->iv = iv_copy(mrb, s->iv);
      }
    }
@@ -179,7 +205,7 @@ to use the ordinary table.
  }
  
  /*
-@@ -959,6 +1034,13 @@
+@@ -959,6 +1053,13 @@
      struct RObject *o = mrb_obj_ptr(obj);
      mrb_check_frozen(mrb, o);
  
@@ -193,7 +219,7 @@ to use the ordinary table.
      if (MRB_OBJ_SHAPED_P(o)) {
        mrb_shaped_iv *siv = (mrb_shaped_iv*)o->iv;
        if (siv) {
-@@ -1019,13 +1101,7 @@
+@@ -1019,13 +1120,7 @@
    mrb_value ary = mrb_ary_new(mrb);
  
    if (obj_iv_p(self)) {

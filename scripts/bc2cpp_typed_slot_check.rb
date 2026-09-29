@@ -139,6 +139,34 @@ Dir.mktmpdir do |dir|
   check.call('the payload free function tolerates a NULL payload',
              structs.match?(/static void Mixed_ivars_free\(mrb_state\* mrb, void\* p\) \{\n  if \(!p\) return;/))
 
+  # RDATA_IVAR_HASH: the emitted index must find every listed slot the way
+  # rdata_ivar_slot (patches/mruby-rdata-ivar-slots.patch) probes it.
+  fnv = lambda do |name|
+    name.each_byte.reduce(2_166_136_261) { |h, byte| ((h ^ byte) * 16_777_619) & 0xffff_ffff }
+  end
+  probe = lambda do |table, names, name|
+    pos = fnv.call(name) & (table.size - 1)
+    until table[pos] == 0xFFFF
+      return table[pos] if names[table[pos]] == name
+
+      pos = (pos + 1) & (table.size - 1)
+    end
+    nil
+  end
+  patch = File.read(File.join(__dir__, '../patches/mruby-rdata-ivar-slots.patch'))
+  check.call('the patch hashes with the constants the generator uses',
+             patch.include?('2166136261u') && patch.include?('16777619u'))
+  crowded = (0...40).map { |i| "@slot#{i}" }
+  table = gen.rdata_ivar_hash(crowded)
+  check.call('the index is at most half full', table.count { |e| e != 0xFFFF } * 2 <= table.size)
+  check.call('every slot of a crowded table is found at its own index',
+             crowded.each_with_index.all? { |name, i| probe.call(table, crowded, name) == i })
+  check.call('a name that is not a slot is not found', probe.call(table, crowded, '@other').nil?)
+  check.call('the emitted type carries the hash table and its mask',
+             structs.include?('Mixed_ivar_slots, 1, sizeof(Mixed_ivars), Mixed_ivar_hash, 1 };') &&
+             structs.include?('static const uint16_t Mixed_ivar_hash[] = {') &&
+             structs.include?('OnlyTyped_ivar_slots, 0, sizeof(OnlyTyped_ivars), nullptr, 0 };'))
+
   init = registry.fetch('initialize').find { |d| d.owner == 'Mixed' }
   init_code = gen.compile_method(init.irep)[:code]
   check.call('a boxed field starts undef, so GC marking and reads see an unset ivar',

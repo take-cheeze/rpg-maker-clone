@@ -85,3 +85,15 @@ descriptor consumer (GC marking, `mrb_iv_get`/`set`/`defined`/`remove`,
 values. `scripts/bc2cpp_rdata_slot_native_check.rb` links generated code against
 the patch-chain mruby and runs it under GC pressure, so a misplaced hunk or a
 raw field in the table crashes it.
+
+## Follow-up: hashed slot lookup
+
+`rdata_ivar_slot` used to scan the descriptor and `strlen`/`memcmp` every entry
+per `mrb_iv_get`/`set`. The interpreter still runs the PPU (its Fiber loop), and
+its RData payload has around a hundred slots, so 100M+ lookups per 60 frames
+took about half of `mruby + bc2cpp`'s optcarrot wall time and made it 2.5x
+slower than the plain interpreter. `mrb_data_type` now also carries an optional
+open-addressing table (`ivar_hash`, `ivar_hash_mask`: FNV-1a 32 of `@name`,
+linear probing, half full, `0xFFFF` = empty) that `emit_structs` builds
+(`rdata_ivar_hash`); a NULL table keeps the linear scan. The C and Ruby hash
+must match, which `scripts/bc2cpp_typed_slot_check.rb` pins.
