@@ -89,5 +89,60 @@ check.call('branch_target_addrs keeps a target that is not an instruction', dang
 check.call('dangling target leaves the graph unresolved', !dangling.resolved?)
 check.call('branch_target_addrs of straight-line code is empty', p.branch_target_addrs.empty?)
 
+# Catch-handler edges. Layout: 0 LOADNIL, 2 SEND (range [2,8) -> rescue at 12),
+# 4 JMPNOT->8, 6 LOADI, 8 JMP->16 (range end, not covered), 12 EXCEPT (handler),
+# 14 JMP->16, 16 RETURN.
+guarded = Irep.new(label: 'h', instructions: [
+  insn(0, 'LOADNIL', 'R1 (nil)'), insn(2, 'SEND', "R1\t:f\tn=0"), insn(4, 'JMPNOT', "R1\t8"),
+  insn(6, 'LOADI_1', 'R2 (1)'), insn(8, 'JMP', '16'), insn(12, 'EXCEPT', 'R3'),
+  insn(14, 'JMP', '16'), insn(16, 'RETURN', 'R1')
+], catch_handlers: [CatchHandler.new(type: :rescue, begin_addr: 2, end_addr: 8, target: 12)])
+g = BytecodeIR::Program.new(guarded)
+check.call('handler edges cover [begin, end)', g.handler_edges.map { |e| [e.src, e.target, e.kind] } ==
+  [[1, 5, :rescue], [2, 5, :rescue], [3, 5, :rescue]])
+check.call('handlers resolved', g.handlers_resolved?)
+check.call('normal predecessors omit the handler', g.instruction_predecessors[5] == Set[])
+check.call('handler predecessors include the range', g.instruction_predecessors(include_handlers: true)[5] == Set[1, 2, 3])
+check.call('handler predecessors keep normal edges', g.instruction_predecessors(include_handlers: true)[7] == Set[4, 6])
+check.call('normal successors untouched by handlers', g.instruction_at(1).successors == [2] && g.successors_of(1) == [2])
+check.call('successors_of with handlers', g.successors_of(1, include_handlers: true) == [2, 5])
+check.call('handler_target_addrs', g.handler_target_addrs == Set[12])
+check.call('handler_protected_addrs is half-open', g.handler_protected_addrs == Set[2, 3, 4, 5, 6, 7])
+check.call('handler_protected_addrs inclusive end', g.handler_protected_addrs(inclusive_end: true) == Set[2, 3, 4, 5, 6, 7, 8])
+check.call('handler is unreachable without handler edges', !g.reachable_from(0).include?(5))
+check.call('handler is reachable with handler edges', g.reachable_from(0, include_handlers: true).include?(5))
+check.call('reachable_from honours avoiding', !g.reachable_from(0, avoiding: 2).include?(7) && g.reachable_from(2, avoiding: 2).empty?)
+check.call('SEND dominates the join only through the handler', g.dominates?(1, 7, include_handlers: true))
+check.call('handler does not dominate the join', !g.dominates?(5, 7, include_handlers: true))
+check.call('handler unreachable on normal flow so nothing dominates it', !g.dominates?(0, 5))
+check.call('dominates itself', g.dominates?(4, 4))
+check.call('JMPNOT does not dominate the join when the handler bypasses it',
+           !g.dominates?(2, 7, include_handlers: true) && g.dominates?(2, 7))
+check.call('every path from the guarded call reaches the RETURN', g.every_path_reaches?(1, 7, include_handlers: true))
+check.call('not every path passes the LOADI', !g.every_path_reaches?(2, 3))
+check.call('every path reaches itself', g.every_path_reaches?(3, 3))
+early = Irep.new(label: 'e', instructions: [
+  insn(0, 'JMPIF', "R1\t8"), insn(4, 'RETURN', 'R1'), insn(8, 'LOADNIL', 'R2 (nil)'), insn(10, 'RETURN', 'R2')
+])
+check.call('an early RETURN is an exit, so the join is not on every path',
+           !BytecodeIR::Program.new(early).every_path_reaches?(0, 2))
+ret_in_range = Irep.new(label: 'r', instructions: [
+  insn(0, 'RETURN', 'R1'), insn(2, 'EXCEPT', 'R2'), insn(4, 'RETURN', 'R2')
+], catch_handlers: [CatchHandler.new(type: :ensure, begin_addr: 0, end_addr: 2, target: 2)])
+rp = BytecodeIR::Program.new(ret_in_range)
+check.call('RETURN inside a range stays an exit with handlers', !rp.every_path_reaches?(0, 1, include_handlers: true))
+bad_target = Irep.new(label: 'b', instructions: [insn(0, 'RETURN', 'R1')],
+                      catch_handlers: [CatchHandler.new(type: :rescue, begin_addr: 0, end_addr: 2, target: 99)])
+bp = BytecodeIR::Program.new(bad_target)
+check.call('unresolved handler target', !bp.handlers_resolved? && bp.handler_edges.empty? &&
+  bp.instruction_predecessors(include_handlers: true).nil? && !bp.instruction_predecessors.nil?)
+check.call('handler_target_addrs keeps a non-instruction target', bp.handler_target_addrs == Set[99])
+check.call('no handlers, no handler edges', program.call([insn(0, 'RETURN', 'R1')]).handler_edges.empty?)
+nest = ->(b, e) { CatchHandler.new(type: :rescue, begin_addr: b, end_addr: e, target: 50) }
+outer, inner, cross = nest.call(0, 20), nest.call(4, 10), nest.call(8, 30)
+lay = ->(list) { BytecodeIR::Program.new(Irep.new(label: 'n', instructions: [], catch_handlers: list)) }
+check.call('nested handlers do not partially overlap', !lay.call([outer, inner]).handler_partially_overlaps?(inner))
+check.call('crossing handlers partially overlap', lay.call([outer, cross]).handler_partially_overlaps?(outer))
+
 abort("bc2cpp_bytecode_ir_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_bytecode_ir_check OK'
