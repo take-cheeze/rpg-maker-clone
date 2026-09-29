@@ -41,5 +41,5 @@ for the closed-world gems and a synthetic source that forces EXT widening.
 - No pass depends on disassembly text any more; only diagnostics print it.
 - Symbol names that the text form could not represent (`:"a b"`) now decode.
 - The opcode table is duplicated from `ops.h`; the check compares the two.
-- Follow-up: build the whole `Irep` (pool, syms, reps) from the RITE binary
-  and retire the C dump regex parse and the text loader.
+- Follow-up (done in ADR 0251): build the whole `Irep` (pool, syms, reps) from
+  the RITE binary and retire the C dump regex parse and the text loader.

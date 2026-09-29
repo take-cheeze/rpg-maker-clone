@@ -116,10 +116,7 @@ require_relative '../tools/bc2cpp/bc2cpp'
 # excluded, i.e. silently interpreted: regenerate, or rename the entry).
 listed = HotMethods.load(HotMethods::DEFAULT_PATH)
 stale = Dir.mktmpdir do |dir|
-  c_src, disasm = run_mrbc(closed_world_mrblib_srcs(root), 'hot_only_probe', dir)
-  ireps, root_label = parse_c_dump(c_src, 'hot_only_probe')
-  blocks, files, catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, files, catches)
+  ireps, root_label = compile_ireps(closed_world_mrblib_srcs(root), 'hot_only_probe', dir)
   HotMethods.stale(build_registry(ireps, root_label).first, listed)
 end
 check.call("tools/bc2cpp/hot_methods.txt (#{listed.size} methods) names only methods the closed world defines" \
@@ -169,10 +166,7 @@ world_registry = nil
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'world.rb')
   File.write(path, WORLD)
-  c_src, disasm = run_mrbc(path, 'bc2cpp_hot_world', dir)
-  ireps, root_label = parse_c_dump(c_src, 'bc2cpp_hot_world')
-  blocks, files, catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root_label), blocks, files, catches)
+  ireps, root_label = compile_ireps(path, 'bc2cpp_hot_world', dir)
   world_registry = [ireps, *build_registry(ireps, root_label)]
 end
 ireps, registry, superclass_of, _containers, included, prepended, unknown = world_registry

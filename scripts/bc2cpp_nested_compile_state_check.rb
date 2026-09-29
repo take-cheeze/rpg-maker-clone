@@ -46,11 +46,8 @@ RUBY
 ireps, registry = Dir.mktmpdir do |dir|
   path = File.join(dir, 'pages.rb')
   File.write(path, SOURCE)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_pages', dir)
-  parsed, root_label = parse_c_dump(c_dump, 'bc2cpp_pages')
+  parsed, root_label = compile_ireps(path, 'bc2cpp_pages', dir)
   order = dfs_order(parsed, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(parsed, order, blocks, block_files, block_catches)
   [parsed, build_registry(parsed, root_label)[0]]
 end
 new_gen = -> { CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new) }

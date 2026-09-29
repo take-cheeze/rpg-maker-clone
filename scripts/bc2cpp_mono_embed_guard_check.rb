@@ -69,11 +69,8 @@ end
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'mono_embed_guard.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_mono_embed_guard', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_mono_embed_guard')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_mono_embed_guard', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry, superclass_of = build_registry(ireps, root_label)
   annotations = Annotations.extract(ireps, registry)
   ivar_layout = IvarLayout.analyze(ireps, registry, {}, annotations)

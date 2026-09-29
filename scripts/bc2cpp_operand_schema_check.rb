@@ -2,28 +2,20 @@
 # frozen_string_literal: true
 
 # Every instruction of the real closed-world gems must parse against
-# OperandSchema and format back to the disassembly's own operand text. Usage:
-# MRBC=path/to/mrbc ruby scripts/bc2cpp_operand_schema_check.rb [DISASM_FILE]
+# OperandSchema and format back to the decoder's own operand text. Usage:
+# MRBC=path/to/mrbc ruby scripts/bc2cpp_operand_schema_check.rb
 require 'tmpdir'
 require_relative '../tools/bc2cpp/irep'
 require_relative '../tools/bc2cpp/operand_schema'
 require_relative '../tools/bc2cpp/compiled_gems'
 
 ROOT = File.expand_path('..', __dir__)
-disasm = if ARGV[0]
-           File.read(ARGV[0], encoding: 'UTF-8')
-         else
-           Dir.mktmpdir do |dir|
-             run_mrbc_text(closed_world_mrblib_srcs(ROOT), File.join(dir, 'schema_check_disasm.txt'),
-                           File.join(dir, 'schema_check.mrb'))
-           end
-         end
+ireps, = Dir.mktmpdir { |dir| compile_ireps(closed_world_mrblib_srcs(ROOT), 'schema_check', dir) }
 
-blocks, = parse_disasm_blocks(disasm)
 total = 0
 unparsed = Hash.new { |h, k| h[k] = [] }
 mismatch = Hash.new { |h, k| h[k] = [] }
-blocks.flatten.each do |insn|
+ireps.each_value.flat_map(&:instructions).each do |insn|
   total += 1
   ops = OperandSchema.parse(insn.op, insn.args)
   if ops.nil?

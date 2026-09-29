@@ -107,11 +107,8 @@ RUBY
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'unwind.rb')
   File.write(source, SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_unwind', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_unwind')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_unwind', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   unwind_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
   code = registry.values.flatten.filter_map do |md|
@@ -151,11 +148,8 @@ RUBY
 Dir.mktmpdir do |dir|
   source = File.join(dir, 'array_operand.rb')
   File.write(source, ARRAY_SRC)
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_array_operand', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_array_operand')
+  ireps, root_label = compile_ireps(source, 'bc2cpp_array_operand', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   array_gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
   code_of = lambda do |name|

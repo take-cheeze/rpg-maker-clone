@@ -152,11 +152,8 @@ Dir.mktmpdir do |dir|
   File.write(src, SRC)
 
   symbol = 'bc2cpp_include_ancestor_check'
-  c_src, disasm_text = run_mrbc(src, symbol, dir)
-  ireps, root_label = parse_c_dump(c_src, symbol)
+  ireps, root_label = compile_ireps(src, symbol, dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm_text)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry, superclass_of, _container_constants, included_modules, prepended_modules, unknown_mixins,
     _struct_members, class_decls, walked = build_registry(ireps, root_label)
 
@@ -265,10 +262,7 @@ Dir.mktmpdir do |dir|
       def call; IncludedDispatchClass.new.value; end
     end
   RUBY
-  c_dump, disasm = run_mrbc(source, 'bc2cpp_included_dispatch_check', dir)
-  dispatch_ireps, dispatch_root = parse_c_dump(c_dump, 'bc2cpp_included_dispatch_check')
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(dispatch_ireps, dfs_order(dispatch_ireps, dispatch_root), blocks, block_files, block_catches)
+  dispatch_ireps, dispatch_root = compile_ireps(source, 'bc2cpp_included_dispatch_check', dir)
   dispatch_registry, dispatch_supers, _classes, dispatch_included, dispatch_prepended, dispatch_unknown,
     _structs, dispatch_decls, dispatch_walked = build_registry(dispatch_ireps, dispatch_root)
   UniqueClassNames.table = UniqueClassNames.analyze(dispatch_ireps, dispatch_root, [], [])

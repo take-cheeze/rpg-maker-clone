@@ -40,11 +40,8 @@ RUBY
 Dir.mktmpdir do |dir|
   path = File.join(dir, 'funcall_argc.rb')
   File.write(path, SRC)
-  c_dump, disasm = run_mrbc(path, 'bc2cpp_funcall_argc', dir)
-  ireps, root_label = parse_c_dump(c_dump, 'bc2cpp_funcall_argc')
+  ireps, root_label = compile_ireps(path, 'bc2cpp_funcall_argc', dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   gen = CodeGen.new(ireps, registry, {}, {}, {}, {}, {}, {}, {}, {}, {}, Set.new)
   code = lambda do |name|

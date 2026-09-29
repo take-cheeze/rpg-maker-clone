@@ -34,11 +34,8 @@ RUBY
 def build_codegen(source_text, symbol, dir)
   source = File.join(dir, "#{symbol}.rb")
   File.write(source, source_text)
-  c_dump, disasm = run_mrbc(source, symbol, dir)
-  ireps, root_label = parse_c_dump(c_dump, symbol)
+  ireps, root_label = compile_ireps(source, symbol, dir)
   order = dfs_order(ireps, root_label)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, order, blocks, block_files, block_catches)
   registry = build_registry(ireps, root_label)[0]
   %w[push <<].each do |name|
     registry[name] << MethodDef.new(name: name, owner: '<native>', irep: nil, visibility: :public)

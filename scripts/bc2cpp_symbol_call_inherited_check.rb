@@ -48,10 +48,7 @@ RUBY
 def generator_for(source, symbol, dir)
   path = File.join(dir, "#{symbol}.rb")
   File.write(path, source)
-  c_dump, disasm = run_mrbc(path, symbol, dir)
-  ireps, root = parse_c_dump(c_dump, symbol)
-  blocks, block_files, block_catches = parse_disasm_blocks(disasm)
-  merge!(ireps, dfs_order(ireps, root), blocks, block_files, block_catches)
+  ireps, root = compile_ireps(path, symbol, dir)
   registry, supers, _classes, included, prepended, unknown, _singletons, declarations, walked = build_registry(ireps, root)
   world = ClosedWorld.new(ireps: ireps, registry: registry, class_decls: declarations, walked: walked,
                           native_paths: [], ruby_paths: [])
