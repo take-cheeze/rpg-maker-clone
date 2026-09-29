@@ -414,10 +414,12 @@ poly_dynamic_names = Hash.new(0)
 end
 @shipped_stdout.scan(/^\s*\/\/ POLY :(\S+) --/).each { |match| poly_dynamic_names[match.first] += 1 }
 poly_dynamic_sites = poly_paths.sum { |path, count| path.start_with?('dynamic_') ? count : 0 }
+direct_new_sites = @shipped_stdout.scan(/^\s*\/\/ MONO :new -> /).size
 
 report << "-- dynamic dispatch remaining (real shipped build, SKIP_UNSUPPORTED=1) --\n"
 report << "cached bc2cpp_send/mrb_funcall_with_block sites, including guarded fallbacks: #{total_dispatch}\n"
 report << "  POLY-marked (receiver's runtime class genuinely decides): #{shipped_poly}\n"
+report << "  direct :new constructor paths emitted (some retain guarded fallback): #{direct_new_sites}\n"
 report << "  generic POLY sites by diagnostics: #{poly_dynamic_sites}\n"
 report << "  POLY_DIAG sites categorized: #{poly_diag_sites}\n"
 report << "  dispatch path by call site:\n"

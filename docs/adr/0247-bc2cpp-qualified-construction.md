@@ -30,4 +30,6 @@ and generated C++ compilation.
 Qualified class constants can reach the existing compiled-initializer direct
 construction path from nested lexical scopes. The proof does not change
 constructor admission or remove runtime fallback for classes that fail those
-checks.
+checks. The same guarded `mrb_obj_new` path also handles `Array.new` using
+mruby's captured Array class pointer, while leaving `Array#initialize` to normal
+runtime dispatch.
