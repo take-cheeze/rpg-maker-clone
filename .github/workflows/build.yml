@@ -1265,6 +1265,11 @@ jobs:
           - name: mruby bare-hash-push check
             run: ruby scripts/mruby_bare_hash_push_check.rb
 
+          # patches/mruby-*.patch hunks must carry context: a zero-context hunk
+          # lands by line number and drifts when an earlier patch shifts the file.
+          - name: mruby patch context check
+            run: ruby scripts/mruby_patch_context_check.rb
+
           # Unit check for the Wio bc2cpp flash-overflow report's map/ld parsing
           # (scripts/wio_overflow_report.rb, ADR 0152) against a hand-built map
           # with known numbers -- the real `wio-bc2cpp` job exercises it too,
