@@ -21,7 +21,7 @@ check = lambda do |what, condition|
   failures << what unless condition
 end
 
-%w[mruby-lcf-compiled mruby-rgss-compiled mruby-rpg2k-compiled].each do |gem|
+%w[mruby-lcf-compiled mruby-rgss-compiled mruby-rpg2k-compiled mruby-core-compiled].each do |gem|
   path = File.expand_path("../#{gem}/mrbgem.rake", __dir__)
   source = File.read(path)
   check.call("#{gem}/mrbgem.rake globs every tools/bc2cpp/*.rb file as a dependency",

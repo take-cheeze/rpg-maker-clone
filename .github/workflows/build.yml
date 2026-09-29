@@ -947,6 +947,11 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_fixnum_nil_ivar_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_typed_slot_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_never_called_registrations_check.rb
+          - shard: core-mrbtest
+            checks: |
+              # mruby's own suites (rake test) on a full-core host build, interpreted and with the
+              # compiled core mrblib registered over it (docs/adr/0264); two mruby builds, so its own shard.
+              ruby scripts/bc2cpp_core_mrbtest.rb
           - shard: rdata-slots
             checks: |
               # Links bc2cpp output against the patch-chain mruby and runs it
@@ -1011,6 +1016,9 @@ jobs:
               MRBC="$mrbc" ruby scripts/bc2cpp_binary_loader_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_closed_world_check.rb
               MRBC="$mrbc" ruby scripts/bc2cpp_native_direct_check.rb
+              # Compiled mruby core mrblib (docs/adr/0264): static invariants, then every compiled body
+              # against the interpreter's answer on edge cases.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mrblib_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
@@ -2534,6 +2542,7 @@ jobs:
               mruby-lcf-compiled \
               mruby-rgss-compiled \
               mruby-rpg2k-compiled \
+              mruby-core-compiled \
               mruby-rgss \
               mruby-lcf \
               mruby-rpg2k \

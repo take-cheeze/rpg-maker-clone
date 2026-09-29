@@ -1059,6 +1059,14 @@
   closed world those arms let the chain's by-name fallback become a proven
   NoMethodError. See
   [`docs/adr/0253-bc2cpp-native-direct-entry-points.md`](docs/adr/0253-bc2cpp-native-direct-entry-points.md).
+  mruby's own Ruby (core mrblib, the core gems' mrblib, mruby-stringio and
+  mruby-onig-regexp) is compiled too, by `mruby-core-compiled`: every method that
+  neither takes nor yields to a block, nor touches the Fiber class, nor comes from
+  mruby-enumerator is registered over its bytecode for the RPG2000/2003 maker (a
+  `Fiber.yield` inside a block cannot cross a compiled frame, so the iterators stay
+  interpreted), and the ones whose name no native method shares also become direct
+  call targets. Flash-limited builds (wio, psp, maix) compile none of it. See
+  [`docs/adr/0264-bc2cpp-compiled-core-mrblib.md`](docs/adr/0264-bc2cpp-compiled-core-mrblib.md).
   Constructor analysis follows source indexes through inlined calls and can
   directly build RGSS `Table` values when the native class and standard
   constructor chain are proven. Qualified class paths such as
