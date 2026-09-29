@@ -72,12 +72,11 @@ keeps a runtime class guard with a dynamic fallback, unless `self` is exactly
 that owner with no subclass (`exact_class?`), the same rule as MONO_EMBED_GUARD.
 
 **MODULE_FUNCTION_COPY.** The constant-object call to a `module_function` copy
-no longer requires the shared body to be free of blocks and `self` reads. It
+no longer requires the shared body to be free of blocks. It
 requires that the body, including nested blocks, contains no `GETIV`, `SETIV`,
 `GETCV`, `SETCV`, `SUPER` or `ARGARY` (state or hierarchy tied to a class's
-instances) and that the module owner embeds no ivars. This supersedes the
-self-use refusal of ADR 0235: ADR 0241 already compiles the shared body on the
-assumption that `self` is the module object, and the call passes exactly that.
+instances) and that the module owner embeds no ivars. A body that reads `self` (R0) is still refused, as in ADR 0259, which owns this
+rule together with the constant-object arms (`codegen_constant_object.rb`).
 
 **CONSTANT_OBJECT_ACCESSOR.** A stable module constant whose singleton has one
 public `attr_*` definition with the right arity compiles to `mrb_iv_get` /
