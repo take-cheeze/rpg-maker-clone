@@ -36,7 +36,6 @@ class ClassArgTypesTest < Minitest::Test
   # exercises ClassArgTypes' OWN logic (skip POLY, skip native, conflict ->
   # nil) without compiling a closed world.
   MethodDefStub = Struct.new(:irep, :owner, :name, keyword_init: true)
-  IrepStub = Struct.new(:label, :instructions, keyword_init: true)
   # A real Insn, so typed operand accessors (#reg, ...) behave as in bc2cpp.
   InsnStub = Class.new do
     def self.new(op:, args:)
@@ -45,7 +44,7 @@ class ClassArgTypesTest < Minitest::Test
   end
 
   def irep(label, insns)
-    IrepStub.new(label: label, instructions: insns)
+    Irep.new(label: label, instructions: insns)
   end
 
   def send_insn(dest, name, argc)
