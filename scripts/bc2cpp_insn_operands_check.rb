@@ -45,5 +45,16 @@ check.call('JMPUW never falls through', !preds[3].include?(2))
 check.call('JMPUW target predecessor', preds[5].include?(2))
 check.call('predecessors nil when unresolved', BytecodeIR::Program.new(bad_irep).instruction_predecessors.nil?)
 
+wr = Irep.new(label: 't5', instructions: [
+  insn(0, 'LOADNIL', 'R3'), insn(2, 'MOVE', "R4\tR3"), insn(5, 'MOVE', "R5\tR4"),
+  insn(8, 'SEND', "R6\t:foo\tn=0"), insn(12, 'RETURN', 'R5')
+])
+check.call('last_writer finds nearest write', wr.last_writer(4, 4).addr == 2)
+check.call('last_writer_index none before entry', wr.last_writer_index(-1, 3).nil?)
+check.call('source_writer follows MOVE chain', wr.source_writer(3, 5).op == 'LOADNIL')
+check.call('source_writer nil when never written', wr.source_writer(3, 9).nil?)
+check.call('index_of_addr', wr.index_of_addr(8) == 3)
+check.call('instructions_at half-open range', wr.instructions_at(2...8).map(&:addr) == [2, 5])
+
 abort("bc2cpp_insn_operands_check FAILED: #{failures.join(', ')}") unless failures.empty?
 puts 'bc2cpp_insn_operands_check OK'
