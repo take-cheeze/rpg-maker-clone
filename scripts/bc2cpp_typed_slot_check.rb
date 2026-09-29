@@ -1,11 +1,13 @@
 #!/usr/bin/env ruby
 # encoding: UTF-8
 # Check TYPED_SLOT_INTERPRETED_ACCESS: a typed embedded ivar (mrb_int, mrb_bool,
-# mrb_sym) is a raw C field, but the RData ivar descriptor and the GC read a
-# slot as an mrb_value. So
+# mrb_sym) is a raw C field. So
 #  - a typed ivar touched by a method that stays interpreted is demoted to a
-#    plain :value slot;
-#  - the descriptor table lists :value slots only.
+#    plain :value slot (the interpreter then reads and writes it as an
+#    mrb_value without paying the descriptor's boxing and type check);
+#  - the descriptor table lists every slot with its kind, so the runtime boxes
+#    a typed value for the ivar API and the GC marks :value slots only
+#    (docs/adr/0261; scripts/bc2cpp_typed_reflection_check.rb runs it).
 # A raw 0x10 read as an mrb_value made mrb_gc_mark dereference address 0x10,
 # and a raw Integer read by the interpreter crashed optcarrot's PPU.
 #
@@ -63,9 +65,11 @@ Dir.mktmpdir do |dir|
 
   structs = gen.emit_structs
   slots = structs[/Clock_ivar_slots\[\] = \{\n(.*?)\n\};/m, 1].to_s
-  check.call('the descriptor lists the :value slot', slots.include?('"@ticks"'))
-  check.call('the descriptor omits the typed slot', !slots.include?('"@count"'))
-  check.call('the descriptor count matches', structs.include?('Clock_ivar_slots, 1, sizeof'))
+  check.call('the descriptor lists the :value slot',
+             slots.include?('{ "@ticks", offsetof(Clock_ivars, ivar_ticks), MRB_DATA_IVAR_VALUE }'))
+  check.call('the descriptor lists the typed slot with its kind',
+             slots.include?('{ "@count", offsetof(Clock_ivars, ivar_count), MRB_DATA_IVAR_INT }'))
+  check.call('the descriptor count matches', structs.include?('Clock_ivar_slots, 2, sizeof'))
 end
 
 puts '-- descriptor consumers: slot table, payload size, initial values, reflection'
@@ -127,20 +131,21 @@ Dir.mktmpdir do |dir|
   check.call('the payload keeps an mrb_value for a boxed ivar', mixed.include?('mrb_value ivar_name;'))
   mixed_slots = structs[/Mixed_ivar_slots\[\] = \{\n(.*?)\n\};/m, 1].to_s
   check.call('a boxed slot is addressed by offsetof into the payload',
-             mixed_slots.include?('{ "@name", offsetof(Mixed_ivars, ivar_name) }'))
-  check.call('a typed ivar read through reflection is not in the table', !mixed_slots.include?('@count'))
+             mixed_slots.include?('{ "@name", offsetof(Mixed_ivars, ivar_name), MRB_DATA_IVAR_VALUE }'))
+  check.call('a typed ivar read through reflection is in the table, with its kind',
+             mixed_slots.include?('{ "@count", offsetof(Mixed_ivars, ivar_count), MRB_DATA_IVAR_INT }'))
   check.call('the copy size covers the typed fields too',
-             structs.include?('Mixed_ivar_slots, 1, sizeof(Mixed_ivars)'))
+             structs.include?('Mixed_ivar_slots, 2, sizeof(Mixed_ivars)'))
 
   only_slots = structs[/OnlyTyped_ivar_slots\[\] = \{\n(.*?)\n\};/m, 1].to_s
-  check.call('an all-typed owner still carries a descriptor, with no slot to mark',
-             structs.include?('OnlyTyped_ivar_slots, 0, sizeof(OnlyTyped_ivars)') && !only_slots.include?('"@'))
-  check.call('the placeholder entry keeps the array non-empty', only_slots.include?('{ "", 0 }'))
+  check.call('an all-typed owner carries a descriptor listing its typed slots',
+             structs.include?('OnlyTyped_ivar_slots, 2, sizeof(OnlyTyped_ivars)') &&
+               only_slots.include?('MRB_DATA_IVAR_INT }') && only_slots.include?('MRB_DATA_IVAR_BOOL }'))
   check.call('the payload free function tolerates a NULL payload',
              structs.match?(/static void Mixed_ivars_free\(mrb_state\* mrb, void\* p\) \{\n  if \(!p\) return;/))
 
   # RDATA_IVAR_HASH: the emitted index must find every listed slot the way
-  # rdata_ivar_slot (patches/mruby-rdata-ivar-slots.patch) probes it.
+  # rdata_ivar_find (patches/mruby-rdata-ivar-slots.patch) probes it.
   fnv = lambda do |name|
     name.each_byte.reduce(2_166_136_261) { |h, byte| ((h ^ byte) * 16_777_619) & 0xffff_ffff }
   end
@@ -163,9 +168,9 @@ Dir.mktmpdir do |dir|
              crowded.each_with_index.all? { |name, i| probe.call(table, crowded, name) == i })
   check.call('a name that is not a slot is not found', probe.call(table, crowded, '@other').nil?)
   check.call('the emitted type carries the hash table and its mask',
-             structs.include?('Mixed_ivar_slots, 1, sizeof(Mixed_ivars), Mixed_ivar_hash, 1 };') &&
+             structs.include?('Mixed_ivar_slots, 2, sizeof(Mixed_ivars), Mixed_ivar_hash, 3 };') &&
              structs.include?('static const uint16_t Mixed_ivar_hash[] = {') &&
-             structs.include?('OnlyTyped_ivar_slots, 0, sizeof(OnlyTyped_ivars), nullptr, 0 };'))
+             structs.include?('OnlyTyped_ivar_slots, 2, sizeof(OnlyTyped_ivars), OnlyTyped_ivar_hash, 3 };'))
 
   init = registry.fetch('initialize').find { |d| d.owner == 'Mixed' }
   init_code = gen.compile_method(init.irep)[:code]

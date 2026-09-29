@@ -1104,6 +1104,14 @@
   on RData-backed classes use GC-traced `mrb_value` slots, while dynamic names
   retain the normal ivar table; see
   [`docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md`](docs/adr/0232-bc2cpp-rdata-instance-variable-slots.md).
+  Typed slots (Integer, Symbol, boolean, Integer-or-nil) are listed in the same
+  descriptor with a kind, so `instance_variable_get/set`, `inspect`, `Marshal`
+  and `dup` see them, and a backward register walk only feeds an unguarded
+  optimization when the write it finds dominates the read (a join such as
+  `x = h[k] || []` no longer counts). bc2cpp also knows `include Enumerable`
+  and inlines `Numeric#positive?`/`#negative?` and `Enumerable#min`/`#max` on
+  exact Arrays and numbers, verified against the build's own core sources; see
+  [`docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md`](docs/adr/0261-bc2cpp-join-dominance-core-mixins-typed-reflection.md).
 
 - On the flash-limited builds (psp, wio and maix), the compiled-Ruby backend
   compiles only the profiled hot methods listed in

@@ -391,8 +391,9 @@ Dir.mktmpdir do |dir|
                !body_of(code, 'AsBox_rest_many').match?(DISPATCH))
   check.call('a rest callee with no extra arguments gets an empty Array',
              body_of(code, 'AsBox_rest_none').include?('mrb_ary_new(M)'))
-  check.call('a too-short call to a rest callee keeps the dispatch (ArgumentError)',
-             body_of(code, 'AsBox_rest_too_few').match?(DISPATCH))
+  check.call('a too-short call to a rest callee raises its ArgumentError (dispatched or static, ADR 0259)',
+             body_of(code, 'AsBox_rest_too_few').match?(DISPATCH) ||
+               body_of(code, 'AsBox_rest_too_few').include?('STATIC_ARGC_ERROR :as_rest'))
   check.call('a literal-sized splat is a direct call',
              !body_of(code, 'AsBox_splat_literal').match?(DISPATCH) &&
                body_of(code, 'AsBox_splat_literal').include?('AsBox_as_two_impl'))

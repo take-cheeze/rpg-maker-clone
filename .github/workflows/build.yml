@@ -953,6 +953,9 @@ jobs:
               # under GC pressure; catches a misplaced patch hunk as well as a
               # raw typed field reaching the descriptor consumers.
               MRBC="$mrbc" ruby scripts/bc2cpp_rdata_slot_native_check.rb
+              # The same descriptor through the C ivar API: typed slots are
+              # visible to reflection, dup and Marshal, and refuse another class.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_typed_reflection_check.rb
           - shard: optcarrot-benchmark
             checks: |
               MRBC="$mrbc" ruby tools/optcarrot_probe/compiled_run.rb 180
@@ -1018,6 +1021,11 @@ jobs:
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_singleton_arity_check.rb
               ruby scripts/native_binding_split_check.rb
               BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_arg_shapes_check.rb
+              # ADR 0261: join dominance for the backward walks, core mixins and the
+              # core methods they let bc2cpp inline. Their runtime sections need a
+              # full-core libmruby (BC2CPP_MRUBY_FULL) and skip without one.
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_join_dominance_check.rb
+              BC2CPP_MRUBY_CORE="$core" MRBC="$mrbc" ruby scripts/bc2cpp_core_mixins_check.rb
 
     env:
       RPGMAKER_BC2CPP: "1"
@@ -1307,6 +1315,15 @@ jobs:
 
           - name: wio dropped-gems check
             run: ruby scripts/wio_dropped_gems_check.rb
+
+          # The host-only sections (hand-built bytecode, a synthetic core tree,
+          # the patch text); the fixture sections need mrbc and the patched
+          # mruby, so they run in the `bc2cpp-checks` job (ADR 0261).
+          - name: bc2cpp join dominance, core mixins and typed reflection checks
+            run: |
+              ruby scripts/bc2cpp_join_dominance_check.rb
+              ruby scripts/bc2cpp_core_mixins_check.rb
+              ruby scripts/bc2cpp_typed_reflection_check.rb
 
           - name: RPG2k game-logic checks
             run: |

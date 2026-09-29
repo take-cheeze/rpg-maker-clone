@@ -29,7 +29,8 @@
 # Requires a host mrbc already built (3rd/mruby/build/host, the same
 # prerequisite every real mruby-*-compiled/mrbgem.rake Rake task already
 # has). Writes to stdout. Set BC2CPP_COVERAGE_REPORT_PATH to write a file
-# instead (used by callers that need to capture the report).
+# instead (used by callers that need to capture the report). Set
+# BC2CPP_COVERAGE_KEEP_DIR to also keep the shipped pass's generated C++.
 
 require 'shellwords'
 require 'open3'
@@ -99,6 +100,12 @@ Dir.mktmpdir do |dir|
   shipped_env = env.merge('OUT_SYMBOL' => 'coverage_report_shipped', 'SKIP_UNSUPPORTED' => '1', 'OUT_DIR' => dir)
   @shipped_stdout, shipped_stderr, shipped_status = Open3.capture3(shipped_env, cmd)
   raise "bc2cpp.rb (SKIP_UNSUPPORTED=1) failed (exit #{shipped_status.exitstatus}):\n#{shipped_stderr[-4000..]}" unless shipped_status.success?
+end
+# BC2CPP_COVERAGE_KEEP_DIR: keep the shipped run's generated C++ (stdout, plus
+# any OUT_DIR files) for a semantic diff of two compiler revisions.
+if (keep = ENV['BC2CPP_COVERAGE_KEEP_DIR'])
+  File.write(File.join(keep, 'shipped.cxx'), @shipped_stdout)
+  File.write(File.join(keep, 'shipped.stderr'), shipped_stderr)
 end
 
 # ---------------------------------------------------------------------------

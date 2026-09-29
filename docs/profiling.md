@@ -334,6 +334,11 @@ BC2CPP_PROFILE_TIMINGS=1 MRBC=build/mruby/host/mrbc/bin/mrbc \
   ruby scripts/bc2cpp_coverage_report.rb
 ```
 
+`BC2CPP_COVERAGE_KEEP_DIR=dir` keeps the shipped pass's generated C++
+(`shipped.cxx`) and its stderr (`shipped.stderr`), for a digit-masked line
+multiset diff of two compiler revisions (difflib does not cope with a 20 MB
+file).
+
 The `BC2CPP_TIME` rows show broad pipeline phases; `BC2CPP_DETAIL` rows split
 the expensive whole-program analyses. Timings are opt-in and do not affect
 generated C++. Both `ArgTypes` and `ClassArgTypes` use the same call-site index,
